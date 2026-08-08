@@ -1,0 +1,194 @@
+/*
+ * World Scenery: the full-window photo layer and the surface overrides that
+ * let it show through, active only while the "world-scenery" theme palette
+ * is applied (html[data-theme-id="world-scenery"], set by applyThemePalette).
+ *
+ * Layer order, bottom to top:
+ *   0  opaque theme canvas (body background — the "plate")
+ *   1  scenery photo group (--scenery-photo-opacity, on an isolated group)
+ *   2  legibility wash     (--scenery-wash-alpha)
+ *   3  content + chrome glass
+ *
+ * The alphas are published by SceneryHost from glass.ts: photo + wash
+ * composite to exactly the configured translucency. The wash — not
+ * backdrop-filter — is what carries long-form text contrast; glass is
+ * reserved for chrome (sidebar, header, composer). The scenery group is
+ * isolated and fades as ONE layer: fading gradient and photo separately
+ * composites both and covers more than the requested alpha.
+ */
+
+html[data-theme-id="world-scenery"] {
+  --scenery-motion: 0.3s cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* ------------------------------------------------------------- art layer -- */
+
+.scenery-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.scenery-layer__group {
+  position: absolute;
+  inset: 0;
+  isolation: isolate;
+  opacity: var(--scenery-photo-opacity, 0.68);
+  transition: opacity var(--scenery-motion);
+}
+
+.scenery-layer__gradient,
+.scenery-layer__photo {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+
+.scenery-layer__photo--current {
+  animation: scenery-fade-in 0.3s cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+@keyframes scenery-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.scenery-layer__wash {
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--scenery-wash-channel, 0 0 0) / var(--scenery-wash-alpha, 0.53));
+  transition: background-color var(--scenery-motion);
+}
+
+/* Slightly heavier at the top so header text always clears the brightest
+   part of a sky; a lighter lift at the bottom anchors the composer. */
+.scenery-layer__edges {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgb(var(--scenery-wash-channel, 0 0 0) / var(--scenery-edge-top-alpha, 0.3)) 0%,
+    transparent 30%,
+    transparent 72%,
+    rgb(var(--scenery-wash-channel, 0 0 0) / var(--scenery-edge-bottom-alpha, 0.21)) 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scenery-layer__group,
+  .scenery-layer__wash {
+    transition: none;
+  }
+
+  .scenery-layer__photo--current {
+    animation: none;
+  }
+}
+
+/* Unsplash guideline: attribution wherever a photo shows prominently. The
+   scrimmed photo is always dark enough for white ink (SurgeCode pill spec). */
+.scenery-attribution {
+  position: fixed;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 0.25rem 0.625rem;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 32%);
+  color: rgb(255 255 255 / 86%);
+  font-size: 11px;
+  line-height: 1.35;
+  pointer-events: auto;
+}
+
+.scenery-attribution a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.scenery-attribution__name {
+  font-weight: 600;
+}
+
+.scenery-attribution__credit {
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+/* ------------------------------------------------- transparent surfaces -- */
+/* Everything below only lifts surfaces while the photo is actually shown;
+   Reduce Transparency (data-scenery-reduced) keeps the stock opaque look. */
+
+/* The routed <main> and the thread view root paint the whole chat column.
+   body keeps its opaque canvas — that is the plate under the photo. */
+html[data-theme-id="world-scenery"]:not([data-scenery-reduced]) main[data-slot="sidebar-inset"] {
+  background-color: transparent;
+  background-image: none;
+}
+
+html[data-theme-id="world-scenery"]:not([data-scenery-reduced])
+  main[data-slot="sidebar-inset"]
+  > div {
+  background-color: transparent;
+}
+
+/* Chat header: frosted chrome band over the photo (SurgeCode .toolbar). */
+html[data-theme-id="world-scenery"]:not([data-scenery-reduced]) [data-chat-header] {
+  background-color: color-mix(in srgb, var(--toolbar-background) 42%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  backdrop-filter: blur(18px) saturate(1.35);
+}
+
+/* Sidebar: the fixed container goes clear; the inner panel carries one
+   translucent fill + blur (never both, or the coverage doubles). */
+html[data-theme-id="world-scenery"]:not([data-scenery-reduced]) [data-app-sidebar] {
+  background-color: transparent;
+}
+
+html[data-theme-id="world-scenery"]:not([data-scenery-reduced])
+  [data-app-sidebar]
+  [data-slot="sidebar-inner"] {
+  background-color: color-mix(in srgb, var(--sidebar) 42%, transparent);
+  background-image: none;
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  backdrop-filter: blur(14px) saturate(1.1);
+}
+
+/* User bubbles and code blocks ride translucent plates instead of opaque
+   tokens: a fixed alpha can promise a contrast floor where a blur material
+   cannot. Values are pinned by sceneryContrast.test.ts. */
+html[data-theme-id="world-scenery"]:not([data-scenery-reduced]) {
+  --message-surface: rgb(20 38 27 / 85%);
+  --code-background: rgb(0 0 0 / 50%);
+}
+
+html[data-theme-id="world-scenery"]:not([data-scenery-reduced]):not(.dark) {
+  --message-surface: rgb(223 239 227 / 85%);
+  --code-background: rgb(255 255 255 / 72%);
+}
+
+/* ------------------------------------------------------------ fallbacks -- */
+
+/* No backdrop-filter support: chrome must go near-opaque or it is unreadable
+   over an arbitrary photo. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html[data-theme-id="world-scenery"]:not([data-scenery-reduced]) [data-chat-header] {
+    background-color: color-mix(in srgb, var(--toolbar-background) 92%, transparent);
+  }
+
+  html[data-theme-id="world-scenery"]:not([data-scenery-reduced])
+    [data-app-sidebar]
+    [data-slot="sidebar-inner"] {
+    background-color: color-mix(in srgb, var(--sidebar) 92%, transparent);
+  }
+}
