@@ -5,6 +5,9 @@
  * photo silently disappears behind an opaque surface. This test makes that
  * failure loud instead.
  */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vite-plus/test";
 
 import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
@@ -12,6 +15,13 @@ import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import sidebarSource from "../components/ui/sidebar.tsx?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
+
+// ?raw on a .css module yields "" under the test pipeline (the CSS transform
+// wins), so the stylesheet contract reads the file straight from disk.
+const indexCssSource = readFileSync(
+  fileURLToPath(new URL("../index.css", import.meta.url)),
+  "utf8",
+);
 import rootRouteSource from "../routes/__root.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
@@ -58,6 +68,18 @@ describe("composer attach contract with upstream markup", () => {
 
   it("the mention drop channel the text-file insert rides still exists", () => {
     expect(chatComposerSource).toContain("onDropCapture={composerMentionDragHandlers.onDrop}");
+  });
+});
+
+describe("glass contract with upstream chrome", () => {
+  it("the composer still wears the glass shell driven by the --glass vars", () => {
+    expect(chatViewSource).toContain("chat-composer-glass-shell");
+    expect(indexCssSource).toContain("var(--chat-composer-glass-surface) var(--glass-opacity)");
+  });
+
+  it("header controls still paint from the --toolbar-control var", () => {
+    expect(indexCssSource).toContain("[data-chat-header] [data-toolbar-control]");
+    expect(indexCssSource).toContain("background-color: var(--toolbar-control)");
   });
 });
 

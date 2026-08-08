@@ -261,8 +261,32 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
 /* Chat header: frosted chrome band over the photo (SurgeCode .toolbar). */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-header] {
   background-color: color-mix(in srgb, var(--toolbar-background) 42%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(1.35);
-  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  backdrop-filter: blur(24px) saturate(1.35);
+}
+
+/* Header controls (Add action / Open / Commit / Initialize git…): the band
+   behind them is already blurred, so a translucent fill is all a control
+   needs to read as glass — index.css paints them from these vars. */
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-header] {
+  --toolbar-control: color-mix(in srgb, var(--app-theme-toolbar-control) 52%, transparent);
+  --toolbar-control-hover: color-mix(
+    in srgb,
+    var(--app-theme-toolbar-control-hover) 68%,
+    transparent
+  );
+}
+
+/* Composer: upstream's own glass shell (chat-composer-glass-shell and the
+   floating pills) reads these vars; at the stock 80% fill it looks solid
+   over the wash. Scoped to the chat column so it wins over the inline
+   root-level value the Settings "Glass opacity" slider writes — that slider
+   keeps governing every other theme. */
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  main[data-slot="sidebar-inset"] {
+  --glass-opacity: 52%;
+  --glass-blur: 24px;
+  --glass-saturation: 1.35;
 }
 
 /* Sidebar: the fixed container goes clear; the inner panel carries one
@@ -306,5 +330,15 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]:not(.dark) {
     [data-app-sidebar]
     [data-slot="sidebar-inner"] {
     background-color: color-mix(in srgb, var(--sidebar) 92%, transparent);
+  }
+
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+    main[data-slot="sidebar-inset"] {
+    --glass-opacity: 94%;
+  }
+
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-header] {
+    --toolbar-control: color-mix(in srgb, var(--app-theme-toolbar-control) 94%, transparent);
+    --toolbar-control-hover: var(--app-theme-toolbar-control-hover);
   }
 }
