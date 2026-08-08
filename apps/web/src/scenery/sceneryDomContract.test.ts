@@ -5,9 +5,9 @@
  * photo silently disappears behind an opaque surface. This test makes that
  * failure loud instead.
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import { describe, expect, it } from "vite-plus/test";
 
 import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
@@ -15,16 +15,18 @@ import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import sidebarSource from "../components/ui/sidebar.tsx?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
-
-// ?raw on a .css module yields "" under the test pipeline (the CSS transform
-// wins), so the stylesheet contract reads the file straight from disk.
-const indexCssSource = readFileSync(
-  fileURLToPath(new URL("../index.css", import.meta.url)),
-  "utf8",
-);
 import rootRouteSource from "../routes/__root.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
+
+// ?raw on a .css module yields "" under the test pipeline (the CSS transform
+// wins), so the stylesheet contract reads the file straight from disk.
+const indexCssSource = await Effect.runPromise(
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    return yield* fs.readFileString(new URL("../index.css", import.meta.url).pathname);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
 
 describe("scenery structural contract with upstream markup", () => {
   it("SidebarInset is still main[data-slot=sidebar-inset] painting bg-background", () => {
