@@ -1,0 +1,37 @@
+/*
+ * Attach button injected into the composer's right action group. Eager CSS
+ * (imported by ComposerAttachControl, which mounts regardless of theme) —
+ * scenery.css lives in the lazy theme chunk and cannot style this. Colors
+ * ride the app theme variables so the button matches any active theme.
+ */
+
+.scenery-attach-slot {
+  display: contents;
+}
+
+.scenery-attach-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--app-theme-icon-muted, currentColor);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.scenery-attach-button:hover {
+  background: var(--app-theme-muted, rgb(127 127 127 / 15%));
+  color: var(--app-theme-text, currentColor);
+}
+
+.scenery-attach-button:focus-visible {
+  outline: 2px solid var(--app-theme-focus, currentColor);
+  outline-offset: 1px;
+}

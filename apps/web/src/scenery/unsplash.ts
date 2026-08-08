@@ -181,9 +181,10 @@ export function wallpaperPixelWidth(): number {
 /**
  * The pre-blurred wallpaper variant: replaces SurgeCode mac's runtime
  * `.blur(4).saturation(1.05)` bake with the CDN equivalent it shipped on
- * mobile (`blur=50&sat=5`), at zero on-device cost.
+ * mobile (`blur=50&sat=5` by default), at zero on-device cost. The blur is
+ * user-adjustable (0–100); 0 drops the param for the sharp original.
  */
-export function wallpaperURL(photo: SceneryPhoto): string {
+export function wallpaperURL(photo: SceneryPhoto, blur = 50): string {
   const base = photo.rawURL ?? photo.heroURL;
-  return sizedImageURL(base, { width: wallpaperPixelWidth(), blur: 50, saturation: 5 });
+  return sizedImageURL(base, { width: wallpaperPixelWidth(), blur, saturation: 5 });
 }

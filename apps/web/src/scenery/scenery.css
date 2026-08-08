@@ -92,22 +92,31 @@ html[data-theme-id="world-scenery"] {
 }
 
 /* Unsplash guideline: attribution wherever a photo shows prominently. The
-   scrimmed photo is always dark enough for white ink (SurgeCode pill spec). */
+   scrimmed photo is always dark enough for white ink (SurgeCode pill spec).
+   One dimmed micro-line so it stays out of the composer's way in small
+   windows; hovering it restores full legibility for the links. */
 .scenery-attribution {
   position: fixed;
-  right: 0.75rem;
-  bottom: 0.75rem;
+  right: 0.5rem;
+  bottom: 0.375rem;
   z-index: 30;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  padding: 0.25rem 0.625rem;
-  border-radius: 8px;
-  background: rgb(0 0 0 / 32%);
+  align-items: baseline;
+  max-width: min(46vw, 22rem);
+  padding: 0.125rem 0.5rem;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 28%);
   color: rgb(255 255 255 / 86%);
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: nowrap;
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
   pointer-events: none;
+}
+
+.scenery-attribution:hover {
+  opacity: 1;
 }
 
 .scenery-attribution a {
@@ -118,12 +127,114 @@ html[data-theme-id="world-scenery"] {
 }
 
 .scenery-attribution__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 600;
 }
 
 .scenery-attribution__credit {
-  font-size: 10px;
+  flex-shrink: 0;
   opacity: 0.85;
+  /* The links must stay hoverable through the pill's pointer-events: none. */
+  pointer-events: auto;
+}
+
+/* ------------------------------------------------------- quick settings -- */
+
+.scenery-quick__trigger {
+  position: fixed;
+  right: 0.5rem;
+  bottom: 1.75rem;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border: 0;
+  border-radius: 9999px;
+  background: rgb(0 0 0 / 28%);
+  color: rgb(255 255 255 / 80%);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.scenery-quick__trigger:hover,
+.scenery-quick__trigger[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.scenery-quick__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+}
+
+.scenery-quick__panel {
+  position: fixed;
+  right: 0.5rem;
+  bottom: 3.375rem;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  width: 15rem;
+  padding: 0.75rem;
+  border: 1px solid var(--app-theme-border);
+  border-radius: 10px;
+  background: var(--app-theme-surface-overlay);
+  color: var(--app-theme-text);
+  font-size: 12px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 25%);
+}
+
+.scenery-quick__row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.scenery-quick__row input[type="range"] {
+  width: 100%;
+  accent-color: var(--app-theme-accent);
+}
+
+.scenery-quick__label {
+  display: flex;
+  justify-content: space-between;
+  color: var(--app-theme-text-muted);
+  font-weight: 500;
+}
+
+.scenery-quick__value {
+  color: var(--app-theme-muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.scenery-quick__segments {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--app-theme-muted);
+}
+
+.scenery-quick__segments button {
+  flex: 1;
+  padding: 0.25rem 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-theme-muted-foreground);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.scenery-quick__segments button[aria-pressed="true"] {
+  background: var(--app-theme-surface-overlay);
+  color: var(--app-theme-text);
+  font-weight: 600;
 }
 
 /* ------------------------------------------------- transparent surfaces -- */

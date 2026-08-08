@@ -10,6 +10,7 @@
  */
 import { lazy, Suspense, useEffect } from "react";
 
+import { ComposerAttachControl } from "./ComposerAttachControl";
 import { useSceneryThemeActive } from "./useHtmlAttributes";
 import { ensureWorldSceneryThemeInstalled } from "./worldSceneryTheme";
 
@@ -22,12 +23,15 @@ export function SceneryHost() {
     ensureWorldSceneryThemeInstalled();
   }, []);
 
-  if (!active) {
-    return null;
-  }
   return (
-    <Suspense fallback={null}>
-      <ActiveScenery />
-    </Suspense>
+    <>
+      {/* Theme-independent fork feature: the composer attach button. */}
+      <ComposerAttachControl />
+      {active ? (
+        <Suspense fallback={null}>
+          <ActiveScenery />
+        </Suspense>
+      ) : null}
+    </>
   );
 }

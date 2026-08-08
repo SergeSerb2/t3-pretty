@@ -16,6 +16,7 @@ import { UNSPLASH_UTM, wallpaperURL, type SceneryPhoto } from "./unsplash";
 
 interface DisplayedPhoto {
   readonly id: string;
+  readonly blur: number;
   readonly url: string;
   readonly name: string;
   readonly photographerName: string;
@@ -25,11 +26,14 @@ interface DisplayedPhoto {
 export function SceneryLayer({
   photo,
   seed,
+  blur,
   onPhotoDisplayed,
 }: {
   photo: SceneryPhoto | null;
   /** Deterministic gradient seed (thread key or daily key). */
   seed: string;
+  /** CDN pre-blur strength (0–100); a change cross-fades like a photo swap. */
+  blur: number;
   onPhotoDisplayed?: (photoId: string) => void;
 }) {
   const [displayed, setDisplayed] = useState<DisplayedPhoto | null>(null);
@@ -45,10 +49,11 @@ export function SceneryLayer({
 
   const photoId = photo?.id ?? null;
   useEffect(() => {
-    if (!photo || photoId === null || displayedRef.current?.id === photoId) {
+    const current = displayedRef.current;
+    if (!photo || photoId === null || (current?.id === photoId && current.blur === blur)) {
       return;
     }
-    const url = wallpaperURL(photo);
+    const url = wallpaperURL(photo, blur);
     let cancelled = false;
     const image = new Image();
     image.addEventListener(
@@ -60,6 +65,7 @@ export function SceneryLayer({
         setPrevious(displayedRef.current);
         setDisplayed({
           id: photo.id,
+          blur,
           url,
           name: photo.name,
           photographerName: photo.photographerName,
@@ -73,8 +79,8 @@ export function SceneryLayer({
     return () => {
       cancelled = true;
     };
-    // The photo identity is the only trigger; the rest is read fresh.
-  }, [photoId]);
+    // Photo identity and blur are the triggers; the rest is read fresh.
+  }, [photoId, blur]);
 
   // Drop the underlay once the crossfade has finished.
   useEffect(() => {
@@ -99,7 +105,7 @@ export function SceneryLayer({
           {displayed ? (
             <div
               className="scenery-layer__photo scenery-layer__photo--current"
-              key={displayed.id}
+              key={`${displayed.id}@${displayed.blur}`}
               style={{ backgroundImage: `url(${displayed.url})` }}
             />
           ) : null}
@@ -110,10 +116,12 @@ export function SceneryLayer({
       {displayed ? (
         // Outside the aria-hidden art layer: the credit is real content, and
         // its links need a stacking slot above the (transparent) chat column.
+        // One dimmed micro-line so a small window's composer controls stay
+        // clear of it; hover restores full legibility for the links.
         <div className="scenery-attribution">
           <span className="scenery-attribution__name">{displayed.name}</span>
           <span className="scenery-attribution__credit">
-            Photo by{" "}
+            {" · "}
             {displayed.photographerProfileURL ? (
               <a
                 href={`${displayed.photographerProfileURL}${UNSPLASH_UTM}`}
@@ -124,8 +132,8 @@ export function SceneryLayer({
               </a>
             ) : (
               displayed.photographerName
-            )}{" "}
-            on{" "}
+            )}
+            {" / "}
             <a href={`https://unsplash.com/${UNSPLASH_UTM}`} rel="noreferrer" target="_blank">
               Unsplash
             </a>

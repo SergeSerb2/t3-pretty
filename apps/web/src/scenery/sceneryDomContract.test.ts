@@ -8,8 +8,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
+import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import sidebarSource from "../components/ui/sidebar.tsx?raw";
+import useThemeSource from "../hooks/useTheme.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
@@ -40,5 +42,31 @@ describe("scenery structural contract with upstream markup", () => {
       expect(text).toContain("<SidebarInset");
       expect(text).toContain("<ChatView");
     }
+  });
+});
+
+describe("composer attach contract with upstream markup", () => {
+  it("the right action group the attach slot is injected into still exists", () => {
+    expect(chatComposerSource).toContain('data-chat-composer-actions="right"');
+  });
+
+  it("the composer still ingests OS-style Files drops on its drag wrapper", () => {
+    expect(chatComposerSource).toContain("onDrop={onComposerDrop}");
+    expect(chatComposerSource).toContain('event.dataTransfer.types.includes("Files")');
+    expect(chatComposerSource).toContain("void addComposerImages(files)");
+  });
+
+  it("the mention drop channel the text-file insert rides still exists", () => {
+    expect(chatComposerSource).toContain("onDropCapture={composerMentionDragHandlers.onDrop}");
+  });
+});
+
+describe("ink override contract with upstream appearance handling", () => {
+  it("useTheme still memoizes applies, so the override survives re-renders", () => {
+    expect(useThemeSource).toContain("lastAppliedTheme?.theme === theme");
+  });
+
+  it("useTheme still expresses appearance as the html dark class", () => {
+    expect(useThemeSource).toContain('classList.toggle("dark", isDark)');
   });
 });

@@ -9,6 +9,7 @@ import { useEffect, useMemo, useSyncExternalStore } from "react";
 
 import { layerStack } from "./glass";
 import { SceneryLayer } from "./SceneryLayer";
+import { SceneryQuickSettings } from "./SceneryQuickSettings";
 import {
   dailyFeatured,
   dailySeed,
@@ -18,6 +19,7 @@ import {
 } from "./sceneryStore";
 import { useActiveThreadKey } from "./useActiveThreadKey";
 import { useIsDarkAppearance } from "./useHtmlAttributes";
+import { useInkOverride } from "./useInkOverride";
 import "./scenery.css";
 
 function subscribeToMediaQuery(query: string) {
@@ -55,6 +57,8 @@ export default function ActiveScenery() {
   const assignments = useSceneryStore((state) => state.assignments);
   const fetchedPhotos = useSceneryStore((state) => state.fetchedPhotos);
   const translucency = useSceneryStore((state) => state.translucency);
+  const blur = useSceneryStore((state) => state.blur);
+  const inkMode = useSceneryStore((state) => state.inkMode);
   const ensureAssignment = useSceneryStore((state) => state.ensureAssignment);
   const registerDisplayed = useSceneryStore((state) => state.registerDisplayed);
   const refreshPoolIfStale = useSceneryStore((state) => state.refreshPoolIfStale);
@@ -114,15 +118,31 @@ export default function ActiveScenery() {
     return dailyFeatured(pool, dailySeed());
   }, [threadKey, assignment, pool]);
 
+  const seed = threadKey ?? dailySeed();
+
+  // Per-thread ink: repaint the palette in whichever variant reads best over
+  // this thread's photo. Off under reduced transparency — the photo is not
+  // shown, so the appearance preference should win unchallenged.
+  useInkOverride(
+    reducedTransparency
+      ? null
+      : {
+          averageColorHex: photo?.averageColorHex ?? null,
+          seed,
+          translucency,
+          blur,
+          inkMode,
+        },
+  );
+
   if (reducedTransparency) {
     return null;
   }
 
   return (
-    <SceneryLayer
-      photo={photo}
-      seed={threadKey ?? dailySeed()}
-      onPhotoDisplayed={registerDisplayed}
-    />
+    <>
+      <SceneryLayer photo={photo} seed={seed} blur={blur} onPhotoDisplayed={registerDisplayed} />
+      <SceneryQuickSettings />
+    </>
   );
 }

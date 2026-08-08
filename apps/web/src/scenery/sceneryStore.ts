@@ -22,6 +22,28 @@ import { makeUnsplashClient, type SceneryPhoto } from "./unsplash";
 const SCENERY_STORAGE_KEY = "t3code:scenery:v1";
 const SCENERY_STORAGE_VERSION = 1;
 
+/** CDN pre-blur (imgix `blur`), 0–100. 50 is the SurgeCode mobile bake. */
+export const BLUR_RANGE = { lowerBound: 0, upperBound: 100 } as const;
+export const DEFAULT_BLUR = 50;
+
+export function clampBlur(value: number): number {
+  if (Number.isNaN(value)) {
+    return DEFAULT_BLUR;
+  }
+  return Math.min(Math.max(Math.round(value), BLUR_RANGE.lowerBound), BLUR_RANGE.upperBound);
+}
+
+/**
+ * How chat ink (text color) is chosen while the theme is active:
+ * - auto  — per thread, from the photo's average color + blur + translucency
+ * - light — always white text (the dark variant stack)
+ * - dark  — always black text (the light variant stack)
+ * - off   — follow the app appearance, the pre-ink behavior
+ */
+export type SceneryInkMode = "auto" | "light" | "dark" | "off";
+
+const INK_MODES: ReadonlyArray<SceneryInkMode> = ["auto", "light", "dark", "off"];
+
 /**
  * How many of the most recent assignments a random pick avoids repeating.
  * SurgeCode excluded photos bound to open/unsettled threads; the web port
@@ -65,10 +87,16 @@ interface SceneryStoreState {
   registeredDownloads: string[];
   /** Window glass 0.5–1.0; how much of the window the app paints over the photo. */
   translucency: number;
+  /** CDN pre-blur strength 0–100 applied to the wallpaper render. */
+  blur: number;
+  /** Chat ink selection policy (see SceneryInkMode). */
+  inkMode: SceneryInkMode;
   ensureAssignment: (threadKey: string) => void;
   registerDisplayed: (photoId: string) => void;
   refreshPoolIfStale: () => Promise<void>;
   setTranslucency: (value: number) => void;
+  setBlur: (value: number) => void;
+  setInkMode: (mode: SceneryInkMode) => void;
   removeThread: (threadKey: string) => void;
 }
 
@@ -138,6 +166,8 @@ export const useSceneryStore = create<SceneryStoreState>()(
       refreshCursor: 0,
       registeredDownloads: [],
       translucency: DEFAULT_TRANSLUCENCY,
+      blur: DEFAULT_BLUR,
+      inkMode: "auto",
       ensureAssignment: (threadKey) =>
         set((state) => {
           if (state.assignments[threadKey]) {
@@ -237,6 +267,8 @@ export const useSceneryStore = create<SceneryStoreState>()(
         }
       },
       setTranslucency: (value) => set(() => ({ translucency: clampTranslucency(value) })),
+      setBlur: (value) => set(() => ({ blur: clampBlur(value) })),
+      setInkMode: (mode) => set(() => ({ inkMode: INK_MODES.includes(mode) ? mode : "auto" })),
       removeThread: (threadKey) =>
         set((state) => {
           if (!(threadKey in state.assignments)) {
@@ -259,6 +291,8 @@ export const useSceneryStore = create<SceneryStoreState>()(
         refreshCursor: state.refreshCursor,
         registeredDownloads: state.registeredDownloads,
         translucency: state.translucency,
+        blur: state.blur,
+        inkMode: state.inkMode,
       }),
       // Placeholder so a future version bump migrates instead of silently
       // discarding every persisted assignment.
