@@ -71,9 +71,10 @@ export interface UnsplashClient {
   readonly searchPhotos: (query: string, count: number) => Promise<ReadonlyArray<SceneryPhoto>>;
   /**
    * Ping `links.download_location` — required by the Unsplash guidelines
-   * whenever a photo is put to use. Fire-and-forget; failures are benign.
+   * whenever a photo is put to use. Resolves true only when the ping landed,
+   * so callers persist the claim only on success; failures are benign.
    */
-  readonly registerDownload: (downloadLocationURL: string) => Promise<void>;
+  readonly registerDownload: (downloadLocationURL: string) => Promise<boolean>;
 }
 
 /** null when no key is configured. */
@@ -118,9 +119,11 @@ export function makeUnsplashClient(
     },
     registerDownload: async (downloadLocationURL) => {
       try {
-        await fetchFn(downloadLocationURL, { headers });
+        const response = await fetchFn(downloadLocationURL, { headers });
+        return response.ok;
       } catch {
         // Guideline ping only; never surface failures.
+        return false;
       }
     },
   };

@@ -35,8 +35,13 @@ export function SceneryLayer({
   const [displayed, setDisplayed] = useState<DisplayedPhoto | null>(null);
   const [previous, setPrevious] = useState<DisplayedPhoto | null>(null);
 
+  // Committed-state mirror for the load effect; synced in an effect (not
+  // during render) so a discarded render cannot corrupt it. Declared before
+  // the load effect so it is current by the time that effect runs.
   const displayedRef = useRef<DisplayedPhoto | null>(null);
-  displayedRef.current = displayed;
+  useEffect(() => {
+    displayedRef.current = displayed;
+  }, [displayed]);
 
   const photoId = photo?.id ?? null;
   useEffect(() => {
@@ -69,7 +74,6 @@ export function SceneryLayer({
       cancelled = true;
     };
     // The photo identity is the only trigger; the rest is read fresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [photoId]);
 
   // Drop the underlay once the crossfade has finished.

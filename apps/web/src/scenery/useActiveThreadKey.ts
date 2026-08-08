@@ -18,7 +18,10 @@ const NON_THREAD_SEGMENTS = new Set(["draft", "settings", "usage", "connect", "p
 
 export function useActiveThreadKey(): string | null {
   const pathname = useLocation({ select: (location) => location.pathname });
-  const draftId = (/^\/draft\/([^/]+)\/?$/.exec(pathname)?.[1] ?? null) as DraftId | null;
+  const rawDraftId = /^\/draft\/([^/]+)\/?$/.exec(pathname)?.[1] ?? null;
+  // Decode like the router decodes params: legacy migrated draft sessions are
+  // keyed `environmentId:threadId`, and the `:` arrives as `%3A`.
+  const draftId = (rawDraftId ? decodeURIComponent(rawDraftId) : null) as DraftId | null;
   const draftSession = useComposerDraftStore((store) =>
     draftId ? store.getDraftSession(draftId) : null,
   );

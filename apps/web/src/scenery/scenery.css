@@ -107,10 +107,11 @@ html[data-theme-id="world-scenery"] {
   color: rgb(255 255 255 / 86%);
   font-size: 11px;
   line-height: 1.35;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .scenery-attribution a {
+  pointer-events: auto;
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -126,24 +127,28 @@ html[data-theme-id="world-scenery"] {
 }
 
 /* ------------------------------------------------- transparent surfaces -- */
-/* Everything below only lifts surfaces while the photo is actually shown;
-   Reduce Transparency (data-scenery-reduced) keeps the stock opaque look. */
+/* Everything below is gated on data-scenery-on, set by ActiveScenery only
+   when the theme is active AND transparency is allowed — the first painted
+   frame and Reduce Transparency both keep the stock opaque look. The doubled
+   [data-theme-id] outranks index.css's themed blocks without relying on
+   emission order. */
 
 /* The routed <main> and the thread view root paint the whole chat column.
    body keeps its opaque canvas — that is the plate under the photo. */
-html[data-theme-id="world-scenery"]:not([data-scenery-reduced]) main[data-slot="sidebar-inset"] {
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  main[data-slot="sidebar-inset"] {
   background-color: transparent;
   background-image: none;
 }
 
-html[data-theme-id="world-scenery"]:not([data-scenery-reduced])
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   main[data-slot="sidebar-inset"]
   > div {
   background-color: transparent;
 }
 
 /* Chat header: frosted chrome band over the photo (SurgeCode .toolbar). */
-html[data-theme-id="world-scenery"]:not([data-scenery-reduced]) [data-chat-header] {
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-header] {
   background-color: color-mix(in srgb, var(--toolbar-background) 42%, transparent);
   -webkit-backdrop-filter: blur(18px) saturate(1.35);
   backdrop-filter: blur(18px) saturate(1.35);
@@ -151,11 +156,11 @@ html[data-theme-id="world-scenery"]:not([data-scenery-reduced]) [data-chat-heade
 
 /* Sidebar: the fixed container goes clear; the inner panel carries one
    translucent fill + blur (never both, or the coverage doubles). */
-html[data-theme-id="world-scenery"]:not([data-scenery-reduced]) [data-app-sidebar] {
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-app-sidebar] {
   background-color: transparent;
 }
 
-html[data-theme-id="world-scenery"]:not([data-scenery-reduced])
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   [data-app-sidebar]
   [data-slot="sidebar-inner"] {
   background-color: color-mix(in srgb, var(--sidebar) 42%, transparent);
@@ -167,12 +172,12 @@ html[data-theme-id="world-scenery"]:not([data-scenery-reduced])
 /* User bubbles and code blocks ride translucent plates instead of opaque
    tokens: a fixed alpha can promise a contrast floor where a blur material
    cannot. Values are pinned by sceneryContrast.test.ts. */
-html[data-theme-id="world-scenery"]:not([data-scenery-reduced]) {
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] {
   --message-surface: rgb(20 38 27 / 85%);
   --code-background: rgb(0 0 0 / 50%);
 }
 
-html[data-theme-id="world-scenery"]:not([data-scenery-reduced]):not(.dark) {
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]:not(.dark) {
   --message-surface: rgb(223 239 227 / 85%);
   --code-background: rgb(255 255 255 / 72%);
 }
@@ -182,11 +187,11 @@ html[data-theme-id="world-scenery"]:not([data-scenery-reduced]):not(.dark) {
 /* No backdrop-filter support: chrome must go near-opaque or it is unreadable
    over an arbitrary photo. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  html[data-theme-id="world-scenery"]:not([data-scenery-reduced]) [data-chat-header] {
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-header] {
     background-color: color-mix(in srgb, var(--toolbar-background) 92%, transparent);
   }
 
-  html[data-theme-id="world-scenery"]:not([data-scenery-reduced])
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
     [data-app-sidebar]
     [data-slot="sidebar-inner"] {
     background-color: color-mix(in srgb, var(--sidebar) 92%, transparent);

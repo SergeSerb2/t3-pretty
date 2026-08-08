@@ -14,6 +14,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { resolveStorage } from "../lib/storage";
 import { WORLD_SCENERY_CATALOG } from "./catalog";
+import { clampTranslucency, DEFAULT_TRANSLUCENCY } from "./glass";
 import { stableIndex } from "./palette";
 import seedPoolJson from "./seedPool.json";
 import { makeUnsplashClient, type SceneryPhoto } from "./unsplash";
@@ -28,6 +29,13 @@ const SCENERY_STORAGE_VERSION = 1;
  * behavior for the pool sizes involved (hundreds of photos).
  */
 const RECENT_EXCLUSION_WINDOW = 60;
+
+/**
+ * Thread routes come and go without a deletion signal reaching this store, so
+ * assignments are LRU-capped instead of pruned by event. Old threads that
+ * fall out re-resolve through the deterministic hash fallback.
+ */
+const MAX_ASSIGNMENTS = 300;
 
 /** Refresh the fetched pool when it is this stale (SurgeCode: 14 days). */
 const POOL_STALE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -53,7 +61,7 @@ interface SceneryStoreState {
   fetchedAt: number | null;
   /** Next catalog index a refresh run continues from. */
   refreshCursor: number;
-  /** Photo ids whose download_location has been pinged (Unsplash guideline). */
+  /** Photo ids whose download_location ping succeeded (Unsplash guideline). */
   registeredDownloads: string[];
   /** Window glass 0.5–1.0; how much of the window the app paints over the photo. */
   translucency: number;
@@ -92,9 +100,10 @@ export function pickScenery(
 }
 
 /**
- * Deterministic fallback when an assignment references a photo that left the
- * pool: the same FNV-1a bucket SurgeCode uses, pinned back into the store so
- * pool growth cannot reshuffle it.
+ * Deterministic fallback when a thread has no live assignment (LRU-evicted,
+ * or the assigned photo left the pool): the same FNV-1a bucket SurgeCode
+ * uses. Not persisted — a pool-size change can re-bucket, which is acceptable
+ * for threads old enough to have been evicted.
  */
 export function fallbackPhoto(
   pool: ReadonlyArray<SceneryPhoto>,
@@ -106,7 +115,19 @@ export function fallbackPhoto(
   return pool[stableIndex(threadKey, pool.length)] ?? null;
 }
 
+function capAssignments(
+  assignments: Record<string, SceneryAssignment>,
+): Record<string, SceneryAssignment> {
+  const entries = Object.entries(assignments);
+  if (entries.length <= MAX_ASSIGNMENTS) {
+    return assignments;
+  }
+  entries.sort((left, right) => right[1].assignedAt - left[1].assignedAt);
+  return Object.fromEntries(entries.slice(0, MAX_ASSIGNMENTS));
+}
+
 let refreshInFlight = false;
+const registrationsInFlight = new Set<string>();
 
 export const useSceneryStore = create<SceneryStoreState>()(
   persist(
@@ -116,7 +137,7 @@ export const useSceneryStore = create<SceneryStoreState>()(
       fetchedAt: null,
       refreshCursor: 0,
       registeredDownloads: [],
-      translucency: 0.85,
+      translucency: DEFAULT_TRANSLUCENCY,
       ensureAssignment: (threadKey) =>
         set((state) => {
           if (state.assignments[threadKey]) {
@@ -128,40 +149,54 @@ export const useSceneryStore = create<SceneryStoreState>()(
             return state;
           }
           return {
-            assignments: {
+            assignments: capAssignments({
               ...state.assignments,
               [threadKey]: { photoId: pick.id, name: pick.name, assignedAt: Date.now() },
-            },
+            }),
           };
         }),
       registerDisplayed: (photoId) => {
         const state = get();
-        if (state.registeredDownloads.includes(photoId)) {
+        if (state.registeredDownloads.includes(photoId) || registrationsInFlight.has(photoId)) {
           return;
         }
-        // Claim before the request suspends so a re-render cannot double-ping.
-        set((current) =>
-          current.registeredDownloads.includes(photoId)
-            ? current
-            : { registeredDownloads: [...current.registeredDownloads, photoId] },
-        );
-        const photo = getSceneryPool(state.fetchedPhotos).find((entry) => entry.id === photoId);
         const client = makeUnsplashClient();
-        if (photo?.downloadLocationURL && client) {
-          void client.registerDownload(photo.downloadLocationURL);
+        const photo = getSceneryPool(state.fetchedPhotos).find((entry) => entry.id === photoId);
+        if (!client || !photo?.downloadLocationURL) {
+          // No key or no registration URL: leave the id unclaimed so the
+          // ping happens once a key is available.
+          return;
         }
+        registrationsInFlight.add(photoId);
+        void client
+          .registerDownload(photo.downloadLocationURL)
+          .then((registered) => {
+            if (!registered) {
+              return;
+            }
+            // Persist only after a successful ping so an offline failure
+            // retries on a later display instead of being lost forever.
+            set((current) =>
+              current.registeredDownloads.includes(photoId)
+                ? current
+                : { registeredDownloads: [...current.registeredDownloads, photoId] },
+            );
+          })
+          .finally(() => {
+            registrationsInFlight.delete(photoId);
+          });
       },
       refreshPoolIfStale: async () => {
         const state = get();
         const pool = getSceneryPool(state.fetchedPhotos);
-        const fresh = state.fetchedAt !== null && Date.now() - state.fetchedAt < POOL_STALE_MS;
-        // The bundled seed already covers the catalog; only hit the network
-        // when the pool is thin or a previous refresh has gone stale.
-        if (pool.length >= 50 && fresh) {
+        if (pool.length >= 50 && state.fetchedAt === null) {
+          // Seeded install: start the staleness clock; the first network
+          // refresh happens once the seed is POOL_STALE_MS old.
+          set(() => ({ fetchedAt: Date.now() }));
           return;
         }
-        if (pool.length >= 50 && state.fetchedAt === null && SEED_POOL.length >= 50) {
-          // Seed-only pool is complete enough; skip the initial network run.
+        const fresh = state.fetchedAt !== null && Date.now() - state.fetchedAt < POOL_STALE_MS;
+        if (pool.length >= 50 && fresh) {
           return;
         }
         const client = makeUnsplashClient();
@@ -201,7 +236,7 @@ export const useSceneryStore = create<SceneryStoreState>()(
           refreshInFlight = false;
         }
       },
-      setTranslucency: (value) => set(() => ({ translucency: Math.min(Math.max(value, 0.5), 1) })),
+      setTranslucency: (value) => set(() => ({ translucency: clampTranslucency(value) })),
       removeThread: (threadKey) =>
         set((state) => {
           if (!(threadKey in state.assignments)) {
@@ -225,6 +260,9 @@ export const useSceneryStore = create<SceneryStoreState>()(
         registeredDownloads: state.registeredDownloads,
         translucency: state.translucency,
       }),
+      // Placeholder so a future version bump migrates instead of silently
+      // discarding every persisted assignment.
+      migrate: (persisted) => persisted as SceneryStoreState,
     },
   ),
 );

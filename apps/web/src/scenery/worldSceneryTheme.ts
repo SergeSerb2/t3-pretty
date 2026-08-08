@@ -155,18 +155,20 @@ export const WORLD_SCENERY_THEME: ThemeDefinition = {
 
 /**
  * Install the theme into the user's theme library (or refresh it after a
- * palette bump). Runs on every boot; a no-op once the current version is in.
+ * palette bump). Runs on every boot. Once the current version has been
+ * written, absence means the user deleted the theme in Settings — that
+ * choice is respected until the next palette version bump.
  */
 export function ensureWorldSceneryThemeInstalled(): void {
   if (typeof window === "undefined") {
     return;
   }
   try {
-    const installed = getCustomThemes().some((theme) => theme.id === WORLD_SCENERY_THEME_ID);
-    const storedVersion = Number(window.localStorage.getItem(THEME_VERSION_STORAGE_KEY));
-    if (installed && storedVersion === WORLD_SCENERY_THEME_VERSION) {
+    const storedVersion = window.localStorage.getItem(THEME_VERSION_STORAGE_KEY);
+    if (storedVersion === String(WORLD_SCENERY_THEME_VERSION)) {
       return;
     }
+    const installed = getCustomThemes().some((theme) => theme.id === WORLD_SCENERY_THEME_ID);
     if (installed) {
       updateCustomTheme(WORLD_SCENERY_THEME);
     } else {
