@@ -63,6 +63,8 @@ export interface RemoteT3RunnerOptions {
   readonly nodeEngineRange?: string | null;
 }
 
+export type RemoteSshPlatform = "posix" | "windows";
+
 export interface SshEnvironmentManagerOptions {
   readonly resolveCliPackageSpec?: () => string;
   readonly resolveCliRunner?: Effect.Effect<RemoteT3RunnerOptions>;
@@ -71,6 +73,7 @@ export interface SshEnvironmentManagerOptions {
 interface SshTunnelEntry {
   readonly key: string;
   readonly target: DesktopSshEnvironmentTarget;
+  readonly remotePlatform: RemoteSshPlatform;
   readonly remotePort: number;
   readonly remoteServerKind: "external" | "managed" | null;
   readonly localPort: number;
@@ -212,6 +215,31 @@ export function normalizeSshErrorMessage(stderr: string, fallbackMessage: string
   const cleaned = stderr.trim();
   return cleaned.length > 0 ? cleaned : fallbackMessage;
 }
+
+export const detectRemoteSshPlatform = Effect.fn("ssh/tunnel.detectRemoteSshPlatform")(function* (
+  target: DesktopSshEnvironmentTarget,
+  input?: SshAuthOptions,
+): Effect.fn.Return<
+  RemoteSshPlatform,
+  SshCommandError | SshInvalidTargetError,
+  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> {
+  return yield* runSshCommand(target, {
+    remoteCommandArgs: ["cmd.exe", "/d", "/c", "echo", "win32"],
+    timeoutMs: 10_000,
+    ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
+    ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
+    ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
+  }).pipe(
+    Effect.map(
+      (result): RemoteSshPlatform =>
+        getLastNonEmptyOutputLine(result.stdout)?.toLowerCase() === "win32" ? "windows" : "posix",
+    ),
+    Effect.catch((cause) =>
+      isSshAuthFailure(cause) ? Effect.fail(cause) : Effect.succeed<RemoteSshPlatform>("posix"),
+    ),
+  );
+});
 
 function stripTrailingNewlines(value: string): string {
   return value.replace(/\n+$/u, "");
@@ -630,6 +658,466 @@ if [ -f "$LOG_FILE" ]; then
 fi
 `;
 
+const REMOTE_WINDOWS_RUNNER_HELPERS = String.raw`const fs = require("node:fs");
+const path = require("node:path");
+const childProcess = require("node:child_process");
+
+const T3_PACKAGE_SPEC = @@T3_PACKAGE_SPEC_JSON@@;
+const T3_NODE_SCRIPT_PATH = @@T3_NODE_SCRIPT_PATH_JSON@@;
+const T3_NODE_ENGINE_RANGE = @@T3_NODE_ENGINE_RANGE_JSON@@;
+const satisfiesSemverRange = @@T3_NODE_ENGINE_CHECK_FUNCTION@@;
+
+function assertCompatibleNode() {
+  if (
+    T3_NODE_ENGINE_RANGE &&
+    !satisfiesSemverRange(process.versions.node || process.version, T3_NODE_ENGINE_RANGE)
+  ) {
+    throw new Error(
+      "Remote node " +
+        (process.versions.node || process.version) +
+        " does not satisfy required range " +
+        T3_NODE_ENGINE_RANGE +
+        ".",
+    );
+  }
+}
+
+function firstExistingPath(candidates) {
+  return candidates.find((candidate) => candidate && fs.existsSync(candidate)) || null;
+}
+
+function resolveRemoteT3Command(args) {
+  if (T3_NODE_SCRIPT_PATH) {
+    if (!fs.existsSync(T3_NODE_SCRIPT_PATH)) {
+      throw new Error("Remote t3 node script does not exist: " + T3_NODE_SCRIPT_PATH + ".");
+    }
+    return { executable: process.execPath, args: [T3_NODE_SCRIPT_PATH, ...args] };
+  }
+
+  const nodeDirectory = path.dirname(process.execPath);
+  const npxCli = firstExistingPath([
+    path.join(nodeDirectory, "node_modules", "npm", "bin", "npx-cli.js"),
+    process.env.APPDATA
+      ? path.join(process.env.APPDATA, "npm", "node_modules", "npm", "bin", "npx-cli.js")
+      : null,
+  ]);
+  if (npxCli) {
+    return {
+      executable: process.execPath,
+      args: [npxCli, "--yes", T3_PACKAGE_SPEC, ...args],
+    };
+  }
+
+  const npmCli = firstExistingPath([
+    path.join(nodeDirectory, "node_modules", "npm", "bin", "npm-cli.js"),
+    process.env.APPDATA
+      ? path.join(process.env.APPDATA, "npm", "node_modules", "npm", "bin", "npm-cli.js")
+      : null,
+  ]);
+  if (npmCli) {
+    return {
+      executable: process.execPath,
+      args: [npmCli, "exec", "--yes", T3_PACKAGE_SPEC, "--", ...args],
+    };
+  }
+
+  throw new Error(
+    "Remote Windows host could not find npm or npx next to " +
+      process.execPath +
+      ". Reinstall Node with npm included.",
+  );
+}
+`;
+
+export const REMOTE_WINDOWS_LAUNCH_SCRIPT = String.raw`"use strict";
+@@T3_WINDOWS_RUNNER_HELPERS@@
+const http = require("node:http");
+const net = require("node:net");
+const os = require("node:os");
+const { once } = require("node:events");
+
+const stateKey = process.argv[2] || "";
+if (!/^[0-9a-f]{16}$/.test(stateKey)) {
+  throw new Error("Invalid SSH launch state key.");
+}
+
+const defaultServerHome = path.join(os.homedir(), ".t3");
+const stateDirectory = path.join(defaultServerHome, "ssh-launch", stateKey);
+const defaultRuntimeFile = path.join(defaultServerHome, "userdata", "server-runtime.json");
+const portFile = path.join(stateDirectory, "port");
+const pidFile = path.join(stateDirectory, "pid");
+const managedFile = path.join(stateDirectory, "managed");
+const logFile = path.join(stateDirectory, "server.log");
+const runnerFile = path.join(stateDirectory, "runner.json");
+const defaultRemotePort = @@T3_DEFAULT_REMOTE_PORT@@;
+const remotePortScanWindow = @@T3_REMOTE_PORT_SCAN_WINDOW@@;
+const readyTimeoutMs = @@T3_READY_TIMEOUT_MS@@;
+const reuseReadyTimeoutMs = @@T3_REUSE_READY_TIMEOUT_MS@@;
+const readyProbeTimeoutMs = @@T3_READY_PROBE_TIMEOUT_MS@@;
+
+function readTrimmed(filePath) {
+  try {
+    return fs.readFileSync(filePath, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+function readInteger(filePath) {
+  const value = Number.parseInt(readTrimmed(filePath), 10);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function writeState(filePath, value) {
+  fs.writeFileSync(filePath, String(value) + "\n", "utf8");
+}
+
+function removeStateFiles() {
+  for (const filePath of [pidFile, portFile, managedFile]) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch (error) {
+      if (!error || error.code !== "ENOENT") throw error;
+    }
+  }
+}
+
+function isPidRunning(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function stopProcessTree(pid) {
+  if (!isPidRunning(pid)) return;
+  childProcess.spawnSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+    stdio: "ignore",
+    windowsHide: true,
+  });
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitForPidExit(pid) {
+  for (let attempt = 0; attempt < 20 && isPidRunning(pid); attempt += 1) {
+    await sleep(100);
+  }
+}
+
+function probe(port) {
+  return new Promise((resolve) => {
+    const request = http.get(
+      { hostname: "127.0.0.1", port, path: "/", timeout: readyProbeTimeoutMs },
+      (response) => {
+        response.resume();
+        response.once("end", () =>
+          resolve(response.statusCode >= 200 && response.statusCode < 300),
+        );
+      },
+    );
+    request.once("timeout", () => {
+      request.destroy();
+      resolve(false);
+    });
+    request.once("error", () => resolve(false));
+  });
+}
+
+async function waitReady(port, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await probe(port)) return true;
+    await sleep(100);
+  }
+  return false;
+}
+
+function canListen(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", () => resolve(false));
+    server.listen(port, "127.0.0.1", () => {
+      server.close((error) => resolve(error ? false : port));
+    });
+  });
+}
+
+async function pickPort(preferredPort) {
+  const start = Number.isInteger(preferredPort) ? preferredPort : defaultRemotePort;
+  const end = Math.min(65_536, start + remotePortScanWindow);
+  for (let port = start; port < end; port += 1) {
+    if (await canListen(port)) return port;
+  }
+  return null;
+}
+
+function readDefaultRuntime() {
+  try {
+    const runtime = JSON.parse(fs.readFileSync(defaultRuntimeFile, "utf8"));
+    const pid = Number(runtime.pid);
+    const port = Number(runtime.port);
+    const origin = new URL(String(runtime.origin || ""));
+    if (
+      !Number.isInteger(pid) ||
+      pid <= 0 ||
+      !Number.isInteger(port) ||
+      origin.protocol !== "http:" ||
+      !["127.0.0.1", "localhost"].includes(origin.hostname) ||
+      !isPidRunning(pid)
+    ) {
+      return null;
+    }
+    return { pid, port };
+  } catch {
+    return null;
+  }
+}
+
+function tailLog() {
+  try {
+    return fs.readFileSync(logFile, "utf8").split(/\r?\n/).slice(-80).join("\n").trim();
+  } catch {
+    return "";
+  }
+}
+
+async function spawnManagedServer(remotePort) {
+  const command = resolveRemoteT3Command([
+    "serve",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    String(remotePort),
+    "--base-dir",
+    defaultServerHome,
+  ]);
+  const logDescriptor = fs.openSync(logFile, "a");
+  try {
+    const child = childProcess.spawn(command.executable, command.args, {
+      cwd: os.homedir(),
+      detached: true,
+      windowsHide: true,
+      env: { ...process.env, T3CODE_NO_BROWSER: "1" },
+      stdio: ["ignore", logDescriptor, logDescriptor],
+    });
+    await Promise.race([
+      once(child, "spawn"),
+      once(child, "error").then(([error]) => Promise.reject(error)),
+    ]);
+    child.unref();
+    if (!Number.isInteger(child.pid) || child.pid <= 0) {
+      throw new Error("Remote Windows host did not return a server process id.");
+    }
+    return child.pid;
+  } finally {
+    fs.closeSync(logDescriptor);
+  }
+}
+
+async function main() {
+  assertCompatibleNode();
+  fs.mkdirSync(stateDirectory, { recursive: true });
+
+  const runnerSignature = JSON.stringify({
+    packageSpec: T3_PACKAGE_SPEC,
+    nodeScriptPath: T3_NODE_SCRIPT_PATH,
+    nodeEngineRange: T3_NODE_ENGINE_RANGE,
+    node: process.execPath,
+  });
+  const runnerChanged = readTrimmed(runnerFile) !== runnerSignature;
+  fs.writeFileSync(runnerFile, runnerSignature + "\n", "utf8");
+
+  let remotePid = readInteger(pidFile);
+  let remotePort = readInteger(portFile);
+  let remoteManaged = readTrimmed(managedFile);
+  const defaultRuntime = readDefaultRuntime();
+
+  if (defaultRuntime && (await waitReady(defaultRuntime.port, reuseReadyTimeoutMs))) {
+    if (remoteManaged === "managed" && remotePid === defaultRuntime.pid) {
+      remotePort = defaultRuntime.port;
+    } else {
+      if (remoteManaged === "managed" && remotePid) {
+        stopProcessTree(remotePid);
+        await waitForPidExit(remotePid);
+      }
+      remotePid = null;
+      remotePort = defaultRuntime.port;
+      remoteManaged = "external";
+    }
+  }
+
+  if (remoteManaged === "external") {
+    if (!remotePort || !(await waitReady(remotePort, reuseReadyTimeoutMs))) {
+      remotePid = null;
+      remotePort = null;
+      remoteManaged = "";
+    }
+  } else if (remoteManaged === "managed" && remotePid && remotePort && isPidRunning(remotePid)) {
+    if (runnerChanged || !(await waitReady(remotePort, reuseReadyTimeoutMs))) {
+      stopProcessTree(remotePid);
+      await waitForPidExit(remotePid);
+      remotePid = null;
+      remotePort = null;
+      remoteManaged = "";
+    }
+  } else {
+    remotePid = null;
+    remotePort = null;
+    remoteManaged = "";
+  }
+
+  if (!remotePort) {
+    remotePort = await pickPort(readInteger(portFile));
+    if (!remotePort) {
+      throw new Error("Failed to find an available port on the remote Windows host.");
+    }
+    remotePid = await spawnManagedServer(remotePort);
+    remoteManaged = "managed";
+    writeState(pidFile, remotePid);
+    writeState(portFile, remotePort);
+    writeState(managedFile, remoteManaged);
+    if (!(await waitReady(remotePort, readyTimeoutMs))) {
+      const logTail = tailLog();
+      stopProcessTree(remotePid);
+      await waitForPidExit(remotePid);
+      removeStateFiles();
+      throw new Error(
+        "Remote T3 server did not become ready on 127.0.0.1:" +
+          remotePort +
+          "." +
+          (logTail ? "\n" + logTail : ""),
+      );
+    }
+  } else {
+    writeState(portFile, remotePort);
+    writeState(managedFile, remoteManaged || "managed");
+    if (remotePid) writeState(pidFile, remotePid);
+    else {
+      try {
+        fs.unlinkSync(pidFile);
+      } catch (error) {
+        if (!error || error.code !== "ENOENT") throw error;
+      }
+    }
+  }
+
+  process.stdout.write(
+    JSON.stringify({ remotePort, serverKind: remoteManaged || "managed" }) + "\n",
+  );
+}
+
+main().catch((error) => {
+  process.stderr.write((error && error.message ? error.message : String(error)) + "\n");
+  process.exitCode = 1;
+});
+`;
+
+export const REMOTE_WINDOWS_PAIRING_SCRIPT = String.raw`"use strict";
+@@T3_WINDOWS_RUNNER_HELPERS@@
+const os = require("node:os");
+
+function main() {
+  assertCompatibleNode();
+  const defaultServerHome = path.join(os.homedir(), ".t3");
+  const command = resolveRemoteT3Command([
+    "auth",
+    "pairing",
+    "create",
+    "--base-dir",
+    defaultServerHome,
+    "--json",
+  ]);
+  const result = childProcess.spawnSync(command.executable, command.args, {
+    cwd: os.homedir(),
+    windowsHide: true,
+    env: process.env,
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exitCode = result.status || 1;
+}
+
+try {
+  main();
+} catch (error) {
+  process.stderr.write((error && error.message ? error.message : String(error)) + "\n");
+  process.exitCode = 1;
+}
+`;
+
+export const REMOTE_WINDOWS_STOP_SCRIPT = String.raw`"use strict";
+const fs = require("node:fs");
+const path = require("node:path");
+const os = require("node:os");
+const childProcess = require("node:child_process");
+
+const stateKey = process.argv[2] || "";
+if (!/^[0-9a-f]{16}$/.test(stateKey)) {
+  throw new Error("Invalid SSH launch state key.");
+}
+const stateDirectory = path.join(os.homedir(), ".t3", "ssh-launch", stateKey);
+const pidFile = path.join(stateDirectory, "pid");
+const portFile = path.join(stateDirectory, "port");
+const managedFile = path.join(stateDirectory, "managed");
+const managed = (() => {
+  try {
+    return fs.readFileSync(managedFile, "utf8").trim();
+  } catch {
+    return "";
+  }
+})();
+const pid = (() => {
+  try {
+    const parsed = Number.parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+})();
+if (managed !== "external" && pid) {
+  childProcess.spawnSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+    stdio: "ignore",
+    windowsHide: true,
+  });
+}
+for (const filePath of [pidFile, portFile, managedFile]) {
+  try {
+    fs.unlinkSync(filePath);
+  } catch (error) {
+    if (!error || error.code !== "ENOENT") throw error;
+  }
+}
+process.stdout.write('{"stopped":true}\n');
+`;
+
+export const REMOTE_WINDOWS_LOG_TAIL_SCRIPT = String.raw`"use strict";
+const fs = require("node:fs");
+const path = require("node:path");
+const os = require("node:os");
+
+const stateKey = process.argv[2] || "";
+if (!/^[0-9a-f]{16}$/.test(stateKey)) {
+  throw new Error("Invalid SSH launch state key.");
+}
+const logFile = path.join(os.homedir(), ".t3", "ssh-launch", stateKey, "server.log");
+try {
+  const lines = fs.readFileSync(logFile, "utf8").split(/\r?\n/);
+  process.stdout.write(lines.slice(-80).join("\n"));
+} catch (error) {
+  if (!error || error.code !== "ENOENT") throw error;
+}
+`;
+
 export function buildRemoteT3RunnerScript(input?: RemoteT3RunnerOptions): string {
   const packageSpec = shellSingleQuote(input?.packageSpec?.trim() || "t3@latest");
   const nodeScriptPath = input?.nodeScriptPath?.trim() || "";
@@ -687,13 +1175,51 @@ function buildRemoteLogTailScript(target: DesktopSshEnvironmentTarget): string {
   });
 }
 
+function buildRemoteWindowsRunnerHelpers(input?: RemoteT3RunnerOptions): string {
+  return applyScriptPlaceholders(REMOTE_WINDOWS_RUNNER_HELPERS, {
+    T3_PACKAGE_SPEC_JSON: JSON.stringify(input?.packageSpec?.trim() || "t3@latest"),
+    T3_NODE_SCRIPT_PATH_JSON: JSON.stringify(input?.nodeScriptPath?.trim() || ""),
+    T3_NODE_ENGINE_RANGE_JSON: JSON.stringify(input?.nodeEngineRange?.trim() || ""),
+    T3_NODE_ENGINE_CHECK_FUNCTION: satisfiesSemverRange.toString(),
+  });
+}
+
+export function buildRemoteWindowsLaunchScript(input?: RemoteT3RunnerOptions): string {
+  return applyScriptPlaceholders(REMOTE_WINDOWS_LAUNCH_SCRIPT, {
+    T3_WINDOWS_RUNNER_HELPERS: buildRemoteWindowsRunnerHelpers(input),
+    T3_DEFAULT_REMOTE_PORT: String(DEFAULT_REMOTE_PORT),
+    T3_REMOTE_PORT_SCAN_WINDOW: String(REMOTE_PORT_SCAN_WINDOW),
+    T3_READY_TIMEOUT_MS: String(REMOTE_READY_TIMEOUT_MS),
+    T3_REUSE_READY_TIMEOUT_MS: String(REMOTE_REUSE_READY_TIMEOUT_MS),
+    T3_READY_PROBE_TIMEOUT_MS: String(SSH_READY_PROBE_TIMEOUT_MS),
+  });
+}
+
+export function buildRemoteWindowsPairingScript(input?: RemoteT3RunnerOptions): string {
+  return applyScriptPlaceholders(REMOTE_WINDOWS_PAIRING_SCRIPT, {
+    T3_WINDOWS_RUNNER_HELPERS: buildRemoteWindowsRunnerHelpers(input),
+  });
+}
+
+export function buildRemoteWindowsStopScript(): string {
+  return REMOTE_WINDOWS_STOP_SCRIPT;
+}
+
+function buildRemoteWindowsLogTailScript(): string {
+  return REMOTE_WINDOWS_LOG_TAIL_SCRIPT;
+}
+
 export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemoteServer")(
   function* (
     target: DesktopSshEnvironmentTarget,
     input?: SshAuthOptions,
     runner?: RemoteT3RunnerOptions,
   ): Effect.fn.Return<
-    { readonly remotePort: number; readonly remoteServerKind: "external" | "managed" | null },
+    {
+      readonly remotePlatform: RemoteSshPlatform;
+      readonly remotePort: number;
+      readonly remoteServerKind: "external" | "managed" | null;
+    },
     SshCommandError | SshInvalidTargetError | SshLaunchError,
     ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
   > {
@@ -702,9 +1228,16 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       ...sshRunnerLogFields(runner),
       stateKey: remoteStateKey(target),
     });
+    const remotePlatform = yield* detectRemoteSshPlatform(target, input);
     const result = yield* runSshCommand(target, {
-      remoteCommandArgs: ["sh", "-s", "--", remoteStateKey(target)],
-      stdin: buildRemoteLaunchScript(runner),
+      remoteCommandArgs:
+        remotePlatform === "windows"
+          ? ["node", "-", remoteStateKey(target)]
+          : ["sh", "-s", "--", remoteStateKey(target)],
+      stdin:
+        remotePlatform === "windows"
+          ? buildRemoteWindowsLaunchScript(runner)
+          : buildRemoteLaunchScript(runner),
       ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
       ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
       ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
@@ -735,9 +1268,11 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       ...sshTargetLogFields(target),
       remotePort: parsed.remotePort,
       remoteServerKind: parsed.serverKind ?? null,
+      remotePlatform,
       stateKey: remoteStateKey(target),
     });
     return {
+      remotePlatform,
       remotePort: parsed.remotePort,
       remoteServerKind: parsed.serverKind ?? null,
     };
@@ -748,6 +1283,7 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
   target: DesktopSshEnvironmentTarget,
   input?: SshAuthOptions,
   runner?: RemoteT3RunnerOptions,
+  knownRemotePlatform?: RemoteSshPlatform,
 ): Effect.fn.Return<
   {
     readonly credential: string;
@@ -759,9 +1295,14 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
     ...sshTargetLogFields(target),
     stateKey: remoteStateKey(target),
   });
+  const remotePlatform = knownRemotePlatform ?? (yield* detectRemoteSshPlatform(target, input));
   const result = yield* runSshCommand(target, {
-    remoteCommandArgs: ["sh", "-s"],
-    stdin: buildRemotePairingScript(target, runner),
+    remoteCommandArgs:
+      remotePlatform === "windows" ? ["node", "-", remoteStateKey(target)] : ["sh", "-s"],
+    stdin:
+      remotePlatform === "windows"
+        ? buildRemoteWindowsPairingScript(runner)
+        : buildRemotePairingScript(target, runner),
     ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
     ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
     ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
@@ -800,6 +1341,7 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
 export const stopRemoteServer = Effect.fn("ssh/tunnel.stopRemoteServer")(function* (
   target: DesktopSshEnvironmentTarget,
   input?: SshAuthOptions,
+  knownRemotePlatform?: RemoteSshPlatform,
 ): Effect.fn.Return<
   void,
   SshCommandError | SshInvalidTargetError,
@@ -809,9 +1351,12 @@ export const stopRemoteServer = Effect.fn("ssh/tunnel.stopRemoteServer")(functio
     ...sshTargetLogFields(target),
     stateKey: remoteStateKey(target),
   });
+  const remotePlatform = knownRemotePlatform ?? (yield* detectRemoteSshPlatform(target, input));
   yield* runSshCommand(target, {
-    remoteCommandArgs: ["sh", "-s"],
-    stdin: buildRemoteStopScript(target),
+    remoteCommandArgs:
+      remotePlatform === "windows" ? ["node", "-", remoteStateKey(target)] : ["sh", "-s"],
+    stdin:
+      remotePlatform === "windows" ? buildRemoteWindowsStopScript() : buildRemoteStopScript(target),
     ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
     ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
     ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
@@ -825,14 +1370,20 @@ export const stopRemoteServer = Effect.fn("ssh/tunnel.stopRemoteServer")(functio
 const readRemoteServerLogTail = Effect.fn("ssh/tunnel.readRemoteServerLogTail")(function* (
   target: DesktopSshEnvironmentTarget,
   input?: SshAuthOptions,
+  knownRemotePlatform?: RemoteSshPlatform,
 ): Effect.fn.Return<
   string,
   SshCommandError | SshInvalidTargetError,
   ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > {
+  const remotePlatform = knownRemotePlatform ?? (yield* detectRemoteSshPlatform(target, input));
   const result = yield* runSshCommand(target, {
-    remoteCommandArgs: ["sh", "-s"],
-    stdin: buildRemoteLogTailScript(target),
+    remoteCommandArgs:
+      remotePlatform === "windows" ? ["node", "-", remoteStateKey(target)] : ["sh", "-s"],
+    stdin:
+      remotePlatform === "windows"
+        ? buildRemoteWindowsLogTailScript()
+        : buildRemoteLogTailScript(target),
     timeoutMs: 10_000,
     ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
     ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
@@ -920,6 +1471,7 @@ const reserveLocalTunnelPort = Effect.fn("ssh/tunnel.reserveLocalTunnelPort")(fu
 const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: {
   readonly key: string;
   readonly resolvedTarget: DesktopSshEnvironmentTarget;
+  readonly remotePlatform: RemoteSshPlatform;
   readonly remotePort: number;
   readonly localPort: number;
   readonly httpBaseUrl: string;
@@ -1027,6 +1579,7 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
   const tunnelEntry: SshTunnelEntry = {
     key: input.key,
     target: input.resolvedTarget,
+    remotePlatform: input.remotePlatform,
     remotePort: input.remotePort,
     remoteServerKind: input.remoteServerKind,
     localPort: input.localPort,
@@ -1099,7 +1652,7 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
           net.canListenOnHost(input.localPort, "127.0.0.1"),
         );
         const remoteLogTailExit = yield* Effect.exit(
-          readRemoteServerLogTail(input.resolvedTarget, input.authOptions),
+          readRemoteServerLogTail(input.resolvedTarget, input.authOptions, input.remotePlatform),
         );
         const processRunning = Exit.isSuccess(processRunningExit) ? processRunningExit.value : null;
         const localPortAvailable = Exit.isSuccess(localPortAvailableExit)
@@ -1347,6 +1900,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
         startSshTunnel({
           key: input.key,
           resolvedTarget: input.resolvedTarget,
+          remotePlatform: remoteLaunch.remotePlatform,
           remotePort,
           localPort,
           httpBaseUrl,
@@ -1395,6 +1949,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
                     batchMode: "no",
                     interactiveAuth: true,
                   },
+              tunnelEntry.remotePlatform,
             ).pipe(
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawnerService),
               Effect.provideService(FileSystem.FileSystem, fileSystemService),
@@ -1533,7 +2088,8 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       ? yield* runWithSshAuth({
           key,
           target: entry.target,
-          operation: (authOptions) => issueRemotePairingToken(entry.target, authOptions, runner),
+          operation: (authOptions) =>
+            issueRemotePairingToken(entry.target, authOptions, runner, entry.remotePlatform),
         })
       : null;
     const pairingToken = pairingResult?.credential ?? null;

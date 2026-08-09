@@ -2471,7 +2471,7 @@ export function ConnectionsSettings() {
             <Input
               value={savedBackendSshUsername}
               onChange={(event) => setSavedBackendSshUsername(event.target.value)}
-              placeholder="root"
+              placeholder="From SSH config"
               disabled={isAddingSavedBackend}
               spellCheck={false}
             />

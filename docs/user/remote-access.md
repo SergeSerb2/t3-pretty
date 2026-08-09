@@ -129,7 +129,8 @@ Use this when you want the desktop app to start or reuse T3 Code on another mach
 1. Open **Settings** → **Connections**.
 2. Under **Remote Environments**, choose **Add environment**.
 3. Select the SSH launch flow.
-4. Enter the SSH target, such as `user@example.com`.
+4. Enter the SSH target, such as `user@example.com`. When you use an SSH config alias, leave the
+   username blank to use the alias's configured `User` value.
 5. Confirm the launch. The desktop app probes the host, starts or reuses a remote T3 server, opens a local port forward, and saves the environment.
 
 After setup, the renderer connects to a local forwarded HTTP/WebSocket endpoint. The remote host still owns the actual T3 server, projects, files, git state, terminals, and provider sessions.
@@ -138,7 +139,10 @@ SSH launch is a desktop feature because it needs local process and SSH access. O
 
 #### SSH Launch Troubleshooting
 
-The desktop SSH launcher connects with a non-interactive `sh` session, writes a small launcher script under `~/.t3/ssh-launch/<host-key>/`, starts or reuses a remote T3 server, and forwards the remote loopback port back to your desktop.
+The desktop SSH launcher detects the remote platform, uses a non-interactive `sh` session on macOS
+and Linux or a Node-based launcher on Windows, writes launcher state under
+`~/.t3/ssh-launch/<host-key>/` (the equivalent path below the Windows user profile), starts or reuses
+a remote T3 server, and forwards the remote loopback port back to your desktop.
 
 The remote host must have a compatible Node.js runtime. T3 Code uses the server package's `engines.node` requirement:
 
@@ -151,10 +155,18 @@ looks in the usual install directories and tries to activate a version manager i
 (Volta, asdf, mise, fnm, nodenv, nvm). That covers most setups, but a version manager that only
 initializes from an interactive shell profile will not be picked up.
 
-If launch fails with `node: command not found`, a port-scan failure, or a message that the remote Node version does not satisfy the required range, SSH into the host and check the same non-interactive shell path T3 Code uses:
+If launch fails with `node: command not found`, a port-scan failure, or a message that the remote
+Node version does not satisfy the required range, SSH into the host and check the same
+non-interactive path T3 Code uses. On macOS or Linux:
 
 ```bash
 ssh user@example.com 'sh -lc "command -v node && node --version"'
+```
+
+On Windows:
+
+```powershell
+ssh user@windows-host node --version
 ```
 
 If that does not print a compatible Node version, configure your version manager for non-interactive shells or install a compatible Node binary in one of the searched locations. For example, with nvm you may need a default alias:

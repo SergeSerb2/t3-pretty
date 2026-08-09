@@ -18,11 +18,15 @@ import {
   buildRemotePairingScript,
   buildRemoteStopScript,
   buildRemoteT3RunnerScript,
+  buildRemoteWindowsLaunchScript,
+  buildRemoteWindowsPairingScript,
+  buildRemoteWindowsStopScript,
   describeReadinessCause,
   issueRemotePairingToken,
   launchOrReuseRemoteServer,
   REMOTE_PICK_PORT_SCRIPT,
   SshEnvironmentManager,
+  stopRemoteServer,
   waitForHttpReady,
 } from "./tunnel.ts";
 
@@ -113,6 +117,29 @@ describe("ssh tunnel scripts", () => {
     assert.include(script, "nvm use --silent default");
     assert.include(script, 'for T3_NODE_BIN in "$NVM_DIR"/versions/node/*/bin');
     assert.notInclude(script, "ensure $NVM_DIR/nvm.sh is available");
+  });
+
+  it("builds syntactically valid Windows launch, pairing, and stop scripts", () => {
+    const runner = {
+      packageSpec: 't3@nightly"; Write-Output owned',
+      nodeEngineRange: TEST_NODE_ENGINE_RANGE,
+    };
+    const launchScript = buildRemoteWindowsLaunchScript(runner);
+    const pairingScript = buildRemoteWindowsPairingScript(runner);
+    const stopScript = buildRemoteWindowsStopScript();
+
+    assert.include(launchScript, 'const T3_PACKAGE_SPEC = "t3@nightly\\\"; Write-Output owned";');
+    assert.include(launchScript, "taskkill.exe");
+    assert.include(launchScript, "npx-cli.js");
+    assert.include(launchScript, "function satisfiesSemverRange");
+    assert.include(pairingScript, '"auth",');
+    assert.include(pairingScript, '"pairing",');
+    assert.include(stopScript, "taskkill.exe");
+    assert.notInclude(launchScript, "@@T3_");
+    assert.notInclude(pairingScript, "@@T3_");
+    assert.doesNotThrow(() => new Function(launchScript));
+    assert.doesNotThrow(() => new Function(pairingScript));
+    assert.doesNotThrow(() => new Function(stopScript));
   });
 
   it("does not hard-code a remote node engine range", () => {
@@ -231,6 +258,52 @@ describe("ssh tunnel scripts", () => {
     return Effect.gen(function* () {
       const result = yield* launchOrReuseRemoteServer(target);
       assert.equal(result.remotePort, 3774);
+    }).pipe(Effect.provide(processLayer));
+  });
+
+  it.effect("uses native Node lifecycle scripts when the remote host is Windows", () => {
+    const spawnedCommands: Array<ReadonlyArray<string>> = [];
+    const spawner = ChildProcessSpawner.make((command) =>
+      Effect.sync(() => {
+        const args = commandArgs(command);
+        spawnedCommands.push(args);
+        if (args.includes("cmd.exe")) {
+          return makeSuccessfulProcess("win32\n");
+        }
+        if (args.includes("node") && args.includes("-")) {
+          if (spawnedCommands.filter((entry) => entry.includes("node")).length === 1) {
+            return makeSuccessfulProcess('{"remotePort":3773,"serverKind":"managed"}\n');
+          }
+          if (spawnedCommands.filter((entry) => entry.includes("node")).length === 2) {
+            return makeSuccessfulProcess('{"credential":"WINDOWS-PAIRING"}\n');
+          }
+          return makeSuccessfulProcess('{"stopped":true}\n');
+        }
+        return makeSuccessfulProcess("\n");
+      }),
+    );
+    const processLayer = Layer.mergeAll(
+      NodeServices.layer,
+      Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+    );
+    const target = {
+      alias: "winbox",
+      hostname: "winbox.example.com",
+      username: "developer",
+      port: 22,
+    } as const;
+
+    return Effect.gen(function* () {
+      const launched = yield* launchOrReuseRemoteServer(target);
+      const paired = yield* issueRemotePairingToken(target);
+      yield* stopRemoteServer(target);
+
+      assert.equal(launched.remotePort, 3773);
+      assert.equal(launched.remoteServerKind, "managed");
+      assert.equal(paired.credential, "WINDOWS-PAIRING");
+      assert.equal(spawnedCommands.filter((args) => args.includes("cmd.exe")).length, 3);
+      assert.equal(spawnedCommands.filter((args) => args.includes("node")).length, 3);
+      assert.isFalse(spawnedCommands.some((args) => args.includes("sh")));
     }).pipe(Effect.provide(processLayer));
   });
 
