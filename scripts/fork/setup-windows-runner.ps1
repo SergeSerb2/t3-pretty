@@ -47,6 +47,8 @@ if (($machinePath -split ";") -notcontains $pwshDir) {
 }
 $env:Path = "$pwshDir;$env:Path"
 
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
+
 $tokenPath = "C:\dev\t3-runner-token.json"
 $token = (Get-Content $tokenPath -Raw | ConvertFrom-Json).token
 Remove-Item $tokenPath -Force
