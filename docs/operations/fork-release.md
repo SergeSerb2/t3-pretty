@@ -37,6 +37,11 @@ newer upstream tag was integrated before its sync pull request merged.
 
 - Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used only by the trusted scheduled
   sync workflow.
+- Secret `FORK_RELEASE_TOKEN`: GitHub credential with repository Contents write access, stored as
+  a repository Actions secret. It is exposed only to the trusted `main` publishing step; GitHub's
+  own CLI creates the release and uploads its assets without handing this credential to a
+  third-party action. Prefer replacing the bootstrap OAuth token with a fine-grained token limited
+  to this repository.
 - `Check`, `Test`, `Mobile Native Static Analysis`, and `Release Smoke` required on `main`.
 - Dedicated runner labels:
   - macOS: `self-hosted`, `macOS`, `ARM64`, `t3code-fork`, `release-only`
