@@ -1363,6 +1363,28 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         assert.equal(yield* fileSystem.exists(worktreePath), false);
       }),
     );
+
+    it.effect("explains an unborn HEAD instead of an opaque worktree add failure", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.initRepo({ cwd });
+        const pathService = yield* Path.Path;
+        const worktreePath = pathService.join(yield* makeTmpDir("git-worktrees-"), "no-commits");
+
+        const failure = yield* driver
+          .createWorktree({
+            cwd,
+            path: worktreePath,
+            refName: "main",
+            newRefName: "feature/no-commits",
+          })
+          .pipe(Effect.flip);
+
+        assert.equal(failure._tag, "GitCommandError");
+        assert.match(failure.detail, /no commits yet/);
+      }),
+    );
   });
 
   describe("remote operations", () => {

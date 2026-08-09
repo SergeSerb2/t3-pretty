@@ -2749,6 +2749,23 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ? ["worktree", "add", "-b", input.newRefName, worktreePath, input.refName]
       : ["worktree", "add", worktreePath, input.refName];
 
+    // A repository whose HEAD is unborn (no commits yet) makes `git worktree
+    // add` fail with an opaque "invalid reference"; surfaced errors drop
+    // stderr, so probe first and explain what the user has to do about it.
+    const headProbe = yield* executeGit(
+      "GitVcsDriver.createWorktree.verifyHead",
+      input.cwd,
+      ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+      { allowNonZeroExit: true },
+    );
+    if (headProbe.exitCode !== 0) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({ operation: "GitVcsDriver.createWorktree", cwd: input.cwd, args }),
+        detail:
+          "the repository has no commits yet — create an initial commit before starting a worktree thread",
+      });
+    }
+
     yield* executeGit("GitVcsDriver.createWorktree", input.cwd, args, {
       fallbackErrorDetail: "git worktree add failed",
     });
