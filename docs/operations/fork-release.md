@@ -14,8 +14,10 @@ source code on installed machines.
    CLIProxyAPI `gpt-5.6-luna` model to resolve each file with max reasoning. The prompt treats fork
    behavior as authoritative while requiring compatible upstream behavior to be retained.
 4. The workflow dispatches the normal fork CI on the result and merges the pull request only after
-   every required check passes. Unsafe, binary, oversized, uncertain, or test-failing changes stop
-   and create an issue pointing to the failed run.
+   every required check passes. It publishes the four required commit statuses with links to that
+   exact run because GitHub suppresses normal push-triggered checks for `GITHUB_TOKEN` automation.
+   Unsafe, binary, oversized, uncertain, or test-failing changes stop and create an issue pointing
+   to the failed run.
 5. Every commit merged to `main`, whether from the upstream sync or a personal pull request,
    starts `Fork Desktop Release`.
 6. `m1-dev-t3code-fork` builds macOS arm64 and x64. `windows-5080-t3code-fork` builds Windows
