@@ -19,7 +19,9 @@ source code on installed machines.
    Unsafe, binary, oversized, uncertain, or test-failing changes stop and create an issue pointing
    to the failed run.
 5. Every commit merged to `main`, whether from the upstream sync or a personal pull request,
-   starts `Fork Desktop Release`.
+   starts its own `Fork Desktop Release`. Release runs are not collapsed through a workflow
+   concurrency group: the dedicated runners queue every main commit, and the GitHub run number
+   makes each fork version unique even when multiple releases overlap.
 6. `m1-dev-t3code-fork` builds macOS arm64 and x64. `windows-5080-t3code-fork` builds Windows
    x64. Only trusted `main` commits run on these self-hosted machines; pull requests use GitHub-
    hosted runners.
@@ -62,6 +64,8 @@ release workflow ever begins executing an untrusted ref.
 
 ## Retiring the old machine-local updater
 
-Disable the old launchd and Windows scheduled updater only after one published fork release
-has been downloaded and installed through the in-app updater on each platform. Until that proof,
-the local updater remains the rollback path rather than an active source-merging system.
+Disable the old launchd and Windows scheduled updater after a public fork release, its checksums,
+manifests, and packaged `app-update.yml` have been verified. Preserve the plist files, scripts, and
+scheduled-task definitions for rollback. An existing installation without `app-update.yml` needs a
+one-time manual install of the fork release; do not leave a legacy staged installer active while
+waiting for that bootstrap because it can replace the app with an older local build.
