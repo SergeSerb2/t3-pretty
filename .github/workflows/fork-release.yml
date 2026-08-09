@@ -51,6 +51,12 @@ jobs:
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Verify release publisher credential
+        if: steps.existing.outputs.should_release == 'true'
+        env:
+          FORK_RELEASE_TOKEN: ${{ secrets.FORK_RELEASE_TOKEN }}
+        run: test -n "$FORK_RELEASE_TOKEN"
+
       - id: release
         name: Create a monotonic fork version
         if: steps.existing.outputs.should_release == 'true'
@@ -448,21 +454,31 @@ jobs:
           grep -F 'repo: t3code-fork-theme' app-update.yml
 
       - name: Publish public GitHub prerelease
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.preflight.outputs.tag }}
-          target_commitish: ${{ needs.preflight.outputs.ref }}
-          name: ${{ needs.preflight.outputs.name }}
-          body: |
-            Fork build from `${{ needs.preflight.outputs.ref }}`.
-            Includes upstream through `${{ needs.preflight.outputs.upstream_tag }}` plus all changes merged to fork `main`.
-          prerelease: true
-          make_latest: false
-          files: |
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.FORK_RELEASE_TOKEN }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+          RELEASE_REF: ${{ needs.preflight.outputs.ref }}
+          RELEASE_NAME: ${{ needs.preflight.outputs.name }}
+          UPSTREAM_TAG: ${{ needs.preflight.outputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(
             release-assets/*.dmg
             release-assets/*.zip
             release-assets/*.exe
             release-assets/*.blockmap
             release-assets/*.yml
-          fail_on_unmatched_files: true
-          token: ${{ github.token }}
+          )
+          (( ${#assets[@]} > 0 ))
+          printf -v release_notes \
+            'Fork build from `%s`.\nIncludes upstream through `%s` plus all changes merged to fork `main`.' \
+            "$RELEASE_REF" "$UPSTREAM_TAG"
+          gh release create "$RELEASE_TAG" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$RELEASE_REF" \
+            --title "$RELEASE_NAME" \
+            --notes "$release_notes" \
+            --prerelease \
+            --latest=false
