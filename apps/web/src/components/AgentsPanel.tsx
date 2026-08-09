@@ -6,7 +6,8 @@
  * Visualization rules (from live-test feedback):
  * - Spawn order is stable. Activity and completion update rows in place.
  * - Agent rows reserve three fixed lines for identity, activity, and metrics;
- *   changing data must never change their height.
+ *   changing data must never change their height. Height only changes on the
+ *   user's explicit unfold into the agent's sub-thread detail view.
  * - Workflow expansion is presentation state. A live run stays expanded when
  *   it settles; older collapsed runs can still be opened at run granularity.
  * - Static status dots, DOM-write elapsed timers, plain token counters.
@@ -21,6 +22,11 @@ import {
   formatSubagentModelLabel,
   formatSubagentTokenCount,
 } from "@t3tools/client-runtime/state/subagentRuntime";
+import type {
+  SubagentActivityLog,
+  SubagentLogEntry,
+} from "@t3tools/client-runtime/state/subagentActivityLog";
+import { subagentLogEntries } from "@t3tools/client-runtime/state/subagentActivityLog";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Bot, Braces, Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -136,8 +142,164 @@ function agentActivityText(agent: RuntimeSubagent): string | null {
   );
 }
 
-/** Flat, non-interactive agent status line. No unfold. */
-function AgentRow({ agent }: { agent: RuntimeSubagent }) {
+function formatEntryTime(at: string): string {
+  const parsed = new Date(at);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(parsed.getHours())}:${pad(parsed.getMinutes())}:${pad(parsed.getSeconds())}`;
+}
+
+const ENTRY_TEXT_CLASS: Record<SubagentLogEntry["kind"], string> = {
+  activity: "text-muted-foreground",
+  status: "font-medium text-foreground/75",
+  result: "text-success-foreground",
+  error: "text-destructive-foreground",
+};
+
+/**
+ * The agent's sub-thread: the accumulated observation feed plus the full
+ * metadata the three-line row has no room for. The feed sticks to its tail
+ * while the agent is live unless the user scrolls back up.
+ */
+function AgentDetail({
+  agent,
+  entries,
+}: {
+  agent: RuntimeSubagent;
+  entries: ReadonlyArray<SubagentLogEntry>;
+}) {
+  const feedRef = useRef<HTMLDivElement>(null);
+  const stickToTail = useRef(true);
+  const feed: ReadonlyArray<SubagentLogEntry> =
+    entries.length > 0
+      ? entries
+      : agent.recentActivity.map((tick) => ({
+          at: tick.at,
+          summary: tick.summary,
+          kind: "activity" as const,
+        }));
+
+  useEffect(() => {
+    const element = feedRef.current;
+    if (element && stickToTail.current) {
+      element.scrollTop = element.scrollHeight;
+    }
+  }, [feed.length]);
+
+  const usage = agent.usage;
+  const facts: Array<{ label: string; value: string }> = [];
+  if (agent.model) {
+    facts.push({
+      label: "model",
+      value: agent.effort ? `${agent.model} · ${agent.effort}` : agent.model,
+    });
+  }
+  if (usage) {
+    const breakdown = [
+      usage.inputTokens !== undefined ? `in ${formatSubagentTokenCount(usage.inputTokens)}` : null,
+      usage.outputTokens !== undefined
+        ? `out ${formatSubagentTokenCount(usage.outputTokens)}`
+        : null,
+      usage.cachedInputTokens !== undefined
+        ? `cache ${formatSubagentTokenCount(usage.cachedInputTokens)}`
+        : null,
+    ].filter((value): value is string => value !== null);
+    facts.push({
+      label: "tokens",
+      value:
+        breakdown.length > 0
+          ? `${formatSubagentTokenCount(usage.totalTokens)} (${breakdown.join(" · ")})`
+          : formatSubagentTokenCount(usage.totalTokens),
+    });
+    if (usage.toolUses !== undefined) {
+      facts.push({ label: "tools", value: `${usage.toolUses}` });
+    }
+  }
+  if (agent.activationCount > 1) {
+    facts.push({ label: "runs", value: `${agent.activationCount}` });
+  }
+  if (agent.phaseTitle) {
+    facts.push({ label: "phase", value: agent.phaseTitle });
+  }
+  if (agent.outputFile) {
+    facts.push({ label: "output", value: agent.outputFile });
+  }
+  const sessionUrl = agent.runHandles?.sessionUrl;
+
+  return (
+    <div className="mx-1.5 mb-1.5 rounded-md border border-border/50 bg-background/50">
+      {feed.length > 0 ? (
+        <div
+          ref={feedRef}
+          onScroll={(event) => {
+            const element = event.currentTarget;
+            stickToTail.current =
+              element.scrollHeight - element.scrollTop - element.clientHeight < 40;
+          }}
+          className="max-h-56 overflow-y-auto px-2 py-1.5"
+        >
+          {feed.map((entry, index) => (
+            <div
+              key={`${entry.at}:${index}`}
+              className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-x-2 py-px"
+            >
+              <span className="pt-px font-mono text-[.6rem] tabular-nums text-muted-foreground/50">
+                {formatEntryTime(entry.at)}
+              </span>
+              <span
+                className={cn(
+                  "whitespace-pre-wrap break-words text-[.7rem] leading-snug",
+                  ENTRY_TEXT_CLASS[entry.kind],
+                )}
+              >
+                {entry.summary}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="px-2 py-1.5 text-[.7rem] text-muted-foreground/70">
+          No activity recorded yet.
+        </p>
+      )}
+      {facts.length > 0 || sessionUrl ? (
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-border/40 px-2 py-1.5 font-mono text-[.65rem] text-muted-foreground/80">
+          {facts.map((fact) => (
+            <span key={fact.label} className="min-w-0 max-w-full truncate">
+              <span className="text-muted-foreground/50">{fact.label} </span>
+              {fact.value}
+            </span>
+          ))}
+          {sessionUrl ? (
+            <a
+              href={sessionUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-info-foreground hover:underline"
+            >
+              session ↗
+            </a>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Agent status line. Collapsed it keeps the fixed three-line shape; clicking
+ * unfolds the agent's sub-thread (observation feed + full metadata) beneath.
+ */
+function AgentRow({
+  agent,
+  log,
+}: {
+  agent: RuntimeSubagent;
+  log?: SubagentActivityLog | undefined;
+}) {
+  const [open, setOpen] = useState(false);
   const visuals = STATUS_VISUALS[agent.status];
   const activity = agentActivityText(agent);
   const modelLabel = formatSubagentModelLabel(agent.model, agent.effort);
@@ -153,38 +315,55 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
   ].filter((value): value is string => value !== null);
 
   return (
-    <div className="grid h-[3.875rem] grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1">
-      <span className="col-start-1 row-start-1 flex items-center">
-        <StatusDot status={agent.status} />
-      </span>
-      <span className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2">
-        <span className="min-w-0 truncate text-sm font-medium">{agent.title}</span>
-        {role ? (
-          <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">
-            {role}
-          </span>
-        ) : null}
-      </span>
-      <span className="col-start-3 row-start-1 min-w-14 text-right font-mono text-[.7rem] text-muted-foreground/80">
-        <span className="inline-flex items-center gap-1">
-          <AgentElapsed agent={agent} />
-          {agent.status === "completed" ? (
-            <Check aria-hidden className="size-3 text-success" />
+    <div className={cn("rounded-md", open && "bg-accent/20")}>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="grid h-[3.875rem] w-full grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1 text-left hover:bg-accent/40"
+      >
+        <span className="col-start-1 row-start-1 flex items-center">
+          <StatusDot status={agent.status} />
+        </span>
+        <span className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2">
+          <span className="min-w-0 truncate text-sm font-medium">{agent.title}</span>
+          {role ? (
+            <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">
+              {role}
+            </span>
           ) : null}
         </span>
-      </span>
-      <span
-        className={cn(
-          "col-start-2 col-end-4 row-start-2 block truncate text-xs",
-          agent.status === "failed" ? "text-destructive-foreground" : "text-muted-foreground",
-        )}
-      >
-        {activity ?? visuals.label}
-      </span>
-      <span className="col-start-2 col-end-4 row-start-3 truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70">
-        {metadata.join(" · ")}
-      </span>
-      <span className="sr-only">{visuals.label}</span>
+        <span className="col-start-3 row-start-1 min-w-14 text-right font-mono text-[.7rem] text-muted-foreground/80">
+          <span className="inline-flex items-center gap-1">
+            <AgentElapsed agent={agent} />
+            {agent.status === "completed" ? (
+              <Check aria-hidden className="size-3 text-success" />
+            ) : null}
+            <ChevronRight
+              aria-hidden
+              className={cn(
+                "size-3 text-muted-foreground/50 transition-transform",
+                open && "rotate-90",
+              )}
+            />
+          </span>
+        </span>
+        <span
+          className={cn(
+            "col-start-2 col-end-4 row-start-2 block truncate text-xs",
+            agent.status === "failed" ? "text-destructive-foreground" : "text-muted-foreground",
+          )}
+        >
+          {activity ?? visuals.label}
+        </span>
+        <span className="col-start-2 col-end-4 row-start-3 truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70">
+          {metadata.join(" · ")}
+        </span>
+        <span className="sr-only">{visuals.label}</span>
+      </button>
+      {open ? (
+        <AgentDetail agent={agent} entries={log ? subagentLogEntries(log, agent.id) : []} />
+      ) : null}
     </div>
   );
 }
@@ -315,9 +494,11 @@ function WorkflowScriptView({
 function PhaseSection({
   phase,
   defaultOpen = false,
+  log,
 }: {
   phase: AgentPanelWorkflowGroup["phases"][number];
   defaultOpen?: boolean;
+  log?: SubagentActivityLog | undefined;
 }) {
   const [open, setOpen] = useState(defaultOpen || phase.state === "running");
   const previousState = useRef(phase.state);
@@ -366,7 +547,9 @@ function PhaseSection({
           </span>
         ) : null}
       </button>
-      {open ? phase.members.map((member) => <AgentRow key={member.id} agent={member} />) : null}
+      {open
+        ? phase.members.map((member) => <AgentRow key={member.id} agent={member} log={log} />)
+        : null}
     </div>
   );
 }
@@ -377,11 +560,13 @@ function ExpandedWorkflowSection({
   environmentId,
   threadId,
   onCollapse,
+  log,
 }: {
   group: AgentPanelWorkflowGroup;
   environmentId: EnvironmentId | null;
   threadId: ThreadId | null;
   onCollapse: () => void;
+  log?: SubagentActivityLog | undefined;
 }) {
   const [scriptOpen, setScriptOpen] = useState(false);
   const members = workflowMembers(group);
@@ -436,13 +621,18 @@ function ExpandedWorkflowSection({
         />
       ) : null}
       {group.phases.map((phase) => (
-        <PhaseSection key={phase.index} phase={phase} defaultOpen={!workflowIsLive(group)} />
+        <PhaseSection
+          key={phase.index}
+          phase={phase}
+          defaultOpen={!workflowIsLive(group)}
+          log={log}
+        />
       ))}
       {group.unphasedMembers.map((member) => (
-        <AgentRow key={member.id} agent={member} />
+        <AgentRow key={member.id} agent={member} log={log} />
       ))}
       {group.phases.length === 0 && group.unphasedMembers.length === 0 ? (
-        <AgentRow agent={group.workflow} />
+        <AgentRow agent={group.workflow} log={log} />
       ) : null}
     </section>
   );
@@ -500,10 +690,12 @@ function WorkflowSection({
   group,
   environmentId,
   threadId,
+  log,
 }: {
   group: AgentPanelWorkflowGroup;
   environmentId: EnvironmentId | null;
   threadId: ThreadId | null;
+  log?: SubagentActivityLog | undefined;
 }) {
   const [open, setOpen] = useState(() => workflowIsLive(group));
   return open ? (
@@ -512,6 +704,7 @@ function WorkflowSection({
       environmentId={environmentId}
       threadId={threadId}
       onCollapse={() => setOpen(false)}
+      log={log}
     />
   ) : (
     <CollapsedWorkflowSection group={group} onExpand={() => setOpen(true)} />
@@ -520,10 +713,13 @@ function WorkflowSection({
 
 export function AgentsPanel({
   model,
+  activityLog,
   environmentId = null,
   threadId = null,
 }: {
   model: AgentPanelModel;
+  /** Session-scoped per-agent history feeding each row's sub-thread view. */
+  activityLog?: SubagentActivityLog | undefined;
   environmentId?: EnvironmentId | null;
   threadId?: ThreadId | null;
 }) {
@@ -550,6 +746,7 @@ export function AgentsPanel({
               group={group}
               environmentId={environmentId}
               threadId={threadId}
+              log={activityLog}
             />
           ))}
           {model.directAgents.length > 0 ? (
@@ -558,7 +755,7 @@ export function AgentsPanel({
                 Direct spawns
               </div>
               {model.directAgents.map((agent) => (
-                <AgentRow key={agent.id} agent={agent} />
+                <AgentRow key={agent.id} agent={agent} log={activityLog} />
               ))}
             </section>
           ) : null}

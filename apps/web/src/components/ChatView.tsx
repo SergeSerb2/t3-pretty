@@ -150,6 +150,11 @@ import {
   deriveAgentPanelModel,
   foldSubagentActivities,
 } from "@t3tools/client-runtime/state/subagentRuntime";
+import {
+  advanceSubagentActivityLog,
+  emptySubagentActivityLog,
+  type SubagentActivityLog,
+} from "@t3tools/client-runtime/state/subagentActivityLog";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
@@ -2223,13 +2228,31 @@ function ChatViewContent(props: ChatViewProps) {
   // until orchestration-v2 lands (source precedence lives in the derive).
   // sessionLive derives interruption for agents orphaned by session death.
   const agentSessionLive = phase !== "disconnected";
-  const agentPanelModel = useMemo(
-    () =>
-      deriveAgentPanelModel({
-        agents: foldSubagentActivities(threadActivities, { sessionLive: agentSessionLive }),
-      }),
+  const foldedSubagents = useMemo(
+    () => foldSubagentActivities(threadActivities, { sessionLive: agentSessionLive }),
     [agentSessionLive, threadActivities],
   );
+  const agentPanelModel = useMemo(
+    () => deriveAgentPanelModel({ agents: foldedSubagents }),
+    [foldedSubagents],
+  );
+  // Accumulated per-agent history for the Agents panel sub-thread view. The
+  // fold is latest-state only (ingestion upserts stable per-task rows), so
+  // depth exists only as this session-scoped observation log. Advancing is
+  // idempotent for an unchanged fold, so the strict-mode double invoke is
+  // safe; history resets on thread switch.
+  const subagentLogRef = useRef<{ key: string | null; log: SubagentActivityLog }>({
+    key: null,
+    log: emptySubagentActivityLog(),
+  });
+  const subagentActivityLog = useMemo(() => {
+    if (subagentLogRef.current.key !== activeThreadKey) {
+      subagentLogRef.current = { key: activeThreadKey, log: emptySubagentActivityLog() };
+    }
+    const advanced = advanceSubagentActivityLog(subagentLogRef.current.log, foldedSubagents);
+    subagentLogRef.current = { key: activeThreadKey, log: advanced };
+    return advanced;
+  }, [activeThreadKey, foldedSubagents]);
   const pendingApprovals = useMemo(
     () => derivePendingApprovals(threadActivities),
     [threadActivities],
@@ -6065,6 +6088,7 @@ function ChatViewContent(props: ChatViewProps) {
     ) : selectedRightPanelSurface?.kind === "agents" ? (
       <AgentsPanel
         model={agentPanelModel}
+        activityLog={subagentActivityLog}
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
       />
