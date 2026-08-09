@@ -44,12 +44,12 @@ import {
   resolveDiffThemeName,
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
+import { AnimatedHeight } from "../AnimatedHeight";
 import ChatMarkdown from "../ChatMarkdown";
 import {
   BotIcon,
   CheckIcon,
   ChevronDownIcon,
-  ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
   GlobeIcon,
@@ -1089,7 +1089,6 @@ function RevertUserMessageButton({ messageId }: { messageId: MessageId }) {
 
 function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-fold" }> }) {
   const ctx = use(TimelineRowCtx);
-  const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;
 
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
@@ -1101,7 +1100,12 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
         className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-xs text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       >
         <span>{row.label}</span>
-        <Icon className="size-3.5" />
+        <ChevronDownIcon
+          className={cn(
+            "size-3.5 transition-transform duration-200",
+            !row.expanded && "-rotate-90",
+          )}
+        />
       </button>
     </div>
   );
@@ -1204,8 +1208,6 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
     steps.find((step) => step.status === "pending")?.step ??
     steps.at(-1)?.step ??
     "Plan";
-  const Chevron = expanded ? ChevronDownIcon : ChevronRightIcon;
-
   return (
     <div className="min-w-0 px-1 py-0.5">
       <button
@@ -1214,7 +1216,12 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       >
-        <Chevron className="size-3.5 shrink-0 text-muted-foreground/65" />
+        <ChevronDownIcon
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground/65 transition-transform duration-200",
+            !expanded && "-rotate-90",
+          )}
+        />
         {steps.length > 1 ? (
           <span aria-hidden className="flex shrink-0 items-center gap-0.5">
             {steps.map((step) => (
@@ -1246,39 +1253,41 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
           </span>
         ) : null}
       </button>
-      {expanded ? (
-        <div className="mt-0.5 space-y-px pl-6">
-          {steps.map((step) => (
-            <div key={step.step} className="flex items-baseline gap-2 text-[12px] leading-5">
-              <span
-                className={cn(
-                  "w-3 shrink-0 text-center font-mono text-[10px]",
-                  step.status === "completed"
-                    ? "text-success"
-                    : step.status === "inProgress"
-                      ? "text-primary"
-                      : "text-muted-foreground/40",
-                )}
-                aria-hidden
-              >
-                {step.status === "completed" ? "✓" : step.status === "inProgress" ? "●" : "○"}
-              </span>
-              <span
-                className={cn(
-                  "min-w-0",
-                  step.status === "completed"
-                    ? "text-muted-foreground/55"
-                    : step.status === "inProgress"
-                      ? "text-foreground/90"
-                      : "text-muted-foreground/70",
-                )}
-              >
-                {step.step}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <AnimatedHeight>
+        {expanded ? (
+          <div className="mt-0.5 space-y-px pl-6">
+            {steps.map((step) => (
+              <div key={step.step} className="flex items-baseline gap-2 text-[12px] leading-5">
+                <span
+                  className={cn(
+                    "w-3 shrink-0 text-center font-mono text-[10px]",
+                    step.status === "completed"
+                      ? "text-success"
+                      : step.status === "inProgress"
+                        ? "text-primary"
+                        : "text-muted-foreground/40",
+                  )}
+                  aria-hidden
+                >
+                  {step.status === "completed" ? "✓" : step.status === "inProgress" ? "●" : "○"}
+                </span>
+                <span
+                  className={cn(
+                    "min-w-0",
+                    step.status === "completed"
+                      ? "text-muted-foreground/55"
+                      : step.status === "inProgress"
+                        ? "text-foreground/90"
+                        : "text-muted-foreground/70",
+                  )}
+                >
+                  {step.step}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </AnimatedHeight>
     </div>
   );
 });
@@ -2367,16 +2376,20 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </div>
         </div>
       </div>
-      {expanded && canExpand && expandedBody ? (
-        <div
-          className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5"
-          onClick={stopRowToggle}
-          onPointerDown={stopRowToggle}
-        >
-          <pre className="max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-[11px] leading-relaxed select-text">
-            {expandedBody}
-          </pre>
-        </div>
+      {canExpand && expandedBody ? (
+        <AnimatedHeight>
+          {expanded ? (
+            <div
+              className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5"
+              onClick={stopRowToggle}
+              onPointerDown={stopRowToggle}
+            >
+              <pre className="max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-[11px] leading-relaxed select-text">
+                {expandedBody}
+              </pre>
+            </div>
+          ) : null}
+        </AnimatedHeight>
       ) : null}
     </div>
   );

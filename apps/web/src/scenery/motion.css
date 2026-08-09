@@ -1,0 +1,320 @@
+/*
+ * Fork motion layer: the chat thread's animation vocabulary, injected from
+ * the scenery module against upstream's stable hooks (data-* attributes and
+ * a few class strings pinned by sceneryMotionContract.test.ts). Everything
+ * is gated on html[data-scenery-motion], set by SceneryMotion only while
+ * the Motion toggle is on — with the attribute absent this file is inert.
+ *
+ * Rules of the layer:
+ * - transform/opacity family only (translate/scale/rotate/opacity), so the
+ *   virtualized timeline's scroll-pinning math never sees a layout change;
+ * - CSS does the animating (compositor thread) — the driver only tags
+ *   classes, because the main thread is busy re-parsing markdown while a
+ *   response streams;
+ * - enters animate, exits are instant (upstream unmounts synchronously;
+ *   asymmetric enter/exit is the intended feel anyway);
+ * - the html.no-transitions theme-swap kill switch and reduced motion both
+ *   neutralize everything here without extra wiring.
+ */
+
+html[data-scenery-motion] {
+  --sc-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --sc-ease-inout: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* ------------------------------------------------------- row arrivals -- */
+/* SceneryMotion tags a timeline row wrapper with scenery-row-enter the
+   first time its row id is seen (never on virtualization re-mounts or
+   thread switches), staggering bursts via --sc-enter-delay. `both` keeps
+   delayed rows invisible until their turn. */
+
+html[data-scenery-motion] [data-timeline-root].scenery-row-enter {
+  animation: scenery-row-rise 220ms var(--sc-ease-out) both;
+  animation-delay: var(--sc-enter-delay, 0ms);
+}
+
+@keyframes scenery-row-rise {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+/* ------------------------------------------------------ working row orb -- */
+/* The orb slot is inserted directly before the three-dot pulse cluster;
+   the adjacent-sibling rule retires the dots while the orb is present. */
+
+html[data-scenery-motion] [data-timeline-row-kind="working"] .scenery-orb-slot + span {
+  display: none;
+}
+
+.scenery-orb-slot {
+  display: inline-flex;
+  align-items: center;
+  /* The 20px orb is taller than the dot cluster it replaces; pull the
+     vertical box in so the working row keeps its compact height. */
+  margin-block: -4px;
+}
+
+/* Soft dip while the orb switches verbs (working → searching → …), so a
+   mode change reads as one indicator changing gear, not a hard cut. */
+.scenery-orb-dip {
+  animation: scenery-orb-dip 240ms var(--sc-ease-inout);
+}
+
+@keyframes scenery-orb-dip {
+  0% {
+    opacity: 1;
+  }
+  45% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------- hero orb slot -- */
+
+.scenery-orb-hero {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+html[data-scenery-motion] .scenery-orb-hero {
+  transition:
+    opacity 300ms var(--sc-ease-out),
+    translate 300ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 10px;
+  }
+}
+
+/* Draft hero headline rises with the orb on a fresh thread. */
+html[data-scenery-motion] [data-chat-composer-overlay] h1 {
+  transition:
+    opacity 300ms var(--sc-ease-out),
+    translate 300ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 10px;
+  }
+}
+
+/* ------------------------------------------------- tool card disclosure -- */
+/* The expanded body (`mt-1 ms-7 …` wrapper) mounts on toggle; entry gets a
+   short reveal, collapse stays instant. Chevron keeps its upstream rotate. */
+
+html[data-scenery-motion] [data-timeline-row-kind="work"] div[class*="ms-7"] {
+  transition:
+    opacity 180ms var(--sc-ease-out),
+    translate 180ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+/* Status verdicts (check / x / minus) pop in at the end of a tool call.
+   `rotate` stays in the list so the sibling chevron keeps its transition
+   after this shorthand overrides Tailwind's transition-transform. */
+html[data-scenery-motion] [data-timeline-row-kind="work"] [class*="gap-px"] svg {
+  transition:
+    scale 150ms var(--sc-ease-out),
+    opacity 150ms var(--sc-ease-out),
+    rotate 200ms var(--sc-ease-out);
+  @starting-style {
+    scale: 0.6;
+    opacity: 0;
+  }
+}
+
+/* ------------------------------------------------- changed-files card -- */
+/* The card materializes mid-turn inside an already-entered assistant row —
+   part of the completion beat: the working-row ghost fades up while the
+   results card rises in. */
+
+html[data-scenery-motion] [data-changed-files-state] {
+  transition:
+    opacity 240ms var(--sc-ease-out),
+    translate 240ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+/* ------------------------------------------------- working-row ghost -- */
+/* SceneryMotion snapshots the "Working for Xs" row every sync; when the
+   row unmounts at turn end the snapshot is replayed as a fixed-position
+   ghost that fades up and out. The orb slot and dot cluster inside the
+   clone are dead pixels (canvas bitmaps do not survive cloneNode) — only
+   the text says goodbye. */
+
+.scenery-ghost-exit {
+  position: fixed;
+  z-index: 20;
+  overflow: hidden;
+  pointer-events: none;
+  animation: scenery-ghost-fade 220ms var(--sc-ease-out) forwards;
+}
+
+.scenery-ghost-exit .scenery-orb-slot,
+.scenery-ghost-exit .scenery-orb-slot + span {
+  display: none !important;
+}
+
+@keyframes scenery-ghost-fade {
+  to {
+    opacity: 0;
+    translate: 0 -6px;
+  }
+}
+
+/* --------------------------------------------------------- sidebar orbs -- */
+/* A working thread's CircleDashedIcon hands its spot to a small orb. */
+
+html[data-scenery-motion] [data-thread-item] .scenery-orb-slot--sidebar + svg {
+  display: none;
+}
+
+.scenery-orb-slot--sidebar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+/* ------------------------------------------------------------- banners -- */
+/* Thread error banner (data-slot=alert) and provider status (role=alert),
+   scoped to the chat column. 220ms matches the composer banner stack's
+   dismiss timing so the thread's banner grammar stays coherent. */
+
+html[data-scenery-motion] main[data-slot="sidebar-inset"] [data-slot="alert"],
+html[data-scenery-motion] main[data-slot="sidebar-inset"] [role="alert"] {
+  transition:
+    opacity 220ms var(--sc-ease-out),
+    translate 220ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 -6px;
+  }
+}
+
+/* Approval / pending-input details slide up out of the composer. */
+html[data-scenery-motion] [data-chat-composer-form] [data-approval-detail] {
+  transition:
+    opacity 220ms var(--sc-ease-out),
+    translate 220ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+/* ---------------------------------------------------- scroll-to-end pill -- */
+/* Animate the button, not its wrapper — the wrapper carries the Tailwind
+   -translate-x-1/2 centering this rule must not clobber. Color/border stay
+   in the list because this shorthand replaces transition-colors. */
+
+html[data-scenery-motion] button[aria-label="Scroll to end"] {
+  transition:
+    opacity 160ms var(--sc-ease-out),
+    translate 160ms var(--sc-ease-out),
+    scale 160ms var(--sc-ease-out),
+    color 150ms ease,
+    border-color 150ms ease;
+  @starting-style {
+    opacity: 0;
+    translate: 0 4px;
+    scale: 0.97;
+  }
+}
+
+/* ------------------------------------------------------ press feedback -- */
+/* Send/stop already transition `scale` via their transition-all utility;
+   these only add the missing pressed state. */
+
+html[data-scenery-motion] button[aria-label="Send message"]:not(:disabled):active,
+html[data-scenery-motion] button[aria-label="Stop generation"]:active {
+  scale: 0.96;
+}
+
+html[data-scenery-motion] button[aria-label="Scroll to end"]:active {
+  scale: 0.97;
+}
+
+html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"] {
+  transition:
+    width 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    height 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    padding 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    scale 140ms var(--sc-ease-out);
+}
+
+html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"]:active {
+  scale: 0.94;
+}
+
+/* ------------------------------------------------------ reduced motion -- */
+/* Gentler, not zero: comprehension-aiding opacity stays, movement goes.
+   The orb component renders its own static frame under reduced motion. */
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-scenery-motion] [data-timeline-root].scenery-row-enter {
+    animation: scenery-row-fade 150ms ease-out both;
+  }
+
+  html[data-scenery-motion] .scenery-orb-hero,
+  html[data-scenery-motion] [data-chat-composer-overlay] h1,
+  html[data-scenery-motion] [data-timeline-row-kind="work"] div[class*="ms-7"],
+  html[data-scenery-motion] [data-timeline-row-kind="work"] [class*="gap-px"] svg,
+  html[data-scenery-motion] main[data-slot="sidebar-inset"] [data-slot="alert"],
+  html[data-scenery-motion] main[data-slot="sidebar-inset"] [role="alert"],
+  html[data-scenery-motion] [data-chat-composer-form] [data-approval-detail],
+  html[data-scenery-motion] button[aria-label="Scroll to end"] {
+    transition-property: opacity;
+    @starting-style {
+      translate: none;
+      scale: none;
+    }
+  }
+
+  html[data-scenery-motion] button[aria-label="Send message"]:not(:disabled):active,
+  html[data-scenery-motion] button[aria-label="Stop generation"]:active,
+  html[data-scenery-motion] button[aria-label="Scroll to end"]:active,
+  html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"]:active {
+    scale: none;
+  }
+
+  html[data-scenery-motion] .scenery-orb-dip {
+    animation: none;
+  }
+
+  html[data-scenery-motion] [data-changed-files-state] {
+    transition-property: opacity;
+    @starting-style {
+      translate: none;
+    }
+  }
+
+  /* The driver also skips spawning ghosts under reduced motion; this is
+     the belt to that suspender. */
+  .scenery-ghost-exit {
+    animation-duration: 1ms;
+  }
+}
+
+@keyframes scenery-row-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

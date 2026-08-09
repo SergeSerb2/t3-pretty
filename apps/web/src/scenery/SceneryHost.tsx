@@ -15,6 +15,7 @@ import { useSceneryThemeActive } from "./useHtmlAttributes";
 import { ensureWorldSceneryThemeInstalled } from "./worldSceneryTheme";
 
 const ActiveScenery = lazy(() => import("./ActiveScenery"));
+const SceneryMotion = lazy(() => import("./SceneryMotion"));
 
 export function SceneryHost() {
   const active = useSceneryThemeActive();
@@ -27,6 +28,11 @@ export function SceneryHost() {
     <>
       {/* Theme-independent fork feature: the composer attach button. */}
       <ComposerAttachControl />
+      {/* Theme-independent fork feature: thread motion + thinking orbs.
+          Lazy so the orb engine stays out of the startup chunk. */}
+      <Suspense fallback={null}>
+        <SceneryMotion />
+      </Suspense>
       {active ? (
         <Suspense fallback={null}>
           <ActiveScenery />

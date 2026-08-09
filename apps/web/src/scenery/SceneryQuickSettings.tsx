@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { TRANSLUCENCY_RANGE } from "./glass";
+import { useMotionStore } from "./motionStore";
 import { BLUR_RANGE, useSceneryStore, type SceneryInkMode } from "./sceneryStore";
 
 const BLUR_COMMIT_DELAY_MS = 250;
@@ -40,6 +41,8 @@ export function SceneryQuickSettings() {
   const setTranslucency = useSceneryStore((state) => state.setTranslucency);
   const setBlur = useSceneryStore((state) => state.setBlur);
   const setInkMode = useSceneryStore((state) => state.setInkMode);
+  const motionEnabled = useMotionStore((state) => state.enabled);
+  const setMotionEnabled = useMotionStore((state) => state.setEnabled);
 
   // Slider position is local so dragging feels live; the store (and the
   // CDN fetch it triggers) hears about it after the debounce.
@@ -126,6 +129,27 @@ export function SceneryQuickSettings() {
               }
             />
           </label>
+          <div className="scenery-quick__row">
+            <span className="scenery-quick__label">Motion</span>
+            <div className="scenery-quick__segments" role="group" aria-label="Motion">
+              <button
+                type="button"
+                title="Animate the chat thread and show thinking orbs"
+                aria-pressed={motionEnabled}
+                onClick={() => setMotionEnabled(true)}
+              >
+                On
+              </button>
+              <button
+                type="button"
+                title="Keep the thread static"
+                aria-pressed={!motionEnabled}
+                onClick={() => setMotionEnabled(false)}
+              >
+                Off
+              </button>
+            </div>
+          </div>
           <div className="scenery-quick__row">
             <span className="scenery-quick__label">Text color</span>
             <div className="scenery-quick__segments" role="group" aria-label="Text color">
