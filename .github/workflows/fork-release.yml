@@ -409,7 +409,7 @@ jobs:
         run: |
           set -euo pipefail
           mac_manifest="$(find release-assets -maxdepth 1 -name '*-mac.yml' -print -quit)"
-          win_manifest="$(find release-assets -maxdepth 1 -name '*.yml' ! -name '*-mac.yml' -print -quit)"
+          win_manifest="$(find release-assets -maxdepth 1 -name 'nightly.yml' -print -quit)"
           test -n "$mac_manifest"
           test -n "$win_manifest"
           node --input-type=module - "$mac_manifest" "$win_manifest" "$RELEASE_VERSION" <<'NODE'
