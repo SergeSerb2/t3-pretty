@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Module-scope raw CSS fixture loading has no Effect test scope.
 /**
  * Rebase tripwire for the scenery CSS's structural assumptions about
  * upstream markup. scenery.css targets these selectors positionally; if a
@@ -5,9 +6,7 @@
  * photo silently disappears behind an opaque surface. This test makes that
  * failure loud instead.
  */
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
+import * as NodeFS from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
 
 import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
@@ -21,12 +20,7 @@ import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
 
 // ?raw on a .css module yields "" under the test pipeline (the CSS transform
 // wins), so the stylesheet contract reads the file straight from disk.
-const indexCssSource = await Effect.runPromise(
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    return yield* fs.readFileString(new URL("../index.css", import.meta.url).pathname);
-  }).pipe(Effect.provide(NodeServices.layer)),
-);
+const indexCssSource = NodeFS.readFileSync(new URL("../index.css", import.meta.url), "utf8");
 
 describe("scenery structural contract with upstream markup", () => {
   it("SidebarInset is still main[data-slot=sidebar-inset] painting bg-background", () => {
