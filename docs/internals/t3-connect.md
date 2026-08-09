@@ -14,16 +14,17 @@ For the wider system diagram, see
 
 ## Application Keys
 
-T3 Connect is disabled in a fresh clone. To enable it for source builds against the production
-deployment, copy the repository-root example file:
+World Scenery is a client-only fork and uses the parent production T3 Connect deployment by default.
+The repository-root example file supplies the checked-in public defaults, so fresh source builds do
+not need a private environment file:
 
 ```sh
-cp .env.example .env
+vp run dev
 ```
 
-`.env.example` carries the production public identifiers (the same values baked into official
-release builds). To target a different Clerk application or relay, set the values yourself in a
-repository-root `.env` or `.env.local` file:
+`.env.example` carries the production public identifiers (the same values baked into parent release
+builds). To target a different Clerk application or relay, override the values in a repository-root
+`.env` or `.env.local` file:
 
 ```dotenv
 T3CODE_CLERK_PUBLISHABLE_KEY=<publishable key>
@@ -41,6 +42,7 @@ Configuration precedence is:
 1. Process or CI environment variables.
 2. Repository-root `.env.local`.
 3. Repository-root `.env`.
+4. Checked-in parent public defaults from `.env.example`.
 
 The Clerk publishable key, JWT template name, CLI OAuth client ID, and relay URL are public
 identifiers, not secrets.

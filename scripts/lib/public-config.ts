@@ -32,7 +32,10 @@ export function loadRepoEnv({
 } = {}): Record<string, string | undefined> {
   const rootEnv = readEnvFile(NodePath.join(repoRoot, ".env"));
   const localEnv = readEnvFile(NodePath.join(repoRoot, ".env.local"));
-  const config = resolvePublicConfig(baseEnv, localEnv, rootEnv);
+  // World Scenery is a client-only fork, so source builds intentionally share
+  // the parent's checked-in production T3 Connect service by default.
+  const parentPublicEnv = readEnvFile(NodePath.join(repoRoot, ".env.example"));
+  const config = resolvePublicConfig(baseEnv, localEnv, rootEnv, parentPublicEnv);
 
   return {
     ...rootEnv,
