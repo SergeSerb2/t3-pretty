@@ -250,11 +250,10 @@ jobs:
       - name: Prepare Windows runner PATH
         shell: powershell
         run: |
-          $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
-          if (-not $pwsh) {
-            throw "PowerShell 7 is required on the release runner"
+          $pwshDir = Join-Path $env:ProgramFiles "PowerShell\7"
+          if (-not (Test-Path (Join-Path $pwshDir "pwsh.exe"))) {
+            throw "PowerShell 7 is required at $pwshDir"
           }
-          $pwshDir = Split-Path -Parent $pwsh.Source
           $pwshDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Setup Vite+
