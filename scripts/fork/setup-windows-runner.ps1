@@ -1,5 +1,36 @@
 $ErrorActionPreference = "Stop"
 
+$pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+if (-not $pwsh) {
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  if (-not $winget) {
+    throw "PowerShell 7 is missing and winget is unavailable"
+  }
+
+  & $winget.Source install `
+    --id Microsoft.PowerShell `
+    --source winget `
+    --accept-package-agreements `
+    --accept-source-agreements `
+    --silent `
+    --disable-interactivity
+  if ($LASTEXITCODE -ne 0) {
+    throw "PowerShell 7 installation failed with exit $LASTEXITCODE"
+  }
+
+  $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+  if (-not $pwsh) {
+    throw "PowerShell 7 was installed but pwsh is still unavailable"
+  }
+
+  $pwshDir = Split-Path -Parent $pwsh.Source
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  if (($userPath -split ";") -notcontains $pwshDir) {
+    [Environment]::SetEnvironmentVariable("Path", "$userPath;$pwshDir", "User")
+  }
+  $env:Path = "$pwshDir;$env:Path"
+}
+
 $tokenPath = "C:\dev\t3-runner-token.json"
 $token = (Get-Content $tokenPath -Raw | ConvertFrom-Json).token
 Remove-Item $tokenPath -Force
