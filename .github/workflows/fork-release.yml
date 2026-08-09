@@ -140,6 +140,10 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      - name: Prepare macOS runner PATH
+        shell: bash
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
         with:
@@ -242,6 +246,15 @@ jobs:
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
+
+      - name: Prepare Windows runner PATH
+        shell: powershell
+        run: |
+          $pwshDir = Join-Path $env:ProgramFiles "PowerShell\7"
+          if (-not (Test-Path (Join-Path $pwshDir "pwsh.exe"))) {
+            throw "PowerShell 7 is required at $pwshDir"
+          }
+          $pwshDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
