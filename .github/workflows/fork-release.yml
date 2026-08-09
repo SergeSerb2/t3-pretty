@@ -11,11 +11,13 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   preflight:
     name: Resolve fork release
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -76,6 +78,8 @@ jobs:
     name: Build WSL node-pty (linux-x64)
     needs: preflight
     if: needs.preflight.outputs.should_release == 'true'
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -119,6 +123,8 @@ jobs:
     name: Build macOS ${{ matrix.arch }}
     needs: preflight
     if: needs.preflight.outputs.should_release == 'true'
+    permissions:
+      contents: read
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 60
     strategy:
@@ -246,6 +252,8 @@ jobs:
     name: Build Windows x64
     needs: [preflight, build_wsl_node_pty]
     if: needs.preflight.outputs.should_release == 'true' && needs.build_wsl_node_pty.result == 'success'
+    permissions:
+      contents: read
     runs-on: [self-hosted, Windows, X64, t3code-fork, release-only]
     timeout-minutes: 60
     steps:
