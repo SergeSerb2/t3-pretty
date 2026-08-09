@@ -11,9 +11,9 @@ source code on installed machines.
 3. Clean changes remain untouched. If Git reports text conflicts, the workflow asks the Railway
    CLIProxyAPI `gpt-5.6-luna` model to resolve each file with max reasoning. The prompt treats fork
    behavior as authoritative while requiring compatible upstream behavior to be retained.
-4. The normal fork CI runs on the result. GitHub auto-merges the pull request only after the
-   required checks pass. Unsafe, binary, oversized, or uncertain conflicts fail closed and create
-   an issue pointing to the failed run.
+4. The workflow dispatches the normal fork CI on the result and merges the pull request only after
+   every required check passes. Unsafe, binary, oversized, uncertain, or test-failing changes stop
+   and create an issue pointing to the failed run.
 5. Every commit merged to `main`, whether from the upstream sync or a personal pull request,
    starts `Fork Desktop Release`.
 6. `m1-dev-t3code-fork` builds macOS arm64 and x64. `windows-5080-t3code-fork` builds Windows
@@ -31,8 +31,7 @@ newer upstream tag was integrated before its sync pull request merged.
 
 - Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used only by the trusted scheduled
   sync workflow.
-- Auto-merge enabled with `Check`, `Test`, `Mobile Native Static Analysis`, and `Release Smoke`
-  required on `main`.
+- `Check`, `Test`, `Mobile Native Static Analysis`, and `Release Smoke` required on `main`.
 - Dedicated runner labels:
   - macOS: `self-hosted`, `macOS`, `ARM64`, `t3code-fork`, `release-only`
   - Windows: `self-hosted`, `Windows`, `X64`, `t3code-fork`, `release-only`

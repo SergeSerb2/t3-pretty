@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
+      should_release: ${{ steps.existing.outputs.should_release }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
       name: ${{ steps.release.outputs.name }}
@@ -40,11 +41,25 @@ jobs:
           git remote add upstream https://github.com/pingdotgg/t3code.git
           git fetch --force --tags upstream
 
+      - id: existing
+        name: Skip an already released commit
+        shell: bash
+        run: |
+          existing_tag="$(git tag --points-at HEAD --list 'fork-v*' --sort=-version:refname | head -n 1)"
+          if [[ -n "$existing_tag" ]]; then
+            echo "Commit already has fork release $existing_tag."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - id: release
         name: Create a monotonic fork version
+        if: steps.existing.outputs.should_release == 'true'
         run: node scripts/fork/resolve-fork-release.mjs
 
       - name: Setup release-smoke dependencies
+        if: steps.existing.outputs.should_release == 'true'
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
@@ -54,11 +69,13 @@ jobs:
               - --filter=@t3tools/scripts...
 
       - name: Exercise release-only workflow steps
+        if: steps.existing.outputs.should_release == 'true'
         run: node scripts/release-smoke.ts
 
   build_wsl_node_pty:
     name: Build WSL node-pty (linux-x64)
     needs: preflight
+    if: needs.preflight.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -101,6 +118,7 @@ jobs:
   build_macos:
     name: Build macOS ${{ matrix.arch }}
     needs: preflight
+    if: needs.preflight.outputs.should_release == 'true'
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 60
     strategy:
@@ -211,6 +229,7 @@ jobs:
   build_windows:
     name: Build Windows x64
     needs: [preflight, build_wsl_node_pty]
+    if: needs.preflight.outputs.should_release == 'true' && needs.build_wsl_node_pty.result == 'success'
     runs-on: [self-hosted, Windows, X64, t3code-fork, release-only]
     timeout-minutes: 60
     steps:
@@ -305,6 +324,7 @@ jobs:
   release:
     name: Publish fork updater release
     needs: [preflight, build_macos, build_windows]
+    if: needs.preflight.outputs.should_release == 'true' && needs.build_macos.result == 'success' && needs.build_windows.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

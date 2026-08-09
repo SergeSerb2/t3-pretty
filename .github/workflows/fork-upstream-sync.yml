@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: write
   contents: write
   issues: write
   pull-requests: write
@@ -116,7 +117,7 @@ jobs:
           git push --force-with-lease origin "HEAD:refs/heads/$SYNC_BRANCH"
 
       - id: pull_request
-        name: Open or update sync pull request
+        name: Validate and merge sync pull request
         if: steps.discover.outputs.has_update == 'true'
         shell: bash
         env:
@@ -134,7 +135,31 @@ jobs:
               --body "Automated hourly sync of the newest upstream T3 Code nightly. Clean merges are preserved directly; conflicts are resolved through CLIProxyAPI with gpt-5.6-luna at max reasoning and then gated by the fork CI checks.")"
           fi
           echo "url=$pr_url" >> "$GITHUB_OUTPUT"
-          gh pr merge "$pr_url" --auto --merge
+
+          head_sha="$(git rev-parse HEAD)"
+          gh workflow run ci.yml --ref "$SYNC_BRANCH"
+
+          run_id=""
+          for _ in {1..12}; do
+            run_id="$(gh run list \
+              --workflow ci.yml \
+              --branch "$SYNC_BRANCH" \
+              --event workflow_dispatch \
+              --limit 10 \
+              --json databaseId,headSha \
+              --jq ".[] | select(.headSha == \"$head_sha\") | .databaseId" | head -n 1)"
+            [[ -n "$run_id" ]] && break
+            sleep 5
+          done
+          [[ -n "$run_id" ]] || { echo "Dispatched CI run was not found." >&2; exit 1; }
+
+          gh run watch "$run_id" --exit-status --interval 15
+          gh pr merge "$pr_url" --merge --delete-branch --match-head-commit "$head_sha"
+
+          # GITHUB_TOKEN-authored merges do not reliably emit recursive push
+          # workflows, so dispatch the release explicitly. The release workflow
+          # is commit-idempotent if a normal push event also arrives.
+          gh workflow run fork-release.yml --ref main
 
       - name: Report blocked sync
         if: failure() && steps.discover.outputs.has_update == 'true'
