@@ -29,7 +29,10 @@ interface UpdatesHarnessOptions {
   >;
   readonly setUpdateChannelError?: DesktopAppSettings.DesktopSettingsWriteError;
   readonly setDisableDifferentialDownload?: Effect.Effect<void>;
+  readonly quitAndInstall?: Effect.Effect<void>;
+  readonly startBackend?: Effect.Effect<void>;
   readonly stopBackend?: Effect.Effect<void>;
+  readonly backendDesiredRunning?: boolean;
   readonly env?: Record<string, string | undefined>;
 }
 
@@ -39,6 +42,10 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
   let checkCount = 0;
   let allowDowngrade = false;
   let fullChangelog = false;
+  let quitAndInstallCount = 0;
+  let startBackendCount = 0;
+  let stopBackendCount = 0;
+  let destroyAllCount = 0;
   const feedUrls: ElectronUpdater.ElectronUpdaterFeedUrl[] = [];
   const listeners = new Map<string, Set<(...args: readonly unknown[]) => void>>();
   const sentStates: DesktopUpdateState[] = [];
@@ -83,7 +90,10 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
       checkCount += 1;
     }).pipe(Effect.andThen(options.checkForUpdates ?? Effect.void)),
     downloadUpdate: Effect.void,
-    quitAndInstall: () => Effect.void,
+    quitAndInstall: () =>
+      Effect.sync(() => {
+        quitAndInstallCount += 1;
+      }).pipe(Effect.andThen(options.quitAndInstall ?? Effect.void)),
     on: (eventName, listener) =>
       Effect.acquireRelease(
         Effect.sync(() => {
@@ -108,18 +118,25 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
       Effect.sync(() => {
         sentStates.push(state as DesktopUpdateState);
       }),
-    destroyAll: Effect.void,
+    destroyAll: Effect.sync(() => {
+      destroyAllCount += 1;
+    }),
     syncAllAppearance: () => Effect.void,
   } satisfies ElectronWindow.ElectronWindow["Service"]);
 
   const stubBackendInstance: DesktopBackendPool.DesktopBackendInstance = {
     id: DesktopBackendPool.PRIMARY_INSTANCE_ID,
     label: Effect.succeed("Windows"),
-    start: Effect.void,
-    stop: () => options.stopBackend ?? Effect.void,
+    start: Effect.sync(() => {
+      startBackendCount += 1;
+    }).pipe(Effect.andThen(options.startBackend ?? Effect.void)),
+    stop: () =>
+      Effect.sync(() => {
+        stopBackendCount += 1;
+      }).pipe(Effect.andThen(options.stopBackend ?? Effect.void)),
     currentConfig: Effect.succeed(Option.none()),
     snapshot: Effect.succeed({
-      desiredRunning: false,
+      desiredRunning: options.backendDesiredRunning ?? false,
       ready: false,
       activePid: Option.none(),
       restartAttempt: 0,
@@ -193,6 +210,10 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     checkCount: () => checkCount,
     feedUrls: () => feedUrls,
     fullChangelog: () => fullChangelog,
+    quitAndInstallCount: () => quitAndInstallCount,
+    startBackendCount: () => startBackendCount,
+    stopBackendCount: () => stopBackendCount,
+    destroyAllCount: () => destroyAllCount,
     listenerCount: () =>
       Array.from(listeners.values()).reduce(
         (total, eventListeners) => total + eventListeners.size,
@@ -505,6 +526,39 @@ describe("DesktopUpdates", () => {
 
         const changedState = yield* updates.setChannel("nightly");
         assert.equal(changedState.channel, "nightly");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("recovers running backends after an asynchronous updater install failure", () => {
+    const harness = makeHarness({ backendDesiredRunning: true });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const desktopState = yield* DesktopState.DesktopState;
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const result = yield* updates.install;
+        assert.isTrue(result.accepted);
+        assert.isFalse(result.completed);
+        assert.isTrue(yield* Ref.get(desktopState.quitting));
+        assert.equal(harness.stopBackendCount(), 1);
+        assert.equal(harness.destroyAllCount(), 1);
+        assert.equal(harness.quitAndInstallCount(), 1);
+        assert.equal(harness.startBackendCount(), 0);
+
+        harness.emit("error", new Error("native installer rejected the update"));
+        yield* flushCallbacks;
+
+        assert.isFalse(yield* Ref.get(desktopState.quitting));
+        assert.equal(harness.startBackendCount(), 1);
+        const failedState = yield* updates.getState;
+        assert.equal(failedState.status, "downloaded");
+        assert.equal(failedState.errorContext, "install");
+        assert.equal(failedState.message, "Desktop updater install operation reported an error.");
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
