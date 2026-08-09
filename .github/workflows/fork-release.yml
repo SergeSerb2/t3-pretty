@@ -43,7 +43,12 @@ jobs:
         name: Skip an already released commit
         shell: bash
         run: |
-          existing_tag="$(git tag --points-at HEAD --list 'fork-v*' --sort=-version:refname | head -n 1)"
+          existing_tag="$(
+            git tag --points-at HEAD \
+              --list 'fork-v*' \
+              --list 'v*-nightly.*.fork' \
+              --sort=-version:refname | head -n 1
+          )"
           if [[ -n "$existing_tag" ]]; then
             echo "Commit already has fork release $existing_tag."
             echo "should_release=false" >> "$GITHUB_OUTPUT"

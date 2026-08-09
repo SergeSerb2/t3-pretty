@@ -47,7 +47,10 @@ function main() {
   const [, major, minor, patch, date, upstreamBuildRaw] = match;
   const forkBuild = BigInt(upstreamBuildRaw) * RUN_MULTIPLIER + runNumber;
   const version = `${major}.${minor}.${patch}-nightly.${date}.${forkBuild}`;
-  const tag = `fork-v${version}`;
+  // electron-updater parses GitHub release tags as semver before matching the
+  // configured prerelease channel. Keep the fork marker as a prerelease
+  // identifier so the tag remains both fork-specific and semver-valid.
+  const tag = `v${version}.fork`;
   const values = {
     upstream_tag: upstreamTag,
     version,
