@@ -163,6 +163,7 @@ describe("AcpCoreRuntimeEvents", () => {
         threadId: "thread-1" as never,
         turnId,
         itemId: "assistant:session-1:segment:0",
+        streamKind: "reasoning_text",
         text: "hello",
         rawPayload: { sessionId: "session-1" },
       }),
@@ -171,6 +172,7 @@ describe("AcpCoreRuntimeEvents", () => {
       itemId: "assistant:session-1:segment:0",
       payload: {
         delta: "hello",
+        streamKind: "reasoning_text",
       },
     });
 

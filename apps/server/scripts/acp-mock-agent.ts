@@ -12,6 +12,7 @@ import * as AcpError from "effect-acp/errors";
 import type * as AcpSchema from "effect-acp/schema";
 
 const requestLogPath = process.env.T3_ACP_REQUEST_LOG_PATH;
+const emulateKimi = process.env.T3_ACP_KIMI === "1";
 const exitLogPath = process.env.T3_ACP_EXIT_LOG_PATH;
 const emitToolCalls = process.env.T3_ACP_EMIT_TOOL_CALLS === "1";
 const emitInterleavedAssistantToolCalls =
@@ -47,10 +48,10 @@ const permissionOptionIds = {
 };
 const sessionId = "mock-session-1";
 
-let currentModeId = "ask";
-let currentModelId = "default";
+let currentModeId = emulateKimi ? "default" : "ask";
+let currentModelId = emulateKimi ? "kimi-code/k3" : "default";
 let parameterizedModelPicker = false;
-let currentReasoning = "medium";
+let currentReasoning = emulateKimi ? "high" : "medium";
 let currentContext = "272k";
 let currentFast = false;
 let promptCount = 0;
@@ -94,6 +95,46 @@ process.once("exit", (code) => {
 });
 
 function configOptions(): ReadonlyArray<AcpSchema.SessionConfigOption> {
+  if (emulateKimi) {
+    return [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: currentModelId,
+        options: [
+          { value: "kimi-code/k3", name: "K3" },
+          { value: "kimi-code/k3-256k", name: "K3-256K" },
+          { value: "kimi-code/kimi-for-coding", name: "K2.7 Coding" },
+        ],
+      },
+      {
+        id: "thinking",
+        name: "Thinking",
+        category: "thought_level",
+        type: "select",
+        currentValue: currentReasoning,
+        options: [
+          { value: "low", name: "Thinking Low" },
+          { value: "high", name: "Thinking High" },
+          { value: "max", name: "Thinking Max" },
+        ],
+      },
+      {
+        id: "mode",
+        name: "Mode",
+        category: "mode",
+        type: "select",
+        currentValue: currentModeId,
+        options: availableModes.map((mode) => ({
+          value: mode.id,
+          name: mode.name,
+          ...(mode.description ? { description: mode.description } : {}),
+        })),
+      },
+    ];
+  }
   if (parameterizedModelPicker) {
     const baseOptions: Array<AcpSchema.SessionConfigOption> = [
       {
@@ -253,23 +294,30 @@ function availableModels(): ReadonlyArray<{
   }));
 }
 
-const availableModes: ReadonlyArray<AcpSchema.SessionMode> = [
-  {
-    id: "ask",
-    name: "Ask",
-    description: "Request permission before making any changes",
-  },
-  {
-    id: "architect",
-    name: "Architect",
-    description: "Design and plan software systems without implementation",
-  },
-  {
-    id: "code",
-    name: "Code",
-    description: "Write and modify code with full tool access",
-  },
-];
+const availableModes: ReadonlyArray<AcpSchema.SessionMode> = emulateKimi
+  ? [
+      { id: "default", name: "Manual approvals" },
+      { id: "plan", name: "Read-only planning" },
+      { id: "auto", name: "Auto-approve safe" },
+      { id: "yolo", name: "Auto-approve everything" },
+    ]
+  : [
+      {
+        id: "ask",
+        name: "Ask",
+        description: "Request permission before making any changes",
+      },
+      {
+        id: "architect",
+        name: "Architect",
+        description: "Design and plan software systems without implementation",
+      },
+      {
+        id: "code",
+        name: "Code",
+        description: "Write and modify code with full tool access",
+      },
+    ];
 
 function modeState(): AcpSchema.SessionModeState {
   return {
@@ -419,6 +467,9 @@ const program = Effect.gen(function* () {
         currentModelId = request.value;
       }
       if (request.configId === "reasoning" && typeof request.value === "string") {
+        currentReasoning = request.value;
+      }
+      if (request.configId === "thinking" && typeof request.value === "string") {
         currentReasoning = request.value;
       }
       if (request.configId === "context" && typeof request.value === "string") {
@@ -864,6 +915,16 @@ const program = Effect.gen(function* () {
           ],
         },
       });
+
+      if (emulateKimi) {
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: "thinking through Kimi mock" },
+          },
+        });
+      }
 
       yield* agent.client.sessionUpdate({
         sessionId: requestedSessionId,

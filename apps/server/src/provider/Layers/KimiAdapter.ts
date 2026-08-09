@@ -1,19 +1,18 @@
 /**
- * CursorAdapterLive — Cursor CLI (`agent acp`) via ACP.
+ * KimiAdapterLive — Kimi Code CLI (`kimi acp`) via ACP.
  *
- * @module CursorAdapterLive
+ * @module KimiAdapterLive
  */
 
 import {
   ApprovalRequestId,
-  type CursorSettings,
+  type KimiSettings,
   type ProviderOptionSelection,
   EventId,
   type ProviderApprovalDecision,
   type ProviderInteractionMode,
   type ProviderRuntimeEvent,
   type ProviderSession,
-  type ProviderUserInputAnswers,
   ProviderDriverKind,
   ProviderInstanceId,
   RuntimeRequestId,
@@ -65,44 +64,40 @@ import {
   parsePermissionRequest,
 } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
-import { applyCursorAcpModelSelection, makeCursorAcpRuntime } from "../acp/CursorAcpSupport.ts";
 import {
-  CursorAskQuestionRequest,
-  CursorCreatePlanRequest,
-  CursorUpdateTodosRequest,
-  extractAskQuestions,
-  extractPlanMarkdown,
-  extractTodosAsPlan,
-} from "../acp/CursorAcpExtension.ts";
-import { type CursorAdapterShape } from "../Services/CursorAdapter.ts";
-import { resolveCursorAcpBaseModelId } from "./CursorProvider.ts";
+  applyKimiAcpModelSelection,
+  makeKimiAcpRuntime,
+  resolveKimiAcpBaseModelId,
+} from "../acp/KimiAcpSupport.ts";
+import { type KimiAdapterShape } from "../Services/KimiAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
-const PROVIDER = ProviderDriverKind.make("cursor");
-const CURSOR_RESUME_VERSION = 1 as const;
-const ACP_PLAN_MODE_ALIASES = ["plan", "architect"];
-const ACP_IMPLEMENT_MODE_ALIASES = ["code", "agent", "default", "chat", "implement"];
-const ACP_APPROVAL_MODE_ALIASES = ["ask"];
+const PROVIDER = ProviderDriverKind.make("kimi");
+const KIMI_RESUME_VERSION = 1 as const;
+const ACP_PLAN_MODE_ALIASES = ["plan", "read only"];
+const ACP_APPROVAL_MODE_ALIASES = ["default", "manual approvals"];
+const ACP_AUTO_MODE_ALIASES = ["auto", "auto approve safe"];
+const ACP_FULL_ACCESS_MODE_ALIASES = ["yolo", "auto approve everything"];
 
 function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
   const result = encodeUnknownJsonStringExit(input);
   return Exit.isSuccess(result) ? result.value : undefined;
 }
 
-export interface CursorAdapterLiveOptions {
+export interface KimiAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   /**
    * Selections are honored when `modelSelection.instanceId` matches this value.
-   * Defaults to the legacy built-in instance id (`cursor`).
+   * Defaults to the legacy built-in instance id (`kimi`).
    */
   readonly instanceId?: ProviderInstanceId;
   /**
    * Optional per-session settings resolver. When provided the adapter yields
    * this effect at the start of every session and uses the result instead of
-   * the `cursorSettings` captured at construction.
+   * the `kimiSettings` captured at construction.
    *
    * Production instances bind settings to the instance scope (the hydration
    * layer rebuilds the adapter on config change) and leave this undefined.
@@ -110,7 +105,7 @@ export interface CursorAdapterLiveOptions {
    * swap `binaryPath` to a mock ACP wrapper — pass a resolver that reads
    * the latest snapshot so the closure isn't stale.
    */
-  readonly resolveSettings?: Effect.Effect<CursorSettings>;
+  readonly resolveSettings?: Effect.Effect<KimiSettings>;
 }
 
 interface PendingApproval {
@@ -118,18 +113,13 @@ interface PendingApproval {
   readonly kind: string | "unknown";
 }
 
-interface PendingUserInput {
-  readonly answers: Deferred.Deferred<ProviderUserInputAnswers>;
-}
-
-interface CursorSessionContext {
+interface KimiSessionContext {
   readonly threadId: ThreadId;
   session: ProviderSession;
   readonly scope: Scope.Closeable;
   readonly acp: AcpSessionRuntime.AcpSessionRuntime["Service"];
   notificationFiber: Fiber.Fiber<void, never> | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
-  readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   readonly turns: Array<{ id: TurnId; items: Array<unknown> }>;
   lastPlanFingerprint: string | undefined;
   activeTurnId: TurnId | undefined;
@@ -153,26 +143,13 @@ function settlePendingApprovalsAsCancelled(
   );
 }
 
-function settlePendingUserInputsAsEmptyAnswers(
-  pendingUserInputs: ReadonlyMap<ApprovalRequestId, PendingUserInput>,
-): Effect.Effect<void> {
-  const pendingEntries = Array.from(pendingUserInputs.values());
-  return Effect.forEach(
-    pendingEntries,
-    (pending) => Deferred.succeed(pending.answers, {}).pipe(Effect.ignore),
-    {
-      discard: true,
-    },
-  );
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseCursorResume(raw: unknown): { sessionId: string } | undefined {
+function parseKimiResume(raw: unknown): { sessionId: string } | undefined {
   if (!isRecord(raw)) return undefined;
-  if (raw.schemaVersion !== CURSOR_RESUME_VERSION) return undefined;
+  if (raw.schemaVersion !== KIMI_RESUME_VERSION) return undefined;
   if (typeof raw.sessionId !== "string" || !raw.sessionId.trim()) return undefined;
   return { sessionId: raw.sessionId.trim() };
 }
@@ -228,17 +205,14 @@ function resolveRequestedModeId(input: {
     return findModeByAliases(modeState.availableModes, ACP_PLAN_MODE_ALIASES)?.id;
   }
 
-  if (input.runtimeMode === "approval-required") {
-    return (
-      findModeByAliases(modeState.availableModes, ACP_APPROVAL_MODE_ALIASES)?.id ??
-      findModeByAliases(modeState.availableModes, ACP_IMPLEMENT_MODE_ALIASES)?.id ??
-      modeState.availableModes.find((mode) => !isPlanMode(mode))?.id ??
-      modeState.currentModeId
-    );
-  }
-
+  const requestedAliases =
+    input.runtimeMode === "approval-required"
+      ? ACP_APPROVAL_MODE_ALIASES
+      : input.runtimeMode === "full-access"
+        ? ACP_FULL_ACCESS_MODE_ALIASES
+        : ACP_AUTO_MODE_ALIASES;
   return (
-    findModeByAliases(modeState.availableModes, ACP_IMPLEMENT_MODE_ALIASES)?.id ??
+    findModeByAliases(modeState.availableModes, requestedAliases)?.id ??
     findModeByAliases(modeState.availableModes, ACP_APPROVAL_MODE_ALIASES)?.id ??
     modeState.availableModes.find((mode) => !isPlanMode(mode))?.id ??
     modeState.currentModeId
@@ -262,7 +236,7 @@ function applyRequestedSessionConfiguration<E>(input: {
 }): Effect.Effect<void, E> {
   return Effect.gen(function* () {
     if (input.modelSelection) {
-      yield* applyCursorAcpModelSelection({
+      yield* applyKimiAcpModelSelection({
         runtime: input.runtime,
         model: input.modelSelection.model,
         selections: input.modelSelection.options,
@@ -310,12 +284,9 @@ function selectAutoApprovedPermissionOption(
   return undefined;
 }
 
-export function makeCursorAdapter(
-  cursorSettings: CursorSettings,
-  options?: CursorAdapterLiveOptions,
-) {
+export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapterLiveOptions) {
   return Effect.gen(function* () {
-    const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("cursor");
+    const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("kimi");
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -332,7 +303,7 @@ export function makeCursorAdapter(
       options?.nativeEventLogger === undefined ? nativeEventLogger : undefined;
     const makeAcpNativeLoggers = yield* makeAcpNativeLoggerFactory();
 
-    const sessions = new Map<ThreadId, CursorSessionContext>();
+    const sessions = new Map<ThreadId, KimiSessionContext>();
     const threadLocksRef = yield* SynchronizedRef.make(new Map<string, Semaphore.Semaphore>());
     const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
 
@@ -343,7 +314,7 @@ export function makeCursorAdapter(
           new ProviderAdapterRequestError({
             provider: PROVIDER,
             method: "crypto/randomUUIDv4",
-            detail: "Failed to generate Cursor runtime identifier.",
+            detail: "Failed to generate Kimi runtime identifier.",
             cause,
           }),
       ),
@@ -355,7 +326,7 @@ export function makeCursorAdapter(
         Effect.mapError(
           (cause) =>
             new EffectAcpErrors.AcpTransportError({
-              detail: "Failed to process Cursor ACP extension event.",
+              detail: "Failed to process Kimi ACP extension event.",
               cause,
             }),
         ),
@@ -389,7 +360,7 @@ export function makeCursorAdapter(
       threadId: ThreadId,
       method: string,
       payload: unknown,
-      _source: "acp.jsonrpc" | "acp.cursor.extension",
+      _source: "acp.jsonrpc",
     ) =>
       Effect.gen(function* () {
         if (!nativeEventLogger) return;
@@ -412,7 +383,7 @@ export function makeCursorAdapter(
       });
 
     const emitPlanUpdate = (
-      ctx: CursorSessionContext,
+      ctx: KimiSessionContext,
       payload: {
         readonly explanation?: string | null;
         readonly plan: ReadonlyArray<{
@@ -421,7 +392,7 @@ export function makeCursorAdapter(
         }>;
       },
       rawPayload: unknown,
-      source: "acp.jsonrpc" | "acp.cursor.extension",
+      source: "acp.jsonrpc",
       method: string,
     ) =>
       Effect.gen(function* () {
@@ -446,7 +417,7 @@ export function makeCursorAdapter(
 
     const requireSession = (
       threadId: ThreadId,
-    ): Effect.Effect<CursorSessionContext, ProviderAdapterSessionNotFoundError> => {
+    ): Effect.Effect<KimiSessionContext, ProviderAdapterSessionNotFoundError> => {
       const ctx = sessions.get(threadId);
       if (!ctx || ctx.stopped) {
         return Effect.fail(
@@ -456,12 +427,11 @@ export function makeCursorAdapter(
       return Effect.succeed(ctx);
     };
 
-    const stopSessionInternal = (ctx: CursorSessionContext) =>
+    const stopSessionInternal = (ctx: KimiSessionContext) =>
       Effect.gen(function* () {
         if (ctx.stopped) return;
         ctx.stopped = true;
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
-        yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
         if (ctx.notificationFiber) {
           yield* Fiber.interrupt(ctx.notificationFiber);
         }
@@ -476,7 +446,7 @@ export function makeCursorAdapter(
         });
       });
 
-    const startSession: CursorAdapterShape["startSession"] = (input) =>
+    const startSession: KimiAdapterShape["startSession"] = (input) =>
       withThreadLock(
         input.threadId,
         Effect.gen(function* () {
@@ -496,7 +466,7 @@ export function makeCursorAdapter(
           }
 
           const cwd = path.resolve(input.cwd.trim());
-          const cursorModelSelection =
+          const kimiModelSelection =
             input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
           const existing = sessions.get(input.threadId);
           if (existing && !existing.stopped) {
@@ -504,36 +474,35 @@ export function makeCursorAdapter(
           }
 
           const pendingApprovals = new Map<ApprovalRequestId, PendingApproval>();
-          const pendingUserInputs = new Map<ApprovalRequestId, PendingUserInput>();
           const sessionScope = yield* Scope.make("sequential");
           let sessionScopeTransferred = false;
           yield* Effect.addFinalizer(() =>
             sessionScopeTransferred ? Effect.void : Scope.close(sessionScope, Exit.void),
           );
-          let ctx!: CursorSessionContext;
+          let ctx!: KimiSessionContext;
 
-          const resumeSessionId = parseCursorResume(input.resumeCursor)?.sessionId;
+          const resumeSessionId = parseKimiResume(input.resumeCursor)?.sessionId;
           const acpNativeLoggers = makeAcpNativeLoggers({
             nativeEventLogger,
             provider: PROVIDER,
             threadId: input.threadId,
           });
 
-          // Resolve the CursorSettings used to spawn the ACP child. Production
+          // Resolve the KimiSettings used to spawn the ACP child. Production
           // leaves `options.resolveSettings` undefined so we use the value
           // captured at adapter construction — per-instance isolation is
           // enforced by the hydration layer rebuilding this adapter whenever
           // its config changes. Tests set `resolveSettings` to pull the latest
           // snapshot from `ServerSettingsService` so that mid-suite
-          // `updateSettings({ providers: { cursor: { binaryPath } } })` calls
+          // `updateSettings({ providers: { kimi: { binaryPath } } })` calls
           // actually take effect when the next session spawns.
-          const effectiveCursorSettings = options?.resolveSettings
+          const effectiveKimiSettings = options?.resolveSettings
             ? yield* options.resolveSettings
-            : cursorSettings;
+            : kimiSettings;
 
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
-          const acp = yield* makeCursorAcpRuntime({
-            cursorSettings: effectiveCursorSettings,
+          const acp = yield* makeKimiAcpRuntime({
+            kimiSettings: effectiveKimiSettings,
             ...(options?.environment ? { environment: options.environment } : {}),
             childProcessSpawner,
             cwd,
@@ -571,98 +540,6 @@ export function makeCursorAdapter(
             ),
           );
           const started = yield* Effect.gen(function* () {
-            yield* acp.handleExtRequest("cursor/ask_question", CursorAskQuestionRequest, (params) =>
-              mapExtensionFailure(
-                Effect.gen(function* () {
-                  yield* logNative(
-                    input.threadId,
-                    "cursor/ask_question",
-                    params,
-                    "acp.cursor.extension",
-                  );
-                  const requestId = ApprovalRequestId.make(yield* randomUUIDv4);
-                  const runtimeRequestId = RuntimeRequestId.make(requestId);
-                  const answers = yield* Deferred.make<ProviderUserInputAnswers>();
-                  pendingUserInputs.set(requestId, { answers });
-                  yield* offerRuntimeEvent({
-                    type: "user-input.requested",
-                    ...(yield* makeEventStamp()),
-                    provider: PROVIDER,
-                    threadId: input.threadId,
-                    turnId: ctx?.activeTurnId,
-                    requestId: runtimeRequestId,
-                    payload: { questions: extractAskQuestions(params) },
-                    raw: {
-                      source: "acp.cursor.extension",
-                      method: "cursor/ask_question",
-                      payload: params,
-                    },
-                  });
-                  const resolved = yield* Deferred.await(answers);
-                  pendingUserInputs.delete(requestId);
-                  yield* offerRuntimeEvent({
-                    type: "user-input.resolved",
-                    ...(yield* makeEventStamp()),
-                    provider: PROVIDER,
-                    threadId: input.threadId,
-                    turnId: ctx?.activeTurnId,
-                    requestId: runtimeRequestId,
-                    payload: { answers: resolved },
-                  });
-                  return { answers: resolved };
-                }),
-              ),
-            );
-            yield* acp.handleExtRequest("cursor/create_plan", CursorCreatePlanRequest, (params) =>
-              mapExtensionFailure(
-                Effect.gen(function* () {
-                  yield* logNative(
-                    input.threadId,
-                    "cursor/create_plan",
-                    params,
-                    "acp.cursor.extension",
-                  );
-                  yield* offerRuntimeEvent({
-                    type: "turn.proposed.completed",
-                    ...(yield* makeEventStamp()),
-                    provider: PROVIDER,
-                    threadId: input.threadId,
-                    turnId: ctx?.activeTurnId,
-                    payload: { planMarkdown: extractPlanMarkdown(params) },
-                    raw: {
-                      source: "acp.cursor.extension",
-                      method: "cursor/create_plan",
-                      payload: params,
-                    },
-                  });
-                  return { accepted: true } as const;
-                }),
-              ),
-            );
-            yield* acp.handleExtNotification(
-              "cursor/update_todos",
-              CursorUpdateTodosRequest,
-              (params) =>
-                mapExtensionFailure(
-                  Effect.gen(function* () {
-                    yield* logNative(
-                      input.threadId,
-                      "cursor/update_todos",
-                      params,
-                      "acp.cursor.extension",
-                    );
-                    if (ctx) {
-                      yield* emitPlanUpdate(
-                        ctx,
-                        extractTodosAsPlan(params),
-                        params,
-                        "acp.cursor.extension",
-                        "cursor/update_todos",
-                      );
-                    }
-                  }),
-                ),
-            );
             yield* acp.handleRequestPermission((params) =>
               mapExtensionFailure(
                 Effect.gen(function* () {
@@ -745,7 +622,7 @@ export function makeCursorAdapter(
             runtime: acp,
             runtimeMode: input.runtimeMode,
             interactionMode: undefined,
-            modelSelection: cursorModelSelection,
+            modelSelection: kimiModelSelection,
             mapError: ({ cause, method }) =>
               mapAcpToAdapterError(PROVIDER, input.threadId, method, cause),
           });
@@ -757,10 +634,10 @@ export function makeCursorAdapter(
             status: "ready",
             runtimeMode: input.runtimeMode,
             cwd,
-            model: cursorModelSelection?.model,
+            model: kimiModelSelection?.model,
             threadId: input.threadId,
             resumeCursor: {
-              schemaVersion: CURSOR_RESUME_VERSION,
+              schemaVersion: KIMI_RESUME_VERSION,
               sessionId: started.sessionId,
             },
             createdAt: now,
@@ -774,7 +651,6 @@ export function makeCursorAdapter(
             acp,
             notificationFiber: undefined,
             pendingApprovals,
-            pendingUserInputs,
             turns: [],
             lastPlanFingerprint: undefined,
             activeTurnId: undefined,
@@ -873,7 +749,7 @@ export function makeCursorAdapter(
             ),
           ).pipe(
             Effect.catch((cause) =>
-              Effect.logError("Failed to process Cursor runtime notification.", { cause }),
+              Effect.logError("Failed to process Kimi runtime notification.", { cause }),
             ),
             Effect.forkChild,
           );
@@ -894,7 +770,7 @@ export function makeCursorAdapter(
             ...(yield* makeEventStamp()),
             provider: PROVIDER,
             threadId: input.threadId,
-            payload: { state: "ready", reason: "Cursor ACP session ready" },
+            payload: { state: "ready", reason: "Kimi ACP session ready" },
           });
           yield* offerRuntimeEvent({
             type: "thread.started",
@@ -908,7 +784,7 @@ export function makeCursorAdapter(
         }).pipe(Effect.scoped),
       );
 
-    const sendTurn: CursorAdapterShape["sendTurn"] = (input) =>
+    const sendTurn: KimiAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(input.threadId);
         // A sendTurn while a prompt is in flight is a steer: the agent folds
@@ -925,7 +801,7 @@ export function makeCursorAdapter(
           const turnModelSelection =
             input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
           const model = turnModelSelection?.model ?? ctx.session.model;
-          const resolvedModel = resolveCursorAcpBaseModelId(model);
+          const resolvedModel = resolveKimiAcpBaseModelId(model);
           yield* applyRequestedSessionConfiguration({
             runtime: ctx.acp,
             runtimeMode: ctx.session.runtimeMode,
@@ -1059,11 +935,10 @@ export function makeCursorAdapter(
         );
       });
 
-    const interruptTurn: CursorAdapterShape["interruptTurn"] = (threadId) =>
+    const interruptTurn: KimiAdapterShape["interruptTurn"] = (threadId) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
-        yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
         yield* Effect.ignore(
           ctx.acp.cancel.pipe(
             Effect.mapError((error) =>
@@ -1073,7 +948,7 @@ export function makeCursorAdapter(
         );
       });
 
-    const respondToRequest: CursorAdapterShape["respondToRequest"] = (
+    const respondToRequest: KimiAdapterShape["respondToRequest"] = (
       threadId,
       requestId,
       decision,
@@ -1091,31 +966,29 @@ export function makeCursorAdapter(
         yield* Deferred.succeed(pending.decision, decision);
       });
 
-    const respondToUserInput: CursorAdapterShape["respondToUserInput"] = (
+    const respondToUserInput: KimiAdapterShape["respondToUserInput"] = (
       threadId,
       requestId,
-      answers,
+      _answers,
     ) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireSession(threadId);
-        const pending = ctx.pendingUserInputs.get(requestId);
-        if (!pending) {
-          return yield* new ProviderAdapterRequestError({
-            provider: PROVIDER,
-            method: "cursor/ask_question",
-            detail: `Unknown pending user-input request: ${requestId}`,
-          });
-        }
-        yield* Deferred.succeed(pending.answers, answers);
-      });
+      requireSession(threadId).pipe(
+        Effect.flatMap(
+          () =>
+            new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "session/elicitation",
+              detail: `Unknown pending user-input request: ${requestId}`,
+            }),
+        ),
+      );
 
-    const readThread: CursorAdapterShape["readThread"] = (threadId) =>
+    const readThread: KimiAdapterShape["readThread"] = (threadId) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
         return { threadId, turns: ctx.turns };
       });
 
-    const rollbackThread: CursorAdapterShape["rollbackThread"] = (threadId, numTurns) =>
+    const rollbackThread: KimiAdapterShape["rollbackThread"] = (threadId, numTurns) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
         if (!Number.isInteger(numTurns) || numTurns < 1) {
@@ -1130,7 +1003,7 @@ export function makeCursorAdapter(
         return { threadId, turns: ctx.turns };
       });
 
-    const stopSession: CursorAdapterShape["stopSession"] = (threadId) =>
+    const stopSession: KimiAdapterShape["stopSession"] = (threadId) =>
       withThreadLock(
         threadId,
         Effect.gen(function* () {
@@ -1139,22 +1012,22 @@ export function makeCursorAdapter(
         }),
       );
 
-    const listSessions: CursorAdapterShape["listSessions"] = () =>
+    const listSessions: KimiAdapterShape["listSessions"] = () =>
       Effect.sync(() => Array.from(sessions.values(), (c) => ({ ...c.session })));
 
-    const hasSession: CursorAdapterShape["hasSession"] = (threadId) =>
+    const hasSession: KimiAdapterShape["hasSession"] = (threadId) =>
       Effect.sync(() => {
         const c = sessions.get(threadId);
         return c !== undefined && !c.stopped;
       });
 
-    const stopAll: CursorAdapterShape["stopAll"] = () =>
+    const stopAll: KimiAdapterShape["stopAll"] = () =>
       Effect.forEach(sessions.values(), stopSessionInternal, { discard: true });
 
     yield* Effect.addFinalizer(() =>
       Effect.forEach(sessions.values(), stopSessionInternal, { discard: true }).pipe(
         Effect.catch((cause) =>
-          Effect.logError("Failed to emit Cursor session shutdown event.", { cause }),
+          Effect.logError("Failed to emit Kimi session shutdown event.", { cause }),
         ),
         Effect.tap(() => PubSub.shutdown(runtimeEventPubSub)),
         Effect.tap(() => managedNativeEventLogger?.close() ?? Effect.void),
@@ -1178,6 +1051,6 @@ export function makeCursorAdapter(
       hasSession,
       stopAll,
       streamEvents,
-    } satisfies CursorAdapterShape;
+    } satisfies KimiAdapterShape;
   });
 }

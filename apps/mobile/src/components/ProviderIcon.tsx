@@ -1,5 +1,5 @@
 import { useColorScheme } from "react-native";
-import { Path, Svg } from "react-native-svg";
+import { Circle, Path, Rect, Svg } from "react-native-svg";
 
 type ProviderIconProps = {
   readonly provider: string | null | undefined;
@@ -45,6 +45,20 @@ export function ProviderIcon(props: ProviderIconProps) {
           fill={isDarkMode ? "#EDECEC" : "#26251E"}
           d="M457.43,125.94L244.42,2.96c-6.84-3.95-15.28-3.95-22.12,0L9.3,125.94c-5.75,3.32-9.3,9.46-9.3,16.11v247.99c0,6.65,3.55,12.79,9.3,16.11l213.01,122.98c6.84,3.95,15.28,3.95,22.12,0l213.01-122.98c5.75-3.32,9.3-9.46,9.3-16.11v-247.99c0-6.65-3.55-12.79-9.3-16.11h-.01ZM444.05,151.99l-205.63,356.16c-1.39,2.4-5.06,1.42-5.06-1.36v-233.21c0-4.66-2.49-8.97-6.53-11.31L24.87,145.67c-2.4-1.39-1.42-5.06,1.36-5.06h411.26c5.84,0,9.49,6.33,6.57,11.39h-.01Z"
         />
+      </Svg>
+    );
+  }
+
+  if (props.provider === "kimi") {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 128 128" fill="none">
+        <Rect x="3" y="3" width="122" height="122" rx="27" fill="#080808" />
+        <Rect x="3.5" y="3.5" width="121" height="121" rx="26.5" stroke="#525252" />
+        <Path
+          fill="#FFFFFF"
+          d="M34 34h16v28.2L78.7 34H100L67.5 64.8 101 96H78.8L56.4 74.3 50 80.4V96H34V34Z"
+        />
+        <Circle cx="101" cy="27" r="8" fill="#56A8FF" />
       </Svg>
     );
   }

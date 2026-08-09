@@ -211,6 +211,22 @@ export const GrokIcon: Icon = ({ className, ...props }) => (
   </svg>
 );
 
+/**
+ * Compact vector adaptation of the official Kimi Code mark. The blue status
+ * dot is retained so the glyph stays recognizable at provider-picker sizes.
+ */
+export const KimiIcon: Icon = ({ className, ...props }) => (
+  <svg {...props} viewBox="0 0 128 128" fill="none" className={className}>
+    <rect x="3" y="3" width="122" height="122" rx="27" fill="#080808" />
+    <rect x="3.5" y="3.5" width="121" height="121" rx="26.5" stroke="#525252" />
+    <path
+      fill="#fff"
+      d="M34 34h16v28.2L78.7 34H100L67.5 64.8 101 96H78.8L56.4 74.3 50 80.4V96H34V34Z"
+    />
+    <circle cx="101" cy="27" r="8" fill="#56A8FF" />
+  </svg>
+);
+
 export const TraeIcon: Icon = (props) => (
   <svg {...props} viewBox="0 0 24 24" fill="currentColor">
     {/* Back rectangle: left strip + bottom strip drawn separately — empty bottom-left corner is the gap between them */}
