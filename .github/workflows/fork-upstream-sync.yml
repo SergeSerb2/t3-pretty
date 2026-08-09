@@ -1,0 +1,153 @@
+name: Fork Upstream Sync
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: fork-upstream-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Sync newest upstream nightly
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - id: discover
+        name: Discover newest upstream nightly
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/pingdotgg/t3code.git
+          latest_tag="$({
+            git ls-remote --tags --refs upstream 'refs/tags/v*-nightly.*' |
+              awk '{sub("refs/tags/", "", $2); print $2}' |
+              sort -V |
+              tail -n 1
+          })"
+          if [[ -z "$latest_tag" ]]; then
+            echo "No upstream nightly tag found." >&2
+            exit 1
+          fi
+
+          git fetch --no-tags upstream "refs/tags/$latest_tag:refs/tags/$latest_tag"
+          current_tag=""
+          if [[ -f .t3-fork/upstream-nightly ]]; then
+            current_tag="$(tr -d '[:space:]' < .t3-fork/upstream-nightly)"
+          fi
+
+          if [[ "$current_tag" == "$latest_tag" ]] &&
+            git merge-base --is-ancestor "$latest_tag^{commit}" HEAD; then
+            echo "Fork already contains $latest_tag."
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          branch="automation/upstream-${latest_tag//[^0-9A-Za-z._-]/-}"
+          echo "has_update=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$latest_tag" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Merge upstream into an automation branch
+        if: steps.discover.outputs.has_update == 'true'
+        shell: bash
+        env:
+          CLI_PROXY_API_KEY: ${{ secrets.CLI_PROXY_API_KEY }}
+          CLI_PROXY_API_URL: https://cli-proxy-api-production-1615.up.railway.app/v1
+          CLI_PROXY_MODEL: gpt-5.6-luna
+          CLI_PROXY_SERVICE_TIER: priority
+          UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
+          SYNC_BRANCH: ${{ steps.discover.outputs.branch }}
+        run: |
+          set -euo pipefail
+          git config user.name "t3code-fork-sync[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$SYNC_BRANCH" origin/main
+
+          set +e
+          git merge --no-ff --no-commit "$UPSTREAM_TAG"
+          merge_status=$?
+          set -e
+
+          unresolved="$(git diff --name-only --diff-filter=U)"
+          if [[ -n "$unresolved" ]]; then
+            node scripts/fork/resolve-git-conflicts.mjs
+          elif (( merge_status != 0 )); then
+            echo "Merge failed without producing resolvable conflicts." >&2
+            exit "$merge_status"
+          fi
+
+          if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
+            echo "Unresolved merge conflicts remain." >&2
+            exit 1
+          fi
+
+          mkdir -p .t3-fork
+          printf '%s\n' "$UPSTREAM_TAG" > .t3-fork/upstream-nightly
+          git add .t3-fork/upstream-nightly
+          git diff --check --cached
+
+          if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+            git commit -m "chore(sync): merge upstream $UPSTREAM_TAG"
+          elif ! git diff --cached --quiet; then
+            git commit -m "chore(sync): record upstream $UPSTREAM_TAG"
+          else
+            echo "Nothing changed after resolving $UPSTREAM_TAG."
+            exit 0
+          fi
+
+          git push --force-with-lease origin "HEAD:refs/heads/$SYNC_BRANCH"
+
+      - id: pull_request
+        name: Open or update sync pull request
+        if: steps.discover.outputs.has_update == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
+          SYNC_BRANCH: ${{ steps.discover.outputs.branch }}
+        run: |
+          set -euo pipefail
+          pr_url="$(gh pr list --head "$SYNC_BRANCH" --base main --state open --json url --jq '.[0].url // empty')"
+          if [[ -z "$pr_url" ]]; then
+            pr_url="$(gh pr create \
+              --base main \
+              --head "$SYNC_BRANCH" \
+              --title "chore(sync): merge upstream $UPSTREAM_TAG" \
+              --body "Automated hourly sync of the newest upstream T3 Code nightly. Clean merges are preserved directly; conflicts are resolved through CLIProxyAPI with gpt-5.6-luna at max reasoning and then gated by the fork CI checks.")"
+          fi
+          echo "url=$pr_url" >> "$GITHUB_OUTPUT"
+          gh pr merge "$pr_url" --auto --merge
+
+      - name: Report blocked sync
+        if: failure() && steps.discover.outputs.has_update == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
+        run: |
+          title="Upstream sync blocked: $UPSTREAM_TAG"
+          existing="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+          body="The guarded hourly sync could not safely merge $UPSTREAM_TAG. Inspect the failed run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
