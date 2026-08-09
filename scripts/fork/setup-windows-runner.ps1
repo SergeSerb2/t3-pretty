@@ -1,5 +1,52 @@
 $ErrorActionPreference = "Stop"
 
+$pwshDir = Join-Path $env:ProgramFiles "PowerShell\7"
+$pwshPath = Join-Path $pwshDir "pwsh.exe"
+if (-not (Test-Path $pwshPath)) {
+  $pwshVersion = "7.6.4"
+  $archive = Join-Path $env:TEMP "PowerShell-$pwshVersion-win-x64.msi"
+  try {
+    Invoke-WebRequest `
+      -UseBasicParsing `
+      -Uri "https://github.com/PowerShell/PowerShell/releases/download/v$pwshVersion/PowerShell-$pwshVersion-win-x64.msi" `
+      -OutFile $archive
+    $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+    $expected = "d11942df52fd12470169797abfa4781d9480efdc81000ba4fa55a5b921ed8dd0"
+    if ($actual -ne $expected) {
+      throw "PowerShell MSI checksum mismatch"
+    }
+
+    $process = Start-Process msiexec.exe `
+      -ArgumentList @(
+        "/i",
+        "`"$archive`"",
+        "/qn",
+        "ADD_PATH=1",
+        "REGISTER_MANIFEST=1",
+        "USE_MU=0",
+        "ENABLE_MU=0"
+      ) `
+      -Wait `
+      -PassThru
+    if ($process.ExitCode -ne 0) {
+      throw "PowerShell MSI failed with exit $($process.ExitCode)"
+    }
+  }
+  finally {
+    Remove-Item $archive -Force -ErrorAction SilentlyContinue
+  }
+
+  if (-not (Test-Path $pwshPath)) {
+    throw "PowerShell 7 was installed but $pwshPath was not found"
+  }
+}
+
+$machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+if (($machinePath -split ";") -notcontains $pwshDir) {
+  [Environment]::SetEnvironmentVariable("Path", "$machinePath;$pwshDir", "Machine")
+}
+$env:Path = "$pwshDir;$env:Path"
+
 $tokenPath = "C:\dev\t3-runner-token.json"
 $token = (Get-Content $tokenPath -Raw | ConvertFrom-Json).token
 Remove-Item $tokenPath -Force

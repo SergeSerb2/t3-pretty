@@ -80,12 +80,23 @@ jobs:
           set -euo pipefail
           git config user.name "t3code-fork-sync[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$SYNC_BRANCH" origin/main
 
-          set +e
-          git merge --no-ff --no-commit "$UPSTREAM_TAG"
-          merge_status=$?
-          set -e
+          if git fetch origin "refs/heads/$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH" 2>/dev/null &&
+            [[ "$(git show "origin/$SYNC_BRANCH:.t3-fork/upstream-nightly" 2>/dev/null | tr -d '[:space:]')" == "$UPSTREAM_TAG" ]] &&
+            git merge-base --is-ancestor "$UPSTREAM_TAG^{commit}" "origin/$SYNC_BRANCH"; then
+            echo "Reusing the previously validated AI resolution for $UPSTREAM_TAG."
+            git checkout -B "$SYNC_BRANCH" "origin/$SYNC_BRANCH"
+            set +e
+            git merge --no-edit origin/main
+            merge_status=$?
+            set -e
+          else
+            git checkout -B "$SYNC_BRANCH" origin/main
+            set +e
+            git merge --no-ff --no-commit "$UPSTREAM_TAG"
+            merge_status=$?
+            set -e
+          fi
 
           unresolved="$(git diff --name-only --diff-filter=U)"
           if [[ -n "$unresolved" ]]; then
@@ -111,10 +122,14 @@ jobs:
             git commit -m "chore(sync): record upstream $UPSTREAM_TAG"
           else
             echo "Nothing changed after resolving $UPSTREAM_TAG."
-            exit 0
           fi
 
-          git push --force-with-lease origin "HEAD:refs/heads/$SYNC_BRANCH"
+          remote_head="$(git rev-parse -q --verify "origin/$SYNC_BRANCH" 2>/dev/null || true)"
+          if [[ "$(git rev-parse HEAD)" == "$remote_head" ]]; then
+            echo "$SYNC_BRANCH is already current."
+          else
+            git push --force-with-lease origin "HEAD:refs/heads/$SYNC_BRANCH"
+          fi
 
       - id: pull_request
         name: Validate and merge sync pull request
@@ -126,14 +141,20 @@ jobs:
           SYNC_BRANCH: ${{ steps.discover.outputs.branch }}
         run: |
           set -euo pipefail
-          pr_url="$(gh pr list --head "$SYNC_BRANCH" --base main --state open --json url --jq '.[0].url // empty')"
-          if [[ -z "$pr_url" ]]; then
-            pr_url="$(gh pr create \
-              --base main \
-              --head "$SYNC_BRANCH" \
-              --title "chore(sync): merge upstream $UPSTREAM_TAG" \
-              --body "Automated hourly sync of the newest upstream T3 Code nightly. Clean merges are preserved directly; conflicts are resolved through CLIProxyAPI with gpt-5.6-luna at max reasoning and then gated by the fork CI checks.")"
+          pr_number="$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+            -f state=open \
+            -f base=main \
+            -f head="$GITHUB_REPOSITORY_OWNER:$SYNC_BRANCH" \
+            --jq '.[0].number // empty')"
+          if [[ -z "$pr_number" ]]; then
+            pr_number="$(gh api --method POST "repos/$GITHUB_REPOSITORY/pulls" \
+              -f base=main \
+              -f head="$SYNC_BRANCH" \
+              -f title="chore(sync): merge upstream $UPSTREAM_TAG" \
+              -f body="Automated hourly sync of the newest upstream T3 Code nightly. Clean merges are preserved directly; conflicts are resolved through CLIProxyAPI with gpt-5.6-luna at max reasoning and then gated by the fork CI checks." \
+              --jq '.number')"
           fi
+          pr_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr_number"
           echo "url=$pr_url" >> "$GITHUB_OUTPUT"
 
           head_sha="$(git rev-parse HEAD)"
@@ -154,7 +175,11 @@ jobs:
           [[ -n "$run_id" ]] || { echo "Dispatched CI run was not found." >&2; exit 1; }
 
           gh run watch "$run_id" --exit-status --interval 15
-          gh pr merge "$pr_url" --merge --delete-branch --match-head-commit "$head_sha"
+          gh api --method PUT "repos/$GITHUB_REPOSITORY/pulls/$pr_number/merge" \
+            -f merge_method=merge \
+            -f sha="$head_sha" \
+            --jq 'if .merged then .message else error(.message) end'
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$SYNC_BRANCH" || true
 
           # GITHUB_TOKEN-authored merges do not reliably emit recursive push
           # workflows, so dispatch the release explicitly. The release workflow
@@ -169,10 +194,13 @@ jobs:
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
         run: |
           title="Upstream sync blocked: $UPSTREAM_TAG"
-          existing="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+          existing="$(gh api --method GET "repos/$GITHUB_REPOSITORY/issues" \
+            -f state=open \
+            -f per_page=100 \
+            --jq ".[] | select(.pull_request == null and .title == \"$title\") | .number" | head -n 1)"
           body="The guarded hourly sync could not safely merge $UPSTREAM_TAG. Inspect the failed run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           if [[ -n "$existing" ]]; then
-            gh issue comment "$existing" --body "$body"
+            gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$existing/comments" -f body="$body" >/dev/null
           else
-            gh issue create --title "$title" --body "$body"
+            gh api --method POST "repos/$GITHUB_REPOSITORY/issues" -f title="$title" -f body="$body" >/dev/null
           fi
