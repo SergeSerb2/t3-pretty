@@ -263,10 +263,17 @@ jobs:
         shell: powershell
         run: |
           $pwshDir = Join-Path $env:ProgramFiles "PowerShell\7"
+          $gitBashDir = Join-Path $env:ProgramFiles "Git\bin"
           if (-not (Test-Path (Join-Path $pwshDir "pwsh.exe"))) {
             throw "PowerShell 7 is required at $pwshDir"
           }
+          if (-not (Test-Path (Join-Path $gitBashDir "bash.exe"))) {
+            throw "Git for Windows Bash is required at $gitBashDir"
+          }
           $pwshDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          # Composite actions request `shell: bash`. Put Git Bash ahead of the
+          # Windows WSL launcher so they do not require a local WSL distro.
+          $gitBashDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
