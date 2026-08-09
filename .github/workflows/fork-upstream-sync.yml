@@ -14,6 +14,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  statuses: write
 
 jobs:
   sync:
@@ -182,6 +183,28 @@ jobs:
           [[ -n "$run_id" ]] || { echo "Dispatched CI run was not found." >&2; exit 1; }
 
           gh run watch "$run_id" -R "$GITHUB_REPOSITORY" --exit-status --interval 15
+          ci_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id"
+          for context in "Check" "Test" "Mobile Native Static Analysis" "Release Smoke"; do
+            gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$head_sha" \
+              -f state=success \
+              -f context="$context" \
+              -f description="Passed in dispatched CI run $run_id" \
+              -f target_url="$ci_url" >/dev/null
+          done
+
+          merge_state=""
+          for _ in {1..12}; do
+            merge_state="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" --jq '.mergeable_state')"
+            if [[ "$merge_state" == "clean" || "$merge_state" == "unstable" ]]; then
+              break
+            fi
+            sleep 5
+          done
+          [[ "$merge_state" == "clean" || "$merge_state" == "unstable" ]] || {
+            echo "Pull request remained $merge_state after CI statuses were published." >&2
+            exit 1
+          }
+
           gh api --method PUT "repos/$GITHUB_REPOSITORY/pulls/$pr_number/merge" \
             -f merge_method=merge \
             -f sha="$head_sha" \
