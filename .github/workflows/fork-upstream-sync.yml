@@ -98,10 +98,16 @@ jobs:
             set -e
           fi
 
+          # The fork owns its release and security automation. Keep those files
+          # pinned to fork main instead of allowing an upstream tag to rewrite
+          # workflows or requiring a broadly scoped personal token.
+          git restore --source=origin/main --staged --worktree -- .github/workflows
+
           unresolved="$(git diff --name-only --diff-filter=U)"
           if [[ -n "$unresolved" ]]; then
             node scripts/fork/resolve-git-conflicts.mjs
-          elif (( merge_status != 0 )); then
+          elif (( merge_status != 0 )) &&
+            ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
             echo "Merge failed without producing resolvable conflicts." >&2
             exit "$merge_status"
           fi
