@@ -412,8 +412,31 @@ jobs:
           win_manifest="$(find release-assets -maxdepth 1 -name '*.yml' ! -name '*-mac.yml' -print -quit)"
           test -n "$mac_manifest"
           test -n "$win_manifest"
-          grep -F "version: $RELEASE_VERSION" "$mac_manifest"
-          grep -F "version: $RELEASE_VERSION" "$win_manifest"
+          node --input-type=module - "$mac_manifest" "$win_manifest" "$RELEASE_VERSION" <<'NODE'
+          import fs from "node:fs";
+          import { parseUpdateManifest } from "./scripts/lib/update-manifest.ts";
+
+          const [macPath, winPath, expectedVersion] = process.argv.slice(2);
+          const mac = parseUpdateManifest(fs.readFileSync(macPath, "utf8"), macPath, "macOS");
+          const win = parseUpdateManifest(fs.readFileSync(winPath, "utf8"), winPath, "Windows");
+
+          for (const [platform, manifest] of [["macOS", mac], ["Windows", win]]) {
+            if (manifest.version !== expectedVersion) {
+              throw new Error(`${platform} manifest version ${manifest.version} != ${expectedVersion}`);
+            }
+          }
+
+          const macUrls = mac.files?.map((file) => file.url) ?? [];
+          if (!macUrls.some((url) => url.endsWith("-arm64.zip"))) {
+            throw new Error("macOS manifest is missing the arm64 zip");
+          }
+          if (!macUrls.some((url) => url.endsWith("-x64.zip"))) {
+            throw new Error("macOS manifest is missing the x64 zip");
+          }
+          if (!(win.files?.some((file) => file.url.endsWith("-x64.exe")) ?? false)) {
+            throw new Error("Windows manifest is missing the x64 installer");
+          }
+          NODE
           mac_zip="$(find release-assets -maxdepth 1 -name '*.zip' -print -quit)"
           test -n "$mac_zip"
           unzip -p "$mac_zip" '*/Contents/Resources/app-update.yml' > app-update.yml
