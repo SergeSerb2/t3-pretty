@@ -1,6 +1,6 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { LinkIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
+import { LinkIcon, LoaderCircleIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
@@ -17,6 +17,7 @@ import {
 import { useEnvironments } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { selectDraftLandingProject } from "~/lib/newThreadDefaults";
 import { cn } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
@@ -39,18 +40,28 @@ function ChatIndexRouteView() {
 function IndexDraftLanding() {
   const projects = useProjects();
   const threads = useThreadShells();
+  const { environments } = useEnvironments();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
-  const mostRecentProject = useMemo(
+  const connectedEnvironmentIds = useMemo(
     () =>
-      bootstrapped
-        ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
-        : null,
-    [bootstrapped, projects, threads],
+      new Set(
+        environments
+          .filter((environment) => environment.connection.phase === "connected")
+          .map((environment) => environment.environmentId),
+      ),
+    [environments],
   );
+  const mostRecentProject = useMemo(() => {
+    if (!bootstrapped) return null;
+    return selectDraftLandingProject(
+      sortScopedProjectsForSidebar(projects, threads, "updated_at"),
+      connectedEnvironmentIds,
+    );
+  }, [bootstrapped, connectedEnvironmentIds, projects, threads]);
 
   useEffect(() => {
     if (mostRecentProject === null || startingRef.current) {
@@ -66,7 +77,7 @@ function IndexDraftLanding() {
   }, [handleNewThread, mostRecentProject, startState.retryRequest]);
 
   if (!bootstrapped) {
-    return null;
+    return <DraftStartingState title="Loading projects…" />;
   }
   if (mostRecentProject !== null) {
     return startState.failed ? (
@@ -78,9 +89,30 @@ function IndexDraftLanding() {
           }));
         }}
       />
-    ) : null;
+    ) : (
+      <DraftStartingState title="Starting a new thread…" />
+    );
   }
   return <NoProjectsHero />;
+}
+
+function DraftStartingState({ title }: { readonly title: string }) {
+  return (
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
+      <Empty className="flex-1">
+        <EmptyHeader className="max-w-md">
+          <LoaderCircleIcon
+            aria-hidden
+            className="mx-auto size-5 animate-spin text-muted-foreground motion-reduce:animate-none"
+          />
+          <EmptyTitle className="text-foreground text-lg">{title}</EmptyTitle>
+          <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
+            {APP_DISPLAY_NAME} is preparing the composer.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    </SidebarInset>
+  );
 }
 
 function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {

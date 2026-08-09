@@ -25,7 +25,9 @@ import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
 import { readThreadShell, useProjects, useThread } from "../state/entities";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
 import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
+import { shouldReadProjectFileThreadEnvMode } from "../lib/newThreadDefaults";
 import { primaryServerSettingsAtom } from "../state/server";
+import { useEnvironments } from "../state/environments";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
@@ -58,6 +60,17 @@ export function useNewThreadHandler() {
   // set those values on a remote server.
   const primaryServerSettings = useAtomValue(primaryServerSettingsAtom);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const { environments } = useEnvironments();
+  const environmentConnectedById = useMemo(
+    () =>
+      new Map(
+        environments.map(
+          (environment) =>
+            [environment.environmentId, environment.connection.phase === "connected"] as const,
+        ),
+      ),
+    [environments],
+  );
   const router = useRouter();
   const getCurrentRouteTarget = useCallback(() => {
     const currentRouteParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
@@ -131,7 +144,12 @@ export function useNewThreadHandler() {
       // skipped entirely when a higher-priority source decides, and its
       // query atom caches per project after the first call.
       const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
-        const consultProjectFile = project !== undefined && project.defaultThreadEnvMode == null;
+        const consultProjectFile =
+          project !== undefined &&
+          shouldReadProjectFileThreadEnvMode({
+            projectDefault: project.defaultThreadEnvMode,
+            environmentConnected: environmentConnectedById.get(project.environmentId) === true,
+          });
         return resolveDefaultThreadEnvMode({
           projectSetting: project?.defaultThreadEnvMode,
           projectFile: consultProjectFile
@@ -381,7 +399,14 @@ export function useNewThreadHandler() {
         });
       })();
     },
-    [getCurrentRouteTarget, primaryServerSettings, projectGroupingSettings, projects, router],
+    [
+      environmentConnectedById,
+      getCurrentRouteTarget,
+      primaryServerSettings,
+      projectGroupingSettings,
+      projects,
+      router,
+    ],
   );
 }
 
