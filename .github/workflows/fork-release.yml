@@ -142,7 +142,19 @@ jobs:
 
       - name: Prepare macOS runner PATH
         shell: bash
-        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+        run: |
+          set -euo pipefail
+          rustup_bin_dir="$(dirname "$(command -v rustup)")"
+          if [[ ! -x "$rustup_bin_dir/rustc" ]]; then
+            rustup_bin_dir="$(brew --prefix rustup)/bin"
+          fi
+          mkdir -p "$HOME/.cargo/bin"
+          for tool in cargo rustc rustdoc rustfmt clippy-driver; do
+            test -x "$rustup_bin_dir/$tool"
+            ln -sf "$rustup_bin_dir/$tool" "$HOME/.cargo/bin/$tool"
+          done
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustc" +stable --version
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1

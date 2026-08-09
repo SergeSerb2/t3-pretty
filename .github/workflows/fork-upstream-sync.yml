@@ -158,11 +158,12 @@ jobs:
           echo "url=$pr_url" >> "$GITHUB_OUTPUT"
 
           head_sha="$(git rev-parse HEAD)"
-          gh workflow run ci.yml --ref "$SYNC_BRANCH"
+          gh workflow run ci.yml -R "$GITHUB_REPOSITORY" --ref "$SYNC_BRANCH"
 
           run_id=""
           for _ in {1..12}; do
             run_id="$(gh run list \
+              -R "$GITHUB_REPOSITORY" \
               --workflow ci.yml \
               --branch "$SYNC_BRANCH" \
               --event workflow_dispatch \
@@ -174,7 +175,7 @@ jobs:
           done
           [[ -n "$run_id" ]] || { echo "Dispatched CI run was not found." >&2; exit 1; }
 
-          gh run watch "$run_id" --exit-status --interval 15
+          gh run watch "$run_id" -R "$GITHUB_REPOSITORY" --exit-status --interval 15
           gh api --method PUT "repos/$GITHUB_REPOSITORY/pulls/$pr_number/merge" \
             -f merge_method=merge \
             -f sha="$head_sha" \
@@ -184,7 +185,7 @@ jobs:
           # GITHUB_TOKEN-authored merges do not reliably emit recursive push
           # workflows, so dispatch the release explicitly. The release workflow
           # is commit-idempotent if a normal push event also arrives.
-          gh workflow run fork-release.yml --ref main
+          gh workflow run fork-release.yml -R "$GITHUB_REPOSITORY" --ref main
 
       - name: Report blocked sync
         if: failure() && steps.discover.outputs.has_update == 'true'
