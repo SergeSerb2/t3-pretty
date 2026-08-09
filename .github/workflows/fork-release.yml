@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       should_release: ${{ steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true' }}
+      windows_release: ${{ steps.signing.outputs.windows }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
       name: ${{ steps.release.outputs.name }}
@@ -83,14 +84,20 @@ jobs:
           AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
         run: |
           set -euo pipefail
-          required=(
+          # macOS signing is the release floor. Windows signing is optional:
+          # when Azure Trusted Signing is not configured the release ships
+          # macOS-only instead of skipping entirely. MACOS_PROVISIONING_PROFILE
+          # is optional; without it the build sets
+          # T3CODE_MACOS_SKIP_PASSKEY_PROFILE and passkey login degrades.
+          mac_required=(
             CSC_LINK
             CSC_KEY_PASSWORD
             APPLE_API_KEY
             APPLE_API_KEY_ID
             APPLE_API_ISSUER
             APPLE_TEAM_ID
-            MACOS_PROVISIONING_PROFILE
+          )
+          win_required=(
             AZURE_TENANT_ID
             AZURE_CLIENT_ID
             AZURE_CLIENT_SECRET
@@ -99,15 +106,25 @@ jobs:
             AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME
             AZURE_TRUSTED_SIGNING_PUBLISHER_NAME
           )
-          missing=()
-          for name in "${required[@]}"; do
-            [[ -n "${!name:-}" ]] || missing+=("$name")
+          missing_mac=()
+          for name in "${mac_required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing_mac+=("$name")
           done
-          if (( ${#missing[@]} > 0 )); then
-            printf 'Skipping updater release because signing is not configured. Missing: %s\n' "${missing[*]}"
+          missing_win=()
+          for name in "${win_required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing_win+=("$name")
+          done
+          if (( ${#missing_mac[@]} > 0 )); then
+            printf 'Skipping updater release because macOS signing is not configured. Missing: %s\n' "${missing_mac[*]}"
             echo 'configured=false' >> "$GITHUB_OUTPUT"
           else
             echo 'configured=true' >> "$GITHUB_OUTPUT"
+          fi
+          if (( ${#missing_win[@]} > 0 )); then
+            printf 'Windows signing is not configured; releasing macOS-only. Missing: %s\n' "${missing_win[*]}"
+            echo 'windows=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'windows=true' >> "$GITHUB_OUTPUT"
           fi
 
       - id: release
@@ -132,7 +149,7 @@ jobs:
   build_wsl_node_pty:
     name: Build WSL node-pty (linux-x64)
     needs: preflight
-    if: needs.preflight.outputs.should_release == 'true'
+    if: needs.preflight.outputs.should_release == 'true' && needs.preflight.outputs.windows_release == 'true'
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -265,7 +282,6 @@ jobs:
             "$APPLE_API_KEY_ID"
             "$APPLE_API_ISSUER"
             "$APPLE_TEAM_ID"
-            "$MACOS_PROVISIONING_PROFILE"
           )
           if printf '%s\n' "${required[@]}" | grep -q '^$'; then
             echo "Refusing to build an unsigned macOS updater artifact." >&2
@@ -274,10 +290,15 @@ jobs:
           key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
           printf '%s' "$APPLE_API_KEY" > "$key_path"
           export APPLE_API_KEY="$key_path"
-          profile_path="$RUNNER_TEMP/t3code.provisionprofile"
-          printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
           export T3CODE_APPLE_TEAM_ID="$APPLE_TEAM_ID"
-          export T3CODE_MACOS_PROVISIONING_PROFILE="$profile_path"
+          if [[ -n "$MACOS_PROVISIONING_PROFILE" ]]; then
+            profile_path="$RUNNER_TEMP/t3code.provisionprofile"
+            printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
+            export T3CODE_MACOS_PROVISIONING_PROFILE="$profile_path"
+          else
+            echo "No provisioning profile configured; signed build ships without the passkey entitlement."
+            export T3CODE_MACOS_SKIP_PASSKEY_PROFILE=1
+          fi
           args+=(--signed)
           vp run dist:desktop:artifact "${args[@]}"
 
@@ -324,7 +345,7 @@ jobs:
   build_windows:
     name: Build Windows x64
     needs: [preflight, build_wsl_node_pty]
-    if: needs.preflight.outputs.should_release == 'true' && needs.build_wsl_node_pty.result == 'success'
+    if: needs.preflight.outputs.should_release == 'true' && needs.preflight.outputs.windows_release == 'true' && needs.build_wsl_node_pty.result == 'success'
     permissions:
       contents: read
     runs-on: [self-hosted, Windows, X64, t3code-fork, release-only]
@@ -451,7 +472,11 @@ jobs:
   release:
     name: Publish fork updater release
     needs: [preflight, build_macos, build_windows]
-    if: needs.preflight.outputs.should_release == 'true' && needs.build_macos.result == 'success' && needs.build_windows.result == 'success'
+    if: >-
+      !cancelled() &&
+      needs.preflight.outputs.should_release == 'true' &&
+      needs.build_macos.result == 'success' &&
+      (needs.build_windows.result == 'success' || needs.build_windows.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -501,21 +526,28 @@ jobs:
         shell: bash
         env:
           RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+          HAS_WINDOWS: ${{ needs.build_windows.result == 'success' }}
         run: |
           set -euo pipefail
           mac_manifest="$(find release-assets -maxdepth 1 -name '*-mac.yml' -print -quit)"
-          win_manifest="$(find release-assets -maxdepth 1 -name 'nightly.yml' -print -quit)"
           test -n "$mac_manifest"
-          test -n "$win_manifest"
+          win_manifest=""
+          if [[ "$HAS_WINDOWS" == "true" ]]; then
+            win_manifest="$(find release-assets -maxdepth 1 -name 'nightly.yml' -print -quit)"
+            test -n "$win_manifest"
+          fi
           node --input-type=module - "$mac_manifest" "$win_manifest" "$RELEASE_VERSION" <<'NODE'
           import fs from "node:fs";
           import { parseUpdateManifest } from "./scripts/lib/update-manifest.ts";
 
           const [macPath, winPath, expectedVersion] = process.argv.slice(2);
           const mac = parseUpdateManifest(fs.readFileSync(macPath, "utf8"), macPath, "macOS");
-          const win = parseUpdateManifest(fs.readFileSync(winPath, "utf8"), winPath, "Windows");
+          const win = winPath
+            ? parseUpdateManifest(fs.readFileSync(winPath, "utf8"), winPath, "Windows")
+            : undefined;
 
-          for (const [platform, manifest] of [["macOS", mac], ["Windows", win]]) {
+          const manifests = [["macOS", mac], ...(win ? [["Windows", win]] : [])];
+          for (const [platform, manifest] of manifests) {
             if (manifest.version !== expectedVersion) {
               throw new Error(`${platform} manifest version ${manifest.version} != ${expectedVersion}`);
             }
@@ -528,7 +560,7 @@ jobs:
           if (!macUrls.some((url) => url.endsWith("-x64.zip"))) {
             throw new Error("macOS manifest is missing the x64 zip");
           }
-          if (!(win.files?.some((file) => file.url.endsWith("-x64.exe")) ?? false)) {
+          if (win && !(win.files?.some((file) => file.url.endsWith("-x64.exe")) ?? false)) {
             throw new Error("Windows manifest is missing the x64 installer");
           }
           NODE
