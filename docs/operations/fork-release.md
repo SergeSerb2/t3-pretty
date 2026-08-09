@@ -7,7 +7,9 @@ source code on installed machines.
 
 1. `Fork Upstream Sync` runs at the top of every hour and finds the newest
    `pingdotgg/t3code` nightly tag.
-2. It merges that tag into an `automation/upstream-*` branch and opens a pull request.
+2. It merges that tag into an `automation/upstream-*` branch and opens a pull request. The fork
+   deliberately keeps `.github/workflows` from its own `main`; upstream workflow changes cannot
+   replace the trusted sync/release boundary or require a personal token with workflow scope.
 3. Clean changes remain untouched. If Git reports text conflicts, the workflow asks the Railway
    CLIProxyAPI `gpt-5.6-luna` model to resolve each file with max reasoning. The prompt treats fork
    behavior as authoritative while requiring compatible upstream behavior to be retained.
