@@ -1,0 +1,409 @@
+name: Fork Desktop Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: fork-desktop-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Resolve fork release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      should_release: ${{ steps.existing.outputs.should_release }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      name: ${{ steps.release.outputs.name }}
+      upstream_tag: ${{ steps.release.outputs.upstream_tag }}
+      ref: ${{ github.sha }}
+    steps:
+      - name: Checkout trusted main commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Fetch upstream release tags
+        run: |
+          git remote add upstream https://github.com/pingdotgg/t3code.git
+          git fetch --force --tags upstream
+
+      - id: existing
+        name: Skip an already released commit
+        shell: bash
+        run: |
+          existing_tag="$(git tag --points-at HEAD --list 'fork-v*' --sort=-version:refname | head -n 1)"
+          if [[ -n "$existing_tag" ]]; then
+            echo "Commit already has fork release $existing_tag."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - id: release
+        name: Create a monotonic fork version
+        if: steps.existing.outputs.should_release == 'true'
+        run: node scripts/fork/resolve-fork-release.mjs
+
+      - name: Setup release-smoke dependencies
+        if: steps.existing.outputs.should_release == 'true'
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+
+      - name: Exercise release-only workflow steps
+        if: steps.existing.outputs.should_release == 'true'
+        run: node scripts/release-smoke.ts
+
+  build_wsl_node_pty:
+    name: Build WSL node-pty (linux-x64)
+    needs: preflight
+    if: needs.preflight.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout trusted main commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=t3...
+
+      - name: Build node-pty Linux prebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
+          pty_dir="$(dirname "$pty_pkg")"
+          ( cd "$pty_dir" && npx --yes node-gyp rebuild )
+          mkdir -p wsl-prebuild
+          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
+          file wsl-prebuild/pty.node
+
+      - name: Upload WSL prebuild
+        uses: actions/upload-artifact@v7
+        with:
+          name: fork-wsl-node-pty-x64
+          path: wsl-prebuild/pty.node
+          if-no-files-found: error
+
+  build_macos:
+    name: Build macOS ${{ matrix.arch }}
+    needs: preflight
+    if: needs.preflight.outputs.should_release == 'true'
+    runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            rust_target: aarch64-apple-darwin
+          - arch: x64
+            rust_target: x86_64-apple-darwin
+    steps:
+      - name: Checkout trusted main commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+          clean: true
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/desktop...
+              - --filter=t3...
+              - --filter=@t3tools/scripts...
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
+
+      - name: Build macOS updater artifact
+        shell: bash
+        env:
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
+          T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.T3CODE_CLERK_PUBLISHABLE_KEY }}
+          T3CODE_CLERK_PASSKEY_RP_DOMAINS: ${{ vars.CLERK_PASSKEY_RP_DOMAINS }}
+        run: |
+          set -euo pipefail
+          args=(
+            --platform mac
+            --target dmg
+            --arch "${{ matrix.arch }}"
+            --build-version "${{ needs.preflight.outputs.version }}"
+            --verbose
+          )
+          required=(
+            "$CSC_LINK"
+            "$CSC_KEY_PASSWORD"
+            "$APPLE_API_KEY"
+            "$APPLE_API_KEY_ID"
+            "$APPLE_API_ISSUER"
+            "$APPLE_TEAM_ID"
+            "$MACOS_PROVISIONING_PROFILE"
+          )
+          if printf '%s\n' "${required[@]}" | grep -q '^$'; then
+            echo "macOS signing is not configured; artifact will be unsigned and cannot auto-install until signing secrets are added."
+          else
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf '%s' "$APPLE_API_KEY" > "$key_path"
+            export APPLE_API_KEY="$key_path"
+            profile_path="$RUNNER_TEMP/t3code.provisionprofile"
+            printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
+            export T3CODE_APPLE_TEAM_ID="$APPLE_TEAM_ID"
+            export T3CODE_MACOS_PROVISIONING_PROFILE="$profile_path"
+            args+=(--signed)
+          fi
+          vp run dist:desktop:artifact "${args[@]}"
+
+      - name: Collect macOS release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+          find release -maxdepth 1 -type f \( \
+            -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name '*.yml' \
+          \) -exec cp {} release-publish/ \;
+          if [[ "${{ matrix.arch }}" == "x64" ]]; then
+            for manifest in release-publish/*-mac.yml; do
+              [[ -e "$manifest" ]] || continue
+              mv "$manifest" "${manifest%.yml}-x64.yml"
+            done
+          fi
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: fork-desktop-mac-${{ matrix.arch }}
+          path: release-publish/*
+          if-no-files-found: error
+
+  build_windows:
+    name: Build Windows x64
+    needs: [preflight, build_wsl_node_pty]
+    if: needs.preflight.outputs.should_release == 'true' && needs.build_wsl_node_pty.result == 'success'
+    runs-on: [self-hosted, Windows, X64, t3code-fork, release-only]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout trusted main commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+          clean: true
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/desktop...
+              - --filter=t3...
+              - --filter=@t3tools/scripts...
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Download WSL prebuild
+        uses: actions/download-artifact@v8
+        with:
+          name: fork-wsl-node-pty-x64
+          path: wsl-prebuild
+
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
+
+      - name: Build Windows updater artifact
+        shell: bash
+        env:
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
+        run: |
+          set -euo pipefail
+          args=(
+            --platform win
+            --target nsis
+            --arch x64
+            --build-version "${{ needs.preflight.outputs.version }}"
+            --wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
+            --verbose
+          )
+          required=(
+            "$AZURE_TENANT_ID"
+            "$AZURE_CLIENT_ID"
+            "$AZURE_CLIENT_SECRET"
+            "$AZURE_TRUSTED_SIGNING_ENDPOINT"
+            "$AZURE_TRUSTED_SIGNING_ACCOUNT_NAME"
+            "$AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME"
+            "$AZURE_TRUSTED_SIGNING_PUBLISHER_NAME"
+          )
+          if printf '%s\n' "${required[@]}" | grep -q '^$'; then
+            echo "Windows signing is not configured; building an unsigned fork installer."
+          else
+            args+=(--signed)
+          fi
+          vp run dist:desktop:artifact "${args[@]}"
+
+      - name: Collect Windows release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+          find release -maxdepth 1 -type f \( \
+            -name '*.exe' -o -name '*.blockmap' -o -name '*.yml' \
+          \) -exec cp {} release-publish/ \;
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: fork-desktop-win-x64
+          path: release-publish/*
+          if-no-files-found: error
+
+  release:
+    name: Publish fork updater release
+    needs: [preflight, build_macos, build_windows]
+    if: needs.preflight.outputs.should_release == 'true' && needs.build_macos.result == 'success' && needs.build_windows.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout trusted main commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup manifest tooling
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: fork-desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Merge macOS architecture manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=false
+          for x64_manifest in release-assets/*-mac-x64.yml; do
+            [[ -e "$x64_manifest" ]] || continue
+            arm64_manifest="${x64_manifest%-x64.yml}.yml"
+            [[ -f "$arm64_manifest" ]] || { echo "Missing $arm64_manifest" >&2; exit 1; }
+            node scripts/merge-update-manifests.ts --platform mac "$arm64_manifest" "$x64_manifest"
+            rm "$x64_manifest"
+            found=true
+          done
+          [[ "$found" == true ]] || { echo "No macOS updater manifests found." >&2; exit 1; }
+
+      - name: Verify updater manifests
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          mac_manifest="$(find release-assets -maxdepth 1 -name '*-mac.yml' -print -quit)"
+          win_manifest="$(find release-assets -maxdepth 1 -name '*.yml' ! -name '*-mac.yml' -print -quit)"
+          test -n "$mac_manifest"
+          test -n "$win_manifest"
+          grep -F "version: $RELEASE_VERSION" "$mac_manifest"
+          grep -F "version: $RELEASE_VERSION" "$win_manifest"
+          mac_zip="$(find release-assets -maxdepth 1 -name '*.zip' -print -quit)"
+          test -n "$mac_zip"
+          unzip -p "$mac_zip" '*/Contents/Resources/app-update.yml' > app-update.yml
+          grep -F 'owner: SergeSerb2' app-update.yml
+          grep -F 'repo: t3code-fork-theme' app-update.yml
+
+      - name: Publish public GitHub prerelease
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.preflight.outputs.tag }}
+          target_commitish: ${{ needs.preflight.outputs.ref }}
+          name: ${{ needs.preflight.outputs.name }}
+          body: |
+            Fork build from `${{ needs.preflight.outputs.ref }}`.
+            Includes upstream through `${{ needs.preflight.outputs.upstream_tag }}` plus all changes merged to fork `main`.
+          prerelease: true
+          make_latest: false
+          files: |
+            release-assets/*.dmg
+            release-assets/*.zip
+            release-assets/*.exe
+            release-assets/*.blockmap
+            release-assets/*.yml
+          fail_on_unmatched_files: true
+          token: ${{ github.token }}
