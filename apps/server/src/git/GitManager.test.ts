@@ -1218,6 +1218,86 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect("resolves fork identities from GitLab and Bitbucket remote URLs", () =>
+    Effect.gen(function* () {
+      const scenarios = [
+        {
+          provider: "GitLab",
+          remoteUrl: "git@gitlab.com:acme/platform/codething-mvp.git",
+          repositoryNameWithOwner: "acme/platform/codething-mvp",
+          ownerLogin: "acme",
+          pullRequestUrl: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/31",
+          pullRequestNumber: 31,
+        },
+        {
+          provider: "Bitbucket",
+          remoteUrl: "git@bitbucket.org:octocat/codething-mvp.git",
+          repositoryNameWithOwner: "octocat/codething-mvp",
+          ownerLogin: "octocat",
+          pullRequestUrl: "https://bitbucket.org/pingdotgg/codething-mvp/pull-requests/32",
+          pullRequestNumber: 32,
+        },
+      ] as const;
+
+      for (const scenario of scenarios) {
+        const repoDir = yield* makeTempDir("t3code-git-manager-provider-fork-");
+        yield* initRepo(repoDir);
+        const forkDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+        const branch = `feature/${scenario.provider.toLowerCase()}-fork`;
+        yield* runGit(repoDir, ["checkout", "-b", branch]);
+        yield* runGit(repoDir, ["push", "-u", "fork-seed", branch]);
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "fork-seed",
+          scenario.remoteUrl,
+          forkDir,
+        );
+
+        const { manager, ghCalls } = yield* makeManager({
+          ghScenario: {
+            prListByHeadSelector: {
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
+              [`${scenario.ownerLogin}:${branch}`]: JSON.stringify([
+                {
+                  number: scenario.pullRequestNumber,
+                  title: `${scenario.provider} fork PR`,
+                  url: scenario.pullRequestUrl,
+                  baseRefName: "main",
+                  headRefName: branch,
+                  state: "OPEN",
+                  updatedAt: "2026-08-10T18:00:00.000Z",
+                  isCrossRepository: true,
+                  headRepository: {
+                    nameWithOwner: scenario.repositoryNameWithOwner,
+                  },
+                  headRepositoryOwner: {
+                    login: scenario.ownerLogin,
+                  },
+                },
+              ]),
+            },
+          },
+        });
+
+        const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+
+        expect(observation.pullRequest?.number).toBe(scenario.pullRequestNumber);
+        expect(observation.headAssociation).toEqual({
+          headRef: branch,
+          repositoryNameWithOwner: scenario.repositoryNameWithOwner,
+          ownerLogin: scenario.ownerLogin,
+          isCrossRepository: true,
+        });
+        expect(
+          ghCalls.some((call) =>
+            call.includes(`pr list --head ${scenario.ownerLogin}:${branch} --state all --limit 20`),
+          ),
+        ).toBe(true);
+      }
+    }),
+  );
+
   it.effect("status returns an explicit non-repo result for non-git directories", () =>
     Effect.gen(function* () {
       const cwd = yield* makeTempDir("t3code-git-manager-non-repo-");

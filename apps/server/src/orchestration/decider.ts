@@ -833,7 +833,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command.branch !== undefined &&
         command.expectedBranch !== undefined &&
         thread.branch !== command.expectedBranch
-          ? thread.branch
+          ? undefined
           : command.branch;
       const occurredAt = yield* nowIso;
       return {

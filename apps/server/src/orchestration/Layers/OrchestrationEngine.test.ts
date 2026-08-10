@@ -72,6 +72,7 @@ async function createOrchestrationSystem() {
   return {
     engine,
     readModel: () => runtime.runPromise(snapshotQuery.getSnapshot()),
+    readCommandModel: () => runtime.runPromise(snapshotQuery.getCommandReadModel()),
     run: <A, E>(effect: Effect.Effect<A, E>) => runtime.runPromise(effect),
     dispose: () => runtime.dispose(),
   };
@@ -553,6 +554,9 @@ describe("OrchestrationEngine", () => {
       }),
     );
 
+    const branchEventId = (await system.readCommandModel()).threads[0]?.branchEventId;
+    expect(branchEventId).toBeDefined();
+
     await system.run(
       engine.dispatch({
         type: "thread.meta.update",
@@ -563,8 +567,9 @@ describe("OrchestrationEngine", () => {
       }),
     );
 
-    const snapshot = await system.readModel();
+    const snapshot = await system.readCommandModel();
     expect(snapshot.threads[0]?.branch).toBe("t3code/generated-branch-name");
+    expect(snapshot.threads[0]?.branchEventId).toBe(branchEventId);
     await system.dispose();
   });
 
