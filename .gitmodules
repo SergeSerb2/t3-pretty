@@ -1,0 +1,6 @@
+# `.repos/alchemy-effect` is vendored as a subtree, so Git needs its nested
+# gitlink mapped again at the repository root for submodule inspection.
+[submodule ".repos/alchemy-effect/.vendor/alchemy"]
+	path = .repos/alchemy-effect/.vendor/alchemy
+	url = https://github.com/alchemy-run/alchemy.git
+	update = none
