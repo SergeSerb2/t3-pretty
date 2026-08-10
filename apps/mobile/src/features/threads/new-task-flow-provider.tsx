@@ -19,6 +19,7 @@ import {
 } from "@t3tools/contracts";
 import {
   applyCreatePullRequestSuffix,
+  hasCreatePullRequestSuffix,
   resolveAutoCreatePullRequest,
   stripCreatePullRequestSuffix,
 } from "@t3tools/shared/createPullRequestPrompt";
@@ -27,7 +28,7 @@ import {
   isDefaultThreadEnvModeSettled,
   resolveDefaultThreadEnvMode,
 } from "@t3tools/shared/threadEnvMode";
-import { useAtomValue } from "@effect/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -81,7 +82,7 @@ import {
   type HomeProjectScope,
 } from "../home/homeThreadList";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
-import { mobilePreferencesAtom } from "../../state/preferences";
+import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 
 type WorkspaceMode = "local" | "worktree";
 
@@ -150,6 +151,7 @@ type NewTaskFlowContextValue = {
   readonly availableBranches: ReadonlyArray<VcsRef>;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
+  readonly autoCreatePullRequest: boolean;
   readonly expandedProvider: string | null;
   readonly environments: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
@@ -172,6 +174,7 @@ type NewTaskFlowContextValue = {
   readonly setWorkspaceMode: (mode: WorkspaceMode) => void;
   readonly selectBranch: (branch: VcsRef) => void;
   readonly setStartFromOrigin: (value: boolean) => void;
+  readonly setAutoCreatePullRequest: (enabled: boolean) => void;
   readonly beginEditingPendingTask: (messageId: string) => boolean;
   readonly finishEditingPendingTask: () => void;
   readonly cancelEditingPendingTask: () => void;
@@ -393,9 +396,31 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   });
   const workspaceMode = selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode;
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const autoCreatePullRequestByEnvMode = AsyncResult.isSuccess(preferencesResult)
     ? preferencesResult.value.autoCreatePullRequestByEnvMode
     : undefined;
+  // A draft-scoped override (set when a queued task is hydrated for editing,
+  // or when the user flips the toggle mid-edit) wins over the per-mode
+  // preference so editing unrelated text cannot change a queued task's choice.
+  const autoCreatePullRequest =
+    selectedProjectDraft.autoCreatePullRequest ??
+    resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, workspaceMode);
+  const setAutoCreatePullRequest = useCallback(
+    (enabled: boolean) => {
+      if (editingPendingTaskRef.current !== null && selectedProjectDraftKey !== null) {
+        updateComposerDraftSettings(selectedProjectDraftKey, { autoCreatePullRequest: enabled });
+        return;
+      }
+      savePreferences({
+        autoCreatePullRequestByEnvMode: {
+          ...autoCreatePullRequestByEnvMode,
+          [workspaceMode]: enabled,
+        },
+      });
+    },
+    [autoCreatePullRequestByEnvMode, savePreferences, selectedProjectDraftKey, workspaceMode],
+  );
   const selectedBranchName = selectedProjectDraft.workspaceSelection?.branch ?? null;
   const selectedWorktreePath = selectedProjectDraft.workspaceSelection?.worktreePath ?? null;
   // Keep the user's explicit choice separate from the resolved display value:
@@ -722,6 +747,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         modelSelection: message.modelSelection,
         runtimeMode: message.runtimeMode,
         interactionMode: message.interactionMode,
+        // Pin the queued task's auto-PR choice to the draft so re-queueing
+        // reproduces it even if the global preference changes meanwhile.
+        autoCreatePullRequest: hasCreatePullRequestSuffix(message.text),
         workspaceSelection: {
           mode: message.creation.workspaceMode,
           branch: message.creation.branch,
@@ -778,10 +806,14 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         messageId: MessageId.make(metadata.messageId),
         commandId: CommandId.make(metadata.commandId),
         // Queued tasks capture the auto-PR instruction at queue time so a
-        // later preference flip cannot alter an already-queued task.
+        // later preference flip cannot alter an already-queued task. A
+        // draft-scoped override (hydrated from the queued text or set by the
+        // toggle mid-edit) wins over the per-mode preference.
         text: applyCreatePullRequestSuffix({
           text,
-          autoCreatePullRequest: resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode),
+          autoCreatePullRequest:
+            draft.autoCreatePullRequest ??
+            resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode),
           threadHasStarted: false,
         }),
         attachments: draft.attachments,
@@ -928,6 +960,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       availableBranches,
       runtimeMode,
       interactionMode,
+      autoCreatePullRequest,
       expandedProvider,
       environments,
       selectedProject,
@@ -944,6 +977,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       setWorkspaceMode,
       selectBranch,
       setStartFromOrigin,
+      setAutoCreatePullRequest,
       beginEditingPendingTask,
       finishEditingPendingTask,
       cancelEditingPendingTask,
@@ -963,6 +997,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     }),
     [
       attachments,
+      autoCreatePullRequest,
       availableBranches,
       beginEditingPendingTask,
       branchQuery,
@@ -1001,6 +1036,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       setPrompt,
       setRuntimeMode,
       setSelectedModelKey,
+      setAutoCreatePullRequest,
       setStartFromOrigin,
       setWorkspaceMode,
       startFromOrigin,

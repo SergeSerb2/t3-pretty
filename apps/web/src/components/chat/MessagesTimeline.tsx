@@ -15,6 +15,7 @@ import {
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
+import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 import {
   createContext,
   Fragment,
@@ -665,7 +666,9 @@ function deriveTimelineMinimapItems(
     items.push({
       id: row.id,
       rowIndex: index,
-      userText: compactMinimapPreview(row.message.text),
+      // Match the bubble: the agent-facing auto-PR block stays out of the
+      // minimap preview and its accessible label.
+      userText: compactMinimapPreview(stripCreatePullRequestSuffix(row.message.text)),
       assistantText: compactMinimapPreview(resolveFinalAssistantTextForTurn(rows, index)),
     });
   }

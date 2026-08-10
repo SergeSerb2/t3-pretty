@@ -1,10 +1,5 @@
 import { NativeStackScreenOptions } from "../../native/StackHeader";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { AsyncResult } from "effect/unstable/reactivity";
-import {
-  applyCreatePullRequestSuffix,
-  resolveAutoCreatePullRequest,
-} from "@t3tools/shared/createPullRequestPrompt";
+import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 import { StackActions, useNavigation, usePreventRemove } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, InteractionManager, Platform, View, useColorScheme } from "react-native";
@@ -52,7 +47,6 @@ import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/re
 import { enqueueThreadOutboxMessage, removeThreadOutboxMessage } from "../../state/thread-outbox";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { branchBadgeLabel, useNewTaskFlow } from "./new-task-flow-provider";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useCreateProjectThread } from "./use-project-actions";
 import { resolveDraftProjectSelection } from "./new-task-project-selection";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
@@ -715,24 +709,12 @@ export function NewTaskDraftScreen(props: {
     [flow],
   );
 
-  const preferencesResult = useAtomValue(mobilePreferencesAtom);
-  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
-  const autoCreatePullRequestByEnvMode = AsyncResult.isSuccess(preferencesResult)
-    ? preferencesResult.value.autoCreatePullRequestByEnvMode
-    : undefined;
-  // Resolved against the mode currently shown in the workspace pill so the
-  // toggle always reflects what the next Start tap will send.
-  const autoCreatePullRequest = resolveAutoCreatePullRequest(
-    autoCreatePullRequestByEnvMode,
-    flow.workspaceMode,
-  );
+  // Resolved by the flow provider against the workspace mode currently shown
+  // in the pill (with any draft-scoped override), so the toggle always
+  // reflects what the next Start tap will send.
+  const autoCreatePullRequest = flow.autoCreatePullRequest;
   const toggleAutoCreatePullRequest = () => {
-    savePreferences({
-      autoCreatePullRequestByEnvMode: {
-        ...autoCreatePullRequestByEnvMode,
-        [flow.workspaceMode]: !autoCreatePullRequest,
-      },
-    });
+    flow.setAutoCreatePullRequest(!autoCreatePullRequest);
   };
 
   async function handleStart(): Promise<void> {
@@ -830,10 +812,7 @@ export function NewTaskDraftScreen(props: {
       interactionMode,
       initialMessageText: applyCreatePullRequestSuffix({
         text: initialMessageText,
-        autoCreatePullRequest: resolveAutoCreatePullRequest(
-          autoCreatePullRequestByEnvMode,
-          workspaceMode,
-        ),
+        autoCreatePullRequest,
         threadHasStarted: false,
       }),
       initialAttachments: draft.attachments,
