@@ -39,6 +39,13 @@ describe("normalizeGitRemoteUrl", () => {
     );
   });
 
+  it("canonicalizes userless scp-style remotes", () => {
+    expect(normalizeGitRemoteUrl("github.com:Fork/Repo.git")).toBe("github.com/fork/repo");
+    // Absolute and drive-letter paths must not parse as host/path.
+    expect(normalizeGitRemoteUrl("/srv/git/repo.git")).toBe("/srv/git/repo");
+    expect(normalizeGitRemoteUrl("C:/repos/project")).toBe("c:/repos/project");
+  });
+
   it("drops explicit ports from URL-shaped remotes", () => {
     expect(normalizeGitRemoteUrl("https://gitlab.company.com:8443/team/project.git")).toBe(
       "gitlab.company.com/team/project",
