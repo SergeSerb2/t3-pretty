@@ -81,11 +81,12 @@ function isRepositoryUrl(remoteUrl: string): boolean {
       return false;
     }
   }
-  const scpStyle = /^(?:[^@/\s]+@)?([^:/\s]+):(\S+)$/.exec(trimmed);
+  // Userless drive-letter forms (c:/repos/foo) were already rejected above;
+  // with a username present even a one-letter host is an unambiguous SSH
+  // alias (git@g:fork/repo.git).
+  const scpStyle = /^(?:[^@/\s]+@)?[^:/\s]+:(\S+)$/.exec(trimmed);
   if (!scpStyle) return false;
-  const [, host = "", path = ""] = scpStyle;
-  // A single-letter "host" is a Windows drive path (c:/repos/foo), not a remote.
-  if (/^[a-z]$/i.test(host)) return false;
+  const [, path = ""] = scpStyle;
   return path.replace(/^\/+/, "").length > 0;
 }
 
