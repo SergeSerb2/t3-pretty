@@ -1,10 +1,15 @@
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
 import { assert, describe, it } from "vite-plus/test";
 
-import { buildConflictPrompt, formatSyncReport } from "./resolve-git-conflicts.mjs";
+import {
+  buildConflictPrompt,
+  formatSyncReport,
+  readReusedSyncReport,
+} from "./resolve-git-conflicts.mjs";
 
 const syncWorkflowPath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -38,6 +43,32 @@ describe("T3 Pretty upstream conflict resolver", () => {
     assert.include(workflow, '[[ -n "$current_tag" && "$current_tag" != "$latest_tag" ]]');
     assert.include(workflow, '"refs/tags/$current_tag:refs/tags/$current_tag"');
     assert.include(workflow, "PREVIOUS_UPSTREAM_TAG: ${{ steps.discover.outputs.previous_tag }}");
+  });
+
+  it("refuses to reuse a legacy resolution branch without its durable report", () => {
+    const temporaryDirectory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-pretty-sync-report-"),
+    );
+    const reportPath = NodePath.join(temporaryDirectory, "upstream-sync-report.md");
+
+    try {
+      assert.throws(
+        () => readReusedSyncReport({ reusedResolution: true, reportPath }),
+        /without its integration report/u,
+      );
+
+      NodeFS.writeFileSync(reportPath, "# T3 Pretty upstream integration report\n");
+      assert.equal(
+        readReusedSyncReport({ reusedResolution: true, reportPath }),
+        "# T3 Pretty upstream integration report",
+      );
+
+      const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+      assert.include(workflow, 'git show "origin/$SYNC_BRANCH:.t3-fork/upstream-sync-report.md"');
+      assert.include(workflow, '== "# T3 Pretty upstream integration report"');
+    } finally {
+      NodeFS.rmSync(temporaryDirectory, { recursive: true });
+    }
   });
 
   it("puts every AI and workflow-policy omission into the durable release report", () => {

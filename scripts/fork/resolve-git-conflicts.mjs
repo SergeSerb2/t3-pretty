@@ -190,6 +190,20 @@ export function formatSyncReport({
   ].join("\n");
 }
 
+export function readReusedSyncReport({ reusedResolution, reportPath = REPORT_PATH }) {
+  if (!reusedResolution) return "";
+  if (!NodeFS.existsSync(reportPath)) {
+    throw new Error(
+      `Refusing to reuse an earlier sync resolution without its integration report at ${reportPath}`,
+    );
+  }
+  const report = NodeFS.readFileSync(reportPath, "utf8").trim();
+  if (!report.includes("# T3 Pretty upstream integration report")) {
+    throw new Error(`Refusing to reuse an earlier sync resolution with an invalid ${reportPath}`);
+  }
+  return report;
+}
+
 function listProtectedWorkflowPaths(upstreamTag, previousUpstreamTag) {
   if (!upstreamTag) return [];
   let base = previousUpstreamTag;
@@ -433,10 +447,7 @@ async function main() {
     protectedWorkflowPaths: listProtectedWorkflowPaths(upstreamTag, previousUpstreamTag),
   });
   const reusedResolution = process.env.REUSED_SYNC_RESOLUTION === "true";
-  const existingReport =
-    reusedResolution && NodeFS.existsSync(REPORT_PATH)
-      ? NodeFS.readFileSync(REPORT_PATH, "utf8").trim()
-      : "";
+  const existingReport = readReusedSyncReport({ reusedResolution });
   const finalReport =
     existingReport && resolutions.length > 0
       ? `${existingReport}\n\n---\n\n${report.replace(

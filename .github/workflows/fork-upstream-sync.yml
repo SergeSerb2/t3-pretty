@@ -93,7 +93,8 @@ jobs:
           export REUSED_SYNC_RESOLUTION=false
           if git fetch origin "refs/heads/$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH" 2>/dev/null &&
             [[ "$(git show "origin/$SYNC_BRANCH:.t3-fork/upstream-nightly" 2>/dev/null | tr -d '[:space:]')" == "$UPSTREAM_TAG" ]] &&
-            git merge-base --is-ancestor "$UPSTREAM_TAG^{commit}" "origin/$SYNC_BRANCH"; then
+            git merge-base --is-ancestor "$UPSTREAM_TAG^{commit}" "origin/$SYNC_BRANCH" &&
+            [[ "$(git show "origin/$SYNC_BRANCH:.t3-fork/upstream-sync-report.md" 2>/dev/null | sed -n '1p')" == "# T3 Pretty upstream integration report" ]]; then
             echo "Reusing the previously validated AI resolution for $UPSTREAM_TAG."
             export REUSED_SYNC_RESOLUTION=true
             git checkout -B "$SYNC_BRANCH" "origin/$SYNC_BRANCH"
