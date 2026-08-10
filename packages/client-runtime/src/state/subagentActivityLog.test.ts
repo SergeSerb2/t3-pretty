@@ -168,6 +168,51 @@ describe("advanceSubagentActivityLog", () => {
     expect(advanceSubagentActivityLog(log, [agent({ id: "a1" })], [first, second])).toBe(log);
   });
 
+  it("inserts tools from an older page before the recorded live tail", () => {
+    const recent = activity(
+      "tool.completed",
+      {
+        agentId: "a1",
+        itemType: "command_execution",
+        detail: "Bash: pnpm test",
+        data: { toolName: "Bash" },
+      },
+      "2026-08-01T10:02:00.000Z",
+    );
+    const completed = agent({
+      id: "a1",
+      status: "completed",
+      result: "All checks passed",
+      completedAt: "2026-08-01T10:03:00.000Z",
+      updatedAt: "2026-08-01T10:03:00.000Z",
+    });
+    let log = advanceSubagentActivityLog(emptySubagentActivityLog(), [completed], [recent]);
+
+    const older = activity(
+      "tool.completed",
+      {
+        agentId: "a1",
+        itemType: "command_execution",
+        detail: "Bash: pnpm lint",
+        data: { toolName: "Bash" },
+      },
+      "2026-08-01T10:01:00.000Z",
+    );
+    log = advanceSubagentActivityLog(log, [completed], [older, recent]);
+
+    expect(subagentLogEntries(log, "a1").map((entry) => entry.summary)).toEqual([
+      "Ran command",
+      "Ran command",
+      "Completed in 3m 00s",
+      "All checks passed",
+    ]);
+    expect(
+      subagentLogEntries(log, "a1")
+        .map((entry) => entry.id)
+        .slice(0, 2),
+    ).toEqual([older.id, recent.id]);
+  });
+
   it("keeps unattributed parent tools out of agent feeds", () => {
     const log = advanceSubagentActivityLog(
       emptySubagentActivityLog(),

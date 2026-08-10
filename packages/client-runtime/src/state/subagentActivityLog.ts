@@ -288,13 +288,6 @@ function statusEntrySummary(
   }
 }
 
-function appendBounded(entries: SubagentLogEntry[], entry: SubagentLogEntry): void {
-  entries.push(entry);
-  if (entries.length > ENTRY_LIMIT) {
-    entries.splice(0, entries.length - ENTRY_LIMIT);
-  }
-}
-
 function advanceAgent(
   previous: SubagentActivityLogState | undefined,
   agent: RuntimeSubagent,
@@ -308,6 +301,8 @@ function advanceAgent(
   const prevHasError = previous?.hasError ?? false;
   const prevActivityIds = previous?.activityIds ?? EMPTY_IDS;
   const seenActivityIds = new Set(prevActivityIds);
+  const currentActivityIds = toolEntries.map((toolEntry) => toolEntry.id);
+  const activityIds = currentActivityIds.length > 0 ? currentActivityIds : prevActivityIds;
   let nextSyntheticSequence = previous?.nextSyntheticSequence ?? 0;
   const nextSyntheticId = () => {
     const id = `subagent-log:${agent.id}:${nextSyntheticSequence}`;
@@ -316,9 +311,7 @@ function advanceAgent(
   };
 
   let changed = previous === undefined;
-  const entries = [...prevEntries];
   const additions: SubagentLogEntry[] = [];
-  const activityIds = [...prevActivityIds];
 
   for (const toolEntry of toolEntries) {
     if (seenActivityIds.has(toolEntry.id)) {
@@ -326,7 +319,6 @@ function advanceAgent(
     }
     seenActivityIds.add(toolEntry.id);
     additions.push(toolEntry.entry);
-    activityIds.push(toolEntry.id);
     changed = true;
   }
 
@@ -378,32 +370,26 @@ function advanceAgent(
     changed = true;
   }
 
+  // Older activity pages arrive after the live tail has already been logged.
+  // Merge the complete feed by timestamp before applying the tail cap so
+  // paginated commands cannot appear after completion/result rows. The sort
+  // is stable, preserving provider/observation order for equal timestamps.
+  const mergedEntries = [...prevEntries, ...additions];
+
   // A natural-language progress update is strictly richer than an adjacent
-  // provider heartbeat ("Bash"). When both land in one render snapshot, keep
-  // the action and drop the generic line. The exact timestamp match avoids
-  // hiding distinct commands when no richer provider text exists.
+  // provider heartbeat ("Bash"). Compare the merged feed so suppression also
+  // works when one side came from a newly loaded page.
   const richTimes = new Set(
-    additions.filter((entry) => entry.kind === "activity").map((entry) => entry.at),
+    mergedEntries.filter((entry) => entry.kind === "activity").map((entry) => entry.at),
   );
-  const orderedAdditions = additions
+  const entries = mergedEntries
     .filter(
       (entry) => entry.kind !== "tool" || entry.detail !== undefined || !richTimes.has(entry.at),
     )
     .map((entry, index) => ({ entry, index }))
     .sort((a, b) => a.entry.at.localeCompare(b.entry.at) || a.index - b.index)
+    .slice(-ENTRY_LIMIT)
     .map(({ entry }) => entry);
-  for (const entry of orderedAdditions) {
-    const previousEntry = entries.at(-1);
-    if (
-      entry.kind === "activity" &&
-      previousEntry?.kind === "tool" &&
-      previousEntry.detail === undefined &&
-      previousEntry.at === entry.at
-    ) {
-      entries.pop();
-    }
-    appendBounded(entries, entry);
-  }
 
   const ringChanged =
     prevRing === undefined ||
@@ -426,7 +412,7 @@ function advanceAgent(
     lastStatus: agent.status,
     hasResult,
     hasError,
-    activityIds: activityIds.slice(-ENTRY_LIMIT),
+    activityIds,
     nextSyntheticSequence,
   };
 }
