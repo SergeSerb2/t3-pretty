@@ -371,6 +371,7 @@ const config: ExpoConfig = {
       },
     ],
     "./plugins/withIosCocoaPodsUuidCache.cjs",
+    "./plugins/withIosPodMinDeploymentTarget.cjs",
     // Must be listed BEFORE expo-widgets: same-type mods run last-registered-
     // first, so registering earlier makes this plugin's mods run AFTER
     // expo-widgets' — its dangerous mod wipes ios/ExpoWidgetsTarget/ (which
