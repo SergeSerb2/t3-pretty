@@ -187,7 +187,9 @@ function deriveDisplayRepositoryPathSegments(remoteUrl: string): ReadonlyArray<s
     if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
       try {
         const url = new URL(trimmed);
-        if (url.hostname.length === 0) return [];
+        // Hostless file: URLs (file:///srv/acme/repo) are filesystem paths —
+        // derive metadata from the path like other local remotes.
+        if (url.hostname.length === 0 && url.protocol !== "file:") return [];
         return url.pathname.split("/").filter((segment) => segment.length > 0);
       } catch {
         return [];
