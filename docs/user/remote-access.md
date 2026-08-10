@@ -32,6 +32,28 @@ That gives you:
 - transport security at the network layer
 - less exposure than opening the server to the public internet
 
+## Surge Connect
+
+Surge Connect provides an account-based mesh when you want to reach your environments without
+manually sharing an address or pairing link with every device.
+
+On the computer that hosts an environment:
+
+1. Open **Settings** → **Connections**.
+2. Under **Surge Connect**, select **Sign in to Surge Code** and finish signing in.
+3. Under **This environment**, turn on **Surge Connect**. The environment becomes available to the
+   other devices signed in to the same account.
+
+On a new device:
+
+1. Open **Settings** → **Connections** and sign in to the same Surge Code account.
+2. Find the host under **Remote Environments** and select **Connect**.
+
+Use **Manage account** on the Surge Code account row to inspect or change the signed-in account.
+**Publish agent activity** is a separate setting for mobile notifications and Live Activities; it
+does not need the Surge Connect tunnel to be on. If the account row says **Unavailable**, that build
+does not include Surge Connect configuration.
+
 ## Enabling Network Access
 
 There are three ways to reach your server from another device: expose the desktop app's backend,
