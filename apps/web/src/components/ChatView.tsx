@@ -121,6 +121,7 @@ import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
+import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
@@ -4117,6 +4118,22 @@ function ChatViewContent(props: ChatViewProps) {
     requestedEnvMode: envMode,
     isGitRepo,
   });
+  // Auto-PR preference is kept per env mode: worktree threads default on
+  // (their work is expected to land as a PR), local threads default off.
+  const autoCreatePullRequestEnvMode = sendEnvMode === "worktree" ? "worktree" : "local";
+  const autoCreatePullRequest = useUiStateStore(
+    (store) => store.autoCreatePullRequestByEnvMode[autoCreatePullRequestEnvMode],
+  );
+  const setAutoCreatePullRequestForEnvMode = useUiStateStore(
+    (store) => store.setAutoCreatePullRequest,
+  );
+  const onToggleAutoCreatePullRequest = useCallback(() => {
+    setAutoCreatePullRequestForEnvMode(autoCreatePullRequestEnvMode, !autoCreatePullRequest);
+  }, [autoCreatePullRequest, autoCreatePullRequestEnvMode, setAutoCreatePullRequestForEnvMode]);
+  // The suffix only ever rides a thread's first message, so the toggle is
+  // only offered while the thread is still fresh (macOS/mobile parity).
+  const offerAutoCreatePullRequestToggle =
+    isGitRepo && (!isServerThread || (activeThread?.messages.length ?? 0) === 0);
   const localCheckoutBranchMismatch = useMemo(
     () =>
       isServerThread
@@ -5094,10 +5111,14 @@ function ChatViewContent(props: ChatViewProps) {
       (text, annotation) => appendPreviewAnnotationPrompt(text, annotation),
       messageTextWithContexts,
     );
-    const messageTextForSend = appendReviewCommentsToPrompt(
-      messageTextWithPreviewAnnotations,
-      composerReviewCommentsSnapshot,
-    );
+    const messageTextForSend = applyCreatePullRequestSuffix({
+      text: appendReviewCommentsToPrompt(
+        messageTextWithPreviewAnnotations,
+        composerReviewCommentsSnapshot,
+      ),
+      autoCreatePullRequest,
+      threadHasStarted: !isFirstMessage,
+    });
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const outgoingMessageText = formatOutgoingPrompt({
@@ -6346,6 +6367,9 @@ function ChatViewContent(props: ChatViewProps) {
                             activeProposedPlan={activeProposedPlan}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
+                            autoCreatePullRequest={autoCreatePullRequest}
+                            showAutoCreatePullRequestToggle={offerAutoCreatePullRequestToggle}
+                            onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
                             lockedProvider={lockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
                             activeProjectDefaultModelSelection={

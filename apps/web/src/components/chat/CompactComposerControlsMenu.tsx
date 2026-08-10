@@ -4,6 +4,7 @@ import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   Menu,
+  MenuCheckboxItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -15,6 +16,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
+  autoCreatePullRequest: boolean;
+  showAutoCreatePullRequestToggle: boolean;
+  onToggleAutoCreatePullRequest: () => void;
   traitsMenuContent?: ReactNode;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -69,6 +73,17 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <MenuRadioItem value="auto">Auto</MenuRadioItem>
           <MenuRadioItem value="full-access">Full access</MenuRadioItem>
         </MenuRadioGroup>
+        {props.showAutoCreatePullRequestToggle ? (
+          <>
+            <MenuDivider />
+            <MenuCheckboxItem
+              checked={props.autoCreatePullRequest}
+              onCheckedChange={() => props.onToggleAutoCreatePullRequest()}
+            >
+              Create PR when done
+            </MenuCheckboxItem>
+          </>
+        ) : null}
       </MenuPopup>
     </Menu>
   );

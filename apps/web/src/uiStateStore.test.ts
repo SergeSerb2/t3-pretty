@@ -2,6 +2,7 @@ import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  DEFAULT_AUTO_CREATE_PULL_REQUEST,
   legacyProjectCwdPreferenceKey,
   markThreadUnread,
   markThreadVisited,
@@ -24,6 +25,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
+    autoCreatePullRequestByEnvMode: DEFAULT_AUTO_CREATE_PULL_REQUEST,
     ...overrides,
   };
 }
@@ -183,6 +185,7 @@ describe("parsePersistedState", () => {
           "turn-2": true,
         },
       },
+      autoCreatePullRequestByEnvMode: DEFAULT_AUTO_CREATE_PULL_REQUEST,
     });
   });
 
@@ -303,6 +306,7 @@ describe("uiStateStore persistence", () => {
           "turn-2": true,
         },
       },
+      autoCreatePullRequestByEnvMode: DEFAULT_AUTO_CREATE_PULL_REQUEST,
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,

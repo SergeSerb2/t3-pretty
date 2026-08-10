@@ -194,6 +194,7 @@ import { toastManager } from "../ui/toast";
 import {
   BotIcon,
   CircleAlertIcon,
+  GitPullRequestArrowIcon,
   PencilRulerIcon,
   type LucideIcon,
   LockIcon,
@@ -298,6 +299,9 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
+  autoCreatePullRequest: boolean;
+  showAutoCreatePullRequestToggle: boolean;
+  onToggleAutoCreatePullRequest: () => void;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
@@ -337,6 +341,41 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
           </span>
         </TooltipTrigger>
         <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
+      </Tooltip>
+    </>
+  ) : null;
+
+  const autoPrTooltip = props.autoCreatePullRequest
+    ? "Create a PR when done — the first message asks the agent to open a pull request after finishing"
+    : "Create a PR when done — off";
+
+  const autoPrToggle = props.showAutoCreatePullRequestToggle ? (
+    <>
+      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <ComposerControl
+              className={cn(
+                "shrink-0 whitespace-nowrap",
+                props.autoCreatePullRequest
+                  ? "bg-accent text-accent-foreground hover:bg-accent/80"
+                  : "text-secondary-label hover:text-foreground",
+              )}
+              type="button"
+              aria-pressed={props.autoCreatePullRequest}
+              onClick={props.onToggleAutoCreatePullRequest}
+              aria-label={autoPrTooltip}
+            />
+          }
+        >
+          <ComposerControlIcon
+            icon={GitPullRequestArrowIcon}
+            className={cn(props.autoCreatePullRequest && "text-current opacity-100")}
+          />
+          <span className="sr-only sm:not-sr-only">PR</span>
+        </TooltipTrigger>
+        <TooltipPopup side="top">{autoPrTooltip}</TooltipPopup>
       </Tooltip>
     </>
   ) : null;
@@ -382,6 +421,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
       </Tooltip>
 
       {interactionModeToggle}
+      {autoPrToggle}
     </>
   );
 });
@@ -542,6 +582,11 @@ export interface ChatComposerProps {
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
 
+  // Auto-PR
+  autoCreatePullRequest: boolean;
+  showAutoCreatePullRequestToggle: boolean;
+  onToggleAutoCreatePullRequest: () => void;
+
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
   providerStatuses: ServerProvider[];
@@ -633,6 +678,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProposedPlan,
     runtimeMode,
     interactionMode,
+    autoCreatePullRequest,
+    showAutoCreatePullRequestToggle,
+    onToggleAutoCreatePullRequest,
     lockedProvider,
     providerStatuses,
     activeProjectDefaultModelSelection,
@@ -3151,6 +3199,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     interactionMode={interactionMode}
                     runtimeMode={runtimeMode}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
+                    autoCreatePullRequest={autoCreatePullRequest}
+                    showAutoCreatePullRequestToggle={showAutoCreatePullRequestToggle}
+                    onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
                     traitsMenuContent={providerTraitsMenuContent}
                     onToggleInteractionMode={toggleInteractionMode}
                     onRuntimeModeChange={handleRuntimeModeChange}
@@ -3167,6 +3218,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
+                      autoCreatePullRequest={autoCreatePullRequest}
+                      showAutoCreatePullRequestToggle={showAutoCreatePullRequestToggle}
+                      onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
                       onToggleInteractionMode={toggleInteractionMode}
                       onRuntimeModeChange={handleRuntimeModeChange}
                     />
