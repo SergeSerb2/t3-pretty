@@ -19,9 +19,9 @@ jobs:
   deploy_relay:
     name: Deploy production relay
     # Fork: this repo deploys its own relay (parent gate was pingdotgg/t3code).
-    # FORK_RELAY_DEPLOY_ENABLED keeps forks-of-the-fork from failing on missing
-    # credentials.
-    if: github.repository == 'SergeSerb2/t3code-fork-theme' && vars.FORK_RELAY_DEPLOY_ENABLED == 'true'
+    # Owner check survives repo renames; FORK_RELAY_DEPLOY_ENABLED keeps
+    # forks-of-the-fork from failing on missing credentials.
+    if: github.repository_owner == 'SergeSerb2' && vars.FORK_RELAY_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
