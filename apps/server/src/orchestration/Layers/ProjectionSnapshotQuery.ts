@@ -7,7 +7,6 @@ import {
   OrchestrationCheckpointFile,
   OrchestrationProposedPlanId,
   OrchestrationReadModel,
-  OrchestrationSessionStatus,
   OrchestrationThreadSearchSource,
   OrchestrationShellSnapshot,
   OrchestrationThread,
@@ -120,7 +119,7 @@ const ProjectionMergedPullRequestCandidateRowSchema = Schema.Struct({
   threadId: ThreadId,
   branch: Schema.String,
   cwd: Schema.String,
-  sessionStatus: Schema.NullOr(OrchestrationSessionStatus),
+  createdAt: IsoDateTime,
 });
 const ProjectionThreadSearchRequest = Schema.Struct({
   pattern: Schema.String,
@@ -790,7 +789,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               THEN threads.worktree_path
             ELSE projects.workspace_root
           END AS cwd,
-          sessions.status AS "sessionStatus"
+          threads.created_at AS "createdAt"
         FROM projection_threads AS threads
         INNER JOIN projection_projects AS projects
           ON projects.project_id = threads.project_id

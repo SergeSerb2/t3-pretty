@@ -1,4 +1,4 @@
-import { CommandId, type VcsStatusRemoteResult } from "@t3tools/contracts";
+import { CommandId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -9,6 +9,7 @@ import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 
+import type { GitPullRequestBranchObservation } from "../git/GitManager.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { forkParked } from "../serverActivation.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
@@ -29,8 +30,25 @@ export class ThreadMergedPullRequestReactor extends Context.Service<
   }
 >()("t3/orchestration/ThreadMergedPullRequestReactor") {}
 
-export function shouldSettleMergedPullRequest(pullRequest: VcsStatusRemoteResult["pr"]): boolean {
-  return pullRequest?.state === "merged";
+export function shouldSettleMergedPullRequest(
+  thread: ProjectionMergedPullRequestCandidate,
+  observation: GitPullRequestBranchObservation,
+): boolean {
+  if (
+    observation.pullRequest?.state !== "merged" ||
+    observation.pullRequest.headRef !== thread.branch ||
+    observation.updatedAt === null
+  ) {
+    return false;
+  }
+
+  const threadCreatedAt = Date.parse(thread.createdAt);
+  const pullRequestUpdatedAt = Date.parse(observation.updatedAt);
+  return (
+    Number.isFinite(threadCreatedAt) &&
+    Number.isFinite(pullRequestUpdatedAt) &&
+    pullRequestUpdatedAt >= threadCreatedAt
+  );
 }
 
 export const make = Effect.gen(function* () {
@@ -49,6 +67,7 @@ export const make = Effect.gen(function* () {
         commandId,
         threadId: thread.threadId,
         onlyIfAutoSettlementEligible: true,
+        expectedBranch: thread.branch,
       })
       .pipe(
         Effect.tap(() =>
@@ -65,7 +84,7 @@ export const make = Effect.gen(function* () {
           }).pipe(Effect.as(false));
         }),
       );
-    if (!settled || thread.sessionStatus === null || thread.sessionStatus === "stopped") return;
+    if (!settled) return;
 
     yield* orchestrationEngine
       .dispatch({
@@ -88,13 +107,13 @@ export const make = Effect.gen(function* () {
 
   const sweep = Effect.gen(function* () {
     const candidates = yield* projectionSnapshotQuery.listMergedPullRequestCandidates();
-    const pullRequestByBranch = new Map<string, VcsStatusRemoteResult["pr"]>();
+    const pullRequestByBranch = new Map<string, GitPullRequestBranchObservation>();
 
     for (const thread of candidates) {
       const key = `${thread.cwd}\u0000${thread.branch}`;
-      let pullRequest = pullRequestByBranch.get(key);
-      if (pullRequest === undefined) {
-        pullRequest = yield* gitWorkflow
+      let observation = pullRequestByBranch.get(key);
+      if (observation === undefined) {
+        observation = yield* gitWorkflow
           .pullRequestForBranch({ cwd: thread.cwd, branch: thread.branch })
           .pipe(
             Effect.catchCause((cause) => {
@@ -102,12 +121,12 @@ export const make = Effect.gen(function* () {
               return Effect.logWarning("merged pull request branch lookup failed", {
                 threadId: thread.threadId,
                 cause: Cause.pretty(cause),
-              }).pipe(Effect.as(null));
+              }).pipe(Effect.as({ pullRequest: null, updatedAt: null }));
             }),
           );
-        pullRequestByBranch.set(key, pullRequest);
+        pullRequestByBranch.set(key, observation);
       }
-      if (shouldSettleMergedPullRequest(pullRequest)) {
+      if (shouldSettleMergedPullRequest(thread, observation)) {
         yield* settleThread(thread);
       }
     }

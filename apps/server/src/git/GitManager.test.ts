@@ -881,6 +881,9 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
       const branch = "feature/background-merged";
+      yield* runGit(repoDir, ["checkout", "-b", branch]);
+      yield* runGit(repoDir, ["push", "-u", "origin", branch]);
+      yield* runGit(repoDir, ["checkout", "main"]);
 
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
@@ -902,19 +905,58 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         },
       });
 
-      const pullRequest = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+      const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
 
-      expect(pullRequest).toEqual({
-        number: 18,
-        title: "Background merged PR",
-        url: "https://github.com/pingdotgg/codething-mvp/pull/18",
-        baseRef: "main",
-        headRef: branch,
-        state: "merged",
+      expect(observation).toEqual({
+        pullRequest: {
+          number: 18,
+          title: "Background merged PR",
+          url: "https://github.com/pingdotgg/codething-mvp/pull/18",
+          baseRef: "main",
+          headRef: branch,
+          state: "merged",
+        },
+        updatedAt: "2026-01-03T00:00:00.000Z",
       });
       expect(ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`))).toBe(
         true,
       );
+    }),
+  );
+
+  it.effect("skips provider lookup for a local-only stored branch", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      const branch = "feature/local-only";
+      yield* runGit(repoDir, ["checkout", "-b", branch]);
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            [branch]: JSON.stringify([
+              {
+                number: 19,
+                title: "Should not be queried",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/19",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "merged",
+                updatedAt: "2026-01-03T00:00:00.000Z",
+              },
+            ]),
+          },
+        },
+      });
+
+      const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+
+      expect(observation).toEqual({ pullRequest: null, updatedAt: null });
+      expect(ghCalls.some((call) => call.includes("pr list"))).toBe(false);
     }),
   );
 

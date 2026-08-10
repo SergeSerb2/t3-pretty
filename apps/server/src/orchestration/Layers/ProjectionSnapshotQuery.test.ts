@@ -575,19 +575,19 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           threadId: ThreadId.make("eligible-root"),
           branch: "feature/root",
           cwd: "/tmp/project-active",
-          sessionStatus: "ready",
+          createdAt: "2026-08-10T00:00:02.000Z",
         },
         {
           threadId: ThreadId.make("eligible-worktree"),
           branch: "feature/worktree",
           cwd: "/tmp/project-worktree",
-          sessionStatus: null,
+          createdAt: "2026-08-10T00:00:03.000Z",
         },
         {
           threadId: ThreadId.make("eligible-stopped"),
           branch: "feature/stopped",
           cwd: "/tmp/project-active",
-          sessionStatus: "stopped",
+          createdAt: "2026-08-10T00:00:04.000Z",
         },
       ]);
     }),

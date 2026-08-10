@@ -456,6 +456,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (command.expectedBranch !== undefined && thread.branch !== command.expectedBranch) {
+        return yield* Effect.fail(
+          new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `thread ${command.threadId} branch changed before automatic settlement`,
+          }),
+        );
+      }
       if (
         command.onlyIfAutoSettlementEligible === true &&
         (thread.pinnedAt != null || thread.settledOverride !== null)

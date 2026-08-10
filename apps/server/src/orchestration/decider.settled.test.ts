@@ -25,6 +25,7 @@ function makeReadModel(
   activities: OrchestrationThread["activities"] = [],
   messages: OrchestrationThread["messages"] = [],
   pinnedAt: string | null = null,
+  branch: string | null = null,
 ): OrchestrationReadModel {
   return {
     snapshotSequence: 0,
@@ -37,7 +38,7 @@ function makeReadModel(
         modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
         runtimeMode: "full-access",
         interactionMode: "default",
-        branch: null,
+        branch,
         worktreePath: null,
         latestTurn: null,
         createdAt: NOW,
@@ -139,20 +140,35 @@ it.layer(NodeServices.layer)("settled thread decider", (it) => {
 
   it.effect("preserves user activation and pins during automatic settlement races", () =>
     Effect.gen(function* () {
+      const expectedBranch = "feature/merged-pr";
       const command = {
         type: "thread.settle" as const,
         commandId: CommandId.make("cmd-auto-settle-race"),
         threadId: ThreadId.make("thread-1"),
         onlyIfAutoSettlementEligible: true,
+        expectedBranch,
       };
 
       for (const readModel of [
-        makeReadModel("active"),
-        makeReadModel(null, null, null, [], [], NOW),
+        makeReadModel("active", null, null, [], [], null, expectedBranch),
+        makeReadModel(null, null, null, [], [], NOW, expectedBranch),
       ]) {
         const error = yield* decideOrchestrationCommand({ command, readModel }).pipe(Effect.flip);
         expect(error._tag).toBe("OrchestrationCommandInvariantError");
       }
+
+      const branchChangedError = yield* decideOrchestrationCommand({
+        command,
+        readModel: makeReadModel(null, null, null, [], [], null, "feature/different-pr"),
+      }).pipe(Effect.flip);
+      expect(branchChangedError._tag).toBe("OrchestrationCommandInvariantError");
+
+      const settled = yield* decideOrchestrationCommand({
+        command,
+        readModel: makeReadModel(null, null, null, [], [], null, expectedBranch),
+      });
+      const settledEvents = Array.isArray(settled) ? settled : [settled];
+      expect(settledEvents[0]?.type).toBe("thread.settled");
     }),
   );
 

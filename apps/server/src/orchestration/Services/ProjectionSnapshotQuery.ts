@@ -14,7 +14,6 @@ import type {
   OrchestrationReadModel,
   OrchestrationSearchThreadsInput,
   OrchestrationSearchThreadsResult,
-  OrchestrationSessionStatus,
   OrchestrationShellSnapshot,
   OrchestrationThread,
   OrchestrationThreadDetailSnapshot,
@@ -59,7 +58,7 @@ export interface ProjectionMergedPullRequestCandidate {
   readonly threadId: ThreadId;
   readonly branch: string;
   readonly cwd: string;
-  readonly sessionStatus: OrchestrationSessionStatus | null;
+  readonly createdAt: string;
 }
 
 /**
@@ -96,8 +95,8 @@ export interface ProjectionSnapshotQueryShape {
 
   /**
    * Read only active thread rows that can be considered for merged pull
-   * request settlement. The caller still verifies the cached VCS status and
-   * the command decider remains authoritative for state races.
+   * request settlement. The caller still verifies branch-specific provider
+   * status and the command decider remains authoritative for state races.
    */
   readonly listMergedPullRequestCandidates: () => Effect.Effect<
     ReadonlyArray<ProjectionMergedPullRequestCandidate>,

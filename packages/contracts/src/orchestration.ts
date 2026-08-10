@@ -692,6 +692,9 @@ const ThreadSettleCommand = Schema.Struct({
   // the thread active after a reconciliation query but before this command is
   // decided. The authoritative read model must win that race.
   onlyIfAutoSettlementEligible: Schema.optional(Schema.Boolean),
+  // The branch observed as merged. Automatic settlement must not land after
+  // a concurrent metadata update associates the thread with another branch.
+  expectedBranch: Schema.optional(TrimmedNonEmptyString),
 });
 
 const ThreadUnsettleCommand = Schema.Struct({
