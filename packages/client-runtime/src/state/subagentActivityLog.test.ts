@@ -130,6 +130,7 @@ describe("advanceSubagentActivityLog", () => {
     );
 
     expect(subagentLogEntries(log, "a1")).toContainEqual({
+      id: command.id,
       at: "2026-08-01T10:00:02.000Z",
       summary: "Ran command",
       detail: "rg -n 'device limit' apps packages",
@@ -158,9 +159,11 @@ describe("advanceSubagentActivityLog", () => {
       [first, second],
     );
 
-    expect(subagentLogEntries(log, "a1").map((entry) => [entry.summary, entry.detail])).toEqual([
-      ["Ran command", "git status"],
-      ["Ran command", "git status"],
+    expect(
+      subagentLogEntries(log, "a1").map((entry) => [entry.id, entry.summary, entry.detail]),
+    ).toEqual([
+      [first.id, "Ran command", "git status"],
+      [second.id, "Ran command", "git status"],
     ]);
     expect(advanceSubagentActivityLog(log, [agent({ id: "a1" })], [first, second])).toBe(log);
   });

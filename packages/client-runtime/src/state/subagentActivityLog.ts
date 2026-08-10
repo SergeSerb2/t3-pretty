@@ -26,6 +26,8 @@ import { isTerminalSubagentStatus } from "./subagentRuntime.ts";
 export type SubagentLogEntryKind = "activity" | "tool" | "status" | "result" | "error";
 
 export interface SubagentLogEntry {
+  /** Stable identity used by incremental UI reconciliation. */
+  readonly id: string;
   readonly at: string;
   readonly summary: string;
   readonly kind: SubagentLogEntryKind;
@@ -46,6 +48,8 @@ export interface SubagentActivityLogState {
   readonly hasError: boolean;
   /** Terminal attributed tool rows already folded into `entries`. */
   readonly activityIds: ReadonlyArray<string>;
+  /** Monotonic identity source for synthetic progress/status/result rows. */
+  readonly nextSyntheticSequence: number;
 }
 
 export type SubagentActivityLog = ReadonlyMap<string, SubagentActivityLogState>;
@@ -100,13 +104,18 @@ function friendlyToolActivity(toolName: string): string {
   }
 }
 
-export function subagentLogEntryFromActivity(at: string, summary: string): SubagentLogEntry {
+export function subagentLogEntryFromActivity(
+  id: string,
+  at: string,
+  summary: string,
+): SubagentLogEntry {
   const match = /^▸\s*(.+)$/.exec(summary);
   if (!match?.[1]) {
-    return { at, summary, kind: "activity" };
+    return { id, at, summary, kind: "activity" };
   }
   const toolName = match[1].trim();
   return {
+    id,
     at,
     summary: friendlyToolActivity(toolName),
     kind: "tool",
@@ -196,6 +205,7 @@ function attributedToolEntries(
     const detail = stripToolPrefix(stringValue(payload.detail), toolName);
     const denied = activity.kind === "tool.denied";
     const entry: SubagentLogEntry = {
+      id: activity.id,
       at: activity.createdAt,
       summary: denied
         ? toolName
@@ -298,6 +308,12 @@ function advanceAgent(
   const prevHasError = previous?.hasError ?? false;
   const prevActivityIds = previous?.activityIds ?? EMPTY_IDS;
   const seenActivityIds = new Set(prevActivityIds);
+  let nextSyntheticSequence = previous?.nextSyntheticSequence ?? 0;
+  const nextSyntheticId = () => {
+    const id = `subagent-log:${agent.id}:${nextSyntheticSequence}`;
+    nextSyntheticSequence += 1;
+    return id;
+  };
 
   let changed = previous === undefined;
   const entries = [...prevEntries];
@@ -324,13 +340,14 @@ function advanceAgent(
     if (prevRingSet?.has(tick.summary)) {
       continue;
     }
-    additions.push(subagentLogEntryFromActivity(tick.at, tick.summary));
+    additions.push(subagentLogEntryFromActivity(nextSyntheticId(), tick.at, tick.summary));
     changed = true;
   }
 
   const statusSummary = statusEntrySummary(prevStatus, agent);
   if (statusSummary !== null) {
     additions.push({
+      id: nextSyntheticId(),
       at: agent.completedAt ?? agent.updatedAt,
       summary: statusSummary,
       kind: "status",
@@ -343,6 +360,7 @@ function advanceAgent(
   const hasResult = agent.result !== null;
   if (hasResult && !prevHasResult && agent.result) {
     additions.push({
+      id: nextSyntheticId(),
       at: agent.completedAt ?? agent.updatedAt,
       summary: agent.result,
       kind: "result",
@@ -352,6 +370,7 @@ function advanceAgent(
   const hasError = agent.error !== null;
   if (hasError && !prevHasError && agent.error) {
     additions.push({
+      id: nextSyntheticId(),
       at: agent.completedAt ?? agent.updatedAt,
       summary: agent.error,
       kind: "error",
@@ -408,6 +427,7 @@ function advanceAgent(
     hasResult,
     hasError,
     activityIds: activityIds.slice(-ENTRY_LIMIT),
+    nextSyntheticSequence,
   };
 }
 

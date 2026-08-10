@@ -41,7 +41,26 @@ describe("projectActivityPayload agent-field survival", () => {
     expect(payload.parentToolUseId).toBe("toolu_abc");
     // Slimming itself still applies to data.
     const data = payload.data as Record<string, unknown>;
+    expect(data.toolName).toBe("Bash");
     expect(data.somethingClientNeverReads).toBeUndefined();
+  });
+
+  it("preserves non-MCP tool names used by the subagent activity feed", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        agentId: "task-123",
+        data: {
+          toolName: "Read",
+          toolCallId: "tool-read-1",
+          input: { file_path: "/tmp/app.ts" },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+
+    expect(data.toolName).toBe("Read");
+    expect(data.toolCallId).toBe("tool-read-1");
   });
 
   it("slims Codex-shaped mcp_tool_call items to rendered fields plus a result summary", () => {

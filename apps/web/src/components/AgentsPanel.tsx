@@ -218,7 +218,13 @@ function AgentDetail({
   const feed: ReadonlyArray<SubagentLogEntry> =
     entries.length > 0
       ? entries
-      : agent.recentActivity.map((tick) => subagentLogEntryFromActivity(tick.at, tick.summary));
+      : agent.recentActivity.map((tick, index) =>
+          subagentLogEntryFromActivity(
+            `recent:${agent.id}:${index}:${tick.at}`,
+            tick.at,
+            tick.summary,
+          ),
+        );
 
   useEffect(() => {
     const element = feedRef.current;
@@ -293,7 +299,7 @@ function AgentDetail({
           >
             {feed.map((entry, index) => (
               <li
-                key={`${entry.at}:${entry.kind}:${entry.summary}:${entry.detail ?? ""}`}
+                key={entry.id}
                 className="grid grid-cols-[1.125rem_minmax(0,1fr)_3.25rem] gap-x-2 py-1"
               >
                 <span className="relative flex justify-center pt-0.5">

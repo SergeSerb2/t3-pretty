@@ -304,6 +304,10 @@ export function projectActivityPayload(
   if ("kind" in data) {
     projectedData.kind = data.kind;
   }
+  const toolName = asTrimmedString(data.toolName);
+  if (toolName) {
+    projectedData.toolName = toolName;
+  }
 
   const rawOutput = projectRawOutput(data.rawOutput);
   if (rawOutput) {
