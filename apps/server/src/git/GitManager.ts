@@ -87,6 +87,10 @@ export class GitManager extends Context.Service<
       input: VcsStatusInput,
       options?: GitVcsDriver.GitRemoteStatusOptions,
     ) => Effect.Effect<VcsStatusRemoteResult | null, GitManagerServiceError>;
+    readonly pullRequestForBranch: (input: {
+      readonly cwd: string;
+      readonly branch: string;
+    }) => Effect.Effect<VcsStatusRemoteResult["pr"], GitManagerServiceError>;
     readonly invalidateLocalStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateRemoteStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateStatus: (cwd: string) => Effect.Effect<void, never>;
@@ -906,11 +910,21 @@ export const make = Effect.gen(function* () {
         prLookupEpochByCwd.set(cacheKey, prLookupEpoch(cacheKey) + 1);
       }),
     );
-  // Cache keys are NUL-joined [cwd, branch, upstreamRef, epoch] — none of the
-  // segments can contain a NUL byte, and refs are never empty, so "" decodes
-  // back to a null upstreamRef.
-  const prLookupCacheKey = (cwd: string, details: { branch: string; upstreamRef: string | null }) =>
-    [cwd, details.branch, details.upstreamRef ?? "", String(prLookupEpoch(cwd))].join("\u0000");
+  // Cache keys are NUL-joined [cwd, branch, upstreamRef, includeUnpublished,
+  // epoch]. None of the segments can contain a NUL byte, and refs are never
+  // empty, so "" decodes back to a null upstreamRef.
+  const prLookupCacheKey = (
+    cwd: string,
+    details: { branch: string; upstreamRef: string | null },
+    includeUnpublished: boolean,
+  ) =>
+    [
+      cwd,
+      details.branch,
+      details.upstreamRef ?? "",
+      includeUnpublished ? "1" : "0",
+      String(prLookupEpoch(cwd)),
+    ].join("\u0000");
   // Consecutive failures per cache key, so a branch that keeps failing waits
   // longer before the next attempt. Cleared as soon as a lookup succeeds.
   const prLookupFailureStreakByKey = new Map<string, number>();
@@ -930,7 +944,8 @@ export const make = Effect.gen(function* () {
   };
   const prLookupCache = yield* Cache.makeWith(
     (key: string) => {
-      const [cwd = "", branch = "", upstreamRef = ""] = key.split("\u0000");
+      const [cwd = "", branch = "", upstreamRef = "", includeUnpublished = "0"] =
+        key.split("\u0000");
       const details = {
         branch,
         upstreamRef: upstreamRef.length > 0 ? upstreamRef : null,
@@ -939,7 +954,11 @@ export const make = Effect.gen(function* () {
         const headContext = yield* resolveBranchHeadContext(cwd, details);
         // Only skip when the branch is untracked as well: anything carrying an
         // upstream keeps the old behaviour.
-        if (details.upstreamRef === null && (yield* isUnpublishedBranch(cwd, headContext))) {
+        if (
+          includeUnpublished !== "1" &&
+          details.upstreamRef === null &&
+          (yield* isUnpublishedBranch(cwd, headContext))
+        ) {
           return { latest: null, automatedReview: undefined, headContext };
         }
         const latest = yield* findLatestPrForHeadContext(cwd, headContext);
@@ -1039,11 +1058,15 @@ export const make = Effect.gen(function* () {
   const lookupStatusPr = Effect.fn("lookupStatusPr")(function* (
     cwd: string,
     details: { branch: string; upstreamRef: string | null; isDefaultBranch: boolean },
+    options?: { readonly includeUnpublished?: boolean },
   ) {
     // Keyed by (cwd, branch) only: the upstream ref changing (e.g. a first
     // `push -u`) must not orphan the fallback value for the same branch.
     const branchKey = `${cwd}\u0000${details.branch}`;
-    return yield* Cache.get(prLookupCache, prLookupCacheKey(cwd, details)).pipe(
+    return yield* Cache.get(
+      prLookupCache,
+      prLookupCacheKey(cwd, details, options?.includeUnpublished === true),
+    ).pipe(
       Effect.map(({ latest, automatedReview, headContext }) => {
         if (!latest) return { pr: null, headContext };
         // On the default branch, only surface open PRs.
@@ -1784,6 +1807,39 @@ export const make = Effect.gen(function* () {
       return yield* Cache.get(remoteStatusResultCache, cacheKey);
     },
   );
+  const pullRequestForBranch: GitManager["Service"]["pullRequestForBranch"] = Effect.fn(
+    "pullRequestForBranch",
+  )(function* (input) {
+    const cwd = yield* normalizeStatusCacheKey(input.cwd);
+    const upstreamRef = yield* gitCore
+      .execute({
+        operation: "GitManager.pullRequestForBranch.upstream",
+        cwd,
+        args: [
+          "for-each-ref",
+          "--count=1",
+          "--format=%(upstream:short)",
+          `refs/heads/${input.branch}`,
+        ],
+        timeoutMs: 5_000,
+      })
+      .pipe(
+        Effect.map((result) => result.stdout.trim() || null),
+        Effect.orElseSucceed(() => null),
+      );
+
+    return yield* lookupStatusPr(
+      cwd,
+      {
+        branch: input.branch,
+        upstreamRef,
+        isDefaultBranch: false,
+      },
+      // Merged hosts often delete the remote branch. The persisted thread
+      // branch is still enough to ask the provider for its latest PR/MR.
+      { includeUnpublished: true },
+    );
+  });
   const status: GitManager["Service"]["status"] = Effect.fn("status")(function* (input) {
     const [local, remote] = yield* Effect.all([localStatus(input), remoteStatus(input)], {
       concurrency: "unbounded",
@@ -2242,6 +2298,7 @@ export const make = Effect.gen(function* () {
   return GitManager.of({
     localStatus,
     remoteStatus,
+    pullRequestForBranch,
     status,
     invalidateLocalStatus,
     invalidateRemoteStatus,

@@ -874,6 +874,50 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect("resolves a merged PR for a stored branch that is not checked out", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      const branch = "feature/background-merged";
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            [branch]:
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
+              JSON.stringify([
+                {
+                  number: 18,
+                  title: "Background merged PR",
+                  url: "https://github.com/pingdotgg/codething-mvp/pull/18",
+                  baseRefName: "main",
+                  headRefName: branch,
+                  state: "merged",
+                  updatedAt: "2026-01-03T00:00:00.000Z",
+                },
+              ]),
+          },
+        },
+      });
+
+      const pullRequest = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+
+      expect(pullRequest).toEqual({
+        number: 18,
+        title: "Background merged PR",
+        url: "https://github.com/pingdotgg/codething-mvp/pull/18",
+        baseRef: "main",
+        headRef: branch,
+        state: "merged",
+      });
+      expect(ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`))).toBe(
+        true,
+      );
+    }),
+  );
+
   it.effect("status returns an explicit non-repo result for non-git directories", () =>
     Effect.gen(function* () {
       const cwd = yield* makeTempDir("t3code-git-manager-non-repo-");

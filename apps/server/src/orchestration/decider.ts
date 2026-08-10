@@ -456,6 +456,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (
+        command.onlyIfAutoSettlementEligible === true &&
+        (thread.pinnedAt != null || thread.settledOverride !== null)
+      ) {
+        return yield* Effect.fail(
+          new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `thread ${command.threadId} became pinned or gained an explicit lifecycle override before automatic settlement`,
+          }),
+        );
+      }
       // Server-side twin of the client's canSettle session check: a stale
       // or raced client must not settle a thread whose session is coming
       // alive or working.

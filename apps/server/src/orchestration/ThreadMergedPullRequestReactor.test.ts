@@ -2,15 +2,14 @@ import {
   ThreadId,
   type OrchestrationCommand,
   type OrchestrationSessionStatus,
-  type VcsStatusResult,
+  type VcsStatusRemoteResult,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Stream from "effect/Stream";
 
-import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import {
   ProjectionSnapshotQuery,
@@ -35,35 +34,25 @@ function makeCandidate(input: {
   };
 }
 
-function status(input: {
+function pullRequest(input: {
   readonly state: "open" | "closed" | "merged";
-  readonly refName?: string;
   readonly headRef?: string;
-}): VcsStatusResult {
+}): NonNullable<VcsStatusRemoteResult["pr"]> {
   return {
-    isRepo: true,
-    hasPrimaryRemote: true,
-    isDefaultRef: false,
-    refName: input.refName ?? BRANCH,
-    hasWorkingTreeChanges: false,
-    workingTree: { files: [], insertions: 0, deletions: 0 },
-    hasUpstream: true,
-    aheadCount: 0,
-    behindCount: 0,
-    pr: {
-      number: 42,
-      title: "Merged feature",
-      url: "https://github.com/example/repo/pull/42",
-      baseRef: "main",
-      headRef: input.headRef ?? BRANCH,
-      state: input.state,
-    },
+    number: 42,
+    title: "Merged feature",
+    url: "https://github.com/example/repo/pull/42",
+    baseRef: "main",
+    headRef: input.headRef ?? BRANCH,
+    state: input.state,
   };
 }
 
+const branchKey = (cwd: string, branch: string) => `${cwd}\u0000${branch}`;
+
 function runSweep(input: {
   readonly candidates: ReadonlyArray<ProjectionMergedPullRequestCandidate>;
-  readonly statusByCwd: ReadonlyMap<string, VcsStatusResult | null>;
+  readonly pullRequestByBranch: ReadonlyMap<string, VcsStatusRemoteResult["pr"]>;
 }) {
   const dispatched: OrchestrationCommand[] = [];
 
@@ -85,12 +74,9 @@ function runSweep(input: {
       }),
     ),
     Layer.provide(
-      Layer.succeed(VcsStatusBroadcaster, {
-        getStatus: () => Effect.die("getStatus should not be called"),
-        peekStatus: ({ cwd }) => Effect.succeed(input.statusByCwd.get(cwd) ?? null),
-        refreshLocalStatus: () => Effect.die("refreshLocalStatus should not be called"),
-        refreshStatus: () => Effect.die("refreshStatus should not be called"),
-        streamStatus: () => Stream.die("streamStatus should not be called"),
+      Layer.mock(GitWorkflowService.GitWorkflowService)({
+        pullRequestForBranch: ({ cwd, branch }) =>
+          Effect.succeed(input.pullRequestByBranch.get(branchKey(cwd, branch)) ?? null),
       }),
     ),
   );
@@ -107,7 +93,9 @@ describe("ThreadMergedPullRequestReactor", () => {
     Effect.gen(function* () {
       const commands = yield* runSweep({
         candidates: [makeCandidate({ id: "merged", sessionStatus: "ready" })],
-        statusByCwd: new Map([[WORKSPACE_ROOT, status({ state: "merged" })]]),
+        pullRequestByBranch: new Map([
+          [branchKey(WORKSPACE_ROOT, BRANCH), pullRequest({ state: "merged" })],
+        ]),
       });
 
       expect(commands).toHaveLength(2);
@@ -116,6 +104,7 @@ describe("ThreadMergedPullRequestReactor", () => {
       if (settleCommand?.type === "thread.settle") {
         expect(settleCommand.threadId).toBe("merged");
         expect(settleCommand.commandId.startsWith("server:auto-settle:pr-merged:")).toBe(true);
+        expect(settleCommand.onlyIfAutoSettlementEligible).toBe(true);
 
         const stopCommand = commands[1];
         expect(stopCommand?.type).toBe("thread.session.stop");
@@ -134,7 +123,9 @@ describe("ThreadMergedPullRequestReactor", () => {
       for (const sessionStatus of [null, "stopped"] as const) {
         const commands = yield* runSweep({
           candidates: [makeCandidate({ id: `merged-${sessionStatus}`, sessionStatus })],
-          statusByCwd: new Map([[WORKSPACE_ROOT, status({ state: "merged" })]]),
+          pullRequestByBranch: new Map([
+            [branchKey(WORKSPACE_ROOT, BRANCH), pullRequest({ state: "merged" })],
+          ]),
         });
 
         expect(commands.map((command) => command.type)).toEqual(["thread.settle"]);
@@ -147,7 +138,9 @@ describe("ThreadMergedPullRequestReactor", () => {
       const worktreePath = "/workspace/project-1-worktree";
       const commands = yield* runSweep({
         candidates: [makeCandidate({ id: "worktree", cwd: worktreePath })],
-        statusByCwd: new Map([[worktreePath, status({ state: "merged" })]]),
+        pullRequestByBranch: new Map([
+          [branchKey(worktreePath, BRANCH), pullRequest({ state: "merged" })],
+        ]),
       });
 
       expect(
@@ -156,19 +149,37 @@ describe("ThreadMergedPullRequestReactor", () => {
     }),
   );
 
+  it.effect("checks every stored branch when local-mode threads share a checkout", () =>
+    Effect.gen(function* () {
+      const otherBranch = "feature/merged-other";
+      const commands = yield* runSweep({
+        candidates: [
+          makeCandidate({ id: "local-one" }),
+          makeCandidate({ id: "local-two", branch: otherBranch }),
+        ],
+        pullRequestByBranch: new Map([
+          [branchKey(WORKSPACE_ROOT, BRANCH), pullRequest({ state: "merged" })],
+          [
+            branchKey(WORKSPACE_ROOT, otherBranch),
+            pullRequest({ state: "merged", headRef: otherBranch }),
+          ],
+        ]),
+      });
+
+      expect(
+        commands.flatMap((command) => (command.type === "thread.settle" ? [command.threadId] : [])),
+      ).toEqual(["local-one", "local-two"]);
+    }),
+  );
+
   it.effect("does not settle open, closed, or mismatched pull requests", () =>
     Effect.gen(function* () {
-      const cases = [
-        status({ state: "open" }),
-        status({ state: "closed" }),
-        status({ state: "merged", refName: "feature/other" }),
-        status({ state: "merged", headRef: "feature/other" }),
-      ];
+      const cases = [pullRequest({ state: "open" }), pullRequest({ state: "closed" }), null];
 
       for (const [index, vcsStatus] of cases.entries()) {
         const commands = yield* runSweep({
           candidates: [makeCandidate({ id: `not-merged-${index}` })],
-          statusByCwd: new Map([[WORKSPACE_ROOT, vcsStatus]]),
+          pullRequestByBranch: new Map([[branchKey(WORKSPACE_ROOT, BRANCH), vcsStatus]]),
         });
         expect(commands).toEqual([]);
       }

@@ -24,6 +24,7 @@ function makeReadModel(
   session: OrchestrationSession | null = null,
   activities: OrchestrationThread["activities"] = [],
   messages: OrchestrationThread["messages"] = [],
+  pinnedAt: string | null = null,
 ): OrchestrationReadModel {
   return {
     snapshotSequence: 0,
@@ -44,6 +45,7 @@ function makeReadModel(
         archivedAt,
         settledOverride,
         settledAt: settledOverride === "settled" ? SETTLED_AT : null,
+        pinnedAt,
         deletedAt: null,
         messages,
         proposedPlans: [],
@@ -132,6 +134,25 @@ it.layer(NodeServices.layer)("settled thread decider", (it) => {
       });
       const settledEvents = Array.isArray(settled) ? settled : [settled];
       expect(settledEvents[0]?.type).toBe("thread.settled");
+    }),
+  );
+
+  it.effect("preserves user activation and pins during automatic settlement races", () =>
+    Effect.gen(function* () {
+      const command = {
+        type: "thread.settle" as const,
+        commandId: CommandId.make("cmd-auto-settle-race"),
+        threadId: ThreadId.make("thread-1"),
+        onlyIfAutoSettlementEligible: true,
+      };
+
+      for (const readModel of [
+        makeReadModel("active"),
+        makeReadModel(null, null, null, [], [], NOW),
+      ]) {
+        const error = yield* decideOrchestrationCommand({ command, readModel }).pipe(Effect.flip);
+        expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      }
     }),
   );
 

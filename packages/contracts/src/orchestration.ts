@@ -688,6 +688,10 @@ const ThreadSettleCommand = Schema.Struct({
   type: Schema.Literal("thread.settle"),
   commandId: CommandId,
   threadId: ThreadId,
+  // Background settlement is conditional: a user may pin or explicitly keep
+  // the thread active after a reconciliation query but before this command is
+  // decided. The authoritative read model must win that race.
+  onlyIfAutoSettlementEligible: Schema.optional(Schema.Boolean),
 });
 
 const ThreadUnsettleCommand = Schema.Struct({
