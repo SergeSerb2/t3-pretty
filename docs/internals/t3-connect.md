@@ -40,6 +40,11 @@ The shared client loader projects these canonical values into framework-specific
 `EXPO_PUBLIC_*` aliases. Existing aliases remain accepted as overrides for compatibility, but new
 client configuration should use the canonical names.
 
+The environment persists the relay URL that owns its active link. The web reconciliation path only
+treats that link as enabled when it matches the build-configured relay; enabling access after a
+relay change removes the previous local link before installing the current relay's account,
+credential, issuer, and managed tunnel configuration.
+
 Configuration precedence is:
 
 1. Process or CI environment variables.

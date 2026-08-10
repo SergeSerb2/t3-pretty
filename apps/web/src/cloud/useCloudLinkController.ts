@@ -11,13 +11,14 @@ import { useState } from "react";
 import { toastManager } from "../components/ui/toast";
 import { relayEnvironmentDiscovery } from "../state/relay";
 import { useAtomCommand } from "../state/use-atom-command";
+import { isCloudLinkOnConfiguredRelay } from "./linkEnvironment";
 import {
   linkPrimaryEnvironment as linkPrimaryEnvironmentAtom,
   unlinkPrimaryEnvironment as unlinkPrimaryEnvironmentAtom,
   updatePrimaryEnvironmentPreferences as updatePrimaryEnvironmentPreferencesAtom,
 } from "./linkEnvironmentAtoms";
 import { usePrimaryCloudLinkState } from "./primaryCloudLinkState";
-import { resolveRelayClerkTokenOptions } from "./publicConfig";
+import { resolveCloudPublicConfig, resolveRelayClerkTokenOptions } from "./publicConfig";
 
 export interface CloudLinkDesiredState {
   readonly managedTunnel: boolean;
@@ -72,12 +73,17 @@ export function useCloudLinkController() {
     });
   };
 
+  const storedLinkState = primaryCloudLinkState.data;
+  const storedLinked = storedLinkState?.linked ?? false;
+  const linked = isCloudLinkOnConfiguredRelay(storedLinkState, resolveCloudPublicConfig().relayUrl);
   // Older environment servers predate the managedTunnelActive field; for them a
-  // link always implies a managed tunnel, so fall back to `linked`.
-  const managedTunnelActive =
-    primaryCloudLinkState.data?.managedTunnelActive ?? primaryCloudLinkState.data?.linked ?? false;
-  const publishAgentActivity = primaryCloudLinkState.data?.publishAgentActivity ?? false;
-  const linked = primaryCloudLinkState.data?.linked ?? false;
+  // link always implies a managed tunnel, so fall back to `linked`. A link to a
+  // different relay is not active for this build and must be replaced before
+  // either capability can be presented as enabled.
+  const storedManagedTunnelActive =
+    storedLinkState?.managedTunnelActive ?? storedLinkState?.linked ?? false;
+  const managedTunnelActive = linked && storedManagedTunnelActive;
+  const publishAgentActivity = linked && (storedLinkState?.publishAgentActivity ?? false);
 
   const reconcileCloudState = async (desired: CloudLinkDesiredState): Promise<boolean> => {
     setOperationError(null);
@@ -119,7 +125,21 @@ export function useCloudLinkController() {
         );
         return false;
       }
-      if (!linked || managedTunnelActive !== desired.managedTunnel) {
+      // Forks and self-hosted builds can change relay deployments while a host
+      // still has a durable link to the previous one. Remove that local link
+      // first so the new relay can install its account, issuer, credential, and
+      // tunnel as one coherent configuration.
+      if (storedLinked && !linked) {
+        const unlinkResult = await unlinkPrimaryEnvironment({ target, clerkToken });
+        if (unlinkResult._tag === "Failure") {
+          if (!isAtomCommandInterrupted(unlinkResult)) {
+            reportUpdateFailure(squashAtomCommandFailure(unlinkResult));
+          }
+          primaryCloudLinkState.refresh();
+          return false;
+        }
+      }
+      if (!linked || storedManagedTunnelActive !== desired.managedTunnel) {
         const linkResult = await linkPrimaryEnvironment({
           target,
           clerkToken,

@@ -49,6 +49,10 @@ On a new device:
 1. Open **Settings** → **Connections** and sign in to the same Surge Code account.
 2. Find the host under **Remote Environments** and select **Connect**.
 
+If a host says **Relay offline**, open **Connections** on that host and enable Surge Connect there.
+When an updated or self-hosted build targets a different relay, enabling Surge Connect replaces the
+host's old relay link with one for the current build.
+
 Use **Manage account** on the Surge Code account row to inspect or change the signed-in account.
 **Publish agent activity** is a separate setting for mobile notifications and Live Activities; it
 does not need the Surge Connect tunnel to be on. If the account row says **Unavailable**, that build
