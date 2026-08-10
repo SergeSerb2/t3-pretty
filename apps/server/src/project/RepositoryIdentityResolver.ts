@@ -115,8 +115,9 @@ function redactGitRemoteUrlCredentials(remoteUrl: string): string {
       return remoteUrl;
     }
   }
-  // scp-style syntax has no password field, but strip one defensively.
-  return remoteUrl.replace(/^([^@/:]+):[^@/]*@/, "$1@");
+  // scp-style syntax has no password field — everything after the colon is
+  // the repository path and must be preserved verbatim.
+  return remoteUrl;
 }
 
 function pickRemote(
