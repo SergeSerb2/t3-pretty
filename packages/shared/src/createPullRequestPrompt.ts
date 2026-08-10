@@ -28,8 +28,16 @@ export function resolveAutoCreatePullRequest(
   return typeof stored === "boolean" ? stored : AUTO_CREATE_PULL_REQUEST_DEFAULTS[envMode];
 }
 
-const OPEN_TAG = `<${CREATE_PULL_REQUEST_TAG}>`;
-const CLOSE_TAG = `</${CREATE_PULL_REQUEST_TAG}>`;
+/**
+ * The `source` attribute is the generated-only discriminator: a user asking
+ * about this feature naturally quotes the bare `<create_pull_request_instructions>`
+ * tag, which never collides with the attributed marker the clients emit.
+ */
+export const CREATE_PULL_REQUEST_OPEN_MARKER = `<${CREATE_PULL_REQUEST_TAG} source="t3-auto-pr">`;
+export const CREATE_PULL_REQUEST_CLOSE_MARKER = `</${CREATE_PULL_REQUEST_TAG}>`;
+
+const OPEN_TAG = CREATE_PULL_REQUEST_OPEN_MARKER;
+const CLOSE_TAG = CREATE_PULL_REQUEST_CLOSE_MARKER;
 
 const GUIDELINES = `Guidelines:
 - If the current branch IS the repository's default branch (e.g. main), first create a feature branch for this work — never commit or push directly to the default branch.

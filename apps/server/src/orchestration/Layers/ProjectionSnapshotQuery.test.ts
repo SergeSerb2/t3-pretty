@@ -8,7 +8,11 @@ import {
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
-import { CREATE_PULL_REQUEST_MESSAGE_SUFFIX } from "@t3tools/shared/createPullRequestPrompt";
+import {
+  CREATE_PULL_REQUEST_CLOSE_MARKER,
+  CREATE_PULL_REQUEST_MESSAGE_SUFFIX,
+  CREATE_PULL_REQUEST_OPEN_MARKER,
+} from "@t3tools/shared/createPullRequestPrompt";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -2003,6 +2007,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             0,
             '2026-05-01T00:00:21.000Z',
             '2026-05-01T00:00:21.000Z'
+          ),
+          (
+            'message-inline-pair',
+            'thread-autopr',
+            NULL,
+            'user',
+            ${`Explain ${CREATE_PULL_REQUEST_OPEN_MARKER}INLINEVIS quarry${CREATE_PULL_REQUEST_CLOSE_MARKER}`},
+            0,
+            '2026-05-01T00:00:22.000Z',
+            '2026-05-01T00:00:22.000Z'
           )
       `;
 
@@ -2107,6 +2121,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         [[ThreadId.make("thread-autopr"), "user"]],
       );
       assert.match(deepQuotes.matches[0]?.snippet ?? "", /DEEPQUOTE quarry after fifth marker/);
+      // An inline marker pair ending the text is not the newline-delimited
+      // generated block; its visible text keeps matching (shared stripper
+      // parity).
+      const inlinePair = yield* snapshotQuery.searchThreads({ query: "INLINEVIS quarry" });
+      assert.deepStrictEqual(
+        inlinePair.matches.map((match) => [match.threadId, match.source]),
+        [[ThreadId.make("thread-autopr"), "user"]],
+      );
 
       assert.deepStrictEqual(
         (yield* snapshotQuery.searchThreads({ query: "interim needle" })).matches,

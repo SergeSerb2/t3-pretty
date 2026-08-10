@@ -38,7 +38,8 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
 import {
-  CREATE_PULL_REQUEST_TAG,
+  CREATE_PULL_REQUEST_CLOSE_MARKER,
+  CREATE_PULL_REQUEST_OPEN_MARKER,
   stripCreatePullRequestSuffix,
 } from "@t3tools/shared/createPullRequestPrompt";
 
@@ -227,8 +228,8 @@ function escapeLikePattern(value: string): string {
 }
 
 /** Markers delimiting the hidden auto-PR instruction block in user messages. */
-const AUTO_PR_INSTRUCTIONS_OPEN_TAG = `<${CREATE_PULL_REQUEST_TAG}>`;
-const AUTO_PR_INSTRUCTIONS_CLOSE_TAG = `</${CREATE_PULL_REQUEST_TAG}>`;
+const AUTO_PR_INSTRUCTIONS_OPEN_TAG = CREATE_PULL_REQUEST_OPEN_MARKER;
+const AUTO_PR_INSTRUCTIONS_CLOSE_TAG = CREATE_PULL_REQUEST_CLOSE_MARKER;
 
 function foldAsciiCase(value: string): string {
   return value.replace(/[A-Z]/g, (character) => character.toLowerCase());
@@ -859,8 +860,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       // thread's rank slot nor consume a result slot. The recursive
       // `marker_scan` walks every opening-marker position so the cut happens
       // at the TRUE last marker (matching the shared stripper) no matter how
-      // many times the user quoted it; stripping additionally requires the
-      // closing marker at the end of the text.
+      // many times the user quoted it; stripping additionally mirrors the
+      // shared structural validation — the marker must be followed by a
+      // newline and the closing marker must sit on its own line at the end.
       sql`
         WITH RECURSIVE base AS (
           SELECT
@@ -936,9 +938,19 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               WHEN base.role = 'user'
                 AND last_marker.open_pos IS NOT NULL
                 AND substr(
+                  base.text,
+                  last_marker.open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length},
+                  1
+                ) = char(10)
+                AND substr(
                   rtrim(base.text),
                   -${AUTO_PR_INSTRUCTIONS_CLOSE_TAG.length}
                 ) = ${AUTO_PR_INSTRUCTIONS_CLOSE_TAG}
+                AND substr(
+                  rtrim(base.text),
+                  -${AUTO_PR_INSTRUCTIONS_CLOSE_TAG.length + 1},
+                  1
+                ) = char(10)
               THEN substr(base.text, 1, last_marker.open_pos - 1)
               ELSE base.text
             END AS match_text,

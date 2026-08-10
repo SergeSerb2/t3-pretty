@@ -2,7 +2,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   applyCreatePullRequestSuffix,
+  CREATE_PULL_REQUEST_CLOSE_MARKER,
   CREATE_PULL_REQUEST_MESSAGE_SUFFIX,
+  CREATE_PULL_REQUEST_OPEN_MARKER,
   hasCreatePullRequestSuffix,
   stripCreatePullRequestSuffix,
 } from "./createPullRequestPrompt.ts";
@@ -77,9 +79,28 @@ describe("stripCreatePullRequestSuffix", () => {
   });
 
   it("strips historical blocks whose inner wording differs", () => {
-    const sent =
-      "Do the thing\n\n<create_pull_request_instructions>\nold wording\n</create_pull_request_instructions>";
+    const sent = `Do the thing\n\n${CREATE_PULL_REQUEST_OPEN_MARKER}\nold wording\n${CREATE_PULL_REQUEST_CLOSE_MARKER}`;
     expect(stripCreatePullRequestSuffix(sent)).toBe("Do the thing");
+  });
+
+  it("preserves a user-authored trailing block that lacks the generated marker attribute", () => {
+    const typed =
+      "Please tweak this block:\n<create_pull_request_instructions>\ncustom wording\n</create_pull_request_instructions>";
+    expect(hasCreatePullRequestSuffix(typed)).toBe(false);
+    expect(stripCreatePullRequestSuffix(typed)).toBe(typed);
+    const sent = applyCreatePullRequestSuffix({
+      text: typed,
+      autoCreatePullRequest: true,
+      threadHasStarted: false,
+    });
+    expect(sent).toBe(`${typed}${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`);
+    expect(stripCreatePullRequestSuffix(sent)).toBe(typed);
+  });
+
+  it("preserves an inline marker pair even when it ends the text", () => {
+    const typed = `Explain ${CREATE_PULL_REQUEST_OPEN_MARKER}VISIBLE${CREATE_PULL_REQUEST_CLOSE_MARKER}`;
+    expect(hasCreatePullRequestSuffix(typed)).toBe(false);
+    expect(stripCreatePullRequestSuffix(typed)).toBe(typed);
   });
 
   it("leaves an unterminated marker alone — only the exact trailing block is generated", () => {
