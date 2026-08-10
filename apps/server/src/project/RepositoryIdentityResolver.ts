@@ -56,9 +56,43 @@ function parseRemoteUrls(stdout: string): Map<string, RemoteUrls> {
 
 // A push URL only qualifies as a repository identity when it normalizes to a
 // host/owner/repo path — push URLs are also used as write-protection sentinels
-// (e.g. `pushurl = DISABLED`), which must not leak into the identity.
+// (e.g. `pushurl = DISABLED` or `pushurl = /dev/null`), which must not leak
+// into the identity. Filesystem paths (absolute POSIX or Windows drive paths)
+// are rejected; a qualifying value needs a leading host segment followed by at
+// least one repository path segment.
 function isRepositoryUrl(remoteUrl: string): boolean {
-  return normalizeGitRemoteUrl(remoteUrl).includes("/");
+  const normalized = normalizeGitRemoteUrl(remoteUrl);
+  if (normalized.startsWith("/") || /^[a-z]:[\\/]/.test(normalized)) {
+    return false;
+  }
+  const segments = normalized.split("/").filter((segment) => segment.length > 0);
+  return segments.length >= 2;
+}
+
+// Remote URLs can embed credentials (e.g. PAT-authenticated HTTPS push URLs).
+// The identity is broadcast to every connected client, so credentials must be
+// stripped before a URL is retained. HTTP(S) userinfo is always a credential;
+// for SSH-style URLs the username (typically `git`) is part of the address, so
+// only a password portion is dropped.
+function redactGitRemoteUrlCredentials(remoteUrl: string): string {
+  const schemeMatch = /^([a-z][a-z0-9+.-]*):\/\//i.exec(remoteUrl);
+  if (schemeMatch) {
+    try {
+      const url = new URL(remoteUrl);
+      if (!url.username && !url.password) {
+        return remoteUrl;
+      }
+      url.password = "";
+      if (/^https?$/i.test(schemeMatch[1] ?? "")) {
+        url.username = "";
+      }
+      return url.toString();
+    } catch {
+      return remoteUrl;
+    }
+  }
+  // scp-style syntax has no password field, but strip one defensively.
+  return remoteUrl.replace(/^([^@/:]+):[^@/]*@/, "$1@");
 }
 
 function pickRemote(
@@ -114,7 +148,7 @@ function buildRepositoryIdentity(input: {
     locator: {
       source: "git-remote",
       remoteName: input.remoteName,
-      remoteUrl: input.remoteUrl,
+      remoteUrl: redactGitRemoteUrlCredentials(input.remoteUrl),
     },
     rootPath: input.rootPath,
     ...(repositoryPath ? { displayName: repositoryPath } : {}),
