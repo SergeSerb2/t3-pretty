@@ -26,6 +26,7 @@ import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
 import { request, runStream } from "@t3tools/client-runtime/rpc";
 import { makeEnvironmentHttpApiClient } from "@t3tools/client-runtime/rpc";
 import { ManagedRelay } from "@t3tools/client-runtime/relay";
+import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 
 import {
   readPrimaryEnvironmentDescriptor,
@@ -45,6 +46,18 @@ export function normalizeRelayBaseUrl(value: string | null | undefined): string 
     return null;
   }
   return trimmed.replace(/\/+$/g, "");
+}
+
+export function isCloudLinkOnConfiguredRelay(
+  state: EnvironmentCloudLinkStateResult | null,
+  configuredRelayUrl: string | null,
+): boolean {
+  if (!state?.linked || state.relayUrl === null || configuredRelayUrl === null) {
+    return false;
+  }
+  const linkedRelayUrl = normalizeSecureRelayUrl(state.relayUrl);
+  const normalizedConfiguredRelayUrl = normalizeSecureRelayUrl(configuredRelayUrl);
+  return linkedRelayUrl !== null && linkedRelayUrl === normalizedConfiguredRelayUrl;
 }
 
 function relayUrl(): string | null {

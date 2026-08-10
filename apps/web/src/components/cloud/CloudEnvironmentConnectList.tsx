@@ -199,10 +199,10 @@ export function CloudEnvironmentConnectRows({
       : availability === "online"
         ? "Available · Relay online"
         : availability === "offline"
-          ? "Available · Relay offline"
+          ? "Unavailable · Relay offline"
           : availability === "checking"
-            ? "Available · Checking relay status…"
-            : (Option.getOrNull(error)?.message ?? "Available · Relay status unavailable");
+            ? "Checking relay status…"
+            : (Option.getOrNull(error)?.message ?? "Relay status unavailable");
     return (
       <div key={environment.environmentId} className={ITEM_ROW_CLASSNAME}>
         <div className={ITEM_ROW_INNER_CLASSNAME}>
