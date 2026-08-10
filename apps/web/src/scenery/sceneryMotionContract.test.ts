@@ -16,6 +16,8 @@ import messagesTimelineSource from "../components/chat/MessagesTimeline.tsx?raw"
 import providerBannerSource from "../components/chat/ProviderStatusBanner.tsx?raw";
 import sidebarSource from "../components/Sidebar.tsx?raw";
 import alertSource from "../components/ui/alert.tsx?raw";
+import motionDriverSource from "./SceneryMotion.tsx?raw";
+import motionStylesSource from "./motion.css?raw";
 
 describe("row arrival contract with the messages timeline", () => {
   it("row wrappers still carry data-timeline-root", () => {
@@ -38,6 +40,12 @@ describe("working-row orb contract", () => {
 
   it("tool rows still expose the heading span the orb verb is read from", () => {
     expect(messagesTimelineSource).toContain("min-w-0 shrink truncate");
+  });
+
+  it("never clones the transient working row into a fixed-position exit ghost", () => {
+    expect(motionDriverSource).not.toContain("workingRow.cloneNode");
+    expect(motionDriverSource).not.toContain("scenery-ghost-exit");
+    expect(motionStylesSource).not.toContain("scenery-ghost-exit");
   });
 });
 
