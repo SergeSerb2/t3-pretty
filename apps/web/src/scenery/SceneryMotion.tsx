@@ -38,8 +38,6 @@ const HERO_SELECTOR = "[data-chat-composer-overlay] h1";
 const SIDEBAR_ICON_SELECTOR = "[data-thread-item] svg.lucide-circle-dashed";
 /** Bound on concurrent sidebar orb canvases (offscreen ones pause anyway). */
 const SIDEBAR_ORB_CAP = 12;
-const GHOST_CLASS = "scenery-ghost-exit";
-const GHOST_FALLBACK_MS = 500;
 const ENTER_CLASS = "scenery-row-enter";
 const ENTER_DELAY_PROP = "--sc-enter-delay";
 const DIP_CLASS = "scenery-orb-dip";
@@ -163,7 +161,6 @@ export function SceneryMotion() {
     const seenRowIds = new Set<string>();
     const managedSlots = new Map<string, HTMLElement>();
     const sidebarSlots = new Map<Element, HTMLElement>();
-    let lastWorkingSnapshot: { clone: HTMLElement; rect: DOMRect } | null = null;
     const orbHold = { state: "working" as OrbState, since: 0 };
     let holdTimer: number | null = null;
     let queued = false;
@@ -223,33 +220,6 @@ export function SceneryMotion() {
       let hero: HTMLElement | null = null;
 
       const workingRow = document.querySelector<HTMLElement>(WORKING_ROW_SELECTOR);
-
-      // Completion beat: snapshot the working row every sync; when it
-      // unmounts at turn end, replay the snapshot as a ghost fading up
-      // while the turn's results rise in below it.
-      if (workingRow) {
-        lastWorkingSnapshot = {
-          clone: workingRow.cloneNode(true) as HTMLElement,
-          rect: workingRow.getBoundingClientRect(),
-        };
-      } else if (lastWorkingSnapshot) {
-        const snapshot = lastWorkingSnapshot;
-        lastWorkingSnapshot = null;
-        const threadStillMounted = document.querySelector(ROW_WRAPPER_SELECTOR) !== null;
-        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        if (threadStillMounted && !reduced && performance.now() >= silentUntilRef.current) {
-          const ghost = document.createElement("div");
-          ghost.className = GHOST_CLASS;
-          ghost.style.left = `${snapshot.rect.left}px`;
-          ghost.style.top = `${snapshot.rect.top}px`;
-          ghost.style.width = `${snapshot.rect.width}px`;
-          ghost.appendChild(snapshot.clone);
-          document.body.appendChild(ghost);
-          const removeGhost = () => ghost.remove();
-          ghost.addEventListener("animationend", removeGhost, { once: true });
-          window.setTimeout(removeGhost, GHOST_FALLBACK_MS);
-        }
-      }
 
       const workingDots = workingRow?.querySelector("span.inline-flex");
       if (workingDots?.parentElement) {
@@ -392,9 +362,6 @@ export function SceneryMotion() {
       }
       for (const slot of sidebarSlots.values()) {
         slot.remove();
-      }
-      for (const ghost of document.querySelectorAll(`.${GHOST_CLASS}`)) {
-        ghost.remove();
       }
       setSlots(NO_SLOTS);
       document.documentElement.removeAttribute("data-scenery-motion");
