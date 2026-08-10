@@ -38,6 +38,12 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
 import {
+  CREATE_PULL_REQUEST_CLOSE_MARKER,
+  CREATE_PULL_REQUEST_OPEN_MARKER,
+  stripCreatePullRequestSuffix,
+} from "@t3tools/shared/createPullRequestPrompt";
+
+import {
   isPersistenceError,
   toPersistenceDecodeError,
   toPersistenceSqlError,
@@ -220,6 +226,10 @@ function maxIso(left: string | null, right: string): string {
 function escapeLikePattern(value: string): string {
   return value.replaceAll("!", "!!").replaceAll("%", "!%").replaceAll("_", "!_");
 }
+
+/** Markers delimiting the hidden auto-PR instruction block in user messages. */
+const AUTO_PR_INSTRUCTIONS_OPEN_TAG = CREATE_PULL_REQUEST_OPEN_MARKER;
+const AUTO_PR_INSTRUCTIONS_CLOSE_TAG = CREATE_PULL_REQUEST_CLOSE_MARKER;
 
 function foldAsciiCase(value: string): string {
   return value.replace(/[A-Z]/g, (character) => character.toLowerCase());
@@ -843,8 +853,18 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     Request: ProjectionThreadSearchRequest,
     Result: ProjectionThreadSearchRow,
     execute: ({ pattern, limit }) =>
+      // `candidates` reduces user messages to their visible text (the hidden
+      // auto-PR instruction block is a trailing suffix, so everything from the
+      // final marker on is agent-only) BEFORE the LIKE filter, per-thread
+      // ranking, and LIMIT run — a hidden-only hit must neither claim a
+      // thread's rank slot nor consume a result slot. The recursive
+      // `marker_scan` walks every opening-marker position so the cut happens
+      // at the TRUE last marker (matching the shared stripper) no matter how
+      // many times the user quoted it; stripping additionally mirrors the
+      // shared structural validation — the marker must be followed by a
+      // newline and the closing marker must sit on its own line at the end.
       sql`
-        WITH ranked AS (
+        WITH RECURSIVE base AS (
           SELECT
             threads.thread_id AS thread_id,
             threads.project_id AS project_id,
@@ -852,23 +872,15 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               WHEN 'user' THEN 'user'
               ELSE 'assistant'
             END AS source,
-            messages.text AS match_text,
+            messages.role AS role,
+            messages.text AS text,
+            messages.message_id AS message_id,
             messages.created_at AS message_created_at,
             CASE messages.role
               WHEN 'user' THEN 0
               ELSE 1
             END AS match_rank,
-            threads.updated_at AS thread_updated_at,
-            ROW_NUMBER() OVER (
-              PARTITION BY threads.thread_id
-              ORDER BY
-                CASE messages.role
-                  WHEN 'user' THEN 0
-                  ELSE 1
-                END ASC,
-                messages.created_at DESC,
-                messages.message_id ASC
-            ) AS thread_match_rank
+            threads.updated_at AS thread_updated_at
           FROM projection_thread_messages AS messages
           INNER JOIN projection_threads AS threads
             ON threads.thread_id = messages.thread_id
@@ -889,7 +901,79 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 )
               )
             )
-            AND messages.text LIKE ${pattern} ESCAPE '!'
+        ),
+        marker_scan AS (
+          SELECT
+            message_id,
+            text,
+            instr(text, ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}) AS open_pos
+          FROM base
+          WHERE role = 'user'
+            AND instr(text, ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}) > 0
+          UNION ALL
+          SELECT
+            message_id,
+            text,
+            open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length} - 1 + instr(
+              substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
+              ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
+            )
+          FROM marker_scan
+          WHERE instr(
+            substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
+            ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
+          ) > 0
+        ),
+        last_marker AS (
+          SELECT message_id, MAX(open_pos) AS open_pos
+          FROM marker_scan
+          GROUP BY message_id
+        ),
+        candidates AS (
+          SELECT
+            base.thread_id,
+            base.project_id,
+            base.source,
+            CASE
+              WHEN base.role = 'user'
+                AND last_marker.open_pos IS NOT NULL
+                AND substr(
+                  base.text,
+                  last_marker.open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length},
+                  1
+                ) = char(10)
+                AND substr(
+                  rtrim(base.text),
+                  -${AUTO_PR_INSTRUCTIONS_CLOSE_TAG.length}
+                ) = ${AUTO_PR_INSTRUCTIONS_CLOSE_TAG}
+                AND substr(
+                  rtrim(base.text),
+                  -${AUTO_PR_INSTRUCTIONS_CLOSE_TAG.length + 1},
+                  1
+                ) = char(10)
+              THEN substr(base.text, 1, last_marker.open_pos - 1)
+              ELSE base.text
+            END AS match_text,
+            base.message_id,
+            base.message_created_at,
+            base.match_rank,
+            base.thread_updated_at
+          FROM base
+          LEFT JOIN last_marker
+            ON last_marker.message_id = base.message_id
+        ),
+        ranked AS (
+          SELECT
+            *,
+            ROW_NUMBER() OVER (
+              PARTITION BY thread_id
+              ORDER BY
+                match_rank ASC,
+                message_created_at DESC,
+                message_id ASC
+            ) AS thread_match_rank
+          FROM candidates
+          WHERE match_text LIKE ${pattern} ESCAPE '!'
         )
         SELECT
           thread_id AS "threadId",
@@ -2236,7 +2320,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         threadId: row.threadId,
         projectId: row.projectId,
         source: row.source,
-        snippet: buildSearchSnippet(row.matchText, input.query),
+        // The SQL already reduced user rows to their visible text; this strip
+        // is a belt-and-braces pass for any non-trailing marker block.
+        snippet: buildSearchSnippet(
+          row.source === "user" ? stripCreatePullRequestSuffix(row.matchText) : row.matchText,
+          input.query,
+        ),
         messageCreatedAt: row.messageCreatedAt,
       })),
     };

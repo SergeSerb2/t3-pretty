@@ -1,4 +1,5 @@
 import { type ThreadId } from "@t3tools/contracts";
+import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 
 import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
 
@@ -247,13 +248,17 @@ export function extractTrailingTerminalContexts(prompt: string): ExtractedTermin
 
 export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMessageState {
   // Order matters: send-time appends `<terminal_context>` first, then
-  // `<element_context>` last. Strip element first so the (now-trailing)
-  // terminal block can be matched by `extractTrailingTerminalContexts`.
-  const extractedElement = extractTrailingElementContexts(prompt);
+  // `<element_context>`, then the auto-PR instruction block last. Strip in
+  // reverse so each stage sees its block back at the trailing position.
+  const withoutPullRequestSuffix = stripCreatePullRequestSuffix(prompt);
+  const extractedElement = extractTrailingElementContexts(withoutPullRequestSuffix);
   const extractedTerminal = extractTrailingTerminalContexts(extractedElement.promptText);
   return {
     visibleText: extractedTerminal.promptText,
-    copyText: prompt,
+    // Copy keeps the attached context blocks but never the agent-only auto-PR
+    // instructions — the clipboard should match what the user believes the
+    // message says.
+    copyText: withoutPullRequestSuffix,
     contextCount: extractedTerminal.contextCount,
     previewTitle: extractedTerminal.previewTitle,
     contexts: extractedTerminal.contexts,

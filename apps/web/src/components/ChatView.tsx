@@ -121,6 +121,7 @@ import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
+import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
@@ -4117,6 +4118,26 @@ function ChatViewContent(props: ChatViewProps) {
     requestedEnvMode: envMode,
     isGitRepo,
   });
+  // Auto-PR preference is kept per env mode: worktree threads default on
+  // (their work is expected to land as a PR), local threads default off.
+  const autoCreatePullRequestEnvMode = sendEnvMode === "worktree" ? "worktree" : "local";
+  const autoCreatePullRequestPreference = useUiStateStore(
+    (store) => store.autoCreatePullRequestByEnvMode[autoCreatePullRequestEnvMode],
+  );
+  // Gate the applied value, not just the toggle's visibility: outside a git
+  // repository the hidden control leaves no way to turn the behavior off, and
+  // fetch/push/PR instructions are meaningless there anyway.
+  const autoCreatePullRequest = isGitRepo && autoCreatePullRequestPreference;
+  const setAutoCreatePullRequestForEnvMode = useUiStateStore(
+    (store) => store.setAutoCreatePullRequest,
+  );
+  const onToggleAutoCreatePullRequest = useCallback(() => {
+    setAutoCreatePullRequestForEnvMode(autoCreatePullRequestEnvMode, !autoCreatePullRequest);
+  }, [autoCreatePullRequest, autoCreatePullRequestEnvMode, setAutoCreatePullRequestForEnvMode]);
+  // The suffix only ever rides a thread's first message, so the toggle is
+  // only offered while the thread is still fresh (macOS/mobile parity).
+  const offerAutoCreatePullRequestToggle =
+    isGitRepo && (!isServerThread || (activeThread?.messages.length ?? 0) === 0);
   const localCheckoutBranchMismatch = useMemo(
     () =>
       isServerThread
@@ -5094,10 +5115,17 @@ function ChatViewContent(props: ChatViewProps) {
       (text, annotation) => appendPreviewAnnotationPrompt(text, annotation),
       messageTextWithContexts,
     );
-    const messageTextForSend = appendReviewCommentsToPrompt(
-      messageTextWithPreviewAnnotations,
-      composerReviewCommentsSnapshot,
-    );
+    // The image-only fallback substitutes before the auto-PR suffix so an
+    // attachments-only first message still carries the PR instruction.
+    const messageTextForSend = applyCreatePullRequestSuffix({
+      text:
+        appendReviewCommentsToPrompt(
+          messageTextWithPreviewAnnotations,
+          composerReviewCommentsSnapshot,
+        ) || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+      autoCreatePullRequest,
+      threadHasStarted: !isFirstMessage,
+    });
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const outgoingMessageText = formatOutgoingPrompt({
@@ -5105,7 +5133,7 @@ function ChatViewContent(props: ChatViewProps) {
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
-      text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+      text: messageTextForSend,
     });
     const turnAttachmentsPromise = Promise.all(
       composerImagesSnapshot.map(async (image) => ({
@@ -5715,7 +5743,14 @@ function ChatViewContent(props: ChatViewProps) {
     const createdAt = new Date().toISOString();
     const nextThreadId = newThreadId();
     const planMarkdown = activeProposedPlan.planMarkdown;
-    const implementationPrompt = buildPlanImplementationPrompt(planMarkdown);
+    // The implementation prompt is the new thread's first user message, so the
+    // auto-PR toggle applies to it the same way it applies to a composer send —
+    // the implementing agent is the one that should open the PR.
+    const implementationPrompt = applyCreatePullRequestSuffix({
+      text: buildPlanImplementationPrompt(planMarkdown),
+      autoCreatePullRequest,
+      threadHasStarted: false,
+    });
     const outgoingImplementationPrompt = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
@@ -5828,6 +5863,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeProposedPlan,
     activeThreadBranch,
     activeThread,
+    autoCreatePullRequest,
     beginLocalDispatch,
     activeEnvironmentUnavailable,
     createThread,
@@ -6346,6 +6382,9 @@ function ChatViewContent(props: ChatViewProps) {
                             activeProposedPlan={activeProposedPlan}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
+                            autoCreatePullRequest={autoCreatePullRequest}
+                            showAutoCreatePullRequestToggle={offerAutoCreatePullRequestToggle}
+                            onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
                             lockedProvider={lockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
                             activeProjectDefaultModelSelection={

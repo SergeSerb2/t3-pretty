@@ -8,6 +8,11 @@ import {
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
+import {
+  CREATE_PULL_REQUEST_CLOSE_MARKER,
+  CREATE_PULL_REQUEST_MESSAGE_SUFFIX,
+  CREATE_PULL_REQUEST_OPEN_MARKER,
+} from "@t3tools/shared/createPullRequestPrompt";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -1849,6 +1854,25 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             '2026-05-01T00:00:07.000Z',
             '2026-05-01T00:00:08.000Z',
             NULL
+          ),
+          (
+            'thread-autopr',
+            'project-search',
+            'Auto-PR search',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            'full-access',
+            'default',
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            '2026-05-01T00:00:09.000Z',
+            '2026-05-01T00:00:09.000Z',
+            NULL,
+            NULL
           )
       `;
 
@@ -1933,6 +1957,66 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             0,
             '2026-05-01T00:00:16.000Z',
             '2026-05-01T00:00:16.000Z'
+          ),
+          (
+            'message-autopr',
+            'thread-autopr',
+            'turn-autopr',
+            'user',
+            ${`Refactor the AUTOPR parser.${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`},
+            0,
+            '2026-05-01T00:00:17.000Z',
+            '2026-05-01T00:00:17.000Z'
+          ),
+          (
+            'message-autopr-final',
+            'thread-autopr',
+            'turn-autopr',
+            'assistant',
+            'I merged main and opened the pull request for review.',
+            0,
+            '2026-05-01T00:00:18.000Z',
+            '2026-05-01T00:00:18.000Z'
+          ),
+          (
+            'message-midtag',
+            'thread-autopr',
+            NULL,
+            'user',
+            'How does <create_pull_request_instructions> tagging work? MIDTAG probe.',
+            0,
+            '2026-05-01T00:00:19.000Z',
+            '2026-05-01T00:00:19.000Z'
+          ),
+          (
+            'message-quoted-plus-suffix',
+            'thread-autopr',
+            NULL,
+            'user',
+            ${`Compare <create_pull_request_instructions> handling.\nQUOTEDVIS quarry after marker.${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`},
+            0,
+            '2026-05-01T00:00:20.000Z',
+            '2026-05-01T00:00:20.000Z'
+          ),
+          (
+            'message-deep-quotes',
+            'thread-autopr',
+            NULL,
+            'user',
+            ${`${"Quote <create_pull_request_instructions> again.\n".repeat(5)}DEEPQUOTE quarry after fifth marker.${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`},
+            0,
+            '2026-05-01T00:00:21.000Z',
+            '2026-05-01T00:00:21.000Z'
+          ),
+          (
+            'message-inline-pair',
+            'thread-autopr',
+            NULL,
+            'user',
+            ${`Explain ${CREATE_PULL_REQUEST_OPEN_MARKER}INLINEVIS quarry${CREATE_PULL_REQUEST_CLOSE_MARKER}`},
+            0,
+            '2026-05-01T00:00:22.000Z',
+            '2026-05-01T00:00:22.000Z'
           )
       `;
 
@@ -1948,17 +2032,29 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           completed_at,
           checkpoint_files_json
         )
-        VALUES (
-          'thread-active',
-          'turn-active',
-          'message-user',
-          'message-final',
-          'completed',
-          '2026-05-01T00:00:12.000Z',
-          '2026-05-01T00:00:12.000Z',
-          '2026-05-01T00:00:13.000Z',
-          '[]'
-        )
+        VALUES
+          (
+            'thread-active',
+            'turn-active',
+            'message-user',
+            'message-final',
+            'completed',
+            '2026-05-01T00:00:12.000Z',
+            '2026-05-01T00:00:12.000Z',
+            '2026-05-01T00:00:13.000Z',
+            '[]'
+          ),
+          (
+            'thread-autopr',
+            'turn-autopr',
+            'message-autopr',
+            'message-autopr-final',
+            'completed',
+            '2026-05-01T00:00:17.000Z',
+            '2026-05-01T00:00:17.000Z',
+            '2026-05-01T00:00:18.000Z',
+            '[]'
+          )
       `;
 
       const literalPercent = yield* snapshotQuery.searchThreads({ query: "100%" });
@@ -1978,6 +2074,60 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       assert.deepStrictEqual(
         deduped.matches.map((match) => [match.threadId, match.source]),
         [[ThreadId.make("thread-active"), "user"]],
+      );
+
+      // The hidden auto-PR instruction block neither matches nor leaks into
+      // snippets: block-only phrases find nothing, and a hit on the user's own
+      // text produces an excerpt without the block.
+      assert.deepStrictEqual(
+        (yield* snapshotQuery.searchThreads({ query: "resolving any conflicts" })).matches,
+        [],
+      );
+      const autoPr = yield* snapshotQuery.searchThreads({ query: "AUTOPR parser" });
+      assert.deepStrictEqual(
+        autoPr.matches.map((match) => [match.threadId, match.source]),
+        [[ThreadId.make("thread-autopr"), "user"]],
+      );
+      assert.equal(autoPr.matches[0]?.snippet, "Refactor the AUTOPR parser.");
+      // A hidden-block hit must not shadow a genuine assistant match in the
+      // same thread: "pull request" appears in the user suffix (excluded
+      // before ranking) and in the visible assistant reply (returned).
+      const shadowed = yield* snapshotQuery.searchThreads({ query: "pull request" });
+      assert.deepStrictEqual(
+        shadowed.matches.map((match) => [match.threadId, match.source]),
+        [[ThreadId.make("thread-autopr"), "assistant"]],
+      );
+      // User-authored text that merely quotes the marker mid-message is not a
+      // generated suffix and stays fully searchable.
+      const midTag = yield* snapshotQuery.searchThreads({ query: "MIDTAG probe" });
+      assert.deepStrictEqual(
+        midTag.matches.map((match) => [match.threadId, match.source]),
+        [[ThreadId.make("thread-autopr"), "user"]],
+      );
+      assert.match(midTag.matches[0]?.snippet ?? "", /MIDTAG probe/);
+      // Visible text between a quoted marker and the generated suffix stays
+      // searchable — the cut happens at the LAST marker, not the first.
+      const quotedPlusSuffix = yield* snapshotQuery.searchThreads({ query: "QUOTEDVIS quarry" });
+      assert.deepStrictEqual(
+        quotedPlusSuffix.matches.map((match) => [match.threadId, match.source]),
+        [[ThreadId.make("thread-autopr"), "user"]],
+      );
+      assert.match(quotedPlusSuffix.matches[0]?.snippet ?? "", /QUOTEDVIS quarry after marker/);
+      // The last-marker walk is unbounded: visible text after the FIFTH
+      // quoted marker still matches.
+      const deepQuotes = yield* snapshotQuery.searchThreads({ query: "DEEPQUOTE quarry" });
+      assert.deepStrictEqual(
+        deepQuotes.matches.map((match) => [match.threadId, match.source]),
+        [[ThreadId.make("thread-autopr"), "user"]],
+      );
+      assert.match(deepQuotes.matches[0]?.snippet ?? "", /DEEPQUOTE quarry after fifth marker/);
+      // An inline marker pair ending the text is not the newline-delimited
+      // generated block; its visible text keeps matching (shared stripper
+      // parity).
+      const inlinePair = yield* snapshotQuery.searchThreads({ query: "INLINEVIS quarry" });
+      assert.deepStrictEqual(
+        inlinePair.matches.map((match) => [match.threadId, match.source]),
+        [[ThreadId.make("thread-autopr"), "user"]],
       );
 
       assert.deepStrictEqual(

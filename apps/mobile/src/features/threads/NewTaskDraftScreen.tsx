@@ -1,4 +1,5 @@
 import { NativeStackScreenOptions } from "../../native/StackHeader";
+import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 import { StackActions, useNavigation, usePreventRemove } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, InteractionManager, Platform, View, useColorScheme } from "react-native";
@@ -708,6 +709,14 @@ export function NewTaskDraftScreen(props: {
     [flow],
   );
 
+  // Resolved by the flow provider against the workspace mode currently shown
+  // in the pill (with any draft-scoped override), so the toggle always
+  // reflects what the next Start tap will send.
+  const autoCreatePullRequest = flow.autoCreatePullRequest;
+  const toggleAutoCreatePullRequest = () => {
+    flow.setAutoCreatePullRequest(!autoCreatePullRequest);
+  };
+
   async function handleStart(): Promise<void> {
     const selectedProject = flow.selectedProject;
     const draftKey = flow.draftKey;
@@ -736,6 +745,7 @@ export function NewTaskDraftScreen(props: {
       !modelSelection ||
       initialMessageText.length === 0 ||
       flow.submitting ||
+      !flow.autoCreatePullRequestSettled ||
       (workspaceMode === "worktree" && !selectedBranchName)
     ) {
       return;
@@ -801,7 +811,11 @@ export function NewTaskDraftScreen(props: {
       startFromOrigin,
       runtimeMode,
       interactionMode,
-      initialMessageText,
+      initialMessageText: applyCreatePullRequestSuffix({
+        text: initialMessageText,
+        autoCreatePullRequest,
+        threadHasStarted: false,
+      }),
       initialAttachments: draft.attachments,
       ...(editingPendingTask
         ? {
@@ -874,6 +888,9 @@ export function NewTaskDraftScreen(props: {
     isIncomingShareReady &&
     !isImportingShare &&
     !flow.submitting &&
+    // The auto-PR choice must be settled (draft override or hydrated
+    // preferences) so a cold-start send cannot race the stored setting.
+    flow.autoCreatePullRequestSettled &&
     !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
   const promptEditor = (
     <ComposerEditor
@@ -950,6 +967,19 @@ export function NewTaskDraftScreen(props: {
           label={workspaceLabel}
         />
       </ControlPillMenu>
+      {flow.canToggleAutoCreatePullRequest ? (
+        <ComposerToolbarButton
+          accessibilityLabel={
+            autoCreatePullRequest ? "Create PR when done: on" : "Create PR when done: off"
+          }
+          active={autoCreatePullRequest}
+          disabled={isIncomingShareTransferPending}
+          icon="arrow.triangle.pull"
+          label="PR"
+          onPress={toggleAutoCreatePullRequest}
+          showChevron={false}
+        />
+      ) : null}
     </>
   );
 

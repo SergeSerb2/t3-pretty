@@ -17,13 +17,21 @@ import {
   T3_PROJECT_FILE_NAME,
   ThreadId,
 } from "@t3tools/contracts";
+import {
+  applyCreatePullRequestSuffix,
+  hasCreatePullRequestSuffix,
+  resolveAutoCreatePullRequest,
+  stripCreatePullRequestSuffix,
+} from "@t3tools/shared/createPullRequestPrompt";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import {
   isDefaultThreadEnvModeSettled,
   resolveDefaultThreadEnvMode,
 } from "@t3tools/shared/threadEnvMode";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
+import { AsyncResult } from "effect/unstable/reactivity";
 
 import { useEnvironmentServerConfig, useProjects, useThreadShells } from "../../state/entities";
 import type { TurnCommandMetadata } from "../../lib/commandMetadata";
@@ -74,6 +82,7 @@ import {
   type HomeProjectScope,
 } from "../home/homeThreadList";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
+import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 
 type WorkspaceMode = "local" | "worktree";
 
@@ -142,6 +151,9 @@ type NewTaskFlowContextValue = {
   readonly availableBranches: ReadonlyArray<VcsRef>;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
+  readonly autoCreatePullRequest: boolean;
+  readonly autoCreatePullRequestSettled: boolean;
+  readonly canToggleAutoCreatePullRequest: boolean;
   readonly expandedProvider: string | null;
   readonly environments: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
@@ -164,6 +176,7 @@ type NewTaskFlowContextValue = {
   readonly setWorkspaceMode: (mode: WorkspaceMode) => void;
   readonly selectBranch: (branch: VcsRef) => void;
   readonly setStartFromOrigin: (value: boolean) => void;
+  readonly setAutoCreatePullRequest: (enabled: boolean) => void;
   readonly beginEditingPendingTask: (messageId: string) => boolean;
   readonly finishEditingPendingTask: () => void;
   readonly cancelEditingPendingTask: () => void;
@@ -384,6 +397,43 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     projectFilePending: t3ProjectFileQuery.isPending,
   });
   const workspaceMode = selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode;
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const preferencesHydrated = AsyncResult.isSuccess(preferencesResult);
+  const autoCreatePullRequestByEnvMode = preferencesHydrated
+    ? preferencesResult.value.autoCreatePullRequestByEnvMode
+    : undefined;
+  // A draft-scoped override (set when a queued task is hydrated for editing,
+  // or when the user flips the toggle mid-edit) wins over the per-mode
+  // preference so editing unrelated text cannot change a queued task's choice.
+  // Until the persisted preferences hydrate the choice stays OFF: sending the
+  // push/open-PR instructions against a not-yet-loaded opt-out is worse than
+  // briefly withholding the default. Gated on repository status below.
+  const autoCreatePullRequestChoice =
+    selectedProjectDraft.autoCreatePullRequest ??
+    (preferencesHydrated
+      ? resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, workspaceMode)
+      : false);
+  // Submission waits for this: sending during hydration would race the stored
+  // choice in whichever direction the fallback picks. A draft override settles
+  // it immediately; otherwise the persisted preferences must have loaded.
+  const autoCreatePullRequestSettled =
+    selectedProjectDraft.autoCreatePullRequest !== undefined || preferencesHydrated;
+  const setAutoCreatePullRequest = useCallback(
+    (enabled: boolean) => {
+      if (editingPendingTaskRef.current !== null && selectedProjectDraftKey !== null) {
+        updateComposerDraftSettings(selectedProjectDraftKey, { autoCreatePullRequest: enabled });
+        return;
+      }
+      savePreferences({
+        autoCreatePullRequestByEnvMode: {
+          ...autoCreatePullRequestByEnvMode,
+          [workspaceMode]: enabled,
+        },
+      });
+    },
+    [autoCreatePullRequestByEnvMode, savePreferences, selectedProjectDraftKey, workspaceMode],
+  );
   const selectedBranchName = selectedProjectDraft.workspaceSelection?.branch ?? null;
   const selectedWorktreePath = selectedProjectDraft.workspaceSelection?.worktreePath ?? null;
   // Keep the user's explicit choice separate from the resolved display value:
@@ -532,6 +582,13 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   );
   const branchState = useBranches(branchTarget);
   const branchesLoading = branchState.isPending;
+  // Gate the applied auto-PR value on repository status, not just the
+  // control's visibility: the shared local-mode preference must not send
+  // fetch/commit/push instructions into a non-git directory. Only a
+  // CONFIRMED non-repository disables it — while the query is pending or the
+  // environment is offline the captured/preferred choice is preserved.
+  const projectConfirmedNotGitRepo = branchState.data?.isRepo === false;
+  const autoCreatePullRequest = !projectConfirmedNotGitRepo && autoCreatePullRequestChoice;
   const allBranchRefs = branchState.data?.refs ?? EMPTY_BRANCH_REFS;
   const availableBranches = useMemo(
     () =>
@@ -702,12 +759,17 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     const draftKey = pendingTaskDraftKey(message.messageId);
     // Only hydrate a fresh editing draft; reopening mid-edit keeps newer edits.
     if (isComposerDraftEmpty(getComposerDraftSnapshot(draftKey))) {
-      setComposerDraftText(draftKey, message.text);
+      // Queued text may carry the agent-facing auto-PR block; the editor shows
+      // only what the user typed, and re-queueing re-applies the suffix.
+      setComposerDraftText(draftKey, stripCreatePullRequestSuffix(message.text));
       replaceComposerDraftAttachments(draftKey, message.attachments);
       updateComposerDraftSettings(draftKey, {
         modelSelection: message.modelSelection,
         runtimeMode: message.runtimeMode,
         interactionMode: message.interactionMode,
+        // Pin the queued task's auto-PR choice to the draft so re-queueing
+        // reproduces it even if the global preference changes meanwhile.
+        autoCreatePullRequest: hasCreatePullRequestSuffix(message.text),
         workspaceSelection: {
           mode: message.creation.workspaceMode,
           branch: message.creation.branch,
@@ -763,7 +825,21 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         threadId: ThreadId.make(metadata.threadId),
         messageId: MessageId.make(metadata.messageId),
         commandId: CommandId.make(metadata.commandId),
-        text,
+        // Queued tasks capture the auto-PR instruction at queue time so a
+        // later preference flip cannot alter an already-queued task. A
+        // draft-scoped override (hydrated from the queued text or set by the
+        // toggle mid-edit) wins over the per-mode preference; non-git
+        // projects never queue the instruction.
+        text: applyCreatePullRequestSuffix({
+          text,
+          autoCreatePullRequest:
+            !projectConfirmedNotGitRepo &&
+            (draft.autoCreatePullRequest ??
+              (preferencesHydrated
+                ? resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode)
+                : false)),
+          threadHasStarted: false,
+        }),
         attachments: draft.attachments,
         modelSelection: draftModelSelection,
         runtimeMode: draft.runtimeMode ?? DEFAULT_RUNTIME_MODE,
@@ -786,8 +862,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       };
     },
     [
+      autoCreatePullRequestByEnvMode,
       editingPendingProject,
       editingPendingTask,
+      preferencesHydrated,
+      projectConfirmedNotGitRepo,
       selectedEnvironmentServerConfig,
       selectedModel,
       selectedProject,
@@ -907,6 +986,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       availableBranches,
       runtimeMode,
       interactionMode,
+      autoCreatePullRequest,
+      autoCreatePullRequestSettled,
+      canToggleAutoCreatePullRequest: !projectConfirmedNotGitRepo && preferencesHydrated,
       expandedProvider,
       environments,
       selectedProject,
@@ -923,6 +1005,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       setWorkspaceMode,
       selectBranch,
       setStartFromOrigin,
+      setAutoCreatePullRequest,
       beginEditingPendingTask,
       finishEditingPendingTask,
       cancelEditingPendingTask,
@@ -942,8 +1025,12 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     }),
     [
       attachments,
+      autoCreatePullRequest,
+      autoCreatePullRequestSettled,
       availableBranches,
       beginEditingPendingTask,
+      preferencesHydrated,
+      projectConfirmedNotGitRepo,
       branchQuery,
       branchesLoading,
       buildPendingTaskMessage,
@@ -980,6 +1067,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       setPrompt,
       setRuntimeMode,
       setSelectedModelKey,
+      setAutoCreatePullRequest,
       setStartFromOrigin,
       setWorkspaceMode,
       startFromOrigin,

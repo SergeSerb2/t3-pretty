@@ -1,5 +1,10 @@
 import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
+import {
+  AUTO_CREATE_PULL_REQUEST_DEFAULTS,
+  resolveAutoCreatePullRequest,
+  type AutoCreatePullRequestEnvMode,
+} from "@t3tools/shared/createPullRequestPrompt";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
@@ -27,7 +32,12 @@ export interface PersistedUiState {
   defaultAdvertisedEndpointKey?: string | null;
   threadChangedFilesExpansionVersion?: typeof THREAD_CHANGED_FILES_EXPANSION_VERSION;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
+  autoCreatePullRequestByEnvMode?: Partial<Record<AutoCreatePullRequestEnvMode, boolean>>;
 }
+
+export type { AutoCreatePullRequestEnvMode };
+
+export const DEFAULT_AUTO_CREATE_PULL_REQUEST = AUTO_CREATE_PULL_REQUEST_DEFAULTS;
 
 export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
@@ -43,7 +53,11 @@ export interface UiEndpointState {
   defaultAdvertisedEndpointKey: string | null;
 }
 
-export interface UiState extends UiProjectState, UiThreadState, UiEndpointState {}
+export interface UiComposerState {
+  autoCreatePullRequestByEnvMode: Record<AutoCreatePullRequestEnvMode, boolean>;
+}
+
+export interface UiState extends UiProjectState, UiThreadState, UiEndpointState, UiComposerState {}
 
 const initialState: UiState = {
   projectExpandedById: {},
@@ -51,6 +65,7 @@ const initialState: UiState = {
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
+  autoCreatePullRequestByEnvMode: DEFAULT_AUTO_CREATE_PULL_REQUEST,
 };
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
@@ -135,6 +150,18 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.defaultAdvertisedEndpointKey.length > 0
         ? parsed.defaultAdvertisedEndpointKey
         : null,
+    autoCreatePullRequestByEnvMode: sanitizeAutoCreatePullRequest(
+      parsed.autoCreatePullRequestByEnvMode,
+    ),
+  };
+}
+
+function sanitizeAutoCreatePullRequest(
+  value: PersistedUiState["autoCreatePullRequestByEnvMode"],
+): Record<AutoCreatePullRequestEnvMode, boolean> {
+  return {
+    local: resolveAutoCreatePullRequest(value, "local"),
+    worktree: resolveAutoCreatePullRequest(value, "worktree"),
   };
 }
 
@@ -207,6 +234,7 @@ export function persistState(state: UiState): void {
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
+        autoCreatePullRequestByEnvMode: state.autoCreatePullRequestByEnvMode,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -289,6 +317,23 @@ export function setThreadChangedFilesExpanded(
         ...currentThreadState,
         [turnId]: expanded,
       },
+    },
+  };
+}
+
+export function setAutoCreatePullRequest(
+  state: UiState,
+  envMode: AutoCreatePullRequestEnvMode,
+  enabled: boolean,
+): UiState {
+  if (state.autoCreatePullRequestByEnvMode[envMode] === enabled) {
+    return state;
+  }
+  return {
+    ...state,
+    autoCreatePullRequestByEnvMode: {
+      ...state.autoCreatePullRequestByEnvMode,
+      [envMode]: enabled,
     },
   };
 }
@@ -386,6 +431,7 @@ interface UiStateStore extends UiState {
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
+  setAutoCreatePullRequest: (envMode: AutoCreatePullRequestEnvMode, enabled: boolean) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
@@ -404,6 +450,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
+  setAutoCreatePullRequest: (envMode, enabled) =>
+    set((state) => setAutoCreatePullRequest(state, envMode, enabled)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>

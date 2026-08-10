@@ -45,6 +45,12 @@ export interface ComposerDraft {
   readonly runtimeMode?: RuntimeMode;
   readonly interactionMode?: ProviderInteractionMode;
   readonly workspaceSelection?: ComposerDraftWorkspaceSelection;
+  /**
+   * Draft-scoped auto-PR override. Absent means "follow the per-mode
+   * preference"; set when a queued task is hydrated for editing so its
+   * captured choice survives preference changes.
+   */
+  readonly autoCreatePullRequest?: boolean;
 }
 
 export interface ComposerDraftContent {
@@ -62,7 +68,11 @@ export interface ComposerDraftWorkspaceSelection {
 
 export type ComposerDraftSettingsUpdate = Pick<
   ComposerDraft,
-  "modelSelection" | "runtimeMode" | "interactionMode" | "workspaceSelection"
+  | "modelSelection"
+  | "runtimeMode"
+  | "interactionMode"
+  | "workspaceSelection"
+  | "autoCreatePullRequest"
 >;
 
 const ComposerDraftWorkspaceSelectionSchema = Schema.Struct({
@@ -80,6 +90,7 @@ const ComposerDraftSchema = Schema.Struct({
   runtimeMode: Schema.optional(RuntimeModeSchema),
   interactionMode: Schema.optional(ProviderInteractionModeSchema),
   workspaceSelection: Schema.optional(ComposerDraftWorkspaceSelectionSchema),
+  autoCreatePullRequest: Schema.optional(Schema.Boolean),
 });
 
 const PersistedComposerDraftsSchema = Schema.Struct({
@@ -131,7 +142,8 @@ function isEmptyDraft(draft: ComposerDraft): boolean {
     draft.modelSelection === undefined &&
     draft.runtimeMode === undefined &&
     draft.interactionMode === undefined &&
-    draft.workspaceSelection === undefined
+    draft.workspaceSelection === undefined &&
+    draft.autoCreatePullRequest === undefined
   );
 }
 
@@ -378,12 +390,22 @@ export function clearComposerDraftContentState(
   if (!existing) {
     return current;
   }
-  const { importedShareIds: _importedShareIds, workspaceSelection, ...retained } = existing;
+  const {
+    importedShareIds: _importedShareIds,
+    workspaceSelection,
+    autoCreatePullRequest,
+    ...retained
+  } = existing;
+  // The auto-PR override travels with the workspace selection: both describe
+  // this task's picks, so the next task re-resolves from defaults.
   const draft = {
     ...retained,
     ...(options?.clearWorkspaceSelection || workspaceSelection === undefined
       ? {}
       : { workspaceSelection }),
+    ...(options?.clearWorkspaceSelection || autoCreatePullRequest === undefined
+      ? {}
+      : { autoCreatePullRequest }),
     text: "",
     attachments: [],
   };

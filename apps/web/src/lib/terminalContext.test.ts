@@ -21,6 +21,10 @@ import {
   stripInlineTerminalContextPlaceholders,
   type TerminalContextDraft,
 } from "./terminalContext";
+import {
+  applyCreatePullRequestSuffix,
+  stripCreatePullRequestSuffix,
+} from "@t3tools/shared/createPullRequestPrompt";
 
 function makeContext(overrides?: Partial<TerminalContextDraft>): TerminalContextDraft {
   return {
@@ -124,6 +128,20 @@ describe("terminalContext", () => {
       ],
       elementContexts: [],
     });
+  });
+
+  it("hides the auto-PR instruction block from the visible text", () => {
+    const prompt = applyCreatePullRequestSuffix({
+      text: appendTerminalContextsToPrompt("Investigate this", [makeContext()]),
+      autoCreatePullRequest: true,
+      threadHasStarted: false,
+    });
+    const displayed = deriveDisplayedUserMessageState(prompt);
+    expect(displayed.visibleText).toBe("Investigate this");
+    expect(displayed.copyText).toBe(stripCreatePullRequestSuffix(prompt));
+    expect(displayed.copyText).not.toContain("create_pull_request_instructions");
+    expect(displayed.copyText).toContain("<terminal_context>");
+    expect(displayed.contextCount).toBe(1);
   });
 
   it("preserves prompt text when no trailing terminal context block exists", () => {
