@@ -118,7 +118,8 @@ export function SceneryLayer({
         // its links need a stacking slot above the (transparent) chat column.
         // The location collapses before the required photo credit at narrow
         // widths. CSS aligns this with the settings trigger as one short dock
-        // instead of stacking two overlays beside the composer.
+        // in a bottom strip the composer overlay is padded away from, so the
+        // dock never sits on top of the chat box.
         <div className="scenery-attribution">
           <span className="scenery-attribution__name">{displayed.name}</span>
           <span className="scenery-attribution__separator" aria-hidden>
