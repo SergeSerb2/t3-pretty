@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Module-scope raw CSS fixture loading has no Effect test scope.
 /**
  * Rebase tripwire for the motion layer's structural assumptions about
  * upstream markup. motion.css and SceneryMotion.tsx target these hooks by
@@ -5,6 +6,7 @@
  * or one of the pinned class strings, an animation (or an orb slot)
  * silently stops appearing. This test makes that failure loud.
  */
+import * as NodeFS from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
 
 import chatViewSource from "../components/ChatView.tsx?raw";
@@ -17,7 +19,8 @@ import providerBannerSource from "../components/chat/ProviderStatusBanner.tsx?ra
 import sidebarSource from "../components/Sidebar.tsx?raw";
 import alertSource from "../components/ui/alert.tsx?raw";
 import motionDriverSource from "./SceneryMotion.tsx?raw";
-import motionStylesSource from "./motion.css?raw";
+
+const motionStylesSource = NodeFS.readFileSync(new URL("./motion.css", import.meta.url), "utf8");
 
 describe("row arrival contract with the messages timeline", () => {
   it("row wrappers still carry data-timeline-root", () => {
@@ -102,6 +105,12 @@ describe("hero and sidebar contract", () => {
   it("working sidebar rows still mark themselves with CircleDashedIcon", () => {
     expect(sidebarSource).toContain("data-thread-item");
     expect(sidebarSource).toContain("CircleDashedIcon");
+  });
+
+  it("pairs the working label with its sidebar orb motion", () => {
+    expect(sidebarSource).toContain("data-sidebar-working-label");
+    expect(motionStylesSource).toContain("scenery-sidebar-working-breathe");
+    expect(motionStylesSource).toContain("~ [data-sidebar-working-label]");
   });
 });
 

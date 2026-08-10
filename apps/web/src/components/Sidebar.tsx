@@ -1350,15 +1350,20 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         ) : topStatus.icon === "done" ? (
                           <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
                         ) : null}
-                        {/* The label alone is the live region: a role="status"
-                            wrapper around the ticking duration would make
-                            screen readers announce every second. */}
-                        <span role="status">{topStatus.label}</span>
-                        {status === "working" ? (
-                          <span aria-hidden>
-                            <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
-                          </span>
-                        ) : null}
+                        <span
+                          data-sidebar-working-label={status === "working" ? "" : undefined}
+                          className="inline-flex items-center gap-1"
+                        >
+                          {/* The label alone is the live region: a role="status"
+                              wrapper around the ticking duration would make
+                              screen readers announce every second. */}
+                          <span role="status">{topStatus.label}</span>
+                          {status === "working" ? (
+                            <span aria-hidden>
+                              <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
+                            </span>
+                          ) : null}
+                        </span>
                       </span>
                     )
                   ) : (
