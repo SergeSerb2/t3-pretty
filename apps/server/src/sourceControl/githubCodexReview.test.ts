@@ -9,7 +9,7 @@ import {
 
 function response(input: {
   readonly head?: string;
-  readonly committedAt?: string;
+  readonly headUpdatedAt?: string;
   readonly reactions?: ReadonlyArray<{
     readonly content: string;
     readonly createdAt: string;
@@ -26,14 +26,8 @@ function response(input: {
       repository: {
         pullRequest: {
           headRefOid: input.head ?? "abcdef1234567890",
-          commits: {
-            nodes: [
-              {
-                commit: {
-                  committedDate: input.committedAt ?? "2026-08-10T05:30:00Z",
-                },
-              },
-            ],
+          headUpdates: {
+            updatedAt: input.headUpdatedAt ?? "2026-08-10T05:30:00Z",
           },
           reactions: {
             pageInfo: { hasNextPage: false, endCursor: null },
@@ -134,6 +128,23 @@ describe("resolveGitHubCodexReviewPages", () => {
             {
               content: "THUMBS_UP",
               createdAt: "2026-08-10T05:29:00Z",
+              login: "chatgpt-codex-connector[bot]",
+            },
+          ],
+        }),
+      ),
+    ).toEqual({ provider: "codex", state: "stale" });
+  });
+
+  it("uses the PR head-update time rather than the commit's authored time", () => {
+    expect(
+      decode(
+        response({
+          headUpdatedAt: "2026-08-10T05:40:00Z",
+          reactions: [
+            {
+              content: "THUMBS_UP",
+              createdAt: "2026-08-10T05:38:00Z",
               login: "chatgpt-codex-connector[bot]",
             },
           ],

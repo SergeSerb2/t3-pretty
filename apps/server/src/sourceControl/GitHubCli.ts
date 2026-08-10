@@ -24,8 +24,10 @@ import {
 } from "./githubCodexReview.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+// A commit's own timestamp can predate when it became the PR head. Restricting
+// the timeline to head-changing items gives reactions a head-specific cutoff.
 const CODEX_REVIEW_QUERY =
-  "query($owner:String!,$name:String!,$number:Int!,$reactionsCursor:String,$reviewsCursor:String,$includeReactions:Boolean!,$includeReviews:Boolean!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid commits(last:1){nodes{commit{committedDate}}} reactions(first:100,after:$reactionsCursor) @include(if:$includeReactions){pageInfo{hasNextPage endCursor} nodes{content createdAt user{login}}} reviews(first:100,after:$reviewsCursor) @include(if:$includeReviews){pageInfo{hasNextPage endCursor} nodes{author{login} body submittedAt}}}}}";
+  "query($owner:String!,$name:String!,$number:Int!,$reactionsCursor:String,$reviewsCursor:String,$includeReactions:Boolean!,$includeReviews:Boolean!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid headUpdates:timelineItems(last:1,itemTypes:[PULL_REQUEST_COMMIT,HEAD_REF_FORCE_PUSHED_EVENT,HEAD_REF_RESTORED_EVENT]){updatedAt} reactions(first:100,after:$reactionsCursor) @include(if:$includeReactions){pageInfo{hasNextPage endCursor} nodes{content createdAt user{login}}} reviews(first:100,after:$reviewsCursor) @include(if:$includeReviews){pageInfo{hasNextPage endCursor} nodes{author{login} body submittedAt}}}}}";
 
 const gitHubCliFailureFields = {
   command: Schema.Literal("gh"),

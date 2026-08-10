@@ -39,14 +39,8 @@ const GitHubCodexReviewPageResponseSchema = Schema.Struct({
         pullRequest: Schema.NullOr(
           Schema.Struct({
             headRefOid: Schema.String,
-            commits: Schema.Struct({
-              nodes: Schema.Array(
-                Schema.Struct({
-                  commit: Schema.Struct({
-                    committedDate: Schema.String,
-                  }),
-                }),
-              ),
+            headUpdates: Schema.Struct({
+              updatedAt: Schema.String,
             }),
             reactions: Schema.optional(
               Schema.Struct({
@@ -71,7 +65,7 @@ const decodeGitHubCodexReviewPageResponse = decodeJsonResult(GitHubCodexReviewPa
 
 export interface GitHubCodexReviewPage {
   readonly headRefOid: string;
-  readonly latestCommitAt: string | null;
+  readonly headUpdatedAt: string;
   readonly reactions: ReadonlyArray<Schema.Schema.Type<typeof GitHubCodexReactionSchema>>;
   readonly reviews: ReadonlyArray<Schema.Schema.Type<typeof GitHubCodexReviewSchema>>;
   readonly reactionsHasNextPage: boolean;
@@ -132,9 +126,9 @@ export function resolveGitHubCodexReviewPages(
 ): AutomatedReviewSignal | null {
   const firstPage = pages[0];
   if (!firstPage) return null;
-  const latestCommitAt = Math.max(
+  const headUpdatedAt = Math.max(
     Number.NEGATIVE_INFINITY,
-    ...pages.map((page) => timestamp(page.latestCommitAt)),
+    ...pages.map((page) => timestamp(page.headUpdatedAt)),
   );
   const candidates: Array<AutomatedReviewSignal & { readonly observedAt: number }> = [];
 
@@ -145,7 +139,7 @@ export function resolveGitHubCodexReviewPages(
       const reviewedHead = reviewedCommit(review.body);
       const isCurrent = reviewedHead
         ? commitMatchesHead(reviewedHead, firstPage.headRefOid)
-        : observedAt >= latestCommitAt;
+        : observedAt >= headUpdatedAt;
       candidates.push({
         provider: "codex",
         state: isCurrent ? "feedback" : "stale",
@@ -165,7 +159,7 @@ export function resolveGitHubCodexReviewPages(
       const observedAt = timestamp(reaction.createdAt);
       candidates.push({
         provider: "codex",
-        state: observedAt >= latestCommitAt ? state : "stale",
+        state: observedAt >= headUpdatedAt ? state : "stale",
         observedAt,
       });
     }
@@ -185,7 +179,7 @@ export function decodeGitHubCodexReviewPageJson(
 
   return Result.succeed({
     headRefOid: pullRequest.headRefOid,
-    latestCommitAt: pullRequest.commits.nodes[0]?.commit.committedDate ?? null,
+    headUpdatedAt: pullRequest.headUpdates.updatedAt,
     reactions: pullRequest.reactions?.nodes ?? [],
     reviews: pullRequest.reviews?.nodes ?? [],
     reactionsHasNextPage: pullRequest.reactions?.pageInfo.hasNextPage ?? false,

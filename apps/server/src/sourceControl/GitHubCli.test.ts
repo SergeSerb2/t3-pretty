@@ -168,8 +168,8 @@ describe("GitHubCli.layer", () => {
                 repository: {
                   pullRequest: {
                     headRefOid: "abcdef1234567890",
-                    commits: {
-                      nodes: [{ commit: { committedDate: "2026-08-10T05:30:00Z" } }],
+                    headUpdates: {
+                      updatedAt: "2026-08-10T05:30:00Z",
                     },
                     reactions: {
                       pageInfo: { hasNextPage: false, endCursor: null },
@@ -217,6 +217,9 @@ describe("GitHubCli.layer", () => {
           ]),
         }),
       );
+      expect(mockRun.mock.calls[0]?.[0].args).toEqual(
+        expect.arrayContaining([expect.stringContaining("headUpdates:timelineItems")]),
+      );
     }).pipe(Effect.provide(layer)),
   );
 
@@ -232,8 +235,8 @@ describe("GitHubCli.layer", () => {
                   repository: {
                     pullRequest: {
                       headRefOid: "abcdef1234567890",
-                      commits: {
-                        nodes: [{ commit: { committedDate: "2026-08-10T05:30:00Z" } }],
+                      headUpdates: {
+                        updatedAt: "2026-08-10T05:30:00Z",
                       },
                       reactions: {
                         pageInfo: { hasNextPage: true, endCursor: "reaction-100" },
@@ -265,8 +268,8 @@ describe("GitHubCli.layer", () => {
                   repository: {
                     pullRequest: {
                       headRefOid: "abcdef1234567890",
-                      commits: {
-                        nodes: [{ commit: { committedDate: "2026-08-10T05:30:00Z" } }],
+                      headUpdates: {
+                        updatedAt: "2026-08-10T05:30:00Z",
                       },
                       reactions: {
                         pageInfo: { hasNextPage: false, endCursor: null },
