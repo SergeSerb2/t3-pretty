@@ -167,6 +167,41 @@ function pickDisplayRemote(remotes: ReadonlyMap<string, RemoteUrls>) {
   });
 }
 
+// Derive the repository path (owner/name segments) directly from the URL
+// shape rather than from normalizeGitRemoteUrl's output — normalization only
+// canonicalizes URLs whose path has an owner/repo pair, so a root-level URL
+// like https://git.example/repo.git would otherwise be split as if the scheme
+// were the host.
+function deriveDisplayRepositoryPathSegments(remoteUrl: string): ReadonlyArray<string> {
+  const trimmed = remoteUrl
+    .trim()
+    .replace(/\/+$/g, "")
+    .replace(/\.git$/i, "")
+    .toLowerCase();
+  if (/^[a-z]:/i.test(trimmed)) {
+    return [];
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      if (url.hostname.length === 0) return [];
+      return url.pathname.split("/").filter((segment) => segment.length > 0);
+    } catch {
+      return [];
+    }
+  }
+  const scpStyle =
+    /^(?:[^@:/\s]+@)?[^:/\s]+:(.+)$/.exec(trimmed) ?? /^[^@:/\s]+@[^:/\s]+\/(.+)$/.exec(trimmed);
+  if (scpStyle?.[1]) {
+    return scpStyle[1].split("/").filter((segment) => segment.length > 0);
+  }
+  // Plain filesystem paths: keep the historical normalized-key split.
+  return normalizeGitRemoteUrl(trimmed)
+    .split("/")
+    .slice(1)
+    .filter((segment) => segment.length > 0);
+}
+
 function buildRepositoryIdentity(input: {
   readonly groupingRemoteUrl: string;
   readonly remoteName: string;
@@ -175,9 +210,9 @@ function buildRepositoryIdentity(input: {
 }): RepositoryIdentity {
   const canonicalKey = normalizeGitRemoteUrl(input.groupingRemoteUrl);
   const sourceControlProvider = detectSourceControlProviderFromGitRemoteUrl(input.remoteUrl);
-  const repositoryPath = normalizeGitRemoteUrl(input.remoteUrl).split("/").slice(1).join("/");
-  const repositoryPathSegments = repositoryPath.split("/").filter((segment) => segment.length > 0);
-  const [owner] = repositoryPathSegments;
+  const repositoryPathSegments = deriveDisplayRepositoryPathSegments(input.remoteUrl);
+  const repositoryPath = repositoryPathSegments.join("/");
+  const owner = repositoryPathSegments.length >= 2 ? repositoryPathSegments[0] : undefined;
   const repositoryName = repositoryPathSegments.at(-1);
 
   return {

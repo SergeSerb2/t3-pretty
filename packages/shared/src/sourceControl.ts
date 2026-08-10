@@ -190,20 +190,26 @@ function parseRemoteHost(remoteUrl: string): string | null {
     return null;
   }
 
-  if (trimmed.startsWith("git@")) {
-    const hostWithPath = trimmed.slice("git@".length);
-    const separatorIndex = hostWithPath.search(/[:/]/);
-    if (separatorIndex <= 0) {
-      return null;
-    }
-    return hostWithPath.slice(0, separatorIndex).toLowerCase();
-  }
-
-  try {
-    return new URL(trimmed).host.toLowerCase();
-  } catch {
+  // Windows drive paths (c:/repos, c:repos) are not remotes.
+  if (/^[a-z]:/i.test(trimmed)) {
     return null;
   }
+
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    try {
+      const host = new URL(trimmed).host.toLowerCase();
+      return host.length > 0 ? host : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Git documents scp-like syntax as `[<user>@]<host>:<path>` with the user
+  // optional and not restricted to `git`. Without a username the separator
+  // must be a colon, otherwise plain paths would parse as host/path.
+  const scpStyleHost = /^[^@:/\s]+@([^:/\s]+)[:/]/.exec(trimmed) ?? /^([^@:/\s]+):/.exec(trimmed);
+  const host = scpStyleHost?.[1];
+  return host ? host.toLowerCase() : null;
 }
 
 function parseHostName(host: string): string {

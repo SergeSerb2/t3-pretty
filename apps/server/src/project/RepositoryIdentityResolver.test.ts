@@ -218,6 +218,9 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(identity).not.toBeNull();
       expect(JSON.stringify(identity)).not.toContain("ghp_secrettoken");
       expect(identity?.locator.remoteUrl).toBe("https://git.example/repo.git");
+      expect(identity?.displayName).toBe("repo");
+      expect(identity?.name).toBe("repo");
+      expect(identity?.owner).toBeUndefined();
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
@@ -325,6 +328,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(identity?.displayName).toBe("team/repo");
       expect(identity?.owner).toBe("team");
       expect(identity?.name).toBe("repo");
+      expect(identity?.provider).toBe("gitlab");
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
@@ -368,6 +372,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(identity?.displayName).toBe("fork/repo");
       expect(identity?.owner).toBe("fork");
       expect(identity?.name).toBe("repo");
+      expect(identity?.provider).toBe("github");
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
