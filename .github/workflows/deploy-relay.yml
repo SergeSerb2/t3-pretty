@@ -58,6 +58,11 @@ jobs:
             args:
               - --filter=t3code-relay...
 
+      - name: Configure Clerk desktop origins
+        run: vp run --filter t3code-relay configure-clerk
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+
       - name: Deploy production relay stage
         id: deploy
         run: vp run --filter t3code-relay deploy --stage prod --yes --github-output
