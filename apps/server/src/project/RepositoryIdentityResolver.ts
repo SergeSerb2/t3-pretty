@@ -45,12 +45,11 @@ function parseRemoteFetchUrls(stdout: string): Map<string, string> {
   return remotes;
 }
 
-function pickPrimaryRemote(
+function pickRemote(
   remotes: ReadonlyMap<string, string>,
+  preferredRemoteNames: readonly string[],
 ): { readonly remoteName: string; readonly remoteUrl: string } | null {
-  // origin is the repository the user actually works against (their fork, where
-  // branches push and PRs open); upstream is only the source they pull from.
-  for (const preferredRemoteName of ["origin", "upstream"] as const) {
+  for (const preferredRemoteName of preferredRemoteNames) {
     const remoteUrl = remotes.get(preferredRemoteName);
     if (remoteUrl) {
       return { remoteName: preferredRemoteName, remoteUrl };
@@ -62,14 +61,28 @@ function pickPrimaryRemote(
   return remoteName && remoteUrl ? { remoteName, remoteUrl } : null;
 }
 
+// canonicalKey groups project copies across environments, so it must stay
+// stable when the same repository is checked out through different forks —
+// prefer the shared upstream. Display fields and the locator describe the
+// repository the user actually works against (branches push and PRs open on
+// origin), so those prefer origin.
+function pickGroupingRemote(remotes: ReadonlyMap<string, string>) {
+  return pickRemote(remotes, ["upstream", "origin"]);
+}
+
+function pickDisplayRemote(remotes: ReadonlyMap<string, string>) {
+  return pickRemote(remotes, ["origin", "upstream"]);
+}
+
 function buildRepositoryIdentity(input: {
+  readonly groupingRemoteUrl: string;
   readonly remoteName: string;
   readonly remoteUrl: string;
   readonly rootPath: string;
 }): RepositoryIdentity {
-  const canonicalKey = normalizeGitRemoteUrl(input.remoteUrl);
+  const canonicalKey = normalizeGitRemoteUrl(input.groupingRemoteUrl);
   const sourceControlProvider = detectSourceControlProviderFromGitRemoteUrl(input.remoteUrl);
-  const repositoryPath = canonicalKey.split("/").slice(1).join("/");
+  const repositoryPath = normalizeGitRemoteUrl(input.remoteUrl).split("/").slice(1).join("/");
   const repositoryPathSegments = repositoryPath.split("/").filter((segment) => segment.length > 0);
   const [owner] = repositoryPathSegments;
   const repositoryName = repositoryPathSegments.at(-1);
@@ -133,8 +146,16 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     return null;
   }
 
-  const remote = pickPrimaryRemote(parseRemoteFetchUrls(remoteResult.value.stdout));
-  return remote ? buildRepositoryIdentity({ ...remote, rootPath: cacheKey }) : null;
+  const remotes = parseRemoteFetchUrls(remoteResult.value.stdout);
+  const displayRemote = pickDisplayRemote(remotes);
+  const groupingRemote = pickGroupingRemote(remotes);
+  return displayRemote && groupingRemote
+    ? buildRepositoryIdentity({
+        ...displayRemote,
+        groupingRemoteUrl: groupingRemote.remoteUrl,
+        rootPath: cacheKey,
+      })
+    : null;
 });
 
 export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
