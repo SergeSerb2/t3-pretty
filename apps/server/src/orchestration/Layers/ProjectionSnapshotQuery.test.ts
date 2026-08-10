@@ -8,6 +8,7 @@ import {
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
+import { CREATE_PULL_REQUEST_MESSAGE_SUFFIX } from "@t3tools/shared/createPullRequestPrompt";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -1849,6 +1850,25 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             '2026-05-01T00:00:07.000Z',
             '2026-05-01T00:00:08.000Z',
             NULL
+          ),
+          (
+            'thread-autopr',
+            'project-search',
+            'Auto-PR search',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            'full-access',
+            'default',
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            '2026-05-01T00:00:09.000Z',
+            '2026-05-01T00:00:09.000Z',
+            NULL,
+            NULL
           )
       `;
 
@@ -1933,6 +1953,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             0,
             '2026-05-01T00:00:16.000Z',
             '2026-05-01T00:00:16.000Z'
+          ),
+          (
+            'message-autopr',
+            'thread-autopr',
+            NULL,
+            'user',
+            ${`Refactor the AUTOPR parser.${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`},
+            0,
+            '2026-05-01T00:00:17.000Z',
+            '2026-05-01T00:00:17.000Z'
           )
       `;
 
@@ -1979,6 +2009,20 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         deduped.matches.map((match) => [match.threadId, match.source]),
         [[ThreadId.make("thread-active"), "user"]],
       );
+
+      // The hidden auto-PR instruction block neither matches nor leaks into
+      // snippets: block-only phrases find nothing, and a hit on the user's own
+      // text produces an excerpt without the block.
+      assert.deepStrictEqual(
+        (yield* snapshotQuery.searchThreads({ query: "resolving any conflicts" })).matches,
+        [],
+      );
+      const autoPr = yield* snapshotQuery.searchThreads({ query: "AUTOPR parser" });
+      assert.deepStrictEqual(
+        autoPr.matches.map((match) => [match.threadId, match.source]),
+        [[ThreadId.make("thread-autopr"), "user"]],
+      );
+      assert.equal(autoPr.matches[0]?.snippet, "Refactor the AUTOPR parser.");
 
       assert.deepStrictEqual(
         (yield* snapshotQuery.searchThreads({ query: "interim needle" })).matches,

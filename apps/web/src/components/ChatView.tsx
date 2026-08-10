@@ -4121,9 +4121,13 @@ function ChatViewContent(props: ChatViewProps) {
   // Auto-PR preference is kept per env mode: worktree threads default on
   // (their work is expected to land as a PR), local threads default off.
   const autoCreatePullRequestEnvMode = sendEnvMode === "worktree" ? "worktree" : "local";
-  const autoCreatePullRequest = useUiStateStore(
+  const autoCreatePullRequestPreference = useUiStateStore(
     (store) => store.autoCreatePullRequestByEnvMode[autoCreatePullRequestEnvMode],
   );
+  // Gate the applied value, not just the toggle's visibility: outside a git
+  // repository the hidden control leaves no way to turn the behavior off, and
+  // fetch/push/PR instructions are meaningless there anyway.
+  const autoCreatePullRequest = isGitRepo && autoCreatePullRequestPreference;
   const setAutoCreatePullRequestForEnvMode = useUiStateStore(
     (store) => store.setAutoCreatePullRequest,
   );

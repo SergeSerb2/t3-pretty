@@ -37,6 +37,8 @@ import * as Struct from "effect/Struct";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
+import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+
 import {
   isPersistenceError,
   toPersistenceDecodeError,
@@ -2231,14 +2233,28 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         ),
       ),
     );
+    const foldedQuery = foldAsciiCase(input.query);
     return {
-      matches: rows.map((row) => ({
-        threadId: row.threadId,
-        projectId: row.projectId,
-        source: row.source,
-        snippet: buildSearchSnippet(row.matchText, input.query),
-        messageCreatedAt: row.messageCreatedAt,
-      })),
+      matches: rows.flatMap((row) => {
+        // User messages may carry the hidden auto-PR instruction block; it is
+        // stripped from every transcript surface, so search matching and
+        // excerpts must not resurface it. Rows whose only hit was inside the
+        // block are dropped entirely.
+        const visibleText =
+          row.source === "user" ? stripCreatePullRequestSuffix(row.matchText) : row.matchText;
+        if (visibleText !== row.matchText && !foldAsciiCase(visibleText).includes(foldedQuery)) {
+          return [];
+        }
+        return [
+          {
+            threadId: row.threadId,
+            projectId: row.projectId,
+            source: row.source,
+            snippet: buildSearchSnippet(visibleText, input.query),
+            messageCreatedAt: row.messageCreatedAt,
+          },
+        ];
+      }),
     };
   });
 
