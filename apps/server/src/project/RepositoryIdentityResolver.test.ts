@@ -332,6 +332,27 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
+  it.effect("preserves display metadata for Windows drive-letter fetch remotes", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-drive-fetch-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", "C:/repos/project"]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+
+      expect(identity).not.toBeNull();
+      expect(identity?.canonicalKey).toBe("c:/repos/project");
+      expect(identity?.displayName).toBe("repos/project");
+      expect(identity?.owner).toBe("repos");
+      expect(identity?.name).toBe("project");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
   it.effect("ignores Windows drive-letter push paths", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

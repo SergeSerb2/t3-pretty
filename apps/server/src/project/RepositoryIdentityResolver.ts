@@ -179,24 +179,27 @@ function deriveDisplayRepositoryPathSegments(remoteUrl: string): ReadonlyArray<s
     .replace(/\/+$/g, "")
     .replace(/\.git$/i, "")
     .toLowerCase();
-  if (/^[a-z]:/i.test(trimmed)) {
-    return [];
-  }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
-    try {
-      const url = new URL(trimmed);
-      if (url.hostname.length === 0) return [];
-      return url.pathname.split("/").filter((segment) => segment.length > 0);
-    } catch {
-      return [];
+  // Drive-letter values (c:/repos/project) are filesystem paths, not
+  // host/path remotes — skip URL and scp parsing so they use the same
+  // normalized-key split as other local paths.
+  const isDrivePath = /^[a-z]:/i.test(trimmed);
+  if (!isDrivePath) {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+      try {
+        const url = new URL(trimmed);
+        if (url.hostname.length === 0) return [];
+        return url.pathname.split("/").filter((segment) => segment.length > 0);
+      } catch {
+        return [];
+      }
+    }
+    const scpStyle =
+      /^(?:[^@:/\s]+@)?[^:/\s]+:(.+)$/.exec(trimmed) ?? /^[^@:/\s]+@[^:/\s]+\/(.+)$/.exec(trimmed);
+    if (scpStyle?.[1]) {
+      return scpStyle[1].split("/").filter((segment) => segment.length > 0);
     }
   }
-  const scpStyle =
-    /^(?:[^@:/\s]+@)?[^:/\s]+:(.+)$/.exec(trimmed) ?? /^[^@:/\s]+@[^:/\s]+\/(.+)$/.exec(trimmed);
-  if (scpStyle?.[1]) {
-    return scpStyle[1].split("/").filter((segment) => segment.length > 0);
-  }
-  // Plain filesystem paths: keep the historical normalized-key split.
+  // Filesystem paths: keep the historical normalized-key split.
   return normalizeGitRemoteUrl(trimmed)
     .split("/")
     .slice(1)
