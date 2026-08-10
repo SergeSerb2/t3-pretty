@@ -266,6 +266,7 @@ jobs:
           MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
           T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.T3CODE_CLERK_PUBLISHABLE_KEY }}
           T3CODE_CLERK_PASSKEY_RP_DOMAINS: ${{ vars.CLERK_PASSKEY_RP_DOMAINS }}
+          VITE_SCENERY_UNSPLASH_KEY: ${{ secrets.VITE_SCENERY_UNSPLASH_KEY }}
         run: |
           set -euo pipefail
           args=(
@@ -299,6 +300,44 @@ jobs:
             echo "No provisioning profile configured; signed build ships without the passkey entitlement."
             export T3CODE_MACOS_SKIP_PASSKEY_PROFILE=1
           fi
+          # electron-builder's own temp-keychain import fails at
+          # set-key-partition-list under this runner's launchd session. Prepare
+          # the signing keychain the same way the proven SurgeCode release job
+          # does on this host, then hand it to electron-builder through
+          # CSC_KEYCHAIN/CSC_NAME instead of CSC_LINK.
+          signing_keychain="$RUNNER_TEMP/fork-release.keychain-db"
+          keychain_password="$(openssl rand -hex 32)"
+          certificate_path="$RUNNER_TEMP/DeveloperIDApplication.p12"
+          developer_id_g2_path="$RUNNER_TEMP/DeveloperIDG2CA.cer"
+          developer_id_g2_sha256="f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a"
+          restore_keychains() {
+            security list-keychains -d user -s "$HOME/Library/Keychains/login.keychain-db" || true
+            security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
+          }
+          trap restore_keychains EXIT
+          printf '%s' "$CSC_LINK" | tr -d ' \n' | base64 -D > "$certificate_path"
+          curl --fail --location --silent --show-error \
+            -o "$developer_id_g2_path" \
+            "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer"
+          printf '%s  %s\n' "$developer_id_g2_sha256" "$developer_id_g2_path" | shasum -a 256 -c -
+          security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
+          security create-keychain -p "$keychain_password" "$signing_keychain"
+          security set-keychain-settings -lut 21600 "$signing_keychain"
+          security unlock-keychain -p "$keychain_password" "$signing_keychain"
+          security import "$developer_id_g2_path" -k "$signing_keychain"
+          security import "$certificate_path" -k "$signing_keychain" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S 'apple-tool:,apple:,codesign:' -s -k "$keychain_password" "$signing_keychain" >/dev/null
+          security list-keychains -d user -s "$signing_keychain" "$HOME/Library/Keychains/login.keychain-db"
+          identity_name="$(security find-identity -v -p codesigning "$signing_keychain" |
+            sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -n 1)"
+          if [[ -z "$identity_name" ]]; then
+            echo "No valid Developer ID Application identity in the prepared keychain." >&2
+            exit 1
+          fi
+          rm -f "$certificate_path"
+          export CSC_KEYCHAIN="$signing_keychain"
+          export CSC_NAME="$identity_name"
+          unset CSC_LINK CSC_KEY_PASSWORD
           args+=(--signed)
           vp run dist:desktop:artifact "${args[@]}"
 
@@ -413,6 +452,7 @@ jobs:
           AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
           AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
           AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
+          VITE_SCENERY_UNSPLASH_KEY: ${{ secrets.VITE_SCENERY_UNSPLASH_KEY }}
         run: |
           set -euo pipefail
           args=(
