@@ -21,7 +21,10 @@ import {
   stripInlineTerminalContextPlaceholders,
   type TerminalContextDraft,
 } from "./terminalContext";
-import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import {
+  applyCreatePullRequestSuffix,
+  stripCreatePullRequestSuffix,
+} from "@t3tools/shared/createPullRequestPrompt";
 
 function makeContext(overrides?: Partial<TerminalContextDraft>): TerminalContextDraft {
   return {
@@ -135,7 +138,9 @@ describe("terminalContext", () => {
     });
     const displayed = deriveDisplayedUserMessageState(prompt);
     expect(displayed.visibleText).toBe("Investigate this");
-    expect(displayed.copyText).toBe(prompt);
+    expect(displayed.copyText).toBe(stripCreatePullRequestSuffix(prompt));
+    expect(displayed.copyText).not.toContain("create_pull_request_instructions");
+    expect(displayed.copyText).toContain("<terminal_context>");
     expect(displayed.contextCount).toBe(1);
   });
 

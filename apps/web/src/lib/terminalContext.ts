@@ -255,7 +255,10 @@ export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMe
   const extractedTerminal = extractTrailingTerminalContexts(extractedElement.promptText);
   return {
     visibleText: extractedTerminal.promptText,
-    copyText: prompt,
+    // Copy keeps the attached context blocks but never the agent-only auto-PR
+    // instructions — the clipboard should match what the user believes the
+    // message says.
+    copyText: withoutPullRequestSuffix,
     contextCount: extractedTerminal.contextCount,
     previewTitle: extractedTerminal.previewTitle,
     contexts: extractedTerminal.contexts,

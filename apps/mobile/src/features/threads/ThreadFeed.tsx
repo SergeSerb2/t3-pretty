@@ -941,7 +941,9 @@ function renderFeedEntry(
             {message.text.trim().length > 0 ? (
               <CopyTextButton
                 accessibilityLabel="Copy message"
-                text={message.text}
+                // The clipboard matches the bubble: agent-only auto-PR
+                // instructions never ride a copy.
+                text={stripCreatePullRequestSuffix(message.text)}
                 tintColor={iconSubtleColor}
                 buttonSize={28}
                 iconSize={13}

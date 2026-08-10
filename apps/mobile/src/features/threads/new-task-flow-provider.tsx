@@ -573,9 +573,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const branchesLoading = branchState.isPending;
   // Gate the applied auto-PR value on repository status, not just the
   // control's visibility: the shared local-mode preference must not send
-  // fetch/commit/push instructions into a non-git directory.
-  const projectIsGitRepo = branchState.data?.isRepo ?? false;
-  const autoCreatePullRequest = projectIsGitRepo && autoCreatePullRequestChoice;
+  // fetch/commit/push instructions into a non-git directory. Only a
+  // CONFIRMED non-repository disables it — while the query is pending or the
+  // environment is offline the captured/preferred choice is preserved.
+  const projectConfirmedNotGitRepo = branchState.data?.isRepo === false;
+  const autoCreatePullRequest = !projectConfirmedNotGitRepo && autoCreatePullRequestChoice;
   const allBranchRefs = branchState.data?.refs ?? EMPTY_BRANCH_REFS;
   const availableBranches = useMemo(
     () =>
@@ -820,7 +822,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         text: applyCreatePullRequestSuffix({
           text,
           autoCreatePullRequest:
-            projectIsGitRepo &&
+            !projectConfirmedNotGitRepo &&
             (draft.autoCreatePullRequest ??
               resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode)),
           threadHasStarted: false,
@@ -850,7 +852,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       autoCreatePullRequestByEnvMode,
       editingPendingProject,
       editingPendingTask,
-      projectIsGitRepo,
+      projectConfirmedNotGitRepo,
       selectedEnvironmentServerConfig,
       selectedModel,
       selectedProject,
@@ -971,7 +973,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       runtimeMode,
       interactionMode,
       autoCreatePullRequest,
-      canToggleAutoCreatePullRequest: projectIsGitRepo,
+      canToggleAutoCreatePullRequest: !projectConfirmedNotGitRepo,
       expandedProvider,
       environments,
       selectedProject,
@@ -1011,7 +1013,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       autoCreatePullRequest,
       availableBranches,
       beginEditingPendingTask,
-      projectIsGitRepo,
+      projectConfirmedNotGitRepo,
       branchQuery,
       branchesLoading,
       buildPendingTaskMessage,
