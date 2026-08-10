@@ -37,7 +37,11 @@ jobs:
 
       - name: Fetch upstream release tags
         run: |
-          git remote add upstream https://github.com/pingdotgg/t3code.git
+          if git remote get-url upstream >/dev/null 2>&1; then
+            git remote set-url upstream https://github.com/pingdotgg/t3code.git
+          else
+            git remote add upstream https://github.com/pingdotgg/t3code.git
+          fi
           git fetch --force --tags upstream
 
       - id: existing
