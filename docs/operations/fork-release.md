@@ -1,31 +1,39 @@
-# Personal fork sync and desktop releases
+# T3 Pretty parent sync and desktop releases
 
-The fork treats GitHub `main` as the only release source of truth. It does not rebuild or merge
+T3 Pretty treats GitHub `main` as the only release source of truth. It does not rebuild or merge
 source code on installed machines.
 
 ## Flow
 
-1. `Fork Upstream Sync` runs at the top of every hour and finds the newest
-   `pingdotgg/t3code` nightly tag.
+1. `T3 Pretty Upstream Sync` runs at 00:00 and 12:00 UTC. These two scheduled checks per day are
+   the usage ceiling for the quality-first conflict resolver; there is no manual-dispatch bypass.
+   Each check finds the newest `pingdotgg/t3code` nightly tag.
 2. It merges that tag into an `automation/upstream-*` branch and opens a pull request. The fork
    deliberately keeps `.github/workflows` from its own `main`; upstream workflow changes cannot
    replace the trusted sync/release boundary or require a personal token with workflow scope.
-3. Clean changes remain untouched. If Git reports text conflicts, the workflow asks the Railway
-   CLIProxyAPI `gpt-5.6-luna` model to resolve each file with max reasoning. The prompt treats fork
-   behavior as authoritative while requiring compatible upstream behavior to be retained.
-4. The workflow dispatches the normal fork CI on the result and merges the pull request only after
+3. Clean changes remain untouched and do not make a model request. If Git reports text conflicts,
+   the workflow asks the Railway CLIProxyAPI `gpt-5.6-sol` model to resolve each file with `xhigh`
+   reasoning. Its preservation contract treats T3 Pretty and other fork-specific behavior as
+   authoritative, integrates compatible parent improvements around it, and keeps the smallest
+   T3 Pretty side when both intents genuinely cannot coexist.
+4. Every sync commits `.t3-fork/upstream-sync-report.md`. It identifies T3 Pretty behavior
+   preserved at conflict boundaries, compatible parent behavior integrated there, and every
+   parent change intentionally omitted to protect T3 Pretty. Fork-owned parent workflow changes
+   are enumerated as omissions too. The report is copied into the sync pull request and every
+   T3 Pretty desktop release note, so an omission cannot exist only in a transient Actions log.
+5. The workflow dispatches the normal fork CI on the result and merges the pull request only after
    every required check passes. It publishes the four required commit statuses with links to that
    exact run because GitHub suppresses normal push-triggered checks for `GITHUB_TOKEN` automation.
    Unsafe, binary, oversized, uncertain, or test-failing changes stop and create an issue pointing
    to the failed run.
-5. Every commit merged to `main`, whether from the upstream sync or a personal pull request,
-   starts its own `Fork Desktop Release`. Release runs are not collapsed through a workflow
+6. Every commit merged to `main`, whether from the parent sync or a T3 Pretty pull request,
+   starts its own `T3 Pretty Desktop Release`. Release runs are not collapsed through a workflow
    concurrency group: the dedicated runners queue every main commit, and the GitHub run number
    makes each fork version unique even when multiple releases overlap.
-6. `m1-dev-t3code-fork` builds macOS arm64 and x64. `windows-5080-t3code-fork` builds Windows
+7. `m1-dev-t3code-fork` builds macOS arm64 and x64. `windows-5080-t3code-fork` builds Windows
    x64. Only trusted `main` commits run on these self-hosted machines; pull requests use GitHub-
    hosted runners.
-7. GitHub publishes a public prerelease with the installers, blockmaps, and `nightly` update
+8. GitHub publishes a public prerelease with the installers, blockmaps, and `nightly` update
    manifests. Packaged fork apps point `electron-updater` at
    `SergeSerb2/t3code-fork-theme`, so no per-machine GitHub token is required.
 

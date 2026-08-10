@@ -1,4 +1,4 @@
-name: Fork Desktop Release
+name: T3 Pretty Desktop Release
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   preflight:
-    name: Resolve fork release
+    name: Resolve T3 Pretty release
     permissions:
       contents: read
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
@@ -506,7 +506,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Publish fork updater release
+    name: Publish T3 Pretty updater release
     needs: [preflight, build_macos, build_windows]
     if: >-
       !cancelled() &&
@@ -607,13 +607,22 @@ jobs:
             release-assets/*.yml
           )
           (( ${#assets[@]} > 0 ))
-          printf -v release_notes \
-            'Fork build from `%s`.\nIncludes upstream through `%s` plus all changes merged to fork `main`.' \
-            "$RELEASE_REF" "$UPSTREAM_TAG"
+          release_notes_path="$RUNNER_TEMP/t3-pretty-release-notes.md"
+          {
+            printf \
+              'T3 Pretty build from `%s`.\nIncludes parent T3 Code through `%s` plus all changes merged to T3 Pretty `main`.\n' \
+              "$RELEASE_REF" "$UPSTREAM_TAG"
+            if [[ -s .t3-fork/upstream-sync-report.md ]]; then
+              printf '\n'
+              cat .t3-fork/upstream-sync-report.md
+            else
+              printf '\nNo parent integration report is present for this revision.\n'
+            fi
+          } > "$release_notes_path"
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$RELEASE_REF" \
             --title "$RELEASE_NAME" \
-            --notes "$release_notes" \
+            --notes-file "$release_notes_path" \
             --prerelease \
             --latest=false

@@ -37,11 +37,13 @@ it("emits a fork-specific semver tag that electron-updater can match to nightly"
       readonly version: string;
       readonly tag: string;
       readonly upstream_tag: string;
+      readonly name: string;
     };
 
     assert.equal(metadata.version, "0.0.33-nightly.20260809.1043000015");
     assert.equal(metadata.tag, "v0.0.33-nightly.20260809.1043000015.fork");
     assert.equal(metadata.upstream_tag, "v0.0.33-nightly.20260809.1043");
+    assert.equal(metadata.name, "T3 Pretty 0.0.33-nightly.20260809.1043000015");
     assert.match(metadata.tag, /^v\d+\.\d+\.\d+-nightly\.\d{8}\.\d+\.fork$/u);
   } finally {
     NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
