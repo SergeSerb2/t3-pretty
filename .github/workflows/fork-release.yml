@@ -641,3 +641,43 @@ jobs:
             --notes "$release_notes" \
             --prerelease \
             --latest=false
+
+  update_windows_native:
+    name: Update Windows box (native unsigned build)
+    needs: [preflight, release]
+    # No Azure Trusted Signing: instead of publishing a Windows updater
+    # artifact, drive the box's existing native pipeline. The runner lives on
+    # that machine; syncing C:\dev\t3code-scenery to the released commit and
+    # kicking the scenery-update scheduled task builds and installs the same
+    # code the release shipped for macOS.
+    if: >-
+      !cancelled() &&
+      needs.release.result == 'success' &&
+      needs.preflight.outputs.windows_release != 'true'
+    runs-on: [self-hosted, Windows, X64, t3code-fork, release-only]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Sync native checkout and trigger build
+        shell: powershell
+        env:
+          RELEASE_SHA: ${{ needs.preflight.outputs.ref }}
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $repo = "C:\dev\t3code-scenery"
+          $status = schtasks /query /tn scenery-update /fo LIST 2>$null | Select-String "Status:"
+          if ($status -and $status.ToString() -match "Running") {
+            Write-Host "scenery-update is already building; the next release retriggers."
+            exit 0
+          }
+          git -C $repo fetch https://github.com/SergeSerb2/t3code-fork-theme.git main
+          if ($LASTEXITCODE -ne 0) { throw "fetch failed" }
+          git -C $repo reset --hard -q
+          git -C $repo checkout -q -B scenery $env:RELEASE_SHA
+          if ($LASTEXITCODE -ne 0) { throw "checkout of $env:RELEASE_SHA failed" }
+          Set-Content C:\dev\scenery-version.txt $env:RELEASE_VERSION
+          schtasks /run /tn scenery-update
+          if ($LASTEXITCODE -ne 0) { throw "could not start the scenery-update task" }
+          Write-Host "native build triggered for $env:RELEASE_SHA ($env:RELEASE_VERSION)"
