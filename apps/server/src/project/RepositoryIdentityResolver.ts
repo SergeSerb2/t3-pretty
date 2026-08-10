@@ -34,6 +34,9 @@ interface RemoteUrls {
   readonly pushUrl?: string;
 }
 
+// URLs are credential-redacted at parse time so every downstream consumer —
+// canonicalKey normalization, display metadata, and the locator — only ever
+// sees redacted values.
 function parseRemoteUrls(stdout: string): Map<string, RemoteUrls> {
   const remotes = new Map<string, RemoteUrls>();
   for (const line of stdout.split("\n")) {
@@ -41,8 +44,9 @@ function parseRemoteUrls(stdout: string): Map<string, RemoteUrls> {
     if (trimmed.length === 0) continue;
     const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)$/.exec(trimmed);
     if (!match) continue;
-    const [, remoteName = "", remoteUrl = "", direction = ""] = match;
-    if (remoteName.length === 0 || remoteUrl.length === 0) continue;
+    const [, remoteName = "", rawRemoteUrl = "", direction = ""] = match;
+    if (remoteName.length === 0 || rawRemoteUrl.length === 0) continue;
+    const remoteUrl = redactGitRemoteUrlCredentials(rawRemoteUrl);
     const existing = remotes.get(remoteName) ?? {};
     remotes.set(
       remoteName,
@@ -54,19 +58,29 @@ function parseRemoteUrls(stdout: string): Map<string, RemoteUrls> {
   return remotes;
 }
 
-// A push URL only qualifies as a repository identity when it normalizes to a
-// host/owner/repo path — push URLs are also used as write-protection sentinels
-// (e.g. `pushurl = DISABLED` or `pushurl = /dev/null`), which must not leak
-// into the identity. Filesystem paths (absolute POSIX or Windows drive paths)
-// are rejected; a qualifying value needs a leading host segment followed by at
-// least one repository path segment.
+// A push URL only qualifies as a repository identity when it addresses a real
+// host with a repository path — push URLs are also used as write-protection
+// sentinels (e.g. `pushurl = DISABLED`, `/dev/null`, `file:///dev/null`),
+// which must not leak into the identity. Only URL-shaped values with a
+// nonempty hostname and scp-style host:path values qualify; plain filesystem
+// paths and bare words are rejected.
 function isRepositoryUrl(remoteUrl: string): boolean {
-  const normalized = normalizeGitRemoteUrl(remoteUrl);
-  if (normalized.startsWith("/") || /^[a-z]:[\\/]/.test(normalized)) {
-    return false;
+  const trimmed = remoteUrl.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      if (url.hostname.length === 0) return false;
+      return url.pathname.split("/").some((segment) => segment.length > 0);
+    } catch {
+      return false;
+    }
   }
-  const segments = normalized.split("/").filter((segment) => segment.length > 0);
-  return segments.length >= 2;
+  const scpStyle = /^(?:[^@/\s]+@)?([^:/\s]+):(\S+)$/.exec(trimmed);
+  if (!scpStyle) return false;
+  const [, host = "", path = ""] = scpStyle;
+  // A single-letter "host" is a Windows drive path (c:/repos/foo), not a remote.
+  if (/^[a-z]$/i.test(host)) return false;
+  return path.replace(/^\/+/, "").length > 0;
 }
 
 // Remote URLs can embed credentials (e.g. PAT-authenticated HTTPS push URLs).
@@ -160,7 +174,7 @@ function buildRepositoryIdentity(input: {
     locator: {
       source: "git-remote",
       remoteName: input.remoteName,
-      remoteUrl: redactGitRemoteUrlCredentials(input.remoteUrl),
+      remoteUrl: input.remoteUrl,
     },
     rootPath: input.rootPath,
     ...(repositoryPath ? { displayName: repositoryPath } : {}),

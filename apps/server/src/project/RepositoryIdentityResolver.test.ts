@@ -197,6 +197,51 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
+  it.effect("redacts credentials before deriving display metadata for root-level repos", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-root-repo-credential-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", "https://git.example/repo.git"]);
+      yield* git(cwd, [
+        "config",
+        "remote.origin.pushurl",
+        "https://ghp_secrettoken@git.example/repo.git",
+      ]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+
+      expect(identity).not.toBeNull();
+      expect(JSON.stringify(identity)).not.toContain("ghp_secrettoken");
+      expect(identity?.locator.remoteUrl).toBe("https://git.example/repo.git");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
+  it.effect("ignores URL-shaped push sentinels without a host like file:///dev/null", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-file-devnull-push-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", "git@github.com:julius/t3code.git"]);
+      yield* git(cwd, ["config", "remote.origin.pushurl", "file:///dev/null"]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+
+      expect(identity).not.toBeNull();
+      expect(identity?.canonicalKey).toBe("github.com/julius/t3code");
+      expect(identity?.locator.remoteUrl).toBe("git@github.com:julius/t3code.git");
+      expect(identity?.displayName).toBe("julius/t3code");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
   it.effect("redacts credentials from retained remote URLs", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
