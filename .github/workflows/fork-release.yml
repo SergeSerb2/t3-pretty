@@ -1,4 +1,4 @@
-name: Fork Desktop Release
+name: T3 Pretty Desktop Release
 
 on:
   push:
@@ -586,7 +586,7 @@ jobs:
           test -n "$mac_zip"
           unzip -p "$mac_zip" '*/Contents/Resources/app-update.yml' > app-update.yml
           grep -F 'owner: SergeSerb2' app-update.yml
-          grep -F 'repo: t3code-fork-theme' app-update.yml
+          grep -F 'repo: t3-pretty' app-update.yml
 
       - name: Publish public GitHub prerelease
         shell: bash

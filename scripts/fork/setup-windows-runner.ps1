@@ -77,7 +77,7 @@ if (-not (Test-Path ".\config.cmd")) {
 & .\config.cmd `
   --unattended `
   --replace `
-  --url https://github.com/SergeSerb2/t3code-fork-theme `
+  --url https://github.com/SergeSerb2/t3-pretty `
   --token $token `
   --name windows-5080-t3code-fork `
   --labels t3code-fork,release-only,windows-x64 `
@@ -87,6 +87,9 @@ if ($LASTEXITCODE -ne 0) {
   throw "Runner config failed with exit $LASTEXITCODE"
 }
 
-$services = Get-Service | Where-Object Name -Like "actions.runner.SergeSerb2-t3code-fork-theme*"
+$services = Get-Service | Where-Object {
+  $_.Name -Like "actions.runner.SergeSerb2-t3-pretty*" -or
+  $_.Name -Like "actions.runner.SergeSerb2-t3code-fork-theme*"
+}
 $services | Start-Service
 $services | Select-Object Name, Status, StartType | Format-List

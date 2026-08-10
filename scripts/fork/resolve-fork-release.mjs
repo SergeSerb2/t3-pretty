@@ -55,7 +55,7 @@ function main() {
     upstream_tag: upstreamTag,
     version,
     tag,
-    name: `T3 Code Fork ${version}`,
+    name: `T3 Pretty ${version}`,
     short_sha: git("rev-parse", "--short=9", "HEAD"),
   };
 

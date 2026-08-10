@@ -27,7 +27,7 @@ source code on installed machines.
    hosted runners.
 7. GitHub publishes a public prerelease with the installers, blockmaps, and `nightly` update
    manifests. Packaged fork apps point `electron-updater` at
-   `SergeSerb2/t3code-fork-theme`, so no per-machine GitHub token is required.
+   `SergeSerb2/t3-pretty`, so no per-machine GitHub token is required.
 
 Fork versions retain the newest integrated upstream nightly prefix and append a monotonic fork
 build number. This makes personal merges newer than the parent build without pretending that a
