@@ -8,6 +8,17 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { createStaticNavigation, DarkTheme, DefaultTheme } from "@react-navigation/native";
 
+// World Scenery nav palette — keep in step with global.css (native headers
+// cannot read CSS variables, so the scenery screen/accent hexes repeat here).
+const SCENERY_NAV_DARK = {
+  ...DarkTheme,
+  colors: { ...DarkTheme.colors, background: "#0e1110", card: "#0e1110", primary: "#91c9a3" },
+};
+const SCENERY_NAV_LIGHT = {
+  ...DefaultTheme,
+  colors: { ...DefaultTheme.colors, background: "#f4f6f4", card: "#f4f6f4", primary: "#27633f" },
+};
+
 import { RegistryContext } from "@effect/atom-react";
 import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { CloudAuthProvider } from "./features/cloud/CloudAuthProvider";
@@ -84,7 +95,7 @@ export default function App() {
                   <IncomingShareProvider>
                     <Navigation
                       linking={appLinking}
-                      theme={colorScheme === "dark" ? DarkTheme : DefaultTheme}
+                      theme={colorScheme === "dark" ? SCENERY_NAV_DARK : SCENERY_NAV_LIGHT}
                     />
                   </IncomingShareProvider>
                   <ConfirmDialogHost />

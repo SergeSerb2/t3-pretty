@@ -2,194 +2,201 @@
 @import "uniwind";
 
 /* ─── Theme tokens ──────────────────────────────────────────────────── */
+/*
+ * World Scenery (T3 Pretty's default look): alpine-nature tones ported from
+ * apps/web/src/scenery/worldSceneryTheme.ts. Keep hues in step with that
+ * palette — greens carry the identity; text/icon steps preserve the original
+ * mobile contrast ladder. Feature colors with no scenery equivalent (danger,
+ * inline skills, backdrops) keep their upstream values.
+ */
 @layer theme {
   :root {
     @variant light {
       /* Page backgrounds */
-      --color-screen: #f2f2f7;
-      --color-sheet: rgba(242, 242, 247, 0.98);
+      --color-screen: #f4f6f4;
+      --color-sheet: rgba(244, 246, 244, 0.98);
 
       /* Card / surface */
       --color-card: #ffffff;
-      --color-card-alt: #f5f5f5;
+      --color-card-alt: #fafcfa;
       --color-card-translucent: rgba(255, 255, 255, 0.8);
 
       /* Text */
-      --color-foreground: #262626;
-      --color-foreground-secondary: #525252;
-      --color-foreground-muted: #737373;
-      --color-foreground-tertiary: #8e8e93;
+      --color-foreground: #161a17;
+      --color-foreground-secondary: #414843;
+      --color-foreground-muted: #5a625b;
+      --color-foreground-tertiary: #7c837d;
 
       /* Borders & separators */
-      --color-border: rgba(0, 0, 0, 0.08);
-      --color-border-subtle: rgba(0, 0, 0, 0.06);
-      --color-separator: rgba(0, 0, 0, 0.04);
+      --color-border: rgba(22, 38, 26, 0.1);
+      --color-border-subtle: rgba(22, 38, 26, 0.07);
+      --color-separator: rgba(22, 38, 26, 0.05);
 
       /* Subtle backgrounds (badges, pills, overlays) */
-      --color-subtle: rgba(0, 0, 0, 0.04);
-      --color-subtle-strong: rgba(0, 0, 0, 0.08);
+      --color-subtle: rgba(39, 99, 63, 0.06);
+      --color-subtle-strong: rgba(39, 99, 63, 0.11);
       --color-inline-skill-background: rgba(217, 70, 239, 0.12);
       --color-inline-skill-border: rgba(217, 70, 239, 0.25);
       --color-inline-skill-foreground: #a21caf;
 
       /* Primary action */
-      --color-primary: #262626;
+      --color-primary: #27633f;
       --color-primary-foreground: #ffffff;
-      --color-primary-shadow: rgba(0, 0, 0, 0.18);
+      --color-primary-shadow: rgba(28, 70, 48, 0.22);
 
       /* Secondary action */
       --color-secondary: #ffffff;
-      --color-secondary-foreground: #262626;
-      --color-secondary-border: rgba(0, 0, 0, 0.08);
-      --color-switch-active: #34c759;
+      --color-secondary-foreground: #232823;
+      --color-secondary-border: rgba(22, 38, 26, 0.1);
+      --color-switch-active: #2e7d4f;
 
       /* Danger */
       --color-danger: #fef2f2;
       --color-danger-border: rgba(239, 68, 68, 0.12);
-      --color-danger-foreground: #dc2626;
+      --color-danger-foreground: #c22030;
 
       /* Inputs */
       --color-input: #ffffff;
-      --color-input-border: rgba(0, 0, 0, 0.1);
-      --color-sidebar-search: rgba(118, 118, 128, 0.12);
-      --color-placeholder: #a3a3a3;
+      --color-input-border: rgba(22, 38, 26, 0.12);
+      --color-sidebar-search: rgba(118, 128, 118, 0.12);
+      --color-placeholder: #6b736c;
 
       /* Icons */
-      --color-icon: #262626;
-      --color-icon-muted: #525252;
-      --color-icon-subtle: #a3a3a3;
+      --color-icon: #232823;
+      --color-icon-muted: #3f473f;
+      --color-icon-subtle: #7c837d;
 
       /* Header / glass chrome */
-      --color-header: rgba(255, 255, 255, 0.97);
-      --color-header-border: rgba(0, 0, 0, 0.06);
+      --color-header: rgba(244, 246, 244, 0.97);
+      --color-header-border: rgba(22, 38, 26, 0.07);
       --color-glass-surface: rgba(255, 255, 255, 0.72);
       --color-glass-tint: rgba(255, 255, 255, 0.18);
 
       /* StatusBar */
-      --color-status-bar: #f2f2f7;
+      --color-status-bar: #f4f6f4;
 
       /* Markdown */
-      --color-md-body: #111111;
-      --color-md-strong: #000000;
-      --color-md-link: #2563eb;
-      --color-md-blockquote-border: rgba(0, 0, 0, 0.08);
-      --color-md-blockquote-bg: rgba(0, 0, 0, 0.02);
-      --color-md-code-bg: rgba(0, 0, 0, 0.04);
-      --color-md-code-text: #262626;
+      --color-md-body: #141815;
+      --color-md-strong: #060907;
+      --color-md-link: #1d5f8a;
+      --color-md-blockquote-border: rgba(22, 38, 26, 0.1);
+      --color-md-blockquote-bg: rgba(39, 99, 63, 0.03);
+      --color-md-code-bg: rgba(39, 99, 63, 0.06);
+      --color-md-code-text: #242925;
       --color-md-user-code-bg: rgba(255, 255, 255, 0.22);
       --color-md-user-code-text: #ffffff;
       --color-md-user-fence-bg: rgba(0, 0, 0, 0.16);
       --color-md-user-fence-text: #ffffff;
-      --color-md-hr: rgba(0, 0, 0, 0.08);
+      --color-md-hr: rgba(22, 38, 26, 0.1);
 
       /* iMessage-style user bubble */
-      --color-user-bubble: #007aff;
+      --color-user-bubble: #27633f;
       --color-user-bubble-foreground: #ffffff;
       --color-user-bubble-foreground-muted: rgba(255, 255, 255, 0.78);
 
       /* Drawer / modal backdrop */
-      --color-backdrop: rgba(0, 0, 0, 0.22);
-      --color-drawer: rgba(255, 255, 255, 0.99);
-      --color-drawer-shadow: rgba(0, 0, 0, 0.12);
+      --color-backdrop: rgba(10, 20, 13, 0.22);
+      --color-drawer: rgba(250, 252, 250, 0.99);
+      --color-drawer-shadow: rgba(10, 20, 13, 0.12);
 
       /* Misc */
-      --color-dot-separator: rgba(0, 0, 0, 0.2);
-      --color-wordmark: #262626;
-      --color-chevron: rgba(0, 0, 0, 0.2);
+      --color-dot-separator: rgba(22, 38, 26, 0.2);
+      --color-wordmark: #232823;
+      --color-chevron: rgba(22, 38, 26, 0.22);
     }
 
     @variant dark {
       /* Page backgrounds */
-      --color-screen: #0a0a0a;
-      --color-sheet: rgba(14, 14, 14, 0.98);
+      --color-screen: #0e1110;
+      --color-sheet: rgba(14, 17, 16, 0.98);
 
       /* Card / surface */
-      --color-card: #171717;
-      --color-card-alt: #1c1c1c;
-      --color-card-translucent: rgba(17, 17, 17, 0.8);
+      --color-card: #131715;
+      --color-card-alt: #161b18;
+      --color-card-translucent: rgba(19, 23, 21, 0.8);
 
       /* Text */
-      --color-foreground: #f5f5f5;
-      --color-foreground-secondary: #a3a3a3;
-      --color-foreground-muted: #8e8e93;
-      --color-foreground-tertiary: #636366;
+      --color-foreground: #f0f2ef;
+      --color-foreground-secondary: #b6bcb7;
+      --color-foreground-muted: #98a29a;
+      --color-foreground-tertiary: #6e7770;
 
       /* Borders & separators */
-      --color-border: rgba(255, 255, 255, 0.06);
-      --color-border-subtle: rgba(255, 255, 255, 0.04);
-      --color-separator: rgba(255, 255, 255, 0.03);
+      --color-border: rgba(222, 236, 226, 0.08);
+      --color-border-subtle: rgba(222, 236, 226, 0.05);
+      --color-separator: rgba(222, 236, 226, 0.04);
 
       /* Subtle backgrounds (badges, pills, overlays) */
-      --color-subtle: rgba(255, 255, 255, 0.04);
-      --color-subtle-strong: rgba(255, 255, 255, 0.08);
+      --color-subtle: rgba(145, 201, 163, 0.07);
+      --color-subtle-strong: rgba(145, 201, 163, 0.13);
       --color-inline-skill-background: rgba(217, 70, 239, 0.12);
       --color-inline-skill-border: rgba(217, 70, 239, 0.25);
       --color-inline-skill-foreground: #f0abfc;
 
       /* Primary action */
-      --color-primary: #f5f5f5;
-      --color-primary-foreground: #0a0a0a;
+      --color-primary: #91c9a3;
+      --color-primary-foreground: #0c1710;
       --color-primary-shadow: rgba(0, 0, 0, 0.22);
 
       /* Secondary action */
-      --color-secondary: rgba(255, 255, 255, 0.04);
-      --color-secondary-foreground: #f5f5f5;
-      --color-secondary-border: rgba(255, 255, 255, 0.06);
-      --color-switch-active: #30d158;
+      --color-secondary: rgba(145, 201, 163, 0.07);
+      --color-secondary-foreground: #e6eae6;
+      --color-secondary-border: rgba(222, 236, 226, 0.08);
+      --color-switch-active: #7fbc93;
 
       /* Danger */
-      --color-danger: rgba(239, 68, 68, 0.14);
-      --color-danger-border: rgba(248, 113, 113, 0.18);
-      --color-danger-foreground: #fca5a5;
+      --color-danger: rgba(251, 106, 118, 0.14);
+      --color-danger-border: rgba(251, 106, 118, 0.18);
+      --color-danger-foreground: #ffd2d7;
 
       /* Inputs */
-      --color-input: #141414;
-      --color-input-border: rgba(255, 255, 255, 0.08);
-      --color-sidebar-search: rgba(118, 118, 128, 0.24);
-      --color-placeholder: #8e8e93;
+      --color-input: #1a201c;
+      --color-input-border: rgba(222, 236, 226, 0.1);
+      --color-sidebar-search: rgba(118, 128, 120, 0.24);
+      --color-placeholder: #b3bcb5;
 
       /* Icons */
-      --color-icon: #f5f5f5;
-      --color-icon-muted: #a3a3a3;
-      --color-icon-subtle: #8e8e93;
+      --color-icon: #e8ece9;
+      --color-icon-muted: #b0b9b2;
+      --color-icon-subtle: #8e948f;
 
       /* Header / glass chrome */
-      --color-header: rgba(10, 10, 10, 0.97);
-      --color-header-border: rgba(255, 255, 255, 0.06);
-      --color-glass-surface: rgba(23, 23, 23, 0.78);
-      --color-glass-tint: rgba(23, 23, 23, 0.24);
+      --color-header: rgba(14, 17, 16, 0.97);
+      --color-header-border: rgba(222, 236, 226, 0.08);
+      --color-glass-surface: rgba(19, 23, 21, 0.78);
+      --color-glass-tint: rgba(27, 33, 29, 0.24);
 
       /* StatusBar */
-      --color-status-bar: #0a0a0a;
+      --color-status-bar: #0e1110;
 
       /* Markdown */
-      --color-md-body: #e5e5e5;
-      --color-md-strong: #f5f5f5;
-      --color-md-link: #60a5fa;
-      --color-md-blockquote-border: rgba(255, 255, 255, 0.1);
-      --color-md-blockquote-bg: rgba(255, 255, 255, 0.03);
-      --color-md-code-bg: rgba(255, 255, 255, 0.06);
-      --color-md-code-text: #e5e5e5;
+      --color-md-body: #e4e7e4;
+      --color-md-strong: #f0f2ef;
+      --color-md-link: #6cb8e8;
+      --color-md-blockquote-border: rgba(222, 236, 226, 0.12);
+      --color-md-blockquote-bg: rgba(145, 201, 163, 0.05);
+      --color-md-code-bg: rgba(222, 236, 226, 0.07);
+      --color-md-code-text: #e4e7e4;
       --color-md-user-code-bg: rgba(255, 255, 255, 0.18);
       --color-md-user-code-text: #ffffff;
       --color-md-user-fence-bg: rgba(0, 0, 0, 0.28);
       --color-md-user-fence-text: #ffffff;
-      --color-md-hr: rgba(255, 255, 255, 0.08);
+      --color-md-hr: rgba(222, 236, 226, 0.1);
 
       /* iMessage-style user bubble */
-      --color-user-bubble: #0a84ff;
-      --color-user-bubble-foreground: #ffffff;
-      --color-user-bubble-foreground-muted: rgba(255, 255, 255, 0.78);
+      --color-user-bubble: #24422f;
+      --color-user-bubble-foreground: #f2f4f1;
+      --color-user-bubble-foreground-muted: rgba(242, 244, 241, 0.78);
 
       /* Drawer / modal backdrop */
       --color-backdrop: rgba(0, 0, 0, 0.48);
-      --color-drawer: rgba(14, 14, 14, 0.99);
+      --color-drawer: rgba(12, 15, 13, 0.99);
       --color-drawer-shadow: rgba(0, 0, 0, 0.32);
 
       /* Misc */
-      --color-dot-separator: rgba(255, 255, 255, 0.2);
-      --color-wordmark: #f5f5f5;
-      --color-chevron: rgba(255, 255, 255, 0.2);
+      --color-dot-separator: rgba(222, 236, 226, 0.2);
+      --color-wordmark: #e8ece9;
+      --color-chevron: rgba(222, 236, 226, 0.2);
     }
   }
 }

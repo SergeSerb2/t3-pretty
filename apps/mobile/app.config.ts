@@ -338,11 +338,12 @@ const config: ExpoConfig = {
       {
         image: variant.assets.splashIcon,
         resizeMode: "contain",
-        backgroundColor: "#ffffff",
+        // World Scenery screen tokens — keep in step with global.css.
+        backgroundColor: "#f4f6f4",
         imageWidth: 220,
         dark: {
           image: variant.assets.splashIcon,
-          backgroundColor: "#0a0a0a",
+          backgroundColor: "#0e1110",
         },
       },
     ],
