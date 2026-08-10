@@ -71,3 +71,12 @@ If a step fails:
    `<client-version>` with the client version shown in the warning.
 
 For remote connection setup and access troubleshooting, see [Remote Access](./remote-access.md).
+
+## What's New Dialog
+
+After an update, the app shows a What's New dialog the next time it opens, listing the changes in
+the releases you skipped. Dismissing it marks those releases as seen; it will not reappear until
+the next update.
+
+To browse the changelog at any time, open Settings → General → What's new, or run "What's new"
+from the command palette.
