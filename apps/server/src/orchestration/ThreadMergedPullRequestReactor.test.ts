@@ -1,0 +1,327 @@
+import {
+  EventId,
+  ThreadId,
+  type OrchestrationCommand,
+  type VcsStatusRemoteResult,
+} from "@t3tools/contracts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { describe, expect, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+
+import type {
+  GitBranchHeadAssociation,
+  GitPullRequestBranchObservation,
+} from "../git/GitManager.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
+import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
+import {
+  ProjectionSnapshotQuery,
+  type ProjectionMergedPullRequestCandidate,
+} from "./Services/ProjectionSnapshotQuery.ts";
+import { layer, ThreadMergedPullRequestReactor } from "./ThreadMergedPullRequestReactor.ts";
+
+const WORKSPACE_ROOT = "/workspace/project-1";
+const BRANCH = "feature/merged-pr";
+const BRANCH_OBSERVED_AT = "2026-01-01T00:00:00.000Z";
+const PULL_REQUEST_MERGED_AT = "2026-01-02T00:00:00.000Z";
+
+function makeCandidate(input: {
+  readonly id: string;
+  readonly branch?: string;
+  readonly cwd?: string;
+  readonly branchObservedAt?: string;
+  readonly branchHeadRef?: string | null;
+  readonly branchHeadRepository?: string | null;
+  readonly branchHeadOwner?: string | null;
+  readonly branchHeadIsCrossRepository?: boolean | null;
+}): ProjectionMergedPullRequestCandidate {
+  return {
+    threadId: ThreadId.make(input.id),
+    branch: input.branch ?? BRANCH,
+    cwd: input.cwd ?? WORKSPACE_ROOT,
+    branchObservedAt: input.branchObservedAt ?? BRANCH_OBSERVED_AT,
+    branchEventId: EventId.make(`event-${input.id}`),
+    branchHeadRef: input.branchHeadRef ?? null,
+    branchHeadRepository: input.branchHeadRepository ?? null,
+    branchHeadOwner: input.branchHeadOwner ?? null,
+    branchHeadIsCrossRepository: input.branchHeadIsCrossRepository ?? null,
+  };
+}
+
+function pullRequest(input: {
+  readonly state: "open" | "closed" | "merged";
+  readonly headRef?: string;
+}): NonNullable<VcsStatusRemoteResult["pr"]> {
+  return {
+    number: 42,
+    title: "Merged feature",
+    url: "https://github.com/example/repo/pull/42",
+    baseRef: "main",
+    headRef: input.headRef ?? BRANCH,
+    state: input.state,
+  };
+}
+
+function observation(
+  pullRequestValue: VcsStatusRemoteResult["pr"],
+  mergedAt: string | null = PULL_REQUEST_MERGED_AT,
+  headAssociation: GitBranchHeadAssociation = {
+    headRef: pullRequestValue?.headRef ?? BRANCH,
+    repositoryNameWithOwner: null,
+    ownerLogin: null,
+    isCrossRepository: false,
+  },
+): GitPullRequestBranchObservation {
+  return { pullRequest: pullRequestValue, mergedAt, headAssociation };
+}
+
+const branchKey = (cwd: string, branch: string) => `${cwd}\u0000${branch}`;
+
+function runSweepResult(input: {
+  readonly candidates: ReadonlyArray<ProjectionMergedPullRequestCandidate>;
+  readonly pullRequestByBranch: ReadonlyMap<string, GitPullRequestBranchObservation>;
+}) {
+  const dispatched: OrchestrationCommand[] = [];
+  const recordedBranchHeads: Array<
+    Parameters<ProjectionThreadRepository["Service"]["recordBranchHead"]>[0]
+  > = [];
+  const lookups: Array<
+    Parameters<GitWorkflowService.GitWorkflowService["Service"]["pullRequestForBranch"]>[0]
+  > = [];
+
+  const testLayer = layer.pipe(
+    Layer.provideMerge(NodeServices.layer),
+    Layer.provide(
+      Layer.mock(OrchestrationEngineService)({
+        dispatch: (command) =>
+          Effect.sync(() => {
+            dispatched.push(command);
+            return { sequence: dispatched.length };
+          }),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(ProjectionSnapshotQuery)({
+        getShellSnapshot: () => Effect.die("getShellSnapshot should not be called"),
+        listMergedPullRequestCandidates: () => Effect.succeed(input.candidates),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(ProjectionThreadRepository)({
+        recordBranchHead: (record) =>
+          Effect.sync(() => {
+            recordedBranchHeads.push(record);
+          }),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(GitWorkflowService.GitWorkflowService)({
+        pullRequestForBranch: (lookup) =>
+          Effect.sync(() => {
+            lookups.push(lookup);
+            return (
+              input.pullRequestByBranch.get(branchKey(lookup.cwd, lookup.branch)) ??
+              observation(null, null)
+            );
+          }),
+      }),
+    ),
+  );
+
+  return Effect.gen(function* () {
+    const reactor = yield* ThreadMergedPullRequestReactor;
+    yield* reactor.sweepOnce;
+    return { dispatched, recordedBranchHeads, lookups };
+  }).pipe(Effect.provide(testLayer));
+}
+
+function runSweep(input: {
+  readonly candidates: ReadonlyArray<ProjectionMergedPullRequestCandidate>;
+  readonly pullRequestByBranch: ReadonlyMap<string, GitPullRequestBranchObservation>;
+}) {
+  return runSweepResult(input).pipe(Effect.map(({ dispatched }) => dispatched));
+}
+
+describe("ThreadMergedPullRequestReactor", () => {
+  it.effect("persists settlement and always dispatches guarded session cleanup", () =>
+    Effect.gen(function* () {
+      const commands = yield* runSweep({
+        candidates: [makeCandidate({ id: "merged" })],
+        pullRequestByBranch: new Map([
+          [branchKey(WORKSPACE_ROOT, BRANCH), observation(pullRequest({ state: "merged" }))],
+        ]),
+      });
+
+      expect(commands).toHaveLength(2);
+      const settleCommand = commands[0];
+      expect(settleCommand?.type).toBe("thread.settle");
+      if (settleCommand?.type === "thread.settle") {
+        expect(settleCommand.threadId).toBe("merged");
+        expect(settleCommand.commandId.startsWith("server:auto-settle:pr-merged:")).toBe(true);
+        expect(settleCommand.onlyIfAutoSettlementEligible).toBe(true);
+        expect(settleCommand.expectedBranch).toBe(BRANCH);
+        expect(settleCommand.expectedBranchEventId).toBe("event-merged");
+
+        const stopCommand = commands[1];
+        expect(stopCommand?.type).toBe("thread.session.stop");
+        if (stopCommand?.type === "thread.session.stop") {
+          expect(stopCommand.threadId).toBe("merged");
+          expect(stopCommand.commandId).toBe(`session-stop-for-settle:${settleCommand.commandId}`);
+          expect(stopCommand.onlyIfSettled).toBe(true);
+          expect(Number.isNaN(Date.parse(stopCommand.createdAt))).toBe(false);
+        }
+      }
+    }),
+  );
+
+  it.effect("persists and reuses the exact branch head for its branch incarnation", () =>
+    Effect.gen(function* () {
+      const exactHead = {
+        headRef: BRANCH,
+        repositoryNameWithOwner: "octocat/repo",
+        ownerLogin: "octocat",
+        isCrossRepository: true,
+      } as const;
+      const first = yield* runSweepResult({
+        candidates: [makeCandidate({ id: "learn-head" })],
+        pullRequestByBranch: new Map([
+          [
+            branchKey(WORKSPACE_ROOT, BRANCH),
+            observation(pullRequest({ state: "open" }), null, exactHead),
+          ],
+        ]),
+      });
+      expect(first.recordedBranchHeads).toEqual([
+        {
+          threadId: "learn-head",
+          branchEventId: "event-learn-head",
+          headRef: BRANCH,
+          repositoryNameWithOwner: "octocat/repo",
+          ownerLogin: "octocat",
+          isCrossRepository: true,
+        },
+      ]);
+
+      const second = yield* runSweepResult({
+        candidates: [
+          makeCandidate({
+            id: "reuse-head",
+            branchHeadRef: exactHead.headRef,
+            branchHeadRepository: exactHead.repositoryNameWithOwner,
+            branchHeadOwner: exactHead.ownerLogin,
+            branchHeadIsCrossRepository: exactHead.isCrossRepository,
+          }),
+        ],
+        pullRequestByBranch: new Map([
+          [
+            branchKey(WORKSPACE_ROOT, BRANCH),
+            observation(pullRequest({ state: "open" }), null, exactHead),
+          ],
+        ]),
+      });
+      expect(second.lookups[0]?.headAssociation).toEqual(exactHead);
+      expect(second.recordedBranchHeads).toEqual([]);
+    }),
+  );
+
+  it.effect("uses a thread worktree instead of the project root", () =>
+    Effect.gen(function* () {
+      const worktreePath = "/workspace/project-1-worktree";
+      const commands = yield* runSweep({
+        candidates: [makeCandidate({ id: "worktree", cwd: worktreePath })],
+        pullRequestByBranch: new Map([
+          [branchKey(worktreePath, BRANCH), observation(pullRequest({ state: "merged" }))],
+        ]),
+      });
+
+      expect(
+        commands.flatMap((command) => (command.type === "thread.settle" ? [command.threadId] : [])),
+      ).toEqual(["worktree"]);
+    }),
+  );
+
+  it.effect("checks every stored branch when local-mode threads share a checkout", () =>
+    Effect.gen(function* () {
+      const otherBranch = "feature/merged-other";
+      const commands = yield* runSweep({
+        candidates: [
+          makeCandidate({ id: "local-one" }),
+          makeCandidate({ id: "local-two", branch: otherBranch }),
+        ],
+        pullRequestByBranch: new Map([
+          [branchKey(WORKSPACE_ROOT, BRANCH), observation(pullRequest({ state: "merged" }))],
+          [
+            branchKey(WORKSPACE_ROOT, otherBranch),
+            observation(pullRequest({ state: "merged", headRef: otherBranch })),
+          ],
+        ]),
+      });
+
+      expect(
+        commands.flatMap((command) => (command.type === "thread.settle" ? [command.threadId] : [])),
+      ).toEqual(["local-one", "local-two"]);
+    }),
+  );
+
+  it.effect("accepts a merged PR resolved through a differently named upstream branch", () =>
+    Effect.gen(function* () {
+      const commands = yield* runSweep({
+        candidates: [makeCandidate({ id: "renamed-upstream" })],
+        pullRequestByBranch: new Map([
+          [
+            branchKey(WORKSPACE_ROOT, BRANCH),
+            observation(pullRequest({ state: "merged", headRef: "feature/remote-name" })),
+          ],
+        ]),
+      });
+
+      expect(
+        commands.flatMap((command) => (command.type === "thread.settle" ? [command.threadId] : [])),
+      ).toEqual(["renamed-upstream"]);
+    }),
+  );
+
+  it.effect("does not settle a reused branch from an older merged pull request", () =>
+    Effect.gen(function* () {
+      const commands = yield* runSweep({
+        candidates: [
+          makeCandidate({
+            id: "reused-branch",
+            branchObservedAt: "2026-01-03T00:00:00.000Z",
+          }),
+        ],
+        pullRequestByBranch: new Map([
+          [
+            branchKey(WORKSPACE_ROOT, BRANCH),
+            observation(pullRequest({ state: "merged" }), "2026-01-02T00:00:00.000Z"),
+          ],
+        ]),
+      });
+
+      expect(commands).toEqual([]);
+    }),
+  );
+
+  it.effect("does not settle open, closed, or timestamp-less pull requests", () =>
+    Effect.gen(function* () {
+      const cases = [
+        observation(pullRequest({ state: "open" })),
+        observation(pullRequest({ state: "closed" })),
+        observation(null),
+        observation(pullRequest({ state: "merged" }), null),
+      ];
+
+      for (const [index, pullRequestObservation] of cases.entries()) {
+        const commands = yield* runSweep({
+          candidates: [makeCandidate({ id: `not-merged-${index}` })],
+          pullRequestByBranch: new Map([
+            [branchKey(WORKSPACE_ROOT, BRANCH), pullRequestObservation],
+          ]),
+        });
+        expect(commands).toEqual([]);
+      }
+    }),
+  );
+});

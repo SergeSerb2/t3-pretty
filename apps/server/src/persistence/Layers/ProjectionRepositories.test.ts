@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
+import { EventId, ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -199,6 +199,84 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
       assert.strictEqual(updated?.snoozedUntil, null);
       assert.strictEqual(updated?.snoozedAt, null);
       assert.strictEqual(updated?.pinnedAt, null);
+    }),
+  );
+
+  it.effect("records branch heads only for the current branch event", () =>
+    Effect.gen(function* () {
+      const threads = yield* ProjectionThreadRepository;
+      const threadId = ThreadId.make("thread-branch-head");
+      const firstBranchEventId = EventId.make("event-branch-first");
+      const secondBranchEventId = EventId.make("event-branch-second");
+
+      yield* threads.upsert({
+        threadId,
+        projectId: ProjectId.make("project-1"),
+        title: "Branch head thread",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.4",
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: "feature/one",
+        branchEventId: firstBranchEventId,
+        branchHeadRef: null,
+        branchHeadRepository: null,
+        branchHeadOwner: null,
+        branchHeadIsCrossRepository: null,
+        worktreePath: null,
+        latestTurnId: null,
+        createdAt: "2026-03-24T00:00:00.000Z",
+        updatedAt: "2026-03-24T00:00:00.000Z",
+        archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
+        snoozedUntil: null,
+        snoozedAt: null,
+        pinnedAt: null,
+        latestUserMessageAt: null,
+        pendingApprovalCount: 0,
+        pendingUserInputCount: 0,
+        hasActionableProposedPlan: 0,
+        deletedAt: null,
+      });
+      yield* threads.recordBranchHead({
+        threadId,
+        branchEventId: firstBranchEventId,
+        headRef: "feature/fork-one",
+        repositoryNameWithOwner: "octocat/repo",
+        ownerLogin: "octocat",
+        isCrossRepository: true,
+      });
+
+      const first = Option.getOrThrow(yield* threads.getById({ threadId }));
+      yield* threads.upsert({ ...first, title: "Unrelated update" });
+      const preserved = Option.getOrThrow(yield* threads.getById({ threadId }));
+      assert.strictEqual(preserved.branchHeadRepository, "octocat/repo");
+
+      yield* threads.upsert({
+        ...preserved,
+        branch: "feature/two",
+        branchEventId: secondBranchEventId,
+        branchHeadRef: null,
+        branchHeadRepository: null,
+        branchHeadOwner: null,
+        branchHeadIsCrossRepository: null,
+      });
+      yield* threads.recordBranchHead({
+        threadId,
+        branchEventId: firstBranchEventId,
+        headRef: "feature/stale",
+        repositoryNameWithOwner: "intruder/repo",
+        ownerLogin: "intruder",
+        isCrossRepository: true,
+      });
+
+      const current = Option.getOrThrow(yield* threads.getById({ threadId }));
+      assert.strictEqual(current.branchEventId, secondBranchEventId);
+      assert.strictEqual(current.branchHeadRef, null);
+      assert.strictEqual(current.branchHeadRepository, null);
     }),
   );
 });

@@ -58,6 +58,7 @@ function toChangeRequest(summary: {
   readonly headRefName: string;
   readonly state: "open" | "closed" | "merged";
   readonly updatedAt: ChangeRequest["updatedAt"];
+  readonly mergedAt: NonNullable<ChangeRequest["mergedAt"]>;
 }): ChangeRequest {
   return {
     provider: "azure-devops",
@@ -68,6 +69,7 @@ function toChangeRequest(summary: {
     headRefName: summary.headRefName,
     state: summary.state,
     updatedAt: summary.updatedAt,
+    mergedAt: summary.mergedAt,
     isCrossRepository: false,
   };
 }

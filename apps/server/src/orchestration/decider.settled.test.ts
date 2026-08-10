@@ -24,6 +24,9 @@ function makeReadModel(
   session: OrchestrationSession | null = null,
   activities: OrchestrationThread["activities"] = [],
   messages: OrchestrationThread["messages"] = [],
+  pinnedAt: string | null = null,
+  branch: string | null = null,
+  branchEventId?: EventId,
 ): OrchestrationReadModel {
   return {
     snapshotSequence: 0,
@@ -36,7 +39,8 @@ function makeReadModel(
         modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
         runtimeMode: "full-access",
         interactionMode: "default",
-        branch: null,
+        branch,
+        ...(branchEventId ? { branchEventId } : {}),
         worktreePath: null,
         latestTurn: null,
         createdAt: NOW,
@@ -44,6 +48,7 @@ function makeReadModel(
         archivedAt,
         settledOverride,
         settledAt: settledOverride === "settled" ? SETTLED_AT : null,
+        pinnedAt,
         deletedAt: null,
         messages,
         proposedPlans: [],
@@ -129,6 +134,66 @@ it.layer(NodeServices.layer)("settled thread decider", (it) => {
           threadId: ThreadId.make("thread-1"),
         },
         readModel: makeReadModel(null, null, makeSession("stopped")),
+      });
+      const settledEvents = Array.isArray(settled) ? settled : [settled];
+      expect(settledEvents[0]?.type).toBe("thread.settled");
+    }),
+  );
+
+  it.effect("preserves user activation and pins during automatic settlement races", () =>
+    Effect.gen(function* () {
+      const expectedBranch = "feature/merged-pr";
+      const expectedBranchEventId = EventId.make("event-merged-pr");
+      const command = {
+        type: "thread.settle" as const,
+        commandId: CommandId.make("cmd-auto-settle-race"),
+        threadId: ThreadId.make("thread-1"),
+        onlyIfAutoSettlementEligible: true,
+        expectedBranch,
+        expectedBranchEventId,
+      };
+
+      for (const readModel of [
+        makeReadModel("active", null, null, [], [], null, expectedBranch, expectedBranchEventId),
+        makeReadModel(null, null, null, [], [], NOW, expectedBranch, expectedBranchEventId),
+      ]) {
+        const error = yield* decideOrchestrationCommand({ command, readModel }).pipe(Effect.flip);
+        expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      }
+
+      const branchChangedError = yield* decideOrchestrationCommand({
+        command,
+        readModel: makeReadModel(null, null, null, [], [], null, "feature/different-pr"),
+      }).pipe(Effect.flip);
+      expect(branchChangedError._tag).toBe("OrchestrationCommandInvariantError");
+
+      const branchReusedError = yield* decideOrchestrationCommand({
+        command,
+        readModel: makeReadModel(
+          null,
+          null,
+          null,
+          [],
+          [],
+          null,
+          expectedBranch,
+          EventId.make("event-reused-branch"),
+        ),
+      }).pipe(Effect.flip);
+      expect(branchReusedError._tag).toBe("OrchestrationCommandInvariantError");
+
+      const settled = yield* decideOrchestrationCommand({
+        command,
+        readModel: makeReadModel(
+          null,
+          null,
+          null,
+          [],
+          [],
+          null,
+          expectedBranch,
+          expectedBranchEventId,
+        ),
       });
       const settledEvents = Array.isArray(settled) ? settled : [settled];
       expect(settledEvents[0]?.type).toBe("thread.settled");

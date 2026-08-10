@@ -84,6 +84,7 @@ describe("orchestration projector", () => {
         runtimeMode: "full-access",
         interactionMode: "default",
         branch: null,
+        branchEventId: "event-1",
         worktreePath: null,
         latestTurn: null,
         createdAt: now,
@@ -101,6 +102,77 @@ describe("orchestration projector", () => {
         session: null,
       },
     ]);
+  });
+
+  it("changes the branch event token when a branch name is reused", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const created = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(now),
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: now,
+          commandId: "cmd-thread-create",
+          payload: {
+            threadId: "thread-1",
+            projectId: "project-1",
+            title: "demo",
+            modelSelection: {
+              provider: ProviderDriverKind.make("codex"),
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            branch: "feature/a",
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+    const changed = await Effect.runPromise(
+      projectEvent(
+        created,
+        makeEvent({
+          sequence: 2,
+          type: "thread.meta-updated",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: now,
+          commandId: "cmd-thread-branch-b",
+          payload: {
+            threadId: "thread-1",
+            branch: "feature/b",
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+    const reused = await Effect.runPromise(
+      projectEvent(
+        changed,
+        makeEvent({
+          sequence: 3,
+          type: "thread.meta-updated",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: now,
+          commandId: "cmd-thread-branch-a-again",
+          payload: {
+            threadId: "thread-1",
+            branch: "feature/a",
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+
+    expect(changed.threads[0]?.branchEventId).toBe("event-2");
+    expect(reused.threads[0]?.branch).toBe("feature/a");
+    expect(reused.threads[0]?.branchEventId).toBe("event-3");
   });
 
   it("fails when event payload cannot be decoded by runtime schema", async () => {

@@ -8,6 +8,7 @@
  */
 import {
   CommandId,
+  EventId,
   IsoDateTime,
   ModelSelection,
   NonNegativeInt,
@@ -32,6 +33,11 @@ export const ProjectionThread = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(Schema.String),
+  branchEventId: Schema.optional(Schema.NullOr(EventId)),
+  branchHeadRef: Schema.optional(Schema.NullOr(Schema.String)),
+  branchHeadRepository: Schema.optional(Schema.NullOr(Schema.String)),
+  branchHeadOwner: Schema.optional(Schema.NullOr(Schema.String)),
+  branchHeadIsCrossRepository: Schema.optional(Schema.NullOr(NonNegativeInt)),
   worktreePath: Schema.NullOr(Schema.String),
   latestTurnId: Schema.NullOr(TurnId),
   createdAt: IsoDateTime,
@@ -68,6 +74,17 @@ export const ListProjectionThreadsByProjectInput = Schema.Struct({
 });
 export type ListProjectionThreadsByProjectInput = typeof ListProjectionThreadsByProjectInput.Type;
 
+export const RecordProjectionThreadBranchHeadInput = Schema.Struct({
+  threadId: ThreadId,
+  branchEventId: EventId,
+  headRef: Schema.String,
+  repositoryNameWithOwner: Schema.NullOr(Schema.String),
+  ownerLogin: Schema.NullOr(Schema.String),
+  isCrossRepository: Schema.Boolean,
+});
+export type RecordProjectionThreadBranchHeadInput =
+  typeof RecordProjectionThreadBranchHeadInput.Type;
+
 /**
  * ProjectionThreadRepositoryShape - Service API for projected thread records.
  */
@@ -94,6 +111,11 @@ export interface ProjectionThreadRepositoryShape {
   readonly listByProjectId: (
     input: ListProjectionThreadsByProjectInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThread>, ProjectionRepositoryError>;
+
+  /** Persist a resolved branch head only if its branch incarnation is current. */
+  readonly recordBranchHead: (
+    input: RecordProjectionThreadBranchHeadInput,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
 
   /**
    * Soft-delete a projected thread row by id.

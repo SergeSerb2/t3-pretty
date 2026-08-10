@@ -1,6 +1,7 @@
 import {
   ChatAttachment,
   CheckpointRef,
+  EventId,
   IsoDateTime,
   MessageId,
   NonNegativeInt,
@@ -114,6 +115,17 @@ const ProjectionStateDbRowSchema = ProjectionState;
 const ProjectionCountsRowSchema = Schema.Struct({
   projectCount: Schema.Number,
   threadCount: Schema.Number,
+});
+const ProjectionMergedPullRequestCandidateRowSchema = Schema.Struct({
+  threadId: ThreadId,
+  branch: Schema.String,
+  cwd: Schema.String,
+  branchObservedAt: IsoDateTime,
+  branchEventId: EventId,
+  branchHeadRef: Schema.NullOr(Schema.String),
+  branchHeadRepository: Schema.NullOr(Schema.String),
+  branchHeadOwner: Schema.NullOr(Schema.String),
+  branchHeadIsCrossRepository: Schema.NullOr(NonNegativeInt),
 });
 const ProjectionThreadSearchRequest = Schema.Struct({
   pattern: Schema.String,
@@ -417,6 +429,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
           branch,
+          branch_event_id AS "branchEventId",
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
@@ -767,6 +780,62 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           (SELECT COUNT(*) FROM projection_projects) AS "projectCount",
           (SELECT COUNT(*) FROM projection_threads) AS "threadCount"
+      `,
+  });
+
+  const listMergedPullRequestCandidateRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionMergedPullRequestCandidateRowSchema,
+    execute: () =>
+      sql`
+        SELECT
+          threads.thread_id AS "threadId",
+          threads.branch,
+          CASE
+            WHEN threads.worktree_path IS NOT NULL AND TRIM(threads.worktree_path) <> ''
+              THEN threads.worktree_path
+            ELSE projects.workspace_root
+          END AS cwd,
+          branch_events.recorded_at AS "branchObservedAt",
+          branch_events.event_id AS "branchEventId",
+          threads.branch_head_ref AS "branchHeadRef",
+          threads.branch_head_repository AS "branchHeadRepository",
+          threads.branch_head_owner AS "branchHeadOwner",
+          threads.branch_head_is_cross_repository AS "branchHeadIsCrossRepository"
+        FROM projection_threads AS threads
+        INNER JOIN projection_projects AS projects
+          ON projects.project_id = threads.project_id
+        INNER JOIN orchestration_events AS branch_events
+          ON branch_events.sequence = (
+            SELECT events.sequence
+            FROM orchestration_events AS events
+            WHERE events.aggregate_kind = 'thread'
+              AND events.stream_id = threads.thread_id
+              AND events.recorded_at IS NOT NULL
+              AND (
+                events.event_type = 'thread.created'
+                OR (
+                  events.event_type = 'thread.meta-updated'
+                  AND json_type(events.payload_json, '$.branch') IS NOT NULL
+                )
+              )
+            ORDER BY events.sequence DESC
+            LIMIT 1
+          )
+          AND threads.branch_event_id = branch_events.event_id
+        LEFT JOIN projection_thread_sessions AS sessions
+          ON sessions.thread_id = threads.thread_id
+        WHERE threads.deleted_at IS NULL
+          AND threads.archived_at IS NULL
+          AND projects.deleted_at IS NULL
+          AND threads.branch IS NOT NULL
+          AND TRIM(threads.branch) <> ''
+          AND threads.settled_override IS NULL
+          AND threads.pinned_at IS NULL
+          AND threads.pending_approval_count = 0
+          AND threads.pending_user_input_count = 0
+          AND (sessions.status IS NULL OR sessions.status NOT IN ('starting', 'running'))
+        ORDER BY threads.created_at ASC, threads.thread_id ASC
       `,
   });
 
@@ -1773,6 +1842,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   runtimeMode: row.runtimeMode,
                   interactionMode: row.interactionMode,
                   branch: row.branch,
+                  ...(row.branchEventId ? { branchEventId: row.branchEventId } : {}),
                   worktreePath: row.worktreePath,
                   latestTurn: latestTurnByThread.get(row.threadId) ?? null,
                   createdAt: row.createdAt,
@@ -2127,6 +2197,24 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         }),
       ),
     );
+
+  const listMergedPullRequestCandidates: ProjectionSnapshotQueryShape["listMergedPullRequestCandidates"] =
+    () =>
+      listMergedPullRequestCandidateRows(undefined).pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "ProjectionSnapshotQuery.listMergedPullRequestCandidates:query",
+            "ProjectionSnapshotQuery.listMergedPullRequestCandidates:decodeRows",
+          ),
+        ),
+        Effect.map((rows) =>
+          rows.map((row) => ({
+            ...row,
+            branchHeadIsCrossRepository:
+              row.branchHeadIsCrossRepository === null ? null : row.branchHeadIsCrossRepository > 0,
+          })),
+        ),
+      );
 
   const searchThreads: ProjectionSnapshotQueryShape["searchThreads"] = Effect.fn(
     "ProjectionSnapshotQuery.searchThreads",
@@ -2668,6 +2756,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     getCommandReadModel,
     getSnapshot,
     getShellSnapshot,
+    listMergedPullRequestCandidates,
     getArchivedShellSnapshot,
     searchThreads,
     getSnapshotSequence,

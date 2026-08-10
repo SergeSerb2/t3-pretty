@@ -1,6 +1,8 @@
 import { assert, it, afterEach, expect, vi } from "@effect/vitest";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { VcsProcessExitError } from "@t3tools/contracts";
@@ -107,6 +109,7 @@ layer("GitLabCli.layer", (it) => {
                 target_branch: " main ",
                 source_branch: " feature/mr-list ",
                 state: "merged",
+                merged_at: "2026-01-03T00:00:00.000Z",
               },
             ]),
           ),
@@ -130,6 +133,7 @@ layer("GitLabCli.layer", (it) => {
           baseRefName: "main",
           headRefName: "feature/mr-list",
           state: "merged",
+          mergedAt: Option.some(DateTime.makeUnsafe("2026-01-03T00:00:00.000Z")),
         },
       ]);
       expect(mockedRun).toHaveBeenCalledWith(

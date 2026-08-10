@@ -471,6 +471,174 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
     }),
   );
 
+  it.effect("lists only narrow merged pull request settlement candidates", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* sql`DELETE FROM projection_thread_sessions`;
+      yield* sql`DELETE FROM projection_threads`;
+      yield* sql`DELETE FROM projection_projects`;
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id,
+          title,
+          workspace_root,
+          default_model_selection_json,
+          scripts_json,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES
+          (
+            'project-active',
+            'Active Project',
+            '/tmp/project-active',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            '[]',
+            '2026-08-10T00:00:00.000Z',
+            '2026-08-10T00:00:00.000Z',
+            NULL
+          ),
+          (
+            'project-deleted',
+            'Deleted Project',
+            '/tmp/project-deleted',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            '[]',
+            '2026-08-10T00:00:00.000Z',
+            '2026-08-10T00:00:00.000Z',
+            '2026-08-10T00:00:01.000Z'
+          )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id,
+          project_id,
+          title,
+          model_selection_json,
+          runtime_mode,
+          interaction_mode,
+          branch,
+          worktree_path,
+          created_at,
+          updated_at,
+          archived_at,
+          settled_override,
+          pinned_at,
+          pending_approval_count,
+          pending_user_input_count,
+          deleted_at
+        )
+        VALUES
+          ('eligible-root', 'project-active', 'Eligible Root', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/root', NULL, '2026-08-10T00:00:02.000Z', '2026-08-10T00:00:02.000Z', NULL, NULL, NULL, 0, 0, NULL),
+          ('eligible-worktree', 'project-active', 'Eligible Worktree', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/worktree', '/tmp/project-worktree', '2026-08-10T00:00:03.000Z', '2026-08-10T00:00:03.000Z', NULL, NULL, NULL, 0, 0, NULL),
+          ('eligible-stopped', 'project-active', 'Eligible Stopped', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/stopped', NULL, '2026-08-10T00:00:04.000Z', '2026-08-10T00:00:04.000Z', NULL, NULL, NULL, 0, 0, NULL),
+          ('excluded-no-branch', 'project-active', 'No Branch', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', NULL, NULL, '2026-08-10T00:00:05.000Z', '2026-08-10T00:00:05.000Z', NULL, NULL, NULL, 0, 0, NULL),
+          ('excluded-settled', 'project-active', 'Settled', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/settled', NULL, '2026-08-10T00:00:06.000Z', '2026-08-10T00:00:06.000Z', NULL, 'settled', NULL, 0, 0, NULL),
+          ('excluded-pinned', 'project-active', 'Pinned', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/pinned', NULL, '2026-08-10T00:00:07.000Z', '2026-08-10T00:00:07.000Z', NULL, NULL, '2026-08-10T00:00:07.000Z', 0, 0, NULL),
+          ('excluded-approval', 'project-active', 'Approval', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/approval', NULL, '2026-08-10T00:00:08.000Z', '2026-08-10T00:00:08.000Z', NULL, NULL, NULL, 1, 0, NULL),
+          ('excluded-input', 'project-active', 'Input', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/input', NULL, '2026-08-10T00:00:09.000Z', '2026-08-10T00:00:09.000Z', NULL, NULL, NULL, 0, 1, NULL),
+          ('excluded-running', 'project-active', 'Running', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/running', NULL, '2026-08-10T00:00:10.000Z', '2026-08-10T00:00:10.000Z', NULL, NULL, NULL, 0, 0, NULL),
+          ('excluded-starting', 'project-active', 'Starting', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/starting', NULL, '2026-08-10T00:00:11.000Z', '2026-08-10T00:00:11.000Z', NULL, NULL, NULL, 0, 0, NULL),
+          ('excluded-archived', 'project-active', 'Archived', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/archived', NULL, '2026-08-10T00:00:12.000Z', '2026-08-10T00:00:12.000Z', '2026-08-10T00:00:12.000Z', NULL, NULL, 0, 0, NULL),
+          ('excluded-deleted', 'project-active', 'Deleted', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/deleted', NULL, '2026-08-10T00:00:13.000Z', '2026-08-10T00:00:13.000Z', NULL, NULL, NULL, 0, 0, '2026-08-10T00:00:13.000Z'),
+          ('excluded-project', 'project-deleted', 'Deleted Project', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/deleted-project', NULL, '2026-08-10T00:00:14.000Z', '2026-08-10T00:00:14.000Z', NULL, NULL, NULL, 0, 0, NULL)
+      `;
+
+      yield* sql`
+        INSERT INTO orchestration_events (
+          event_id,
+          aggregate_kind,
+          stream_id,
+          stream_version,
+          event_type,
+          occurred_at,
+          actor_kind,
+          payload_json,
+          metadata_json,
+          recorded_at
+        )
+        VALUES
+          ('event-eligible-root-created', 'thread', 'eligible-root', 0, 'thread.created', '2099-01-01T00:00:00.000Z', 'client', '{"branch":"feature/root"}', '{}', '2026-08-10T00:00:02.100Z'),
+          ('event-eligible-root-title', 'thread', 'eligible-root', 1, 'thread.meta-updated', '2026-08-10T00:00:02.900Z', 'server', '{"title":"Renamed"}', '{}', '2026-08-10T00:00:02.900Z'),
+          ('event-eligible-worktree-created', 'thread', 'eligible-worktree', 0, 'thread.created', '2026-08-10T00:00:03.100Z', 'client', '{"branch":"feature/old"}', '{}', '2026-08-10T00:00:03.100Z'),
+          ('event-eligible-worktree-branch', 'thread', 'eligible-worktree', 1, 'thread.meta-updated', '2026-08-10T00:00:03.800Z', 'server', '{"branch":"feature/worktree"}', '{}', '2026-08-10T00:00:03.800Z'),
+          ('event-eligible-stopped-created', 'thread', 'eligible-stopped', 0, 'thread.created', '2026-08-10T00:00:04.500Z', 'client', '{"branch":"feature/stopped"}', '{}', '2026-08-10T00:00:04.500Z')
+      `;
+
+      yield* sql`
+        INSERT INTO projection_thread_sessions (
+          thread_id,
+          status,
+          provider_name,
+          provider_session_id,
+          provider_thread_id,
+          runtime_mode,
+          active_turn_id,
+          last_error,
+          updated_at
+        )
+        VALUES
+          ('eligible-root', 'ready', 'codex', NULL, NULL, 'full-access', NULL, NULL, '2026-08-10T00:00:15.000Z'),
+          ('eligible-stopped', 'stopped', 'codex', NULL, NULL, 'full-access', NULL, NULL, '2026-08-10T00:00:15.000Z'),
+          ('excluded-running', 'running', 'codex', NULL, NULL, 'full-access', NULL, NULL, '2026-08-10T00:00:15.000Z'),
+          ('excluded-starting', 'starting', 'codex', NULL, NULL, 'full-access', NULL, NULL, '2026-08-10T00:00:15.000Z')
+      `;
+
+      yield* sql`
+        UPDATE projection_threads
+        SET branch_event_id = CASE thread_id
+          WHEN 'eligible-root' THEN 'event-eligible-root-created'
+          WHEN 'eligible-worktree' THEN 'event-eligible-worktree-branch'
+          WHEN 'eligible-stopped' THEN 'event-eligible-stopped-created'
+        END
+        WHERE thread_id IN ('eligible-root', 'eligible-worktree', 'eligible-stopped')
+      `;
+
+      const candidates = yield* snapshotQuery.listMergedPullRequestCandidates();
+
+      assert.deepEqual(candidates, [
+        {
+          threadId: ThreadId.make("eligible-root"),
+          branch: "feature/root",
+          cwd: "/tmp/project-active",
+          branchObservedAt: "2026-08-10T00:00:02.100Z",
+          branchEventId: EventId.make("event-eligible-root-created"),
+          branchHeadRef: null,
+          branchHeadRepository: null,
+          branchHeadOwner: null,
+          branchHeadIsCrossRepository: null,
+        },
+        {
+          threadId: ThreadId.make("eligible-worktree"),
+          branch: "feature/worktree",
+          cwd: "/tmp/project-worktree",
+          branchObservedAt: "2026-08-10T00:00:03.800Z",
+          branchEventId: EventId.make("event-eligible-worktree-branch"),
+          branchHeadRef: null,
+          branchHeadRepository: null,
+          branchHeadOwner: null,
+          branchHeadIsCrossRepository: null,
+        },
+        {
+          threadId: ThreadId.make("eligible-stopped"),
+          branch: "feature/stopped",
+          cwd: "/tmp/project-active",
+          branchObservedAt: "2026-08-10T00:00:04.500Z",
+          branchEventId: EventId.make("event-eligible-stopped-created"),
+          branchHeadRef: null,
+          branchHeadRepository: null,
+          branchHeadOwner: null,
+          branchHeadIsCrossRepository: null,
+        },
+      ]);
+    }),
+  );
+
   it.effect("keeps archived threads out of the main shell snapshot", () =>
     Effect.gen(function* () {
       const snapshotQuery = yield* ProjectionSnapshotQuery;

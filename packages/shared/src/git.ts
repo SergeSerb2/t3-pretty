@@ -141,21 +141,72 @@ export function normalizeGitRemoteUrl(value: string): string {
   return normalized;
 }
 
+function parseGitRemoteRepositoryPath(url: string): ReadonlyArray<string> | null {
+  const trimmed = url.trim();
+  let repositoryPath: string;
+
+  if (/^(?:ssh|https?|git):\/\//i.test(trimmed)) {
+    try {
+      repositoryPath = new URL(trimmed).pathname;
+    } catch {
+      return null;
+    }
+  } else {
+    const scpStyleRemote = /^[^@/\s]+@[^:/\s]+[:/](.+)$/u.exec(trimmed);
+    repositoryPath = scpStyleRemote?.[1] ?? "";
+  }
+
+  const segments = repositoryPath
+    .replace(/^\/+|\/+$/gu, "")
+    .split("/")
+    .filter((segment) => segment.length > 0);
+  const repositoryName = segments.at(-1)?.replace(/\.git$/iu, "") ?? "";
+  if (segments.length < 2 || repositoryName.length === 0) {
+    return null;
+  }
+
+  return [...segments.slice(0, -1), repositoryName];
+}
+
 /**
- * Best-effort parse of a GitHub `owner/repo` identifier from common remote URL shapes.
+ * Best-effort parse of the repository identity used by supported Git hosts.
+ * GitHub and Bitbucket use `owner/repo`; GitLab may include nested groups.
  */
-export function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {
+export function parseRepositoryNameWithOwnerFromGitRemoteUrl(url: string | null): string | null {
   const trimmed = url?.trim() ?? "";
   if (trimmed.length === 0) {
     return null;
   }
 
-  const match =
-    /^(?:git@github\.com:|ssh:\/\/git@github\.com\/|https:\/\/github\.com\/|git:\/\/github\.com\/)([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i.exec(
-      trimmed,
-    );
-  const repositoryNameWithOwner = match?.[1]?.trim() ?? "";
-  return repositoryNameWithOwner.length > 0 ? repositoryNameWithOwner : null;
+  const provider = detectSourceControlProviderFromRemoteUrl(trimmed);
+  if (
+    provider?.kind !== "github" &&
+    provider?.kind !== "gitlab" &&
+    provider?.kind !== "bitbucket"
+  ) {
+    return null;
+  }
+
+  const segments = parseGitRemoteRepositoryPath(trimmed);
+  if (!segments) {
+    return null;
+  }
+  if (provider.kind !== "gitlab" && segments.length !== 2) {
+    return null;
+  }
+
+  return segments.join("/");
+}
+
+/**
+ * Best-effort parse of a GitHub `owner/repo` identifier from common remote URL shapes.
+ */
+export function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {
+  const trimmed = url?.trim() ?? "";
+  if (detectSourceControlProviderFromRemoteUrl(trimmed)?.kind !== "github") {
+    return null;
+  }
+  return parseRepositoryNameWithOwnerFromGitRemoteUrl(trimmed);
 }
 
 function deriveLocalBranchNameCandidatesFromRemoteRef(

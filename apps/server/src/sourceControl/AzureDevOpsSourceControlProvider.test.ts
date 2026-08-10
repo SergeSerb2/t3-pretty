@@ -24,6 +24,7 @@ it.effect("maps Azure DevOps PR summaries into provider-neutral change requests"
           headRefName: "feature/source-control",
           state: "open",
           updatedAt: Option.none(),
+          mergedAt: Option.none(),
         }),
     });
 
@@ -41,6 +42,7 @@ it.effect("maps Azure DevOps PR summaries into provider-neutral change requests"
       headRefName: "feature/source-control",
       state: "open",
       updatedAt: Option.none(),
+      mergedAt: Option.none(),
       isCrossRepository: false,
     });
   }),

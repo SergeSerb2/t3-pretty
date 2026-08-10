@@ -296,6 +296,7 @@ export function projectEvent(
             runtimeMode: payload.runtimeMode,
             interactionMode: payload.interactionMode,
             branch: payload.branch,
+            branchEventId: event.eventId,
             worktreePath: payload.worktreePath,
             latestTurn: null,
             createdAt: payload.createdAt,
@@ -454,7 +455,9 @@ export function projectEvent(
             ...(payload.modelSelection !== undefined
               ? { modelSelection: payload.modelSelection }
               : {}),
-            ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
+            ...(payload.branch !== undefined
+              ? { branch: payload.branch, branchEventId: event.eventId }
+              : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
             updatedAt: payload.updatedAt,
           }),

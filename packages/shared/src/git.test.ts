@@ -7,6 +7,7 @@ import {
   isTemporaryWorktreeBranch,
   normalizeGitRemoteUrl,
   parseGitHubRepositoryNameWithOwnerFromRemoteUrl,
+  parseRepositoryNameWithOwnerFromGitRemoteUrl,
   WORKTREE_BRANCH_PREFIX,
 } from "./git.ts";
 
@@ -50,6 +51,29 @@ describe("parseGitHubRepositoryNameWithOwnerFromRemoteUrl", () => {
     expect(
       parseGitHubRepositoryNameWithOwnerFromRemoteUrl("https://github.com/T3Tools/T3Code.git"),
     ).toBe("T3Tools/T3Code");
+  });
+});
+
+describe("parseRepositoryNameWithOwnerFromGitRemoteUrl", () => {
+  it("extracts GitHub, nested GitLab, and Bitbucket repository identities", () => {
+    expect(parseRepositoryNameWithOwnerFromGitRemoteUrl("git@github.com:T3Tools/T3Code.git")).toBe(
+      "T3Tools/T3Code",
+    );
+    expect(
+      parseRepositoryNameWithOwnerFromGitRemoteUrl(
+        "ssh://git@gitlab.com:2222/T3Tools/platform/T3Code.git",
+      ),
+    ).toBe("T3Tools/platform/T3Code");
+    expect(
+      parseRepositoryNameWithOwnerFromGitRemoteUrl("https://bitbucket.org/T3Tools/T3Code.git"),
+    ).toBe("T3Tools/T3Code");
+  });
+
+  it("fails closed for unsupported and local remote shapes", () => {
+    expect(
+      parseRepositoryNameWithOwnerFromGitRemoteUrl("https://dev.azure.com/acme/project/_git/repo"),
+    ).toBeNull();
+    expect(parseRepositoryNameWithOwnerFromGitRemoteUrl("/tmp/acme/repo.git")).toBeNull();
   });
 });
 

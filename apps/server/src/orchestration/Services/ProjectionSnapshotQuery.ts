@@ -8,6 +8,7 @@
  */
 import type {
   CheckpointRef,
+  EventId,
   OrchestrationCheckpointSummary,
   OrchestrationProject,
   OrchestrationProjectShell,
@@ -54,6 +55,18 @@ export interface ProjectionFullThreadDiffContext {
   readonly toCheckpointRef: CheckpointRef | null;
 }
 
+export interface ProjectionMergedPullRequestCandidate {
+  readonly threadId: ThreadId;
+  readonly branch: string;
+  readonly cwd: string;
+  readonly branchObservedAt: string;
+  readonly branchEventId: EventId;
+  readonly branchHeadRef: string | null;
+  readonly branchHeadRepository: string | null;
+  readonly branchHeadOwner: string | null;
+  readonly branchHeadIsCrossRepository: boolean | null;
+}
+
 /**
  * ProjectionSnapshotQueryShape - Service API for read-model snapshots.
  */
@@ -83,6 +96,16 @@ export interface ProjectionSnapshotQueryShape {
    */
   readonly getShellSnapshot: () => Effect.Effect<
     OrchestrationShellSnapshot,
+    ProjectionRepositoryError
+  >;
+
+  /**
+   * Read only active thread rows that can be considered for merged pull
+   * request settlement. The caller still verifies branch-specific provider
+   * status and the command decider remains authoritative for state races.
+   */
+  readonly listMergedPullRequestCandidates: () => Effect.Effect<
+    ReadonlyArray<ProjectionMergedPullRequestCandidate>,
     ProjectionRepositoryError
   >;
 

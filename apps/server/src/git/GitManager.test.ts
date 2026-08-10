@@ -874,6 +874,430 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect("resolves a merged PR for a stored branch that is not checked out", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      const branch = "feature/background-merged";
+      yield* runGit(repoDir, ["checkout", "-b", branch]);
+      yield* runGit(repoDir, ["push", "-u", "origin", branch]);
+      yield* runGit(repoDir, ["checkout", "main"]);
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            [branch]:
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
+              JSON.stringify([
+                {
+                  number: 18,
+                  title: "Background merged PR",
+                  url: "https://github.com/pingdotgg/codething-mvp/pull/18",
+                  baseRefName: "main",
+                  headRefName: branch,
+                  state: "merged",
+                  mergedAt: "2026-01-02T00:00:00.000Z",
+                  updatedAt: "2026-01-03T00:00:00.000Z",
+                },
+              ]),
+          },
+        },
+      });
+
+      const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+
+      expect(observation).toEqual({
+        pullRequest: {
+          number: 18,
+          title: "Background merged PR",
+          url: "https://github.com/pingdotgg/codething-mvp/pull/18",
+          baseRef: "main",
+          headRef: branch,
+          state: "merged",
+        },
+        mergedAt: "2026-01-02T00:00:00.000Z",
+        headAssociation: {
+          headRef: branch,
+          repositoryNameWithOwner: null,
+          ownerLogin: null,
+          isCrossRepository: false,
+        },
+      });
+      expect(ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`))).toBe(
+        true,
+      );
+    }),
+  );
+
+  it.effect("uses the newest branch PR for settlement without changing status preference", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      const branch = "feature/reused-pr-head";
+      yield* runGit(repoDir, ["checkout", "-b", branch]);
+      yield* runGit(repoDir, ["push", "-u", "origin", branch]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            [branch]: JSON.stringify([
+              {
+                number: 21,
+                title: "Older open PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/21",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "open",
+                updatedAt: "2026-01-05T00:00:00.000Z",
+              },
+              {
+                number: 22,
+                title: "Newer merged PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/22",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "merged",
+                mergedAt: "2026-01-03T00:00:00.000Z",
+                updatedAt: "2026-01-04T00:00:00.000Z",
+              },
+            ]),
+          },
+        },
+      });
+
+      const status = yield* manager.status({ cwd: repoDir });
+      expect(status.pr?.number).toBe(21);
+      expect(status.pr?.state).toBe("open");
+
+      const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+      expect(observation).toEqual({
+        pullRequest: {
+          number: 22,
+          title: "Newer merged PR",
+          url: "https://github.com/pingdotgg/codething-mvp/pull/22",
+          baseRef: "main",
+          headRef: branch,
+          state: "merged",
+        },
+        mergedAt: "2026-01-03T00:00:00.000Z",
+        headAssociation: {
+          headRef: branch,
+          repositoryNameWithOwner: null,
+          ownerLogin: null,
+          isCrossRepository: false,
+        },
+      });
+    }),
+  );
+
+  it.effect("skips provider lookup for a local-only stored branch", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      const branch = "feature/local-only";
+      yield* runGit(repoDir, ["checkout", "-b", branch]);
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            [branch]: JSON.stringify([
+              {
+                number: 19,
+                title: "Should not be queried",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/19",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "merged",
+                updatedAt: "2026-01-03T00:00:00.000Z",
+              },
+            ]),
+          },
+        },
+      });
+
+      const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+
+      expect(observation).toEqual({
+        pullRequest: null,
+        mergedAt: null,
+        headAssociation: {
+          headRef: branch,
+          repositoryNameWithOwner: null,
+          ownerLogin: null,
+          isCrossRepository: false,
+        },
+      });
+      expect(ghCalls.some((call) => call.includes("pr list"))).toBe(false);
+    }),
+  );
+
+  it.effect("resolves a merged PR after both local and remote branches are deleted", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      const branch = "feature/deleted-after-merge";
+      yield* runGit(repoDir, ["checkout", "-b", branch]);
+      yield* runGit(repoDir, ["push", "-u", "origin", branch]);
+      yield* runGit(repoDir, ["checkout", "main"]);
+      yield* runGit(repoDir, ["branch", "-D", branch]);
+      yield* runGit(repoDir, ["push", "origin", "--delete", branch]);
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            [branch]: JSON.stringify([
+              {
+                number: 20,
+                title: "Merged before branch deletion",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/20",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "merged",
+                mergedAt: "2026-01-03T00:00:00.000Z",
+                updatedAt: "2026-01-04T00:00:00.000Z",
+              },
+            ]),
+          },
+        },
+      });
+
+      const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+
+      expect(observation).toEqual({
+        pullRequest: {
+          number: 20,
+          title: "Merged before branch deletion",
+          url: "https://github.com/pingdotgg/codething-mvp/pull/20",
+          baseRef: "main",
+          headRef: branch,
+          state: "merged",
+        },
+        mergedAt: "2026-01-03T00:00:00.000Z",
+        headAssociation: {
+          headRef: branch,
+          repositoryNameWithOwner: null,
+          ownerLogin: null,
+          isCrossRepository: false,
+        },
+      });
+      expect(ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`))).toBe(
+        true,
+      );
+    }),
+  );
+
+  it.effect("resolves a deleted fork branch only from its durable head identity", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const originDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", originDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+
+      const forkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "fork-seed",
+        "git@github.com:octocat/codething-mvp.git",
+        forkDir,
+      );
+      const branch = "feature/deleted-fork-branch";
+      yield* runGit(repoDir, ["checkout", "-b", branch]);
+      yield* runGit(repoDir, ["push", "-u", "fork-seed", branch]);
+
+      const unrelatedForkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "unrelated-fork", unrelatedForkDir]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "unrelated-fork",
+        "git@github.com:intruder/codething-mvp.git",
+        unrelatedForkDir,
+      );
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            [`intruder:${branch}`]: JSON.stringify([
+              {
+                number: 99,
+                title: "Unrelated fork PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/99",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "merged",
+                mergedAt: "2026-01-07T00:00:00.000Z",
+                updatedAt: "2026-01-08T00:00:00.000Z",
+                isCrossRepository: true,
+                headRepository: {
+                  nameWithOwner: "intruder/codething-mvp",
+                },
+                headRepositoryOwner: {
+                  login: "intruder",
+                },
+              },
+            ]),
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            [`octocat:${branch}`]: JSON.stringify([
+              {
+                number: 23,
+                title: "Merged fork PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/23",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "merged",
+                mergedAt: "2026-01-05T00:00:00.000Z",
+                updatedAt: "2026-01-06T00:00:00.000Z",
+                isCrossRepository: true,
+                headRepository: {
+                  nameWithOwner: "octocat/codething-mvp",
+                },
+                headRepositoryOwner: {
+                  login: "octocat",
+                },
+              },
+            ]),
+          },
+        },
+      });
+
+      const beforeDeletion = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+      expect(beforeDeletion.headAssociation).toEqual({
+        headRef: branch,
+        repositoryNameWithOwner: "octocat/codething-mvp",
+        ownerLogin: "octocat",
+        isCrossRepository: true,
+      });
+
+      yield* runGit(repoDir, ["checkout", "main"]);
+      yield* runGit(repoDir, ["branch", "-D", branch]);
+      yield* runGit(repoDir, ["push", "fork-seed", "--delete", branch]);
+
+      const observation = yield* manager.pullRequestForBranch({
+        cwd: repoDir,
+        branch,
+        headAssociation: beforeDeletion.headAssociation,
+      });
+
+      expect(observation).toEqual({
+        pullRequest: {
+          number: 23,
+          title: "Merged fork PR",
+          url: "https://github.com/pingdotgg/codething-mvp/pull/23",
+          baseRef: "main",
+          headRef: branch,
+          state: "merged",
+        },
+        mergedAt: "2026-01-05T00:00:00.000Z",
+        headAssociation: {
+          headRef: branch,
+          repositoryNameWithOwner: "octocat/codething-mvp",
+          ownerLogin: "octocat",
+          isCrossRepository: true,
+        },
+      });
+      expect(
+        ghCalls.some((call) =>
+          call.includes(`pr list --head octocat:${branch} --state all --limit 20`),
+        ),
+      ).toBe(true);
+      expect(ghCalls.some((call) => call.includes(`--head intruder:${branch}`))).toBe(false);
+    }),
+  );
+
+  it.effect("resolves fork identities from GitLab and Bitbucket remote URLs", () =>
+    Effect.gen(function* () {
+      const scenarios = [
+        {
+          provider: "GitLab",
+          remoteUrl: "git@gitlab.com:acme/platform/codething-mvp.git",
+          repositoryNameWithOwner: "acme/platform/codething-mvp",
+          ownerLogin: "acme",
+          pullRequestUrl: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/31",
+          pullRequestNumber: 31,
+        },
+        {
+          provider: "Bitbucket",
+          remoteUrl: "git@bitbucket.org:octocat/codething-mvp.git",
+          repositoryNameWithOwner: "octocat/codething-mvp",
+          ownerLogin: "octocat",
+          pullRequestUrl: "https://bitbucket.org/pingdotgg/codething-mvp/pull-requests/32",
+          pullRequestNumber: 32,
+        },
+      ] as const;
+
+      for (const scenario of scenarios) {
+        const repoDir = yield* makeTempDir("t3code-git-manager-provider-fork-");
+        yield* initRepo(repoDir);
+        const forkDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+        const branch = `feature/${scenario.provider.toLowerCase()}-fork`;
+        yield* runGit(repoDir, ["checkout", "-b", branch]);
+        yield* runGit(repoDir, ["push", "-u", "fork-seed", branch]);
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "fork-seed",
+          scenario.remoteUrl,
+          forkDir,
+        );
+
+        const { manager, ghCalls } = yield* makeManager({
+          ghScenario: {
+            prListByHeadSelector: {
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
+              [`${scenario.ownerLogin}:${branch}`]: JSON.stringify([
+                {
+                  number: scenario.pullRequestNumber,
+                  title: `${scenario.provider} fork PR`,
+                  url: scenario.pullRequestUrl,
+                  baseRefName: "main",
+                  headRefName: branch,
+                  state: "OPEN",
+                  updatedAt: "2026-08-10T18:00:00.000Z",
+                  isCrossRepository: true,
+                  headRepository: {
+                    nameWithOwner: scenario.repositoryNameWithOwner,
+                  },
+                  headRepositoryOwner: {
+                    login: scenario.ownerLogin,
+                  },
+                },
+              ]),
+            },
+          },
+        });
+
+        const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+
+        expect(observation.pullRequest?.number).toBe(scenario.pullRequestNumber);
+        expect(observation.headAssociation).toEqual({
+          headRef: branch,
+          repositoryNameWithOwner: scenario.repositoryNameWithOwner,
+          ownerLogin: scenario.ownerLogin,
+          isCrossRepository: true,
+        });
+        expect(
+          ghCalls.some((call) =>
+            call.includes(`pr list --head ${scenario.ownerLogin}:${branch} --state all --limit 20`),
+          ),
+        ).toBe(true);
+      }
+    }),
+  );
+
   it.effect("status returns an explicit non-repo result for non-git directories", () =>
     Effect.gen(function* () {
       const cwd = yield* makeTempDir("t3code-git-manager-non-repo-");
@@ -2662,6 +3086,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             headRefName: "statemachine",
             state: "open",
             updatedAt: Option.none(),
+            mergedAt: Option.none(),
             isCrossRepository: false,
             headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
             headRepositoryOwnerLogin: "pingdotgg",
@@ -2680,6 +3105,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             headRefName: "statemachine",
             state: "open",
             updatedAt: Option.none(),
+            mergedAt: Option.none(),
             isCrossRepository: true,
             headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
             headRepositoryOwnerLogin: "pingdotgg",
@@ -2709,6 +3135,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             headRefName: "t3code/git-audit-stability",
             state: "open",
             updatedAt: Option.none(),
+            mergedAt: Option.none(),
             isCrossRepository: true,
             headRepositoryNameWithOwner: "justsomelegs/t3code",
             headRepositoryOwnerLogin: "justsomelegs",

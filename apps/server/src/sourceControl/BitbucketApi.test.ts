@@ -186,6 +186,7 @@ it.effect("parses pull request responses from the Bitbucket REST API", () => {
       headRefName: "feature/source-control",
       state: "open",
       updatedAt: Option.some(DateTime.makeUnsafe("2026-01-02T00:00:00.000Z")),
+      mergedAt: Option.none(),
       isCrossRepository: true,
       headRepositoryNameWithOwner: "octocat/t3code",
       headRepositoryOwnerLogin: "octocat",
@@ -206,6 +207,7 @@ it.effect("lists pull requests with Bitbucket state and source branch query para
             ...bitbucketPullRequest,
             id: 7,
             state: "MERGED",
+            closed_on: "2026-01-03T00:00:00.000Z",
             source: {
               branch: { name: "feature/merged" },
               repository: { full_name: "pingdotgg/t3code" },
@@ -225,6 +227,10 @@ it.effect("lists pull requests with Bitbucket state and source branch query para
     });
 
     assert.strictEqual(result[0]?.state, "merged");
+    assert.deepStrictEqual(
+      result[0]?.mergedAt,
+      Option.some(DateTime.makeUnsafe("2026-01-03T00:00:00.000Z")),
+    );
     const request = execute.mock.calls[0]?.[0];
     assert.strictEqual(
       request?.url,

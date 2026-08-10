@@ -159,6 +159,8 @@ export class VcsStatusBroadcaster extends Context.Service<
     readonly getStatus: (
       input: VcsStatusInput,
     ) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
+    /** Read the merged cached status without touching git or a forge. */
+    readonly peekStatus: (input: VcsStatusInput) => Effect.Effect<VcsStatusResult | null>;
     readonly refreshLocalStatus: (
       cwd: string,
     ) => Effect.Effect<VcsStatusLocalResult, GitManagerServiceError>;
@@ -337,6 +339,15 @@ export const make = Effect.gen(function* () {
       { concurrency: "unbounded" },
     );
     return yield* updateCachedStatus(cwd, local, remote);
+  });
+
+  const peekStatus: VcsStatusBroadcaster["Service"]["peekStatus"] = Effect.fn(
+    "VcsStatusBroadcaster.peekStatus",
+  )(function* (input) {
+    const cwd = yield* withFileSystem(normalizeCwd(input.cwd));
+    const cached = yield* getCachedStatus(cwd);
+    if (!cached?.local || !cached.remote) return null;
+    return mergeGitStatusParts(cached.local.value, cached.remote.value);
   });
 
   const refreshLocalStatusCore = Effect.fn("VcsStatusBroadcaster.refreshLocalStatusCore")(
@@ -587,6 +598,7 @@ export const make = Effect.gen(function* () {
 
   return VcsStatusBroadcaster.of({
     getStatus,
+    peekStatus,
     refreshLocalStatus,
     refreshStatus,
     streamStatus,

@@ -34,6 +34,7 @@ import {
   detectSourceControlProviderFromGitRemoteUrl,
   mergeGitStatusParts,
   normalizeGitRemoteUrl,
+  parseRepositoryNameWithOwnerFromGitRemoteUrl,
   resolveAutoFeatureBranchName,
   sanitizeBranchFragment,
   sanitizeFeatureBranchName,
@@ -69,6 +70,19 @@ export interface GitRunStackedActionOptions {
   readonly progressReporter?: GitActionProgressReporter;
 }
 
+export interface GitPullRequestBranchObservation {
+  readonly pullRequest: VcsStatusRemoteResult["pr"];
+  readonly mergedAt: string | null;
+  readonly headAssociation: GitBranchHeadAssociation;
+}
+
+export interface GitBranchHeadAssociation {
+  readonly headRef: string;
+  readonly repositoryNameWithOwner: string | null;
+  readonly ownerLogin: string | null;
+  readonly isCrossRepository: boolean;
+}
+
 interface SourceControlTextGenerationSettings {
   readonly modelSelection: ModelSelection;
   readonly style: SourceControlWritingStyleSettings;
@@ -87,6 +101,11 @@ export class GitManager extends Context.Service<
       input: VcsStatusInput,
       options?: GitVcsDriver.GitRemoteStatusOptions,
     ) => Effect.Effect<VcsStatusRemoteResult | null, GitManagerServiceError>;
+    readonly pullRequestForBranch: (input: {
+      readonly cwd: string;
+      readonly branch: string;
+      readonly headAssociation?: GitBranchHeadAssociation;
+    }) => Effect.Effect<GitPullRequestBranchObservation, GitManagerServiceError>;
     readonly invalidateLocalStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateRemoteStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateStatus: (cwd: string) => Effect.Effect<void, never>;
@@ -113,6 +132,7 @@ const PR_LOOKUP_CACHE_TTL = Duration.minutes(2);
 const PR_LOOKUP_FAILURE_BASE_TTL = Duration.seconds(20);
 const PR_LOOKUP_FAILURE_MAX_TTL = Duration.minutes(15);
 const PR_LOOKUP_CACHE_CAPACITY = 2_048;
+type PullRequestLookupSelection = "prefer-open" | "latest";
 
 /**
  * How long a failed PR lookup is cached, given the number of consecutive
@@ -148,11 +168,16 @@ interface OpenPrInfo {
 interface PullRequestInfo extends OpenPrInfo, PullRequestHeadRemoteInfo {
   state: "open" | "closed" | "merged";
   updatedAt: Option.Option<DateTime.Utc>;
+  mergedAt: Option.Option<DateTime.Utc>;
 }
 
 const pullRequestUpdatedAtDescOrder: Order.Order<PullRequestInfo> = Order.mapInput(
   Order.flip(Option.makeOrder(DateTime.Order)),
   (pullRequest) => pullRequest.updatedAt,
+);
+const pullRequestNumberDescOrder: Order.Order<PullRequestInfo> = Order.mapInput(
+  Order.flip(Order.Number),
+  (pullRequest) => pullRequest.number,
 );
 
 interface ResolvedPullRequest {
@@ -220,20 +245,6 @@ function resolvePullRequestWorktreeLocalBranchName(
   const sanitizedHeadBranch = sanitizeBranchFragment(pullRequest.headBranch).trim();
   const suffix = sanitizedHeadBranch.length > 0 ? sanitizedHeadBranch : "head";
   return `t3code/pr-${pullRequest.number}/${suffix}`;
-}
-
-function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {
-  const trimmed = url?.trim() ?? "";
-  if (trimmed.length === 0) {
-    return null;
-  }
-
-  const match =
-    /^(?:git@github\.com:|ssh:\/\/git@github\.com\/|https:\/\/github\.com\/|git:\/\/github\.com\/)([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i.exec(
-      trimmed,
-    );
-  const repositoryNameWithOwner = match?.[1]?.trim() ?? "";
-  return repositoryNameWithOwner.length > 0 ? repositoryNameWithOwner : null;
 }
 
 function parseRepositoryOwnerLogin(nameWithOwner: string | null): string | null {
@@ -381,6 +392,7 @@ function toPullRequestInfo(summary: ChangeRequest): PullRequestInfo {
     headRefName: summary.headRefName,
     state: summary.state ?? "open",
     updatedAt: summary.updatedAt,
+    mergedAt: summary.mergedAt ?? Option.none(),
     ...(summary.isCrossRepository !== undefined
       ? { isCrossRepository: summary.isCrossRepository }
       : {}),
@@ -906,11 +918,30 @@ export const make = Effect.gen(function* () {
         prLookupEpochByCwd.set(cacheKey, prLookupEpoch(cacheKey) + 1);
       }),
     );
-  // Cache keys are NUL-joined [cwd, branch, upstreamRef, epoch] — none of the
-  // segments can contain a NUL byte, and refs are never empty, so "" decodes
-  // back to a null upstreamRef.
-  const prLookupCacheKey = (cwd: string, details: { branch: string; upstreamRef: string | null }) =>
-    [cwd, details.branch, details.upstreamRef ?? "", String(prLookupEpoch(cwd))].join("\u0000");
+  // Cache keys are NUL-joined [cwd, branch, upstreamRef,
+  // queryWhenLocalBranchMissing, selection, headRef, headRepository,
+  // headOwner, headIsCrossRepository, epoch]. None of the segments can contain
+  // a NUL byte. Selection and the durable head association stay in the key
+  // because status and settlement can intentionally resolve different PRs.
+  const prLookupCacheKey = (
+    cwd: string,
+    details: { branch: string; upstreamRef: string | null },
+    queryWhenLocalBranchMissing: boolean,
+    selection: PullRequestLookupSelection,
+    headAssociation?: GitBranchHeadAssociation,
+  ) =>
+    [
+      cwd,
+      details.branch,
+      details.upstreamRef ?? "",
+      queryWhenLocalBranchMissing ? "1" : "0",
+      selection,
+      headAssociation?.headRef ?? "",
+      headAssociation?.repositoryNameWithOwner ?? "",
+      headAssociation?.ownerLogin ?? "",
+      headAssociation ? (headAssociation.isCrossRepository ? "1" : "0") : "",
+      String(prLookupEpoch(cwd)),
+    ].join("\u0000");
   // Consecutive failures per cache key, so a branch that keeps failing waits
   // longer before the next attempt. Cleared as soon as a lookup succeeds.
   const prLookupFailureStreakByKey = new Map<string, number>();
@@ -930,19 +961,50 @@ export const make = Effect.gen(function* () {
   };
   const prLookupCache = yield* Cache.makeWith(
     (key: string) => {
-      const [cwd = "", branch = "", upstreamRef = ""] = key.split("\u0000");
+      const [
+        cwd = "",
+        branch = "",
+        upstreamRef = "",
+        queryWhenLocalBranchMissing = "0",
+        selection = "prefer-open",
+        associatedHeadRef = "",
+        associatedRepository = "",
+        associatedOwner = "",
+        associatedIsCrossRepository = "",
+      ] = key.split("\u0000");
       const details = {
         branch,
         upstreamRef: upstreamRef.length > 0 ? upstreamRef : null,
       };
+      const headAssociation =
+        associatedHeadRef.length > 0 && associatedIsCrossRepository.length > 0
+          ? {
+              headRef: associatedHeadRef,
+              repositoryNameWithOwner: associatedRepository || null,
+              ownerLogin: associatedOwner || null,
+              isCrossRepository: associatedIsCrossRepository === "1",
+            }
+          : undefined;
       return Effect.gen(function* () {
-        const headContext = yield* resolveBranchHeadContext(cwd, details);
+        const headContext = yield* resolveBranchHeadContext(
+          cwd,
+          details,
+          headAssociation ? { headAssociation } : undefined,
+        );
         // Only skip when the branch is untracked as well: anything carrying an
         // upstream keeps the old behaviour.
-        if (details.upstreamRef === null && (yield* isUnpublishedBranch(cwd, headContext))) {
+        if (
+          queryWhenLocalBranchMissing !== "1" &&
+          details.upstreamRef === null &&
+          (yield* isUnpublishedBranch(cwd, headContext))
+        ) {
           return { latest: null, automatedReview: undefined, headContext };
         }
-        const latest = yield* findLatestPrForHeadContext(cwd, headContext);
+        const latest = yield* findLatestPrForHeadContext(
+          cwd,
+          headContext,
+          selection === "latest" ? "latest" : "prefer-open",
+        );
         if (!latest || latest.state !== "open") {
           return { latest, automatedReview: undefined, headContext };
         }
@@ -984,6 +1046,7 @@ export const make = Effect.gen(function* () {
   // branch retargeted to another remote/fork cannot inherit the old badge.
   interface LastKnownPr {
     readonly pr: ReturnType<typeof toStatusPr> | null;
+    readonly mergedAt: string | null;
     readonly upstreamRef: string | null;
     readonly headBranch: string;
     readonly remoteName: string | null;
@@ -1005,11 +1068,11 @@ export const make = Effect.gen(function* () {
   const resolveLastKnownPr = (
     branchKey: string,
     current: Pick<LastKnownPr, "upstreamRef" | "headBranch" | "remoteName" | "headRemoteUrlKey">,
-  ): ReturnType<typeof toStatusPr> | null => {
+  ): Pick<LastKnownPr, "pr" | "mergedAt"> => {
     const lastKnown = lastKnownPrByBranchKey.get(branchKey);
-    if (!lastKnown) return null;
+    if (!lastKnown) return { pr: null, mergedAt: null };
     if (lastKnown.headBranch !== current.headBranch) {
-      return null;
+      return { pr: null, mergedAt: null };
     }
 
     // The normalized URL catches both remote-alias changes and an existing
@@ -1019,7 +1082,9 @@ export const make = Effect.gen(function* () {
     // *current* remote URL must read as "unknown", not as "no remote" — the
     // latter would otherwise drop an already-known PR badge on every hiccup.
     if (lastKnown.headRemoteUrlKey !== null && current.headRemoteUrlKey !== null) {
-      return lastKnown.headRemoteUrlKey === current.headRemoteUrlKey ? lastKnown.pr : null;
+      return lastKnown.headRemoteUrlKey === current.headRemoteUrlKey
+        ? { pr: lastKnown.pr, mergedAt: lastKnown.mergedAt }
+        : { pr: null, mergedAt: null };
     }
 
     // If the remote URL can't be compared, fall back to the remote identity
@@ -1032,31 +1097,65 @@ export const make = Effect.gen(function* () {
       lastKnown.remoteName !== null &&
       current.remoteName !== null
     ) {
-      return lastKnown.remoteName === current.remoteName ? lastKnown.pr : null;
+      return lastKnown.remoteName === current.remoteName
+        ? { pr: lastKnown.pr, mergedAt: lastKnown.mergedAt }
+        : { pr: null, mergedAt: null };
     }
-    return lastKnown.pr;
+    return { pr: lastKnown.pr, mergedAt: lastKnown.mergedAt };
   };
-  const lookupStatusPr = Effect.fn("lookupStatusPr")(function* (
+  const lookupStatusPrObservation = Effect.fn("lookupStatusPrObservation")(function* (
     cwd: string,
     details: { branch: string; upstreamRef: string | null; isDefaultBranch: boolean },
+    options?: {
+      readonly queryWhenLocalBranchMissing?: boolean;
+      readonly selection?: PullRequestLookupSelection;
+      readonly headAssociation?: GitBranchHeadAssociation;
+    },
   ) {
-    // Keyed by (cwd, branch) only: the upstream ref changing (e.g. a first
-    // `push -u`) must not orphan the fallback value for the same branch.
-    const branchKey = `${cwd}\u0000${details.branch}`;
-    return yield* Cache.get(prLookupCache, prLookupCacheKey(cwd, details)).pipe(
+    const selection = options?.selection ?? "prefer-open";
+    // Keyed by (cwd, branch, selection): an upstream change (e.g. a first
+    // `push -u`) must not orphan the fallback value, while status and
+    // settlement must never borrow answers selected under different rules.
+    const branchKey = [
+      cwd,
+      details.branch,
+      selection,
+      options?.headAssociation?.headRef ?? "",
+      options?.headAssociation?.repositoryNameWithOwner ?? "",
+      options?.headAssociation?.ownerLogin ?? "",
+      options?.headAssociation ? (options.headAssociation.isCrossRepository ? "1" : "0") : "",
+    ].join("\u0000");
+    return yield* Cache.get(
+      prLookupCache,
+      prLookupCacheKey(
+        cwd,
+        details,
+        options?.queryWhenLocalBranchMissing === true,
+        selection,
+        options?.headAssociation,
+      ),
+    ).pipe(
       Effect.map(({ latest, automatedReview, headContext }) => {
-        if (!latest) return { pr: null, headContext };
+        if (!latest) return { pr: null, mergedAt: null, headContext };
         // On the default branch, only surface open PRs.
         // Merged/closed matches are usually reverse-merge history, not the thread's PR context.
         if (details.isDefaultBranch && latest.state !== "open") {
-          return { pr: null, headContext };
+          return { pr: null, mergedAt: null, headContext };
         }
-        return { pr: toStatusPr(latest, automatedReview), headContext };
+        return {
+          pr: toStatusPr(latest, automatedReview),
+          mergedAt: Option.match(latest.mergedAt, {
+            onNone: () => null,
+            onSome: DateTime.formatIso,
+          }),
+          headContext,
+        };
       }),
-      Effect.tap(({ pr, headContext }) =>
+      Effect.tap(({ pr, mergedAt, headContext }) =>
         Effect.sync(() =>
           rememberLastKnownPr(branchKey, {
             pr,
+            mergedAt,
             upstreamRef: details.upstreamRef,
             headBranch: headContext.headBranch,
             remoteName: headContext.remoteName,
@@ -1064,7 +1163,6 @@ export const make = Effect.gen(function* () {
           }),
         ),
       ),
-      Effect.map(({ pr }) => pr),
       Effect.catch((error) =>
         Effect.logWarning("PR lookup failed; keeping last known PR state.").pipe(
           Effect.annotateLogs({
@@ -1075,18 +1173,31 @@ export const make = Effect.gen(function* () {
                 ? String(error._tag)
                 : typeof error,
           }),
-          Effect.andThen(resolveBranchHeadContext(cwd, details)),
-          Effect.map((headContext) =>
-            resolveLastKnownPr(branchKey, {
+          Effect.andThen(
+            resolveBranchHeadContext(
+              cwd,
+              details,
+              options?.headAssociation ? { headAssociation: options.headAssociation } : undefined,
+            ),
+          ),
+          Effect.map((headContext) => ({
+            ...resolveLastKnownPr(branchKey, {
               upstreamRef: details.upstreamRef,
               headBranch: headContext.headBranch,
               remoteName: headContext.remoteName,
               headRemoteUrlKey: headContext.headRemoteUrlKey,
             }),
-          ),
+            headContext,
+          })),
         ),
       ),
     );
+  });
+  const lookupStatusPr = Effect.fn("lookupStatusPr")(function* (
+    cwd: string,
+    details: { branch: string; upstreamRef: string | null; isDefaultBranch: boolean },
+  ) {
+    return (yield* lookupStatusPrObservation(cwd, details)).pr;
   });
   const readRemoteStatus = Effect.fn("readRemoteStatus")(function* (
     cwd: string,
@@ -1156,7 +1267,7 @@ export const make = Effect.gen(function* () {
     }
 
     const remoteUrl = yield* readConfigValueNullable(cwd, `remote.${remoteName}.url`);
-    const repositoryNameWithOwner = parseGitHubRepositoryNameWithOwnerFromRemoteUrl(remoteUrl);
+    const repositoryNameWithOwner = parseRepositoryNameWithOwnerFromGitRemoteUrl(remoteUrl);
     return {
       remoteUrlKey: remoteUrl ? normalizeGitRemoteUrl(remoteUrl) : null,
       repositoryNameWithOwner,
@@ -1167,14 +1278,18 @@ export const make = Effect.gen(function* () {
   const resolveBranchHeadContext = Effect.fn("resolveBranchHeadContext")(function* (
     cwd: string,
     details: { branch: string; upstreamRef: string | null },
+    options?: { readonly headAssociation?: GitBranchHeadAssociation },
   ) {
     const remoteName = yield* readConfigValueNullable(cwd, `branch.${details.branch}.remote`);
     const headBranchFromUpstream = details.upstreamRef
       ? extractBranchNameFromRemoteRef(details.upstreamRef, { remoteName })
       : "";
-    const headBranch = headBranchFromUpstream.length > 0 ? headBranchFromUpstream : details.branch;
+    const headBranch =
+      options?.headAssociation?.headRef ??
+      (headBranchFromUpstream.length > 0 ? headBranchFromUpstream : details.branch);
     const shouldProbeLocalBranchSelector =
-      headBranchFromUpstream.length === 0 || headBranch === details.branch;
+      (headBranchFromUpstream.length === 0 && options?.headAssociation === undefined) ||
+      headBranch === details.branch;
 
     const [remoteRepository, originRepository] = yield* Effect.all(
       [
@@ -1183,19 +1298,28 @@ export const make = Effect.gen(function* () {
       ],
       { concurrency: "unbounded" },
     );
-
+    // A durable association is authoritative, including explicit nulls. Falling
+    // back from one of those nulls to a currently configured remote can attach
+    // a deleted branch to an unrelated fork that happens to use the same name.
+    const headRepositoryNameWithOwner = options?.headAssociation
+      ? options.headAssociation.repositoryNameWithOwner
+      : remoteRepository.repositoryNameWithOwner;
+    const headRepositoryOwnerLogin = options?.headAssociation
+      ? options.headAssociation.ownerLogin
+      : remoteRepository.ownerLogin;
     const isCrossRepository =
-      remoteRepository.repositoryNameWithOwner !== null &&
+      options?.headAssociation?.isCrossRepository ??
+      (remoteRepository.repositoryNameWithOwner !== null &&
       originRepository.repositoryNameWithOwner !== null
         ? remoteRepository.repositoryNameWithOwner.toLowerCase() !==
           originRepository.repositoryNameWithOwner.toLowerCase()
         : remoteName !== null &&
           remoteName !== "origin" &&
-          remoteRepository.repositoryNameWithOwner !== null;
+          remoteRepository.repositoryNameWithOwner !== null);
 
     const ownerHeadSelector =
-      remoteRepository.ownerLogin && headBranch.length > 0
-        ? `${remoteRepository.ownerLogin}:${headBranch}`
+      headRepositoryOwnerLogin && headBranch.length > 0
+        ? `${headRepositoryOwnerLogin}:${headBranch}`
         : null;
     const remoteAliasHeadSelector =
       remoteName && headBranch.length > 0 ? `${remoteName}:${headBranch}` : null;
@@ -1230,10 +1354,12 @@ export const make = Effect.gen(function* () {
         ownerHeadSelector && isCrossRepository ? ownerHeadSelector : headBranch,
       remoteName,
       headRemoteUrlKey:
-        remoteRepository.remoteUrlKey ??
-        (remoteName === null ? originRepository.remoteUrlKey : null),
-      headRepositoryNameWithOwner: remoteRepository.repositoryNameWithOwner,
-      headRepositoryOwnerLogin: remoteRepository.ownerLogin,
+        options?.headAssociation !== undefined
+          ? null
+          : (remoteRepository.remoteUrlKey ??
+            (remoteName === null ? originRepository.remoteUrlKey : null)),
+      headRepositoryNameWithOwner,
+      headRepositoryOwnerLogin,
       isCrossRepository,
     } satisfies BranchHeadContext;
   });
@@ -1307,6 +1433,7 @@ export const make = Effect.gen(function* () {
           headRefName: firstPullRequest.headRefName,
           state: "open",
           updatedAt: Option.none(),
+          mergedAt: Option.none(),
         } satisfies PullRequestInfo;
       }
     }
@@ -1317,6 +1444,7 @@ export const make = Effect.gen(function* () {
   const findLatestPrForHeadContext = Effect.fn("findLatestPrForHeadContext")(function* (
     cwd: string,
     headContext: BranchHeadContext,
+    selection: PullRequestLookupSelection = "prefer-open",
   ) {
     const parsedByNumber = new Map<number, PullRequestInfo>();
 
@@ -1336,8 +1464,12 @@ export const make = Effect.gen(function* () {
       }
     }
 
+    if (selection === "latest") {
+      // Provider request numbers are immutable creation order; updatedAt can
+      // move an older open request ahead of a newer merged one.
+      return Arr.sort(parsedByNumber.values(), pullRequestNumberDescOrder)[0] ?? null;
+    }
     const parsed = Arr.sort(parsedByNumber.values(), pullRequestUpdatedAtDescOrder);
-
     const latestOpenPr = parsed.find((pr) => pr.state === "open");
     if (latestOpenPr) {
       return latestOpenPr;
@@ -1784,6 +1916,69 @@ export const make = Effect.gen(function* () {
       return yield* Cache.get(remoteStatusResultCache, cacheKey);
     },
   );
+  const pullRequestForBranch: GitManager["Service"]["pullRequestForBranch"] = Effect.fn(
+    "pullRequestForBranch",
+  )(function* (input) {
+    const cwd = yield* normalizeStatusCacheKey(input.cwd);
+    const localBranch = yield* gitCore
+      .execute({
+        operation: "GitManager.pullRequestForBranch.localBranch",
+        cwd,
+        args: [
+          "for-each-ref",
+          "--count=1",
+          "--format=%(refname)%09%(upstream:short)",
+          `refs/heads/${input.branch}`,
+        ],
+        timeoutMs: 5_000,
+      })
+      .pipe(
+        Effect.map((result) => {
+          const [localRef = "", upstreamRef = ""] = result.stdout.trimEnd().split("\t", 2);
+          return {
+            exists: localRef.length > 0,
+            upstreamRef: upstreamRef.trim() || null,
+            probeSucceeded: true,
+          };
+        }),
+        // A failed local probe is not evidence that the branch was deleted.
+        Effect.orElseSucceed(() => ({ exists: true, upstreamRef: null, probeSucceeded: false })),
+      );
+
+    const shouldUseStoredHeadAssociation =
+      input.headAssociation !== undefined &&
+      (!localBranch.exists || !localBranch.probeSucceeded || localBranch.upstreamRef === null);
+    const queryWhenLocalBranchMissing = !localBranch.exists || !localBranch.probeSucceeded;
+
+    const observation = yield* lookupStatusPrObservation(
+      cwd,
+      {
+        branch: input.branch,
+        upstreamRef: localBranch.upstreamRef,
+        isDefaultBranch: false,
+      },
+      // A persisted thread can outlive both its local and hosted branch refs.
+      // A tracked local branch can refresh the association; otherwise retain
+      // the exact durable identity, including when the local probe itself fails.
+      {
+        queryWhenLocalBranchMissing,
+        selection: "latest",
+        ...(shouldUseStoredHeadAssociation && input.headAssociation
+          ? { headAssociation: input.headAssociation }
+          : {}),
+      },
+    );
+    return {
+      pullRequest: observation.pr,
+      mergedAt: observation.mergedAt,
+      headAssociation: {
+        headRef: observation.headContext.headBranch,
+        repositoryNameWithOwner: observation.headContext.headRepositoryNameWithOwner,
+        ownerLogin: observation.headContext.headRepositoryOwnerLogin,
+        isCrossRepository: observation.headContext.isCrossRepository,
+      },
+    };
+  });
   const status: GitManager["Service"]["status"] = Effect.fn("status")(function* (input) {
     const [local, remote] = yield* Effect.all([localStatus(input), remoteStatus(input)], {
       concurrency: "unbounded",
@@ -2242,6 +2437,7 @@ export const make = Effect.gen(function* () {
   return GitManager.of({
     localStatus,
     remoteStatus,
+    pullRequestForBranch,
     status,
     invalidateLocalStatus,
     invalidateRemoteStatus,
