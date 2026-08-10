@@ -1973,6 +1973,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             0,
             '2026-05-01T00:00:18.000Z',
             '2026-05-01T00:00:18.000Z'
+          ),
+          (
+            'message-midtag',
+            'thread-autopr',
+            NULL,
+            'user',
+            'How does <create_pull_request_instructions> tagging work? MIDTAG probe.',
+            0,
+            '2026-05-01T00:00:19.000Z',
+            '2026-05-01T00:00:19.000Z'
           )
       `;
 
@@ -2053,6 +2063,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         shadowed.matches.map((match) => [match.threadId, match.source]),
         [[ThreadId.make("thread-autopr"), "assistant"]],
       );
+      // User-authored text that merely quotes the marker mid-message is not a
+      // generated suffix and stays fully searchable.
+      const midTag = yield* snapshotQuery.searchThreads({ query: "MIDTAG probe" });
+      assert.deepStrictEqual(
+        midTag.matches.map((match) => [match.threadId, match.source]),
+        [[ThreadId.make("thread-autopr"), "user"]],
+      );
+      assert.match(midTag.matches[0]?.snippet ?? "", /MIDTAG probe/);
 
       assert.deepStrictEqual(
         (yield* snapshotQuery.searchThreads({ query: "interim needle" })).matches,

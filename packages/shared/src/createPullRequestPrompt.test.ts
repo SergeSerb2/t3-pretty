@@ -82,9 +82,27 @@ describe("stripCreatePullRequestSuffix", () => {
     expect(stripCreatePullRequestSuffix(sent)).toBe("Do the thing");
   });
 
-  it("drops an unterminated block to the end of the text", () => {
+  it("leaves an unterminated marker alone — only the exact trailing block is generated", () => {
     const sent = "Do the thing\n\n<create_pull_request_instructions>\ntruncated";
-    expect(stripCreatePullRequestSuffix(sent)).toBe("Do the thing");
+    expect(stripCreatePullRequestSuffix(sent)).toBe(sent);
+  });
+
+  it("leaves user-authored mid-text markers alone", () => {
+    const sent =
+      "How does <create_pull_request_instructions> get injected?\nExplain the mechanism.";
+    expect(stripCreatePullRequestSuffix(sent)).toBe(sent);
+    expect(hasCreatePullRequestSuffix(sent)).toBe(false);
+  });
+
+  it("strips only the trailing block when the user also quotes the marker", () => {
+    const typed = "Discuss <create_pull_request_instructions> markup handling";
+    const sent = applyCreatePullRequestSuffix({
+      text: typed,
+      autoCreatePullRequest: true,
+      threadHasStarted: false,
+    });
+    expect(sent).not.toBe(typed);
+    expect(stripCreatePullRequestSuffix(sent)).toBe(typed);
   });
 });
 

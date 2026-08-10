@@ -398,16 +398,21 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const workspaceMode = selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode;
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
-  const autoCreatePullRequestByEnvMode = AsyncResult.isSuccess(preferencesResult)
+  const preferencesHydrated = AsyncResult.isSuccess(preferencesResult);
+  const autoCreatePullRequestByEnvMode = preferencesHydrated
     ? preferencesResult.value.autoCreatePullRequestByEnvMode
     : undefined;
   // A draft-scoped override (set when a queued task is hydrated for editing,
   // or when the user flips the toggle mid-edit) wins over the per-mode
   // preference so editing unrelated text cannot change a queued task's choice.
-  // Gated on repository status below once the branch query resolves.
+  // Until the persisted preferences hydrate the choice stays OFF: sending the
+  // push/open-PR instructions against a not-yet-loaded opt-out is worse than
+  // briefly withholding the default. Gated on repository status below.
   const autoCreatePullRequestChoice =
     selectedProjectDraft.autoCreatePullRequest ??
-    resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, workspaceMode);
+    (preferencesHydrated
+      ? resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, workspaceMode)
+      : false);
   const setAutoCreatePullRequest = useCallback(
     (enabled: boolean) => {
       if (editingPendingTaskRef.current !== null && selectedProjectDraftKey !== null) {
@@ -824,7 +829,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
           autoCreatePullRequest:
             !projectConfirmedNotGitRepo &&
             (draft.autoCreatePullRequest ??
-              resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode)),
+              (preferencesHydrated
+                ? resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode)
+                : false)),
           threadHasStarted: false,
         }),
         attachments: draft.attachments,
@@ -852,6 +859,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       autoCreatePullRequestByEnvMode,
       editingPendingProject,
       editingPendingTask,
+      preferencesHydrated,
       projectConfirmedNotGitRepo,
       selectedEnvironmentServerConfig,
       selectedModel,
@@ -973,7 +981,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       runtimeMode,
       interactionMode,
       autoCreatePullRequest,
-      canToggleAutoCreatePullRequest: !projectConfirmedNotGitRepo,
+      canToggleAutoCreatePullRequest: !projectConfirmedNotGitRepo && preferencesHydrated,
       expandedProvider,
       environments,
       selectedProject,
@@ -1013,6 +1021,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       autoCreatePullRequest,
       availableBranches,
       beginEditingPendingTask,
+      preferencesHydrated,
       projectConfirmedNotGitRepo,
       branchQuery,
       branchesLoading,

@@ -226,8 +226,9 @@ function escapeLikePattern(value: string): string {
   return value.replaceAll("!", "!!").replaceAll("%", "!%").replaceAll("_", "!_");
 }
 
-/** Marker opening the hidden auto-PR instruction block in user messages. */
+/** Markers delimiting the hidden auto-PR instruction block in user messages. */
 const AUTO_PR_INSTRUCTIONS_OPEN_TAG = `<${CREATE_PULL_REQUEST_TAG}>`;
+const AUTO_PR_INSTRUCTIONS_CLOSE_TAG = `</${CREATE_PULL_REQUEST_TAG}>`;
 
 function foldAsciiCase(value: string): string {
   return value.replace(/[A-Z]/g, (character) => character.toLowerCase());
@@ -855,7 +856,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       // auto-PR instruction block is a trailing suffix, so everything from the
       // marker on is agent-only) BEFORE the LIKE filter, per-thread ranking,
       // and LIMIT run — a hidden-only hit must neither claim a thread's rank
-      // slot nor consume a result slot.
+      // slot nor consume a result slot. Stripping only happens when the text
+      // ends with the closing marker, so a user merely quoting the markup
+      // stays fully searchable.
       sql`
         WITH candidates AS (
           SELECT
@@ -868,6 +871,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             CASE
               WHEN messages.role = 'user'
                 AND instr(messages.text, ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}) > 0
+                AND substr(
+                  rtrim(messages.text),
+                  -${AUTO_PR_INSTRUCTIONS_CLOSE_TAG.length}
+                ) = ${AUTO_PR_INSTRUCTIONS_CLOSE_TAG}
               THEN substr(
                 messages.text,
                 1,

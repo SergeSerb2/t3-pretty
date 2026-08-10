@@ -84,24 +84,27 @@ export function applyCreatePullRequestSuffix(input: {
   return input.text + CREATE_PULL_REQUEST_MESSAGE_SUFFIX;
 }
 
+/**
+ * Matches only the auto-generated TRAILING block, so user-authored text that
+ * merely quotes the marker (e.g. while discussing this feature) is never
+ * mistaken for an applied suffix. Tolerant of historical wording changes
+ * inside the block, but the block must close and sit at the end of the text.
+ */
+const TRAILING_SUFFIX_PATTERN = new RegExp(`\\n*${OPEN_TAG}\\n[\\s\\S]*?\\n${CLOSE_TAG}\\s*$`);
+
 export function hasCreatePullRequestSuffix(text: string): boolean {
-  return text.includes(OPEN_TAG);
+  return TRAILING_SUFFIX_PATTERN.test(text);
 }
 
 /**
- * Removes the marker block for display so the user's chat bubble shows only
- * what they typed. Tolerant of historical wording changes: it strips any
- * content between the marker tags, not just the current suffix text.
+ * Removes the trailing marker block for display so the user's chat bubble
+ * shows only what they typed. Mid-text occurrences of the marker are left
+ * alone — only the generated trailing block is agent-only.
  */
 export function stripCreatePullRequestSuffix(text: string): string {
-  if (!hasCreatePullRequestSuffix(text)) {
-    return text;
-  }
   let result = text;
-  for (let start = result.indexOf(OPEN_TAG); start !== -1; start = result.indexOf(OPEN_TAG)) {
-    const end = result.indexOf(CLOSE_TAG, start);
-    const stop = end === -1 ? result.length : end + CLOSE_TAG.length;
-    result = result.slice(0, start) + result.slice(stop);
+  while (TRAILING_SUFFIX_PATTERN.test(result)) {
+    result = result.replace(TRAILING_SUFFIX_PATTERN, "");
   }
-  return result.replace(/\n{3,}/g, "\n\n").trimEnd();
+  return result === text ? text : result.trimEnd();
 }
