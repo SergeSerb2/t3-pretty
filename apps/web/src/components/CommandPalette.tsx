@@ -37,6 +37,7 @@ import {
   MessageSquareIcon,
   PaletteIcon,
   SettingsIcon,
+  SparklesIcon,
   SquarePenIcon,
   TextSearchIcon,
 } from "lucide-react";
@@ -54,6 +55,7 @@ import {
 } from "react";
 import { useAtomValue } from "@effect/atom-react";
 
+import { openWhatsNewDialog } from "../changelog/whatsNewStore";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -1418,6 +1420,17 @@ function OpenCommandPaletteDialog(props: {
     shortcutCommand: "filePicker.toggle",
     run: async () => {
       openOverlayMode("files");
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:whats-new",
+    searchTerms: ["what's new", "whats new", "changelog", "release notes", "updates", "version"],
+    title: "What's new",
+    icon: <SparklesIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      openWhatsNewDialog();
     },
   });
 

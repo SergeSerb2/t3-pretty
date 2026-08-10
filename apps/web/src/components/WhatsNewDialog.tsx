@@ -53,10 +53,14 @@ function formatReleaseDate(isoDate: string): string | null {
 export function WhatsNewDialog({
   releases,
   open,
+  announceUpdate,
   onOpenChange,
 }: {
   readonly releases: readonly ChangelogRelease[];
   readonly open: boolean;
+  /** True when the dialog announces a fresh update, false when the user
+      opened the changelog on demand. */
+  readonly announceUpdate: boolean;
   readonly onOpenChange: (open: boolean) => void;
 }) {
   const latestVersion = releases[0]?.version;
@@ -76,7 +80,7 @@ export function WhatsNewDialog({
             <div className="flex min-w-0 flex-col gap-1">
               <DialogTitle>What’s new</DialogTitle>
               <DialogDescription>
-                {latestVersion
+                {announceUpdate && latestVersion
                   ? `${APP_BASE_NAME} has been updated to v${latestVersion}.`
                   : `Recent updates to ${APP_BASE_NAME}.`}
               </DialogDescription>
