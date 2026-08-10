@@ -527,6 +527,16 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
             >
               {pr.label}
             </Text>
+            {pr.automatedReview ? (
+              <Text
+                numberOfLines={1}
+                className={`${compact ? "text-xs" : "text-3xs"} font-t3-medium ${
+                  selected ? "text-white" : pr.automatedReview.textClassName
+                }`}
+              >
+                · Codex {pr.automatedReview.shortLabel}
+              </Text>
+            ) : null}
           </View>
         ) : null}
       </View>

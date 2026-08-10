@@ -11,6 +11,7 @@ import {
 import * as GitHubCli from "./GitHubCli.ts";
 import { findAuthenticatedGitHubAccount, parseGitHubAuthStatus } from "./gitHubAuthStatus.ts";
 import { decodeGitHubPullRequestListJson } from "./gitHubPullRequests.ts";
+import { parseGitHubPullRequestUrl } from "./githubCodexReview.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
 import {
   combinedAuthOutput,
@@ -205,6 +206,41 @@ export const make = Effect.gen(function* () {
             }),
         ),
       ),
+    getAutomatedReview: (input) => {
+      const coordinates = parseGitHubPullRequestUrl(input.reference);
+      if (coordinates === null) {
+        return Effect.fail(
+          new SourceControlProviderError({
+            provider: "github",
+            operation: "getAutomatedReview",
+            cwd: input.cwd,
+            reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
+            detail: "Codex review state is available only for github.com pull requests.",
+          }),
+        );
+      }
+      return github
+        .getCodexReview({
+          cwd: input.cwd,
+          ...coordinates,
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new SourceControlProviderError({
+                provider: "github",
+                operation: "getAutomatedReview",
+                command: error.command,
+                cwd: input.cwd,
+                reference: SourceControlProvider.transportSafeSourceControlErrorValue(
+                  input.reference,
+                ),
+                detail: error.detail,
+                cause: error,
+              }),
+          ),
+        );
+    },
     createChangeRequest: (input) =>
       github
         .createPullRequest({

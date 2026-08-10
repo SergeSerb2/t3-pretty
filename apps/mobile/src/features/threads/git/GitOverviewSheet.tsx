@@ -5,6 +5,7 @@ import {
   requiresDefaultBranchConfirmation,
 } from "@t3tools/client-runtime/state/vcs";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { resolveAutomatedReviewPresentation } from "@t3tools/shared/sourceControl";
 import {
   CommonActions,
   StackActions,
@@ -188,7 +189,9 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
         return `${ahead} commit${ahead === 1 ? "" : "s"} ahead`;
       }
       if (item.kind === "open_pr" && status.pr?.number != null) {
-        return `PR #${status.pr.number} ${status.pr.state ?? "open"}`;
+        const automatedReview = resolveAutomatedReviewPresentation(status.pr.automatedReview);
+        const reviewDetail = automatedReview ? ` · Codex ${automatedReview.shortLabel}` : "";
+        return `PR #${status.pr.number} ${status.pr.state ?? "open"}${reviewDetail}`;
       }
       return undefined;
     },

@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 
 import {
   TrimmedNonEmptyString,
+  type AutomatedReviewSignal,
   type SourceControlRepositoryVisibility,
   type VcsError,
 } from "@t3tools/contracts";
@@ -16,8 +17,17 @@ import {
   decodeGitHubPullRequestJson,
   decodeGitHubPullRequestListJson,
 } from "./gitHubPullRequests.ts";
+import {
+  decodeGitHubCodexReviewPageJson,
+  resolveGitHubCodexReviewPages,
+  type GitHubCodexReviewPage,
+} from "./githubCodexReview.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+// A commit's own timestamp can predate when it became the PR head. Restricting
+// the timeline to head-changing items gives reactions a head-specific cutoff.
+const CODEX_REVIEW_QUERY =
+  "query($owner:String!,$name:String!,$number:Int!,$reactionsCursor:String,$reviewsCursor:String,$includeReactions:Boolean!,$includeReviews:Boolean!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid headUpdates:timelineItems(last:1,itemTypes:[PULL_REQUEST_COMMIT,HEAD_REF_FORCE_PUSHED_EVENT,HEAD_REF_RESTORED_EVENT]){updatedAt} reactions(first:100,after:$reactionsCursor) @include(if:$includeReactions){pageInfo{hasNextPage endCursor} nodes{content createdAt user{login}}} reviews(first:100,after:$reviewsCursor) @include(if:$includeReviews){pageInfo{hasNextPage endCursor} nodes{author{login} body submittedAt}}}}}";
 
 const gitHubCliFailureFields = {
   command: Schema.Literal("gh"),
@@ -122,6 +132,19 @@ export class GitHubPullRequestDecodeError extends Schema.TaggedErrorClass<GitHub
   }
 }
 
+export class GitHubCodexReviewDecodeError extends Schema.TaggedErrorClass<GitHubCodexReviewDecodeError>()(
+  "GitHubCodexReviewDecodeError",
+  gitHubCliDecodeFields,
+) {
+  get detail(): string {
+    return "GitHub CLI returned invalid Codex review JSON.";
+  }
+
+  override get message(): string {
+    return `GitHub CLI failed in getCodexReview: ${this.detail}`;
+  }
+}
+
 export class GitHubRepositoryDecodeError extends Schema.TaggedErrorClass<GitHubRepositoryDecodeError>()(
   "GitHubRepositoryDecodeError",
   gitHubCliDecodeFields,
@@ -143,6 +166,7 @@ export const GitHubCliError = Schema.Union([
   GitHubPullRequestListDecodeError,
   GitHubChangeRequestListDecodeError,
   GitHubPullRequestDecodeError,
+  GitHubCodexReviewDecodeError,
   GitHubRepositoryDecodeError,
 ]);
 export type GitHubCliError = typeof GitHubCliError.Type;
@@ -215,6 +239,13 @@ export class GitHubCli extends Context.Service<
       readonly cwd: string;
       readonly reference: string;
     }) => Effect.Effect<GitHubPullRequestSummary, GitHubCliError>;
+
+    readonly getCodexReview: (input: {
+      readonly cwd: string;
+      readonly owner: string;
+      readonly repository: string;
+      readonly number: number;
+    }) => Effect.Effect<AutomatedReviewSignal | null, GitHubCliError>;
 
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;
@@ -390,6 +421,96 @@ export const make = Effect.gen(function* () {
           ),
         ),
       ),
+    getCodexReview: (input) =>
+      Effect.gen(function* () {
+        const pages: GitHubCodexReviewPage[] = [];
+        const seenReactionsCursors = new Set<string>();
+        const seenReviewsCursors = new Set<string>();
+        let reactionsCursor: string | null = null;
+        let reviewsCursor: string | null = null;
+        let includeReactions = true;
+        let includeReviews = true;
+
+        // An empty result becomes a user-visible "No signal" state, so both
+        // connections must be exhausted before that conclusion is safe.
+        while (includeReactions || includeReviews) {
+          const args = [
+            "api",
+            "graphql",
+            "-f",
+            `owner=${input.owner}`,
+            "-f",
+            `name=${input.repository}`,
+            "-F",
+            `number=${input.number}`,
+            "-F",
+            `includeReactions=${includeReactions}`,
+            "-F",
+            `includeReviews=${includeReviews}`,
+            ...(includeReactions && reactionsCursor
+              ? ["-f", `reactionsCursor=${reactionsCursor}`]
+              : []),
+            ...(includeReviews && reviewsCursor ? ["-f", `reviewsCursor=${reviewsCursor}`] : []),
+            "-f",
+            `query=${CODEX_REVIEW_QUERY}`,
+          ];
+          const raw = (yield* execute({ cwd: input.cwd, args })).stdout.trim();
+          const decoded = decodeGitHubCodexReviewPageJson(raw);
+          if (!Result.isSuccess(decoded)) {
+            return yield* new GitHubCodexReviewDecodeError({
+              command: "gh",
+              cwd: input.cwd,
+              cause: decoded.failure,
+            });
+          }
+          const page = decoded.success;
+          if (page === null) return null;
+          if (pages[0] && pages[0].headRefOid !== page.headRefOid) {
+            return yield* new GitHubCodexReviewDecodeError({
+              command: "gh",
+              cwd: input.cwd,
+              cause: new Error("Pull request head changed during Codex activity pagination."),
+            });
+          }
+          pages.push(page);
+
+          if (includeReactions) {
+            const nextCursor = page.nextReactionsCursor;
+            if (
+              page.reactionsHasNextPage &&
+              (nextCursor === null || seenReactionsCursors.has(nextCursor))
+            ) {
+              return yield* new GitHubCodexReviewDecodeError({
+                command: "gh",
+                cwd: input.cwd,
+                cause: new Error("GitHub reaction pagination did not advance."),
+              });
+            }
+            if (nextCursor !== null) seenReactionsCursors.add(nextCursor);
+            reactionsCursor = nextCursor;
+            includeReactions = page.reactionsHasNextPage;
+          }
+
+          if (includeReviews) {
+            const nextCursor = page.nextReviewsCursor;
+            if (
+              page.reviewsHasNextPage &&
+              (nextCursor === null || seenReviewsCursors.has(nextCursor))
+            ) {
+              return yield* new GitHubCodexReviewDecodeError({
+                command: "gh",
+                cwd: input.cwd,
+                cause: new Error("GitHub review pagination did not advance."),
+              });
+            }
+            if (nextCursor !== null) seenReviewsCursors.add(nextCursor);
+            reviewsCursor = nextCursor;
+            includeReviews = page.reviewsHasNextPage;
+          }
+        }
+
+        return resolveGitHubCodexReviewPages(pages);
+      }),
     getRepositoryCloneUrls: (input) =>
       execute({
         cwd: input.cwd,

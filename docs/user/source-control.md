@@ -38,8 +38,15 @@ T3 Code works with the platforms your team already uses:
 **Stay on top of open reviews**
 
 - See if your current branch already has an open PR/MR
+- For open GitHub PRs, see Codex Auto Review's public state beside the PR: reviewing, no issues, feedback, an earlier result, or no public signal
 - Open the review directly in your browser with one click
 - Check out a teammate's branch to review code locally
+
+The Codex indicator is based on activity GitHub exposes publicly: the connector's eyes reaction while
+reviewing, thumbs-up when it finishes without comments, or a posted Codex review when it finds
+issues. **No public signal** is intentionally not labeled as “skipped”: it can also mean Smart Review
+is still deciding or Auto Review is disabled. Codex's current Smart Review setting remains the source
+of truth for that configuration.
 
 ### Know Your Setup at a Glance
 

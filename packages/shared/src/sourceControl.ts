@@ -1,4 +1,55 @@
-import type { SourceControlProviderInfo, SourceControlProviderKind } from "@t3tools/contracts";
+import type {
+  AutomatedReviewSignal,
+  SourceControlProviderInfo,
+  SourceControlProviderKind,
+} from "@t3tools/contracts";
+
+export interface AutomatedReviewPresentation {
+  readonly label: string;
+  readonly shortLabel: string;
+  readonly description: string;
+}
+
+export function resolveAutomatedReviewPresentation(
+  signal: AutomatedReviewSignal | null | undefined,
+): AutomatedReviewPresentation | null {
+  if (signal === undefined) return null;
+  if (signal === null) {
+    return {
+      label: "No public Codex review signal",
+      shortLabel: "No signal",
+      description:
+        "Smart Review may still be deciding, may have skipped this PR, or Auto Review may be off.",
+    };
+  }
+
+  switch (signal.state) {
+    case "reviewing":
+      return {
+        label: "Codex is reviewing",
+        shortLabel: "Reviewing",
+        description: "Codex acknowledged the PR and is reviewing it now.",
+      };
+    case "passed":
+      return {
+        label: "Codex found no issues",
+        shortLabel: "No issues",
+        description: "Codex finished and left a thumbs-up instead of review comments.",
+      };
+    case "feedback":
+      return {
+        label: "Codex left feedback",
+        shortLabel: "Feedback",
+        description: "Codex finished and posted review comments for the current commit.",
+      };
+    case "stale":
+      return {
+        label: "Earlier Codex result",
+        shortLabel: "Earlier result",
+        description: "The visible Codex result predates the current commit.",
+      };
+  }
+}
 
 export interface ChangeRequestPresentation {
   readonly icon: "github" | "gitlab" | "azure-devops" | "bitbucket" | "change-request";

@@ -15,6 +15,7 @@ import * as Scope from "effect/Scope";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { expect } from "vite-plus/test";
 import type {
+  AutomatedReviewSignal,
   GitActionProgressEvent,
   GitPreparePullRequestThreadInput,
   ThreadId,
@@ -40,6 +41,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as GitManager from "./GitManager.ts";
 
 interface FakeGhScenario {
+  codexReview?: AutomatedReviewSignal | null;
   prListSequence?: string[];
   prListByHeadSelector?: Record<string, string>;
   prListSequenceByHeadSelector?: Record<string, string[]>;
@@ -555,6 +557,16 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
         }).pipe(
           Effect.map((result) => JSON.parse(result.stdout) as GitHubCli.GitHubPullRequestSummary),
         ),
+      getCodexReview: (input) =>
+        "codexReview" in scenario
+          ? Effect.succeed(scenario.codexReview ?? null)
+          : Effect.fail(
+              new GitHubCli.GitHubCliCommandError({
+                command: "gh",
+                cwd: input.cwd,
+                cause: new Error("Codex review lookup is not configured in this GitManager fake."),
+              }),
+            ),
       getRepositoryCloneUrls: (input) =>
         execute({
           cwd: input.cwd,
@@ -688,6 +700,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
 
       const { manager } = yield* makeManager({
         ghScenario: {
+          codexReview: { provider: "codex", state: "reviewing" },
           prListSequence: [
             // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
@@ -715,6 +728,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         baseRef: "main",
         headRef: "feature/status-open-pr",
         state: "open",
+        automatedReview: { provider: "codex", state: "reviewing" },
       });
     }),
   );

@@ -687,7 +687,10 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                     className={`inline-flex items-center justify-center ${prStatus.colorClass} cursor-pointer rounded-sm outline-hidden focus-visible:ring-1 focus-visible:ring-ring`}
                     onClick={handlePrClick}
                   >
-                    <ChangeRequestStatusIcon className="size-3" />
+                    <ChangeRequestStatusIcon
+                      className="size-3"
+                      automatedReview={prStatus.automatedReview}
+                    />
                   </button>
                 }
               />

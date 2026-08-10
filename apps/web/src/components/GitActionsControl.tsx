@@ -90,6 +90,7 @@ import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { readLocalApi } from "~/localApi";
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
 import { openPullRequestLink } from "~/lib/openPullRequestLink";
+import { AutomatedReviewStatusIcon, automatedReviewIndicator } from "./ThreadStatusIndicators";
 
 interface GitActionsControlProps {
   gitCwd: string | null;
@@ -1154,6 +1155,12 @@ export default function GitActionsControl({
       resolveQuickAction(gitStatusForActions, isGitActionRunning, isDefaultRef, hasPrimaryRemote),
     [gitStatusForActions, hasPrimaryRemote, isDefaultRef, isGitActionRunning],
   );
+  const automatedReviewStatus = automatedReviewIndicator(
+    gitStatusForActions?.pr?.state === "open" ? gitStatusForActions.pr.automatedReview : undefined,
+  );
+  const quickActionAccessibleLabel = automatedReviewStatus
+    ? `${quickAction.label}. ${automatedReviewStatus.label}. ${automatedReviewStatus.description}`
+    : quickAction.label;
   const quickActionDisabledReason = quickAction.disabled
     ? (quickAction.hint ?? "This action is currently unavailable.")
     : null;
@@ -1716,10 +1723,19 @@ export default function GitActionsControl({
               variant="outline"
               size="xs"
               className="ps-[8.5px]"
+              aria-label={quickActionAccessibleLabel}
+              title={
+                automatedReviewStatus
+                  ? `${automatedReviewStatus.label}. ${automatedReviewStatus.description}`
+                  : undefined
+              }
               disabled={isGitActionRunning || quickAction.disabled}
               onClick={runQuickAction}
             >
               <GitQuickActionIcon quickAction={quickAction} SourceControlIcon={SourceControlIcon} />
+              {automatedReviewStatus ? (
+                <AutomatedReviewStatusIcon status={automatedReviewStatus} className="size-3.5" />
+              ) : null}
               <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
                 {quickAction.label}
               </span>

@@ -156,6 +156,7 @@ function bindProviderContext(
   if (context === null) {
     return provider;
   }
+  const getAutomatedReview = provider.getAutomatedReview;
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: provider.kind,
@@ -169,6 +170,17 @@ function bindProviderContext(
         ...input,
         context: input.context ?? context,
       }),
+    ...(getAutomatedReview
+      ? {
+          getAutomatedReview: (
+            input: Parameters<NonNullable<typeof provider.getAutomatedReview>>[0],
+          ) =>
+            getAutomatedReview({
+              ...input,
+              context: input.context ?? context,
+            }),
+        }
+      : {}),
     createChangeRequest: (input) =>
       provider.createChangeRequest({
         ...input,

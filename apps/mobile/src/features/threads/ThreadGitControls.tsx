@@ -10,6 +10,7 @@ import {
   requiresDefaultBranchConfirmation,
   resolveQuickAction,
 } from "@t3tools/client-runtime/state/vcs";
+import { resolveAutomatedReviewPresentation } from "@t3tools/shared/sourceControl";
 import { useNavigation } from "@react-navigation/native";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useCallback, useMemo } from "react";
@@ -59,6 +60,10 @@ function compactMenuStatus(gitStatus: VcsStatusResult | null): string {
   }
   if (gitStatus.pr?.state === "open") {
     parts.push(`PR #${gitStatus.pr.number}`);
+    const automatedReview = resolveAutomatedReviewPresentation(gitStatus.pr.automatedReview);
+    if (automatedReview) {
+      parts.push(`Codex ${automatedReview.shortLabel}`);
+    }
   }
 
   return parts.join(" · ");

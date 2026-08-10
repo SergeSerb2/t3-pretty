@@ -137,6 +137,7 @@ import {
 } from "./Sidebar.logic";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
+  AutomatedReviewStatusIcon,
   ThreadWorktreeIndicator,
   prStatusIndicator,
   resolveThreadPr,
@@ -1075,7 +1076,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         className={cn(
           // Sidebar chrome follows the interface font; tabular digits keep the
           // number from reflowing as PR states stream in.
-          "shrink-0 text-xs tabular-nums hover:underline",
+          "inline-flex shrink-0 items-center gap-0.5 text-xs tabular-nums hover:underline",
           variant === "slim" && variantAction === "unsettle"
             ? props.isActive
               ? "text-secondary-label"
@@ -1084,7 +1085,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         )}
         aria-label={prStatus.tooltip}
       >
-        #{pr.number}
+        <span>#{pr.number}</span>
+        {prStatus.automatedReview ? (
+          <AutomatedReviewStatusIcon status={prStatus.automatedReview} className="size-3" />
+        ) : null}
       </button>
     ) : null;
   const terminalStatusIcon = terminalStatus ? (
