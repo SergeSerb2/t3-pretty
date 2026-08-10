@@ -1993,6 +1993,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             0,
             '2026-05-01T00:00:20.000Z',
             '2026-05-01T00:00:20.000Z'
+          ),
+          (
+            'message-deep-quotes',
+            'thread-autopr',
+            NULL,
+            'user',
+            ${`${"Quote <create_pull_request_instructions> again.\n".repeat(5)}DEEPQUOTE quarry after fifth marker.${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`},
+            0,
+            '2026-05-01T00:00:21.000Z',
+            '2026-05-01T00:00:21.000Z'
           )
       `;
 
@@ -2089,6 +2099,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         [[ThreadId.make("thread-autopr"), "user"]],
       );
       assert.match(quotedPlusSuffix.matches[0]?.snippet ?? "", /QUOTEDVIS quarry after marker/);
+      // The last-marker walk is unbounded: visible text after the FIFTH
+      // quoted marker still matches.
+      const deepQuotes = yield* snapshotQuery.searchThreads({ query: "DEEPQUOTE quarry" });
+      assert.deepStrictEqual(
+        deepQuotes.matches.map((match) => [match.threadId, match.source]),
+        [[ThreadId.make("thread-autopr"), "user"]],
+      );
+      assert.match(deepQuotes.matches[0]?.snippet ?? "", /DEEPQUOTE quarry after fifth marker/);
 
       assert.deepStrictEqual(
         (yield* snapshotQuery.searchThreads({ query: "interim needle" })).matches,

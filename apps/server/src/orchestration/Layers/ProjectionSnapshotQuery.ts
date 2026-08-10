@@ -856,15 +856,13 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       // auto-PR instruction block is a trailing suffix, so everything from the
       // final marker on is agent-only) BEFORE the LIKE filter, per-thread
       // ranking, and LIMIT run — a hidden-only hit must neither claim a
-      // thread's rank slot nor consume a result slot. The `openN` CTE chain
-      // walks successive opening-marker positions so the cut happens at the
-      // LAST marker (matching the shared stripper) and user text that merely
-      // quotes the marker stays searchable; stripping additionally requires
-      // the closing marker at the end of the text. The walk is capped at four
-      // markers — beyond that it cuts at the fourth, which can only over-hide,
-      // never leak.
+      // thread's rank slot nor consume a result slot. The recursive
+      // `marker_scan` walks every opening-marker position so the cut happens
+      // at the TRUE last marker (matching the shared stripper) no matter how
+      // many times the user quoted it; stripping additionally requires the
+      // closing marker at the end of the text.
       sql`
-        WITH base AS (
+        WITH RECURSIVE base AS (
           SELECT
             threads.thread_id AS thread_id,
             threads.project_id AS project_id,
@@ -902,84 +900,55 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               )
             )
         ),
-        open1 AS (
-          SELECT *, instr(text, ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}) AS open_pos
+        marker_scan AS (
+          SELECT
+            message_id,
+            text,
+            instr(text, ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}) AS open_pos
           FROM base
-        ),
-        open2 AS (
+          WHERE role = 'user'
+            AND instr(text, ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}) > 0
+          UNION ALL
           SELECT
-            thread_id, project_id, source, role, text, message_id,
-            message_created_at, match_rank, thread_updated_at,
-            CASE
-              WHEN open_pos > 0
-                AND instr(
-                  substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
-                  ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
-                ) > 0
-              THEN open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length} - 1 + instr(
-                substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
-                ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
-              )
-              ELSE open_pos
-            END AS open_pos
-          FROM open1
+            message_id,
+            text,
+            open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length} - 1 + instr(
+              substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
+              ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
+            )
+          FROM marker_scan
+          WHERE instr(
+            substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
+            ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
+          ) > 0
         ),
-        open3 AS (
-          SELECT
-            thread_id, project_id, source, role, text, message_id,
-            message_created_at, match_rank, thread_updated_at,
-            CASE
-              WHEN open_pos > 0
-                AND instr(
-                  substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
-                  ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
-                ) > 0
-              THEN open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length} - 1 + instr(
-                substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
-                ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
-              )
-              ELSE open_pos
-            END AS open_pos
-          FROM open2
-        ),
-        open4 AS (
-          SELECT
-            thread_id, project_id, source, role, text, message_id,
-            message_created_at, match_rank, thread_updated_at,
-            CASE
-              WHEN open_pos > 0
-                AND instr(
-                  substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
-                  ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
-                ) > 0
-              THEN open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length} - 1 + instr(
-                substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
-                ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
-              )
-              ELSE open_pos
-            END AS open_pos
-          FROM open3
+        last_marker AS (
+          SELECT message_id, MAX(open_pos) AS open_pos
+          FROM marker_scan
+          GROUP BY message_id
         ),
         candidates AS (
           SELECT
-            thread_id,
-            project_id,
-            source,
+            base.thread_id,
+            base.project_id,
+            base.source,
             CASE
-              WHEN role = 'user'
-                AND open_pos > 0
+              WHEN base.role = 'user'
+                AND last_marker.open_pos IS NOT NULL
                 AND substr(
-                  rtrim(text),
+                  rtrim(base.text),
                   -${AUTO_PR_INSTRUCTIONS_CLOSE_TAG.length}
                 ) = ${AUTO_PR_INSTRUCTIONS_CLOSE_TAG}
-              THEN substr(text, 1, open_pos - 1)
-              ELSE text
+              THEN substr(base.text, 1, last_marker.open_pos - 1)
+              ELSE base.text
             END AS match_text,
-            message_id,
-            message_created_at,
-            match_rank,
-            thread_updated_at
-          FROM open4
+            base.message_id,
+            base.message_created_at,
+            base.match_rank,
+            base.thread_updated_at
+          FROM base
+          LEFT JOIN last_marker
+            ON last_marker.message_id = base.message_id
         ),
         ranked AS (
           SELECT
