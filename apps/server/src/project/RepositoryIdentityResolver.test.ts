@@ -374,6 +374,26 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
+  it.effect("falls back to the fetch provider for SSH alias push hosts", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-alias-provider-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", "https://github.com/acme/repo.git"]);
+      yield* git(cwd, ["config", "remote.origin.pushurl", "work:fork/repo.git"]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+
+      expect(identity).not.toBeNull();
+      expect(identity?.displayName).toBe("fork/repo");
+      expect(identity?.provider).toBe("github");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
   it.effect("accepts one-letter SSH alias hosts with a username", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

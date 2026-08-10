@@ -210,10 +210,23 @@ function buildRepositoryIdentity(input: {
   readonly groupingRemoteUrl: string;
   readonly remoteName: string;
   readonly remoteUrl: string;
+  readonly fallbackProviderUrl?: string;
   readonly rootPath: string;
 }): RepositoryIdentity {
   const canonicalKey = normalizeGitRemoteUrl(input.groupingRemoteUrl);
-  const sourceControlProvider = detectSourceControlProviderFromGitRemoteUrl(input.remoteUrl);
+  // A promoted push URL can use an unclassifiable host (e.g. an SSH alias);
+  // fall back to the fetch URL's recognized provider in that case.
+  const displayUrlProvider = detectSourceControlProviderFromGitRemoteUrl(input.remoteUrl);
+  const fallbackProvider =
+    input.fallbackProviderUrl === undefined
+      ? null
+      : detectSourceControlProviderFromGitRemoteUrl(input.fallbackProviderUrl);
+  const sourceControlProvider =
+    displayUrlProvider !== null && displayUrlProvider.kind !== "unknown"
+      ? displayUrlProvider
+      : fallbackProvider !== null && fallbackProvider.kind !== "unknown"
+        ? fallbackProvider
+        : (displayUrlProvider ?? fallbackProvider);
   const repositoryPathSegments = deriveDisplayRepositoryPathSegments(input.remoteUrl);
   const repositoryPath = repositoryPathSegments.join("/");
   const owner = repositoryPathSegments.length >= 2 ? repositoryPathSegments[0] : undefined;
@@ -285,6 +298,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     ? buildRepositoryIdentity({
         ...displayRemote,
         groupingRemoteUrl: groupingRemote.remoteUrl,
+        fallbackProviderUrl: remotes.get(displayRemote.remoteName)?.fetchUrl,
         rootPath: cacheKey,
       })
     : null;
