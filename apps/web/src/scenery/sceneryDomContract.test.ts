@@ -36,6 +36,11 @@ describe("scenery structural contract with upstream markup", () => {
     expect(chatViewSource).toContain("data-chat-header");
   });
 
+  it("the composer overlay still carries the attribute the dock clearance targets", () => {
+    expect(chatViewSource).toContain('data-chat-composer-overlay="true"');
+    expect(sceneryCssSource).toContain("[data-chat-composer-overlay]");
+  });
+
   it("the sidebar container still carries data-app-sidebar", () => {
     expect(appSidebarLayoutSource).toContain("data-app-sidebar");
   });
