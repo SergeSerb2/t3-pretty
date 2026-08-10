@@ -200,21 +200,13 @@ jobs:
           if-no-files-found: error
 
   build_macos:
-    name: Build macOS ${{ matrix.arch }}
+    name: Build macOS arm64
     needs: preflight
     if: needs.preflight.outputs.should_release == 'true'
     permissions:
       contents: read
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            rust_target: aarch64-apple-darwin
-          - arch: x64
-            rust_target: x86_64-apple-darwin
     steps:
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
@@ -256,7 +248,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust_target }}
+          targets: aarch64-apple-darwin
 
       - name: Align package versions
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
@@ -280,7 +272,7 @@ jobs:
           args=(
             --platform mac
             --target dmg
-            --arch "${{ matrix.arch }}"
+            --arch arm64
             --build-version "${{ needs.preflight.outputs.version }}"
             --verbose
           )
@@ -357,7 +349,7 @@ jobs:
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          zip_path="$(find release -maxdepth 1 -type f -name '*-${{ matrix.arch }}.zip' -print -quit)"
+          zip_path="$(find release -maxdepth 1 -type f -name '*-arm64.zip' -print -quit)"
           test -n "$zip_path"
           verify_dir="$(mktemp -d)"
           trap 'rm -rf "$verify_dir"' EXIT
@@ -377,17 +369,11 @@ jobs:
           find release -maxdepth 1 -type f \( \
             -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name '*.yml' \
           \) -exec cp {} release-publish/ \;
-          if [[ "${{ matrix.arch }}" == "x64" ]]; then
-            for manifest in release-publish/*-mac.yml; do
-              [[ -e "$manifest" ]] || continue
-              mv "$manifest" "${manifest%.yml}-x64.yml"
-            done
-          fi
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: fork-desktop-mac-${{ matrix.arch }}
+          name: fork-desktop-mac-arm64
           path: release-publish/*
           if-no-files-found: error
 
@@ -557,21 +543,6 @@ jobs:
           merge-multiple: true
           path: release-assets
 
-      - name: Merge macOS architecture manifests
-        shell: bash
-        run: |
-          set -euo pipefail
-          found=false
-          for x64_manifest in release-assets/*-mac-x64.yml; do
-            [[ -e "$x64_manifest" ]] || continue
-            arm64_manifest="${x64_manifest%-x64.yml}.yml"
-            [[ -f "$arm64_manifest" ]] || { echo "Missing $arm64_manifest" >&2; exit 1; }
-            node scripts/merge-update-manifests.ts --platform mac "$arm64_manifest" "$x64_manifest"
-            rm "$x64_manifest"
-            found=true
-          done
-          [[ "$found" == true ]] || { echo "No macOS updater manifests found." >&2; exit 1; }
-
       - name: Verify updater manifests
         shell: bash
         env:
@@ -606,9 +577,6 @@ jobs:
           const macUrls = mac.files?.map((file) => file.url) ?? [];
           if (!macUrls.some((url) => url.endsWith("-arm64.zip"))) {
             throw new Error("macOS manifest is missing the arm64 zip");
-          }
-          if (!macUrls.some((url) => url.endsWith("-x64.zip"))) {
-            throw new Error("macOS manifest is missing the x64 zip");
           }
           if (win && !(win.files?.some((file) => file.url.endsWith("-x64.exe")) ?? false)) {
             throw new Error("Windows manifest is missing the x64 installer");
