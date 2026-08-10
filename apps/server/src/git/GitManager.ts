@@ -122,6 +122,7 @@ const PR_LOOKUP_CACHE_TTL = Duration.minutes(2);
 const PR_LOOKUP_FAILURE_BASE_TTL = Duration.seconds(20);
 const PR_LOOKUP_FAILURE_MAX_TTL = Duration.minutes(15);
 const PR_LOOKUP_CACHE_CAPACITY = 2_048;
+type PullRequestLookupSelection = "prefer-open" | "latest";
 
 /**
  * How long a failed PR lookup is cached, given the number of consecutive
@@ -918,18 +919,22 @@ export const make = Effect.gen(function* () {
       }),
     );
   // Cache keys are NUL-joined [cwd, branch, upstreamRef,
-  // queryWhenLocalBranchMissing, epoch]. None of the segments can contain a
-  // NUL byte, and refs are never empty, so "" decodes back to a null upstream.
+  // queryWhenLocalBranchMissing, selection, epoch]. None of the segments can
+  // contain a NUL byte, and refs are never empty, so "" decodes back to a null
+  // upstream. Selection stays in the key because status intentionally prefers
+  // an open PR while settlement needs the newest branch result.
   const prLookupCacheKey = (
     cwd: string,
     details: { branch: string; upstreamRef: string | null },
     queryWhenLocalBranchMissing: boolean,
+    selection: PullRequestLookupSelection,
   ) =>
     [
       cwd,
       details.branch,
       details.upstreamRef ?? "",
       queryWhenLocalBranchMissing ? "1" : "0",
+      selection,
       String(prLookupEpoch(cwd)),
     ].join("\u0000");
   // Consecutive failures per cache key, so a branch that keeps failing waits
@@ -951,8 +956,13 @@ export const make = Effect.gen(function* () {
   };
   const prLookupCache = yield* Cache.makeWith(
     (key: string) => {
-      const [cwd = "", branch = "", upstreamRef = "", queryWhenLocalBranchMissing = "0"] =
-        key.split("\u0000");
+      const [
+        cwd = "",
+        branch = "",
+        upstreamRef = "",
+        queryWhenLocalBranchMissing = "0",
+        selection = "prefer-open",
+      ] = key.split("\u0000");
       const details = {
         branch,
         upstreamRef: upstreamRef.length > 0 ? upstreamRef : null,
@@ -968,7 +978,11 @@ export const make = Effect.gen(function* () {
         ) {
           return { latest: null, automatedReview: undefined, headContext };
         }
-        const latest = yield* findLatestPrForHeadContext(cwd, headContext);
+        const latest = yield* findLatestPrForHeadContext(
+          cwd,
+          headContext,
+          selection === "latest" ? "latest" : "prefer-open",
+        );
         if (!latest || latest.state !== "open") {
           return { latest, automatedReview: undefined, headContext };
         }
@@ -1070,14 +1084,19 @@ export const make = Effect.gen(function* () {
   const lookupStatusPrObservation = Effect.fn("lookupStatusPrObservation")(function* (
     cwd: string,
     details: { branch: string; upstreamRef: string | null; isDefaultBranch: boolean },
-    options?: { readonly queryWhenLocalBranchMissing?: boolean },
+    options?: {
+      readonly queryWhenLocalBranchMissing?: boolean;
+      readonly selection?: PullRequestLookupSelection;
+    },
   ) {
-    // Keyed by (cwd, branch) only: the upstream ref changing (e.g. a first
-    // `push -u`) must not orphan the fallback value for the same branch.
-    const branchKey = `${cwd}\u0000${details.branch}`;
+    const selection = options?.selection ?? "prefer-open";
+    // Keyed by (cwd, branch, selection): an upstream change (e.g. a first
+    // `push -u`) must not orphan the fallback value, while status and
+    // settlement must never borrow answers selected under different rules.
+    const branchKey = `${cwd}\u0000${details.branch}\u0000${selection}`;
     return yield* Cache.get(
       prLookupCache,
-      prLookupCacheKey(cwd, details, options?.queryWhenLocalBranchMissing === true),
+      prLookupCacheKey(cwd, details, options?.queryWhenLocalBranchMissing === true, selection),
     ).pipe(
       Effect.map(({ latest, automatedReview, headContext }) => {
         if (!latest) return { pr: null, mergedAt: null, headContext };
@@ -1367,6 +1386,7 @@ export const make = Effect.gen(function* () {
   const findLatestPrForHeadContext = Effect.fn("findLatestPrForHeadContext")(function* (
     cwd: string,
     headContext: BranchHeadContext,
+    selection: PullRequestLookupSelection = "prefer-open",
   ) {
     const parsedByNumber = new Map<number, PullRequestInfo>();
 
@@ -1388,6 +1408,9 @@ export const make = Effect.gen(function* () {
 
     const parsed = Arr.sort(parsedByNumber.values(), pullRequestUpdatedAtDescOrder);
 
+    if (selection === "latest") {
+      return parsed[0] ?? null;
+    }
     const latestOpenPr = parsed.find((pr) => pr.state === "open");
     if (latestOpenPr) {
       return latestOpenPr;
@@ -1872,7 +1895,7 @@ export const make = Effect.gen(function* () {
       // A persisted thread can outlive both its local and hosted branch refs.
       // Existing local refs still use the unpublished-branch short circuit;
       // only a missing local ref is treated as historical lookup evidence.
-      { queryWhenLocalBranchMissing: !localBranch.exists },
+      { queryWhenLocalBranchMissing: !localBranch.exists, selection: "latest" },
     );
     return {
       pullRequest: observation.pr,

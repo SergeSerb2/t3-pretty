@@ -38,12 +38,12 @@ export function shouldSettleMergedPullRequest(
     return false;
   }
 
-  const threadCreatedAt = Date.parse(thread.createdAt);
+  const branchObservedAt = Date.parse(thread.branchObservedAt);
   const pullRequestMergedAt = Date.parse(observation.mergedAt);
   return (
-    Number.isFinite(threadCreatedAt) &&
+    Number.isFinite(branchObservedAt) &&
     Number.isFinite(pullRequestMergedAt) &&
-    pullRequestMergedAt >= threadCreatedAt
+    pullRequestMergedAt >= branchObservedAt
   );
 }
 

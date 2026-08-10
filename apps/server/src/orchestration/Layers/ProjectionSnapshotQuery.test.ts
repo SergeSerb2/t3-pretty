@@ -550,6 +550,27 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       `;
 
       yield* sql`
+        INSERT INTO orchestration_events (
+          event_id,
+          aggregate_kind,
+          stream_id,
+          stream_version,
+          event_type,
+          occurred_at,
+          actor_kind,
+          payload_json,
+          metadata_json,
+          recorded_at
+        )
+        VALUES
+          ('event-eligible-root-created', 'thread', 'eligible-root', 0, 'thread.created', '2099-01-01T00:00:00.000Z', 'client', '{"branch":"feature/root"}', '{}', '2026-08-10T00:00:02.100Z'),
+          ('event-eligible-root-title', 'thread', 'eligible-root', 1, 'thread.meta-updated', '2026-08-10T00:00:02.900Z', 'server', '{"title":"Renamed"}', '{}', '2026-08-10T00:00:02.900Z'),
+          ('event-eligible-worktree-created', 'thread', 'eligible-worktree', 0, 'thread.created', '2026-08-10T00:00:03.100Z', 'client', '{"branch":"feature/old"}', '{}', '2026-08-10T00:00:03.100Z'),
+          ('event-eligible-worktree-branch', 'thread', 'eligible-worktree', 1, 'thread.meta-updated', '2026-08-10T00:00:03.800Z', 'server', '{"branch":"feature/worktree"}', '{}', '2026-08-10T00:00:03.800Z'),
+          ('event-eligible-stopped-created', 'thread', 'eligible-stopped', 0, 'thread.created', '2026-08-10T00:00:04.500Z', 'client', '{"branch":"feature/stopped"}', '{}', '2026-08-10T00:00:04.500Z')
+      `;
+
+      yield* sql`
         INSERT INTO projection_thread_sessions (
           thread_id,
           status,
@@ -575,19 +596,19 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           threadId: ThreadId.make("eligible-root"),
           branch: "feature/root",
           cwd: "/tmp/project-active",
-          createdAt: "2026-08-10T00:00:02.000Z",
+          branchObservedAt: "2026-08-10T00:00:02.100Z",
         },
         {
           threadId: ThreadId.make("eligible-worktree"),
           branch: "feature/worktree",
           cwd: "/tmp/project-worktree",
-          createdAt: "2026-08-10T00:00:03.000Z",
+          branchObservedAt: "2026-08-10T00:00:03.800Z",
         },
         {
           threadId: ThreadId.make("eligible-stopped"),
           branch: "feature/stopped",
           cwd: "/tmp/project-active",
-          createdAt: "2026-08-10T00:00:04.000Z",
+          branchObservedAt: "2026-08-10T00:00:04.500Z",
         },
       ]);
     }),

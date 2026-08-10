@@ -116,7 +116,8 @@ const makeEventStore = Effect.gen(function* () {
           correlation_id,
           actor_kind,
           payload_json,
-          metadata_json
+          metadata_json,
+          recorded_at
         )
         VALUES (
           ${request.eventId},
@@ -140,7 +141,8 @@ const makeEventStore = Effect.gen(function* () {
           ${request.correlationId},
           ${request.actorKind},
           ${request.payloadJson},
-          ${request.metadataJson}
+          ${request.metadataJson},
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         )
         RETURNING
           sequence,

@@ -58,7 +58,7 @@ export interface ProjectionMergedPullRequestCandidate {
   readonly threadId: ThreadId;
   readonly branch: string;
   readonly cwd: string;
-  readonly createdAt: string;
+  readonly branchObservedAt: string;
 }
 
 /**

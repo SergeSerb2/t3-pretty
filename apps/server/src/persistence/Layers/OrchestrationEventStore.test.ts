@@ -49,16 +49,20 @@ layer("OrchestrationEventStore", (it) => {
       const storedRows = yield* sql<{
         readonly payloadJson: string;
         readonly metadataJson: string;
+        readonly recordedAt: string;
       }>`
         SELECT
           payload_json AS "payloadJson",
-          metadata_json AS "metadataJson"
+          metadata_json AS "metadataJson",
+          recorded_at AS "recordedAt"
         FROM orchestration_events
         WHERE event_id = ${appended.eventId}
       `;
       assert.equal(storedRows.length, 1);
       assert.equal(typeof storedRows[0]?.payloadJson, "string");
       assert.equal(typeof storedRows[0]?.metadataJson, "string");
+      assert.ok(Number.isFinite(Date.parse(storedRows[0]?.recordedAt ?? "")));
+      assert.notEqual(storedRows[0]?.recordedAt, now);
 
       const replayed = yield* Stream.runCollect(eventStore.readFromSequence(0, 10)).pipe(
         Effect.map((chunk) => Array.from(chunk)),

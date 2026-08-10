@@ -119,7 +119,7 @@ const ProjectionMergedPullRequestCandidateRowSchema = Schema.Struct({
   threadId: ThreadId,
   branch: Schema.String,
   cwd: Schema.String,
-  createdAt: IsoDateTime,
+  branchObservedAt: IsoDateTime,
 });
 const ProjectionThreadSearchRequest = Schema.Struct({
   pattern: Schema.String,
@@ -789,10 +789,27 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               THEN threads.worktree_path
             ELSE projects.workspace_root
           END AS cwd,
-          threads.created_at AS "createdAt"
+          branch_events.recorded_at AS "branchObservedAt"
         FROM projection_threads AS threads
         INNER JOIN projection_projects AS projects
           ON projects.project_id = threads.project_id
+        INNER JOIN orchestration_events AS branch_events
+          ON branch_events.sequence = (
+            SELECT events.sequence
+            FROM orchestration_events AS events
+            WHERE events.aggregate_kind = 'thread'
+              AND events.stream_id = threads.thread_id
+              AND events.recorded_at IS NOT NULL
+              AND (
+                events.event_type = 'thread.created'
+                OR (
+                  events.event_type = 'thread.meta-updated'
+                  AND json_type(events.payload_json, '$.branch') IS NOT NULL
+                )
+              )
+            ORDER BY events.sequence DESC
+            LIMIT 1
+          )
         LEFT JOIN projection_thread_sessions AS sessions
           ON sessions.thread_id = threads.thread_id
         WHERE threads.deleted_at IS NULL

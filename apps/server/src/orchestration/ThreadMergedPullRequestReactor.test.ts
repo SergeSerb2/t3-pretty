@@ -19,20 +19,20 @@ import { layer, ThreadMergedPullRequestReactor } from "./ThreadMergedPullRequest
 
 const WORKSPACE_ROOT = "/workspace/project-1";
 const BRANCH = "feature/merged-pr";
-const THREAD_CREATED_AT = "2026-01-01T00:00:00.000Z";
+const BRANCH_OBSERVED_AT = "2026-01-01T00:00:00.000Z";
 const PULL_REQUEST_MERGED_AT = "2026-01-02T00:00:00.000Z";
 
 function makeCandidate(input: {
   readonly id: string;
   readonly branch?: string;
   readonly cwd?: string;
-  readonly createdAt?: string;
+  readonly branchObservedAt?: string;
 }): ProjectionMergedPullRequestCandidate {
   return {
     threadId: ThreadId.make(input.id),
     branch: input.branch ?? BRANCH,
     cwd: input.cwd ?? WORKSPACE_ROOT,
-    createdAt: input.createdAt ?? THREAD_CREATED_AT,
+    branchObservedAt: input.branchObservedAt ?? BRANCH_OBSERVED_AT,
   };
 }
 
@@ -190,7 +190,12 @@ describe("ThreadMergedPullRequestReactor", () => {
   it.effect("does not settle a reused branch from an older merged pull request", () =>
     Effect.gen(function* () {
       const commands = yield* runSweep({
-        candidates: [makeCandidate({ id: "reused-branch", createdAt: "2026-01-03T00:00:00.000Z" })],
+        candidates: [
+          makeCandidate({
+            id: "reused-branch",
+            branchObservedAt: "2026-01-03T00:00:00.000Z",
+          }),
+        ],
         pullRequestByBranch: new Map([
           [
             branchKey(WORKSPACE_ROOT, BRANCH),

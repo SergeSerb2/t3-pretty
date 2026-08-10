@@ -925,6 +925,64 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect("uses the newest branch PR for settlement without changing status preference", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      const branch = "feature/reused-pr-head";
+      yield* runGit(repoDir, ["checkout", "-b", branch]);
+      yield* runGit(repoDir, ["push", "-u", "origin", branch]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            [branch]: JSON.stringify([
+              {
+                number: 21,
+                title: "Older open PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/21",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "open",
+                updatedAt: "2026-01-02T00:00:00.000Z",
+              },
+              {
+                number: 22,
+                title: "Newer merged PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/22",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "merged",
+                mergedAt: "2026-01-03T00:00:00.000Z",
+                updatedAt: "2026-01-04T00:00:00.000Z",
+              },
+            ]),
+          },
+        },
+      });
+
+      const status = yield* manager.status({ cwd: repoDir });
+      expect(status.pr?.number).toBe(21);
+      expect(status.pr?.state).toBe("open");
+
+      const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+      expect(observation).toEqual({
+        pullRequest: {
+          number: 22,
+          title: "Newer merged PR",
+          url: "https://github.com/pingdotgg/codething-mvp/pull/22",
+          baseRef: "main",
+          headRef: branch,
+          state: "merged",
+        },
+        mergedAt: "2026-01-03T00:00:00.000Z",
+      });
+    }),
+  );
+
   it.effect("skips provider lookup for a local-only stored branch", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
