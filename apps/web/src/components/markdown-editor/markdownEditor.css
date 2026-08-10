@@ -1,0 +1,71 @@
+/*
+ * Motion polish for the markdown editor. Everything transform/opacity-only,
+ * all guarded for reduced motion. The caret glide + eased blink are what make
+ * typing feel fluid; CodeMirror positions .cm-cursor absolutely per frame, so
+ * a short left/top transition turns jumps into glides.
+ */
+.t3-markdown-editor {
+  opacity: 1;
+  translate: 0 0;
+  transition:
+    opacity 220ms cubic-bezier(0.23, 1, 0.32, 1),
+    translate 220ms cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+
+@starting-style {
+  .t3-markdown-editor {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+.t3-markdown-editor .cm-cursor {
+  transition:
+    left 64ms cubic-bezier(0.23, 1, 0.32, 1),
+    top 64ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Replace CodeMirror's hard visibility blink with an eased fade. */
+.t3-markdown-editor .cm-cursorLayer {
+  animation-name: t3-markdown-caret-blink !important;
+  animation-duration: 1.1s !important;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes t3-markdown-caret-blink {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  75%,
+  85% {
+    opacity: 0.12;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.t3-markdown-editor .cm-activeLine {
+  transition: background-color 160ms ease-out;
+}
+
+.t3-markdown-editor .cm-selectionBackground {
+  transition: background-color 100ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t3-markdown-editor,
+  .t3-markdown-editor .cm-cursor,
+  .t3-markdown-editor .cm-activeLine,
+  .t3-markdown-editor .cm-selectionBackground {
+    transition: none;
+  }
+
+  .t3-markdown-editor .cm-cursorLayer {
+    animation-name: cm-blink !important;
+  }
+}

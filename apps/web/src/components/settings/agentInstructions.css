@@ -1,0 +1,74 @@
+/*
+ * Enter/exit motion for the Instructions settings panel. Rows cascade in with
+ * a tiny stagger; the editor view rises as it appears. Compositor-only
+ * properties, all suppressed under reduced motion.
+ */
+.t3-instruction-row {
+  opacity: 1;
+  translate: 0 0;
+  transition:
+    opacity 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    translate 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 100ms ease-out;
+}
+
+@starting-style {
+  .t3-instruction-row {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+.t3-instruction-row:nth-child(2) {
+  transition-delay: 20ms, 20ms, 0ms;
+}
+.t3-instruction-row:nth-child(3) {
+  transition-delay: 40ms, 40ms, 0ms;
+}
+.t3-instruction-row:nth-child(4) {
+  transition-delay: 60ms, 60ms, 0ms;
+}
+.t3-instruction-row:nth-child(5) {
+  transition-delay: 80ms, 80ms, 0ms;
+}
+.t3-instruction-row:nth-child(n + 6) {
+  transition-delay: 100ms, 100ms, 0ms;
+}
+
+.t3-instruction-editor {
+  opacity: 1;
+  translate: 0 0;
+  transition:
+    opacity 240ms cubic-bezier(0.23, 1, 0.32, 1),
+    translate 240ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@starting-style {
+  .t3-instruction-editor {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+.t3-save-indicator {
+  opacity: 1;
+  scale: 1;
+  transition:
+    opacity 160ms ease-out,
+    scale 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@starting-style {
+  .t3-save-indicator {
+    opacity: 0;
+    scale: 0.9;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t3-instruction-row,
+  .t3-instruction-editor,
+  .t3-save-indicator {
+    transition: none;
+  }
+}

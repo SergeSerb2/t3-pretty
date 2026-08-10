@@ -91,6 +91,7 @@ import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
+import * as AgentInstructionFiles from "./instructions/AgentInstructionFiles.ts";
 import { readWorkflowScript } from "./orchestration/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
@@ -376,6 +377,7 @@ const makeWsRpcLayer = (
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+      const agentInstructionFiles = yield* AgentInstructionFiles.AgentInstructionFiles;
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
@@ -1740,6 +1742,18 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.agentInstructionsList]: (input) =>
+          observeRpcEffect(WS_METHODS.agentInstructionsList, agentInstructionFiles.list(input), {
+            "rpc.aggregate": "workspace",
+          }),
+        [WS_METHODS.agentInstructionsRead]: (input) =>
+          observeRpcEffect(WS_METHODS.agentInstructionsRead, agentInstructionFiles.read(input), {
+            "rpc.aggregate": "workspace",
+          }),
+        [WS_METHODS.agentInstructionsWrite]: (input) =>
+          observeRpcEffect(WS_METHODS.agentInstructionsWrite, agentInstructionFiles.write(input), {
+            "rpc.aggregate": "workspace",
+          }),
         [WS_METHODS.shellOpenInEditor]: (input) =>
           observeRpcEffect(WS_METHODS.shellOpenInEditor, externalLauncher.launchEditor(input), {
             "rpc.aggregate": "workspace",

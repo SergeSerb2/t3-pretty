@@ -65,6 +65,7 @@ import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolve
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
+import * as AgentInstructionFiles from "./instructions/AgentInstructionFiles.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
@@ -392,7 +393,17 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // no longer transitively provides it. Exposing it at the runtime level
   // keeps a single Live for all opencode consumers.
   Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
-  Layer.provideMerge(WorkspaceLayerLive),
+  // AgentInstructionFiles rides the workspace entry to stay inside pipe()'s
+  // 20-argument ceiling; layer memoization dedupes the shared dependencies.
+  Layer.provideMerge(
+    Layer.mergeAll(
+      WorkspaceLayerLive,
+      AgentInstructionFiles.layer.pipe(
+        Layer.provide(WorkspaceEntriesLayerLive),
+        Layer.provide(ServerSettingsLayerLive),
+      ),
+    ),
+  ),
   Layer.provideMerge(ProjectFaviconResolverLayerLive),
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(ServerEnvironment.layer),

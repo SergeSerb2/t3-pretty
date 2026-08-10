@@ -39,6 +39,10 @@
       "types": "./src/relay/index.ts",
       "default": "./src/relay/index.ts"
     },
+    "./state/agent-instructions": {
+      "types": "./src/state/agentInstructions.ts",
+      "default": "./src/state/agentInstructions.ts"
+    },
     "./state/auth": {
       "types": "./src/state/auth.ts",
       "default": "./src/state/auth.ts"

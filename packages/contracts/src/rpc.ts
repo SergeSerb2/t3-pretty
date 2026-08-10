@@ -4,6 +4,15 @@ import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
+  AgentInstructionsError,
+  AgentInstructionsListInput,
+  AgentInstructionsListResult,
+  AgentInstructionsReadInput,
+  AgentInstructionsReadResult,
+  AgentInstructionsWriteInput,
+  AgentInstructionsWriteResult,
+} from "./agentInstructions.ts";
+import {
   AuthAccessStreamError,
   AuthAccessStreamEvent,
   EnvironmentAuthorizationError,
@@ -176,6 +185,11 @@ export const WS_METHODS = {
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+
+  // Agent instruction file methods
+  agentInstructionsList: "agentInstructions.list",
+  agentInstructionsRead: "agentInstructions.read",
+  agentInstructionsWrite: "agentInstructions.write",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -476,6 +490,24 @@ export const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   payload: ProjectWriteFileInput,
   success: ProjectWriteFileResult,
   error: Schema.Union([ProjectWriteFileError, EnvironmentAuthorizationError]),
+});
+
+export const WsAgentInstructionsListRpc = Rpc.make(WS_METHODS.agentInstructionsList, {
+  payload: AgentInstructionsListInput,
+  success: AgentInstructionsListResult,
+  error: Schema.Union([AgentInstructionsError, EnvironmentAuthorizationError]),
+});
+
+export const WsAgentInstructionsReadRpc = Rpc.make(WS_METHODS.agentInstructionsRead, {
+  payload: AgentInstructionsReadInput,
+  success: AgentInstructionsReadResult,
+  error: Schema.Union([AgentInstructionsError, EnvironmentAuthorizationError]),
+});
+
+export const WsAgentInstructionsWriteRpc = Rpc.make(WS_METHODS.agentInstructionsWrite, {
+  payload: AgentInstructionsWriteInput,
+  success: AgentInstructionsWriteResult,
+  error: Schema.Union([AgentInstructionsError, EnvironmentAuthorizationError]),
 });
 
 export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
@@ -842,6 +874,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
+  WsAgentInstructionsListRpc,
+  WsAgentInstructionsReadRpc,
+  WsAgentInstructionsWriteRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,
