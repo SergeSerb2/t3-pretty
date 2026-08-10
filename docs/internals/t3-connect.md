@@ -56,10 +56,12 @@ should set `T3CODE_CLERK_PUBLISHABLE_KEY`, `T3CODE_CLERK_JWT_TEMPLATE`,
 production builds only need the Clerk publishable key, JWT template name, and relay URL in their EAS
 environment.
 
-When any client-facing public value is absent, cloud UI is omitted. The `t3 connect` command group is
-always registered: when the CLI public values are absent, `makeCli` in `apps/server/src/bin.ts`
-registers a hidden fallback `connect` command that reports the missing configuration instead of
-silently vanishing from help. The bundled server still accepts runtime overrides for self-hosted or
+When any client-facing public value is absent, network-backed cloud actions, authentication, and
+relay discovery are omitted or disabled. **Connections** keeps a noninteractive Surge Code account
+row visible so the missing build configuration is explicit. The `t3 connect` command group is always
+registered: when the CLI public values are absent, `makeCli` in `apps/server/src/bin.ts` registers a
+hidden fallback `connect` command that reports the missing configuration instead of silently
+vanishing from help. The bundled server still accepts runtime overrides for self-hosted or
 operator-managed deployments.
 
 For a hosted relay deployment, copy `infra/relay/.env.example` to `infra/relay/.env`. The relay
