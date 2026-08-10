@@ -165,6 +165,10 @@ const pullRequestUpdatedAtDescOrder: Order.Order<PullRequestInfo> = Order.mapInp
   Order.flip(Option.makeOrder(DateTime.Order)),
   (pullRequest) => pullRequest.updatedAt,
 );
+const pullRequestNumberDescOrder: Order.Order<PullRequestInfo> = Order.mapInput(
+  Order.flip(Order.Number),
+  (pullRequest) => pullRequest.number,
+);
 
 interface ResolvedPullRequest {
   number: number;
@@ -191,6 +195,7 @@ interface BranchHeadContext {
   headRepositoryNameWithOwner: string | null;
   headRepositoryOwnerLogin: string | null;
   isCrossRepository: boolean;
+  historicalHeadIdentities?: ReadonlyArray<PullRequestHeadIdentity>;
 }
 
 function parseRepositoryNameFromPullRequestUrl(url: string): string | null {
@@ -328,7 +333,11 @@ export function matchesBranchHeadContext(
   pr: PullRequestInfo,
   headContext: Pick<
     BranchHeadContext,
-    "headBranch" | "headRepositoryNameWithOwner" | "headRepositoryOwnerLogin" | "isCrossRepository"
+    | "headBranch"
+    | "headRepositoryNameWithOwner"
+    | "headRepositoryOwnerLogin"
+    | "isCrossRepository"
+    | "historicalHeadIdentities"
   >,
 ): boolean {
   if (pr.headRefName !== headContext.headBranch) {
@@ -337,6 +346,26 @@ export function matchesBranchHeadContext(
 
   const expectedHead = resolveExpectedHeadIdentity(headContext);
   const pullRequestHead = resolvePullRequestHeadIdentity(pr);
+  const historicalHeadIdentities = headContext.historicalHeadIdentities ?? [];
+
+  if (
+    !expectedHead.repositoryNameWithOwner &&
+    !expectedHead.ownerLogin &&
+    historicalHeadIdentities.length > 0 &&
+    (pr.isCrossRepository === true ||
+      pullRequestHead.repositoryNameWithOwner !== null ||
+      pullRequestHead.ownerLogin !== null)
+  ) {
+    return historicalHeadIdentities.some((historicalHead) => {
+      if (historicalHead.repositoryNameWithOwner && pullRequestHead.repositoryNameWithOwner) {
+        return historicalHead.repositoryNameWithOwner === pullRequestHead.repositoryNameWithOwner;
+      }
+      return (
+        historicalHead.ownerLogin !== null &&
+        historicalHead.ownerLogin === pullRequestHead.ownerLogin
+      );
+    });
+  }
 
   if (expectedHead.repositoryNameWithOwner) {
     if (pullRequestHead.repositoryNameWithOwner) {
@@ -968,7 +997,9 @@ export const make = Effect.gen(function* () {
         upstreamRef: upstreamRef.length > 0 ? upstreamRef : null,
       };
       return Effect.gen(function* () {
-        const headContext = yield* resolveBranchHeadContext(cwd, details);
+        const headContext = yield* resolveBranchHeadContext(cwd, details, {
+          discoverHistoricalRemotes: queryWhenLocalBranchMissing === "1",
+        });
         // Only skip when the branch is untracked as well: anything carrying an
         // upstream keeps the old behaviour.
         if (
@@ -1137,7 +1168,11 @@ export const make = Effect.gen(function* () {
                 ? String(error._tag)
                 : typeof error,
           }),
-          Effect.andThen(resolveBranchHeadContext(cwd, details)),
+          Effect.andThen(
+            resolveBranchHeadContext(cwd, details, {
+              discoverHistoricalRemotes: options?.queryWhenLocalBranchMissing === true,
+            }),
+          ),
           Effect.map((headContext) =>
             resolveLastKnownPr(branchKey, {
               upstreamRef: details.upstreamRef,
@@ -1235,6 +1270,7 @@ export const make = Effect.gen(function* () {
   const resolveBranchHeadContext = Effect.fn("resolveBranchHeadContext")(function* (
     cwd: string,
     details: { branch: string; upstreamRef: string | null },
+    options?: { readonly discoverHistoricalRemotes?: boolean },
   ) {
     const remoteName = yield* readConfigValueNullable(cwd, `branch.${details.branch}.remote`);
     const headBranchFromUpstream = details.upstreamRef
@@ -1251,6 +1287,52 @@ export const make = Effect.gen(function* () {
       ],
       { concurrency: "unbounded" },
     );
+    // Deleting a branch removes branch.<name>.remote, but configured remotes
+    // remain. Their repository identities let historical settlement match a
+    // fork PR without accepting an arbitrary same-named fork branch.
+    const historicalRemoteNames =
+      options?.discoverHistoricalRemotes === true && remoteName === null
+        ? yield* gitCore
+            .execute({
+              operation: "GitManager.resolveBranchHeadContext.historicalRemotes",
+              cwd,
+              args: ["remote"],
+              timeoutMs: 5_000,
+            })
+            .pipe(
+              Effect.map((result) =>
+                result.stdout
+                  .split("\n")
+                  .map((name) => name.trim())
+                  .filter((name) => name.length > 0),
+              ),
+              Effect.orElseSucceed(() => []),
+            )
+        : [];
+    const historicalRemoteRepositories = yield* Effect.all(
+      historicalRemoteNames.map((name) => resolveRemoteRepositoryContext(cwd, name)),
+      { concurrency: "unbounded" },
+    );
+    const historicalHeadIdentities: PullRequestHeadIdentity[] = [];
+    for (const repository of historicalRemoteRepositories) {
+      const repositoryNameWithOwner = normalizeOptionalRepositoryNameWithOwner(
+        repository.repositoryNameWithOwner,
+      );
+      const ownerLogin =
+        normalizeOptionalOwnerLogin(repository.ownerLogin) ??
+        parseRepositoryOwnerLogin(repositoryNameWithOwner);
+      if (!repositoryNameWithOwner && !ownerLogin) continue;
+      if (
+        historicalHeadIdentities.some(
+          (identity) =>
+            identity.repositoryNameWithOwner === repositoryNameWithOwner &&
+            identity.ownerLogin === ownerLogin,
+        )
+      ) {
+        continue;
+      }
+      historicalHeadIdentities.push({ repositoryNameWithOwner, ownerLogin });
+    }
 
     const isCrossRepository =
       remoteRepository.repositoryNameWithOwner !== null &&
@@ -1271,6 +1353,12 @@ export const make = Effect.gen(function* () {
       isCrossRepository || (remoteName !== null && remoteName !== "origin");
 
     const headSelectors: string[] = [];
+    for (const historicalHead of historicalHeadIdentities) {
+      appendUnique(
+        headSelectors,
+        historicalHead.ownerLogin ? `${historicalHead.ownerLogin}:${headBranch}` : null,
+      );
+    }
     if (isCrossRepository && shouldProbeRemoteOwnedSelectors) {
       appendUnique(headSelectors, ownerHeadSelector);
       appendUnique(
@@ -1303,6 +1391,7 @@ export const make = Effect.gen(function* () {
       headRepositoryNameWithOwner: remoteRepository.repositoryNameWithOwner,
       headRepositoryOwnerLogin: remoteRepository.ownerLogin,
       isCrossRepository,
+      ...(historicalHeadIdentities.length > 0 ? { historicalHeadIdentities } : {}),
     } satisfies BranchHeadContext;
   });
 
@@ -1406,11 +1495,12 @@ export const make = Effect.gen(function* () {
       }
     }
 
-    const parsed = Arr.sort(parsedByNumber.values(), pullRequestUpdatedAtDescOrder);
-
     if (selection === "latest") {
-      return parsed[0] ?? null;
+      // Provider request numbers are immutable creation order; updatedAt can
+      // move an older open request ahead of a newer merged one.
+      return Arr.sort(parsedByNumber.values(), pullRequestNumberDescOrder)[0] ?? null;
     }
+    const parsed = Arr.sort(parsedByNumber.values(), pullRequestUpdatedAtDescOrder);
     const latestOpenPr = parsed.find((pr) => pr.state === "open");
     if (latestOpenPr) {
       return latestOpenPr;

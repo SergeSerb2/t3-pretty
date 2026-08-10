@@ -947,7 +947,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                 baseRefName: "main",
                 headRefName: branch,
                 state: "open",
-                updatedAt: "2026-01-02T00:00:00.000Z",
+                updatedAt: "2026-01-05T00:00:00.000Z",
               },
               {
                 number: 22,
@@ -1068,6 +1068,77 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       expect(ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`))).toBe(
         true,
       );
+    }),
+  );
+
+  it.effect("resolves a deleted cross-repository branch from its remaining fork remote", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const originDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", originDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+
+      const forkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "fork-seed",
+        "git@github.com:octocat/codething-mvp.git",
+        forkDir,
+      );
+      const branch = "feature/deleted-fork-branch";
+      yield* runGit(repoDir, ["checkout", "-b", branch]);
+      yield* runGit(repoDir, ["push", "-u", "fork-seed", branch]);
+      yield* runGit(repoDir, ["checkout", "main"]);
+      yield* runGit(repoDir, ["branch", "-D", branch]);
+      yield* runGit(repoDir, ["push", "fork-seed", "--delete", branch]);
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            [`octocat:${branch}`]: JSON.stringify([
+              {
+                number: 23,
+                title: "Merged fork PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/23",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "merged",
+                mergedAt: "2026-01-05T00:00:00.000Z",
+                updatedAt: "2026-01-06T00:00:00.000Z",
+                isCrossRepository: true,
+                headRepository: {
+                  nameWithOwner: "octocat/codething-mvp",
+                },
+                headRepositoryOwner: {
+                  login: "octocat",
+                },
+              },
+            ]),
+          },
+        },
+      });
+
+      const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+
+      expect(observation).toEqual({
+        pullRequest: {
+          number: 23,
+          title: "Merged fork PR",
+          url: "https://github.com/pingdotgg/codething-mvp/pull/23",
+          baseRef: "main",
+          headRef: branch,
+          state: "merged",
+        },
+        mergedAt: "2026-01-05T00:00:00.000Z",
+      });
+      expect(
+        ghCalls.some((call) =>
+          call.includes(`pr list --head octocat:${branch} --state all --limit 20`),
+        ),
+      ).toBe(true);
     }),
   );
 
@@ -2916,6 +2987,39 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           headContext,
         ),
       ).toBe(true);
+    }),
+  );
+
+  it.effect("matches historical fork PRs only to a configured remote identity", () =>
+    Effect.sync(() => {
+      const headContext = {
+        headBranch: "statemachine",
+        headRepositoryNameWithOwner: null,
+        headRepositoryOwnerLogin: null,
+        isCrossRepository: false,
+        historicalHeadIdentities: [
+          {
+            repositoryNameWithOwner: "octocat/codething-mvp",
+            ownerLogin: "octocat",
+          },
+        ],
+      };
+      const pullRequest = (owner: string) => ({
+        number: 142,
+        title: "Fork PR",
+        url: "https://github.com/pingdotgg/codething-mvp/pull/142",
+        baseRefName: "main",
+        headRefName: "statemachine",
+        state: "merged" as const,
+        updatedAt: Option.none(),
+        mergedAt: Option.none(),
+        isCrossRepository: true,
+        headRepositoryNameWithOwner: `${owner}/codething-mvp`,
+        headRepositoryOwnerLogin: owner,
+      });
+
+      expect(GitManager.matchesBranchHeadContext(pullRequest("octocat"), headContext)).toBe(true);
+      expect(GitManager.matchesBranchHeadContext(pullRequest("intruder"), headContext)).toBe(false);
     }),
   );
 
