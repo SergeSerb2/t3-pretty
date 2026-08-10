@@ -1,5 +1,16 @@
 # Brand icons
 
+## T3 Pretty fork icon
+
+`pretty/t3-pretty-1024.png` is the master icon for the personal T3 Pretty fork. The smaller PNG,
+ICO, and ICNS files beside it are derived exports. Desktop and web builds intentionally use this
+same family in every release channel so upstream dev/nightly/prod artwork cannot replace the fork
+identity during packaging. The checked-in `t3.json` also points to the master image, which makes the
+logo appear for this repository in T3 Pretty project rows instead of the folder fallback.
+
+The master was generated from the upstream blueprint T3 icon with OpenAI's built-in image generator,
+then its flat outer background was removed and the derived sizes were exported locally.
+
 The three Icon Composer projects are the source of truth for full application icons:
 
 - `dev/app-icon.icon`
