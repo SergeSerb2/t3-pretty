@@ -29,49 +29,71 @@ export class RepositoryIdentityResolver extends Context.Service<
   }
 >()("t3/project/RepositoryIdentityResolver") {}
 
-function parseRemoteFetchUrls(stdout: string): Map<string, string> {
-  const remotes = new Map<string, string>();
+interface RemoteUrls {
+  readonly fetchUrl?: string;
+  readonly pushUrl?: string;
+}
+
+function parseRemoteUrls(stdout: string): Map<string, RemoteUrls> {
+  const remotes = new Map<string, RemoteUrls>();
   for (const line of stdout.split("\n")) {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
     const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)$/.exec(trimmed);
     if (!match) continue;
     const [, remoteName = "", remoteUrl = "", direction = ""] = match;
-    if (direction !== "fetch" || remoteName.length === 0 || remoteUrl.length === 0) {
-      continue;
-    }
-    remotes.set(remoteName, remoteUrl);
+    if (remoteName.length === 0 || remoteUrl.length === 0) continue;
+    const existing = remotes.get(remoteName) ?? {};
+    remotes.set(
+      remoteName,
+      direction === "fetch"
+        ? { ...existing, fetchUrl: remoteUrl }
+        : { ...existing, pushUrl: remoteUrl },
+    );
   }
   return remotes;
 }
 
+// A push URL only qualifies as a repository identity when it normalizes to a
+// host/owner/repo path — push URLs are also used as write-protection sentinels
+// (e.g. `pushurl = DISABLED`), which must not leak into the identity.
+function isRepositoryUrl(remoteUrl: string): boolean {
+  return normalizeGitRemoteUrl(remoteUrl).includes("/");
+}
+
 function pickRemote(
-  remotes: ReadonlyMap<string, string>,
+  remotes: ReadonlyMap<string, RemoteUrls>,
   preferredRemoteNames: readonly string[],
+  selectUrl: (urls: RemoteUrls) => string | undefined,
 ): { readonly remoteName: string; readonly remoteUrl: string } | null {
   for (const preferredRemoteName of preferredRemoteNames) {
-    const remoteUrl = remotes.get(preferredRemoteName);
+    const urls = remotes.get(preferredRemoteName);
+    const remoteUrl = urls === undefined ? undefined : selectUrl(urls);
     if (remoteUrl) {
       return { remoteName: preferredRemoteName, remoteUrl };
     }
   }
 
-  const [remoteName, remoteUrl] =
+  const [remoteName, urls] =
     [...remotes.entries()].toSorted(([left], [right]) => left.localeCompare(right))[0] ?? [];
+  const remoteUrl = urls === undefined ? undefined : selectUrl(urls);
   return remoteName && remoteUrl ? { remoteName, remoteUrl } : null;
 }
 
 // canonicalKey groups project copies across environments, so it must stay
 // stable when the same repository is checked out through different forks —
-// prefer the shared upstream. Display fields and the locator describe the
-// repository the user actually works against (branches push and PRs open on
-// origin), so those prefer origin.
-function pickGroupingRemote(remotes: ReadonlyMap<string, string>) {
-  return pickRemote(remotes, ["upstream", "origin"]);
+// prefer the shared upstream's fetch URL. Display fields and the locator
+// describe the repository the user actually works against (branches push and
+// PRs open on origin), so those prefer origin, and prefer its push URL when it
+// differs from the fetch URL (triangular workflows pushing to a fork).
+function pickGroupingRemote(remotes: ReadonlyMap<string, RemoteUrls>) {
+  return pickRemote(remotes, ["upstream", "origin"], (urls) => urls.fetchUrl);
 }
 
-function pickDisplayRemote(remotes: ReadonlyMap<string, string>) {
-  return pickRemote(remotes, ["origin", "upstream"]);
+function pickDisplayRemote(remotes: ReadonlyMap<string, RemoteUrls>) {
+  return pickRemote(remotes, ["origin", "upstream"], (urls) =>
+    urls.pushUrl !== undefined && isRepositoryUrl(urls.pushUrl) ? urls.pushUrl : urls.fetchUrl,
+  );
 }
 
 function buildRepositoryIdentity(input: {
@@ -146,7 +168,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     return null;
   }
 
-  const remotes = parseRemoteFetchUrls(remoteResult.value.stdout);
+  const remotes = parseRemoteUrls(remoteResult.value.stdout);
   const displayRemote = pickDisplayRemote(remotes);
   const groupingRemote = pickGroupingRemote(remotes);
   return displayRemote && groupingRemote
