@@ -1,9 +1,7 @@
-import * as NodeFS from "node:fs";
-import * as NodeURL from "node:url";
 import type { ExpoConfig } from "expo/config";
 
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
-import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
+import { loadRepoEnv, readReleaseTrainVersion } from "../../scripts/lib/public-config.ts";
 
 type AppVariant = "development" | "preview" | "production";
 
@@ -195,20 +193,7 @@ const appleTeamId = repoEnv.T3CODE_APPLE_TEAM_ID?.trim();
 // prerelease suffixes in CFBundleShortVersionString, so only the numeric
 // prefix survives ("0.0.34-nightly.x" → "0.0.34").
 function resolveMobileAppVersion(): string {
-  const override = repoEnv.T3CODE_MOBILE_APP_VERSION?.trim();
-  const raw =
-    override ||
-    (() => {
-      try {
-        const webPackageJson = NodeFS.readFileSync(
-          NodeURL.fileURLToPath(new URL("../web/package.json", import.meta.url)),
-          "utf8",
-        );
-        return (JSON.parse(webPackageJson) as { version?: string }).version ?? "";
-      } catch {
-        return "";
-      }
-    })();
+  const raw = repoEnv.T3CODE_MOBILE_APP_VERSION?.trim() || readReleaseTrainVersion() || "";
   return /^(\d+\.\d+\.\d+)/.exec(raw)?.[1] ?? "0.0.33";
 }
 
