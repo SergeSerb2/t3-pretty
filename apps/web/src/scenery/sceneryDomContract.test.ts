@@ -36,9 +36,20 @@ describe("scenery structural contract with upstream markup", () => {
     expect(chatViewSource).toContain("data-chat-header");
   });
 
-  it("the composer overlay still carries the attribute the dock clearance targets", () => {
+  it("the composer overlay still carries the attributes the dock clearance targets", () => {
     expect(chatViewSource).toContain('data-chat-composer-overlay="true"');
-    expect(sceneryCssSource).toContain("[data-chat-composer-overlay]");
+    expect(chatViewSource).toContain(
+      'data-composer-placement={isDraftHeroState ? "hero" : "docked"}',
+    );
+    expect(sceneryCssSource).toContain("[data-chat-composer-overlay][data-composer-placement=");
+  });
+
+  it("the composer still ends with the spacer the dock clearance subtracts", () => {
+    // --scenery-composer-own-spacer mirrors this element; if upstream resizes
+    // or removes it, the dock clearance math drifts.
+    expect(chatViewSource).toContain(
+      "h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]",
+    );
   });
 
   it("the sidebar container still carries data-app-sidebar", () => {

@@ -22,12 +22,28 @@ html[data-theme-id="world-scenery"] {
   --scenery-dock-block: max(0.375rem, env(safe-area-inset-bottom));
   --scenery-dock-control-size: 1.5rem;
   --scenery-dock-inline: max(0.5rem, env(safe-area-inset-right));
+  /* The composer overlay already ends with its own aria-hidden spacer
+     (safe-area-inset-bottom + 1rem, 1.25rem from sm up — pinned by
+     sceneryDomContract.test.ts); counting it here would push the composer a
+     full spacer higher than the dock needs. */
+  --scenery-composer-own-spacer: calc(env(safe-area-inset-bottom, 0px) + 1rem);
   /* Bottom strip reserved for the dock: the composer overlay ends above it
      (see the transparent-surfaces section), so the credit and settings
-     trigger never sit on top of the chat box. */
-  --scenery-dock-clearance: calc(
-    var(--scenery-dock-block) + var(--scenery-dock-control-size) + 0.375rem
+     trigger never sit on top of the chat box. Only the height the composer's
+     own spacer does not already provide is added. */
+  --scenery-dock-clearance: max(
+    0rem,
+    calc(
+      var(--scenery-dock-block) + var(--scenery-dock-control-size) + 0.375rem -
+        var(--scenery-composer-own-spacer)
+    )
   );
+}
+
+@media (min-width: 40rem) {
+  html[data-theme-id="world-scenery"] {
+    --scenery-composer-own-spacer: calc(env(safe-area-inset-bottom, 0px) + 1.25rem);
+  }
 }
 
 /* ------------------------------------------------------------- art layer -- */
@@ -399,13 +415,23 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   --glass-saturation: 1.35;
 }
 
-/* The composer overlay is anchored to the viewport bottom; without this it
-   runs under the fixed dock (credit pill + settings trigger) on short or
-   narrow windows. Reserving the dock strip here lifts the whole chat box
-   above it — ChatView measures the overlay's height, so the message list's
-   bottom inset follows automatically. */
-html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-composer-overlay] {
+/* The docked composer overlay is anchored to the viewport bottom; without
+   this it runs under the fixed dock (credit pill + settings trigger) on
+   short or narrow windows. Reserving the dock strip here lifts the whole
+   chat box above it — ChatView measures the overlay's height, so the
+   message list's bottom inset follows automatically. */
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  [data-chat-composer-overlay][data-composer-placement="docked"] {
   padding-bottom: var(--scenery-dock-clearance);
+}
+
+/* The draft hero overlay is full-height and centers the composer; padding
+   only the bottom would drag the centered group upward by half the
+   clearance. Padding both ends keeps the centering while the bottom still
+   clears the dock on short windows. */
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  [data-chat-composer-overlay][data-composer-placement="hero"] {
+  padding-block: var(--scenery-dock-clearance);
 }
 
 /* Sidebar: the fixed container goes clear; the inner panel carries one
