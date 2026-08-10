@@ -67,6 +67,11 @@ function parseRemoteUrls(stdout: string): Map<string, RemoteUrls> {
 // paths and bare words are rejected.
 function isRepositoryUrl(remoteUrl: string): boolean {
   const trimmed = remoteUrl.trim();
+  // Windows drive paths (c:/repos, C://repos, c:\repos) would otherwise parse
+  // as single-letter URL schemes or scp hosts.
+  if (/^[a-z]:/i.test(trimmed)) {
+    return false;
+  }
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
     try {
       const url = new URL(trimmed);
