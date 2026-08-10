@@ -223,6 +223,29 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
+  it.effect("skips push-only fallback remotes in favor of ones with a fetch URL", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-push-only-fallback-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "work", "git@github.com:julius/t3code.git"]);
+      yield* git(cwd, ["remote", "add", "archive", "git@github.com:T3Tools/archive.git"]);
+      yield* git(cwd, ["config", "--unset-all", "remote.archive.url"]);
+      yield* git(cwd, ["config", "remote.archive.pushurl", "git@github.com:T3Tools/archive.git"]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+
+      expect(identity).not.toBeNull();
+      expect(identity?.locator.remoteName).toBe("work");
+      expect(identity?.canonicalKey).toBe("github.com/julius/t3code");
+      expect(identity?.displayName).toBe("julius/t3code");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
   it.effect("uses the last remote path segment as the repository name for nested groups", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

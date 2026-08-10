@@ -108,10 +108,16 @@ function pickRemote(
     }
   }
 
-  const [remoteName, urls] =
-    [...remotes.entries()].toSorted(([left], [right]) => left.localeCompare(right))[0] ?? [];
-  const remoteUrl = urls === undefined ? undefined : selectUrl(urls);
-  return remoteName && remoteUrl ? { remoteName, remoteUrl } : null;
+  const sortedRemotes = [...remotes.entries()].toSorted(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  for (const [remoteName, urls] of sortedRemotes) {
+    const remoteUrl = selectUrl(urls);
+    if (remoteName && remoteUrl) {
+      return { remoteName, remoteUrl };
+    }
+  }
+  return null;
 }
 
 // canonicalKey groups project copies across environments, so it must stay
@@ -125,9 +131,15 @@ function pickGroupingRemote(remotes: ReadonlyMap<string, RemoteUrls>) {
 }
 
 function pickDisplayRemote(remotes: ReadonlyMap<string, RemoteUrls>) {
-  return pickRemote(remotes, ["origin", "upstream"], (urls) =>
-    urls.pushUrl !== undefined && isRepositoryUrl(urls.pushUrl) ? urls.pushUrl : urls.fetchUrl,
-  );
+  // Only remotes with a fetch URL qualify (matching the grouping selection so
+  // both roles resolve consistently); a repository push URL then overrides the
+  // fetch URL for display.
+  return pickRemote(remotes, ["origin", "upstream"], (urls) => {
+    if (urls.fetchUrl === undefined) return undefined;
+    return urls.pushUrl !== undefined && isRepositoryUrl(urls.pushUrl)
+      ? urls.pushUrl
+      : urls.fetchUrl;
+  });
 }
 
 function buildRepositoryIdentity(input: {
