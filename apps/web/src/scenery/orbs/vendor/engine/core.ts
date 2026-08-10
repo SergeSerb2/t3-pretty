@@ -73,6 +73,17 @@ export function angleDelta(a: number, b: number): number {
   return Math.atan2(Math.sin(a - b), Math.cos(a - b));
 }
 
+/**
+ * The light renderer sits directly over the chat backdrop, which can be a
+ * bright photo in World Scenery. Pale, translucent far-side dots compound
+ * with that backdrop and disappear at the 20px working-row size. Keep the
+ * dark renderer's original grayscale ramp, but make light-mode ink denser:
+ * its darkest-to-lightest range stays below #242424 and every painted mark
+ * carries enough opacity to clear the scenery contrast floor.
+ */
+const LIGHT_INK_MAX_CHANNEL = 36;
+const LIGHT_INK_MIN_ALPHA = 0.6;
+
 /** Shared spin + tilt + orthographic projection. */
 export function makeProj(
   yaw: number,
@@ -105,8 +116,9 @@ export function paint(ctx: CanvasRenderingContext2D, dots: Dot[], dark: boolean,
     const alpha = d.a ?? 1;
     if (alpha < 0.02) continue;
     const w = Math.min(1, Math.max(0, d.white));
-    const g = Math.round((dark ? 1 - w : w) * 255);
-    ctx.fillStyle = `rgba(${g},${g},${g},${alpha})`;
+    const g = Math.round(dark ? (1 - w) * 255 : w * LIGHT_INK_MAX_CHANNEL);
+    const paintedAlpha = dark ? alpha : Math.max(LIGHT_INK_MIN_ALPHA, alpha);
+    ctx.fillStyle = `rgba(${g},${g},${g},${paintedAlpha})`;
     ctx.beginPath();
     ctx.arc(d.x, d.y, Math.max(rMin, d.r), 0, Math.PI * 2);
     ctx.fill();
@@ -119,8 +131,9 @@ export function paintLines(ctx: CanvasRenderingContext2D, lines: Line[], dark: b
     const alpha = l.a ?? 1;
     if (alpha < 0.02) continue;
     const w = Math.min(1, Math.max(0, l.white));
-    const g = Math.round((dark ? 1 - w : w) * 255);
-    ctx.strokeStyle = `rgba(${g},${g},${g},${alpha})`;
+    const g = Math.round(dark ? (1 - w) * 255 : w * LIGHT_INK_MAX_CHANNEL);
+    const paintedAlpha = dark ? alpha : Math.max(LIGHT_INK_MIN_ALPHA, alpha);
+    ctx.strokeStyle = `rgba(${g},${g},${g},${paintedAlpha})`;
     ctx.lineWidth = l.w;
     ctx.beginPath();
     ctx.moveTo(l.x1, l.y1);
