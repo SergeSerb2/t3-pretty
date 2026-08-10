@@ -133,7 +133,9 @@ export function normalizeGitRemoteUrl(value: string): string {
     }
   }
 
-  const scpStyleHostAndPath = /^git@([^:/\s]+)[:/]([^/\s]+(?:\/[^/\s]+)+)$/i.exec(normalized);
+  // Git documents scp-like syntax as `[<user>@]<host>:<path>` — the username
+  // is not restricted to `git` (e.g. alice@gitlab.company.com:team/repo).
+  const scpStyleHostAndPath = /^[^@:/\s]+@([^:/\s]+)[:/]([^/\s]+(?:\/[^/\s]+)+)$/i.exec(normalized);
   if (scpStyleHostAndPath?.[1] && scpStyleHostAndPath[2]) {
     return `${scpStyleHostAndPath[1]}/${scpStyleHostAndPath[2]}`;
   }

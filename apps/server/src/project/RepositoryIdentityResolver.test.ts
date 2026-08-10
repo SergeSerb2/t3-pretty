@@ -242,6 +242,92 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
+  it.effect("strips query-string credentials from retained remote URLs", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-query-token-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", "https://github.com/T3Tools/t3code.git"]);
+      yield* git(cwd, [
+        "config",
+        "remote.origin.pushurl",
+        "https://github.com/julius/t3code.git?access_token=ghp_querysecret",
+      ]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+
+      expect(identity).not.toBeNull();
+      expect(JSON.stringify(identity)).not.toContain("ghp_querysecret");
+      expect(identity?.locator.remoteUrl).toBe("https://github.com/julius/t3code.git");
+      expect(identity?.displayName).toBe("julius/t3code");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
+  it.effect("uses the first push URL when a remote has several", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-multi-push-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", "git@github.com:T3Tools/t3code.git"]);
+      yield* git(cwd, [
+        "remote",
+        "set-url",
+        "--add",
+        "--push",
+        "origin",
+        "git@github.com:julius/t3code.git",
+      ]);
+      yield* git(cwd, [
+        "remote",
+        "set-url",
+        "--add",
+        "--push",
+        "origin",
+        "git@backup.example.com:mirror/t3code.git",
+      ]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+
+      expect(identity).not.toBeNull();
+      expect(identity?.locator.remoteUrl).toBe("git@github.com:julius/t3code.git");
+      expect(identity?.displayName).toBe("julius/t3code");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
+  it.effect("normalizes scp push URLs with non-git SSH usernames", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-scp-user-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", "https://gitlab.company.com/central/repo.git"]);
+      yield* git(cwd, [
+        "config",
+        "remote.origin.pushurl",
+        "alice@gitlab.company.com:team/repo.git",
+      ]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+
+      expect(identity).not.toBeNull();
+      expect(identity?.canonicalKey).toBe("gitlab.company.com/central/repo");
+      expect(identity?.displayName).toBe("team/repo");
+      expect(identity?.owner).toBe("team");
+      expect(identity?.name).toBe("repo");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
   it.effect("redacts credentials from retained remote URLs", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

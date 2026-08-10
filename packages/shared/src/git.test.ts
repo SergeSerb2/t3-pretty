@@ -33,6 +33,12 @@ describe("normalizeGitRemoteUrl", () => {
     );
   });
 
+  it("canonicalizes scp-style remotes with non-git SSH usernames", () => {
+    expect(normalizeGitRemoteUrl("alice@gitlab.company.com:Team/Repo.git")).toBe(
+      "gitlab.company.com/team/repo",
+    );
+  });
+
   it("drops explicit ports from URL-shaped remotes", () => {
     expect(normalizeGitRemoteUrl("https://gitlab.company.com:8443/team/project.git")).toBe(
       "gitlab.company.com/team/project",

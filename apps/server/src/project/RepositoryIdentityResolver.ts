@@ -48,12 +48,13 @@ function parseRemoteUrls(stdout: string): Map<string, RemoteUrls> {
     if (remoteName.length === 0 || rawRemoteUrl.length === 0) continue;
     const remoteUrl = redactGitRemoteUrlCredentials(rawRemoteUrl);
     const existing = remotes.get(remoteName) ?? {};
-    remotes.set(
-      remoteName,
-      direction === "fetch"
-        ? { ...existing, fetchUrl: remoteUrl }
-        : { ...existing, pushUrl: remoteUrl },
-    );
+    // A remote can have several push URLs (one `(push)` line each); git treats
+    // the first as the primary target, so later lines must not overwrite it.
+    if (direction === "fetch" && existing.fetchUrl === undefined) {
+      remotes.set(remoteName, { ...existing, fetchUrl: remoteUrl });
+    } else if (direction === "push" && existing.pushUrl === undefined) {
+      remotes.set(remoteName, { ...existing, pushUrl: remoteUrl });
+    }
   }
   return remotes;
 }
@@ -83,23 +84,27 @@ function isRepositoryUrl(remoteUrl: string): boolean {
   return path.replace(/^\/+/, "").length > 0;
 }
 
-// Remote URLs can embed credentials (e.g. PAT-authenticated HTTPS push URLs).
-// The identity is broadcast to every connected client, so credentials must be
-// stripped before a URL is retained. HTTP(S) userinfo is always a credential;
-// for SSH-style URLs the username (typically `git`) is part of the address, so
-// only a password portion is dropped.
+// Remote URLs can embed credentials (e.g. PAT-authenticated HTTPS push URLs,
+// or tokens in query parameters such as `?access_token=…`). The identity is
+// broadcast to every connected client, so credentials must be stripped before
+// a URL is retained. HTTP(S) userinfo is always a credential; for SSH-style
+// URLs the username (typically `git`) is part of the address, so only a
+// password portion is dropped. Query strings and fragments carry no repository
+// address information and are dropped entirely.
 function redactGitRemoteUrlCredentials(remoteUrl: string): string {
   const schemeMatch = /^([a-z][a-z0-9+.-]*):\/\//i.exec(remoteUrl);
   if (schemeMatch) {
     try {
       const url = new URL(remoteUrl);
-      if (!url.username && !url.password) {
+      if (!url.username && !url.password && !url.search && !url.hash) {
         return remoteUrl;
       }
       url.password = "";
       if (/^https?$/i.test(schemeMatch[1] ?? "")) {
         url.username = "";
       }
+      url.search = "";
+      url.hash = "";
       return url.toString();
     } catch {
       return remoteUrl;
