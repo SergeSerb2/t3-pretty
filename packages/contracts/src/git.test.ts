@@ -7,6 +7,7 @@ import {
   GitRunStackedActionResult,
   GitRunStackedActionInput,
   GitResolvePullRequestResult,
+  VcsStatusResult,
 } from "./git.ts";
 
 const decodeCreateWorktreeInput = Schema.decodeUnknownSync(VcsCreateWorktreeInput);
@@ -16,6 +17,30 @@ const decodePreparePullRequestThreadInput = Schema.decodeUnknownSync(
 const decodeRunStackedActionInput = Schema.decodeUnknownSync(GitRunStackedActionInput);
 const decodeRunStackedActionResult = Schema.decodeUnknownSync(GitRunStackedActionResult);
 const decodeResolvePullRequestResult = Schema.decodeUnknownSync(GitResolvePullRequestResult);
+const decodeVcsStatusResult = Schema.decodeUnknownSync(VcsStatusResult);
+
+function vcsStatusWithReview(automatedReview?: unknown) {
+  return {
+    isRepo: true,
+    hasPrimaryRemote: true,
+    isDefaultRef: false,
+    refName: "feature/codex-state",
+    hasWorkingTreeChanges: false,
+    workingTree: { files: [], insertions: 0, deletions: 0 },
+    hasUpstream: true,
+    aheadCount: 0,
+    behindCount: 0,
+    pr: {
+      number: 42,
+      title: "Surface Codex state",
+      url: "https://github.com/t3tools/t3code/pull/42",
+      baseRef: "main",
+      headRef: "feature/codex-state",
+      state: "open",
+      ...(arguments.length > 0 ? { automatedReview } : {}),
+    },
+  };
+}
 
 describe("VcsCreateWorktreeInput", () => {
   it("accepts omitted newRefName for existing-refName worktrees", () => {
@@ -70,6 +95,20 @@ describe("GitResolvePullRequestResult", () => {
 
     expect(parsed.pullRequest.number).toBe(42);
     expect(parsed.pullRequest.headBranch).toBe("feature/pr-threads");
+  });
+});
+
+describe("VcsStatusResult automated review state", () => {
+  it("decodes an observed Codex signal", () => {
+    expect(
+      decodeVcsStatusResult(vcsStatusWithReview({ provider: "codex", state: "feedback" })).pr
+        ?.automatedReview,
+    ).toEqual({ provider: "codex", state: "feedback" });
+  });
+
+  it("preserves checked-with-no-signal and supports older omitted payloads", () => {
+    expect(decodeVcsStatusResult(vcsStatusWithReview(null)).pr?.automatedReview).toBeNull();
+    expect(decodeVcsStatusResult(vcsStatusWithReview()).pr?.automatedReview).toBeUndefined();
   });
 });
 

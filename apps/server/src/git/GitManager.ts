@@ -58,7 +58,7 @@ import type { GitManagerServiceError } from "@t3tools/contracts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import { detectPrTemplate } from "../sourceControl/PrTemplateDetection.ts";
-import type { ChangeRequest } from "@t3tools/contracts";
+import type { AutomatedReviewSignal, ChangeRequest } from "@t3tools/contracts";
 
 export interface GitActionProgressReporter {
   readonly publish: (event: GitActionProgressEvent) => Effect.Effect<void, never>;
@@ -527,13 +527,17 @@ function appendUnique(values: string[], next: string | null | undefined): void {
   values.push(trimmed);
 }
 
-function toStatusPr(pr: PullRequestInfo): {
+function toStatusPr(
+  pr: PullRequestInfo,
+  automatedReview?: AutomatedReviewSignal | null,
+): {
   number: number;
   title: string;
   url: string;
   baseRef: string;
   headRef: string;
   state: "open" | "closed" | "merged";
+  automatedReview?: AutomatedReviewSignal | null;
 } {
   return {
     number: pr.number,
@@ -542,6 +546,7 @@ function toStatusPr(pr: PullRequestInfo): {
     baseRef: pr.baseRefName,
     headRef: pr.headRefName,
     state: pr.state,
+    ...(automatedReview !== undefined ? { automatedReview } : {}),
   };
 }
 
@@ -935,10 +940,31 @@ export const make = Effect.gen(function* () {
         // Only skip when the branch is untracked as well: anything carrying an
         // upstream keeps the old behaviour.
         if (details.upstreamRef === null && (yield* isUnpublishedBranch(cwd, headContext))) {
-          return { latest: null, headContext };
+          return { latest: null, automatedReview: undefined, headContext };
         }
         const latest = yield* findLatestPrForHeadContext(cwd, headContext);
-        return { latest, headContext };
+        if (!latest || latest.state !== "open") {
+          return { latest, automatedReview: undefined, headContext };
+        }
+        const provider = yield* sourceControlProvider(cwd);
+        const automatedReview = provider.getAutomatedReview
+          ? yield* provider.getAutomatedReview({ cwd, reference: latest.url }).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("Automated review lookup failed; omitting review state.").pipe(
+                  Effect.annotateLogs({
+                    operation: "lookupAutomatedReview",
+                    provider: provider.kind,
+                    errorTag:
+                      typeof error === "object" && error !== null && "_tag" in error
+                        ? String(error._tag)
+                        : typeof error,
+                  }),
+                  Effect.as(undefined),
+                ),
+              ),
+            )
+          : undefined;
+        return { latest, automatedReview, headContext };
       });
     },
     {
@@ -1018,14 +1044,14 @@ export const make = Effect.gen(function* () {
     // `push -u`) must not orphan the fallback value for the same branch.
     const branchKey = `${cwd}\u0000${details.branch}`;
     return yield* Cache.get(prLookupCache, prLookupCacheKey(cwd, details)).pipe(
-      Effect.map(({ latest, headContext }) => {
+      Effect.map(({ latest, automatedReview, headContext }) => {
         if (!latest) return { pr: null, headContext };
         // On the default branch, only surface open PRs.
         // Merged/closed matches are usually reverse-merge history, not the thread's PR context.
         if (details.isDefaultBranch && latest.state !== "open") {
           return { pr: null, headContext };
         }
-        return { pr: toStatusPr(latest), headContext };
+        return { pr: toStatusPr(latest, automatedReview), headContext };
       }),
       Effect.tap(({ pr, headContext }) =>
         Effect.sync(() =>

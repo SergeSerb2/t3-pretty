@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 
 import {
   TrimmedNonEmptyString,
+  type AutomatedReviewSignal,
   type SourceControlRepositoryVisibility,
   type VcsError,
 } from "@t3tools/contracts";
@@ -16,8 +17,11 @@ import {
   decodeGitHubPullRequestJson,
   decodeGitHubPullRequestListJson,
 } from "./gitHubPullRequests.ts";
+import { decodeGitHubCodexReviewJson } from "./githubCodexReview.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const CODEX_REVIEW_QUERY =
+  "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid commits(last:1){nodes{commit{committedDate}}} reactions(last:20){nodes{content createdAt user{login}}} reviews(last:20){nodes{author{login} body submittedAt}}}}}";
 
 const gitHubCliFailureFields = {
   command: Schema.Literal("gh"),
@@ -122,6 +126,19 @@ export class GitHubPullRequestDecodeError extends Schema.TaggedErrorClass<GitHub
   }
 }
 
+export class GitHubCodexReviewDecodeError extends Schema.TaggedErrorClass<GitHubCodexReviewDecodeError>()(
+  "GitHubCodexReviewDecodeError",
+  gitHubCliDecodeFields,
+) {
+  get detail(): string {
+    return "GitHub CLI returned invalid Codex review JSON.";
+  }
+
+  override get message(): string {
+    return `GitHub CLI failed in getCodexReview: ${this.detail}`;
+  }
+}
+
 export class GitHubRepositoryDecodeError extends Schema.TaggedErrorClass<GitHubRepositoryDecodeError>()(
   "GitHubRepositoryDecodeError",
   gitHubCliDecodeFields,
@@ -143,6 +160,7 @@ export const GitHubCliError = Schema.Union([
   GitHubPullRequestListDecodeError,
   GitHubChangeRequestListDecodeError,
   GitHubPullRequestDecodeError,
+  GitHubCodexReviewDecodeError,
   GitHubRepositoryDecodeError,
 ]);
 export type GitHubCliError = typeof GitHubCliError.Type;
@@ -215,6 +233,13 @@ export class GitHubCli extends Context.Service<
       readonly cwd: string;
       readonly reference: string;
     }) => Effect.Effect<GitHubPullRequestSummary, GitHubCliError>;
+
+    readonly getCodexReview: (input: {
+      readonly cwd: string;
+      readonly owner: string;
+      readonly repository: string;
+      readonly number: number;
+    }) => Effect.Effect<AutomatedReviewSignal | null, GitHubCliError>;
 
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;
@@ -386,6 +411,40 @@ export const make = Effect.gen(function* () {
               return Effect.succeed(
                 (({ updatedAt: _updatedAt, ...summary }) => summary)(decoded.success),
               );
+            }),
+          ),
+        ),
+      ),
+    getCodexReview: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: [
+          "api",
+          "graphql",
+          "-f",
+          `owner=${input.owner}`,
+          "-f",
+          `name=${input.repository}`,
+          "-F",
+          `number=${input.number}`,
+          "-f",
+          `query=${CODEX_REVIEW_QUERY}`,
+        ],
+      }).pipe(
+        Effect.map((result) => result.stdout.trim()),
+        Effect.flatMap((raw) =>
+          Effect.sync(() => decodeGitHubCodexReviewJson(raw)).pipe(
+            Effect.flatMap((decoded) => {
+              if (!Result.isSuccess(decoded)) {
+                return Effect.fail(
+                  new GitHubCodexReviewDecodeError({
+                    command: "gh",
+                    cwd: input.cwd,
+                    cause: decoded.failure,
+                  }),
+                );
+              }
+              return Effect.succeed(decoded.success);
             }),
           ),
         ),

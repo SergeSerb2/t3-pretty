@@ -3,8 +3,36 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   detectSourceControlProviderFromRemoteUrl,
   getChangeRequestTerminologyForKind,
+  resolveAutomatedReviewPresentation,
   resolveChangeRequestPresentation,
 } from "./sourceControl.ts";
+
+describe("automated review presentation", () => {
+  it("keeps an observed no-signal state honest", () => {
+    expect(resolveAutomatedReviewPresentation(null)).toEqual({
+      label: "No public Codex review signal",
+      shortLabel: "No signal",
+      description:
+        "Smart Review may still be deciding, may have skipped this PR, or Auto Review may be off.",
+    });
+  });
+
+  it("does not invent a state when the server cannot report one", () => {
+    expect(resolveAutomatedReviewPresentation(undefined)).toBeNull();
+  });
+
+  it("presents each visible Codex lifecycle state", () => {
+    expect(
+      ["reviewing", "passed", "feedback", "stale"].map(
+        (state) =>
+          resolveAutomatedReviewPresentation({
+            provider: "codex",
+            state: state as "reviewing" | "passed" | "feedback" | "stale",
+          })?.shortLabel,
+      ),
+    ).toEqual(["Reviewing", "No issues", "Feedback", "Earlier result"]);
+  });
+});
 
 describe("source control presentation", () => {
   it("uses merge request terminology for GitLab", () => {

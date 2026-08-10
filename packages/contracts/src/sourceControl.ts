@@ -21,6 +21,15 @@ export type SourceControlProviderInfo = typeof SourceControlProviderInfo.Type;
 export const ChangeRequestState = Schema.Literals(["open", "closed", "merged"]);
 export type ChangeRequestState = typeof ChangeRequestState.Type;
 
+export const AutomatedReviewState = Schema.Literals(["reviewing", "passed", "feedback", "stale"]);
+export type AutomatedReviewState = typeof AutomatedReviewState.Type;
+
+export const AutomatedReviewSignal = Schema.Struct({
+  provider: Schema.Literal("codex"),
+  state: AutomatedReviewState,
+});
+export type AutomatedReviewSignal = typeof AutomatedReviewSignal.Type;
+
 export const ChangeRequest = Schema.Struct({
   provider: SourceControlProviderKind,
   number: PositiveInt,

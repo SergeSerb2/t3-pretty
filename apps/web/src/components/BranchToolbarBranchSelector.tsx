@@ -613,7 +613,7 @@ export function BranchToolbarBranchSelector({
   // Action-oriented tooltip (the pill opens the PR), distinct from the sidebar's
   // state-description tooltip.
   const branchPrTooltip = branchPr
-    ? `Open ${sourceControlPresentation.terminology.singular} #${branchPr.number} (${branchPr.state}) in browser`
+    ? `Open ${sourceControlPresentation.terminology.singular} #${branchPr.number} (${branchPr.state}) in browser${branchPrStatus?.automatedReview ? `. ${branchPrStatus.automatedReview.label}. ${branchPrStatus.automatedReview.description}` : ""}`
     : "";
   const openPrLink = useOpenPrLink();
 
@@ -730,10 +730,15 @@ export function BranchToolbarBranchSelector({
                 />
               }
             >
-              <ChangeRequestStatusIcon className="size-3" />
+              <ChangeRequestStatusIcon
+                className="size-3"
+                automatedReview={branchPrStatus.automatedReview}
+              />
               <span>#{branchPr.number}</span>
             </TooltipTrigger>
-            <TooltipPopup side="top">{branchPrTooltip}</TooltipPopup>
+            <TooltipPopup side="top" className="max-w-80 whitespace-normal leading-snug">
+              {branchPrTooltip}
+            </TooltipPopup>
           </Tooltip>
         ) : null}
         {/* Context menu lives on the wrapper: the disabled Button has

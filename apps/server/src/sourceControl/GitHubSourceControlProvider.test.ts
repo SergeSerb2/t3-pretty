@@ -68,6 +68,48 @@ it.effect("maps GitHub PR summaries into provider-neutral change requests", () =
   }),
 );
 
+it.effect("maps a github.com PR URL to its public Codex review signal", () =>
+  Effect.gen(function* () {
+    let reviewInput: Parameters<GitHubCli.GitHubCli["Service"]["getCodexReview"]>[0] | null = null;
+    const provider = yield* makeProvider({
+      getCodexReview: (input) => {
+        reviewInput = input;
+        return Effect.succeed({ provider: "codex", state: "passed" });
+      },
+    });
+    if (!provider.getAutomatedReview) throw new Error("Expected automated review support");
+
+    const signal = yield* provider.getAutomatedReview({
+      cwd: "/repo",
+      reference: "https://github.com/pingdotgg/t3code/pull/42",
+    });
+
+    assert.deepStrictEqual(reviewInput, {
+      cwd: "/repo",
+      owner: "pingdotgg",
+      repository: "t3code",
+      number: 42,
+    });
+    assert.deepStrictEqual(signal, { provider: "codex", state: "passed" });
+  }),
+);
+
+it.effect("does not claim Codex visibility for a non-github.com PR URL", () =>
+  Effect.gen(function* () {
+    const provider = yield* makeProvider({});
+    if (!provider.getAutomatedReview) throw new Error("Expected automated review support");
+    const error = yield* provider
+      .getAutomatedReview({
+        cwd: "/repo",
+        reference: "https://github.example.test/pingdotgg/t3code/pull/42",
+      })
+      .pipe(Effect.flip);
+
+    assert.equal(error?._tag, "SourceControlProviderError");
+    assert.equal(error?.operation, "getAutomatedReview");
+  }),
+);
+
 it.effect("adds safe request context while retaining GitHub CLI causes", () =>
   Effect.gen(function* () {
     const cause = new GitHubCli.GitHubPullRequestNotFoundError({

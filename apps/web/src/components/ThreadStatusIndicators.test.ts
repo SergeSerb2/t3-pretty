@@ -2,6 +2,7 @@ import type { VcsStatusResult } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  automatedReviewIndicator,
   prStatusIndicator,
   resolveThreadPr,
   settledPrHoverColorClass,
@@ -86,6 +87,34 @@ describe("prStatusIndicator", () => {
     expect(prStatusIndicator({ ...closedPr, state: "closed" }, undefined)?.colorClass).toContain(
       "text-red-600",
     );
+  });
+
+  it("includes the public Codex state in the tooltip", () => {
+    const pr = status().pr;
+    if (!pr) throw new Error("Expected pull request fixture");
+
+    expect(
+      prStatusIndicator(
+        { ...pr, automatedReview: { provider: "codex", state: "reviewing" } },
+        undefined,
+      ),
+    ).toMatchObject({
+      tooltip: "PR #42 - Open: PR branch. Codex is reviewing.",
+      automatedReview: {
+        state: "reviewing",
+        shortLabel: "Reviewing",
+      },
+    });
+  });
+});
+
+describe("automatedReviewIndicator", () => {
+  it("distinguishes a checked PR with no public signal from an unsupported server", () => {
+    expect(automatedReviewIndicator(null)).toMatchObject({
+      state: "no_signal",
+      shortLabel: "No signal",
+    });
+    expect(automatedReviewIndicator(undefined)).toBeNull();
   });
 });
 

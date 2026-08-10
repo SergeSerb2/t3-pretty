@@ -33,4 +33,29 @@ describe("presentThreadPr", () => {
       accessibilityLabel: "#3774 merge request merged",
     });
   });
+
+  it("includes visible Codex review state in the compact presentation", () => {
+    expect(
+      presentThreadPr(
+        {
+          ...pullRequest,
+          automatedReview: { provider: "codex", state: "reviewing" },
+        },
+        undefined,
+      ),
+    ).toMatchObject({
+      accessibilityLabel: "#3774 pull request merged, Codex is reviewing",
+      automatedReview: {
+        state: "reviewing",
+        shortLabel: "Reviewing",
+      },
+    });
+  });
+
+  it("shows an honest no-signal state only when the server checked for one", () => {
+    expect(presentThreadPr({ ...pullRequest, automatedReview: null }, undefined)).toMatchObject({
+      automatedReview: { state: "no_signal", shortLabel: "No signal" },
+    });
+    expect(presentThreadPr(pullRequest, undefined).automatedReview).toBeNull();
+  });
 });

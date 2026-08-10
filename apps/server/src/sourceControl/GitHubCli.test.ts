@@ -157,6 +157,65 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("reads public Codex review activity through GitHub GraphQL", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify({
+              data: {
+                repository: {
+                  pullRequest: {
+                    headRefOid: "abcdef1234567890",
+                    commits: {
+                      nodes: [{ commit: { committedDate: "2026-08-10T05:30:00Z" } }],
+                    },
+                    reactions: {
+                      nodes: [
+                        {
+                          content: "EYES",
+                          createdAt: "2026-08-10T05:31:00Z",
+                          user: { login: "chatgpt-codex-connector[bot]" },
+                        },
+                      ],
+                    },
+                    reviews: { nodes: [] },
+                  },
+                },
+              },
+            }),
+          ),
+        ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const result = yield* gh.getCodexReview({
+        cwd: "/repo",
+        owner: "pingdotgg",
+        repository: "t3code",
+        number: 42,
+      });
+
+      assert.deepStrictEqual(result, { provider: "codex", state: "reviewing" });
+      expect(mockRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: "GitHubCli.execute",
+          command: "gh",
+          cwd: "/repo",
+          timeoutMs: 30_000,
+          args: expect.arrayContaining([
+            "api",
+            "graphql",
+            "owner=pingdotgg",
+            "name=t3code",
+            "number=42",
+          ]),
+        }),
+      );
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("skips invalid entries when parsing pr lists", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValueOnce(

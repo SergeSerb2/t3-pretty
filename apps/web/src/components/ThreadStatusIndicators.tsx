@@ -4,8 +4,19 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import type { VcsStatusResult } from "@t3tools/contracts";
-import { CloudIcon, FolderGit2Icon, GitPullRequestIcon, TerminalIcon } from "lucide-react";
+import {
+  CheckIcon,
+  CircleDashedIcon,
+  CloudIcon,
+  EyeIcon,
+  FolderGit2Icon,
+  GitPullRequestIcon,
+  HistoryIcon,
+  MessageSquareWarningIcon,
+  TerminalIcon,
+} from "lucide-react";
 import { useMemo } from "react";
+import { resolveAutomatedReviewPresentation } from "@t3tools/shared/sourceControl";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { useProject } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
@@ -25,6 +36,15 @@ export interface PrStatusIndicator {
   tooltipLead: string;
   tooltipTitle: string;
   url: string;
+  automatedReview: AutomatedReviewIndicator | null;
+}
+
+export interface AutomatedReviewIndicator {
+  state: NonNullable<NonNullable<ThreadPr>["automatedReview"]>["state"] | "no_signal";
+  label: string;
+  shortLabel: string;
+  description: string;
+  colorClass: string;
 }
 
 export interface TerminalStatusIndicator {
@@ -34,6 +54,23 @@ export interface TerminalStatusIndicator {
 }
 
 export type ThreadPr = VcsStatusResult["pr"];
+
+export function automatedReviewIndicator(
+  signal: NonNullable<ThreadPr>["automatedReview"],
+): AutomatedReviewIndicator | null {
+  const presentation = resolveAutomatedReviewPresentation(signal);
+  if (presentation === null) return null;
+  const state = signal?.state ?? "no_signal";
+  const colorClass =
+    state === "reviewing"
+      ? "text-sky-600 dark:text-sky-300"
+      : state === "passed"
+        ? "text-emerald-600 dark:text-emerald-300"
+        : state === "feedback"
+          ? "text-amber-700 dark:text-amber-300"
+          : "text-muted-foreground/55";
+  return { state, colorClass, ...presentation };
+}
 
 export function settledPrHoverColorClass(state: NonNullable<ThreadPr>["state"]): string {
   switch (state) {
@@ -61,7 +98,8 @@ export function prStatusIndicator(
   const presentation = resolveChangeRequestPresentation(provider);
 
   const tooltipLead = formatPrStatusLead(pr, presentation.shortName);
-  const tooltip = `${tooltipLead}: ${pr.title}`;
+  const automatedReview = automatedReviewIndicator(pr.automatedReview);
+  const tooltip = `${tooltipLead}: ${pr.title}${automatedReview ? `. ${automatedReview.label}.` : ""}`;
 
   if (pr.state === "open") {
     return {
@@ -71,6 +109,7 @@ export function prStatusIndicator(
       tooltipLead,
       tooltipTitle: pr.title,
       url: pr.url,
+      automatedReview,
     };
   }
   if (pr.state === "closed") {
@@ -81,6 +120,7 @@ export function prStatusIndicator(
       tooltipLead,
       tooltipTitle: pr.title,
       url: pr.url,
+      automatedReview,
     };
   }
   if (pr.state === "merged") {
@@ -91,21 +131,69 @@ export function prStatusIndicator(
       tooltipLead,
       tooltipTitle: pr.title,
       url: pr.url,
+      automatedReview,
     };
   }
   return null;
 }
 
-export function ChangeRequestStatusIcon({ className }: { className?: string }) {
-  return <GitPullRequestIcon className={className} />;
+export function AutomatedReviewStatusIcon({
+  status,
+  className,
+}: {
+  status: AutomatedReviewIndicator;
+  className?: string | undefined;
+}) {
+  const Icon =
+    status.state === "reviewing"
+      ? EyeIcon
+      : status.state === "passed"
+        ? CheckIcon
+        : status.state === "feedback"
+          ? MessageSquareWarningIcon
+          : status.state === "stale"
+            ? HistoryIcon
+            : CircleDashedIcon;
+  return <Icon aria-hidden="true" className={`${className ?? "size-3"} ${status.colorClass}`} />;
+}
+
+export function ChangeRequestStatusIcon({
+  className,
+  automatedReview,
+}: {
+  className?: string;
+  automatedReview?: AutomatedReviewIndicator | null;
+}) {
+  return (
+    <span className="inline-flex items-center gap-0.5" aria-hidden="true">
+      <GitPullRequestIcon className={className} />
+      {automatedReview ? (
+        <AutomatedReviewStatusIcon status={automatedReview} className={className} />
+      ) : null}
+    </span>
+  );
 }
 
 export function PrStatusTooltipContent({ status }: { status: PrStatusIndicator }) {
   return (
-    <span className="flex max-w-[min(34rem,calc(100vw-2rem))] items-stretch overflow-hidden whitespace-nowrap">
-      <span className="shrink-0 pr-2 font-medium">{status.tooltipLead}</span>
-      <span className="min-h-4 shrink-0 border-border/70 border-l" aria-hidden="true" />
-      <span className="min-w-0 truncate pl-2">{status.tooltipTitle}</span>
+    <span className="flex max-w-[min(34rem,calc(100vw-2rem))] flex-col gap-1.5 overflow-hidden">
+      <span className="flex items-stretch whitespace-nowrap">
+        <span className="shrink-0 pr-2 font-medium">{status.tooltipLead}</span>
+        <span className="min-h-4 shrink-0 border-border/70 border-l" aria-hidden="true" />
+        <span className="min-w-0 truncate pl-2">{status.tooltipTitle}</span>
+      </span>
+      {status.automatedReview ? (
+        <span className="flex items-start gap-1.5 whitespace-normal text-xs leading-snug">
+          <AutomatedReviewStatusIcon
+            status={status.automatedReview}
+            className="mt-px size-3 shrink-0"
+          />
+          <span>
+            <span className="font-medium">{status.automatedReview.label}.</span>{" "}
+            <span className="text-muted-foreground">{status.automatedReview.description}</span>
+          </span>
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -278,7 +366,10 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
               />
             }
           >
-            <ChangeRequestStatusIcon className="size-3" />
+            <ChangeRequestStatusIcon
+              className="size-3"
+              automatedReview={prStatus.automatedReview}
+            />
           </TooltipTrigger>
           <TooltipPopup side="top">
             <PrStatusTooltipContent status={prStatus} />
