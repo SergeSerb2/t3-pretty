@@ -44,6 +44,7 @@ describe("normalizeGitRemoteUrl", () => {
     // Absolute and drive-letter paths must not parse as host/path.
     expect(normalizeGitRemoteUrl("/srv/git/repo.git")).toBe("/srv/git/repo");
     expect(normalizeGitRemoteUrl("C:/repos/project")).toBe("c:/repos/project");
+    expect(normalizeGitRemoteUrl("C:repos/project")).toBe("c:repos/project");
   });
 
   it("drops explicit ports from URL-shaped remotes", () => {
