@@ -231,6 +231,7 @@ export interface GitLabMergeRequestSummary {
   readonly headRefName: string;
   readonly state?: "open" | "closed" | "merged";
   readonly updatedAt?: Option.Option<DateTime.Utc>;
+  readonly mergedAt?: Option.Option<DateTime.Utc>;
   readonly isCrossRepository?: boolean;
   readonly headRepositoryNameWithOwner?: string | null;
   readonly headRepositoryOwnerLogin?: string | null;
@@ -362,13 +363,18 @@ function sourceProjectIdentifier(
   return source?.repository ?? source?.owner ?? null;
 }
 
-function toSummaryWithOptionalUpdatedAt(
+function toSummaryWithOptionalTimestamps(
   record: GitLabMergeRequestSummary & {
     readonly updatedAt: Option.Option<DateTime.Utc>;
+    readonly mergedAt: Option.Option<DateTime.Utc>;
   },
 ): GitLabMergeRequestSummary {
-  const { updatedAt, ...summary } = record;
-  return Option.isSome(updatedAt) ? { ...summary, updatedAt } : summary;
+  const { updatedAt, mergedAt, ...summary } = record;
+  return {
+    ...summary,
+    ...(Option.isSome(updatedAt) ? { updatedAt } : {}),
+    ...(Option.isSome(mergedAt) ? { mergedAt } : {}),
+  };
 }
 
 function parseRepositoryPath(repository: string): {
@@ -463,7 +469,7 @@ export const make = Effect.gen(function* () {
                     );
                   }
 
-                  return Effect.succeed(decoded.success.map(toSummaryWithOptionalUpdatedAt));
+                  return Effect.succeed(decoded.success.map(toSummaryWithOptionalTimestamps));
                 }),
               ),
         ),
@@ -490,7 +496,7 @@ export const make = Effect.gen(function* () {
                 );
               }
 
-              return Effect.succeed(toSummaryWithOptionalUpdatedAt(decoded.success));
+              return Effect.succeed(toSummaryWithOptionalTimestamps(decoded.success));
             }),
           ),
         ),

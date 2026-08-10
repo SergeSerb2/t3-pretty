@@ -283,7 +283,7 @@ export const make = Effect.gen(function* () {
         Effect.flatMap((isGitRepository) =>
           isGitRepository
             ? gitManager.pullRequestForBranch(input)
-            : Effect.succeed({ pullRequest: null, updatedAt: null }),
+            : Effect.succeed({ pullRequest: null, mergedAt: null }),
         ),
       ),
     invalidateLocalStatus: gitManager.invalidateLocalStatus,

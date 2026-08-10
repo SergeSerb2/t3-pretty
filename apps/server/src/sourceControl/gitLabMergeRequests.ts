@@ -15,6 +15,7 @@ export interface NormalizedGitLabMergeRequestRecord {
   readonly headRefName: string;
   readonly state: "open" | "closed" | "merged";
   readonly updatedAt: Option.Option<DateTime.Utc>;
+  readonly mergedAt: Option.Option<DateTime.Utc>;
   readonly isCrossRepository?: boolean;
   readonly headRepositoryNameWithOwner?: string | null;
   readonly headRepositoryOwnerLogin?: string | null;
@@ -42,6 +43,7 @@ const GitLabMergeRequestSchema = Schema.Struct({
   target_branch: TrimmedNonEmptyString,
   state: Schema.optional(Schema.NullOr(Schema.String)),
   updated_at: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
+  merged_at: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
   source_project_id: Schema.optional(Schema.NullOr(Schema.Number)),
   target_project_id: Schema.optional(Schema.NullOr(Schema.Number)),
   source_project: Schema.optional(Schema.NullOr(GitLabProjectReferenceSchema)),
@@ -109,6 +111,7 @@ function normalizeGitLabMergeRequestRecord(
     headRefName: raw.source_branch,
     state: normalizeGitLabMergeRequestState(raw.state),
     updatedAt: raw.updated_at ?? Option.none(),
+    mergedAt: raw.merged_at ?? Option.none(),
     ...(typeof isCrossRepository === "boolean" ? { isCrossRepository } : {}),
     ...(sourceProjectPath ? { headRepositoryNameWithOwner: sourceProjectPath } : {}),
     ...(headRepositoryOwnerLogin ? { headRepositoryOwnerLogin } : {}),

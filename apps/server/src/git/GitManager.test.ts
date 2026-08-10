@@ -898,6 +898,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   baseRefName: "main",
                   headRefName: branch,
                   state: "merged",
+                  mergedAt: "2026-01-02T00:00:00.000Z",
                   updatedAt: "2026-01-03T00:00:00.000Z",
                 },
               ]),
@@ -916,7 +917,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           headRef: branch,
           state: "merged",
         },
-        updatedAt: "2026-01-03T00:00:00.000Z",
+        mergedAt: "2026-01-02T00:00:00.000Z",
       });
       expect(ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`))).toBe(
         true,
@@ -955,8 +956,60 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
 
       const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
 
-      expect(observation).toEqual({ pullRequest: null, updatedAt: null });
+      expect(observation).toEqual({ pullRequest: null, mergedAt: null });
       expect(ghCalls.some((call) => call.includes("pr list"))).toBe(false);
+    }),
+  );
+
+  it.effect("resolves a merged PR after both local and remote branches are deleted", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      const branch = "feature/deleted-after-merge";
+      yield* runGit(repoDir, ["checkout", "-b", branch]);
+      yield* runGit(repoDir, ["push", "-u", "origin", branch]);
+      yield* runGit(repoDir, ["checkout", "main"]);
+      yield* runGit(repoDir, ["branch", "-D", branch]);
+      yield* runGit(repoDir, ["push", "origin", "--delete", branch]);
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            [branch]: JSON.stringify([
+              {
+                number: 20,
+                title: "Merged before branch deletion",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/20",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "merged",
+                mergedAt: "2026-01-03T00:00:00.000Z",
+                updatedAt: "2026-01-04T00:00:00.000Z",
+              },
+            ]),
+          },
+        },
+      });
+
+      const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+
+      expect(observation).toEqual({
+        pullRequest: {
+          number: 20,
+          title: "Merged before branch deletion",
+          url: "https://github.com/pingdotgg/codething-mvp/pull/20",
+          baseRef: "main",
+          headRef: branch,
+          state: "merged",
+        },
+        mergedAt: "2026-01-03T00:00:00.000Z",
+      });
+      expect(ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`))).toBe(
+        true,
+      );
     }),
   );
 
@@ -2748,6 +2801,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             headRefName: "statemachine",
             state: "open",
             updatedAt: Option.none(),
+            mergedAt: Option.none(),
             isCrossRepository: false,
             headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
             headRepositoryOwnerLogin: "pingdotgg",
@@ -2766,6 +2820,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             headRefName: "statemachine",
             state: "open",
             updatedAt: Option.none(),
+            mergedAt: Option.none(),
             isCrossRepository: true,
             headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
             headRepositoryOwnerLogin: "pingdotgg",
@@ -2795,6 +2850,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             headRefName: "t3code/git-audit-stability",
             state: "open",
             updatedAt: Option.none(),
+            mergedAt: Option.none(),
             isCrossRepository: true,
             headRepositoryNameWithOwner: "justsomelegs/t3code",
             headRepositoryOwnerLogin: "justsomelegs",

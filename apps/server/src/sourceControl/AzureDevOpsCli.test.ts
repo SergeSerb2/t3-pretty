@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, afterEach, describe, expect, vi } from "@effect/vitest";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -163,6 +164,10 @@ describe("AzureDevOpsCli.layer", () => {
       });
 
       assert.strictEqual(result[0]?.state, "merged");
+      assert.deepStrictEqual(
+        result[0]?.mergedAt,
+        Option.some(DateTime.makeUnsafe("2026-01-03T00:00:00.000Z")),
+      );
       expect(mockRun).toHaveBeenCalledWith({
         operation: "AzureDevOpsCli.execute",
         command: "az",

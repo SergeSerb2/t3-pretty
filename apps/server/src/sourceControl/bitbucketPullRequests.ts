@@ -11,6 +11,7 @@ export interface NormalizedBitbucketPullRequestRecord {
   readonly headRefName: string;
   readonly state: "open" | "closed" | "merged";
   readonly updatedAt: Option.Option<DateTime.Utc>;
+  readonly mergedAt: Option.Option<DateTime.Utc>;
   readonly isCrossRepository?: boolean;
   readonly headRepositoryNameWithOwner?: string | null;
   readonly headRepositoryOwnerLogin?: string | null;
@@ -39,6 +40,7 @@ export const BitbucketPullRequestSchema = Schema.Struct({
   title: TrimmedNonEmptyString,
   state: Schema.optional(Schema.NullOr(Schema.String)),
   updated_on: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
+  closed_on: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
   links: Schema.Struct({
     html: Schema.Struct({
       href: TrimmedNonEmptyString,
@@ -81,6 +83,7 @@ function normalizeBitbucketPullRequestState(state: string | null | undefined) {
 export function normalizeBitbucketPullRequestRecord(
   raw: Schema.Schema.Type<typeof BitbucketPullRequestSchema>,
 ): NormalizedBitbucketPullRequestRecord {
+  const state = normalizeBitbucketPullRequestState(raw.state);
   const headRepositoryNameWithOwner = trimOptionalString(raw.source.repository?.full_name);
   const baseRepositoryNameWithOwner = trimOptionalString(raw.destination.repository?.full_name);
   const headRepositoryOwnerLogin = raw.source.repository
@@ -97,8 +100,9 @@ export function normalizeBitbucketPullRequestRecord(
     url: raw.links.html.href,
     baseRefName: raw.destination.branch.name,
     headRefName: raw.source.branch.name,
-    state: normalizeBitbucketPullRequestState(raw.state),
+    state,
     updatedAt: raw.updated_on ?? Option.none(),
+    mergedAt: state === "merged" ? (raw.closed_on ?? Option.none()) : Option.none(),
     ...(isCrossRepository ? { isCrossRepository: true } : {}),
     ...(headRepositoryNameWithOwner ? { headRepositoryNameWithOwner } : {}),
     ...(headRepositoryOwnerLogin ? { headRepositoryOwnerLogin } : {}),

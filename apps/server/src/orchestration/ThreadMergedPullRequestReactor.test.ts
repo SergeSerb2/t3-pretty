@@ -20,7 +20,7 @@ import { layer, ThreadMergedPullRequestReactor } from "./ThreadMergedPullRequest
 const WORKSPACE_ROOT = "/workspace/project-1";
 const BRANCH = "feature/merged-pr";
 const THREAD_CREATED_AT = "2026-01-01T00:00:00.000Z";
-const PULL_REQUEST_UPDATED_AT = "2026-01-02T00:00:00.000Z";
+const PULL_REQUEST_MERGED_AT = "2026-01-02T00:00:00.000Z";
 
 function makeCandidate(input: {
   readonly id: string;
@@ -52,9 +52,9 @@ function pullRequest(input: {
 
 function observation(
   pullRequestValue: VcsStatusRemoteResult["pr"],
-  updatedAt: string | null = PULL_REQUEST_UPDATED_AT,
+  mergedAt: string | null = PULL_REQUEST_MERGED_AT,
 ): GitPullRequestBranchObservation {
-  return { pullRequest: pullRequestValue, updatedAt };
+  return { pullRequest: pullRequestValue, mergedAt };
 }
 
 const branchKey = (cwd: string, branch: string) => `${cwd}\u0000${branch}`;
@@ -169,6 +169,24 @@ describe("ThreadMergedPullRequestReactor", () => {
     }),
   );
 
+  it.effect("accepts a merged PR resolved through a differently named upstream branch", () =>
+    Effect.gen(function* () {
+      const commands = yield* runSweep({
+        candidates: [makeCandidate({ id: "renamed-upstream" })],
+        pullRequestByBranch: new Map([
+          [
+            branchKey(WORKSPACE_ROOT, BRANCH),
+            observation(pullRequest({ state: "merged", headRef: "feature/remote-name" })),
+          ],
+        ]),
+      });
+
+      expect(
+        commands.flatMap((command) => (command.type === "thread.settle" ? [command.threadId] : [])),
+      ).toEqual(["renamed-upstream"]);
+    }),
+  );
+
   it.effect("does not settle a reused branch from an older merged pull request", () =>
     Effect.gen(function* () {
       const commands = yield* runSweep({
@@ -185,14 +203,13 @@ describe("ThreadMergedPullRequestReactor", () => {
     }),
   );
 
-  it.effect("does not settle open, closed, or mismatched pull requests", () =>
+  it.effect("does not settle open, closed, or timestamp-less pull requests", () =>
     Effect.gen(function* () {
       const cases = [
         observation(pullRequest({ state: "open" })),
         observation(pullRequest({ state: "closed" })),
         observation(null),
         observation(pullRequest({ state: "merged" }), null),
-        observation(pullRequest({ state: "merged", headRef: "feature/different-pr" })),
       ];
 
       for (const [index, pullRequestObservation] of cases.entries()) {

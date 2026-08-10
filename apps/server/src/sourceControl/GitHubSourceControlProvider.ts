@@ -31,6 +31,7 @@ function toChangeRequest(summary: GitHubCli.GitHubPullRequestSummary): ChangeReq
     headRefName: summary.headRefName,
     state: summary.state ?? "open",
     updatedAt: Option.none(),
+    mergedAt: Option.none(),
     ...(summary.isCrossRepository !== undefined
       ? { isCrossRepository: summary.isCrossRepository }
       : {}),
@@ -156,6 +157,7 @@ export const make = Effect.gen(function* () {
                       decoded.success.map((item) => ({
                         ...toChangeRequest(item),
                         updatedAt: item.updatedAt,
+                        mergedAt: item.mergedAt,
                       })),
                     )
                   : Effect.fail(

@@ -71,7 +71,7 @@ export interface GitRunStackedActionOptions {
 
 export interface GitPullRequestBranchObservation {
   readonly pullRequest: VcsStatusRemoteResult["pr"];
-  readonly updatedAt: string | null;
+  readonly mergedAt: string | null;
 }
 
 interface SourceControlTextGenerationSettings {
@@ -157,6 +157,7 @@ interface OpenPrInfo {
 interface PullRequestInfo extends OpenPrInfo, PullRequestHeadRemoteInfo {
   state: "open" | "closed" | "merged";
   updatedAt: Option.Option<DateTime.Utc>;
+  mergedAt: Option.Option<DateTime.Utc>;
 }
 
 const pullRequestUpdatedAtDescOrder: Order.Order<PullRequestInfo> = Order.mapInput(
@@ -390,6 +391,7 @@ function toPullRequestInfo(summary: ChangeRequest): PullRequestInfo {
     headRefName: summary.headRefName,
     state: summary.state ?? "open",
     updatedAt: summary.updatedAt,
+    mergedAt: summary.mergedAt ?? Option.none(),
     ...(summary.isCrossRepository !== undefined
       ? { isCrossRepository: summary.isCrossRepository }
       : {}),
@@ -915,11 +917,21 @@ export const make = Effect.gen(function* () {
         prLookupEpochByCwd.set(cacheKey, prLookupEpoch(cacheKey) + 1);
       }),
     );
-  // Cache keys are NUL-joined [cwd, branch, upstreamRef, epoch] — none of the
-  // segments can contain a NUL byte, and refs are never empty, so "" decodes
-  // back to a null upstreamRef.
-  const prLookupCacheKey = (cwd: string, details: { branch: string; upstreamRef: string | null }) =>
-    [cwd, details.branch, details.upstreamRef ?? "", String(prLookupEpoch(cwd))].join("\u0000");
+  // Cache keys are NUL-joined [cwd, branch, upstreamRef,
+  // queryWhenLocalBranchMissing, epoch]. None of the segments can contain a
+  // NUL byte, and refs are never empty, so "" decodes back to a null upstream.
+  const prLookupCacheKey = (
+    cwd: string,
+    details: { branch: string; upstreamRef: string | null },
+    queryWhenLocalBranchMissing: boolean,
+  ) =>
+    [
+      cwd,
+      details.branch,
+      details.upstreamRef ?? "",
+      queryWhenLocalBranchMissing ? "1" : "0",
+      String(prLookupEpoch(cwd)),
+    ].join("\u0000");
   // Consecutive failures per cache key, so a branch that keeps failing waits
   // longer before the next attempt. Cleared as soon as a lookup succeeds.
   const prLookupFailureStreakByKey = new Map<string, number>();
@@ -939,7 +951,8 @@ export const make = Effect.gen(function* () {
   };
   const prLookupCache = yield* Cache.makeWith(
     (key: string) => {
-      const [cwd = "", branch = "", upstreamRef = ""] = key.split("\u0000");
+      const [cwd = "", branch = "", upstreamRef = "", queryWhenLocalBranchMissing = "0"] =
+        key.split("\u0000");
       const details = {
         branch,
         upstreamRef: upstreamRef.length > 0 ? upstreamRef : null,
@@ -948,7 +961,11 @@ export const make = Effect.gen(function* () {
         const headContext = yield* resolveBranchHeadContext(cwd, details);
         // Only skip when the branch is untracked as well: anything carrying an
         // upstream keeps the old behaviour.
-        if (details.upstreamRef === null && (yield* isUnpublishedBranch(cwd, headContext))) {
+        if (
+          queryWhenLocalBranchMissing !== "1" &&
+          details.upstreamRef === null &&
+          (yield* isUnpublishedBranch(cwd, headContext))
+        ) {
           return { latest: null, automatedReview: undefined, headContext };
         }
         const latest = yield* findLatestPrForHeadContext(cwd, headContext);
@@ -993,7 +1010,7 @@ export const make = Effect.gen(function* () {
   // branch retargeted to another remote/fork cannot inherit the old badge.
   interface LastKnownPr {
     readonly pr: ReturnType<typeof toStatusPr> | null;
-    readonly updatedAt: string | null;
+    readonly mergedAt: string | null;
     readonly upstreamRef: string | null;
     readonly headBranch: string;
     readonly remoteName: string | null;
@@ -1015,11 +1032,11 @@ export const make = Effect.gen(function* () {
   const resolveLastKnownPr = (
     branchKey: string,
     current: Pick<LastKnownPr, "upstreamRef" | "headBranch" | "remoteName" | "headRemoteUrlKey">,
-  ): Pick<LastKnownPr, "pr" | "updatedAt"> => {
+  ): Pick<LastKnownPr, "pr" | "mergedAt"> => {
     const lastKnown = lastKnownPrByBranchKey.get(branchKey);
-    if (!lastKnown) return { pr: null, updatedAt: null };
+    if (!lastKnown) return { pr: null, mergedAt: null };
     if (lastKnown.headBranch !== current.headBranch) {
-      return { pr: null, updatedAt: null };
+      return { pr: null, mergedAt: null };
     }
 
     // The normalized URL catches both remote-alias changes and an existing
@@ -1030,8 +1047,8 @@ export const make = Effect.gen(function* () {
     // latter would otherwise drop an already-known PR badge on every hiccup.
     if (lastKnown.headRemoteUrlKey !== null && current.headRemoteUrlKey !== null) {
       return lastKnown.headRemoteUrlKey === current.headRemoteUrlKey
-        ? { pr: lastKnown.pr, updatedAt: lastKnown.updatedAt }
-        : { pr: null, updatedAt: null };
+        ? { pr: lastKnown.pr, mergedAt: lastKnown.mergedAt }
+        : { pr: null, mergedAt: null };
     }
 
     // If the remote URL can't be compared, fall back to the remote identity
@@ -1045,40 +1062,44 @@ export const make = Effect.gen(function* () {
       current.remoteName !== null
     ) {
       return lastKnown.remoteName === current.remoteName
-        ? { pr: lastKnown.pr, updatedAt: lastKnown.updatedAt }
-        : { pr: null, updatedAt: null };
+        ? { pr: lastKnown.pr, mergedAt: lastKnown.mergedAt }
+        : { pr: null, mergedAt: null };
     }
-    return { pr: lastKnown.pr, updatedAt: lastKnown.updatedAt };
+    return { pr: lastKnown.pr, mergedAt: lastKnown.mergedAt };
   };
   const lookupStatusPrObservation = Effect.fn("lookupStatusPrObservation")(function* (
     cwd: string,
     details: { branch: string; upstreamRef: string | null; isDefaultBranch: boolean },
+    options?: { readonly queryWhenLocalBranchMissing?: boolean },
   ) {
     // Keyed by (cwd, branch) only: the upstream ref changing (e.g. a first
     // `push -u`) must not orphan the fallback value for the same branch.
     const branchKey = `${cwd}\u0000${details.branch}`;
-    return yield* Cache.get(prLookupCache, prLookupCacheKey(cwd, details)).pipe(
+    return yield* Cache.get(
+      prLookupCache,
+      prLookupCacheKey(cwd, details, options?.queryWhenLocalBranchMissing === true),
+    ).pipe(
       Effect.map(({ latest, automatedReview, headContext }) => {
-        if (!latest) return { pr: null, updatedAt: null, headContext };
+        if (!latest) return { pr: null, mergedAt: null, headContext };
         // On the default branch, only surface open PRs.
         // Merged/closed matches are usually reverse-merge history, not the thread's PR context.
         if (details.isDefaultBranch && latest.state !== "open") {
-          return { pr: null, updatedAt: null, headContext };
+          return { pr: null, mergedAt: null, headContext };
         }
         return {
           pr: toStatusPr(latest, automatedReview),
-          updatedAt: Option.match(latest.updatedAt, {
+          mergedAt: Option.match(latest.mergedAt, {
             onNone: () => null,
             onSome: DateTime.formatIso,
           }),
           headContext,
         };
       }),
-      Effect.tap(({ pr, updatedAt, headContext }) =>
+      Effect.tap(({ pr, mergedAt, headContext }) =>
         Effect.sync(() =>
           rememberLastKnownPr(branchKey, {
             pr,
-            updatedAt,
+            mergedAt,
             upstreamRef: details.upstreamRef,
             headBranch: headContext.headBranch,
             remoteName: headContext.remoteName,
@@ -1086,7 +1107,7 @@ export const make = Effect.gen(function* () {
           }),
         ),
       ),
-      Effect.map(({ pr, updatedAt }) => ({ pr, updatedAt })),
+      Effect.map(({ pr, mergedAt }) => ({ pr, mergedAt })),
       Effect.catch((error) =>
         Effect.logWarning("PR lookup failed; keeping last known PR state.").pipe(
           Effect.annotateLogs({
@@ -1335,6 +1356,7 @@ export const make = Effect.gen(function* () {
           headRefName: firstPullRequest.headRefName,
           state: "open",
           updatedAt: Option.none(),
+          mergedAt: Option.none(),
         } satisfies PullRequestInfo;
       }
     }
@@ -1816,31 +1838,45 @@ export const make = Effect.gen(function* () {
     "pullRequestForBranch",
   )(function* (input) {
     const cwd = yield* normalizeStatusCacheKey(input.cwd);
-    const upstreamRef = yield* gitCore
+    const localBranch = yield* gitCore
       .execute({
-        operation: "GitManager.pullRequestForBranch.upstream",
+        operation: "GitManager.pullRequestForBranch.localBranch",
         cwd,
         args: [
           "for-each-ref",
           "--count=1",
-          "--format=%(upstream:short)",
+          "--format=%(refname)%09%(upstream:short)",
           `refs/heads/${input.branch}`,
         ],
         timeoutMs: 5_000,
       })
       .pipe(
-        Effect.map((result) => result.stdout.trim() || null),
-        Effect.orElseSucceed(() => null),
+        Effect.map((result) => {
+          const [localRef = "", upstreamRef = ""] = result.stdout.trimEnd().split("\t", 2);
+          return {
+            exists: localRef.length > 0,
+            upstreamRef: upstreamRef.trim() || null,
+          };
+        }),
+        // A failed local probe is not evidence that the branch was deleted.
+        Effect.orElseSucceed(() => ({ exists: true, upstreamRef: null })),
       );
 
-    const observation = yield* lookupStatusPrObservation(cwd, {
-      branch: input.branch,
-      upstreamRef,
-      isDefaultBranch: false,
-    });
+    const observation = yield* lookupStatusPrObservation(
+      cwd,
+      {
+        branch: input.branch,
+        upstreamRef: localBranch.upstreamRef,
+        isDefaultBranch: false,
+      },
+      // A persisted thread can outlive both its local and hosted branch refs.
+      // Existing local refs still use the unpublished-branch short circuit;
+      // only a missing local ref is treated as historical lookup evidence.
+      { queryWhenLocalBranchMissing: !localBranch.exists },
+    );
     return {
       pullRequest: observation.pr,
-      updatedAt: observation.updatedAt,
+      mergedAt: observation.mergedAt,
     };
   });
   const status: GitManager["Service"]["status"] = Effect.fn("status")(function* (input) {

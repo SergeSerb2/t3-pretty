@@ -34,20 +34,16 @@ export function shouldSettleMergedPullRequest(
   thread: ProjectionMergedPullRequestCandidate,
   observation: GitPullRequestBranchObservation,
 ): boolean {
-  if (
-    observation.pullRequest?.state !== "merged" ||
-    observation.pullRequest.headRef !== thread.branch ||
-    observation.updatedAt === null
-  ) {
+  if (observation.pullRequest?.state !== "merged" || observation.mergedAt === null) {
     return false;
   }
 
   const threadCreatedAt = Date.parse(thread.createdAt);
-  const pullRequestUpdatedAt = Date.parse(observation.updatedAt);
+  const pullRequestMergedAt = Date.parse(observation.mergedAt);
   return (
     Number.isFinite(threadCreatedAt) &&
-    Number.isFinite(pullRequestUpdatedAt) &&
-    pullRequestUpdatedAt >= threadCreatedAt
+    Number.isFinite(pullRequestMergedAt) &&
+    pullRequestMergedAt >= threadCreatedAt
   );
 }
 
@@ -121,7 +117,7 @@ export const make = Effect.gen(function* () {
               return Effect.logWarning("merged pull request branch lookup failed", {
                 threadId: thread.threadId,
                 cause: Cause.pretty(cause),
-              }).pipe(Effect.as({ pullRequest: null, updatedAt: null }));
+              }).pipe(Effect.as({ pullRequest: null, mergedAt: null }));
             }),
           );
         pullRequestByBranch.set(key, observation);

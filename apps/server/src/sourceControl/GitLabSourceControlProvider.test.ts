@@ -45,6 +45,7 @@ it.effect("maps GitLab MR summaries into provider-neutral change requests", () =
       headRefName: "feature/source-control",
       state: "open",
       updatedAt: Option.none(),
+      mergedAt: Option.none(),
       isCrossRepository: true,
       headRepositoryNameWithOwner: "fork/t3code",
       headRepositoryOwnerLogin: "fork",
