@@ -45,7 +45,7 @@ export function CompactBrandTitle(
   return (
     <View
       aria-level={1}
-      accessibilityLabel="T3 Code, Threads"
+      accessibilityLabel="T3 Pretty, Threads"
       accessible
       role="heading"
       style={{
@@ -64,7 +64,7 @@ export function CompactBrandTitle(
           letterSpacing: -0.5,
         }}
       >
-        Code
+        Pretty
       </Text>
       <View
         style={{
