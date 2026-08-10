@@ -1,6 +1,15 @@
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+
 import { assert, describe, it } from "vite-plus/test";
 
 import { buildConflictPrompt, formatSyncReport } from "./resolve-git-conflicts.mjs";
+
+const syncWorkflowPath = NodePath.resolve(
+  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+  "../../.github/workflows/fork-upstream-sync.yml",
+);
 
 describe("T3 Pretty upstream conflict resolver", () => {
   it("makes fork preservation, compatible parent integration, and omission reporting explicit", () => {
@@ -21,6 +30,14 @@ describe("T3 Pretty upstream conflict resolver", () => {
     assert.include(prompt, "An omission must never be silent");
     assert.include(prompt, "feat(pretty): add the compact sidebar");
     assert.include(prompt, "upstream_changes_omitted");
+  });
+
+  it("fetches the previous nightly tag used for fork-history context", () => {
+    const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+
+    assert.include(workflow, '[[ -n "$current_tag" && "$current_tag" != "$latest_tag" ]]');
+    assert.include(workflow, '"refs/tags/$current_tag:refs/tags/$current_tag"');
+    assert.include(workflow, "PREVIOUS_UPSTREAM_TAG: ${{ steps.discover.outputs.previous_tag }}");
   });
 
   it("puts every AI and workflow-policy omission into the durable release report", () => {

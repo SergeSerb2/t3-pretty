@@ -54,6 +54,12 @@ jobs:
             current_tag="$(tr -d '[:space:]' < .t3-fork/upstream-nightly)"
           fi
           echo "previous_tag=$current_tag" >> "$GITHUB_OUTPUT"
+          # The resolver uses previous_tag..origin/main to recover the fork's
+          # intent for conflicted paths. Fresh Actions clones do not have the
+          # previous tag ref even though its commit is in main's history.
+          if [[ -n "$current_tag" && "$current_tag" != "$latest_tag" ]]; then
+            git fetch --no-tags upstream "refs/tags/$current_tag:refs/tags/$current_tag"
+          fi
 
           if [[ "$current_tag" == "$latest_tag" ]] &&
             git merge-base --is-ancestor "$latest_tag^{commit}" HEAD; then
