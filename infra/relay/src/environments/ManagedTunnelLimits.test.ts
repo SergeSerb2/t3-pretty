@@ -59,9 +59,11 @@ describe("ManagedTunnelLimits", () => {
     }).pipe(Effect.provide(layerWithDb(fakeDb)));
   });
 
-  it.effect("rejects provisioning at the default limit of 3", () => {
+  it.effect("rejects provisioning at the default limit", () => {
     const fakeDb = makeFakeDb({
-      countRows: Effect.succeed([{ activeTunnels: 3 }]),
+      countRows: Effect.succeed([
+        { activeTunnels: ManagedTunnelLimits.DEFAULT_MANAGED_TUNNEL_LIMIT },
+      ]),
     });
 
     return Effect.gen(function* () {
@@ -74,16 +76,20 @@ describe("ManagedTunnelLimits", () => {
         _tag: "ManagedTunnelLimitExceeded",
         userId: "user-1",
         environmentId: "environment-1",
-        maxTunnels: 3,
-        activeTunnels: 3,
+        maxTunnels: ManagedTunnelLimits.DEFAULT_MANAGED_TUNNEL_LIMIT,
+        activeTunnels: ManagedTunnelLimits.DEFAULT_MANAGED_TUNNEL_LIMIT,
       });
     }).pipe(Effect.provide(layerWithDb(fakeDb)));
   });
 
   it.effect("honors a per-user override above the default", () => {
     const fakeDb = makeFakeDb({
-      overrideRows: Effect.succeed([{ maxTunnels: 25 }]),
-      countRows: Effect.succeed([{ activeTunnels: 10 }]),
+      overrideRows: Effect.succeed([
+        { maxTunnels: ManagedTunnelLimits.DEFAULT_MANAGED_TUNNEL_LIMIT + 150 },
+      ]),
+      countRows: Effect.succeed([
+        { activeTunnels: ManagedTunnelLimits.DEFAULT_MANAGED_TUNNEL_LIMIT + 50 },
+      ]),
     });
 
     return Effect.gen(function* () {

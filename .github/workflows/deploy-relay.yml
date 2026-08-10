@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,8 +18,11 @@ concurrency:
 jobs:
   deploy_relay:
     name: Deploy production relay
-    if: github.repository == 'pingdotgg/t3code'
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # Fork: this repo deploys its own relay (parent gate was pingdotgg/t3code).
+    # FORK_RELAY_DEPLOY_ENABLED keeps forks-of-the-fork from failing on missing
+    # credentials.
+    if: github.repository == 'SergeSerb2/t3code-fork-theme' && vars.FORK_RELAY_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
       name: production

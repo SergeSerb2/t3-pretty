@@ -14,15 +14,16 @@ For the wider system diagram, see
 
 ## Application Keys
 
-World Scenery is a client-only fork and uses the parent production T3 Connect deployment by default.
-The repository-root example file supplies the checked-in public defaults, so fresh source builds do
-not need a private environment file:
+This fork operates its own T3 Connect relay (`https://relay.sergeserbinenko.com`, deployed by
+`deploy-relay.yml` from `infra/relay/`) with a raised managed-tunnel limit — the parent's
+production relay caps managed tunnels at 3 per user. The repository-root example file supplies the
+checked-in public defaults, so fresh source builds do not need a private environment file:
 
 ```sh
 vp run dev
 ```
 
-`.env.example` carries the production public identifiers (the same values baked into parent release
+`.env.example` carries the fork's public identifiers (the same values baked into fork release
 builds). To target a different Clerk application or relay, override the values in a repository-root
 `.env` or `.env.local` file:
 
