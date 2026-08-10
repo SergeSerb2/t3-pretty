@@ -1957,12 +1957,22 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           (
             'message-autopr',
             'thread-autopr',
-            NULL,
+            'turn-autopr',
             'user',
             ${`Refactor the AUTOPR parser.${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`},
             0,
             '2026-05-01T00:00:17.000Z',
             '2026-05-01T00:00:17.000Z'
+          ),
+          (
+            'message-autopr-final',
+            'thread-autopr',
+            'turn-autopr',
+            'assistant',
+            'I merged main and opened the pull request for review.',
+            0,
+            '2026-05-01T00:00:18.000Z',
+            '2026-05-01T00:00:18.000Z'
           )
       `;
 
@@ -1978,17 +1988,29 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           completed_at,
           checkpoint_files_json
         )
-        VALUES (
-          'thread-active',
-          'turn-active',
-          'message-user',
-          'message-final',
-          'completed',
-          '2026-05-01T00:00:12.000Z',
-          '2026-05-01T00:00:12.000Z',
-          '2026-05-01T00:00:13.000Z',
-          '[]'
-        )
+        VALUES
+          (
+            'thread-active',
+            'turn-active',
+            'message-user',
+            'message-final',
+            'completed',
+            '2026-05-01T00:00:12.000Z',
+            '2026-05-01T00:00:12.000Z',
+            '2026-05-01T00:00:13.000Z',
+            '[]'
+          ),
+          (
+            'thread-autopr',
+            'turn-autopr',
+            'message-autopr',
+            'message-autopr-final',
+            'completed',
+            '2026-05-01T00:00:17.000Z',
+            '2026-05-01T00:00:17.000Z',
+            '2026-05-01T00:00:18.000Z',
+            '[]'
+          )
       `;
 
       const literalPercent = yield* snapshotQuery.searchThreads({ query: "100%" });
@@ -2023,6 +2045,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         [[ThreadId.make("thread-autopr"), "user"]],
       );
       assert.equal(autoPr.matches[0]?.snippet, "Refactor the AUTOPR parser.");
+      // A hidden-block hit must not shadow a genuine assistant match in the
+      // same thread: "pull request" appears in the user suffix (excluded
+      // before ranking) and in the visible assistant reply (returned).
+      const shadowed = yield* snapshotQuery.searchThreads({ query: "pull request" });
+      assert.deepStrictEqual(
+        shadowed.matches.map((match) => [match.threadId, match.source]),
+        [[ThreadId.make("thread-autopr"), "assistant"]],
+      );
 
       assert.deepStrictEqual(
         (yield* snapshotQuery.searchThreads({ query: "interim needle" })).matches,

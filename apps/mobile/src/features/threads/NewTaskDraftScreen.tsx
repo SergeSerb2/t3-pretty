@@ -963,17 +963,19 @@ export function NewTaskDraftScreen(props: {
           label={workspaceLabel}
         />
       </ControlPillMenu>
-      <ComposerToolbarButton
-        accessibilityLabel={
-          autoCreatePullRequest ? "Create PR when done: on" : "Create PR when done: off"
-        }
-        active={autoCreatePullRequest}
-        disabled={isIncomingShareTransferPending}
-        icon="arrow.triangle.pull"
-        label="PR"
-        onPress={toggleAutoCreatePullRequest}
-        showChevron={false}
-      />
+      {flow.canToggleAutoCreatePullRequest ? (
+        <ComposerToolbarButton
+          accessibilityLabel={
+            autoCreatePullRequest ? "Create PR when done: on" : "Create PR when done: off"
+          }
+          active={autoCreatePullRequest}
+          disabled={isIncomingShareTransferPending}
+          icon="arrow.triangle.pull"
+          label="PR"
+          onPress={toggleAutoCreatePullRequest}
+          showChevron={false}
+        />
+      ) : null}
     </>
   );
 

@@ -152,6 +152,7 @@ type NewTaskFlowContextValue = {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly autoCreatePullRequest: boolean;
+  readonly canToggleAutoCreatePullRequest: boolean;
   readonly expandedProvider: string | null;
   readonly environments: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
@@ -403,7 +404,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   // A draft-scoped override (set when a queued task is hydrated for editing,
   // or when the user flips the toggle mid-edit) wins over the per-mode
   // preference so editing unrelated text cannot change a queued task's choice.
-  const autoCreatePullRequest =
+  // Gated on repository status below once the branch query resolves.
+  const autoCreatePullRequestChoice =
     selectedProjectDraft.autoCreatePullRequest ??
     resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, workspaceMode);
   const setAutoCreatePullRequest = useCallback(
@@ -569,6 +571,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   );
   const branchState = useBranches(branchTarget);
   const branchesLoading = branchState.isPending;
+  // Gate the applied auto-PR value on repository status, not just the
+  // control's visibility: the shared local-mode preference must not send
+  // fetch/commit/push instructions into a non-git directory.
+  const projectIsGitRepo = branchState.data?.isRepo ?? false;
+  const autoCreatePullRequest = projectIsGitRepo && autoCreatePullRequestChoice;
   const allBranchRefs = branchState.data?.refs ?? EMPTY_BRANCH_REFS;
   const availableBranches = useMemo(
     () =>
@@ -808,12 +815,14 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         // Queued tasks capture the auto-PR instruction at queue time so a
         // later preference flip cannot alter an already-queued task. A
         // draft-scoped override (hydrated from the queued text or set by the
-        // toggle mid-edit) wins over the per-mode preference.
+        // toggle mid-edit) wins over the per-mode preference; non-git
+        // projects never queue the instruction.
         text: applyCreatePullRequestSuffix({
           text,
           autoCreatePullRequest:
-            draft.autoCreatePullRequest ??
-            resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode),
+            projectIsGitRepo &&
+            (draft.autoCreatePullRequest ??
+              resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode)),
           threadHasStarted: false,
         }),
         attachments: draft.attachments,
@@ -841,6 +850,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       autoCreatePullRequestByEnvMode,
       editingPendingProject,
       editingPendingTask,
+      projectIsGitRepo,
       selectedEnvironmentServerConfig,
       selectedModel,
       selectedProject,
@@ -961,6 +971,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       runtimeMode,
       interactionMode,
       autoCreatePullRequest,
+      canToggleAutoCreatePullRequest: projectIsGitRepo,
       expandedProvider,
       environments,
       selectedProject,
@@ -1000,6 +1011,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       autoCreatePullRequest,
       availableBranches,
       beginEditingPendingTask,
+      projectIsGitRepo,
       branchQuery,
       branchesLoading,
       buildPendingTaskMessage,

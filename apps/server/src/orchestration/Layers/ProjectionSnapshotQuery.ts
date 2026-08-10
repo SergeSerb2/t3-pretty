@@ -37,7 +37,10 @@ import * as Struct from "effect/Struct";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
-import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import {
+  CREATE_PULL_REQUEST_TAG,
+  stripCreatePullRequestSuffix,
+} from "@t3tools/shared/createPullRequestPrompt";
 
 import {
   isPersistenceError,
@@ -222,6 +225,9 @@ function maxIso(left: string | null, right: string): string {
 function escapeLikePattern(value: string): string {
   return value.replaceAll("!", "!!").replaceAll("%", "!%").replaceAll("_", "!_");
 }
+
+/** Marker opening the hidden auto-PR instruction block in user messages. */
+const AUTO_PR_INSTRUCTIONS_OPEN_TAG = `<${CREATE_PULL_REQUEST_TAG}>`;
 
 function foldAsciiCase(value: string): string {
   return value.replace(/[A-Z]/g, (character) => character.toLowerCase());
@@ -845,8 +851,13 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     Request: ProjectionThreadSearchRequest,
     Result: ProjectionThreadSearchRow,
     execute: ({ pattern, limit }) =>
+      // `candidates` reduces user messages to their visible text (the hidden
+      // auto-PR instruction block is a trailing suffix, so everything from the
+      // marker on is agent-only) BEFORE the LIKE filter, per-thread ranking,
+      // and LIMIT run — a hidden-only hit must neither claim a thread's rank
+      // slot nor consume a result slot.
       sql`
-        WITH ranked AS (
+        WITH candidates AS (
           SELECT
             threads.thread_id AS thread_id,
             threads.project_id AS project_id,
@@ -854,23 +865,23 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               WHEN 'user' THEN 'user'
               ELSE 'assistant'
             END AS source,
-            messages.text AS match_text,
+            CASE
+              WHEN messages.role = 'user'
+                AND instr(messages.text, ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}) > 0
+              THEN substr(
+                messages.text,
+                1,
+                instr(messages.text, ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}) - 1
+              )
+              ELSE messages.text
+            END AS match_text,
+            messages.message_id AS message_id,
             messages.created_at AS message_created_at,
             CASE messages.role
               WHEN 'user' THEN 0
               ELSE 1
             END AS match_rank,
-            threads.updated_at AS thread_updated_at,
-            ROW_NUMBER() OVER (
-              PARTITION BY threads.thread_id
-              ORDER BY
-                CASE messages.role
-                  WHEN 'user' THEN 0
-                  ELSE 1
-                END ASC,
-                messages.created_at DESC,
-                messages.message_id ASC
-            ) AS thread_match_rank
+            threads.updated_at AS thread_updated_at
           FROM projection_thread_messages AS messages
           INNER JOIN projection_threads AS threads
             ON threads.thread_id = messages.thread_id
@@ -891,7 +902,19 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 )
               )
             )
-            AND messages.text LIKE ${pattern} ESCAPE '!'
+        ),
+        ranked AS (
+          SELECT
+            *,
+            ROW_NUMBER() OVER (
+              PARTITION BY thread_id
+              ORDER BY
+                match_rank ASC,
+                message_created_at DESC,
+                message_id ASC
+            ) AS thread_match_rank
+          FROM candidates
+          WHERE match_text LIKE ${pattern} ESCAPE '!'
         )
         SELECT
           thread_id AS "threadId",
@@ -2233,28 +2256,19 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         ),
       ),
     );
-    const foldedQuery = foldAsciiCase(input.query);
     return {
-      matches: rows.flatMap((row) => {
-        // User messages may carry the hidden auto-PR instruction block; it is
-        // stripped from every transcript surface, so search matching and
-        // excerpts must not resurface it. Rows whose only hit was inside the
-        // block are dropped entirely.
-        const visibleText =
-          row.source === "user" ? stripCreatePullRequestSuffix(row.matchText) : row.matchText;
-        if (visibleText !== row.matchText && !foldAsciiCase(visibleText).includes(foldedQuery)) {
-          return [];
-        }
-        return [
-          {
-            threadId: row.threadId,
-            projectId: row.projectId,
-            source: row.source,
-            snippet: buildSearchSnippet(visibleText, input.query),
-            messageCreatedAt: row.messageCreatedAt,
-          },
-        ];
-      }),
+      matches: rows.map((row) => ({
+        threadId: row.threadId,
+        projectId: row.projectId,
+        source: row.source,
+        // The SQL already reduced user rows to their visible text; this strip
+        // is a belt-and-braces pass for any non-trailing marker block.
+        snippet: buildSearchSnippet(
+          row.source === "user" ? stripCreatePullRequestSuffix(row.matchText) : row.matchText,
+          input.query,
+        ),
+        messageCreatedAt: row.messageCreatedAt,
+      })),
     };
   });
 
