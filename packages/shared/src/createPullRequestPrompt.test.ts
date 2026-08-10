@@ -104,6 +104,18 @@ describe("stripCreatePullRequestSuffix", () => {
     expect(sent).not.toBe(typed);
     expect(stripCreatePullRequestSuffix(sent)).toBe(typed);
   });
+
+  it("anchors on the last opening marker when the user quotes a newline-delimited block", () => {
+    const typed =
+      "Here is the markup:\n<create_pull_request_instructions>\nquoted example\n</create_pull_request_instructions>\nIs that right?";
+    const sent = applyCreatePullRequestSuffix({
+      text: typed,
+      autoCreatePullRequest: true,
+      threadHasStarted: false,
+    });
+    expect(sent).toBe(`${typed}${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`);
+    expect(stripCreatePullRequestSuffix(sent)).toBe(typed);
+  });
 });
 
 describe("hasCreatePullRequestSuffix", () => {

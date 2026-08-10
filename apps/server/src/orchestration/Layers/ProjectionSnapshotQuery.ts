@@ -858,7 +858,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       // and LIMIT run — a hidden-only hit must neither claim a thread's rank
       // slot nor consume a result slot. Stripping only happens when the text
       // ends with the closing marker, so a user merely quoting the markup
-      // stays fully searchable.
+      // stays fully searchable. SQLite cannot cheaply find the LAST marker, so
+      // when a message both quotes the opening marker mid-text AND carries the
+      // generated suffix, matching conservatively ignores the text between the
+      // two markers — it over-hides in that contrived case, never leaks; the
+      // snippet itself is rebuilt in TS with exact last-marker stripping.
       sql`
         WITH candidates AS (
           SELECT

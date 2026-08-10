@@ -85,15 +85,31 @@ export function applyCreatePullRequestSuffix(input: {
 }
 
 /**
- * Matches only the auto-generated TRAILING block, so user-authored text that
- * merely quotes the marker (e.g. while discussing this feature) is never
- * mistaken for an applied suffix. Tolerant of historical wording changes
- * inside the block, but the block must close and sit at the end of the text.
+ * The generated block viewed from its own opening marker: one open tag,
+ * arbitrary instruction wording, close tag at the end of the text. Applied to
+ * the slice starting at the LAST opening marker, so user-authored occurrences
+ * of the marker earlier in the message can never widen the match.
  */
-const TRAILING_SUFFIX_PATTERN = new RegExp(`\\n*${OPEN_TAG}\\n[\\s\\S]*?\\n${CLOSE_TAG}\\s*$`);
+const SUFFIX_BLOCK_FROM_OPEN_TAG_PATTERN = new RegExp(
+  `^${OPEN_TAG}\\n[\\s\\S]*\\n${CLOSE_TAG}\\s*$`,
+);
+
+/**
+ * Index of the auto-generated trailing block's opening marker, or -1 when the
+ * text does not end with one. Anchoring on the last opening marker keeps
+ * user-authored text that merely quotes the marker (e.g. while discussing
+ * this feature) from being mistaken for — or swallowed into — the suffix.
+ */
+function trailingSuffixStart(text: string): number {
+  const lastOpen = text.lastIndexOf(OPEN_TAG);
+  if (lastOpen === -1) {
+    return -1;
+  }
+  return SUFFIX_BLOCK_FROM_OPEN_TAG_PATTERN.test(text.slice(lastOpen)) ? lastOpen : -1;
+}
 
 export function hasCreatePullRequestSuffix(text: string): boolean {
-  return TRAILING_SUFFIX_PATTERN.test(text);
+  return trailingSuffixStart(text) !== -1;
 }
 
 /**
@@ -103,8 +119,8 @@ export function hasCreatePullRequestSuffix(text: string): boolean {
  */
 export function stripCreatePullRequestSuffix(text: string): string {
   let result = text;
-  while (TRAILING_SUFFIX_PATTERN.test(result)) {
-    result = result.replace(TRAILING_SUFFIX_PATTERN, "");
+  for (let start = trailingSuffixStart(result); start !== -1; start = trailingSuffixStart(result)) {
+    result = result.slice(0, start).trimEnd();
   }
-  return result === text ? text : result.trimEnd();
+  return result;
 }
