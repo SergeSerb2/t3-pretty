@@ -14,7 +14,7 @@ jobs:
     name: Resolve fork release
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 10
     outputs:
       should_release: ${{ steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true' }}
@@ -152,7 +152,7 @@ jobs:
     if: needs.preflight.outputs.should_release == 'true' && needs.preflight.outputs.windows_release == 'true'
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 15
     steps:
       - name: Checkout trusted main commit
@@ -164,25 +164,33 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=t3...
-
-      - name: Build node-pty Linux prebuild
+      - name: Build node-pty Linux prebuild in an x64 container
         shell: bash
         run: |
           set -euo pipefail
-          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
-          pty_dir="$(dirname "$pty_pkg")"
-          ( cd "$pty_dir" && npx --yes node-gyp rebuild )
+          export PATH="/opt/homebrew/bin:$HOME/.vite-plus/bin:$PATH"
+          docker version
+
+          node_pty_version="$(
+            node -e "console.log(require('./apps/server/package.json').dependencies['node-pty'].replace(/^[^0-9]*/, ''))"
+          )"
           mkdir -p wsl-prebuild
-          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
-          file wsl-prebuild/pty.node
+          docker run --rm \
+            --platform linux/amd64 \
+            --env "NODE_PTY_VERSION=$node_pty_version" \
+            --volume "$GITHUB_WORKSPACE/wsl-prebuild:/out" \
+            node:24.19.0-bookworm@sha256:f6d02cf1353049cf3658e6ce9ec03c6877a6479495f122062d195e2279d01055 \
+            bash -lc '
+              set -euo pipefail
+              mkdir -p /build
+              cd /build
+              npm init --yes >/dev/null
+              npm install --ignore-scripts "node-pty@$NODE_PTY_VERSION"
+              pty_dir=/build/node_modules/node-pty
+              ( cd "$pty_dir" && npx --yes node-gyp rebuild )
+              install -m 0644 "$pty_dir/build/Release/pty.node" /out/pty.node
+            '
+          file wsl-prebuild/pty.node | tee /dev/stderr | grep -Eq 'x86[-_]64'
 
       - name: Upload WSL prebuild
         uses: actions/upload-artifact@v7
@@ -519,7 +527,7 @@ jobs:
       needs.preflight.outputs.should_release == 'true' &&
       needs.build_macos.result == 'success' &&
       (needs.build_windows.result == 'success' || needs.build_windows.result == 'skipped')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 10
     permissions:
       contents: write
