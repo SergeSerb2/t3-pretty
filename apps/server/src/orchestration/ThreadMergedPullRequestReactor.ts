@@ -9,8 +9,12 @@ import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 
-import type { GitPullRequestBranchObservation } from "../git/GitManager.ts";
+import type {
+  GitBranchHeadAssociation,
+  GitPullRequestBranchObservation,
+} from "../git/GitManager.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
 import { forkParked } from "../serverActivation.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import {
@@ -47,10 +51,47 @@ export function shouldSettleMergedPullRequest(
   );
 }
 
+function storedBranchHeadAssociation(
+  thread: ProjectionMergedPullRequestCandidate,
+): GitBranchHeadAssociation | undefined {
+  if (thread.branchHeadRef === null || thread.branchHeadIsCrossRepository === null) {
+    return undefined;
+  }
+  return {
+    headRef: thread.branchHeadRef,
+    repositoryNameWithOwner: thread.branchHeadRepository,
+    ownerLogin: thread.branchHeadOwner,
+    isCrossRepository: thread.branchHeadIsCrossRepository,
+  };
+}
+
+function branchHeadAssociationKey(association: GitBranchHeadAssociation | undefined): string {
+  if (!association) return "";
+  return [
+    association.headRef,
+    association.repositoryNameWithOwner ?? "",
+    association.ownerLogin ?? "",
+    association.isCrossRepository ? "1" : "0",
+  ].join("\u0000");
+}
+
+function branchHeadAssociationMatches(
+  thread: ProjectionMergedPullRequestCandidate,
+  association: GitBranchHeadAssociation,
+): boolean {
+  return (
+    thread.branchHeadRef === association.headRef &&
+    thread.branchHeadRepository === association.repositoryNameWithOwner &&
+    thread.branchHeadOwner === association.ownerLogin &&
+    thread.branchHeadIsCrossRepository === association.isCrossRepository
+  );
+}
+
 export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+  const projectionThreadRepository = yield* ProjectionThreadRepository;
   const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
 
   const settleThread = Effect.fn("ThreadMergedPullRequestReactor.settleThread")(function* (
@@ -64,6 +105,7 @@ export const make = Effect.gen(function* () {
         threadId: thread.threadId,
         onlyIfAutoSettlementEligible: true,
         expectedBranch: thread.branch,
+        expectedBranchEventId: thread.branchEventId,
       })
       .pipe(
         Effect.tap(() =>
@@ -103,24 +145,70 @@ export const make = Effect.gen(function* () {
 
   const sweep = Effect.gen(function* () {
     const candidates = yield* projectionSnapshotQuery.listMergedPullRequestCandidates();
-    const pullRequestByBranch = new Map<string, GitPullRequestBranchObservation>();
+    const pullRequestByBranch = new Map<
+      string,
+      { readonly observation: GitPullRequestBranchObservation; readonly resolved: boolean }
+    >();
 
     for (const thread of candidates) {
-      const key = `${thread.cwd}\u0000${thread.branch}`;
-      let observation = pullRequestByBranch.get(key);
-      if (observation === undefined) {
-        observation = yield* gitWorkflow
-          .pullRequestForBranch({ cwd: thread.cwd, branch: thread.branch })
+      const storedHeadAssociation = storedBranchHeadAssociation(thread);
+      const key = `${thread.cwd}\u0000${thread.branch}\u0000${branchHeadAssociationKey(
+        storedHeadAssociation,
+      )}`;
+      let lookup = pullRequestByBranch.get(key);
+      if (lookup === undefined) {
+        lookup = yield* gitWorkflow
+          .pullRequestForBranch({
+            cwd: thread.cwd,
+            branch: thread.branch,
+            ...(storedHeadAssociation ? { headAssociation: storedHeadAssociation } : {}),
+          })
           .pipe(
+            Effect.map((observation) => ({ observation, resolved: true }) as const),
             Effect.catchCause((cause) => {
               if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
               return Effect.logWarning("merged pull request branch lookup failed", {
                 threadId: thread.threadId,
                 cause: Cause.pretty(cause),
-              }).pipe(Effect.as({ pullRequest: null, mergedAt: null }));
+              }).pipe(
+                Effect.as({
+                  observation: {
+                    pullRequest: null,
+                    mergedAt: null,
+                    headAssociation: storedHeadAssociation ?? {
+                      headRef: thread.branch,
+                      repositoryNameWithOwner: null,
+                      ownerLogin: null,
+                      isCrossRepository: false,
+                    },
+                  },
+                  resolved: false,
+                } as const),
+              );
             }),
           );
-        pullRequestByBranch.set(key, observation);
+        pullRequestByBranch.set(key, lookup);
+      }
+      const { observation, resolved } = lookup;
+      if (resolved && !branchHeadAssociationMatches(thread, observation.headAssociation)) {
+        yield* projectionThreadRepository
+          .recordBranchHead({
+            threadId: thread.threadId,
+            branchEventId: thread.branchEventId,
+            headRef: observation.headAssociation.headRef,
+            repositoryNameWithOwner: observation.headAssociation.repositoryNameWithOwner,
+            ownerLogin: observation.headAssociation.ownerLogin,
+            isCrossRepository: observation.headAssociation.isCrossRepository,
+          })
+          .pipe(
+            Effect.catchCause((cause) => {
+              if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
+              return Effect.logWarning("failed to persist pull request branch identity", {
+                threadId: thread.threadId,
+                cause: Cause.pretty(cause),
+              });
+            }),
+          );
       }
       if (shouldSettleMergedPullRequest(thread, observation)) {
         yield* settleThread(thread);

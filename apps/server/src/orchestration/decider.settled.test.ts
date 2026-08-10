@@ -26,6 +26,7 @@ function makeReadModel(
   messages: OrchestrationThread["messages"] = [],
   pinnedAt: string | null = null,
   branch: string | null = null,
+  branchEventId?: EventId,
 ): OrchestrationReadModel {
   return {
     snapshotSequence: 0,
@@ -39,6 +40,7 @@ function makeReadModel(
         runtimeMode: "full-access",
         interactionMode: "default",
         branch,
+        ...(branchEventId ? { branchEventId } : {}),
         worktreePath: null,
         latestTurn: null,
         createdAt: NOW,
@@ -141,17 +143,19 @@ it.layer(NodeServices.layer)("settled thread decider", (it) => {
   it.effect("preserves user activation and pins during automatic settlement races", () =>
     Effect.gen(function* () {
       const expectedBranch = "feature/merged-pr";
+      const expectedBranchEventId = EventId.make("event-merged-pr");
       const command = {
         type: "thread.settle" as const,
         commandId: CommandId.make("cmd-auto-settle-race"),
         threadId: ThreadId.make("thread-1"),
         onlyIfAutoSettlementEligible: true,
         expectedBranch,
+        expectedBranchEventId,
       };
 
       for (const readModel of [
-        makeReadModel("active", null, null, [], [], null, expectedBranch),
-        makeReadModel(null, null, null, [], [], NOW, expectedBranch),
+        makeReadModel("active", null, null, [], [], null, expectedBranch, expectedBranchEventId),
+        makeReadModel(null, null, null, [], [], NOW, expectedBranch, expectedBranchEventId),
       ]) {
         const error = yield* decideOrchestrationCommand({ command, readModel }).pipe(Effect.flip);
         expect(error._tag).toBe("OrchestrationCommandInvariantError");
@@ -163,9 +167,33 @@ it.layer(NodeServices.layer)("settled thread decider", (it) => {
       }).pipe(Effect.flip);
       expect(branchChangedError._tag).toBe("OrchestrationCommandInvariantError");
 
+      const branchReusedError = yield* decideOrchestrationCommand({
+        command,
+        readModel: makeReadModel(
+          null,
+          null,
+          null,
+          [],
+          [],
+          null,
+          expectedBranch,
+          EventId.make("event-reused-branch"),
+        ),
+      }).pipe(Effect.flip);
+      expect(branchReusedError._tag).toBe("OrchestrationCommandInvariantError");
+
       const settled = yield* decideOrchestrationCommand({
         command,
-        readModel: makeReadModel(null, null, null, [], [], null, expectedBranch),
+        readModel: makeReadModel(
+          null,
+          null,
+          null,
+          [],
+          [],
+          null,
+          expectedBranch,
+          expectedBranchEventId,
+        ),
       });
       const settledEvents = Array.isArray(settled) ? settled : [settled];
       expect(settledEvents[0]?.type).toBe("thread.settled");

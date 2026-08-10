@@ -12,6 +12,7 @@ import {
   ListProjectionThreadsByProjectInput,
   ProjectionThread,
   ProjectionThreadRepository,
+  RecordProjectionThreadBranchHeadInput,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
 import { ModelSelection } from "@t3tools/contracts";
@@ -38,6 +39,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           runtime_mode,
           interaction_mode,
           branch,
+          branch_event_id,
+          branch_head_ref,
+          branch_head_repository,
+          branch_head_owner,
+          branch_head_is_cross_repository,
           worktree_path,
           latest_turn_id,
           created_at,
@@ -65,6 +71,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.runtimeMode},
           ${row.interactionMode},
           ${row.branch},
+          ${row.branchEventId ?? null},
+          ${row.branchHeadRef ?? null},
+          ${row.branchHeadRepository ?? null},
+          ${row.branchHeadOwner ?? null},
+          ${row.branchHeadIsCrossRepository ?? null},
           ${row.worktreePath},
           ${row.latestTurnId},
           ${row.createdAt},
@@ -92,6 +103,27 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           runtime_mode = excluded.runtime_mode,
           interaction_mode = excluded.interaction_mode,
           branch = excluded.branch,
+          branch_event_id = excluded.branch_event_id,
+          branch_head_ref = CASE
+            WHEN projection_threads.branch_event_id IS excluded.branch_event_id
+              THEN projection_threads.branch_head_ref
+            ELSE excluded.branch_head_ref
+          END,
+          branch_head_repository = CASE
+            WHEN projection_threads.branch_event_id IS excluded.branch_event_id
+              THEN projection_threads.branch_head_repository
+            ELSE excluded.branch_head_repository
+          END,
+          branch_head_owner = CASE
+            WHEN projection_threads.branch_event_id IS excluded.branch_event_id
+              THEN projection_threads.branch_head_owner
+            ELSE excluded.branch_head_owner
+          END,
+          branch_head_is_cross_repository = CASE
+            WHEN projection_threads.branch_event_id IS excluded.branch_event_id
+              THEN projection_threads.branch_head_is_cross_repository
+            ELSE excluded.branch_head_is_cross_repository
+          END,
           worktree_path = excluded.worktree_path,
           latest_turn_id = excluded.latest_turn_id,
           created_at = excluded.created_at,
@@ -126,6 +158,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
           branch,
+          branch_event_id AS "branchEventId",
+          branch_head_ref AS "branchHeadRef",
+          branch_head_repository AS "branchHeadRepository",
+          branch_head_owner AS "branchHeadOwner",
+          branch_head_is_cross_repository AS "branchHeadIsCrossRepository",
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
@@ -162,6 +199,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
           branch,
+          branch_event_id AS "branchEventId",
+          branch_head_ref AS "branchHeadRef",
+          branch_head_repository AS "branchHeadRepository",
+          branch_head_owner AS "branchHeadOwner",
+          branch_head_is_cross_repository AS "branchHeadIsCrossRepository",
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
@@ -195,6 +237,21 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
       `,
   });
 
+  const recordProjectionThreadBranchHead = SqlSchema.void({
+    Request: RecordProjectionThreadBranchHeadInput,
+    execute: (input) =>
+      sql`
+        UPDATE projection_threads
+        SET
+          branch_head_ref = ${input.headRef},
+          branch_head_repository = ${input.repositoryNameWithOwner},
+          branch_head_owner = ${input.ownerLogin},
+          branch_head_is_cross_repository = ${input.isCrossRepository ? 1 : 0}
+        WHERE thread_id = ${input.threadId}
+          AND branch_event_id = ${input.branchEventId}
+      `,
+  });
+
   const upsert: ProjectionThreadRepositoryShape["upsert"] = (row) =>
     upsertProjectionThreadRow(row).pipe(
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.upsert:query")),
@@ -210,6 +267,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.listByProjectId:query")),
     );
 
+  const recordBranchHead: ProjectionThreadRepositoryShape["recordBranchHead"] = (input) =>
+    recordProjectionThreadBranchHead(input).pipe(
+      Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.recordBranchHead:query")),
+    );
+
   const deleteById: ProjectionThreadRepositoryShape["deleteById"] = (input) =>
     deleteProjectionThreadRow(input).pipe(
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.deleteById:query")),
@@ -219,6 +281,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
     upsert,
     getById,
     listByProjectId,
+    recordBranchHead,
     deleteById,
   } satisfies ProjectionThreadRepositoryShape;
 });

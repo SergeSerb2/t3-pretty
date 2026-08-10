@@ -589,6 +589,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           ('excluded-starting', 'starting', 'codex', NULL, NULL, 'full-access', NULL, NULL, '2026-08-10T00:00:15.000Z')
       `;
 
+      yield* sql`
+        UPDATE projection_threads
+        SET branch_event_id = CASE thread_id
+          WHEN 'eligible-root' THEN 'event-eligible-root-created'
+          WHEN 'eligible-worktree' THEN 'event-eligible-worktree-branch'
+          WHEN 'eligible-stopped' THEN 'event-eligible-stopped-created'
+        END
+        WHERE thread_id IN ('eligible-root', 'eligible-worktree', 'eligible-stopped')
+      `;
+
       const candidates = yield* snapshotQuery.listMergedPullRequestCandidates();
 
       assert.deepEqual(candidates, [
@@ -597,18 +607,33 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           branch: "feature/root",
           cwd: "/tmp/project-active",
           branchObservedAt: "2026-08-10T00:00:02.100Z",
+          branchEventId: EventId.make("event-eligible-root-created"),
+          branchHeadRef: null,
+          branchHeadRepository: null,
+          branchHeadOwner: null,
+          branchHeadIsCrossRepository: null,
         },
         {
           threadId: ThreadId.make("eligible-worktree"),
           branch: "feature/worktree",
           cwd: "/tmp/project-worktree",
           branchObservedAt: "2026-08-10T00:00:03.800Z",
+          branchEventId: EventId.make("event-eligible-worktree-branch"),
+          branchHeadRef: null,
+          branchHeadRepository: null,
+          branchHeadOwner: null,
+          branchHeadIsCrossRepository: null,
         },
         {
           threadId: ThreadId.make("eligible-stopped"),
           branch: "feature/stopped",
           cwd: "/tmp/project-active",
           branchObservedAt: "2026-08-10T00:00:04.500Z",
+          branchEventId: EventId.make("event-eligible-stopped-created"),
+          branchHeadRef: null,
+          branchHeadRepository: null,
+          branchHeadOwner: null,
+          branchHeadIsCrossRepository: null,
         },
       ]);
     }),

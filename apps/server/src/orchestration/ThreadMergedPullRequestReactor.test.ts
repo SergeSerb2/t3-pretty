@@ -1,4 +1,5 @@
 import {
+  EventId,
   ThreadId,
   type OrchestrationCommand,
   type VcsStatusRemoteResult,
@@ -8,8 +9,12 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { GitPullRequestBranchObservation } from "../git/GitManager.ts";
+import type {
+  GitBranchHeadAssociation,
+  GitPullRequestBranchObservation,
+} from "../git/GitManager.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import {
   ProjectionSnapshotQuery,
@@ -27,12 +32,21 @@ function makeCandidate(input: {
   readonly branch?: string;
   readonly cwd?: string;
   readonly branchObservedAt?: string;
+  readonly branchHeadRef?: string | null;
+  readonly branchHeadRepository?: string | null;
+  readonly branchHeadOwner?: string | null;
+  readonly branchHeadIsCrossRepository?: boolean | null;
 }): ProjectionMergedPullRequestCandidate {
   return {
     threadId: ThreadId.make(input.id),
     branch: input.branch ?? BRANCH,
     cwd: input.cwd ?? WORKSPACE_ROOT,
     branchObservedAt: input.branchObservedAt ?? BRANCH_OBSERVED_AT,
+    branchEventId: EventId.make(`event-${input.id}`),
+    branchHeadRef: input.branchHeadRef ?? null,
+    branchHeadRepository: input.branchHeadRepository ?? null,
+    branchHeadOwner: input.branchHeadOwner ?? null,
+    branchHeadIsCrossRepository: input.branchHeadIsCrossRepository ?? null,
   };
 }
 
@@ -53,17 +67,29 @@ function pullRequest(input: {
 function observation(
   pullRequestValue: VcsStatusRemoteResult["pr"],
   mergedAt: string | null = PULL_REQUEST_MERGED_AT,
+  headAssociation: GitBranchHeadAssociation = {
+    headRef: pullRequestValue?.headRef ?? BRANCH,
+    repositoryNameWithOwner: null,
+    ownerLogin: null,
+    isCrossRepository: false,
+  },
 ): GitPullRequestBranchObservation {
-  return { pullRequest: pullRequestValue, mergedAt };
+  return { pullRequest: pullRequestValue, mergedAt, headAssociation };
 }
 
 const branchKey = (cwd: string, branch: string) => `${cwd}\u0000${branch}`;
 
-function runSweep(input: {
+function runSweepResult(input: {
   readonly candidates: ReadonlyArray<ProjectionMergedPullRequestCandidate>;
   readonly pullRequestByBranch: ReadonlyMap<string, GitPullRequestBranchObservation>;
 }) {
   const dispatched: OrchestrationCommand[] = [];
+  const recordedBranchHeads: Array<
+    Parameters<ProjectionThreadRepository["Service"]["recordBranchHead"]>[0]
+  > = [];
+  const lookups: Array<
+    Parameters<GitWorkflowService.GitWorkflowService["Service"]["pullRequestForBranch"]>[0]
+  > = [];
 
   const testLayer = layer.pipe(
     Layer.provideMerge(NodeServices.layer),
@@ -83,11 +109,23 @@ function runSweep(input: {
       }),
     ),
     Layer.provide(
+      Layer.mock(ProjectionThreadRepository)({
+        recordBranchHead: (record) =>
+          Effect.sync(() => {
+            recordedBranchHeads.push(record);
+          }),
+      }),
+    ),
+    Layer.provide(
       Layer.mock(GitWorkflowService.GitWorkflowService)({
-        pullRequestForBranch: ({ cwd, branch }) =>
-          Effect.succeed(
-            input.pullRequestByBranch.get(branchKey(cwd, branch)) ?? observation(null, null),
-          ),
+        pullRequestForBranch: (lookup) =>
+          Effect.sync(() => {
+            lookups.push(lookup);
+            return (
+              input.pullRequestByBranch.get(branchKey(lookup.cwd, lookup.branch)) ??
+              observation(null, null)
+            );
+          }),
       }),
     ),
   );
@@ -95,8 +133,15 @@ function runSweep(input: {
   return Effect.gen(function* () {
     const reactor = yield* ThreadMergedPullRequestReactor;
     yield* reactor.sweepOnce;
-    return dispatched;
+    return { dispatched, recordedBranchHeads, lookups };
   }).pipe(Effect.provide(testLayer));
+}
+
+function runSweep(input: {
+  readonly candidates: ReadonlyArray<ProjectionMergedPullRequestCandidate>;
+  readonly pullRequestByBranch: ReadonlyMap<string, GitPullRequestBranchObservation>;
+}) {
+  return runSweepResult(input).pipe(Effect.map(({ dispatched }) => dispatched));
 }
 
 describe("ThreadMergedPullRequestReactor", () => {
@@ -117,6 +162,7 @@ describe("ThreadMergedPullRequestReactor", () => {
         expect(settleCommand.commandId.startsWith("server:auto-settle:pr-merged:")).toBe(true);
         expect(settleCommand.onlyIfAutoSettlementEligible).toBe(true);
         expect(settleCommand.expectedBranch).toBe(BRANCH);
+        expect(settleCommand.expectedBranchEventId).toBe("event-merged");
 
         const stopCommand = commands[1];
         expect(stopCommand?.type).toBe("thread.session.stop");
@@ -127,6 +173,56 @@ describe("ThreadMergedPullRequestReactor", () => {
           expect(Number.isNaN(Date.parse(stopCommand.createdAt))).toBe(false);
         }
       }
+    }),
+  );
+
+  it.effect("persists and reuses the exact branch head for its branch incarnation", () =>
+    Effect.gen(function* () {
+      const exactHead = {
+        headRef: BRANCH,
+        repositoryNameWithOwner: "octocat/repo",
+        ownerLogin: "octocat",
+        isCrossRepository: true,
+      } as const;
+      const first = yield* runSweepResult({
+        candidates: [makeCandidate({ id: "learn-head" })],
+        pullRequestByBranch: new Map([
+          [
+            branchKey(WORKSPACE_ROOT, BRANCH),
+            observation(pullRequest({ state: "open" }), null, exactHead),
+          ],
+        ]),
+      });
+      expect(first.recordedBranchHeads).toEqual([
+        {
+          threadId: "learn-head",
+          branchEventId: "event-learn-head",
+          headRef: BRANCH,
+          repositoryNameWithOwner: "octocat/repo",
+          ownerLogin: "octocat",
+          isCrossRepository: true,
+        },
+      ]);
+
+      const second = yield* runSweepResult({
+        candidates: [
+          makeCandidate({
+            id: "reuse-head",
+            branchHeadRef: exactHead.headRef,
+            branchHeadRepository: exactHead.repositoryNameWithOwner,
+            branchHeadOwner: exactHead.ownerLogin,
+            branchHeadIsCrossRepository: exactHead.isCrossRepository,
+          }),
+        ],
+        pullRequestByBranch: new Map([
+          [
+            branchKey(WORKSPACE_ROOT, BRANCH),
+            observation(pullRequest({ state: "open" }), null, exactHead),
+          ],
+        ]),
+      });
+      expect(second.lookups[0]?.headAssociation).toEqual(exactHead);
+      expect(second.recordedBranchHeads).toEqual([]);
     }),
   );
 

@@ -371,6 +371,9 @@ export const OrchestrationThread = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
+  // Server-owned token for the event that established the current branch.
+  // Optional so snapshots from older servers remain decodable.
+  branchEventId: Schema.optional(EventId),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
@@ -695,6 +698,9 @@ const ThreadSettleCommand = Schema.Struct({
   // The branch observed as merged. Automatic settlement must not land after
   // a concurrent metadata update associates the thread with another branch.
   expectedBranch: Schema.optional(TrimmedNonEmptyString),
+  // A branch can change A -> B -> A while a forge lookup is in flight. The
+  // event token distinguishes those same-named branch incarnations.
+  expectedBranchEventId: Schema.optional(EventId),
 });
 
 const ThreadUnsettleCommand = Schema.Struct({

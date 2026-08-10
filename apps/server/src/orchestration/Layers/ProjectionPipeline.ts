@@ -610,6 +610,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             runtimeMode: event.payload.runtimeMode,
             interactionMode: event.payload.interactionMode,
             branch: event.payload.branch,
+            branchEventId: event.eventId,
+            branchHeadRef: null,
+            branchHeadRepository: null,
+            branchHeadOwner: null,
+            branchHeadIsCrossRepository: null,
             worktreePath: event.payload.worktreePath,
             latestTurnId: null,
             createdAt: event.payload.createdAt,
@@ -795,7 +800,16 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...(event.payload.modelSelection !== undefined
               ? { modelSelection: event.payload.modelSelection }
               : {}),
-            ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
+            ...(event.payload.branch !== undefined
+              ? {
+                  branch: event.payload.branch,
+                  branchEventId: event.eventId,
+                  branchHeadRef: null,
+                  branchHeadRepository: null,
+                  branchHeadOwner: null,
+                  branchHeadIsCrossRepository: null,
+                }
+              : {}),
             ...(event.payload.worktreePath !== undefined
               ? { worktreePath: event.payload.worktreePath }
               : {}),

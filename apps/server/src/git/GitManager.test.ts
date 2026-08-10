@@ -918,6 +918,12 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           state: "merged",
         },
         mergedAt: "2026-01-02T00:00:00.000Z",
+        headAssociation: {
+          headRef: branch,
+          repositoryNameWithOwner: null,
+          ownerLogin: null,
+          isCrossRepository: false,
+        },
       });
       expect(ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`))).toBe(
         true,
@@ -979,6 +985,12 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           state: "merged",
         },
         mergedAt: "2026-01-03T00:00:00.000Z",
+        headAssociation: {
+          headRef: branch,
+          repositoryNameWithOwner: null,
+          ownerLogin: null,
+          isCrossRepository: false,
+        },
       });
     }),
   );
@@ -1014,7 +1026,16 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
 
       const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
 
-      expect(observation).toEqual({ pullRequest: null, mergedAt: null });
+      expect(observation).toEqual({
+        pullRequest: null,
+        mergedAt: null,
+        headAssociation: {
+          headRef: branch,
+          repositoryNameWithOwner: null,
+          ownerLogin: null,
+          isCrossRepository: false,
+        },
+      });
       expect(ghCalls.some((call) => call.includes("pr list"))).toBe(false);
     }),
   );
@@ -1064,6 +1085,12 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           state: "merged",
         },
         mergedAt: "2026-01-03T00:00:00.000Z",
+        headAssociation: {
+          headRef: branch,
+          repositoryNameWithOwner: null,
+          ownerLogin: null,
+          isCrossRepository: false,
+        },
       });
       expect(ghCalls.some((call) => call.includes(`pr list --head ${branch} --state all`))).toBe(
         true,
@@ -1071,7 +1098,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
-  it.effect("resolves a deleted cross-repository branch from its remaining fork remote", () =>
+  it.effect("resolves a deleted fork branch only from its durable head identity", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
       yield* initRepo(repoDir);
@@ -1090,13 +1117,39 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const branch = "feature/deleted-fork-branch";
       yield* runGit(repoDir, ["checkout", "-b", branch]);
       yield* runGit(repoDir, ["push", "-u", "fork-seed", branch]);
-      yield* runGit(repoDir, ["checkout", "main"]);
-      yield* runGit(repoDir, ["branch", "-D", branch]);
-      yield* runGit(repoDir, ["push", "fork-seed", "--delete", branch]);
+
+      const unrelatedForkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "unrelated-fork", unrelatedForkDir]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "unrelated-fork",
+        "git@github.com:intruder/codething-mvp.git",
+        unrelatedForkDir,
+      );
 
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
           prListByHeadSelector: {
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            [`intruder:${branch}`]: JSON.stringify([
+              {
+                number: 99,
+                title: "Unrelated fork PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/99",
+                baseRefName: "main",
+                headRefName: branch,
+                state: "merged",
+                mergedAt: "2026-01-07T00:00:00.000Z",
+                updatedAt: "2026-01-08T00:00:00.000Z",
+                isCrossRepository: true,
+                headRepository: {
+                  nameWithOwner: "intruder/codething-mvp",
+                },
+                headRepositoryOwner: {
+                  login: "intruder",
+                },
+              },
+            ]),
             // @effect-diagnostics-next-line preferSchemaOverJson:off
             [`octocat:${branch}`]: JSON.stringify([
               {
@@ -1121,7 +1174,23 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         },
       });
 
-      const observation = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+      const beforeDeletion = yield* manager.pullRequestForBranch({ cwd: repoDir, branch });
+      expect(beforeDeletion.headAssociation).toEqual({
+        headRef: branch,
+        repositoryNameWithOwner: "octocat/codething-mvp",
+        ownerLogin: "octocat",
+        isCrossRepository: true,
+      });
+
+      yield* runGit(repoDir, ["checkout", "main"]);
+      yield* runGit(repoDir, ["branch", "-D", branch]);
+      yield* runGit(repoDir, ["push", "fork-seed", "--delete", branch]);
+
+      const observation = yield* manager.pullRequestForBranch({
+        cwd: repoDir,
+        branch,
+        headAssociation: beforeDeletion.headAssociation,
+      });
 
       expect(observation).toEqual({
         pullRequest: {
@@ -1133,12 +1202,19 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           state: "merged",
         },
         mergedAt: "2026-01-05T00:00:00.000Z",
+        headAssociation: {
+          headRef: branch,
+          repositoryNameWithOwner: "octocat/codething-mvp",
+          ownerLogin: "octocat",
+          isCrossRepository: true,
+        },
       });
       expect(
         ghCalls.some((call) =>
           call.includes(`pr list --head octocat:${branch} --state all --limit 20`),
         ),
       ).toBe(true);
+      expect(ghCalls.some((call) => call.includes(`--head intruder:${branch}`))).toBe(false);
     }),
   );
 
@@ -2987,39 +3063,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           headContext,
         ),
       ).toBe(true);
-    }),
-  );
-
-  it.effect("matches historical fork PRs only to a configured remote identity", () =>
-    Effect.sync(() => {
-      const headContext = {
-        headBranch: "statemachine",
-        headRepositoryNameWithOwner: null,
-        headRepositoryOwnerLogin: null,
-        isCrossRepository: false,
-        historicalHeadIdentities: [
-          {
-            repositoryNameWithOwner: "octocat/codething-mvp",
-            ownerLogin: "octocat",
-          },
-        ],
-      };
-      const pullRequest = (owner: string) => ({
-        number: 142,
-        title: "Fork PR",
-        url: "https://github.com/pingdotgg/codething-mvp/pull/142",
-        baseRefName: "main",
-        headRefName: "statemachine",
-        state: "merged" as const,
-        updatedAt: Option.none(),
-        mergedAt: Option.none(),
-        isCrossRepository: true,
-        headRepositoryNameWithOwner: `${owner}/codething-mvp`,
-        headRepositoryOwnerLogin: owner,
-      });
-
-      expect(GitManager.matchesBranchHeadContext(pullRequest("octocat"), headContext)).toBe(true);
-      expect(GitManager.matchesBranchHeadContext(pullRequest("intruder"), headContext)).toBe(false);
     }),
   );
 

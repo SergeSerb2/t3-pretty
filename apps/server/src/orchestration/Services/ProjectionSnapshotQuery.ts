@@ -8,6 +8,7 @@
  */
 import type {
   CheckpointRef,
+  EventId,
   OrchestrationCheckpointSummary,
   OrchestrationProject,
   OrchestrationProjectShell,
@@ -59,6 +60,11 @@ export interface ProjectionMergedPullRequestCandidate {
   readonly branch: string;
   readonly cwd: string;
   readonly branchObservedAt: string;
+  readonly branchEventId: EventId;
+  readonly branchHeadRef: string | null;
+  readonly branchHeadRepository: string | null;
+  readonly branchHeadOwner: string | null;
+  readonly branchHeadIsCrossRepository: boolean | null;
 }
 
 /**

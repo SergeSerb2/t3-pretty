@@ -362,6 +362,8 @@ it.effect("decodes thread settle and unsettle commands", () =>
       type: "thread.settle",
       commandId: "cmd-settle-1",
       threadId: "thread-1",
+      expectedBranch: "feature/merged-pr",
+      expectedBranchEventId: "event-merged-pr",
     });
     const unsettle = yield* decodeOrchestrationCommand({
       type: "thread.unsettle",
@@ -371,6 +373,9 @@ it.effect("decodes thread settle and unsettle commands", () =>
     });
 
     assert.strictEqual(settle.type, "thread.settle");
+    if (settle.type === "thread.settle") {
+      assert.strictEqual(settle.expectedBranchEventId, "event-merged-pr");
+    }
     assert.strictEqual(unsettle.type, "thread.unsettle");
 
     // "activity" is server-owned: it exists on the event, never on the
@@ -420,6 +425,7 @@ it.effect("defaults settled fields when decoding historical thread data", () =>
 
     assert.strictEqual(thread.settledOverride, null);
     assert.strictEqual(thread.settledAt, null);
+    assert.strictEqual(thread.branchEventId, undefined);
     assert.strictEqual(shell.settledOverride, null);
     assert.strictEqual(shell.settledAt, null);
   }),
