@@ -65,6 +65,7 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.browserArtifactsDir, "/tmp/t3/userdata/browser-artifacts");
       assert.equal(environment.rootDir, "/repo");
       assert.equal(environment.appRoot, "/repo");
+      assert.equal(environment.developmentDockIconPath, "/repo/assets/pretty/t3-pretty-1024.png");
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
       assert.equal(environment.backendCwd, "/repo");
       assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev");
