@@ -42,6 +42,8 @@ T3 Code works with the platforms your team already uses:
 - Open the review directly in your browser with one click
 - Check out a teammate's branch to review code locally
 
+When a PR/MR merges, its thread settles automatically across clients. Pinned threads and threads you explicitly kept active remain in the active list.
+
 The Codex indicator is based on activity GitHub exposes publicly: the connector's eyes reaction while
 reviewing, thumbs-up when it finishes without comments, or a posted Codex review when it finds
 issues. **No public signal** is intentionally not labeled as “skipped”: it can also mean Smart Review
