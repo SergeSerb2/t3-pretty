@@ -14,8 +14,11 @@ import {
 /**
  * Managed tunnels a user may hold at once unless a row in
  * `relay_managed_tunnel_limits` overrides it for that user.
+ *
+ * Fork: raised from the parent's 3 — this relay serves a handful of users, so
+ * the cap only guards against runaway tunnel provisioning.
  */
-export const DEFAULT_MANAGED_TUNNEL_LIMIT = 3;
+export const DEFAULT_MANAGED_TUNNEL_LIMIT = 100;
 
 export class ManagedTunnelLimitPersistenceError extends Schema.TaggedErrorClass<ManagedTunnelLimitPersistenceError>()(
   "ManagedTunnelLimitPersistenceError",
