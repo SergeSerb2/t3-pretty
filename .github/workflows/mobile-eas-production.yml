@@ -5,7 +5,20 @@ name: Mobile EAS Production
 # in the same OS/pnpm as the EAS build; a macOS `eas build` computes a different
 # fingerprint (platform-specific deps + pnpm version) and errors. On this Linux
 # runner, with corepack pinning pnpm 10.24 in eas.json, local == build.
+#
+# Fork release train: every merge to main publishes an OTA update to the
+# fork-owned EAS project (mode=update, all platforms). Store builds stay
+# manual via workflow_dispatch. Both paths no-op until EXPO_TOKEN and a
+# fork EAS project exist — see docs/operations/fork-mobile-release.md.
 on:
+  push:
+    branches: [main]
+    paths:
+      - apps/mobile/**
+      - packages/**
+      - patches/**
+      - pnpm-lock.yaml
+      - .github/workflows/mobile-eas-production.yml
   workflow_dispatch:
     inputs:
       mode:
@@ -30,15 +43,22 @@ on:
         required: false
         type: string
 
+concurrency:
+  group: mobile-eas-production
+  cancel-in-progress: false
+
 jobs:
   production:
-    name: EAS Production ${{ inputs.mode }}
+    name: EAS Production ${{ github.event_name == 'push' && 'update' || inputs.mode }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
     permissions:
       contents: read
     env:
       APP_VARIANT: production
       NODE_OPTIONS: --max-old-space-size=8192
+      # push → OTA update for every platform; dispatch → operator's choice.
+      MODE: ${{ github.event_name == 'push' && 'update' || inputs.mode }}
+      PLATFORM: ${{ github.event_name == 'push' && 'all' || inputs.platform }}
     steps:
       - id: expo-token
         name: Check for EXPO_TOKEN
@@ -99,14 +119,14 @@ jobs:
         run: eas env:pull production --non-interactive
 
       - name: Build and submit
-        if: steps.expo-token.outputs.present == 'true' && inputs.mode == 'build'
+        if: steps.expo-token.outputs.present == 'true' && env.MODE == 'build'
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas build --platform ${{ inputs.platform }} --profile production --auto-submit --non-interactive --no-wait
+        run: eas build --platform "$PLATFORM" --profile production --auto-submit --non-interactive --no-wait
 
       - name: Publish OTA update
-        if: steps.expo-token.outputs.present == 'true' && inputs.mode == 'update'
+        if: steps.expo-token.outputs.present == 'true' && env.MODE == 'update'
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -114,6 +134,6 @@ jobs:
           eas update \
             --channel production \
             --environment production \
-            --platform ${{ inputs.platform }} \
+            --platform "$PLATFORM" \
             --message "${{ inputs.message || format('Production OTA ({0})', github.sha) }}" \
             --non-interactive
