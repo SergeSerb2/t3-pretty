@@ -17,13 +17,20 @@ import {
   T3_PROJECT_FILE_NAME,
   ThreadId,
 } from "@t3tools/contracts";
+import {
+  applyCreatePullRequestSuffix,
+  resolveAutoCreatePullRequest,
+  stripCreatePullRequestSuffix,
+} from "@t3tools/shared/createPullRequestPrompt";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import {
   isDefaultThreadEnvModeSettled,
   resolveDefaultThreadEnvMode,
 } from "@t3tools/shared/threadEnvMode";
+import { useAtomValue } from "@effect/atom-react";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
+import { AsyncResult } from "effect/unstable/reactivity";
 
 import { useEnvironmentServerConfig, useProjects, useThreadShells } from "../../state/entities";
 import type { TurnCommandMetadata } from "../../lib/commandMetadata";
@@ -74,6 +81,7 @@ import {
   type HomeProjectScope,
 } from "../home/homeThreadList";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
+import { mobilePreferencesAtom } from "../../state/preferences";
 
 type WorkspaceMode = "local" | "worktree";
 
@@ -384,6 +392,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     projectFilePending: t3ProjectFileQuery.isPending,
   });
   const workspaceMode = selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode;
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const autoCreatePullRequestByEnvMode = AsyncResult.isSuccess(preferencesResult)
+    ? preferencesResult.value.autoCreatePullRequestByEnvMode
+    : undefined;
   const selectedBranchName = selectedProjectDraft.workspaceSelection?.branch ?? null;
   const selectedWorktreePath = selectedProjectDraft.workspaceSelection?.worktreePath ?? null;
   // Keep the user's explicit choice separate from the resolved display value:
@@ -702,7 +714,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     const draftKey = pendingTaskDraftKey(message.messageId);
     // Only hydrate a fresh editing draft; reopening mid-edit keeps newer edits.
     if (isComposerDraftEmpty(getComposerDraftSnapshot(draftKey))) {
-      setComposerDraftText(draftKey, message.text);
+      // Queued text may carry the agent-facing auto-PR block; the editor shows
+      // only what the user typed, and re-queueing re-applies the suffix.
+      setComposerDraftText(draftKey, stripCreatePullRequestSuffix(message.text));
       replaceComposerDraftAttachments(draftKey, message.attachments);
       updateComposerDraftSettings(draftKey, {
         modelSelection: message.modelSelection,
@@ -763,7 +777,13 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         threadId: ThreadId.make(metadata.threadId),
         messageId: MessageId.make(metadata.messageId),
         commandId: CommandId.make(metadata.commandId),
-        text,
+        // Queued tasks capture the auto-PR instruction at queue time so a
+        // later preference flip cannot alter an already-queued task.
+        text: applyCreatePullRequestSuffix({
+          text,
+          autoCreatePullRequest: resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode),
+          threadHasStarted: false,
+        }),
         attachments: draft.attachments,
         modelSelection: draftModelSelection,
         runtimeMode: draft.runtimeMode ?? DEFAULT_RUNTIME_MODE,
@@ -786,6 +806,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       };
     },
     [
+      autoCreatePullRequestByEnvMode,
       editingPendingProject,
       editingPendingTask,
       selectedEnvironmentServerConfig,

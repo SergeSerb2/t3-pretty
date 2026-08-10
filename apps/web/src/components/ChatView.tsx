@@ -5111,11 +5111,14 @@ function ChatViewContent(props: ChatViewProps) {
       (text, annotation) => appendPreviewAnnotationPrompt(text, annotation),
       messageTextWithContexts,
     );
+    // The image-only fallback substitutes before the auto-PR suffix so an
+    // attachments-only first message still carries the PR instruction.
     const messageTextForSend = applyCreatePullRequestSuffix({
-      text: appendReviewCommentsToPrompt(
-        messageTextWithPreviewAnnotations,
-        composerReviewCommentsSnapshot,
-      ),
+      text:
+        appendReviewCommentsToPrompt(
+          messageTextWithPreviewAnnotations,
+          composerReviewCommentsSnapshot,
+        ) || IMAGE_ONLY_BOOTSTRAP_PROMPT,
       autoCreatePullRequest,
       threadHasStarted: !isFirstMessage,
     });
@@ -5126,7 +5129,7 @@ function ChatViewContent(props: ChatViewProps) {
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
-      text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+      text: messageTextForSend,
     });
     const turnAttachmentsPromise = Promise.all(
       composerImagesSnapshot.map(async (image) => ({

@@ -8,10 +8,14 @@ import {
   type RuntimeMode,
 } from "@t3tools/contracts";
 
+import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+
 import { toUploadChatImageAttachments, type DraftComposerImageAttachment } from "./composerImages";
 
 export function deriveThreadTitleFromPrompt(value: string): string {
-  const trimmed = value.trim();
+  // The auto-PR instruction block is agent-facing; a title derived from the
+  // prompt should reflect only what the user typed.
+  const trimmed = stripCreatePullRequestSuffix(value).trim();
   if (trimmed.length === 0) {
     return "New thread";
   }

@@ -1,5 +1,10 @@
 import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
+import {
+  AUTO_CREATE_PULL_REQUEST_DEFAULTS,
+  resolveAutoCreatePullRequest,
+  type AutoCreatePullRequestEnvMode,
+} from "@t3tools/shared/createPullRequestPrompt";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
@@ -30,17 +35,9 @@ export interface PersistedUiState {
   autoCreatePullRequestByEnvMode?: Partial<Record<AutoCreatePullRequestEnvMode, boolean>>;
 }
 
-export type AutoCreatePullRequestEnvMode = "local" | "worktree";
+export type { AutoCreatePullRequestEnvMode };
 
-/**
- * Worktree threads default to auto-PR on: a fresh worktree exists to produce a
- * branch, and its work is expected to land as a pull request. Local threads
- * default off.
- */
-export const DEFAULT_AUTO_CREATE_PULL_REQUEST: Record<AutoCreatePullRequestEnvMode, boolean> = {
-  local: false,
-  worktree: true,
-};
+export const DEFAULT_AUTO_CREATE_PULL_REQUEST = AUTO_CREATE_PULL_REQUEST_DEFAULTS;
 
 export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
@@ -163,11 +160,8 @@ function sanitizeAutoCreatePullRequest(
   value: PersistedUiState["autoCreatePullRequestByEnvMode"],
 ): Record<AutoCreatePullRequestEnvMode, boolean> {
   return {
-    local: typeof value?.local === "boolean" ? value.local : DEFAULT_AUTO_CREATE_PULL_REQUEST.local,
-    worktree:
-      typeof value?.worktree === "boolean"
-        ? value.worktree
-        : DEFAULT_AUTO_CREATE_PULL_REQUEST.worktree,
+    local: resolveAutoCreatePullRequest(value, "local"),
+    worktree: resolveAutoCreatePullRequest(value, "worktree"),
   };
 }
 

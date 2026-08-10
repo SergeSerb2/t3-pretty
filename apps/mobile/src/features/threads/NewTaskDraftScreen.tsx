@@ -1,4 +1,10 @@
 import { NativeStackScreenOptions } from "../../native/StackHeader";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/unstable/reactivity";
+import {
+  applyCreatePullRequestSuffix,
+  resolveAutoCreatePullRequest,
+} from "@t3tools/shared/createPullRequestPrompt";
 import { StackActions, useNavigation, usePreventRemove } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, InteractionManager, Platform, View, useColorScheme } from "react-native";
@@ -46,6 +52,7 @@ import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/re
 import { enqueueThreadOutboxMessage, removeThreadOutboxMessage } from "../../state/thread-outbox";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { branchBadgeLabel, useNewTaskFlow } from "./new-task-flow-provider";
+import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useCreateProjectThread } from "./use-project-actions";
 import { resolveDraftProjectSelection } from "./new-task-project-selection";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
@@ -708,6 +715,26 @@ export function NewTaskDraftScreen(props: {
     [flow],
   );
 
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const autoCreatePullRequestByEnvMode = AsyncResult.isSuccess(preferencesResult)
+    ? preferencesResult.value.autoCreatePullRequestByEnvMode
+    : undefined;
+  // Resolved against the mode currently shown in the workspace pill so the
+  // toggle always reflects what the next Start tap will send.
+  const autoCreatePullRequest = resolveAutoCreatePullRequest(
+    autoCreatePullRequestByEnvMode,
+    flow.workspaceMode,
+  );
+  const toggleAutoCreatePullRequest = () => {
+    savePreferences({
+      autoCreatePullRequestByEnvMode: {
+        ...autoCreatePullRequestByEnvMode,
+        [flow.workspaceMode]: !autoCreatePullRequest,
+      },
+    });
+  };
+
   async function handleStart(): Promise<void> {
     const selectedProject = flow.selectedProject;
     const draftKey = flow.draftKey;
@@ -801,7 +828,14 @@ export function NewTaskDraftScreen(props: {
       startFromOrigin,
       runtimeMode,
       interactionMode,
-      initialMessageText,
+      initialMessageText: applyCreatePullRequestSuffix({
+        text: initialMessageText,
+        autoCreatePullRequest: resolveAutoCreatePullRequest(
+          autoCreatePullRequestByEnvMode,
+          workspaceMode,
+        ),
+        threadHasStarted: false,
+      }),
       initialAttachments: draft.attachments,
       ...(editingPendingTask
         ? {
@@ -950,6 +984,17 @@ export function NewTaskDraftScreen(props: {
           label={workspaceLabel}
         />
       </ControlPillMenu>
+      <ComposerToolbarButton
+        accessibilityLabel={
+          autoCreatePullRequest ? "Create PR when done: on" : "Create PR when done: off"
+        }
+        active={autoCreatePullRequest}
+        disabled={isIncomingShareTransferPending}
+        icon="arrow.triangle.pull"
+        label="PR"
+        onPress={toggleAutoCreatePullRequest}
+        showChevron={false}
+      />
     </>
   );
 

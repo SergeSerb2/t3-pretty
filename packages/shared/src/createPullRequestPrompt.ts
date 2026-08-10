@@ -8,6 +8,26 @@
 
 export const CREATE_PULL_REQUEST_TAG = "create_pull_request_instructions";
 
+export type AutoCreatePullRequestEnvMode = "local" | "worktree";
+
+/**
+ * Worktree threads default to auto-PR on: a fresh worktree exists to produce a
+ * branch, and its work is expected to land as a pull request. Local threads
+ * default off. Shared so every client resolves the same defaults.
+ */
+export const AUTO_CREATE_PULL_REQUEST_DEFAULTS: Record<AutoCreatePullRequestEnvMode, boolean> = {
+  local: false,
+  worktree: true,
+};
+
+export function resolveAutoCreatePullRequest(
+  byEnvMode: Partial<Record<AutoCreatePullRequestEnvMode, boolean | undefined>> | null | undefined,
+  envMode: AutoCreatePullRequestEnvMode,
+): boolean {
+  const stored = byEnvMode?.[envMode];
+  return typeof stored === "boolean" ? stored : AUTO_CREATE_PULL_REQUEST_DEFAULTS[envMode];
+}
+
 const OPEN_TAG = `<${CREATE_PULL_REQUEST_TAG}>`;
 const CLOSE_TAG = `</${CREATE_PULL_REQUEST_TAG}>`;
 

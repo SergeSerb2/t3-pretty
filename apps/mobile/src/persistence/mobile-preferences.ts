@@ -34,6 +34,15 @@ export interface Preferences {
    * default flat list — see `resolveThreadListV2Enabled`.
    */
   readonly legacyThreadListEnabled?: boolean;
+  /**
+   * Auto-PR toggle state per workspace mode, mirroring the web client.
+   * Absent keys fall back to `AUTO_CREATE_PULL_REQUEST_DEFAULTS` (worktree
+   * on, local off) via `resolveAutoCreatePullRequest`.
+   */
+  readonly autoCreatePullRequestByEnvMode?: {
+    readonly local?: boolean;
+    readonly worktree?: boolean;
+  };
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedErrorClass<MobilePreferencesLoadError>()(
@@ -86,6 +95,10 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     legacyThreadListEnabled?: boolean;
+    autoCreatePullRequestByEnvMode?: {
+      local?: boolean;
+      worktree?: boolean;
+    };
   } = {};
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
@@ -124,6 +137,21 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.legacyThreadListEnabled === "boolean") {
     preferences.legacyThreadListEnabled = parsed.legacyThreadListEnabled;
+  }
+  if (
+    typeof parsed.autoCreatePullRequestByEnvMode === "object" &&
+    parsed.autoCreatePullRequestByEnvMode !== null
+  ) {
+    const byEnvMode: { local?: boolean; worktree?: boolean } = {};
+    if (typeof parsed.autoCreatePullRequestByEnvMode.local === "boolean") {
+      byEnvMode.local = parsed.autoCreatePullRequestByEnvMode.local;
+    }
+    if (typeof parsed.autoCreatePullRequestByEnvMode.worktree === "boolean") {
+      byEnvMode.worktree = parsed.autoCreatePullRequestByEnvMode.worktree;
+    }
+    if (Object.keys(byEnvMode).length > 0) {
+      preferences.autoCreatePullRequestByEnvMode = byEnvMode;
+    }
   }
   return preferences;
 }
