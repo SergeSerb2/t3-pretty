@@ -328,8 +328,10 @@ jobs:
           security import "$certificate_path" -k "$signing_keychain" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S 'apple-tool:,apple:,codesign:' -s -k "$keychain_password" "$signing_keychain" >/dev/null
           security list-keychains -d user -s "$signing_keychain" "$HOME/Library/Keychains/login.keychain-db"
+          # electron-builder rejects CSC_NAME values that include the
+          # certificate-type prefix.
           identity_name="$(security find-identity -v -p codesigning "$signing_keychain" |
-            sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -n 1)"
+            sed -n 's/.*"Developer ID Application: \([^"]*\)".*/\1/p' | head -n 1)"
           if [[ -z "$identity_name" ]]; then
             echo "No valid Developer ID Application identity in the prepared keychain." >&2
             exit 1
