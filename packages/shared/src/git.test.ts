@@ -33,6 +33,30 @@ describe("normalizeGitRemoteUrl", () => {
     );
   });
 
+  it("canonicalizes scp-style remotes with non-git SSH usernames", () => {
+    expect(normalizeGitRemoteUrl("alice@gitlab.company.com:Team/Repo.git")).toBe(
+      "gitlab.company.com/team/repo",
+    );
+  });
+
+  it("treats slash-separated non-git user paths as filesystem paths", () => {
+    expect(normalizeGitRemoteUrl("alice@github.com/team/repo.git")).toBe(
+      "alice@github.com/team/repo",
+    );
+    // Legacy git@host/path form remains recognized.
+    expect(normalizeGitRemoteUrl("git@github.com/T3Tools/T3Code.git")).toBe(
+      "github.com/t3tools/t3code",
+    );
+  });
+
+  it("canonicalizes userless scp-style remotes", () => {
+    expect(normalizeGitRemoteUrl("github.com:Fork/Repo.git")).toBe("github.com/fork/repo");
+    // Absolute and drive-letter paths must not parse as host/path.
+    expect(normalizeGitRemoteUrl("/srv/git/repo.git")).toBe("/srv/git/repo");
+    expect(normalizeGitRemoteUrl("C:/repos/project")).toBe("c:/repos/project");
+    expect(normalizeGitRemoteUrl("C:repos/project")).toBe("c:repos/project");
+  });
+
   it("drops explicit ports from URL-shaped remotes", () => {
     expect(normalizeGitRemoteUrl("https://gitlab.company.com:8443/team/project.git")).toBe(
       "gitlab.company.com/team/project",
