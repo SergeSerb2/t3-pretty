@@ -5736,7 +5736,14 @@ function ChatViewContent(props: ChatViewProps) {
     const createdAt = new Date().toISOString();
     const nextThreadId = newThreadId();
     const planMarkdown = activeProposedPlan.planMarkdown;
-    const implementationPrompt = buildPlanImplementationPrompt(planMarkdown);
+    // The implementation prompt is the new thread's first user message, so the
+    // auto-PR toggle applies to it the same way it applies to a composer send —
+    // the implementing agent is the one that should open the PR.
+    const implementationPrompt = applyCreatePullRequestSuffix({
+      text: buildPlanImplementationPrompt(planMarkdown),
+      autoCreatePullRequest,
+      threadHasStarted: false,
+    });
     const outgoingImplementationPrompt = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
@@ -5849,6 +5856,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeProposedPlan,
     activeThreadBranch,
     activeThread,
+    autoCreatePullRequest,
     beginLocalDispatch,
     activeEnvironmentUnavailable,
     createThread,

@@ -3,6 +3,7 @@ import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { type LegendListRef } from "@legendapp/list/react-native";
 import type { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contracts";
 import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
+import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 import { formatElapsed } from "@t3tools/shared/orchestrationTiming";
 import { SymbolView } from "../../components/AppSymbol";
 import { HeaderHeightContext } from "@react-navigation/elements";
@@ -1056,13 +1057,17 @@ function UserMessageContent(props: {
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly onLinkPress: (href: string) => void;
 }) {
-  const segments = parseReviewCommentMessageSegments(props.text);
+  // Messages sent from clients with the auto-PR toggle on carry a canned
+  // instruction block that those clients hide from the bubble; hide it here
+  // too so the same thread reads identically on mobile.
+  const displayText = stripCreatePullRequestSuffix(props.text);
+  const segments = parseReviewCommentMessageSegments(displayText);
   const hasReviewComment = segments.some((segment) => segment.kind === "review-comment");
   if (!hasReviewComment) {
     if (hasNativeSelectableMarkdownText()) {
       return (
         <SelectableMarkdownText
-          markdown={props.text}
+          markdown={displayText}
           skills={props.skills}
           textStyle={props.markdownStyles.nativeTextStyle}
           preserveSoftBreaks
@@ -1077,7 +1082,7 @@ function UserMessageContent(props: {
         styles={props.markdownStyles.styles}
         theme={props.markdownStyles.theme}
       >
-        {props.text}
+        {displayText}
       </Markdown>
     );
   }
