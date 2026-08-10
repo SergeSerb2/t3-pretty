@@ -854,17 +854,17 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     execute: ({ pattern, limit }) =>
       // `candidates` reduces user messages to their visible text (the hidden
       // auto-PR instruction block is a trailing suffix, so everything from the
-      // marker on is agent-only) BEFORE the LIKE filter, per-thread ranking,
-      // and LIMIT run — a hidden-only hit must neither claim a thread's rank
-      // slot nor consume a result slot. Stripping only happens when the text
-      // ends with the closing marker, so a user merely quoting the markup
-      // stays fully searchable. SQLite cannot cheaply find the LAST marker, so
-      // when a message both quotes the opening marker mid-text AND carries the
-      // generated suffix, matching conservatively ignores the text between the
-      // two markers — it over-hides in that contrived case, never leaks; the
-      // snippet itself is rebuilt in TS with exact last-marker stripping.
+      // final marker on is agent-only) BEFORE the LIKE filter, per-thread
+      // ranking, and LIMIT run — a hidden-only hit must neither claim a
+      // thread's rank slot nor consume a result slot. The `openN` CTE chain
+      // walks successive opening-marker positions so the cut happens at the
+      // LAST marker (matching the shared stripper) and user text that merely
+      // quotes the marker stays searchable; stripping additionally requires
+      // the closing marker at the end of the text. The walk is capped at four
+      // markers — beyond that it cuts at the fourth, which can only over-hide,
+      // never leak.
       sql`
-        WITH candidates AS (
+        WITH base AS (
           SELECT
             threads.thread_id AS thread_id,
             threads.project_id AS project_id,
@@ -872,20 +872,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               WHEN 'user' THEN 'user'
               ELSE 'assistant'
             END AS source,
-            CASE
-              WHEN messages.role = 'user'
-                AND instr(messages.text, ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}) > 0
-                AND substr(
-                  rtrim(messages.text),
-                  -${AUTO_PR_INSTRUCTIONS_CLOSE_TAG.length}
-                ) = ${AUTO_PR_INSTRUCTIONS_CLOSE_TAG}
-              THEN substr(
-                messages.text,
-                1,
-                instr(messages.text, ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}) - 1
-              )
-              ELSE messages.text
-            END AS match_text,
+            messages.role AS role,
+            messages.text AS text,
             messages.message_id AS message_id,
             messages.created_at AS message_created_at,
             CASE messages.role
@@ -913,6 +901,85 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 )
               )
             )
+        ),
+        open1 AS (
+          SELECT *, instr(text, ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}) AS open_pos
+          FROM base
+        ),
+        open2 AS (
+          SELECT
+            thread_id, project_id, source, role, text, message_id,
+            message_created_at, match_rank, thread_updated_at,
+            CASE
+              WHEN open_pos > 0
+                AND instr(
+                  substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
+                  ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
+                ) > 0
+              THEN open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length} - 1 + instr(
+                substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
+                ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
+              )
+              ELSE open_pos
+            END AS open_pos
+          FROM open1
+        ),
+        open3 AS (
+          SELECT
+            thread_id, project_id, source, role, text, message_id,
+            message_created_at, match_rank, thread_updated_at,
+            CASE
+              WHEN open_pos > 0
+                AND instr(
+                  substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
+                  ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
+                ) > 0
+              THEN open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length} - 1 + instr(
+                substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
+                ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
+              )
+              ELSE open_pos
+            END AS open_pos
+          FROM open2
+        ),
+        open4 AS (
+          SELECT
+            thread_id, project_id, source, role, text, message_id,
+            message_created_at, match_rank, thread_updated_at,
+            CASE
+              WHEN open_pos > 0
+                AND instr(
+                  substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
+                  ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
+                ) > 0
+              THEN open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length} - 1 + instr(
+                substr(text, open_pos + ${AUTO_PR_INSTRUCTIONS_OPEN_TAG.length}),
+                ${AUTO_PR_INSTRUCTIONS_OPEN_TAG}
+              )
+              ELSE open_pos
+            END AS open_pos
+          FROM open3
+        ),
+        candidates AS (
+          SELECT
+            thread_id,
+            project_id,
+            source,
+            CASE
+              WHEN role = 'user'
+                AND open_pos > 0
+                AND substr(
+                  rtrim(text),
+                  -${AUTO_PR_INSTRUCTIONS_CLOSE_TAG.length}
+                ) = ${AUTO_PR_INSTRUCTIONS_CLOSE_TAG}
+              THEN substr(text, 1, open_pos - 1)
+              ELSE text
+            END AS match_text,
+            message_id,
+            message_created_at,
+            match_rank,
+            thread_updated_at
+          FROM open4
         ),
         ranked AS (
           SELECT

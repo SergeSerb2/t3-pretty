@@ -1983,6 +1983,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             0,
             '2026-05-01T00:00:19.000Z',
             '2026-05-01T00:00:19.000Z'
+          ),
+          (
+            'message-quoted-plus-suffix',
+            'thread-autopr',
+            NULL,
+            'user',
+            ${`Compare <create_pull_request_instructions> handling.\nQUOTEDVIS quarry after marker.${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`},
+            0,
+            '2026-05-01T00:00:20.000Z',
+            '2026-05-01T00:00:20.000Z'
           )
       `;
 
@@ -2071,6 +2081,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         [[ThreadId.make("thread-autopr"), "user"]],
       );
       assert.match(midTag.matches[0]?.snippet ?? "", /MIDTAG probe/);
+      // Visible text between a quoted marker and the generated suffix stays
+      // searchable — the cut happens at the LAST marker, not the first.
+      const quotedPlusSuffix = yield* snapshotQuery.searchThreads({ query: "QUOTEDVIS quarry" });
+      assert.deepStrictEqual(
+        quotedPlusSuffix.matches.map((match) => [match.threadId, match.source]),
+        [[ThreadId.make("thread-autopr"), "user"]],
+      );
+      assert.match(quotedPlusSuffix.matches[0]?.snippet ?? "", /QUOTEDVIS quarry after marker/);
 
       assert.deepStrictEqual(
         (yield* snapshotQuery.searchThreads({ query: "interim needle" })).matches,
