@@ -14,7 +14,6 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  statuses: write
 
 jobs:
   sync:
@@ -158,40 +157,13 @@ jobs:
               -f base=main \
               -f head="$SYNC_BRANCH" \
               -f title="chore(sync): merge upstream $UPSTREAM_TAG" \
-              -f body="Automated hourly sync of the newest upstream T3 Code nightly. Clean merges are preserved directly; conflicts are resolved through CLIProxyAPI with gpt-5.6-luna at max reasoning and then gated by the fork CI checks." \
+              -f body="Automated hourly sync of the newest upstream T3 Code nightly. Clean merges are preserved directly; conflicts are resolved through CLIProxyAPI with gpt-5.6-luna at max reasoning and then merged by this workflow." \
               --jq '.number')"
           fi
           pr_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr_number"
           echo "url=$pr_url" >> "$GITHUB_OUTPUT"
 
           head_sha="$(git rev-parse HEAD)"
-          gh workflow run ci.yml -R "$GITHUB_REPOSITORY" --ref "$SYNC_BRANCH"
-
-          run_id=""
-          for _ in {1..12}; do
-            run_id="$(gh run list \
-              -R "$GITHUB_REPOSITORY" \
-              --workflow ci.yml \
-              --branch "$SYNC_BRANCH" \
-              --event workflow_dispatch \
-              --limit 10 \
-              --json databaseId,headSha \
-              --jq ".[] | select(.headSha == \"$head_sha\") | .databaseId" | head -n 1)"
-            [[ -n "$run_id" ]] && break
-            sleep 5
-          done
-          [[ -n "$run_id" ]] || { echo "Dispatched CI run was not found." >&2; exit 1; }
-
-          gh run watch "$run_id" -R "$GITHUB_REPOSITORY" --exit-status --interval 15
-          ci_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id"
-          for context in "Check" "Test" "Mobile Native Static Analysis" "Release Smoke"; do
-            gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$head_sha" \
-              -f state=success \
-              -f context="$context" \
-              -f description="Passed in dispatched CI run $run_id" \
-              -f target_url="$ci_url" >/dev/null
-          done
-
           merge_state=""
           for _ in {1..12}; do
             merge_state="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" --jq '.mergeable_state')"
