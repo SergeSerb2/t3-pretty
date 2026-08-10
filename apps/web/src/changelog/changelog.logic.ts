@@ -146,3 +146,16 @@ export function writeLastSeenChangelogVersion(version: string): void {
     console.error("Could not persist the last-seen changelog version.", error);
   }
 }
+
+/** Persist a version as seen only when it moves the marker forward, so a
+    downgraded client can never mark an already-seen release as unseen. */
+export function advanceLastSeenChangelogVersion(version: string): void {
+  if (!isAnnounceableAppVersion(version)) {
+    return;
+  }
+  const stored = readLastSeenChangelogVersion();
+  if (stored !== null && (compareAppVersions(version, stored) ?? 0) <= 0) {
+    return;
+  }
+  writeLastSeenChangelogVersion(version);
+}

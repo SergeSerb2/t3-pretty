@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  advanceLastSeenChangelogVersion,
   compareAppVersions,
   isAnnounceableAppVersion,
+  readLastSeenChangelogVersion,
   resolveWhatsNewDecision,
+  writeLastSeenChangelogVersion,
 } from "./changelog.logic";
 import type { ChangelogRelease } from "./changelogData";
 
@@ -48,6 +51,25 @@ describe("isAnnounceableAppVersion", () => {
   it("accepts real versions", () => {
     expect(isAnnounceableAppVersion("0.0.33")).toBe(true);
     expect(isAnnounceableAppVersion("v0.0.34-nightly.1")).toBe(true);
+  });
+});
+
+describe("advanceLastSeenChangelogVersion", () => {
+  it("writes when nothing is stored, advances forward, and never regresses", () => {
+    advanceLastSeenChangelogVersion("0.0.33");
+    expect(readLastSeenChangelogVersion()).toBe("0.0.33");
+
+    advanceLastSeenChangelogVersion("0.0.32");
+    expect(readLastSeenChangelogVersion()).toBe("0.0.33");
+
+    advanceLastSeenChangelogVersion("0.0.34");
+    expect(readLastSeenChangelogVersion()).toBe("0.0.34");
+  });
+
+  it("ignores non-announceable versions", () => {
+    writeLastSeenChangelogVersion("0.0.33");
+    advanceLastSeenChangelogVersion("0.0.0");
+    expect(readLastSeenChangelogVersion()).toBe("0.0.33");
   });
 });
 

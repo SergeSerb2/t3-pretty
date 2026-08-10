@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 
 import { APP_VERSION } from "../branding";
 import {
+  advanceLastSeenChangelogVersion,
   hasExistingInstallData,
-  isAnnounceableAppVersion,
   readLastSeenChangelogVersion,
   resolveWhatsNewDecision,
   writeLastSeenChangelogVersion,
@@ -62,13 +62,12 @@ export function WhatsNewHost() {
       releases={presentation.releases}
       open={open}
       announceUpdate={presentation.announceUpdate}
+      currentVersion={APP_VERSION}
       onOpenChange={(nextOpen) => {
         if (nextOpen) {
           return;
         }
-        if (isAnnounceableAppVersion(APP_VERSION)) {
-          writeLastSeenChangelogVersion(APP_VERSION);
-        }
+        advanceLastSeenChangelogVersion(APP_VERSION);
         setOpen(false);
         closeWhatsNew();
       }}

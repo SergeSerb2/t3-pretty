@@ -54,6 +54,7 @@ export function WhatsNewDialog({
   releases,
   open,
   announceUpdate,
+  currentVersion,
   onOpenChange,
 }: {
   readonly releases: readonly ChangelogRelease[];
@@ -61,10 +62,11 @@ export function WhatsNewDialog({
   /** True when the dialog announces a fresh update, false when the user
       opened the changelog on demand. */
   readonly announceUpdate: boolean;
+  /** The running app version, shown in the update announcement. It can be
+      newer than the latest changelog entry (nightlies). */
+  readonly currentVersion: string;
   readonly onOpenChange: (open: boolean) => void;
 }) {
-  const latestVersion = releases[0]?.version;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup aria-label="What's new" className="max-w-md">
@@ -80,8 +82,8 @@ export function WhatsNewDialog({
             <div className="flex min-w-0 flex-col gap-1">
               <DialogTitle>What’s new</DialogTitle>
               <DialogDescription>
-                {announceUpdate && latestVersion
-                  ? `${APP_BASE_NAME} has been updated to v${latestVersion}.`
+                {announceUpdate
+                  ? `${APP_BASE_NAME} has been updated to v${currentVersion}.`
                   : `Recent updates to ${APP_BASE_NAME}.`}
               </DialogDescription>
             </div>
