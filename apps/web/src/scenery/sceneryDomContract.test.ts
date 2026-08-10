@@ -21,6 +21,7 @@ import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
 // ?raw on a .css module yields "" under the test pipeline (the CSS transform
 // wins), so the stylesheet contract reads the file straight from disk.
 const indexCssSource = NodeFS.readFileSync(new URL("../index.css", import.meta.url), "utf8");
+const sceneryCssSource = NodeFS.readFileSync(new URL("./scenery.css", import.meta.url), "utf8");
 
 describe("scenery structural contract with upstream markup", () => {
   it("SidebarInset is still main[data-slot=sidebar-inset] painting bg-background", () => {
@@ -76,6 +77,17 @@ describe("glass contract with upstream chrome", () => {
   it("header controls still paint from the --toolbar-control var", () => {
     expect(indexCssSource).toContain("[data-chat-header] [data-toolbar-control]");
     expect(indexCssSource).toContain("background-color: var(--toolbar-control)");
+  });
+});
+
+describe("scenery attribution contract", () => {
+  it("keeps long photographer credits shrinkable inside the compact dock", () => {
+    expect(sceneryCssSource).toMatch(
+      /\.scenery-attribution__credit\s*\{[^}]*min-width: 0;[^}]*flex-shrink: 1;/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\.scenery-attribution__photographer\s*\{[^}]*min-width: 0;[^}]*flex-shrink: 1;[^}]*overflow: hidden;/s,
+    );
   });
 });
 

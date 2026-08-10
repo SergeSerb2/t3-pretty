@@ -142,7 +142,7 @@ html[data-theme-id="world-scenery"] {
 .scenery-attribution__credit {
   display: flex;
   min-width: 0;
-  flex-shrink: 0;
+  flex-shrink: 1;
   align-items: center;
   /* The links must stay hoverable through the pill's pointer-events: none. */
   pointer-events: auto;
@@ -150,7 +150,9 @@ html[data-theme-id="world-scenery"] {
 
 .scenery-attribution__photographer {
   display: inline-block;
+  min-width: 0;
   max-width: 8rem;
+  flex-shrink: 1;
   overflow: hidden;
   text-overflow: ellipsis;
 }
