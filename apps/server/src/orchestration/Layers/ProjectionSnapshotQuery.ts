@@ -7,6 +7,7 @@ import {
   OrchestrationCheckpointFile,
   OrchestrationProposedPlanId,
   OrchestrationReadModel,
+  OrchestrationSessionStatus,
   OrchestrationThreadSearchSource,
   OrchestrationShellSnapshot,
   OrchestrationThread,
@@ -114,6 +115,12 @@ const ProjectionStateDbRowSchema = ProjectionState;
 const ProjectionCountsRowSchema = Schema.Struct({
   projectCount: Schema.Number,
   threadCount: Schema.Number,
+});
+const ProjectionMergedPullRequestCandidateRowSchema = Schema.Struct({
+  threadId: ThreadId,
+  branch: Schema.String,
+  cwd: Schema.String,
+  sessionStatus: Schema.NullOr(OrchestrationSessionStatus),
 });
 const ProjectionThreadSearchRequest = Schema.Struct({
   pattern: Schema.String,
@@ -767,6 +774,39 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           (SELECT COUNT(*) FROM projection_projects) AS "projectCount",
           (SELECT COUNT(*) FROM projection_threads) AS "threadCount"
+      `,
+  });
+
+  const listMergedPullRequestCandidateRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionMergedPullRequestCandidateRowSchema,
+    execute: () =>
+      sql`
+        SELECT
+          threads.thread_id AS "threadId",
+          threads.branch,
+          CASE
+            WHEN threads.worktree_path IS NOT NULL AND TRIM(threads.worktree_path) <> ''
+              THEN threads.worktree_path
+            ELSE projects.workspace_root
+          END AS cwd,
+          sessions.status AS "sessionStatus"
+        FROM projection_threads AS threads
+        INNER JOIN projection_projects AS projects
+          ON projects.project_id = threads.project_id
+        LEFT JOIN projection_thread_sessions AS sessions
+          ON sessions.thread_id = threads.thread_id
+        WHERE threads.deleted_at IS NULL
+          AND threads.archived_at IS NULL
+          AND projects.deleted_at IS NULL
+          AND threads.branch IS NOT NULL
+          AND TRIM(threads.branch) <> ''
+          AND threads.settled_override IS NULL
+          AND threads.pinned_at IS NULL
+          AND threads.pending_approval_count = 0
+          AND threads.pending_user_input_count = 0
+          AND (sessions.status IS NULL OR sessions.status NOT IN ('starting', 'running'))
+        ORDER BY threads.created_at ASC, threads.thread_id ASC
       `,
   });
 
@@ -2128,6 +2168,17 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       ),
     );
 
+  const listMergedPullRequestCandidates: ProjectionSnapshotQueryShape["listMergedPullRequestCandidates"] =
+    () =>
+      listMergedPullRequestCandidateRows(undefined).pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "ProjectionSnapshotQuery.listMergedPullRequestCandidates:query",
+            "ProjectionSnapshotQuery.listMergedPullRequestCandidates:decodeRows",
+          ),
+        ),
+      );
+
   const searchThreads: ProjectionSnapshotQueryShape["searchThreads"] = Effect.fn(
     "ProjectionSnapshotQuery.searchThreads",
   )(function* (input) {
@@ -2668,6 +2719,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     getCommandReadModel,
     getSnapshot,
     getShellSnapshot,
+    listMergedPullRequestCandidates,
     getArchivedShellSnapshot,
     searchThreads,
     getSnapshotSequence,
