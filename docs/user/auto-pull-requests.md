@@ -24,9 +24,10 @@ Flip the toggle at any time; your choice for that mode is remembered on this dev
 
 When a task starts with the PR instruction, the agent finishes your requested work and then:
 
-1. Fetches the latest changes and merges (or rebases) the repository's default branch — usually `main` — into the task's branch, resolving conflicts
-2. Reviews the branch diff and commits any remaining changes
-3. **Pushes the branch to your remote** and **opens a pull request** against the default branch, following the repository's PR template if present
+1. Creates a feature branch first if the task is on the repository's default branch — it never commits or pushes directly to `main`
+2. Fetches the latest changes and merges (or rebases) the repository's default branch — usually `main` — into the task's branch, resolving conflicts
+3. Reviews the branch diff and commits any remaining changes
+4. **Pushes the branch to your remote** and **opens a pull request** against the default branch, following the repository's PR template if present
 
 Because this pushes to your remote and creates a PR on your Git hosting provider, leave the toggle off for exploratory work you don't want published.
 

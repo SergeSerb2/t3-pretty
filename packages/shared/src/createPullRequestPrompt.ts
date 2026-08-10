@@ -32,6 +32,7 @@ const OPEN_TAG = `<${CREATE_PULL_REQUEST_TAG}>`;
 const CLOSE_TAG = `</${CREATE_PULL_REQUEST_TAG}>`;
 
 const GUIDELINES = `Guidelines:
+- If the current branch IS the repository's default branch (e.g. main), first create a feature branch for this work — never commit or push directly to the default branch.
 - Before opening the PR, bring this worktree/branch up to date: fetch origin and merge (or rebase) the repository's default branch (usually origin/main) into the current branch, resolving any conflicts sensibly.
 - Review the full diff of this branch before writing anything.
 - Commit any uncommitted changes with clear, conventional commit messages.

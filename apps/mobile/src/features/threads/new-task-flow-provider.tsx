@@ -152,6 +152,7 @@ type NewTaskFlowContextValue = {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly autoCreatePullRequest: boolean;
+  readonly autoCreatePullRequestSettled: boolean;
   readonly canToggleAutoCreatePullRequest: boolean;
   readonly expandedProvider: string | null;
   readonly environments: ReadonlyArray<{
@@ -413,6 +414,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     (preferencesHydrated
       ? resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, workspaceMode)
       : false);
+  // Submission waits for this: sending during hydration would race the stored
+  // choice in whichever direction the fallback picks. A draft override settles
+  // it immediately; otherwise the persisted preferences must have loaded.
+  const autoCreatePullRequestSettled =
+    selectedProjectDraft.autoCreatePullRequest !== undefined || preferencesHydrated;
   const setAutoCreatePullRequest = useCallback(
     (enabled: boolean) => {
       if (editingPendingTaskRef.current !== null && selectedProjectDraftKey !== null) {
@@ -981,6 +987,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       runtimeMode,
       interactionMode,
       autoCreatePullRequest,
+      autoCreatePullRequestSettled,
       canToggleAutoCreatePullRequest: !projectConfirmedNotGitRepo && preferencesHydrated,
       expandedProvider,
       environments,
@@ -1019,6 +1026,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     [
       attachments,
       autoCreatePullRequest,
+      autoCreatePullRequestSettled,
       availableBranches,
       beginEditingPendingTask,
       preferencesHydrated,

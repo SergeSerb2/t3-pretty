@@ -745,6 +745,7 @@ export function NewTaskDraftScreen(props: {
       !modelSelection ||
       initialMessageText.length === 0 ||
       flow.submitting ||
+      !flow.autoCreatePullRequestSettled ||
       (workspaceMode === "worktree" && !selectedBranchName)
     ) {
       return;
@@ -887,6 +888,9 @@ export function NewTaskDraftScreen(props: {
     isIncomingShareReady &&
     !isImportingShare &&
     !flow.submitting &&
+    // The auto-PR choice must be settled (draft override or hydrated
+    // preferences) so a cold-start send cannot race the stored setting.
+    flow.autoCreatePullRequestSettled &&
     !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
   const promptEditor = (
     <ComposerEditor
