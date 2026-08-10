@@ -142,6 +142,36 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function isSameOrTruncatedText(value: string, candidate: string): boolean {
+  if (value === candidate) {
+    return true;
+  }
+  const truncatedPrefix = candidate.endsWith("...") ? candidate.slice(0, -3) : null;
+  return truncatedPrefix !== null && value.startsWith(truncatedPrefix);
+}
+
+/**
+ * Older servers persisted a provider progress summary only in `detail`, but
+ * current ingestion also uses `detail` for the task description when no
+ * summary exists. Accept the compatibility field only when a known title
+ * proves it is not that description; otherwise the tool heartbeat is the
+ * only trustworthy live signal.
+ */
+function legacyProgressSummary(
+  payload: Record<string, unknown>,
+  agent: MutableAgent,
+): string | undefined {
+  const detail = asString(payload.detail);
+  if (!detail) {
+    return undefined;
+  }
+  const titles = [asString(payload.title), agent.title === agent.id ? undefined : agent.title];
+  if (titles.some((title) => title && isSameOrTruncatedText(detail, title))) {
+    return undefined;
+  }
+  return detail;
+}
+
 function asCount(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
@@ -521,10 +551,8 @@ export function foldSubagentActivities(
         }
         // Current servers preserve Claude's natural-language progress in
         // `summary`; older/remotely skewed servers stored the same text in
-        // `detail`. Prefer the structured field, but keep the compatibility
-        // fallback so the Agents panel does not collapse a useful
-        // "Running Compare tunnel limit" update into a generic "Bash".
-        const summary = asString(payload.summary) ?? asString(payload.detail);
+        // `detail`. Reject detail that merely mirrors the task description.
+        const summary = asString(payload.summary) ?? legacyProgressSummary(payload, agent);
         if (summary) {
           agent.progress = bounded(summary);
           agent.recentActivity = appendActivity(agent.recentActivity, at, summary);

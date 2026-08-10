@@ -139,6 +139,32 @@ describe("advanceSubagentActivityLog", () => {
     expect(advanceSubagentActivityLog(log, [agent({ id: "a1" })], [command])).toBe(log);
   });
 
+  it("preserves repeated tool executions with distinct activity ids", () => {
+    const first = activity("tool.completed", {
+      agentId: "a1",
+      itemType: "command_execution",
+      detail: "Bash: git status",
+      data: { toolName: "Bash" },
+    });
+    const second = activity("tool.completed", {
+      agentId: "a1",
+      itemType: "command_execution",
+      detail: "Bash: git status",
+      data: { toolName: "Bash" },
+    });
+    const log = advanceSubagentActivityLog(
+      emptySubagentActivityLog(),
+      [agent({ id: "a1" })],
+      [first, second],
+    );
+
+    expect(subagentLogEntries(log, "a1").map((entry) => [entry.summary, entry.detail])).toEqual([
+      ["Ran command", "git status"],
+      ["Ran command", "git status"],
+    ]);
+    expect(advanceSubagentActivityLog(log, [agent({ id: "a1" })], [first, second])).toBe(log);
+  });
+
   it("keeps unattributed parent tools out of agent feeds", () => {
     const log = advanceSubagentActivityLog(
       emptySubagentActivityLog(),

@@ -129,6 +129,20 @@ describe("foldSubagentActivities", () => {
     ]);
   });
 
+  it("does not mistake a task description in detail for live progress", () => {
+    const agents = fold([
+      activity("task.progress", {
+        taskId: "task-description",
+        title: "Map T3 Connect system",
+        detail: "Map T3 Connect system",
+        lastToolName: "Bash",
+      }),
+    ]);
+
+    expect(agents[0]?.progress).toBeNull();
+    expect(agents[0]?.recentActivity.map((entry) => entry.summary)).toEqual(["▸ Bash"]);
+  });
+
   it("completion before start stays terminal; a late start only fills metadata", () => {
     const agents = fold([
       activity("task.completed", {

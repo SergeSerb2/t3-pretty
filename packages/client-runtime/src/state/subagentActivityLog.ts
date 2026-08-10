@@ -279,14 +279,6 @@ function statusEntrySummary(
 }
 
 function appendBounded(entries: SubagentLogEntry[], entry: SubagentLogEntry): void {
-  const previous = entries.at(-1);
-  if (
-    previous?.summary === entry.summary &&
-    previous.detail === entry.detail &&
-    previous.kind === entry.kind
-  ) {
-    return;
-  }
   entries.push(entry);
   if (entries.length > ENTRY_LIMIT) {
     entries.splice(0, entries.length - ENTRY_LIMIT);
@@ -305,7 +297,7 @@ function advanceAgent(
   const prevHasResult = previous?.hasResult ?? false;
   const prevHasError = previous?.hasError ?? false;
   const prevActivityIds = previous?.activityIds ?? EMPTY_IDS;
-  const prevActivityIdSet = new Set(prevActivityIds);
+  const seenActivityIds = new Set(prevActivityIds);
 
   let changed = previous === undefined;
   const entries = [...prevEntries];
@@ -313,9 +305,10 @@ function advanceAgent(
   const activityIds = [...prevActivityIds];
 
   for (const toolEntry of toolEntries) {
-    if (prevActivityIdSet.has(toolEntry.id)) {
+    if (seenActivityIds.has(toolEntry.id)) {
       continue;
     }
+    seenActivityIds.add(toolEntry.id);
     additions.push(toolEntry.entry);
     activityIds.push(toolEntry.id);
     changed = true;
