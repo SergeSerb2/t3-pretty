@@ -5,6 +5,11 @@ import { getLocalStorageItem, setLocalStorageItem } from "../hooks/useLocalStora
 
 export const CHANGELOG_LAST_SEEN_STORAGE_KEY = "t3code:changelog-last-seen:v1";
 
+/** Marker introduced in 0.0.34. Installs that predate it have no last-seen
+    version, so they are treated as having seen everything up to this
+    baseline and catch up on the releases after it. */
+export const CHANGELOG_ROLLOUT_BASELINE_VERSION = "0.0.30";
+
 const ChangelogLastSeenSchema = Schema.Struct({
   version: Schema.String,
 });
@@ -59,29 +64,37 @@ export interface WhatsNewDecision {
 export function resolveWhatsNewDecision({
   currentVersion,
   lastSeenVersion,
+  hasExistingInstallData,
   releases,
 }: {
   readonly currentVersion: string;
   readonly lastSeenVersion: string | null;
+  /** Whether this browser profile used the app before the marker existed —
+      distinguishes an upgrade (catch up from the rollout baseline) from a
+      fresh install (stay silent). */
+  readonly hasExistingInstallData: boolean;
   readonly releases: readonly ChangelogRelease[];
 }): WhatsNewDecision {
   if (!isAnnounceableAppVersion(currentVersion)) {
     return { releases: [], acknowledgeVersion: null };
   }
 
-  // First run: remember where we started instead of replaying history.
-  if (lastSeenVersion === null) {
+  // Fresh install: remember where we started instead of replaying history.
+  if (lastSeenVersion === null && !hasExistingInstallData) {
     return { releases: [], acknowledgeVersion: currentVersion };
   }
 
-  const movement = compareAppVersions(currentVersion, lastSeenVersion);
+  // Install that predates the marker: catch up from the rollout baseline.
+  const effectiveLastSeen = lastSeenVersion ?? CHANGELOG_ROLLOUT_BASELINE_VERSION;
+
+  const movement = compareAppVersions(currentVersion, effectiveLastSeen);
   if (movement === null || movement <= 0) {
     return { releases: [], acknowledgeVersion: null };
   }
 
   const unseen = releases
     .filter((release) => {
-      const aboveLastSeen = compareAppVersions(release.version, lastSeenVersion);
+      const aboveLastSeen = compareAppVersions(release.version, effectiveLastSeen);
       const withinCurrent = compareAppVersions(release.version, currentVersion);
       return (
         aboveLastSeen !== null && aboveLastSeen > 0 && withinCurrent !== null && withinCurrent <= 0
@@ -94,6 +107,25 @@ export function resolveWhatsNewDecision({
   }
 
   return { releases: unseen, acknowledgeVersion: null };
+}
+
+/** Whether this browser profile holds app state written before the changelog
+    marker existed — any other t3code:* key counts as an existing install. */
+export function hasExistingInstallData(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    for (let index = 0; index < window.localStorage.length; index++) {
+      const key = window.localStorage.key(index);
+      if (key !== null && key.startsWith("t3code:") && key !== CHANGELOG_LAST_SEEN_STORAGE_KEY) {
+        return true;
+      }
+    }
+  } catch (error) {
+    console.error("Could not inspect local storage for existing install data.", error);
+  }
+  return false;
 }
 
 export function readLastSeenChangelogVersion(): string | null {

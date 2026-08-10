@@ -56,6 +56,7 @@ describe("resolveWhatsNewDecision", () => {
     const decision = resolveWhatsNewDecision({
       currentVersion: "0.0.0",
       lastSeenVersion: "0.0.31",
+      hasExistingInstallData: true,
       releases: RELEASES,
     });
     expect(decision).toEqual({ releases: [], acknowledgeVersion: null });
@@ -65,7 +66,29 @@ describe("resolveWhatsNewDecision", () => {
     const decision = resolveWhatsNewDecision({
       currentVersion: "0.0.33",
       lastSeenVersion: null,
+      hasExistingInstallData: false,
       releases: RELEASES,
+    });
+    expect(decision).toEqual({ releases: [], acknowledgeVersion: "0.0.33" });
+  });
+
+  it("catches an existing install up from the rollout baseline", () => {
+    const decision = resolveWhatsNewDecision({
+      currentVersion: "0.0.33",
+      lastSeenVersion: null,
+      hasExistingInstallData: true,
+      releases: RELEASES,
+    });
+    expect(decision.acknowledgeVersion).toBeNull();
+    expect(decision.releases.map((entry) => entry.version)).toEqual(["0.0.33", "0.0.32", "0.0.31"]);
+  });
+
+  it("acknowledges silently for an existing install with no entries to catch up on", () => {
+    const decision = resolveWhatsNewDecision({
+      currentVersion: "0.0.33",
+      lastSeenVersion: null,
+      hasExistingInstallData: true,
+      releases: [],
     });
     expect(decision).toEqual({ releases: [], acknowledgeVersion: "0.0.33" });
   });
@@ -74,6 +97,7 @@ describe("resolveWhatsNewDecision", () => {
     const decision = resolveWhatsNewDecision({
       currentVersion: "0.0.33",
       lastSeenVersion: "0.0.33",
+      hasExistingInstallData: true,
       releases: RELEASES,
     });
     expect(decision).toEqual({ releases: [], acknowledgeVersion: null });
@@ -83,6 +107,7 @@ describe("resolveWhatsNewDecision", () => {
     const decision = resolveWhatsNewDecision({
       currentVersion: "0.0.32",
       lastSeenVersion: "0.0.33",
+      hasExistingInstallData: true,
       releases: RELEASES,
     });
     expect(decision).toEqual({ releases: [], acknowledgeVersion: null });
@@ -92,6 +117,7 @@ describe("resolveWhatsNewDecision", () => {
     const decision = resolveWhatsNewDecision({
       currentVersion: "0.0.33",
       lastSeenVersion: "0.0.31",
+      hasExistingInstallData: true,
       releases: [release("0.0.31"), release("0.0.33"), release("0.0.32")],
     });
     expect(decision.acknowledgeVersion).toBeNull();
@@ -102,6 +128,7 @@ describe("resolveWhatsNewDecision", () => {
     const decision = resolveWhatsNewDecision({
       currentVersion: "0.0.32",
       lastSeenVersion: "0.0.31",
+      hasExistingInstallData: true,
       releases: RELEASES,
     });
     expect(decision.releases.map((entry) => entry.version)).toEqual(["0.0.32"]);
@@ -111,6 +138,7 @@ describe("resolveWhatsNewDecision", () => {
     const decision = resolveWhatsNewDecision({
       currentVersion: "0.0.34-nightly.20260810",
       lastSeenVersion: "0.0.32",
+      hasExistingInstallData: true,
       releases: RELEASES,
     });
     expect(decision.releases.map((entry) => entry.version)).toEqual(["0.0.33"]);
@@ -120,6 +148,7 @@ describe("resolveWhatsNewDecision", () => {
     const decision = resolveWhatsNewDecision({
       currentVersion: "0.0.40",
       lastSeenVersion: "0.0.33",
+      hasExistingInstallData: true,
       releases: RELEASES,
     });
     expect(decision).toEqual({ releases: [], acknowledgeVersion: "0.0.40" });

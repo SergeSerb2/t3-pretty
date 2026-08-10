@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { APP_VERSION } from "../branding";
 import {
+  hasExistingInstallData,
   readLastSeenChangelogVersion,
   resolveWhatsNewDecision,
   writeLastSeenChangelogVersion,
@@ -11,8 +12,9 @@ import { WhatsNewDialog } from "./WhatsNewDialog";
 
 /**
  * Shows the What's New dialog once after the app updates past releases the
- * user hasn't seen. First runs and dev builds stay silent; the seen marker is
- * persisted when the dialog is dismissed.
+ * user hasn't seen. Fresh installs and dev builds stay silent, installs that
+ * predate the seen marker catch up from the rollout baseline, and the marker
+ * is persisted when the dialog is dismissed.
  */
 export function WhatsNewHost() {
   const [unseenReleases, setUnseenReleases] = useState<readonly ChangelogRelease[]>([]);
@@ -22,6 +24,7 @@ export function WhatsNewHost() {
     const decision = resolveWhatsNewDecision({
       currentVersion: APP_VERSION,
       lastSeenVersion: readLastSeenChangelogVersion(),
+      hasExistingInstallData: hasExistingInstallData(),
       releases: CHANGELOG_RELEASES,
     });
     if (decision.acknowledgeVersion !== null) {
