@@ -26,9 +26,23 @@ import type {
   SubagentActivityLog,
   SubagentLogEntry,
 } from "@t3tools/client-runtime/state/subagentActivityLog";
-import { subagentLogEntries } from "@t3tools/client-runtime/state/subagentActivityLog";
+import {
+  subagentLogEntries,
+  subagentLogEntryFromActivity,
+} from "@t3tools/client-runtime/state/subagentActivityLog";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { Bot, Braces, Check, ChevronDown, ChevronRight, X } from "lucide-react";
+import {
+  Bot,
+  Braces,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  CircleDot,
+  ScrollText,
+  SquareTerminal,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
@@ -152,11 +166,40 @@ function formatEntryTime(at: string): string {
 }
 
 const ENTRY_TEXT_CLASS: Record<SubagentLogEntry["kind"], string> = {
-  activity: "text-muted-foreground",
+  activity: "font-medium text-foreground/85",
+  tool: "font-medium text-foreground/75",
   status: "font-medium text-foreground/75",
-  result: "text-success-foreground",
+  result: "text-foreground/85",
   error: "text-destructive-foreground",
 };
+
+function ActivityEntryIcon({ entry }: { entry: SubagentLogEntry }) {
+  const failedStatus = entry.kind === "status" && /^failed\b/i.test(entry.summary);
+  const completedStatus = entry.kind === "status" && /^completed\b/i.test(entry.summary);
+  if (entry.kind === "error" || failedStatus) {
+    return <TriangleAlert aria-hidden className="size-2.5" />;
+  }
+  if (entry.kind === "result" || completedStatus) {
+    return <Check aria-hidden className="size-2.5" />;
+  }
+  if (entry.kind === "tool") {
+    return <SquareTerminal aria-hidden className="size-2.5" />;
+  }
+  return <CircleDot aria-hidden className="size-2.5" />;
+}
+
+function entryMarkerClass(entry: SubagentLogEntry): string {
+  if (entry.kind === "error" || (entry.kind === "status" && /^failed\b/i.test(entry.summary))) {
+    return "border-destructive/25 bg-destructive/10 text-destructive-foreground";
+  }
+  if (entry.kind === "result" || (entry.kind === "status" && /^completed\b/i.test(entry.summary))) {
+    return "border-success/25 bg-success/10 text-success-foreground";
+  }
+  if (entry.kind === "tool") {
+    return "border-border/70 bg-secondary text-muted-foreground";
+  }
+  return "border-info/25 bg-info/10 text-info-foreground";
+}
 
 /**
  * The agent's sub-thread: the accumulated observation feed plus the full
@@ -170,16 +213,18 @@ function AgentDetail({
   agent: RuntimeSubagent;
   entries: ReadonlyArray<SubagentLogEntry>;
 }) {
-  const feedRef = useRef<HTMLDivElement>(null);
+  const feedRef = useRef<HTMLOListElement>(null);
   const stickToTail = useRef(true);
   const feed: ReadonlyArray<SubagentLogEntry> =
     entries.length > 0
       ? entries
-      : agent.recentActivity.map((tick) => ({
-          at: tick.at,
-          summary: tick.summary,
-          kind: "activity" as const,
-        }));
+      : agent.recentActivity.map((tick, index) =>
+          subagentLogEntryFromActivity(
+            `recent:${agent.id}:${index}:${tick.at}`,
+            tick.at,
+            tick.summary,
+          ),
+        );
 
   useEffect(() => {
     const element = feedRef.current;
@@ -227,62 +272,106 @@ function AgentDetail({
     facts.push({ label: "output", value: agent.outputFile });
   }
   const sessionUrl = agent.runHandles?.sessionUrl;
+  const live =
+    agent.status === "running" || agent.status === "pending" || agent.status === "waiting";
 
   return (
-    <div className="mx-1.5 mb-1.5 rounded-md border border-border/50 bg-background/50">
+    <div className="mx-1.5 mb-1.5 border-t border-border/50 bg-background/30">
       {feed.length > 0 ? (
-        <div
-          ref={feedRef}
-          onScroll={(event) => {
-            const element = event.currentTarget;
-            stickToTail.current =
-              element.scrollHeight - element.scrollTop - element.clientHeight < 40;
-          }}
-          className="max-h-56 overflow-y-auto px-2 py-1.5"
-        >
-          {feed.map((entry, index) => (
-            <div
-              key={`${entry.at}:${index}`}
-              className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-x-2 py-px"
-            >
-              <span className="pt-px font-mono text-[.6rem] tabular-nums text-muted-foreground/50">
-                {formatEntryTime(entry.at)}
-              </span>
-              <span
-                className={cn(
-                  "whitespace-pre-wrap break-words text-[.7rem] leading-snug",
-                  ENTRY_TEXT_CLASS[entry.kind],
-                )}
+        <>
+          <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-2">
+            <ScrollText aria-hidden className="size-3 text-muted-foreground/70" />
+            <span className="text-[.7rem] font-medium text-foreground/80">Activity</span>
+            <span className="ml-auto inline-flex items-center gap-1.5 font-mono text-[.6rem] tabular-nums text-muted-foreground/60">
+              {live ? <span aria-hidden className="size-1 rounded-full bg-info" /> : null}
+              {live ? "Live" : `${feed.length} update${feed.length === 1 ? "" : "s"}`}
+            </span>
+          </div>
+          <ol
+            ref={feedRef}
+            aria-label={`Activity for ${agent.title}`}
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              stickToTail.current =
+                element.scrollHeight - element.scrollTop - element.clientHeight < 40;
+            }}
+            className="max-h-64 overflow-y-auto px-2 pb-2"
+          >
+            {feed.map((entry, index) => (
+              <li
+                key={entry.id}
+                className="grid grid-cols-[1.125rem_minmax(0,1fr)_3.25rem] gap-x-2 py-1"
               >
-                {entry.summary}
-              </span>
-            </div>
-          ))}
-        </div>
+                <span className="relative flex justify-center pt-0.5">
+                  {index < feed.length - 1 ? (
+                    <span
+                      aria-hidden
+                      className="absolute bottom-[-.4rem] top-[1rem] w-px bg-border/60"
+                    />
+                  ) : null}
+                  <span
+                    className={cn(
+                      "relative z-10 flex size-4 items-center justify-center rounded-full border",
+                      entryMarkerClass(entry),
+                    )}
+                  >
+                    <ActivityEntryIcon entry={entry} />
+                  </span>
+                </span>
+                <span className="min-w-0">
+                  <span
+                    className={cn(
+                      "block whitespace-pre-wrap break-words text-[.7rem] leading-[1.35]",
+                      ENTRY_TEXT_CLASS[entry.kind],
+                    )}
+                  >
+                    {entry.summary}
+                  </span>
+                  {entry.detail ? (
+                    <span className="mt-0.5 block whitespace-pre-wrap break-words font-mono text-[.625rem] leading-[1.35] text-muted-foreground/75">
+                      {entry.detail}
+                    </span>
+                  ) : null}
+                </span>
+                <time
+                  dateTime={entry.at}
+                  className="pt-0.5 text-right font-mono text-[.6rem] tabular-nums text-muted-foreground/45"
+                >
+                  {formatEntryTime(entry.at)}
+                </time>
+              </li>
+            ))}
+          </ol>
+        </>
       ) : (
         <p className="px-2 py-1.5 text-[.7rem] text-muted-foreground/70">
           No activity recorded yet.
         </p>
       )}
       {facts.length > 0 || sessionUrl ? (
-        <div className="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-border/40 px-2 py-1.5 font-mono text-[.65rem] text-muted-foreground/80">
+        <dl className="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-border/40 px-2.5 py-1.5 font-mono text-[.625rem] text-muted-foreground/80">
           {facts.map((fact) => (
-            <span key={fact.label} className="min-w-0 max-w-full truncate">
-              <span className="text-muted-foreground/50">{fact.label} </span>
-              {fact.value}
-            </span>
+            <div key={fact.label} className="flex min-w-0 max-w-full gap-1">
+              <dt className="text-muted-foreground/45">{fact.label}</dt>
+              <dd className="truncate">{fact.value}</dd>
+            </div>
           ))}
           {sessionUrl ? (
-            <a
-              href={sessionUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-info-foreground hover:underline"
-            >
-              session ↗
-            </a>
+            <div>
+              <dt className="sr-only">session</dt>
+              <dd>
+                <a
+                  href={sessionUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-info-foreground hover:underline"
+                >
+                  session ↗
+                </a>
+              </dd>
+            </div>
           ) : null}
-        </div>
+        </dl>
       ) : null}
     </div>
   );
@@ -320,7 +409,8 @@ function AgentRow({
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="grid h-[3.875rem] w-full grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1 text-left hover:bg-accent/40"
+        aria-label={`${open ? "Collapse" : "Expand"} activity for ${agent.title}, ${visuals.label}`}
+        className="grid h-[3.875rem] w-full grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1 text-left hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
       >
         <span className="col-start-1 row-start-1 flex items-center">
           <StatusDot status={agent.status} />
@@ -343,6 +433,7 @@ function AgentRow({
               aria-hidden
               className={cn(
                 "size-3 text-muted-foreground/50 transition-transform",
+                "motion-reduce:transition-none",
                 open && "rotate-90",
               )}
             />
