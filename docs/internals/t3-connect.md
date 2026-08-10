@@ -56,6 +56,13 @@ should set `T3CODE_CLERK_PUBLISHABLE_KEY`, `T3CODE_CLERK_JWT_TEMPLATE`,
 production builds only need the Clerk publishable key, JWT template name, and relay URL in their EAS
 environment.
 
+Clerk must allow both Electron renderer origins, `t3code://app` and `t3code-dev://app`, on the
+instance. Without them, Clerk rejects desktop bootstrap with `origin_invalid` and the client cannot
+offer sign-in or account management. The production relay workflow reconciles these origins through
+Clerk's Backend API before every deployment, preserving any web or extension origins already on the
+instance. Self-hosted deployments that do not use that workflow must add the two values to the
+instance's allowed origins themselves.
+
 When any client-facing public value is absent, network-backed cloud actions, authentication, and
 relay discovery are omitted or disabled. **Connections** keeps a noninteractive Surge Code account
 row visible so the missing build configuration is explicit. The `t3 connect` command group is always
@@ -168,21 +175,22 @@ t3code-dev://app/
 t3code://app/
 ```
 
-Local desktop development uses `t3code-dev://app`, while packaged builds use `t3code://app`. Add the
-matching origin to each Clerk instance's Backend API `allowed_origins` array as well. The development
-Clerk instance should only need `t3code-dev://app`; the production Clerk instance should only need
-`t3code://app`. `@clerk/electron` owns the native request adapter, encrypted Clerk token persistence,
-external-browser OAuth transport, and callback delivery for initial sign-in and linked-account flows.
+Local desktop development uses `t3code-dev://app`, while packaged builds use `t3code://app`. Add both
+origins to every Clerk instance used by desktop clients. This matches the production relay workflow
+and keeps an instance usable by development and packaged renderers without an `origin_invalid`
+bootstrap failure. `@clerk/electron` owns the native request adapter, encrypted Clerk token
+persistence, external-browser OAuth transport, and callback delivery for initial sign-in and
+linked-account flows.
 
-There is currently no Dashboard UI for `allowed_origins`. Preserve any existing entries and update
-the instance through the Backend API:
+There is currently no Dashboard UI for `allowed_origins`. With `CLERK_SECRET_KEY` present in the
+shell environment, run the same idempotent reconciler used by the production workflow:
 
 ```sh
-curl -X PATCH https://api.clerk.com/v1/instance \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $CLERK_SECRET_KEY" \
-  -d '{"allowed_origins":["t3code://app"]}'
+vp run --filter t3code-relay configure-clerk
 ```
+
+The reconciler reads the current array, adds any missing desktop origins, and only then updates the
+instance, so existing web and extension origins remain intact.
 
 Never put `CLERK_SECRET_KEY` in the desktop app, a client-facing environment file, or a build
 artifact.

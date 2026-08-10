@@ -63,7 +63,10 @@ export function SurgeConnectAccountSection() {
 }
 
 function ConfiguredSurgeConnectAccountSection() {
-  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  // This is an interactive sign-in surface, so use Clerk's default pending-session
+  // behavior. Relay activation keeps pending sessions intact separately; here they
+  // must remain actionable instead of leaving the account row in a loading state.
+  const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
   const clerk = useClerk();
   const { authPrompt, openAuthPrompt } = useT3ConnectAuthPrompt();

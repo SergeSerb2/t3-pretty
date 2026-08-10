@@ -1,8 +1,36 @@
-import { describe, expect, it } from "vite-plus/test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { resolveSurgeConnectAccountPresentation } from "./SurgeConnectAccountSection";
 
+const { useAuthMock } = vi.hoisted(() => ({
+  useAuthMock: vi.fn(() => ({ isLoaded: true, isSignedIn: false })),
+}));
+
+vi.mock("@clerk/react", () => ({
+  useAuth: useAuthMock,
+  useClerk: vi.fn(() => ({ openUserProfile: vi.fn() })),
+  useUser: vi.fn(() => ({ user: null })),
+}));
+
+vi.mock("~/cloud/publicConfig", () => ({
+  hasCloudPublicConfig: vi.fn(() => true),
+}));
+
+vi.mock("../clerk/useT3ConnectAuthPrompt", () => ({
+  useT3ConnectAuthPrompt: vi.fn(() => ({ authPrompt: null, openAuthPrompt: vi.fn() })),
+}));
+
+import { SurgeConnectAccountSection } from "./SurgeConnectAccountSection";
+
 describe("resolveSurgeConnectAccountPresentation", () => {
+  it("uses Clerk's interactive pending-session behavior", () => {
+    renderToStaticMarkup(createElement(SurgeConnectAccountSection));
+
+    expect(useAuthMock).toHaveBeenCalledWith();
+  });
+
   it("keeps the account entry visible while Clerk loads", () => {
     expect(
       resolveSurgeConnectAccountPresentation({
