@@ -1,0 +1,56 @@
+/**
+ * The in-app changelog shown by the What's New sheet after an update.
+ *
+ * Add a new release at the TOP of the list when preparing a release. Keep
+ * entries user-facing and mobile-relevant: what someone using the phone app
+ * would notice, not internal refactors. Dates are ISO (YYYY-MM-DD); versions
+ * match the T3 Pretty release train (see resolveMobileAppVersion in
+ * app.config.ts).
+ */
+
+export type ChangelogItemKind = "new" | "improved" | "fixed";
+
+export interface ChangelogItem {
+  readonly kind: ChangelogItemKind;
+  readonly title: string;
+  readonly description?: string;
+}
+
+export interface ChangelogRelease {
+  readonly version: string;
+  readonly date: string;
+  readonly headline?: string;
+  readonly items: readonly ChangelogItem[];
+}
+
+export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
+  {
+    version: "0.0.34",
+    date: "2026-08-10",
+    headline: "Meet T3 Pretty",
+    items: [
+      {
+        kind: "new",
+        title: "World Scenery look",
+        description:
+          "The alpine World Scenery palette from the desktop app is now the phone app's default theme, in both light and dark.",
+      },
+      {
+        kind: "new",
+        title: "T3 Pretty identity",
+        description:
+          "The app is now T3 Pretty: new icon, new name, and Surge Connect as the built-in cloud relay.",
+      },
+      {
+        kind: "new",
+        title: "Pull request reviews",
+        description: "Browse and review pull requests across providers without leaving a thread.",
+      },
+      {
+        kind: "new",
+        title: "What's New",
+        description: "Release notes now appear right here after each update.",
+      },
+    ],
+  },
+];

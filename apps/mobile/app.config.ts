@@ -1,3 +1,5 @@
+import * as NodeFS from "node:fs";
+import * as NodeURL from "node:url";
 import type { ExpoConfig } from "expo/config";
 
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
@@ -187,12 +189,35 @@ const easProjectId = repoEnv.T3CODE_MOBILE_EAS_PROJECT_ID?.trim();
 const expoOwner = repoEnv.T3CODE_MOBILE_EXPO_OWNER?.trim();
 const appleTeamId = repoEnv.T3CODE_APPLE_TEAM_ID?.trim();
 
+// The mobile version tracks the T3 Pretty release train (apps/web/package.json,
+// rewritten by scripts/update-release-package-versions.ts during releases) so
+// the in-app What's New changelog can key entries by release. iOS rejects
+// prerelease suffixes in CFBundleShortVersionString, so only the numeric
+// prefix survives ("0.0.34-nightly.x" → "0.0.34").
+function resolveMobileAppVersion(): string {
+  const override = repoEnv.T3CODE_MOBILE_APP_VERSION?.trim();
+  const raw =
+    override ||
+    (() => {
+      try {
+        const webPackageJson = NodeFS.readFileSync(
+          NodeURL.fileURLToPath(new URL("../web/package.json", import.meta.url)),
+          "utf8",
+        );
+        return (JSON.parse(webPackageJson) as { version?: string }).version ?? "";
+      } catch {
+        return "";
+      }
+    })();
+  return /^(\d+\.\d+\.\d+)/.exec(raw)?.[1] ?? "0.0.33";
+}
+
 const config: ExpoConfig = {
   name: variant.appName,
   slug: repoEnv.T3CODE_MOBILE_EXPO_SLUG?.trim() || "t3-pretty",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "1.0.2",
+  version: resolveMobileAppVersion(),
   runtimeVersion: {
     // Fingerprint (not appVersion) so an OTA only reaches binaries whose native
     // project — native deps, config plugins, AND patches/ — matches the update.

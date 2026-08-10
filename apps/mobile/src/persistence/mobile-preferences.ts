@@ -43,6 +43,9 @@ export interface Preferences {
     readonly local?: boolean;
     readonly worktree?: boolean;
   };
+  /** Newest app version whose What's New notes were shown — see
+      features/whats-new. */
+  readonly lastSeenChangelogVersion?: string;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedErrorClass<MobilePreferencesLoadError>()(
@@ -99,6 +102,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
       local?: boolean;
       worktree?: boolean;
     };
+    lastSeenChangelogVersion?: string;
   } = {};
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
@@ -152,6 +156,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     if (Object.keys(byEnvMode).length > 0) {
       preferences.autoCreatePullRequestByEnvMode = byEnvMode;
     }
+  }
+  if (typeof parsed.lastSeenChangelogVersion === "string") {
+    preferences.lastSeenChangelogVersion = parsed.lastSeenChangelogVersion;
   }
   return preferences;
 }

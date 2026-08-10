@@ -21,6 +21,7 @@ const SCENERY_NAV_LIGHT = {
 
 import { RegistryContext } from "@effect/atom-react";
 import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
+import { WhatsNewHost } from "./features/whats-new/WhatsNewHost";
 import { CloudAuthProvider } from "./features/cloud/CloudAuthProvider";
 import { prepareNativeShowcaseCapture } from "./features/showcase/nativeShowcaseScene";
 import { IncomingShareProvider } from "./features/sharing/IncomingShareProvider";
@@ -99,6 +100,7 @@ export default function App() {
                     />
                   </IncomingShareProvider>
                   <ConfirmDialogHost />
+                  <WhatsNewHost />
                 </BlurTargetView>
                 {/* Anchored-menu overlays render here — in-window, so the
                     keyboard stays up while a dropdown is open. */}
