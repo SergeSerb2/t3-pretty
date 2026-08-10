@@ -1,9 +1,9 @@
-name: Fork Upstream Sync
+name: T3 Pretty Upstream Sync
 
 on:
   schedule:
-    - cron: "0 * * * *"
-  workflow_dispatch:
+    # Twice daily is the usage ceiling for the xhigh Sol conflict resolver.
+    - cron: "0 0,12 * * *"
 
 concurrency:
   group: fork-upstream-sync
@@ -19,7 +19,7 @@ jobs:
   sync:
     name: Sync newest upstream nightly
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout fork main
         uses: actions/checkout@v6
@@ -53,6 +53,13 @@ jobs:
           if [[ -f .t3-fork/upstream-nightly ]]; then
             current_tag="$(tr -d '[:space:]' < .t3-fork/upstream-nightly)"
           fi
+          echo "previous_tag=$current_tag" >> "$GITHUB_OUTPUT"
+          # The resolver uses previous_tag..origin/main to recover the fork's
+          # intent for conflicted paths. Fresh Actions clones do not have the
+          # previous tag ref even though its commit is in main's history.
+          if [[ -n "$current_tag" && "$current_tag" != "$latest_tag" ]]; then
+            git fetch --no-tags upstream "refs/tags/$current_tag:refs/tags/$current_tag"
+          fi
 
           if [[ "$current_tag" == "$latest_tag" ]] &&
             git merge-base --is-ancestor "$latest_tag^{commit}" HEAD; then
@@ -72,19 +79,24 @@ jobs:
         env:
           CLI_PROXY_API_KEY: ${{ secrets.CLI_PROXY_API_KEY }}
           CLI_PROXY_API_URL: https://cli-proxy-api-production-1615.up.railway.app/v1
-          CLI_PROXY_MODEL: gpt-5.6-luna
+          CLI_PROXY_MODEL: gpt-5.6-sol
+          CLI_PROXY_REASONING_EFFORT: xhigh
           CLI_PROXY_SERVICE_TIER: priority
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
+          PREVIOUS_UPSTREAM_TAG: ${{ steps.discover.outputs.previous_tag }}
           SYNC_BRANCH: ${{ steps.discover.outputs.branch }}
         run: |
           set -euo pipefail
-          git config user.name "t3code-fork-sync[bot]"
+          git config user.name "t3-pretty-sync[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          export REUSED_SYNC_RESOLUTION=false
           if git fetch origin "refs/heads/$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH" 2>/dev/null &&
             [[ "$(git show "origin/$SYNC_BRANCH:.t3-fork/upstream-nightly" 2>/dev/null | tr -d '[:space:]')" == "$UPSTREAM_TAG" ]] &&
-            git merge-base --is-ancestor "$UPSTREAM_TAG^{commit}" "origin/$SYNC_BRANCH"; then
+            git merge-base --is-ancestor "$UPSTREAM_TAG^{commit}" "origin/$SYNC_BRANCH" &&
+            [[ "$(git show "origin/$SYNC_BRANCH:.t3-fork/upstream-sync-report.md" 2>/dev/null | sed -n '1p')" == "# T3 Pretty upstream integration report" ]]; then
             echo "Reusing the previously validated AI resolution for $UPSTREAM_TAG."
+            export REUSED_SYNC_RESOLUTION=true
             git checkout -B "$SYNC_BRANCH" "origin/$SYNC_BRANCH"
             set +e
             git merge --no-edit origin/main
@@ -104,13 +116,15 @@ jobs:
           git restore --source=origin/main --staged --worktree -- .github/workflows
 
           unresolved="$(git diff --name-only --diff-filter=U)"
-          if [[ -n "$unresolved" ]]; then
-            node scripts/fork/resolve-git-conflicts.mjs
-          elif (( merge_status != 0 )) &&
+          if [[ -z "$unresolved" ]] && (( merge_status != 0 )) &&
             ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
             echo "Merge failed without producing resolvable conflicts." >&2
             exit "$merge_status"
           fi
+          # Always write the durable integration report. Clean merges make no
+          # model request; conflict merges use Sol/xhigh and record every
+          # parent change intentionally omitted to protect T3 Pretty.
+          node scripts/fork/resolve-git-conflicts.mjs
 
           if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
             echo "Unresolved merge conflicts remain." >&2
@@ -147,6 +161,13 @@ jobs:
           SYNC_BRANCH: ${{ steps.discover.outputs.branch }}
         run: |
           set -euo pipefail
+          pr_body_path="$RUNNER_TEMP/t3-pretty-upstream-sync.md"
+          {
+            printf '%s\n\n' \
+              'Automated twice-daily integration of the newest parent T3 Code nightly into T3 Pretty.' \
+              'Clean merges are retained directly. Text conflicts are resolved through CLIProxyAPI with gpt-5.6-sol at xhigh reasoning under the T3 Pretty preservation contract.'
+            cat .t3-fork/upstream-sync-report.md
+          } > "$pr_body_path"
           pr_number="$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
             -f state=open \
             -f base=main \
@@ -157,8 +178,11 @@ jobs:
               -f base=main \
               -f head="$SYNC_BRANCH" \
               -f title="chore(sync): merge upstream $UPSTREAM_TAG" \
-              -f body="Automated hourly sync of the newest upstream T3 Code nightly. Clean merges are preserved directly; conflicts are resolved through CLIProxyAPI with gpt-5.6-luna at max reasoning and then merged by this workflow." \
+              -F "body=@$pr_body_path" \
               --jq '.number')"
+          else
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/pulls/$pr_number" \
+              -F "body=@$pr_body_path" >/dev/null
           fi
           pr_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr_number"
           echo "url=$pr_url" >> "$GITHUB_OUTPUT"
@@ -200,7 +224,7 @@ jobs:
             -f state=open \
             -f per_page=100 \
             --jq ".[] | select(.pull_request == null and .title == \"$title\") | .number" | head -n 1)"
-          body="The guarded hourly sync could not safely merge $UPSTREAM_TAG. Inspect the failed run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          body="The guarded twice-daily T3 Pretty sync could not safely merge $UPSTREAM_TAG. Inspect the failed run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           if [[ -n "$existing" ]]; then
             gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$existing/comments" -f body="$body" >/dev/null
           else
