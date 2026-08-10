@@ -138,10 +138,12 @@ export function normalizeGitRemoteUrl(value: string): string {
   // alice@gitlab.company.com:team/repo). Without a username the separator must
   // be a colon and the host must not be a Windows drive letter, otherwise
   // plain and drive-relative paths (c:repos/project) would parse as host/path.
-  const scpStyleHostAndPath = /^[a-z]:/i.test(normalized)
-    ? null
-    : (/^(?:[^@:/\s]+@)?([^:/\s]+):([^/\s]+(?:\/[^/\s]+)+)$/i.exec(normalized) ??
-      /^[^@:/\s]+@([^:/\s]+)\/([^/\s]+(?:\/[^/\s]+)+)$/i.exec(normalized));
+  // <transport>::<address> is reserved for remote helpers, not a host:path.
+  const scpStyleHostAndPath =
+    /^[a-z]:/i.test(normalized) || /^[^:/\s]+::/.test(normalized)
+      ? null
+      : (/^(?:[^@:/\s]+@)?([^:/\s]+):([^/\s]+(?:\/[^/\s]+)+)$/i.exec(normalized) ??
+        /^[^@:/\s]+@([^:/\s]+)\/([^/\s]+(?:\/[^/\s]+)+)$/i.exec(normalized));
   if (scpStyleHostAndPath?.[1] && scpStyleHostAndPath[2]) {
     return `${scpStyleHostAndPath[1]}/${scpStyleHostAndPath[2]}`;
   }
@@ -160,10 +162,11 @@ function parseGitRemoteRepositoryPath(url: string): ReadonlyArray<string> | null
       return null;
     }
   } else {
-    const scpStyleRemote = /^[a-z]:/i.test(trimmed)
-      ? null
-      : (/^(?:[^@:/\s]+@)?[^:/\s]+:(.+)$/u.exec(trimmed) ??
-        /^[^@:/\s]+@[^:/\s]+\/(.+)$/u.exec(trimmed));
+    const scpStyleRemote =
+      /^[a-z]:/i.test(trimmed) || /^[^:/\s]+::/.test(trimmed)
+        ? null
+        : (/^(?:[^@:/\s]+@)?[^:/\s]+:(.+)$/u.exec(trimmed) ??
+          /^[^@:/\s]+@[^:/\s]+\/(.+)$/u.exec(trimmed));
     repositoryPath = scpStyleRemote?.[1] ?? "";
   }
 

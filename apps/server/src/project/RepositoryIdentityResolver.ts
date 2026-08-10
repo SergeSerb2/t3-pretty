@@ -72,6 +72,11 @@ function isRepositoryUrl(remoteUrl: string): boolean {
   if (/^[a-z]:/i.test(trimmed)) {
     return false;
   }
+  // <transport>::<address> is reserved for git remote helpers (hg::https://…)
+  // and is not a host:path remote.
+  if (/^[^:/\s]+::/.test(trimmed)) {
+    return false;
+  }
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
     try {
       const url = new URL(trimmed);
@@ -195,8 +200,10 @@ function deriveDisplayRepositoryPathSegments(remoteUrl: string): ReadonlyArray<s
         return [];
       }
     }
-    const scpStyle =
-      /^(?:[^@:/\s]+@)?[^:/\s]+:(.+)$/.exec(trimmed) ?? /^[^@:/\s]+@[^:/\s]+\/(.+)$/.exec(trimmed);
+    const scpStyle = /^[^:/\s]+::/.test(trimmed)
+      ? null
+      : (/^(?:[^@:/\s]+@)?[^:/\s]+:(.+)$/.exec(trimmed) ??
+        /^[^@:/\s]+@[^:/\s]+\/(.+)$/.exec(trimmed));
     if (scpStyle?.[1]) {
       return scpStyle[1].split("/").filter((segment) => segment.length > 0);
     }

@@ -195,6 +195,12 @@ function parseRemoteHost(remoteUrl: string): string | null {
     return null;
   }
 
+  // Git reserves <transport>::<address> for remote helpers (hg::https://…);
+  // the segment before :: is a transport, not a host.
+  if (/^[^:/\s]+::/.test(trimmed)) {
+    return null;
+  }
+
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
     try {
       const host = new URL(trimmed).host.toLowerCase();

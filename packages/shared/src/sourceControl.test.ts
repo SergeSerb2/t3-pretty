@@ -85,6 +85,19 @@ describe("detectSourceControlProviderFromRemoteUrl", () => {
     ).toBe("bitbucket");
   });
 
+  it("returns null for remote-helper URLs", () => {
+    expect(detectSourceControlProviderFromRemoteUrl("hg::https://example.com/org/repo")).toBeNull();
+  });
+
+  it("classifies scp-style remotes with optional usernames", () => {
+    expect(
+      detectSourceControlProviderFromRemoteUrl("alice@gitlab.company.com:team/repo.git")?.kind,
+    ).toBe("gitlab");
+    expect(detectSourceControlProviderFromRemoteUrl("github.com:fork/repo.git")?.kind).toBe(
+      "github",
+    );
+  });
+
   it("preserves ports while classifying by hostname", () => {
     expect(
       detectSourceControlProviderFromRemoteUrl("https://gitlab.com:8443/group/repo.git"),
