@@ -1,4 +1,5 @@
 import { UserButton, useAuth } from "@clerk/react";
+import { SURGE_CODE_ACCOUNT_NAME } from "@t3tools/shared/connectBranding";
 import { LogInIcon, SmartphoneIcon } from "lucide-react";
 
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
@@ -55,7 +56,7 @@ function ConfiguredT3ConnectSidebarSignIn() {
         <SidebarMenuItem>
           <SidebarMenuButton onClick={openAuthPrompt}>
             <LogInIcon />
-            <span>Sign in to T3 Connect</span>
+            <span>Sign in to {SURGE_CODE_ACCOUNT_NAME}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

@@ -16,7 +16,8 @@ This app has three variants:
 
 Run commands from `apps/mobile`.
 
-T3 Connect is optional and disabled in a fresh clone. Public configuration belongs in the
+Surge Connect is optional. T3 Pretty source builds use the fork's checked-in public client
+configuration, while other clones can remove those defaults to disable it. Overrides belong in the
 repository-root `.env` or `.env.local`, not an `apps/mobile/.env` file. See
 [`../../.env.example`](../../.env.example).
 

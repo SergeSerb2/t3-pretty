@@ -1,5 +1,6 @@
 import { useAuth, useClerk, useUser } from "@clerk/react";
 import { encodeConnectAuthCode, readConnectAuthorizeRequest } from "@t3tools/shared/connectAuth";
+import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -89,8 +90,8 @@ export function ConnectCliAuthorizeSurface() {
         title="Connecting your terminal"
         description={
           isSignedIn
-            ? "Redirecting to authorize T3 Connect for your CLI…"
-            : "Sign in to continue authorizing T3 Connect for your CLI."
+            ? `Redirecting to authorize ${SURGE_CONNECT_NAME} for your CLI…`
+            : `Sign in to continue authorizing ${SURGE_CONNECT_NAME} for your CLI.`
         }
       />
       {isLoaded && !isSignedIn ? (
@@ -101,7 +102,7 @@ export function ConnectCliAuthorizeSurface() {
               clerk.openSignIn(resolveClerkSignInProps(window.location.href, isElectron))
             }
           >
-            Sign in
+            Sign in to {SURGE_CODE_ACCOUNT_NAME}
           </Button>
         </div>
       ) : null}
@@ -185,7 +186,7 @@ export function ConnectCliCallbackSurface() {
 
       <p className="mt-6 text-xs leading-relaxed text-muted-foreground">
         Only enter this code in a terminal session you started yourself. Anyone holding it can link
-        their machine to your T3 Connect account while it is valid.
+        their machine to your {SURGE_CONNECT_NAME} account while it is valid.
       </p>
     </AuthSurfaceShell>
   );

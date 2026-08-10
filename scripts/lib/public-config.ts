@@ -32,10 +32,10 @@ export function loadRepoEnv({
 } = {}): Record<string, string | undefined> {
   const rootEnv = readEnvFile(NodePath.join(repoRoot, ".env"));
   const localEnv = readEnvFile(NodePath.join(repoRoot, ".env.local"));
-  // World Scenery is a client-only fork, so source builds intentionally share
-  // the parent's checked-in production T3 Connect service by default.
-  const parentPublicEnv = readEnvFile(NodePath.join(repoRoot, ".env.example"));
-  const config = resolvePublicConfig(baseEnv, localEnv, rootEnv, parentPublicEnv);
+  // T3 Pretty source builds use the fork-operated Surge Connect service by
+  // default. The checked-in values are public client identifiers, not secrets.
+  const forkPublicEnv = readEnvFile(NodePath.join(repoRoot, ".env.example"));
+  const config = resolvePublicConfig(baseEnv, localEnv, rootEnv, forkPublicEnv);
 
   return {
     ...rootEnv,

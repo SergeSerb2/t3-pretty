@@ -85,4 +85,11 @@ describe("searchSettings", () => {
       targetId: "appearance",
     });
   });
+
+  it("routes Surge Code account searches to Connections", () => {
+    expect(searchSettings("surge code account")[0]).toMatchObject({
+      id: "surge-connect-account",
+      to: "/settings/connections",
+    });
+  });
 });

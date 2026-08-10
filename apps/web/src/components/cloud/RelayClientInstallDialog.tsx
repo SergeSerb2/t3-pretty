@@ -1,6 +1,7 @@
 import { DownloadIcon } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import type { RelayClientInstallProgressStage } from "@t3tools/contracts";
+import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 
 import {
   completeRelayClientInstallDialogClose,
@@ -69,8 +70,8 @@ export function RelayClientInstallDialog() {
           </DialogTitle>
           <DialogDescription>
             {isInstalling
-              ? "T3 Pretty is preparing this environment for secure access through T3 Connect."
-              : "T3 Pretty needs the relay client to make this environment available through T3 Connect."}
+              ? `T3 Pretty is preparing this environment for secure access through ${SURGE_CONNECT_NAME}.`
+              : `T3 Pretty needs the relay client to make this environment available through ${SURGE_CONNECT_NAME}.`}
           </DialogDescription>
         </DialogHeader>
         <DialogPanel scrollFade={false}>
