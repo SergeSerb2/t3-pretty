@@ -1,7 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Result from "effect/Result";
 
-import { decodeGitHubCodexReviewJson, parseGitHubPullRequestUrl } from "./githubCodexReview.ts";
+import {
+  decodeGitHubCodexReviewPageJson,
+  parseGitHubPullRequestUrl,
+  resolveGitHubCodexReviewPages,
+} from "./githubCodexReview.ts";
 
 function response(input: {
   readonly head?: string;
@@ -32,12 +36,14 @@ function response(input: {
             ],
           },
           reactions: {
+            pageInfo: { hasNextPage: false, endCursor: null },
             nodes: (input.reactions ?? []).map(({ login, ...reaction }) => ({
               ...reaction,
               user: { login },
             })),
           },
           reviews: {
+            pageInfo: { hasNextPage: false, endCursor: null },
             nodes: (input.reviews ?? []).map(({ login, ...review }) => ({
               ...review,
               author: { login },
@@ -50,10 +56,10 @@ function response(input: {
 }
 
 function decode(raw: string) {
-  const result = decodeGitHubCodexReviewJson(raw);
+  const result = decodeGitHubCodexReviewPageJson(raw);
   expect(Result.isSuccess(result)).toBe(true);
   if (Result.isFailure(result)) throw new Error("Expected GitHub response to decode");
-  return result.success;
+  return result.success ? resolveGitHubCodexReviewPages([result.success]) : null;
 }
 
 describe("parseGitHubPullRequestUrl", () => {
@@ -71,7 +77,7 @@ describe("parseGitHubPullRequestUrl", () => {
   });
 });
 
-describe("decodeGitHubCodexReviewJson", () => {
+describe("resolveGitHubCodexReviewPages", () => {
   it("reports the connector eye reaction as reviewing", () => {
     expect(
       decode(

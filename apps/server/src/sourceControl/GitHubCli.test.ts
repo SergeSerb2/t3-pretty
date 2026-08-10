@@ -172,6 +172,7 @@ describe("GitHubCli.layer", () => {
                       nodes: [{ commit: { committedDate: "2026-08-10T05:30:00Z" } }],
                     },
                     reactions: {
+                      pageInfo: { hasNextPage: false, endCursor: null },
                       nodes: [
                         {
                           content: "EYES",
@@ -180,7 +181,10 @@ describe("GitHubCli.layer", () => {
                         },
                       ],
                     },
-                    reviews: { nodes: [] },
+                    reviews: {
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                      nodes: [],
+                    },
                   },
                 },
               },
@@ -212,6 +216,92 @@ describe("GitHubCli.layer", () => {
             "number=42",
           ]),
         }),
+      );
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("paginates all public activity before reporting Codex state", () =>
+    Effect.gen(function* () {
+      mockRun
+        .mockReturnValueOnce(
+          Effect.succeed(
+            processOutput(
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
+              JSON.stringify({
+                data: {
+                  repository: {
+                    pullRequest: {
+                      headRefOid: "abcdef1234567890",
+                      commits: {
+                        nodes: [{ commit: { committedDate: "2026-08-10T05:30:00Z" } }],
+                      },
+                      reactions: {
+                        pageInfo: { hasNextPage: true, endCursor: "reaction-100" },
+                        nodes: [
+                          {
+                            content: "THUMBS_UP",
+                            createdAt: "2026-08-10T05:31:00Z",
+                            user: { login: "another-reviewer" },
+                          },
+                        ],
+                      },
+                      reviews: {
+                        pageInfo: { hasNextPage: false, endCursor: null },
+                        nodes: [],
+                      },
+                    },
+                  },
+                },
+              }),
+            ),
+          ),
+        )
+        .mockReturnValueOnce(
+          Effect.succeed(
+            processOutput(
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
+              JSON.stringify({
+                data: {
+                  repository: {
+                    pullRequest: {
+                      headRefOid: "abcdef1234567890",
+                      commits: {
+                        nodes: [{ commit: { committedDate: "2026-08-10T05:30:00Z" } }],
+                      },
+                      reactions: {
+                        pageInfo: { hasNextPage: false, endCursor: null },
+                        nodes: [
+                          {
+                            content: "THUMBS_UP",
+                            createdAt: "2026-08-10T05:38:00Z",
+                            user: { login: "chatgpt-codex-connector[bot]" },
+                          },
+                        ],
+                      },
+                    },
+                  },
+                },
+              }),
+            ),
+          ),
+        );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const result = yield* gh.getCodexReview({
+        cwd: "/repo",
+        owner: "pingdotgg",
+        repository: "t3code",
+        number: 42,
+      });
+
+      assert.deepStrictEqual(result, { provider: "codex", state: "passed" });
+      expect(mockRun).toHaveBeenCalledTimes(2);
+      expect(mockRun.mock.calls[1]?.[0].args).toEqual(
+        expect.arrayContaining([
+          "reactionsCursor=reaction-100",
+          "includeReactions=true",
+          "includeReviews=false",
+        ]),
       );
     }).pipe(Effect.provide(layer)),
   );
