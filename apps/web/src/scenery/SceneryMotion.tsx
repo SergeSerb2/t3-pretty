@@ -29,6 +29,7 @@ import { useMotionStore } from "./motionStore";
 import { ThinkingOrb } from "./orbs/vendor";
 import type { OrbState } from "./orbs/vendor";
 import { useActiveThreadKey } from "./useActiveThreadKey";
+import { useIsDarkAppearance } from "./useHtmlAttributes";
 import "./motion.css";
 
 const ROW_WRAPPER_SELECTOR = "[data-timeline-root]";
@@ -142,6 +143,8 @@ function ensureSlot(
 export function SceneryMotion() {
   const enabled = useMotionStore((state) => state.enabled);
   const threadKey = useActiveThreadKey();
+  const isDark = useIsDarkAppearance();
+  const orbTheme = isDark ? "dark" : "light";
   const [slots, setSlots] = useState<OrbSlots>(NO_SLOTS);
   const [orbState, setOrbState] = useState<OrbState>("working");
 
@@ -374,7 +377,7 @@ export function SceneryMotion() {
         ? createPortal(
             // The row's own "Working for Xs" text is the announcement;
             // the orb is decorative next to it.
-            <ThinkingOrb state={orbState} size={20} aria-hidden />,
+            <ThinkingOrb state={orbState} size={20} theme={orbTheme} aria-hidden />,
             slots.working,
           )
         : null}
@@ -383,6 +386,7 @@ export function SceneryMotion() {
             <ThinkingOrb
               state={orbState}
               size={20}
+              theme={orbTheme}
               style={{ width: 16, height: 16 }}
               aria-hidden
             />,
@@ -390,13 +394,22 @@ export function SceneryMotion() {
           )
         : null}
       {slots.hero
-        ? createPortal(<ThinkingOrb state="breathing" size={64} aria-hidden />, slots.hero)
+        ? createPortal(
+            <ThinkingOrb state="breathing" size={64} theme={orbTheme} aria-hidden />,
+            slots.hero,
+          )
         : null}
       {slots.sidebar.map((slot, index) =>
         createPortal(
           // Sidebar rows only know "working" — the verb inference above
           // reads the active thread's timeline, which other threads lack.
-          <ThinkingOrb state="working" size={20} style={{ width: 16, height: 16 }} aria-hidden />,
+          <ThinkingOrb
+            state="working"
+            size={20}
+            theme={orbTheme}
+            style={{ width: 16, height: 16 }}
+            aria-hidden
+          />,
           slot,
           `sidebar-orb-${index}`,
         ),

@@ -45,6 +45,12 @@ describe("working-row orb contract", () => {
     expect(messagesTimelineSource).toContain("min-w-0 shrink truncate");
   });
 
+  it("pins every orb to the app's resolved appearance", () => {
+    expect(motionDriverSource).toContain("const isDark = useIsDarkAppearance()");
+    expect(motionDriverSource).toContain('const orbTheme = isDark ? "dark" : "light"');
+    expect(motionDriverSource.match(/theme=\{orbTheme\}/g)).toHaveLength(4);
+  });
+
   it("never clones the transient working row into a fixed-position exit ghost", () => {
     expect(motionDriverSource).not.toContain("workingRow.cloneNode");
     expect(motionDriverSource).not.toContain("scenery-ghost-exit");
