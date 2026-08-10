@@ -519,7 +519,12 @@ export function foldSubagentActivities(
         ) {
           applyStatus(agent, "running", at);
         }
-        const summary = asString(payload.summary);
+        // Current servers preserve Claude's natural-language progress in
+        // `summary`; older/remotely skewed servers stored the same text in
+        // `detail`. Prefer the structured field, but keep the compatibility
+        // fallback so the Agents panel does not collapse a useful
+        // "Running Compare tunnel limit" update into a generic "Bash".
+        const summary = asString(payload.summary) ?? asString(payload.detail);
         if (summary) {
           agent.progress = bounded(summary);
           agent.recentActivity = appendActivity(agent.recentActivity, at, summary);

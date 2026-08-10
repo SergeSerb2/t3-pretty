@@ -110,6 +110,25 @@ describe("foldSubagentActivities", () => {
     expect(agents[0]!.status).toBe("running");
   });
 
+  it("uses legacy detail progress before falling back to a generic tool name", () => {
+    const agents = fold([
+      activity("task.started", {
+        taskId: "task-detail",
+        title: "Map T3 Connect system",
+      }),
+      activity("task.progress", {
+        taskId: "task-detail",
+        detail: "Running Compare tunnel limit on main",
+        lastToolName: "Bash",
+      }),
+    ]);
+
+    expect(agents[0]?.progress).toBe("Running Compare tunnel limit on main");
+    expect(agents[0]?.recentActivity.map((entry) => entry.summary)).toEqual([
+      "Running Compare tunnel limit on main",
+    ]);
+  });
+
   it("completion before start stays terminal; a late start only fills metadata", () => {
     const agents = fold([
       activity("task.completed", {

@@ -2249,10 +2249,14 @@ function ChatViewContent(props: ChatViewProps) {
     if (subagentLogRef.current.key !== activeThreadKey) {
       subagentLogRef.current = { key: activeThreadKey, log: emptySubagentActivityLog() };
     }
-    const advanced = advanceSubagentActivityLog(subagentLogRef.current.log, foldedSubagents);
+    const advanced = advanceSubagentActivityLog(
+      subagentLogRef.current.log,
+      foldedSubagents,
+      threadActivities,
+    );
     subagentLogRef.current = { key: activeThreadKey, log: advanced };
     return advanced;
-  }, [activeThreadKey, foldedSubagents]);
+  }, [activeThreadKey, foldedSubagents, threadActivities]);
   const pendingApprovals = useMemo(
     () => derivePendingApprovals(threadActivities),
     [threadActivities],

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import type { OrchestrationThreadActivity } from "@t3tools/contracts";
 import type { RuntimeSubagent } from "./subagentRuntime.ts";
 import {
   advanceSubagentActivityLog,
@@ -38,6 +39,24 @@ function agent(overrides: Partial<RuntimeSubagent> & { id: string }): RuntimeSub
   };
 }
 
+let activitySequence = 0;
+function activity(
+  kind: string,
+  payload: Record<string, unknown>,
+  at = "2026-08-01T10:00:02.000Z",
+): OrchestrationThreadActivity {
+  activitySequence += 1;
+  return {
+    id: `activity-${activitySequence}`,
+    tone: "tool",
+    kind,
+    summary: kind === "tool.completed" ? "Command run" : "Tool denied",
+    payload,
+    turnId: null,
+    createdAt: at,
+  } as unknown as OrchestrationThreadActivity;
+}
+
 describe("advanceSubagentActivityLog", () => {
   it("seeds a new agent from its current ring and accumulates later ticks", () => {
     const first = advanceSubagentActivityLog(emptySubagentActivityLog(), [
@@ -60,7 +79,7 @@ describe("advanceSubagentActivityLog", () => {
     ]);
     expect(subagentLogEntries(second, "a1").map((entry) => entry.summary)).toEqual([
       "Reading files",
-      "▸ Bash",
+      "Running a command",
     ]);
   });
 
@@ -91,9 +110,64 @@ describe("advanceSubagentActivityLog", () => {
       agent({ id: "a1", recentActivity: [{ at: "2026-08-01T10:00:03.000Z", summary: "▸ Read" }] }),
     ]);
     expect(subagentLogEntries(log, "a1").map((entry) => entry.summary)).toEqual([
-      "▸ Read",
-      "▸ Bash",
-      "▸ Read",
+      "Reading files",
+      "Running a command",
+      "Reading files",
+    ]);
+  });
+
+  it("re-homes completed tool detail into the owning agent", () => {
+    const command = activity("tool.completed", {
+      agentId: "a1",
+      itemType: "command_execution",
+      detail: "Bash: rg -n 'device limit' apps packages",
+      data: { toolName: "Bash" },
+    });
+    const log = advanceSubagentActivityLog(
+      emptySubagentActivityLog(),
+      [agent({ id: "a1" })],
+      [command],
+    );
+
+    expect(subagentLogEntries(log, "a1")).toContainEqual({
+      at: "2026-08-01T10:00:02.000Z",
+      summary: "Ran command",
+      detail: "rg -n 'device limit' apps packages",
+      kind: "tool",
+      toolName: "Bash",
+    });
+    expect(advanceSubagentActivityLog(log, [agent({ id: "a1" })], [command])).toBe(log);
+  });
+
+  it("keeps unattributed parent tools out of agent feeds", () => {
+    const log = advanceSubagentActivityLog(
+      emptySubagentActivityLog(),
+      [agent({ id: "a1" })],
+      [
+        activity("tool.completed", {
+          itemType: "command_execution",
+          detail: "Bash: git status",
+          data: { toolName: "Bash" },
+        }),
+      ],
+    );
+
+    expect(subagentLogEntries(log, "a1")).toEqual([]);
+  });
+
+  it("prefers a same-timestamp natural action over a generic heartbeat", () => {
+    const log = advanceSubagentActivityLog(emptySubagentActivityLog(), [
+      agent({
+        id: "a1",
+        recentActivity: [
+          { at: "2026-08-01T10:00:04.000Z", summary: "▸ Bash" },
+          { at: "2026-08-01T10:00:04.000Z", summary: "Running Compare tunnel limit on main" },
+        ],
+      }),
+    ]);
+
+    expect(subagentLogEntries(log, "a1").map((entry) => entry.summary)).toEqual([
+      "Running Compare tunnel limit on main",
     ]);
   });
 
