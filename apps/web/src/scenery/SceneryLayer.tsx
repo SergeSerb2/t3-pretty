@@ -116,14 +116,19 @@ export function SceneryLayer({
       {displayed ? (
         // Outside the aria-hidden art layer: the credit is real content, and
         // its links need a stacking slot above the (transparent) chat column.
-        // One dimmed micro-line so a small window's composer controls stay
-        // clear of it; hover restores full legibility for the links.
+        // The location collapses before the required photo credit at narrow
+        // widths. CSS aligns this with the settings trigger as one short dock
+        // instead of stacking two overlays beside the composer.
         <div className="scenery-attribution">
           <span className="scenery-attribution__name">{displayed.name}</span>
-          <span className="scenery-attribution__credit">
+          <span className="scenery-attribution__separator" aria-hidden>
             {" · "}
+          </span>
+          <span className="scenery-attribution__credit">
+            <span className="scenery-attribution__prefix">Photo by </span>
             {displayed.photographerProfileURL ? (
               <a
+                className="scenery-attribution__photographer"
                 href={`${displayed.photographerProfileURL}${UNSPLASH_UTM}`}
                 rel="noreferrer"
                 target="_blank"
@@ -131,9 +136,11 @@ export function SceneryLayer({
                 {displayed.photographerName}
               </a>
             ) : (
-              displayed.photographerName
+              <span className="scenery-attribution__photographer">
+                {displayed.photographerName}
+              </span>
             )}
-            {" / "}
+            <span className="scenery-attribution__prefix"> on </span>
             <a href={`https://unsplash.com/${UNSPLASH_UTM}`} rel="noreferrer" target="_blank">
               Unsplash
             </a>

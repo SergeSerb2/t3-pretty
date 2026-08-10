@@ -1,6 +1,6 @@
 /**
- * Bottom-right quick controls for the scenery: photo blur, photo presence
- * (the glass translucency), and the ink mode. Lives entirely inside the
+ * Compact bottom-edge controls for the scenery: photo blur, photo presence
+ * (the glass translucency), motion, and ink mode. Lives entirely inside the
  * scenery layer chunk — no upstream settings surface is touched.
  *
  * Blur commits are debounced: every distinct blur value is a distinct CDN
@@ -86,6 +86,7 @@ export function SceneryQuickSettings() {
         className="scenery-quick__trigger"
         aria-label="Scenery settings"
         aria-expanded={open}
+        aria-controls="scenery-quick-settings"
         title="Scenery settings"
         onClick={() => setOpen((value) => !value)}
       >
@@ -99,27 +100,30 @@ export function SceneryQuickSettings() {
         </svg>
       </button>
       {open ? (
-        <div className="scenery-quick__panel" role="dialog" aria-label="Scenery settings">
-          <label className="scenery-quick__row">
-            <span className="scenery-quick__label">
-              Blur <span className="scenery-quick__value">{blurDraft}</span>
-            </span>
+        <div
+          id="scenery-quick-settings"
+          className="scenery-quick__panel"
+          role="dialog"
+          aria-label="Scenery settings"
+        >
+          <label className="scenery-quick__row scenery-quick__row--range">
+            <span className="scenery-quick__label">Blur</span>
             <input
               type="range"
+              aria-label="Photo blur"
               min={BLUR_RANGE.lowerBound}
               max={BLUR_RANGE.upperBound}
               step={1}
               value={blurDraft}
               onChange={(event) => onBlurInput(Number(event.target.value))}
             />
+            <output className="scenery-quick__value">{blurDraft}</output>
           </label>
-          <label className="scenery-quick__row">
-            <span className="scenery-quick__label">
-              Photo presence{" "}
-              <span className="scenery-quick__value">{translucencyToPercent(translucency)}%</span>
-            </span>
+          <label className="scenery-quick__row scenery-quick__row--range">
+            <span className="scenery-quick__label">Photo</span>
             <input
               type="range"
+              aria-label="Photo presence"
               min={0}
               max={100}
               step={1}
@@ -128,6 +132,7 @@ export function SceneryQuickSettings() {
                 setTranslucency(percentToTranslucency(Number(event.target.value)))
               }
             />
+            <output className="scenery-quick__value">{translucencyToPercent(translucency)}%</output>
           </label>
           <div className="scenery-quick__row">
             <span className="scenery-quick__label">Motion</span>
