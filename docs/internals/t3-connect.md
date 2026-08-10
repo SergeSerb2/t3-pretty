@@ -1,20 +1,22 @@
-# T3 Connect
+# Surge Connect (T3 Connect-compatible)
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-T3 Connect uses one Clerk application for web, desktop, and mobile authentication. The relay verifies
-two kinds of bearer credential: template JWTs generated from the `t3-relay` template with the shared
-`t3-code-relay` audience, and Clerk OAuth tokens issued to the CLI. `verifyRelayClientBearerToken` in
-`infra/relay/src/http/Api.ts` tries the template/session path first and falls back to OAuth
-verification (`acceptsToken: "oauth_token"`), so the CLI's OAuth credential works without a JWT
-template.
+Surge Connect is T3 Pretty's fork-operated deployment and user-facing name for the upstream T3
+Connect protocol. Technical API routes, environment variables, types, and the `t3 connect` CLI stay
+unchanged for compatibility. Surge Connect uses one Clerk application for web, desktop, and mobile
+authentication. The relay verifies two kinds of bearer credential: template JWTs generated from the
+`t3-relay` template with the shared `t3-code-relay` audience, and Clerk OAuth tokens issued to the
+CLI. `verifyRelayClientBearerToken` in `infra/relay/src/http/Api.ts` tries the template/session path
+first and falls back to OAuth verification (`acceptsToken: "oauth_token"`), so the CLI's OAuth
+credential works without a JWT template.
 
 For the wider system diagram, see
 [t3-code-connect-auth-flow.html](./t3-code-connect-auth-flow.html).
 
 ## Application Keys
 
-This fork operates its own T3 Connect relay (`https://relay.sergeserbinenko.com`, deployed by
+This fork operates its own Surge Connect relay (`https://relay.sergeserbinenko.com`, deployed by
 `deploy-relay.yml` from `infra/relay/`) with a raised managed-tunnel limit — the parent's
 production relay caps managed tunnels at 3 per user. The repository-root example file supplies the
 checked-in public defaults, so fresh source builds do not need a private environment file:
@@ -43,7 +45,7 @@ Configuration precedence is:
 1. Process or CI environment variables.
 2. Repository-root `.env.local`.
 3. Repository-root `.env`.
-4. Checked-in parent public defaults from `.env.example`.
+4. Checked-in Surge Connect public defaults from `.env.example`.
 
 The Clerk publishable key, JWT template name, CLI OAuth client ID, and relay URL are public
 identifiers, not secrets.
@@ -242,13 +244,14 @@ flow uses a custom redirect URI, add that exact URI to the same allowlist.
 
 ## Sign-in Surfaces
 
-Signed-in users manage T3 Connect under **Connections**. The settings sidebar also has dedicated
-controls, rendered by `SettingsSidebarNav.tsx`: `T3ConnectSidebarSignIn` in the footer shows a
-**Sign in to T3 Connect** button while signed out, and `T3ConnectSidebarAvatar` shows a Clerk
-`UserButton` account control while signed in. Both are gated on cloud public configuration.
-Desktop renders the same web bundle, so it has them too. The waitlist enrollment flow from the
-private beta was removed when Connect went GA; sign-up is open unless a Clerk restriction below is
-enabled.
+Signed-in users manage Surge Connect under **Connections**. The page begins with a persistent Surge
+Code account row: signed-out users get a **Sign in to Surge Code** action, while signed-in users
+see their account and a **Manage account** action. The settings sidebar also renders
+`T3ConnectSidebarSignIn` while signed out and `T3ConnectSidebarAvatar` while signed in. All account
+controls are gated on cloud public configuration; an unconfigured build keeps the Connections row
+visible and explains why Surge Connect is unavailable. Desktop renders the same web bundle, so it
+has these controls too. The waitlist enrollment flow from the private beta was removed when Connect
+went GA; sign-up is open unless a Clerk restriction below is enabled.
 
 ## Restricting Sign-ups: Known-User Allowlist
 

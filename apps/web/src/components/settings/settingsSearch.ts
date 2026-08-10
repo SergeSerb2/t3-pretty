@@ -197,6 +197,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/source-control",
   },
   {
+    id: "surge-connect-account",
+    title: "Surge Code account",
+    to: "/settings/connections",
+  },
+  {
     id: "remote-environments",
     title: "Remote environments",
     to: "/settings/connections",

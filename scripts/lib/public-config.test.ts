@@ -41,24 +41,24 @@ describe("loadRepoEnv", () => {
     expect(env.VITE_RELAY_OTLP_TRACES_TOKEN).toBeUndefined();
   });
 
-  it("projects the parent T3 Connect public defaults for fork builds", () => {
+  it("projects the Surge Connect public defaults for fork builds", () => {
     const repoRoot = makeTemporaryDirectory();
     NodeFS.writeFileSync(
       NodePath.join(repoRoot, ".env.example"),
-      "T3CODE_CLERK_PUBLISHABLE_KEY=pk_parent\nT3CODE_CLERK_JWT_TEMPLATE=template_parent\nT3CODE_CLERK_CLI_OAUTH_CLIENT_ID=oauth_parent\nT3CODE_RELAY_URL=https://relay.parent.example.test\n",
+      "T3CODE_CLERK_PUBLISHABLE_KEY=pk_fork\nT3CODE_CLERK_JWT_TEMPLATE=template_fork\nT3CODE_CLERK_CLI_OAUTH_CLIENT_ID=oauth_fork\nT3CODE_RELAY_URL=https://relay.fork.example.test\n",
     );
 
     expect(loadRepoEnv({ baseEnv: {}, repoRoot })).toMatchObject({
-      T3CODE_CLERK_PUBLISHABLE_KEY: "pk_parent",
-      VITE_CLERK_PUBLISHABLE_KEY: "pk_parent",
-      EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_parent",
-      T3CODE_CLERK_JWT_TEMPLATE: "template_parent",
-      VITE_CLERK_JWT_TEMPLATE: "template_parent",
-      EXPO_PUBLIC_CLERK_JWT_TEMPLATE: "template_parent",
-      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: "oauth_parent",
-      VITE_CLERK_CLI_OAUTH_CLIENT_ID: "oauth_parent",
-      T3CODE_RELAY_URL: "https://relay.parent.example.test",
-      VITE_T3CODE_RELAY_URL: "https://relay.parent.example.test",
+      T3CODE_CLERK_PUBLISHABLE_KEY: "pk_fork",
+      VITE_CLERK_PUBLISHABLE_KEY: "pk_fork",
+      EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_fork",
+      T3CODE_CLERK_JWT_TEMPLATE: "template_fork",
+      VITE_CLERK_JWT_TEMPLATE: "template_fork",
+      EXPO_PUBLIC_CLERK_JWT_TEMPLATE: "template_fork",
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: "oauth_fork",
+      VITE_CLERK_CLI_OAUTH_CLIENT_ID: "oauth_fork",
+      T3CODE_RELAY_URL: "https://relay.fork.example.test",
+      VITE_T3CODE_RELAY_URL: "https://relay.fork.example.test",
     });
   });
 
