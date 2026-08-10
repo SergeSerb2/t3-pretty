@@ -89,6 +89,10 @@ describe("detectSourceControlProviderFromRemoteUrl", () => {
     expect(detectSourceControlProviderFromRemoteUrl("hg::https://example.com/org/repo")).toBeNull();
   });
 
+  it("returns null for slash-separated non-git user paths", () => {
+    expect(detectSourceControlProviderFromRemoteUrl("alice@github.com/team/repo.git")).toBeNull();
+  });
+
   it("classifies scp-style remotes with optional usernames", () => {
     expect(
       detectSourceControlProviderFromRemoteUrl("alice@gitlab.company.com:team/repo.git")?.kind,

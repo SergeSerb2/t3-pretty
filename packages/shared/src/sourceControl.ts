@@ -211,9 +211,11 @@ function parseRemoteHost(remoteUrl: string): string | null {
   }
 
   // Git documents scp-like syntax as `[<user>@]<host>:<path>` with the user
-  // optional and not restricted to `git`. Without a username the separator
-  // must be a colon, otherwise plain paths would parse as host/path.
-  const scpStyleHost = /^[^@:/\s]+@([^:/\s]+)[:/]/.exec(trimmed) ?? /^([^@:/\s]+):/.exec(trimmed);
+  // optional and not restricted to `git`, but the host/path separator must be
+  // a colon — slash-separated values like alice@github.com/team/repo are
+  // filesystem paths. Only the legacy git@host/path form is grandfathered in.
+  const scpStyleHost =
+    /^(?:[^@:/\s]+@)?([^:/\s]+):/.exec(trimmed) ?? /^git@([^:/\s]+)\//.exec(trimmed);
   const host = scpStyleHost?.[1];
   return host ? host.toLowerCase() : null;
 }

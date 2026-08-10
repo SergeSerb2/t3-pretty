@@ -39,6 +39,16 @@ describe("normalizeGitRemoteUrl", () => {
     );
   });
 
+  it("treats slash-separated non-git user paths as filesystem paths", () => {
+    expect(normalizeGitRemoteUrl("alice@github.com/team/repo.git")).toBe(
+      "alice@github.com/team/repo",
+    );
+    // Legacy git@host/path form remains recognized.
+    expect(normalizeGitRemoteUrl("git@github.com/T3Tools/T3Code.git")).toBe(
+      "github.com/t3tools/t3code",
+    );
+  });
+
   it("canonicalizes userless scp-style remotes", () => {
     expect(normalizeGitRemoteUrl("github.com:Fork/Repo.git")).toBe("github.com/fork/repo");
     // Absolute and drive-letter paths must not parse as host/path.

@@ -202,8 +202,7 @@ function deriveDisplayRepositoryPathSegments(remoteUrl: string): ReadonlyArray<s
     }
     const scpStyle = /^[^:/\s]+::/.test(trimmed)
       ? null
-      : (/^(?:[^@:/\s]+@)?[^:/\s]+:(.+)$/.exec(trimmed) ??
-        /^[^@:/\s]+@[^:/\s]+\/(.+)$/.exec(trimmed));
+      : (/^(?:[^@:/\s]+@)?[^:/\s]+:(.+)$/.exec(trimmed) ?? /^git@[^:/\s]+\/(.+)$/.exec(trimmed));
     if (scpStyle?.[1]) {
       return scpStyle[1].split("/").filter((segment) => segment.length > 0);
     }
