@@ -730,10 +730,7 @@ export function BranchToolbarBranchSelector({
                 />
               }
             >
-              <ChangeRequestStatusIcon
-                className="size-3"
-                automatedReview={branchPrStatus.automatedReview}
-              />
+              <ChangeRequestStatusIcon className="size-3" />
               <span>#{branchPr.number}</span>
             </TooltipTrigger>
             <TooltipPopup side="top" className="max-w-80 whitespace-normal leading-snug">

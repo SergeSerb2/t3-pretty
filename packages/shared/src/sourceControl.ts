@@ -16,7 +16,7 @@ export function resolveAutomatedReviewPresentation(
   if (signal === undefined) return null;
   if (signal === null) {
     return {
-      label: "No public Codex review signal",
+      label: "No public auto review signal",
       shortLabel: "No signal",
       description:
         "Smart Review may still be deciding, may have skipped this PR, or Auto Review may be off.",
@@ -26,26 +26,26 @@ export function resolveAutomatedReviewPresentation(
   switch (signal.state) {
     case "reviewing":
       return {
-        label: "Codex is reviewing",
-        shortLabel: "Reviewing",
+        label: "Auto review running",
+        shortLabel: "Running",
         description: "Codex acknowledged the PR and is reviewing it now.",
       };
     case "passed":
       return {
-        label: "Codex found no issues",
-        shortLabel: "No issues",
+        label: "Auto review complete",
+        shortLabel: "Complete",
         description: "Codex finished and left a thumbs-up instead of review comments.",
       };
     case "feedback":
       return {
-        label: "Codex left feedback",
+        label: "Auto review left feedback",
         shortLabel: "Feedback",
         description: "Codex finished and posted review comments for the current commit.",
       };
     case "stale":
       return {
-        label: "Earlier Codex result",
-        shortLabel: "Earlier result",
+        label: "Earlier auto review",
+        shortLabel: "Earlier",
         description: "The visible Codex result predates the current commit.",
       };
   }

@@ -157,21 +157,8 @@ export function AutomatedReviewStatusIcon({
   return <Icon aria-hidden="true" className={`${className ?? "size-3"} ${status.colorClass}`} />;
 }
 
-export function ChangeRequestStatusIcon({
-  className,
-  automatedReview,
-}: {
-  className?: string;
-  automatedReview?: AutomatedReviewIndicator | null;
-}) {
-  return (
-    <span className="inline-flex items-center gap-0.5" aria-hidden="true">
-      <GitPullRequestIcon className={className} />
-      {automatedReview ? (
-        <AutomatedReviewStatusIcon status={automatedReview} className={className} />
-      ) : null}
-    </span>
-  );
+export function ChangeRequestStatusIcon({ className }: { className?: string }) {
+  return <GitPullRequestIcon aria-hidden="true" className={className} />;
 }
 
 export function PrStatusTooltipContent({ status }: { status: PrStatusIndicator }) {
@@ -366,10 +353,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
               />
             }
           >
-            <ChangeRequestStatusIcon
-              className="size-3"
-              automatedReview={prStatus.automatedReview}
-            />
+            <ChangeRequestStatusIcon className="size-3" />
           </TooltipTrigger>
           <TooltipPopup side="top">
             <PrStatusTooltipContent status={prStatus} />

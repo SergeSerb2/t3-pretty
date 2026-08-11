@@ -38,7 +38,8 @@ T3 Code works with the platforms your team already uses:
 **Stay on top of open reviews**
 
 - See if your current branch already has an open PR/MR
-- For open GitHub PRs, see Codex Auto Review's public state beside the PR: reviewing, no issues, feedback, an earlier result, or no public signal
+- For open GitHub PRs, open the git menu beside the PR action to see Codex Auto Review's public
+  state: running, complete, feedback, an earlier result, or no public signal
 - Open several reviews from the **Pull requests** page as tabs in the right panel
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation

@@ -10,7 +10,7 @@ import {
 describe("automated review presentation", () => {
   it("keeps an observed no-signal state honest", () => {
     expect(resolveAutomatedReviewPresentation(null)).toEqual({
-      label: "No public Codex review signal",
+      label: "No public auto review signal",
       shortLabel: "No signal",
       description:
         "Smart Review may still be deciding, may have skipped this PR, or Auto Review may be off.",
@@ -28,9 +28,14 @@ describe("automated review presentation", () => {
           resolveAutomatedReviewPresentation({
             provider: "codex",
             state: state as "reviewing" | "passed" | "feedback" | "stale",
-          })?.shortLabel,
+          })?.label,
       ),
-    ).toEqual(["Reviewing", "No issues", "Feedback", "Earlier result"]);
+    ).toEqual([
+      "Auto review running",
+      "Auto review complete",
+      "Auto review left feedback",
+      "Earlier auto review",
+    ]);
   });
 });
 

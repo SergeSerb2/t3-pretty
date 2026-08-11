@@ -190,7 +190,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
       }
       if (item.kind === "open_pr" && status.pr?.number != null) {
         const automatedReview = resolveAutomatedReviewPresentation(status.pr.automatedReview);
-        const reviewDetail = automatedReview ? ` · Codex ${automatedReview.shortLabel}` : "";
+        const reviewDetail = automatedReview ? ` · ${automatedReview.label}` : "";
         return `PR #${status.pr.number} ${status.pr.state ?? "open"}${reviewDetail}`;
       }
       return undefined;

@@ -138,7 +138,6 @@ import {
 } from "./Sidebar.logic";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
-  AutomatedReviewStatusIcon,
   ThreadWorktreeIndicator,
   prStatusIndicator,
   resolveThreadPr,
@@ -1100,9 +1099,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         aria-label={prStatus.tooltip}
       >
         <span>#{pr.number}</span>
-        {prStatus.automatedReview ? (
-          <AutomatedReviewStatusIcon status={prStatus.automatedReview} className="size-3" />
-        ) : null}
       </button>
     ) : null;
   const terminalStatusIcon = terminalStatus ? (

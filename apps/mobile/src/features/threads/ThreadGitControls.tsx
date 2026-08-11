@@ -62,7 +62,7 @@ function compactMenuStatus(gitStatus: VcsStatusResult | null): string {
     parts.push(`PR #${gitStatus.pr.number}`);
     const automatedReview = resolveAutomatedReviewPresentation(gitStatus.pr.automatedReview);
     if (automatedReview) {
-      parts.push(`Codex ${automatedReview.shortLabel}`);
+      parts.push(automatedReview.label);
     }
   }
 
