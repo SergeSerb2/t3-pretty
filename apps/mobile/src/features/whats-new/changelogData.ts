@@ -33,7 +33,7 @@ export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
         kind: "new",
         title: "World Scenery look",
         description:
-          "The alpine World Scenery palette from the desktop app is now the phone app's default theme, in both light and dark.",
+          "The full World Scenery theme from the desktop app: every thread gets its own landscape photo behind the chat, the threads list shows a new featured place each day, and Blur / Photo presence controls live in Settings → Appearance.",
       },
       {
         kind: "new",
