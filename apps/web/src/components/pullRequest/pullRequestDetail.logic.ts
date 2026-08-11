@@ -37,6 +37,10 @@ export type PullRequestConversationItem =
  * first time a thread's comment is met, the whole conversation is emitted; later replies of
  * the same thread are skipped so a resolved discussion is one card rather than a stack of
  * remarks that look unfinished.
+ *
+ * Threads that never appear in the flat feed are still emitted. Hosts can fail the two reads
+ * independently — GitLab's notes and discussions do — and a notes failure would otherwise
+ * hide every discussion the page already has.
  */
 export function groupPullRequestConversation(
   comments: ReadonlyArray<PullRequestComment>,
@@ -58,7 +62,26 @@ export function groupPullRequestConversation(
     seenThreads.add(thread.id);
     items.push({ kind: "thread", thread });
   }
-  return items;
+  const unseenThreads = threads.filter((thread) => !seenThreads.has(thread.id));
+  if (unseenThreads.length === 0) return items;
+  const activityAt = (item: PullRequestConversationItem): string =>
+    item.kind === "comment" ? item.comment.createdAt : threadActivityAt(item.thread, order);
+  return [
+    ...items,
+    ...unseenThreads.map((thread) => ({ kind: "thread" as const, thread })),
+  ].toSorted((left, right) => {
+    const cmp = activityAt(left).localeCompare(activityAt(right));
+    return order === "newest" ? -cmp : cmp;
+  });
+}
+
+/** Newest-first uses the latest remark; oldest-first uses the first. Empty threads sort first. */
+function threadActivityAt(thread: PullRequestReviewThread, order: "newest" | "oldest"): string {
+  const times = thread.comments.map((comment) => comment.createdAt);
+  if (times.length === 0) return "";
+  return order === "newest"
+    ? times.reduce((latest, at) => (at > latest ? at : latest))
+    : times.reduce((earliest, at) => (at < earliest ? at : earliest));
 }
 
 export function countUnresolvedReviewThreads(

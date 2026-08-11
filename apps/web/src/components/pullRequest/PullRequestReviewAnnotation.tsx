@@ -84,6 +84,7 @@ export function ReviewThreadCard({
   canResolve,
   pending,
   fixPending,
+  fixDisabled,
   onFix,
   onReply,
   onToggleResolved,
@@ -96,6 +97,8 @@ export function ReviewThreadCard({
   pending: boolean;
   /** True while this thread's own hand-off is preparing, so only its button says so. */
   fixPending?: boolean;
+  /** True while any hand-off is preparing, so a click is not silently ignored. */
+  fixDisabled?: boolean;
   /** Absent where a thread is shown outside the pull request page's reach. */
   onFix?: () => void;
   /** Resolves to whether the host took it, so a reply that failed keeps the words it was given. */
@@ -159,7 +162,7 @@ export function ReviewThreadCard({
             size="xs"
             variant="ghost"
             className="ml-auto"
-            disabled={pending || fixPending}
+            disabled={pending || fixPending || Boolean(fixDisabled)}
             onClick={onFix}
           >
             <HammerIcon className="size-3" />

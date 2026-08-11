@@ -159,6 +159,21 @@ describe("grouping the conversation", () => {
     ).toEqual(["thread-b", "thread-a", "issue-1"]);
   });
 
+  it("keeps a thread whose comments never appeared in the flat feed", () => {
+    // GitLab can fail notes while discussions still return: the conversation would otherwise
+    // look empty even though the page already holds the review threads.
+    expect(
+      groupPullRequestConversation([], [openThread, resolvedThread], "newest").map((item) =>
+        item.kind === "thread" ? item.thread.id : item.comment.id,
+      ),
+    ).toEqual(["thread-b", "thread-a"]);
+    expect(
+      groupPullRequestConversation([issue], [openThread], "oldest").map((item) =>
+        item.kind === "thread" ? item.thread.id : item.comment.id,
+      ),
+    ).toEqual(["issue-1", "thread-a"]);
+  });
+
   it("counts resolved conversations separately from open ones", () => {
     const threads = [openThread, resolvedThread];
     expect(countUnresolvedReviewThreads(threads)).toBe(1);

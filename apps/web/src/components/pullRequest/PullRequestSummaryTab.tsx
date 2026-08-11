@@ -369,7 +369,7 @@ export function PullRequestSummaryTab({
         title="Comments"
         {...(activityPending || activityError ? {} : { count: detail.commentCount })}
         actions={
-          !activityPending && !activityError && detail.comments.length > 0 ? (
+          !activityPending && !activityError && conversationItems.length > 0 ? (
             <span className="flex shrink-0 items-center gap-1">
               {resolvedThreadCount > 0 ? (
                 <Button
@@ -418,7 +418,7 @@ export function PullRequestSummaryTab({
                 {detail.comments.length} are here; open it on the host to read the rest.
               </p>
             ) : null}
-            {detail.comments.length === 0 ? (
+            {conversationItems.length === 0 ? (
               <p className="py-2 text-xs text-muted-foreground">No comments yet.</p>
             ) : visibleComments.length === 0 ? (
               <p className="py-2 text-xs text-muted-foreground">
@@ -457,7 +457,8 @@ export function PullRequestSummaryTab({
                         fixPending={
                           pendingFinding === pullRequestFindingKey({ kind: "thread", thread })
                         }
-                        {...(onFixFinding
+                        fixDisabled={pendingFinding !== null && pendingFinding !== undefined}
+                        {...(onFixFinding && !thread.isResolved
                           ? { onFix: () => onFixFinding({ kind: "thread", thread }) }
                           : {})}
                         onReply={(body) =>
