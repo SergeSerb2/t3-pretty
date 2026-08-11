@@ -9,16 +9,25 @@
  * Picked files reach the composer through its own event surface instead of
  * private APIs: images are dispatched as a synthetic drop carrying Files —
  * the exact path an OS drag takes, so validation, compression, attachment
- * limits and error toasts are all upstream's. Non-image files become pending
- * path attachments: chips render in the composer chrome, and the absolute
- * filepath is baked into the outgoing prompt at send time (stripped from the
- * bubble), invisible in the editor.
+ * limits and error toasts are all upstream's. Non-image files with a real
+ * absolute path (Electron) become pending path attachments: chips in the
+ * composer chrome, filepath baked into the outgoing prompt at send time.
+ * Browser picks have no absolute path — text is inserted into the prompt via
+ * the mention-drop channel; other files fall through the images drop path so
+ * the composer refuses them instead of claiming an unreadable basename.
  */
 import { FileIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { classifyAttachment, createAttachedFileRef, type AttachedFileRef } from "./attachFiles";
+import { COMPOSER_MENTION_DRAG_TYPE } from "../components/chat/composerMentionDrag";
+import {
+  classifyAttachment,
+  createAttachedFileRef,
+  looksBinary,
+  textAttachmentPayload,
+  type AttachedFileRef,
+} from "./attachFiles";
 import { addAttachedFiles, removeAttachedFile, useAttachedFiles } from "./attachedFileStore";
 import { useActiveThreadKey } from "./useActiveThreadKey";
 import "./composerAttach.css";
@@ -45,22 +54,56 @@ function dropFiles(target: Element, files: ReadonlyArray<File>): void {
   dispatchDrop(target, transfer);
 }
 
-function deliverFiles(slot: Element, threadKey: string | null, files: ReadonlyArray<File>): void {
-  const imageFiles: File[] = [];
+function dropPromptText(target: Element, payload: string): void {
+  const transfer = new DataTransfer();
+  transfer.setData(COMPOSER_MENTION_DRAG_TYPE, payload);
+  dispatchDrop(target, transfer);
+}
+
+async function deliverFiles(
+  slot: Element,
+  threadKey: string | null,
+  files: ReadonlyArray<File>,
+): Promise<void> {
+  const dropPath: File[] = [];
   const pathFiles: AttachedFileRef[] = [];
   for (const file of files) {
-    if (classifyAttachment(file) === "image") {
-      imageFiles.push(file);
-    } else {
-      pathFiles.push(createAttachedFileRef(file));
+    const kind = classifyAttachment(file);
+    if (kind === "image") {
+      dropPath.push(file);
+      continue;
     }
+
+    const pathRef = createAttachedFileRef(file);
+    if (pathRef) {
+      pathFiles.push(pathRef);
+      continue;
+    }
+
+    // No absolute path (typical browser pick). Inline readable text; otherwise
+    // let the composer's images-only drop path refuse the file.
+    if (kind === "text") {
+      try {
+        const content = await file.text();
+        if (looksBinary(content)) {
+          dropPath.push(file);
+        } else {
+          dropPromptText(slot, textAttachmentPayload(file.name, content));
+        }
+      } catch {
+        dropPath.push(file);
+      }
+      continue;
+    }
+
+    dropPath.push(file);
   }
   if (threadKey && pathFiles.length > 0) {
     addAttachedFiles(threadKey, pathFiles);
   }
-  // One drop for the image batch: the composer validates them together, so the
-  // attachment-count limit sees the whole pick at once.
-  dropFiles(slot, imageFiles);
+  // One drop for the image/binary batch: the composer validates them together,
+  // so the attachment-count limit sees the whole pick at once.
+  dropFiles(slot, dropPath);
 }
 
 function PaperclipIcon() {
@@ -232,7 +275,7 @@ export function ComposerAttachControl() {
                 onChange={(event) => {
                   const files = Array.from(event.target.files ?? []);
                   event.target.value = "";
-                  deliverFiles(slot, threadKey, files);
+                  void deliverFiles(slot, threadKey, files);
                 }}
               />
             </>,

@@ -8,8 +8,10 @@ import {
   createAttachedFileRef,
   fileExtension,
   hasAttachedFilePathsSuffix,
+  looksBinary,
   resolvePickedFilePath,
   stripAttachedFilePathsSuffix,
+  textAttachmentPayload,
   type AttachedFileRef,
 } from "./attachFiles";
 
@@ -26,32 +28,58 @@ function fileRef(overrides: Partial<AttachedFileRef> = {}): AttachedFileRef {
 
 describe("classifyAttachment", () => {
   it("routes images to the composer's own drop pipeline", () => {
-    expect(classifyAttachment({ name: "photo.png", type: "image/png" })).toBe("image");
-    expect(classifyAttachment({ name: "shot.HEIC", type: "image/heic" })).toBe("image");
+    expect(classifyAttachment({ name: "photo.png", type: "image/png", size: 10 })).toBe("image");
+    expect(classifyAttachment({ name: "shot.HEIC", type: "image/heic", size: 10 })).toBe("image");
   });
 
-  it("treats every non-image as a path attachment", () => {
-    expect(classifyAttachment({ name: "notes.txt", type: "text/plain" })).toBe("file");
-    expect(classifyAttachment({ name: "app.zip", type: "application/zip" })).toBe("file");
-    expect(classifyAttachment({ name: "mystery.bin", type: "" })).toBe("file");
+  it("classifies readable text for prompt inlining when no absolute path exists", () => {
+    expect(classifyAttachment({ name: "notes.txt", type: "text/plain", size: 10 })).toBe("text");
+    expect(classifyAttachment({ name: "data.json", type: "application/json", size: 10 })).toBe(
+      "text",
+    );
+    expect(classifyAttachment({ name: "script.ts", type: "", size: 10 })).toBe("text");
+  });
+
+  it("treats non-text binaries as path-or-refuse files", () => {
+    expect(classifyAttachment({ name: "app.zip", type: "application/zip", size: 10 })).toBe("file");
+    expect(classifyAttachment({ name: "mystery.bin", type: "", size: 10 })).toBe("file");
+    expect(classifyAttachment({ name: "huge.txt", type: "text/plain", size: 200 * 1024 })).toBe(
+      "file",
+    );
   });
 });
 
 describe("resolvePickedFilePath", () => {
-  it("prefers Electron's File.path when present", () => {
+  it("prefers Electron's File.path when it is absolute", () => {
     const file = new File(["x"], "notes.pdf", { type: "application/pdf" });
     Object.defineProperty(file, "path", { value: "/tmp/notes.pdf" });
     expect(resolvePickedFilePath(file)).toBe("/tmp/notes.pdf");
   });
 
-  it("falls back to the basename when no absolute path is available", () => {
+  it("accepts Windows absolute paths", () => {
     const file = new File(["x"], "notes.pdf", { type: "application/pdf" });
-    expect(resolvePickedFilePath(file)).toBe("notes.pdf");
+    Object.defineProperty(file, "path", { value: "C:\\Users\\serge\\notes.pdf" });
+    expect(resolvePickedFilePath(file)).toBe("C:\\Users\\serge\\notes.pdf");
+  });
+
+  it("returns null when only a basename is available", () => {
+    const file = new File(["x"], "notes.pdf", { type: "application/pdf" });
+    expect(resolvePickedFilePath(file)).toBeNull();
+  });
+
+  it("returns null for relative or empty File.path values", () => {
+    const relative = new File(["x"], "notes.pdf", { type: "application/pdf" });
+    Object.defineProperty(relative, "path", { value: "notes.pdf" });
+    expect(resolvePickedFilePath(relative)).toBeNull();
+
+    const empty = new File(["x"], "notes.pdf", { type: "application/pdf" });
+    Object.defineProperty(empty, "path", { value: "   " });
+    expect(resolvePickedFilePath(empty)).toBeNull();
   });
 });
 
 describe("createAttachedFileRef", () => {
-  it("captures name, path, mime, and size", () => {
+  it("captures name, path, mime, and size when an absolute path exists", () => {
     const file = new File(["hello"], "readme.md", { type: "text/markdown" });
     Object.defineProperty(file, "path", { value: "/repo/readme.md" });
     const ref = createAttachedFileRef(file, "id-1");
@@ -62,6 +90,32 @@ describe("createAttachedFileRef", () => {
       mimeType: "text/markdown",
       sizeBytes: 5,
     });
+  });
+
+  it("returns null when the browser only exposes a basename", () => {
+    const file = new File(["hello"], "readme.md", { type: "text/markdown" });
+    expect(createAttachedFileRef(file, "id-1")).toBeNull();
+  });
+});
+
+describe("textAttachmentPayload", () => {
+  it("wraps content in a four-backtick fence keyed by extension", () => {
+    expect(textAttachmentPayload("notes.md", "hello")).toBe(
+      "Attached file `notes.md`:\n````md\nhello\n````\n",
+    );
+  });
+
+  it("does not double a trailing newline already present", () => {
+    expect(textAttachmentPayload("a.txt", "hi\n")).toBe(
+      "Attached file `a.txt`:\n````txt\nhi\n````\n",
+    );
+  });
+});
+
+describe("looksBinary", () => {
+  it("flags NUL bytes", () => {
+    expect(looksBinary("plain")).toBe(false);
+    expect(looksBinary("a\u0000b")).toBe(true);
   });
 });
 

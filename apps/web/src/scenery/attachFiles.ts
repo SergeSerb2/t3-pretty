@@ -2,17 +2,79 @@
  * Classification and send-time payload for the fork's composer attach button.
  *
  * Images still ride the composer's own Files drop path (validation, compression,
- * limits, toasts). Every other file becomes a pending path attachment: the UI
- * shows a chip, and at send time the absolute (or best-effort) filepath is
- * appended in a marker block the timeline strips from the bubble — same
- * invisible-to-the-user pattern as the auto-PR suffix.
+ * limits, toasts). Non-image picks with a real absolute path (Electron `File.path`)
+ * become pending path attachments: chips in the composer, filepath baked into the
+ * outgoing prompt at send time. Browser picks have no absolute path — text content
+ * is inserted into the prompt, and other files fall through the images-only drop
+ * path so the composer can refuse them instead of inventing an unreadable basename.
  */
 
 export const ATTACHED_FILE_PATHS_TAG = "attached_file_paths";
 export const ATTACHED_FILE_PATHS_OPEN_MARKER = `<${ATTACHED_FILE_PATHS_TAG} source="t3-composer-attach">`;
 export const ATTACHED_FILE_PATHS_CLOSE_MARKER = `</${ATTACHED_FILE_PATHS_TAG}>`;
 
-export type AttachKind = "image" | "file";
+export const TEXT_ATTACHMENT_MAX_BYTES = 128 * 1024;
+
+const TEXT_MIME_PREFIXES = ["text/"];
+const TEXT_MIME_TYPES = new Set([
+  "application/json",
+  "application/xml",
+  "application/javascript",
+  "application/x-yaml",
+  "application/yaml",
+  "application/toml",
+  "application/x-sh",
+]);
+
+const TEXT_EXTENSIONS = new Set([
+  "txt",
+  "md",
+  "markdown",
+  "rst",
+  "json",
+  "jsonc",
+  "js",
+  "jsx",
+  "mjs",
+  "cjs",
+  "ts",
+  "tsx",
+  "css",
+  "scss",
+  "html",
+  "xml",
+  "yml",
+  "yaml",
+  "toml",
+  "ini",
+  "conf",
+  "env",
+  "csv",
+  "tsv",
+  "py",
+  "rb",
+  "go",
+  "rs",
+  "java",
+  "kt",
+  "swift",
+  "c",
+  "h",
+  "cpp",
+  "hpp",
+  "cs",
+  "sh",
+  "zsh",
+  "bash",
+  "fish",
+  "sql",
+  "log",
+  "diff",
+  "patch",
+  "lock",
+]);
+
+export type AttachKind = "image" | "file" | "text";
 
 export type AttachedFileRef = {
   readonly id: string;
@@ -27,34 +89,72 @@ export function fileExtension(name: string): string {
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 }
 
-export function classifyAttachment(file: { name: string; type: string }): AttachKind {
-  return file.type.startsWith("image/") ? "image" : "file";
+function isTextAttachment(file: { name: string; type: string; size: number }): boolean {
+  const textByMime =
+    TEXT_MIME_PREFIXES.some((prefix) => file.type.startsWith(prefix)) ||
+    TEXT_MIME_TYPES.has(file.type);
+  const textByName = file.type === "" && TEXT_EXTENSIONS.has(fileExtension(file.name));
+  return (textByMime || textByName) && file.size <= TEXT_ATTACHMENT_MAX_BYTES;
+}
+
+export function classifyAttachment(file: { name: string; type: string; size: number }): AttachKind {
+  if (file.type.startsWith("image/")) {
+    return "image";
+  }
+  if (isTextAttachment(file)) {
+    return "text";
+  }
+  return "file";
+}
+
+/** A NUL byte means the extension lied — treat the pick as binary after all. */
+export function looksBinary(content: string): boolean {
+  return content.includes("\u0000");
 }
 
 /**
- * Best-effort absolute path for a picked File. Electron still exposes
- * `File.path` for local picks; browsers only give the basename, which is still
- * enough for the chip label and a useful agent hint.
+ * The prompt block a text file becomes when we cannot hand the agent a real
+ * absolute path. Four-backtick fence so files that themselves contain ```
+ * fences survive; the trailing space matches the mention-insert convention.
  */
-export function resolvePickedFilePath(file: File): string {
+export function textAttachmentPayload(name: string, content: string): string {
+  const language = fileExtension(name);
+  const body = content.endsWith("\n") ? content : `${content}\n`;
+  return `Attached file \`${name}\`:\n\`\`\`\`${language}\n${body}\`\`\`\`\n`;
+}
+
+function isAbsoluteFilePath(path: string): boolean {
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
+}
+
+/**
+ * Absolute path for a picked File when the host exposes one (Electron
+ * `File.path`). Browser `<input type="file">` only gives a basename — that is
+ * not a readable environment path, so callers must inline text or refuse.
+ */
+export function resolvePickedFilePath(file: File): string | null {
   const withPath = file as File & { path?: unknown };
   if (typeof withPath.path === "string") {
     const trimmed = withPath.path.trim();
-    if (trimmed.length > 0) {
+    if (trimmed.length > 0 && isAbsoluteFilePath(trimmed)) {
       return trimmed;
     }
   }
-  return file.name;
+  return null;
 }
 
 export function createAttachedFileRef(
   file: File,
   id: string = crypto.randomUUID(),
-): AttachedFileRef {
+): AttachedFileRef | null {
+  const path = resolvePickedFilePath(file);
+  if (!path) {
+    return null;
+  }
   return {
     id,
     name: file.name || "file",
-    path: resolvePickedFilePath(file),
+    path,
     mimeType: file.type || "application/octet-stream",
     sizeBytes: file.size,
   };
