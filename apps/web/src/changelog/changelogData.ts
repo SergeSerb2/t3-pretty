@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260811.1067000063",
+    date: "2026-08-11",
+    items: [
+      {
+        kind: "fixed",
+        title: "route self-hosted GitLab remotes (#6061)",
+      },
+      {
+        kind: "fixed",
+        title: "handle unborn HEAD in VCS status (#5944)",
+      },
+      {
+        kind: "fixed",
+        title: "advertise 256-color TERM on Windows terminals (#5693)",
+      },
+      {
+        kind: "fixed",
+        title: "skip Linux libc detection on Windows/macOS (#5354)",
+      },
+      {
+        kind: "improved",
+        title: "skip base64 for oversized image candidates (#5220)",
+      },
+      {
+        kind: "fixed",
+        title: "persist sidebar shelf collapse state (#5136)",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260811.1063000060",
     date: "2026-08-10",
     items: [
