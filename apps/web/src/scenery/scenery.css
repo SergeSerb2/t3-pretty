@@ -126,7 +126,6 @@ html[data-theme-id="world-scenery"] {
   z-index: 30;
   display: flex;
   align-items: center;
-  gap: 0.3em;
   height: 1.5rem;
   max-width: min(42vw, 24rem);
   padding: 0 0.625rem;
@@ -163,6 +162,9 @@ html[data-theme-id="world-scenery"] {
 
 .scenery-attribution__separator {
   flex-shrink: 0;
+  /* Flex items strip collapsible leading/trailing spaces; pre keeps the
+     " · " in the markup so copy and no-CSS consumers still see it. */
+  white-space: pre;
 }
 
 .scenery-attribution__credit {
@@ -170,14 +172,14 @@ html[data-theme-id="world-scenery"] {
   min-width: 0;
   flex-shrink: 1;
   align-items: center;
-  /* Word spacing: flex items drop leading/trailing spaces in their text. */
-  gap: 0.3em;
   /* The links must stay hoverable through the pill's pointer-events: none. */
   pointer-events: auto;
 }
 
 .scenery-attribution__prefix {
   flex-shrink: 0;
+  /* Same as the separator: keep "Photo by " / " on " in the painted text. */
+  white-space: pre;
 }
 
 .scenery-attribution__photographer {

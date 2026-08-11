@@ -100,18 +100,20 @@ describe("glass contract with upstream chrome", () => {
 describe("scenery attribution contract", () => {
   it("keeps long photographer credits shrinkable inside the compact dock", () => {
     expect(sceneryCssSource).toMatch(
-      /\.scenery-attribution__credit\s*\{[^}]*min-width: 0;[^}]*flex-shrink: 1;[^}]*gap: 0\.3em;/s,
+      /\.scenery-attribution__credit\s*\{[^}]*min-width: 0;[^}]*flex-shrink: 1;/s,
     );
     expect(sceneryCssSource).toMatch(
       /\.scenery-attribution__photographer\s*\{[^}]*min-width: 0;[^}]*flex-shrink: 1;[^}]*overflow: hidden;/s,
     );
   });
 
-  it("spaces the Unsplash credit with flex gap so words do not collapse", () => {
-    expect(sceneryCssSource).toMatch(/\.scenery-attribution\s*\{[^}]*gap: 0\.3em;/s);
-    expect(sceneryCssSource).toMatch(/\.scenery-attribution__prefix\s*\{[^}]*flex-shrink: 0;/s);
-    // Flex gap is visual only; the text nodes keep real spaces so copy,
-    // translation, and stylesheet-less DOM still read "Photo by Name on Unsplash".
+  it("preserves Unsplash credit spaces in markup and in the painted flex items", () => {
+    expect(sceneryCssSource).toMatch(
+      /\.scenery-attribution__prefix\s*\{[^}]*flex-shrink: 0;[^}]*white-space: pre;/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\.scenery-attribution__separator\s*\{[^}]*flex-shrink: 0;[^}]*white-space: pre;/s,
+    );
     expect(sceneryLayerSource).toContain(">Photo by </span>");
     expect(sceneryLayerSource).toContain("> on </span>");
   });
