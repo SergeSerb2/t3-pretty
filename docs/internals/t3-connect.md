@@ -40,10 +40,10 @@ The shared client loader projects these canonical values into framework-specific
 `EXPO_PUBLIC_*` aliases. Existing aliases remain accepted as overrides for compatibility, but new
 client configuration should use the canonical names.
 
-The environment persists the relay URL that owns its active link. The web reconciliation path only
-treats that link as enabled when it matches the build-configured relay; enabling access after a
-relay change removes the previous local link before installing the current relay's account,
-credential, issuer, and managed tunnel configuration.
+The environment persists the relay URL and cloud user that own its active link. The web
+reconciliation path only treats that link as enabled when both match the desktop's current build
+and signed-in account. A linked desktop automatically replaces a stale relay or account link before
+installing the current account, credential, issuer, and managed tunnel configuration.
 
 Configuration precedence is:
 
@@ -60,6 +60,11 @@ should set `T3CODE_CLERK_PUBLISHABLE_KEY`, `T3CODE_CLERK_JWT_TEMPLATE`,
 `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID`, and `T3CODE_RELAY_URL` before building. EAS preview and
 production builds only need the Clerk publishable key, JWT template name, and relay URL in their EAS
 environment.
+
+The desktop main process also passes the relay URL, Clerk publishable key, and CLI OAuth client ID
+to backends it manages over SSH. They are part of the remote runner signature, so changing builds or
+relay configuration restarts a desktop-managed backend with a coherent control plane. A separately
+running backend discovered over SSH remains external and keeps its own configuration.
 
 Clerk must allow both Electron renderer origins, `t3code://app` and `t3code-dev://app`, on the
 instance. Without them, Clerk rejects desktop bootstrap with `origin_invalid` and the client cannot
@@ -267,6 +272,25 @@ controls are gated on cloud public configuration; an unconfigured build keeps th
 visible and explains why Surge Connect is unavailable. Desktop renders the same web bundle, so it
 has these controls too. The waitlist enrollment flow from the private beta was removed when Connect
 went GA; sign-up is open unless a Clerk restriction below is enabled.
+
+## Desktop Mesh Reconciliation
+
+Relay environment membership is account-authoritative, while the connection catalog remains local
+to each client. A signed-in desktop whose primary environment has an active managed tunnel bridges
+those models: after successful discovery it reconciles all other account environments into
+`RelayConnectionTarget` entries, updates labels, and removes relay-owned entries no longer present.
+Direct, SSH, and platform-managed entries are never overwritten by this reconciliation.
+
+Discovery refreshes when credentials change, when the application returns to the foreground, and
+on the renderer's bounded live-refresh cadence while the user remains active. The previous list is
+retained during an in-flight refresh; only an authoritative successful list mutates the catalog.
+Clicking **Connect** on desktop first saves the requested remote target and then enables the local
+managed link if necessary, making the relationship reciprocal. An explicitly disabled local link
+is not re-enabled in the background.
+
+Headless servers and browser-only clients do not run the desktop reconciler. A headless server can
+be discovered and added by desktops but has no client catalog to populate, which keeps that
+connection one-way by construction.
 
 ## Restricting Sign-ups: Known-User Allowlist
 

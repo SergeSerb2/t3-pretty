@@ -25,6 +25,8 @@ import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
 import { toastManager } from "../ui/toast";
 import { presentSavedCloudEnvironmentConnection } from "./cloudEnvironmentConnectionPresentation";
+import { isElectron } from "~/env";
+import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 
 export interface SavedCloudEnvironmentConnection {
   readonly environmentId: EnvironmentId;
@@ -70,6 +72,7 @@ export function CloudEnvironmentConnectRows({
   const refreshRelayEnvironments = useAtomCommand(relayEnvironmentDiscovery.refresh, {
     reportFailure: false,
   });
+  const cloudLinkController = useCloudLinkController();
   const connectRelayEnvironment = useCallback(
     (environment: RelayClientEnvironmentRecord) =>
       registerEnvironment(
@@ -96,8 +99,18 @@ export function CloudEnvironmentConnectRows({
   const connectEnvironment = async (environment: RelayClientEnvironmentRecord) => {
     setConnectingEnvironmentId(environment.environmentId);
     const result = await connectRelayEnvironment(environment);
-    setConnectingEnvironmentId(null);
     if (result._tag === "Success") {
+      const meshReady =
+        !isElectron ||
+        cloudLinkController.managedTunnelActive ||
+        (await cloudLinkController.reconcileCloudState({
+          managedTunnel: true,
+          publish: cloudLinkController.storedPublishAgentActivity,
+        }));
+      setConnectingEnvironmentId(null);
+      if (!meshReady) {
+        return;
+      }
       toastManager.add({
         type: "success",
         title: "Environment added",
@@ -105,6 +118,7 @@ export function CloudEnvironmentConnectRows({
       });
       return;
     }
+    setConnectingEnvironmentId(null);
     if (isAtomCommandInterrupted(result)) {
       return;
     }

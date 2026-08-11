@@ -212,6 +212,7 @@ describe("RelayEnvironmentDiscovery", () => {
         yield* Fiber.join(refreshFiber);
 
         const complete = yield* SubscriptionRef.get(discovery.state);
+        expect(complete.loaded).toBe(true);
         expect(complete.environments.get(environments[0]!.environmentId)?.availability).toBe(
           "offline",
         );
@@ -371,6 +372,30 @@ describe("RelayEnvironmentDiscovery", () => {
         );
         expect(Option.isNone(populated.error)).toBe(true);
         expect(yield* Ref.get(harness.listCalls)).toBe(1);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("refreshes discovered environments when the application becomes active", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* Effect.gen(function* () {
+        const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+        const requests = yield* Ref.get(harness.statusRequests);
+        for (const environment of environments) {
+          yield* Deferred.succeed(
+            requests.get(environment.environmentId)!,
+            status(environment, "online"),
+          );
+        }
+        yield* discovery.refresh;
+        yield* Effect.yieldNow;
+
+        yield* harness.wake("application-active");
+        yield* Deferred.await(harness.secondListCall);
+
+        expect(yield* Ref.get(harness.listCalls)).toBe(2);
+        expect((yield* SubscriptionRef.get(discovery.state)).loaded).toBe(true);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );

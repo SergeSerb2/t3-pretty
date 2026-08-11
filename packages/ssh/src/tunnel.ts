@@ -61,6 +61,30 @@ export interface RemoteT3RunnerOptions {
   readonly packageSpec?: string;
   readonly nodeScriptPath?: string | null;
   readonly nodeEngineRange?: string | null;
+  readonly publicEnvironment?: {
+    readonly T3CODE_RELAY_URL?: string;
+    readonly T3CODE_CLERK_PUBLISHABLE_KEY?: string;
+    readonly T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?: string;
+  };
+}
+
+const REMOTE_PUBLIC_ENVIRONMENT_KEYS = [
+  "T3CODE_RELAY_URL",
+  "T3CODE_CLERK_PUBLISHABLE_KEY",
+  "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID",
+] as const;
+
+function normalizeRemotePublicEnvironment(
+  input?: RemoteT3RunnerOptions,
+): NonNullable<RemoteT3RunnerOptions["publicEnvironment"]> {
+  const environment: Record<string, string> = {};
+  for (const name of REMOTE_PUBLIC_ENVIRONMENT_KEYS) {
+    const value = input?.publicEnvironment?.[name]?.trim();
+    if (value) {
+      environment[name] = value;
+    }
+  }
+  return environment;
 }
 
 export type RemoteSshPlatform = "posix" | "windows";
@@ -442,6 +466,7 @@ export const REMOTE_RUNNER_SCRIPT = `#!/bin/sh
 set -eu
 @@T3_NODE_ENV_SCRIPT@@
 ensure_remote_node_path || true
+@@T3_PUBLIC_ENVIRONMENT@@
 T3_NODE_SCRIPT_PATH=@@T3_NODE_SCRIPT_PATH@@
 if [ -n "$T3_NODE_SCRIPT_PATH" ]; then
   if ! command -v node >/dev/null 2>&1; then
@@ -665,6 +690,7 @@ const childProcess = require("node:child_process");
 const T3_PACKAGE_SPEC = @@T3_PACKAGE_SPEC_JSON@@;
 const T3_NODE_SCRIPT_PATH = @@T3_NODE_SCRIPT_PATH_JSON@@;
 const T3_NODE_ENGINE_RANGE = @@T3_NODE_ENGINE_RANGE_JSON@@;
+const T3_PUBLIC_ENVIRONMENT = @@T3_PUBLIC_ENVIRONMENT_JSON@@;
 const satisfiesSemverRange = @@T3_NODE_ENGINE_CHECK_FUNCTION@@;
 
 function assertCompatibleNode() {
@@ -904,7 +930,7 @@ async function spawnManagedServer(remotePort) {
       cwd: os.homedir(),
       detached: true,
       windowsHide: true,
-      env: { ...process.env, T3CODE_NO_BROWSER: "1" },
+      env: { ...process.env, ...T3_PUBLIC_ENVIRONMENT, T3CODE_NO_BROWSER: "1" },
       stdio: ["ignore", logDescriptor, logDescriptor],
     });
     await Promise.race([
@@ -929,6 +955,7 @@ async function main() {
     packageSpec: T3_PACKAGE_SPEC,
     nodeScriptPath: T3_NODE_SCRIPT_PATH,
     nodeEngineRange: T3_NODE_ENGINE_RANGE,
+    publicEnvironment: T3_PUBLIC_ENVIRONMENT,
     node: process.execPath,
   });
   const runnerChanged = readTrimmed(runnerFile) !== runnerSignature;
@@ -1037,7 +1064,7 @@ function main() {
   const result = childProcess.spawnSync(command.executable, command.args, {
     cwd: os.homedir(),
     windowsHide: true,
-    env: process.env,
+    env: { ...process.env, ...T3_PUBLIC_ENVIRONMENT },
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
   });
@@ -1126,6 +1153,9 @@ export function buildRemoteT3RunnerScript(input?: RemoteT3RunnerOptions): string
       T3_PACKAGE_SPEC: packageSpec,
       T3_NODE_SCRIPT_PATH: shellSingleQuote(nodeScriptPath),
       T3_NODE_ENV_SCRIPT: buildRemoteNodeEnvScript(input),
+      T3_PUBLIC_ENVIRONMENT: Object.entries(normalizeRemotePublicEnvironment(input))
+        .map(([name, value]) => `export ${name}=${shellSingleQuote(value)}`)
+        .join("\n"),
     }),
   );
 }
@@ -1180,6 +1210,7 @@ function buildRemoteWindowsRunnerHelpers(input?: RemoteT3RunnerOptions): string 
     T3_PACKAGE_SPEC_JSON: JSON.stringify(input?.packageSpec?.trim() || "t3@latest"),
     T3_NODE_SCRIPT_PATH_JSON: JSON.stringify(input?.nodeScriptPath?.trim() || ""),
     T3_NODE_ENGINE_RANGE_JSON: JSON.stringify(input?.nodeEngineRange?.trim() || ""),
+    T3_PUBLIC_ENVIRONMENT_JSON: JSON.stringify(normalizeRemotePublicEnvironment(input)),
     T3_NODE_ENGINE_CHECK_FUNCTION: satisfiesSemverRange.toString(),
   });
 }

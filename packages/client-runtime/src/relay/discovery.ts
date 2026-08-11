@@ -34,6 +34,7 @@ export interface RelayDiscoveredEnvironment {
 
 export interface RelayEnvironmentDiscoveryState {
   readonly environments: ReadonlyMap<string, RelayDiscoveredEnvironment>;
+  readonly loaded: boolean;
   readonly refreshing: boolean;
   readonly offline: boolean;
   readonly error: Option.Option<ConnectionAttemptError>;
@@ -49,6 +50,7 @@ export class RelayEnvironmentDiscovery extends Context.Service<
 
 export const EMPTY_RELAY_ENVIRONMENT_DISCOVERY_STATE: RelayEnvironmentDiscoveryState = {
   environments: new Map(),
+  loaded: false,
   refreshing: false,
   offline: false,
   error: Option.none(),
@@ -215,12 +217,12 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
 
       let generation = yield* Ref.get(accountGeneration);
       yield* Ref.set(refreshGeneration, generation);
-      yield* SubscriptionRef.set(state, {
-        environments: new Map(),
+      yield* SubscriptionRef.update(state, (current) => ({
+        ...current,
         refreshing: true,
         offline: false,
         error: Option.none(),
-      });
+      }));
 
       // Signed out is the idle state, not a failure: the proactive refresh on
       // credentials-changed also runs on sign-out and must settle back to a
@@ -236,6 +238,8 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
           }
           yield* SubscriptionRef.update(state, (current) => ({
             ...current,
+            environments: new Map(),
+            loaded: false,
             refreshing: false,
           }));
           return;
@@ -275,6 +279,7 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
       yield* SubscriptionRef.update(state, (current) => ({
         ...current,
         environments: next,
+        loaded: true,
       }));
 
       yield* Effect.forEach(
@@ -301,6 +306,8 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
           }
           yield* SubscriptionRef.update(state, (current) => ({
             ...current,
+            environments: new Map(),
+            loaded: false,
             refreshing: false,
             error: Option.some(error),
           }));
@@ -338,7 +345,11 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
             // clean empty state.
             yield* refresh.pipe(Effect.forkScoped);
           })
-        : Effect.void,
+        : Ref.get(hasRefreshed).pipe(
+            Effect.flatMap((shouldRefresh) =>
+              shouldRefresh ? refresh.pipe(Effect.forkScoped) : Effect.void,
+            ),
+          ),
     ),
     Effect.forkScoped,
   );

@@ -65,6 +65,29 @@ import * as DesktopWindow from "./window/DesktopWindow.ts";
 import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
 
+declare const __T3CODE_BUILD_RELAY_URL__: string | undefined;
+declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
+declare const __T3CODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__: string | undefined;
+
+function buildTimeSshPublicEnvironment(): NonNullable<RemoteT3RunnerOptions["publicEnvironment"]> {
+  const values = {
+    T3CODE_RELAY_URL:
+      process.env.T3CODE_RELAY_URL?.trim() ||
+      (typeof __T3CODE_BUILD_RELAY_URL__ === "undefined" ? "" : __T3CODE_BUILD_RELAY_URL__.trim()),
+    T3CODE_CLERK_PUBLISHABLE_KEY:
+      process.env.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ||
+      (typeof __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__ === "undefined"
+        ? ""
+        : __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__.trim()),
+    T3CODE_CLERK_CLI_OAUTH_CLIENT_ID:
+      process.env.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() ||
+      (typeof __T3CODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__ === "undefined"
+        ? ""
+        : __T3CODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__.trim()),
+  };
+  return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== ""));
+}
+
 const desktopEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
     const metadata = yield* Effect.service(ElectronApp.ElectronApp).pipe(
@@ -91,6 +114,7 @@ const resolveDesktopSshCliRunner = (
     return {
       nodeScriptPath: devRemoteEntryPath,
       nodeEngineRange: serverPackageJson.engines.node,
+      publicEnvironment: buildTimeSshPublicEnvironment(),
     };
   }
   return {
@@ -100,6 +124,7 @@ const resolveDesktopSshCliRunner = (
       isDevelopment: environment.isDevelopment,
     }),
     nodeEngineRange: serverPackageJson.engines.node,
+    publicEnvironment: buildTimeSshPublicEnvironment(),
   };
 };
 

@@ -11,7 +11,7 @@ import { useState } from "react";
 import { toastManager } from "../components/ui/toast";
 import { relayEnvironmentDiscovery } from "../state/relay";
 import { useAtomCommand } from "../state/use-atom-command";
-import { isCloudLinkOnConfiguredRelay } from "./linkEnvironment";
+import { isCloudLinkOnConfiguredRelayForAccount } from "./linkEnvironment";
 import {
   linkPrimaryEnvironment as linkPrimaryEnvironmentAtom,
   unlinkPrimaryEnvironment as unlinkPrimaryEnvironmentAtom,
@@ -35,7 +35,7 @@ export interface CloudLinkDesiredState {
  * changes, so flipping publish alone is cheap.
  */
 export function useCloudLinkController() {
-  const { getToken, isSignedIn } = useAuth();
+  const { getToken, isSignedIn, userId } = useAuth();
   const refreshRelayEnvironments = useAtomCommand(relayEnvironmentDiscovery.refresh, {
     reportFailure: false,
   });
@@ -75,15 +75,20 @@ export function useCloudLinkController() {
 
   const storedLinkState = primaryCloudLinkState.data;
   const storedLinked = storedLinkState?.linked ?? false;
-  const linked = isCloudLinkOnConfiguredRelay(storedLinkState, resolveCloudPublicConfig().relayUrl);
+  const linked = isCloudLinkOnConfiguredRelayForAccount(
+    storedLinkState,
+    resolveCloudPublicConfig().relayUrl,
+    isSignedIn ? userId : null,
+  );
   // Older environment servers predate the managedTunnelActive field; for them a
   // link always implies a managed tunnel, so fall back to `linked`. A link to a
   // different relay is not active for this build and must be replaced before
   // either capability can be presented as enabled.
   const storedManagedTunnelActive =
     storedLinkState?.managedTunnelActive ?? storedLinkState?.linked ?? false;
+  const storedPublishAgentActivity = storedLinkState?.publishAgentActivity ?? false;
   const managedTunnelActive = linked && storedManagedTunnelActive;
-  const publishAgentActivity = linked && (storedLinkState?.publishAgentActivity ?? false);
+  const publishAgentActivity = linked && storedPublishAgentActivity;
 
   const reconcileCloudState = async (desired: CloudLinkDesiredState): Promise<boolean> => {
     setOperationError(null);
@@ -178,6 +183,9 @@ export function useCloudLinkController() {
   return {
     isSignedIn,
     linkState: primaryCloudLinkState,
+    storedLinked,
+    storedManagedTunnelActive,
+    storedPublishAgentActivity,
     linked,
     managedTunnelActive,
     publishAgentActivity,

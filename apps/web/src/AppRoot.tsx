@@ -1,7 +1,10 @@
 import { RouterProvider } from "@tanstack/react-router";
 
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
+import { SurgeConnectMeshSync } from "./cloud/SurgeConnectMeshSync";
+import { hasCloudPublicConfig } from "./cloud/publicConfig";
 import { PreviewAutomationHosts } from "./components/preview/PreviewAutomationHosts";
+import { isElectron } from "./env";
 import { AppAtomRegistryProvider } from "./rpc/atomRegistry";
 import type { AppRouter } from "./router";
 
@@ -13,6 +16,7 @@ import type { AppRouter } from "./router";
 export function AppRoot({ router }: { readonly router: AppRouter }) {
   return (
     <AppAtomRegistryProvider>
+      {isElectron && hasCloudPublicConfig() ? <SurgeConnectMeshSync /> : null}
       <RouterProvider router={router} />
       <PreviewAutomationHosts />
       <ElectronBrowserHost />

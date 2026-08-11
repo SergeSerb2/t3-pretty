@@ -18,6 +18,7 @@ import {
   type ConnectionRegistration,
   type PlatformConnectionRegistration,
   type PrimaryConnectionRegistration,
+  type RelayConnectionRegistration,
   SshConnectionProfile,
   connectionRegistrationCatalogEntry,
 } from "./catalog.ts";
@@ -84,6 +85,14 @@ export class EnvironmentRegistry extends Context.Service<
       | PlatformEnvironmentRemovalError
     >;
     readonly removeRelayEnvironments: () => Effect.Effect<
+      void,
+      | Persistence.ConnectionPersistenceError
+      | ConnectionAttemptError
+      | PlatformEnvironmentRemovalError
+    >;
+    readonly reconcileRelayEnvironments: (
+      registrations: ReadonlyArray<RelayConnectionRegistration>,
+    ) => Effect.Effect<
       void,
       | Persistence.ConnectionPersistenceError
       | ConnectionAttemptError
@@ -622,6 +631,50 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const reconcileRelayEnvironments = Effect.fn("EnvironmentRegistry.reconcileRelayEnvironments")(
+    function* (relayRegistrations: ReadonlyArray<RelayConnectionRegistration>) {
+      const desiredByEnvironment = new Map(
+        relayRegistrations.map((registration) => [registration.target.environmentId, registration]),
+      );
+      const currentEntries = yield* SubscriptionRef.get(entries);
+      const staleRelayEnvironmentIds = [...currentEntries.values()]
+        .filter(
+          (entry) =>
+            entry.target._tag === "RelayConnectionTarget" &&
+            !desiredByEnvironment.has(entry.target.environmentId),
+        )
+        .map((entry) => entry.target.environmentId);
+
+      yield* Effect.forEach(
+        staleRelayEnvironmentIds,
+        (environmentId) =>
+          remove(environmentId).pipe(
+            Effect.catchTag("EnvironmentNotRegisteredError", () => Effect.void),
+          ),
+        { discard: true },
+      );
+
+      yield* Effect.forEach(
+        relayRegistrations,
+        (registration) =>
+          SubscriptionRef.get(entries).pipe(
+            Effect.flatMap((current) => {
+              const existing = current.get(registration.target.environmentId);
+              if (
+                existing !== undefined &&
+                (existing.target._tag !== "RelayConnectionTarget" ||
+                  Equal.equals(existing, connectionRegistrationCatalogEntry(registration)))
+              ) {
+                return Effect.void;
+              }
+              return register(registration);
+            }),
+          ),
+        { discard: true },
+      );
+    },
+  );
+
   const retryNow = (environmentId: EnvironmentId) =>
     acquireSupervisor(environmentId).pipe(
       Effect.flatMap((supervisor) => supervisor.retryNow),
@@ -666,6 +719,7 @@ export const make = Effect.gen(function* () {
     reconcilePlatform,
     remove,
     removeRelayEnvironments,
+    reconcileRelayEnvironments,
     retryNow,
     state,
     stateChanges,
