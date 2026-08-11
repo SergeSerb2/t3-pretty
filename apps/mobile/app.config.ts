@@ -151,15 +151,20 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   },
 ];
 
+const shareExtensionEnabled = !isIosPersonalTeamBuild && repoEnv.T3CODE_IOS_SHARE_EXTENSION !== "0";
+
 const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   "expo-sharing",
   {
     ios: {
       // Personal Teams cannot sign App Groups or extension targets. Keep the
       // reduced-capability local build usable while release builds expose the
-      // real system share target.
-      enabled: !isIosPersonalTeamBuild,
-      extensionBundleIdentifier: `${iosBundleIdentifier}.sharing`,
+      // real system share target. T3CODE_IOS_SHARE_EXTENSION=0 disables the
+      // extension even on full teams — the `.share` App ID needs its App
+      // Groups container ticked on the Developer Portal first (headless
+      // re-provisioning cannot attach it), which is a one-time manual step.
+      enabled: shareExtensionEnabled,
+      extensionBundleIdentifier: `${iosBundleIdentifier}.share`,
       appGroupId: `group.${iosBundleIdentifier}`,
       activationRule: {
         supportsText: true,
@@ -305,9 +310,9 @@ const config: ExpoConfig = {
     ],
     "expo-secure-store",
     "expo-sqlite",
-    ...(isIosPersonalTeamBuild
-      ? [sharingPlugin]
-      : ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]),
+    ...(shareExtensionEnabled
+      ? ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]
+      : [sharingPlugin]),
     [
       "expo-notifications",
       {
