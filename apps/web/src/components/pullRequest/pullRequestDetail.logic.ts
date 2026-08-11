@@ -360,22 +360,39 @@ function handoffPreamble(input: {
 }
 
 /**
- * Closing the loop on the host: fixing code and leaving the conversation open is how the same
- * finding comes back as unfinished work. Thread ids are what GitHub's resolve mutation needs;
- * without them the agent still has the path and the words to find the matching conversation.
+ * How to close a review conversation on this host. GitHub, GitLab and Bitbucket each speak a
+ * different resolve API; naming the wrong one leaves the thread open with a failed call.
  */
-function resolveFindingsAfterFixInstruction(threadIds: ReadonlyArray<string> = []): string {
+function hostResolveGuidance(provider: SourceControlProviderKind): string {
+  switch (provider) {
+    case "github":
+      return " On GitHub, use `gh api graphql` with `resolveReviewThread` for the matching thread.";
+    case "gitlab":
+      return ' On GitLab, use `glab api` to PUT `{"resolved":true}` on the matching merge request discussion.';
+    case "bitbucket":
+      return " On Bitbucket, POST to the matching pull request comment's `/resolve` endpoint.";
+    default:
+      return " Use that host's review-thread resolution API or UI for the matching conversation.";
+  }
+}
+
+/**
+ * Closing the loop on the host: fixing code and leaving the conversation open is how the same
+ * finding comes back as unfinished work. Only threaded findings are resolvable — a review summary
+ * has no thread id, and a host resolve API cannot close it.
+ */
+function resolveFindingsAfterFixInstruction(
+  provider: SourceControlProviderKind,
+  threadIds: ReadonlyArray<string>,
+): string {
   const ids = threadIds
     .map((id) => id.trim())
     .filter((id) => id.length > 0)
     .map((id) => `\`${boundedField(id)}\``);
-  const idClause =
-    ids.length === 1
-      ? ` Thread id: ${ids[0]}.`
-      : ids.length > 1
-        ? ` Thread ids: ${ids.join(", ")}.`
-        : "";
-  return `When you finish fixing a review finding you addressed, also resolve that conversation on the pull request so it no longer shows as open.${idClause} On GitHub, use \`gh api graphql\` with \`resolveReviewThread\` for the matching thread. Leaving fixed findings unresolved is incomplete.`;
+  // Callers only pass threaded findings; an empty list would mean there is nothing to resolve.
+  if (ids.length === 0) return "";
+  const idClause = ids.length === 1 ? ` Thread id: ${ids[0]}.` : ` Thread ids: ${ids.join(", ")}.`;
+  return `When you finish fixing a review finding you addressed, also resolve that conversation on the pull request so it no longer shows as open.${idClause}${hostResolveGuidance(provider)} Leaving fixed findings unresolved is incomplete.`;
 }
 
 export interface FixFindingsHandoff {
@@ -542,9 +559,14 @@ export function buildFixFindingsHandoff(input: {
             "No unresolved review findings were returned; inspect the pull request and its failing checks before changing code.",
           ]
         : []),
-      // Checks are CI, not conversations — only review findings need resolving on the host.
-      ...(includedThreads.length > 0 || includedRemarks.length > 0
-        ? [resolveFindingsAfterFixInstruction(includedThreads.map((thread) => thread.id))]
+      // Checks and top-level review remarks are not resolvable threads — only threaded findings are.
+      ...(includedThreads.length > 0
+        ? [
+            resolveFindingsAfterFixInstruction(
+              input.provider,
+              includedThreads.map((thread) => thread.id),
+            ),
+          ]
         : []),
     ].join("\n"),
     reviewComments: includedThreads.map((thread) => reviewThreadContext(thread, input.number)),
@@ -606,7 +628,6 @@ export function buildFixFindingHandoff(input: {
         "Fix the review remark quoted below. It names no line, so find what it refers to before changing anything.",
         ...preamble,
         `> ${boundedField(comment.author?.login ?? "ghost")}${where}: ${boundedField(body)}`,
-        resolveFindingsAfterFixInstruction(),
       ].join("\n"),
       reviewComments: [],
     };

@@ -581,7 +581,8 @@ describe("findings that cannot be attached", () => {
     expect(handoff.reviewComments).toEqual([]);
     expect(handoff.prompt).toContain("revert the middleware change");
     expect(handoff.prompt).not.toContain("No unresolved review findings");
-    expect(handoff.prompt).toContain("Leaving fixed findings unresolved is incomplete");
+    // A review summary has no thread id, so there is nothing the host can resolve.
+    expect(handoff.prompt).not.toContain("resolveReviewThread");
   });
 
   it("carries a host's line comments when it reports no threads at all", () => {
@@ -688,7 +689,8 @@ describe("one finding handed over on its own", () => {
     });
     expect(handoff.reviewComments).toEqual([]);
     expect(handoff.prompt).toContain("> julius on `apps/server/src/auth.ts`: this breaks SSO auth");
-    expect(handoff.prompt).toContain("Leaving fixed findings unresolved is incomplete");
+    // Top-level remarks are not review threads — do not ask the agent to resolve one.
+    expect(handoff.prompt).not.toContain("resolveReviewThread");
   });
 
   it("quotes a failing check with what the host reported about it", () => {
