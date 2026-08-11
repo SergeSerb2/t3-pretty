@@ -497,10 +497,19 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   /* Match both sidebars' 200ms motion without resizing the terminal canvas on
      every frame. The gap reallocates chat height while the fixed-size terminal
-     surface moves independently. */
+     surface moves independently.
+
+     Closed is the cascade default (height 0 / translated away). Open must not
+     be the base rule with @starting-style undoing it — that first-paints the
+     full gap, snaps back to 0, then animates open, which wiggles the docked
+     chat composer up and down. */
   .terminal-drawer-inline-gap {
-    height: var(--terminal-drawer-height);
+    height: 0;
     transition: height 200ms linear;
+  }
+
+  .terminal-drawer-inline-gap[data-terminal-drawer-open="true"] {
+    height: var(--terminal-drawer-height);
   }
 
   .terminal-drawer-inline-gap[data-terminal-drawer-resizing="true"] {
@@ -508,16 +517,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 
   .terminal-drawer-inline-surface {
-    translate: 0;
+    translate: 0 100%;
     transition: translate 200ms linear;
   }
 
-  .terminal-drawer-inline-gap[data-terminal-drawer-open="false"] {
-    height: 0;
-  }
-
-  .terminal-drawer-inline-gap[data-terminal-drawer-open="false"] .terminal-drawer-inline-surface {
-    translate: 0 100%;
+  .terminal-drawer-inline-gap[data-terminal-drawer-open="true"] .terminal-drawer-inline-surface {
+    translate: 0;
   }
 
   @starting-style {
