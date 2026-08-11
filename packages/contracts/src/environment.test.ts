@@ -26,4 +26,17 @@ describe("ExecutionEnvironmentDescriptor", () => {
       }).capabilities.pullRequests,
     ).toBe(true);
   });
+
+  it("treats a missing canvas capability as unsupported under version skew", () => {
+    expect(decodeDescriptor(descriptor).capabilities.canvas).toBeUndefined();
+  });
+
+  it("preserves an advertised canvas capability", () => {
+    expect(
+      decodeDescriptor({
+        ...descriptor,
+        capabilities: { ...descriptor.capabilities, canvas: true },
+      }).capabilities.canvas,
+    ).toBe(true);
+  });
 });

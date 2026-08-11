@@ -1153,6 +1153,7 @@ function PullRequestsRouteView() {
             diffAvailable={false}
             filesAvailable={false}
             pullRequestAvailable={false}
+            canvasAvailable={false}
             agentsAvailable={false}
             liveAgentCount={0}
             pullRequestStatuses={pullRequestTabStatuses}

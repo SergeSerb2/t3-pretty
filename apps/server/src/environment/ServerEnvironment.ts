@@ -150,6 +150,7 @@ export const make = Effect.gen(function* () {
       threadPinReorder: true,
       threadScenery: true,
       threadTitleRegeneration: true,
+      canvas: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" ? { serverSelfUpdateProgress: true } : {}),
     },

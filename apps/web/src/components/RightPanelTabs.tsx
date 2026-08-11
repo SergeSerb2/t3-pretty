@@ -68,6 +68,7 @@ interface RightPanelTabsProps {
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
+  canvasAvailable: boolean;
   agentsAvailable: boolean;
   pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
   /** Running + waiting subagents; badges the Agents card in the empty state. */
@@ -89,6 +90,7 @@ const SURFACE_DISABLED_REASONS = {
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
   pullRequest: "This thread's branch has no pull request yet.",
+  canvas: "This environment's server is too old for the canvas — update the server to enable it.",
   agents: "Agents are only available from a thread.",
 } as const;
 
@@ -135,6 +137,7 @@ function RightPanelEmptyState(props: {
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
+  canvasAvailable: boolean;
   agentsAvailable: boolean;
   liveAgentCount: number;
 }) {
@@ -197,8 +200,8 @@ function RightPanelEmptyState(props: {
       label: "Canvas",
       description: "Mark up screens and iterate with the agent.",
       icon: Frame,
-      available: true,
-      disabledReason: null,
+      available: props.canvasAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.canvas,
       onClick: props.onAddCanvas,
       badgeCount: 0,
     },
@@ -597,7 +600,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     <Bot />
                     Agents
                   </SurfaceMenuItem>
-                  <SurfaceMenuItem available onClick={props.onAddCanvas}>
+                  <SurfaceMenuItem
+                    available={props.canvasAvailable}
+                    disabledReason={SURFACE_DISABLED_REASONS.canvas}
+                    onClick={props.onAddCanvas}
+                  >
                     <Frame />
                     Canvas
                   </SurfaceMenuItem>
@@ -623,6 +630,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
+            canvasAvailable={props.canvasAvailable}
             agentsAvailable={props.agentsAvailable}
             liveAgentCount={props.liveAgentCount}
           />
