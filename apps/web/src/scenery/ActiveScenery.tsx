@@ -11,11 +11,14 @@
  * (no server thread yet) and pre-scenery servers.
  */
 import { useAtomValue } from "@effect/atom-react";
+import { connectionProjectionPhase } from "@t3tools/client-runtime/connection";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
+import { environmentCatalog } from "../connection/catalog";
 import { readEnvironmentSupportsScenery } from "../state/entities";
+import { useEnvironmentQuery } from "../state/query";
 import { environmentThreadShells, threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { layerStack } from "./glass";
@@ -78,6 +81,13 @@ export default function ActiveScenery() {
   );
   const serverScenery = threadShell?.scenery ?? null;
   const serverThreadKnown = threadShell !== null;
+  // Reactive connection state: reconnecting re-runs the assign effect below,
+  // which retries a dispatch that failed while the socket was down.
+  const connection = useEnvironmentQuery(
+    threadRef ? environmentCatalog.stateAtom(threadRef.environmentId) : null,
+  );
+  const connectionReady =
+    connection.data !== null && connectionProjectionPhase(connection.data) === "ready";
   const assignments = useSceneryStore((state) => state.assignments);
   const fetchedPhotos = useSceneryStore((state) => state.fetchedPhotos);
   const translucency = useSceneryStore((state) => state.translucency);
@@ -108,17 +118,24 @@ export default function ActiveScenery() {
     if (
       !threadRef ||
       !serverThreadKnown ||
+      !connectionReady ||
       !readEnvironmentSupportsScenery(threadRef.environmentId)
     ) {
       return;
     }
     // Upload the local pick so the other devices converge on it. The server
     // keeps the first assignment it sees (write-once), so a raced device
-    // adopts the winner when the shell stream lands.
+    // adopts the winner when the shell stream lands. connectionReady is a
+    // dependency, so a dispatch lost to a dropped socket retries on reconnect.
     const state = useSceneryStore.getState();
     const assignment = state.assignments[threadKey];
+    // Resolve exactly what the render path shows for this assignment —
+    // including the deterministic fallback when the saved photo left the
+    // pool — so the photo on screen is the one other devices converge on.
+    const poolSnapshot = getSceneryPool(state.fetchedPhotos);
     const photo = assignment
-      ? getSceneryPool(state.fetchedPhotos).find((entry) => entry.id === assignment.photoId)
+      ? (poolSnapshot.find((entry) => entry.id === assignment.photoId) ??
+        fallbackPhoto(poolSnapshot, threadKey))
       : undefined;
     if (!photo) {
       return;
@@ -127,7 +144,15 @@ export default function ActiveScenery() {
       environmentId: threadRef.environmentId,
       input: { threadId: threadRef.threadId, scenery: photoToAssignmentPayload(photo) },
     });
-  }, [threadKey, threadRef, serverScenery, serverThreadKnown, ensureAssignment, assignScenery]);
+  }, [
+    threadKey,
+    threadRef,
+    serverScenery,
+    serverThreadKnown,
+    connectionReady,
+    ensureAssignment,
+    assignScenery,
+  ]);
 
   // Publish the layer alphas the CSS reads, plus the positive activation
   // attribute the transparent-surface rules are gated on. A positive gate —
