@@ -48,8 +48,35 @@ DMG. It now also calls `scenery-ios-build.sh`, which:
   unchanged.
 
 Configuration lives in `~/.t3-scenery-updater/ios.env` (Xcode path, team id,
-personal-team bundle id, device opt-in). Disable the mobile leg entirely with
+device opt-in). Every assignment in that file must be `export`ed — the app
+config and pod plugins read them from the environment of child processes.
+Disable the mobile leg entirely with
 `touch ~/.t3-scenery-updater/.scenery-ios-off`.
+
+### Team and capabilities
+
+The signing team (78A5P57U23) is a paid Individual Developer Program team, so
+the device build ships full capabilities: widget extension (Live Activities),
+app groups, push, associated domains. Personal-team mode
+(`T3CODE_IOS_PERSONAL_TEAM=1`, which strips those) remains available in
+`ios.env` as a commented-out fallback — see "Personal Team signing" in
+`apps/mobile/README.md`.
+
+The share extension is the one exception: its `.share` App ID needs the
+`group.com.sergeserbinenko.t3pretty` container ticked under its App Groups
+capability on the Developer Portal once by a human (headless provisioning
+cannot attach it). Until that happens, `T3CODE_IOS_SHARE_EXTENSION=0` in
+`ios.env` keeps the extension out of builds; remove the line to re-enable.
+
+### Push delivery (Live Activities + notifications)
+
+Remote updates are relay → APNs, so the relay needs credentials:
+repo variables `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_BUNDLE_ID`,
+`APNS_ENVIRONMENT` and the `APNS_PRIVATE_KEY` secret, consumed by
+`deploy-relay.yml`. `APNS_ENVIRONMENT=sandbox` matches the development-signed
+device installs from this pipeline; flip it to `production` once store builds
+ship. Without these the features degrade gracefully in-app (settings switches
+disabled), with no relay-side errors.
 
 ## Versioning
 
