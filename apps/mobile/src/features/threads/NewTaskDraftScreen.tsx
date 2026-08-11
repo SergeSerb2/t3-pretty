@@ -815,6 +815,7 @@ export function NewTaskDraftScreen(props: {
         text: initialMessageText,
         autoCreatePullRequest,
         threadHasStarted: false,
+        model: modelSelection.model,
       }),
       initialAttachments: draft.attachments,
       ...(editingPendingTask

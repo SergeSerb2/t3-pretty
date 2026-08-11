@@ -44,6 +44,8 @@ T3 Code works with the platforms your team already uses:
   leaving the conversation
 - On GitHub pull requests, see emoji reactions on the description and comments — including Codex's
   eyes while it reviews and thumbs-up when it finishes without comments
+- Resolved review conversations collapse in the pull request conversation and on the diff, so you
+  can see which comments are done without opening GitHub. Hide them entirely with **Hide resolved**
 - Open the review directly in your browser with one click
 - Check out a teammate's branch to review code locally
 

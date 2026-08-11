@@ -5192,6 +5192,7 @@ function ChatViewContent(props: ChatViewProps) {
         ) || IMAGE_ONLY_BOOTSTRAP_PROMPT,
       autoCreatePullRequest,
       threadHasStarted: !isFirstMessage,
+      model: ctxSelectedModelSelection.model,
     });
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
@@ -5820,6 +5821,7 @@ function ChatViewContent(props: ChatViewProps) {
       text: buildPlanImplementationPrompt(planMarkdown),
       autoCreatePullRequest,
       threadHasStarted: false,
+      model: ctxSelectedModelSelection.model,
     });
     const outgoingImplementationPrompt = formatOutgoingPrompt({
       provider: ctxSelectedProvider,

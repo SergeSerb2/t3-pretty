@@ -1,5 +1,6 @@
 import type { PullRequestActor, PullRequestDetailView } from "@t3tools/contracts";
 import {
+  CheckCircle2Icon,
   ChevronDownIcon,
   ExternalLinkIcon,
   FileCode2Icon,
@@ -139,7 +140,7 @@ function ConversationCard({
   onOpen: (url: string) => void;
 }) {
   return (
-    <article className="py-2">
+    <article className={cn("py-2", event.isResolved && "opacity-70")}>
       <div className="px-2">
         <div className="flex min-w-0 items-start gap-2">
           <div className="min-w-0 flex-1">
@@ -147,6 +148,12 @@ function ConversationCard({
               <ActorName actor={event.actor} />
               <span className="text-muted-foreground">{event.title}</span>
               {event.reviewState ? <ReviewStateBadge state={event.reviewState} /> : null}
+              {event.isResolved ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-500">
+                  <CheckCircle2Icon aria-hidden className="size-3" />
+                  Resolved
+                </span>
+              ) : null}
             </div>
             <PullRequestMetaLine className="mt-1 flex-wrap text-[11px] text-muted-foreground">
               <span>{formatRelativeTimeLabel(event.at)}</span>
@@ -195,6 +202,7 @@ function ConversationGroup({
 }) {
   const [open, setOpen] = useState(false);
   const actors = uniqueConversationActors(events);
+  const resolvedCount = events.filter((event) => event.isResolved).length;
   const first = events[0];
   if (first === undefined) return null;
 
@@ -219,7 +227,8 @@ function ConversationGroup({
                 {events.length.toLocaleString()} {events.length === 1 ? "comment" : "comments"}
               </span>
               <span className="block truncate text-[10px] text-muted-foreground">
-                {actors.length.toLocaleString()} {actors.length === 1 ? "author" : "authors"} ·{" "}
+                {actors.length.toLocaleString()} {actors.length === 1 ? "author" : "authors"}
+                {resolvedCount > 0 ? ` · ${resolvedCount.toLocaleString()} resolved` : ""} ·{" "}
                 {formatRelativeTimeLabel(first.at)}
               </span>
             </span>
