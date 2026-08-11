@@ -12,6 +12,10 @@ import {
   buildExplainPullRequestHandoff,
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
+  countResolvedReviewThreads,
+  countUnresolvedReviewThreads,
+  describePullRequestConversationSummary,
+  groupPullRequestConversation,
   groupPullRequestTimelineConversations,
   handoffPrompt,
   handoffReviewComments,
@@ -71,6 +75,136 @@ describe("ordering comments", () => {
   });
 });
 
+describe("grouping the conversation", () => {
+  const issue: PullRequestComment = {
+    id: "issue-1",
+    kind: "issue-comment",
+    author: { login: "octocat", name: null, avatarUrl: null },
+    body: "looks good",
+    createdAt: "2026-07-01T00:00:00Z",
+    url: null,
+    path: null,
+    reviewState: null,
+  };
+  const first: PullRequestComment = {
+    ...issue,
+    id: "thread-a-1",
+    kind: "review-comment",
+    body: "rename this",
+    createdAt: "2026-07-02T00:00:00Z",
+    path: "src/app.ts",
+  };
+  const reply: PullRequestComment = {
+    ...first,
+    id: "thread-a-2",
+    body: "done",
+    createdAt: "2026-07-03T00:00:00Z",
+  };
+  const other: PullRequestComment = {
+    ...first,
+    id: "thread-b-1",
+    body: "nit",
+    createdAt: "2026-07-04T00:00:00Z",
+  };
+  const openThread: PullRequestReviewThread = {
+    id: "thread-a",
+    path: "src/app.ts",
+    line: 12,
+    side: "right",
+    isResolved: false,
+    isOutdated: false,
+    comments: [
+      {
+        id: first.id,
+        author: first.author,
+        body: first.body,
+        createdAt: first.createdAt,
+        url: null,
+      },
+      {
+        id: reply.id,
+        author: reply.author,
+        body: reply.body,
+        createdAt: reply.createdAt,
+        url: null,
+      },
+    ],
+  };
+  const resolvedThread: PullRequestReviewThread = {
+    ...openThread,
+    id: "thread-b",
+    isResolved: true,
+    comments: [
+      {
+        id: other.id,
+        author: other.author,
+        body: other.body,
+        createdAt: other.createdAt,
+        url: null,
+      },
+    ],
+  };
+
+  it("emits a review thread once, at the first of its comments in reading order", () => {
+    const comments = [issue, first, reply, other];
+    expect(
+      groupPullRequestConversation(comments, [openThread, resolvedThread], "oldest").map((item) =>
+        item.kind === "thread" ? item.thread.id : item.comment.id,
+      ),
+    ).toEqual(["issue-1", "thread-a", "thread-b"]);
+    expect(
+      groupPullRequestConversation(comments, [openThread, resolvedThread], "newest").map((item) =>
+        item.kind === "thread" ? item.thread.id : item.comment.id,
+      ),
+    ).toEqual(["thread-b", "thread-a", "issue-1"]);
+  });
+
+  it("keeps a thread whose comments never appeared in the flat feed", () => {
+    // GitLab can fail notes while discussions still return: the conversation would otherwise
+    // look empty even though the page already holds the review threads.
+    expect(
+      groupPullRequestConversation([], [openThread, resolvedThread], "newest").map((item) =>
+        item.kind === "thread" ? item.thread.id : item.comment.id,
+      ),
+    ).toEqual(["thread-b", "thread-a"]);
+    expect(
+      groupPullRequestConversation([issue], [openThread], "oldest").map((item) =>
+        item.kind === "thread" ? item.thread.id : item.comment.id,
+      ),
+    ).toEqual(["issue-1", "thread-a"]);
+  });
+
+  it("counts resolved conversations separately from open ones", () => {
+    const threads = [openThread, resolvedThread];
+    expect(countUnresolvedReviewThreads(threads)).toBe(1);
+    expect(countResolvedReviewThreads(threads)).toBe(1);
+  });
+
+  it("names whether review conversations still need work", () => {
+    expect(
+      describePullRequestConversationSummary({
+        commentCount: 12,
+        unresolvedThreadCount: 3,
+        resolvedThreadCount: 2,
+      }),
+    ).toBe("12 comments · 3 unresolved");
+    expect(
+      describePullRequestConversationSummary({
+        commentCount: 1,
+        unresolvedThreadCount: 0,
+        resolvedThreadCount: 1,
+      }),
+    ).toBe("1 comment · all resolved");
+    expect(
+      describePullRequestConversationSummary({
+        commentCount: 4,
+        unresolvedThreadCount: 0,
+        resolvedThreadCount: 0,
+      }),
+    ).toBe("4 comments");
+  });
+});
+
 describe("pull request timeline", () => {
   it("orders creation, commits and comments newest first", () => {
     // What happened last is what the reader opening the tab is asking about.
@@ -117,6 +251,46 @@ describe("pull request timeline", () => {
       path: "src/app.ts",
       reviewState: "APPROVED",
     });
+  });
+
+  it("marks comments that belong to a resolved review thread", () => {
+    const events = buildPullRequestTimeline({
+      ...TIMELINE_SOURCE,
+      comments: [
+        TIMELINE_SOURCE.comments[0]!,
+        {
+          id: "review-1",
+          kind: "review-comment",
+          author: { login: "reviewer", name: null, avatarUrl: null },
+          body: "rename this",
+          createdAt: "2026-07-03T12:00:00Z",
+          url: null,
+          path: "src/app.ts",
+          reviewState: null,
+        },
+      ],
+      reviewThreads: [
+        {
+          id: "thread-1",
+          path: "src/app.ts",
+          line: 4,
+          side: "right",
+          isResolved: true,
+          isOutdated: false,
+          comments: [
+            {
+              id: "review-1",
+              author: { login: "reviewer", name: null, avatarUrl: null },
+              body: "rename this",
+              createdAt: "2026-07-03T12:00:00Z",
+              url: null,
+            },
+          ],
+        },
+      ],
+    });
+    expect(events.find((event) => event.id === "c1")?.isResolved).toBeUndefined();
+    expect(events.find((event) => event.id === "review-1")?.isResolved).toBe(true);
   });
 
   it("carries each commit's line counts into its timeline event", () => {

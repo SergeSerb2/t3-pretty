@@ -24,6 +24,94 @@ export function orderPullRequestComments<T extends { readonly createdAt: string 
   return order === "newest" ? comments.toReversed() : comments;
 }
 
+/**
+ * A conversation row: a lone remark, or a review thread shown once even when several of its
+ * comments sit in the flat list. The thread carries resolved state the bare comment has lost.
+ */
+export type PullRequestConversationItem =
+  | { readonly kind: "comment"; readonly comment: PullRequestComment }
+  | { readonly kind: "thread"; readonly thread: PullRequestReviewThread };
+
+/**
+ * Collapses review-thread comments into their thread, in the order the page is reading. The
+ * first time a thread's comment is met, the whole conversation is emitted; later replies of
+ * the same thread are skipped so a resolved discussion is one card rather than a stack of
+ * remarks that look unfinished.
+ *
+ * Threads that never appear in the flat feed are still emitted. Hosts can fail the two reads
+ * independently — GitLab's notes and discussions do — and a notes failure would otherwise
+ * hide every discussion the page already has.
+ */
+export function groupPullRequestConversation(
+  comments: ReadonlyArray<PullRequestComment>,
+  threads: ReadonlyArray<PullRequestReviewThread>,
+  order: "newest" | "oldest",
+): ReadonlyArray<PullRequestConversationItem> {
+  const threadByCommentId = new Map(
+    threads.flatMap((thread) => thread.comments.map((comment) => [comment.id, thread] as const)),
+  );
+  const seenThreads = new Set<string>();
+  const items: PullRequestConversationItem[] = [];
+  for (const comment of orderPullRequestComments(comments, order)) {
+    const thread = threadByCommentId.get(comment.id);
+    if (thread === undefined) {
+      items.push({ kind: "comment", comment });
+      continue;
+    }
+    if (seenThreads.has(thread.id)) continue;
+    seenThreads.add(thread.id);
+    items.push({ kind: "thread", thread });
+  }
+  const unseenThreads = threads.filter((thread) => !seenThreads.has(thread.id));
+  if (unseenThreads.length === 0) return items;
+  const activityAt = (item: PullRequestConversationItem): string =>
+    item.kind === "comment" ? item.comment.createdAt : threadActivityAt(item.thread, order);
+  return [
+    ...items,
+    ...unseenThreads.map((thread) => ({ kind: "thread" as const, thread })),
+  ].toSorted((left, right) => {
+    const cmp = activityAt(left).localeCompare(activityAt(right));
+    return order === "newest" ? -cmp : cmp;
+  });
+}
+
+/** Newest-first uses the latest remark; oldest-first uses the first. Empty threads sort first. */
+function threadActivityAt(thread: PullRequestReviewThread, order: "newest" | "oldest"): string {
+  const times = thread.comments.map((comment) => comment.createdAt);
+  if (times.length === 0) return "";
+  return order === "newest"
+    ? times.reduce((latest, at) => (at > latest ? at : latest))
+    : times.reduce((earliest, at) => (at < earliest ? at : earliest));
+}
+
+export function countUnresolvedReviewThreads(
+  threads: ReadonlyArray<PullRequestReviewThread>,
+): number {
+  return threads.filter((thread) => !thread.isResolved).length;
+}
+
+export function countResolvedReviewThreads(
+  threads: ReadonlyArray<PullRequestReviewThread>,
+): number {
+  return threads.length - countUnresolvedReviewThreads(threads);
+}
+
+/** The comments meta-row: totals plus whether review conversations still need work. */
+export function describePullRequestConversationSummary(input: {
+  readonly commentCount: number;
+  readonly unresolvedThreadCount: number;
+  readonly resolvedThreadCount: number;
+}): string {
+  const comments = input.commentCount === 1 ? "1 comment" : `${input.commentCount} comments`;
+  if (input.unresolvedThreadCount > 0) {
+    return `${comments} · ${input.unresolvedThreadCount} unresolved`;
+  }
+  if (input.resolvedThreadCount > 0) {
+    return `${comments} · all resolved`;
+  }
+  return comments;
+}
+
 export interface PullRequestTimelineEvent {
   readonly id: string;
   readonly at: string;
@@ -41,6 +129,11 @@ export interface PullRequestTimelineEvent {
   readonly deletions: number | null;
   readonly path: string | null;
   readonly reviewState: string | null;
+  /**
+   * True when this comment belongs to a review thread that has been marked resolved on the host.
+   * Absent on everything that is not a review conversation.
+   */
+  readonly isResolved?: boolean;
 }
 
 export type PullRequestTimelineRow =
@@ -94,8 +187,15 @@ export function buildPullRequestTimeline(
   detail: Pick<
     PullRequestDetailView,
     "createdAt" | "author" | "commits" | "comments" | "mergedAt" | "closedAt"
-  >,
+  > & {
+    readonly reviewThreads?: ReadonlyArray<PullRequestReviewThread>;
+  },
 ): ReadonlyArray<PullRequestTimelineEvent> {
+  const resolvedCommentIds = new Set(
+    (detail.reviewThreads ?? []).flatMap((thread) =>
+      thread.isResolved ? thread.comments.map((comment) => comment.id) : [],
+    ),
+  );
   return [
     {
       id: "created",
@@ -141,6 +241,7 @@ export function buildPullRequestTimeline(
       deletions: null,
       path: comment.path,
       reviewState: comment.reviewState,
+      ...(resolvedCommentIds.has(comment.id) ? { isResolved: true as const } : {}),
     })),
     ...(detail.mergedAt
       ? [

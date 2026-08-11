@@ -706,6 +706,7 @@ export function PullRequestCodeTab({
         canResolve={review.resolve}
         pending={threadPending}
         fixPending={pendingFinding === pullRequestFindingKey({ kind: "thread", thread })}
+        fixDisabled={pendingFinding !== null && pendingFinding !== undefined}
         {...(onFixFinding ? { onFix: () => onFixFinding({ kind: "thread", thread }) } : {})}
         onReply={(body) =>
           runThreadCommand("Reply could not be posted", () =>

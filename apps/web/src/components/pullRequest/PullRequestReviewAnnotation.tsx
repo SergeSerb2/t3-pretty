@@ -10,7 +10,7 @@ import {
   MessageSquareIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { cn } from "~/lib/utils";
@@ -84,9 +84,11 @@ export function ReviewThreadCard({
   canResolve,
   pending,
   fixPending,
+  fixDisabled,
   onFix,
   onReply,
   onToggleResolved,
+  className,
 }: {
   thread: PullRequestReviewThread;
   workspaceRoot: string;
@@ -95,17 +97,27 @@ export function ReviewThreadCard({
   pending: boolean;
   /** True while this thread's own hand-off is preparing, so only its button says so. */
   fixPending?: boolean;
+  /** True while any hand-off is preparing, so a click is not silently ignored. */
+  fixDisabled?: boolean;
   /** Absent where a thread is shown outside the pull request page's reach. */
   onFix?: () => void;
   /** Resolves to whether the host took it, so a reply that failed keeps the words it was given. */
   onReply: (body: string) => Promise<boolean>;
   onToggleResolved: () => void;
+  className?: string | undefined;
 }) {
   // A resolved thread is finished work, so it opens collapsed and stays one line until asked for.
   const [expanded, setExpanded] = useState(!thread.isResolved);
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
   const sendingRef = useRef(false);
+
+  // The host (or this page) marked it resolved after the card mounted: collapse it the same way
+  // a first render of a resolved conversation would, rather than leaving the remarks open as if
+  // they were still outstanding.
+  useEffect(() => {
+    setExpanded(!thread.isResolved);
+  }, [thread.isResolved]);
 
   const send = async () => {
     const trimmed = reply.trim();
@@ -125,7 +137,7 @@ export function ReviewThreadCard({
 
   return (
     <div
-      className={CARD_CLASS}
+      className={cn(CARD_CLASS, className)}
       contentEditable={false}
       onPointerDown={(event) => event.stopPropagation()}
     >
@@ -150,7 +162,7 @@ export function ReviewThreadCard({
             size="xs"
             variant="ghost"
             className="ml-auto"
-            disabled={pending || fixPending}
+            disabled={pending || fixPending || Boolean(fixDisabled)}
             onClick={onFix}
           >
             <HammerIcon className="size-3" />
