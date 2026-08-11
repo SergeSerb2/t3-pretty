@@ -26,6 +26,377 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260811.1063000054",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "new",
+        title: "generate What's New changelog for every fork release (#45)",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260811.1063000053",
+    date: "2026-08-11",
+    items: [
+      {
+        kind: "new",
+        title: "add three-hour snooze option (#5914)",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260810.1059000052",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "new",
+        title:
+          "T3 Pretty iOS app — rebrand, World Scenery default, Surge Connect, release train (#44)",
+      },
+      {
+        kind: "fixed",
+        title: "account for Windows window controls in PR page header (#6049)",
+      },
+      {
+        kind: "fixed",
+        title: "extend release publish timeout (#6034)",
+      },
+      {
+        kind: "fixed",
+        title: "improve built-in theme contrast (#6000)",
+      },
+      {
+        kind: "new",
+        title: "add duplicate action to the T3 Code default theme (#6013)",
+      },
+      {
+        kind: "improved",
+        title: "probe the Windows shell environment concurrently (#5878)",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260810.1059000051",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "fixed",
+        title: "keep scenery credits dock off the chat box (#42)",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260810.1059000050",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "new",
+        title: "add auto-PR toggle to chat composer (#43)",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260810.1059000049",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "new",
+        title: "show What's New changelog dialog after updates (#41)",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260810.1059000048",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "fixed",
+        title: "prefer origin over upstream for repository identity (#40)",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260810.1059000047",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "fixed",
+        title: "migrate stale relay links",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260810.1059000046",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260810.1059000045",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260810.1059000043",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260810.1059000042",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260810.1059000041",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "improved",
+        title: "prepare v0.0.33",
+      },
+      {
+        kind: "fixed",
+        title: "parse EAS fingerprint JSON (#5991)",
+      },
+      {
+        kind: "fixed",
+        title: "stop Android user bubbles with code blocks from overlapping (#5659)",
+      },
+      {
+        kind: "fixed",
+        title: "detect PowerShell cmdlet errors in work log rows (#5726)",
+      },
+      {
+        kind: "fixed",
+        title: "use import/export-appropriate icons for theme buttons (#5964)",
+      },
+      {
+        kind: "fixed",
+        title: "use themed confirmation dialogs (#5624)",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1055000040",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1055000039",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1055000038",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1055000037",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1055000036",
+    date: "2026-08-09",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1055000035",
+    date: "2026-08-09",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1055000034",
+    date: "2026-08-09",
+    items: [
+      {
+        kind: "new",
+        title: "manage agent instruction files from Settings",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1055000033",
+    date: "2026-08-09",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1055000032",
+    date: "2026-08-09",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1055000030",
+    date: "2026-08-09",
+    items: [
+      {
+        kind: "fixed",
+        title: "replace runner-driven Windows update with an on-box poller",
+      },
+      {
+        kind: "fixed",
+        title: "update pills use readable theme foregrounds (#5938)",
+      },
+      {
+        kind: "fixed",
+        title: "align project name with headline (#5864)",
+      },
+      {
+        kind: "fixed",
+        title: "trait menu closes after you pick a level (#5879)",
+      },
+      {
+        kind: "fixed",
+        title: "enable restore defaults after theme mix changes (#5928)",
+      },
+      {
+        kind: "fixed",
+        title: "show worktree icon in sidebar v2 (#5909)",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1054000025",
+    date: "2026-08-09",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1054000024",
+    date: "2026-08-09",
+    items: [
+      {
+        kind: "new",
+        title: "update the Windows box natively on each release",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260810.1054000023",
+    date: "2026-08-09",
+    items: [
+      {
+        kind: "fixed",
+        title: "strip certificate-type prefix from CSC_NAME",
+      },
+      {
+        kind: "fixed",
+        title: "sign from a prepared keychain",
+      },
+      {
+        kind: "fixed",
+        title: "allow macOS-only releases",
+      },
+      {
+        kind: "fixed",
+        title: "adopt fork bundle id com.sergeserb.t3code",
+      },
+      {
+        kind: "new",
+        title: "per-agent sub-thread detail in the Agents panel",
+      },
+      {
+        kind: "fixed",
+        title: "explain unborn-HEAD worktree creation failures",
+      },
+    ],
+  },
+  {
+    version: "0.0.33-nightly.20260809.1043000015",
+    date: "2026-08-09",
+    items: [
+      {
+        kind: "fixed",
+        title: "make updater tags semver-valid",
+      },
+      {
+        kind: "fixed",
+        title: "restore new sessions in fork builds",
+      },
+      {
+        kind: "fixed",
+        title: "use dedicated publisher (#14)",
+      },
+      {
+        kind: "fixed",
+        title: "queue every main commit (#13)",
+      },
+      {
+        kind: "fixed",
+        title: "publish required CI statuses (#12)",
+      },
+      {
+        kind: "fixed",
+        title: "grant publisher write access (#10)",
+      },
+    ],
+  },
+  {
     version: "0.0.33",
     date: "2026-08-10",
     items: [
