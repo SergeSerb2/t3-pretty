@@ -1158,6 +1158,14 @@ export interface DesktopBridge {
   setWslOnly: (enabled: boolean) => Promise<DesktopWslState>;
   pickFolder: (options?: PickFolderOptions) => Promise<string | null>;
   /**
+   * Absolute filesystem path for a user-picked File, via Electron
+   * `webUtils.getPathForFile`. Optional on older desktop builds and absent on
+   * web. Returns an empty string when the File is not backed by a disk path.
+   * The argument is the renderer `File` object (typed as `object` so contracts
+   * stay DOM-free).
+   */
+  getPathForFile?: (file: object) => string;
+  /**
    * Multi-select JSON file picker that opens in the VS Code extensions
    * directory when one exists. Optional: older desktop builds lack it, and
    * web callers fall back to a plain file input.

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   applyAttachedFilePathsSuffix,
@@ -26,6 +26,34 @@ function fileRef(overrides: Partial<AttachedFileRef> = {}): AttachedFileRef {
   };
 }
 
+function testWindow(): Window & typeof globalThis {
+  return globalThis.window ?? (globalThis as unknown as Window & typeof globalThis);
+}
+
+function stubGetPathForFile(impl: ((file: object) => string) | undefined): void {
+  if (impl === undefined) {
+    Reflect.deleteProperty(testWindow(), "desktopBridge");
+    return;
+  }
+  testWindow().desktopBridge = {
+    getPathForFile: impl,
+  } as typeof window.desktopBridge;
+}
+
+beforeEach(() => {
+  if (globalThis.window === undefined) {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: globalThis,
+    });
+  }
+  Reflect.deleteProperty(testWindow(), "desktopBridge");
+});
+
+afterEach(() => {
+  Reflect.deleteProperty(testWindow(), "desktopBridge");
+});
+
 describe("classifyAttachment", () => {
   it("routes images to the composer's own drop pipeline", () => {
     expect(classifyAttachment({ name: "photo.png", type: "image/png", size: 10 })).toBe("image");
@@ -50,15 +78,15 @@ describe("classifyAttachment", () => {
 });
 
 describe("resolvePickedFilePath", () => {
-  it("prefers Electron's File.path when it is absolute", () => {
+  it("uses desktopBridge.getPathForFile when it returns an absolute path", () => {
+    stubGetPathForFile(() => "/tmp/notes.pdf");
     const file = new File(["x"], "notes.pdf", { type: "application/pdf" });
-    Object.defineProperty(file, "path", { value: "/tmp/notes.pdf" });
     expect(resolvePickedFilePath(file)).toBe("/tmp/notes.pdf");
   });
 
-  it("accepts Windows absolute paths", () => {
+  it("accepts Windows absolute paths from the bridge", () => {
+    stubGetPathForFile(() => "C:\\Users\\serge\\notes.pdf");
     const file = new File(["x"], "notes.pdf", { type: "application/pdf" });
-    Object.defineProperty(file, "path", { value: "C:\\Users\\serge\\notes.pdf" });
     expect(resolvePickedFilePath(file)).toBe("C:\\Users\\serge\\notes.pdf");
   });
 
@@ -67,21 +95,27 @@ describe("resolvePickedFilePath", () => {
     expect(resolvePickedFilePath(file)).toBeNull();
   });
 
-  it("returns null for relative or empty File.path values", () => {
+  it("returns null for relative or empty bridge paths", () => {
+    stubGetPathForFile(() => "notes.pdf");
     const relative = new File(["x"], "notes.pdf", { type: "application/pdf" });
-    Object.defineProperty(relative, "path", { value: "notes.pdf" });
     expect(resolvePickedFilePath(relative)).toBeNull();
 
+    stubGetPathForFile(() => "   ");
     const empty = new File(["x"], "notes.pdf", { type: "application/pdf" });
-    Object.defineProperty(empty, "path", { value: "   " });
     expect(resolvePickedFilePath(empty)).toBeNull();
+  });
+
+  it("ignores the removed Electron File.path property", () => {
+    const file = new File(["x"], "notes.pdf", { type: "application/pdf" });
+    Object.defineProperty(file, "path", { value: "/tmp/notes.pdf" });
+    expect(resolvePickedFilePath(file)).toBeNull();
   });
 });
 
 describe("createAttachedFileRef", () => {
   it("captures name, path, mime, and size when an absolute path exists", () => {
+    stubGetPathForFile(() => "/repo/readme.md");
     const file = new File(["hello"], "readme.md", { type: "text/markdown" });
-    Object.defineProperty(file, "path", { value: "/repo/readme.md" });
     const ref = createAttachedFileRef(file, "id-1");
     expect(ref).toEqual({
       id: "id-1",

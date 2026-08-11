@@ -2,8 +2,9 @@
  * Classification and send-time payload for the fork's composer attach button.
  *
  * Images still ride the composer's own Files drop path (validation, compression,
- * limits, toasts). Non-image picks with a real absolute path (Electron `File.path`)
- * become pending path attachments: chips in the composer, filepath baked into the
+ * limits, toasts). Non-image picks with a real absolute path (desktop
+ * `desktopBridge.getPathForFile` → Electron `webUtils.getPathForFile`) become
+ * pending path attachments: chips in the composer, filepath baked into the
  * outgoing prompt at send time. Browser picks have no absolute path — text content
  * is inserted into the prompt, and other files fall through the images-only drop
  * path so the composer can refuse them instead of inventing an unreadable basename.
@@ -128,14 +129,17 @@ function isAbsoluteFilePath(path: string): boolean {
 }
 
 /**
- * Absolute path for a picked File when the host exposes one (Electron
- * `File.path`). Browser `<input type="file">` only gives a basename — that is
- * not a readable environment path, so callers must inline text or refuse.
+ * Absolute path for a picked File when the desktop preload exposes one via
+ * Electron `webUtils.getPathForFile` (`File.path` was removed in Electron 32+).
+ * Browser `<input type="file">` only gives a basename — that is not a readable
+ * environment path, so callers must inline text or refuse.
  */
 export function resolvePickedFilePath(file: File): string | null {
-  const withPath = file as File & { path?: unknown };
-  if (typeof withPath.path === "string") {
-    const trimmed = withPath.path.trim();
+  const getPathForFile =
+    typeof window === "undefined" ? undefined : window.desktopBridge?.getPathForFile;
+  const bridgePath = getPathForFile?.(file);
+  if (typeof bridgePath === "string") {
+    const trimmed = bridgePath.trim();
     if (trimmed.length > 0 && isAbsoluteFilePath(trimmed)) {
       return trimmed;
     }

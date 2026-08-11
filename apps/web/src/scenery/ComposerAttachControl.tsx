@@ -10,8 +10,9 @@
  * private APIs: images are dispatched as a synthetic drop carrying Files —
  * the exact path an OS drag takes, so validation, compression, attachment
  * limits and error toasts are all upstream's. Non-image files with a real
- * absolute path (Electron) become pending path attachments: chips in the
- * composer chrome, filepath baked into the outgoing prompt at send time.
+ * absolute path (desktop `desktopBridge.getPathForFile`) become pending path
+ * attachments: chips in the composer chrome, filepath baked into the outgoing
+ * prompt at send time.
  * Browser picks have no absolute path — text is inserted into the prompt via
  * the mention-drop channel; other files fall through the images drop path so
  * the composer refuses them instead of claiming an unreadable basename.
