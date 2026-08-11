@@ -13,7 +13,7 @@ import * as Path from "effect/Path";
 import * as ServerConfig from "../config.ts";
 import {
   importProjectFavicon,
-  removeStaleManagedProjectFavicons,
+  removeManagedProjectFaviconFile,
   resolveManagedProjectFaviconFile,
   toSafeProjectIconSegment,
 } from "./ProjectFaviconStore.ts";
@@ -119,9 +119,9 @@ describe("ProjectFaviconStore", () => {
         Array.from(Buffer.from(pngBytes)),
       );
 
-      yield* removeStaleManagedProjectFavicons({
+      yield* removeManagedProjectFaviconFile({
         projectId,
-        keepFaviconPath: png.faviconPath,
+        faviconPath: svg.faviconPath,
       });
       expect(
         yield* resolveManagedProjectFaviconFile({

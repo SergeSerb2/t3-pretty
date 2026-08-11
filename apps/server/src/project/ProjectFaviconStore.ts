@@ -14,7 +14,6 @@ import {
   ProjectImportFaviconError,
   type ProjectImportFaviconResult,
 } from "@t3tools/contracts";
-import { WORKSPACE_IMAGE_PREVIEW_EXTENSIONS } from "@t3tools/shared/filePreview";
 import {
   MANAGED_PROJECT_FAVICON_REVISION_LENGTH,
   parseManagedProjectFaviconPath,
@@ -128,38 +127,6 @@ export const removeManagedProjectFaviconFile = Effect.fn(
   yield* optionOnNotFound(fileSystem.remove(resolved.candidate)).pipe(
     Effect.orElseSucceed(() => Option.none()),
   );
-});
-
-export const removeStaleManagedProjectFavicons = Effect.fn(
-  "ProjectFaviconStore.removeStaleManagedProjectFavicons",
-)(function* (input: { readonly projectId: string; readonly keepFaviconPath: string }) {
-  const keep = yield* resolveStoredIconPath(input.keepFaviconPath, input.projectId);
-  const segment = toSafeProjectIconSegment(input.projectId);
-  if (!keep || !segment) {
-    return;
-  }
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const entries = yield* optionOnNotFound(fileSystem.readDirectory(keep.iconsDir)).pipe(
-    Effect.orElseSucceed(() => Option.none<ReadonlyArray<string>>()),
-  );
-  if (Option.isNone(entries)) {
-    return;
-  }
-  const keepName = path.basename(keep.candidate);
-  for (const entry of entries.value) {
-    if (entry === keepName) continue;
-    const isHashed = entry.startsWith(`${segment}.`);
-    const isLegacyUnhashed = WORKSPACE_IMAGE_PREVIEW_EXTENSIONS.some(
-      (extension) => entry === `${segment}${extension}`,
-    );
-    if (!isHashed && !isLegacyUnhashed) continue;
-    const stalePath = path.join(keep.iconsDir, entry);
-    if (!isInsideDirectory(path, keep.iconsDir, stalePath)) continue;
-    yield* optionOnNotFound(fileSystem.remove(stalePath)).pipe(
-      Effect.orElseSucceed(() => Option.none()),
-    );
-  }
 });
 
 export const importProjectFavicon = Effect.fn("ProjectFaviconStore.importProjectFavicon")(

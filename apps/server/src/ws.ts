@@ -60,6 +60,7 @@ import {
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import { isManagedProjectFaviconPath } from "@t3tools/shared/projectFavicon";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
@@ -104,7 +105,6 @@ import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts
 import {
   importProjectFavicon,
   removeManagedProjectFaviconFile,
-  removeStaleManagedProjectFavicons,
 } from "./project/ProjectFaviconStore.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
@@ -1838,6 +1838,7 @@ const makeWsRpcLayer = (
                   fileName: input.fileName,
                 });
               }
+              const previousFaviconPath = project.value.faviconPath ?? null;
               const imported = yield* importProjectFavicon(input);
               const rollbackNewFile = imported.created
                 ? removeManagedProjectFaviconFile({
@@ -1876,10 +1877,19 @@ const makeWsRpcLayer = (
                     ),
                   );
               }).pipe(Effect.tapError(() => rollbackNewFile));
-              yield* removeStaleManagedProjectFavicons({
-                projectId: input.projectId,
-                keepFaviconPath: imported.faviconPath,
-              }).pipe(Effect.ignore);
+              // Delete only the path this update replaced. Sweeping other
+              // project-icon files can remove a concurrent import that has
+              // not published yet.
+              if (
+                previousFaviconPath &&
+                previousFaviconPath !== imported.faviconPath &&
+                isManagedProjectFaviconPath(previousFaviconPath)
+              ) {
+                yield* removeManagedProjectFaviconFile({
+                  projectId: input.projectId,
+                  faviconPath: previousFaviconPath,
+                }).pipe(Effect.ignore);
+              }
               return { faviconPath: imported.faviconPath };
             }),
             { "rpc.aggregate": "workspace" },
