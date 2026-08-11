@@ -99,11 +99,16 @@ describe("glass contract with upstream chrome", () => {
 describe("scenery attribution contract", () => {
   it("keeps long photographer credits shrinkable inside the compact dock", () => {
     expect(sceneryCssSource).toMatch(
-      /\.scenery-attribution__credit\s*\{[^}]*min-width: 0;[^}]*flex-shrink: 1;/s,
+      /\.scenery-attribution__credit\s*\{[^}]*min-width: 0;[^}]*flex-shrink: 1;[^}]*gap: 0\.3em;/s,
     );
     expect(sceneryCssSource).toMatch(
       /\.scenery-attribution__photographer\s*\{[^}]*min-width: 0;[^}]*flex-shrink: 1;[^}]*overflow: hidden;/s,
     );
+  });
+
+  it("spaces the Unsplash credit with flex gap so words do not collapse", () => {
+    expect(sceneryCssSource).toMatch(/\.scenery-attribution\s*\{[^}]*gap: 0\.3em;/s);
+    expect(sceneryCssSource).toMatch(/\.scenery-attribution__prefix\s*\{[^}]*flex-shrink: 0;/s);
   });
 });
 

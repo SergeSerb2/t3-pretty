@@ -123,10 +123,10 @@ export function SceneryLayer({
         <div className="scenery-attribution">
           <span className="scenery-attribution__name">{displayed.name}</span>
           <span className="scenery-attribution__separator" aria-hidden>
-            {" · "}
+            ·
           </span>
           <span className="scenery-attribution__credit">
-            <span className="scenery-attribution__prefix">Photo by </span>
+            <span className="scenery-attribution__prefix">Photo by</span>
             {displayed.photographerProfileURL ? (
               <a
                 className="scenery-attribution__photographer"
@@ -141,7 +141,7 @@ export function SceneryLayer({
                 {displayed.photographerName}
               </span>
             )}
-            <span className="scenery-attribution__prefix"> on </span>
+            <span className="scenery-attribution__prefix">on</span>
             <a href={`https://unsplash.com/${UNSPLASH_UTM}`} rel="noreferrer" target="_blank">
               Unsplash
             </a>
