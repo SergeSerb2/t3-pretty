@@ -128,6 +128,9 @@ import {
   ProjectWriteFileError,
   ProjectWriteFileInput,
   ProjectWriteFileResult,
+  ProjectImportFaviconError,
+  ProjectImportFaviconInput,
+  ProjectImportFaviconResult,
 } from "./project.ts";
 import {
   TerminalAttachInput,
@@ -216,6 +219,7 @@ export const WS_METHODS = {
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+  projectsImportFavicon: "projects.importFavicon",
 
   // Agent instruction file methods
   agentInstructionsList: "agentInstructions.list",
@@ -644,6 +648,12 @@ export const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   error: Schema.Union([ProjectWriteFileError, EnvironmentAuthorizationError]),
 });
 
+export const WsProjectsImportFaviconRpc = Rpc.make(WS_METHODS.projectsImportFavicon, {
+  payload: ProjectImportFaviconInput,
+  success: ProjectImportFaviconResult,
+  error: Schema.Union([ProjectImportFaviconError, EnvironmentAuthorizationError]),
+});
+
 export const WsAgentInstructionsListRpc = Rpc.make(WS_METHODS.agentInstructionsList, {
   payload: AgentInstructionsListInput,
   success: AgentInstructionsListResult,
@@ -1063,6 +1073,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
+  WsProjectsImportFaviconRpc,
   WsAgentInstructionsListRpc,
   WsAgentInstructionsReadRpc,
   WsAgentInstructionsWriteRpc,

@@ -930,6 +930,14 @@ it.effect("project favicon overrides accept only supported image files", () =>
     });
     assert.strictEqual(valid.type, "project.meta.update");
 
+    const managed = yield* decodeOrchestrationCommand({
+      type: "project.meta.update",
+      commandId: "cmd-project-favicon-managed",
+      projectId: "project-1",
+      faviconPath: "t3-project-icon/0123456789abcdef-logo.png",
+    });
+    assert.strictEqual(managed.type, "project.meta.update");
+
     const invalid = yield* Effect.exit(
       decodeOrchestrationCommand({
         type: "project.meta.update",

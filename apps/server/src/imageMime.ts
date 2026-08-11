@@ -4,6 +4,8 @@ export const IMAGE_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   "image/avif": ".avif",
   "image/bmp": ".bmp",
   "image/gif": ".gif",
+  "image/x-icon": ".ico",
+  "image/vnd.microsoft.icon": ".ico",
   "image/heic": ".heic",
   "image/heif": ".heif",
   "image/jpeg": ".jpg",

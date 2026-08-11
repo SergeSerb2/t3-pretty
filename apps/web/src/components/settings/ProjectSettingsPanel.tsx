@@ -12,14 +12,16 @@ import {
   deriveProjectGroupingOverrideKey,
   selectProjectGroupingSettings,
 } from "../../logicalProject";
-import type {
-  ContextMenuItem,
-  ModelSelection,
-  ProviderDriverKind,
-  SidebarProjectGroupingMode,
-  T3ProjectFileScript,
-  ThreadEnvMode,
+import {
+  PROJECT_IMPORT_FAVICON_MAX_BYTES,
+  type ContextMenuItem,
+  type ModelSelection,
+  type ProviderDriverKind,
+  type SidebarProjectGroupingMode,
+  type T3ProjectFileScript,
+  type ThreadEnvMode,
 } from "@t3tools/contracts";
+import { managedProjectFaviconFileName } from "@t3tools/shared/projectFavicon";
 import { resolveEnvModeLabel } from "../BranchToolbar.logic";
 import { createModelSelection } from "@t3tools/shared/model";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
@@ -115,6 +117,30 @@ export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, st
   repository_path: "Group by repository path",
   separate: "Keep separate",
 };
+
+const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
+  ".avif": "image/avif",
+  ".gif": "image/gif",
+  ".ico": "image/x-icon",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+};
+
+async function readImageFileAsDataUrl(file: File): Promise<string> {
+  const extension = file.name.includes(".")
+    ? `.${file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase()}`
+    : "";
+  const mimeType = file.type || IMAGE_MIME_BY_EXTENSION[extension] || "application/octet-stream";
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
 
 /** Logical project groups for the settings page, sorted by display name. */
 export function useSettingsProjectGroups(): SidebarProjectSnapshot[] {
@@ -309,6 +335,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const threads = useThreadShells();
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
+  const importFavicon = useAtomCommand(projectEnvironment.importFavicon, { reportFailure: false });
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
     reportFailure: false,
@@ -345,17 +372,20 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     }
     return counts;
   }, [threads]);
-  const reportFailure = useCallback((title: string, result: AtomCommandResult<void, unknown>) => {
-    if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-    const error = squashAtomCommandFailure(result);
-    toastManager.add(
-      stackedThreadToast({
-        type: "error",
-        title,
-        description: error instanceof Error ? error.message : "An error occurred.",
-      }),
-    );
-  }, []);
+  const reportFailure = useCallback(
+    (title: string, result: AtomCommandResult<unknown, unknown>) => {
+      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title,
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    },
+    [],
+  );
 
   // Group-shared fields live on each physical project record, so a
   // group-level edit fans out to every member.
@@ -459,6 +489,56 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       }
     },
     [updateAllMembers],
+  );
+  const setFaviconFromComputerFile = useCallback(
+    async (file: File) => {
+      if (savingFaviconRef.current) return;
+      if (file.size <= 0 || file.size > PROJECT_IMPORT_FAVICON_MAX_BYTES) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to update project icon",
+            description: "Image is empty or larger than 2 MB.",
+          }),
+        );
+        return;
+      }
+      savingFaviconRef.current = true;
+      setIsSavingFavicon(true);
+      try {
+        const dataUrl = await readImageFileAsDataUrl(file);
+        for (const member of group.memberProjects) {
+          const imported = mapAtomCommandResult(
+            await importFavicon({
+              environmentId: member.environmentId,
+              input: { projectId: member.id, fileName: file.name, dataUrl },
+            }),
+            (value) => value,
+          );
+          if (imported._tag === "Failure") {
+            reportFailure(
+              group.memberProjects.length > 1
+                ? `Failed to update project icon on ${member.environmentLabel ?? "the current environment"}`
+                : "Failed to update project icon",
+              imported,
+            );
+            return;
+          }
+        }
+      } catch (cause) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to update project icon",
+            description: cause instanceof Error ? cause.message : "An error occurred.",
+          }),
+        );
+      } finally {
+        savingFaviconRef.current = false;
+        setIsSavingFavicon(false);
+      }
+    },
+    [group.memberProjects, importFavicon, reportFailure],
   );
 
   // ----- checkout selection and scripts -----
@@ -780,7 +860,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           />
           <SettingsRow
             title="Project icon"
-            description={faviconPath ?? "Automatic"}
+            description={
+              faviconPath === null
+                ? "Automatic"
+                : (managedProjectFaviconFileName(faviconPath) ?? faviconPath)
+            }
             resetAction={
               faviconPath !== null ? (
                 <SettingResetButton
@@ -1174,9 +1258,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       <ProjectFaviconPickerDialog
         key={`${representative.environmentId}:${representative.workspaceRoot}:${faviconPickerOpen}`}
         cwd={representative.workspaceRoot}
+        disabled={isSavingFavicon}
         environmentId={representative.environmentId}
         onOpenChange={setFaviconPickerOpen}
         onSelect={(path) => void setFaviconPath(path)}
+        onSelectComputerFile={(file) => void setFaviconFromComputerFile(file)}
         open={faviconPickerOpen}
         projectName={group.displayName}
       />

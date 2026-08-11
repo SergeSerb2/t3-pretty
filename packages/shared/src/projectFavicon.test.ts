@@ -2,8 +2,11 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   getProjectFaviconCacheKey,
+  isManagedProjectFaviconPath,
   isProjectFaviconFallbackUrl,
+  managedProjectFaviconFileName,
   PROJECT_FAVICON_FALLBACK_MARKER,
+  toManagedProjectFaviconPath,
 } from "./projectFavicon.ts";
 
 describe("project favicon", () => {
@@ -48,5 +51,24 @@ describe("project favicon", () => {
       ),
     ).toBe(false);
     expect(isProjectFaviconFallbackUrl(null)).toBe(false);
+  });
+
+  it("turns a picked file name into a revisioned managed project icon path", () => {
+    const revision = "0123456789abcdef";
+    expect(toManagedProjectFaviconPath("/Users/ada/Pictures/Logo.PNG", revision)).toBe(
+      "t3-project-icon/0123456789abcdef-Logo.png",
+    );
+    expect(toManagedProjectFaviconPath("brand/icon.svg", revision)).toBe(
+      "t3-project-icon/0123456789abcdef-icon.svg",
+    );
+    expect(toManagedProjectFaviconPath("../secrets.env", revision)).toBeNull();
+    expect(toManagedProjectFaviconPath("notes.md", revision)).toBeNull();
+    expect(toManagedProjectFaviconPath("logo.png", "not-a-hash")).toBeNull();
+    expect(isManagedProjectFaviconPath("t3-project-icon/0123456789abcdef-Logo.png")).toBe(true);
+    expect(isManagedProjectFaviconPath("brand/icon.svg")).toBe(false);
+    expect(managedProjectFaviconFileName("t3-project-icon/0123456789abcdef-Logo.png")).toBe(
+      "Logo.png",
+    );
+    expect(managedProjectFaviconFileName("t3-project-icon/Logo.png")).toBeNull();
   });
 });

@@ -35,6 +35,8 @@ import type {
   ProjectSearchEntriesResult,
   ProjectWriteFileInput,
   ProjectWriteFileResult,
+  ProjectImportFaviconInput,
+  ProjectImportFaviconResult,
 } from "./project.ts";
 import type {
   TerminalAttachInput,
@@ -1338,6 +1340,7 @@ export interface EnvironmentApi {
     readFile: (input: ProjectReadFileInput) => Promise<ProjectReadFileResult>;
     searchEntries: (input: ProjectSearchEntriesInput) => Promise<ProjectSearchEntriesResult>;
     writeFile: (input: ProjectWriteFileInput) => Promise<ProjectWriteFileResult>;
+    importFavicon: (input: ProjectImportFaviconInput) => Promise<ProjectImportFaviconResult>;
   };
   filesystem: {
     browse: (input: FilesystemBrowseInput) => Promise<FilesystemBrowseResult>;
