@@ -77,26 +77,17 @@ export function extractChangelogVersions(source) {
   return [...source.matchAll(/^\s+version:\s*"([^"]+)",$/gmu)].map((match) => match[1]);
 }
 
-/** Versions that still need a changelog entry, oldest first: every shipped
-    fork build newer than the newest entry already present, plus the release
-    currently being cut. */
+/** Versions that still need a changelog entry, oldest first and bounded:
+    every shipped fork build without one — including gaps below the newest
+    present entry, which overlapping release runs can leave behind — plus the
+    release currently being cut. */
 export function planReleases({ presentVersions, forkVersions, currentVersion }) {
   const present = new Set(presentVersions);
-  let newestPresent = null;
-  for (const version of presentVersions) {
-    if (newestPresent === null || (compareVersions(version, newestPresent) ?? 0) > 0) {
-      newestPresent = version;
-    }
-  }
-  const planned = forkVersions.filter(
-    (version) =>
-      !present.has(version) &&
-      (newestPresent === null || (compareVersions(version, newestPresent) ?? 0) > 0),
-  );
+  const planned = forkVersions.filter((version) => !present.has(version));
   if (currentVersion && !present.has(currentVersion) && !planned.includes(currentVersion)) {
     planned.push(currentVersion);
   }
-  return planned.sort((a, b) => compareVersions(a, b) ?? 0).slice(-MAX_RELEASES_PER_RUN);
+  return planned.sort((a, b) => compareVersions(a, b) ?? 0).slice(0, MAX_RELEASES_PER_RUN);
 }
 
 /** Serialize one release to the exact changelogData.ts entry style. Property
@@ -130,14 +121,51 @@ export function serializeReleaseEntry(entry) {
   return lines.join("\n");
 }
 
-/** Insert serialized entries (newest first) at the top of the releases array. */
-export function insertChangelogEntries(source, serializedEntries) {
-  const index = source.indexOf(CHANGELOG_MARKER);
-  if (index === -1) {
+// Entry blocks are the only lines at exactly two-space indent inside the
+// array; item objects sit deeper, so this boundary is unambiguous.
+const ENTRY_BLOCK_PATTERN = /^  \{[\s\S]*?^  \},$/gmu;
+
+/** Split the releases array into its raw entry blocks, preserving each
+    block's exact text so existing entries move untouched. */
+function splitChangelogEntries(source) {
+  const markerIndex = source.indexOf(CHANGELOG_MARKER);
+  if (markerIndex === -1) {
     throw new Error(`Could not find the CHANGELOG_RELEASES array in ${CHANGELOG_PATH}`);
   }
-  const insertAt = index + CHANGELOG_MARKER.length;
-  return `${source.slice(0, insertAt)}\n${serializedEntries.join("\n")}${source.slice(insertAt)}`;
+  const arrayStart = markerIndex + CHANGELOG_MARKER.length;
+  const arrayEnd = source.indexOf("\n];", arrayStart);
+  if (arrayEnd === -1) {
+    throw new Error(`Could not find the end of CHANGELOG_RELEASES in ${CHANGELOG_PATH}`);
+  }
+  const body = source.slice(arrayStart, arrayEnd);
+  const blocks = [];
+  for (const match of body.matchAll(ENTRY_BLOCK_PATTERN)) {
+    const versionMatch = /^\s+version:\s*"([^"]+)",$/mu.exec(match[0]);
+    if (!versionMatch) {
+      throw new Error(`A CHANGELOG_RELEASES entry is missing its version`);
+    }
+    blocks.push({ version: versionMatch[1], text: match[0] });
+  }
+  if (body.replace(ENTRY_BLOCK_PATTERN, "").trim() !== "") {
+    throw new Error(`Unrecognized content inside CHANGELOG_RELEASES in ${CHANGELOG_PATH}`);
+  }
+  return { prefix: source.slice(0, arrayStart), blocks, suffix: source.slice(arrayEnd) };
+}
+
+/** Merge new entries ({version, text}) into the releases array, keeping the
+    whole list sorted newest first so gap-filling entries land at their
+    sorted position instead of only ever prepending. */
+export function mergeChangelogEntries(source, newEntries) {
+  const { prefix, blocks, suffix } = splitChangelogEntries(source);
+  const present = new Set(blocks.map((block) => block.version));
+  const merged = [...blocks];
+  for (const entry of newEntries) {
+    if (!present.has(entry.version)) {
+      merged.push(entry);
+    }
+  }
+  merged.sort((a, b) => -(compareVersions(a.version, b.version) ?? 0));
+  return `${prefix}\n${merged.map((entry) => entry.text).join("\n")}${suffix}`;
 }
 
 export function buildChangelogPrompt({ releases }) {
@@ -511,19 +539,36 @@ async function main() {
   // main: a manual dispatch of another ref must not fast-forward main to
   // unreviewed history, and a moved tip means this run already lost the race.
   git(["fetch", "origin", "main"]);
-  if (git(["rev-parse", "origin/main"]) !== baseSha) {
+  const mainTip = git(["rev-parse", "origin/main"]);
+  if (mainTip !== baseSha) {
+    // A retry of a run that already pushed its notes finds its own untagged
+    // changelog commit as the main tip; reuse it so the release still ships
+    // the notes instead of publishing the bare triggering commit.
+    const tipSubject = git(["log", "-1", "--format=%s", mainTip]);
+    const tipFirstParent = git(["log", "-1", "--format=%P", mainTip]).split(" ")[0];
+    if (tipFirstParent === baseSha && tipSubject.startsWith(COMMIT_SUBJECT_PREFIX)) {
+      process.stdout.write(
+        `[fork-changelog] reusing the changelog commit ${mainTip.slice(0, 12)} already on main\n`,
+      );
+      writeGitHubOutput({ ref: mainTip, entries: 0 });
+      return;
+    }
     warn("HEAD is not the origin/main tip; skipping the changelog push.");
     writeGitHubOutput({ ref: baseSha, entries: 0 });
     return;
   }
 
   const entries = await generateEntries({ contexts, token, warn });
-  const serialized = entries
-    .sort((a, b) => -(compareVersions(a.version, b.version) ?? 0))
-    .map(serializeReleaseEntry);
-  NodeFS.writeFileSync(CHANGELOG_PATH, insertChangelogEntries(source, serialized));
+  const newEntries = entries.map((entry) => ({
+    version: entry.version,
+    text: serializeReleaseEntry(entry),
+  }));
+  NodeFS.writeFileSync(CHANGELOG_PATH, mergeChangelogEntries(source, newEntries));
 
-  const newest = entries[0]?.version ?? currentVersion ?? "unknown";
+  const newest =
+    newEntries.map((entry) => entry.version).sort((a, b) => -(compareVersions(a, b) ?? 0))[0] ??
+    currentVersion ??
+    "unknown";
   git(["add", "--", CHANGELOG_PATH]);
   git([
     "-c",

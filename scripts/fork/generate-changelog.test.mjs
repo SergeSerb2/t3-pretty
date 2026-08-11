@@ -9,7 +9,7 @@ import {
   compareVersions,
   extractChangelogVersions,
   fallbackReleaseEntry,
-  insertChangelogEntries,
+  mergeChangelogEntries,
   parseVersionSegments,
   planReleases,
   serializeReleaseEntry,
@@ -66,13 +66,16 @@ describe("planReleases", () => {
     ]);
   });
 
-  it("skips versions already present and tolerates a missing current version", () => {
+  it("fills gaps below the newest present entry left by overlapping runs", () => {
     const planned = planReleases({
       presentVersions: ["0.0.33-nightly.20260810.1055000040", "0.0.33"],
       forkVersions,
       currentVersion: undefined,
     });
-    assert.deepEqual(planned, ["0.0.34-nightly.20260810.1059000041"]);
+    assert.deepEqual(planned, [
+      "0.0.33-nightly.20260809.1043000015",
+      "0.0.34-nightly.20260810.1059000041",
+    ]);
   });
 
   it("does not duplicate the current version when it is already a shipped tag", () => {
@@ -114,17 +117,39 @@ export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   });
 
   it("inserts new entries at the top without touching existing ones", () => {
-    const entry = serializeReleaseEntry({
-      version: "0.0.34-nightly.20260810.1059000052",
+    const version = "0.0.34-nightly.20260810.1059000052";
+    const text = serializeReleaseEntry({
+      version,
       date: "2026-08-11",
       headline: "",
       items: [{ kind: "new", title: "Fresh feature", description: "" }],
     });
-    const updated = insertChangelogEntries(source, [entry]);
+    const updated = mergeChangelogEntries(source, [{ version, text }]);
     assert.deepEqual(extractChangelogVersions(updated), [
       "0.0.34-nightly.20260810.1059000052",
       "0.0.33",
     ]);
+    assert.include(updated, 'title: "Existing entry"');
+  });
+
+  it("fills an older gap at its sorted position", () => {
+    const gapSource = source.replace(
+      '    version: "0.0.33",',
+      '    version: "0.0.33-nightly.20260810.1055000040",',
+    );
+    const version = "0.0.33-nightly.20260810.1054000025";
+    const text = serializeReleaseEntry({
+      version,
+      date: "2026-08-09",
+      headline: "",
+      items: [{ kind: "fixed", title: "Gap fix", description: "" }],
+    });
+    const updated = mergeChangelogEntries(gapSource, [{ version, text }]);
+    assert.deepEqual(extractChangelogVersions(updated), [
+      "0.0.33-nightly.20260810.1055000040",
+      "0.0.33-nightly.20260810.1054000025",
+    ]);
+    assert.include(updated, 'title: "Gap fix"');
     assert.include(updated, 'title: "Existing entry"');
   });
 
