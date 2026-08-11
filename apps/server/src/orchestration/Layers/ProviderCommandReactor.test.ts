@@ -34,7 +34,10 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { deriveServerPaths, ServerConfig } from "../../config.ts";
 import { TextGenerationError } from "@t3tools/contracts";
-import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
+import {
+  ProviderAdapterRequestError,
+  ProviderInstanceNotFoundError,
+} from "../../provider/Errors.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -153,6 +156,7 @@ describe("ProviderCommandReactor", () => {
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
+    readonly unresolvedInstanceIds?: ReadonlyArray<string>;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -168,6 +172,7 @@ describe("ProviderCommandReactor", () => {
       model: "gpt-5-codex",
     };
     const startSessionEffect = input?.startSessionEffect;
+    const unresolvedInstanceIds = new Set(input?.unresolvedInstanceIds ?? []);
     const startSession = vi.fn((_: unknown, input: unknown) => {
       const sessionIndex = nextSessionIndex++;
       const resumeCursor =
@@ -224,7 +229,14 @@ describe("ProviderCommandReactor", () => {
       return (startSessionEffect?.(session) ?? Effect.succeed(session)).pipe(
         Effect.tap((startedSession) =>
           Effect.sync(() => {
-            runtimeSessions.push(startedSession);
+            const existingIndex = runtimeSessions.findIndex(
+              (entry) => entry.threadId === startedSession.threadId,
+            );
+            if (existingIndex >= 0) {
+              runtimeSessions.splice(existingIndex, 1, startedSession);
+            } else {
+              runtimeSessions.push(startedSession);
+            }
           }),
         ),
       );
@@ -322,6 +334,9 @@ describe("ProviderCommandReactor", () => {
         }),
       getInstanceInfo: (instanceId) => {
         const raw = String(instanceId);
+        if (unresolvedInstanceIds.has(raw)) {
+          return Effect.fail(new ProviderInstanceNotFoundError({ instanceId: raw }));
+        }
         const driverKind = ProviderDriverKind.make(
           raw.startsWith("claude") ? "claudeAgent" : raw.startsWith("codex") ? "codex" : raw,
         );
@@ -507,6 +522,7 @@ describe("ProviderCommandReactor", () => {
       stateDir,
       drain,
       runEffect,
+      unresolvedInstanceIds,
       get titleRegenerationCompletionDispatchAttempts() {
         return titleRegenerationCompletionDispatchAttempts;
       },
@@ -2358,6 +2374,11 @@ describe("ProviderCommandReactor", () => {
 
     await waitFor(() => harness.startSession.mock.calls.length === 2);
     await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      return thread?.modelSelection.instanceId === "claudeAgent";
+    });
     await harness.drain();
 
     const restartRequest = harness.startSession.mock.calls[1]?.[1];
@@ -2468,6 +2489,202 @@ describe("ProviderCommandReactor", () => {
     );
   });
 
+  it("keeps handoff context across a failed first destination turn", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-provider-handoff-send-failure-1"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-provider-handoff-send-failure-1"),
+          role: "user",
+          text: "first",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    harness.sendTurn.mockImplementationOnce(
+      () =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: "claudeAgent",
+            method: "thread.turn.start",
+            detail: "destination rejected first turn",
+          }),
+        ) as never,
+    );
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-provider-handoff-send-failure-2"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-provider-handoff-send-failure-2"),
+          role: "user",
+          text: "continue with claude",
+          attachments: [],
+        },
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-opus-4-6",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      return (
+        thread?.activities.some((activity) => activity.kind === "provider.turn.start.failed") ??
+        false
+      );
+    });
+    await harness.drain();
+
+    expect(harness.startSession.mock.calls.length).toBe(2);
+    expect(harness.sendTurn.mock.calls.length).toBe(2);
+    expect(harness.sendTurn.mock.calls[1]?.[0]).toHaveProperty(
+      "input",
+      expect.stringContaining("[Conversation handoff]"),
+    );
+    const failedAttempt = await harness.readModel();
+    const failedThread = failedAttempt.threads.find(
+      (entry) => entry.id === ThreadId.make("thread-1"),
+    );
+    expect(failedThread?.modelSelection.instanceId).toBe("codex");
+    expect(
+      failedThread?.activities.some((activity) => activity.kind === "thread.model-changed"),
+    ).toBe(false);
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-provider-handoff-send-failure-3"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-provider-handoff-send-failure-3"),
+          role: "user",
+          text: "retry with claude",
+          attachments: [],
+        },
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-opus-4-6",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 3);
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      return thread?.modelSelection.instanceId === "claudeAgent";
+    });
+    await harness.drain();
+
+    expect(harness.startSession.mock.calls.length).toBe(2);
+    const retrySend = harness.sendTurn.mock.calls[2]?.[0];
+    expect(retrySend).toHaveProperty("input", expect.stringContaining("[Conversation handoff]"));
+    expect(retrySend).toHaveProperty("input", expect.stringContaining("User:\nfirst"));
+    expect(retrySend).toHaveProperty("input", expect.stringMatching(/retry with claude$/));
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.modelSelection.instanceId).toBe("claudeAgent");
+    expect(
+      thread?.activities.find((activity) => activity.kind === "thread.model-changed"),
+    ).toMatchObject({
+      payload: {
+        fromInstanceId: "codex",
+        toInstanceId: "claudeAgent",
+        isHandoff: true,
+      },
+    });
+  });
+
+  it("hands off when the source provider instance was removed", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-removed-source-1"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-removed-source-1"),
+          role: "user",
+          text: "first",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    harness.unresolvedInstanceIds.add("codex");
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-removed-source-2"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-removed-source-2"),
+          role: "user",
+          text: "continue with claude",
+          attachments: [],
+        },
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-opus-4-6",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 2);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      return thread?.modelSelection.instanceId === "claudeAgent";
+    });
+    await harness.drain();
+
+    const restartRequest = harness.startSession.mock.calls[1]?.[1];
+    expect(restartRequest).toMatchObject({
+      provider: "claudeAgent",
+      providerInstanceId: "claudeAgent",
+    });
+    expect(restartRequest).not.toHaveProperty("resumeCursor");
+    const secondSend = harness.sendTurn.mock.calls[1]?.[0];
+    expect(secondSend).toHaveProperty("input", expect.stringContaining("[Conversation handoff]"));
+    expect(secondSend).toHaveProperty("input", expect.stringContaining("User:\nfirst"));
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.session?.providerName).toBe("claudeAgent");
+    expect(
+      thread?.activities.some((activity) => activity.kind === "provider.turn.start.failed"),
+    ).toBe(false);
+  });
+
   it("hands off after restart using the last-bound session provider", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
@@ -2514,6 +2731,11 @@ describe("ProviderCommandReactor", () => {
 
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      return thread?.modelSelection.instanceId === "claudeAgent";
+    });
     await harness.drain();
 
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
