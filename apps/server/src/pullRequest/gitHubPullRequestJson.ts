@@ -275,7 +275,23 @@ const RawReviewThreadsSchema = Schema.Struct({
           Schema.NullOr(
             Schema.Struct({
               nodes: Schema.Array(
-                Schema.Struct({ author: Schema.optional(Schema.NullOr(RawActorSchema)) }),
+                Schema.Struct({
+                  id: Schema.optional(Schema.String),
+                  author: Schema.optional(Schema.NullOr(RawActorSchema)),
+                  reactionGroups: Schema.optional(Schema.Array(RawReactionGroupSchema)),
+                }),
+              ),
+            }),
+          ),
+        ),
+        reviews: Schema.optional(
+          Schema.NullOr(
+            Schema.Struct({
+              nodes: Schema.Array(
+                Schema.Struct({
+                  id: Schema.optional(Schema.String),
+                  reactionGroups: Schema.optional(Schema.Array(RawReactionGroupSchema)),
+                }),
               ),
             }),
           ),
@@ -403,8 +419,15 @@ export function decodeActorAvatarsJson(
 export const PULL_REQUEST_LIST_JSON_FIELDS =
   "number,title,url,author,headRefName,baseRefName,state,isDraft,mergeable,additions,deletions,createdAt,updatedAt,mergedAt,reviewRequests,labels";
 
-export const PULL_REQUEST_DETAIL_JSON_FIELDS = `${PULL_REQUEST_LIST_JSON_FIELDS},body,changedFiles,closedAt,statusCheckRollup,reactionGroups`;
+export const PULL_REQUEST_DETAIL_JSON_FIELDS = `${PULL_REQUEST_LIST_JSON_FIELDS},body,changedFiles,closedAt,statusCheckRollup`;
 export const PULL_REQUEST_ACTIVITY_JSON_FIELDS = "author,comments,reviews,commits";
+
+/**
+ * Counts every reactor, including GitHub Apps. `gh pr view --json reactionGroups` asks for
+ * `users { totalCount }`, which omits bots — and Codex Auto Review *is* a bot — so the summary,
+ * issue comments and reviews take this field from GraphQL instead of from `gh`.
+ */
+const GRAPHQL_REACTION_GROUPS = "reactionGroups { content reactors { totalCount } }";
 
 /** GitHub's own ceiling on a connection page, which is what both thread reads ask for. */
 const GRAPHQL_PAGE_SIZE = 100;
@@ -477,8 +500,9 @@ export function pullRequestSearchGraphQlQuery(rows: number): string {
  * view entirely. This query gives back the newest hundred, which is what a reader scoping a diff
  * wants, and stands in for the `gh` list wherever it came back non-empty.
  *
- * Reaction groups ride on each comment so the conversation can show GitHub's (and Codex's) emoji
- * without a round trip of its own.
+ * Reaction groups ride on each review-thread comment, and on the pull request's issue comments
+ * and reviews, so the conversation can show GitHub's (and Codex's) emoji without a round trip
+ * of its own. Those last two are counted from `reactors`, not `users`, because Codex is a bot.
  */
 export const REVIEW_THREADS_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
@@ -496,14 +520,15 @@ export const REVIEW_THREADS_GRAPHQL_QUERY = `query($owner: String!, $name: Strin
           comments(first: ${GRAPHQL_PAGE_SIZE}) {
             totalCount
             pageInfo { hasNextPage endCursor }
-            nodes { id author { login avatarUrl } body createdAt url reactionGroups { content reactors { totalCount } } }
+            nodes { id author { login avatarUrl } body createdAt url ${GRAPHQL_REACTION_GROUPS} }
           }
         }
       }
       viewerCanUpdate
       viewerDidAuthor
       author { login avatarUrl }
-      comments(first: ${GRAPHQL_PAGE_SIZE}) { nodes { author { login avatarUrl } } }
+      comments(first: ${GRAPHQL_PAGE_SIZE}) { nodes { id author { login avatarUrl } ${GRAPHQL_REACTION_GROUPS} } }
+      reviews(first: ${GRAPHQL_PAGE_SIZE}) { nodes { id ${GRAPHQL_REACTION_GROUPS} } }
       reviewRequests(first: 50) {
         nodes {
           requestedReviewer {
@@ -541,7 +566,7 @@ export const REVIEW_THREAD_COMMENTS_GRAPHQL_QUERY = `query($threadId: ID!, $curs
     ... on PullRequestReviewThread {
       comments(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { id author { login avatarUrl } body createdAt url reactionGroups { content reactors { totalCount } } }
+        nodes { id author { login avatarUrl } body createdAt url ${GRAPHQL_REACTION_GROUPS} }
       }
     }
   }
@@ -725,11 +750,43 @@ function toReactions(
   const counts = new Map<PullRequestReaction["content"], number>();
   for (const group of groups ?? []) {
     const content = GITHUB_REACTION_CONTENT[group.content.trim().toUpperCase()];
-    const count = group.reactors?.totalCount ?? group.users?.totalCount ?? 0;
+    // `reactors` includes GitHub Apps (Codex). `users` does not, and is only a fallback for a
+    // payload that never heard of `reactors` — never a substitute when `reactors` is present
+    // and zero because the only reactor was a bot.
+    const count =
+      group.reactors?.totalCount !== undefined && group.reactors.totalCount !== null
+        ? group.reactors.totalCount
+        : (group.users?.totalCount ?? 0);
     if (content === undefined || count <= 0) continue;
     counts.set(content, Math.max(counts.get(content) ?? 0, count));
   }
   return [...counts.entries()].map(([content, count]) => ({ content, count }));
+}
+
+function collectReactionsById(
+  nodes: ReadonlyArray<{
+    readonly id?: string | undefined;
+    readonly reactionGroups?:
+      | ReadonlyArray<Schema.Schema.Type<typeof RawReactionGroupSchema>>
+      | undefined;
+  }>,
+  into: Map<string, ReadonlyArray<PullRequestReaction>>,
+): void {
+  for (const node of nodes) {
+    const id = trimmed(node.id);
+    if (id === null) continue;
+    const reactions = toReactions(node.reactionGroups);
+    if (reactions.length > 0) into.set(id, reactions);
+  }
+}
+
+/** GraphQL reactor counts replace `gh`'s user-only groups wherever the two disagree. */
+export function overlayReactions(
+  item: PullRequestComment,
+  reactionsById: ReadonlyMap<string, ReadonlyArray<PullRequestReaction>>,
+): PullRequestComment {
+  const reactions = reactionsById.get(item.id);
+  return reactions === undefined ? item : { ...item, reactions };
 }
 
 /** Spread onto a comment or summary only when GitHub reported someone reacting. */
@@ -1181,6 +1238,11 @@ export interface GitHubReviewThreadComments {
   readonly commits: ReadonlyArray<PullRequestCommit>;
   /** What GitHub says the reader may do with this pull request, read off the same response. */
   readonly viewer: { readonly canUpdate: boolean; readonly didAuthor: boolean };
+  /**
+   * Reactor counts for issue comments and reviews, keyed by GraphQL id. `gh pr view --json`
+   * only counts users, so these replace that field wherever Codex (a bot) reacted.
+   */
+  readonly reactionsById: ReadonlyMap<string, ReadonlyArray<PullRequestReaction>>;
 }
 
 /** One thread as this page found it, with what it takes to finish reading it. */
@@ -1204,6 +1266,7 @@ export interface GitHubReviewThreadPage {
   >;
   readonly commits: ReadonlyArray<PullRequestCommit>;
   readonly viewer: { readonly canUpdate: boolean; readonly didAuthor: boolean };
+  readonly reactionsById: ReadonlyMap<string, ReadonlyArray<PullRequestReaction>>;
 }
 
 /**
@@ -1320,6 +1383,10 @@ export function decodeReviewThreadsJson(
       }),
     });
   }
+  const reactionsById = new Map<string, ReadonlyArray<PullRequestReaction>>();
+  collectReactionsById(pullRequest.comments?.nodes ?? [], reactionsById);
+  collectReactionsById(pullRequest.reviews?.nodes ?? [], reactionsById);
+
   return Result.succeed({
     threads: entries,
     nextCursor: nextCursorOf(threads.pageInfo),
@@ -1328,6 +1395,7 @@ export function decodeReviewThreadsJson(
     commitStats,
     commits,
     viewer: toPullRequestViewerFields(pullRequest),
+    reactionsById,
   });
 }
 
@@ -1553,6 +1621,11 @@ export interface GitHubViewerAccess {
   /** GitHub's own `viewerCanUpdate`, true for the author as well as for anyone with write. */
   readonly canUpdate: boolean;
   readonly didAuthor: boolean;
+  /**
+   * Reactions on the pull request itself, counted from `reactors` so a Codex thumbs-up is not
+   * dropped the way `gh pr view --json reactionGroups` drops bots.
+   */
+  readonly reactions?: ReadonlyArray<PullRequestReaction>;
 }
 
 /**
@@ -1564,7 +1637,11 @@ export interface GitHubViewerAccess {
 export const VIEWER_PERMISSIONS_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     viewerPermission
-    pullRequest(number: $number) { viewerCanUpdate viewerDidAuthor }
+    pullRequest(number: $number) {
+      viewerCanUpdate
+      viewerDidAuthor
+      ${GRAPHQL_REACTION_GROUPS}
+    }
   }
 }`;
 
@@ -1573,7 +1650,12 @@ const RawViewerPermissionsSchema = Schema.Struct({
     repository: Schema.Struct({
       viewerPermission: Schema.optional(Schema.NullOr(Schema.String)),
       /** Null for a number that names no pull request the viewer can see. */
-      pullRequest: Schema.NullOr(RawViewerFieldsSchema),
+      pullRequest: Schema.NullOr(
+        Schema.Struct({
+          ...RawViewerFieldsSchema.fields,
+          reactionGroups: Schema.optional(Schema.Array(RawReactionGroupSchema)),
+        }),
+      ),
     }),
   }),
 });
@@ -1591,6 +1673,7 @@ export function decodeViewerPermissionsJson(
   return Result.succeed({
     canWrite: toCanWrite(repository.viewerPermission),
     ...toPullRequestViewerFields(repository.pullRequest),
+    ...reactionFields(repository.pullRequest?.reactionGroups),
   });
 }
 

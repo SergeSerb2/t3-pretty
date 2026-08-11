@@ -13,6 +13,7 @@ import {
   decodeReviewThreadCommentsJson,
   decodeReviewThreadsJson,
   decodeViewerPermissionsJson,
+  overlayReactions,
   reviewThreadConversation,
 } from "./gitHubPullRequestJson.ts";
 
@@ -173,21 +174,8 @@ describe("pull request detail decoding", () => {
     },
   );
 
-  it("keeps GitHub reaction groups on the summary, comments and reviews", () => {
+  it("keeps GitHub reaction groups on comments and reviews", () => {
     const raw = JSON.parse(detailJson) as Record<string, unknown>;
-    const detail = expectSuccess(
-      decodePullRequestDetailJson(
-        JSON.stringify({
-          ...raw,
-          reactionGroups: [
-            { content: "THUMBS_UP", users: { totalCount: 1 } },
-            { content: "EYES", users: { totalCount: 0 } },
-            { content: "SPARKLE", users: { totalCount: 4 } },
-          ],
-        }),
-      ),
-    );
-    expect(detail.reactions).toEqual([{ content: "thumbs_up", count: 1 }]);
 
     const activity = expectSuccess(
       decodePullRequestActivityJson(
@@ -477,6 +465,68 @@ describe("review thread decoding", () => {
     ).toEqual([{ content: "thumbs_up", count: 2 }]);
   });
 
+  it("collects GraphQL reactor counts for issue comments and reviews, which include bots", () => {
+    const result = expectSuccess(
+      decodeReviewThreadsJson(
+        JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: { totalCount: 0, nodes: [] },
+                comments: {
+                  nodes: [
+                    {
+                      id: "c1",
+                      author: { login: "octocat" },
+                      reactionGroups: [
+                        {
+                          content: "THUMBS_UP",
+                          users: { totalCount: 0 },
+                          reactors: { totalCount: 1 },
+                        },
+                      ],
+                    },
+                  ],
+                },
+                reviews: {
+                  nodes: [
+                    {
+                      id: "r1",
+                      reactionGroups: [{ content: "EYES", reactors: { totalCount: 1 } }],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+      ),
+    );
+    expect([...result.reactionsById]).toEqual([
+      ["c1", [{ content: "thumbs_up", count: 1 }]],
+      ["r1", [{ content: "eyes", count: 1 }]],
+    ]);
+  });
+
+  it("replaces gh's user-only count with the GraphQL reactor count", () => {
+    expect(
+      overlayReactions(
+        {
+          id: "c1",
+          kind: "issue-comment" as const,
+          author: null,
+          body: "ok",
+          createdAt: "2026-07-01T00:00:00Z",
+          url: null,
+          path: null,
+          reviewState: null,
+          reactions: [{ content: "thumbs_up", count: 1 }],
+        },
+        new Map([["c1", [{ content: "thumbs_up" as const, count: 2 }]]]),
+      ).reactions,
+    ).toEqual([{ content: "thumbs_up", count: 2 }]);
+  });
+
   it("hands back the cursor the next page of threads carries on from", () => {
     const result = expectSuccess(
       decodeReviewThreadsJson(
@@ -620,6 +670,32 @@ describe("viewer permission decoding", () => {
       canUpdate: true,
       didAuthor: false,
     });
+  });
+
+  it("counts GraphQL reactors on the summary, including when the only reactor is a bot", () => {
+    // `gh pr view --json reactionGroups` reports users.totalCount, which omits GitHub Apps.
+    // Codex Auto Review is chatgpt-codex-connector[bot], so a thumbs-up from it is users:0
+    // and reactors:1. The viewer query asks for reactors for that reason.
+    expect(
+      expectSuccess(
+        decodeViewerPermissionsJson(
+          viewerJson({
+            viewerPermission: "WRITE",
+            pullRequest: {
+              viewerCanUpdate: true,
+              viewerDidAuthor: false,
+              reactionGroups: [
+                { content: "THUMBS_UP", users: { totalCount: 0 }, reactors: { totalCount: 1 } },
+                { content: "EYES", reactors: { totalCount: 1 } },
+              ],
+            },
+          }),
+        ),
+      ).reactions,
+    ).toEqual([
+      { content: "thumbs_up", count: 1 },
+      { content: "eyes", count: 1 },
+    ]);
   });
 });
 
