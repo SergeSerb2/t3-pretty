@@ -17,6 +17,7 @@ import useThemeSource from "../hooks/useTheme.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
+import sceneryLayerSource from "./SceneryLayer.tsx?raw";
 
 // ?raw on a .css module yields "" under the test pipeline (the CSS transform
 // wins), so the stylesheet contract reads the file straight from disk.
@@ -109,6 +110,10 @@ describe("scenery attribution contract", () => {
   it("spaces the Unsplash credit with flex gap so words do not collapse", () => {
     expect(sceneryCssSource).toMatch(/\.scenery-attribution\s*\{[^}]*gap: 0\.3em;/s);
     expect(sceneryCssSource).toMatch(/\.scenery-attribution__prefix\s*\{[^}]*flex-shrink: 0;/s);
+    // Flex gap is visual only; the text nodes keep real spaces so copy,
+    // translation, and stylesheet-less DOM still read "Photo by Name on Unsplash".
+    expect(sceneryLayerSource).toContain(">Photo by </span>");
+    expect(sceneryLayerSource).toContain("> on </span>");
   });
 });
 
