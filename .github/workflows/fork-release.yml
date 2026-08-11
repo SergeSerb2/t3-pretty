@@ -36,29 +36,90 @@ jobs:
       upstream_tag: ${{ steps.release.outputs.upstream_tag }}
       ref: ${{ steps.changelog.outputs.ref || github.sha }}
     steps:
-      - name: Verify runner action externals
+      - name: Ensure runner action externals
         shell: bash
         run: |
           set -euo pipefail
           # Every `uses:` step runs under the runner's own bundled Node. When
-          # that tree goes missing - an interrupted runner self-update, or a
-          # disk sweep that reaps `externals/` - `run:` steps keep working
-          # while every action dies with a bare ENOENT naming the node binary.
-          # Without this guard the first casualty is whichever action follows
-          # the build, so a signed release burns several minutes before
-          # failing. Check it up front instead, and say how to repair it.
+          # that tree goes missing - an interrupted runner self-update, macOS
+          # quarantining the binary, or a disk sweep that reaps `externals/` -
+          # `run:` steps keep working while every action dies with a bare
+          # ENOENT naming the node binary. Without this guard the first
+          # casualty is whichever action follows the build, so a signed
+          # release burns several minutes before failing. Check it up front
+          # and restore the runtime from nodejs.org, so a broken runner costs
+          # one download instead of parking every release until someone
+          # re-extracts the runner package by hand.
           runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
           externals="${runner_root}/externals"
-          node_bin="${externals}/node24/bin/node"
-          if [[ ! -x "$node_bin" ]] || ! "$node_bin" --version >/dev/null 2>&1; then
-            echo "::error::Runner cannot execute actions: ${node_bin} is missing or unusable."
-            echo "Repair on the runner host: stop the runner service, re-extract the"
-            echo "actions-runner release package over ${runner_root} to restore externals/,"
-            echo "then start the service again. No repository change fixes this."
-            ls -la "$externals" 2>/dev/null || echo "externals/ does not exist at ${externals}"
-            exit 1
-          fi
-          echo "Runner externals OK (node $("$node_bin" --version))."
+          case "$(uname -m)" in
+            arm64|aarch64) node_arch=arm64 ;;
+            x86_64) node_arch=x64 ;;
+            *) node_arch="" ;;
+          esac
+
+          node_ok() {
+            [[ -x "$1/bin/node" ]] && "$1/bin/node" --version >/dev/null 2>&1
+          }
+
+          # Deliberately no `set -e` reliance: this is called from an `if`,
+          # which suppresses errexit for the whole call, so every fallible
+          # command has to be checked by hand.
+          restore_node() {
+            local major="$1" dest="$2" base tmp line sha name src
+            [[ -n "$node_arch" ]] || { echo "Unsupported machine $(uname -m)."; return 1; }
+            base="https://nodejs.org/download/release/latest-v${major}.x"
+            tmp="$(mktemp -d)" || return 1
+            echo "Restoring ${dest} from ${base} (darwin-${node_arch})."
+            line="$(curl -fsSL --retry 3 "${base}/SHASUMS256.txt" \
+              | grep -E "node-v${major}\.[0-9.]+-darwin-${node_arch}\.tar\.gz$" | head -n1)"
+            if [[ -z "$line" ]]; then
+              echo "No darwin-${node_arch} build listed for node ${major}.x."
+              rm -rf "$tmp"; return 1
+            fi
+            sha="${line%% *}"
+            name="${line##* }"
+            src="${tmp}/${name%.tar.gz}"
+            if ! curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"; then
+              rm -rf "$tmp"; return 1
+            fi
+            if ! (cd "$tmp" && printf '%s  %s\n' "$sha" "$name" | shasum -a 256 -c - >/dev/null); then
+              echo "Checksum mismatch for ${name}."
+              rm -rf "$tmp"; return 1
+            fi
+            if ! tar -xzf "${tmp}/${name}" -C "$tmp"; then rm -rf "$tmp"; return 1; fi
+            rm -rf "${dest}.repair" "${dest}.broken"
+            if ! mv "$src" "${dest}.repair"; then rm -rf "$tmp"; return 1; fi
+            # A quarantined download is exactly the failure being repaired.
+            xattr -rc "${dest}.repair" >/dev/null 2>&1 || true
+            if [[ -e "$dest" ]] && ! mv "$dest" "${dest}.broken"; then
+              rm -rf "$tmp" "${dest}.repair"; return 1
+            fi
+            if ! mv "${dest}.repair" "$dest"; then rm -rf "$tmp"; return 1; fi
+            rm -rf "${dest}.broken" "$tmp"
+            node_ok "$dest"
+          }
+
+          for runtime in node24 node20; do
+            dest="${externals}/${runtime}"
+            # node20 only matters while some action still declares it. Do not
+            # conjure it onto runners that have already dropped the runtime.
+            if [[ "$runtime" != node24 && ! -d "$dest" ]]; then continue; fi
+            if node_ok "$dest"; then
+              echo "${runtime} OK (node $("${dest}/bin/node" --version))."
+              continue
+            fi
+            echo "::warning::${dest}/bin/node is missing or unusable; restoring it."
+            ls -la "$dest" 2>/dev/null || echo "${dest} does not exist."
+            if ! restore_node "${runtime#node}" "$dest"; then
+              echo "::error::Runner cannot execute actions: ${dest}/bin/node is missing and could not be restored."
+              echo "Repair on the runner host: stop the runner service, re-extract the"
+              echo "actions-runner release package over ${runner_root} to restore externals/,"
+              echo "then start the service again."
+              exit 1
+            fi
+            echo "Restored ${runtime} (node $("${dest}/bin/node" --version))."
+          done
 
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
@@ -225,29 +286,90 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 15
     steps:
-      - name: Verify runner action externals
+      - name: Ensure runner action externals
         shell: bash
         run: |
           set -euo pipefail
           # Every `uses:` step runs under the runner's own bundled Node. When
-          # that tree goes missing - an interrupted runner self-update, or a
-          # disk sweep that reaps `externals/` - `run:` steps keep working
-          # while every action dies with a bare ENOENT naming the node binary.
-          # Without this guard the first casualty is whichever action follows
-          # the build, so a signed release burns several minutes before
-          # failing. Check it up front instead, and say how to repair it.
+          # that tree goes missing - an interrupted runner self-update, macOS
+          # quarantining the binary, or a disk sweep that reaps `externals/` -
+          # `run:` steps keep working while every action dies with a bare
+          # ENOENT naming the node binary. Without this guard the first
+          # casualty is whichever action follows the build, so a signed
+          # release burns several minutes before failing. Check it up front
+          # and restore the runtime from nodejs.org, so a broken runner costs
+          # one download instead of parking every release until someone
+          # re-extracts the runner package by hand.
           runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
           externals="${runner_root}/externals"
-          node_bin="${externals}/node24/bin/node"
-          if [[ ! -x "$node_bin" ]] || ! "$node_bin" --version >/dev/null 2>&1; then
-            echo "::error::Runner cannot execute actions: ${node_bin} is missing or unusable."
-            echo "Repair on the runner host: stop the runner service, re-extract the"
-            echo "actions-runner release package over ${runner_root} to restore externals/,"
-            echo "then start the service again. No repository change fixes this."
-            ls -la "$externals" 2>/dev/null || echo "externals/ does not exist at ${externals}"
-            exit 1
-          fi
-          echo "Runner externals OK (node $("$node_bin" --version))."
+          case "$(uname -m)" in
+            arm64|aarch64) node_arch=arm64 ;;
+            x86_64) node_arch=x64 ;;
+            *) node_arch="" ;;
+          esac
+
+          node_ok() {
+            [[ -x "$1/bin/node" ]] && "$1/bin/node" --version >/dev/null 2>&1
+          }
+
+          # Deliberately no `set -e` reliance: this is called from an `if`,
+          # which suppresses errexit for the whole call, so every fallible
+          # command has to be checked by hand.
+          restore_node() {
+            local major="$1" dest="$2" base tmp line sha name src
+            [[ -n "$node_arch" ]] || { echo "Unsupported machine $(uname -m)."; return 1; }
+            base="https://nodejs.org/download/release/latest-v${major}.x"
+            tmp="$(mktemp -d)" || return 1
+            echo "Restoring ${dest} from ${base} (darwin-${node_arch})."
+            line="$(curl -fsSL --retry 3 "${base}/SHASUMS256.txt" \
+              | grep -E "node-v${major}\.[0-9.]+-darwin-${node_arch}\.tar\.gz$" | head -n1)"
+            if [[ -z "$line" ]]; then
+              echo "No darwin-${node_arch} build listed for node ${major}.x."
+              rm -rf "$tmp"; return 1
+            fi
+            sha="${line%% *}"
+            name="${line##* }"
+            src="${tmp}/${name%.tar.gz}"
+            if ! curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"; then
+              rm -rf "$tmp"; return 1
+            fi
+            if ! (cd "$tmp" && printf '%s  %s\n' "$sha" "$name" | shasum -a 256 -c - >/dev/null); then
+              echo "Checksum mismatch for ${name}."
+              rm -rf "$tmp"; return 1
+            fi
+            if ! tar -xzf "${tmp}/${name}" -C "$tmp"; then rm -rf "$tmp"; return 1; fi
+            rm -rf "${dest}.repair" "${dest}.broken"
+            if ! mv "$src" "${dest}.repair"; then rm -rf "$tmp"; return 1; fi
+            # A quarantined download is exactly the failure being repaired.
+            xattr -rc "${dest}.repair" >/dev/null 2>&1 || true
+            if [[ -e "$dest" ]] && ! mv "$dest" "${dest}.broken"; then
+              rm -rf "$tmp" "${dest}.repair"; return 1
+            fi
+            if ! mv "${dest}.repair" "$dest"; then rm -rf "$tmp"; return 1; fi
+            rm -rf "${dest}.broken" "$tmp"
+            node_ok "$dest"
+          }
+
+          for runtime in node24 node20; do
+            dest="${externals}/${runtime}"
+            # node20 only matters while some action still declares it. Do not
+            # conjure it onto runners that have already dropped the runtime.
+            if [[ "$runtime" != node24 && ! -d "$dest" ]]; then continue; fi
+            if node_ok "$dest"; then
+              echo "${runtime} OK (node $("${dest}/bin/node" --version))."
+              continue
+            fi
+            echo "::warning::${dest}/bin/node is missing or unusable; restoring it."
+            ls -la "$dest" 2>/dev/null || echo "${dest} does not exist."
+            if ! restore_node "${runtime#node}" "$dest"; then
+              echo "::error::Runner cannot execute actions: ${dest}/bin/node is missing and could not be restored."
+              echo "Repair on the runner host: stop the runner service, re-extract the"
+              echo "actions-runner release package over ${runner_root} to restore externals/,"
+              echo "then start the service again."
+              exit 1
+            fi
+            echo "Restored ${runtime} (node $("${dest}/bin/node" --version))."
+          done
 
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
@@ -302,29 +424,90 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 60
     steps:
-      - name: Verify runner action externals
+      - name: Ensure runner action externals
         shell: bash
         run: |
           set -euo pipefail
           # Every `uses:` step runs under the runner's own bundled Node. When
-          # that tree goes missing - an interrupted runner self-update, or a
-          # disk sweep that reaps `externals/` - `run:` steps keep working
-          # while every action dies with a bare ENOENT naming the node binary.
-          # Without this guard the first casualty is whichever action follows
-          # the build, so a signed release burns several minutes before
-          # failing. Check it up front instead, and say how to repair it.
+          # that tree goes missing - an interrupted runner self-update, macOS
+          # quarantining the binary, or a disk sweep that reaps `externals/` -
+          # `run:` steps keep working while every action dies with a bare
+          # ENOENT naming the node binary. Without this guard the first
+          # casualty is whichever action follows the build, so a signed
+          # release burns several minutes before failing. Check it up front
+          # and restore the runtime from nodejs.org, so a broken runner costs
+          # one download instead of parking every release until someone
+          # re-extracts the runner package by hand.
           runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
           externals="${runner_root}/externals"
-          node_bin="${externals}/node24/bin/node"
-          if [[ ! -x "$node_bin" ]] || ! "$node_bin" --version >/dev/null 2>&1; then
-            echo "::error::Runner cannot execute actions: ${node_bin} is missing or unusable."
-            echo "Repair on the runner host: stop the runner service, re-extract the"
-            echo "actions-runner release package over ${runner_root} to restore externals/,"
-            echo "then start the service again. No repository change fixes this."
-            ls -la "$externals" 2>/dev/null || echo "externals/ does not exist at ${externals}"
-            exit 1
-          fi
-          echo "Runner externals OK (node $("$node_bin" --version))."
+          case "$(uname -m)" in
+            arm64|aarch64) node_arch=arm64 ;;
+            x86_64) node_arch=x64 ;;
+            *) node_arch="" ;;
+          esac
+
+          node_ok() {
+            [[ -x "$1/bin/node" ]] && "$1/bin/node" --version >/dev/null 2>&1
+          }
+
+          # Deliberately no `set -e` reliance: this is called from an `if`,
+          # which suppresses errexit for the whole call, so every fallible
+          # command has to be checked by hand.
+          restore_node() {
+            local major="$1" dest="$2" base tmp line sha name src
+            [[ -n "$node_arch" ]] || { echo "Unsupported machine $(uname -m)."; return 1; }
+            base="https://nodejs.org/download/release/latest-v${major}.x"
+            tmp="$(mktemp -d)" || return 1
+            echo "Restoring ${dest} from ${base} (darwin-${node_arch})."
+            line="$(curl -fsSL --retry 3 "${base}/SHASUMS256.txt" \
+              | grep -E "node-v${major}\.[0-9.]+-darwin-${node_arch}\.tar\.gz$" | head -n1)"
+            if [[ -z "$line" ]]; then
+              echo "No darwin-${node_arch} build listed for node ${major}.x."
+              rm -rf "$tmp"; return 1
+            fi
+            sha="${line%% *}"
+            name="${line##* }"
+            src="${tmp}/${name%.tar.gz}"
+            if ! curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"; then
+              rm -rf "$tmp"; return 1
+            fi
+            if ! (cd "$tmp" && printf '%s  %s\n' "$sha" "$name" | shasum -a 256 -c - >/dev/null); then
+              echo "Checksum mismatch for ${name}."
+              rm -rf "$tmp"; return 1
+            fi
+            if ! tar -xzf "${tmp}/${name}" -C "$tmp"; then rm -rf "$tmp"; return 1; fi
+            rm -rf "${dest}.repair" "${dest}.broken"
+            if ! mv "$src" "${dest}.repair"; then rm -rf "$tmp"; return 1; fi
+            # A quarantined download is exactly the failure being repaired.
+            xattr -rc "${dest}.repair" >/dev/null 2>&1 || true
+            if [[ -e "$dest" ]] && ! mv "$dest" "${dest}.broken"; then
+              rm -rf "$tmp" "${dest}.repair"; return 1
+            fi
+            if ! mv "${dest}.repair" "$dest"; then rm -rf "$tmp"; return 1; fi
+            rm -rf "${dest}.broken" "$tmp"
+            node_ok "$dest"
+          }
+
+          for runtime in node24 node20; do
+            dest="${externals}/${runtime}"
+            # node20 only matters while some action still declares it. Do not
+            # conjure it onto runners that have already dropped the runtime.
+            if [[ "$runtime" != node24 && ! -d "$dest" ]]; then continue; fi
+            if node_ok "$dest"; then
+              echo "${runtime} OK (node $("${dest}/bin/node" --version))."
+              continue
+            fi
+            echo "::warning::${dest}/bin/node is missing or unusable; restoring it."
+            ls -la "$dest" 2>/dev/null || echo "${dest} does not exist."
+            if ! restore_node "${runtime#node}" "$dest"; then
+              echo "::error::Runner cannot execute actions: ${dest}/bin/node is missing and could not be restored."
+              echo "Repair on the runner host: stop the runner service, re-extract the"
+              echo "actions-runner release package over ${runner_root} to restore externals/,"
+              echo "then start the service again."
+              exit 1
+            fi
+            echo "Restored ${runtime} (node $("${dest}/bin/node" --version))."
+          done
 
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
@@ -504,7 +687,7 @@ jobs:
     runs-on: [self-hosted, Windows, X64, t3code-fork, release-only]
     timeout-minutes: 60
     steps:
-      - name: Verify runner action externals
+      - name: Ensure runner action externals
         # PowerShell, not bash: this runs before the PATH prep below, and the
         # bash first on this runner's PATH is WSL's, which would resolve
         # RUNNER_TEMP to a Linux path that does not exist.
@@ -515,25 +698,86 @@ jobs:
           # that tree goes missing - an interrupted runner self-update, or a
           # disk sweep that reaps `externals\` - `run:` steps keep working
           # while every action dies with a bare ENOENT naming the node binary.
-          # Fail here, before the build, and say how to repair it.
+          # Check it up front and restore the runtime from nodejs.org, so a
+          # broken runner costs one download instead of parking the release.
           $runnerRoot = (Resolve-Path (Join-Path $env:RUNNER_TEMP "..\..")).Path
           $externals = Join-Path $runnerRoot "externals"
-          $nodeBin = Join-Path $externals "node24\bin\node.exe"
-          $usable = $false
-          if (Test-Path $nodeBin) {
-            & $nodeBin --version *> $null
-            $usable = $LASTEXITCODE -eq 0
+
+          function Test-RunnerNode($dest) {
+            $bin = Join-Path $dest "bin\node.exe"
+            if (-not (Test-Path $bin)) { return $false }
+            # A corrupt image fails to launch at all, which $ErrorActionPreference
+            # would turn into a terminating error instead of a false verdict.
+            try { & $bin --version *> $null } catch { return $false }
+            return $LASTEXITCODE -eq 0
           }
-          if (-not $usable) {
-            Write-Output "::error::Runner cannot execute actions: $nodeBin is missing or unusable."
-            Write-Output "Repair on the runner host: stop the runner service, re-extract the"
-            Write-Output "actions-runner release package over $runnerRoot to restore externals\,"
-            Write-Output "then start the service again. No repository change fixes this."
-            if (Test-Path $externals) { Get-ChildItem $externals | Out-String | Write-Output }
-            else { Write-Output "externals\ does not exist at $externals" }
-            exit 1
+
+          # Log with Write-Host, never Write-Output: anything on the success
+          # stream inside a function becomes part of its return value.
+          function Restore-RunnerNode($major, $dest) {
+            $base = "https://nodejs.org/download/release/latest-v$major.x"
+            $tmp = Join-Path $env:RUNNER_TEMP ("node-restore-" + [guid]::NewGuid().ToString())
+            New-Item -ItemType Directory -Path $tmp | Out-Null
+            try {
+              Write-Host "Restoring $dest from $base (win-x64)."
+              $sums = (Invoke-WebRequest -UseBasicParsing "$base/SHASUMS256.txt").Content -split "`n"
+              $line = $sums | Where-Object { $_ -match "node-v$major\.[0-9.]+-win-x64\.zip\s*$" } | Select-Object -First 1
+              if (-not $line) {
+                Write-Host "No win-x64 build listed for node $major.x."
+                return $false
+              }
+              $parts = $line.Trim() -split "\s+"
+              $sha = $parts[0]
+              $name = $parts[-1]
+              $zip = Join-Path $tmp $name
+              Invoke-WebRequest -UseBasicParsing "$base/$name" -OutFile $zip
+              if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $sha.ToUpper()) {
+                Write-Host "Checksum mismatch for $name."
+                return $false
+              }
+              Expand-Archive -Path $zip -DestinationPath $tmp -Force
+              $src = Join-Path $tmp ($name -replace "\.zip$", "")
+              # The nodejs.org zip keeps node.exe at its root; the runner
+              # looks for it under bin\, the way its own package ships it.
+              New-Item -ItemType Directory -Path (Join-Path $src "bin") -Force | Out-Null
+              Copy-Item (Join-Path $src "node.exe") (Join-Path $src "bin\node.exe") -Force
+              $repair = "$dest.repair"
+              $broken = "$dest.broken"
+              Remove-Item -Recurse -Force $repair, $broken -ErrorAction SilentlyContinue
+              Move-Item $src $repair
+              if (Test-Path $dest) { Move-Item $dest $broken }
+              Move-Item $repair $dest
+              Remove-Item -Recurse -Force $broken -ErrorAction SilentlyContinue
+              return (Test-RunnerNode $dest)
+            } finally {
+              Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+            }
           }
-          Write-Output "Runner externals OK (node $(& $nodeBin --version))."
+
+          foreach ($runtime in @("node24", "node20")) {
+            $dest = Join-Path $externals $runtime
+            # node20 only matters while some action still declares it. Do not
+            # conjure it onto runners that have already dropped the runtime.
+            if ($runtime -ne "node24" -and -not (Test-Path $dest)) { continue }
+            if (Test-RunnerNode $dest) {
+              Write-Output "$runtime OK (node $(& (Join-Path $dest 'bin\node.exe') --version))."
+              continue
+            }
+            Write-Output "::warning::$dest\bin\node.exe is missing or unusable; restoring it."
+            if (Test-Path $dest) { Get-ChildItem $dest | Out-String | Write-Output }
+            else { Write-Output "$dest does not exist." }
+            $restored = $false
+            try { $restored = Restore-RunnerNode ($runtime -replace "node", "") $dest }
+            catch { Write-Output $_.Exception.Message }
+            if (-not $restored) {
+              Write-Output "::error::Runner cannot execute actions: $dest\bin\node.exe is missing and could not be restored."
+              Write-Output "Repair on the runner host: stop the runner service, re-extract the"
+              Write-Output "actions-runner release package over $runnerRoot to restore externals\,"
+              Write-Output "then start the service again."
+              exit 1
+            }
+            Write-Output "Restored $runtime (node $(& (Join-Path $dest 'bin\node.exe') --version))."
+          }
 
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
@@ -667,29 +911,90 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Verify runner action externals
+      - name: Ensure runner action externals
         shell: bash
         run: |
           set -euo pipefail
           # Every `uses:` step runs under the runner's own bundled Node. When
-          # that tree goes missing - an interrupted runner self-update, or a
-          # disk sweep that reaps `externals/` - `run:` steps keep working
-          # while every action dies with a bare ENOENT naming the node binary.
-          # Without this guard the first casualty is whichever action follows
-          # the build, so a signed release burns several minutes before
-          # failing. Check it up front instead, and say how to repair it.
+          # that tree goes missing - an interrupted runner self-update, macOS
+          # quarantining the binary, or a disk sweep that reaps `externals/` -
+          # `run:` steps keep working while every action dies with a bare
+          # ENOENT naming the node binary. Without this guard the first
+          # casualty is whichever action follows the build, so a signed
+          # release burns several minutes before failing. Check it up front
+          # and restore the runtime from nodejs.org, so a broken runner costs
+          # one download instead of parking every release until someone
+          # re-extracts the runner package by hand.
           runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
           externals="${runner_root}/externals"
-          node_bin="${externals}/node24/bin/node"
-          if [[ ! -x "$node_bin" ]] || ! "$node_bin" --version >/dev/null 2>&1; then
-            echo "::error::Runner cannot execute actions: ${node_bin} is missing or unusable."
-            echo "Repair on the runner host: stop the runner service, re-extract the"
-            echo "actions-runner release package over ${runner_root} to restore externals/,"
-            echo "then start the service again. No repository change fixes this."
-            ls -la "$externals" 2>/dev/null || echo "externals/ does not exist at ${externals}"
-            exit 1
-          fi
-          echo "Runner externals OK (node $("$node_bin" --version))."
+          case "$(uname -m)" in
+            arm64|aarch64) node_arch=arm64 ;;
+            x86_64) node_arch=x64 ;;
+            *) node_arch="" ;;
+          esac
+
+          node_ok() {
+            [[ -x "$1/bin/node" ]] && "$1/bin/node" --version >/dev/null 2>&1
+          }
+
+          # Deliberately no `set -e` reliance: this is called from an `if`,
+          # which suppresses errexit for the whole call, so every fallible
+          # command has to be checked by hand.
+          restore_node() {
+            local major="$1" dest="$2" base tmp line sha name src
+            [[ -n "$node_arch" ]] || { echo "Unsupported machine $(uname -m)."; return 1; }
+            base="https://nodejs.org/download/release/latest-v${major}.x"
+            tmp="$(mktemp -d)" || return 1
+            echo "Restoring ${dest} from ${base} (darwin-${node_arch})."
+            line="$(curl -fsSL --retry 3 "${base}/SHASUMS256.txt" \
+              | grep -E "node-v${major}\.[0-9.]+-darwin-${node_arch}\.tar\.gz$" | head -n1)"
+            if [[ -z "$line" ]]; then
+              echo "No darwin-${node_arch} build listed for node ${major}.x."
+              rm -rf "$tmp"; return 1
+            fi
+            sha="${line%% *}"
+            name="${line##* }"
+            src="${tmp}/${name%.tar.gz}"
+            if ! curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"; then
+              rm -rf "$tmp"; return 1
+            fi
+            if ! (cd "$tmp" && printf '%s  %s\n' "$sha" "$name" | shasum -a 256 -c - >/dev/null); then
+              echo "Checksum mismatch for ${name}."
+              rm -rf "$tmp"; return 1
+            fi
+            if ! tar -xzf "${tmp}/${name}" -C "$tmp"; then rm -rf "$tmp"; return 1; fi
+            rm -rf "${dest}.repair" "${dest}.broken"
+            if ! mv "$src" "${dest}.repair"; then rm -rf "$tmp"; return 1; fi
+            # A quarantined download is exactly the failure being repaired.
+            xattr -rc "${dest}.repair" >/dev/null 2>&1 || true
+            if [[ -e "$dest" ]] && ! mv "$dest" "${dest}.broken"; then
+              rm -rf "$tmp" "${dest}.repair"; return 1
+            fi
+            if ! mv "${dest}.repair" "$dest"; then rm -rf "$tmp"; return 1; fi
+            rm -rf "${dest}.broken" "$tmp"
+            node_ok "$dest"
+          }
+
+          for runtime in node24 node20; do
+            dest="${externals}/${runtime}"
+            # node20 only matters while some action still declares it. Do not
+            # conjure it onto runners that have already dropped the runtime.
+            if [[ "$runtime" != node24 && ! -d "$dest" ]]; then continue; fi
+            if node_ok "$dest"; then
+              echo "${runtime} OK (node $("${dest}/bin/node" --version))."
+              continue
+            fi
+            echo "::warning::${dest}/bin/node is missing or unusable; restoring it."
+            ls -la "$dest" 2>/dev/null || echo "${dest} does not exist."
+            if ! restore_node "${runtime#node}" "$dest"; then
+              echo "::error::Runner cannot execute actions: ${dest}/bin/node is missing and could not be restored."
+              echo "Repair on the runner host: stop the runner service, re-extract the"
+              echo "actions-runner release package over ${runner_root} to restore externals/,"
+              echo "then start the service again."
+              exit 1
+            fi
+            echo "Restored ${runtime} (node $("${dest}/bin/node" --version))."
+          done
 
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
