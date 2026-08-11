@@ -122,6 +122,12 @@ import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { applyAttachedFilePathsSuffix } from "../scenery/attachFiles";
+import {
+  getAttachedFilesForThread,
+  restoreAttachedFiles,
+  takeAttachedFilesForThread,
+} from "../scenery/attachedFileStore";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
@@ -5073,6 +5079,7 @@ function ChatViewContent(props: ChatViewProps) {
         composerPreviewAnnotations.length +
         composerCanvasSelections.length +
         composerReviewComments.length,
+      fileAttachmentCount: getAttachedFilesForThread(activeThreadKey).length,
     });
     if (!directAnnotation && showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
@@ -5173,6 +5180,7 @@ function ChatViewContent(props: ChatViewProps) {
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerCanvasSelectionsSnapshot = [...composerCanvasSelections];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
+    const attachedFilesSnapshot = takeAttachedFilesForThread(activeThreadKey);
     const messageTextWithContexts = appendElementContextsToPrompt(
       appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
       composerElementContextsSnapshot,
@@ -5185,14 +5193,17 @@ function ChatViewContent(props: ChatViewProps) {
       (text, selection) => appendCanvasSelectionPrompt(text, selection),
       messageTextWithPreviewAnnotations,
     );
+    // Path attachments bake absolute filepaths into a trailing marker block
+    // the timeline strips from the bubble — same invisible agent-only pattern
+    // as the auto-PR suffix that follows.
+    const messageTextWithAttachedFiles = applyAttachedFilePathsSuffix(
+      appendReviewCommentsToPrompt(messageTextWithCanvasSelections, composerReviewCommentsSnapshot),
+      attachedFilesSnapshot,
+    );
     // The image-only fallback substitutes before the auto-PR suffix so an
     // attachments-only first message still carries the PR instruction.
     const messageTextForSend = applyCreatePullRequestSuffix({
-      text:
-        appendReviewCommentsToPrompt(
-          messageTextWithCanvasSelections,
-          composerReviewCommentsSnapshot,
-        ) || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+      text: messageTextWithAttachedFiles || IMAGE_ONLY_BOOTSTRAP_PROMPT,
       autoCreatePullRequest,
       threadHasStarted: !isFirstMessage,
       model: ctxSelectedModelSelection.model,
@@ -5280,6 +5291,8 @@ function ChatViewContent(props: ChatViewProps) {
     if (!titleSeed) {
       if (firstComposerImageName) {
         titleSeed = `Image: ${firstComposerImageName}`;
+      } else if (attachedFilesSnapshot[0]) {
+        titleSeed = `File: ${attachedFilesSnapshot[0].name}`;
       } else if (composerTerminalContextsSnapshot.length > 0) {
         titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
       } else if (composerElementContextsSnapshot.length > 0) {
@@ -5396,6 +5409,7 @@ function ChatViewContent(props: ChatViewProps) {
         composerImagesRef.current.length === 0 &&
         composerTerminalContextsRef.current.length === 0 &&
         composerElementContextsRef.current.length === 0 &&
+        getAttachedFilesForThread(activeThreadKey).length === 0 &&
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.previewAnnotations
           .length ?? 0) === 0 &&
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.canvasSelections
@@ -5423,6 +5437,9 @@ function ChatViewContent(props: ChatViewProps) {
         setComposerDraftPreviewAnnotations(composerDraftTarget, composerPreviewAnnotationsSnapshot);
         setComposerDraftCanvasSelections(composerDraftTarget, composerCanvasSelectionsSnapshot);
         setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
+        if (activeThreadKey && attachedFilesSnapshot.length > 0) {
+          restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+        }
         composerRef.current?.resetCursorState({
           cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
           prompt: promptForSend,

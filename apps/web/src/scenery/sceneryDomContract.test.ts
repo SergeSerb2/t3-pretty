@@ -74,14 +74,19 @@ describe("composer attach contract with upstream markup", () => {
     expect(chatComposerSource).toContain('data-chat-composer-actions="right"');
   });
 
+  it("the editor chrome the file-chip strip mounts into still exists", () => {
+    expect(chatComposerSource).toContain('data-chat-composer-editor-chrome="true"');
+  });
+
   it("the composer still ingests OS-style Files drops on its drag wrapper", () => {
     expect(chatComposerSource).toContain("onDrop={onComposerDrop}");
     expect(chatComposerSource).toContain('event.dataTransfer.types.includes("Files")');
     expect(chatComposerSource).toContain("void addComposerImages(files)");
   });
 
-  it("the mention drop channel the text-file insert rides still exists", () => {
-    expect(chatComposerSource).toContain("onDropCapture={composerMentionDragHandlers.onDrop}");
+  it("ChatView still bakes attached filepaths into the outgoing prompt", () => {
+    expect(chatViewSource).toContain("applyAttachedFilePathsSuffix");
+    expect(chatViewSource).toContain("takeAttachedFilesForThread");
   });
 });
 

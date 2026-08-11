@@ -18,6 +18,7 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import {
@@ -229,6 +230,7 @@ import { formatProviderSkillDisplayName } from "../../providerSkillPresentation"
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
+import { useAttachedFiles } from "../../scenery/attachedFileStore";
 
 const runtimeModeConfig: Record<
   RuntimeMode,
@@ -731,6 +733,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerCanvasSelections = composerDraft.canvasSelections;
   const composerReviewComments = composerDraft.reviewComments;
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
+  const attachedFileThreadKey = activeThreadId
+    ? scopedThreadKey(scopeThreadRef(environmentId, activeThreadId))
+    : null;
+  const attachedFiles = useAttachedFiles(attachedFileThreadKey);
 
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
@@ -1057,8 +1063,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           composerPreviewAnnotations.length +
           composerCanvasSelections.length +
           composerReviewComments.length,
+        fileAttachmentCount: attachedFiles.length,
       }),
     [
+      attachedFiles.length,
       composerElementContexts.length,
       composerImages.length,
       composerPreviewAnnotations.length,
@@ -2909,6 +2917,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
           <div
             ref={setComposerMenuAnchor}
+            data-chat-composer-editor-chrome="true"
             className={cn(
               "relative px-3 pb-2 sm:px-4",
               hasComposerHeader ? "pt-2.5 sm:pt-3" : "pt-3.5 sm:pt-4",
