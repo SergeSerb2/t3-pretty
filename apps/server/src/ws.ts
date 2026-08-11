@@ -3,7 +3,9 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -60,7 +62,6 @@ import {
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
-import { isManagedProjectFaviconPath } from "@t3tools/shared/projectFavicon";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
@@ -104,6 +105,7 @@ import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import {
   importProjectFavicon,
+  releaseReplacedManagedProjectFavicon,
   removeManagedProjectFaviconFile,
 } from "./project/ProjectFaviconStore.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -381,6 +383,8 @@ const makeWsRpcLayer = (
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
@@ -977,6 +981,16 @@ const makeWsRpcLayer = (
           );
         });
 
+      const lookupProjectFaviconPath = (
+        projectId: ProjectId,
+      ): Effect.Effect<string | null, never, never> =>
+        projectionSnapshotQuery.getProjectShellById(projectId).pipe(
+          Effect.map((project) =>
+            Option.isSome(project) ? (project.value.faviconPath ?? null) : null,
+          ),
+          Effect.orElseSucceed((): string | null => null),
+        );
+
       const dispatchNormalizedCommand = (
         normalizedCommand: OrchestrationCommand,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> => {
@@ -990,9 +1004,45 @@ const makeWsRpcLayer = (
                     toDispatchCommandError(cause, "Failed to dispatch orchestration command"),
                   ),
                 );
+        const dispatchWithFaviconRelease = Effect.gen(function* () {
+          if (
+            normalizedCommand.type === "project.meta.update" &&
+            normalizedCommand.faviconPath !== undefined
+          ) {
+            const previousFaviconPath = yield* lookupProjectFaviconPath(
+              normalizedCommand.projectId,
+            );
+            const result = yield* dispatchEffect;
+            yield* releaseReplacedManagedProjectFavicon({
+              projectId: normalizedCommand.projectId,
+              previousPath: previousFaviconPath,
+              nextPath: normalizedCommand.faviconPath,
+            }).pipe(Effect.ignore);
+            return result;
+          }
+          if (normalizedCommand.type === "project.delete") {
+            const previousFaviconPath = yield* lookupProjectFaviconPath(
+              normalizedCommand.projectId,
+            );
+            const result = yield* dispatchEffect;
+            yield* releaseReplacedManagedProjectFavicon({
+              projectId: normalizedCommand.projectId,
+              previousPath: previousFaviconPath,
+              nextPath: null,
+            }).pipe(Effect.ignore);
+            return result;
+          }
+          return yield* dispatchEffect;
+        });
 
         return startup
-          .enqueueCommand(dispatchEffect)
+          .enqueueCommand(
+            dispatchWithFaviconRelease.pipe(
+              Effect.provideService(FileSystem.FileSystem, fileSystem),
+              Effect.provideService(Path.Path, path),
+              Effect.provideService(ServerConfig.ServerConfig, config),
+            ),
+          )
           .pipe(
             Effect.mapError((cause) =>
               toDispatchCommandError(cause, "Failed to dispatch orchestration command"),
@@ -1877,19 +1927,15 @@ const makeWsRpcLayer = (
                     ),
                   );
               }).pipe(Effect.tapError(() => rollbackNewFile));
-              // Delete only the path this update replaced. Sweeping other
-              // project-icon files can remove a concurrent import that has
-              // not published yet.
-              if (
-                previousFaviconPath &&
-                previousFaviconPath !== imported.faviconPath &&
-                isManagedProjectFaviconPath(previousFaviconPath)
-              ) {
-                yield* removeManagedProjectFaviconFile({
-                  projectId: input.projectId,
-                  faviconPath: previousFaviconPath,
-                }).pipe(Effect.ignore);
-              }
+              // Delete only the previously published file when it is a
+              // different storage target. Sweeping other project-icon files
+              // can remove a concurrent import that has not published yet,
+              // and same-content renames share one file.
+              yield* releaseReplacedManagedProjectFavicon({
+                projectId: input.projectId,
+                previousPath: previousFaviconPath,
+                nextPath: imported.faviconPath,
+              }).pipe(Effect.ignore);
               return { faviconPath: imported.faviconPath };
             }),
             { "rpc.aggregate": "workspace" },

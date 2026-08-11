@@ -13,7 +13,8 @@ import * as Path from "effect/Path";
 import * as ServerConfig from "../config.ts";
 import {
   importProjectFavicon,
-  removeManagedProjectFaviconFile,
+  managedProjectFaviconStorageKey,
+  releaseReplacedManagedProjectFavicon,
   resolveManagedProjectFaviconFile,
   toSafeProjectIconSegment,
 } from "./ProjectFaviconStore.ts";
@@ -119,9 +120,10 @@ describe("ProjectFaviconStore", () => {
         Array.from(Buffer.from(pngBytes)),
       );
 
-      yield* removeManagedProjectFaviconFile({
+      yield* releaseReplacedManagedProjectFavicon({
         projectId,
-        faviconPath: svg.faviconPath,
+        previousPath: svg.faviconPath,
+        nextPath: png.faviconPath,
       });
       expect(
         yield* resolveManagedProjectFaviconFile({
@@ -167,6 +169,62 @@ describe("ProjectFaviconStore", () => {
           faviconPath: second.faviconPath,
         }),
       ).not.toBeNull();
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("keeps the shared file when the same bytes are imported under a new name", () =>
+    Effect.gen(function* () {
+      const projectId = "project-favicon-5";
+      const first = yield* importProjectFavicon({
+        projectId,
+        fileName: "logo.svg",
+        dataUrl: svgDataUrl,
+      });
+      const second = yield* importProjectFavicon({
+        projectId,
+        fileName: "brand.svg",
+        dataUrl: svgDataUrl,
+      });
+
+      expect(second.faviconPath).not.toBe(first.faviconPath);
+      expect(managedProjectFaviconStorageKey(projectId, first.faviconPath)).toBe(
+        managedProjectFaviconStorageKey(projectId, second.faviconPath),
+      );
+
+      yield* releaseReplacedManagedProjectFavicon({
+        projectId,
+        previousPath: first.faviconPath,
+        nextPath: second.faviconPath,
+      });
+      expect(
+        yield* resolveManagedProjectFaviconFile({
+          projectId,
+          faviconPath: second.faviconPath,
+        }),
+      ).not.toBeNull();
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("removes the managed file when the published path is cleared", () =>
+    Effect.gen(function* () {
+      const projectId = "project-favicon-6";
+      const imported = yield* importProjectFavicon({
+        projectId,
+        fileName: "logo.svg",
+        dataUrl: svgDataUrl,
+      });
+
+      yield* releaseReplacedManagedProjectFavicon({
+        projectId,
+        previousPath: imported.faviconPath,
+        nextPath: null,
+      });
+      expect(
+        yield* resolveManagedProjectFaviconFile({
+          projectId,
+          faviconPath: imported.faviconPath,
+        }),
+      ).toBeNull();
     }).pipe(Effect.provide(testLayer)),
   );
 });

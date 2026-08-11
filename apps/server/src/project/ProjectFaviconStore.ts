@@ -64,6 +64,18 @@ function storedFileName(segment: string, revision: string, extension: string): s
   return `${segment}.${revision}${extension}`;
 }
 
+/** Disk identity for a managed icon: project segment, content hash, and extension. */
+export function managedProjectFaviconStorageKey(
+  projectId: string,
+  faviconPath: string | null | undefined,
+): string | null {
+  if (!faviconPath) return null;
+  const parsed = parseManagedProjectFaviconPath(faviconPath);
+  const segment = toSafeProjectIconSegment(projectId);
+  if (!parsed || !segment) return null;
+  return storedFileName(segment, parsed.revision, parsed.extension);
+}
+
 const resolveStoredIconPath = Effect.fn("ProjectFaviconStore.resolveStoredIconPath")(function* (
   faviconPath: string,
   projectId: string,
@@ -127,6 +139,27 @@ export const removeManagedProjectFaviconFile = Effect.fn(
   yield* optionOnNotFound(fileSystem.remove(resolved.candidate)).pipe(
     Effect.orElseSucceed(() => Option.none()),
   );
+});
+
+/**
+ * Drop the previously published managed file when the project stops pointing
+ * at it. Same-content renames share one file, so those are left in place.
+ */
+export const releaseReplacedManagedProjectFavicon = Effect.fn(
+  "ProjectFaviconStore.releaseReplacedManagedProjectFavicon",
+)(function* (input: {
+  readonly projectId: string;
+  readonly previousPath: string | null | undefined;
+  readonly nextPath: string | null | undefined;
+}) {
+  if (!input.previousPath) return;
+  const previousKey = managedProjectFaviconStorageKey(input.projectId, input.previousPath);
+  const nextKey = managedProjectFaviconStorageKey(input.projectId, input.nextPath);
+  if (!previousKey || previousKey === nextKey) return;
+  yield* removeManagedProjectFaviconFile({
+    projectId: input.projectId,
+    faviconPath: input.previousPath,
+  });
 });
 
 export const importProjectFavicon = Effect.fn("ProjectFaviconStore.importProjectFavicon")(
