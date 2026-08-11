@@ -88,6 +88,22 @@ describe("composer attach contract with upstream markup", () => {
     expect(chatViewSource).toContain("applyAttachedFilePathsSuffix");
     expect(chatViewSource).toContain("takeAttachedFilesForThread");
   });
+
+  it("plan follow-up send also bakes attached filepaths before starting the turn", () => {
+    const followUpFnStart = chatViewSource.indexOf("const onSubmitPlanFollowUp = useCallback");
+    expect(followUpFnStart).toBeGreaterThan(-1);
+    const nextCallback = chatViewSource.indexOf(
+      "const onImplementPlanInNewThread = useCallback",
+      followUpFnStart,
+    );
+    const followUpSlice = chatViewSource.slice(
+      followUpFnStart,
+      nextCallback === -1 ? followUpFnStart + 8000 : nextCallback,
+    );
+    expect(followUpSlice).toContain("takeAttachedFilesForThread(activeThreadKey)");
+    expect(followUpSlice).toContain("applyAttachedFilePathsSuffix");
+    expect(followUpSlice).toContain("restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot)");
+  });
 });
 
 describe("glass contract with upstream chrome", () => {

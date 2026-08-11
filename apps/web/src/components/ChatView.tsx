@@ -5675,6 +5675,12 @@ function ChatViewContent(props: ChatViewProps) {
         selectedModelSelection: ctxSelectedModelSelection,
       } = sendCtx;
 
+      // Same path-suffix bake as the normal composer send — plan follow-up
+      // used to return before takeAttachedFilesForThread ran, so refine /
+      // implement with a file chip dropped the attachment entirely.
+      const attachedFilesSnapshot = takeAttachedFilesForThread(activeThreadKey);
+      const textWithAttachedFiles = applyAttachedFilePathsSuffix(trimmed, attachedFilesSnapshot);
+
       const threadIdForSend = activeThread.id;
       const messageIdForSend = newMessageId();
       const messageCreatedAt = new Date().toISOString();
@@ -5683,7 +5689,7 @@ function ChatViewContent(props: ChatViewProps) {
         model: ctxSelectedModel,
         models: ctxSelectedProviderModels,
         effort: ctxSelectedPromptEffort,
-        text: trimmed,
+        text: textWithAttachedFiles,
       });
 
       sendInFlightRef.current = true;
@@ -5775,6 +5781,9 @@ function ChatViewContent(props: ChatViewProps) {
       setOptimisticUserMessages((existing) =>
         existing.filter((message) => message.id !== messageIdForSend),
       );
+      if (activeThreadKey && attachedFilesSnapshot.length > 0) {
+        restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+      }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
         setThreadError(
@@ -5787,6 +5796,7 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [
       activeThread,
+      activeThreadKey,
       activeProposedPlan,
       acknowledgeActiveThreadWoke,
       beginLocalDispatch,
