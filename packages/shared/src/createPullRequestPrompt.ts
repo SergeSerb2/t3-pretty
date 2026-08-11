@@ -39,7 +39,9 @@ export const CREATE_PULL_REQUEST_CLOSE_MARKER = `</${CREATE_PULL_REQUEST_TAG}>`;
 const OPEN_TAG = CREATE_PULL_REQUEST_OPEN_MARKER;
 const CLOSE_TAG = CREATE_PULL_REQUEST_CLOSE_MARKER;
 
-const GUIDELINES = `Guidelines:
+function buildGuidelines(model: string | null | undefined): string {
+  const selectedModel = model?.trim();
+  return `Guidelines:
 - If the current branch IS the repository's default branch (e.g. main), first create a feature branch for this work — never commit or push directly to the default branch.
 - Before opening the PR, bring this worktree/branch up to date: fetch origin and merge (or rebase) the repository's default branch (usually origin/main) into the current branch, resolving any conflicts sensibly.
 - Review the full diff of this branch before writing anything.
@@ -47,7 +49,14 @@ const GUIDELINES = `Guidelines:
 - Push the branch and open the PR against the repository's default branch.
 - Use a concise, imperative PR title.
 - In the PR body, summarize what changed and why, and note how it was verified.
-- Follow the repository's PR template and contribution guidelines if present.`;
+- Follow the repository's PR template and contribution guidelines if present.${
+    selectedModel
+      ? `\n- T3 Code recorded the current thread's selected model as ${JSON.stringify(selectedModel)}. If the PR body identifies the model, copy this exact identifier; do not infer or substitute a different model or version.`
+      : ""
+  }`;
+}
+
+const GUIDELINES = buildGuidelines(undefined);
 
 /** Sent on its own when the user asks for a PR without other work. */
 export const CREATE_PULL_REQUEST_PROMPT = `Please create a pull request for the work in this session.
@@ -59,13 +68,17 @@ ${GUIDELINES}`;
  * blank lines separate it from the user's own text; the marker tags let the
  * timeline strip it before rendering the bubble.
  */
-export const CREATE_PULL_REQUEST_MESSAGE_SUFFIX = `
+export function buildCreatePullRequestMessageSuffix(model?: string | null | undefined): string {
+  return `
 
 ${OPEN_TAG}
 When you finish the work above, also create a pull request for it.
 
-${GUIDELINES}
+${buildGuidelines(model)}
 ${CLOSE_TAG}`;
+}
+
+export const CREATE_PULL_REQUEST_MESSAGE_SUFFIX = buildCreatePullRequestMessageSuffix();
 
 /**
  * Appends the auto-PR instruction when it applies. Empty drafts are left alone
@@ -81,6 +94,7 @@ export function applyCreatePullRequestSuffix(input: {
   readonly text: string;
   readonly autoCreatePullRequest: boolean;
   readonly threadHasStarted: boolean;
+  readonly model?: string | null | undefined;
 }): string {
   if (
     !input.autoCreatePullRequest ||
@@ -90,7 +104,7 @@ export function applyCreatePullRequestSuffix(input: {
   ) {
     return input.text;
   }
-  return input.text + CREATE_PULL_REQUEST_MESSAGE_SUFFIX;
+  return input.text + buildCreatePullRequestMessageSuffix(input.model);
 }
 
 /**
