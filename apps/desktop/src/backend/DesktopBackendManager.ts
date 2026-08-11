@@ -61,6 +61,14 @@ const MAX_RESTART_DELAY = Duration.seconds(10);
 // self-heal for a while but must not leave the app connecting forever.
 const MAX_PREFLIGHT_FAILURE_ATTEMPTS = 5;
 const DEFAULT_BACKEND_READINESS_TIMEOUT = Duration.minutes(1);
+// A missed bootstrap readiness budget does not mean a dead backend: a slow
+// first launch on Windows (AV scanning the unpacked asar, provider CLI
+// discovery) can push the first HTTP bind past a minute while the process
+// stays healthy. After onReadinessFailure reports the initial timeout, the
+// readiness watch continues for this much longer so a late backend still
+// opens the window instead of stranding the user with no UI. Process death
+// is handled by the exit watcher, not by this probe.
+const EXTENDED_BACKEND_READINESS_TIMEOUT = Duration.minutes(10);
 const DEFAULT_BACKEND_READINESS_INTERVAL = Duration.millis(100);
 const DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT = Duration.seconds(1);
 const DEFAULT_BACKEND_TERMINATE_GRACE = Duration.seconds(2);
@@ -563,16 +571,35 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
       ).pipe(Effect.forkScoped),
     );
   }
-  yield* waitForHttpReady({
-    executablePath: options.executablePath,
-    entryPath: options.entryPath,
-    cwd: options.cwd,
-    httpBaseUrl: options.httpBaseUrl,
-    timeout: options.readinessTimeout ?? DEFAULT_BACKEND_READINESS_TIMEOUT,
-  }).pipe(
+  const readinessProbe = (timeout: Duration.Duration) =>
+    waitForHttpReady({
+      executablePath: options.executablePath,
+      entryPath: options.entryPath,
+      cwd: options.cwd,
+      httpBaseUrl: options.httpBaseUrl,
+      timeout,
+    });
+  yield* readinessProbe(options.readinessTimeout ?? DEFAULT_BACKEND_READINESS_TIMEOUT).pipe(
     Effect.tap(() => options.onReady?.() ?? Effect.void),
     Effect.catchTags({
-      BackendReadinessTimeoutError: (error) => options.onReadinessFailure?.(error) ?? Effect.void,
+      BackendReadinessTimeoutError: Effect.fn("desktop.backendProcess.extendedReadinessWatch")(
+        function* (error) {
+          yield* options.onReadinessFailure?.(error) ?? Effect.void;
+          // The initial budget elapsed but the child is still running. Keep
+          // watching (see EXTENDED_BACKEND_READINESS_TIMEOUT) so the window
+          // still opens when a slow backend binds late.
+          yield* readinessProbe(EXTENDED_BACKEND_READINESS_TIMEOUT).pipe(
+            Effect.tap(() => options.onReady?.() ?? Effect.void),
+            Effect.catchTags({
+              BackendReadinessTimeoutError: (extendedError) =>
+                logBackendProcessWarning("desktop backend never became ready", {
+                  readinessUrl: extendedError.readinessUrl.href,
+                  timeoutMs: extendedError.timeoutMs,
+                }),
+            }),
+          );
+        },
+      ),
     }),
     Effect.forkScoped,
   );
