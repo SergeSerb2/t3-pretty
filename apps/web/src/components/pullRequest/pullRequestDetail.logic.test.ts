@@ -413,6 +413,7 @@ describe("pull request timeline", () => {
 
 describe("fix findings handoff", () => {
   const base = {
+    provider: "github" as const,
     number: 42,
     title: "Add the pull requests page",
     url: "https://github.com/pingdotgg/t3code/pull/42",
@@ -473,6 +474,31 @@ describe("fix findings handoff", () => {
     expect(handoff.prompt).toContain("resolveReviewThread");
     expect(handoff.prompt).toContain("Thread id: `t1`");
     expect(handoff.prompt).toContain("Leaving fixed findings unresolved is incomplete");
+  });
+
+  it("names the host's own resolve path instead of always pointing at GitHub", () => {
+    const gitlab = buildFixFindingsHandoff({
+      ...base,
+      provider: "gitlab",
+      url: "https://gitlab.com/acme/app/-/merge_requests/42",
+      reviewThreads: [thread("rename the helper")],
+      checks: [],
+    });
+    expect(gitlab.prompt).toContain("glab api");
+    expect(gitlab.prompt).toContain('"resolved":true');
+    expect(gitlab.prompt).toContain("Thread id: `t1`");
+    expect(gitlab.prompt).not.toContain("resolveReviewThread");
+
+    const bitbucket = buildFixFindingsHandoff({
+      ...base,
+      provider: "bitbucket",
+      url: "https://bitbucket.org/acme/app/pull-requests/42",
+      reviewThreads: [thread("rename the helper")],
+      checks: [],
+    });
+    expect(bitbucket.prompt).toContain("/resolve");
+    expect(bitbucket.prompt).not.toContain("resolveReviewThread");
+    expect(bitbucket.prompt).not.toContain("gh api graphql");
   });
 
   it("names the pre-change side, and a thread the host pinned to the file rather than a line", () => {
@@ -552,6 +578,7 @@ describe("fix findings handoff", () => {
 
 describe("findings that cannot be attached", () => {
   const base = {
+    provider: "github" as const,
     number: 42,
     title: "Add the pull requests page",
     url: "https://github.com/pingdotgg/t3code/pull/42",
