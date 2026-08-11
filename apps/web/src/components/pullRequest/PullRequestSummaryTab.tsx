@@ -7,7 +7,7 @@ import {
   SendIcon,
   UsersIcon,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 
 import { useAtomCommand } from "~/state/use-atom-command";
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -29,12 +29,16 @@ import {
 import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import {
-  orderPullRequestComments,
+  countResolvedReviewThreads,
+  countUnresolvedReviewThreads,
+  describePullRequestConversationSummary,
+  groupPullRequestConversation,
   pullRequestFindingKey,
   type PullRequestFinding,
 } from "./pullRequestDetail.logic";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
+import { ReviewThreadCard } from "./PullRequestReviewAnnotation";
 
 function MetaRow({
   icon,
@@ -191,20 +195,50 @@ export function PullRequestSummaryTab({
   // rather than wherever the last one had been read back to.
   const [shown, setShown] = useState({ url: detail.url, count: COMMENT_PAGE });
   const shownComments = shown.url === detail.url ? shown.count : COMMENT_PAGE;
-  // Windowed by recency regardless of display order: expanding always reaches further back in
-  // time, whether the newest comment currently reads first or last.
-  const recentComments = detail.comments.slice(Math.max(0, detail.comments.length - shownComments));
-  const hiddenCommentCount = detail.comments.length - recentComments.length;
   const [commentOrder, setCommentOrder] = useState<"newest" | "oldest">("newest");
-  const visibleComments = orderPullRequestComments(recentComments, commentOrder);
+  const [hideResolved, setHideResolved] = useState(false);
+  const [threadPending, setThreadPending] = useState(false);
+  const replyToThread = useAtomCommand(pullRequestEnvironment.replyToThread, {
+    reportFailure: false,
+  });
+  const setThreadResolution = useAtomCommand(pullRequestEnvironment.setThreadResolution, {
+    reportFailure: false,
+  });
 
-  // A comment that already lives on a review thread is that thread: the thread carries the line
-  // and side the bare comment has lost, and a resolved one is finished work nobody should be
-  // invited to fix again — the same call the whole-review hand-off makes.
-  const threadByCommentId = new Map(
-    detail.reviewThreads.flatMap((thread) =>
-      thread.comments.map((comment) => [comment.id, thread] as const),
-    ),
+  const unresolvedThreadCount = countUnresolvedReviewThreads(detail.reviewThreads);
+  const resolvedThreadCount = countResolvedReviewThreads(detail.reviewThreads);
+  // Grouped newest-first so a thread sits at its latest remark, then windowed by recency:
+  // expanding always reaches further back in time, whether the page currently reads newest
+  // or oldest first.
+  const conversationItems = groupPullRequestConversation(
+    detail.comments,
+    detail.reviewThreads,
+    "newest",
+  );
+  const visibleItems = hideResolved
+    ? conversationItems.filter((item) => item.kind === "comment" || !item.thread.isResolved)
+    : conversationItems;
+  const recentItems = visibleItems.slice(0, shownComments);
+  const hiddenCommentCount = visibleItems.length - recentItems.length;
+  const visibleComments = commentOrder === "newest" ? recentItems : recentItems.toReversed();
+
+  const canReply = detail.capabilities.review.reply && detail.viewerPermissions.comment;
+  const canResolve = detail.capabilities.review.resolve && detail.viewerPermissions.resolve;
+
+  const runThreadCommand = useCallback(
+    async (label: string, run: () => Promise<{ readonly _tag: string }>): Promise<boolean> => {
+      if (threadPending) return false;
+      setThreadPending(true);
+      const result = await run();
+      setThreadPending(false);
+      if (result._tag === "Failure") {
+        toastManager.add({ type: "error", title: label });
+        return false;
+      }
+      onRefresh();
+      return true;
+    },
+    [onRefresh, threadPending],
   );
 
   const openCheck = (url: string) => {
@@ -266,9 +300,11 @@ export function PullRequestSummaryTab({
               ? "Loading conversation…"
               : activityError
                 ? "Conversation unavailable"
-                : detail.commentCount === 1
-                  ? "1 comment"
-                  : `${detail.commentCount} comments`}
+                : describePullRequestConversationSummary({
+                    commentCount: detail.commentCount,
+                    unresolvedThreadCount,
+                    resolvedThreadCount,
+                  })}
           </MetaRow>
         </div>
       </section>
@@ -334,20 +370,39 @@ export function PullRequestSummaryTab({
         {...(activityPending || activityError ? {} : { count: detail.commentCount })}
         actions={
           !activityPending && !activityError && detail.comments.length > 0 ? (
-            <Button
-              size="xs"
-              variant="ghost"
-              className="h-7 shrink-0 px-2 text-[10px] text-muted-foreground"
-              aria-label={
-                commentOrder === "newest"
-                  ? "Show oldest comments first"
-                  : "Show newest comments first"
-              }
-              onClick={() => setCommentOrder((value) => (value === "newest" ? "oldest" : "newest"))}
-            >
-              <ArrowDownUpIcon aria-hidden className="size-3" />
-              {commentOrder === "newest" ? "Newest first" : "Oldest first"}
-            </Button>
+            <span className="flex shrink-0 items-center gap-1">
+              {resolvedThreadCount > 0 ? (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="h-7 px-2 text-[10px] text-muted-foreground"
+                  aria-label={
+                    hideResolved
+                      ? "Show resolved review conversations"
+                      : "Hide resolved review conversations"
+                  }
+                  onClick={() => setHideResolved((value) => !value)}
+                >
+                  {hideResolved ? "Show resolved" : "Hide resolved"}
+                </Button>
+              ) : null}
+              <Button
+                size="xs"
+                variant="ghost"
+                className="h-7 px-2 text-[10px] text-muted-foreground"
+                aria-label={
+                  commentOrder === "newest"
+                    ? "Show oldest comments first"
+                    : "Show newest comments first"
+                }
+                onClick={() =>
+                  setCommentOrder((value) => (value === "newest" ? "oldest" : "newest"))
+                }
+              >
+                <ArrowDownUpIcon aria-hidden className="size-3" />
+                {commentOrder === "newest" ? "Newest first" : "Oldest first"}
+              </Button>
+            </span>
           ) : null
         }
       >
@@ -365,6 +420,10 @@ export function PullRequestSummaryTab({
             ) : null}
             {detail.comments.length === 0 ? (
               <p className="py-2 text-xs text-muted-foreground">No comments yet.</p>
+            ) : visibleComments.length === 0 ? (
+              <p className="py-2 text-xs text-muted-foreground">
+                Resolved review conversations are hidden.
+              </p>
             ) : (
               <div className="space-y-3">
                 {hiddenCommentCount > 0 ? (
@@ -383,16 +442,52 @@ export function PullRequestSummaryTab({
                     {hiddenCommentCount === 1 ? "comment" : "comments"}
                   </Button>
                 ) : null}
-                {visibleComments.map((comment) => {
-                  const thread = threadByCommentId.get(comment.id);
+                {visibleComments.map((item) => {
+                  if (item.kind === "thread") {
+                    const thread = item.thread;
+                    return (
+                      <ReviewThreadCard
+                        key={thread.id}
+                        className="mx-0 my-0"
+                        thread={thread}
+                        workspaceRoot={detail.workspaceRoot}
+                        canReply={canReply}
+                        canResolve={canResolve}
+                        pending={threadPending}
+                        fixPending={
+                          pendingFinding === pullRequestFindingKey({ kind: "thread", thread })
+                        }
+                        {...(onFixFinding
+                          ? { onFix: () => onFixFinding({ kind: "thread", thread }) }
+                          : {})}
+                        onReply={(body) =>
+                          runThreadCommand("Reply could not be posted", () =>
+                            replyToThread({
+                              environmentId,
+                              input: { ...reference, threadId: thread.id, body },
+                            }),
+                          )
+                        }
+                        onToggleResolved={() =>
+                          void runThreadCommand("The conversation could not be updated", () =>
+                            setThreadResolution({
+                              environmentId,
+                              input: {
+                                ...reference,
+                                threadId: thread.id,
+                                resolved: !thread.isResolved,
+                              },
+                            }),
+                          )
+                        }
+                      />
+                    );
+                  }
+                  const comment = item.comment;
                   const finding: PullRequestFinding | null =
                     comment.kind !== "review" && comment.kind !== "review-comment"
                       ? null
-                      : thread === undefined
-                        ? { kind: "comment", comment }
-                        : thread.isResolved
-                          ? null
-                          : { kind: "thread", thread };
+                      : { kind: "comment", comment };
                   return (
                     <article
                       key={comment.id}

@@ -42,6 +42,8 @@ T3 Code works with the platforms your team already uses:
 - Open several reviews from the **Pull requests** page as tabs in the right panel
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation
+- Resolved review conversations collapse in the pull request conversation and on the diff, so you
+  can see which comments are done without opening GitHub. Hide them entirely with **Hide resolved**
 - Open the review directly in your browser with one click
 - Check out a teammate's branch to review code locally
 
