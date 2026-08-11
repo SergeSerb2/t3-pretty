@@ -218,7 +218,7 @@ function buildRepositoryIdentity(input: {
   readonly groupingRemoteUrl: string;
   readonly remoteName: string;
   readonly remoteUrl: string;
-  readonly fallbackProviderUrl?: string;
+  readonly fallbackProviderUrl?: string | undefined;
   readonly rootPath: string;
 }): RepositoryIdentity {
   const canonicalKey = normalizeGitRemoteUrl(input.groupingRemoteUrl);

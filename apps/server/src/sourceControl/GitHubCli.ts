@@ -388,7 +388,9 @@ export const make = Effect.gen(function* () {
                   }
 
                   return Effect.succeed(
-                    decoded.success.map(({ updatedAt: _updatedAt, ...summary }) => summary),
+                    decoded.success.map(
+                      ({ updatedAt: _updatedAt, mergedAt: _mergedAt, ...summary }) => summary,
+                    ),
                   );
                 }),
               ),
@@ -420,7 +422,9 @@ export const make = Effect.gen(function* () {
               }
 
               return Effect.succeed(
-                (({ updatedAt: _updatedAt, ...summary }) => summary)(decoded.success),
+                (({ updatedAt: _updatedAt, mergedAt: _mergedAt, ...summary }) => summary)(
+                  decoded.success,
+                ),
               );
             }),
           ),

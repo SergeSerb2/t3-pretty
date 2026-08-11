@@ -42,7 +42,7 @@ export function clampBlur(value: number): number {
  */
 export type SceneryInkMode = "auto" | "light" | "dark" | "off";
 
-const INK_MODES: ReadonlyArray<SceneryInkMode> = ["auto", "light", "dark", "off"];
+const INK_MODES: ReadonlySet<SceneryInkMode> = new Set(["auto", "light", "dark", "off"]);
 
 /**
  * How many of the most recent assignments a random pick avoids repeating.
@@ -268,7 +268,7 @@ export const useSceneryStore = create<SceneryStoreState>()(
       },
       setTranslucency: (value) => set(() => ({ translucency: clampTranslucency(value) })),
       setBlur: (value) => set(() => ({ blur: clampBlur(value) })),
-      setInkMode: (mode) => set(() => ({ inkMode: INK_MODES.includes(mode) ? mode : "auto" })),
+      setInkMode: (mode) => set(() => ({ inkMode: INK_MODES.has(mode) ? mode : "auto" })),
       removeThread: (threadKey) =>
         set((state) => {
           if (!(threadKey in state.assignments)) {

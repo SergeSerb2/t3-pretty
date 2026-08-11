@@ -1,3 +1,4 @@
+import { it as effectIt } from "@effect/vitest";
 import {
   CommandId,
   EventId,
@@ -104,10 +105,10 @@ describe("orchestration projector", () => {
     ]);
   });
 
-  it("changes the branch event token when a branch name is reused", async () => {
-    const now = "2026-01-01T00:00:00.000Z";
-    const created = await Effect.runPromise(
-      projectEvent(
+  effectIt.effect("changes the branch event token when a branch name is reused", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const created = yield* projectEvent(
         createEmptyReadModel(now),
         makeEvent({
           sequence: 1,
@@ -131,10 +132,8 @@ describe("orchestration projector", () => {
             updatedAt: now,
           },
         }),
-      ),
-    );
-    const changed = await Effect.runPromise(
-      projectEvent(
+      );
+      const changed = yield* projectEvent(
         created,
         makeEvent({
           sequence: 2,
@@ -149,10 +148,8 @@ describe("orchestration projector", () => {
             updatedAt: now,
           },
         }),
-      ),
-    );
-    const reused = await Effect.runPromise(
-      projectEvent(
+      );
+      const reused = yield* projectEvent(
         changed,
         makeEvent({
           sequence: 3,
@@ -167,13 +164,13 @@ describe("orchestration projector", () => {
             updatedAt: now,
           },
         }),
-      ),
-    );
+      );
 
-    expect(changed.threads[0]?.branchEventId).toBe("event-2");
-    expect(reused.threads[0]?.branch).toBe("feature/a");
-    expect(reused.threads[0]?.branchEventId).toBe("event-3");
-  });
+      expect(changed.threads[0]?.branchEventId).toBe("event-2");
+      expect(reused.threads[0]?.branch).toBe("feature/a");
+      expect(reused.threads[0]?.branchEventId).toBe("event-3");
+    }),
+  );
 
   it("fails when event payload cannot be decoded by runtime schema", async () => {
     const now = "2026-01-01T00:00:00.000Z";
