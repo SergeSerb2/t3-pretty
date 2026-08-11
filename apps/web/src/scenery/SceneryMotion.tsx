@@ -14,10 +14,11 @@
  *
  * 2. Thinking orbs — canvas dot indicators (vendored thinking-orbs, MIT)
  *    portaled into the "Working…" row (replacing the pulse dots), the
- *    scroll-to-end pill, and the draft hero. The orb's verb is inferred
- *    from the newest timeline row, so the indicator narrates what the
- *    agent is doing: searching a globe while reading, weaving strands
- *    while editing, listening while an approval waits.
+ *    scroll-to-end pill, and the draft hero. Sidebar working threads stay
+ *    text-only. The orb's verb is inferred from the newest timeline row,
+ *    so the indicator narrates what the agent is doing: searching a globe
+ *    while reading, weaving strands while editing, listening while an
+ *    approval waits.
  *
  * 3. The html[data-scenery-motion] gate every motion.css rule hangs off,
  *    bound to the quick-settings Motion toggle.
@@ -35,13 +36,10 @@ import {
   mutationsRequireSceneryMotionSync,
   PILL_SELECTOR,
   ROW_WRAPPER_SELECTOR,
-  SIDEBAR_ICON_SELECTOR,
   WORKING_ROW_SELECTOR,
 } from "./sceneryMotionMutations";
 import "./motion.css";
 
-/** Bound on concurrent static sidebar orb canvases. */
-const SIDEBAR_ORB_CAP = 12;
 const ENTER_CLASS = "scenery-row-enter";
 const ENTER_DELAY_PROP = "--sc-enter-delay";
 const DIP_CLASS = "scenery-orb-dip";
@@ -67,19 +65,12 @@ interface OrbSlots {
   readonly working: HTMLElement | null;
   readonly pill: HTMLElement | null;
   readonly hero: HTMLElement | null;
-  readonly sidebar: ReadonlyArray<HTMLElement>;
 }
 
-const NO_SLOTS: OrbSlots = { working: null, pill: null, hero: null, sidebar: [] };
+const NO_SLOTS: OrbSlots = { working: null, pill: null, hero: null };
 
 function sameSlots(left: OrbSlots, right: OrbSlots): boolean {
-  return (
-    left.working === right.working &&
-    left.pill === right.pill &&
-    left.hero === right.hero &&
-    left.sidebar.length === right.sidebar.length &&
-    left.sidebar.every((slot, index) => slot === right.sidebar[index])
-  );
+  return left.working === right.working && left.pill === right.pill && left.hero === right.hero;
 }
 
 function orbStateForToolHeading(heading: string): OrbState {
@@ -166,7 +157,6 @@ export function SceneryMotion() {
 
     const seenRowIds = new Set<string>();
     const managedSlots = new Map<string, HTMLElement>();
-    const sidebarSlots = new Map<Element, HTMLElement>();
     const orbHold = { state: "working" as OrbState, since: 0 };
     let holdTimer: number | null = null;
     let queued = false;
@@ -268,32 +258,7 @@ export function SceneryMotion() {
         }
       }
 
-      // Sidebar: every working thread's CircleDashedIcon yields to an orb.
-      const sidebarIcons = [
-        ...document.querySelectorAll<SVGSVGElement>(SIDEBAR_ICON_SELECTOR),
-      ].slice(0, SIDEBAR_ORB_CAP);
-      const sidebar: HTMLElement[] = [];
-      for (const icon of sidebarIcons) {
-        const parent = icon.parentElement;
-        if (!parent) {
-          continue;
-        }
-        const slot = sidebarSlots.get(icon) ?? document.createElement("span");
-        slot.className = "scenery-orb-slot scenery-orb-slot--sidebar";
-        if (slot.nextElementSibling !== icon) {
-          parent.insertBefore(slot, icon);
-        }
-        sidebarSlots.set(icon, slot);
-        sidebar.push(slot);
-      }
-      for (const [icon, slot] of sidebarSlots) {
-        if (!icon.isConnected || !sidebarIcons.includes(icon as SVGSVGElement)) {
-          slot.remove();
-          sidebarSlots.delete(icon);
-        }
-      }
-
-      return { working, pill, hero, sidebar };
+      return { working, pill, hero };
     };
 
     const commitOrbState = (next: OrbState) => {
@@ -369,9 +334,6 @@ export function SceneryMotion() {
       for (const slot of managedSlots.values()) {
         slot.remove();
       }
-      for (const slot of sidebarSlots.values()) {
-        slot.remove();
-      }
       setSlots(NO_SLOTS);
       document.documentElement.removeAttribute("data-scenery-motion");
     };
@@ -405,22 +367,6 @@ export function SceneryMotion() {
             slots.hero,
           )
         : null}
-      {slots.sidebar.map((slot, index) =>
-        createPortal(
-          // Sidebar rows only know "working" — the verb inference above
-          // reads the active thread's timeline, which other threads lack.
-          <ThinkingOrb
-            state="working"
-            size={20}
-            theme={orbTheme}
-            paused
-            style={{ width: 16, height: 16 }}
-            aria-hidden
-          />,
-          slot,
-          `sidebar-orb-${index}`,
-        ),
-      )}
     </>
   );
 }
