@@ -52,6 +52,7 @@ import { createDebouncedStorage, createMemoryStorage } from "./lib/storage";
 import { getDefaultServerModel } from "./providerModels";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
 import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
+import { CanvasSelectionContextSchema, type CanvasSelectionContext } from "./lib/canvasSelection";
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const isReviewCommentContext = Schema.is(ReviewCommentContextSchema);
@@ -131,6 +132,7 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   terminalContexts: Schema.optionalKey(Schema.Array(PersistedTerminalContextDraft)),
   elementContexts: Schema.optionalKey(Schema.Array(PersistedElementContextDraft)),
   previewAnnotations: Schema.optionalKey(Schema.Array(PreviewAnnotationPayloadSchema)),
+  canvasSelections: Schema.optionalKey(Schema.Array(CanvasSelectionContextSchema)),
   reviewComments: Schema.optionalKey(Schema.Array(ReviewCommentContextSchema)),
   // Keyed by `ProviderInstanceId` (open branded slug) so custom provider
   // instances (e.g. `codex_personal`) round-trip alongside the built-in
@@ -261,6 +263,12 @@ export interface ComposerThreadDraftState {
    */
   elementContexts: ElementContextDraft[];
   previewAnnotations: PreviewAnnotationPayload[];
+  /**
+   * Canvas-selection attachments captured from the thread canvas. The node
+   * summaries are persisted inline; the rendered crop travels as an image
+   * attachment sharing the selection's id.
+   */
+  canvasSelections: CanvasSelectionContext[];
   reviewComments: ReviewCommentContext[];
   /**
    * Per-instance model selection. Keyed by `ProviderInstanceId` (open
@@ -298,6 +306,7 @@ export function composerDraftHasUserContent(
     draft.terminalContexts.length > 0 ||
     draft.elementContexts.length > 0 ||
     draft.previewAnnotations.length > 0 ||
+    draft.canvasSelections.length > 0 ||
     draft.reviewComments.length > 0
   );
 }
@@ -508,6 +517,12 @@ interface ComposerDraftStoreState {
     annotations: ReadonlyArray<PreviewAnnotationPayload>,
   ) => void;
   removePreviewAnnotation: (threadRef: ComposerThreadTarget, annotationId: string) => void;
+  addCanvasSelection: (threadRef: ComposerThreadTarget, selection: CanvasSelectionContext) => void;
+  setCanvasSelections: (
+    threadRef: ComposerThreadTarget,
+    selections: ReadonlyArray<CanvasSelectionContext>,
+  ) => void;
+  removeCanvasSelection: (threadRef: ComposerThreadTarget, selectionId: string) => void;
   addReviewComment: (threadRef: ComposerThreadTarget, comment: ReviewCommentContext) => void;
   setReviewComments: (
     threadRef: ComposerThreadTarget,
@@ -522,7 +537,8 @@ interface ComposerDraftStoreState {
   clearComposerContent: (threadRef: ComposerThreadTarget) => void;
   /**
    * Clears only the prompt text and image attachments, preserving terminal /
-   * element contexts, preview annotations, and review comments. Used by the
+   * element contexts, preview annotations, canvas selections, and review
+   * comments. Used by the
    * prompt stash, which can only round-trip text + images: clearing the
    * session-bound contexts would destroy state nothing can restore.
    */
@@ -598,12 +614,14 @@ const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
 const EMPTY_ELEMENT_CONTEXTS: ElementContextDraft[] = [];
 const EMPTY_PREVIEW_ANNOTATIONS: PreviewAnnotationPayload[] = [];
+const EMPTY_CANVAS_SELECTIONS: CanvasSelectionContext[] = [];
 const EMPTY_REVIEW_COMMENTS: ReviewCommentContext[] = [];
 Object.freeze(EMPTY_IMAGES);
 Object.freeze(EMPTY_IDS);
 Object.freeze(EMPTY_PERSISTED_ATTACHMENTS);
 Object.freeze(EMPTY_ELEMENT_CONTEXTS);
 Object.freeze(EMPTY_PREVIEW_ANNOTATIONS);
+Object.freeze(EMPTY_CANVAS_SELECTIONS);
 Object.freeze(EMPTY_REVIEW_COMMENTS);
 const EMPTY_MODEL_SELECTION_BY_PROVIDER: Partial<Record<ProviderDriverKind, ModelSelection>> =
   Object.freeze({});
@@ -620,6 +638,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   terminalContexts: EMPTY_TERMINAL_CONTEXTS,
   elementContexts: EMPTY_ELEMENT_CONTEXTS,
   previewAnnotations: EMPTY_PREVIEW_ANNOTATIONS,
+  canvasSelections: EMPTY_CANVAS_SELECTIONS,
   reviewComments: EMPTY_REVIEW_COMMENTS,
   modelSelectionByProvider: EMPTY_MODEL_SELECTION_BY_PROVIDER,
   activeProvider: null,
@@ -642,6 +661,7 @@ export function createEmptyThreadDraft(): ComposerThreadDraftState {
     terminalContexts: [],
     elementContexts: [],
     previewAnnotations: [],
+    canvasSelections: [],
     reviewComments: [],
     modelSelectionByProvider: {},
     activeProvider: null,
@@ -715,6 +735,7 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.terminalContexts.length === 0 &&
     draft.elementContexts.length === 0 &&
     draft.previewAnnotations.length === 0 &&
+    draft.canvasSelections.length === 0 &&
     draft.reviewComments.length === 0 &&
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
@@ -1894,6 +1915,7 @@ function partializeComposerDraftStoreState(
       draft.terminalContexts.length === 0 &&
       draft.elementContexts.length === 0 &&
       draft.previewAnnotations.length === 0 &&
+      draft.canvasSelections.length === 0 &&
       draft.reviewComments.length === 0 &&
       !hasModelData &&
       draft.runtimeMode === null &&
@@ -1939,6 +1961,14 @@ function partializeComposerDraftStoreState(
             previewAnnotations: draft.previewAnnotations.map(
               (annotation) => ({ ...annotation }) as DeepMutable<PreviewAnnotationPayload>,
             ),
+          }
+        : {}),
+      ...(draft.canvasSelections.length > 0
+        ? {
+            canvasSelections: draft.canvasSelections.map((selection) => ({
+              ...selection,
+              nodes: selection.nodes.map((node) => ({ ...node })),
+            })),
           }
         : {}),
       ...(draft.reviewComments.length > 0
@@ -2197,6 +2227,7 @@ function toHydratedThreadDraft(
       })) ?? [],
     previewAnnotations:
       persistedDraft.previewAnnotations?.map((annotation) => ({ ...annotation })) ?? [],
+    canvasSelections: persistedDraft.canvasSelections?.map((selection) => ({ ...selection })) ?? [],
     reviewComments: persistedDraft.reviewComments?.map((comment) => ({ ...comment })) ?? [],
     modelSelectionByProvider,
     activeProvider,
@@ -3311,6 +3342,65 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },
+        addCanvasSelection: (threadRef, selection) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) return;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const nextSelections = existing.canvasSelections.filter(
+              (entry) => entry.id !== selection.id,
+            );
+            return {
+              draftsByThreadKey: {
+                ...state.draftsByThreadKey,
+                [threadKey]: {
+                  ...existing,
+                  canvasSelections: [...nextSelections, { ...selection }],
+                },
+              },
+            };
+          });
+        },
+        setCanvasSelections: (threadRef, selections) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) return;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            return {
+              draftsByThreadKey: {
+                ...state.draftsByThreadKey,
+                [threadKey]: { ...existing, canvasSelections: [...selections] },
+              },
+            };
+          });
+        },
+        removeCanvasSelection: (threadRef, selectionId) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey || !selectionId) return;
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current) return state;
+            const canvasSelections = current.canvasSelections.filter(
+              (entry) => entry.id !== selectionId,
+            );
+            if (canvasSelections.length === current.canvasSelections.length) return state;
+            const nextDraft = {
+              ...current,
+              canvasSelections,
+              images: current.images.filter((image) => image.id !== selectionId),
+              persistedAttachments: current.persistedAttachments.filter(
+                (image) => image.id !== selectionId,
+              ),
+              nonPersistedImageIds: current.nonPersistedImageIds.filter(
+                (imageId) => imageId !== selectionId,
+              ),
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) delete nextDraftsByThreadKey[threadKey];
+            else nextDraftsByThreadKey[threadKey] = nextDraft;
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
         addReviewComment: (threadRef, comment) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef);
           if (!threadKey || !isReviewCommentContext(comment)) return;
@@ -3434,6 +3524,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               terminalContexts: [],
               elementContexts: [],
               previewAnnotations: [],
+              canvasSelections: [],
               reviewComments: [],
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };

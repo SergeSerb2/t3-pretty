@@ -21,6 +21,7 @@ export const RIGHT_PANEL_KINDS = [
   "preview",
   "terminal",
   "agents",
+  "canvas",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -44,11 +45,13 @@ export type RightPanelSurface =
       revealLine: number | null;
       revealRequestId: number;
     }
-  | { id: "agents"; kind: "agents" };
+  | { id: "agents"; kind: "agents" }
+  | { id: "canvas"; kind: "canvas" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 // v9 removed the "plan" surface kind (plans render inline in the transcript).
-const RIGHT_PANEL_STORAGE_VERSION = 9;
+// v10 added the "canvas" surface kind.
+const RIGHT_PANEL_STORAGE_VERSION = 10;
 
 export interface ThreadRightPanelState {
   isOpen: boolean;
@@ -100,6 +103,8 @@ const singletonSurface = (
       return { id: "files", kind };
     case "agents":
       return { id: "agents", kind };
+    case "canvas":
+      return { id: "canvas", kind };
   }
 };
 
@@ -178,9 +183,16 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                 threadState && typeof threadState === "object" ? threadState : null;
               const surfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
-                    // Dropped surface kind: plans now render inline in the
-                    // transcript (v9).
-                    if ((surface as { kind?: string }).kind === "plan") return [];
+                    // Drop surfaces whose kind no longer exists (e.g. "plan",
+                    // removed in v9 when plans moved inline into the
+                    // transcript).
+                    if (
+                      !(RIGHT_PANEL_KINDS as readonly string[]).includes(
+                        (surface as { kind?: string }).kind ?? "",
+                      )
+                    ) {
+                      return [];
+                    }
                     if (surface.kind === "file") {
                       const revealLine =
                         typeof surface.revealLine === "number" &&

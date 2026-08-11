@@ -1,6 +1,6 @@
 import type { ContextMenuItem, PreviewSessionSnapshot } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
-import { Bot, FileDiff, Files, Globe2, Plus, TerminalSquare, X } from "lucide-react";
+import { Bot, FileDiff, Files, Frame, Globe2, Plus, TerminalSquare, X } from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
@@ -47,6 +47,7 @@ interface RightPanelTabsProps {
   onAddDiff: () => void;
   onAddFiles: () => void;
   onAddAgents: () => void;
+  onAddCanvas: () => void;
   browserAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
@@ -97,6 +98,7 @@ function RightPanelEmptyState(props: {
   onAddDiff: () => void;
   onAddFiles: () => void;
   onAddAgents: () => void;
+  onAddCanvas: () => void;
   browserAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
@@ -147,6 +149,15 @@ function RightPanelEmptyState(props: {
       disabledReason: null,
       onClick: props.onAddAgents,
       badgeCount: props.liveAgentCount,
+    },
+    {
+      label: "Canvas",
+      description: "Mark up screens and iterate with the agent.",
+      icon: Frame,
+      available: true,
+      disabledReason: null,
+      onClick: props.onAddCanvas,
+      badgeCount: 0,
     },
   ] as const;
 
@@ -235,6 +246,8 @@ function surfaceTitle(
       );
     case "agents":
       return "Agents";
+    case "canvas":
+      return "Canvas";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -296,6 +309,8 @@ function SurfaceIcon({
       return <TerminalSquare className="size-3 shrink-0" />;
     case "agents":
       return <Bot className="size-3 shrink-0" />;
+    case "canvas":
+      return <Frame className="size-3 shrink-0" />;
   }
 }
 
@@ -502,6 +517,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     <Bot />
                     Agents
                   </SurfaceMenuItem>
+                  <SurfaceMenuItem available onClick={props.onAddCanvas}>
+                    <Frame />
+                    Canvas
+                  </SurfaceMenuItem>
                 </MenuPopup>
               </Menu>
             ) : null}
@@ -517,6 +536,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}
             onAddAgents={props.onAddAgents}
+            onAddCanvas={props.onAddCanvas}
             browserAvailable={props.browserAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}

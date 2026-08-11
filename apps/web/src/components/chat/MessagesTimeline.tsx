@@ -53,6 +53,7 @@ import {
   ChevronDownIcon,
   CircleAlertIcon,
   EyeIcon,
+  FrameIcon,
   GlobeIcon,
   HammerIcon,
   MessageCircleIcon,
@@ -103,6 +104,12 @@ import {
   extractTrailingPreviewAnnotation,
   type ParsedPreviewAnnotation,
 } from "~/lib/previewAnnotation";
+import {
+  CANVAS_SELECTION_IMAGE_PREFIX,
+  canvasSelectionImageName,
+  extractTrailingCanvasSelection,
+  type ParsedCanvasSelection,
+} from "~/lib/canvasSelection";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
@@ -967,8 +974,18 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
   const terminalContexts = displayedUserMessage.contexts;
   const previewAnnotations: ParsedPreviewAnnotation[] = [];
+  const canvasSelections: ParsedCanvasSelection[] = [];
   let visibleText = displayedUserMessage.visibleText;
+  // Trailing context blocks unwind in reverse append order; canvas selections
+  // are appended after preview annotations, but the loop stays order-agnostic
+  // so either kind composes with the other.
   while (true) {
+    const canvasExtracted = extractTrailingCanvasSelection(visibleText);
+    if (canvasExtracted) {
+      canvasSelections.unshift(canvasExtracted.selection);
+      visibleText = canvasExtracted.text;
+      continue;
+    }
     const extracted = extractTrailingPreviewAnnotation(visibleText);
     if (!extracted.annotation) break;
     previewAnnotations.unshift(extracted.annotation);
@@ -980,7 +997,14 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     ...elementContextState.contexts,
   ];
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
-  const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
+  const canvasSelectionImages = userImages.filter((image) =>
+    image.name.startsWith(CANVAS_SELECTION_IMAGE_PREFIX),
+  );
+  const regularImages = userImages.filter(
+    (image) =>
+      !image.name.startsWith("preview-annotation-") &&
+      !image.name.startsWith(CANVAS_SELECTION_IMAGE_PREFIX),
+  );
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
 
   return (
@@ -1024,6 +1048,19 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             key={annotation.id}
             annotation={annotation}
             image={previewImages[index] ?? null}
+          />
+        ))}
+        {canvasSelections.map((selection, index) => (
+          <UserMessageCanvasSelectionCard
+            key={selection.id}
+            selection={selection}
+            image={
+              canvasSelectionImages.find(
+                (image) => image.name === canvasSelectionImageName(selection.id),
+              ) ??
+              canvasSelectionImages[index] ??
+              null
+            }
           />
         ))}
         {elementContexts.length > 0 ? (
@@ -1591,6 +1628,56 @@ function UserMessagePreviewAnnotationCard(props: {
               {props.annotation.styleChanges.length}
             </span>
           ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserMessageCanvasSelectionCard(props: {
+  selection: ParsedCanvasSelection;
+  image: NonNullable<TimelineMessage["attachments"]>[number] | null;
+}) {
+  const ctx = use(TimelineRowCtx);
+  return (
+    <div className="mb-2 flex max-w-full items-center overflow-hidden rounded-lg border border-border/70 bg-background/70">
+      {props.image?.previewUrl ? (
+        <button
+          type="button"
+          className="size-14 shrink-0 cursor-zoom-in overflow-hidden border-r border-border/70 bg-muted"
+          aria-label={`Preview ${props.image.name}`}
+          onClick={() => {
+            if (!props.image) return;
+            const preview = buildExpandedImagePreview([props.image], props.image.id);
+            if (preview) ctx.onImageExpand(preview);
+          }}
+        >
+          <img
+            src={props.image.previewUrl}
+            alt="Selected canvas region"
+            className="size-full object-cover"
+          />
+        </button>
+      ) : null}
+      <div className="min-w-0 px-2.5 py-2">
+        {props.selection.comment ? (
+          <div className="max-w-80 truncate text-foreground text-xs font-medium">
+            {props.selection.comment}
+          </div>
+        ) : null}
+        <div
+          className={cn(
+            "flex items-center gap-2 text-secondary-label text-[10px]",
+            props.selection.comment && "mt-1",
+          )}
+        >
+          <span className="inline-flex shrink-0 items-center gap-1">
+            <FrameIcon className="size-3" />
+            Canvas selection
+          </span>
+          <span className="truncate">
+            {props.selection.nodeCount} node{props.selection.nodeCount === 1 ? "" : "s"}
+          </span>
         </div>
       </div>
     </div>

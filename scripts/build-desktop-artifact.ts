@@ -1881,6 +1881,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         ),
       }
     : undefined;
+  // Screen capture (desktopCapturer) relies purely on macOS TCC: the user
+  // grants Screen Recording under Privacy & Security and the app must be
+  // relaunched for the grant to take effect. This unsandboxed app needs no
+  // entitlement or Info.plist usage key for it, so do not try to "fix"
+  // capture issues here at the entitlement layer.
   const macEntitlementsPath = macPasskeySigning
     ? path.join(stageAppDir, "entitlements.mac.plist")
     : undefined;

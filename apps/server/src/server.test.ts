@@ -121,6 +121,7 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as AgentInstructionFiles from "./instructions/AgentInstructionFiles.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewManager from "./preview/Manager.ts";
+import * as CanvasStore from "./canvas/Store.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
@@ -402,6 +403,7 @@ const buildAppUnderTest = (options?: {
       ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]
     >;
     terminalManager?: Partial<TerminalManager.TerminalManager["Service"]>;
+    canvasStore?: Partial<CanvasStore.CanvasStore["Service"]>;
     orchestrationEngine?: Partial<OrchestrationEngine.OrchestrationEngineService["Service"]>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"]>;
     checkpointDiffQuery?: Partial<CheckpointDiffQuery.CheckpointDiffQuery["Service"]>;
@@ -768,6 +770,9 @@ const buildAppUnderTest = (options?: {
             retain: Effect.void,
             registerTerminalProcesses: () => Effect.void,
             unregisterTerminal: () => Effect.void,
+          }),
+          Layer.mock(CanvasStore.CanvasStore)({
+            ...options?.layers?.canvasStore,
           }),
         ),
       ),

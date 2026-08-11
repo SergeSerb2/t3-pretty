@@ -41,6 +41,7 @@ import {
   setTheme,
   showContextMenu,
 } from "./methods/window.ts";
+import * as CaptureIpc from "./methods/capture.ts";
 import * as PreviewIpc from "./methods/preview.ts";
 import { getWslState, setWslBackendEnabled, setWslDistro, setWslOnly } from "./methods/wsl.ts";
 
@@ -90,5 +91,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(checkForUpdate);
   for (const previewMethod of PreviewIpc.methods) {
     yield* ipc.handle(previewMethod);
+  }
+  for (const captureMethod of CaptureIpc.methods) {
+    yield* ipc.handle(captureMethod);
   }
 });

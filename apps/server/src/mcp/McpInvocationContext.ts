@@ -1,13 +1,13 @@
 import {
   type EnvironmentId,
-  PreviewAutomationUnavailableError,
+  McpCapabilityUnavailableError,
   type ProviderInstanceId,
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-export type McpCapability = "preview";
+export type McpCapability = "preview" | "canvas";
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
@@ -28,7 +28,7 @@ export const requireMcpCapability = Effect.fn("mcp.requireCapability")(function*
 ) {
   const invocation = yield* McpInvocationContext;
   if (!invocation.capabilities.has(capability)) {
-    return yield* new PreviewAutomationUnavailableError({
+    return yield* new McpCapabilityUnavailableError({
       capability,
       environmentId: invocation.environmentId,
       threadId: invocation.threadId,

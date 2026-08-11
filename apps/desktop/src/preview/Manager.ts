@@ -15,6 +15,7 @@ import type {
   DesktopPreviewRecordingArtifact,
   DesktopPreviewRecordingFrame,
   DesktopPreviewScreenshotArtifact,
+  DesktopPreviewTabImage,
   PreviewAutomationClickInput,
   PreviewAutomationActionEvent,
   PreviewAutomationConsoleEntry,
@@ -99,6 +100,7 @@ const MAX_EVALUATION_BYTES = 64_000;
 const MAX_VISIBLE_TEXT_LENGTH = 20_000;
 const MAX_INTERACTIVE_ELEMENTS = 200;
 const MAX_SCREENSHOT_WIDTH = 1280;
+const TAB_IMAGE_DEFAULT_MAX_DIMENSION = 2048;
 const RECORDING_FRAME_INTERVAL_MS = Math.ceil(1_000 / 12);
 const RECORDING_JPEG_QUALITY = 80;
 const PICTURE_IN_PICTURE_INITIAL_WIDTH = 480;
@@ -2061,6 +2063,39 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     };
   });
 
+  const captureTabImage = Effect.fn("PreviewManager.captureTabImage")(function* (input: {
+    readonly tabId: string;
+    readonly maxDimension?: number;
+  }) {
+    const wc = yield* requireWebContents(input.tabId);
+    const sourceImage = yield* attemptPromise(
+      {
+        operation: "captureTabImage.capturePage",
+        tabId: input.tabId,
+        webContentsId: wc.id,
+      },
+      () => wc.capturePage(),
+    );
+    const sourceSize = sourceImage.getSize();
+    const maxDimension = input.maxDimension ?? TAB_IMAGE_DEFAULT_MAX_DIMENSION;
+    // Resize by the largest edge only; nativeImage preserves the aspect
+    // ratio when the other dimension is omitted.
+    const image =
+      Math.max(sourceSize.width, sourceSize.height) > maxDimension
+        ? sourceImage.resize(
+            sourceSize.width >= sourceSize.height
+              ? { width: maxDimension }
+              : { height: maxDimension },
+          )
+        : sourceImage;
+    const size = image.getSize();
+    return {
+      dataUrl: image.toDataURL(),
+      width: size.width,
+      height: size.height,
+    } satisfies DesktopPreviewTabImage;
+  });
+
   const capturePreviewFrame = Effect.fn("PreviewManager.capturePreviewFrame")(function* (
     tabId: string,
   ) {
@@ -3283,6 +3318,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     automationWaitFor,
     cancelPickElement,
     captureScreenshot,
+    captureTabImage,
     closeTab,
     copyArtifactToClipboard,
     createTab,
@@ -3610,6 +3646,10 @@ export class PreviewManager extends Context.Service<
     readonly captureScreenshot: (
       tabId: string,
     ) => Effect.Effect<DesktopPreviewScreenshotArtifact, PreviewManagerError>;
+    readonly captureTabImage: (input: {
+      readonly tabId: string;
+      readonly maxDimension?: number;
+    }) => Effect.Effect<DesktopPreviewTabImage, PreviewManagerError>;
     readonly revealArtifact: (path: string) => Effect.Effect<void, PreviewManagerError>;
     readonly copyArtifactToClipboard: (path: string) => Effect.Effect<void, PreviewManagerError>;
     readonly openPictureInPicture: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
@@ -3723,6 +3763,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     pickElement: operations.pickElement,
     cancelPickElement: operations.cancelPickElement,
     captureScreenshot: operations.captureScreenshot,
+    captureTabImage: operations.captureTabImage,
     revealArtifact: operations.revealArtifact,
     copyArtifactToClipboard: operations.copyArtifactToClipboard,
     openPictureInPicture: operations.openPictureInPicture,
