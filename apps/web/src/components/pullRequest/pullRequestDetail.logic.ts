@@ -6,6 +6,7 @@ import type {
   PullRequestReaction,
   PullRequestReviewThread,
   PullRequestState,
+  SourceControlProviderKind,
 } from "@t3tools/contracts";
 
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
@@ -360,31 +361,11 @@ function handoffPreamble(input: {
 }
 
 /**
- * How to close a review conversation on this host. GitHub, GitLab and Bitbucket each speak a
- * different resolve API; naming the wrong one leaves the thread open with a failed call.
- */
-function hostResolveGuidance(provider: SourceControlProviderKind): string {
-  switch (provider) {
-    case "github":
-      return " On GitHub, use `gh api graphql` with `resolveReviewThread` for the matching thread.";
-    case "gitlab":
-      return ' On GitLab, use `glab api` to PUT `{"resolved":true}` on the matching merge request discussion.';
-    case "bitbucket":
-      return " On Bitbucket, POST to the matching pull request comment's `/resolve` endpoint.";
-    default:
-      return " Use that host's review-thread resolution API or UI for the matching conversation.";
-  }
-}
-
-/**
  * Closing the loop on the host: fixing code and leaving the conversation open is how the same
  * finding comes back as unfinished work. Only threaded findings are resolvable — a review summary
- * has no thread id, and a host resolve API cannot close it.
+ * has no thread id, and GitHub's resolve mutation cannot close it.
  */
-function resolveFindingsAfterFixInstruction(
-  provider: SourceControlProviderKind,
-  threadIds: ReadonlyArray<string>,
-): string {
+function resolveFindingsAfterFixInstruction(threadIds: ReadonlyArray<string>): string {
   const ids = threadIds
     .map((id) => id.trim())
     .filter((id) => id.length > 0)
@@ -392,7 +373,7 @@ function resolveFindingsAfterFixInstruction(
   // Callers only pass threaded findings; an empty list would mean there is nothing to resolve.
   if (ids.length === 0) return "";
   const idClause = ids.length === 1 ? ` Thread id: ${ids[0]}.` : ` Thread ids: ${ids.join(", ")}.`;
-  return `When you finish fixing a review finding you addressed, also resolve that conversation on the pull request so it no longer shows as open.${idClause}${hostResolveGuidance(provider)} Leaving fixed findings unresolved is incomplete.`;
+  return `When you finish fixing a review finding you addressed, also resolve that conversation on the pull request so it no longer shows as open.${idClause} On GitHub, use \`gh api graphql\` with \`resolveReviewThread\` for the matching thread. Leaving fixed findings unresolved is incomplete.`;
 }
 
 export interface FixFindingsHandoff {
@@ -467,6 +448,7 @@ export function handoffReviewComments(
  * attacker-controlled on public repositories.
  */
 export function buildFixFindingsHandoff(input: {
+  readonly provider: SourceControlProviderKind;
   readonly number: number;
   readonly title: string;
   readonly url: string;
@@ -561,12 +543,7 @@ export function buildFixFindingsHandoff(input: {
         : []),
       // Checks and top-level review remarks are not resolvable threads — only threaded findings are.
       ...(includedThreads.length > 0
-        ? [
-            resolveFindingsAfterFixInstruction(
-              input.provider,
-              includedThreads.map((thread) => thread.id),
-            ),
-          ]
+        ? [resolveFindingsAfterFixInstruction(includedThreads.map((thread) => thread.id))]
         : []),
     ].join("\n"),
     reviewComments: includedThreads.map((thread) => reviewThreadContext(thread, input.number)),
