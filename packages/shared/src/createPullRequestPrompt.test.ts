@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   applyCreatePullRequestSuffix,
+  buildCreatePullRequestMessageSuffix,
   CREATE_PULL_REQUEST_CLOSE_MARKER,
   CREATE_PULL_REQUEST_MESSAGE_SUFFIX,
   CREATE_PULL_REQUEST_OPEN_MARKER,
@@ -61,6 +62,22 @@ describe("applyCreatePullRequestSuffix", () => {
       threadHasStarted: false,
     });
     expect(twice).toBe(once);
+  });
+
+  it("pins PR model attribution to the selected thread model", () => {
+    const result = applyCreatePullRequestSuffix({
+      text: "Fix the login bug",
+      autoCreatePullRequest: true,
+      threadHasStarted: false,
+      model: "kimi-code/k3",
+    });
+
+    expect(result).toBe(`Fix the login bug${buildCreatePullRequestMessageSuffix("kimi-code/k3")}`);
+    expect(result).toContain(
+      'T3 Code recorded the current thread\'s selected model as "kimi-code/k3".',
+    );
+    expect(result).toContain("copy this exact identifier");
+    expect(stripCreatePullRequestSuffix(result)).toBe("Fix the login bug");
   });
 });
 

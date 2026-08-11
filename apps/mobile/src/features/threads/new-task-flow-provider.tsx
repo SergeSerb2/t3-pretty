@@ -839,6 +839,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
                 ? resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode)
                 : false)),
           threadHasStarted: false,
+          model: draftModelSelection.model,
         }),
         attachments: draft.attachments,
         modelSelection: draftModelSelection,
