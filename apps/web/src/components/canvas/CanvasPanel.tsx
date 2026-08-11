@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from "react";
 
 import { selectThreadCanvasState, useCanvasStore } from "~/canvasStore";
 import { Spinner } from "~/components/ui/spinner";
+import { useServerConfigs } from "~/state/entities";
 
 import { CanvasAddToChatBar } from "./CanvasAddToChatBar";
 import { CanvasCaptureMenu } from "./CanvasCaptureMenu";
@@ -15,13 +16,53 @@ import { CanvasWindowCaptureDialog } from "./CanvasWindowCaptureDialog";
 import { useCanvasCapture } from "./useCanvasCapture";
 import { useCanvasDoc } from "./useCanvasDoc";
 
+function CanvasPanelLoading() {
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-background">
+      <div className="flex min-h-0 flex-1 items-center justify-center">
+        <Spinner className="size-4 text-muted-foreground" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Gates the canvas surface on the environment's server advertising the canvas
+ * capability. A pre-canvas server answers `canvas.get` with an "unknown
+ * request tag" defect, so probing it would surface a load error the user can
+ * never retry away; the gate names the actual remedy instead. The capability
+ * lives outside the inner component so no canvas RPC fires until it is known.
+ */
+export function CanvasPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
+  const serverConfigs = useServerConfigs();
+  const serverConfig = serverConfigs.get(threadRef.environmentId);
+  if (serverConfig === undefined) {
+    return <CanvasPanelLoading />;
+  }
+  if (serverConfig.environment.capabilities.canvas !== true) {
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col bg-background">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+          <p className="text-muted-foreground text-sm">
+            This environment&apos;s server is too old for the canvas.
+          </p>
+          <p className="max-w-sm text-muted-foreground/70 text-xs">
+            Update the server running this environment, then reopen the canvas.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  return <CanvasPanelContent threadRef={threadRef} />;
+}
+
 /**
  * Canvas right-panel surface: syncs the thread's canvas document and composes
  * the toolbar, the interactive viewport, the capture flows, and the empty-state
  * overlay. The empty state floats over a live viewport so the draw tools work
  * on an empty canvas the moment a tool is picked.
  */
-export function CanvasPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
+function CanvasPanelContent({ threadRef }: { threadRef: ScopedThreadRef }) {
   const { doc, revision, loading, error, refresh } = useCanvasDoc(threadRef);
   const [inkStyle, setInkStyle] = useState<CanvasInkStyle>(DEFAULT_CANVAS_INK_STYLE);
   const controllerRef = useRef<CanvasViewportController | null>(null);
@@ -57,13 +98,7 @@ export function CanvasPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
   );
 
   if (loading) {
-    return (
-      <div className="flex h-full min-h-0 flex-1 flex-col bg-background">
-        <div className="flex min-h-0 flex-1 items-center justify-center">
-          <Spinner className="size-4 text-muted-foreground" />
-        </div>
-      </div>
-    );
+    return <CanvasPanelLoading />;
   }
 
   if (error !== null && doc.nodes.length === 0) {

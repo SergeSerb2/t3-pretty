@@ -2054,6 +2054,7 @@ function ChatViewContent(props: ChatViewProps) {
     : (primaryEnvironment?.serverConfig ?? null);
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
+  const supportsCanvas = serverConfig?.environment.capabilities.canvas === true;
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
   const versionMismatchDismissKey =
     versionMismatch && activeThread
@@ -3353,9 +3354,9 @@ function ChatViewContent(props: ChatViewProps) {
     useRightPanelStore.getState().open(activeThreadRef, "agents");
   }, [activeThreadRef]);
   const addCanvasSurface = useCallback(() => {
-    if (!activeThreadRef) return;
+    if (!activeThreadRef || !supportsCanvas) return;
     useRightPanelStore.getState().open(activeThreadRef, "canvas");
-  }, [activeThreadRef]);
+  }, [activeThreadRef, supportsCanvas]);
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
@@ -6701,6 +6702,7 @@ function ChatViewContent(props: ChatViewProps) {
               diffAvailable={isServerThread && isGitRepo}
               filesAvailable={activeProject !== null}
               pullRequestAvailable={pullRequestSurfaceAvailable}
+              canvasAvailable={supportsCanvas}
               agentsAvailable
               pullRequestStatuses={pullRequestTabStatuses}
               liveAgentCount={agentPanelModel.liveCount}
@@ -6738,6 +6740,7 @@ function ChatViewContent(props: ChatViewProps) {
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
             pullRequestAvailable={pullRequestSurfaceAvailable}
+            canvasAvailable={supportsCanvas}
             agentsAvailable
             pullRequestStatuses={pullRequestTabStatuses}
             liveAgentCount={agentPanelModel.liveCount}
