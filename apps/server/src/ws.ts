@@ -40,6 +40,7 @@ import {
   ProjectSearchContentsError,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
+  ProjectImportFaviconError,
   RelayClientInstallFailedError,
   type RelayClientInstallProgressEvent,
   type ServerSelfUpdateError,
@@ -100,6 +101,7 @@ import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
+import { importProjectFavicon } from "./project/ProjectFaviconStore.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -1808,6 +1810,34 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.projectsImportFavicon]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsImportFavicon,
+            Effect.gen(function* () {
+              const project = yield* projectionSnapshotQuery
+                .getProjectShellById(input.projectId)
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ProjectImportFaviconError({
+                        failure: "write_failed",
+                        projectId: input.projectId,
+                        fileName: input.fileName,
+                        cause,
+                      }),
+                  ),
+                );
+              if (Option.isNone(project)) {
+                return yield* new ProjectImportFaviconError({
+                  failure: "project_not_found",
+                  projectId: input.projectId,
+                  fileName: input.fileName,
+                });
+              }
+              return yield* importProjectFavicon(input);
+            }),
+            { "rpc.aggregate": "workspace" },
+          ),
         [WS_METHODS.agentInstructionsList]: (input) =>
           observeRpcEffect(WS_METHODS.agentInstructionsList, agentInstructionFiles.list(input), {
             "rpc.aggregate": "workspace",
@@ -1865,6 +1895,7 @@ const makeWsRpcLayer = (
                 }
                 return yield* issueAssetUrl({
                   resource: input.resource,
+                  projectId: project.value.id,
                   ...(project.value.faviconPath
                     ? { projectFaviconPath: project.value.faviconPath }
                     : {}),

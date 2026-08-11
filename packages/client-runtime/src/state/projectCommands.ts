@@ -102,5 +102,14 @@ export function createProjectEnvironmentAtoms<R, E>(
           JSON.stringify([environmentId, input.cwd, input.relativePath]),
       },
     }),
+    importFavicon: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:import-favicon",
+      tag: WS_METHODS.projectsImportFavicon,
+      scheduler: projectScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.projectId]),
+      },
+    }),
   };
 }

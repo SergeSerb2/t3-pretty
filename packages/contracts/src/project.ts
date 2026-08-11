@@ -2,9 +2,11 @@ import * as Schema from "effect/Schema";
 import {
   NonNegativeInt,
   PositiveInt,
+  ProjectId,
   TrimmedNonEmptyString,
   TrimmedString,
 } from "./baseSchemas.ts";
+import { ProjectFaviconPath } from "./orchestration.ts";
 
 const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
 const PROJECT_SEARCH_CONTENTS_MAX_LIMIT = 500;
@@ -295,6 +297,65 @@ export class ProjectWriteFileError extends Schema.TaggedErrorClass<ProjectWriteF
       message:
         decodedProjectErrorMessage(props) ??
         `Failed to write workspace file '${props.relativePath}' in '${props.cwd}'.`,
+    } as any);
+  }
+}
+
+export const PROJECT_IMPORT_FAVICON_MAX_BYTES = 2 * 1024 * 1024;
+const PROJECT_IMPORT_FAVICON_MAX_DATA_URL_CHARS = 3_000_000;
+const PROJECT_IMPORT_FAVICON_FILE_NAME_MAX_LENGTH = 255;
+
+export const ProjectImportFaviconInput = Schema.Struct({
+  projectId: ProjectId,
+  fileName: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(PROJECT_IMPORT_FAVICON_FILE_NAME_MAX_LENGTH),
+  ),
+  dataUrl: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(PROJECT_IMPORT_FAVICON_MAX_DATA_URL_CHARS),
+  ),
+});
+export type ProjectImportFaviconInput = typeof ProjectImportFaviconInput.Type;
+
+export const ProjectImportFaviconResult = Schema.Struct({
+  faviconPath: ProjectFaviconPath,
+});
+export type ProjectImportFaviconResult = typeof ProjectImportFaviconResult.Type;
+
+export const ProjectImportFaviconFailure = Schema.Literals([
+  "project_not_found",
+  "invalid_image",
+  "empty_or_too_large",
+  "write_failed",
+]);
+export type ProjectImportFaviconFailure = typeof ProjectImportFaviconFailure.Type;
+
+const PROJECT_IMPORT_FAVICON_FAILURE_MESSAGES: Record<ProjectImportFaviconFailure, string> = {
+  project_not_found: "Project was not found.",
+  invalid_image: "Choose an SVG, PNG, ICO, JPEG, GIF, AVIF, or WebP file.",
+  empty_or_too_large: "Image is empty or larger than 2 MB.",
+  write_failed: "Failed to save the project icon.",
+};
+
+export class ProjectImportFaviconError extends Schema.TaggedErrorClass<ProjectImportFaviconError>()(
+  "ProjectImportFaviconError",
+  {
+    failure: Schema.optional(ProjectImportFaviconFailure),
+    projectId: Schema.optional(ProjectId),
+    fileName: Schema.optional(TrimmedNonEmptyString),
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: {
+    readonly failure: ProjectImportFaviconFailure;
+    readonly projectId?: string;
+    readonly fileName?: string;
+    readonly cause?: unknown;
+  }) {
+    super({
+      ...props,
+      message: PROJECT_IMPORT_FAVICON_FAILURE_MESSAGES[props.failure],
     } as any);
   }
 }

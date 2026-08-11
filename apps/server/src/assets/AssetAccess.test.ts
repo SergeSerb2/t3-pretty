@@ -13,6 +13,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
+import { importProjectFavicon, toSafeProjectIconSegment } from "../project/ProjectFaviconStore.ts";
 import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { ASSET_ROUTE_PREFIX, issueAssetUrl, resolveAsset } from "./AssetAccess.ts";
@@ -329,6 +330,66 @@ describe("AssetAccess", () => {
 
       expect(result.sourcePath).toBe("favicon.svg");
       expect(result.relativeUrl).toMatch(/\/v[0-9a-f]{64}-favicon\.svg$/);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("issues project favicon capabilities for a managed computer-picked icon", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const config = yield* ServerConfig.ServerConfig;
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-favicon-managed-",
+      });
+      yield* fileSystem.writeFileString(path.join(root, "favicon.svg"), "<svg>automatic</svg>");
+      const projectId = "project-managed-icon";
+      const imported = yield* importProjectFavicon({
+        projectId,
+        fileName: "brand-mark.svg",
+        dataUrl: "data:image/svg+xml;base64,PHN2Zz5waWNrZWQ8L3N2Zz4=",
+      });
+      const storedPath = path.join(
+        config.projectIconsDir,
+        `${toSafeProjectIconSegment(projectId)}.svg`,
+      );
+      const canonicalStoredPath = yield* fileSystem.realPath(storedPath);
+
+      const result = yield* issueAssetUrl({
+        resource: { _tag: "project-favicon", cwd: root },
+        projectId,
+        projectFaviconPath: imported.faviconPath,
+      });
+
+      expect(result.sourcePath).toBe("brand-mark.svg");
+      expect(result.relativeUrl).toMatch(/\/v[0-9a-f]{64}-brand-mark\.svg$/);
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const separatorIndex = suffix.indexOf("/");
+      expect(
+        yield* resolveAsset(suffix.slice(0, separatorIndex), suffix.slice(separatorIndex + 1)),
+      ).toEqual({
+        kind: "file",
+        path: canonicalStoredPath,
+        source: "project-favicon",
+      });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("falls back to automatic discovery when a managed icon is missing", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-favicon-managed-missing-",
+      });
+      yield* fileSystem.writeFileString(path.join(root, "favicon.svg"), "<svg>automatic</svg>");
+
+      const result = yield* issueAssetUrl({
+        resource: { _tag: "project-favicon", cwd: root },
+        projectId: "project-missing-managed-icon",
+        projectFaviconPath: "t3-project-icon/gone.svg",
+      });
+
+      expect(result.sourcePath).toBe("favicon.svg");
     }).pipe(Effect.provide(testLayer)),
   );
 

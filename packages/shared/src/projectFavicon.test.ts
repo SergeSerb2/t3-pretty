@@ -2,8 +2,11 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   getProjectFaviconCacheKey,
+  isManagedProjectFaviconPath,
   isProjectFaviconFallbackUrl,
+  managedProjectFaviconFileName,
   PROJECT_FAVICON_FALLBACK_MARKER,
+  toManagedProjectFaviconPath,
 } from "./projectFavicon.ts";
 
 describe("project favicon", () => {
@@ -48,5 +51,17 @@ describe("project favicon", () => {
       ),
     ).toBe(false);
     expect(isProjectFaviconFallbackUrl(null)).toBe(false);
+  });
+
+  it("turns a picked file name into a managed project icon path", () => {
+    expect(toManagedProjectFaviconPath("/Users/ada/Pictures/Logo.PNG")).toBe(
+      "t3-project-icon/Logo.png",
+    );
+    expect(toManagedProjectFaviconPath("brand/icon.svg")).toBe("t3-project-icon/icon.svg");
+    expect(toManagedProjectFaviconPath("../secrets.env")).toBeNull();
+    expect(toManagedProjectFaviconPath("notes.md")).toBeNull();
+    expect(isManagedProjectFaviconPath("t3-project-icon/Logo.png")).toBe(true);
+    expect(isManagedProjectFaviconPath("brand/icon.svg")).toBe(false);
+    expect(managedProjectFaviconFileName("t3-project-icon/Logo.png")).toBe("Logo.png");
   });
 });

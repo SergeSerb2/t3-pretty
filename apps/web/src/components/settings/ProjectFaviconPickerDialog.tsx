@@ -1,8 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
 
 import { primaryServerKeybindingsAtom } from "~/state/server";
+import { isMacPlatform, isWindowsPlatform } from "~/lib/utils";
 import { useTheme } from "~/hooks/useTheme";
 import { CommandPaletteContent } from "../CommandPaletteContent";
 import type { CommandPaletteActionItem } from "../CommandPalette.logic";
@@ -13,7 +14,11 @@ import {
   PROJECT_FILE_PICKER_RESULT_LIMIT,
 } from "../files/ProjectFilePicker.logic";
 import { useProjectFilePickerQuery } from "../files/projectFilesQueryState";
+import { Button } from "../ui/button";
 import { CommandDialog, CommandDialogPopup } from "../ui/command";
+
+const PROJECT_ICON_FILE_ACCEPT =
+  ".avif,.gif,.ico,.jpeg,.jpg,.png,.svg,.webp,image/avif,image/gif,image/jpeg,image/png,image/svg+xml,image/webp,image/x-icon";
 
 function emptyMessage(query: string, error: string | null, isPending: boolean): string {
   if (error) return error;
@@ -21,16 +26,25 @@ function emptyMessage(query: string, error: string | null, isPending: boolean): 
   return query.trim() ? "No matching image files." : "No image files found.";
 }
 
+function browseComputerLabel(platform: string): string {
+  if (isMacPlatform(platform)) return "Browse in Finder";
+  if (isWindowsPlatform(platform)) return "Browse in Explorer";
+  return "Browse computer";
+}
+
 export function ProjectFaviconPickerDialog(props: {
   readonly cwd: string;
+  readonly disabled?: boolean;
   readonly environmentId: EnvironmentId;
   readonly onOpenChange: (open: boolean) => void;
   readonly onSelect: (path: string) => void;
+  readonly onSelectComputerFile: (file: File) => void;
   readonly open: boolean;
   readonly projectName: string;
 }) {
   const [query, setQuery] = useState("");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const result = useProjectFilePickerQuery(
     props.environmentId,
     props.cwd,
@@ -54,6 +68,14 @@ export function ProjectFaviconPickerDialog(props: {
     [props.onSelect, resolvedTheme, result.entries, result.matchedQuery],
   );
 
+  const handleComputerFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    props.onOpenChange(false);
+    props.onSelectComputerFile(file);
+  };
+
   return (
     <CommandDialog open={props.open} onOpenChange={props.onOpenChange}>
       {props.open ? (
@@ -67,6 +89,18 @@ export function ProjectFaviconPickerDialog(props: {
             autoHighlight="always"
             escapeLabel="Close"
             footerActionLabel="Select icon"
+            footerTrailing={
+              <Button
+                variant="ghost"
+                size="xs"
+                className="h-auto px-2 text-muted-foreground text-xs hover:bg-transparent hover:text-foreground"
+                disabled={props.disabled}
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {browseComputerLabel(navigator.platform)}
+              </Button>
+            }
             inputProps={{ placeholder: "Search image files…" }}
             mode="none"
             onItemHighlighted={(value) => {
@@ -97,6 +131,13 @@ export function ProjectFaviconPickerDialog(props: {
               emptyStateMessage={emptyMessage(query, result.error, result.isPending)}
             />
           </CommandPaletteContent>
+          <input
+            ref={fileInputRef}
+            accept={PROJECT_ICON_FILE_ACCEPT}
+            className="sr-only"
+            type="file"
+            onChange={handleComputerFileChange}
+          />
         </CommandDialogPopup>
       ) : null}
     </CommandDialog>
