@@ -26,6 +26,16 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260811.1063000055",
+    date: "2026-08-10",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore green checks after PR autosettle merges",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260811.1063000054",
     date: "2026-08-10",
     items: [
