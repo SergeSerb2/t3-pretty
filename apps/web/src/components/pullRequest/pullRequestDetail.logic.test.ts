@@ -253,6 +253,26 @@ describe("pull request timeline", () => {
     });
   });
 
+  it("carries GitHub reactions on a comment into the timeline event", () => {
+    const events = buildPullRequestTimeline({
+      ...TIMELINE_SOURCE,
+      comments: [
+        {
+          ...TIMELINE_SOURCE.comments[0]!,
+          reactions: [
+            { content: "thumbs_up", count: 1 },
+            { content: "eyes", count: 1 },
+          ],
+        },
+      ],
+    });
+
+    expect(events.find((event) => event.id === "c1")?.reactions).toEqual([
+      { content: "thumbs_up", count: 1 },
+      { content: "eyes", count: 1 },
+    ]);
+  });
+
   it("marks comments that belong to a resolved review thread", () => {
     const events = buildPullRequestTimeline({
       ...TIMELINE_SOURCE,

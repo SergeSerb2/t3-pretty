@@ -13,6 +13,7 @@ import type {
   PullRequestMergeCapabilities,
   PullRequestMergeMethod,
   PullRequestMergeability,
+  PullRequestReaction,
   PullRequestReviewCommentDraft,
   PullRequestReviewThread,
   PullRequestReviewVerdict,
@@ -140,6 +141,11 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
   readonly checks: ReadonlyArray<PullRequestCheck>;
   readonly mergeCapabilities: PullRequestMergeCapabilities;
   readonly viewerPermissions: PullRequestViewerPermissions;
+  /**
+   * Reactions on the change request itself. Absent where the host has none or does not
+   * expose them — GitHub is the one that does, and Codex's thumbs-up lives here.
+   */
+  readonly reactions?: ReadonlyArray<PullRequestReaction>;
 }
 
 /** The conversation-shaped half of a detail, loaded after the core can already render. */

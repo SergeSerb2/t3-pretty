@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import type {
   PullRequestActor,
   PullRequestCapabilities,
+  PullRequestComment,
   PullRequestViewerPermissions,
 } from "@t3tools/contracts";
 
@@ -12,7 +13,7 @@ import {
   type ProviderChangeRequestDetail,
   type PullRequestProviderApi,
 } from "./PullRequestProvider.ts";
-import type { GitHubViewerAccess } from "./gitHubPullRequestJson.ts";
+import { overlayReactions, type GitHubViewerAccess } from "./gitHubPullRequestJson.ts";
 
 const CAPABILITIES: PullRequestCapabilities = {
   diff: true,
@@ -219,6 +220,9 @@ export const make = Effect.gen(function* () {
             })),
             mergeCapabilities: repository.mergeCapabilities,
             viewerPermissions: gitHubViewerPermissions(viewerAccess),
+            ...(viewerAccess.reactions === undefined || viewerAccess.reactions.length === 0
+              ? {}
+              : { reactions: viewerAccess.reactions }),
           }),
         ),
       ),
@@ -243,6 +247,7 @@ export const make = Effect.gen(function* () {
               >(),
               commits: [],
               viewer: { canUpdate: true, didAuthor: false },
+              reactionsById: new Map(),
             })),
           ),
         ],
@@ -264,10 +269,15 @@ export const make = Effect.gen(function* () {
               ),
             })),
             comments: [...pullRequest.comments, ...reviewThreads.comments]
-              .map((comment) => ({
-                ...comment,
-                author: withAvatar(comment.author, reviewThreads.avatarsByLogin, input.host),
-              }))
+              .map((comment) =>
+                overlayReactions(
+                  {
+                    ...comment,
+                    author: withAvatar(comment.author, reviewThreads.avatarsByLogin, input.host),
+                  } satisfies PullRequestComment,
+                  reviewThreads.reactionsById,
+                ),
+              )
               .toSorted((left, right) => left.createdAt.localeCompare(right.createdAt)),
             // `gh pr view --json comments,reviews` follows GitHub's cursors itself, so those two
             // are always whole and only the thread walk can stop short of the host.

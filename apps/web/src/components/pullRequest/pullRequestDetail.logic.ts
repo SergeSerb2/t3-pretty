@@ -3,6 +3,7 @@ import type {
   PullRequestCheck,
   PullRequestComment,
   PullRequestDetailView,
+  PullRequestReaction,
   PullRequestReviewThread,
   PullRequestState,
 } from "@t3tools/contracts";
@@ -129,6 +130,7 @@ export interface PullRequestTimelineEvent {
   readonly deletions: number | null;
   readonly path: string | null;
   readonly reviewState: string | null;
+  readonly reactions?: ReadonlyArray<PullRequestReaction>;
   /**
    * True when this comment belongs to a review thread that has been marked resolved on the host.
    * Absent on everything that is not a review conversation.
@@ -241,6 +243,9 @@ export function buildPullRequestTimeline(
       deletions: null,
       path: comment.path,
       reviewState: comment.reviewState,
+      ...(comment.reactions === undefined || comment.reactions.length === 0
+        ? {}
+        : { reactions: comment.reactions }),
       ...(resolvedCommentIds.has(comment.id) ? { isResolved: true as const } : {}),
     })),
     ...(detail.mergedAt

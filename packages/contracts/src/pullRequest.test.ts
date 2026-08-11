@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  PullRequestComment,
   PullRequestListInput,
   PullRequestListResult,
   PullRequestReviewerRequestInput,
@@ -151,5 +152,39 @@ describe("PullRequestReviewerRequestInput", () => {
         requested: true,
       }).reviewers.map((entry) => entry.kind),
     ).toEqual(["user", "team"]);
+  });
+});
+
+describe("PullRequestComment reactions", () => {
+  const decodeComment = Schema.decodeUnknownSync(PullRequestComment);
+  const comment = {
+    id: "c1",
+    kind: "issue-comment",
+    author: { login: "octocat", name: null, avatarUrl: null },
+    body: "looks good",
+    createdAt: "2026-07-01T00:00:00Z",
+    url: null,
+    path: null,
+    reviewState: null,
+  };
+
+  it("keeps a payload that never heard of reactions, which is every server before this field", () => {
+    expect(decodeComment(comment).reactions).toBeUndefined();
+  });
+
+  it("keeps known reactions and drops one GitHub adds later rather than failing the comment", () => {
+    expect(
+      decodeComment({
+        ...comment,
+        reactions: [
+          { content: "thumbs_up", count: 1 },
+          { content: "eyes", count: 2 },
+          { content: "sparkle", count: 1 },
+        ],
+      }).reactions,
+    ).toEqual([
+      { content: "thumbs_up", count: 1 },
+      { content: "eyes", count: 2 },
+    ]);
   });
 });

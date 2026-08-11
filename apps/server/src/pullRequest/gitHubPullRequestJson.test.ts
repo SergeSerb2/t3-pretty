@@ -13,6 +13,7 @@ import {
   decodeReviewThreadCommentsJson,
   decodeReviewThreadsJson,
   decodeViewerPermissionsJson,
+  overlayReactions,
   reviewThreadConversation,
 } from "./gitHubPullRequestJson.ts";
 
@@ -172,6 +173,39 @@ describe("pull request detail decoding", () => {
       expect(detail.comments.map((comment) => comment.id)).toContain("r6");
     },
   );
+
+  it("keeps GitHub reaction groups on comments and reviews", () => {
+    const raw = JSON.parse(detailJson) as Record<string, unknown>;
+
+    const activity = expectSuccess(
+      decodePullRequestActivityJson(
+        JSON.stringify({
+          ...raw,
+          comments: [
+            {
+              id: "c1",
+              body: "second",
+              createdAt: "2026-07-04T00:00:00Z",
+              reactionGroups: [{ content: "HOORAY", users: { totalCount: 3 } }],
+            },
+          ],
+          reviews: [
+            {
+              id: "r1",
+              body: "first",
+              state: "COMMENTED",
+              submittedAt: "2026-07-03T00:00:00Z",
+              reactionGroups: [{ content: "EYES", reactors: { totalCount: 1 } }],
+            },
+          ],
+        }),
+      ),
+    );
+    expect(activity.comments.map((comment) => [comment.id, comment.reactions])).toEqual([
+      ["r1", [{ content: "eyes", count: 1 }]],
+      ["c1", [{ content: "hooray", count: 3 }]],
+    ]);
+  });
 
   it("drops a review that carries neither a body nor a state", () => {
     const raw = JSON.parse(detailJson) as Record<string, unknown>;
@@ -398,6 +432,101 @@ describe("review thread decoding", () => {
     expect(comments.map((comment) => comment.id)).toEqual(["t1", "t2"]);
   });
 
+  it("carries GraphQL reaction groups on a thread comment into the conversation", () => {
+    const result = expectSuccess(
+      decodeReviewThreadsJson(
+        threadsJson([
+          {
+            id: "PRRT_reactions",
+            isResolved: false,
+            path: "apps/server/src/ws.ts",
+            comments: {
+              nodes: [
+                {
+                  id: "t1",
+                  body: "fix this",
+                  createdAt: "2026-07-01T00:00:00Z",
+                  reactionGroups: [
+                    { content: "THUMBS_UP", reactors: { totalCount: 2 } },
+                    { content: "HEART", reactors: { totalCount: 0 } },
+                  ],
+                },
+              ],
+            },
+          },
+        ]),
+      ),
+    );
+    expect(result.threads[0]?.thread.comments[0]?.reactions).toEqual([
+      { content: "thumbs_up", count: 2 },
+    ]);
+    expect(
+      reviewThreadConversation(result.threads.map((entry) => entry.thread))[0]?.reactions,
+    ).toEqual([{ content: "thumbs_up", count: 2 }]);
+  });
+
+  it("collects GraphQL reactor counts for issue comments and reviews, which include bots", () => {
+    const result = expectSuccess(
+      decodeReviewThreadsJson(
+        JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: { totalCount: 0, nodes: [] },
+                comments: {
+                  nodes: [
+                    {
+                      id: "c1",
+                      author: { login: "octocat" },
+                      reactionGroups: [
+                        {
+                          content: "THUMBS_UP",
+                          users: { totalCount: 0 },
+                          reactors: { totalCount: 1 },
+                        },
+                      ],
+                    },
+                  ],
+                },
+                reviews: {
+                  nodes: [
+                    {
+                      id: "r1",
+                      reactionGroups: [{ content: "EYES", reactors: { totalCount: 1 } }],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+      ),
+    );
+    expect([...result.reactionsById]).toEqual([
+      ["c1", [{ content: "thumbs_up", count: 1 }]],
+      ["r1", [{ content: "eyes", count: 1 }]],
+    ]);
+  });
+
+  it("replaces gh's user-only count with the GraphQL reactor count", () => {
+    expect(
+      overlayReactions(
+        {
+          id: "c1",
+          kind: "issue-comment" as const,
+          author: null,
+          body: "ok",
+          createdAt: "2026-07-01T00:00:00Z",
+          url: null,
+          path: null,
+          reviewState: null,
+          reactions: [{ content: "thumbs_up", count: 1 }],
+        },
+        new Map([["c1", [{ content: "thumbs_up" as const, count: 2 }]]]),
+      ).reactions,
+    ).toEqual([{ content: "thumbs_up", count: 2 }]);
+  });
+
   it("hands back the cursor the next page of threads carries on from", () => {
     const result = expectSuccess(
       decodeReviewThreadsJson(
@@ -541,6 +670,32 @@ describe("viewer permission decoding", () => {
       canUpdate: true,
       didAuthor: false,
     });
+  });
+
+  it("counts GraphQL reactors on the summary, including when the only reactor is a bot", () => {
+    // `gh pr view --json reactionGroups` reports users.totalCount, which omits GitHub Apps.
+    // Codex Auto Review is chatgpt-codex-connector[bot], so a thumbs-up from it is users:0
+    // and reactors:1. The viewer query asks for reactors for that reason.
+    expect(
+      expectSuccess(
+        decodeViewerPermissionsJson(
+          viewerJson({
+            viewerPermission: "WRITE",
+            pullRequest: {
+              viewerCanUpdate: true,
+              viewerDidAuthor: false,
+              reactionGroups: [
+                { content: "THUMBS_UP", users: { totalCount: 0 }, reactors: { totalCount: 1 } },
+                { content: "EYES", reactors: { totalCount: 1 } },
+              ],
+            },
+          }),
+        ),
+      ).reactions,
+    ).toEqual([
+      { content: "thumbs_up", count: 1 },
+      { content: "eyes", count: 1 },
+    ]);
   });
 });
 

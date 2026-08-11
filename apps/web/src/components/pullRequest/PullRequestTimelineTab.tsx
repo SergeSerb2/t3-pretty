@@ -28,6 +28,7 @@ import {
   PullRequestActorAvatar,
   PullRequestDiffStat,
   PullRequestMetaLine,
+  PullRequestReactions,
 } from "./pullRequestPresentation";
 
 function TimelineBody({ body, markdown, cwd }: { body: string; markdown: boolean; cwd: string }) {
@@ -170,6 +171,11 @@ function ConversationCard({
       {event.body ? (
         <div className="px-2 pb-2">
           <TimelineBody body={event.body} markdown={event.markdown} cwd={cwd} />
+          <PullRequestReactions reactions={event.reactions} />
+        </div>
+      ) : event.reactions !== undefined && event.reactions.length > 0 ? (
+        <div className="px-2 pb-2">
+          <PullRequestReactions reactions={event.reactions} />
         </div>
       ) : null}
     </article>

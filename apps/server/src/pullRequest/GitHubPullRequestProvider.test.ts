@@ -102,6 +102,64 @@ describe("gitHubViewerPermissions", () => {
       ),
     ),
   );
+
+  it.effect("puts GraphQL reactor counts on the summary, which include Codex", () =>
+    Effect.gen(function* () {
+      const provider = yield* make;
+      const detail = yield* provider.getChangeRequest({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.com",
+        number: 7,
+      });
+
+      expect(detail.reactions).toEqual([{ content: "thumbs_up", count: 1 }]);
+    }).pipe(
+      Effect.provide(
+        Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
+          getPullRequestDetail: () =>
+            Effect.succeed({
+              authorId: null,
+              number: 7,
+              title: "Pull request 7",
+              url: "https://github.com/acme/web/pull/7",
+              author: null,
+              headBranch: "feat/page",
+              baseBranch: "main",
+              state: "open",
+              isDraft: false,
+              mergeability: "mergeable",
+              additions: 1,
+              deletions: 1,
+              createdAt: "2026-07-01T00:00:00Z",
+              updatedAt: "2026-07-02T00:00:00Z",
+              reviewRequestLogins: [],
+              hasTeamReviewRequest: false,
+              labels: [],
+              body: "",
+              changedFiles: 1,
+              mergedAt: null,
+              closedAt: null,
+              checks: [],
+              comments: [],
+              commits: [],
+            }),
+          getRepositoryAccess: () =>
+            Effect.succeed({
+              canWrite: false,
+              mergeCapabilities: { merge: true, squash: true, rebase: true },
+            }),
+          getViewerAccess: () =>
+            Effect.succeed({
+              canWrite: false,
+              canUpdate: true,
+              didAuthor: false,
+              reactions: [{ content: "thumbs_up", count: 1 }],
+            }),
+        }),
+      ),
+    ),
+  );
 });
 
 describe("getChangeRequest commits", () => {
@@ -140,6 +198,7 @@ describe("getChangeRequest commits", () => {
     avatarsByLogin: new Map<string, string>(),
     commitStats: new Map<string, { readonly additions: number; readonly deletions: number }>(),
     viewer: { canUpdate: true, didAuthor: false },
+    reactionsById: new Map(),
   };
 
   const layerWith = (commits: GitHubReviewThreadComments["commits"]) =>
