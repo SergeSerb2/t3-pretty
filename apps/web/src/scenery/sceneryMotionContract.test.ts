@@ -48,7 +48,7 @@ describe("working-row orb contract", () => {
   it("pins every orb to the app's resolved appearance", () => {
     expect(motionDriverSource).toContain("const isDark = useIsDarkAppearance()");
     expect(motionDriverSource).toContain('const orbTheme = isDark ? "dark" : "light"');
-    expect(motionDriverSource.match(/theme=\{orbTheme\}/g)).toHaveLength(4);
+    expect(motionDriverSource.match(/theme=\{orbTheme\}/g)).toHaveLength(3);
   });
 
   it("never clones the transient working row into a fixed-position exit ghost", () => {
@@ -112,18 +112,17 @@ describe("hero and sidebar contract", () => {
     expect(sidebarSource).toContain('aria-label="New thread"');
   });
 
-  it("working sidebar rows still mark themselves with CircleDashedIcon", () => {
+  it("working sidebar rows keep a quiet text-only status label", () => {
     expect(sidebarSource).toContain("data-thread-item");
-    expect(sidebarSource).toContain("CircleDashedIcon");
-  });
-
-  it("keeps persistent sidebar orb canvases static", () => {
-    expect(motionDriverSource).toMatch(/state="working"[\s\S]*?theme=\{orbTheme\}[\s\S]*?paused/);
+    expect(sidebarSource).toContain('label: "Working"');
+    expect(sidebarSource).not.toContain("CircleDashedIcon");
+    expect(motionDriverSource).not.toContain("scenery-orb-slot--sidebar");
+    expect(motionStylesSource).not.toContain("scenery-orb-slot--sidebar");
   });
 
   it("keeps the working label quiet without an infinite animation", () => {
     expect(sidebarSource).toContain("data-sidebar-working-label");
-    expect(motionStylesSource).toContain("~ [data-sidebar-working-label]");
+    expect(motionStylesSource).toContain("[data-sidebar-working-label]");
     expect(motionStylesSource).not.toContain("scenery-sidebar-working-breathe");
   });
 });

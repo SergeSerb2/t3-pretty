@@ -148,25 +148,10 @@ html[data-scenery-motion] [data-changed-files-state] {
   }
 }
 
-/* --------------------------------------------------------- sidebar orbs -- */
-/* A working thread's CircleDashedIcon hands its spot to a small orb. */
+/* -------------------------------------------------- sidebar working label -- */
+/* Working threads keep the status text only — no dashed icon, no orb. */
 
-html[data-scenery-motion] [data-thread-item] .scenery-orb-slot--sidebar + svg {
-  display: none;
-}
-
-.scenery-orb-slot--sidebar {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-}
-
-/* Keep the secondary label quiet without keeping the compositor awake for
-   every working thread in the sidebar. */
-html[data-scenery-motion]
-  [data-thread-item]
-  .scenery-orb-slot--sidebar
-  ~ [data-sidebar-working-label] {
+html[data-scenery-motion] [data-thread-item] [data-sidebar-working-label] {
   opacity: 0.9;
 }
 

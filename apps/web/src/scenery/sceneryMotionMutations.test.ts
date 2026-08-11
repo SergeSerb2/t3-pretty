@@ -32,7 +32,7 @@ describe("scenery motion mutation filter", () => {
     expect(SCENERY_MOTION_STRUCTURE_SELECTOR).toContain("[data-approval-detail]");
     expect(SCENERY_MOTION_STRUCTURE_SELECTOR).toContain('button[aria-label="Scroll to end"]');
     expect(SCENERY_MOTION_STRUCTURE_SELECTOR).toContain("[data-chat-composer-overlay] h1");
-    expect(SCENERY_MOTION_STRUCTURE_SELECTOR).toContain("svg.lucide-circle-dashed");
+    expect(SCENERY_MOTION_STRUCTURE_SELECTOR).not.toContain("svg.lucide-circle-dashed");
   });
 
   it("ignores streamed text and unrelated element churn", () => {
