@@ -17,7 +17,9 @@ jobs:
     permissions:
       contents: write
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
-    timeout-minutes: 10
+    # Headroom above the changelog generator's 10-minute model budget so a
+    # stalled CLIProxy request can never get the preflight hard-killed.
+    timeout-minutes: 15
     outputs:
       should_release: ${{ steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true' }}
       windows_release: ${{ steps.signing.outputs.windows }}

@@ -21,8 +21,12 @@ const MAX_RELEASES_PER_RUN = 60;
 const MAX_VERSIONS_PER_REQUEST = 4;
 const MAX_FORK_COMMITS = 40;
 const MAX_UPSTREAM_COMMITS = 60;
-const MAX_PUSH_ATTEMPTS = 3;
 const PRINT_WIDTH = 100;
+// Model calls must stay comfortably below the 15-minute preflight deadline:
+// each request times out on its own, and an overall budget stops further
+// chunk requests so the fallback path always runs before GitHub kills the job.
+const REQUEST_TIMEOUT_MS = 150_000;
+const MODEL_TIME_BUDGET_MS = 600_000;
 
 function git(args, options = {}) {
   return NodeChildProcess.execFileSync("git", args, {
@@ -227,6 +231,7 @@ async function callChangelogModel({ prompt, token }) {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     body: JSON.stringify({
       model: MODEL,
       reasoning: { effort: REASONING_EFFORT },
@@ -391,17 +396,18 @@ function hasChanges(context) {
 
 async function generateEntries({ contexts, token, warn }) {
   const entries = [];
+  const deadline = Date.now() + MODEL_TIME_BUDGET_MS;
   for (let start = 0; start < contexts.length; start += MAX_VERSIONS_PER_REQUEST) {
     const chunk = contexts.slice(start, start + MAX_VERSIONS_PER_REQUEST);
     let modelReleases = [];
-    if (token) {
+    if (token && Date.now() < deadline) {
       const prompt = buildChangelogPrompt({ releases: chunk });
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
           modelReleases = await callChangelogModel({ prompt, token });
           break;
         } catch (error) {
-          if (attempt === 2) {
+          if (attempt === 2 || Date.now() >= deadline) {
             warn(
               `CLIProxyAPI changelog generation failed for ${chunk
                 .map((release) => release.version)
@@ -409,9 +415,16 @@ async function generateEntries({ contexts, token, warn }) {
                 error instanceof Error ? error.message : String(error)
               }`,
             );
+            break;
           }
         }
       }
+    } else if (token) {
+      warn(
+        `Changelog model time budget exhausted; using commit subjects for ${chunk
+          .map((release) => release.version)
+          .join(", ")}.`,
+      );
     }
     for (const context of chunk) {
       const modelRelease = modelReleases.find((release) => release.version === context.version);
@@ -456,86 +469,84 @@ async function main() {
     return;
   }
 
-  for (let attempt = 1; attempt <= MAX_PUSH_ATTEMPTS; attempt++) {
-    const source = NodeFS.readFileSync(CHANGELOG_PATH, "utf8");
-    const planned = planReleases({
-      presentVersions: extractChangelogVersions(source),
-      forkVersions: forkReleases.map((release) => release.version),
-      currentVersion: currentVersion || undefined,
-    });
-    if (planned.length === 0) {
-      process.stdout.write("[fork-changelog] changelog already covers every fork release\n");
-      writeGitHubOutput({ ref: baseSha, entries: 0 });
-      return;
-    }
-
-    const contexts = planned
-      .map((version) => releaseContext({ version, currentVersion, forkReleases }))
-      .filter(hasChanges);
-    if (contexts.length === 0) {
-      process.stdout.write(
-        "[fork-changelog] every pending release is empty; nothing to announce\n",
-      );
-      writeGitHubOutput({ ref: baseSha, entries: 0 });
-      return;
-    }
-
-    process.stdout.write(
-      `[fork-changelog] planning ${contexts.length} release(s): ${contexts
-        .map((context) => context.version)
-        .join(", ")}\n`,
-    );
-    if (dryRun) {
-      for (const context of contexts) {
-        process.stdout.write(`${JSON.stringify(context, null, 2)}\n`);
-      }
-      return;
-    }
-    if (!token) {
-      warn("CLI_PROXY_API_KEY is not set; shipping without new changelog entries.");
-      writeGitHubOutput({ ref: baseSha, entries: 0 });
-      return;
-    }
-
-    const entries = await generateEntries({ contexts, token, warn });
-    const serialized = entries
-      .sort((a, b) => -(compareVersions(a.version, b.version) ?? 0))
-      .map(serializeReleaseEntry);
-    NodeFS.writeFileSync(CHANGELOG_PATH, insertChangelogEntries(source, serialized));
-
-    const newest = entries[0]?.version ?? currentVersion ?? "unknown";
-    git(["add", "--", CHANGELOG_PATH]);
-    git([
-      "-c",
-      "user.name=t3-pretty-release[bot]",
-      "-c",
-      "user.email=github-actions[bot]@users.noreply.github.com",
-      "commit",
-      "-m",
-      `docs(changelog): add release notes through v${newest}`,
-    ]);
-
-    try {
-      git(["push", "origin", "HEAD:main"]);
-      const sha = git(["rev-parse", "HEAD"]);
-      process.stdout.write(
-        `[fork-changelog] committed and pushed ${entries.length} release note(s) as ${sha.slice(0, 12)}\n`,
-      );
-      writeGitHubOutput({ ref: sha, entries: entries.length });
-      return;
-    } catch (error) {
-      warn(
-        `Could not push the changelog commit (attempt ${attempt}/${MAX_PUSH_ATTEMPTS}). ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      git(["fetch", "origin", "main"]);
-      git(["reset", "--hard", "origin/main"]);
-    }
+  const source = NodeFS.readFileSync(CHANGELOG_PATH, "utf8");
+  const planned = planReleases({
+    presentVersions: extractChangelogVersions(source),
+    forkVersions: forkReleases.map((release) => release.version),
+    currentVersion: currentVersion || undefined,
+  });
+  if (planned.length === 0) {
+    process.stdout.write("[fork-changelog] changelog already covers every fork release\n");
+    writeGitHubOutput({ ref: baseSha, entries: 0 });
+    return;
   }
 
-  warn("Giving up on the changelog commit after repeated push conflicts; releasing without it.");
-  writeGitHubOutput({ ref: baseSha, entries: 0 });
+  const contexts = planned
+    .map((version) => releaseContext({ version, currentVersion, forkReleases }))
+    .filter(hasChanges);
+  if (contexts.length === 0) {
+    process.stdout.write("[fork-changelog] every pending release is empty; nothing to announce\n");
+    writeGitHubOutput({ ref: baseSha, entries: 0 });
+    return;
+  }
+
+  process.stdout.write(
+    `[fork-changelog] planning ${contexts.length} release(s): ${contexts
+      .map((context) => context.version)
+      .join(", ")}\n`,
+  );
+  if (dryRun) {
+    for (const context of contexts) {
+      process.stdout.write(`${JSON.stringify(context, null, 2)}\n`);
+    }
+    return;
+  }
+  if (!token) {
+    warn("CLI_PROXY_API_KEY is not set; shipping without new changelog entries.");
+    writeGitHubOutput({ ref: baseSha, entries: 0 });
+    return;
+  }
+
+  const entries = await generateEntries({ contexts, token, warn });
+  const serialized = entries
+    .sort((a, b) => -(compareVersions(a.version, b.version) ?? 0))
+    .map(serializeReleaseEntry);
+  NodeFS.writeFileSync(CHANGELOG_PATH, insertChangelogEntries(source, serialized));
+
+  const newest = entries[0]?.version ?? currentVersion ?? "unknown";
+  git(["add", "--", CHANGELOG_PATH]);
+  git([
+    "-c",
+    "user.name=t3-pretty-release[bot]",
+    "-c",
+    "user.email=github-actions[bot]@users.noreply.github.com",
+    "commit",
+    "-m",
+    `docs(changelog): add release notes through v${newest}`,
+  ]);
+
+  try {
+    git(["push", "origin", "HEAD:main"]);
+  } catch (error) {
+    // A rejected push means origin/main moved since this run started. Never
+    // rebase onto it: the release must stay pinned to the triggering commit
+    // its version was computed from, and the moved commit's own queued run
+    // regenerates any entries this run leaves behind.
+    warn(
+      `Could not push the changelog commit; releasing ${baseSha.slice(0, 12)} without it. ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    git(["reset", "--hard", baseSha]);
+    writeGitHubOutput({ ref: baseSha, entries: 0 });
+    return;
+  }
+
+  const sha = git(["rev-parse", "HEAD"]);
+  process.stdout.write(
+    `[fork-changelog] committed and pushed ${entries.length} release note(s) as ${sha.slice(0, 12)}\n`,
+  );
+  writeGitHubOutput({ ref: sha, entries: entries.length });
 }
 
 function writeGitHubOutput(values) {
