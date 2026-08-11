@@ -9,6 +9,13 @@ on:
 permissions:
   contents: write
 
+# A single self-hosted runner serves every job below, so overlapping merges
+# would otherwise contend for it. Queue instead of cancelling: each commit
+# still gets its own release, just one at a time.
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
 jobs:
   preflight:
     name: Resolve T3 Pretty release
@@ -29,6 +36,30 @@ jobs:
       upstream_tag: ${{ steps.release.outputs.upstream_tag }}
       ref: ${{ steps.changelog.outputs.ref || github.sha }}
     steps:
+      - name: Verify runner action externals
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Every `uses:` step runs under the runner's own bundled Node. When
+          # that tree goes missing - an interrupted runner self-update, or a
+          # disk sweep that reaps `externals/` - `run:` steps keep working
+          # while every action dies with a bare ENOENT naming the node binary.
+          # Without this guard the first casualty is whichever action follows
+          # the build, so a signed release burns several minutes before
+          # failing. Check it up front instead, and say how to repair it.
+          runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
+          externals="${runner_root}/externals"
+          node_bin="${externals}/node24/bin/node"
+          if [[ ! -x "$node_bin" ]] || ! "$node_bin" --version >/dev/null 2>&1; then
+            echo "::error::Runner cannot execute actions: ${node_bin} is missing or unusable."
+            echo "Repair on the runner host: stop the runner service, re-extract the"
+            echo "actions-runner release package over ${runner_root} to restore externals/,"
+            echo "then start the service again. No repository change fixes this."
+            ls -la "$externals" 2>/dev/null || echo "externals/ does not exist at ${externals}"
+            exit 1
+          fi
+          echo "Runner externals OK (node $("$node_bin" --version))."
+
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
         with:
@@ -194,6 +225,30 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 15
     steps:
+      - name: Verify runner action externals
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Every `uses:` step runs under the runner's own bundled Node. When
+          # that tree goes missing - an interrupted runner self-update, or a
+          # disk sweep that reaps `externals/` - `run:` steps keep working
+          # while every action dies with a bare ENOENT naming the node binary.
+          # Without this guard the first casualty is whichever action follows
+          # the build, so a signed release burns several minutes before
+          # failing. Check it up front instead, and say how to repair it.
+          runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
+          externals="${runner_root}/externals"
+          node_bin="${externals}/node24/bin/node"
+          if [[ ! -x "$node_bin" ]] || ! "$node_bin" --version >/dev/null 2>&1; then
+            echo "::error::Runner cannot execute actions: ${node_bin} is missing or unusable."
+            echo "Repair on the runner host: stop the runner service, re-extract the"
+            echo "actions-runner release package over ${runner_root} to restore externals/,"
+            echo "then start the service again. No repository change fixes this."
+            ls -la "$externals" 2>/dev/null || echo "externals/ does not exist at ${externals}"
+            exit 1
+          fi
+          echo "Runner externals OK (node $("$node_bin" --version))."
+
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
         with:
@@ -247,6 +302,30 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 60
     steps:
+      - name: Verify runner action externals
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Every `uses:` step runs under the runner's own bundled Node. When
+          # that tree goes missing - an interrupted runner self-update, or a
+          # disk sweep that reaps `externals/` - `run:` steps keep working
+          # while every action dies with a bare ENOENT naming the node binary.
+          # Without this guard the first casualty is whichever action follows
+          # the build, so a signed release burns several minutes before
+          # failing. Check it up front instead, and say how to repair it.
+          runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
+          externals="${runner_root}/externals"
+          node_bin="${externals}/node24/bin/node"
+          if [[ ! -x "$node_bin" ]] || ! "$node_bin" --version >/dev/null 2>&1; then
+            echo "::error::Runner cannot execute actions: ${node_bin} is missing or unusable."
+            echo "Repair on the runner host: stop the runner service, re-extract the"
+            echo "actions-runner release package over ${runner_root} to restore externals/,"
+            echo "then start the service again. No repository change fixes this."
+            ls -la "$externals" 2>/dev/null || echo "externals/ does not exist at ${externals}"
+            exit 1
+          fi
+          echo "Runner externals OK (node $("$node_bin" --version))."
+
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
         with:
@@ -425,6 +504,37 @@ jobs:
     runs-on: [self-hosted, Windows, X64, t3code-fork, release-only]
     timeout-minutes: 60
     steps:
+      - name: Verify runner action externals
+        # PowerShell, not bash: this runs before the PATH prep below, and the
+        # bash first on this runner's PATH is WSL's, which would resolve
+        # RUNNER_TEMP to a Linux path that does not exist.
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Every `uses:` step runs under the runner's own bundled Node. When
+          # that tree goes missing - an interrupted runner self-update, or a
+          # disk sweep that reaps `externals\` - `run:` steps keep working
+          # while every action dies with a bare ENOENT naming the node binary.
+          # Fail here, before the build, and say how to repair it.
+          $runnerRoot = (Resolve-Path (Join-Path $env:RUNNER_TEMP "..\..")).Path
+          $externals = Join-Path $runnerRoot "externals"
+          $nodeBin = Join-Path $externals "node24\bin\node.exe"
+          $usable = $false
+          if (Test-Path $nodeBin) {
+            & $nodeBin --version *> $null
+            $usable = $LASTEXITCODE -eq 0
+          }
+          if (-not $usable) {
+            Write-Output "::error::Runner cannot execute actions: $nodeBin is missing or unusable."
+            Write-Output "Repair on the runner host: stop the runner service, re-extract the"
+            Write-Output "actions-runner release package over $runnerRoot to restore externals\,"
+            Write-Output "then start the service again. No repository change fixes this."
+            if (Test-Path $externals) { Get-ChildItem $externals | Out-String | Write-Output }
+            else { Write-Output "externals\ does not exist at $externals" }
+            exit 1
+          }
+          Write-Output "Runner externals OK (node $(& $nodeBin --version))."
+
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
         with:
@@ -557,6 +667,30 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Verify runner action externals
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Every `uses:` step runs under the runner's own bundled Node. When
+          # that tree goes missing - an interrupted runner self-update, or a
+          # disk sweep that reaps `externals/` - `run:` steps keep working
+          # while every action dies with a bare ENOENT naming the node binary.
+          # Without this guard the first casualty is whichever action follows
+          # the build, so a signed release burns several minutes before
+          # failing. Check it up front instead, and say how to repair it.
+          runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
+          externals="${runner_root}/externals"
+          node_bin="${externals}/node24/bin/node"
+          if [[ ! -x "$node_bin" ]] || ! "$node_bin" --version >/dev/null 2>&1; then
+            echo "::error::Runner cannot execute actions: ${node_bin} is missing or unusable."
+            echo "Repair on the runner host: stop the runner service, re-extract the"
+            echo "actions-runner release package over ${runner_root} to restore externals/,"
+            echo "then start the service again. No repository change fixes this."
+            ls -la "$externals" 2>/dev/null || echo "externals/ does not exist at ${externals}"
+            exit 1
+          fi
+          echo "Runner externals OK (node $("$node_bin" --version))."
+
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
         with:
