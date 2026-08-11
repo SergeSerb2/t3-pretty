@@ -76,9 +76,11 @@ import {
 } from "../../lib/terminalContext";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
 import { type ElementContextDraft } from "../../lib/elementContext";
+import { type CanvasSelectionContext } from "../../lib/canvasSelection";
 import { ComposerPendingElementContexts } from "./ComposerPendingElementContexts";
 import { ComposerPendingReviewComments } from "./ComposerPendingReviewComments";
 import { ComposerPreviewAnnotationCards } from "./ComposerPreviewAnnotationCards";
+import { ComposerCanvasSelectionCards } from "./ComposerCanvasSelectionCards";
 import {
   shouldUseCompactComposerPrimaryActions,
   shouldUseCompactComposerFooter,
@@ -515,6 +517,7 @@ export interface ChatComposerHandle {
     terminalContexts: TerminalContextDraft[];
     elementContexts: ElementContextDraft[];
     previewAnnotations: PreviewAnnotationPayload[];
+    canvasSelections: CanvasSelectionContext[];
     reviewComments: ReviewCommentContext[];
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
@@ -725,6 +728,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerElementContexts = composerDraft.elementContexts;
   const composerPreviewAnnotations = composerDraft.previewAnnotations;
+  const composerCanvasSelections = composerDraft.canvasSelections;
   const composerReviewComments = composerDraft.reviewComments;
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
 
@@ -746,6 +750,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const removeComposerDraftPreviewAnnotation = useComposerDraftStore(
     (store) => store.removePreviewAnnotation,
+  );
+  const removeComposerDraftCanvasSelection = useComposerDraftStore(
+    (store) => store.removeCanvasSelection,
   );
   const removeComposerDraftReviewComment = useComposerDraftStore(
     (store) => store.removeReviewComment,
@@ -1048,12 +1055,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         elementContextCount:
           composerElementContexts.length +
           composerPreviewAnnotations.length +
+          composerCanvasSelections.length +
           composerReviewComments.length,
       }),
     [
       composerElementContexts.length,
       composerImages.length,
       composerPreviewAnnotations.length,
+      composerCanvasSelections.length,
       composerReviewComments.length,
       composerTerminalContexts,
       prompt,
@@ -2655,6 +2664,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         terminalContexts: composerTerminalContextsRef.current,
         elementContexts: composerElementContextsRef.current,
         previewAnnotations: composerPreviewAnnotations,
+        canvasSelections: composerCanvasSelections,
         reviewComments: composerReviewComments,
         selectedPromptEffort,
         selectedModelOptionsForDispatch,
@@ -2676,6 +2686,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerTerminalContextsRef,
       composerElementContextsRef,
       composerPreviewAnnotations,
+      composerCanvasSelections,
       composerReviewComments,
       isConnecting,
       isComposerApprovalState,
@@ -2963,6 +2974,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             {!isComposerCollapsedMobile &&
               !isComposerApprovalState &&
               pendingUserInputs.length === 0 &&
+              composerCanvasSelections.length > 0 && (
+                <ComposerCanvasSelectionCards
+                  selections={composerCanvasSelections}
+                  images={composerImages}
+                  onRemove={(selectionId) =>
+                    removeComposerDraftCanvasSelection(composerDraftTarget, selectionId)
+                  }
+                  onExpandImage={(imageId) => {
+                    const preview = buildExpandedImagePreview(composerImages, imageId);
+                    if (preview) onExpandImage(preview);
+                  }}
+                  className="mb-3"
+                />
+              )}
+
+            {!isComposerCollapsedMobile &&
+              !isComposerApprovalState &&
+              pendingUserInputs.length === 0 &&
               composerReviewComments.length > 0 && (
                 <ComposerPendingReviewComments
                   comments={composerReviewComments}
@@ -2991,7 +3020,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               pendingUserInputs.length === 0 &&
               composerImages.some(
                 (image) =>
-                  !composerPreviewAnnotations.some((annotation) => annotation.id === image.id),
+                  !composerPreviewAnnotations.some((annotation) => annotation.id === image.id) &&
+                  !composerCanvasSelections.some((selection) => selection.id === image.id),
               ) && (
                 <div className="mb-3 flex flex-wrap gap-2">
                   {composerImages
@@ -2999,7 +3029,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       (image) =>
                         !composerPreviewAnnotations.some(
                           (annotation) => annotation.id === image.id,
-                        ),
+                        ) &&
+                        !composerCanvasSelections.some((selection) => selection.id === image.id),
                     )
                     .map((image) => (
                       <div

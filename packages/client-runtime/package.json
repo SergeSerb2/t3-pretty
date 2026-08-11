@@ -51,6 +51,10 @@
       "types": "./src/state/assets.ts",
       "default": "./src/state/assets.ts"
     },
+    "./state/canvas": {
+      "types": "./src/state/canvas.ts",
+      "default": "./src/state/canvas.ts"
+    },
     "./state/connections": {
       "types": "./src/state/connections.ts",
       "default": "./src/state/connections.ts"

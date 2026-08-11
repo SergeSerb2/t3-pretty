@@ -22,6 +22,7 @@ import serverPackageJson from "../../server/package.json" with { type: "json" };
 
 import * as DesktopIpc from "./ipc/DesktopIpc.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
+import * as ElectronDesktopCapturer from "./electron/ElectronDesktopCapturer.ts";
 import * as ElectronDialog from "./electron/ElectronDialog.ts";
 import * as ElectronMenu from "./electron/ElectronMenu.ts";
 import * as ElectronPowerMonitor from "./electron/ElectronPowerMonitor.ts";
@@ -57,6 +58,7 @@ import * as DesktopSshPasswordPrompts from "./ssh/DesktopSshPasswordPrompts.ts";
 import * as DesktopState from "./app/DesktopState.ts";
 import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
+import * as ScreenCaptureManager from "./capture/Manager.ts";
 import * as BrowserSession from "./preview/BrowserSession.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as DesktopWindow from "./window/DesktopWindow.ts";
@@ -151,9 +153,15 @@ const desktopPreviewLayer = PreviewManager.layer.pipe(
   Layer.provideMerge(desktopFoundationLayer),
 );
 
+const desktopCaptureLayer = ScreenCaptureManager.layer.pipe(
+  Layer.provideMerge(ElectronDesktopCapturer.layer),
+  Layer.provideMerge(desktopFoundationLayer),
+);
+
 const desktopWindowLayer = DesktopWindow.layer.pipe(
   Layer.provideMerge(desktopServerExposureLayer),
   Layer.provideMerge(desktopPreviewLayer),
+  Layer.provideMerge(desktopCaptureLayer),
 );
 
 // Pool layer instantiates the backend factory once for the Windows

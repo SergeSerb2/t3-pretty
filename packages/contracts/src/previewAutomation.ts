@@ -634,7 +634,7 @@ export type PreviewAutomationResponse = typeof PreviewAutomationResponse.Type;
 export class PreviewAutomationUnavailableError extends Schema.TaggedErrorClass<PreviewAutomationUnavailableError>()(
   "PreviewAutomationUnavailableError",
   {
-    capability: Schema.Literal("preview"),
+    capability: Schema.Literals(["preview", "canvas"]),
     environmentId: EnvironmentId,
     threadId: ThreadId,
     providerSessionId: TrimmedNonEmptyString,
@@ -645,6 +645,15 @@ export class PreviewAutomationUnavailableError extends Schema.TaggedErrorClass<P
     return `MCP credential does not grant the ${this.capability} capability.`;
   }
 }
+
+/**
+ * The capability gate covers every MCP surface, not just preview automation;
+ * canvas call sites use this capability-neutral alias so they don't reference
+ * a "preview"-named error. The wire tag stays PreviewAutomationUnavailableError
+ * for compatibility with existing clients.
+ */
+export const McpCapabilityUnavailableError = PreviewAutomationUnavailableError;
+export type McpCapabilityUnavailableError = PreviewAutomationUnavailableError;
 
 const PreviewAutomationScopeErrorFields = {
   operation: PreviewAutomationOperation,

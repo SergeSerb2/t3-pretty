@@ -1147,6 +1147,7 @@ function PullRequestsRouteView() {
             onAddFiles={() => undefined}
             onAddPullRequest={() => undefined}
             onAddAgents={() => undefined}
+            onAddCanvas={() => undefined}
             browserAvailable={false}
             terminalAvailable={false}
             diffAvailable={false}

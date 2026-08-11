@@ -27,7 +27,11 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { OtlpTracer } from "effect/unstable/observability";
 
 import * as ServerConfig from "./config.ts";
-import { ASSET_ROUTE_PREFIX, resolveAsset } from "./assets/AssetAccess.ts";
+import {
+  ASSET_ROUTE_PREFIX,
+  resolveAsset,
+  type ResolvedAssetSource,
+} from "./assets/AssetAccess.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { traceRelayRequest } from "./cloud/traceRelayRequest.ts";
@@ -45,10 +49,22 @@ const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
 
-export function assetResponseHeaders(filePath: string): Record<string, string> {
+export function assetResponseHeaders(
+  filePath: string,
+  source?: ResolvedAssetSource,
+): Record<string, string> {
   return {
-    "Cache-Control": "private, max-age=3600",
+    // Attachment bytes never change for a given attachment id, so they can be
+    // cached hard; workspace files and favicons can be edited in place.
+    "Cache-Control":
+      source === "attachment" ? "private, max-age=31536000, immutable" : "private, max-age=3600",
     "X-Content-Type-Options": "nosniff",
+    // Asset URLs are signed capability URLs (the token is the whole
+    // authorization), so cross-origin reads — canvas bitmaps, the desktop
+    // renderer origin — are safe to allow for any origin.
+    ...(source === "attachment" || source === "workspace-file"
+      ? { "Access-Control-Allow-Origin": "*" }
+      : {}),
     ...(filePath.toLowerCase().endsWith(".svg")
       ? { "Content-Security-Policy": SVG_CONTENT_SECURITY_POLICY }
       : {}),
@@ -219,7 +235,7 @@ export const assetRouteLayer = HttpRouter.add(
     }
     return yield* HttpServerResponse.file(asset.path, {
       status: 200,
-      headers: assetResponseHeaders(asset.path),
+      headers: assetResponseHeaders(asset.path, asset.source),
     }).pipe(
       Effect.orElseSucceed(() => HttpServerResponse.text("Internal Server Error", { status: 500 })),
     );

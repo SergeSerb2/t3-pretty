@@ -44,4 +44,27 @@ describe("assetResponseHeaders", () => {
       "X-Content-Type-Options": "nosniff",
     });
   });
+
+  it("caches attachment bytes immutably and allows cross-origin reads", () => {
+    expect(assetResponseHeaders("/attachments/user-image.png", "attachment")).toEqual({
+      "Cache-Control": "private, max-age=31536000, immutable",
+      "X-Content-Type-Options": "nosniff",
+      "Access-Control-Allow-Origin": "*",
+    });
+  });
+
+  it("keeps workspace-file caching but allows cross-origin reads", () => {
+    expect(assetResponseHeaders("/workspace/report.png", "workspace-file")).toEqual({
+      "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+      "Access-Control-Allow-Origin": "*",
+    });
+  });
+
+  it("does not open project favicons to cross-origin reads", () => {
+    expect(assetResponseHeaders("/workspace/favicon.png", "project-favicon")).toEqual({
+      "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+    });
+  });
 });

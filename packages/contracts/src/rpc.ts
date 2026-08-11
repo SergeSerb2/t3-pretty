@@ -29,6 +29,16 @@ import {
 } from "./filesystem.ts";
 import { AssetAccessError, AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
 import {
+  CanvasApplyInput,
+  CanvasApplyResult,
+  CanvasError,
+  CanvasEvent,
+  CanvasGetInput,
+  CanvasState,
+  CanvasSubscribeInput,
+  CanvasUpdateSelectionInput,
+} from "./canvas.ts";
+import {
   GitActionProgressEvent,
   VcsSwitchRefInput,
   VcsSwitchRefResult,
@@ -259,6 +269,11 @@ export const WS_METHODS = {
   previewAutomationRespond: "previewAutomation.respond",
   previewAutomationFocusHost: "previewAutomation.focusHost",
 
+  // Canvas methods
+  canvasGet: "canvas.get",
+  canvasApply: "canvas.apply",
+  canvasUpdateSelection: "canvas.updateSelection",
+
   // Server meta
   serverProbe: "server.probe",
   serverGetConfig: "server.getConfig",
@@ -311,6 +326,7 @@ export const WS_METHODS = {
   subscribeTerminalEvents: "subscribeTerminalEvents",
   subscribeTerminalMetadata: "subscribeTerminalMetadata",
   subscribePreviewEvents: "subscribePreviewEvents",
+  subscribeCanvasEvents: "canvas.subscribe",
   subscribeDiscoveredLocalServers: "subscribeDiscoveredLocalServers",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
@@ -854,6 +870,30 @@ export const WsSubscribePreviewEventsRpc = Rpc.make(WS_METHODS.subscribePreviewE
   stream: true,
 });
 
+export const WsCanvasGetRpc = Rpc.make(WS_METHODS.canvasGet, {
+  payload: CanvasGetInput,
+  success: CanvasState,
+  error: Schema.Union([CanvasError, EnvironmentAuthorizationError]),
+});
+
+export const WsCanvasApplyRpc = Rpc.make(WS_METHODS.canvasApply, {
+  payload: CanvasApplyInput,
+  success: CanvasApplyResult,
+  error: Schema.Union([CanvasError, EnvironmentAuthorizationError]),
+});
+
+export const WsCanvasUpdateSelectionRpc = Rpc.make(WS_METHODS.canvasUpdateSelection, {
+  payload: CanvasUpdateSelectionInput,
+  error: Schema.Union([CanvasError, EnvironmentAuthorizationError]),
+});
+
+export const WsSubscribeCanvasEventsRpc = Rpc.make(WS_METHODS.subscribeCanvasEvents, {
+  payload: CanvasSubscribeInput,
+  success: CanvasEvent,
+  error: Schema.Union([CanvasError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
 export const WsSubscribeDiscoveredLocalServersRpc = Rpc.make(
   WS_METHODS.subscribeDiscoveredLocalServers,
   {
@@ -1063,6 +1103,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsPreviewAutomationRespondRpc,
   WsPreviewAutomationFocusHostRpc,
   WsSubscribePreviewEventsRpc,
+  WsCanvasGetRpc,
+  WsCanvasApplyRpc,
+  WsCanvasUpdateSelectionRpc,
+  WsSubscribeCanvasEventsRpc,
   WsSubscribeDiscoveredLocalServersRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,

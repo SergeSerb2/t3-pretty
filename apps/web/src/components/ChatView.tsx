@@ -223,6 +223,7 @@ import {
   formatElementContextLabel,
 } from "../lib/elementContext";
 import { appendPreviewAnnotationPrompt } from "../lib/previewAnnotation";
+import { appendCanvasSelectionPrompt } from "../lib/canvasSelection";
 import { appendReviewCommentsToPrompt, type ReviewCommentContext } from "../reviewCommentContext";
 import { environmentCatalog } from "../connection/catalog";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
@@ -429,6 +430,9 @@ const PreviewPanel = lazy(() =>
 );
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
+const CanvasPanel = lazy(() =>
+  import("./canvas/CanvasPanel").then((module) => ({ default: module.CanvasPanel })),
+);
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   "input",
@@ -1368,6 +1372,9 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const setComposerDraftPreviewAnnotations = useComposerDraftStore(
     (store) => store.setPreviewAnnotations,
+  );
+  const setComposerDraftCanvasSelections = useComposerDraftStore(
+    (store) => store.setCanvasSelections,
   );
   const setComposerDraftReviewComments = useComposerDraftStore((store) => store.setReviewComments);
   const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
@@ -3345,6 +3352,10 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
   }, [activeThreadRef]);
+  const addCanvasSurface = useCallback(() => {
+    if (!activeThreadRef) return;
+    useRightPanelStore.getState().open(activeThreadRef, "canvas");
+  }, [activeThreadRef]);
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
@@ -4354,6 +4365,7 @@ function ChatViewContent(props: ChatViewProps) {
         draft.terminalContexts.length > 0 ||
         draft.elementContexts.length > 0 ||
         draft.previewAnnotations.length > 0 ||
+        draft.canvasSelections.length > 0 ||
         draft.reviewComments.length > 0),
     );
   });
@@ -5014,6 +5026,7 @@ function ChatViewContent(props: ChatViewProps) {
       terminalContexts: composerTerminalContexts,
       elementContexts: composerElementContexts,
       previewAnnotations: sendContextPreviewAnnotations,
+      canvasSelections: composerCanvasSelections,
       reviewComments: composerReviewComments,
       selectedProvider: ctxSelectedProvider,
       selectedModel: ctxSelectedModel,
@@ -5054,6 +5067,7 @@ function ChatViewContent(props: ChatViewProps) {
       elementContextCount:
         composerElementContexts.length +
         composerPreviewAnnotations.length +
+        composerCanvasSelections.length +
         composerReviewComments.length,
     });
     if (!directAnnotation && showPlanFollowUpPrompt && activeProposedPlan) {
@@ -5078,6 +5092,7 @@ function ChatViewContent(props: ChatViewProps) {
       sendableComposerTerminalContexts.length === 0 &&
       composerElementContexts.length === 0 &&
       composerPreviewAnnotations.length === 0 &&
+      composerCanvasSelections.length === 0 &&
       composerReviewComments.length === 0
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
@@ -5152,6 +5167,7 @@ function ChatViewContent(props: ChatViewProps) {
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const composerElementContextsSnapshot = [...composerElementContexts];
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
+    const composerCanvasSelectionsSnapshot = [...composerCanvasSelections];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
     const messageTextWithContexts = appendElementContextsToPrompt(
       appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
@@ -5161,12 +5177,16 @@ function ChatViewContent(props: ChatViewProps) {
       (text, annotation) => appendPreviewAnnotationPrompt(text, annotation),
       messageTextWithContexts,
     );
+    const messageTextWithCanvasSelections = composerCanvasSelectionsSnapshot.reduce(
+      (text, selection) => appendCanvasSelectionPrompt(text, selection),
+      messageTextWithPreviewAnnotations,
+    );
     // The image-only fallback substitutes before the auto-PR suffix so an
     // attachments-only first message still carries the PR instruction.
     const messageTextForSend = applyCreatePullRequestSuffix({
       text:
         appendReviewCommentsToPrompt(
-          messageTextWithPreviewAnnotations,
+          messageTextWithCanvasSelections,
           composerReviewCommentsSnapshot,
         ) || IMAGE_ONLY_BOOTSTRAP_PROMPT,
       autoCreatePullRequest,
@@ -5373,6 +5393,8 @@ function ChatViewContent(props: ChatViewProps) {
         composerElementContextsRef.current.length === 0 &&
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.previewAnnotations
           .length ?? 0) === 0 &&
+        (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.canvasSelections
+          .length ?? 0) === 0 &&
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
           .length ?? 0) === 0
       ) {
@@ -5394,6 +5416,7 @@ function ChatViewContent(props: ChatViewProps) {
         setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
         setComposerDraftElementContexts(composerDraftTarget, composerElementContextsSnapshot);
         setComposerDraftPreviewAnnotations(composerDraftTarget, composerPreviewAnnotationsSnapshot);
+        setComposerDraftCanvasSelections(composerDraftTarget, composerCanvasSelectionsSnapshot);
         setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
         composerRef.current?.resetCursorState({
           cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
@@ -6208,6 +6231,10 @@ function ChatViewContent(props: ChatViewProps) {
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
       />
+    ) : selectedRightPanelSurface?.kind === "canvas" ? (
+      <Suspense fallback={null}>
+        <CanvasPanel threadRef={activeThreadRef} />
+      </Suspense>
     ) : (selectedRightPanelSurface?.kind === "files" ||
         selectedRightPanelSurface?.kind === "file") &&
       activeProject &&
@@ -6668,6 +6695,7 @@ function ChatViewContent(props: ChatViewProps) {
               onAddFiles={addFilesSurface}
               onAddPullRequest={addPullRequestSurface}
               onAddAgents={addAgentsSurface}
+              onAddCanvas={addCanvasSurface}
               browserAvailable={isPreviewSupportedInRuntime()}
               terminalAvailable={activeProject !== null}
               diffAvailable={isServerThread && isGitRepo}
@@ -6704,6 +6732,7 @@ function ChatViewContent(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}
+            onAddCanvas={addCanvasSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}

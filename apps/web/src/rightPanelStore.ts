@@ -22,6 +22,7 @@ export const RIGHT_PANEL_KINDS = [
   "terminal",
   "pull-request",
   "agents",
+  "canvas",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -56,12 +57,15 @@ export type RightPanelSurface =
       repository: string;
       number: number;
     }
-  | { id: "agents"; kind: "agents" };
+  | { id: "agents"; kind: "agents" }
+  | { id: "canvas"; kind: "canvas" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 // v9 removed the "plan" surface kind (plans render inline in the transcript).
 // v10 keys pull-request surfaces by reference instead of a singleton tab.
 // v11 stops persisting the pull-request list's shared panel, so a restart opens the page fresh.
+// The "canvas" kind needed no bump: migration drops any kind this build does not know,
+// so older persisted state stays valid and simply carries no canvas surface.
 const RIGHT_PANEL_STORAGE_VERSION = 11;
 
 /**
@@ -130,6 +134,8 @@ const singletonSurface = (
       return { id: "files", kind };
     case "agents":
       return { id: "agents", kind };
+    case "canvas":
+      return { id: "canvas", kind };
   }
 };
 
@@ -233,9 +239,16 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                 threadState && typeof threadState === "object" ? threadState : null;
               const surfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
-                    // Dropped surface kind: plans now render inline in the
-                    // transcript (v9).
-                    if ((surface as { kind?: string }).kind === "plan") return [];
+                    // Drop surfaces whose kind no longer exists (e.g. "plan",
+                    // removed in v9 when plans moved inline into the
+                    // transcript).
+                    if (
+                      !(RIGHT_PANEL_KINDS as readonly string[]).includes(
+                        (surface as { kind?: string }).kind ?? "",
+                      )
+                    ) {
+                      return [];
+                    }
                     if (surface.kind === "file") {
                       const revealLine =
                         typeof surface.revealLine === "number" &&
