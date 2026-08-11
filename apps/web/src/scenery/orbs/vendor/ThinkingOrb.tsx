@@ -1,13 +1,13 @@
 // @ts-nocheck -- vendored from thinking-orbs (MIT, Jakub Antalik); the upstream
 // library is not written for this repo's noUncheckedIndexedAccess setting.
-// The ThinkingOrb component. One shared clock (performance.now) keeps
-// every mounted orb in phase; each instance runs its own rAF loop but
-// pauses automatically while offscreen (IntersectionObserver) or when
-// the tab is hidden (visibilitychange). Reduced-motion users get a
-// static representative frame that still follows the live theme.
+// The ThinkingOrb component. One capped rAF scheduler keeps every mounted
+// orb in phase and pauses automatically while offscreen, hidden, or unfocused.
+// Reduced-motion and persistent status placements get a static representative
+// frame that still follows the live theme.
 
 import { useEffect, useRef } from "react";
 import { MODE_DRAWS } from "./engine/registry";
+import { subscribeOrbAnimationFrame } from "./orbAnimationScheduler";
 import { resolvePreset } from "./presets";
 import { useReducedMotion, useResolvedDark } from "./theme";
 import type { ThinkingOrbProps } from "./types";
@@ -57,53 +57,61 @@ export function ThinkingOrb({
       draw(ctx, size, tSec, dark, opts);
     };
 
-    // reduced motion → one static, deterministic frame
-    if (reduced) {
-      frame(0.6);
+    // Reduced motion and explicitly quiet placements (sidebar status chrome)
+    // render once and install no observers, listeners, or animation clock.
+    if (reduced || paused) {
+      frame(reduced ? 0.6 : (performance.now() / 1000) * effSpeed);
       return;
     }
 
-    let raf = 0;
-    let running = false;
-    const loop = () => {
-      frame((performance.now() / 1000) * effSpeed);
-      if (running) raf = requestAnimationFrame(loop);
-    };
+    let unsubscribeFrame: (() => void) | null = null;
     const start = () => {
-      if (running || paused) return;
-      running = true;
-      raf = requestAnimationFrame(loop);
+      if (unsubscribeFrame !== null) return;
+      unsubscribeFrame = subscribeOrbAnimationFrame((timestamp) => {
+        frame((timestamp / 1000) * effSpeed);
+      });
     };
     const stop = () => {
-      running = false;
-      cancelAnimationFrame(raf);
+      unsubscribeFrame?.();
+      unsubscribeFrame = null;
     };
 
     // draw at least one frame even when paused/offscreen
     frame((performance.now() / 1000) * effSpeed);
 
     // pause offscreen + on hidden tabs — free when not visible
-    let visible = true;
+    let visible = false;
+    let pageActive = document.visibilityState !== "hidden" && document.hasFocus();
+    const updateRunning = () => {
+      if (visible && pageActive) start();
+      else stop();
+    };
     const io =
       typeof IntersectionObserver !== "undefined"
         ? new IntersectionObserver(([entry]) => {
             visible = entry.isIntersecting;
-            if (visible && document.visibilityState !== "hidden") start();
-            else stop();
+            updateRunning();
           })
         : null;
     io?.observe(canvas);
-    const onVis = () => {
-      if (document.visibilityState === "hidden") stop();
-      else if (visible) start();
+    const onPageActivity = () => {
+      pageActive = document.visibilityState !== "hidden" && document.hasFocus();
+      updateRunning();
     };
-    document.addEventListener("visibilitychange", onVis);
-    if (!io) start();
+    document.addEventListener("visibilitychange", onPageActivity);
+    window.addEventListener("focus", onPageActivity);
+    window.addEventListener("blur", onPageActivity);
+    if (!io) {
+      visible = true;
+      updateRunning();
+    }
 
     return () => {
       stop();
       io?.disconnect();
-      document.removeEventListener("visibilitychange", onVis);
+      document.removeEventListener("visibilitychange", onPageActivity);
+      window.removeEventListener("focus", onPageActivity);
+      window.removeEventListener("blur", onPageActivity);
     };
   }, [state, size, dark, speed, paused, reduced]);
 

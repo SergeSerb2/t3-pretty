@@ -161,30 +161,13 @@ html[data-scenery-motion] [data-thread-item] .scenery-orb-slot--sidebar + svg {
   align-items: center;
 }
 
-/* Let the quieter text breathe alongside its animated orb. The stepped
-   ramps match the app's duty-cycled status motion, avoiding a continuous
-   compositor update for every working thread in the sidebar. */
+/* Keep the secondary label quiet without keeping the compositor awake for
+   every working thread in the sidebar. */
 html[data-scenery-motion]
   [data-thread-item]
   .scenery-orb-slot--sidebar
   ~ [data-sidebar-working-label] {
-  animation: scenery-sidebar-working-breathe 3s infinite;
-}
-
-@keyframes scenery-sidebar-working-breathe {
-  0%,
-  40% {
-    opacity: 0.96;
-    animation-timing-function: steps(6);
-  }
-  50%,
-  90% {
-    opacity: 0.82;
-    animation-timing-function: steps(6);
-  }
-  100% {
-    opacity: 0.96;
-  }
+  opacity: 0.9;
 }
 
 /* ------------------------------------------------------------- banners -- */
@@ -291,14 +274,6 @@ html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"]:act
 
   html[data-scenery-motion] .scenery-orb-dip {
     animation: none;
-  }
-
-  html[data-scenery-motion]
-    [data-thread-item]
-    .scenery-orb-slot--sidebar
-    ~ [data-sidebar-working-label] {
-    animation: none;
-    opacity: 1;
   }
 
   html[data-scenery-motion] [data-changed-files-state] {
