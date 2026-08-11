@@ -524,22 +524,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             );
             return;
           }
-          const updated = mapAtomCommandResult(
-            await updateProject({
-              environmentId: member.environmentId,
-              input: { projectId: member.id, faviconPath: imported.value.faviconPath },
-            }),
-            () => undefined,
-          );
-          if (updated._tag === "Failure") {
-            reportFailure(
-              group.memberProjects.length > 1
-                ? `Failed to update project icon on ${member.environmentLabel ?? "the current environment"}`
-                : "Failed to update project icon",
-              updated,
-            );
-            return;
-          }
         }
       } catch (cause) {
         toastManager.add(
@@ -554,7 +538,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         setIsSavingFavicon(false);
       }
     },
-    [group.memberProjects, importFavicon, reportFailure, updateProject],
+    [group.memberProjects, importFavicon, reportFailure],
   );
 
   // ----- checkout selection and scripts -----

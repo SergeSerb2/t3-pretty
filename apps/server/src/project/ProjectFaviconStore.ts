@@ -2,9 +2,10 @@
 /**
  * Stores project icons picked from outside the workspace in T3 home.
  *
- * Bytes live under `project-icons/` keyed by project id so the original file
- * never has to be committed to the repo. The path saved on the project record
- * is a display-only managed marker, not a filesystem path.
+ * Bytes live under `project-icons/` keyed by project id and content revision
+ * so the original file never has to be committed to the repo. The path saved
+ * on the project record is a display-only managed marker, not a filesystem
+ * path.
  *
  * @module ProjectFaviconStore
  */
@@ -15,10 +16,13 @@ import {
 } from "@t3tools/contracts";
 import { WORKSPACE_IMAGE_PREVIEW_EXTENSIONS } from "@t3tools/shared/filePreview";
 import {
-  isManagedProjectFaviconPath,
+  MANAGED_PROJECT_FAVICON_REVISION_LENGTH,
+  parseManagedProjectFaviconPath,
   toManagedProjectFaviconPath,
 } from "@t3tools/shared/projectFavicon";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -57,25 +61,20 @@ function isInsideDirectory(path: Path.Path, directory: string, candidate: string
   return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
-export const resolveManagedProjectFaviconFile = Effect.fn(
-  "ProjectFaviconStore.resolveManagedProjectFaviconFile",
-)(function* (input: { readonly projectId: string; readonly faviconPath: string }) {
-  if (!isManagedProjectFaviconPath(input.faviconPath)) {
-    return null;
-  }
-  const segment = toSafeProjectIconSegment(input.projectId);
-  if (!segment) {
+function storedFileName(segment: string, revision: string, extension: string): string {
+  return `${segment}.${revision}${extension}`;
+}
+
+const resolveStoredIconPath = Effect.fn("ProjectFaviconStore.resolveStoredIconPath")(function* (
+  faviconPath: string,
+  projectId: string,
+) {
+  const parsed = parseManagedProjectFaviconPath(faviconPath);
+  const segment = toSafeProjectIconSegment(projectId);
+  if (!parsed || !segment) {
     return null;
   }
   const path = yield* Path.Path;
-  const extension = path.extname(input.faviconPath).toLowerCase();
-  if (
-    !WORKSPACE_IMAGE_PREVIEW_EXTENSIONS.includes(
-      extension as (typeof WORKSPACE_IMAGE_PREVIEW_EXTENSIONS)[number],
-    )
-  ) {
-    return null;
-  }
   const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const iconsDir = yield* optionOnNotFound(fileSystem.realPath(config.projectIconsDir)).pipe(
@@ -84,16 +83,31 @@ export const resolveManagedProjectFaviconFile = Effect.fn(
   if (Option.isNone(iconsDir)) {
     return null;
   }
-  const candidate = path.join(iconsDir.value, `${segment}${extension}`);
+  const candidate = path.join(
+    iconsDir.value,
+    storedFileName(segment, parsed.revision, parsed.extension),
+  );
   if (!isInsideDirectory(path, iconsDir.value, candidate)) {
     return null;
   }
-  const canonicalFile = yield* optionOnNotFound(fileSystem.realPath(candidate)).pipe(
+  return { iconsDir: iconsDir.value, candidate, segment, parsed };
+});
+
+export const resolveManagedProjectFaviconFile = Effect.fn(
+  "ProjectFaviconStore.resolveManagedProjectFaviconFile",
+)(function* (input: { readonly projectId: string; readonly faviconPath: string }) {
+  const resolved = yield* resolveStoredIconPath(input.faviconPath, input.projectId);
+  if (!resolved) {
+    return null;
+  }
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const canonicalFile = yield* optionOnNotFound(fileSystem.realPath(resolved.candidate)).pipe(
     Effect.orElseSucceed(() => Option.none<string>()),
   );
   if (
     Option.isNone(canonicalFile) ||
-    !isInsideDirectory(path, iconsDir.value, canonicalFile.value)
+    !isInsideDirectory(path, resolved.iconsDir, canonicalFile.value)
   ) {
     return null;
   }
@@ -103,25 +117,61 @@ export const resolveManagedProjectFaviconFile = Effect.fn(
   return Option.isSome(info) && info.value.type === "File" ? canonicalFile.value : null;
 });
 
+export const removeManagedProjectFaviconFile = Effect.fn(
+  "ProjectFaviconStore.removeManagedProjectFaviconFile",
+)(function* (input: { readonly projectId: string; readonly faviconPath: string }) {
+  const resolved = yield* resolveStoredIconPath(input.faviconPath, input.projectId);
+  if (!resolved) {
+    return;
+  }
+  const fileSystem = yield* FileSystem.FileSystem;
+  yield* optionOnNotFound(fileSystem.remove(resolved.candidate)).pipe(
+    Effect.orElseSucceed(() => Option.none()),
+  );
+});
+
+export const removeStaleManagedProjectFavicons = Effect.fn(
+  "ProjectFaviconStore.removeStaleManagedProjectFavicons",
+)(function* (input: { readonly projectId: string; readonly keepFaviconPath: string }) {
+  const keep = yield* resolveStoredIconPath(input.keepFaviconPath, input.projectId);
+  const segment = toSafeProjectIconSegment(input.projectId);
+  if (!keep || !segment) {
+    return;
+  }
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const entries = yield* optionOnNotFound(fileSystem.readDirectory(keep.iconsDir)).pipe(
+    Effect.orElseSucceed(() => Option.none<ReadonlyArray<string>>()),
+  );
+  if (Option.isNone(entries)) {
+    return;
+  }
+  const keepName = path.basename(keep.candidate);
+  for (const entry of entries.value) {
+    if (entry === keepName) continue;
+    const isHashed = entry.startsWith(`${segment}.`);
+    const isLegacyUnhashed = WORKSPACE_IMAGE_PREVIEW_EXTENSIONS.some(
+      (extension) => entry === `${segment}${extension}`,
+    );
+    if (!isHashed && !isLegacyUnhashed) continue;
+    const stalePath = path.join(keep.iconsDir, entry);
+    if (!isInsideDirectory(path, keep.iconsDir, stalePath)) continue;
+    yield* optionOnNotFound(fileSystem.remove(stalePath)).pipe(
+      Effect.orElseSucceed(() => Option.none()),
+    );
+  }
+});
+
 export const importProjectFavicon = Effect.fn("ProjectFaviconStore.importProjectFavicon")(
   function* (input: {
     readonly projectId: string;
     readonly fileName: string;
     readonly dataUrl: string;
   }): Effect.fn.Return<
-    ProjectImportFaviconResult,
+    ProjectImportFaviconResult & { readonly created: boolean },
     ProjectImportFaviconError,
-    FileSystem.FileSystem | Path.Path | ServerConfig.ServerConfig
+    Crypto.Crypto | FileSystem.FileSystem | Path.Path | ServerConfig.ServerConfig
   > {
-    const faviconPath = toManagedProjectFaviconPath(input.fileName);
-    if (!faviconPath) {
-      return yield* new ProjectImportFaviconError({
-        failure: "invalid_image",
-        projectId: input.projectId,
-        fileName: input.fileName,
-      });
-    }
-
     const parsed = parseBase64DataUrl(input.dataUrl);
     if (!parsed) {
       return yield* new ProjectImportFaviconError({
@@ -130,8 +180,6 @@ export const importProjectFavicon = Effect.fn("ProjectFaviconStore.importProject
         fileName: input.fileName,
       });
     }
-    const path = yield* Path.Path;
-    const extension = path.extname(faviconPath).toLowerCase();
 
     const bytes = Buffer.from(parsed.base64, "base64");
     if (bytes.byteLength === 0 || bytes.byteLength > PROJECT_IMPORT_FAVICON_MAX_BYTES) {
@@ -142,8 +190,32 @@ export const importProjectFavicon = Effect.fn("ProjectFaviconStore.importProject
       });
     }
 
+    const crypto = yield* Crypto.Crypto;
+    const revision = yield* crypto.digest("SHA-256", bytes).pipe(
+      Effect.map(Encoding.encodeHex),
+      Effect.map((hex) => hex.slice(0, MANAGED_PROJECT_FAVICON_REVISION_LENGTH)),
+      Effect.mapError(
+        (cause) =>
+          new ProjectImportFaviconError({
+            failure: "write_failed",
+            projectId: input.projectId,
+            fileName: input.fileName,
+            cause,
+          }),
+      ),
+    );
+    const faviconPath = toManagedProjectFaviconPath(input.fileName, revision);
+    if (!faviconPath) {
+      return yield* new ProjectImportFaviconError({
+        failure: "invalid_image",
+        projectId: input.projectId,
+        fileName: input.fileName,
+      });
+    }
+
     const segment = toSafeProjectIconSegment(input.projectId);
-    if (!segment) {
+    const managed = parseManagedProjectFaviconPath(faviconPath);
+    if (!segment || !managed) {
       return yield* new ProjectImportFaviconError({
         failure: "write_failed",
         projectId: input.projectId,
@@ -152,8 +224,12 @@ export const importProjectFavicon = Effect.fn("ProjectFaviconStore.importProject
     }
 
     const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     const config = yield* ServerConfig.ServerConfig;
-    const targetPath = path.join(config.projectIconsDir, `${segment}${extension}`);
+    const targetPath = path.join(
+      config.projectIconsDir,
+      storedFileName(segment, managed.revision, managed.extension),
+    );
     if (!isInsideDirectory(path, config.projectIconsDir, targetPath)) {
       return yield* new ProjectImportFaviconError({
         failure: "write_failed",
@@ -173,23 +249,9 @@ export const importProjectFavicon = Effect.fn("ProjectFaviconStore.importProject
           }),
       ),
     );
-
-    for (const staleExtension of WORKSPACE_IMAGE_PREVIEW_EXTENSIONS) {
-      if (staleExtension === extension) continue;
-      const stalePath = path.join(config.projectIconsDir, `${segment}${staleExtension}`);
-      yield* optionOnNotFound(fileSystem.remove(stalePath)).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProjectImportFaviconError({
-              failure: "write_failed",
-              projectId: input.projectId,
-              fileName: input.fileName,
-              cause,
-            }),
-        ),
-      );
-    }
-
+    const existed = yield* optionOnNotFound(fileSystem.stat(targetPath)).pipe(
+      Effect.orElseSucceed(() => Option.none()),
+    );
     yield* fileSystem.writeFile(targetPath, bytes).pipe(
       Effect.mapError(
         (cause) =>
@@ -202,6 +264,9 @@ export const importProjectFavicon = Effect.fn("ProjectFaviconStore.importProject
       ),
     );
 
-    return { faviconPath };
+    return {
+      faviconPath,
+      created: Option.isNone(existed) || existed.value.type !== "File",
+    };
   },
 );

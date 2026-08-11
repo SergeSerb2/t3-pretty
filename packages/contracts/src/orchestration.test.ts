@@ -934,7 +934,7 @@ it.effect("project favicon overrides accept only supported image files", () =>
       type: "project.meta.update",
       commandId: "cmd-project-favicon-managed",
       projectId: "project-1",
-      faviconPath: "t3-project-icon/logo.png",
+      faviconPath: "t3-project-icon/0123456789abcdef-logo.png",
     });
     assert.strictEqual(managed.type, "project.meta.update");
 

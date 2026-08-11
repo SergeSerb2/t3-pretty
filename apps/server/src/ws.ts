@@ -101,7 +101,11 @@ import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
-import { importProjectFavicon } from "./project/ProjectFaviconStore.ts";
+import {
+  importProjectFavicon,
+  removeManagedProjectFaviconFile,
+  removeStaleManagedProjectFavicons,
+} from "./project/ProjectFaviconStore.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -1834,7 +1838,49 @@ const makeWsRpcLayer = (
                   fileName: input.fileName,
                 });
               }
-              return yield* importProjectFavicon(input);
+              const imported = yield* importProjectFavicon(input);
+              const rollbackNewFile = imported.created
+                ? removeManagedProjectFaviconFile({
+                    projectId: input.projectId,
+                    faviconPath: imported.faviconPath,
+                  }).pipe(Effect.ignore)
+                : Effect.void;
+              yield* Effect.gen(function* () {
+                const commandId = yield* serverCommandId("project-import-favicon").pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ProjectImportFaviconError({
+                        failure: "write_failed",
+                        projectId: input.projectId,
+                        fileName: input.fileName,
+                        cause,
+                      }),
+                  ),
+                );
+                yield* orchestrationEngine
+                  .dispatch({
+                    type: "project.meta.update",
+                    commandId,
+                    projectId: input.projectId,
+                    faviconPath: imported.faviconPath,
+                  })
+                  .pipe(
+                    Effect.mapError(
+                      (cause) =>
+                        new ProjectImportFaviconError({
+                          failure: "write_failed",
+                          projectId: input.projectId,
+                          fileName: input.fileName,
+                          cause,
+                        }),
+                    ),
+                  );
+              }).pipe(Effect.tapError(() => rollbackNewFile));
+              yield* removeStaleManagedProjectFavicons({
+                projectId: input.projectId,
+                keepFaviconPath: imported.faviconPath,
+              }).pipe(Effect.ignore);
+              return { faviconPath: imported.faviconPath };
             }),
             { "rpc.aggregate": "workspace" },
           ),

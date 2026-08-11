@@ -13,7 +13,10 @@ import * as TestClock from "effect/testing/TestClock";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
-import { importProjectFavicon, toSafeProjectIconSegment } from "../project/ProjectFaviconStore.ts";
+import {
+  importProjectFavicon,
+  resolveManagedProjectFaviconFile,
+} from "../project/ProjectFaviconStore.ts";
 import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { ASSET_ROUTE_PREFIX, issueAssetUrl, resolveAsset } from "./AssetAccess.ts";
@@ -337,7 +340,6 @@ describe("AssetAccess", () => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const config = yield* ServerConfig.ServerConfig;
       const root = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "t3-asset-favicon-managed-",
       });
@@ -348,11 +350,12 @@ describe("AssetAccess", () => {
         fileName: "brand-mark.svg",
         dataUrl: "data:image/svg+xml;base64,PHN2Zz5waWNrZWQ8L3N2Zz4=",
       });
-      const storedPath = path.join(
-        config.projectIconsDir,
-        `${toSafeProjectIconSegment(projectId)}.svg`,
-      );
-      const canonicalStoredPath = yield* fileSystem.realPath(storedPath);
+      const storedPath = yield* resolveManagedProjectFaviconFile({
+        projectId,
+        faviconPath: imported.faviconPath,
+      });
+      expect(storedPath).not.toBeNull();
+      const canonicalStoredPath = yield* fileSystem.realPath(storedPath!);
 
       const result = yield* issueAssetUrl({
         resource: { _tag: "project-favicon", cwd: root },
