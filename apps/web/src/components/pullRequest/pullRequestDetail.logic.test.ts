@@ -470,6 +470,9 @@ describe("fix findings handoff", () => {
     ]);
     expect(handoff.prompt).not.toContain("rename the helper");
     expect(handoff.prompt).toContain("untrusted data");
+    expect(handoff.prompt).toContain("resolveReviewThread");
+    expect(handoff.prompt).toContain("Thread id: `t1`");
+    expect(handoff.prompt).toContain("Leaving fixed findings unresolved is incomplete");
   });
 
   it("names the pre-change side, and a thread the host pinned to the file rather than a line", () => {
@@ -495,6 +498,8 @@ describe("fix findings handoff", () => {
     });
     expect(handoff.prompt).toContain("> typecheck — 2 errors");
     expect(handoff.reviewComments).toEqual([]);
+    // A check is CI, not a conversation — resolving review threads does not apply.
+    expect(handoff.prompt).not.toContain("resolveReviewThread");
   });
 
   it("leaves out a resolved conversation, and one nobody wrote in", () => {
@@ -514,6 +519,7 @@ describe("fix findings handoff", () => {
     const handoff = buildFixFindingsHandoff({ ...base, reviewThreads: [], checks: [] });
     expect(handoff.prompt).toContain("No unresolved review findings were returned");
     expect(handoff.reviewComments).toEqual([]);
+    expect(handoff.prompt).not.toContain("resolveReviewThread");
   });
 
   it("bounds a hostile review body instead of attaching it whole", () => {
@@ -575,6 +581,7 @@ describe("findings that cannot be attached", () => {
     expect(handoff.reviewComments).toEqual([]);
     expect(handoff.prompt).toContain("revert the middleware change");
     expect(handoff.prompt).not.toContain("No unresolved review findings");
+    expect(handoff.prompt).toContain("Leaving fixed findings unresolved is incomplete");
   });
 
   it("carries a host's line comments when it reports no threads at all", () => {
@@ -658,6 +665,8 @@ describe("one finding handed over on its own", () => {
     ]);
     expect(handoff.prompt).toContain("attached to this message");
     expect(handoff.prompt).not.toContain("rename the helper");
+    expect(handoff.prompt).toContain("Thread id: `t1`");
+    expect(handoff.prompt).toContain("resolveReviewThread");
   });
 
   it("quotes a review remark, which has no line to attach it to", () => {
@@ -679,6 +688,7 @@ describe("one finding handed over on its own", () => {
     });
     expect(handoff.reviewComments).toEqual([]);
     expect(handoff.prompt).toContain("> julius on `apps/server/src/auth.ts`: this breaks SSO auth");
+    expect(handoff.prompt).toContain("Leaving fixed findings unresolved is incomplete");
   });
 
   it("quotes a failing check with what the host reported about it", () => {
@@ -691,6 +701,7 @@ describe("one finding handed over on its own", () => {
     });
     expect(handoff.prompt).toContain("> typecheck — 2 errors");
     expect(handoff.prompt).toContain("Reproduce it locally first");
+    expect(handoff.prompt).not.toContain("resolveReviewThread");
   });
 
   it("marks the pull request's own words as untrusted whatever the finding is", () => {

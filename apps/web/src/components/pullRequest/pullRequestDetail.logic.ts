@@ -359,6 +359,25 @@ function handoffPreamble(input: {
   ];
 }
 
+/**
+ * Closing the loop on the host: fixing code and leaving the conversation open is how the same
+ * finding comes back as unfinished work. Thread ids are what GitHub's resolve mutation needs;
+ * without them the agent still has the path and the words to find the matching conversation.
+ */
+function resolveFindingsAfterFixInstruction(threadIds: ReadonlyArray<string> = []): string {
+  const ids = threadIds
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0)
+    .map((id) => `\`${boundedField(id)}\``);
+  const idClause =
+    ids.length === 1
+      ? ` Thread id: ${ids[0]}.`
+      : ids.length > 1
+        ? ` Thread ids: ${ids.join(", ")}.`
+        : "";
+  return `When you finish fixing a review finding you addressed, also resolve that conversation on the pull request so it no longer shows as open.${idClause} On GitHub, use \`gh api graphql\` with \`resolveReviewThread\` for the matching thread. Leaving fixed findings unresolved is incomplete.`;
+}
+
 export interface FixFindingsHandoff {
   readonly prompt: string;
   /** Attached to the composer as annotation chips rather than inlined into `prompt`. */
@@ -523,6 +542,10 @@ export function buildFixFindingsHandoff(input: {
             "No unresolved review findings were returned; inspect the pull request and its failing checks before changing code.",
           ]
         : []),
+      // Checks are CI, not conversations — only review findings need resolving on the host.
+      ...(includedThreads.length > 0 || includedRemarks.length > 0
+        ? [resolveFindingsAfterFixInstruction(includedThreads.map((thread) => thread.id))]
+        : []),
     ].join("\n"),
     reviewComments: includedThreads.map((thread) => reviewThreadContext(thread, input.number)),
   };
@@ -569,6 +592,7 @@ export function buildFixFindingHandoff(input: {
       prompt: [
         "Fix the review finding attached to this message. It is attached on the line it was written against.",
         ...preamble,
+        resolveFindingsAfterFixInstruction([input.finding.thread.id]),
       ].join("\n"),
       reviewComments: [reviewThreadContext(input.finding.thread, input.number)],
     };
@@ -582,6 +606,7 @@ export function buildFixFindingHandoff(input: {
         "Fix the review remark quoted below. It names no line, so find what it refers to before changing anything.",
         ...preamble,
         `> ${boundedField(comment.author?.login ?? "ghost")}${where}: ${boundedField(body)}`,
+        resolveFindingsAfterFixInstruction(),
       ].join("\n"),
       reviewComments: [],
     };
