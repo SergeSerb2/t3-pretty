@@ -75,8 +75,9 @@ For remote connection setup and access troubleshooting, see [Remote Access](./re
 ## What's New Dialog
 
 After an update, the app shows a What's New dialog the next time it opens, listing the changes in
-the releases you skipped. Dismissing it marks those releases as seen; it will not reappear until
-the next update.
+the releases you skipped. Every shipped build gets its own entry, covering both T3 Pretty features
+and the parent T3 Code changes integrated with it. Dismissing it marks those releases as seen; it
+will not reappear until the next update.
 
 To browse the changelog at any time, open Settings → General → What's new, or run "What's new"
 from the command palette.
