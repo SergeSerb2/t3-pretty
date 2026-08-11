@@ -6,7 +6,6 @@ import type {
   PullRequestReaction,
   PullRequestReviewThread,
   PullRequestState,
-  SourceControlProviderKind,
 } from "@t3tools/contracts";
 
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
@@ -448,7 +447,6 @@ export function handoffReviewComments(
  * attacker-controlled on public repositories.
  */
 export function buildFixFindingsHandoff(input: {
-  readonly provider: SourceControlProviderKind;
   readonly number: number;
   readonly title: string;
   readonly url: string;

@@ -629,6 +629,7 @@ describe("findings that cannot be attached", () => {
 
 describe("one finding handed over on its own", () => {
   const base = {
+    provider: "github" as const,
     number: 42,
     title: "Add the pull requests page",
     url: "https://github.com/pingdotgg/t3code/pull/42",
@@ -787,6 +788,7 @@ describe("findings that are already on a line", () => {
       ],
     };
     const handoff = buildFixFindingsHandoff({
+      provider: "github",
       number: 42,
       title: "Add the pull requests page",
       url: "https://github.com/pingdotgg/t3code/pull/42",
