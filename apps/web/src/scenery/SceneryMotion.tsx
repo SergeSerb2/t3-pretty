@@ -30,14 +30,17 @@ import { ThinkingOrb } from "./orbs/vendor";
 import type { OrbState } from "./orbs/vendor";
 import { useActiveThreadKey } from "./useActiveThreadKey";
 import { useIsDarkAppearance } from "./useHtmlAttributes";
+import {
+  HERO_SELECTOR,
+  mutationsRequireSceneryMotionSync,
+  PILL_SELECTOR,
+  ROW_WRAPPER_SELECTOR,
+  SIDEBAR_ICON_SELECTOR,
+  WORKING_ROW_SELECTOR,
+} from "./sceneryMotionMutations";
 import "./motion.css";
 
-const ROW_WRAPPER_SELECTOR = "[data-timeline-root]";
-const WORKING_ROW_SELECTOR = '[data-timeline-row-kind="working"]';
-const PILL_SELECTOR = 'button[aria-label="Scroll to end"]';
-const HERO_SELECTOR = "[data-chat-composer-overlay] h1";
-const SIDEBAR_ICON_SELECTOR = "[data-thread-item] svg.lucide-circle-dashed";
-/** Bound on concurrent sidebar orb canvases (offscreen ones pause anyway). */
+/** Bound on concurrent static sidebar orb canvases. */
 const SIDEBAR_ORB_CAP = 12;
 const ENTER_CLASS = "scenery-row-enter";
 const ENTER_DELAY_PROP = "--sc-enter-delay";
@@ -340,7 +343,10 @@ export function SceneryMotion() {
       setSlots((current) => (sameSlots(current, nextSlots) ? current : nextSlots));
     };
 
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver((mutations) => {
+      if (!mutationsRequireSceneryMotionSync(mutations)) {
+        return;
+      }
       if (!queued) {
         queued = true;
         requestAnimationFrame(sync);
@@ -407,6 +413,7 @@ export function SceneryMotion() {
             state="working"
             size={20}
             theme={orbTheme}
+            paused
             style={{ width: 16, height: 16 }}
             aria-hidden
           />,

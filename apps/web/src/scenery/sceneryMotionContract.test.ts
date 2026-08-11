@@ -56,6 +56,10 @@ describe("working-row orb contract", () => {
     expect(motionDriverSource).not.toContain("scenery-ghost-exit");
     expect(motionStylesSource).not.toContain("scenery-ghost-exit");
   });
+
+  it("filters body mutations before scheduling a full motion sync", () => {
+    expect(motionDriverSource).toContain("mutationsRequireSceneryMotionSync(mutations)");
+  });
 });
 
 describe("tool card disclosure contract", () => {
@@ -113,10 +117,14 @@ describe("hero and sidebar contract", () => {
     expect(sidebarSource).toContain("CircleDashedIcon");
   });
 
-  it("pairs the working label with its sidebar orb motion", () => {
+  it("keeps persistent sidebar orb canvases static", () => {
+    expect(motionDriverSource).toMatch(/state="working"[\s\S]*?theme=\{orbTheme\}[\s\S]*?paused/);
+  });
+
+  it("keeps the working label quiet without an infinite animation", () => {
     expect(sidebarSource).toContain("data-sidebar-working-label");
-    expect(motionStylesSource).toContain("scenery-sidebar-working-breathe");
     expect(motionStylesSource).toContain("~ [data-sidebar-working-label]");
+    expect(motionStylesSource).not.toContain("scenery-sidebar-working-breathe");
   });
 });
 
