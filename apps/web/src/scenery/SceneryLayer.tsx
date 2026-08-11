@@ -34,7 +34,7 @@ export function SceneryLayer({
   seed: string;
   /** CDN pre-blur strength (0–100); a change cross-fades like a photo swap. */
   blur: number;
-  onPhotoDisplayed?: (photoId: string) => void;
+  onPhotoDisplayed?: (photo: SceneryPhoto) => void;
 }) {
   const [displayed, setDisplayed] = useState<DisplayedPhoto | null>(null);
   const [previous, setPrevious] = useState<DisplayedPhoto | null>(null);
@@ -71,7 +71,7 @@ export function SceneryLayer({
           photographerName: photo.photographerName,
           photographerProfileURL: photo.photographerProfileURL,
         });
-        onPhotoDisplayed?.(photo.id);
+        onPhotoDisplayed?.(photo);
       },
       { once: true },
     );

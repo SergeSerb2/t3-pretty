@@ -823,6 +823,36 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.scenery.assign": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const occurredAt = yield* nowIso;
+      // Write-once: the first assignment wins. Devices racing to assign the
+      // same thread (or a client retrying) get the existing binding re-emitted
+      // with the original timestamps, so the projection is a no-op and every
+      // client converges on one photo. Scenery has no lifecycle invariants —
+      // an archived thread keeps its photo, so requireThread (not
+      // requireThreadNotArchived) is the right guard.
+      const existing = thread.scenery ?? null;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.scenery-assigned" as const,
+        payload: {
+          threadId: command.threadId,
+          scenery: existing ?? { ...command.scenery, assignedAt: occurredAt },
+          updatedAt: existing !== null ? thread.updatedAt : occurredAt,
+        },
+      };
+    }
+
     case "thread.meta.update": {
       const thread = yield* requireThread({
         readModel,

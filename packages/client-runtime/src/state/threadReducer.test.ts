@@ -280,6 +280,43 @@ describe("applyThreadDetailEvent", () => {
     });
   });
 
+  describe("thread.scenery-assigned", () => {
+    it("sets scenery", () => {
+      const assignedAt = "2026-04-01T05:00:00.000Z";
+      const scenery = {
+        photoId: "unsplash-yosemite",
+        name: "Yosemite Valley, United States",
+        averageColorHex: "#3a5f7a",
+        heroURL: "https://images.unsplash.com/photo-yosemite?w=1080",
+        thumbURL: "https://images.unsplash.com/photo-yosemite?w=200",
+        rawURL: "https://images.unsplash.com/photo-yosemite",
+        downloadLocationURL: "https://api.unsplash.com/photos/yosemite/download",
+        photographerName: "Jane Doe",
+        photographerProfileURL: "https://unsplash.com/@jane",
+        assignedAt,
+      };
+      const result = applyThreadDetailEvent(baseThread, {
+        ...baseEventFields,
+        sequence: 5,
+        occurredAt: assignedAt,
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.scenery-assigned",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          scenery,
+          updatedAt: assignedAt,
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.scenery).toEqual(scenery);
+        expect(result.thread.updatedAt).toBe(assignedAt);
+      }
+    });
+  });
+
   describe("thread.meta-updated", () => {
     it("patches title and branch", () => {
       const result = applyThreadDetailEvent(baseThread, {
