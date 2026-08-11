@@ -11,6 +11,7 @@ import type {
   PullRequestLabel,
   PullRequestMergeCapabilities,
   PullRequestMergeability,
+  PullRequestReaction,
   PullRequestReviewCommentDraft,
   PullRequestReviewThread,
   PullRequestReviewVerdict,
@@ -161,12 +162,26 @@ const RawCheckSchema = Schema.Struct({
   targetUrl: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
+/**
+ * One GitHub reaction group. `gh pr view --json` still names the people `users`; GraphQL has
+ * moved that connection to `reactors`. Both are optional so either shape, and a group with
+ * nobody in it, still decode.
+ */
+const RawReactionGroupSchema = Schema.Struct({
+  content: Schema.String,
+  users: Schema.optional(Schema.NullOr(Schema.Struct({ totalCount: Schema.optional(Schema.Int) }))),
+  reactors: Schema.optional(
+    Schema.NullOr(Schema.Struct({ totalCount: Schema.optional(Schema.Int) })),
+  ),
+});
+
 const RawCommentSchema = Schema.Struct({
   id: Schema.String,
   author: Schema.optional(Schema.NullOr(RawActorSchema)),
   body: Schema.optional(Schema.String),
   createdAt: Schema.String,
   url: Schema.optional(Schema.NullOr(Schema.String)),
+  reactionGroups: Schema.optional(Schema.Array(RawReactionGroupSchema)),
 });
 
 const RawReviewSchema = Schema.Struct({
@@ -176,6 +191,7 @@ const RawReviewSchema = Schema.Struct({
   state: Schema.optional(Schema.NullOr(Schema.String)),
   submittedAt: Schema.optional(Schema.NullOr(Schema.String)),
   url: Schema.optional(Schema.NullOr(Schema.String)),
+  reactionGroups: Schema.optional(Schema.Array(RawReactionGroupSchema)),
 });
 
 const RawCommitSchema = Schema.Struct({
@@ -200,6 +216,7 @@ const RawDetailSchema = Schema.Struct({
   changedFiles: Schema.optional(Schema.Int),
   closedAt: Schema.optional(Schema.NullOr(Schema.String)),
   statusCheckRollup: Schema.optional(Schema.NullOr(Schema.Array(RawCheckSchema))),
+  reactionGroups: Schema.optional(Schema.Array(RawReactionGroupSchema)),
 });
 
 const RawActivitySchema = Schema.Struct({
@@ -386,7 +403,7 @@ export function decodeActorAvatarsJson(
 export const PULL_REQUEST_LIST_JSON_FIELDS =
   "number,title,url,author,headRefName,baseRefName,state,isDraft,mergeable,additions,deletions,createdAt,updatedAt,mergedAt,reviewRequests,labels";
 
-export const PULL_REQUEST_DETAIL_JSON_FIELDS = `${PULL_REQUEST_LIST_JSON_FIELDS},body,changedFiles,closedAt,statusCheckRollup`;
+export const PULL_REQUEST_DETAIL_JSON_FIELDS = `${PULL_REQUEST_LIST_JSON_FIELDS},body,changedFiles,closedAt,statusCheckRollup,reactionGroups`;
 export const PULL_REQUEST_ACTIVITY_JSON_FIELDS = "author,comments,reviews,commits";
 
 /** GitHub's own ceiling on a connection page, which is what both thread reads ask for. */
@@ -459,6 +476,9 @@ export function pullRequestSearchGraphQlQuery(rows: number): string {
  * the start, so a pull request with more than a hundred commits loses the newest ones from its
  * view entirely. This query gives back the newest hundred, which is what a reader scoping a diff
  * wants, and stands in for the `gh` list wherever it came back non-empty.
+ *
+ * Reaction groups ride on each comment so the conversation can show GitHub's (and Codex's) emoji
+ * without a round trip of its own.
  */
 export const REVIEW_THREADS_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
@@ -476,7 +496,7 @@ export const REVIEW_THREADS_GRAPHQL_QUERY = `query($owner: String!, $name: Strin
           comments(first: ${GRAPHQL_PAGE_SIZE}) {
             totalCount
             pageInfo { hasNextPage endCursor }
-            nodes { id author { login avatarUrl } body createdAt url }
+            nodes { id author { login avatarUrl } body createdAt url reactionGroups { content reactors { totalCount } } }
           }
         }
       }
@@ -521,7 +541,7 @@ export const REVIEW_THREAD_COMMENTS_GRAPHQL_QUERY = `query($threadId: ID!, $curs
     ... on PullRequestReviewThread {
       comments(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { id author { login avatarUrl } body createdAt url }
+        nodes { id author { login avatarUrl } body createdAt url reactionGroups { content reactors { totalCount } } }
       }
     }
   }
@@ -642,6 +662,7 @@ export interface GitHubPullRequestDetail extends GitHubPullRequestListItem {
   readonly mergedAt: string | null;
   readonly closedAt: string | null;
   readonly checks: ReadonlyArray<PullRequestCheck>;
+  readonly reactions?: ReadonlyArray<PullRequestReaction>;
 }
 
 export interface GitHubPullRequestActivity {
@@ -685,6 +706,38 @@ function toActor(raw: Schema.Schema.Type<typeof RawActorSchema> | null | undefin
   return login === null
     ? null
     : { login, name: trimmed(raw?.name), avatarUrl: trimmed(raw?.avatarUrl) };
+}
+
+const GITHUB_REACTION_CONTENT: Record<string, PullRequestReaction["content"]> = {
+  THUMBS_UP: "thumbs_up",
+  THUMBS_DOWN: "thumbs_down",
+  LAUGH: "laugh",
+  HOORAY: "hooray",
+  CONFUSED: "confused",
+  HEART: "heart",
+  ROCKET: "rocket",
+  EYES: "eyes",
+};
+
+function toReactions(
+  groups: ReadonlyArray<Schema.Schema.Type<typeof RawReactionGroupSchema>> | undefined,
+): ReadonlyArray<PullRequestReaction> {
+  const counts = new Map<PullRequestReaction["content"], number>();
+  for (const group of groups ?? []) {
+    const content = GITHUB_REACTION_CONTENT[group.content.trim().toUpperCase()];
+    const count = group.reactors?.totalCount ?? group.users?.totalCount ?? 0;
+    if (content === undefined || count <= 0) continue;
+    counts.set(content, Math.max(counts.get(content) ?? 0, count));
+  }
+  return [...counts.entries()].map(([content, count]) => ({ content, count }));
+}
+
+/** Spread onto a comment or summary only when GitHub reported someone reacting. */
+function reactionFields(
+  groups: ReadonlyArray<Schema.Schema.Type<typeof RawReactionGroupSchema>> | undefined,
+): { readonly reactions?: ReadonlyArray<PullRequestReaction> } {
+  const reactions = toReactions(groups);
+  return reactions.length === 0 ? {} : { reactions };
 }
 
 function toCommitActor(
@@ -835,6 +888,7 @@ function toComments(raw: {
       url: trimmed(comment.url),
       path: null,
       reviewState: null,
+      ...reactionFields(comment.reactionGroups),
     }),
   );
   // A review with no body is kept only when its state is the event itself — an approval, a
@@ -860,6 +914,7 @@ function toComments(raw: {
         url: trimmed(review.url),
         path: null,
         reviewState,
+        ...reactionFields(review.reactionGroups),
       },
     ];
   });
@@ -912,6 +967,7 @@ function toDetail(raw: Schema.Schema.Type<typeof RawDetailSchema>): GitHubPullRe
     mergedAt: trimmed(raw.mergedAt),
     closedAt: trimmed(raw.closedAt),
     checks: toChecks(raw.statusCheckRollup),
+    ...reactionFields(raw.reactionGroups),
   };
 }
 
@@ -1169,6 +1225,9 @@ export function reviewThreadConversation(
         url: comment.url,
         path: thread.path,
         reviewState: null,
+        ...(comment.reactions === undefined || comment.reactions.length === 0
+          ? {}
+          : { reactions: comment.reactions }),
       }),
     ),
   );
@@ -1207,6 +1266,7 @@ export function decodeReviewThreadsJson(
             body: comment.body ?? "",
             createdAt: comment.createdAt,
             url: trimmed(comment.url),
+            ...reactionFields(comment.reactionGroups),
           })),
         },
         commentCount: thread.comments.totalCount ?? thread.comments.nodes.length,
@@ -1291,6 +1351,7 @@ export function decodeReviewThreadCommentsJson(raw: string): Result.Result<
       body: comment.body ?? "",
       createdAt: comment.createdAt,
       url: trimmed(comment.url),
+      ...reactionFields(comment.reactionGroups),
     })),
     nextCursor: nextCursorOf(comments?.pageInfo),
   });

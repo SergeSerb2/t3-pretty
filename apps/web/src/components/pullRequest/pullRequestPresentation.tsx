@@ -3,6 +3,7 @@ import type {
   PullRequestCheck,
   PullRequestCheckStatus,
   PullRequestMergeability,
+  PullRequestReaction,
   PullRequestState,
 } from "@t3tools/contracts";
 import {
@@ -21,6 +22,7 @@ import { Children, isValidElement, type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { presentPullRequestReactions } from "./pullRequestReactions";
 
 interface StatePresentation {
   readonly label: string;
@@ -253,6 +255,34 @@ export function PullRequestMetaLine({
             ],
       )}
     </span>
+  );
+}
+
+/**
+ * GitHub-style reaction pills under a summary or a comment. Display only: toggling one would
+ * be a write the rest of this page does not offer, and the point is seeing Codex's eyes or
+ * thumbs-up without leaving the sidebar.
+ */
+export function PullRequestReactions({
+  reactions,
+}: {
+  reactions: ReadonlyArray<PullRequestReaction> | undefined;
+}) {
+  const visible = presentPullRequestReactions(reactions);
+  if (visible.length === 0) return null;
+  return (
+    <ul className="mt-2 flex flex-wrap gap-1" aria-label="Reactions">
+      {visible.map((reaction) => (
+        <li
+          key={reaction.content}
+          className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/50 px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground"
+          aria-label={`${reaction.count} ${reaction.label.toLowerCase()}`}
+        >
+          <span aria-hidden>{reaction.emoji}</span>
+          {reaction.count}
+        </li>
+      ))}
+    </ul>
   );
 }
 

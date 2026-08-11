@@ -3,6 +3,7 @@ import type {
   PullRequestCheck,
   PullRequestComment,
   PullRequestDetailView,
+  PullRequestReaction,
   PullRequestReviewThread,
   PullRequestState,
 } from "@t3tools/contracts";
@@ -41,6 +42,7 @@ export interface PullRequestTimelineEvent {
   readonly deletions: number | null;
   readonly path: string | null;
   readonly reviewState: string | null;
+  readonly reactions?: ReadonlyArray<PullRequestReaction>;
 }
 
 export type PullRequestTimelineRow =
@@ -141,6 +143,9 @@ export function buildPullRequestTimeline(
       deletions: null,
       path: comment.path,
       reviewState: comment.reviewState,
+      ...(comment.reactions === undefined || comment.reactions.length === 0
+        ? {}
+        : { reactions: comment.reactions }),
     })),
     ...(detail.mergedAt
       ? [

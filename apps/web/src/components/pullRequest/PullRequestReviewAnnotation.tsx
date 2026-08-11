@@ -18,7 +18,7 @@ import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
-import { PullRequestActorLabel } from "./pullRequestPresentation";
+import { PullRequestActorLabel, PullRequestReactions } from "./pullRequestPresentation";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import type { PendingReviewComment } from "./pullRequestReviewStore";
 
@@ -184,6 +184,7 @@ export function ReviewThreadCard({
                   text={comment.body}
                   cwd={workspaceRoot}
                 />
+                <PullRequestReactions reactions={comment.reactions} />
               </article>
             ))}
           </div>

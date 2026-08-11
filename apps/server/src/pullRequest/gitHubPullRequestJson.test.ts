@@ -173,6 +173,52 @@ describe("pull request detail decoding", () => {
     },
   );
 
+  it("keeps GitHub reaction groups on the summary, comments and reviews", () => {
+    const raw = JSON.parse(detailJson) as Record<string, unknown>;
+    const detail = expectSuccess(
+      decodePullRequestDetailJson(
+        JSON.stringify({
+          ...raw,
+          reactionGroups: [
+            { content: "THUMBS_UP", users: { totalCount: 1 } },
+            { content: "EYES", users: { totalCount: 0 } },
+            { content: "SPARKLE", users: { totalCount: 4 } },
+          ],
+        }),
+      ),
+    );
+    expect(detail.reactions).toEqual([{ content: "thumbs_up", count: 1 }]);
+
+    const activity = expectSuccess(
+      decodePullRequestActivityJson(
+        JSON.stringify({
+          ...raw,
+          comments: [
+            {
+              id: "c1",
+              body: "second",
+              createdAt: "2026-07-04T00:00:00Z",
+              reactionGroups: [{ content: "HOORAY", users: { totalCount: 3 } }],
+            },
+          ],
+          reviews: [
+            {
+              id: "r1",
+              body: "first",
+              state: "COMMENTED",
+              submittedAt: "2026-07-03T00:00:00Z",
+              reactionGroups: [{ content: "EYES", reactors: { totalCount: 1 } }],
+            },
+          ],
+        }),
+      ),
+    );
+    expect(activity.comments.map((comment) => [comment.id, comment.reactions])).toEqual([
+      ["r1", [{ content: "eyes", count: 1 }]],
+      ["c1", [{ content: "hooray", count: 3 }]],
+    ]);
+  });
+
   it("drops a review that carries neither a body nor a state", () => {
     const raw = JSON.parse(detailJson) as Record<string, unknown>;
     const detail = expectSuccess(
@@ -396,6 +442,39 @@ describe("review thread decoding", () => {
     );
     const comments = reviewThreadConversation(result.threads.map((entry) => entry.thread));
     expect(comments.map((comment) => comment.id)).toEqual(["t1", "t2"]);
+  });
+
+  it("carries GraphQL reaction groups on a thread comment into the conversation", () => {
+    const result = expectSuccess(
+      decodeReviewThreadsJson(
+        threadsJson([
+          {
+            id: "PRRT_reactions",
+            isResolved: false,
+            path: "apps/server/src/ws.ts",
+            comments: {
+              nodes: [
+                {
+                  id: "t1",
+                  body: "fix this",
+                  createdAt: "2026-07-01T00:00:00Z",
+                  reactionGroups: [
+                    { content: "THUMBS_UP", reactors: { totalCount: 2 } },
+                    { content: "HEART", reactors: { totalCount: 0 } },
+                  ],
+                },
+              ],
+            },
+          },
+        ]),
+      ),
+    );
+    expect(result.threads[0]?.thread.comments[0]?.reactions).toEqual([
+      { content: "thumbs_up", count: 2 },
+    ]);
+    expect(
+      reviewThreadConversation(result.threads.map((entry) => entry.thread))[0]?.reactions,
+    ).toEqual([{ content: "thumbs_up", count: 2 }]);
   });
 
   it("hands back the cursor the next page of threads carries on from", () => {

@@ -3,6 +3,7 @@ import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondab
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import {
+  ForwardCompatibleArray,
   IsoDateTime,
   NonNegativeInt,
   PositiveInt,
@@ -73,6 +74,36 @@ export const PullRequestCommentKind = Schema.Literals([
 ]);
 export type PullRequestCommentKind = typeof PullRequestCommentKind.Type;
 
+/**
+ * GitHub's reaction vocabulary, which is the one host that reports emoji on a change request
+ * and its remarks. Codex Auto Review uses `eyes` while it is reading and `thumbs_up` when it
+ * finishes without comments, which is why the summary has to carry them.
+ */
+export const PullRequestReactionContent = Schema.Literals([
+  "thumbs_up",
+  "thumbs_down",
+  "laugh",
+  "hooray",
+  "confused",
+  "heart",
+  "rocket",
+  "eyes",
+]);
+export type PullRequestReactionContent = typeof PullRequestReactionContent.Type;
+
+export const PullRequestReaction = Schema.Struct({
+  content: PullRequestReactionContent,
+  count: PositiveInt,
+});
+export type PullRequestReaction = typeof PullRequestReaction.Type;
+
+/**
+ * Reactions a host reported. Optional and forward-compatible so an older server, a host that
+ * has none, and a newer GitHub emoji the client does not know yet cannot take the comment
+ * down. Empty groups are omitted rather than sent as `[]`.
+ */
+const PullRequestReactions = Schema.optional(ForwardCompatibleArray(PullRequestReaction));
+
 export const PullRequestComment = Schema.Struct({
   id: TrimmedNonEmptyString,
   kind: PullRequestCommentKind,
@@ -82,6 +113,7 @@ export const PullRequestComment = Schema.Struct({
   url: Schema.NullOr(Schema.String),
   path: Schema.NullOr(Schema.String),
   reviewState: Schema.NullOr(Schema.String),
+  reactions: PullRequestReactions,
 });
 export type PullRequestComment = typeof PullRequestComment.Type;
 
@@ -103,6 +135,7 @@ export const PullRequestThreadComment = Schema.Struct({
   body: Schema.String,
   createdAt: IsoDateTime,
   url: Schema.NullOr(Schema.String),
+  reactions: PullRequestReactions,
 });
 export type PullRequestThreadComment = typeof PullRequestThreadComment.Type;
 
@@ -499,6 +532,11 @@ export const PullRequestDetail = Schema.Struct({
   labels: Schema.Array(PullRequestLabel),
   checks: Schema.Array(PullRequestCheck),
   mergeCapabilities: PullRequestMergeCapabilities,
+  /**
+   * Reactions on the change request itself, which is where GitHub (and Codex) put a thumbs-up
+   * on the summary rather than on a comment.
+   */
+  reactions: PullRequestReactions,
 });
 export type PullRequestDetail = typeof PullRequestDetail.Type;
 

@@ -24,6 +24,7 @@ import {
   PullRequestActorLabel,
   PullRequestCheckStatusIcon,
   PullRequestMetaLine,
+  PullRequestReactions,
   pullRequestCheckStatusLabel,
 } from "./pullRequestPresentation";
 import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
@@ -278,6 +279,7 @@ export function PullRequestSummaryTab({
           text={detail.body.trim().length > 0 ? detail.body : "_No description provided._"}
           cwd={detail.workspaceRoot}
         />
+        <PullRequestReactions reactions={detail.reactions} />
       </Section>
 
       <Section title="Checks" count={detail.checks.length}>
@@ -441,6 +443,7 @@ export function PullRequestSummaryTab({
                         text={comment.body}
                         cwd={detail.workspaceRoot}
                       />
+                      <PullRequestReactions reactions={comment.reactions} />
                     </article>
                   );
                 })}

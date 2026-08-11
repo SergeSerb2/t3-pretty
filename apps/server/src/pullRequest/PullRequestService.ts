@@ -981,6 +981,9 @@ export const make = Effect.gen(function* () {
                 checks: changeRequest.checks,
                 mergeCapabilities: changeRequest.mergeCapabilities,
                 viewerPermissions: changeRequest.viewerPermissions,
+                ...(changeRequest.reactions !== undefined && changeRequest.reactions.length > 0
+                  ? { reactions: changeRequest.reactions }
+                  : {}),
               }),
             ),
           ),
