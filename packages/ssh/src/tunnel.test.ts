@@ -171,6 +171,28 @@ describe("ssh tunnel scripts", () => {
     assert.include(script, 'exec node "$T3_NODE_SCRIPT_PATH" "$@"');
   });
 
+  it("propagates fork public cloud configuration to POSIX and Windows runners", () => {
+    const publicEnvironment = {
+      T3CODE_RELAY_URL: "https://relay.fork.example.test",
+      T3CODE_CLERK_PUBLISHABLE_KEY: "pk_fork_'quoted",
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: "oauth_fork",
+    };
+    const posixScript = buildRemoteT3RunnerScript({ publicEnvironment });
+    const windowsLaunchScript = buildRemoteWindowsLaunchScript({ publicEnvironment });
+    const windowsPairingScript = buildRemoteWindowsPairingScript({ publicEnvironment });
+
+    assert.include(posixScript, "export T3CODE_RELAY_URL='https://relay.fork.example.test'");
+    assert.include(posixScript, "export T3CODE_CLERK_PUBLISHABLE_KEY='pk_fork_'\\''quoted'");
+    assert.include(posixScript, "export T3CODE_CLERK_CLI_OAUTH_CLIENT_ID='oauth_fork'");
+    assert.include(windowsLaunchScript, '"T3CODE_RELAY_URL":"https://relay.fork.example.test"');
+    assert.include(windowsLaunchScript, "...T3_PUBLIC_ENVIRONMENT");
+    assert.include(windowsPairingScript, "...T3_PUBLIC_ENVIRONMENT");
+    assert.notInclude(posixScript, "@@T3_");
+    assert.notInclude(windowsLaunchScript, "@@T3_");
+    assert.doesNotThrow(() => new Function(windowsLaunchScript));
+    assert.doesNotThrow(() => new Function(windowsPairingScript));
+  });
+
   it("uses the remote t3 runner for launch and pairing scripts", () => {
     const target = {
       alias: "devbox",

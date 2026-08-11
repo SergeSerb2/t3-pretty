@@ -60,6 +60,17 @@ export function isCloudLinkOnConfiguredRelay(
   return linkedRelayUrl !== null && linkedRelayUrl === normalizedConfiguredRelayUrl;
 }
 
+export function isCloudLinkOnConfiguredRelayForAccount(
+  state: EnvironmentCloudLinkStateResult | null,
+  configuredRelayUrl: string | null,
+  accountId: string | null | undefined,
+): boolean {
+  return (
+    isCloudLinkOnConfiguredRelay(state, configuredRelayUrl) &&
+    (accountId === null || (accountId !== undefined && state?.cloudUserId === accountId))
+  );
+}
+
 function relayUrl(): string | null {
   return resolveCloudPublicConfig().relayUrl;
 }

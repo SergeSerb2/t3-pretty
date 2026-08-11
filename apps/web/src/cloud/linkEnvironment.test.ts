@@ -28,6 +28,7 @@ import { __resetDesktopPrimaryAuthForTests } from "../environments/primary/deskt
 import {
   collectCloudLinkTargets,
   isCloudLinkOnConfiguredRelay,
+  isCloudLinkOnConfiguredRelayForAccount,
   linkPrimaryEnvironmentToCloud,
   listManagedCloudEnvironments,
   normalizeRelayBaseUrl,
@@ -182,6 +183,12 @@ describe("web cloud link environment client", () => {
     expect(isCloudLinkOnConfiguredRelay(state, "https://relay.sergeserbinenko.com")).toBe(false);
     expect(isCloudLinkOnConfiguredRelay({ ...state, linked: false }, state.relayUrl)).toBe(false);
     expect(isCloudLinkOnConfiguredRelay({ ...state, relayUrl: null }, state.relayUrl)).toBe(false);
+    expect(isCloudLinkOnConfiguredRelayForAccount(state, state.relayUrl, "user-1")).toBe(true);
+    expect(isCloudLinkOnConfiguredRelayForAccount(state, state.relayUrl, "different-user")).toBe(
+      false,
+    );
+    expect(isCloudLinkOnConfiguredRelayForAccount(state, state.relayUrl, null)).toBe(true);
+    expect(isCloudLinkOnConfiguredRelayForAccount(state, state.relayUrl, undefined)).toBe(false);
   });
 
   it.effect("lists relay-managed environments through the typed relay client", () =>

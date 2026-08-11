@@ -49,9 +49,19 @@ On a new device:
 1. Open **Settings** → **Connections** and sign in to the same Surge Code account.
 2. Find the host under **Remote Environments** and select **Connect**.
 
+In the desktop app, selecting **Connect** also makes the new device available through Surge
+Connect. Once both desktops participate, each app automatically keeps the full account mesh in its
+connection list, including machines added later. Threads from every linked desktop are therefore
+available in either app without repeating **Connect** on both sides.
+
+A headless server has no desktop connection list to synchronize, so it remains intentionally
+one-way: desktop apps can add it from the mesh, but it does not gain their threads. Browser-only
+clients also keep their explicitly saved connections.
+
 If a host says **Relay offline**, open **Connections** on that host and enable Surge Connect there.
-When an updated or self-hosted build targets a different relay, enabling Surge Connect replaces the
-host's old relay link with one for the current build.
+The desktop app repairs links left on an older relay or signed in to a different account before it
+synchronizes the mesh. Managed SSH backends launched by the desktop app inherit that build's public
+Surge Connect configuration instead of silently joining another relay deployment.
 
 Use **Manage account** on the Surge Code account row to inspect or change the signed-in account.
 **Publish agent activity** is a separate setting for mobile notifications and Live Activities; it
