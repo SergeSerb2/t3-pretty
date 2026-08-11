@@ -507,6 +507,16 @@ async function main() {
     return;
   }
 
+  // Only a run sitting exactly on the origin/main tip may publish notes to
+  // main: a manual dispatch of another ref must not fast-forward main to
+  // unreviewed history, and a moved tip means this run already lost the race.
+  git(["fetch", "origin", "main"]);
+  if (git(["rev-parse", "origin/main"]) !== baseSha) {
+    warn("HEAD is not the origin/main tip; skipping the changelog push.");
+    writeGitHubOutput({ ref: baseSha, entries: 0 });
+    return;
+  }
+
   const entries = await generateEntries({ contexts, token, warn });
   const serialized = entries
     .sort((a, b) => -(compareVersions(a.version, b.version) ?? 0))

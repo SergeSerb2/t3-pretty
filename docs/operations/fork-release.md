@@ -34,10 +34,13 @@ source code on installed machines.
    the Railway CLIProxyAPI model (`gpt-5.6-sol`, `high` reasoning by default) to write one What's
    New entry per shipped fork build — the fork's own commits plus the parent nightly window —
    for every build still missing an entry, then commits and pushes `changelogData.ts` with the
-   workflow `GITHUB_TOKEN`. That push does not retrigger the workflow, and the build and publish
-   jobs check out the pushed changelog commit, so each release ships its own notes. Generation
-   failures downgrade to warnings: the release ships without new entries and the next run
-   regenerates everything missing.
+   workflow `GITHUB_TOKEN`. That push only happens for runs triggered by `main` itself and only
+   when the triggering commit is still the `main` tip, so a manual dispatch of another ref cannot
+   move `main`, and it does not retrigger the workflow. The build and publish jobs check out the
+   pushed changelog commit, so each release ships its own notes; the already-released skip check
+   recognizes the tagged changelog child of the triggering commit, so re-running a completed
+   Actions run stays a no-op. Generation failures downgrade to warnings: the release ships
+   without new entries and the next run regenerates everything missing.
 8. `m1-dev-t3code-fork` builds macOS arm64 and x64. `windows-5080-t3code-fork` builds Windows
    x64. Only trusted `main` commits run on these self-hosted machines; pull requests use GitHub-
    hosted runners.

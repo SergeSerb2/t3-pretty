@@ -229,4 +229,17 @@ describe("release workflow wiring", () => {
     assert.include(workflow, "RELEASE_VERSION: ${{ steps.release.outputs.version }}");
     assert.include(workflow, "ref: ${{ steps.changelog.outputs.ref || github.sha }}");
   });
+
+  it("restricts the changelog push to runs triggered by main", () => {
+    const workflow = NodeFS.readFileSync(releaseWorkflowPath, "utf8");
+
+    assert.include(workflow, "github.ref == 'refs/heads/main'");
+  });
+
+  it("recognizes a tagged changelog child when skipping already released commits", () => {
+    const workflow = NodeFS.readFileSync(releaseWorkflowPath, "utf8");
+
+    assert.include(workflow, '"$tag^{commit}~1"');
+    assert.include(workflow, '"docs(changelog):"*');
+  });
 });
