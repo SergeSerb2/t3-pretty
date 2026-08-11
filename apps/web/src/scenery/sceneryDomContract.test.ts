@@ -17,6 +17,7 @@ import useThemeSource from "../hooks/useTheme.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
+import sceneryLayerSource from "./SceneryLayer.tsx?raw";
 
 // ?raw on a .css module yields "" under the test pipeline (the CSS transform
 // wins), so the stylesheet contract reads the file straight from disk.
@@ -104,6 +105,17 @@ describe("scenery attribution contract", () => {
     expect(sceneryCssSource).toMatch(
       /\.scenery-attribution__photographer\s*\{[^}]*min-width: 0;[^}]*flex-shrink: 1;[^}]*overflow: hidden;/s,
     );
+  });
+
+  it("preserves Unsplash credit spaces in markup and in the painted flex items", () => {
+    expect(sceneryCssSource).toMatch(
+      /\.scenery-attribution__prefix\s*\{[^}]*flex-shrink: 0;[^}]*white-space: pre;/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\.scenery-attribution__separator\s*\{[^}]*flex-shrink: 0;[^}]*white-space: pre;/s,
+    );
+    expect(sceneryLayerSource).toContain(">Photo by </span>");
+    expect(sceneryLayerSource).toContain("> on </span>");
   });
 });
 

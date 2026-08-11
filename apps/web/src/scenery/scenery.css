@@ -162,6 +162,9 @@ html[data-theme-id="world-scenery"] {
 
 .scenery-attribution__separator {
   flex-shrink: 0;
+  /* Flex items strip collapsible leading/trailing spaces; pre keeps the
+     " · " in the markup so copy and no-CSS consumers still see it. */
+  white-space: pre;
 }
 
 .scenery-attribution__credit {
@@ -171,6 +174,12 @@ html[data-theme-id="world-scenery"] {
   align-items: center;
   /* The links must stay hoverable through the pill's pointer-events: none. */
   pointer-events: auto;
+}
+
+.scenery-attribution__prefix {
+  flex-shrink: 0;
+  /* Same as the separator: keep "Photo by " / " on " in the painted text. */
+  white-space: pre;
 }
 
 .scenery-attribution__photographer {
