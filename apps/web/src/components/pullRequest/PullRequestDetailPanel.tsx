@@ -93,6 +93,7 @@ import {
   handoffPrompt,
   handoffReviewComments,
   pullRequestFindingKey,
+  pullRequestUrlHost,
   readableFailure,
   type PullRequestFinding,
 } from "./pullRequestDetail.logic";
@@ -636,26 +637,35 @@ export function PullRequestDetailPanel({
   /** One finding, handed over on its own — the surfaces that show findings call this. */
   const startFixFinding = (finding: PullRequestFinding) => {
     if (!detail) return;
+    // Same gate as the Resolve control: do not ask the agent to resolve when this account cannot.
+    const canResolve = detail.capabilities.review.resolve && detail.viewerPermissions.resolve;
+    // Detail views do not carry `host` yet; the URL hostname is what `gh --hostname` needs.
+    const host = pullRequestUrlHost(detail.url) ?? detail.provider;
     void startHandoff(
       pullRequestFindingKey(finding),
       buildFixFindingHandoff({
         provider: detail.provider,
+        host,
         number: detail.number,
         title: detail.title,
         url: detail.url,
         headBranch: detail.headBranch,
         baseBranch: detail.baseBranch,
         finding,
+        canResolve,
       }),
     );
   };
 
   const startFixFindings = () => {
     if (!detail) return;
+    const canResolve = detail.capabilities.review.resolve && detail.viewerPermissions.resolve;
+    const host = pullRequestUrlHost(detail.url) ?? detail.provider;
     void startHandoff(
       "findings",
       buildFixFindingsHandoff({
         provider: detail.provider,
+        host,
         number: detail.number,
         title: detail.title,
         url: detail.url,
@@ -665,6 +675,7 @@ export function PullRequestDetailPanel({
         comments: detail.comments,
         checks: detail.checks,
         commentsTruncated: detail.commentsTruncated,
+        canResolve,
       }),
     );
   };

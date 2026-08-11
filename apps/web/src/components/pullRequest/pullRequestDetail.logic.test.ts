@@ -414,6 +414,7 @@ describe("pull request timeline", () => {
 describe("fix findings handoff", () => {
   const base = {
     provider: "github" as const,
+    host: "github.com",
     number: 42,
     title: "Add the pull requests page",
     url: "https://github.com/pingdotgg/t3code/pull/42",
@@ -421,6 +422,7 @@ describe("fix findings handoff", () => {
     baseBranch: "main",
     comments: [] as ReadonlyArray<PullRequestComment>,
     commentsTruncated: false,
+    canResolve: true,
   };
 
   function thread(
@@ -472,6 +474,7 @@ describe("fix findings handoff", () => {
     expect(handoff.prompt).not.toContain("rename the helper");
     expect(handoff.prompt).toContain("untrusted data");
     expect(handoff.prompt).toContain("resolveReviewThread");
+    expect(handoff.prompt).toContain("--hostname github.com");
     expect(handoff.prompt).toContain("Thread id: `t1`");
     expect(handoff.prompt).toContain("Leaving fixed findings unresolved is incomplete");
   });
@@ -480,6 +483,7 @@ describe("fix findings handoff", () => {
     const gitlab = buildFixFindingsHandoff({
       ...base,
       provider: "gitlab",
+      host: "gitlab.com",
       url: "https://gitlab.com/acme/app/-/merge_requests/42",
       reviewThreads: [thread("rename the helper")],
       checks: [],
@@ -492,6 +496,7 @@ describe("fix findings handoff", () => {
     const bitbucket = buildFixFindingsHandoff({
       ...base,
       provider: "bitbucket",
+      host: "bitbucket.org",
       url: "https://bitbucket.org/acme/app/pull-requests/42",
       reviewThreads: [thread("rename the helper")],
       checks: [],
@@ -499,6 +504,33 @@ describe("fix findings handoff", () => {
     expect(bitbucket.prompt).toContain("/resolve");
     expect(bitbucket.prompt).not.toContain("resolveReviewThread");
     expect(bitbucket.prompt).not.toContain("gh api graphql");
+  });
+
+  it("passes the GitHub Enterprise host into gh api guidance", () => {
+    const handoff = buildFixFindingsHandoff({
+      ...base,
+      host: "github.acme.dev",
+      url: "https://github.acme.dev/acme/app/pull/42",
+      reviewThreads: [thread("rename the helper")],
+      checks: [],
+    });
+    expect(handoff.prompt).toContain("gh api graphql --hostname github.acme.dev");
+    expect(handoff.prompt).not.toContain("--hostname github.com");
+  });
+
+  it("omits resolve instructions when the viewer cannot resolve threads", () => {
+    // Outside reviewers without write access still get Fix, but the Resolve control is hidden —
+    // the handoff must not demand a mutation they cannot perform.
+    const handoff = buildFixFindingsHandoff({
+      ...base,
+      canResolve: false,
+      reviewThreads: [thread("rename the helper")],
+      checks: [],
+    });
+    expect(handoff.reviewComments).toHaveLength(1);
+    expect(handoff.prompt).not.toContain("resolveReviewThread");
+    expect(handoff.prompt).not.toContain("Leaving fixed findings unresolved is incomplete");
+    expect(handoff.prompt).not.toContain("Thread id:");
   });
 
   it("names the pre-change side, and a thread the host pinned to the file rather than a line", () => {
@@ -579,6 +611,7 @@ describe("fix findings handoff", () => {
 describe("findings that cannot be attached", () => {
   const base = {
     provider: "github" as const,
+    host: "github.com",
     number: 42,
     title: "Add the pull requests page",
     url: "https://github.com/pingdotgg/t3code/pull/42",
@@ -587,6 +620,7 @@ describe("findings that cannot be attached", () => {
     reviewThreads: [] as ReadonlyArray<PullRequestReviewThread>,
     checks: [] as ReadonlyArray<PullRequestCheck>,
     commentsTruncated: false,
+    canResolve: true,
   };
 
   const review: PullRequestComment = {
@@ -657,11 +691,13 @@ describe("findings that cannot be attached", () => {
 describe("one finding handed over on its own", () => {
   const base = {
     provider: "github" as const,
+    host: "github.com",
     number: 42,
     title: "Add the pull requests page",
     url: "https://github.com/pingdotgg/t3code/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
+    canResolve: true,
   };
 
   const reviewThread: PullRequestReviewThread = {
@@ -696,6 +732,17 @@ describe("one finding handed over on its own", () => {
     expect(handoff.prompt).not.toContain("rename the helper");
     expect(handoff.prompt).toContain("Thread id: `t1`");
     expect(handoff.prompt).toContain("resolveReviewThread");
+  });
+
+  it("omits resolve instructions on a single thread when the viewer cannot resolve", () => {
+    const handoff = buildFixFindingHandoff({
+      ...base,
+      canResolve: false,
+      finding: { kind: "thread", thread: reviewThread },
+    });
+    expect(handoff.reviewComments).toHaveLength(1);
+    expect(handoff.prompt).not.toContain("resolveReviewThread");
+    expect(handoff.prompt).not.toContain("Leaving fixed findings unresolved is incomplete");
   });
 
   it("quotes a review remark, which has no line to attach it to", () => {
@@ -816,6 +863,7 @@ describe("findings that are already on a line", () => {
     };
     const handoff = buildFixFindingsHandoff({
       provider: "github",
+      host: "github.com",
       number: 42,
       title: "Add the pull requests page",
       url: "https://github.com/pingdotgg/t3code/pull/42",
@@ -837,6 +885,7 @@ describe("findings that are already on a line", () => {
       ],
       checks: [],
       commentsTruncated: false,
+      canResolve: true,
     });
     expect(handoff.prompt).not.toContain("this was already fixed");
     expect(handoff.reviewComments).toEqual([]);

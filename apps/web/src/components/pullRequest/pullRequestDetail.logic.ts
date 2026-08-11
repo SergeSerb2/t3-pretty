@@ -363,11 +363,14 @@ function handoffPreamble(input: {
 /**
  * How to close a review conversation on this host. GitHub, GitLab and Bitbucket each speak a
  * different resolve API; naming the wrong one leaves the thread open with a failed call.
+ *
+ * `gh api` defaults to github.com, so Enterprise installs need the concrete host or the
+ * mutation lands on the wrong API — matching the server wrapper that always passes `--hostname`.
  */
-function hostResolveGuidance(provider: SourceControlProviderKind): string {
+function hostResolveGuidance(provider: SourceControlProviderKind, host: string): string {
   switch (provider) {
     case "github":
-      return " On GitHub, use `gh api graphql` with `resolveReviewThread` for the matching thread.";
+      return ` On GitHub, use \`gh api graphql --hostname ${boundedField(host)}\` with \`resolveReviewThread\` for the matching thread.`;
     case "gitlab":
       return ' On GitLab, use `glab api` to PUT `{"resolved":true}` on the matching merge request discussion.';
     case "bitbucket":
@@ -380,12 +383,16 @@ function hostResolveGuidance(provider: SourceControlProviderKind): string {
 /**
  * Closing the loop on the host: fixing code and leaving the conversation open is how the same
  * finding comes back as unfinished work. Only threaded findings are resolvable — a review summary
- * has no thread id, and a host resolve API cannot close it.
+ * has no thread id, and a host resolve API cannot close it. When the viewer cannot resolve
+ * (same gate as the Resolve control), omit this so the agent is not told to mutate and fail.
  */
 function resolveFindingsAfterFixInstruction(
   provider: SourceControlProviderKind,
+  host: string,
   threadIds: ReadonlyArray<string>,
+  canResolve: boolean,
 ): string {
+  if (!canResolve) return "";
   const ids = threadIds
     .map((id) => id.trim())
     .filter((id) => id.length > 0)
@@ -393,7 +400,20 @@ function resolveFindingsAfterFixInstruction(
   // Callers only pass threaded findings; an empty list would mean there is nothing to resolve.
   if (ids.length === 0) return "";
   const idClause = ids.length === 1 ? ` Thread id: ${ids[0]}.` : ` Thread ids: ${ids.join(", ")}.`;
-  return `When you finish fixing a review finding you addressed, also resolve that conversation on the pull request so it no longer shows as open.${idClause}${hostResolveGuidance(provider)} Leaving fixed findings unresolved is incomplete.`;
+  return `When you finish fixing a review finding you addressed, also resolve that conversation on the pull request so it no longer shows as open.${idClause}${hostResolveGuidance(provider, host)} Leaving fixed findings unresolved is incomplete.`;
+}
+
+/**
+ * Hostname the pull request URL is served from. Detail views do not yet carry `host` the way
+ * list rows do, so handoffs that need `gh --hostname` read it from the URL the host gave.
+ */
+export function pullRequestUrlHost(url: string): string | null {
+  try {
+    const host = new URL(url).hostname.trim();
+    return host.length > 0 ? host : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface FixFindingsHandoff {
@@ -469,6 +489,8 @@ export function handoffReviewComments(
  */
 export function buildFixFindingsHandoff(input: {
   readonly provider: SourceControlProviderKind;
+  /** Host the PR is addressed on — github.com or a GitHub Enterprise hostname. */
+  readonly host: string;
   readonly number: number;
   readonly title: string;
   readonly url: string;
@@ -479,6 +501,11 @@ export function buildFixFindingsHandoff(input: {
   readonly comments: ReadonlyArray<PullRequestComment>;
   readonly checks: ReadonlyArray<PullRequestCheck>;
   readonly commentsTruncated: boolean;
+  /**
+   * Whether this viewer may resolve review threads on the host — host capability and
+   * `viewerPermissions.resolve` together, matching the Resolve control.
+   */
+  readonly canResolve: boolean;
 }): FixFindingsHandoff {
   // A resolved conversation is finished work, and one nobody wrote in says nothing.
   const threads = input.reviewThreads.filter(
@@ -562,13 +589,16 @@ export function buildFixFindingsHandoff(input: {
           ]
         : []),
       // Checks and top-level review remarks are not resolvable threads — only threaded findings are.
+      // Skip when the viewer cannot resolve; asking would demand an API mutation they cannot perform.
       ...(includedThreads.length > 0
         ? [
             resolveFindingsAfterFixInstruction(
               input.provider,
+              input.host,
               includedThreads.map((thread) => thread.id),
+              input.canResolve,
             ),
-          ]
+          ].filter((line) => line.length > 0)
         : []),
     ].join("\n"),
     reviewComments: includedThreads.map((thread) => reviewThreadContext(thread, input.number)),
@@ -604,20 +634,33 @@ export function pullRequestFindingKey(finding: PullRequestFinding): string {
  */
 export function buildFixFindingHandoff(input: {
   readonly provider: SourceControlProviderKind;
+  /** Host the PR is addressed on — github.com or a GitHub Enterprise hostname. */
+  readonly host: string;
   readonly number: number;
   readonly title: string;
   readonly url: string;
   readonly headBranch: string;
   readonly baseBranch: string;
   readonly finding: PullRequestFinding;
+  /**
+   * Whether this viewer may resolve review threads on the host — host capability and
+   * `viewerPermissions.resolve` together, matching the Resolve control.
+   */
+  readonly canResolve: boolean;
 }): FixFindingsHandoff {
   const preamble = handoffPreamble(input);
   if (input.finding.kind === "thread") {
+    const resolveInstruction = resolveFindingsAfterFixInstruction(
+      input.provider,
+      input.host,
+      [input.finding.thread.id],
+      input.canResolve,
+    );
     return {
       prompt: [
         "Fix the review finding attached to this message. It is attached on the line it was written against.",
         ...preamble,
-        resolveFindingsAfterFixInstruction(input.provider, [input.finding.thread.id]),
+        ...(resolveInstruction ? [resolveInstruction] : []),
       ].join("\n"),
       reviewComments: [reviewThreadContext(input.finding.thread, input.number)],
     };
