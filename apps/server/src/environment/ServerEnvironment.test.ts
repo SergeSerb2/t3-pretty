@@ -72,6 +72,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(second.capabilities.pullRequests).toBe(true);
       expect(second.capabilities.threadTitleRegeneration).toBe(true);
       expect(second.capabilities.canvas).toBe(true);
+      expect(second.capabilities.providerHandoff).toBe(true);
     }),
   );
 

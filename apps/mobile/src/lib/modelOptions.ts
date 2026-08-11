@@ -188,3 +188,13 @@ export function groupByProvider(options: ReadonlyArray<ModelOption>): ReadonlyAr
     models: group.models,
   }));
 }
+
+export function resolveThreadProviderGroups(input: {
+  readonly providerGroups: ReadonlyArray<ProviderGroup>;
+  readonly currentProviderInstanceId: string;
+  readonly supportsProviderHandoff: boolean;
+}): ReadonlyArray<ProviderGroup> {
+  return input.supportsProviderHandoff
+    ? input.providerGroups
+    : input.providerGroups.filter((group) => group.providerKey === input.currentProviderInstanceId);
+}
