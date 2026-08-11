@@ -70,6 +70,7 @@ import {
   useRegisterWorkspaceInspector,
 } from "../layout/AdaptiveWorkspaceLayout";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
+import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
 import { ThreadFileNavigatorPane } from "../files/thread-file-navigator-pane";
 import {
   ThreadInspectorContentStack,
@@ -766,6 +767,7 @@ function ThreadRouteContent(
       <GitActionProgressOverlay progress={gitActionProgress} onDismiss={dismissGitActionResult} />
 
       <View className="flex-1 bg-screen">
+        {routeThreadIdentity !== null ? <SceneryBackdrop threadKey={routeThreadIdentity} /> : null}
         <ThreadDetailScreen
           selectedThread={selectedThreadWithDraftSettings ?? selectedThread}
           contentPresentation={contentPresentation}

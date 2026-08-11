@@ -29,6 +29,7 @@ import {
   AppearancePreferencesProvider,
   useAppearancePreferences,
 } from "./features/settings/appearance/AppearancePreferencesProvider";
+import { SceneryProvider } from "./features/scenery/SceneryProvider";
 import { RootStack } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
 import { OverlayPortalHost } from "./components/OverlayPortal";
@@ -77,37 +78,39 @@ export default function App() {
     <RegistryContext.Provider value={appAtomRegistry}>
       <CloudAuthProvider>
         <AppearancePreferencesProvider>
-          <SplashScreenCoordinator />
-          <GestureHandlerRootView className="flex-1">
-            <KeyboardProvider statusBarTranslucent>
-              <SafeAreaProvider>
-                <StatusBar
-                  barStyle={colorScheme === "dark" ? "light-content" : "dark-content"}
-                  backgroundColor={statusBarBg}
-                  translucent
-                />
-                {/* The navigation theme drives the NATIVE header appearance: native-stack
-                    forwards `dark` as the nav bar's overrideUserInterfaceStyle. Without
-                    this, React Navigation defaults to its light theme and every native
-                    header (glass buttons, title, materials) is forced light even when
-                    the system is in dark mode. */}
-                {/* Blur target for Android dropdown backdrops — see appBlurTarget.ts. */}
-                <BlurTargetView ref={appBlurTargetRef} style={{ flex: 1 }}>
-                  <IncomingShareProvider>
-                    <Navigation
-                      linking={appLinking}
-                      theme={colorScheme === "dark" ? SCENERY_NAV_DARK : SCENERY_NAV_LIGHT}
-                    />
-                  </IncomingShareProvider>
-                  <ConfirmDialogHost />
-                  <WhatsNewHost />
-                </BlurTargetView>
-                {/* Anchored-menu overlays render here — in-window, so the
-                    keyboard stays up while a dropdown is open. */}
-                <OverlayPortalHost />
-              </SafeAreaProvider>
-            </KeyboardProvider>
-          </GestureHandlerRootView>
+          <SceneryProvider>
+            <SplashScreenCoordinator />
+            <GestureHandlerRootView className="flex-1">
+              <KeyboardProvider statusBarTranslucent>
+                <SafeAreaProvider>
+                  <StatusBar
+                    barStyle={colorScheme === "dark" ? "light-content" : "dark-content"}
+                    backgroundColor={statusBarBg}
+                    translucent
+                  />
+                  {/* The navigation theme drives the NATIVE header appearance: native-stack
+                      forwards `dark` as the nav bar's overrideUserInterfaceStyle. Without
+                      this, React Navigation defaults to its light theme and every native
+                      header (glass buttons, title, materials) is forced light even when
+                      the system is in dark mode. */}
+                  {/* Blur target for Android dropdown backdrops — see appBlurTarget.ts. */}
+                  <BlurTargetView ref={appBlurTargetRef} style={{ flex: 1 }}>
+                    <IncomingShareProvider>
+                      <Navigation
+                        linking={appLinking}
+                        theme={colorScheme === "dark" ? SCENERY_NAV_DARK : SCENERY_NAV_LIGHT}
+                      />
+                    </IncomingShareProvider>
+                    <ConfirmDialogHost />
+                    <WhatsNewHost />
+                  </BlurTargetView>
+                  {/* Anchored-menu overlays render here — in-window, so the
+                      keyboard stays up while a dropdown is open. */}
+                  <OverlayPortalHost />
+                </SafeAreaProvider>
+              </KeyboardProvider>
+            </GestureHandlerRootView>
+          </SceneryProvider>
         </AppearancePreferencesProvider>
       </CloudAuthProvider>
     </RegistryContext.Provider>
