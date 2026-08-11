@@ -99,10 +99,10 @@ describe("prStatusIndicator", () => {
         undefined,
       ),
     ).toMatchObject({
-      tooltip: "PR #42 - Open: PR branch. Codex is reviewing.",
+      tooltip: "PR #42 - Open: PR branch. Auto review running.",
       automatedReview: {
         state: "reviewing",
-        shortLabel: "Reviewing",
+        shortLabel: "Running",
       },
     });
   });

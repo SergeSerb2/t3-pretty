@@ -90,7 +90,38 @@ import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { readLocalApi } from "~/localApi";
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
 import { openPullRequestLink } from "~/lib/openPullRequestLink";
-import { AutomatedReviewStatusIcon, automatedReviewIndicator } from "./ThreadStatusIndicators";
+import {
+  AutomatedReviewStatusIcon,
+  automatedReviewIndicator,
+  type AutomatedReviewIndicator,
+} from "./ThreadStatusIndicators";
+
+function GitMenuItemLabel({
+  label,
+  automatedReview,
+}: {
+  label: string;
+  automatedReview?: AutomatedReviewIndicator | null;
+}) {
+  if (!automatedReview) {
+    return label;
+  }
+
+  return (
+    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span>{label}</span>
+      <span
+        className={`flex items-start gap-1.5 text-xs leading-snug ${automatedReview.colorClass}`}
+      >
+        <AutomatedReviewStatusIcon status={automatedReview} className="mt-px size-3 shrink-0" />
+        <span className="min-w-0">
+          <span className="font-medium">{automatedReview.label}</span>
+          <span className="text-muted-foreground"> — {automatedReview.description}</span>
+        </span>
+      </span>
+    </span>
+  );
+}
 
 interface GitActionsControlProps {
   gitCwd: string | null;
@@ -1737,18 +1768,10 @@ export default function GitActionsControl({
               size="xs"
               className="ps-[8.5px]"
               aria-label={quickActionAccessibleLabel}
-              title={
-                automatedReviewStatus
-                  ? `${automatedReviewStatus.label}. ${automatedReviewStatus.description}`
-                  : undefined
-              }
               disabled={isGitActionRunning || quickAction.disabled}
               onClick={runQuickAction}
             >
               <GitQuickActionIcon quickAction={quickAction} SourceControlIcon={SourceControlIcon} />
-              {automatedReviewStatus ? (
-                <AutomatedReviewStatusIcon status={automatedReviewStatus} className="size-3.5" />
-              ) : null}
               <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
                 {quickAction.label}
               </span>
@@ -1768,7 +1791,7 @@ export default function GitActionsControl({
             >
               <ChevronDownIcon aria-hidden="true" className="size-4" />
             </MenuTrigger>
-            <MenuPopup align="end" className="w-full">
+            <MenuPopup align="end" className="w-full min-w-64">
               {gitActionMenuItems.map((item) => {
                 const disabledReason = getMenuActionDisabledReason({
                   item,
@@ -1776,6 +1799,7 @@ export default function GitActionsControl({
                   isBusy: isGitActionRunning,
                   hasPrimaryRemote,
                 });
+                const itemAutomatedReview = item.kind === "open_pr" ? automatedReviewStatus : null;
                 if (item.disabled && disabledReason) {
                   return (
                     <Popover key={`${item.id}-${item.label}`}>
@@ -1784,12 +1808,15 @@ export default function GitActionsControl({
                         nativeButton={false}
                         render={<span className="block w-max cursor-not-allowed" />}
                       >
-                        <MenuItem className="w-full" disabled>
+                        <MenuItem className="w-full items-start" disabled>
                           <GitActionItemIcon
                             icon={item.icon}
                             SourceControlIcon={SourceControlIcon}
                           />
-                          {item.label}
+                          <GitMenuItemLabel
+                            label={item.label}
+                            automatedReview={itemAutomatedReview}
+                          />
                         </MenuItem>
                       </PopoverTrigger>
                       <PopoverPopup tooltipStyle side="left" align="center">
@@ -1802,13 +1829,14 @@ export default function GitActionsControl({
                 return (
                   <MenuItem
                     key={`${item.id}-${item.label}`}
+                    className={itemAutomatedReview ? "items-start" : undefined}
                     disabled={item.disabled}
                     onClick={() => {
                       openDialogForMenuItem(item);
                     }}
                   >
                     <GitActionItemIcon icon={item.icon} SourceControlIcon={SourceControlIcon} />
-                    {item.label}
+                    <GitMenuItemLabel label={item.label} automatedReview={itemAutomatedReview} />
                   </MenuItem>
                 );
               })}

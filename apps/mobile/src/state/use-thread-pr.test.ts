@@ -44,10 +44,10 @@ describe("presentThreadPr", () => {
         undefined,
       ),
     ).toMatchObject({
-      accessibilityLabel: "#3774 pull request merged, Codex is reviewing",
+      accessibilityLabel: "#3774 pull request merged, Auto review running",
       automatedReview: {
         state: "reviewing",
-        shortLabel: "Reviewing",
+        shortLabel: "Running",
       },
     });
   });
