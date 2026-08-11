@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { CodeAppearanceSection } from "./appearance/sections/CodeAppearanceSection";
+import { SceneryAppearanceSection } from "./appearance/sections/SceneryAppearanceSection";
 import { TerminalAppearanceSection } from "./appearance/sections/TerminalAppearanceSection";
 import { TextAppearanceSection } from "./appearance/sections/TextAppearanceSection";
 
@@ -30,6 +31,7 @@ export function SettingsAppearanceRouteScreen() {
         }}
       >
         <TextAppearanceSection />
+        <SceneryAppearanceSection />
         <TerminalAppearanceSection />
         <CodeAppearanceSection />
       </ScrollView>

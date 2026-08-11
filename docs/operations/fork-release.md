@@ -30,10 +30,21 @@ source code on installed machines.
    starts its own `T3 Pretty Desktop Release`. Release runs are not collapsed through a workflow
    concurrency group: the dedicated runners queue every main commit, and the GitHub run number
    makes each fork version unique even when multiple releases overlap.
-7. `m1-dev-t3code-fork` builds macOS arm64 and x64. `windows-5080-t3code-fork` builds Windows
+7. Before building, the release preflight runs `scripts/fork/generate-changelog.mjs`, which asks
+   the Railway CLIProxyAPI model (`gpt-5.6-sol`, `high` reasoning by default) to write one What's
+   New entry per shipped fork build — the fork's own commits plus the parent nightly window —
+   for every build still missing an entry, then commits and pushes `changelogData.ts` with the
+   workflow `GITHUB_TOKEN`. That push only happens for runs triggered by `main` itself and only
+   when the triggering commit is still the `main` tip, so a manual dispatch of another ref cannot
+   move `main`, and it does not retrigger the workflow. The build and publish jobs check out the
+   pushed changelog commit, so each release ships its own notes; the already-released skip check
+   recognizes the tagged changelog child of the triggering commit, so re-running a completed
+   Actions run stays a no-op. Generation failures downgrade to warnings: the release ships
+   without new entries and the next run regenerates everything missing.
+8. `m1-dev-t3code-fork` builds macOS arm64 and x64. `windows-5080-t3code-fork` builds Windows
    x64. Only trusted `main` commits run on these self-hosted machines; pull requests use GitHub-
    hosted runners.
-8. GitHub publishes a public prerelease with the installers, blockmaps, and `nightly` update
+9. GitHub publishes a public prerelease with the installers, blockmaps, and `nightly` update
    manifests. Packaged fork apps point `electron-updater` at
    `SergeSerb2/t3-pretty`, so no per-machine GitHub token is required.
 
@@ -43,8 +54,10 @@ newer upstream tag was integrated before its sync pull request merged.
 
 ## Required repository configuration
 
-- Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used only by the trusted scheduled
-  sync workflow.
+- Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used by the trusted scheduled
+  sync workflow for conflict resolution and by the release preflight for What's New changelog
+  generation. `CLI_PROXY_CHANGELOG_EFFORT` optionally overrides the changelog reasoning effort
+  (default `high`).
 - Secret `FORK_RELEASE_TOKEN`: GitHub credential with repository Contents write access, stored as
   a repository Actions secret. It is exposed only to the trusted `main` publishing step; GitHub's
   own CLI creates the release and uploads its assets without handing this credential to a

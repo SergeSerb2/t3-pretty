@@ -120,10 +120,10 @@ export function createNativeReviewDiffTheme(
     return {
       // Match the app surface (--color-sheet) so code views blend with the rest of
       // the app instead of using a distinct code-editor background.
-      background: "#0e0e0e",
+      background: "#0e1110",
       text: terminalTheme.foreground,
       mutedText: terminalTheme.mutedForeground,
-      headerBackground: "#0e0e0e",
+      headerBackground: "#0e1110",
       border: terminalTheme.border,
       hunkBackground: "#071f28",
       hunkText: terminalBlue ?? "#009fff",
@@ -139,10 +139,10 @@ export function createNativeReviewDiffTheme(
   return {
     // Match the app surface (--color-sheet) so code views blend with the rest of the
     // app instead of using a distinct code-editor background.
-    background: "#f2f2f7",
+    background: "#f4f6f4",
     text: "#070707",
     mutedText: terminalTheme.mutedForeground,
-    headerBackground: "#f2f2f7",
+    headerBackground: "#f4f6f4",
     border: terminalTheme.border,
     hunkBackground: "#e0f2ff",
     hunkText: terminalBlue ?? "#009fff",

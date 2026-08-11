@@ -216,6 +216,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       const identity = yield* resolver.resolve(cwd);
 
       expect(identity).not.toBeNull();
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
       expect(JSON.stringify(identity)).not.toContain("ghp_secrettoken");
       expect(identity?.locator.remoteUrl).toBe("https://git.example/repo.git");
       expect(identity?.displayName).toBe("repo");
@@ -264,6 +265,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       const identity = yield* resolver.resolve(cwd);
 
       expect(identity).not.toBeNull();
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
       expect(JSON.stringify(identity)).not.toContain("ghp_querysecret");
       expect(identity?.locator.remoteUrl).toBe("https://github.com/julius/t3code.git");
       expect(identity?.displayName).toBe("julius/t3code");
@@ -498,6 +500,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
 
       expect(identity).not.toBeNull();
       expect(identity?.locator.remoteUrl).toBe("https://github.com/julius/t3code.git");
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
       expect(JSON.stringify(identity)).not.toContain("ghp_secrettoken");
       expect(identity?.displayName).toBe("julius/t3code");
       expect(identity?.canonicalKey).toBe("github.com/t3tools/t3code");

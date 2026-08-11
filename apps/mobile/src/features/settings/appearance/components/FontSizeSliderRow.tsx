@@ -35,6 +35,9 @@ export function FontSizeSliderRow(props: {
   readonly step: number;
   readonly value: number;
   readonly onChange: (value: number) => void;
+  /** Symbols flanking the track (low end / high end); text-size by default. */
+  readonly iconMin?: SymbolName;
+  readonly iconMax?: SymbolName;
 }) {
   const icon = useThemeColor("--color-icon");
   const iconMuted = String(useThemeColor("--color-icon-muted"));
@@ -150,7 +153,7 @@ export function FontSizeSliderRow(props: {
       </View>
       <View className="flex-row items-center gap-3">
         <SymbolView
-          name="textformat.size.smaller"
+          name={props.iconMin ?? "textformat.size.smaller"}
           size={15}
           tintColor={iconMuted}
           type="monochrome"
@@ -202,7 +205,7 @@ export function FontSizeSliderRow(props: {
           </View>
         </GestureDetector>
         <SymbolView
-          name="textformat.size.larger"
+          name={props.iconMax ?? "textformat.size.larger"}
           size={22}
           tintColor={iconMuted}
           type="monochrome"

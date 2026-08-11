@@ -24,6 +24,9 @@ import { ActivityIndicator, FlatList, Platform, Pressable, View } from "react-na
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeColor } from "../../lib/useThemeColor";
+import { SceneryAttribution } from "../scenery/SceneryAttribution";
+import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
+import { useDailySceneryPhoto } from "../scenery/SceneryProvider";
 
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
@@ -215,6 +218,14 @@ export function HomeScreen(props: HomeScreenProps) {
     Platform.OS === "ios" && !NATIVE_LIQUID_GLASS_SUPPORTED
       ? PRE_LIQUID_GLASS_BOTTOM_TOOLBAR_HEIGHT
       : 0;
+  const dailySceneryPhoto = useDailySceneryPhoto();
+  // Top edge of the zone the lists reserve for the floating bottom toolbar /
+  // Android FAB, so the credit pill never overlaps either (web keeps the same
+  // clearance for its credits dock).
+  const sceneryCreditBottom =
+    Platform.OS === "ios"
+      ? Math.max(insets.bottom, 24) + 96 + iosBottomToolbarClearance - 8
+      : Math.max(insets.bottom, 16) + 88;
   const searchEnvironmentIds = useMemo(
     () =>
       props.selectedEnvironmentId === null
@@ -1034,6 +1045,7 @@ export function HomeScreen(props: HomeScreenProps) {
           paddingTop: NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top + 72 : 0,
         }}
       >
+        <SceneryBackdrop threadKey={null} />
         <View className="w-full max-w-[430px]">
           <EmptyState
             title={emptyState.title}
@@ -1048,6 +1060,9 @@ export function HomeScreen(props: HomeScreenProps) {
             </View>
           ) : null}
         </View>
+        {dailySceneryPhoto !== null ? (
+          <SceneryAttribution photo={dailySceneryPhoto} bottom={sceneryCreditBottom} />
+        ) : null}
       </View>
     );
   }
@@ -1094,6 +1109,7 @@ export function HomeScreen(props: HomeScreenProps) {
   if (threadListV2Enabled) {
     return (
       <View className="flex-1 bg-screen">
+        <SceneryBackdrop threadKey={null} />
         <SwipeableScrollGateProvider enabled={swipeEnabled}>
           <FlatList
             data={threadListV2Items}
@@ -1133,6 +1149,9 @@ export function HomeScreen(props: HomeScreenProps) {
             }}
           />
         </SwipeableScrollGateProvider>
+        {dailySceneryPhoto !== null ? (
+          <SceneryAttribution photo={dailySceneryPhoto} bottom={sceneryCreditBottom} />
+        ) : null}
       </View>
     );
   }
@@ -1145,6 +1164,7 @@ export function HomeScreen(props: HomeScreenProps) {
           the first scroll event) and blanks non-pinned headers after
           collapse/expand data changes. The flattened layout still exposes
           `stickyHeaderIndices` if this gets revisited. */}
+      <SceneryBackdrop threadKey={null} />
       <SwipeableScrollGateProvider enabled={swipeEnabled}>
         <LegendList
           ref={listRef}
@@ -1187,6 +1207,9 @@ export function HomeScreen(props: HomeScreenProps) {
           }
         />
       </SwipeableScrollGateProvider>
+      {dailySceneryPhoto !== null ? (
+        <SceneryAttribution photo={dailySceneryPhoto} bottom={sceneryCreditBottom} />
+      ) : null}
     </View>
   );
 }

@@ -89,6 +89,7 @@ export function ComposerAttachControl() {
   useEffect(() => {
     const managed = new Map<Element, HTMLElement>();
     let queued = false;
+    let nextSlotId = 0;
 
     const sync = () => {
       queued = false;
@@ -107,6 +108,7 @@ export function ComposerAttachControl() {
           continue;
         }
         const slot = existing ?? document.createElement("span");
+        slot.dataset.scenerySlotId ??= String(nextSlotId++);
         slot.className = SLOT_CLASS;
         host.insertBefore(slot, host.firstChild);
         managed.set(host, slot);
@@ -136,8 +138,8 @@ export function ComposerAttachControl() {
 
   return (
     <>
-      {slots.map((slot, index) => (
-        <span key={index}>
+      {slots.map((slot) => (
+        <span key={slot.dataset.scenerySlotId}>
           {createPortal(
             <>
               <button

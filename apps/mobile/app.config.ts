@@ -1,7 +1,7 @@
 import type { ExpoConfig } from "expo/config";
 
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
-import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
+import { loadRepoEnv, readReleaseTrainVersion } from "../../scripts/lib/public-config.ts";
 
 type AppVariant = "development" | "preview" | "production";
 
@@ -39,7 +39,9 @@ const DEVELOPMENT_ASSETS = {
 
 const PREVIEW_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIconComposerProject),
+  // The T3 Pretty icon ships as a plain PNG, not an Icon Composer project, so
+  // point ios.icon at the PNG or the upstream composer art would win on iOS.
+  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.prettyIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.nightlyLinuxIconPng),
   androidAdaptiveBackgroundColor: "#111533",
@@ -50,7 +52,7 @@ const PREVIEW_ASSETS = {
 
 const RELEASE_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIconComposerProject),
+  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.prettyIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidAdaptiveForeground: "./assets/android-icon-mark.png",
   androidAdaptiveBackgroundColor: "#000000",
@@ -59,29 +61,50 @@ const RELEASE_ASSETS = {
   androidNotificationColor: "#FFFFFF",
 } as const;
 
+// The fork's Clerk instance hosts the passkey relying party + universal links.
+// Derive it from the configured publishable key (pk_live_<base64 domain>$) so
+// swapping Clerk instances via env cannot leave stale associated domains.
+const FORK_RELYING_PARTY = "clerk.sergeserbinenko.com";
+
+function resolveRelyingParty(publishableKey: string | undefined): string {
+  if (!publishableKey) return FORK_RELYING_PARTY;
+  const encoded = publishableKey.replace(/^pk_(?:live|test)_/, "");
+  try {
+    const decoded = Buffer.from(encoded, "base64").toString("utf8");
+    return decoded.endsWith("$") ? decoded.slice(0, -1) : FORK_RELYING_PARTY;
+  } catch {
+    return FORK_RELYING_PARTY;
+  }
+}
+
+const relyingParty = resolveRelyingParty(repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
+// Schemes stay `t3code*` on purpose: pairing QR codes and hosted pair links
+// encode the upstream scheme, and Surge Connect keeps technical identifiers
+// upstream-compatible (see docs/internals/t3-connect.md).
 const VARIANT_CONFIG = {
   development: {
-    appName: "T3 Code Dev",
+    appName: "T3 Pretty Dev",
     scheme: "t3code-dev",
-    iosBundleIdentifier: "com.t3tools.t3code.dev",
-    androidPackage: "com.t3tools.t3code.dev",
-    relyingParty: "clerk.t3.codes",
+    iosBundleIdentifier: "com.sergeserbinenko.t3pretty.dev",
+    androidPackage: "com.sergeserbinenko.t3pretty.dev",
+    relyingParty,
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
-    appName: "T3 Code Preview",
+    appName: "T3 Pretty Preview",
     scheme: "t3code-preview",
-    iosBundleIdentifier: "com.t3tools.t3code.preview",
-    androidPackage: "com.t3tools.t3code.preview",
-    relyingParty: "clerk.t3.codes",
+    iosBundleIdentifier: "com.sergeserbinenko.t3pretty.preview",
+    androidPackage: "com.sergeserbinenko.t3pretty.preview",
+    relyingParty,
     assets: PREVIEW_ASSETS,
   },
   production: {
-    appName: "T3 Code",
+    appName: "T3 Pretty",
     scheme: "t3code",
-    iosBundleIdentifier: "com.t3tools.t3code",
-    androidPackage: "com.t3tools.t3code",
-    relyingParty: "clerk.t3.codes",
+    iosBundleIdentifier: "com.sergeserbinenko.t3pretty",
+    androidPackage: "com.sergeserbinenko.t3pretty",
+    relyingParty,
     assets: RELEASE_ASSETS,
   },
 } as const;
@@ -121,12 +144,14 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "AgentActivity",
         displayName: "Agent Activity",
-        description: "Shows the current state of active T3 Code agents.",
+        description: "Shows the current state of active T3 Pretty agents.",
         supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
       },
     ],
   },
 ];
+
+const shareExtensionEnabled = !isIosPersonalTeamBuild && repoEnv.T3CODE_IOS_SHARE_EXTENSION !== "0";
 
 const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   "expo-sharing",
@@ -134,9 +159,12 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
     ios: {
       // Personal Teams cannot sign App Groups or extension targets. Keep the
       // reduced-capability local build usable while release builds expose the
-      // real system share target.
-      enabled: !isIosPersonalTeamBuild,
-      extensionBundleIdentifier: `${iosBundleIdentifier}.sharing`,
+      // real system share target. T3CODE_IOS_SHARE_EXTENSION=0 disables the
+      // extension even on full teams — the `.share` App ID needs its App
+      // Groups container ticked on the Developer Portal first (headless
+      // re-provisioning cannot attach it), which is a one-time manual step.
+      enabled: shareExtensionEnabled,
+      extensionBundleIdentifier: `${iosBundleIdentifier}.share`,
       appGroupId: `group.${iosBundleIdentifier}`,
       activationRule: {
         supportsText: true,
@@ -156,12 +184,30 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 // names on Android so React Native and the native composer use one set of
 // family names without waiting for runtime font loading.
 
+// Fork-owned OTA endpoint. Left unset, updates are disabled entirely: the
+// upstream EAS project shares runtime fingerprints with fork binaries, so
+// keeping upstream's URL would let upstream OTA bundles replace fork JS.
+const mobileUpdateUrl = repoEnv.T3CODE_MOBILE_UPDATE_URL?.trim();
+const easProjectId = repoEnv.T3CODE_MOBILE_EAS_PROJECT_ID?.trim();
+const expoOwner = repoEnv.T3CODE_MOBILE_EXPO_OWNER?.trim();
+const appleTeamId = repoEnv.T3CODE_APPLE_TEAM_ID?.trim();
+
+// The mobile version tracks the T3 Pretty release train (apps/web/package.json,
+// rewritten by scripts/update-release-package-versions.ts during releases) so
+// the in-app What's New changelog can key entries by release. iOS rejects
+// prerelease suffixes in CFBundleShortVersionString, so only the numeric
+// prefix survives ("0.0.34-nightly.x" → "0.0.34").
+function resolveMobileAppVersion(): string {
+  const raw = repoEnv.T3CODE_MOBILE_APP_VERSION?.trim() || readReleaseTrainVersion() || "";
+  return /^(\d+\.\d+\.\d+)/.exec(raw)?.[1] ?? "0.0.33";
+}
+
 const config: ExpoConfig = {
   name: variant.appName,
-  slug: "t3-code",
+  slug: repoEnv.T3CODE_MOBILE_EXPO_SLUG?.trim() || "t3-pretty",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "1.0.2",
+  version: resolveMobileAppVersion(),
   runtimeVersion: {
     // Fingerprint (not appVersion) so an OTA only reaches binaries whose native
     // project — native deps, config plugins, AND patches/ — matches the update.
@@ -172,12 +218,14 @@ const config: ExpoConfig = {
   orientation: "portrait",
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
-  updates: {
-    enabled: true,
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    checkAutomatically: "ON_LOAD",
-    fallbackToCacheTimeout: 0,
-  },
+  updates: mobileUpdateUrl
+    ? {
+        enabled: true,
+        url: mobileUpdateUrl,
+        checkAutomatically: "ON_LOAD",
+        fallbackToCacheTimeout: 0,
+      }
+    : { enabled: false },
   ios: {
     icon: variant.assets.iosIcon,
     supportsTablet: true,
@@ -185,10 +233,11 @@ const config: ExpoConfig = {
     // showcase capture build requires full screen (see infoPlist below).
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
-    // Pin code signing to the T3 Tools team so non-interactive `expo run:ios`
-    // does not fall back to a personal team (which cannot sign app groups,
-    // Sign in with Apple, or push notification entitlements).
-    appleTeamId: "ARK85ZXQ4Z",
+    // Pin code signing via T3CODE_IOS_APPLE_TEAM_ID so non-interactive
+    // `expo run:ios` does not fall back to a personal team (which cannot sign
+    // app groups, Sign in with Apple, or push notification entitlements).
+    // Unset, Xcode selects whichever team the local account provides.
+    ...(appleTeamId ? { appleTeamId } : {}),
     associatedDomains: [
       `applinks:${variant.relyingParty}`,
       `webcredentials:${variant.relyingParty}`,
@@ -198,7 +247,7 @@ const config: ExpoConfig = {
         NSAllowsArbitraryLoads: true,
       },
       NSLocalNetworkUsageDescription:
-        "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
+        "Allow T3 Pretty to connect to T3 Code servers on your local network or tailnet.",
       ITSAppUsesNonExemptEncryption: false,
       // The App Store screenshot harness rotates the iPad interface from
       // inside the app (CI denies osascript the Accessibility access that
@@ -261,9 +310,9 @@ const config: ExpoConfig = {
     ],
     "expo-secure-store",
     "expo-sqlite",
-    ...(isIosPersonalTeamBuild
-      ? [sharingPlugin]
-      : ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]),
+    ...(shareExtensionEnabled
+      ? ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]
+      : [sharingPlugin]),
     [
       "expo-notifications",
       {
@@ -292,7 +341,7 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",
+        cameraPermission: "Allow T3 Pretty to access your camera so you can scan pairing QR codes.",
         microphonePermission: false,
         barcodeScannerEnabled: true,
         recordAudioAndroid: false,
@@ -304,11 +353,12 @@ const config: ExpoConfig = {
       {
         image: variant.assets.splashIcon,
         resizeMode: "contain",
-        backgroundColor: "#ffffff",
+        // World Scenery screen tokens — keep in step with global.css.
+        backgroundColor: "#f4f6f4",
         imageWidth: 220,
         dark: {
           image: variant.assets.splashIcon,
-          backgroundColor: "#0a0a0a",
+          backgroundColor: "#0e1110",
         },
       },
     ],
@@ -326,6 +376,7 @@ const config: ExpoConfig = {
       },
     ],
     "./plugins/withIosCocoaPodsUuidCache.cjs",
+    "./plugins/withIosPodMinDeploymentTarget.cjs",
     // Must be listed BEFORE expo-widgets: same-type mods run last-registered-
     // first, so registering earlier makes this plugin's mods run AFTER
     // expo-widgets' — its dangerous mod wipes ios/ExpoWidgetsTarget/ (which
@@ -338,6 +389,7 @@ const config: ExpoConfig = {
     "./plugins/withAndroidModernPopupMenu.cjs",
     "./plugins/withAndroidModernAlertDialog.cjs",
     "./plugins/withAndroidPredictiveBackCompat.cjs",
+    "./plugins/withAndroidTabletOrientation.cjs",
     ...(isIosPersonalTeamBuild ? ["./plugins/withoutIosPersonalTeamCapabilities.cjs"] : []),
   ],
   extra: {
@@ -364,11 +416,9 @@ const config: ExpoConfig = {
       tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
-    eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    },
+    ...(easProjectId ? { eas: { projectId: easProjectId } } : {}),
   },
-  owner: "pingdotgg",
+  ...(expoOwner ? { owner: expoOwner } : {}),
 };
 
 export default config;

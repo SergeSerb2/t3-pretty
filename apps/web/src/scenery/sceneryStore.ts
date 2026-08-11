@@ -12,6 +12,8 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import type { ThreadSceneryAssignment, ThreadSceneryPhoto } from "@t3tools/contracts";
+
 import { resolveStorage } from "../lib/storage";
 import { WORLD_SCENERY_CATALOG } from "./catalog";
 import { clampTranslucency, DEFAULT_TRANSLUCENCY } from "./glass";
@@ -42,7 +44,7 @@ export function clampBlur(value: number): number {
  */
 export type SceneryInkMode = "auto" | "light" | "dark" | "off";
 
-const INK_MODES: ReadonlyArray<SceneryInkMode> = ["auto", "light", "dark", "off"];
+const INK_MODES: ReadonlySet<SceneryInkMode> = new Set(["auto", "light", "dark", "off"]);
 
 /**
  * How many of the most recent assignments a random pick avoids repeating.
@@ -92,7 +94,7 @@ interface SceneryStoreState {
   /** Chat ink selection policy (see SceneryInkMode). */
   inkMode: SceneryInkMode;
   ensureAssignment: (threadKey: string) => void;
-  registerDisplayed: (photoId: string) => void;
+  registerDisplayed: (photo: SceneryPhoto) => void;
   refreshPoolIfStale: () => Promise<void>;
   setTranslucency: (value: number) => void;
   setBlur: (value: number) => void;
@@ -109,6 +111,40 @@ export function getSceneryPool(fetchedPhotos: ReadonlyArray<SceneryPhoto>): Scen
     byId.set(photo.id, photo);
   }
   return [...byId.values()];
+}
+
+/**
+ * Rebuild a renderable photo from the server-synced assignment. The payload
+ * is denormalized precisely so this works when the photo is not in the local
+ * pool (fetched pools diverge per device).
+ */
+export function photoFromAssignment(assignment: ThreadSceneryAssignment): SceneryPhoto {
+  return {
+    id: assignment.photoId,
+    name: assignment.name,
+    averageColorHex: assignment.averageColorHex,
+    heroURL: assignment.heroURL,
+    thumbURL: assignment.thumbURL,
+    rawURL: assignment.rawURL,
+    downloadLocationURL: assignment.downloadLocationURL,
+    photographerName: assignment.photographerName,
+    photographerProfileURL: assignment.photographerProfileURL,
+  };
+}
+
+/** The inverse: what a client sends to bind its picked photo to the thread. */
+export function photoToAssignmentPayload(photo: SceneryPhoto): ThreadSceneryPhoto {
+  return {
+    photoId: photo.id,
+    name: photo.name,
+    averageColorHex: photo.averageColorHex,
+    heroURL: photo.heroURL,
+    thumbURL: photo.thumbURL,
+    rawURL: photo.rawURL,
+    downloadLocationURL: photo.downloadLocationURL,
+    photographerName: photo.photographerName,
+    photographerProfileURL: photo.photographerProfileURL,
+  };
 }
 
 export function pickScenery(
@@ -185,21 +221,26 @@ export const useSceneryStore = create<SceneryStoreState>()(
             }),
           };
         }),
-      registerDisplayed: (photoId) => {
+      registerDisplayed: (photo) => {
         const state = get();
-        if (state.registeredDownloads.includes(photoId) || registrationsInFlight.has(photoId)) {
+        if (state.registeredDownloads.includes(photo.id) || registrationsInFlight.has(photo.id)) {
           return;
         }
         const client = makeUnsplashClient();
-        const photo = getSceneryPool(state.fetchedPhotos).find((entry) => entry.id === photoId);
-        if (!client || !photo?.downloadLocationURL) {
+        // The displayed photo carries its registration URL, so the ping works
+        // even for a server-synced assignment this device's pool lacks.
+        const downloadLocationURL =
+          photo.downloadLocationURL ??
+          getSceneryPool(state.fetchedPhotos).find((entry) => entry.id === photo.id)
+            ?.downloadLocationURL;
+        if (!client || !downloadLocationURL) {
           // No key or no registration URL: leave the id unclaimed so the
           // ping happens once a key is available.
           return;
         }
-        registrationsInFlight.add(photoId);
+        registrationsInFlight.add(photo.id);
         void client
-          .registerDownload(photo.downloadLocationURL)
+          .registerDownload(downloadLocationURL)
           .then((registered) => {
             if (!registered) {
               return;
@@ -207,13 +248,13 @@ export const useSceneryStore = create<SceneryStoreState>()(
             // Persist only after a successful ping so an offline failure
             // retries on a later display instead of being lost forever.
             set((current) =>
-              current.registeredDownloads.includes(photoId)
+              current.registeredDownloads.includes(photo.id)
                 ? current
-                : { registeredDownloads: [...current.registeredDownloads, photoId] },
+                : { registeredDownloads: [...current.registeredDownloads, photo.id] },
             );
           })
           .finally(() => {
-            registrationsInFlight.delete(photoId);
+            registrationsInFlight.delete(photo.id);
           });
       },
       refreshPoolIfStale: async () => {
@@ -268,7 +309,7 @@ export const useSceneryStore = create<SceneryStoreState>()(
       },
       setTranslucency: (value) => set(() => ({ translucency: clampTranslucency(value) })),
       setBlur: (value) => set(() => ({ blur: clampBlur(value) })),
-      setInkMode: (mode) => set(() => ({ inkMode: INK_MODES.includes(mode) ? mode : "auto" })),
+      setInkMode: (mode) => set(() => ({ inkMode: INK_MODES.has(mode) ? mode : "auto" })),
       removeThread: (threadKey) =>
         set((state) => {
           if (!(threadKey in state.assignments)) {

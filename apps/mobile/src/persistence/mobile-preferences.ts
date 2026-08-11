@@ -43,6 +43,30 @@ export interface Preferences {
     readonly local?: boolean;
     readonly worktree?: boolean;
   };
+  /** Newest app version whose What's New notes were shown — see
+      features/whats-new. */
+  readonly lastSeenChangelogVersion?: string;
+  /** World Scenery state — see features/scenery. */
+  readonly scenery?: MobileSceneryPreferences;
+}
+
+/** One thread → photo binding in the World Scenery theme. */
+export interface MobileSceneryAssignment {
+  readonly photoId: string;
+  /** Curated "Location, Country" name, denormalized for display. */
+  readonly name: string;
+  readonly assignedAt: number;
+}
+
+export interface MobileSceneryPreferences {
+  /** Master switch for the photo layer; defaults to on when absent. */
+  readonly enabled?: boolean;
+  /** CDN pre-blur strength 0–100 applied to the wallpaper render. */
+  readonly blur?: number;
+  /** How much of the screen the app paints over the photo, 0.5–1. */
+  readonly translucency?: number;
+  /** Thread key → assigned photo, LRU-capped by the scenery feature. */
+  readonly assignments?: Readonly<Record<string, MobileSceneryAssignment>>;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedErrorClass<MobilePreferencesLoadError>()(
@@ -99,6 +123,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
       local?: boolean;
       worktree?: boolean;
     };
+    lastSeenChangelogVersion?: string;
+    scenery?: MobileSceneryPreferences;
   } = {};
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
@@ -152,6 +178,46 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     if (Object.keys(byEnvMode).length > 0) {
       preferences.autoCreatePullRequestByEnvMode = byEnvMode;
     }
+  }
+  if (typeof parsed.lastSeenChangelogVersion === "string") {
+    preferences.lastSeenChangelogVersion = parsed.lastSeenChangelogVersion;
+  }
+  if (typeof parsed.scenery === "object" && parsed.scenery !== null) {
+    const scenery: {
+      enabled?: boolean;
+      blur?: number;
+      translucency?: number;
+      assignments?: Record<string, MobileSceneryAssignment>;
+    } = {};
+    if (typeof parsed.scenery.enabled === "boolean") {
+      scenery.enabled = parsed.scenery.enabled;
+    }
+    if (typeof parsed.scenery.blur === "number") {
+      scenery.blur = parsed.scenery.blur;
+    }
+    if (typeof parsed.scenery.translucency === "number") {
+      scenery.translucency = parsed.scenery.translucency;
+    }
+    if (typeof parsed.scenery.assignments === "object" && parsed.scenery.assignments !== null) {
+      const assignments: Record<string, MobileSceneryAssignment> = {};
+      for (const [threadKey, assignment] of Object.entries(parsed.scenery.assignments)) {
+        if (
+          typeof assignment === "object" &&
+          assignment !== null &&
+          typeof assignment.photoId === "string" &&
+          typeof assignment.name === "string" &&
+          typeof assignment.assignedAt === "number"
+        ) {
+          assignments[threadKey] = {
+            photoId: assignment.photoId,
+            name: assignment.name,
+            assignedAt: assignment.assignedAt,
+          };
+        }
+      }
+      scenery.assignments = assignments;
+    }
+    preferences.scenery = scenery;
   }
   return preferences;
 }

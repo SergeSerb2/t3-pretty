@@ -701,6 +701,63 @@ describe("DesktopBackendManager", () => {
     ),
   );
 
+  it.effect("reports ready when the backend binds after the bootstrap readiness timeout", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const serving = yield* Ref.make(false);
+        let readyCount = 0;
+        const firstRequest = yield* Deferred.make<void>();
+        const ready = yield* Deferred.make<void>();
+        const exited = yield* Queue.unbounded<void>();
+
+        const spawnerLayer = Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() =>
+            Effect.succeed(
+              makeProcess({
+                exitCode: Deferred.await(ready).pipe(Effect.as(ChildProcessSpawner.ExitCode(0))),
+              }),
+            ),
+          ),
+        );
+
+        const instance = yield* makeTestInstance({
+          spawnerLayer,
+          httpClientLayer: httpClientLayer((request) =>
+            Effect.gen(function* () {
+              yield* Deferred.succeed(firstRequest, void 0);
+              const isServing = yield* Ref.get(serving);
+              return responseForRequest(request, isServing ? 200 : 503);
+            }),
+          ),
+          onReady: Effect.sync(() => {
+            readyCount += 1;
+          }).pipe(Effect.andThen(Deferred.succeed(ready, void 0)), Effect.asVoid),
+          backendOutputLog: {
+            persistFailure: () => Queue.offer(exited, void 0).pipe(Effect.asVoid),
+          },
+        });
+
+        yield* instance.start;
+        yield* Deferred.await(firstRequest);
+
+        // The backend misses the one-minute bootstrap readiness budget. The
+        // instance must stay unready without reporting ready...
+        yield* TestClock.adjust(Duration.minutes(1));
+        assert.equal(readyCount, 0);
+        assert.equal((yield* instance.snapshot).ready, false);
+
+        // ...but when the port eventually binds, the extended readiness watch
+        // still reports ready instead of stranding the app with no window.
+        yield* Ref.set(serving, true);
+        yield* TestClock.adjust(Duration.millis(100));
+        yield* Queue.take(exited);
+
+        assert.equal(readyCount, 1);
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
+
   it.effect("starts the configured backend and closes the scoped process on stop", () =>
     Effect.scoped(
       Effect.gen(function* () {

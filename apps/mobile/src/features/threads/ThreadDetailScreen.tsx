@@ -26,6 +26,8 @@ import type { StatusTone } from "../../components/StatusPill";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import { CHAT_CONTENT_MAX_WIDTH, type LayoutVariant } from "../../lib/layout";
 import { scopedThreadKey } from "../../lib/scopedEntities";
+import { SceneryAttribution } from "../scenery/SceneryAttribution";
+import { useThreadSceneryPhoto } from "../scenery/SceneryProvider";
 import type {
   PendingApproval,
   PendingUserInput,
@@ -175,6 +177,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const insets = useSafeAreaInsets();
   const agentLabel = `${props.selectedThread.modelSelection.instanceId} agent`;
   const selectedThreadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
+  const threadSceneryPhoto = useThreadSceneryPhoto(selectedThreadKey);
   const composerEditorRef = useRef<ComposerEditorHandle>(null);
   const composerOverlayRef = useRef<View>(null);
   const listRef = useRef<LegendListRef>(null);
@@ -450,6 +453,12 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             />
           </View>
         </KeyboardStickyView>
+      ) : null}
+
+      {/* World Scenery credit floats just above the composer overlay — the
+          same clearance the desktop credits dock keeps off the chat box. */}
+      {showContent && threadSceneryPhoto !== null ? (
+        <SceneryAttribution photo={threadSceneryPhoto} bottom={estimatedOverlayHeight + 6} />
       ) : null}
     </View>
   );

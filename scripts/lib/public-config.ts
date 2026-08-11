@@ -106,6 +106,23 @@ export function loadRepoEnv({
   };
 }
 
+/**
+ * Version of the T3 Pretty release train — apps/web/package.json, which
+ * scripts/update-release-package-versions.ts rewrites during releases. The
+ * mobile app derives its CFBundleShortVersionString from this (app.config.ts
+ * cannot compute a repo-relative path itself: Expo's config loader evaluates
+ * it as CJS, where import.meta is unavailable).
+ */
+export function readReleaseTrainVersion(repoRoot = REPO_ROOT): string | undefined {
+  try {
+    const raw = NodeFS.readFileSync(NodePath.join(repoRoot, "apps/web/package.json"), "utf8");
+    const version = (JSON.parse(raw) as { version?: unknown }).version;
+    return typeof version === "string" ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function resolvePublicConfig(...sources: readonly Environment[]): T3CodePublicConfig {
   return {
     clerkPublishableKey: firstNonEmpty(

@@ -1,5 +1,6 @@
 export const BRAND_ASSET_PATHS = {
   prettyIconPng: "assets/pretty/t3-pretty-1024.png",
+  prettyIosIconPng: "assets/pretty/t3-pretty-ios-1024.png",
   prettyIconIcns: "assets/pretty/t3-pretty.icns",
   prettyIconIco: "assets/pretty/t3-pretty.ico",
   prettyWebFaviconIco: "assets/pretty/t3-pretty.ico",
@@ -12,7 +13,7 @@ export const BRAND_ASSET_PATHS = {
   developmentUniversalIconPng: "assets/dev/blueprint-universal-1024.png",
 
   productionIconComposerProject: "assets/prod/app-icon.icon",
-  productionIosIconPng: "assets/prod/black-ios-1024.png",
+  productionIosIconPng: "assets/pretty/t3-pretty-ios-1024.png",
   productionMacIconPng: "assets/pretty/t3-pretty-1024.png",
   productionLinuxIconPng: "assets/pretty/t3-pretty-1024.png",
   productionWindowsIconIco: "assets/pretty/t3-pretty.ico",
@@ -22,7 +23,7 @@ export const BRAND_ASSET_PATHS = {
   productionWebAppleTouchIconPng: "assets/pretty/t3-pretty-apple-touch-180.png",
 
   nightlyIconComposerProject: "assets/nightly/app-icon.icon",
-  nightlyIosIconPng: "assets/nightly/nightly-ios-1024.png",
+  nightlyIosIconPng: "assets/pretty/t3-pretty-ios-1024.png",
   nightlyMacIconPng: "assets/pretty/t3-pretty-1024.png",
   nightlyLinuxIconPng: "assets/pretty/t3-pretty-1024.png",
   nightlyWindowsIconIco: "assets/pretty/t3-pretty.ico",

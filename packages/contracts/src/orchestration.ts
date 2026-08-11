@@ -361,6 +361,35 @@ export const ThreadTitleRegeneration = Schema.Struct({
 });
 export type ThreadTitleRegeneration = typeof ThreadTitleRegeneration.Type;
 
+/**
+ * World Scenery photo descriptor, denormalized onto the thread so every
+ * client renders the assignment without holding the photo in its local pool
+ * (fetched pools diverge per device). Field names mirror the web client's
+ * SceneryPhoto; URLs are Unsplash CDN links.
+ */
+const threadSceneryPhotoFields = {
+  photoId: TrimmedNonEmptyString,
+  /** Curated "Location, Country" display name. */
+  name: TrimmedNonEmptyString,
+  averageColorHex: Schema.NullOr(TrimmedNonEmptyString),
+  heroURL: TrimmedNonEmptyString,
+  thumbURL: TrimmedNonEmptyString,
+  rawURL: Schema.NullOr(TrimmedNonEmptyString),
+  downloadLocationURL: Schema.NullOr(TrimmedNonEmptyString),
+  photographerName: TrimmedNonEmptyString,
+  photographerProfileURL: Schema.NullOr(TrimmedNonEmptyString),
+} as const;
+
+/** What a client sends with thread.scenery.assign; the server stamps assignedAt. */
+export const ThreadSceneryPhoto = Schema.Struct(threadSceneryPhotoFields);
+export type ThreadSceneryPhoto = typeof ThreadSceneryPhoto.Type;
+
+export const ThreadSceneryAssignment = Schema.Struct({
+  ...threadSceneryPhotoFields,
+  assignedAt: IsoDateTime,
+});
+export type ThreadSceneryAssignment = typeof ThreadSceneryAssignment.Type;
+
 export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -400,6 +429,10 @@ export const OrchestrationThread = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   // Pending-only state. Optional so older servers remain compatible.
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
+  // World Scenery photo bound to this thread. Write-once (first assignment
+  // wins) so devices racing to assign converge. Optional so payloads from
+  // pre-scenery servers still decode.
+  scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -458,6 +491,8 @@ export const OrchestrationThreadShell = Schema.Struct({
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
+  // Same write-once World Scenery binding as OrchestrationThread.scenery.
+  scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -761,6 +796,15 @@ const ThreadPinReorderCommand = Schema.Struct({
   orderKey: TrimmedNonEmptyString,
 });
 
+const ThreadSceneryAssignCommand = Schema.Struct({
+  type: Schema.Literal("thread.scenery.assign"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  // The picked photo, denormalized. The server stamps assignedAt; a thread
+  // that already has scenery keeps its first pick (see the decider).
+  scenery: ThreadSceneryPhoto,
+});
+
 const ThreadMetaUpdateCommand = Schema.Struct({
   type: Schema.Literal("thread.meta.update"),
   commandId: CommandId,
@@ -923,6 +967,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadPinCommand,
   ThreadUnpinCommand,
   ThreadPinReorderCommand,
+  ThreadSceneryAssignCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -951,6 +996,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadPinCommand,
   ThreadUnpinCommand,
   ThreadPinReorderCommand,
+  ThreadSceneryAssignCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -1069,6 +1115,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.pinned",
   "thread.unpinned",
   "thread.pin-reordered",
+  "thread.scenery-assigned",
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
@@ -1198,6 +1245,14 @@ export const ThreadUnpinnedPayload = Schema.Struct({
 export const ThreadPinReorderedPayload = Schema.Struct({
   threadId: ThreadId,
   orderKey: TrimmedNonEmptyString,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadSceneryAssignedPayload = Schema.Struct({
+  threadId: ThreadId,
+  // The winning assignment: the command's photo on first assign, the existing
+  // binding on raced/duplicate assigns (write-once, like re-pinning).
+  scenery: ThreadSceneryAssignment,
   updatedAt: IsoDateTime,
 });
 
@@ -1409,6 +1464,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.pin-reordered"),
     payload: ThreadPinReorderedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.scenery-assigned"),
+    payload: ThreadSceneryAssignedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

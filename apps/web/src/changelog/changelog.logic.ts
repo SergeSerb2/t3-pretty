@@ -14,18 +14,31 @@ const ChangelogLastSeenSchema = Schema.Struct({
   version: Schema.String,
 });
 
-/** Numeric dotted prefix of a version, ignoring any prerelease suffix
-    ("0.0.34-nightly.1" → [0, 0, 34]). Null when nothing parses. */
+/** Numeric segments of a version, including dotted-numeric prerelease parts
+    ("0.0.34-nightly.20260810.1059000052.fork" → [0, 0, 34, 20260810, 1059000052]).
+    Alphabetic prerelease identifiers such as "nightly" or "fork" carry no
+    ordering information and are skipped. Null when nothing parses. */
 function parseVersionSegments(version: string | null | undefined): readonly number[] | null {
-  const match = version?.trim().match(/^v?(\d+(?:\.\d+)*)/);
+  const match = version?.trim().match(/^v?(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?/);
   if (!match) {
     return null;
   }
-  return match[1]!.split(".").map(Number);
+  const segments = match[1]!.split(".").map(Number);
+  const prerelease = match[2];
+  if (prerelease) {
+    for (const identifier of prerelease.split(".")) {
+      if (/^\d+$/u.test(identifier)) {
+        segments.push(Number(identifier));
+      }
+    }
+  }
+  return segments;
 }
 
-/** Compare two app versions by numeric segments. Prerelease suffixes are
-    ignored, so "0.0.34-nightly" and "0.0.34" compare equal. Null when either
+/** Compare two app versions by numeric segments, including numeric prerelease
+    build numbers so nightly builds order against each other
+    ("0.0.34-nightly.20260810.1062" > "0.0.34-nightly.20260810.1059") and a
+    plain "0.0.34" sorts below every one of its nightlies. Null when either
     side is unparsable. */
 export function compareAppVersions(a: string, b: string): number | null {
   const left = parseVersionSegments(a);
