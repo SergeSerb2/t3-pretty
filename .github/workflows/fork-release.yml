@@ -12,8 +12,10 @@ permissions:
 jobs:
   preflight:
     name: Resolve T3 Pretty release
+    # contents: write so the changelog step can push the generated release
+    # notes commit. The GITHUB_TOKEN push does not retrigger this workflow.
     permissions:
-      contents: read
+      contents: write
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 10
     outputs:
@@ -23,7 +25,7 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       name: ${{ steps.release.outputs.name }}
       upstream_tag: ${{ steps.release.outputs.upstream_tag }}
-      ref: ${{ github.sha }}
+      ref: ${{ steps.changelog.outputs.ref || github.sha }}
     steps:
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
@@ -135,6 +137,19 @@ jobs:
         name: Create a monotonic fork version
         if: steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
         run: node scripts/fork/resolve-fork-release.mjs
+
+      - id: changelog
+        name: Generate What's New changelog entries
+        if: steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
+        env:
+          CLI_PROXY_API_KEY: ${{ secrets.CLI_PROXY_API_KEY }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        # Writes one What's New entry per shipped fork build — the fork's own
+        # changes plus the integrated parent nightly — for every build missing
+        # an entry, then commits and pushes so this release ships its own
+        # notes. Failures downgrade to warnings and never block the release;
+        # the next run regenerates whatever is missing.
+        run: node scripts/fork/generate-changelog.mjs
 
       - name: Setup release-smoke dependencies
         if: steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'

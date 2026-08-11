@@ -29,9 +29,28 @@ describe("compareAppVersions", () => {
     expect(compareAppVersions("1.0", "1.0.0")).toBe(0);
   });
 
-  it("ignores prerelease suffixes", () => {
+  it("orders nightly builds by their numeric prerelease segments", () => {
     expect(compareAppVersions("0.0.34-nightly.20260810", "0.0.33")).toBe(1);
-    expect(compareAppVersions("0.0.34-nightly.1", "0.0.34")).toBe(0);
+    expect(compareAppVersions("0.0.34-nightly.20260810.1062", "0.0.34-nightly.20260810.1059")).toBe(
+      1,
+    );
+    expect(
+      compareAppVersions(
+        "0.0.34-nightly.20260810.1059000051",
+        "0.0.34-nightly.20260810.1059000052",
+      ),
+    ).toBe(-1);
+    expect(
+      compareAppVersions(
+        "0.0.34-nightly.20260810.1059000052.fork",
+        "0.0.34-nightly.20260810.1059000052",
+      ),
+    ).toBe(0);
+  });
+
+  it("sorts a plain version below its own nightlies", () => {
+    expect(compareAppVersions("0.0.34", "0.0.34-nightly.1")).toBe(-1);
+    expect(compareAppVersions("0.0.34-nightly.1", "0.0.34")).toBe(1);
   });
 
   it("returns null for unparsable versions", () => {
@@ -164,6 +183,24 @@ describe("resolveWhatsNewDecision", () => {
       releases: RELEASES,
     });
     expect(decision.releases.map((entry) => entry.version)).toEqual(["0.0.33"]);
+  });
+
+  it("announces each nightly build newer than the marker", () => {
+    const decision = resolveWhatsNewDecision({
+      currentVersion: "0.0.34-nightly.20260810.1059000052",
+      lastSeenVersion: "0.0.34-nightly.20260810.1059000050",
+      hasExistingInstallData: true,
+      releases: [
+        release("0.0.34-nightly.20260810.1059000052"),
+        release("0.0.34-nightly.20260810.1059000051"),
+        release("0.0.34-nightly.20260810.1059000050"),
+        release("0.0.33"),
+      ],
+    });
+    expect(decision.releases.map((entry) => entry.version)).toEqual([
+      "0.0.34-nightly.20260810.1059000052",
+      "0.0.34-nightly.20260810.1059000051",
+    ]);
   });
 
   it("advances the marker silently when an upgrade has no entries", () => {
