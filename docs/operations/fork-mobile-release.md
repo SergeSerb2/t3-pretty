@@ -37,12 +37,12 @@ of reporting a green release that shipped nothing. To activate:
    workflow exposes Expo's supported ASC CI variables so EAS can create or
    repair distribution credentials, and injects the same key into the submit
    profile for deferred TestFlight submission.
-4. In App Store Connect, create the iOS app record once (`T3-Pretty`, bundle ID
-   `com.sergeserbinenko.t3pretty`). Apple does not expose new app-record
-   creation through the App Store Connect API.
-5. Run **Bootstrap iOS EAS Credentials** once. After it creates the first Apple
-   Distribution certificate and both provisioning profiles, normal mobile
-   releases are fully non-interactive.
+4. In App Store Connect, create the iOS app record once (`T3 Pretty`, bundle ID
+   `com.sergeserbinenko.t3pretty`, SKU `t3-pretty-ios`).
+5. Initialize EAS credentials once from an interactive local terminal with
+   `eas build --platform ios --profile production --no-wait`. After it creates
+   the first Apple Distribution certificate and both provisioning profiles,
+   normal mobile releases are fully non-interactive.
 6. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
    `T3CODE_MOBILE_EAS_PROJECT_ID`, `T3CODE_MOBILE_EXPO_OWNER`,
    optionally `T3CODE_MOBILE_EXPO_SLUG`.
