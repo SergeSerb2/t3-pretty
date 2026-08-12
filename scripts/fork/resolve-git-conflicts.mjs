@@ -110,6 +110,9 @@ T3 Pretty preservation checklist:
 - Branding, visual design, themes, World Scenery, navigation, sidebar, preview, animation, and reduced-motion behavior.
 - Provider and agent integrations, T3 Connect behavior, limits, subagent UX, and fork-only settings.
 - Desktop lifecycle, terminal behavior, Windows SSH/remote support, updater/release infrastructure, signing, and runner safeguards.
+- Mobile behavior and parity across iOS and Android, including navigation, connection state, accessibility, performance, and native extension behavior.
+- T3 Pretty mobile identity and delivery: fork bundle/package identifiers, the compatible t3code URL schemes, the fork-owned Expo project and OTA boundary, Surge Connect, World Scenery, widgets, Live Activities, notifications, signing, and provisioning safeguards.
+- For conflicts under apps/mobile or shared code it consumes, integrate compatible upstream mobile features, fixes, refactors, and tests while preserving those fork identities and custom behaviors.
 - Tests and compatibility code that protect any of the above, plus future fork changes evidenced by OURS or the fork history below.
 
 Resolution and reporting contract:

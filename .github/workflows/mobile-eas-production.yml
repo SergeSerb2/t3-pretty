@@ -6,10 +6,10 @@ name: Mobile EAS Production
 # fingerprint (platform-specific deps + pnpm version) and errors. On this Linux
 # runner, with corepack pinning pnpm 10.24 in eas.json, local == build.
 #
-# Fork release train: every merge to main publishes an OTA update to the
-# fork-owned EAS project (mode=update, all platforms). Store builds stay
-# manual via workflow_dispatch. Both paths no-op until EXPO_TOKEN and a
-# fork EAS project exist — see docs/operations/fork-mobile-release.md.
+# Fork release train: every mobile-relevant merge to main publishes an OTA
+# update for both platforms and queues a production iOS build for TestFlight.
+# Manual dispatch can run that complete release or either half independently.
+# See docs/operations/fork-mobile-release.md.
 on:
   push:
     branches: [main]
@@ -22,11 +22,12 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "build (+ auto-submit to TestFlight) or update (OTA)"
+        description: "release (OTA + iOS TestFlight), build, or update (OTA only)"
         required: true
         type: choice
-        default: build
+        default: release
         options:
+          - release
           - build
           - update
       platform:
@@ -39,7 +40,7 @@ on:
           - android
           - all
       message:
-        description: "OTA update message (mode=update only)"
+        description: "OTA update message (release or update mode)"
         required: false
         type: string
 
@@ -49,15 +50,24 @@ concurrency:
 
 jobs:
   production:
-    name: EAS Production ${{ github.event_name == 'push' && 'update' || inputs.mode }}
+    name: EAS Production ${{ github.event_name == 'push' && 'release' || inputs.mode }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
       APP_VARIANT: production
       NODE_OPTIONS: --max-old-space-size=8192
-      # push → OTA update for every platform; dispatch → operator's choice.
-      MODE: ${{ github.event_name == 'push' && 'update' || inputs.mode }}
+      # Public fork-owned EAS identity. These must be available before
+      # `eas env:pull` so app.config.ts can resolve the project being pulled.
+      T3CODE_MOBILE_UPDATE_URL: ${{ vars.T3CODE_MOBILE_UPDATE_URL }}
+      T3CODE_MOBILE_EAS_PROJECT_ID: ${{ vars.T3CODE_MOBILE_EAS_PROJECT_ID }}
+      T3CODE_MOBILE_EXPO_OWNER: ${{ vars.T3CODE_MOBILE_EXPO_OWNER }}
+      T3CODE_MOBILE_EXPO_SLUG: ${{ vars.T3CODE_MOBILE_EXPO_SLUG }}
+      T3CODE_APPLE_TEAM_ID: ${{ vars.T3CODE_APPLE_TEAM_ID }}
+      T3CODE_IOS_SHARE_EXTENSION: ${{ vars.T3CODE_IOS_SHARE_EXTENSION }}
+      # A mobile-relevant push is a complete release: fast OTA delivery for
+      # compatible runtimes plus a new iOS binary for native runtime changes.
+      MODE: ${{ github.event_name == 'push' && 'release' || inputs.mode }}
       PLATFORM: ${{ github.event_name == 'push' && 'all' || inputs.platform }}
     steps:
       - id: expo-token
@@ -68,8 +78,8 @@ jobs:
           if [ -n "$EXPO_TOKEN" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "EXPO_TOKEN is not available; skipping EAS production job."
+            echo "EXPO_TOKEN is required for the active fork-owned EAS release train." >&2
+            exit 1
           fi
 
       - name: Checkout
@@ -116,24 +126,80 @@ jobs:
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas env:pull production --non-interactive
+        # app.config.ts reads the repository-root env files, not apps/mobile/.env.local.
+        run: eas env:pull production --path ../../.env.local --non-interactive
 
-      - name: Build and submit
-        if: steps.expo-token.outputs.present == 'true' && env.MODE == 'build'
-        working-directory: apps/mobile
+      - name: Prepare Apple CI credentials
+        if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'build' || env.MODE == 'release')
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas build --platform "$PLATFORM" --profile production --auto-submit --non-interactive --no-wait
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "$name is required for unattended iOS build and submission." >&2
+              exit 1
+            fi
+          done
+
+          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY" > "$key_path"
+          chmod 600 "$key_path"
+          {
+            echo "EXPO_ASC_API_KEY_PATH=$key_path"
+            echo "EXPO_ASC_KEY_ID=$APPLE_API_KEY_ID"
+            echo "EXPO_ASC_ISSUER_ID=$APPLE_API_ISSUER"
+            echo "EXPO_APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            echo "EXPO_APPLE_TEAM_TYPE=INDIVIDUAL"
+          } >> "$GITHUB_ENV"
+
+          # Auto-submit runs after the remote build completes. Add the same ASC
+          # key to the submit profile so EAS can retain it for that deferred job.
+          jq \
+            --arg path "$key_path" \
+            --arg id "$APPLE_API_KEY_ID" \
+            --arg issuer "$APPLE_API_ISSUER" \
+            '.submit.production.ios += {
+              ascApiKeyPath: $path,
+              ascApiKeyId: $id,
+              ascApiKeyIssuerId: $issuer
+            }' \
+            apps/mobile/eas.json > "$RUNNER_TEMP/eas.json"
+          mv "$RUNNER_TEMP/eas.json" apps/mobile/eas.json
 
       - name: Publish OTA update
-        if: steps.expo-token.outputs.present == 'true' && env.MODE == 'update'
+        if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'update' || env.MODE == 'release')
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
+          update_platform="$PLATFORM"
+          if [[ "$MODE" == "release" ]]; then
+            update_platform=all
+          fi
           eas update \
             --channel production \
             --environment production \
-            --platform "$PLATFORM" \
+            --platform "$update_platform" \
             --message "${{ inputs.message || format('Production OTA ({0})', github.sha) }}" \
             --non-interactive
+
+      - name: Build and submit
+        if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'build' || env.MODE == 'release')
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          build_platform="$PLATFORM"
+          if [[ "$MODE" == "release" ]]; then
+            build_platform=ios
+          fi
+          eas build \
+            --platform "$build_platform" \
+            --profile production \
+            --auto-submit \
+            --non-interactive \
+            --no-wait

@@ -187,6 +187,15 @@ jobs:
           pr_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr_number"
           echo "url=$pr_url" >> "$GITHUB_OUTPUT"
 
+          mobile_release_needed=false
+          if ! git diff --quiet origin/main...HEAD -- \
+            apps/mobile \
+            packages \
+            patches \
+            pnpm-lock.yaml; then
+            mobile_release_needed=true
+          fi
+
           head_sha="$(git rev-parse HEAD)"
           merge_state=""
           for _ in {1..12}; do
@@ -211,6 +220,16 @@ jobs:
           # workflows, so dispatch the release explicitly. The release workflow
           # is commit-idempotent if a normal push event also arrives.
           gh workflow run fork-release.yml -R "$GITHUB_REPOSITORY" --ref main
+          if [[ "$mobile_release_needed" == "true" ]]; then
+            gh workflow run mobile-eas-production.yml \
+              -R "$GITHUB_REPOSITORY" \
+              --ref main \
+              -f mode=release \
+              -f platform=ios \
+              -f message="Upstream sync $UPSTREAM_TAG"
+          else
+            echo "The upstream integration changed no mobile-relevant paths; skipping mobile release."
+          fi
 
       - name: Report blocked sync
         if: failure() && steps.discover.outputs.has_update == 'true'

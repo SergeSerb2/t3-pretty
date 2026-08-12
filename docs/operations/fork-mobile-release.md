@@ -13,16 +13,30 @@ auto-merged PR. Mobile code rides along — there is no separate mobile sync.
 
 ## Merge-driven releases
 
-`.github/workflows/mobile-eas-production.yml` now triggers on every push to
-`main` that touches mobile-relevant paths and publishes an OTA update
-(`eas update`, production channel, both platforms). Store builds
-(`eas build --auto-submit`) remain manual via workflow_dispatch.
+`.github/workflows/mobile-eas-production.yml` triggers on every push to `main`
+that touches mobile-relevant paths. A release publishes an OTA update on the
+production channel for both platforms and queues a production iOS build with
+automatic TestFlight submission. Native runtime changes therefore receive a
+new binary instead of publishing an OTA that no installed app can consume.
 
-Both paths skip cleanly until the fork's Expo identity exists. To activate:
+The twice-daily upstream workflow uses the same whole-repository merge and
+gpt-5.6-sol/xhigh conflict resolver as desktop. Because GitHub-token-authored
+merges do not recursively trigger push workflows, it explicitly dispatches the
+mobile release after an upstream integration only when that integration changed
+`apps/mobile`, shared packages, patches, or the lockfile. Server/web-only parent
+changes do not consume an EAS build.
 
-1. Create an Expo account + EAS project for the fork.
+The workflow fails early when required release credentials are missing instead
+of reporting a green release that shipped nothing. To activate:
+
+1. Create an Expo account and fork-owned EAS project.
 2. Set repo secret `EXPO_TOKEN`.
-3. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
+3. Set `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` from a
+   Team App Store Connect API key, plus repo variable `APPLE_TEAM_ID`. The
+   workflow exposes Expo's supported ASC CI variables so EAS can create or
+   repair distribution credentials, and injects the same key into the submit
+   profile for deferred TestFlight submission.
+4. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
    `T3CODE_MOBILE_EAS_PROJECT_ID`, `T3CODE_MOBILE_EXPO_OWNER`,
    optionally `T3CODE_MOBILE_EXPO_SLUG`.
 
@@ -80,8 +94,10 @@ disabled), with no relay-side errors.
 
 ## Versioning
 
-The mobile app version tracks `apps/web/package.json` (the release-train
-manifest rewritten during releases), trimmed to its numeric prefix for
-`CFBundleShortVersionString`; `T3CODE_MOBILE_APP_VERSION` overrides it (the
-local pipeline passes the upstream nightly version explicitly). The in-app
-What's New sheet keys its entries by these versions.
+The mobile app version prefers `.t3-fork/upstream-nightly`, then falls back to
+`apps/web/package.json`, and trims the selected release-train value to its
+numeric prefix for `CFBundleShortVersionString`. `T3CODE_MOBILE_APP_VERSION`
+remains an explicit override. This keeps TestFlight marketing versions aligned
+with the upstream code integrated into the fork even before the web package
+manifest advances. The in-app What's New sheet keys its entries by these
+versions.

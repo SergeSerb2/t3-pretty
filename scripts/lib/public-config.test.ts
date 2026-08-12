@@ -4,7 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
-import { loadRepoEnv, resolvePublicConfig } from "./public-config.ts";
+import { loadRepoEnv, readReleaseTrainVersion, resolvePublicConfig } from "./public-config.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -169,6 +169,35 @@ describe("loadRepoEnv", () => {
       EXPO_PUBLIC_OTLP_TRACES_DATASET: "mobile-traces",
       EXPO_PUBLIC_OTLP_TRACES_TOKEN: "mobile-token",
     });
+  });
+});
+
+describe("readReleaseTrainVersion", () => {
+  it("prefers the integrated upstream nightly version in fork checkouts", () => {
+    const repoRoot = makeTemporaryDirectory();
+    NodeFS.mkdirSync(NodePath.join(repoRoot, ".t3-fork"));
+    NodeFS.mkdirSync(NodePath.join(repoRoot, "apps/web"), { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(repoRoot, ".t3-fork/upstream-nightly"),
+      "v0.0.34-nightly.20260811.1067\n",
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(repoRoot, "apps/web/package.json"),
+      '{"version":"0.0.33"}\n',
+    );
+
+    expect(readReleaseTrainVersion(repoRoot)).toBe("0.0.34-nightly.20260811.1067");
+  });
+
+  it("falls back to the web package version outside a synced fork", () => {
+    const repoRoot = makeTemporaryDirectory();
+    NodeFS.mkdirSync(NodePath.join(repoRoot, "apps/web"), { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(repoRoot, "apps/web/package.json"),
+      '{"version":"0.0.33"}\n',
+    );
+
+    expect(readReleaseTrainVersion(repoRoot)).toBe("0.0.33");
   });
 });
 

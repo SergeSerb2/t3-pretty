@@ -15,6 +15,10 @@ const syncWorkflowPath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "../../.github/workflows/fork-upstream-sync.yml",
 );
+const mobileWorkflowPath = NodePath.resolve(
+  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+  "../../.github/workflows/mobile-eas-production.yml",
+);
 
 describe("T3 Pretty upstream conflict resolver", () => {
   it("makes fork preservation, compatible parent integration, and omission reporting explicit", () => {
@@ -35,6 +39,29 @@ describe("T3 Pretty upstream conflict resolver", () => {
     assert.include(prompt, "An omission must never be silent");
     assert.include(prompt, "feat(pretty): add the compact sidebar");
     assert.include(prompt, "upstream_changes_omitted");
+    assert.include(prompt, "fork-owned Expo project and OTA boundary");
+    assert.include(prompt, "integrate compatible upstream mobile features");
+  });
+
+  it("releases synced mobile changes without releasing server-only integrations", () => {
+    const syncWorkflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+    const mobileWorkflow = NodeFS.readFileSync(mobileWorkflowPath, "utf8");
+
+    assert.include(syncWorkflow, "git diff --quiet origin/main...HEAD");
+    assert.include(syncWorkflow, "mobile_release_needed=true");
+    assert.include(syncWorkflow, "gh workflow run mobile-eas-production.yml");
+    assert.include(syncWorkflow, "-f mode=release");
+    assert.include(mobileWorkflow, "paths:");
+    assert.include(mobileWorkflow, "- apps/mobile/**");
+    assert.include(mobileWorkflow, "env.MODE == 'build' || env.MODE == 'release'");
+    assert.include(mobileWorkflow, "env.MODE == 'update' || env.MODE == 'release'");
+    assert.include(mobileWorkflow, "EXPO_ASC_API_KEY_PATH");
+    assert.include(mobileWorkflow, "ascApiKeyIssuerId");
+    assert.include(mobileWorkflow, "Publish OTA update");
+    assert.isBelow(
+      mobileWorkflow.indexOf("- name: Publish OTA update"),
+      mobileWorkflow.indexOf("- name: Build and submit"),
+    );
   });
 
   it("fetches the previous nightly tag used for fork-history context", () => {
