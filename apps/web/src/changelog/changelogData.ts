@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260812.1077000096",
+    date: "2026-08-12",
+    items: [
+      {
+        kind: "new",
+        title: "reset sidebar width on double click (#6320)",
+      },
+      {
+        kind: "fixed",
+        title: "theme Clerk surfaces (#6300)",
+      },
+      {
+        kind: "fixed",
+        title: "prevent changed files header overlap (#6314)",
+      },
+      {
+        kind: "fixed",
+        title: "preserve CLI OAuth parameters through browser sign-in (#6285)",
+      },
+      {
+        kind: "fixed",
+        title: "align mobile onboarding header (#6293)",
+      },
+      {
+        kind: "new",
+        title: "a better right panel empty state (#6258)",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260811.1067000094",
     date: "2026-08-12",
     items: [
