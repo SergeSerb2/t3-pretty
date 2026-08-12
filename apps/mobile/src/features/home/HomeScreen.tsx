@@ -24,7 +24,12 @@ import { ActivityIndicator, FlatList, Platform, Pressable, View } from "react-na
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeColor } from "../../lib/useThemeColor";
-import { SceneryAttribution } from "../scenery/SceneryAttribution";
+import {
+  SCENERY_CREDIT_GAP,
+  SCENERY_CREDIT_HEIGHT,
+  SCENERY_CREDIT_MIN_BOTTOM,
+  SceneryAttribution,
+} from "../scenery/SceneryAttribution";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
 import { useDailySceneryPhoto, useSceneryChromeActive } from "../scenery/SceneryProvider";
 
@@ -59,6 +64,7 @@ import {
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   type ThreadListV2ListItem,
 } from "../threads/threadListV2";
+import { ANDROID_HOME_FAB_EDGE_GAP, ANDROID_HOME_FAB_SIZE } from "./AndroidHomeFab";
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   buildHomeListLayout,
@@ -221,13 +227,23 @@ export function HomeScreen(props: HomeScreenProps) {
       : 0;
   const dailySceneryPhoto = useDailySceneryPhoto();
   const sceneryChrome = useSceneryChromeActive();
-  // Top edge of the zone the lists reserve for the floating bottom toolbar /
-  // Android FAB, so the credit pill never overlaps either (web keeps the same
-  // clearance for its credits dock).
-  const sceneryCreditBottom =
-    Platform.OS === "ios"
-      ? Math.max(insets.bottom, 24) + 96 + iosBottomToolbarClearance - 8
-      : Math.max(insets.bottom, 16) + 88;
+  const [creditHeight, setCreditHeight] = useState(SCENERY_CREDIT_HEIGHT);
+  // iOS: pre-Liquid-Glass 44pt bottom toolbar. Android: sit the credit just
+  // above the new-task FAB (size + edge gap + credit gap, minus the safe
+  // area SceneryAttribution already applies).
+  const sceneryCreditBottomExtra =
+    Platform.OS === "android"
+      ? Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +
+        ANDROID_HOME_FAB_EDGE_GAP +
+        ANDROID_HOME_FAB_SIZE +
+        SCENERY_CREDIT_GAP -
+        Math.max(insets.bottom, SCENERY_CREDIT_MIN_BOTTOM)
+      : iosBottomToolbarClearance;
+  const sceneryListPad = dailySceneryPhoto !== null ? creditHeight : 0;
+  const androidListBottomPad =
+    Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) + 88 + sceneryListPad;
+  const iosListBottomPad =
+    Math.max(insets.bottom, 24) + 24 + iosBottomToolbarClearance + sceneryListPad;
   const searchEnvironmentIds = useMemo(
     () =>
       props.selectedEnvironmentId === null
@@ -1074,7 +1090,11 @@ export function HomeScreen(props: HomeScreenProps) {
           ) : null}
         </View>
         {dailySceneryPhoto !== null ? (
-          <SceneryAttribution photo={dailySceneryPhoto} bottom={sceneryCreditBottom} />
+          <SceneryAttribution
+            photo={dailySceneryPhoto}
+            bottomExtra={sceneryCreditBottomExtra}
+            onHeightChange={setCreditHeight}
+          />
         ) : null}
       </View>
     );
@@ -1161,13 +1181,17 @@ export function HomeScreen(props: HomeScreenProps) {
             contentContainerStyle={{
               paddingBottom:
                 Platform.OS === "ios"
-                  ? Math.max(insets.bottom, 24) + 96 + iosBottomToolbarClearance
-                  : Math.max(insets.bottom, 16) + 88,
+                  ? Math.max(insets.bottom, 24) + 96 + iosBottomToolbarClearance + sceneryListPad
+                  : androidListBottomPad,
             }}
           />
         </SwipeableScrollGateProvider>
         {dailySceneryPhoto !== null ? (
-          <SceneryAttribution photo={dailySceneryPhoto} bottom={sceneryCreditBottom} />
+          <SceneryAttribution
+            photo={dailySceneryPhoto}
+            bottomExtra={sceneryCreditBottomExtra}
+            onHeightChange={setCreditHeight}
+          />
         ) : null}
       </View>
     );
@@ -1209,15 +1233,13 @@ export function HomeScreen(props: HomeScreenProps) {
             // standard 44pt bottom toolbar that overlays the list and is not
             // reflected in insets while contentInsetAdjustmentBehavior is
             // "never".
-            paddingBottom:
-              Platform.OS === "ios"
-                ? Math.max(insets.bottom, 24) + 24 + iosBottomToolbarClearance
-                : Math.max(insets.bottom, 16) + 88,
+            paddingBottom: Platform.OS === "ios" ? iosListBottomPad : androidListBottomPad,
           }}
           scrollIndicatorInsets={
             Platform.OS === "ios"
               ? {
-                  bottom: Math.max(insets.bottom, 16) + 24 + iosBottomToolbarClearance,
+                  bottom:
+                    Math.max(insets.bottom, 16) + 24 + iosBottomToolbarClearance + sceneryListPad,
                   top: 0,
                 }
               : undefined
@@ -1225,7 +1247,11 @@ export function HomeScreen(props: HomeScreenProps) {
         />
       </SwipeableScrollGateProvider>
       {dailySceneryPhoto !== null ? (
-        <SceneryAttribution photo={dailySceneryPhoto} bottom={sceneryCreditBottom} />
+        <SceneryAttribution
+          photo={dailySceneryPhoto}
+          bottomExtra={sceneryCreditBottomExtra}
+          onHeightChange={setCreditHeight}
+        />
       ) : null}
     </View>
   );
