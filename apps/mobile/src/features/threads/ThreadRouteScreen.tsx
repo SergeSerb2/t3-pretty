@@ -793,6 +793,7 @@ function ThreadRouteContent(
           threadCwd={selectedThreadCwd}
           selectedThreadQueueCount={composer.selectedThreadQueueCount}
           headQueuedMessageId={composer.headQueuedMessageId}
+          isHeadQueuedMessageRetrying={composer.isHeadQueuedMessageRetrying}
           isDeliveringQueuedMessage={composer.isDeliveringQueuedMessage}
           layoutVariant={layout.variant}
           usesAutomaticContentInsets={usesNativeHeaderGlass}

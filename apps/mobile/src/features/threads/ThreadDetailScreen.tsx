@@ -75,6 +75,7 @@ export interface ThreadDetailScreenProps {
   readonly threadCwd: string | null;
   readonly selectedThreadQueueCount: number;
   readonly headQueuedMessageId: MessageId | null;
+  readonly isHeadQueuedMessageRetrying: boolean;
   readonly isDeliveringQueuedMessage: boolean;
   readonly serverConfig: T3ServerConfig | null;
   readonly layoutVariant?: LayoutVariant;
@@ -450,6 +451,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
               serverConfig={props.serverConfig}
               queueCount={props.selectedThreadQueueCount}
               headQueuedMessageId={props.headQueuedMessageId}
+              isHeadQueuedMessageRetrying={props.isHeadQueuedMessageRetrying}
               isDeliveringQueuedMessage={props.isDeliveringQueuedMessage}
               activeThreadBusy={props.activeThreadBusy}
               environmentId={props.environmentId}

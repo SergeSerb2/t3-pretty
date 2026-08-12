@@ -63,6 +63,7 @@ describe("shouldKeepLocalComposerSendBusy", () => {
         connected: true,
         threadBusy: false,
         isNextInQueue: true,
+        isWaitingForRetry: false,
       }),
     ).toBe(true);
   });
@@ -75,6 +76,7 @@ describe("shouldKeepLocalComposerSendBusy", () => {
         connected: true,
         threadBusy: false,
         isNextInQueue: false,
+        isWaitingForRetry: false,
       }),
     ).toBe(true);
   });
@@ -87,6 +89,7 @@ describe("shouldKeepLocalComposerSendBusy", () => {
         connected: true,
         threadBusy: false,
         isNextInQueue: true,
+        isWaitingForRetry: false,
       }),
     ).toBe(false);
   });
@@ -99,6 +102,7 @@ describe("shouldKeepLocalComposerSendBusy", () => {
         connected: true,
         threadBusy: true,
         isNextInQueue: true,
+        isWaitingForRetry: false,
       }),
     ).toBe(false);
     expect(
@@ -108,6 +112,7 @@ describe("shouldKeepLocalComposerSendBusy", () => {
         connected: false,
         threadBusy: false,
         isNextInQueue: true,
+        isWaitingForRetry: false,
       }),
     ).toBe(false);
     expect(
@@ -117,6 +122,17 @@ describe("shouldKeepLocalComposerSendBusy", () => {
         connected: true,
         threadBusy: false,
         isNextInQueue: false,
+        isWaitingForRetry: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldKeepLocalComposerSendBusy({
+        isDeliveringQueuedMessage: false,
+        isAwaitingEnqueue: false,
+        connected: true,
+        threadBusy: false,
+        isNextInQueue: true,
+        isWaitingForRetry: true,
       }),
     ).toBe(false);
   });

@@ -40,7 +40,10 @@ import { setPendingConnectionError } from "../state/use-remote-environment-regis
 import { useSelectedThreadDetail } from "../state/use-thread-detail";
 import { useThreadSelection } from "../state/use-thread-selection";
 import { enqueueThreadOutboxMessage } from "./thread-outbox";
-import { dispatchingQueuedMessageIdAtom } from "./use-thread-outbox-drain";
+import {
+  dispatchingQueuedMessageIdAtom,
+  retryingQueuedMessageIdsAtom,
+} from "./use-thread-outbox-drain";
 import { useThreadOutboxMessages } from "./use-thread-outbox";
 
 export function appendReviewCommentToDraft(input: {
@@ -80,6 +83,7 @@ export function useThreadComposerState() {
   const composerDrafts = useAtomValue(composerDraftsAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
   const dispatchingQueuedMessageId = useAtomValue(dispatchingQueuedMessageIdAtom);
+  const retryingQueuedMessageIds = useAtomValue(retryingQueuedMessageIdsAtom);
 
   useEffect(() => {
     ensureComposerDraftsLoaded();
@@ -107,6 +111,8 @@ export function useThreadComposerState() {
     selectedThreadQueuedMessages.some(
       (message) => message.messageId === dispatchingQueuedMessageId,
     );
+  const isHeadQueuedMessageRetrying =
+    headQueuedMessageId !== null && retryingQueuedMessageIds[headQueuedMessageId] === true;
   const selectedThread = selectedThreadDetail ?? selectedThreadShell;
   const modelSelection = selectedDraft?.modelSelection ?? selectedThread?.modelSelection ?? null;
   const runtimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
@@ -319,6 +325,7 @@ export function useThreadComposerState() {
     selectedThreadFeed,
     selectedThreadQueueCount,
     headQueuedMessageId,
+    isHeadQueuedMessageRetrying,
     isDeliveringQueuedMessage,
     activeWorkStartedAt,
     draftMessage,

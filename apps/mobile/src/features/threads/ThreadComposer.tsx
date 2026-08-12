@@ -112,6 +112,7 @@ export interface ThreadComposerProps {
   readonly serverConfig: T3ServerConfig | null;
   readonly queueCount: number;
   readonly headQueuedMessageId: MessageId | null;
+  readonly isHeadQueuedMessageRetrying: boolean;
   readonly isDeliveringQueuedMessage: boolean;
   readonly activeThreadBusy: boolean;
   readonly environmentId: EnvironmentId;
@@ -340,6 +341,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         connected: props.connectionState === "connected",
         threadBusy: props.activeThreadBusy,
         isNextInQueue: props.headQueuedMessageId === inFlightMessageId,
+        isWaitingForRetry:
+          inFlightMessageId !== null &&
+          props.isHeadQueuedMessageRetrying &&
+          props.headQueuedMessageId === inFlightMessageId,
       })
     ) {
       return;
@@ -362,6 +367,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.connectionState,
     props.headQueuedMessageId,
     props.isDeliveringQueuedMessage,
+    props.isHeadQueuedMessageRetrying,
   ]);
 
   // Notify the parent from the derived value, not focus events: the parent
