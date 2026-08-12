@@ -18,7 +18,6 @@ import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSw
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
-import { ChromeGlass } from "../../components/ChromeGlass";
 import { ControlPillMenu } from "../../components/ControlPill";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { ProviderIcon } from "../../components/ProviderIcon";
@@ -36,18 +35,15 @@ import {
   type ThreadListV2GlassClusterRole,
   type ThreadListV2Status,
 } from "./threadListV2";
-import {
-  THREAD_LIST_V2_CARD_CHROME_STYLE,
-  threadListV2ClusterPlateStyle,
-} from "./threadListV2Chrome";
+import { threadListV2CardPlateStyle, threadListV2ClusterPlateStyle } from "./threadListV2Chrome";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
 /**
  * Thread List v2 renders one flat native list: rich rows for active work and
  * a receded settled tail, all with native swipe and long-press actions.
  * Over World Scenery the opaque screen plates lift: active work sits on
- * liquid-glass cards, snoozed/settled history shares one inset frosted
- * plate, and the wash — not per-row blur — carries text contrast.
+ * frosted cards, snoozed/settled history shares one inset frosted plate,
+ * and the wash — not per-row blur or native glass — carries text contrast.
  */
 
 const MONO_FONT = Platform.select({
@@ -305,6 +301,8 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
   const { pendingTask, onSelectPendingTask, onDeletePendingTask } = props;
   const drawerColor = useThemeColor("--color-drawer");
   const pressedBackgroundColor = useThemeColor("--color-subtle");
+  const chromeFill = useThemeColor("--color-chrome-glass");
+  const chromeBorder = useThemeColor("--color-chrome-glass-border");
   const sidebarPane = props.pane === "sidebar";
   const sceneryChrome = props.sceneryChrome === true && !sidebarPane;
   const projectTitle =
@@ -386,10 +384,10 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
           {sidebarPane ? (
             rowContent
           ) : sceneryChrome ? (
-            <View style={THREAD_LIST_V2_CARD_CHROME_STYLE}>
-              <ChromeGlass>
-                <View className="px-4 py-2.5">{rowContent}</View>
-              </ChromeGlass>
+            <View
+              style={threadListV2CardPlateStyle({ fill: chromeFill, borderColor: chromeBorder })}
+            >
+              <View className="px-4 py-2.5">{rowContent}</View>
             </View>
           ) : (
             <View className="bg-screen">
@@ -881,10 +879,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         {sidebarPane ? (
           cardContent
         ) : sceneryChrome ? (
-          <View style={THREAD_LIST_V2_CARD_CHROME_STYLE}>
-            <ChromeGlass>
-              <View className="px-4 py-2.5">{cardContent}</View>
-            </ChromeGlass>
+          <View style={threadListV2CardPlateStyle({ fill: chromeFill, borderColor: chromeBorder })}>
+            <View className="px-4 py-2.5">{cardContent}</View>
           </View>
         ) : (
           /* Opaque plates when scenery is off so swipe actions reveal a

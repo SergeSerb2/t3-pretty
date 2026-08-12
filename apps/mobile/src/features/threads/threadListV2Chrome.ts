@@ -1,14 +1,31 @@
 import type { ColorValue, ViewStyle } from "react-native";
 import { StyleSheet } from "react-native";
 
-import { CHROME_GLASS_RADIUS } from "../../components/ChromeGlass";
 import { HOME_HORIZONTAL_INSET } from "../../lib/layoutMetrics";
 import type { ThreadListV2GlassClusterRole } from "./threadListV2";
 
-export const THREAD_LIST_V2_CARD_CHROME_STYLE: ViewStyle = {
-  marginBottom: 10,
-  marginHorizontal: HOME_HORIZONTAL_INSET,
-};
+/** Card / chrome radius — 16 stays inside the product card ceiling. */
+export const CHROME_GLASS_RADIUS = 16;
+
+/**
+ * Standalone frosted card for active/queued rows. Static fill only — native
+ * liquid glass samples the backdrop per view and hitches in recycled lists.
+ */
+export function threadListV2CardPlateStyle(input: {
+  readonly fill: ColorValue;
+  readonly borderColor: ColorValue;
+}): ViewStyle {
+  return {
+    backgroundColor: input.fill,
+    borderColor: input.borderColor,
+    borderCurve: "continuous",
+    borderRadius: CHROME_GLASS_RADIUS,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 10,
+    marginHorizontal: HOME_HORIZONTAL_INSET,
+    overflow: "hidden",
+  };
+}
 
 /**
  * One inset frosted plate split across FlatList rows. Adjacent roles share
