@@ -228,6 +228,7 @@ export function HomeScreen(props: HomeScreenProps) {
       ? PRE_LIQUID_GLASS_BOTTOM_TOOLBAR_HEIGHT
       : 0;
   const dailySceneryPhoto = useDailySceneryPhoto();
+  const [creditHeight, setCreditHeight] = useState(SCENERY_CREDIT_HEIGHT);
   // iOS: pre-Liquid-Glass 44pt bottom toolbar. Android: sit the credit just
   // above the new-task FAB (size + edge gap + credit gap, minus the safe
   // area SceneryAttribution already applies).
@@ -242,7 +243,7 @@ export function HomeScreen(props: HomeScreenProps) {
   const androidListBottomPad =
     Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +
     88 +
-    (dailySceneryPhoto !== null ? SCENERY_CREDIT_HEIGHT : 0);
+    (dailySceneryPhoto !== null ? creditHeight : 0);
   const searchEnvironmentIds = useMemo(
     () =>
       props.selectedEnvironmentId === null
@@ -1078,7 +1079,11 @@ export function HomeScreen(props: HomeScreenProps) {
           ) : null}
         </View>
         {dailySceneryPhoto !== null ? (
-          <SceneryAttribution photo={dailySceneryPhoto} bottomExtra={sceneryCreditBottomExtra} />
+          <SceneryAttribution
+            photo={dailySceneryPhoto}
+            bottomExtra={sceneryCreditBottomExtra}
+            onHeightChange={setCreditHeight}
+          />
         ) : null}
       </View>
     );
@@ -1167,7 +1172,11 @@ export function HomeScreen(props: HomeScreenProps) {
           />
         </SwipeableScrollGateProvider>
         {dailySceneryPhoto !== null ? (
-          <SceneryAttribution photo={dailySceneryPhoto} bottomExtra={sceneryCreditBottomExtra} />
+          <SceneryAttribution
+            photo={dailySceneryPhoto}
+            bottomExtra={sceneryCreditBottomExtra}
+            onHeightChange={setCreditHeight}
+          />
         ) : null}
       </View>
     );
@@ -1225,7 +1234,11 @@ export function HomeScreen(props: HomeScreenProps) {
         />
       </SwipeableScrollGateProvider>
       {dailySceneryPhoto !== null ? (
-        <SceneryAttribution photo={dailySceneryPhoto} bottomExtra={sceneryCreditBottomExtra} />
+        <SceneryAttribution
+          photo={dailySceneryPhoto}
+          bottomExtra={sceneryCreditBottomExtra}
+          onHeightChange={setCreditHeight}
+        />
       ) : null}
     </View>
   );

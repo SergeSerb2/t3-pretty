@@ -190,6 +190,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const lastScrolledAnchorMessageIdRef = useRef<MessageId | null>(null);
   const [composerExpanded, setComposerExpanded] = useState(false);
   const [anchorMessageId, setAnchorMessageId] = useState<MessageId | null>(null);
+  const [creditHeight, setCreditHeight] = useState(SCENERY_CREDIT_HEIGHT);
   // Key the safe-area padding on keyboard visibility, not focus: on Android
   // the back gesture closes the keyboard while the editor stays focused, and
   // a focus-keyed inset would leave the toolbar under the gesture bar.
@@ -198,7 +199,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   // sits below send/stop instead of stealing taps from them. Keyboard-open
   // hides the credit under the IME, so skip the slot then.
   const sceneryCreditSlot =
-    threadSceneryPhoto !== null && !isKeyboardVisible ? SCENERY_CREDIT_HEIGHT : 0;
+    threadSceneryPhoto !== null && !isKeyboardVisible ? creditHeight : 0;
   const composerBottomInset =
     (isKeyboardVisible ? 0 : Math.max(insets.bottom, 12)) + sceneryCreditSlot;
   const contentPresentationKind = props.contentPresentation.kind;
@@ -472,7 +473,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
       {/* World Scenery credit docks to the bottom-right safe area, in the
           strip reserved under the composer so it cannot cover send/stop. */}
       {showContent && threadSceneryPhoto !== null ? (
-        <SceneryAttribution photo={threadSceneryPhoto} />
+        <SceneryAttribution photo={threadSceneryPhoto} onHeightChange={setCreditHeight} />
       ) : null}
     </View>
   );

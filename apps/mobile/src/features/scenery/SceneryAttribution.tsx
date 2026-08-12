@@ -6,14 +6,16 @@
  * chat bubbles and list rows instead of covering them.
  */
 import * as Linking from "expo-linking";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useRef } from "react";
+import { Pressable, StyleSheet, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
 import { UNSPLASH_UTM, type SceneryPhoto } from "./sceneryLogic";
 
-/** Painted height of the credit pill (4pt padding + 14pt type). Callers
- *  reserve this below overlapping chrome so the pill stays tappable. */
+/** Unscaled first-frame estimate (4pt padding + 14pt type). Callers use this
+ *  until onHeightChange reports the painted size, which grows with Dynamic
+ *  Type. */
 export const SCENERY_CREDIT_HEIGHT = 22;
 /** Gap between the credit pill and overlaying chrome. */
 export const SCENERY_CREDIT_GAP = 6;
@@ -27,20 +29,33 @@ export function SceneryAttribution(props: {
    *  Do not pass composer or floating-search heights — those park the pill
    *  on content. */
   readonly bottomExtra?: number;
+  /** Painted pill height after layout, including Dynamic Type. */
+  readonly onHeightChange?: (height: number) => void;
 }) {
   const { photo } = props;
   const insets = useSafeAreaInsets();
+  const reportedHeightRef = useRef(0);
   const bottom = Math.max(insets.bottom, SCENERY_CREDIT_MIN_BOTTOM) + (props.bottomExtra ?? 0);
   const profileURL =
     photo.photographerProfileURL !== null
       ? `${photo.photographerProfileURL}${UNSPLASH_UTM}`
       : `https://unsplash.com/${UNSPLASH_UTM}`;
 
+  const handleLayout = (event: LayoutChangeEvent) => {
+    const height = Math.ceil(event.nativeEvent.layout.height);
+    if (height <= 0 || height === reportedHeightRef.current) {
+      return;
+    }
+    reportedHeightRef.current = height;
+    props.onHeightChange?.(height);
+  };
+
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       <Pressable
         accessibilityRole="link"
         accessibilityLabel={`Wallpaper: ${photo.name}. Photo by ${photo.photographerName} on Unsplash.`}
+        onLayout={handleLayout}
         onPress={() => void Linking.openURL(profileURL).catch(() => undefined)}
         style={({ pressed }) => ({
           position: "absolute",
