@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, InteractionManager, Platform, View, useColorScheme } from "react-native";
 import {
   KeyboardAvoidingView,
+  KeyboardController,
   KeyboardStickyView,
   useKeyboardState,
 } from "react-native-keyboard-controller";
@@ -790,6 +791,12 @@ export function NewTaskDraftScreen(props: {
       return;
     }
 
+    // The composer is a custom native text view, so RN Keyboard.dismiss()
+    // would miss it. Resign first responder through the library so its
+    // visibility flag (which gates KeyboardAvoidingView below) updates.
+    promptInputRef.current?.blur();
+    void KeyboardController.dismiss();
+
     const editingPendingTask = flow.editingPendingTask;
 
     if (!environmentConnected) {
@@ -1183,7 +1190,12 @@ export function NewTaskDraftScreen(props: {
     <View className="flex-1 bg-sheet">
       <NativeStackScreenOptions options={{ title: selectedProject.title }} />
 
-      <KeyboardAvoidingView automaticOffset behavior="padding" className="flex-1">
+      {/* Pad the whole draft chrome for the IME. automaticOffset only lifted
+          the focused native editor, which left the toolbar under the keyboard.
+          Gate on visibility rather than animated height: the custom composer
+          can dismiss the IME without updating keyboard-controller's height,
+          which otherwise left this padding stranded during send. */}
+      <KeyboardAvoidingView behavior="padding" className="flex-1" enabled={isKeyboardVisible}>
         <View className="min-h-0 flex-1 px-5 pt-2">{promptEditor}</View>
 
         <View className="border-t border-border" style={{ paddingBottom: controlsBottomPadding }}>
@@ -1207,7 +1219,7 @@ export function NewTaskDraftScreen(props: {
               <ComposerDispatchStatusLabel label={dispatchStatus} />
             </View>
           ) : null}
-          <ComposerToolbarRow paddingBottom={controlsBottomPadding} paddingHorizontal={6}>
+          <ComposerToolbarRow paddingBottom={8} paddingHorizontal={6}>
             <ComposerToolbarScroller
               fadeOpaque={sheetFadeOpaque}
               fadeTransparent={sheetFadeTransparent}
