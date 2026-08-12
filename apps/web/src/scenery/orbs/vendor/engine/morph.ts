@@ -8,8 +8,8 @@
 // every instant of the morph, holds and transitions alike. Plain
 // circle fills only: no canvas/SVG filters, fully cross-browser.
 
-import type { Dot, ModeDraw } from "./types";
-import { paint } from "./core";
+import type { ModeDraw } from "./types";
+import { addDot, beginDots, paintDots } from "./core";
 
 type Path = (f: number) => [number, number];
 
@@ -113,7 +113,7 @@ export const drawMorph: ModeDraw = (ctx, size, t, dark, o) => {
   const re = (o.rDot ?? 0.021) * 1.35 * sprd;
   const pulse = 1 + 0.02 * Math.sin(local * 3.1);
 
-  const dots: Dot[] = [];
+  beginDots();
   const c2 = size / 2;
   let seg = 0;
   let acc = 0;
@@ -128,13 +128,7 @@ export const drawMorph: ModeDraw = (ctx, size, t, dark, o) => {
     const f = L[seg] ? Math.min(1, (target - acc) / L[seg]) : 0;
     const x = (a[0] + (b[0] - a[0]) * f) * pulse;
     const y = (a[1] + (b[1] - a[1]) * f) * pulse;
-    dots.push({
-      x: c2 + x * size,
-      y: c2 + y * size,
-      z: 0,
-      r: Math.max(0.35, re * size),
-      white: 0.1,
-    });
+    addDot(c2 + x * size, c2 + y * size, 0, Math.max(0.35, re * size), 0.1);
   }
-  paint(ctx, dots, dark, o.rMin);
+  paintDots(ctx, dark, o.rMin);
 };

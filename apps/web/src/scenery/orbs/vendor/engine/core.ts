@@ -83,6 +83,33 @@ export function angleDelta(a: number, b: number): number {
  */
 const LIGHT_INK_MAX_CHANNEL = 36;
 const LIGHT_INK_MIN_ALPHA = 0.6;
+const INK_ALPHA_STEPS = 100;
+const INK_STYLE_STRIDE = INK_ALPHA_STEPS + 1;
+/** Shipped 20/64 orbs stamp ~1 CSS-px marks; squares match circles at that size. */
+const CHEAP_DOT_RADIUS = 1.5;
+const TAU = Math.PI * 2;
+
+const inkStyleCache: string[] = [];
+
+function inkChannel(white: number, dark: boolean): number {
+  const w = Math.min(1, Math.max(0, white));
+  return Math.round(dark ? (1 - w) * 255 : w * LIGHT_INK_MAX_CHANNEL);
+}
+
+function inkAlpha(alpha: number, dark: boolean): number {
+  const painted = dark ? alpha : Math.max(LIGHT_INK_MIN_ALPHA, alpha);
+  return Math.round(painted * INK_ALPHA_STEPS) / INK_ALPHA_STEPS;
+}
+
+function inkStyle(g: number, a: number): string {
+  const ai = Math.round(a * INK_ALPHA_STEPS);
+  const key = g * INK_STYLE_STRIDE + ai;
+  const hit = inkStyleCache[key];
+  if (hit !== undefined) return hit;
+  const style = `rgba(${g},${g},${g},${ai / INK_ALPHA_STEPS})`;
+  inkStyleCache[key] = style;
+  return style;
+}
 
 /** Shared spin + tilt + orthographic projection. */
 export function makeProj(
@@ -109,37 +136,132 @@ export function makeProj(
  * Painter: z-sort far→near, matte grayscale dots. On dark substrates the
  * ink value is mirrored (1 - white) so near dots read bright — the same
  * depth language on an inverted substrate.
+ *
+ * Small marks use fillRect instead of arc(); at the shipped 20/64 sizes a
+ * mark is ~1 CSS pixel, so the square is indistinguishable and skips the
+ * antialiased-circle rasterizer that was dominating renderer CPU.
  */
 export function paint(ctx: CanvasRenderingContext2D, dots: Dot[], dark: boolean, rMin = 0.3): void {
   dots.sort((a, b) => a.z - b.z);
+  let lastStyle = "";
   for (const d of dots) {
     const alpha = d.a ?? 1;
     if (alpha < 0.02) continue;
-    const w = Math.min(1, Math.max(0, d.white));
-    const g = Math.round(dark ? (1 - w) * 255 : w * LIGHT_INK_MAX_CHANNEL);
-    const paintedAlpha = dark ? alpha : Math.max(LIGHT_INK_MIN_ALPHA, alpha);
-    ctx.fillStyle = `rgba(${g},${g},${g},${paintedAlpha})`;
-    ctx.beginPath();
-    ctx.arc(d.x, d.y, Math.max(rMin, d.r), 0, Math.PI * 2);
-    ctx.fill();
+    const g = inkChannel(d.white, dark);
+    const a = inkAlpha(alpha, dark);
+    const style = inkStyle(g, a);
+    if (style !== lastStyle) {
+      ctx.fillStyle = style;
+      lastStyle = style;
+    }
+    const r = Math.max(rMin, d.r);
+    if (r <= CHEAP_DOT_RADIUS) {
+      ctx.fillRect(d.x - r, d.y - r, r * 2, r * 2);
+    } else {
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, r, 0, TAU);
+      ctx.fill();
+    }
   }
 }
 
 /** Stroke pass for edge-based modes. Runs before `paint` so nodes sit on top. */
 export function paintLines(ctx: CanvasRenderingContext2D, lines: Line[], dark: boolean): void {
+  let lastStyle = "";
+  let lastWidth = NaN;
   for (const l of lines) {
     const alpha = l.a ?? 1;
     if (alpha < 0.02) continue;
-    const w = Math.min(1, Math.max(0, l.white));
-    const g = Math.round(dark ? (1 - w) * 255 : w * LIGHT_INK_MAX_CHANNEL);
-    const paintedAlpha = dark ? alpha : Math.max(LIGHT_INK_MIN_ALPHA, alpha);
-    ctx.strokeStyle = `rgba(${g},${g},${g},${paintedAlpha})`;
-    ctx.lineWidth = l.w;
+    const g = inkChannel(l.white, dark);
+    const a = inkAlpha(alpha, dark);
+    const style = inkStyle(g, a);
+    if (style !== lastStyle) {
+      ctx.strokeStyle = style;
+      lastStyle = style;
+    }
+    if (l.w !== lastWidth) {
+      ctx.lineWidth = l.w;
+      lastWidth = l.w;
+    }
     ctx.beginPath();
     ctx.moveTo(l.x1, l.y1);
     ctx.lineTo(l.x2, l.y2);
     ctx.stroke();
   }
+}
+
+const dotStorage: Dot[] = [];
+const dots: Dot[] = [];
+const lineStorage: Line[] = [];
+const lines: Line[] = [];
+
+/** Clear the recycled dot list. Call once at the start of a mode's frame. */
+export function beginDots(): void {
+  dots.length = 0;
+}
+
+export function addDot(
+  x: number,
+  y: number,
+  z: number,
+  r: number,
+  white: number,
+  a?: number,
+): void {
+  const i = dots.length;
+  const existing = dotStorage[i];
+  if (existing) {
+    existing.x = x;
+    existing.y = y;
+    existing.z = z;
+    existing.r = r;
+    existing.white = white;
+    existing.a = a;
+    dots.push(existing);
+    return;
+  }
+  const created: Dot = { x, y, z, r, white, a };
+  dotStorage[i] = created;
+  dots.push(created);
+}
+
+export function paintDots(ctx: CanvasRenderingContext2D, dark: boolean, rMin?: number): void {
+  paint(ctx, dots, dark, rMin);
+}
+
+export function beginLines(): void {
+  lines.length = 0;
+}
+
+export function addLine(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  white: number,
+  w: number,
+  a?: number,
+): void {
+  const i = lines.length;
+  const existing = lineStorage[i];
+  if (existing) {
+    existing.x1 = x1;
+    existing.y1 = y1;
+    existing.x2 = x2;
+    existing.y2 = y2;
+    existing.white = white;
+    existing.w = w;
+    existing.a = a;
+    lines.push(existing);
+    return;
+  }
+  const created: Line = { x1, y1, x2, y2, white, w, a };
+  lineStorage[i] = created;
+  lines.push(created);
+}
+
+export function paintCollectedLines(ctx: CanvasRenderingContext2D, dark: boolean): void {
+  paintLines(ctx, lines, dark);
 }
 
 /**

@@ -4,15 +4,19 @@
 // on the sphere under slow value noise; any pair closer than `thr` grows an
 // edge, and bright packets run along randomly re-picked node pairs.
 
-import type { Dot, Line, ModeDraw } from "./types";
+import type { ModeDraw } from "./types";
 import {
+  addDot,
+  addLine,
+  beginDots,
+  beginLines,
   fibDir,
   frac,
   hashD,
   lerp,
   makeProj,
-  paint,
-  paintLines,
+  paintCollectedLines,
+  paintDots,
   radiusScale,
   vnoise,
 } from "./core";
@@ -42,8 +46,8 @@ export const drawWeb: ModeDraw = (ctx, size, t, dark, o) => {
     nodes.push([x / l, y / l, z / l]);
   }
 
-  const lines: Line[] = [];
-  const dots: Dot[] = [];
+  beginLines();
+  beginDots();
 
   // edges between close neighbours, alpha by proximity + depth
   for (let i = 0; i < nodeN; i++) {
@@ -56,15 +60,15 @@ export const drawWeb: ModeDraw = (ctx, size, t, dark, o) => {
       const [x1, y1, z1] = pt(nodes[i][0], nodes[i][1], nodes[i][2]);
       const [x2, y2, z2] = pt(nodes[j][0], nodes[j][1], nodes[j][2]);
       const depth = ((z1 + z2) / 2 + 1) / 2;
-      lines.push({
+      addLine(
         x1,
         y1,
         x2,
         y2,
-        white: 0.42,
-        a: (1 - dist / thr) * (0.3 + 0.55 * depth),
-        w: Math.max(0.6, (o.lineW ?? 0.8) * rs),
-      });
+        0.42,
+        Math.max(0.6, (o.lineW ?? 0.8) * rs),
+        (1 - dist / thr) * (0.3 + 0.55 * depth),
+      );
     }
   }
 
@@ -72,13 +76,7 @@ export const drawWeb: ModeDraw = (ctx, size, t, dark, o) => {
     const [px, py, z] = pt(nodes[i][0], nodes[i][1], nodes[i][2]);
     const depth = (z + 1) / 2;
     const pulse = 1 + 0.25 * Math.sin(t * 1.4 + i * 2.7);
-    dots.push({
-      x: px,
-      y: py,
-      z,
-      r: (nodeR + nodeRDepth * depth) * pulse * rs,
-      white: 0.55 - 0.45 * depth,
-    });
+    addDot(px, py, z, (nodeR + nodeRDepth * depth) * pulse * rs, 0.55 - 0.45 * depth);
   }
 
   // signals: bright packets running between paired nodes
@@ -95,16 +93,9 @@ export const drawWeb: ModeDraw = (ctx, size, t, dark, o) => {
     const l = Math.max(1e-6, Math.sqrt(x * x + y * y + z * z));
     const [px, py, zr] = pt(x / l, y / l, z / l);
     const depth = (zr + 1) / 2;
-    dots.push({
-      x: px,
-      y: py,
-      z: zr,
-      r: (nodeR * 1.5 + nodeRDepth * depth) * rs,
-      white: 0.05,
-      a: 0.5 + 0.5 * depth,
-    });
+    addDot(px, py, zr, (nodeR * 1.5 + nodeRDepth * depth) * rs, 0.05, 0.5 + 0.5 * depth);
   }
 
-  paintLines(ctx, lines, dark);
-  paint(ctx, dots, dark, o.rMin);
+  paintCollectedLines(ctx, dark);
+  paintDots(ctx, dark, o.rMin);
 };

@@ -1,9 +1,10 @@
 // @ts-nocheck -- vendored from thinking-orbs (MIT, Jakub Antalik); the upstream
 // library is not written for this repo's noUncheckedIndexedAccess setting.
-// The ThinkingOrb component. One capped rAF scheduler keeps every mounted
+// The ThinkingOrb component. One 30fps rAF scheduler keeps every mounted
 // orb in phase and pauses automatically while offscreen, hidden, or unfocused.
-// Reduced-motion and persistent status placements get a static representative
-// frame that still follows the live theme.
+// Each canvas is paint-contained so a dirty frame cannot invalidate the
+// scenery/chat layer. Reduced-motion and persistent status placements get a
+// static representative frame that still follows the live theme.
 
 import { useEffect, useRef } from "react";
 import { MODE_DRAWS } from "./engine/registry";
@@ -44,15 +45,16 @@ export function ThinkingOrb({
     const dpr = Math.min(2, (typeof devicePixelRatio !== "undefined" && devicePixelRatio) || 1);
     canvas.width = Math.round(size * dpr);
     canvas.height = Math.round(size * dpr);
-    const ctx = canvas.getContext("2d");
+    const ctx =
+      canvas.getContext("2d", { alpha: true, desynchronized: true }) ?? canvas.getContext("2d");
     if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const { mode, speed: baseSpeed, opts } = resolvePreset(state, size);
     const draw = MODE_DRAWS[mode];
     const effSpeed = baseSpeed * speed;
 
     const frame = (tSec: number) => {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, size, size);
       draw(ctx, size, tSec, dark, opts);
     };
@@ -120,7 +122,15 @@ export function ThinkingOrb({
       ref={ref}
       role="img"
       aria-label={ariaLabel ?? LABELS[state]}
-      style={{ width: size, height: size, display: "block", ...style }}
+      style={{
+        width: size,
+        height: size,
+        display: "block",
+        ...style,
+        // Size+paint containment keeps a 30fps canvas dirty-rect from
+        // invalidating the scenery wallpaper / chat layer on 240 Hz displays.
+        contain: "strict",
+      }}
       {...rest}
     />
   );

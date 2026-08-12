@@ -8,8 +8,8 @@
 // a face-on circle whose radius — not its out-of-plane offset — undulates,
 // so it reads as a ring slowly morphing rather than a sash in orbit.
 
-import type { Dot, ModeDraw } from "./types";
-import { fibDir, makeProj, paint, radiusScale } from "./core";
+import type { ModeDraw } from "./types";
+import { addDot, beginDots, fibDir, makeProj, paintDots, radiusScale } from "./core";
 
 export const drawRibbon: ModeDraw = (ctx, size, t, dark, o) => {
   const cx = size / 2;
@@ -22,13 +22,13 @@ export const drawRibbon: ModeDraw = (ctx, size, t, dark, o) => {
   const pt = makeProj(t * 0.1 * spin, camTilt, cx, cy, 1);
   const rs = radiusScale(size, o.rsPow ?? 0.6);
 
-  const dots: Dot[] = [];
+  beginDots();
   const ghostN = o.ghostN ?? 150;
   for (let i = 0; i < ghostN; i++) {
     const d = fibDir(i, ghostN);
     const [px, py, z] = pt(d[0] * R, d[1] * R, d[2] * R);
     const depth = (z / R + 1) / 2;
-    dots.push({ x: px, y: py, z, r: 0.8 * rs, white: 0.78, a: 0.1 + 0.22 * depth });
+    addDot(px, py, z, 0.8 * rs, 0.78, 0.1 + 0.22 * depth);
   }
 
   // The band plane, precessing (frozen when spin=0). The projection squashes
@@ -82,15 +82,15 @@ export const drawRibbon: ModeDraw = (ctx, size, t, dark, o) => {
       const rr = baseR * radial;
       const [px, py, zr] = pt((x / l) * rr, (y / l) * rr, (z / l) * rr);
       const depth = (zr / R + 1) / 2;
-      dots.push({
-        x: px,
-        y: py,
-        z: zr,
-        r: ((o.rBase ?? 1.1) + (o.rDepth ?? 1.7) * depth) * (1 - 0.25 * edge) * rs,
-        white: 0.52 - 0.44 * depth + 0.18 * edge,
-        a: 0.4 + 0.6 * depth,
-      });
+      addDot(
+        px,
+        py,
+        zr,
+        ((o.rBase ?? 1.1) + (o.rDepth ?? 1.7) * depth) * (1 - 0.25 * edge) * rs,
+        0.52 - 0.44 * depth + 0.18 * edge,
+        0.4 + 0.6 * depth,
+      );
     }
   }
-  paint(ctx, dots, dark, o.rMin);
+  paintDots(ctx, dark, o.rMin);
 };

@@ -4,8 +4,8 @@
 // (the tuned preset runs coreless): just ghost paths and the particles
 // doing the work.
 
-import type { Dot, ModeDraw } from "./types";
-import { hashD, makeProj, paint, radiusScale } from "./core";
+import type { ModeDraw } from "./types";
+import { addDot, beginDots, hashD, makeProj, paintDots, radiusScale } from "./core";
 
 export const drawOrbits: ModeDraw = (ctx, size, t, dark, o) => {
   const cx = size / 2;
@@ -14,7 +14,7 @@ export const drawOrbits: ModeDraw = (ctx, size, t, dark, o) => {
   const pt = makeProj(t * 0.12, 0.3, cx, cy, 1);
   const rs = radiusScale(size, o.rsPow ?? 0.6);
 
-  const dots: Dot[] = [];
+  beginDots();
   const orbitN = o.orbitN ?? 12;
   const ghostN = o.ghostN ?? 40;
   const particles = o.particles ?? 3;
@@ -51,14 +51,7 @@ export const drawOrbits: ModeDraw = (ctx, size, t, dark, o) => {
         (uz * Math.cos(a) + vz * Math.sin(a)) * ro,
       );
       const depth = (z / ro + 1) / 2;
-      dots.push({
-        x: px,
-        y: py,
-        z,
-        r: (o.ghostR ?? 0.9) * rs,
-        white: 0.72,
-        a: (o.ghostA ?? 0.5) * (0.4 + 0.6 * depth),
-      });
+      addDot(px, py, z, (o.ghostR ?? 0.9) * rs, 0.72, (o.ghostA ?? 0.5) * (0.4 + 0.6 * depth));
     }
     // the particles doing the work
     for (let m = 0; m < particles; m++) {
@@ -69,14 +62,14 @@ export const drawOrbits: ModeDraw = (ctx, size, t, dark, o) => {
         (uz * Math.cos(a) + vz * Math.sin(a)) * ro,
       );
       const depth = (z / ro + 1) / 2;
-      dots.push({
-        x: px,
-        y: py,
+      addDot(
+        px,
+        py,
         z,
-        r: ((o.partR ?? 1.2) + (o.partRDepth ?? 1.6) * depth) * rs,
-        white: 0.3 - 0.22 * depth,
-      });
+        ((o.partR ?? 1.2) + (o.partRDepth ?? 1.6) * depth) * rs,
+        0.3 - 0.22 * depth,
+      );
     }
   }
-  paint(ctx, dots, dark, o.rMin);
+  paintDots(ctx, dark, o.rMin);
 };

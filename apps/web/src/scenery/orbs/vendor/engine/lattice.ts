@@ -4,8 +4,8 @@
 // wave (listening). All draw a lat/long dot field with mode-specific
 // motion, then hand off to the shared z-sorted painter.
 
-import type { Dot, ModeDraw } from "./types";
-import { angleDelta, hashD, makeProj, paint, radiusScale } from "./core";
+import type { ModeDraw } from "./types";
+import { addDot, angleDelta, beginDots, hashD, makeProj, paintDots, radiusScale } from "./core";
 
 // --- the shared solver heartbeat (rubik) ------------------------------
 // Rapid eased moves scramble, then replay in reverse (palindrome) so
@@ -100,7 +100,7 @@ export const drawGlobe: ModeDraw = (ctx, size, t, dark, o) => {
   const rs = radiusScale(size, o.rsPow ?? 0.6);
   const dimBase = o.dimBase ?? 1;
 
-  const dots: Dot[] = [];
+  beginDots();
   const latRings = o.latRings ?? 17;
   const lonDensity = o.lonDensity ?? 44;
   for (let li = 0; li <= latRings; li++) {
@@ -115,18 +115,17 @@ export const drawGlobe: ModeDraw = (ctx, size, t, dark, o) => {
       // the scan: a moving meridian read as a size ripple, not a shine
       const d = angleDelta(lon + t * spin, scan);
       const boost = Math.exp(-(d * d) / 0.18) * Math.max(0, z);
-      dots.push({
-        x: px,
-        y: py,
+      addDot(
+        px,
+        py,
         z,
-        r: ((o.rBase ?? 0.6) + (o.rDepth ?? 1.7) * depth + (o.rBoost ?? 1) * boost) * rs,
-        white: (o.inkFar ?? 0.62) - (o.inkSpan ?? 0.54) * depth,
-        // dimBase < 1 fades un-scanned dots so the meridian reads clearly
-        a: dimBase + (1 - dimBase) * Math.min(1, boost),
-      });
+        ((o.rBase ?? 0.6) + (o.rDepth ?? 1.7) * depth + (o.rBoost ?? 1) * boost) * rs,
+        (o.inkFar ?? 0.62) - (o.inkSpan ?? 0.54) * depth,
+        dimBase + (1 - dimBase) * Math.min(1, boost),
+      );
     }
   }
-  paint(ctx, dots, dark, o.rMin);
+  paintDots(ctx, dark, o.rMin);
 };
 
 // --- Rubik: bands twist in quarter turns, scramble → solve — solving --
@@ -141,7 +140,7 @@ export const drawRubik: ModeDraw = (ctx, size, t, dark, o) => {
   const moves = makeMoves(moveCount);
   const sc = solveCycle(t, moveCount, 0.42, 1.2);
 
-  const dots: Dot[] = [];
+  beginDots();
   const latRings = o.latRings ?? 15;
   const lonDensity = o.lonDensity ?? 40;
   for (let li = 0; li <= latRings; li++) {
@@ -159,17 +158,16 @@ export const drawRubik: ModeDraw = (ctx, size, t, dark, o) => {
       const [px, py, zr] = pt(x, y, z);
       const depth = (zr + 1) / 2;
       // the band being turned inks a touch darker — the "hand"
-      dots.push({
-        x: px,
-        y: py,
-        z: zr,
-        r:
-          ((o.rBase ?? 0.6) + (o.rDepth ?? 1.7) * depth + (inActive ? (o.rActive ?? 0.3) : 0)) * rs,
-        white: (o.inkFar ?? 0.62) - (o.inkSpan ?? 0.54) * depth - (inActive ? 0.14 : 0),
-      });
+      addDot(
+        px,
+        py,
+        zr,
+        ((o.rBase ?? 0.6) + (o.rDepth ?? 1.7) * depth + (inActive ? (o.rActive ?? 0.3) : 0)) * rs,
+        (o.inkFar ?? 0.62) - (o.inkSpan ?? 0.54) * depth - (inActive ? 0.14 : 0),
+      );
     }
   }
-  paint(ctx, dots, dark, o.rMin);
+  paintDots(ctx, dark, o.rMin);
 };
 
 // --- Wave: a waveform rolls through the rings — listening -------------
@@ -183,7 +181,7 @@ export const drawWave: ModeDraw = (ctx, size, t, dark, o) => {
   const pt = makeProj(t * 0.18, 0.38, cx, cy, 1);
   const rs = radiusScale(size, o.rsPow ?? 0.6);
 
-  const dots: Dot[] = [];
+  beginDots();
   const rings = o.rings ?? 15;
   const lonDensity = o.lonDensity ?? 40;
   for (let ri = 0; ri <= rings; ri++) {
@@ -199,14 +197,14 @@ export const drawWave: ModeDraw = (ctx, size, t, dark, o) => {
       const [px, py, z] = pt(cosLat * Math.cos(lon) * rr, sinLat * rr, cosLat * Math.sin(lon) * rr);
       const depth = (z / R + 1) / 2;
       const crest = Math.max(0, w);
-      dots.push({
-        x: px,
-        y: py,
+      addDot(
+        px,
+        py,
         z,
-        r: ((o.rBase ?? 0.6) + (o.rDepth ?? 1.7) * depth) * (1 + 0.4 * crest) * rs,
-        white: 0.66 - 0.56 * depth - 0.1 * crest,
-      });
+        ((o.rBase ?? 0.6) + (o.rDepth ?? 1.7) * depth) * (1 + 0.4 * crest) * rs,
+        0.66 - 0.56 * depth - 0.1 * crest,
+      );
     }
   }
-  paint(ctx, dots, dark, o.rMin);
+  paintDots(ctx, dark, o.rMin);
 };

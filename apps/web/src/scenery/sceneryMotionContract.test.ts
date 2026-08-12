@@ -19,6 +19,7 @@ import providerBannerSource from "../components/chat/ProviderStatusBanner.tsx?ra
 import sidebarSource from "../components/Sidebar.tsx?raw";
 import alertSource from "../components/ui/alert.tsx?raw";
 import motionDriverSource from "./SceneryMotion.tsx?raw";
+import thinkingOrbSource from "./orbs/vendor/ThinkingOrb.tsx?raw";
 
 const motionStylesSource = NodeFS.readFileSync(new URL("./motion.css", import.meta.url), "utf8");
 
@@ -49,6 +50,12 @@ describe("working-row orb contract", () => {
     expect(motionDriverSource).toContain("const isDark = useIsDarkAppearance()");
     expect(motionDriverSource).toContain('const orbTheme = isDark ? "dark" : "light"');
     expect(motionDriverSource.match(/theme=\{orbTheme\}/g)).toHaveLength(3);
+  });
+
+  it("keeps thinking orbs on a paint-contained 30fps canvas", () => {
+    expect(thinkingOrbSource).toContain("subscribeOrbAnimationFrame");
+    expect(thinkingOrbSource).toContain('contain: "strict"');
+    expect(motionStylesSource).toContain("contain: layout paint");
   });
 
   it("never clones the transient working row into a fixed-position exit ghost", () => {
