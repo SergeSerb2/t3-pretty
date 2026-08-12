@@ -230,9 +230,10 @@ export function HomeScreen(props: HomeScreenProps) {
   const sceneryChrome = useSceneryChromeActive();
   const [creditHeight, setCreditHeight] = useState(SCENERY_CREDIT_HEIGHT);
   // Liquid Glass Home: dockUnderFloatingChrome puts the pill under the
-  // floating search bar (no extra). Pre-Liquid-Glass: lift by the 44pt
-  // toolbar above the safe-area dock. Android: sit just above the new-task
-  // FAB (size + edge gap + credit gap, minus the safe area already applied).
+  // floating search bar, which now rests in the home-indicator strip.
+  // Pre-Liquid-Glass: lift by the 44pt toolbar above the safe-area dock.
+  // Android: sit just above the new-task FAB (size + edge gap + credit gap,
+  // minus the safe area already applied).
   const sceneryCreditBottomExtra =
     Platform.OS === "android"
       ? Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +

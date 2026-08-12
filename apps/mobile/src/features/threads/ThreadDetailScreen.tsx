@@ -59,7 +59,8 @@ import type { StatusTone } from "../../components/StatusPill";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import { CHAT_CONTENT_MAX_WIDTH, type LayoutVariant } from "../../lib/layout";
 import { scopedThreadKey } from "../../lib/scopedEntities";
-import { SCENERY_CREDIT_HEIGHT, SceneryAttribution } from "../scenery/SceneryAttribution";
+import { SceneryAttribution } from "../scenery/SceneryAttribution";
+import { deriveFloatingChromeBottomInset, SCENERY_CREDIT_HEIGHT } from "../scenery/sceneryDock";
 import { useThreadSceneryPhoto } from "../scenery/SceneryProvider";
 import type {
   PendingApproval,
@@ -286,14 +287,19 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   // animation, so the composer would ride down flush to the screen edge and
   // then snap up into the inset. On iOS blur precedes the hide, so the
   // focus-keyed inset is already in place while the composer rides down.
-  const isComposerAtKeyboardEdge =
-    Platform.OS === "android" ? isKeyboardVisible : composerExpanded;
-  const composerSafeAreaInset = isComposerAtKeyboardEdge ? 0 : Math.max(insets.bottom, 12);
+  const isComposerAtKeyboardEdge = Platform.OS === "android" ? isKeyboardVisible : composerExpanded;
   // Reserve a strip under the composer for the scenery credit so the pill
   // sits below send/stop instead of stealing taps from them. Keyboard-open
-  // hides the credit under the IME, so skip the slot then.
+  // hides the credit under the IME, so skip the slot then. iOS docks the
+  // floating pill in the home-indicator strip instead of stacking a full
+  // safe-area inset under the credit.
   const sceneryCreditSlot = threadSceneryPhoto !== null && !isKeyboardVisible ? creditHeight : 0;
-  const composerBottomInset = composerSafeAreaInset + sceneryCreditSlot;
+  const composerBottomInset = deriveFloatingChromeBottomInset({
+    isAtKeyboardEdge: isComposerAtKeyboardEdge,
+    platform: Platform.OS === "android" ? "android" : "ios",
+    safeAreaBottom: insets.bottom,
+    creditHeight: sceneryCreditSlot,
+  });
   const contentPresentationKind = props.contentPresentation.kind;
   // The raw sync status enters "synchronizing" on every full fetch, cached or
   // not. Whether messages are already on screen decides the pill label: no
@@ -781,9 +787,13 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
       ) : null}
 
       {/* World Scenery credit centers under the composer strip so it cannot
-          cover send/stop and stays clear of the device's rounded corners. */}
+          cover send/stop. On iOS it docks in the home-indicator strip. */}
       {showContent && threadSceneryPhoto !== null ? (
-        <SceneryAttribution photo={threadSceneryPhoto} onHeightChange={setCreditHeight} />
+        <SceneryAttribution
+          photo={threadSceneryPhoto}
+          dockUnderFloatingChrome={Platform.OS === "ios"}
+          onHeightChange={setCreditHeight}
+        />
       ) : null}
     </View>
   );
