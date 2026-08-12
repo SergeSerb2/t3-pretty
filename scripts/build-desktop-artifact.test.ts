@@ -36,6 +36,7 @@ import {
   resolveDesktopWebAssetBrand,
   resolveResourceMonitorRustTargets,
   resourceMonitorExecutableName,
+  resolveGenericUpdateFeedUrl,
   resolveGitHubPublishConfig,
   resolveMockUpdateServerPort,
   resolveMockUpdateServerUrl,
@@ -114,6 +115,23 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "nightly");
   });
 
+  it("keeps a trailing slash on generic updater feed URLs so channel files stay under download/", () => {
+    assert.equal(
+      resolveGenericUpdateFeedUrl(
+        "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+      ),
+      "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+    );
+    assert.equal(
+      resolveGenericUpdateFeedUrl(
+        "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+      ),
+      "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+    );
+    assert.equal(resolveGenericUpdateFeedUrl("ftp://example.test/updates"), undefined);
+    assert.equal(resolveGenericUpdateFeedUrl("not a url"), undefined);
+  });
+
   it.effect("resolves GitHub desktop publish config from Effect config", () =>
     Effect.gen(function* () {
       const latestConfig = yield* resolveGitHubPublishConfig("latest").pipe(
@@ -149,6 +167,71 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         provider: "github",
         owner: "pingdotgg",
         repo: "t3code",
+        releaseType: "prerelease",
+        channel: "nightly",
+      });
+    }),
+  );
+
+  it.effect("prefers a generic GitHub latest/download feed over the GitHub provider", () =>
+    Effect.gen(function* () {
+      const nightlyConfig = yield* resolveGitHubPublishConfig("nightly").pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: {
+                T3CODE_DESKTOP_UPDATE_FEED_URL:
+                  "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+                T3CODE_DESKTOP_UPDATE_REPOSITORY: "SergeSerb2/t3-pretty",
+              },
+            }),
+          ),
+        ),
+      );
+      const latestConfig = yield* resolveGitHubPublishConfig("latest").pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: {
+                T3CODE_DESKTOP_UPDATE_FEED_URL:
+                  "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+              },
+            }),
+          ),
+        ),
+      );
+
+      assert.deepStrictEqual(nightlyConfig, {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        channel: "nightly",
+      });
+      assert.deepStrictEqual(latestConfig, {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+      });
+    }),
+  );
+
+  it.effect("ignores an invalid generic updater feed URL and uses the GitHub provider", () =>
+    Effect.gen(function* () {
+      const config = yield* resolveGitHubPublishConfig("nightly").pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: {
+                T3CODE_DESKTOP_UPDATE_FEED_URL: "not-a-url",
+                T3CODE_DESKTOP_UPDATE_REPOSITORY: "SergeSerb2/t3-pretty",
+              },
+            }),
+          ),
+        ),
+      );
+
+      assert.deepStrictEqual(config, {
+        provider: "github",
+        owner: "SergeSerb2",
+        repo: "t3-pretty",
         releaseType: "prerelease",
         channel: "nightly",
       });

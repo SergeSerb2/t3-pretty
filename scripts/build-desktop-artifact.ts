@@ -1448,13 +1448,45 @@ export function resolveDesktopRuntimeDependencies(
   return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/desktop");
 }
 
+export function resolveGenericUpdateFeedUrl(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined;
+  } catch {
+    return undefined;
+  }
+
+  // electron-updater resolves channel files with `new URL(file, baseUrl)`. A
+  // base without a trailing slash replaces the last path segment, so
+  // `.../releases/latest/download` + `nightly-mac.yml` would miss `/download/`.
+  return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
+}
+
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
   updateChannel: "latest" | "nightly",
 ) {
   const env = yield* Config.all({
+    updateFeedUrl: Config.string("T3CODE_DESKTOP_UPDATE_FEED_URL").pipe(Config.option),
     updateRepository: Config.string("T3CODE_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
     githubRepository: Config.string("GITHUB_REPOSITORY").pipe(Config.option),
   });
+  // Fork-only nightlies have no GitHub "latest" release, so electron-updater's
+  // GitHub provider 404s on /releases/latest and has to parse the Atom feed.
+  // A generic latest/download URL fetches nightly-mac.yml directly instead.
+  const genericFeedUrl = resolveGenericUpdateFeedUrl(
+    Option.getOrUndefined(env.updateFeedUrl) ?? "",
+  );
+  if (genericFeedUrl) {
+    return {
+      provider: "generic" as const,
+      url: genericFeedUrl,
+      ...(updateChannel === "nightly" ? { channel: "nightly" as const } : {}),
+    };
+  }
+
   const rawRepo = (
     Option.getOrUndefined(env.updateRepository)?.trim() ||
     Option.getOrUndefined(env.githubRepository)?.trim() ||

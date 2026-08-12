@@ -19,8 +19,10 @@ source code on installed machines.
 4. Every sync commits `.t3-fork/upstream-sync-report.md`. It identifies T3 Pretty behavior
    preserved at conflict boundaries, compatible parent behavior integrated there, and every
    parent change intentionally omitted to protect T3 Pretty. Fork-owned parent workflow changes
-   are enumerated as omissions too. The report is copied into the sync pull request and every
-   T3 Pretty desktop release note, so an omission cannot exist only in a transient Actions log.
+   are enumerated as omissions too. The report is copied into the sync pull request, and each
+   desktop GitHub release links to the file at that tag, so an omission cannot exist only in a
+   transient Actions log. The GitHub release body stays short so `electron-updater` does not have
+   to parse a multi-release Atom feed full of the report HTML.
 5. The workflow dispatches the normal fork CI on the result and merges the pull request only after
    every required check passes. It publishes the four required commit statuses with links to that
    exact run because GitHub suppresses normal push-triggered checks for `GITHUB_TOKEN` automation.
@@ -44,9 +46,13 @@ source code on installed machines.
 8. `m1-dev-t3code-fork` builds macOS arm64 and x64. `windows-5080-t3code-fork` builds Windows
    x64. Only trusted `main` commits run on these self-hosted machines; pull requests use GitHub-
    hosted runners.
-9. GitHub publishes a public prerelease with the installers, blockmaps, and `nightly` update
-   manifests. Packaged fork apps point `electron-updater` at
-   `SergeSerb2/t3-pretty`, so no per-machine GitHub token is required.
+9. GitHub publishes a public prerelease marked as latest, with the installers, blockmaps, and
+   both `nightly` and `latest` update manifests. Packaged fork apps use a generic
+   `electron-updater` feed at
+   `https://github.com/SergeSerb2/t3-pretty/releases/latest/download/`, so no per-machine GitHub
+   token is required and the in-app checker does not depend on GitHub's `/releases/latest` API or
+   the Atom feed. Already-installed GitHub-provider builds need one manual install of a release
+   that contains this feed before later updates can be automatic.
 
 Fork versions retain the newest integrated upstream nightly prefix and append a monotonic fork
 build number. This makes personal merges newer than the parent build without pretending that a

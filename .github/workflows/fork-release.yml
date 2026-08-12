@@ -558,6 +558,7 @@ jobs:
         shell: bash
         env:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+          T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
@@ -834,6 +835,7 @@ jobs:
         shell: bash
         env:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+          T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -1063,8 +1065,12 @@ jobs:
           mac_zip="$(find release-assets -maxdepth 1 -name '*.zip' -print -quit)"
           test -n "$mac_zip"
           unzip -p "$mac_zip" '*/Contents/Resources/app-update.yml' > app-update.yml
-          grep -F 'owner: SergeSerb2' app-update.yml
-          grep -F 'repo: t3-pretty' app-update.yml
+          grep -F 'provider: generic' app-update.yml
+          grep -F 'https://github.com/SergeSerb2/t3-pretty/releases/latest/download/' app-update.yml
+          shopt -s nullglob
+          for nightly_manifest in release-assets/nightly*.yml; do
+            cp "$nightly_manifest" "${nightly_manifest/nightly/latest}"
+          done
 
       - name: Publish public GitHub prerelease
         shell: bash
@@ -1091,8 +1097,9 @@ jobs:
               'T3 Pretty build from `%s`.\nIncludes parent T3 Code through `%s` plus all changes merged to T3 Pretty `main`.\n' \
               "$RELEASE_REF" "$UPSTREAM_TAG"
             if [[ -s .t3-fork/upstream-sync-report.md ]]; then
-              printf '\n'
-              cat .t3-fork/upstream-sync-report.md
+              printf \
+                '\nParent integration report: https://github.com/%s/blob/%s/.t3-fork/upstream-sync-report.md\n' \
+                "$GITHUB_REPOSITORY" "$RELEASE_TAG"
             else
               printf '\nNo parent integration report is present for this revision.\n'
             fi
@@ -1103,4 +1110,4 @@ jobs:
             --title "$RELEASE_NAME" \
             --notes-file "$release_notes_path" \
             --prerelease \
-            --latest=false
+            --latest=true
