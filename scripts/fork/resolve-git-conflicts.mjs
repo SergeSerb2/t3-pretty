@@ -12,7 +12,8 @@ const MODEL = process.env.CLI_PROXY_MODEL ?? "gpt-5.6-sol";
 const REASONING_EFFORT = process.env.CLI_PROXY_REASONING_EFFORT ?? "xhigh";
 const SERVICE_TIER = process.env.CLI_PROXY_SERVICE_TIER ?? "priority";
 const MAX_CONFLICTS = 12;
-const MAX_FILE_BYTES = 600_000;
+const MAX_CONFLICT_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_PROMPT_BYTES = 600_000;
 const MAX_EDIT_DISTANCE = 20_000;
 const CONFLICT_PATTERN = /^<<<<<<<[^\n]*\n[\s\S]*?^>>>>>>>[^\n]*(?:\n|$)/gmu;
 const REPORT_PATH = ".t3-fork/upstream-sync-report.md";
@@ -136,6 +137,30 @@ ${conflicts
   .join("\n\n")}`;
 }
 
+export function prepareConflictPrompt({ path, conflictedSource, forkHistory }) {
+  if (Buffer.byteLength(conflictedSource) > MAX_CONFLICT_FILE_BYTES) {
+    throw new Error(`${path} exceeds the ${MAX_CONFLICT_FILE_BYTES}-byte local file limit`);
+  }
+  if (conflictedSource.includes("\0")) {
+    throw new Error(`${path} is binary and cannot be AI-resolved`);
+  }
+  const conflicts = [...conflictedSource.matchAll(CONFLICT_PATTERN)].map((match, index) => ({
+    index,
+    start: match.index,
+    end: match.index + match[0].length,
+    context: contextAround(conflictedSource, match.index, match.index + match[0].length),
+  }));
+  if (conflicts.length === 0) {
+    throw new Error(`${path} did not contain diff3 conflict markers`);
+  }
+
+  const prompt = buildConflictPrompt({ path, conflicts, forkHistory });
+  if (Buffer.byteLength(prompt) > MAX_PROMPT_BYTES) {
+    throw new Error(`${path} exceeds the ${MAX_PROMPT_BYTES}-byte conflict prompt limit`);
+  }
+  return { conflicts, prompt };
+}
+
 function reportList(items, emptyMessage) {
   return items.length > 0 ? items.map((item) => `- ${item}`) : [`- ${emptyMessage}`];
 }
@@ -247,26 +272,10 @@ async function resolveConflict(path, token) {
   }
 
   const conflictedSource = NodeFS.readFileSync(path, "utf8");
-  if (Buffer.byteLength(conflictedSource) > MAX_FILE_BYTES) {
-    throw new Error(`${path} exceeds the ${MAX_FILE_BYTES}-byte resolver limit`);
-  }
-  if (conflictedSource.includes("\0")) {
-    throw new Error(`${path} is binary and cannot be AI-resolved`);
-  }
-  const conflicts = [...conflictedSource.matchAll(CONFLICT_PATTERN)].map((match, index) => ({
-    index,
-    start: match.index,
-    end: match.index + match[0].length,
-    context: contextAround(conflictedSource, match.index, match.index + match[0].length),
-  }));
-  if (conflicts.length === 0) {
-    throw new Error(`${path} did not contain diff3 conflict markers`);
-  }
-
   const previousUpstreamTag = process.env.PREVIOUS_UPSTREAM_TAG?.trim() ?? "";
-  const prompt = buildConflictPrompt({
+  const { conflicts, prompt } = prepareConflictPrompt({
     path,
-    conflicts,
+    conflictedSource,
     forkHistory: forkHistoryForPath(path, previousUpstreamTag),
   });
 

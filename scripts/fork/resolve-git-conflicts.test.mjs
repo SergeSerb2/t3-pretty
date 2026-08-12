@@ -8,6 +8,7 @@ import { assert, describe, it } from "vite-plus/test";
 import {
   buildConflictPrompt,
   formatSyncReport,
+  prepareConflictPrompt,
   readReusedSyncReport,
 } from "./resolve-git-conflicts.mjs";
 
@@ -41,6 +42,65 @@ describe("T3 Pretty upstream conflict resolver", () => {
     assert.include(prompt, "upstream_changes_omitted");
     assert.include(prompt, "fork-owned Expo project and OTA boundary");
     assert.include(prompt, "integrate compatible upstream mobile features");
+  });
+
+  it("allows a large generated file when its conflict prompt remains bounded", () => {
+    const unchangedPrefix = "      unchanged-dependency:\n        version: 1.0.0\n".repeat(18_000);
+    const conflictedSource = `${unchangedPrefix}${"<".repeat(7)} ours
+      '@lezer/highlight':
+        version: 1.2.3
+${"|".repeat(7)} base
+${"=".repeat(7)}
+      '@noble/hashes':
+        version: 1.8.0
+${">".repeat(7)} theirs
+      trailing-dependency:
+        version: 2.0.0
+`;
+
+    assert.isAbove(Buffer.byteLength(conflictedSource), 600_000);
+    const { conflicts, prompt } = prepareConflictPrompt({
+      path: "pnpm-lock.yaml",
+      conflictedSource,
+      forkHistory: "",
+    });
+
+    assert.lengthOf(conflicts, 1);
+    assert.include(prompt, "@lezer/highlight");
+    assert.include(prompt, "@noble/hashes");
+    assert.isBelow(Buffer.byteLength(prompt), 600_000);
+  });
+
+  it("still refuses conflict context that would exceed the model input guard", () => {
+    const conflictedSource = `${"<".repeat(7)} ours
+${"a".repeat(600_000)}
+${"|".repeat(7)} base
+${"=".repeat(7)}
+theirs
+${">".repeat(7)} theirs
+`;
+
+    assert.throws(
+      () =>
+        prepareConflictPrompt({
+          path: "oversized.txt",
+          conflictedSource,
+          forkHistory: "",
+        }),
+      /exceeds the 600000-byte conflict prompt limit/u,
+    );
+  });
+
+  it("still refuses files large enough to risk local conflict processing", () => {
+    assert.throws(
+      () =>
+        prepareConflictPrompt({
+          path: "oversized.txt",
+          conflictedSource: "a".repeat(4 * 1024 * 1024 + 1),
+          forkHistory: "",
+        }),
+      /exceeds the 4194304-byte local file limit/u,
+    );
   });
 
   it("releases synced mobile changes without releasing server-only integrations", () => {
