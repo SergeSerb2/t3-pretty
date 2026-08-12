@@ -100,9 +100,16 @@ export function ControlPillMenu(
   props: Omit<ComponentProps<typeof MenuView>, "children" | "themeVariant"> & {
     readonly children: ReactNode;
     readonly className?: string;
+    readonly disabled?: boolean;
   },
 ) {
   const isDarkMode = useColorScheme() === "dark";
+  // Android's wrapper owns the press (`pointerEvents="none"` on children),
+  // and iOS MenuView intercepts taps on the host view, so a disabled child
+  // pill is not enough — skip the menu host entirely while locked.
+  if (props.disabled) {
+    return props.children;
+  }
 
   if (Platform.OS === "android") {
     // Long-press menus keep their child interactive: the child element gets
@@ -142,7 +149,7 @@ export function ControlPillMenu(
     );
   }
 
-  const { className: _className, ...menuProps } = props;
+  const { className: _className, disabled: _disabled, ...menuProps } = props;
   let children = menuProps.children;
   // In long-press mode the wrapped pressable still receives the touch (the
   // patched MenuView button is touch-transparent) and RN's Fabric touch

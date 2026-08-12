@@ -145,6 +145,8 @@ export function NewTaskDraftScreen(props: {
   const isIncomingShareTransferPending = Boolean(
     incomingShare && cancelledIncomingShareId !== props.incomingShareId,
   );
+  const isDispatching = flow.submitting || pendingPreviews.length > 0;
+  const composerSelectorsLocked = isIncomingShareTransferPending || isDispatching;
   usePreventRemove(
     (isIncomingShareTransferPending && !isProjectPickerReturnActive) || isCancellingShareImport,
     () => undefined,
@@ -560,11 +562,11 @@ export function NewTaskDraftScreen(props: {
       flow.environments.map((environment) => ({
         id: `environment:${environment.environmentId}`,
         title: environment.environmentLabel,
-        attributes: isIncomingShareTransferPending ? { disabled: true } : undefined,
+        attributes: composerSelectorsLocked ? { disabled: true } : undefined,
         state:
           flow.selectedEnvironmentId === environment.environmentId ? ("on" as const) : undefined,
       })),
-    [flow.environments, flow.selectedEnvironmentId, isIncomingShareTransferPending],
+    [composerSelectorsLocked, flow.environments, flow.selectedEnvironmentId],
   );
 
   const providerOptionDescriptors = useMemo(
@@ -662,14 +664,14 @@ export function NewTaskDraftScreen(props: {
     [currentBranchName, flow.selectedBranchName, flow.workspaceMode],
   );
   function handleEnvironmentMenuAction(event: string) {
-    if (isIncomingShareTransferPending || !event.startsWith("environment:")) {
+    if (composerSelectorsLocked || !event.startsWith("environment:")) {
       return;
     }
     flow.selectEnvironment(EnvironmentId.make(event.slice("environment:".length)));
   }
 
   function handleWorkspaceMenuAction(event: string) {
-    if (isIncomingShareTransferPending) {
+    if (composerSelectorsLocked) {
       return;
     }
     if (event.startsWith("workspace:mode:")) {
@@ -692,7 +694,7 @@ export function NewTaskDraftScreen(props: {
   }
 
   async function handlePickImages(): Promise<void> {
-    if (isIncomingShareTransferPending || flow.submitting || pendingPreviews.length > 0) {
+    if (isIncomingShareTransferPending || isDispatching) {
       return;
     }
     try {
@@ -916,7 +918,6 @@ export function NewTaskDraftScreen(props: {
   // The settings sheet dismisses the keyboard, so its flag keeps the Android
   // draft composer expanded through the blur (mirrors ThreadComposer).
   const isExpanded = !isAndroid || isComposerFocused || settingsSheetPresentation.isActive;
-  const isDispatching = flow.submitting || pendingPreviews.length > 0;
   const attachedUris = new Set(flow.attachments.map((image) => image.previewUri));
   const stripAttachments = [
     ...flow.attachments,
@@ -999,22 +1000,24 @@ export function NewTaskDraftScreen(props: {
       />
       <ControlPillMenu
         actions={environmentMenuActions}
+        disabled={composerSelectorsLocked}
         onPressAction={({ nativeEvent }) => handleEnvironmentMenuAction(nativeEvent.event)}
       >
         <ComposerToolbarTrigger
           accessibilityLabel="Environment"
-          disabled={isIncomingShareTransferPending}
+          disabled={composerSelectorsLocked}
           icon="desktopcomputer"
           label={selectedEnvironmentLabel}
         />
       </ControlPillMenu>
       <ControlPillMenu
         actions={workspaceMenuActions}
+        disabled={composerSelectorsLocked}
         onPressAction={({ nativeEvent }) => handleWorkspaceMenuAction(nativeEvent.event)}
       >
         <ComposerToolbarTrigger
           accessibilityLabel="Workspace"
-          disabled={isIncomingShareTransferPending}
+          disabled={composerSelectorsLocked}
           icon="point.topleft.down.curvedto.point.bottomright.up"
           label={workspaceLabel}
         />
