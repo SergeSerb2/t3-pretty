@@ -12,7 +12,8 @@ const MODEL = process.env.CLI_PROXY_MODEL ?? "gpt-5.6-sol";
 const REASONING_EFFORT = process.env.CLI_PROXY_REASONING_EFFORT ?? "xhigh";
 const SERVICE_TIER = process.env.CLI_PROXY_SERVICE_TIER ?? "priority";
 const MAX_CONFLICTS = 12;
-const MAX_FILE_BYTES = 600_000;
+const MAX_CONFLICT_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_PROMPT_BYTES = 600_000;
 const MAX_EDIT_DISTANCE = 20_000;
 const CONFLICT_PATTERN = /^<<<<<<<[^\n]*\n[\s\S]*?^>>>>>>>[^\n]*(?:\n|$)/gmu;
 const REPORT_PATH = ".t3-fork/upstream-sync-report.md";
@@ -37,10 +38,67 @@ function extractResponseText(response) {
   throw new Error("CLIProxyAPI response did not contain output text");
 }
 
-function contextAround(source, start, end) {
-  const before = source.slice(0, start).split("\n").slice(-100).join("\n");
-  const after = source.slice(end).split("\n").slice(0, 100).join("\n");
-  return `${before}\n${source.slice(start, end)}${after}`;
+function contextBounds(source, start, end) {
+  let contextStart = 0;
+  let searchFrom = start;
+  for (let line = 0; line < 100; line += 1) {
+    const newline = source.lastIndexOf("\n", searchFrom - 1);
+    if (newline === -1) break;
+    if (line === 99) contextStart = newline + 1;
+    searchFrom = newline;
+  }
+
+  let contextEnd = source.length;
+  searchFrom = end;
+  for (let line = 0; line < 100; line += 1) {
+    const newline = source.indexOf("\n", searchFrom);
+    if (newline === -1) break;
+    if (line === 99) contextEnd = newline;
+    searchFrom = newline + 1;
+  }
+
+  return { contextStart, contextEnd };
+}
+
+function utf8ByteLengthThrough(source, start, end, maxBytes) {
+  let bytes = 0;
+  for (let index = start; index < end; index += 1) {
+    const codeUnit = source.charCodeAt(index);
+    if (codeUnit <= 0x7f) {
+      bytes += 1;
+    } else if (codeUnit <= 0x7ff) {
+      bytes += 2;
+    } else if (
+      codeUnit >= 0xd800 &&
+      codeUnit <= 0xdbff &&
+      index + 1 < end &&
+      source.charCodeAt(index + 1) >= 0xdc00 &&
+      source.charCodeAt(index + 1) <= 0xdfff
+    ) {
+      bytes += 4;
+      index += 1;
+    } else {
+      bytes += 3;
+    }
+    if (bytes > maxBytes) return bytes;
+  }
+  return bytes;
+}
+
+function contextAround(source, start, end, maxBytes) {
+  const { contextStart, contextEnd } = contextBounds(source, start, end);
+  let byteLength = 1;
+  byteLength += utf8ByteLengthThrough(source, contextStart, start, maxBytes - byteLength);
+  if (byteLength > maxBytes) return undefined;
+  byteLength += utf8ByteLengthThrough(source, start, end, maxBytes - byteLength);
+  if (byteLength > maxBytes) return undefined;
+  byteLength += utf8ByteLengthThrough(source, end, contextEnd, maxBytes - byteLength);
+  if (byteLength > maxBytes) return undefined;
+
+  return {
+    byteLength,
+    context: `${source.slice(contextStart, start)}\n${source.slice(start, end)}${source.slice(end, contextEnd)}`,
+  };
 }
 
 function distanceFromConflict(start, end, conflicts) {
@@ -134,6 +192,45 @@ ${forkHistory || "(No fork-only commit subjects were available; infer intent fro
 ${conflicts
   .map((conflict) => `CONFLICT ${conflict.index} WITH LOCAL CONTEXT:\n${conflict.context}`)
   .join("\n\n")}`;
+}
+
+export function prepareConflictPrompt({ path, conflictedSource, forkHistory }) {
+  if (Buffer.byteLength(conflictedSource) > MAX_CONFLICT_FILE_BYTES) {
+    throw new Error(`${path} exceeds the ${MAX_CONFLICT_FILE_BYTES}-byte local file limit`);
+  }
+  if (conflictedSource.includes("\0")) {
+    throw new Error(`${path} is binary and cannot be AI-resolved`);
+  }
+  const conflicts = [];
+  let prompt = buildConflictPrompt({ path, conflicts, forkHistory });
+  let promptBytes = Buffer.byteLength(prompt);
+  if (promptBytes > MAX_PROMPT_BYTES) {
+    throw new Error(`${path} exceeds the ${MAX_PROMPT_BYTES}-byte conflict prompt limit`);
+  }
+
+  for (const match of conflictedSource.matchAll(CONFLICT_PATTERN)) {
+    const index = conflicts.length;
+    const start = match.index;
+    const end = start + match[0].length;
+    const contextPrefix = `${index === 0 ? "" : "\n\n"}CONFLICT ${index} WITH LOCAL CONTEXT:\n`;
+    const prefixBytes = Buffer.byteLength(contextPrefix);
+    const context = contextAround(
+      conflictedSource,
+      start,
+      end,
+      MAX_PROMPT_BYTES - promptBytes - prefixBytes,
+    );
+    if (context === undefined) {
+      throw new Error(`${path} exceeds the ${MAX_PROMPT_BYTES}-byte conflict prompt limit`);
+    }
+    conflicts.push({ index, start, end, context: context.context });
+    prompt += contextPrefix + context.context;
+    promptBytes += prefixBytes + context.byteLength;
+  }
+  if (conflicts.length === 0) {
+    throw new Error(`${path} did not contain diff3 conflict markers`);
+  }
+  return { conflicts, prompt };
 }
 
 function reportList(items, emptyMessage) {
@@ -247,26 +344,10 @@ async function resolveConflict(path, token) {
   }
 
   const conflictedSource = NodeFS.readFileSync(path, "utf8");
-  if (Buffer.byteLength(conflictedSource) > MAX_FILE_BYTES) {
-    throw new Error(`${path} exceeds the ${MAX_FILE_BYTES}-byte resolver limit`);
-  }
-  if (conflictedSource.includes("\0")) {
-    throw new Error(`${path} is binary and cannot be AI-resolved`);
-  }
-  const conflicts = [...conflictedSource.matchAll(CONFLICT_PATTERN)].map((match, index) => ({
-    index,
-    start: match.index,
-    end: match.index + match[0].length,
-    context: contextAround(conflictedSource, match.index, match.index + match[0].length),
-  }));
-  if (conflicts.length === 0) {
-    throw new Error(`${path} did not contain diff3 conflict markers`);
-  }
-
   const previousUpstreamTag = process.env.PREVIOUS_UPSTREAM_TAG?.trim() ?? "";
-  const prompt = buildConflictPrompt({
+  const { conflicts, prompt } = prepareConflictPrompt({
     path,
-    conflicts,
+    conflictedSource,
     forkHistory: forkHistoryForPath(path, previousUpstreamTag),
   });
 
