@@ -26,6 +26,12 @@ provisioned scoped ingest tokens.
 
 The Worker emits Effect's built-in HTTP server spans plus endpoint and database child spans.
 Effect's OpenTelemetry exporter stores semantic HTTP attributes below the `attributes.` prefix.
+`GET /health` is deliberately a database-independent liveness check: public uptime probes must not
+consume Hyperdrive query quota or turn a database incident into a probe-driven query storm.
+Authenticated environment-status reads share successful results for 90 seconds inside a Worker
+isolate. Every request still verifies its sender-bound DPoP proof; a cache miss also persists replay
+state before reading authorization records. Do not extend that cache-hit exception to connects or
+mutations.
 For example:
 
 ```apl

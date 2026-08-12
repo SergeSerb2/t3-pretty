@@ -23,6 +23,7 @@ import {
   relayDocsRedirectRoute,
   relayEnvironmentAuthLayer,
   relayNotFoundRoute,
+  readDpopAuthenticatedCache,
   revokeEnvironmentLinkRecord,
   serveRelayHttpRequestWith,
   traceRelayHttpRequestWith,
@@ -496,6 +497,37 @@ describe("relay request tracing", () => {
 
       expect(response.status).toBe(200);
       expect(spans).toEqual([]);
+    }),
+  );
+});
+
+describe("relay environment status caching", () => {
+  it.effect("verifies every request but only consumes replay state on a cache miss", () =>
+    Effect.gen(function* () {
+      const calls: Array<string> = [];
+      const cached = yield* readDpopAuthenticatedCache({
+        verify: Effect.sync(() => calls.push("verify")),
+        cached: Effect.succeed(Option.some("cached-status")),
+        consume: Effect.sync(() => calls.push("consume")),
+        load: Effect.sync(() => {
+          calls.push("load");
+          return "loaded-status";
+        }),
+      });
+      expect(cached).toEqual({ value: "cached-status", cacheHit: true });
+      expect(calls).toEqual(["verify"]);
+
+      const missed = yield* readDpopAuthenticatedCache({
+        verify: Effect.sync(() => calls.push("verify")),
+        cached: Effect.succeedNone,
+        consume: Effect.sync(() => calls.push("consume")),
+        load: Effect.sync(() => {
+          calls.push("load");
+          return "loaded-status";
+        }),
+      });
+      expect(missed).toEqual({ value: "loaded-status", cacheHit: false });
+      expect(calls).toEqual(["verify", "verify", "consume", "load"]);
     }),
   );
 });

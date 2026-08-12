@@ -29,6 +29,15 @@ export class DpopProofReplayPersistenceError extends Schema.TaggedErrorClass<Dpo
 export class DpopProofReplay extends Context.Service<
   DpopProofReplay,
   {
+    /** Verify a sender-bound proof without recording its jti. Only safe for read-only cache hits. */
+    readonly verify: (input: {
+      readonly proof: string | undefined;
+      readonly method: string;
+      readonly url: string;
+      readonly expectedThumbprint?: string;
+      readonly expectedAccessToken?: string;
+      readonly now: DateTime.DateTime;
+    }) => Effect.Effect<string, HttpApiError.Unauthorized>;
     readonly verifyAndConsume: (input: {
       readonly proof: string | undefined;
       readonly method: string;
@@ -80,9 +89,9 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const verifyAndConsume: DpopProofReplay["Service"]["verifyAndConsume"] = Effect.fn(
-    "relay.dpop_proofs.verify_and_consume",
-  )(function* (input) {
+  const verify = Effect.fn("relay.dpop_proofs.verify")(function* (
+    input: Parameters<DpopProofReplay["Service"]["verify"]>[0],
+  ) {
     yield* Effect.annotateCurrentSpan({
       "relay.dpop.method": input.method,
       "relay.dpop.expected_thumbprint_present": input.expectedThumbprint !== undefined,
@@ -106,25 +115,35 @@ const make = Effect.gen(function* () {
       });
       return yield* new HttpApiError.Unauthorized({});
     }
-    const consumed = yield* consume({
-      thumbprint: result.thumbprint,
-      jti: result.jti,
-      iat: result.iat,
-      expiresAt: DateTime.add(input.now, { minutes: 5 }),
-    });
-    if (!consumed) {
-      yield* Effect.logWarning("relay dpop proof replay rejected", {
-        thumbprint: result.thumbprint,
-        jti: result.jti,
-        iat: result.iat,
-      });
-      return yield* new HttpApiError.Unauthorized({});
-    }
     yield* Effect.annotateCurrentSpan({
       "relay.dpop.thumbprint": result.thumbprint,
       "relay.dpop.iat": result.iat,
     });
-    return result.thumbprint;
+    return result;
+  });
+
+  const verifyWithoutConsume: DpopProofReplay["Service"]["verify"] = (input) =>
+    verify(input).pipe(Effect.map((result) => result.thumbprint));
+
+  const verifyAndConsume: DpopProofReplay["Service"]["verifyAndConsume"] = Effect.fn(
+    "relay.dpop_proofs.verify_and_consume",
+  )(function* (input) {
+    const verified = yield* verify(input);
+    const consumed = yield* consume({
+      thumbprint: verified.thumbprint,
+      jti: verified.jti,
+      iat: verified.iat,
+      expiresAt: DateTime.add(input.now, { minutes: 5 }),
+    });
+    if (!consumed) {
+      yield* Effect.logWarning("relay dpop proof replay rejected", {
+        thumbprint: verified.thumbprint,
+        jti: verified.jti,
+        iat: verified.iat,
+      });
+      return yield* new HttpApiError.Unauthorized({});
+    }
+    return verified.thumbprint;
   });
 
   const pruneExpired: DpopProofReplay["Service"]["pruneExpired"] = Effect.gen(function* () {
@@ -146,6 +165,7 @@ const make = Effect.gen(function* () {
   }).pipe(Effect.withSpan("relay.dpop_proofs.prune_expired"));
 
   return DpopProofReplay.of({
+    verify: verifyWithoutConsume,
     verifyAndConsume,
     consume,
     pruneExpired,

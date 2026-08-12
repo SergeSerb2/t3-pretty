@@ -1,10 +1,12 @@
 import { createClerkClient, verifyToken } from "@clerk/backend";
-import { sql as drizzleSql } from "drizzle-orm";
+import * as Cache from "effect/Cache";
 import * as Crypto from "effect/Crypto";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Record from "effect/Record";
@@ -165,6 +167,28 @@ export const relayDocsRedirectRoute = HttpRouter.add(
 // contains the exact child span that stalled, and the response still carries
 // the traceparent back to the client.
 export const RELAY_REQUEST_DEADLINE_MS = 9_000;
+export const RELAY_ENVIRONMENT_STATUS_CACHE_TTL = Duration.seconds(90);
+
+export function readDpopAuthenticatedCache<A, E1, R1, E2, R2, E3, R3, E4, R4>(input: {
+  readonly verify: Effect.Effect<unknown, E1, R1>;
+  readonly cached: Effect.Effect<Option.Option<A>, E2, R2>;
+  readonly consume: Effect.Effect<unknown, E3, R3>;
+  readonly load: Effect.Effect<A, E4, R4>;
+}): Effect.Effect<
+  { readonly value: A; readonly cacheHit: boolean },
+  E1 | E2 | E3 | E4,
+  R1 | R2 | R3 | R4
+> {
+  return Effect.gen(function* () {
+    yield* input.verify;
+    const cached = yield* input.cached;
+    if (Option.isSome(cached)) {
+      return { value: cached.value, cacheHit: true };
+    }
+    yield* input.consume;
+    return { value: yield* input.load, cacheHit: false };
+  });
+}
 
 const relayRequestDeadline = <E, R>(
   httpEffect: Effect.Effect<
@@ -406,22 +430,10 @@ export const metadataApi = HttpApiBuilder.group(
 export const healthApi = HttpApiBuilder.group(
   RelayApi,
   "health",
+  // HttpApiBuilder group implementations require Effect's generator callback shape.
+  // eslint-disable-next-line require-yield
   Effect.fnUntraced(function* (handlers) {
-    const db = yield* RelayDb.RelayDb;
-    const checkDatabase = yield* Effect.cachedWithTTL(
-      db.execute(drizzleSql`SELECT 1`),
-      Duration.seconds(2),
-    );
-    return handlers.handle(
-      "health",
-      Effect.fn("relay.api.health")(
-        function* () {
-          yield* checkDatabase;
-          return { ok: true, service: "relay" as const };
-        },
-        Effect.catch(() => relayInternalErrorResponse("database_unavailable")),
-      ),
-    );
+    return handlers.handle("health", () => Effect.succeed({ ok: true, service: "relay" as const }));
   }),
 );
 
@@ -775,6 +787,16 @@ export const dpopClientApi = HttpApiBuilder.group(
   Effect.fnUntraced(function* (handlers) {
     const connector = yield* EnvironmentConnector.EnvironmentConnector;
     const dpopProofs = yield* DpopProofs.DpopProofReplay;
+    type EnvironmentStatusInput = Parameters<typeof connector.status>[0];
+    class EnvironmentStatusCacheKey extends Data.Class<EnvironmentStatusInput> {}
+    const statusCache = yield* Cache.makeWith(
+      (key: EnvironmentStatusCacheKey) => connector.status(key),
+      {
+        capacity: 256,
+        timeToLive: (exit) =>
+          Exit.isSuccess(exit) ? RELAY_ENVIRONMENT_STATUS_CACHE_TTL : Duration.zero,
+      },
+    );
     return handlers
       .handle(
         "connectEnvironment",
@@ -833,13 +855,30 @@ export const dpopClientApi = HttpApiBuilder.group(
             const { params } = args;
             const { userId, token } = yield* RelayClientPrincipal;
             const proofKeyThumbprint = yield* requireDpopPrincipalScope("environment:status");
-            yield* requireDpopThumbprint(proofKeyThumbprint, {
-              expectedAccessToken: token,
-            }).pipe(Effect.provideService(DpopProofs.DpopProofReplay, dpopProofs));
-            return yield* connector.status({
+            const statusInput = {
               userId,
               environmentId: params.environmentId,
+            } satisfies EnvironmentStatusInput;
+            const cacheKey = new EnvironmentStatusCacheKey(statusInput);
+            const status = yield* readDpopAuthenticatedCache({
+              verify: requireDpopThumbprint(proofKeyThumbprint, {
+                expectedAccessToken: token,
+                persistReplay: false,
+              }).pipe(Effect.provideService(DpopProofs.DpopProofReplay, dpopProofs)),
+              cached: Cache.getOption(statusCache, cacheKey),
+              consume: requireDpopThumbprint(proofKeyThumbprint, {
+                expectedAccessToken: token,
+                persistReplay: true,
+              }).pipe(Effect.provideService(DpopProofs.DpopProofReplay, dpopProofs)),
+              load: Cache.get(statusCache, cacheKey),
             });
+            yield* Effect.annotateCurrentSpan({
+              "relay.environment_status.cache_hit": status.cacheHit,
+              "relay.environment_status.cache_ttl_ms": Duration.toMillis(
+                RELAY_ENVIRONMENT_STATUS_CACHE_TTL,
+              ),
+            });
+            return status.value;
           },
           mapRelayCommonApiErrors("invalid_dpop"),
           mapErrorTags({
@@ -1263,6 +1302,7 @@ const requireDpopThumbprint = Effect.fn("relay.api.require_dpop_thumbprint")(fun
   expectedThumbprint: string,
   options?: {
     readonly expectedAccessToken?: string;
+    readonly persistReplay?: boolean;
   },
 ) {
   const request = yield* HttpServerRequest.HttpServerRequest;
@@ -1272,7 +1312,8 @@ const requireDpopThumbprint = Effect.fn("relay.api.require_dpop_thumbprint")(fun
     return yield* new HttpApiError.Unauthorized({});
   }
   const dpopProofs = yield* DpopProofs.DpopProofReplay;
-  return yield* dpopProofs.verifyAndConsume({
+  const verify = options?.persistReplay === false ? dpopProofs.verify : dpopProofs.verifyAndConsume;
+  return yield* verify({
     proof: request.headers.dpop,
     method: request.method,
     url: url.value.href,
