@@ -31,12 +31,19 @@ of reporting a green release that shipped nothing. To activate:
 
 1. Create an Expo account and fork-owned EAS project.
 2. Set repo secret `EXPO_TOKEN`.
-3. Set `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` from a
-   Team App Store Connect API key, plus repo variable `APPLE_TEAM_ID`. The
+3. Set `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` from a Team
+   App Store Connect API key with the Admin role and **Access to Certificates,
+   Identifiers & Profiles** enabled, plus repo variable `APPLE_TEAM_ID`. The
    workflow exposes Expo's supported ASC CI variables so EAS can create or
    repair distribution credentials, and injects the same key into the submit
    profile for deferred TestFlight submission.
-4. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
+4. In App Store Connect, create the iOS app record once (`T3-Pretty`, bundle ID
+   `com.sergeserbinenko.t3pretty`). Apple does not expose new app-record
+   creation through the App Store Connect API.
+5. Run **Bootstrap iOS EAS Credentials** once. After it creates the first Apple
+   Distribution certificate and both provisioning profiles, normal mobile
+   releases are fully non-interactive.
+6. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
    `T3CODE_MOBILE_EAS_PROJECT_ID`, `T3CODE_MOBILE_EXPO_OWNER`,
    optionally `T3CODE_MOBILE_EXPO_SLUG`.
 
