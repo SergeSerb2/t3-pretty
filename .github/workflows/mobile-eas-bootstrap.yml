@@ -3,7 +3,9 @@ name: Bootstrap iOS EAS Credentials
 # One-time helper: EAS deliberately refuses to create the first Apple
 # Distribution certificate in --non-interactive mode. This workflow gives the
 # CLI a pseudo-TTY while authenticating with the repository's ASC API key, then
-# accepts the safe default to generate the initial certificate and profiles.
+# accepts the safe defaults to generate the initial certificate and profiles.
+# The key must be a Team key with Admin role and Certificates, Identifiers &
+# Profiles access enabled in App Store Connect.
 on:
   workflow_dispatch:
 
@@ -91,9 +93,9 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         # `script` supplies the TTY EAS requires for first-time credential
-        # creation. A single newline accepts "Generate a new Apple Distribution
-        # Certificate?" (whose documented/default answer is yes).
+        # creation. A finite input stream avoids `yes` exiting with SIGPIPE and
+        # turning a successful build submission into a failed workflow step.
         run: |
-          printf '\n' | script --return --quiet --command \
-            "eas build --platform ios --profile production --no-wait" \
+          printf '\n%.0s' {1..24} | script --return --quiet --command \
+            "CI=false eas build --platform ios --profile production --no-wait" \
             /dev/null

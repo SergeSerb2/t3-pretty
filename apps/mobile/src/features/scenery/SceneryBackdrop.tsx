@@ -13,15 +13,8 @@
  * (absolute-fill) child; content above it stays untouched.
  */
 import { Image } from "expo-image";
-import { useEffect, useMemo, useState } from "react";
-import {
-  AccessibilityInfo,
-  PixelRatio,
-  StyleSheet,
-  useColorScheme,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { useEffect, useMemo } from "react";
+import { PixelRatio, StyleSheet, useColorScheme, useWindowDimensions, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
 import {
@@ -34,23 +27,7 @@ import {
   type SceneryPhoto,
 } from "./sceneryLogic";
 import { useScenery } from "./SceneryProvider";
-
-/** iOS "Reduce Transparency" — mirrors the web's prefers-reduced-transparency
- *  gate, which disables the photo layer entirely. */
-function useReduceTransparency(): boolean {
-  const [reduceTransparency, setReduceTransparency] = useState(false);
-  useEffect(() => {
-    void AccessibilityInfo.isReduceTransparencyEnabled()
-      .then(setReduceTransparency)
-      .catch(() => undefined);
-    const subscription = AccessibilityInfo.addEventListener(
-      "reduceTransparencyChanged",
-      setReduceTransparency,
-    );
-    return () => subscription.remove();
-  }, []);
-  return reduceTransparency;
-}
+import { useReduceTransparency } from "./useReduceTransparency";
 
 function SceneryGradient(props: { readonly seed: string; readonly opacity?: number }) {
   const pair = gradientPair(props.seed);

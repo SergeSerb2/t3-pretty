@@ -26,7 +26,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { SceneryAttribution } from "../scenery/SceneryAttribution";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
-import { useDailySceneryPhoto } from "../scenery/SceneryProvider";
+import { useDailySceneryPhoto, useSceneryChromeActive } from "../scenery/SceneryProvider";
 
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
@@ -54,6 +54,7 @@ import {
 import {
   buildThreadListV2Items,
   buildThreadListV2ListItems,
+  resolveThreadListV2GlassClusterRole,
   THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   type ThreadListV2ListItem,
@@ -219,6 +220,7 @@ export function HomeScreen(props: HomeScreenProps) {
       ? PRE_LIQUID_GLASS_BOTTOM_TOOLBAR_HEIGHT
       : 0;
   const dailySceneryPhoto = useDailySceneryPhoto();
+  const sceneryChrome = useSceneryChromeActive();
   // Top edge of the zone the lists reserve for the floating bottom toolbar /
   // Android FAB, so the credit pill never overlaps either (web keeps the same
   // clearance for its credits dock).
@@ -741,6 +743,9 @@ export function HomeScreen(props: HomeScreenProps) {
       const showTrailingDivider =
         nextItem?.type === "v2-thread" ||
         (nextItem?.type === "v2-pending" && !nextItem.showPendingDivider);
+      const clusterRole = sceneryChrome
+        ? resolveThreadListV2GlassClusterRole(threadListV2Items, index)
+        : null;
       if (item.type === "v2-pending") {
         const pendingScopeKey = scopedProjectKey(
           item.pendingTask.message.environmentId,
@@ -759,6 +764,7 @@ export function HomeScreen(props: HomeScreenProps) {
             }
             showPendingDivider={item.showPendingDivider}
             showTrailingDivider={showTrailingDivider}
+            sceneryChrome={sceneryChrome}
             onSelectPendingTask={props.onSelectPendingTask}
             onDeletePendingTask={props.onDeletePendingTask}
           />
@@ -770,6 +776,8 @@ export function HomeScreen(props: HomeScreenProps) {
             count={item.count}
             expanded={item.expanded}
             onToggle={toggleSnoozedShelf}
+            sceneryChrome={sceneryChrome}
+            clusterRole={clusterRole}
           />
         );
       }
@@ -779,6 +787,8 @@ export function HomeScreen(props: HomeScreenProps) {
             count={item.count}
             expanded={item.expanded}
             onToggle={toggleSettledShelf}
+            sceneryChrome={sceneryChrome}
+            clusterRole={clusterRole}
           />
         );
       }
@@ -789,6 +799,8 @@ export function HomeScreen(props: HomeScreenProps) {
           variant={item.item.variant}
           snoozed={item.item.snoozed}
           pinned={item.item.pinned}
+          sceneryChrome={sceneryChrome}
+          clusterRole={clusterRole}
           snoozePresetMinute={nowMinute}
           snoozeWakeLabelText={item.snoozeWakeLabelText}
           showTrailingDivider={showTrailingDivider}
@@ -879,6 +891,7 @@ export function HomeScreen(props: HomeScreenProps) {
       v2ProjectTitleByProjectKey,
       props.searchQuery,
       nowMinute,
+      sceneryChrome,
     ],
   );
   const v2KeyExtractor = useCallback((item: ThreadListV2ListItem) => item.key, []);
@@ -1123,7 +1136,11 @@ export function HomeScreen(props: HomeScreenProps) {
                   accessibilityRole="button"
                   accessibilityLabel={`Show ${Math.min(threadListV2Layout.hiddenSettledCount, THREAD_LIST_V2_SETTLED_PAGE_COUNT)} more settled threads`}
                   onPress={showMoreSettled}
-                  className="mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
+                  className={
+                    sceneryChrome
+                      ? "mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
+                      : "mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
+                  }
                   style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
                 >
                   <Text className="text-xs font-t3-medium text-foreground-muted">

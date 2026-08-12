@@ -59,6 +59,25 @@ function withAssetFiles(config) {
 function withAssetWiring(config) {
   return withXcodeProject(config, (cfg) => {
     addWidgetAssetCatalog(cfg.modResults, { targetName: TARGET_NAME });
+
+    const objects = cfg.modResults.hash.project.objects;
+    // expo-widgets currently hardcodes the extension MARKETING_VERSION to 1.0.
+    // App Store validation requires it to match the containing app version.
+    const target = Object.entries(objects.PBXNativeTarget || {}).find(
+      ([key, value]) => !key.endsWith("_comment") && value?.name === TARGET_NAME,
+    )?.[1];
+    const configurationList = target
+      ? objects.XCConfigurationList?.[target.buildConfigurationList]
+      : undefined;
+    if (!configurationList) {
+      throw new Error(`withWidgetLogoAsset: build configurations for "${TARGET_NAME}" not found.`);
+    }
+
+    for (const reference of configurationList.buildConfigurations || []) {
+      const buildConfiguration = objects.XCBuildConfiguration?.[reference.value];
+      if (!buildConfiguration?.buildSettings) continue;
+      buildConfiguration.buildSettings.MARKETING_VERSION = cfg.version;
+    }
     return cfg;
   });
 }

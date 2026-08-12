@@ -15,7 +15,16 @@ import {
   type ComposerTrigger,
 } from "@t3tools/shared/composerTrigger";
 import type { ReactNode } from "react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -149,10 +158,40 @@ export interface ThreadComposerProps {
 const COMPOSER_LAYOUT_TRANSITION =
   Platform.OS === "android" ? undefined : LinearTransition.duration(220);
 
+const COMPOSER_EXPANDED_SURFACE_STYLE: ViewStyle = {
+  borderRadius: 20,
+  overflow: "hidden",
+  paddingHorizontal: 14,
+  paddingVertical: 12,
+};
+
+const COMPOSER_COLLAPSED_SURFACE_STYLE: ViewStyle = {
+  borderRadius: 999,
+  overflow: "hidden",
+  flexDirection: "row",
+  alignItems: "center",
+  paddingLeft: 18,
+  paddingRight: 5,
+  paddingVertical: 5,
+};
+
+const COMPOSER_EXPANDED_EDITOR_STYLE: ViewStyle = {
+  minHeight: 80,
+  maxHeight: 160,
+  paddingHorizontal: 4,
+  paddingVertical: 4,
+};
+
+const COMPOSER_COLLAPSED_EDITOR_STYLE: ViewStyle = {
+  height: 36,
+};
+
 export function ComposerSurface(props: {
   readonly children: ReactNode;
   readonly style: ViewStyle;
   readonly isDarkMode: boolean;
+  /** When false, skip the expand/collapse morph (needed while the editor is focused). */
+  readonly animateLayout?: boolean;
 }) {
   // Drop shadow lives on a wrapper: `overflow: "hidden"` on the surface itself
   // (needed to clip content to the pill shape) would clip the shadow on iOS.
@@ -164,10 +203,11 @@ export function ComposerSurface(props: {
     shadowOffset: { width: 0, height: 6 },
     elevation: 10,
   };
+  const layout = props.animateLayout === false ? undefined : COMPOSER_LAYOUT_TRANSITION;
 
   if (isLiquidGlassSupported) {
     return (
-      <Animated.View layout={COMPOSER_LAYOUT_TRANSITION} style={shadowStyle}>
+      <Animated.View layout={layout} style={shadowStyle}>
         <LiquidGlassView
           effect="regular"
           interactive
@@ -181,7 +221,7 @@ export function ComposerSurface(props: {
   }
 
   return (
-    <Animated.View layout={COMPOSER_LAYOUT_TRANSITION} style={shadowStyle}>
+    <Animated.View layout={layout} style={shadowStyle}>
       <View
         style={[
           props.style,
@@ -296,6 +336,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   });
   const wasExpandedBeforePreviewRef = useRef(false);
   const inFlightThreadIdsRef = useRef(new Set<string>());
+  const wasFocusedRef = useRef(false);
   const { onExpandedChange } = props;
 
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
@@ -399,6 +440,21 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const handleBlur = useCallback(() => {
     setIsFocused(false);
   }, []);
+  const editorTextStyle = useMemo(
+    () => ({
+      ...bodyText,
+      color: foregroundColor,
+    }),
+    [bodyText, foregroundColor],
+  );
+  // Keep the expand/collapse morph on the focus/blur frame, but do not layout-
+  // animate the first-responder's ancestors afterward. Reanimated snapshots
+  // of a focused UITextView reload the iOS 26+ keyboard session.
+  const composerLayoutTransition =
+    isFocused && wasFocusedRef.current ? undefined : COMPOSER_LAYOUT_TRANSITION;
+  useLayoutEffect(() => {
+    wasFocusedRef.current = isFocused;
+  }, [isFocused]);
   const showStopAction =
     props.selectedThread.session?.status === "running" ||
     props.selectedThread.session?.status === "starting";
@@ -646,6 +702,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     [beginPendingPreviews, isDispatching, props.onNativePasteImages],
   );
 
+  // Stable void wrapper: an inline paste handler would rebuild every render and
+  // snapshot the focused native editor, which reloads the iOS keyboard session.
+  const handlePasteImages = useCallback(
+    (uris: ReadonlyArray<string>) => {
+      void handleNativePasteImages(uris);
+    },
+    [handleNativePasteImages],
+  );
+
   const handleSend = useCallback(async () => {
     const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
     if (inFlightThreadIdsRef.current.has(threadKey) || isDispatching) return;
@@ -762,7 +827,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   return (
     <Animated.View
       className="px-4"
-      layout={COMPOSER_LAYOUT_TRANSITION}
+      layout={composerLayoutTransition}
       style={{
         paddingTop: isExpanded ? 8 : 6,
         paddingBottom: (props.bottomInset ?? 0) + (isExpanded ? 8 : 6),
@@ -784,7 +849,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       />
       <Animated.View
         className="relative w-full self-center"
-        layout={COMPOSER_LAYOUT_TRANSITION}
+        layout={composerLayoutTransition}
         style={{ maxWidth: props.contentMaxWidth }}
       >
         {composerTrigger && composerMenuItems.length > 0 ? (
@@ -807,24 +872,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
         <ComposerSurface
           isDarkMode={isDarkMode}
-          style={
-            isExpanded
-              ? {
-                  borderRadius: 20,
-                  overflow: "hidden" as const,
-                  paddingHorizontal: 14,
-                  paddingVertical: 12,
-                }
-              : {
-                  borderRadius: 999,
-                  overflow: "hidden" as const,
-                  flexDirection: "row" as const,
-                  alignItems: "center" as const,
-                  paddingLeft: 18,
-                  paddingRight: 5,
-                  paddingVertical: 5,
-                }
-          }
+          animateLayout={composerLayoutTransition !== undefined}
+          style={isExpanded ? COMPOSER_EXPANDED_SURFACE_STYLE : COMPOSER_COLLAPSED_SURFACE_STYLE}
         >
           {/* Attachment strip — inside the card, above the text input */}
           {isExpanded ? (
@@ -842,16 +891,16 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             </Animated.View>
           ) : null}
 
-          <View className={isExpanded ? undefined : "min-w-0 flex-1"}>
+          <View collapsable={false} className={isExpanded ? undefined : "min-w-0 flex-1"}>
             <ComposerEditor
               ref={inputRef}
               multiline
               value={props.draftMessage}
-              skills={selectedProviderStatus?.skills ?? []}
+              skills={selectedProviderStatus?.skills}
               selection={composerSelection}
               onChangeText={props.onChangeDraftMessage}
               onSelectionChange={handleSelectionChange}
-              onPasteImages={(uris) => void handleNativePasteImages(uris)}
+              onPasteImages={handlePasteImages}
               placeholder={props.placeholder}
               onFocus={handleFocus}
               onBlur={handleBlur}
@@ -861,22 +910,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               // a pill-height box matching the send button; iOS keeps insets.
               singleLineCentered={!isExpanded}
               contentInsetVertical={isExpanded || Platform.OS === "android" ? 0 : 6}
-              style={
-                isExpanded
-                  ? {
-                      minHeight: 80,
-                      maxHeight: 160,
-                      paddingHorizontal: 4,
-                      paddingVertical: 4,
-                    }
-                  : {
-                      height: 36,
-                    }
-              }
-              textStyle={{
-                ...bodyText,
-                color: foregroundColor,
-              }}
+              style={isExpanded ? COMPOSER_EXPANDED_EDITOR_STYLE : COMPOSER_COLLAPSED_EDITOR_STYLE}
+              textStyle={editorTextStyle}
             />
           </View>
           {!isExpanded && stripAttachments.length > 0 ? (
