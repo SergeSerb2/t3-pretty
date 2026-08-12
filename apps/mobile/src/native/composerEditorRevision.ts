@@ -91,3 +91,13 @@ export function pruneAcknowledgedComposerNativeEvents(
   // renders look like selection writes, which reloads the iOS keyboard session.
   return latestAcknowledged === null ? pending : [latestAcknowledged, ...pending];
 }
+
+export function replaceAcknowledgedComposerSnapshot(
+  snapshots: ReadonlyArray<ComposerNativeEventSnapshot>,
+  next: ComposerNativeEventSnapshot,
+): ComposerNativeEventSnapshot[] {
+  // A parent-driven write (thread switch, slash command) applies without a
+  // native event. Replace the acknowledged snapshot so the previous document
+  // cannot be reused as an echo against a different native buffer.
+  return [next, ...snapshots.filter((snapshot) => snapshot.eventCount > next.eventCount)];
+}

@@ -4,6 +4,7 @@ import {
   acknowledgeComposerNativeEvent,
   isComposerNativeEcho,
   pruneAcknowledgedComposerNativeEvents,
+  replaceAcknowledgedComposerSnapshot,
   resolveComposerControlledEventCount,
 } from "./composerEditorRevision";
 
@@ -115,5 +116,26 @@ describe("pruneAcknowledgedComposerNativeEvents", () => {
     const pruned = pruneAcknowledgedComposerNativeEvents(snapshots, 5);
 
     expect(isComposerNativeEcho("abc", { start: 3, end: 3 }, 5, pruned)).toBe(true);
+  });
+});
+
+describe("replaceAcknowledgedComposerSnapshot", () => {
+  it("stops the previous document from echoing after a controlled write", () => {
+    const snapshots = [{ eventCount: 5, value: "hello", selection: { start: 5, end: 5 } }];
+    const next = { eventCount: 5, value: "world", selection: { start: 5, end: 5 } };
+    const replaced = replaceAcknowledgedComposerSnapshot(snapshots, next);
+
+    expect(isComposerNativeEcho("hello", { start: 5, end: 5 }, 5, replaced)).toBe(false);
+    expect(isComposerNativeEcho("world", { start: 5, end: 5 }, 5, replaced)).toBe(true);
+  });
+
+  it("keeps newer native events that have not been acknowledged yet", () => {
+    const snapshots = [
+      { eventCount: 5, value: "hello", selection: { start: 5, end: 5 } },
+      { eventCount: 6, value: "hello!", selection: { start: 6, end: 6 } },
+    ];
+    const next = { eventCount: 5, value: "world", selection: { start: 5, end: 5 } };
+
+    expect(replaceAcknowledgedComposerSnapshot(snapshots, next)).toEqual([next, snapshots[1]]);
   });
 });

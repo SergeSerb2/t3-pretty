@@ -23,6 +23,7 @@ import {
   acknowledgeComposerNativeEvent,
   isComposerNativeEcho,
   pruneAcknowledgedComposerNativeEvents,
+  replaceAcknowledgedComposerSnapshot,
   resolveComposerControlledEventCount,
   type ComposerNativeEventSnapshot,
 } from "./composerEditorRevision";
@@ -176,6 +177,19 @@ export function ComposerEditor({
   // acknowledged snapshot makes parent re-renders keep echoing.
   const isNativeEcho =
     controlledEventCount === mostRecentEventCount && acknowledgesLatestNativeEvent;
+  // Parent-driven writes (thread switch, slash command) apply without a native
+  // event. Advance the retained snapshot so the previous document cannot echo
+  // against a different native buffer.
+  if (!includesNativeEvent && !isNativeEcho) {
+    nativeEventSnapshotsRef.current = replaceAcknowledgedComposerSnapshot(
+      nativeEventSnapshotsRef.current,
+      {
+        eventCount: controlledEventCount,
+        value: props.value,
+        selection: selection ?? null,
+      },
+    );
+  }
   const controlledDocumentJson = JSON.stringify({
     value: props.value,
     selection: isNativeEcho ? null : (selection ?? null),
