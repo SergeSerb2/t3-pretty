@@ -40,6 +40,10 @@ import { setPendingConnectionError } from "../state/use-remote-environment-regis
 import { useSelectedThreadDetail } from "../state/use-thread-detail";
 import { useThreadSelection } from "../state/use-thread-selection";
 import { enqueueThreadOutboxMessage } from "./thread-outbox";
+import {
+  dispatchingQueuedMessageIdAtom,
+  retryingQueuedMessageIdsAtom,
+} from "./use-thread-outbox-drain";
 import { useThreadOutboxMessages } from "./use-thread-outbox";
 
 export function appendReviewCommentToDraft(input: {
@@ -78,6 +82,8 @@ export function useThreadComposerState() {
   const selectedThreadDetail = useSelectedThreadDetail();
   const composerDrafts = useAtomValue(composerDraftsAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
+  const dispatchingQueuedMessageId = useAtomValue(dispatchingQueuedMessageIdAtom);
+  const retryingQueuedMessageIds = useAtomValue(retryingQueuedMessageIdsAtom);
 
   useEffect(() => {
     ensureComposerDraftsLoaded();
@@ -99,6 +105,14 @@ export function useThreadComposerState() {
   const draftMessage = selectedDraft?.text ?? "";
   const draftAttachments = selectedDraft?.attachments ?? [];
   const selectedThreadQueueCount = selectedThreadQueuedMessages.length;
+  const headQueuedMessageId = selectedThreadQueuedMessages[0]?.messageId ?? null;
+  const isDeliveringQueuedMessage =
+    dispatchingQueuedMessageId !== null &&
+    selectedThreadQueuedMessages.some(
+      (message) => message.messageId === dispatchingQueuedMessageId,
+    );
+  const isHeadQueuedMessageRetrying =
+    headQueuedMessageId !== null && retryingQueuedMessageIds[headQueuedMessageId] === true;
   const selectedThread = selectedThreadDetail ?? selectedThreadShell;
   const modelSelection = selectedDraft?.modelSelection ?? selectedThread?.modelSelection ?? null;
   const runtimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
@@ -192,22 +206,30 @@ export function useThreadComposerState() {
     [selectedThreadKey],
   );
 
-  const onPickDraftImages = useCallback(async () => {
-    if (!selectedThreadShell) {
-      return;
-    }
+  const onPickDraftImages = useCallback(
+    async (input?: {
+      readonly onPicked?: (
+        previews: ReadonlyArray<{ readonly id: string; readonly previewUri: string }>,
+      ) => void;
+    }) => {
+      if (!selectedThreadShell) {
+        return;
+      }
 
-    const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
-    const result = await pickComposerImages({
-      existingCount: composerDrafts[threadKey]?.attachments.length ?? 0,
-    });
-    if (result.images.length > 0) {
-      appendComposerDraftAttachments(threadKey, result.images);
-    }
-    if (result.error) {
-      setPendingConnectionError(result.error);
-    }
-  }, [composerDrafts, selectedThreadShell]);
+      const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
+      const result = await pickComposerImages({
+        existingCount: composerDrafts[threadKey]?.attachments.length ?? 0,
+        onPicked: input?.onPicked,
+      });
+      if (result.images.length > 0) {
+        appendComposerDraftAttachments(threadKey, result.images);
+      }
+      if (result.error) {
+        setPendingConnectionError(result.error);
+      }
+    },
+    [composerDrafts, selectedThreadShell],
+  );
 
   const onPasteIntoDraft = useCallback(async () => {
     if (!selectedThreadShell) {
@@ -301,6 +323,9 @@ export function useThreadComposerState() {
   return {
     selectedThreadFeed,
     selectedThreadQueueCount,
+    headQueuedMessageId,
+    isHeadQueuedMessageRetrying,
+    isDeliveringQueuedMessage,
     activeWorkStartedAt,
     draftMessage,
     draftAttachments,

@@ -81,13 +81,20 @@ export interface ThreadDetailScreenProps {
   readonly projectWorkspaceRoot: string | null;
   readonly threadCwd: string | null;
   readonly selectedThreadQueueCount: number;
+  readonly headQueuedMessageId: MessageId | null;
+  readonly isHeadQueuedMessageRetrying: boolean;
+  readonly isDeliveringQueuedMessage: boolean;
   readonly serverConfig: T3ServerConfig | null;
   readonly layoutVariant?: LayoutVariant;
   readonly usesAutomaticContentInsets?: boolean;
   readonly onHeaderMaterialVisibilityChange?: (visible: boolean) => void;
   readonly onOpenConnectionEditor: () => void;
   readonly onChangeDraftMessage: (value: string) => void;
-  readonly onPickDraftImages: () => Promise<void>;
+  readonly onPickDraftImages: (input?: {
+    readonly onPicked?: (
+      previews: ReadonlyArray<{ readonly id: string; readonly previewUri: string }>,
+    ) => void;
+  }) => Promise<void>;
   readonly onNativePasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
@@ -456,6 +463,9 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
               selectedThread={props.selectedThread}
               serverConfig={props.serverConfig}
               queueCount={props.selectedThreadQueueCount}
+              headQueuedMessageId={props.headQueuedMessageId}
+              isHeadQueuedMessageRetrying={props.isHeadQueuedMessageRetrying}
+              isDeliveringQueuedMessage={props.isDeliveringQueuedMessage}
               activeThreadBusy={props.activeThreadBusy}
               environmentId={props.environmentId}
               projectCwd={props.projectWorkspaceRoot}

@@ -16,7 +16,10 @@ import ImageViewing from "react-native-image-viewing";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
-import { ComposerAttachmentStrip } from "../../components/ComposerAttachmentStrip";
+import {
+  ComposerAttachmentStrip,
+  type ComposerAttachmentPreview,
+} from "../../components/ComposerAttachmentStrip";
 import { ControlPill } from "../../components/ControlPill";
 import { cn } from "../../lib/cn";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
@@ -62,7 +65,11 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
     Record<string, ReadonlyArray<ReviewHighlightedToken>>
   >({});
   const [attachments, setAttachments] = useState<ReadonlyArray<DraftComposerImageAttachment>>([]);
+  const [pendingPreviews, setPendingPreviews] = useState<ReadonlyArray<ComposerAttachmentPreview>>(
+    [],
+  );
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
+  const isPreparingImages = pendingPreviews.length > 0;
 
   const selectedLines = useMemo(
     () => (target ? getSelectedReviewCommentLines(target) : []),
@@ -74,7 +81,11 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
   const lastNumber = lastLine ? getReviewUnifiedLineNumber(lastLine) : null;
   const selectedTheme = (colorScheme === "dark" ? "dark" : "light") satisfies ReviewDiffTheme;
   const canSubmit =
-    commentText.trim().length > 0 && target !== null && !!environmentId && !!threadId;
+    commentText.trim().length > 0 &&
+    target !== null &&
+    !!environmentId &&
+    !!threadId &&
+    !isPreparingImages;
   const selectionLabel =
     selectedLines.length === 1
       ? firstNumber !== null
@@ -93,7 +104,17 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
     navigation.goBack();
   }, [navigation]);
   const handleNativePaste = useNativePaste((uris) => {
+    if (uris.length === 0 || isPreparingImages) {
+      return;
+    }
     void (async () => {
+      setPendingPreviews(
+        uris.map((uri, index) => ({
+          id: `pending:${index}:${uri}`,
+          previewUri: uri,
+          preparing: true,
+        })),
+      );
       try {
         const images = await convertPastedImagesToAttachments({
           uris,
@@ -104,6 +125,8 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
         }
       } catch (error) {
         console.error("[review comment] error converting pasted images", error);
+      } finally {
+        setPendingPreviews([]);
       }
     })();
   });
@@ -137,17 +160,34 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
   }, [selectedLines, selectedTheme, target]);
 
   async function handlePickImages(): Promise<void> {
-    const result = await pickComposerImages({ existingCount: attachments.length });
-    if (result.images.length > 0) {
-      setAttachments((current) => [...current, ...result.images]);
+    if (isPreparingImages) {
+      return;
     }
-    if (result.error) {
-      setPendingConnectionError(result.error);
+    try {
+      const result = await pickComposerImages({
+        existingCount: attachments.length,
+        onPicked: (previews) =>
+          setPendingPreviews(previews.map((preview) => ({ ...preview, preparing: true }))),
+      });
+      if (result.images.length > 0) {
+        setAttachments((current) => [...current, ...result.images]);
+      }
+      if (result.error) {
+        setPendingConnectionError(result.error);
+      }
+    } finally {
+      setPendingPreviews([]);
     }
   }
 
   const handleSubmit = useCallback(() => {
-    if (!target || !environmentId || !threadId || commentText.trim().length === 0) {
+    if (
+      !target ||
+      !environmentId ||
+      !threadId ||
+      commentText.trim().length === 0 ||
+      isPreparingImages
+    ) {
       return;
     }
 
@@ -159,7 +199,15 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
     });
     setAttachments([]);
     dismissComposer();
-  }, [attachments, commentText, dismissComposer, environmentId, target, threadId]);
+  }, [
+    attachments,
+    commentText,
+    dismissComposer,
+    environmentId,
+    isPreparingImages,
+    target,
+    threadId,
+  ]);
 
   return (
     <View className="flex-1">
@@ -271,10 +319,16 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
                       />
                     </TextInputWrapper>
                   </View>
-                  {attachments.length > 0 ? (
+                  {attachments.length > 0 || pendingPreviews.length > 0 ? (
                     <View className="px-4 pb-3 pt-2">
                       <ComposerAttachmentStrip
-                        attachments={attachments}
+                        attachments={[
+                          ...attachments,
+                          ...pendingPreviews.filter(
+                            (preview) =>
+                              !attachments.some((image) => image.previewUri === preview.previewUri),
+                          ),
+                        ]}
                         imageBorderRadius={16}
                         imageSize={60}
                         onPressImage={setPreviewImageUri}
@@ -297,6 +351,7 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
             <ControlPill
               accessibilityLabel="Add image"
               icon="plus"
+              disabled={isPreparingImages}
               onPress={() => void handlePickImages()}
             />
             <View className="flex-1" />
@@ -306,6 +361,7 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
               label="Comment"
               variant="primary"
               disabled={!canSubmit}
+              loading={isPreparingImages}
               onPress={handleSubmit}
             />
           </View>
@@ -323,6 +379,7 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
             <ControlPill
               accessibilityLabel="Add image"
               icon="plus"
+              disabled={isPreparingImages}
               onPress={() => void handlePickImages()}
             />
             <View className="flex-1" />
@@ -332,6 +389,7 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
               label="Comment"
               variant="primary"
               disabled={!canSubmit}
+              loading={isPreparingImages}
               onPress={handleSubmit}
             />
           </View>

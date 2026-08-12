@@ -7,13 +7,14 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { Platform, Pressable, useColorScheme, View } from "react-native";
+import { Platform, Pressable, useColorScheme } from "react-native";
 import { useThemeColor } from "../lib/useThemeColor";
 
 import { cn } from "../lib/cn";
 import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu";
 import { SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
+import { ComposerSendIconSlot } from "./ComposerSendIndicator";
 
 export function ControlPill(props: {
   readonly icon?: ComponentProps<typeof SymbolView>["name"];
@@ -23,8 +24,12 @@ export function ControlPill(props: {
   readonly onPress?: () => void;
   readonly variant?: "circle" | "pill" | "primary" | "danger";
   readonly disabled?: boolean;
+  /** In-flight send: keep the primary fill and swap the icon for a spinner. */
+  readonly loading?: boolean;
 }) {
   const variant = props.variant ?? "circle";
+  const isLoading = props.loading === true;
+  const showDisabledChrome = props.disabled === true && !isLoading;
 
   const iconColor = useThemeColor("--color-icon");
   const iconSubtle = useThemeColor("--color-icon-subtle");
@@ -32,7 +37,7 @@ export function ControlPill(props: {
   const dangerFg = useThemeColor("--color-danger-foreground");
   const iconTintColor =
     variant === "primary"
-      ? props.disabled
+      ? showDisabledChrome
         ? iconSubtle
         : primaryFg
       : variant === "danger"
@@ -48,7 +53,7 @@ export function ControlPill(props: {
         ? "h-11 flex-row items-center justify-center gap-2 rounded-full px-5"
         : "h-11 flex-row items-center justify-center gap-2 rounded-full px-3.5",
     variant === "primary"
-      ? props.disabled
+      ? showDisabledChrome
         ? "bg-subtle-strong"
         : "bg-primary"
       : variant === "danger"
@@ -58,7 +63,7 @@ export function ControlPill(props: {
   const labelClassName = cn(
     "text-center text-xs font-t3-bold",
     variant === "primary"
-      ? props.disabled
+      ? showDisabledChrome
         ? "text-foreground-muted"
         : "text-primary-foreground"
       : "",
@@ -68,14 +73,19 @@ export function ControlPill(props: {
     <Pressable
       accessibilityLabel={props.accessibilityLabel ?? props.label}
       accessibilityRole="button"
+      accessibilityState={{ disabled: props.disabled === true, busy: isLoading }}
       onPress={props.onPress}
-      disabled={props.disabled}
+      disabled={props.disabled || isLoading}
       className={containerClassName}
     >
-      {props.iconNode ? (
-        <View className="h-4 w-4 items-center justify-center">{props.iconNode}</View>
-      ) : props.icon ? (
-        <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />
+      {props.iconNode || props.icon || isLoading ? (
+        <ComposerSendIconSlot loading={isLoading} color={String(iconTintColor)}>
+          {props.iconNode ? (
+            props.iconNode
+          ) : props.icon ? (
+            <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />
+          ) : null}
+        </ComposerSendIconSlot>
       ) : null}
       {props.label ? <Text className={labelClassName}>{props.label}</Text> : null}
     </Pressable>
@@ -90,9 +100,16 @@ export function ControlPillMenu(
   props: Omit<ComponentProps<typeof MenuView>, "children" | "themeVariant"> & {
     readonly children: ReactNode;
     readonly className?: string;
+    readonly disabled?: boolean;
   },
 ) {
   const isDarkMode = useColorScheme() === "dark";
+  // Android's wrapper owns the press (`pointerEvents="none"` on children),
+  // and iOS MenuView intercepts taps on the host view, so a disabled child
+  // pill is not enough — skip the menu host entirely while locked.
+  if (props.disabled) {
+    return props.children;
+  }
 
   if (Platform.OS === "android") {
     // Long-press menus keep their child interactive: the child element gets
@@ -132,7 +149,7 @@ export function ControlPillMenu(
     );
   }
 
-  const { className: _className, ...menuProps } = props;
+  const { className: _className, disabled: _disabled, ...menuProps } = props;
   let children = menuProps.children;
   // In long-press mode the wrapped pressable still receives the touch (the
   // patched MenuView button is touch-transparent) and RN's Fabric touch

@@ -16,6 +16,7 @@ import { useThemeColor } from "../lib/useThemeColor";
 import { cn } from "../lib/cn";
 import { AppText as Text } from "./AppText";
 import { SymbolView } from "./AppSymbol";
+import { ComposerSendIconSlot } from "./ComposerSendIndicator";
 
 export const COMPOSER_TOOLBAR_CONTROL_HEIGHT = 44;
 export const COMPOSER_TOOLBAR_GAP = 8;
@@ -142,6 +143,8 @@ export function ComposerToolbarButton(props: {
   readonly accessibilityLabel?: string;
   readonly active?: boolean;
   readonly disabled?: boolean;
+  /** In-flight send: keep the primary fill and swap the icon for a spinner. */
+  readonly loading?: boolean;
   readonly maxWidth?: number;
   readonly minWidth?: number;
   readonly onPress?: () => void;
@@ -157,18 +160,20 @@ export function ComposerToolbarButton(props: {
   const primaryFg = useThemeColor("--color-primary-foreground");
   const dangerFg = useThemeColor("--color-danger-foreground");
   const variant = props.variant ?? "default";
+  const isLoading = props.loading === true;
+  const showDisabledChrome = props.disabled === true && !isLoading;
   const isCircle = !props.label && props.showChevron === false;
   const defaultBorderColor = isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
   const activeBorderColor = isDarkMode ? "rgba(255,255,255,0.13)" : "rgba(0,0,0,0.1)";
   const filledBorderColor =
     variant === "danger"
       ? "rgba(255,255,255,0.14)"
-      : props.disabled
+      : showDisabledChrome
         ? defaultBorderColor
         : "rgba(255,255,255,0.18)";
   const iconTintColor =
     variant === "primary"
-      ? props.disabled
+      ? showDisabledChrome
         ? iconSubtle
         : primaryFg
       : variant === "danger"
@@ -179,7 +184,8 @@ export function ComposerToolbarButton(props: {
     <Pressable
       accessibilityLabel={props.accessibilityLabel ?? props.label}
       accessibilityRole="button"
-      disabled={props.disabled}
+      accessibilityState={{ disabled: props.disabled === true, busy: isLoading }}
+      disabled={props.disabled || isLoading}
       onPress={props.onPress}
       className={cn(
         // Default width cap lives in the class chain (not the inline style)
@@ -189,7 +195,7 @@ export function ComposerToolbarButton(props: {
         "h-11 max-w-[172px] flex-row items-center justify-center rounded-full active:opacity-70",
         isCircle ? "w-11" : "gap-2 px-3.5",
         variant === "primary"
-          ? props.disabled
+          ? showDisabledChrome
             ? "bg-subtle-strong"
             : "bg-primary"
           : variant === "danger"
@@ -210,26 +216,30 @@ export function ComposerToolbarButton(props: {
           borderWidth: 1,
           maxWidth: props.maxWidth,
           minWidth: props.minWidth,
-          opacity: props.disabled ? 0.55 : pressed ? 0.72 : 1,
+          opacity: showDisabledChrome ? 0.55 : pressed ? 0.72 : 1,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: isDarkMode ? 3 : 2 },
-          shadowOpacity: props.disabled ? 0 : isDarkMode ? 0.24 : 0.08,
+          shadowOpacity: showDisabledChrome ? 0 : isDarkMode ? 0.24 : 0.08,
           shadowRadius: isDarkMode ? 10 : 8,
         },
         props.style,
       ]}
     >
-      {props.iconNode ? (
-        <View className="h-4 w-4 items-center justify-center">{props.iconNode}</View>
-      ) : props.icon ? (
-        <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />
+      {props.iconNode || props.icon || isLoading ? (
+        <ComposerSendIconSlot loading={isLoading} color={String(iconTintColor)}>
+          {props.iconNode ? (
+            props.iconNode
+          ) : props.icon ? (
+            <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />
+          ) : null}
+        </ComposerSendIconSlot>
       ) : null}
       {props.label ? (
         <Text
           className={cn(
             "shrink text-center text-sm font-t3-bold",
             variant === "primary"
-              ? props.disabled
+              ? showDisabledChrome
                 ? "text-foreground-muted"
                 : "text-primary-foreground"
               : "text-foreground",
@@ -241,7 +251,7 @@ export function ComposerToolbarButton(props: {
           {props.label}
         </Text>
       ) : null}
-      {props.showChevron === false ? null : (
+      {isLoading || props.showChevron === false ? null : (
         <SymbolView name="chevron.down" size={11} tintColor={iconTintColor} type="monochrome" />
       )}
     </Pressable>

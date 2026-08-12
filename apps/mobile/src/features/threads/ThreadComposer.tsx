@@ -27,7 +27,6 @@ import {
 } from "react";
 import {
   ActivityIndicator,
-  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -48,7 +47,17 @@ import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/re
 import { scopedThreadKey } from "../../lib/scopedEntities";
 
 import { AppText as Text } from "../../components/AppText";
-import { ComposerAttachmentStrip } from "../../components/ComposerAttachmentStrip";
+import {
+  ComposerAttachmentStrip,
+  ComposerAttachmentThumb,
+  ComposerDispatchStatusLabel,
+  type ComposerAttachmentPreview,
+} from "../../components/ComposerAttachmentStrip";
+import {
+  composerDispatchStatusLabel,
+  shouldKeepLocalComposerSendBusy,
+} from "../../lib/composerDispatchStatus";
+import { COMPOSER_SEND_INDICATOR_MIN_MS } from "../../components/ComposerSendIndicator";
 import {
   ComposerEditor,
   type ComposerEditorHandle,
@@ -111,12 +120,19 @@ export interface ThreadComposerProps {
   readonly selectedThread: OrchestrationThreadShell;
   readonly serverConfig: T3ServerConfig | null;
   readonly queueCount: number;
+  readonly headQueuedMessageId: MessageId | null;
+  readonly isHeadQueuedMessageRetrying: boolean;
+  readonly isDeliveringQueuedMessage: boolean;
   readonly activeThreadBusy: boolean;
   readonly environmentId: EnvironmentId;
   readonly projectCwd: string | null;
   readonly editorRef?: RefObject<ComposerEditorHandle | null>;
   readonly onChangeDraftMessage: (value: string) => void;
-  readonly onPickDraftImages: () => Promise<void>;
+  readonly onPickDraftImages: (input?: {
+    readonly onPicked?: (
+      previews: ReadonlyArray<{ readonly id: string; readonly previewUri: string }>,
+    ) => void;
+  }) => Promise<void>;
   readonly onNativePasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
@@ -324,11 +340,76 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const { onExpandedChange } = props;
 
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  const [inFlightMessageId, setInFlightMessageId] = useState<MessageId | null>(null);
+  const [pendingPreviews, setPendingPreviews] = useState<ReadonlyArray<ComposerAttachmentPreview>>(
+    [],
+  );
+  const sendStartedAtRef = useRef(0);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
   // Opening and closing count as active so the composer stays expanded while
   // focus moves between its native editor and the settings modal.
   const isExpanded = isFocused || settingsSheetPresentation.isActive;
+  const isDispatching = isSending || pendingPreviews.length > 0 || props.isDeliveringQueuedMessage;
   const canSend = hasContent;
+  const stripAttachments = useMemo((): ComposerAttachmentPreview[] => {
+    const attachedUris = new Set(props.draftAttachments.map((image) => image.previewUri));
+    return [
+      ...props.draftAttachments,
+      ...pendingPreviews.filter((preview) => !attachedUris.has(preview.previewUri)),
+    ];
+  }, [pendingPreviews, props.draftAttachments]);
+  const dispatchStatus = composerDispatchStatusLabel(
+    pendingPreviews.length > 0
+      ? { kind: "preparing-images", count: pendingPreviews.length }
+      : isSending || props.isDeliveringQueuedMessage
+        ? {
+            kind: "sending",
+            creatingThread: false,
+            connected: props.connectionState === "connected",
+          }
+        : { kind: "idle" },
+  );
+
+  useEffect(() => {
+    if (!isSending) {
+      return;
+    }
+    if (
+      shouldKeepLocalComposerSendBusy({
+        isDeliveringQueuedMessage: props.isDeliveringQueuedMessage,
+        isAwaitingEnqueue: inFlightMessageId === null,
+        connected: props.connectionState === "connected",
+        threadBusy: props.activeThreadBusy,
+        isNextInQueue: props.headQueuedMessageId === inFlightMessageId,
+        isWaitingForRetry:
+          inFlightMessageId !== null &&
+          props.isHeadQueuedMessageRetrying &&
+          props.headQueuedMessageId === inFlightMessageId,
+      })
+    ) {
+      return;
+    }
+    const remainingMs = Math.max(
+      0,
+      COMPOSER_SEND_INDICATOR_MIN_MS - (Date.now() - sendStartedAtRef.current),
+    );
+    const release = setTimeout(() => {
+      setIsSending(false);
+      setInFlightMessageId(null);
+    }, remainingMs);
+    return () => {
+      clearTimeout(release);
+    };
+  }, [
+    inFlightMessageId,
+    isSending,
+    props.activeThreadBusy,
+    props.connectionState,
+    props.headQueuedMessageId,
+    props.isDeliveringQueuedMessage,
+    props.isHeadQueuedMessageRetrying,
+  ]);
 
   // Notify the parent from the derived value, not focus events: the parent
   // sizes the feed inset from this, and blur-during-sheet would otherwise
@@ -359,12 +440,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const handleBlur = useCallback(() => {
     setIsFocused(false);
   }, []);
-  const handlePasteImages = useCallback(
-    (uris: ReadonlyArray<string>) => {
-      void props.onNativePasteImages(uris);
-    },
-    [props.onNativePasteImages],
-  );
   const editorTextStyle = useMemo(
     () => ({
       ...bodyText,
@@ -589,12 +664,67 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   // ── Handle command selection ──────────────────────────────
   const { onChangeDraftMessage, onUpdateInteractionMode, draftMessage, onSendMessage } = props;
 
+  const beginPendingPreviews = useCallback(
+    (previews: ReadonlyArray<{ readonly id: string; readonly previewUri: string }>) => {
+      setPendingPreviews(previews.map((preview) => ({ ...preview, preparing: true })));
+    },
+    [],
+  );
+
+  const handlePickDraftImages = useCallback(async () => {
+    if (isDispatching) {
+      return;
+    }
+    try {
+      await props.onPickDraftImages({ onPicked: beginPendingPreviews });
+    } finally {
+      setPendingPreviews([]);
+    }
+  }, [beginPendingPreviews, isDispatching, props.onPickDraftImages]);
+
+  const handleNativePasteImages = useCallback(
+    async (uris: ReadonlyArray<string>) => {
+      if (uris.length === 0 || isDispatching) {
+        return;
+      }
+      beginPendingPreviews(
+        uris.map((uri, index) => ({
+          id: `pending:${index}:${uri}`,
+          previewUri: uri,
+        })),
+      );
+      try {
+        await props.onNativePasteImages(uris);
+      } finally {
+        setPendingPreviews([]);
+      }
+    },
+    [beginPendingPreviews, isDispatching, props.onNativePasteImages],
+  );
+
+  // Stable void wrapper: an inline paste handler would rebuild every render and
+  // snapshot the focused native editor, which reloads the iOS keyboard session.
+  const handlePasteImages = useCallback(
+    (uris: ReadonlyArray<string>) => {
+      void handleNativePasteImages(uris);
+    },
+    [handleNativePasteImages],
+  );
+
   const handleSend = useCallback(async () => {
     const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
-    if (inFlightThreadIdsRef.current.has(threadKey)) return;
+    if (inFlightThreadIdsRef.current.has(threadKey) || isDispatching) return;
     inFlightThreadIdsRef.current.add(threadKey);
+    sendStartedAtRef.current = Date.now();
+    setIsSending(true);
     try {
-      await onSendMessage();
+      const messageId = await onSendMessage();
+      if (messageId === null) {
+        setIsSending(false);
+        setInFlightMessageId(null);
+        return;
+      }
+      setInFlightMessageId(messageId);
       // Sending a prompt starts agent work: arm the lock-screen card while the
       // app is foregrounded and the activity token can be registered. Armed
       // after the send so its preference read and native Activity start don't
@@ -607,6 +737,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       inFlightThreadIdsRef.current.delete(threadKey);
     }
   }, [
+    isDispatching,
     onSendMessage,
     props.environmentId,
     props.environmentLabel,
@@ -752,7 +883,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               exiting={FadeOut.duration(120)}
             >
               <ComposerAttachmentStrip
-                attachments={props.draftAttachments}
+                attachments={stripAttachments}
+                busy={isSending && props.draftAttachments.length > 0}
                 onRemove={props.onRemoveDraftImage}
                 onPressImage={onPressImage}
               />
@@ -782,21 +914,27 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               textStyle={editorTextStyle}
             />
           </View>
-          {!isExpanded && props.draftAttachments.length > 0 ? (
+          {!isExpanded && stripAttachments.length > 0 ? (
             <View className="flex-row gap-1 pl-1">
-              {props.draftAttachments.slice(0, 3).map((image) => (
-                <Pressable key={image.id} onPress={() => onPressImage(image.previewUri)}>
-                  <Image
-                    source={{ uri: image.previewUri }}
-                    className="size-[30px] rounded-lg bg-subtle"
-                    resizeMode="cover"
-                  />
-                </Pressable>
+              {stripAttachments.slice(0, 3).map((image) => (
+                <ComposerAttachmentThumb
+                  key={image.id}
+                  previewUri={image.previewUri}
+                  size={30}
+                  borderRadius={8}
+                  backgroundColor={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}
+                  preparing={isDispatching || image.preparing === true}
+                  onPress={
+                    isDispatching || image.preparing === true
+                      ? undefined
+                      : () => onPressImage(image.previewUri)
+                  }
+                />
               ))}
-              {props.draftAttachments.length > 3 ? (
+              {stripAttachments.length > 3 ? (
                 <View className="size-[30px] items-center justify-center rounded-lg bg-subtle-strong">
                   <Text className="text-foreground-muted text-2xs font-t3-bold">
-                    +{props.draftAttachments.length - 3}
+                    +{stripAttachments.length - 3}
                   </Text>
                 </View>
               ) : null}
@@ -810,7 +948,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 <ControlPill
                   icon="arrow.up"
                   variant="primary"
-                  disabled={!canSend}
+                  disabled={!canSend && !isDispatching}
+                  loading={isDispatching}
                   onPress={handleSend}
                 />
               )}
@@ -829,7 +968,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 <ComposerToolbarButton
                   accessibilityLabel="Add attachment"
                   icon="plus"
-                  onPress={() => void props.onPickDraftImages()}
+                  disabled={isDispatching}
+                  onPress={() => void handlePickDraftImages()}
                   showChevron={false}
                 />
                 <ComposerToolbarTrigger
@@ -852,16 +992,19 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 ) : null}
               </ComposerToolbarScroller>
               <ComposerToolbarButton
-                accessibilityLabel={sendLabel}
+                accessibilityLabel={isDispatching ? (dispatchStatus ?? "Sending") : sendLabel}
                 icon="arrow.up"
                 variant="primary"
-                disabled={!canSend}
+                disabled={!canSend && !isDispatching}
+                loading={isDispatching}
                 onPress={handleSend}
                 showChevron={false}
               />
             </ComposerToolbarRow>
           </Animated.View>
         ) : null}
+
+        {dispatchStatus ? <ComposerDispatchStatusLabel label={dispatchStatus} /> : null}
 
         {/* Queue count */}
         {props.queueCount > 0 ? (

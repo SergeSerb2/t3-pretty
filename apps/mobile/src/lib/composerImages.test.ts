@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
 
 const files = new Map<string, { base64: string; deleted: boolean }>();
+let base64Barrier: Promise<void> | null = null;
+const launchImageLibraryAsync = vi.fn();
 
 vi.mock("expo-file-system", () => ({
   File: class {
@@ -16,6 +18,9 @@ vi.mock("expo-file-system", () => ({
     }
 
     async base64(): Promise<string> {
+      if (base64Barrier) {
+        await base64Barrier;
+      }
       const entry = files.get(this.uri);
       if (!entry || entry.deleted) {
         throw new Error("missing file");
@@ -32,6 +37,10 @@ vi.mock("expo-file-system", () => ({
   },
 }));
 
+vi.mock("expo-image-picker", () => ({
+  launchImageLibraryAsync: (...args: unknown[]) => launchImageLibraryAsync(...args),
+}));
+
 vi.mock("./uuid", () => ({
   uuidv4: () => "attachment-id",
 }));
@@ -39,6 +48,7 @@ vi.mock("./uuid", () => ({
 import {
   convertPastedImagesToAttachments,
   isOwnedPastedImageUri,
+  pickComposerImages,
   toUploadChatImageAttachments,
 } from "./composerImages";
 
@@ -120,5 +130,59 @@ describe("native pasted image cleanup", () => {
     expect(files.get(rejected)?.deleted).toBe(true);
     expect(files.get(overflow)?.deleted).toBe(true);
     expect(files.get(userOwned)?.deleted).toBe(false);
+  });
+});
+
+describe("pickComposerImages", () => {
+  beforeEach(() => {
+    files.clear();
+    base64Barrier = null;
+    launchImageLibraryAsync.mockReset();
+  });
+
+  it("does not ask the picker to encode base64 up front", async () => {
+    launchImageLibraryAsync.mockResolvedValue({ canceled: true, assets: [] });
+
+    await pickComposerImages({ existingCount: 0 });
+
+    expect(launchImageLibraryAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allowsMultipleSelection: true,
+        quality: 1,
+      }),
+    );
+    expect(launchImageLibraryAsync.mock.calls[0]?.[0]).not.toHaveProperty("base64");
+  });
+
+  it("reports local previews before image bytes are encoded", async () => {
+    const uri = "file:///tmp/photo.jpg";
+    files.set(uri, { base64: "aGVsbG8=", deleted: false });
+    let releaseBase64!: () => void;
+    base64Barrier = new Promise<void>((resolve) => {
+      releaseBase64 = resolve;
+    });
+    launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri, fileName: "photo.jpg", mimeType: "image/jpeg", fileSize: 6 }],
+    });
+    const onPicked = vi.fn();
+
+    const pending = pickComposerImages({ existingCount: 0, onPicked });
+    await vi.waitFor(() => {
+      expect(onPicked).toHaveBeenCalledWith([{ id: `picking:0:${uri}`, previewUri: uri }]);
+    });
+
+    releaseBase64();
+    await expect(pending).resolves.toEqual({
+      images: [
+        expect.objectContaining({
+          name: "photo.jpg",
+          mimeType: "image/jpeg",
+          dataUrl: "data:image/jpeg;base64,aGVsbG8=",
+          previewUri: uri,
+        }),
+      ],
+      error: null,
+    });
   });
 });

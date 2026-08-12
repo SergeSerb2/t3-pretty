@@ -42,7 +42,16 @@ async function loadClipboard() {
   }
 }
 
-export async function pickComposerImages(input: { readonly existingCount: number }): Promise<{
+export async function pickComposerImages(input: {
+  readonly existingCount: number;
+  /**
+   * Fired after the picker returns assets, before those files are read into
+   * data URLs. Callers use this to show in-place preparing thumbnails.
+   */
+  readonly onPicked?: (
+    previews: ReadonlyArray<{ readonly id: string; readonly previewUri: string }>,
+  ) => void;
+}): Promise<{
   readonly images: ReadonlyArray<DraftComposerImageAttachment>;
   readonly error: string | null;
 }> {
@@ -65,11 +74,13 @@ export async function pickComposerImages(input: { readonly existingCount: number
     };
   }
 
+  // Skip picker-side base64: it blocks the promise until every asset is
+  // encoded, which left the composer with a dead send button and no
+  // thumbnails. Previews come from the local URI; we read bytes ourselves.
   const result = await imagePicker.launchImageLibraryAsync({
     mediaTypes: ["images"],
     allowsMultipleSelection: true,
     selectionLimit: remainingSlots,
-    base64: true,
     quality: 1,
   });
 
@@ -80,37 +91,44 @@ export async function pickComposerImages(input: { readonly existingCount: number
     };
   }
 
+  input.onPicked?.(
+    result.assets.map((asset, index) => ({
+      id: `picking:${index}:${asset.uri}`,
+      previewUri: asset.uri,
+    })),
+  );
+
+  const { File } = await import("expo-file-system");
   const nextImages: DraftComposerImageAttachment[] = [];
   let error: string | null = null;
 
   for (const asset of result.assets) {
-    const mimeType = asset.mimeType?.toLowerCase();
-    if (!mimeType?.startsWith("image/")) {
+    const mimeType = (asset.mimeType ?? mimeTypeFromUri(asset.uri)).toLowerCase();
+    if (!mimeType.startsWith("image/")) {
       error = `Unsupported file type for '${asset.fileName ?? "image"}'.`;
       continue;
     }
 
-    const base64 = asset.base64;
-    if (!base64) {
+    try {
+      const base64 = await new File(asset.uri).base64();
+      const sizeBytes = asset.fileSize ?? estimateBase64ByteSize(base64);
+      if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+        error = `'${asset.fileName ?? "image"}' exceeds the 10 MB attachment limit.`;
+        continue;
+      }
+
+      nextImages.push({
+        id: uuidv4(),
+        type: "image",
+        name: asset.fileName ?? "image",
+        mimeType,
+        sizeBytes,
+        dataUrl: `data:${mimeType};base64,${base64}`,
+        previewUri: asset.uri,
+      });
+    } catch {
       error = `Failed to read '${asset.fileName ?? "image"}'.`;
-      continue;
     }
-
-    const sizeBytes = asset.fileSize ?? estimateBase64ByteSize(base64);
-    if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-      error = `'${asset.fileName ?? "image"}' exceeds the 10 MB attachment limit.`;
-      continue;
-    }
-
-    nextImages.push({
-      id: uuidv4(),
-      type: "image",
-      name: asset.fileName ?? "image",
-      mimeType,
-      sizeBytes,
-      dataUrl: `data:${mimeType};base64,${base64}`,
-      previewUri: asset.uri,
-    });
   }
 
   return {

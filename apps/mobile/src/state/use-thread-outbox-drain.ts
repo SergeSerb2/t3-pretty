@@ -51,7 +51,32 @@ export const dispatchingQueuedMessageIdAtom = Atom.make<MessageId | null>(null).
   Atom.withLabel("mobile:thread-outbox:dispatching-message-id"),
 );
 
+/** Message ids waiting out a delivery backoff; not currently being sent. */
+export const retryingQueuedMessageIdsAtom = Atom.make<Readonly<Record<MessageId, true>>>({}).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("mobile:thread-outbox:retrying-message-ids"),
+);
+
+function markQueuedMessageRetrying(queuedMessageId: MessageId): void {
+  const current = appAtomRegistry.get(retryingQueuedMessageIdsAtom);
+  if (current[queuedMessageId]) {
+    return;
+  }
+  appAtomRegistry.set(retryingQueuedMessageIdsAtom, { ...current, [queuedMessageId]: true });
+}
+
+function clearQueuedMessageRetrying(queuedMessageId: MessageId): void {
+  const current = appAtomRegistry.get(retryingQueuedMessageIdsAtom);
+  if (!current[queuedMessageId]) {
+    return;
+  }
+  const next = { ...current };
+  delete next[queuedMessageId];
+  appAtomRegistry.set(retryingQueuedMessageIdsAtom, next);
+}
+
 function beginDispatchingQueuedMessage(queuedMessageId: MessageId): void {
+  clearQueuedMessageRetrying(queuedMessageId);
   appAtomRegistry.set(dispatchingQueuedMessageIdAtom, queuedMessageId);
 }
 
@@ -393,6 +418,7 @@ export function useThreadOutboxDrain(): void {
           if (sent) {
             retryAttemptRef.current.delete(nextQueuedMessage.messageId);
             retryNotBeforeRef.current.delete(nextQueuedMessage.messageId);
+            clearQueuedMessageRetrying(nextQueuedMessage.messageId);
             const pendingTimer = retryTimersRef.current.get(nextQueuedMessage.messageId);
             if (pendingTimer !== undefined) {
               clearTimeout(pendingTimer);
@@ -405,6 +431,7 @@ export function useThreadOutboxDrain(): void {
           retryAttemptRef.current.set(nextQueuedMessage.messageId, retryAttempt);
           const retryDelayMs = threadOutboxRetryDelayMs(retryAttempt);
           retryNotBeforeRef.current.set(nextQueuedMessage.messageId, Date.now() + retryDelayMs);
+          markQueuedMessageRetrying(nextQueuedMessage.messageId);
           const pendingTimer = retryTimersRef.current.get(nextQueuedMessage.messageId);
           if (pendingTimer !== undefined) {
             clearTimeout(pendingTimer);
