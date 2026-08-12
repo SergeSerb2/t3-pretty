@@ -58,6 +58,7 @@ html[data-scenery-motion] [data-timeline-row-kind="working"] .scenery-orb-slot +
   /* The 20px orb is taller than the dot cluster it replaces; pull the
      vertical box in so the working row keeps its compact height. */
   margin-block: -4px;
+  contain: layout paint;
 }
 
 /* Soft dip while the orb switches verbs (working → searching → …), so a
@@ -84,6 +85,7 @@ html[data-scenery-motion] [data-timeline-row-kind="working"] .scenery-orb-slot +
   display: flex;
   justify-content: center;
   margin-bottom: 1.25rem;
+  contain: layout paint;
 }
 
 html[data-scenery-motion] .scenery-orb-hero {

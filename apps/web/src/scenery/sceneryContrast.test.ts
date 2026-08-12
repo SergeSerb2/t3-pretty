@@ -90,6 +90,7 @@ function renderOrbInk(white: number, alpha: number, dark: boolean): { color: Rgb
     beginPath() {},
     arc() {},
     fill() {},
+    fillRect() {},
   } as unknown as CanvasRenderingContext2D;
   paint(context, [{ x: 0, y: 0, z: 0, r: 1, white, a: alpha }], dark);
   const match = /^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/.exec(fillStyle);

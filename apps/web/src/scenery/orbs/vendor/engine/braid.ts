@@ -4,8 +4,8 @@
 // Each strand runs pole to pole on a helix, and a radial breathing term
 // makes them trade places, reading as the over/under of a plait.
 
-import type { Dot, ModeDraw } from "./types";
-import { fibDir, frac, makeProj, paint, radiusScale } from "./core";
+import type { ModeDraw } from "./types";
+import { addDot, beginDots, fibDir, frac, makeProj, paintDots, radiusScale } from "./core";
 
 export const drawBraid: ModeDraw = (ctx, size, t, dark, o) => {
   const cx = size / 2;
@@ -14,13 +14,13 @@ export const drawBraid: ModeDraw = (ctx, size, t, dark, o) => {
   const pt = makeProj(t * 0.4, 0.3, cx, cy, 1);
   const rs = radiusScale(size, o.rsPow ?? 0.6);
 
-  const dots: Dot[] = [];
+  beginDots();
   const ghostN = o.ghostN ?? 150;
   for (let i = 0; i < ghostN; i++) {
     const d = fibDir(i, ghostN);
     const [px, py, z] = pt(d[0] * R, d[1] * R, d[2] * R);
     const depth = (z / R + 1) / 2;
-    dots.push({ x: px, y: py, z, r: 0.8 * rs, white: 0.78, a: 0.1 + 0.22 * depth });
+    addDot(px, py, z, 0.8 * rs, 0.78, 0.1 + 0.22 * depth);
   }
 
   const strandN = o.strandN ?? 52;
@@ -38,15 +38,15 @@ export const drawBraid: ModeDraw = (ctx, size, t, dark, o) => {
       const rr = surf * R * weave;
       const [px, py, zr] = pt(Math.cos(a) * rr, u * R * weave, Math.sin(a) * rr);
       const depth = (zr / R + 1) / 2;
-      dots.push({
-        x: px,
-        y: py,
-        z: zr,
-        r: ((o.rBase ?? 1.2) + (o.rDepth ?? 1.8) * depth) * rs,
-        white: 0.55 - 0.45 * depth,
-        a: endFade * (0.45 + 0.55 * depth),
-      });
+      addDot(
+        px,
+        py,
+        zr,
+        ((o.rBase ?? 1.2) + (o.rDepth ?? 1.8) * depth) * rs,
+        0.55 - 0.45 * depth,
+        endFade * (0.45 + 0.55 * depth),
+      );
     }
   }
-  paint(ctx, dots, dark, o.rMin);
+  paintDots(ctx, dark, o.rMin);
 };
