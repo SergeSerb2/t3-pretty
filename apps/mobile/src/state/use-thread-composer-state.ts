@@ -193,22 +193,30 @@ export function useThreadComposerState() {
     [selectedThreadShell],
   );
 
-  const onPickDraftImages = useCallback(async () => {
-    if (!selectedThreadShell) {
-      return;
-    }
+  const onPickDraftImages = useCallback(
+    async (input?: {
+      readonly onPicked?: (
+        previews: ReadonlyArray<{ readonly id: string; readonly previewUri: string }>,
+      ) => void;
+    }) => {
+      if (!selectedThreadShell) {
+        return;
+      }
 
-    const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
-    const result = await pickComposerImages({
-      existingCount: composerDrafts[threadKey]?.attachments.length ?? 0,
-    });
-    if (result.images.length > 0) {
-      appendComposerDraftAttachments(threadKey, result.images);
-    }
-    if (result.error) {
-      setPendingConnectionError(result.error);
-    }
-  }, [composerDrafts, selectedThreadShell]);
+      const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
+      const result = await pickComposerImages({
+        existingCount: composerDrafts[threadKey]?.attachments.length ?? 0,
+        onPicked: input?.onPicked,
+      });
+      if (result.images.length > 0) {
+        appendComposerDraftAttachments(threadKey, result.images);
+      }
+      if (result.error) {
+        setPendingConnectionError(result.error);
+      }
+    },
+    [composerDrafts, selectedThreadShell],
+  );
 
   const onPasteIntoDraft = useCallback(async () => {
     if (!selectedThreadShell) {

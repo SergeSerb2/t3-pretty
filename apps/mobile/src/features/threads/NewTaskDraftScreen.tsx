@@ -22,7 +22,12 @@ import {
   ComposerToolbarTrigger,
 } from "../../components/ComposerToolbarTrigger";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
-import { ComposerAttachmentStrip } from "../../components/ComposerAttachmentStrip";
+import {
+  ComposerAttachmentStrip,
+  ComposerDispatchStatusLabel,
+  type ComposerAttachmentPreview,
+} from "../../components/ComposerAttachmentStrip";
+import { composerDispatchStatusLabel } from "../../lib/composerDispatchStatus";
 import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ComposerSurface } from "./ThreadComposer";
@@ -101,6 +106,9 @@ export function NewTaskDraftScreen(props: {
   const promptInputRef = useRef<ComposerEditorHandle>(null);
   const loadedBranchesProjectKeyRef = useRef<string | null>(null);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
+  const [pendingPreviews, setPendingPreviews] = useState<ReadonlyArray<ComposerAttachmentPreview>>(
+    [],
+  );
   const settingsSheetPresentation = useThreadSettingsSheetPresentation({
     editorRef: promptInputRef,
     isEditorFocused: isComposerFocused,
@@ -683,17 +691,35 @@ export function NewTaskDraftScreen(props: {
   }
 
   async function handlePickImages(): Promise<void> {
-    if (isIncomingShareTransferPending) {
+    if (isIncomingShareTransferPending || flow.submitting || pendingPreviews.length > 0) {
       return;
     }
-    const result = await pickComposerImages({ existingCount: flow.attachments.length });
-    if (result.images.length > 0) {
-      flow.appendAttachments(result.images);
+    try {
+      const result = await pickComposerImages({
+        existingCount: flow.attachments.length,
+        onPicked: (previews) =>
+          setPendingPreviews(previews.map((preview) => ({ ...preview, preparing: true }))),
+      });
+      if (result.images.length > 0) {
+        flow.appendAttachments(result.images);
+      }
+    } finally {
+      setPendingPreviews([]);
     }
   }
 
   const handleNativePasteImages = useCallback(
     async (uris: ReadonlyArray<string>) => {
+      if (uris.length === 0) {
+        return;
+      }
+      setPendingPreviews(
+        uris.map((uri, index) => ({
+          id: `pending:${index}:${uri}`,
+          previewUri: uri,
+          preparing: true,
+        })),
+      );
       try {
         const images = await convertPastedImagesToAttachments({
           uris,
@@ -704,6 +730,8 @@ export function NewTaskDraftScreen(props: {
         }
       } catch (error) {
         console.error("[native paste] error converting images", error);
+      } finally {
+        setPendingPreviews([]);
       }
     },
     [flow],
@@ -745,6 +773,7 @@ export function NewTaskDraftScreen(props: {
       !modelSelection ||
       initialMessageText.length === 0 ||
       flow.submitting ||
+      pendingPreviews.length > 0 ||
       !flow.autoCreatePullRequestSettled ||
       (workspaceMode === "worktree" && !selectedBranchName)
     ) {
@@ -882,13 +911,31 @@ export function NewTaskDraftScreen(props: {
   // The settings sheet dismisses the keyboard, so its flag keeps the Android
   // draft composer expanded through the blur (mirrors ThreadComposer).
   const isExpanded = !isAndroid || isComposerFocused || settingsSheetPresentation.isActive;
+  const isDispatching = flow.submitting || pendingPreviews.length > 0;
+  const attachedUris = new Set(flow.attachments.map((image) => image.previewUri));
+  const stripAttachments = [
+    ...flow.attachments,
+    ...pendingPreviews.filter((preview) => !attachedUris.has(preview.previewUri)),
+  ];
+  const dispatchStatus = composerDispatchStatusLabel(
+    pendingPreviews.length > 0
+      ? { kind: "preparing-images", count: pendingPreviews.length }
+      : flow.submitting
+        ? {
+            kind: "sending",
+            creatingThread: true,
+            connected: environmentConnected,
+            hasImages: flow.attachments.length > 0,
+          }
+        : { kind: "idle" },
+  );
   const canStart =
     Boolean(flow.selectedProject) &&
     Boolean(flow.selectedModel) &&
     flow.prompt.trim().length > 0 &&
     isIncomingShareReady &&
     !isImportingShare &&
-    !flow.submitting &&
+    !isDispatching &&
     // The auto-PR choice must be settled (draft override or hydrated
     // preferences) so a cold-start send cannot race the stored setting.
     flow.autoCreatePullRequestSettled &&
@@ -901,7 +948,7 @@ export function NewTaskDraftScreen(props: {
       // animation and stalls it. The runAfterInteractions effect above focuses
       // the editor once the transition settles instead.
       autoFocus={false}
-      editable={!isIncomingShareTransferPending}
+      editable={!isIncomingShareTransferPending && !isDispatching}
       multiline
       scrollEnabled={isExpanded}
       value={flow.prompt}
@@ -936,7 +983,7 @@ export function NewTaskDraftScreen(props: {
         icon="plus"
         onPress={() => void handlePickImages()}
         showChevron={false}
-        disabled={isIncomingShareTransferPending}
+        disabled={isIncomingShareTransferPending || isDispatching}
       />
       <ComposerToolbarTrigger
         accessibilityLabel="Thread settings"
@@ -1002,13 +1049,18 @@ export function NewTaskDraftScreen(props: {
   const startButton = (
     <ComposerToolbarButton
       accessibilityLabel={
-        flow.submitting ? "Starting task" : environmentConnected ? "Start task" : "Queue task"
+        isDispatching
+          ? (dispatchStatus ?? "Starting task")
+          : environmentConnected
+            ? "Start task"
+            : "Queue task"
       }
       icon={environmentConnected ? "arrow.up" : "tray.and.arrow.up"}
       onPress={() => void handleStart()}
       variant="primary"
       showChevron={false}
-      disabled={!canStart}
+      disabled={!canStart && !isDispatching}
+      loading={isDispatching}
     />
   );
 
@@ -1054,12 +1106,15 @@ export function NewTaskDraftScreen(props: {
                     }
               }
             >
-              {isExpanded && flow.attachments.length > 0 ? (
+              {isExpanded && stripAttachments.length > 0 ? (
                 <View className="pb-2.5">
                   <ComposerAttachmentStrip
-                    attachments={flow.attachments}
+                    attachments={stripAttachments}
+                    busy={flow.submitting && flow.attachments.length > 0}
                     onRemove={
-                      isIncomingShareTransferPending ? () => undefined : flow.removeAttachment
+                      isIncomingShareTransferPending || isDispatching
+                        ? () => undefined
+                        : flow.removeAttachment
                     }
                   />
                 </View>
@@ -1069,7 +1124,8 @@ export function NewTaskDraftScreen(props: {
                 <ControlPill
                   icon="arrow.up"
                   variant="primary"
-                  disabled={!canStart}
+                  disabled={!canStart && !isDispatching}
+                  loading={isDispatching}
                   onPress={() => void handleStart()}
                 />
               ) : null}
@@ -1086,6 +1142,7 @@ export function NewTaskDraftScreen(props: {
                 {startButton}
               </ComposerToolbarRow>
             ) : null}
+            {dispatchStatus ? <ComposerDispatchStatusLabel label={dispatchStatus} /> : null}
           </View>
         </KeyboardAvoidingView>
         {settingsSheet}
@@ -1101,14 +1158,24 @@ export function NewTaskDraftScreen(props: {
         <View className="min-h-0 flex-1 px-5 pt-2">{promptEditor}</View>
 
         <View className="border-t border-border" style={{ paddingBottom: controlsBottomPadding }}>
-          {flow.attachments.length > 0 ? (
+          {stripAttachments.length > 0 ? (
             <View className="px-4 pt-3">
               <ComposerAttachmentStrip
-                attachments={flow.attachments}
-                onRemove={isIncomingShareTransferPending ? () => undefined : flow.removeAttachment}
+                attachments={stripAttachments}
+                busy={flow.submitting && flow.attachments.length > 0}
+                onRemove={
+                  isIncomingShareTransferPending || isDispatching
+                    ? () => undefined
+                    : flow.removeAttachment
+                }
                 imageSize={88}
                 imageBorderRadius={20}
               />
+            </View>
+          ) : null}
+          {dispatchStatus ? (
+            <View className="px-4">
+              <ComposerDispatchStatusLabel label={dispatchStatus} />
             </View>
           ) : null}
           <ComposerToolbarRow paddingBottom={controlsBottomPadding} paddingHorizontal={6}>

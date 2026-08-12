@@ -7,7 +7,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { Platform, Pressable, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, useColorScheme, View } from "react-native";
 import { useThemeColor } from "../lib/useThemeColor";
 
 import { cn } from "../lib/cn";
@@ -23,8 +23,12 @@ export function ControlPill(props: {
   readonly onPress?: () => void;
   readonly variant?: "circle" | "pill" | "primary" | "danger";
   readonly disabled?: boolean;
+  /** In-flight send: keep the primary fill and swap the icon for a spinner. */
+  readonly loading?: boolean;
 }) {
   const variant = props.variant ?? "circle";
+  const isLoading = props.loading === true;
+  const showDisabledChrome = props.disabled === true && !isLoading;
 
   const iconColor = useThemeColor("--color-icon");
   const iconSubtle = useThemeColor("--color-icon-subtle");
@@ -32,7 +36,7 @@ export function ControlPill(props: {
   const dangerFg = useThemeColor("--color-danger-foreground");
   const iconTintColor =
     variant === "primary"
-      ? props.disabled
+      ? showDisabledChrome
         ? iconSubtle
         : primaryFg
       : variant === "danger"
@@ -48,7 +52,7 @@ export function ControlPill(props: {
         ? "h-11 flex-row items-center justify-center gap-2 rounded-full px-5"
         : "h-11 flex-row items-center justify-center gap-2 rounded-full px-3.5",
     variant === "primary"
-      ? props.disabled
+      ? showDisabledChrome
         ? "bg-subtle-strong"
         : "bg-primary"
       : variant === "danger"
@@ -58,7 +62,7 @@ export function ControlPill(props: {
   const labelClassName = cn(
     "text-center text-xs font-t3-bold",
     variant === "primary"
-      ? props.disabled
+      ? showDisabledChrome
         ? "text-foreground-muted"
         : "text-primary-foreground"
       : "",
@@ -68,11 +72,14 @@ export function ControlPill(props: {
     <Pressable
       accessibilityLabel={props.accessibilityLabel ?? props.label}
       accessibilityRole="button"
+      accessibilityState={{ disabled: props.disabled === true, busy: isLoading }}
       onPress={props.onPress}
-      disabled={props.disabled}
+      disabled={props.disabled || isLoading}
       className={containerClassName}
     >
-      {props.iconNode ? (
+      {isLoading ? (
+        <ActivityIndicator color={String(iconTintColor)} size="small" />
+      ) : props.iconNode ? (
         <View className="h-4 w-4 items-center justify-center">{props.iconNode}</View>
       ) : props.icon ? (
         <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />

@@ -1,12 +1,20 @@
 import { SymbolView } from "../components/AppSymbol";
-import { Image, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, View } from "react-native";
+import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 import { useThemeColor } from "../lib/useThemeColor";
 
-import type { DraftComposerImageAttachment } from "../lib/composerImages";
+import { AppText as Text } from "./AppText";
+
+export interface ComposerAttachmentPreview {
+  readonly id: string;
+  readonly previewUri: string;
+  /** True while the image is still being read or the message is sending. */
+  readonly preparing?: boolean;
+}
 
 export interface ComposerAttachmentStripProps {
   /** Attachment images to display. */
-  readonly attachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly attachments: ReadonlyArray<ComposerAttachmentPreview>;
   /** Called when the user taps the remove button on an image. */
   readonly onRemove: (imageId: string) => void;
   /** Called when the user taps on an image thumbnail to preview it. */
@@ -17,7 +25,12 @@ export interface ComposerAttachmentStripProps {
   readonly imageBorderRadius?: number;
   /** Whether the remove button should sit in its own gutter instead of overlapping the image. */
   readonly removeButtonPlacement?: "overlay" | "gutter";
+  /** Dim every thumbnail and hide remove — used while the turn is sending. */
+  readonly busy?: boolean;
 }
+
+const OVERLAY_ENTER = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
+const OVERLAY_EXIT = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 
 /**
  * A horizontally-scrollable strip of image attachment thumbnails with remove
@@ -29,6 +42,7 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
   const radius = props.imageBorderRadius ?? 16;
   const removeButtonPlacement = props.removeButtonPlacement ?? "overlay";
   const removeButtonGutter = removeButtonPlacement === "gutter" ? 10 : 0;
+  const busy = props.busy === true;
 
   if (props.attachments.length === 0) {
     return null;
@@ -42,49 +56,109 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
       className="grow-0"
     >
       <View className="flex-row gap-2.5">
-        {props.attachments.map((image) => (
-          <View
-            key={image.id}
-            className="relative"
-            style={{
-              paddingTop: removeButtonGutter,
-              paddingRight: removeButtonGutter,
-            }}
-          >
-            <Pressable
-              onPress={props.onPressImage ? () => props.onPressImage!(image.previewUri) : undefined}
-            >
-              <Image
-                source={{ uri: image.previewUri }}
-                style={{
-                  width: size,
-                  height: size,
-                  borderRadius: radius,
-                  backgroundColor: subtleBg,
-                }}
-                resizeMode="cover"
-              />
-            </Pressable>
-            <Pressable
-              className="absolute h-[22px] w-[22px] items-center justify-center rounded-[11px] bg-black/55"
+        {props.attachments.map((image) => {
+          const preparing = busy || image.preparing === true;
+          return (
+            <View
+              key={image.id}
+              className="relative"
               style={{
-                top: removeButtonPlacement === "gutter" ? 0 : 4,
-                right: removeButtonPlacement === "gutter" ? 0 : 4,
+                paddingTop: removeButtonGutter,
+                paddingRight: removeButtonGutter,
               }}
-              hitSlop={6}
-              onPress={() => props.onRemove(image.id)}
             >
-              <SymbolView
-                name="xmark"
-                size={9}
-                tintColor="#ffffff"
-                type="monochrome"
-                weight="bold"
+              <ComposerAttachmentThumb
+                previewUri={image.previewUri}
+                size={size}
+                borderRadius={radius}
+                backgroundColor={typeof subtleBg === "string" ? subtleBg : "#e5e5ea"}
+                preparing={preparing}
+                onPress={
+                  props.onPressImage && !preparing
+                    ? () => props.onPressImage!(image.previewUri)
+                    : undefined
+                }
               />
-            </Pressable>
-          </View>
-        ))}
+              {preparing ? null : (
+                <Pressable
+                  className="absolute h-[22px] w-[22px] items-center justify-center rounded-[11px] bg-black/55"
+                  style={{
+                    top: removeButtonPlacement === "gutter" ? 0 : 4,
+                    right: removeButtonPlacement === "gutter" ? 0 : 4,
+                  }}
+                  hitSlop={6}
+                  accessibilityLabel="Remove attachment"
+                  onPress={() => props.onRemove(image.id)}
+                >
+                  <SymbolView
+                    name="xmark"
+                    size={9}
+                    tintColor="#ffffff"
+                    type="monochrome"
+                    weight="bold"
+                  />
+                </Pressable>
+              )}
+            </View>
+          );
+        })}
       </View>
     </ScrollView>
+  );
+}
+
+export function ComposerAttachmentThumb(props: {
+  readonly previewUri: string;
+  readonly size: number;
+  readonly borderRadius: number;
+  readonly backgroundColor: string;
+  readonly preparing?: boolean;
+  readonly onPress?: () => void;
+}) {
+  const image = (
+    <View style={{ width: props.size, height: props.size }}>
+      <Image
+        source={{ uri: props.previewUri }}
+        style={{
+          width: props.size,
+          height: props.size,
+          borderRadius: props.borderRadius,
+          backgroundColor: props.backgroundColor,
+        }}
+        resizeMode="cover"
+      />
+      {props.preparing ? (
+        <Animated.View
+          entering={OVERLAY_ENTER}
+          exiting={OVERLAY_EXIT}
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          className="absolute inset-0 items-center justify-center bg-black/45"
+          style={{ borderRadius: props.borderRadius }}
+        >
+          <ActivityIndicator color="#ffffff" size="small" />
+        </Animated.View>
+      ) : null}
+    </View>
+  );
+
+  if (!props.onPress) {
+    return image;
+  }
+
+  return <Pressable onPress={props.onPress}>{image}</Pressable>;
+}
+
+export function ComposerDispatchStatusLabel(props: { readonly label: string }) {
+  return (
+    <Animated.View
+      entering={OVERLAY_ENTER}
+      exiting={OVERLAY_EXIT}
+      accessibilityLiveRegion="polite"
+      accessibilityRole="text"
+    >
+      <Text className="pt-2 text-xs text-foreground-muted">{props.label}</Text>
+    </Animated.View>
   );
 }
