@@ -240,10 +240,11 @@ export function HomeScreen(props: HomeScreenProps) {
         SCENERY_CREDIT_GAP -
         Math.max(insets.bottom, SCENERY_CREDIT_MIN_BOTTOM)
       : iosBottomToolbarClearance;
+  const sceneryListPad = dailySceneryPhoto !== null ? creditHeight : 0;
   const androidListBottomPad =
-    Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +
-    88 +
-    (dailySceneryPhoto !== null ? creditHeight : 0);
+    Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) + 88 + sceneryListPad;
+  const iosListBottomPad =
+    Math.max(insets.bottom, 24) + 24 + iosBottomToolbarClearance + sceneryListPad;
   const searchEnvironmentIds = useMemo(
     () =>
       props.selectedEnvironmentId === null
@@ -1166,7 +1167,7 @@ export function HomeScreen(props: HomeScreenProps) {
             contentContainerStyle={{
               paddingBottom:
                 Platform.OS === "ios"
-                  ? Math.max(insets.bottom, 24) + 96 + iosBottomToolbarClearance
+                  ? Math.max(insets.bottom, 24) + 96 + iosBottomToolbarClearance + sceneryListPad
                   : androidListBottomPad,
             }}
           />
@@ -1219,14 +1220,16 @@ export function HomeScreen(props: HomeScreenProps) {
             // reflected in insets while contentInsetAdjustmentBehavior is
             // "never".
             paddingBottom:
-              Platform.OS === "ios"
-                ? Math.max(insets.bottom, 24) + 24 + iosBottomToolbarClearance
-                : androidListBottomPad,
+              Platform.OS === "ios" ? iosListBottomPad : androidListBottomPad,
           }}
           scrollIndicatorInsets={
             Platform.OS === "ios"
               ? {
-                  bottom: Math.max(insets.bottom, 16) + 24 + iosBottomToolbarClearance,
+                  bottom:
+                    Math.max(insets.bottom, 16) +
+                    24 +
+                    iosBottomToolbarClearance +
+                    sceneryListPad,
                   top: 0,
                 }
               : undefined
