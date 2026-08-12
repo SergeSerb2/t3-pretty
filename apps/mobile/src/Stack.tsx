@@ -68,11 +68,13 @@ import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
-// Matches --color-sheet in global.css (light/dark). DynamicColorIOS lets the header
-// background stay STATIC config while still adapting to appearance changes.
+// Matches --color-sheet in global.css (World Scenery light/dark). DynamicColorIOS
+// lets the header background stay STATIC config while still adapting to appearance
+// changes. Native headers cannot read CSS variables, so these hexes must stay in
+// step with global.css / App.tsx SCENERY_NAV_* (same constraint as those files).
 const SHEET_BACKGROUND_COLOR =
   Platform.OS === "ios"
-    ? DynamicColorIOS({ light: "rgba(242, 242, 247, 0.98)", dark: "rgba(14, 14, 14, 0.98)" })
+    ? DynamicColorIOS({ light: "rgba(244, 246, 244, 0.98)", dark: "rgba(14, 17, 16, 0.98)" })
     : undefined;
 
 type AppScreenOptions = NativeStackNavigationOptions & {
