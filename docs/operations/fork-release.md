@@ -15,7 +15,10 @@ source code on installed machines.
    the workflow asks the Railway CLIProxyAPI `gpt-5.6-sol` model to resolve each file with `xhigh`
    reasoning. Its preservation contract treats T3 Pretty and other fork-specific behavior as
    authoritative, integrates compatible parent improvements around it, and keeps the smallest
-   T3 Pretty side when both intents genuinely cannot coexist.
+   T3 Pretty side when both intents genuinely cannot coexist. One exception: if the parent later
+   ships a first-party implementation of a feature T3 Pretty added as fork-only (for example a
+   native mobile pull-request manager), the resolver replaces the fork copy with the parent
+   version and re-applies only Pretty branding.
 4. Every sync commits `.t3-fork/upstream-sync-report.md`. It identifies T3 Pretty behavior
    preserved at conflict boundaries, compatible parent behavior integrated there, and every
    parent change intentionally omitted to protect T3 Pretty. Fork-owned parent workflow changes

@@ -158,11 +158,12 @@ export function buildConflictPrompt({ path, conflicts, forkHistory }) {
 
 Priority contract (follow in this order):
 1. OURS is T3 Pretty main. T3 Pretty and other fork-specific behavior is authoritative and must not be removed, weakened, renamed back, or silently regressed.
-2. THEIRS is the parent T3 Code nightly. Integrate every compatible parent improvement, bug fix, refactor, API change, test, and new behavior cleanly around the fork behavior.
-3. Prefer a composed result that preserves both intents. Adapt the parent implementation to the fork's architecture and naming when needed; do not merely choose a whole side.
-4. If a parent change would overwrite or regress a T3 Pretty change and both intents genuinely cannot coexist, keep the T3 Pretty behavior and omit only the smallest conflicting portion of the parent change.
-5. Report every omitted parent behavior or hunk in upstream_changes_omitted with a concrete reason. An omission must never be silent. Use an empty list only when nothing was omitted.
-6. If you cannot identify the fork intent or produce a coherent result with high confidence, return safe=false. Never guess.
+2. Exception — parent first-party replacement: if THEIRS introduces a first-party implementation of a feature T3 Pretty previously added as fork-only (for example a native mobile pull-request manager under apps/mobile), prefer THEIRS. Replace the fork copy with the parent implementation. Re-apply only T3 Pretty branding, identity, theming, and other fork-specific presentation that does not change the parent's behavior. Report the replacement in upstream_changes_integrated and any branding re-applied in fork_changes_preserved.
+3. THEIRS is the parent T3 Code nightly. Integrate every compatible parent improvement, bug fix, refactor, API change, test, and new behavior cleanly around the fork behavior.
+4. Prefer a composed result that preserves both intents. Adapt the parent implementation to the fork's architecture and naming when needed; do not merely choose a whole side.
+5. If a parent change would overwrite or regress a T3 Pretty change and both intents genuinely cannot coexist, keep the T3 Pretty behavior and omit only the smallest conflicting portion of the parent change — unless rule 2 applies, in which case the parent implementation wins.
+6. Report every omitted parent behavior or hunk in upstream_changes_omitted with a concrete reason. An omission must never be silent. Use an empty list only when nothing was omitted.
+7. If you cannot identify the fork intent or produce a coherent result with high confidence, return safe=false. Never guess.
 
 T3 Pretty preservation checklist:
 - Branding, visual design, themes, World Scenery, navigation, sidebar, preview, animation, and reduced-motion behavior.
@@ -170,7 +171,7 @@ T3 Pretty preservation checklist:
 - Desktop lifecycle, terminal behavior, Windows SSH/remote support, updater/release infrastructure, signing, and runner safeguards.
 - Mobile behavior and parity across iOS and Android, including navigation, connection state, accessibility, performance, and native extension behavior.
 - T3 Pretty mobile identity and delivery: fork bundle/package identifiers, the compatible t3code URL schemes, the fork-owned Expo project and OTA boundary, Surge Connect, World Scenery, widgets, Live Activities, notifications, signing, and provisioning safeguards.
-- For conflicts under apps/mobile or shared code it consumes, integrate compatible upstream mobile features, fixes, refactors, and tests while preserving those fork identities and custom behaviors.
+- For conflicts under apps/mobile or shared code it consumes, integrate compatible upstream mobile features, fixes, refactors, and tests while preserving those fork identities and custom behaviors. If upstream later ships a native version of a fork-added mobile feature, take upstream's implementation and keep only Pretty branding around it.
 - Tests and compatibility code that protect any of the above, plus future fork changes evidenced by OURS or the fork history below.
 
 Resolution and reporting contract:

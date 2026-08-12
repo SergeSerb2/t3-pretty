@@ -43,8 +43,9 @@ export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
       },
       {
         kind: "new",
-        title: "Pull request reviews",
-        description: "Browse and review pull requests across providers without leaving a thread.",
+        title: "Native pull requests",
+        description:
+          "Browse, review, merge, and resolve conflicts on pull requests in the app — no browser required. Open them from the home header, the sidebar, or a thread's git controls.",
       },
       {
         kind: "new",
