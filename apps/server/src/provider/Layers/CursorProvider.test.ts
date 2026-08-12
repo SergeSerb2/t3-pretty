@@ -16,6 +16,7 @@ import {
   buildCursorCapabilitiesFromConfigOptions,
   checkCursorProviderStatus,
   discoverCursorModelsViaAcp,
+  enrichCursorAutoModelCapabilities,
   getCursorFallbackModels,
   getCursorParameterizedModelPickerUnsupportedMessage,
   parseCursorAboutOutput,
@@ -24,6 +25,8 @@ import {
   resolveCursorAcpBaseModelId,
   resolveCursorAcpConfigUpdates,
 } from "./CursorProvider.ts";
+
+const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 
 const runNode = <A, E>(
   effect: Effect.Effect<
@@ -425,6 +428,63 @@ describe("buildCursorCapabilitiesFromConfigOptions", () => {
       }),
     );
   });
+
+  it("maps Cursor Router Optimize For modes from Auto config options", () => {
+    expect(
+      buildCursorCapabilitiesFromConfigOptions([
+        {
+          type: "select",
+          currentValue: "balanced",
+          options: [
+            { name: "Cost", value: "cost" },
+            { name: "Balance", value: "balanced" },
+            { name: "Intelligence", value: "intelligence" },
+          ],
+          category: "model_option",
+          id: "optimize_for",
+          name: "Optimize For",
+        },
+      ]),
+    ).toEqual(
+      createModelCapabilities({
+        optionDescriptors: [
+          {
+            ...selectDescriptor("optimizeFor", "Optimize For", [
+              { id: "cost", label: "Cost" },
+              { id: "balanced", label: "Balance", isDefault: true },
+              { id: "intelligence", label: "Intelligence" },
+            ]),
+            description: "Cursor Router mode for Auto: Cost, Balance, or Intelligence.",
+          },
+        ],
+      }),
+    );
+  });
+});
+
+describe("enrichCursorAutoModelCapabilities", () => {
+  it("synthesizes Optimize For for Auto when ACP omits the config option", () => {
+    expect(enrichCursorAutoModelCapabilities(EMPTY_CAPABILITIES, "default", "Auto")).toEqual(
+      createModelCapabilities({
+        optionDescriptors: [
+          {
+            ...selectDescriptor("optimizeFor", "Optimize For", [
+              { id: "cost", label: "Cost" },
+              { id: "balanced", label: "Balance", isDefault: true },
+              { id: "intelligence", label: "Intelligence" },
+            ]),
+            description: "Cursor Router mode for Auto: Cost, Balance, or Intelligence.",
+          },
+        ],
+      }),
+    );
+  });
+
+  it("leaves non-Auto models unchanged", () => {
+    expect(
+      enrichCursorAutoModelCapabilities(EMPTY_CAPABILITIES, "composer-2.5", "Composer 2.5"),
+    ).toEqual(EMPTY_CAPABILITIES);
+  });
 });
 
 describe("checkCursorProviderStatus", () => {
@@ -493,6 +553,11 @@ describe("discoverCursorModelsViaAcp", () => {
       "gpt-5.4",
       "claude-opus-4-6",
     ]);
+    expect(
+      models
+        .find((model) => model.slug === "default")
+        ?.capabilities?.optionDescriptors?.map((descriptor) => descriptor.id),
+    ).toEqual(["optimizeFor"]);
   });
 
   it("closes the ACP probe runtime after discovery completes", async () => {
@@ -631,7 +696,8 @@ describe("resolveCursorAcpBaseModelId", () => {
       "claude-4.6-opus-high-thinking",
     );
     expect(resolveCursorAcpBaseModelId("composer-2")).toBe("composer-2");
-    expect(resolveCursorAcpBaseModelId("auto")).toBe("auto");
+    expect(resolveCursorAcpBaseModelId("auto")).toBe("default");
+    expect(resolveCursorAcpBaseModelId("auto-smart")).toBe("default");
   });
 });
 
@@ -676,5 +742,27 @@ describe("resolveCursorAcpConfigUpdates", () => {
       { configId: "effort", value: "max" },
       { configId: "thinking", value: "false" },
     ]);
+  });
+
+  it("maps Optimize For selections onto the Cursor Router config option", () => {
+    expect(
+      resolveCursorAcpConfigUpdates(
+        [
+          {
+            type: "select",
+            currentValue: "balanced",
+            options: [
+              { name: "Cost", value: "cost" },
+              { name: "Balance", value: "balanced" },
+              { name: "Intelligence", value: "intelligence" },
+            ],
+            category: "model_option",
+            id: "optimize_for",
+            name: "Optimize For",
+          },
+        ],
+        [{ id: "optimizeFor", value: "intelligence" }],
+      ),
+    ).toEqual([{ configId: "optimize_for", value: "intelligence" }]);
   });
 });

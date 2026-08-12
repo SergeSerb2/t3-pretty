@@ -118,4 +118,53 @@ describe("applyCursorAcpModelSelection", () => {
       { type: "config", configId: "fast", value: "true" },
     ]);
   });
+
+  it("maps Auto Optimize For through ACP when the config option is present", async () => {
+    const calls: Array<
+      | { readonly type: "model"; readonly value: string }
+      | { readonly type: "config"; readonly configId: string; readonly value: string | boolean }
+    > = [];
+
+    const runtime = {
+      getConfigOptions: Effect.succeed([
+        {
+          id: "optimize_for",
+          name: "Optimize For",
+          category: "model_option",
+          type: "select" as const,
+          currentValue: "balanced",
+          options: [
+            { value: "cost", name: "Cost" },
+            { value: "balanced", name: "Balance" },
+            { value: "intelligence", name: "Intelligence" },
+          ],
+        },
+      ]),
+      setModel: (value: string) =>
+        Effect.sync(() => {
+          calls.push({ type: "model", value });
+        }),
+      setConfigOption: (configId: string, value: string | boolean) =>
+        Effect.sync(() => {
+          calls.push({ type: "config", configId, value });
+        }),
+    };
+
+    await Effect.runPromise(
+      applyCursorAcpModelSelection({
+        runtime,
+        model: "auto",
+        selections: [{ id: "optimizeFor", value: "cost" }],
+        mapError: ({ step, configId, cause }) =>
+          step === "set-config-option"
+            ? `failed to set config option ${configId}: ${cause.message}`
+            : `failed to set model: ${cause.message}`,
+      }),
+    );
+
+    expect(calls).toEqual([
+      { type: "model", value: "default" },
+      { type: "config", configId: "optimize_for", value: "cost" },
+    ]);
+  });
 });
