@@ -20,7 +20,7 @@ export function SurgeConnectMeshSync() {
   const controller = useCloudLinkController();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const discovery = useRelayEnvironmentDiscovery();
-  const refreshRelayEnvironments = useAtomCommand(relayEnvironmentDiscovery.refresh, {
+  const refreshRelayCatalog = useAtomCommand(relayEnvironmentDiscovery.refreshCatalog, {
     reportFailure: false,
   });
   const reconcileRelayEnvironments = useAtomCommand(environmentCatalog.reconcileRelayEnvironments, {
@@ -36,7 +36,7 @@ export function SurgeConnectMeshSync() {
 
   useLiveRefresh(
     () => {
-      void refreshRelayEnvironments();
+      void refreshRelayCatalog();
     },
     { enabled: meshActive, key: "surge-connect-mesh" },
   );

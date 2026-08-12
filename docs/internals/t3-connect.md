@@ -289,9 +289,11 @@ those models: after successful discovery it reconciles all other account environ
 `RelayConnectionTarget` entries, updates labels, and removes relay-owned entries no longer present.
 Direct, SSH, and platform-managed entries are never overwritten by this reconciliation.
 
-Discovery refreshes when credentials change, when the application returns to the foreground, and
-on the renderer's bounded live-refresh cadence while the user remains active. The previous list is
-retained during an in-flight refresh; only an authoritative successful list mutates the catalog.
+Discovery refreshes environments and their statuses when credentials change or the application
+returns to the foreground. The desktop's bounded live-refresh cadence only refreshes account
+membership: mesh reconciliation does not need to probe every environment endpoint once per minute.
+The previous list is retained during an in-flight refresh; only an authoritative successful list
+mutates the catalog.
 Clicking **Connect** on desktop first saves the requested remote target and then enables the local
 managed link if necessary, making the relationship reciprocal. An explicitly disabled local link
 is not re-enabled in the background.

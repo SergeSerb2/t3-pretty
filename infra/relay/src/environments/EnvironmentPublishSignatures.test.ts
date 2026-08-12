@@ -90,6 +90,7 @@ function layer(replay?: Partial<DpopProofs.DpopProofReplay["Service"]>) {
       Layer.merge(
         RelayConfiguration.layer(config),
         Layer.succeed(DpopProofs.DpopProofReplay, {
+          verify: replay?.verify ?? (() => Effect.die("unexpected DPoP proof verification")),
           verifyAndConsume:
             replay?.verifyAndConsume ?? (() => Effect.die("unexpected DPoP proof verification")),
           consume: replay?.consume ?? (() => Effect.succeed(true)),

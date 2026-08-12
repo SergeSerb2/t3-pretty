@@ -32,10 +32,19 @@ export function createRelayEnvironmentDiscoveryAtoms<R, E>(
         Effect.flatMap((discovery) => discovery.refresh),
       ),
   });
+  const refreshCatalog = createRuntimeCommand(runtime, {
+    label: "relay-environment-discovery:refresh-catalog",
+    concurrency: { mode: "singleFlight", key: () => "refresh-catalog" },
+    execute: (_input: void) =>
+      RelayEnvironmentDiscovery.RelayEnvironmentDiscovery.pipe(
+        Effect.flatMap((discovery) => discovery.refreshCatalog),
+      ),
+  });
 
   return {
     stateAtom,
     stateValueAtom,
     refresh,
+    refreshCatalog,
   };
 }

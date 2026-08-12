@@ -58,6 +58,7 @@ function status(
 const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
   const networkStatus = yield* SubscriptionRef.make<NetworkStatus>("online");
   const listCalls = yield* Ref.make(0);
+  const statusCalls = yield* Ref.make(0);
   const listFailure = yield* Ref.make<ManagedRelay.ManagedRelayClientError | null>(null);
   const secondListCall = yield* Deferred.make<void>();
   const clerkToken = yield* Ref.make<string | null>("clerk-token");
@@ -101,7 +102,8 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
         return environments;
       }),
     getEnvironmentStatus: ({ environmentId }) =>
-      Ref.get(statusRequests).pipe(
+      Ref.update(statusCalls, (current) => current + 1).pipe(
+        Effect.andThen(Ref.get(statusRequests)),
         Effect.flatMap((requests) => Deferred.await(requests.get(environmentId)!)),
       ),
     listDevices: () => Effect.die("unused"),
@@ -157,6 +159,7 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
   return {
     layer,
     listCalls,
+    statusCalls,
     listFailure,
     clerkToken,
     networkStatus,
@@ -217,6 +220,39 @@ describe("RelayEnvironmentDiscovery", () => {
           "offline",
         );
         expect(complete.refreshing).toBe(false);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("refreshes mesh membership without repeating environment status probes", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* Effect.gen(function* () {
+        const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+        const requests = yield* Ref.get(harness.statusRequests);
+        yield* Deferred.succeed(
+          requests.get(environments[0]!.environmentId)!,
+          status(environments[0]!, "online"),
+        );
+        yield* Deferred.succeed(
+          requests.get(environments[1]!.environmentId)!,
+          status(environments[1]!, "offline"),
+        );
+
+        yield* discovery.refresh;
+        expect(yield* Ref.get(harness.statusCalls)).toBe(2);
+
+        yield* discovery.refreshCatalog;
+
+        expect(yield* Ref.get(harness.listCalls)).toBe(2);
+        expect(yield* Ref.get(harness.statusCalls)).toBe(2);
+        const refreshed = yield* SubscriptionRef.get(discovery.state);
+        expect(refreshed.environments.get(environments[0]!.environmentId)?.availability).toBe(
+          "online",
+        );
+        expect(refreshed.environments.get(environments[1]!.environmentId)?.availability).toBe(
+          "offline",
+        );
       }).pipe(Effect.provide(harness.layer));
     }),
   );

@@ -117,6 +117,7 @@ function testLayer(input?: {
       Layer.mergeAll(
         RelayConfiguration.layer(config),
         Layer.succeed(DpopProofs.DpopProofReplay, {
+          verify: () => Effect.die("unexpected DPoP proof verification"),
           verifyAndConsume: () => Effect.die("unexpected DPoP proof verification"),
           consume: input?.consume ?? (() => Effect.succeed(true)),
           pruneExpired: Effect.void,

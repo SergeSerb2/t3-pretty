@@ -96,6 +96,32 @@ function consumeEachProofOnce() {
 }
 
 describe("DpopProofReplay.verifyAndConsume", () => {
+  it.effect("verifies read-only cache hits without writing replay state", () => {
+    const now = DateTime.makeUnsafe("2026-05-25T12:00:00.000Z");
+    const proof = makeDpopProof({
+      method: "GET",
+      url: "https://relay.example.com/v1/environments/env/status",
+      iat: Math.floor(now.epochMilliseconds / 1_000),
+      jti: "proof-cached-status",
+      accessToken: "relay-access-token",
+    });
+
+    return Effect.gen(function* () {
+      const replay = yield* DpopProofs.DpopProofReplay;
+      const input = {
+        proof: proof.proof,
+        method: "GET",
+        url: "https://relay.example.com/v1/environments/env/status",
+        expectedThumbprint: proof.thumbprint,
+        expectedAccessToken: "relay-access-token",
+        now,
+      };
+
+      expect(yield* replay.verify(input)).toBe(proof.thumbprint);
+      expect(yield* replay.verify(input)).toBe(proof.thumbprint);
+    }).pipe(Effect.provide(layer(() => Effect.die("unexpected DPoP replay persistence"))));
+  });
+
   it.effect("rejects replayed proofs after persistence consumes the jti once", () => {
     const now = DateTime.makeUnsafe("2026-05-25T12:00:00.000Z");
     const proof = makeDpopProof({
