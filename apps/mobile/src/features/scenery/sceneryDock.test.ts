@@ -2,8 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   deriveFloatingChromeBottomInset,
-  deriveMailSearchToolbarBottomSpacing,
-  SCENERY_CREDIT_GAP,
   SCENERY_CREDIT_HEIGHT,
   SCENERY_CREDIT_MIN_BOTTOM,
 } from "./sceneryDock";
@@ -56,17 +54,5 @@ describe("deriveFloatingChromeBottomInset", () => {
         creditHeight: 0,
       }),
     ).toBe(12);
-  });
-});
-
-describe("deriveMailSearchToolbarBottomSpacing", () => {
-  it("sits 8pt above the physical bottom when no credit pill is showing", () => {
-    expect(deriveMailSearchToolbarBottomSpacing(false)).toBe(SCENERY_CREDIT_MIN_BOTTOM);
-  });
-
-  it("reserves the credit pill under the search bar", () => {
-    expect(deriveMailSearchToolbarBottomSpacing(true)).toBe(
-      SCENERY_CREDIT_MIN_BOTTOM + SCENERY_CREDIT_HEIGHT + SCENERY_CREDIT_GAP,
-    );
   });
 });

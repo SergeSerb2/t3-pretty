@@ -290,9 +290,9 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const isComposerAtKeyboardEdge = Platform.OS === "android" ? isKeyboardVisible : composerExpanded;
   // Reserve a strip under the composer for the scenery credit so the pill
   // sits below send/stop instead of stealing taps from them. Keyboard-open
-  // hides the credit under the IME, so skip the slot then. iOS docks the
-  // floating pill in the home-indicator strip instead of stacking a full
-  // safe-area inset under the credit.
+  // hides the credit under the IME, so skip the slot then. iOS matches
+  // Liquid Glass Home: dock in the home-indicator strip instead of stacking
+  // a full safe-area inset under the credit.
   const sceneryCreditSlot = threadSceneryPhoto !== null && !isKeyboardVisible ? creditHeight : 0;
   const composerBottomInset = deriveFloatingChromeBottomInset({
     isAtKeyboardEdge: isComposerAtKeyboardEdge,

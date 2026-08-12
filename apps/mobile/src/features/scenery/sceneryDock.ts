@@ -1,10 +1,7 @@
 /**
  * Shared bottom-dock math for World Scenery credits and the floating chrome
- * they sit under (thread composer, Liquid Glass home search).
- *
- * iOS Liquid Glass bars are meant to rest in the home-indicator strip, like
- * Mail's search field. Using the full safe-area inset as padding leaves a
- * dead band between the credit pill and the physical bottom.
+ * they sit under. Liquid Glass Home already docks in the home-indicator strip;
+ * the thread composer uses the same inset so chat matches that home bar.
  */
 
 /** Unscaled first-frame estimate (4pt padding + 14pt type). Callers use this
@@ -31,11 +28,4 @@ export function deriveFloatingChromeBottomInset(input: {
   const dock =
     input.platform === "ios" ? SCENERY_CREDIT_MIN_BOTTOM : Math.max(input.safeAreaBottom, 12);
   return dock + input.creditHeight;
-}
-
-/** Resting offset from the physical bottom for the native Mail search toolbar. */
-export function deriveMailSearchToolbarBottomSpacing(hasSceneryCredit: boolean): number {
-  return (
-    SCENERY_CREDIT_MIN_BOTTOM + (hasSceneryCredit ? SCENERY_CREDIT_HEIGHT + SCENERY_CREDIT_GAP : 0)
-  );
 }

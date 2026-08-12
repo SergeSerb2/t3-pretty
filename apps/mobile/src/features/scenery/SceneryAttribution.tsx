@@ -2,9 +2,9 @@
  * Unsplash attribution pill for the World Scenery photo behind a screen —
  * "Location · Photo by X", tapping through to the photographer's profile with
  * the required utm parameters. Horizontally centered under floating chrome.
- * `dockUnderFloatingChrome` sits the pill in the home-indicator strip so the
- * composer / search bar can rest lower; otherwise the pill clears the system
- * inset (desktop still docks bottom-right via --scenery-dock-block).
+ * `dockUnderFloatingChrome` sits the pill in the home-indicator strip under
+ * Liquid Glass Home search and the thread composer; otherwise the pill clears
+ * the system inset (desktop still docks bottom-right via --scenery-dock-block).
  */
 import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
 import * as Linking from "expo-linking";
@@ -31,8 +31,8 @@ export function SceneryAttribution(props: {
   readonly bottomExtra?: number;
   /**
    * Dock 8pt above the physical bottom so the pill sits under floating
-   * search/compose chrome in the home-indicator strip. Leave unset on
-   * pre-Liquid-Glass Home and Android so the pill still clears the system inset.
+   * Home search / thread compose chrome. Leave unset on pre-Liquid-Glass
+   * Home and Android so the pill still clears the system inset.
    */
   readonly dockUnderFloatingChrome?: boolean;
   /** Painted pill height after layout, including Dynamic Type. */
@@ -42,8 +42,8 @@ export function SceneryAttribution(props: {
   const insets = useSafeAreaInsets();
   const isDarkMode = useColorScheme() !== "light";
   const reportedHeightRef = useRef(0);
-  // Default: clear the home-indicator / system-nav inset. Floating iOS
-  // chrome (Home search, thread composer) opts into a physical-bottom dock.
+  // Default: clear the home-indicator / system-nav inset. Liquid Glass Home
+  // and the iOS thread composer opt into a physical-bottom dock.
   const bottom =
     props.dockUnderFloatingChrome === true
       ? SCENERY_CREDIT_MIN_BOTTOM + (props.bottomExtra ?? 0)

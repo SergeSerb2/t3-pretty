@@ -13,8 +13,6 @@ import { T3Wordmark } from "../../components/T3Wordmark";
 import { HOME_HORIZONTAL_INSET } from "../../lib/layoutMetrics";
 import { resolveMobileStageLabel } from "../../lib/mobileBranding";
 import { useThemeColor } from "../../lib/useThemeColor";
-import { useDailySceneryPhoto } from "../scenery/SceneryProvider";
-import { deriveMailSearchToolbarBottomSpacing } from "../scenery/sceneryDock";
 import { useThreadListV2Enabled } from "../threads/use-thread-list-v2-enabled";
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
@@ -303,8 +301,6 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
 function IosHomeHeader(props: HomeHeaderProps) {
   const searchBarRef = useRef<SearchBarCommands>(null);
   const iconColor = useThemeColor("--color-icon");
-  const dailySceneryPhoto = useDailySceneryPhoto();
-  const mailToolbarBottomSpacing = deriveMailSearchToolbarBottomSpacing(dailySceneryPhoto !== null);
   // Thread List v2 lays the list out in fixed creation order, so the
   // sort/group filter controls would be silently ignored — hide them and
   // key the "customized" icon state off the environment filter alone.
@@ -349,7 +345,6 @@ function IosHomeHeader(props: HomeHeaderProps) {
             ? {
                 unstable_headerToolbarItems: () => [
                   createNativeMailSearchToolbarItem({
-                    bottomSpacing: mailToolbarBottomSpacing,
                     composeButtonId: "home-new-task",
                     composeSystemImageName: "square.and.pencil",
                     filterMenu,

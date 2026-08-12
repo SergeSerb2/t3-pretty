@@ -226,7 +226,7 @@ index 5970e3e3a624b9498b8dedfc16831df03a274d0c..5ebff085788d813f1139eb6f9129fb21
  
  // appearance does not apply to the tvOS so we need to use lagacy customization
  #if TARGET_OS_TV
-@@ -637,10 +675,391 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -637,10 +675,384 @@ + (void)updateViewController:(UIViewController *)vc
    // This assignment should be done after `navitem.titleView = ...` assignment (iOS 16.0 bug).
    // See: https://github.com/software-mansion/react-native-screens/issues/1570 (comments)
    navitem.title = config.title;
@@ -352,11 +352,7 @@ index 5970e3e3a624b9498b8dedfc16831df03a274d0c..5ebff085788d813f1139eb6f9129fb21
 +      CGFloat buttonSize = toolbarHeight;
 +      CGFloat sideButtonReserve = buttonSize + 8.0;
 +      CGFloat searchFieldHeight = 42.0;
-+      CGFloat keyboardBottomSpacing = 8.0;
-+      NSNumber *bottomSpacingNumber = mailSearchToolbarConfig[@"bottomSpacing"];
-+      CGFloat restingBottomSpacing = bottomSpacingNumber != nil
-+          ? MAX(keyboardBottomSpacing, bottomSpacingNumber.doubleValue)
-+          : keyboardBottomSpacing;
++      CGFloat toolbarBottomSpacing = 4.0;
 +      UIFont *searchFont = [UIFont preferredFontForTextStyle:UIFontTextStyleTitle3];
 +      NSDictionary<NSAttributedStringKey, id> *placeholderAttributes = @{
 +        NSForegroundColorAttributeName : UIColor.secondaryLabelColor,
@@ -375,22 +371,19 @@ index 5970e3e3a624b9498b8dedfc16831df03a274d0c..5ebff085788d813f1139eb6f9129fb21
 +      [chromeHostView addSubview:toolbarHost];
 +      // The screen stays mounted beneath pushed routes, so its keyboard layout
 +      // guide can track a keyboard owned by another screen. Keep the toolbar at
-+      // rest unless its own search field is editing. Rest against the physical
-+      // bottom (not the safe-area inset) so Liquid Glass chrome can sit in the
-+      // home-indicator strip; callers pass bottomSpacing to keep scenery
-+      // credits visible underneath.
++      // rest unless its own search field is editing.
 +      NSLayoutConstraint *keyboardAvoidConstraint =
 +          [toolbarHost.bottomAnchor constraintEqualToAnchor:keyboardLayoutGuide.topAnchor
-+                                                   constant:-keyboardBottomSpacing];
++                                                   constant:-toolbarBottomSpacing];
 +      keyboardAvoidConstraint.priority = UILayoutPriorityDefaultLow;
 +      NSLayoutConstraint *restingBottomConstraint =
-+          [toolbarHost.bottomAnchor constraintEqualToAnchor:chromeHostView.bottomAnchor
-+                                                   constant:-restingBottomSpacing];
++          [toolbarHost.bottomAnchor constraintEqualToAnchor:chromeHostView.safeAreaLayoutGuide.bottomAnchor
++                                                   constant:-toolbarBottomSpacing];
 +      restingBottomConstraint.priority = UILayoutPriorityDefaultHigh;
 +      [NSLayoutConstraint activateConstraints:@[
 +        [toolbarHost.centerXAnchor constraintEqualToAnchor:chromeHostView.centerXAnchor],
-+        [toolbarHost.bottomAnchor constraintLessThanOrEqualToAnchor:chromeHostView.bottomAnchor
-+                                                           constant:-keyboardBottomSpacing],
++        [toolbarHost.bottomAnchor constraintLessThanOrEqualToAnchor:chromeHostView.safeAreaLayoutGuide.bottomAnchor
++                                                           constant:-toolbarBottomSpacing],
 +        keyboardAvoidConstraint,
 +        restingBottomConstraint,
 +        [toolbarHost.widthAnchor constraintEqualToConstant:resolvedWidth],
@@ -622,7 +615,7 @@ index 5970e3e3a624b9498b8dedfc16831df03a274d0c..5ebff085788d813f1139eb6f9129fb21
  
    // Setting navigation bar visibility is split to mitigate iOS 26 bug with bar button items
    // (setting nav bar visibility should be done after `navitem.*BarButtonItems`).
-@@ -773,6 +1192,7 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -773,6 +1185,7 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
  
  - (NSArray<UIBarButtonItem *> *)barButtonItemsFromConfigs:(NSArray<NSDictionary<NSString *, id> *> *)dicts
                                           withCurrentItems:(NSArray<UIBarButtonItem *> *)currentItems
@@ -630,7 +623,7 @@ index 5970e3e3a624b9498b8dedfc16831df03a274d0c..5ebff085788d813f1139eb6f9129fb21
  {
    if (dicts.count == 0) {
      return currentItems;
-@@ -781,7 +1201,197 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -781,7 +1194,197 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
    [items addObjectsFromArray:currentItems];
    for (NSUInteger i = 0; i < dicts.count; i++) {
      NSDictionary *dict = dicts[i];
@@ -829,7 +822,7 @@ index 5970e3e3a624b9498b8dedfc16831df03a274d0c..5ebff085788d813f1139eb6f9129fb21
        RNSBarButtonItem *item = [[RNSBarButtonItem alloc] initWithConfig:dict
            action:^(NSString *buttonId) {
              auto eventEmitter = std::static_pointer_cast<const facebook::react::RNSScreenStackHeaderConfigEventEmitter>(
-@@ -803,19 +1413,23 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -803,19 +1406,23 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
            }
            imageLoader:_imageLoader];
        NSNumber *index = dict[@"index"];
@@ -859,7 +852,7 @@ index 5970e3e3a624b9498b8dedfc16831df03a274d0c..5ebff085788d813f1139eb6f9129fb21
          [items insertObject:item atIndex:index.integerValue];
        } else {
          [items addObject:item];
-@@ -825,6 +1439,47 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -825,6 +1432,47 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
    return items;
  }
  
@@ -907,7 +900,7 @@ index 5970e3e3a624b9498b8dedfc16831df03a274d0c..5ebff085788d813f1139eb6f9129fb21
  RNS_IGNORE_SUPER_CALL_BEGIN
  - (void)insertReactSubview:(RNSScreenStackHeaderSubview *)subview atIndex:(NSInteger)atIndex
  {
-@@ -1013,6 +1668,8 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
+@@ -1013,6 +1661,8 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
    }
  
    _title = RCTNSStringFromStringNilIfEmpty(newScreenProps.title);
@@ -916,7 +909,7 @@ index 5970e3e3a624b9498b8dedfc16831df03a274d0c..5ebff085788d813f1139eb6f9129fb21
    if (newScreenProps.titleFontFamily != oldScreenProps.titleFontFamily) {
      _titleFontFamily = RCTNSStringFromStringNilIfEmpty(newScreenProps.titleFontFamily);
    }
-@@ -1038,6 +1695,7 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
+@@ -1038,6 +1688,7 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
    _disableBackButtonMenu = newScreenProps.disableBackButtonMenu;
    _backButtonDisplayMode =
        [RNSConvert UINavigationItemBackButtonDisplayModeFromCppEquivalent:newScreenProps.backButtonDisplayMode];
@@ -924,7 +917,7 @@ index 5970e3e3a624b9498b8dedfc16831df03a274d0c..5ebff085788d813f1139eb6f9129fb21
  
    if (newScreenProps.userInterfaceStyle != oldScreenProps.userInterfaceStyle) {
      _userInterfaceStyle = [RNSConvert UIUserInterfaceStyleFromCppEquivalent:newScreenProps.userInterfaceStyle];
-@@ -1084,6 +1742,30 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
+@@ -1084,6 +1735,30 @@ - (void)updateProps:(react::Props::Shared const &)props oldProps:(react::Props::
      _headerRightBarButtonItems = array;
    }
  
@@ -1320,7 +1313,7 @@ index 3b384e03891e38e936f370372a682d73440e7ec2..861ffed850e90f27916c427853b503db
      /**
       * The tint color to apply to the item.
       *
-@@ -1145,8 +1193,38 @@ export interface HeaderBarButtonItemWithMenu extends SharedHeaderBarButtonItem {
+@@ -1145,8 +1193,37 @@ export interface HeaderBarButtonItemWithMenu extends SharedHeaderBarButtonItem {
  export interface HeaderBarButtonItemSpacing {
      type: 'spacing';
      spacing: number;
@@ -1340,7 +1333,6 @@ index 3b384e03891e38e936f370372a682d73440e7ec2..861ffed850e90f27916c427853b503db
 +}
 +export interface HeaderBarButtonMailSearchToolbarItem {
 +    type: 'mailSearchToolbar';
-+    bottomSpacing?: number | undefined;
 +    composeButtonId?: string | undefined;
 +    composeMenu?: HeaderBarButtonItemWithMenu['menu'] | undefined;
 +    composeSystemImageName?: string | undefined;
@@ -1661,7 +1653,7 @@ index 76a83f3acb6fd3f0af7f027798848b7124100286..9e4499f076f9988e3266df4be7201e13
    /**
     * The tint color to apply to the item.
     *
-@@ -1279,11 +1327,47 @@ export interface HeaderBarButtonItemWithMenu extends SharedHeaderBarButtonItem {
+@@ -1279,11 +1327,46 @@ export interface HeaderBarButtonItemWithMenu extends SharedHeaderBarButtonItem {
  export interface HeaderBarButtonItemSpacing {
    type: 'spacing';
    spacing: number;
@@ -1684,7 +1676,6 @@ index 76a83f3acb6fd3f0af7f027798848b7124100286..9e4499f076f9988e3266df4be7201e13
 +
 +export interface HeaderBarButtonMailSearchToolbarItem {
 +  type: 'mailSearchToolbar';
-+  bottomSpacing?: number | undefined;
 +  composeButtonId?: string | undefined;
 +  composeMenu?: HeaderBarButtonItemWithMenu['menu'] | undefined;
 +  composeSystemImageName?: string | undefined;
