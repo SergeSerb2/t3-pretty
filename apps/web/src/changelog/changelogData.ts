@@ -26,6 +26,16 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260811.1067000079",
+    date: "2026-08-11",
+    items: [
+      {
+        kind: "improved",
+        title: "automate fork EAS releases",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260811.1067000078",
     date: "2026-08-11",
     items: [
