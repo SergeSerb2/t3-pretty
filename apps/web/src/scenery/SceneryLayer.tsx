@@ -7,11 +7,15 @@
  *
  * Anti-flash: the previously displayed photo is held until the next one has
  * decoded, so a thread switch cross-fades photo→photo instead of collapsing
- * to the gradient during the load gap.
+ * to the gradient during the load gap. When the new photo also flips the
+ * ink appearance, that commit is wrapped in a view transition so the
+ * palette, wash, and wallpaper dissolve together.
  */
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 import { gradientCss } from "./palette";
+import { runSceneryInkTransition, SCENERY_INK_TRANSITION_MS } from "./sceneryInkTransition";
 import { UNSPLASH_UTM, wallpaperURL, type SceneryPhoto } from "./unsplash";
 
 interface DisplayedPhoto {
@@ -27,6 +31,7 @@ export function SceneryLayer({
   photo,
   seed,
   blur,
+  appearanceCrossfade = false,
   onPhotoDisplayed,
 }: {
   photo: SceneryPhoto | null;
@@ -34,10 +39,19 @@ export function SceneryLayer({
   seed: string;
   /** CDN pre-blur strength (0–100); a change cross-fades like a photo swap. */
   blur: number;
+  /**
+   * The incoming photo will also flip light↔dark ink. Commit the decoded
+   * swap inside a view transition so chrome and wash don't snap first.
+   */
+  appearanceCrossfade?: boolean;
   onPhotoDisplayed?: (photo: SceneryPhoto) => void;
 }) {
   const [displayed, setDisplayed] = useState<DisplayedPhoto | null>(null);
   const [previous, setPrevious] = useState<DisplayedPhoto | null>(null);
+  const appearanceCrossfadeRef = useRef(appearanceCrossfade);
+  appearanceCrossfadeRef.current = appearanceCrossfade;
+  const onPhotoDisplayedRef = useRef(onPhotoDisplayed);
+  onPhotoDisplayedRef.current = onPhotoDisplayed;
 
   // Committed-state mirror for the load effect; synced in an effect (not
   // during render) so a discarded render cannot corrupt it. Declared before
@@ -62,16 +76,28 @@ export function SceneryLayer({
         if (cancelled) {
           return;
         }
-        setPrevious(displayedRef.current);
-        setDisplayed({
+        const next: DisplayedPhoto = {
           id: photo.id,
           blur,
           url,
           name: photo.name,
           photographerName: photo.photographerName,
           photographerProfileURL: photo.photographerProfileURL,
-        });
-        onPhotoDisplayed?.(photo);
+        };
+        const commit = () => {
+          setPrevious(displayedRef.current);
+          setDisplayed(next);
+          onPhotoDisplayedRef.current?.(photo);
+        };
+        if (appearanceCrossfadeRef.current) {
+          // The view-transition callback must mutate the DOM before it
+          // returns, so React's photo + ink state have to flush together.
+          runSceneryInkTransition(() => {
+            flushSync(commit);
+          });
+          return;
+        }
+        commit();
       },
       { once: true },
     );
@@ -87,7 +113,7 @@ export function SceneryLayer({
     if (!previous) {
       return;
     }
-    const timer = window.setTimeout(() => setPrevious(null), 400);
+    const timer = window.setTimeout(() => setPrevious(null), SCENERY_INK_TRANSITION_MS + 100);
     return () => window.clearTimeout(timer);
   }, [previous]);
 
@@ -110,8 +136,10 @@ export function SceneryLayer({
             />
           ) : null}
         </div>
-        <div className="scenery-layer__wash" />
-        <div className="scenery-layer__edges" />
+        <div className="scenery-layer__wash scenery-layer__wash--dark" />
+        <div className="scenery-layer__wash scenery-layer__wash--light" />
+        <div className="scenery-layer__edges scenery-layer__edges--dark" />
+        <div className="scenery-layer__edges scenery-layer__edges--light" />
       </div>
       {displayed ? (
         // Outside the aria-hidden art layer: the credit is real content, and
