@@ -1,6 +1,6 @@
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import type { EnvironmentThreadStatus } from "@t3tools/client-runtime/state/threads";
-import { useKeyboardChatComposerInset, useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
+import { useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
 import type { LegendListRef } from "@legendapp/list/react-native";
 import type {
   ApprovalRequestId,
@@ -16,13 +16,13 @@ import type {
 } from "@t3tools/contracts";
 import * as Haptics from "expo-haptics";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Platform, View, type GestureResponderEvent } from "react-native";
+import { View, type GestureResponderEvent, type LayoutChangeEvent } from "react-native";
 import {
   KeyboardController,
   KeyboardStickyView,
   useKeyboardState,
 } from "react-native-keyboard-controller";
-import Animated, { FadeInDown, FadeOut } from "react-native-reanimated";
+import Animated, { FadeInDown, FadeOut, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
@@ -197,7 +197,6 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const selectedThreadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
   const threadSceneryPhoto = useThreadSceneryPhoto(selectedThreadKey);
   const composerEditorRef = useRef<ComposerEditorHandle>(null);
-  const composerOverlayRef = useRef<View>(null);
   const listRef = useRef<LegendListRef>(null);
   const feedTouchStartRef = useRef<{ pageX: number; pageY: number } | null>(null);
   const selectedThreadKeyRef = useRef(selectedThreadKey);
@@ -236,21 +235,28 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const composerChrome = composerExpanded ? COMPOSER_EXPANDED_CHROME : COMPOSER_COLLAPSED_CHROME;
   const composerOverlapHeight = composerChrome + composerBottomInset;
   const estimatedOverlayHeight = composerOverlapHeight;
-  // The overlay's measured height includes the home-indicator inset (the
-  // composer pads it), but contentInsetAdjustmentBehavior="automatic" makes
-  // UIKit add the safe-area bottom to the content inset AGAIN — leaving a
-  // dead strip between the resting content and the composer. Report the
-  // overlay height minus the safe area; UIKit adds it back, and ThreadFeed
-  // hands LegendList the same delta via contentInsetEndStaticAdjustment so
-  // its end-scroll math matches the real resting position.
-  const nativeInsetOvercount =
-    props.usesAutomaticContentInsets === true && Platform.OS === "ios" ? insets.bottom : 0;
-  const { contentInsetEndAdjustment, onComposerLayout } = useKeyboardChatComposerInset(
-    listRef,
-    composerOverlayRef,
-    Math.max(0, estimatedOverlayHeight - nativeInsetOvercount),
-    -nativeInsetOvercount,
-  );
+  // Resting composer clearance lives in ThreadFeed's list footer (real
+  // content), not in KeyboardChatScrollView's animated contentInset. The
+  // inset path can leave LegendList's end math ahead of the visual inset, so
+  // running threads stop scrolling while the latest rows are still under the
+  // chat box. Keep a zero SharedValue so keyboard padding still flows through
+  // KeyboardAwareLegendList without double-counting the composer.
+  //
+  // contentInsetAdjustmentBehavior="automatic" still adds the safe-area
+  // bottom on its own — ThreadFeed subtracts that from the footer and hands
+  // LegendList the same delta via contentInsetEndStaticAdjustment.
+  const contentInsetEndAdjustment = useSharedValue(0);
+  const [composerOverlayHeight, setComposerOverlayHeight] = useState(estimatedOverlayHeight);
+  const onComposerLayout = useCallback((event: LayoutChangeEvent) => {
+    const height = event.nativeEvent.layout.height;
+    if (!Number.isFinite(height) || height <= 0) {
+      return;
+    }
+    setComposerOverlayHeight((current) => (current === height ? current : height));
+  }, []);
+  useLayoutEffect(() => {
+    setComposerOverlayHeight(estimatedOverlayHeight);
+  }, [estimatedOverlayHeight]);
   const { freeze, scrollMessageToEnd } = useKeyboardScrollToEnd({ listRef });
   const showContent = props.showContent ?? true;
   const layoutVariant = props.layoutVariant ?? "compact";
@@ -398,7 +404,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             anchorMessageId={anchorMessageId}
             contentInsetEndAdjustment={contentInsetEndAdjustment}
             contentTopInset={0}
-            contentBottomInset={estimatedOverlayHeight}
+            contentBottomInset={composerOverlayHeight}
             contentMaxWidth={contentMaxWidth}
             layoutVariant={layoutVariant}
             usesAutomaticContentInsets={props.usesAutomaticContentInsets}
@@ -421,12 +427,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
           {/* No paddingTop here: the overlay's measured height becomes the
               list's bottom inset, so any padding above the pill/composer
               pushes the resting content floor up by the same amount. */}
-          <View
-            ref={composerOverlayRef}
-            collapsable={false}
-            onLayout={onComposerLayout}
-            className="w-full"
-          >
+          <View collapsable={false} onLayout={onComposerLayout} className="w-full">
             <View className="w-full self-center" style={{ maxWidth: contentMaxWidth }}>
               {props.activePendingApproval || props.activePendingUserInput ? (
                 <Animated.View
