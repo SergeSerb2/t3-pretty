@@ -293,6 +293,17 @@ describe("deriveComposerSendState", () => {
       }).hasSendableContent,
     ).toBe(false);
   });
+
+  it("treats pending path attachments as sendable content", () => {
+    expect(
+      deriveComposerSendState({
+        prompt: "",
+        imageCount: 0,
+        terminalContexts: [],
+        fileAttachmentCount: 1,
+      }).hasSendableContent,
+    ).toBe(true);
+  });
 });
 
 describe("buildExpiredTerminalContextToastCopy", () => {

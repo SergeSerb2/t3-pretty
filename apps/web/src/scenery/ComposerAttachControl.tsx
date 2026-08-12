@@ -1,26 +1,42 @@
 /**
  * The composer attach button, injected from the fork module so no upstream
- * file changes. A slot element is inserted at the front of the composer's
- * right action group (found by [data-chat-composer-actions="right"], pinned
- * by sceneryDomContract.test.ts) and a React portal renders the button into
- * it; a MutationObserver re-finds the group across thread switches.
+ * file changes are required for the control itself. A slot element is inserted
+ * at the front of the composer's right action group (found by
+ * [data-chat-composer-actions="right"], pinned by sceneryDomContract.test.ts)
+ * and a React portal renders the button into it; a MutationObserver re-finds
+ * the group across thread switches.
  *
  * Picked files reach the composer through its own event surface instead of
  * private APIs: images are dispatched as a synthetic drop carrying Files —
  * the exact path an OS drag takes, so validation, compression, attachment
- * limits and error toasts are all upstream's — and text files ride the
- * mention-drop channel, which inserts prompt text through the editor's
- * proper insert path.
+ * limits and error toasts are all upstream's. Non-image files with a real
+ * absolute path (desktop `desktopBridge.getPathForFile`) become pending path
+ * attachments: chips in the composer chrome, filepath baked into the outgoing
+ * prompt at send time.
+ * Browser picks have no absolute path — text is inserted into the prompt via
+ * the mention-drop channel; other files fall through the images drop path so
+ * the composer refuses them instead of claiming an unreadable basename.
  */
+import { FileIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { COMPOSER_MENTION_DRAG_TYPE } from "../components/chat/composerMentionDrag";
-import { classifyAttachment, looksBinary, textAttachmentPayload } from "./attachFiles";
+import {
+  classifyAttachment,
+  createAttachedFileRef,
+  looksBinary,
+  textAttachmentPayload,
+  type AttachedFileRef,
+} from "./attachFiles";
+import { addAttachedFiles, removeAttachedFile, useAttachedFiles } from "./attachedFileStore";
+import { useActiveThreadKey } from "./useActiveThreadKey";
 import "./composerAttach.css";
 
 const HOST_SELECTOR = '[data-chat-composer-actions="right"]';
+const STRIP_HOST_SELECTOR = '[data-chat-composer-editor-chrome="true"]';
 const SLOT_CLASS = "scenery-attach-slot";
+const STRIP_SLOT_CLASS = "scenery-attach-strip-slot";
 
 function dispatchDrop(target: Element, dataTransfer: DataTransfer): void {
   target.dispatchEvent(
@@ -45,26 +61,49 @@ function dropPromptText(target: Element, payload: string): void {
   dispatchDrop(target, transfer);
 }
 
-async function deliverFiles(slot: Element, files: ReadonlyArray<File>): Promise<void> {
+async function deliverFiles(
+  slot: Element,
+  threadKey: string | null,
+  files: ReadonlyArray<File>,
+): Promise<void> {
   const dropPath: File[] = [];
+  const pathFiles: AttachedFileRef[] = [];
   for (const file of files) {
-    if (classifyAttachment(file) !== "text") {
+    const kind = classifyAttachment(file);
+    if (kind === "image") {
       dropPath.push(file);
       continue;
     }
-    try {
-      const content = await file.text();
-      if (looksBinary(content)) {
-        dropPath.push(file);
-      } else {
-        dropPromptText(slot, textAttachmentPayload(file.name, content));
-      }
-    } catch {
-      dropPath.push(file);
+
+    const pathRef = createAttachedFileRef(file);
+    if (pathRef) {
+      pathFiles.push(pathRef);
+      continue;
     }
+
+    // No absolute path (typical browser pick). Inline readable text; otherwise
+    // let the composer's images-only drop path refuse the file.
+    if (kind === "text") {
+      try {
+        const content = await file.text();
+        if (looksBinary(content)) {
+          dropPath.push(file);
+        } else {
+          dropPromptText(slot, textAttachmentPayload(file.name, content));
+        }
+      } catch {
+        dropPath.push(file);
+      }
+      continue;
+    }
+
+    dropPath.push(file);
   }
-  // One drop for the batch: the composer validates them together, so the
-  // attachment-count limit sees the whole pick at once.
+  if (threadKey && pathFiles.length > 0) {
+    addAttachedFiles(threadKey, pathFiles);
+  }
+  // One drop for the image/binary batch: the composer validates them together,
+  // so the attachment-count limit sees the whole pick at once.
   dropFiles(slot, dropPath);
 }
 
@@ -82,28 +121,76 @@ function PaperclipIcon() {
   );
 }
 
+function AttachedFileChip(props: { file: AttachedFileRef; onRemove: (fileId: string) => void }) {
+  const extension = props.file.name.includes(".")
+    ? props.file.name.slice(props.file.name.lastIndexOf(".") + 1).toUpperCase()
+    : "FILE";
+  return (
+    <div className="scenery-attach-file-chip" title={props.file.path}>
+      <div className="scenery-attach-file-chip__icon" aria-hidden>
+        <FileIcon className="size-5" />
+        <span className="scenery-attach-file-chip__ext">{extension.slice(0, 4)}</span>
+      </div>
+      <div className="scenery-attach-file-chip__meta">
+        <span className="scenery-attach-file-chip__name">{props.file.name}</span>
+      </div>
+      <button
+        type="button"
+        className="scenery-attach-file-chip__remove"
+        aria-label={`Remove ${props.file.name}`}
+        onClick={() => props.onRemove(props.file.id)}
+      >
+        <XIcon className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function AttachedFileStrip(props: {
+  files: ReadonlyArray<AttachedFileRef>;
+  onRemove: (fileId: string) => void;
+}) {
+  if (props.files.length === 0) {
+    return null;
+  }
+  return (
+    <div className="scenery-attach-file-strip" data-scenery-attach-file-strip="true">
+      {props.files.map((file) => (
+        <AttachedFileChip key={file.id} file={file} onRemove={props.onRemove} />
+      ))}
+    </div>
+  );
+}
+
 export function ComposerAttachControl() {
-  const [slots, setSlots] = useState<ReadonlyArray<HTMLElement>>([]);
+  const threadKey = useActiveThreadKey();
+  const attachedFiles = useAttachedFiles(threadKey);
+  const [buttonSlots, setButtonSlots] = useState<ReadonlyArray<HTMLElement>>([]);
+  const [stripSlots, setStripSlots] = useState<ReadonlyArray<HTMLElement>>([]);
   const inputRefs = useRef(new Map<HTMLElement, HTMLInputElement | null>());
 
   useEffect(() => {
-    const managed = new Map<Element, HTMLElement>();
+    const managedButtons = new Map<Element, HTMLElement>();
+    const managedStrips = new Map<Element, HTMLElement>();
     let queued = false;
     let nextSlotId = 0;
 
     const sync = () => {
       queued = false;
-      const hosts = [...document.querySelectorAll(HOST_SELECTOR)];
-      let changed = false;
-      for (const [host, slot] of managed) {
-        if (!host.isConnected || !hosts.includes(host)) {
+      const buttonHosts = [...document.querySelectorAll(HOST_SELECTOR)];
+      const stripHosts = [...document.querySelectorAll(STRIP_HOST_SELECTOR)];
+      let buttonsChanged = false;
+      let stripsChanged = false;
+
+      for (const [host, slot] of managedButtons) {
+        if (!host.isConnected || !buttonHosts.includes(host)) {
           slot.remove();
-          managed.delete(host);
-          changed = true;
+          managedButtons.delete(host);
+          buttonsChanged = true;
         }
       }
-      for (const host of hosts) {
-        const existing = managed.get(host);
+      for (const host of buttonHosts) {
+        const existing = managedButtons.get(host);
         if (existing?.parentElement === host) {
           continue;
         }
@@ -111,11 +198,35 @@ export function ComposerAttachControl() {
         slot.dataset.scenerySlotId ??= String(nextSlotId++);
         slot.className = SLOT_CLASS;
         host.insertBefore(slot, host.firstChild);
-        managed.set(host, slot);
-        changed = true;
+        managedButtons.set(host, slot);
+        buttonsChanged = true;
       }
-      if (changed) {
-        setSlots([...managed.values()]);
+
+      for (const [host, slot] of managedStrips) {
+        if (!host.isConnected || !stripHosts.includes(host)) {
+          slot.remove();
+          managedStrips.delete(host);
+          stripsChanged = true;
+        }
+      }
+      for (const host of stripHosts) {
+        const existing = managedStrips.get(host);
+        if (existing?.parentElement === host && existing === host.firstElementChild) {
+          continue;
+        }
+        const slot = existing ?? document.createElement("div");
+        slot.dataset.scenerySlotId ??= String(nextSlotId++);
+        slot.className = STRIP_SLOT_CLASS;
+        host.insertBefore(slot, host.firstChild);
+        managedStrips.set(host, slot);
+        stripsChanged = true;
+      }
+
+      if (buttonsChanged) {
+        setButtonSlots([...managedButtons.values()]);
+      }
+      if (stripsChanged) {
+        setStripSlots([...managedStrips.values()]);
       }
     };
 
@@ -129,16 +240,20 @@ export function ComposerAttachControl() {
     sync();
     return () => {
       observer.disconnect();
-      for (const slot of managed.values()) {
+      for (const slot of managedButtons.values()) {
         slot.remove();
       }
-      setSlots([]);
+      for (const slot of managedStrips.values()) {
+        slot.remove();
+      }
+      setButtonSlots([]);
+      setStripSlots([]);
     };
   }, []);
 
   return (
     <>
-      {slots.map((slot) => (
+      {buttonSlots.map((slot) => (
         <span key={slot.dataset.scenerySlotId}>
           {createPortal(
             <>
@@ -161,13 +276,28 @@ export function ComposerAttachControl() {
                 onChange={(event) => {
                   const files = Array.from(event.target.files ?? []);
                   event.target.value = "";
-                  void deliverFiles(slot, files);
+                  void deliverFiles(slot, threadKey, files);
                 }}
               />
             </>,
             slot,
           )}
         </span>
+      ))}
+      {stripSlots.map((slot) => (
+        <div key={slot.dataset.scenerySlotId}>
+          {createPortal(
+            <AttachedFileStrip
+              files={attachedFiles}
+              onRemove={(fileId) => {
+                if (threadKey) {
+                  removeAttachedFile(threadKey, fileId);
+                }
+              }}
+            />,
+            slot,
+          )}
+        </div>
       ))}
     </>
   );

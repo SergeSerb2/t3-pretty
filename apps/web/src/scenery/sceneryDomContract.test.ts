@@ -74,14 +74,35 @@ describe("composer attach contract with upstream markup", () => {
     expect(chatComposerSource).toContain('data-chat-composer-actions="right"');
   });
 
+  it("the editor chrome the file-chip strip mounts into still exists", () => {
+    expect(chatComposerSource).toContain('data-chat-composer-editor-chrome="true"');
+  });
+
   it("the composer still ingests OS-style Files drops on its drag wrapper", () => {
     expect(chatComposerSource).toContain("onDrop={onComposerDrop}");
     expect(chatComposerSource).toContain('event.dataTransfer.types.includes("Files")');
     expect(chatComposerSource).toContain("void addComposerImages(files)");
   });
 
-  it("the mention drop channel the text-file insert rides still exists", () => {
-    expect(chatComposerSource).toContain("onDropCapture={composerMentionDragHandlers.onDrop}");
+  it("ChatView still bakes attached filepaths into the outgoing prompt", () => {
+    expect(chatViewSource).toContain("applyAttachedFilePathsSuffix");
+    expect(chatViewSource).toContain("takeAttachedFilesForThread");
+  });
+
+  it("plan follow-up send also bakes attached filepaths before starting the turn", () => {
+    const followUpFnStart = chatViewSource.indexOf("const onSubmitPlanFollowUp = useCallback");
+    expect(followUpFnStart).toBeGreaterThan(-1);
+    const nextCallback = chatViewSource.indexOf(
+      "const onImplementPlanInNewThread = useCallback",
+      followUpFnStart,
+    );
+    const followUpSlice = chatViewSource.slice(
+      followUpFnStart,
+      nextCallback === -1 ? followUpFnStart + 8000 : nextCallback,
+    );
+    expect(followUpSlice).toContain("takeAttachedFilesForThread(activeThreadKey)");
+    expect(followUpSlice).toContain("applyAttachedFilePathsSuffix");
+    expect(followUpSlice).toContain("restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot)");
   });
 });
 
