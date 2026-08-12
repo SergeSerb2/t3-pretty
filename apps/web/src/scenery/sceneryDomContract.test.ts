@@ -18,6 +18,9 @@ import rootRouteSource from "../routes/__root.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
 import sceneryLayerSource from "./SceneryLayer.tsx?raw";
+import activeScenerySource from "./ActiveScenery.tsx?raw";
+import useInkOverrideSource from "./useInkOverride.ts?raw";
+import sceneryInkTransitionSource from "./sceneryInkTransition.ts?raw";
 
 // ?raw on a .css module yields "" under the test pipeline (the CSS transform
 // wins), so the stylesheet contract reads the file straight from disk.
@@ -147,5 +150,40 @@ describe("ink override contract with upstream appearance handling", () => {
 
   it("useTheme still expresses appearance as the html dark class", () => {
     expect(useThemeSource).toContain('classList.toggle("dark", isDark)');
+  });
+
+  it("applies ink in layout so a photo view transition captures the new palette", () => {
+    expect(useInkOverrideSource).toContain("useLayoutEffect");
+  });
+});
+
+describe("scenery light/dark appearance crossfade", () => {
+  it("holds ink on the displayed photo until the next one has decoded", () => {
+    expect(activeScenerySource).toContain("displayedTone");
+    expect(activeScenerySource).toContain("appearanceCrossfade");
+    expect(activeScenerySource).toContain("delayedInk");
+  });
+
+  it("commits an appearance-flipping photo swap inside a view transition", () => {
+    expect(sceneryLayerSource).toContain("runSceneryInkTransition");
+    expect(sceneryLayerSource).toContain("flushSync(commit)");
+    expect(sceneryLayerSource).toContain("appearanceCrossfadeRef.current");
+  });
+
+  it("crossfades wash by opacity instead of snapping rgb() channels", () => {
+    expect(sceneryCssSource).toContain("scenery-layer__wash--dark");
+    expect(sceneryCssSource).toContain("scenery-layer__wash--light");
+    expect(sceneryCssSource).toContain("scenery-layer__edges--dark");
+    expect(sceneryCssSource).toContain("scenery-layer__edges--light");
+    expect(sceneryCssSource).not.toContain("--scenery-wash-channel");
+    expect(sceneryLayerSource).toContain(
+      'className="scenery-layer__wash scenery-layer__wash--dark"',
+    );
+  });
+
+  it("dissolves the ink view transition with normal blend so light/dark does not flash", () => {
+    expect(sceneryCssSource).toContain("html[data-scenery-ink-transition]");
+    expect(sceneryCssSource).toContain("mix-blend-mode: normal");
+    expect(sceneryInkTransitionSource).toContain("sceneryInkTransition");
   });
 });

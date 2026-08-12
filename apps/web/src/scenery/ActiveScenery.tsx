@@ -13,7 +13,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { connectionProjectionPhase } from "@t3tools/client-runtime/connection";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
@@ -22,6 +22,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { environmentThreadShells, threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { layerStack } from "./glass";
+import { pickInkVariant, type InkDecisionInput } from "./sceneryInk";
 import { SceneryLayer } from "./SceneryLayer";
 import { SceneryQuickSettings } from "./SceneryQuickSettings";
 import {
@@ -34,7 +35,6 @@ import {
   useSceneryStore,
 } from "./sceneryStore";
 import { useActiveThreadKey } from "./useActiveThreadKey";
-import { useIsDarkAppearance } from "./useHtmlAttributes";
 import { useInkOverride } from "./useInkOverride";
 import "./scenery.css";
 
@@ -68,7 +68,6 @@ function useReducedTransparency(): boolean {
 }
 
 export default function ActiveScenery() {
-  const isDark = useIsDarkAppearance();
   const increasedContrast = useIncreasedContrast();
   const reducedTransparency = useReducedTransparency();
   const threadKey = useActiveThreadKey();
@@ -154,34 +153,6 @@ export default function ActiveScenery() {
     assignScenery,
   ]);
 
-  // Publish the layer alphas the CSS reads, plus the positive activation
-  // attribute the transparent-surface rules are gated on. A positive gate —
-  // rather than :not([data-scenery-reduced]) — means the first painted frame
-  // (before this effect) keeps the stock opaque surfaces, which is exactly
-  // right under prefers-reduced-transparency.
-  useEffect(() => {
-    const root = document.documentElement;
-    if (reducedTransparency) {
-      root.removeAttribute("data-scenery-on");
-      return;
-    }
-    const stack = layerStack(translucency, isDark ? "dark" : "light", increasedContrast);
-    root.style.setProperty("--scenery-wash-alpha", String(stack.washAlpha));
-    root.style.setProperty("--scenery-photo-opacity", String(stack.photoOpacity));
-    root.style.setProperty("--scenery-edge-top-alpha", String(stack.edgeTopAlpha));
-    root.style.setProperty("--scenery-edge-bottom-alpha", String(stack.edgeBottomAlpha));
-    root.style.setProperty("--scenery-wash-channel", isDark ? "0 0 0" : "255 255 255");
-    root.setAttribute("data-scenery-on", "");
-    return () => {
-      root.style.removeProperty("--scenery-wash-alpha");
-      root.style.removeProperty("--scenery-photo-opacity");
-      root.style.removeProperty("--scenery-edge-top-alpha");
-      root.style.removeProperty("--scenery-edge-bottom-alpha");
-      root.style.removeProperty("--scenery-wash-channel");
-      root.removeAttribute("data-scenery-on");
-    };
-  }, [translucency, isDark, increasedContrast, reducedTransparency]);
-
   const assignment = threadKey ? (assignments[threadKey] ?? null) : null;
   const photo = useMemo(() => {
     if (threadKey) {
@@ -204,20 +175,74 @@ export default function ActiveScenery() {
 
   const seed = threadKey ?? dailySeed();
 
+  // Ink follows the photo that is actually on screen. Using the incoming
+  // assignment would flip chrome/wash while the previous wallpaper is still
+  // held (the load gap SceneryLayer already papers over). Until the first
+  // photo has displayed, the assignment is the right source so the opening
+  // gradient already has matching ink.
+  const [displayedTone, setDisplayedTone] = useState<{
+    readonly averageColorHex: string | null;
+    readonly seed: string;
+  } | null>(null);
+
+  const incomingInk: Omit<InkDecisionInput, "baseAppearance"> = {
+    averageColorHex: photo?.averageColorHex ?? null,
+    seed,
+    translucency,
+    blur,
+    inkMode,
+  };
+  const delayedInk: Omit<InkDecisionInput, "baseAppearance"> = {
+    averageColorHex:
+      displayedTone !== null ? displayedTone.averageColorHex : incomingInk.averageColorHex,
+    seed: displayedTone !== null ? displayedTone.seed : incomingInk.seed,
+    translucency,
+    blur,
+    inkMode,
+  };
+
   // Per-thread ink: repaint the palette in whichever variant reads best over
   // this thread's photo. Off under reduced transparency — the photo is not
   // shown, so the appearance preference should win unchallenged.
-  useInkOverride(
-    reducedTransparency
-      ? null
-      : {
-          averageColorHex: photo?.averageColorHex ?? null,
-          seed,
-          translucency,
-          blur,
-          inkMode,
-        },
-  );
+  const { base: inkBase } = useInkOverride(reducedTransparency ? null : delayedInk);
+  const delayedVariant = pickInkVariant({ ...delayedInk, baseAppearance: inkBase });
+  const incomingVariant = pickInkVariant({ ...incomingInk, baseAppearance: inkBase });
+  const appearanceCrossfade = photo !== null && incomingVariant !== delayedVariant;
+
+  // Publish the layer alphas the CSS reads, plus the positive activation
+  // attribute the transparent-surface rules are gated on. A positive gate —
+  // rather than :not([data-scenery-reduced]) — means the first painted frame
+  // (before this effect) keeps the stock opaque surfaces, which is exactly
+  // right under prefers-reduced-transparency. Layout so a view-transition
+  // photo commit captures the matching wash in the same frame as the ink.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    if (reducedTransparency) {
+      root.removeAttribute("data-scenery-on");
+      return;
+    }
+    const darkStack = layerStack(translucency, "dark", increasedContrast);
+    const lightStack = layerStack(translucency, "light", increasedContrast);
+    const activeStack = delayedVariant === "dark" ? darkStack : lightStack;
+    root.style.setProperty("--scenery-wash-dark-alpha", String(darkStack.washAlpha));
+    root.style.setProperty("--scenery-wash-light-alpha", String(lightStack.washAlpha));
+    root.style.setProperty("--scenery-wash-dark-opacity", delayedVariant === "dark" ? "1" : "0");
+    root.style.setProperty("--scenery-wash-light-opacity", delayedVariant === "light" ? "1" : "0");
+    root.style.setProperty("--scenery-photo-opacity", String(activeStack.photoOpacity));
+    root.style.setProperty("--scenery-edge-top-alpha", String(activeStack.edgeTopAlpha));
+    root.style.setProperty("--scenery-edge-bottom-alpha", String(activeStack.edgeBottomAlpha));
+    root.setAttribute("data-scenery-on", "");
+    return () => {
+      root.style.removeProperty("--scenery-wash-dark-alpha");
+      root.style.removeProperty("--scenery-wash-light-alpha");
+      root.style.removeProperty("--scenery-wash-dark-opacity");
+      root.style.removeProperty("--scenery-wash-light-opacity");
+      root.style.removeProperty("--scenery-photo-opacity");
+      root.style.removeProperty("--scenery-edge-top-alpha");
+      root.style.removeProperty("--scenery-edge-bottom-alpha");
+      root.removeAttribute("data-scenery-on");
+    };
+  }, [translucency, delayedVariant, increasedContrast, reducedTransparency]);
 
   if (reducedTransparency) {
     return null;
@@ -225,7 +250,19 @@ export default function ActiveScenery() {
 
   return (
     <>
-      <SceneryLayer photo={photo} seed={seed} blur={blur} onPhotoDisplayed={registerDisplayed} />
+      <SceneryLayer
+        photo={photo}
+        seed={seed}
+        blur={blur}
+        appearanceCrossfade={appearanceCrossfade}
+        onPhotoDisplayed={(displayed) => {
+          registerDisplayed(displayed);
+          setDisplayedTone({
+            averageColorHex: displayed.averageColorHex,
+            seed,
+          });
+        }}
+      />
       <SceneryQuickSettings />
     </>
   );

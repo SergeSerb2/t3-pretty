@@ -6,13 +6,15 @@
  * Layer order, bottom to top:
  *   0  opaque theme canvas (body background — the "plate")
  *   1  scenery photo group (--scenery-photo-opacity, on an isolated group)
- *   2  legibility wash     (--scenery-wash-alpha)
+ *   2  legibility wash     (--scenery-wash-dark/light-alpha, opacity-crossfaded)
  *   3  content + chrome glass
  *
  * The alphas are published by SceneryHost from glass.ts: photo + wash
  * composite to exactly the configured translucency. The wash — not
  * backdrop-filter — is what carries long-form text contrast; glass is
- * reserved for chrome (sidebar, header, composer). The scenery group is
+ * reserved for chrome (sidebar, header, composer). Dark and light washes
+ * are separate layers whose opacity crossfades, because rgb() channels
+ * driven by CSS variables cannot interpolate. The scenery group is
  * isolated and fades as ONE layer: fading gradient and photo separately
  * composites both and covers more than the requested alpha.
  */
@@ -72,7 +74,9 @@ html[data-theme-id="world-scenery"] {
 }
 
 .scenery-layer__photo--current {
-  animation: scenery-fade-in 0.3s cubic-bezier(0.77, 0, 0.175, 1);
+  /* backwards: the first frame is opacity 0, otherwise a cached decode can
+     paint the new photo at full opacity for one frame before the fade runs. */
+  animation: scenery-fade-in 0.3s cubic-bezier(0.77, 0, 0.175, 1) backwards;
 }
 
 @keyframes scenery-fade-in {
@@ -84,30 +88,85 @@ html[data-theme-id="world-scenery"] {
   }
 }
 
-.scenery-layer__wash {
+/* Two washes (and two edge tints) whose *opacity* crossfades. A single
+   layer whose rgb() channels are CSS variables cannot interpolate — the
+   overlay would snap from black to white, which is the flash this split
+   exists to hide. */
+.scenery-layer__wash,
+.scenery-layer__edges {
   position: absolute;
   inset: 0;
-  background: rgb(var(--scenery-wash-channel, 0 0 0) / var(--scenery-wash-alpha, 0.53));
-  transition: background-color var(--scenery-motion);
+  transition: opacity var(--scenery-motion);
+}
+
+.scenery-layer__wash--dark {
+  background: rgb(0 0 0 / var(--scenery-wash-dark-alpha, 0.53));
+  opacity: var(--scenery-wash-dark-opacity, 1);
+}
+
+.scenery-layer__wash--light {
+  background: rgb(255 255 255 / var(--scenery-wash-light-alpha, 0.6));
+  opacity: var(--scenery-wash-light-opacity, 0);
 }
 
 /* Slightly heavier at the top so header text always clears the brightest
    part of a sky; a lighter lift at the bottom anchors the composer. */
-.scenery-layer__edges {
-  position: absolute;
-  inset: 0;
+.scenery-layer__edges--dark {
   background: linear-gradient(
     180deg,
-    rgb(var(--scenery-wash-channel, 0 0 0) / var(--scenery-edge-top-alpha, 0.3)) 0%,
+    rgb(0 0 0 / var(--scenery-edge-top-alpha, 0.3)) 0%,
     transparent 30%,
     transparent 72%,
-    rgb(var(--scenery-wash-channel, 0 0 0) / var(--scenery-edge-bottom-alpha, 0.21)) 100%
+    rgb(0 0 0 / var(--scenery-edge-bottom-alpha, 0.21)) 100%
   );
+  opacity: var(--scenery-wash-dark-opacity, 1);
+}
+
+.scenery-layer__edges--light {
+  background: linear-gradient(
+    180deg,
+    rgb(255 255 255 / var(--scenery-edge-top-alpha, 0.3)) 0%,
+    transparent 30%,
+    transparent 72%,
+    rgb(255 255 255 / var(--scenery-edge-bottom-alpha, 0.21)) 100%
+  );
+  opacity: var(--scenery-wash-light-opacity, 0);
+}
+
+/* Light↔dark ink flip: the view transition crossfades the whole snapshot,
+   so the CSS photo fade and wash opacity tween would double-animate. The
+   default plus-lighter blend also flashes a bright frame between a light
+   and a dark snapshot — normal blend is the dissolve we actually want. */
+html[data-scenery-ink-transition] .scenery-layer__group,
+html[data-scenery-ink-transition] .scenery-layer__wash,
+html[data-scenery-ink-transition] .scenery-layer__edges {
+  transition: none;
+}
+
+html[data-scenery-ink-transition] .scenery-layer__photo--current {
+  animation: none;
+}
+
+html[data-scenery-ink-transition]::view-transition-group(root) {
+  animation-duration: 0.3s;
+  animation-timing-function: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+html[data-scenery-ink-transition]::view-transition-image-pair(root) {
+  isolation: isolate;
+}
+
+html[data-scenery-ink-transition]::view-transition-old(root),
+html[data-scenery-ink-transition]::view-transition-new(root) {
+  animation-duration: 0.3s;
+  animation-timing-function: cubic-bezier(0.77, 0, 0.175, 1);
+  mix-blend-mode: normal;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .scenery-layer__group,
-  .scenery-layer__wash {
+  .scenery-layer__wash,
+  .scenery-layer__edges {
     transition: none;
   }
 

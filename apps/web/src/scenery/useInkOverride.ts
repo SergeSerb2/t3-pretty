@@ -12,7 +12,7 @@
  * re-asserts the decision. Writes we made ourselves are recognized by class
  * + canvas probe and ignored, so the observer cannot loop.
  */
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useLayoutEffect, useReducer, useRef } from "react";
 
 import { applyThemePalette } from "../themePalette";
 import { pickInkVariant, type InkDecisionInput, type InkVariant } from "./sceneryInk";
@@ -55,9 +55,13 @@ interface OverrideState {
  * Keep the palette painted in the variant the ink decision picks for
  * `inputs` (null = no override), restoring upstream's appearance on unmount
  * unless the user has switched themes — then the painted palette is no
- * longer ours to touch. Returns nothing; the `.dark` class is the output.
+ * longer ours to touch. Applies in `useLayoutEffect` so a photo swap that
+ * commits inside a view transition captures the new ink in the same frame.
+ * Returns the upstream base appearance the decision is relative to.
  */
-export function useInkOverride(inputs: Omit<InkDecisionInput, "baseAppearance"> | null): void {
+export function useInkOverride(inputs: Omit<InkDecisionInput, "baseAppearance"> | null): {
+  readonly base: InkVariant;
+} {
   const lastApplied = useRef<InkVariant | null>(null);
   const [state, observed] = useReducer(
     (previous: OverrideState, seen: InkVariant): OverrideState => ({
@@ -111,17 +115,19 @@ export function useInkOverride(inputs: Omit<InkDecisionInput, "baseAppearance"> 
   const restoreRef = useRef(restore);
   restoreRef.current = restore;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
     if (inputs === null || root.dataset.themeId !== WORLD_SCENERY_THEME_ID) {
       restoreRef.current();
       return;
     }
     const variant = pickInkVariant({ ...inputs, baseAppearance: state.base });
+    // Stamp lastApplied before mutating so the observer's microtask sees
+    // our write, not an upstream stomp.
+    lastApplied.current = variant;
     if (domVariant(root) !== variant || probeVariant(root) !== variant) {
       applyVariant(root, variant);
     }
-    lastApplied.current = variant;
     // No cleanup here: a decision change goes straight A→B without bouncing
     // through the base appearance. The unmount effect below restores.
     // decisionKey stands in for the `inputs` object identity.
@@ -129,4 +135,6 @@ export function useInkOverride(inputs: Omit<InkDecisionInput, "baseAppearance"> 
   }, [decisionKey, state.base, state.epoch]);
 
   useEffect(() => () => restoreRef.current(), []);
+
+  return { base: state.base };
 }
