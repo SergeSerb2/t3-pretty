@@ -5,13 +5,12 @@ export type ComposerDispatchPhase =
       readonly kind: "sending";
       readonly creatingThread: boolean;
       readonly connected: boolean;
-      readonly hasImages: boolean;
     };
 
 /**
- * Caption for the composer while images are still being read or a send is in
- * flight. The send control greys out in these states; this copy is the
- * reason, so a stalled-looking button is not the only signal.
+ * Caption for the composer while a send is in flight. The send control used
+ * to grey out with no other signal; this copy names the wait so a slow
+ * connection is not mistaken for a dead button.
  */
 export function composerDispatchStatusLabel(phase: ComposerDispatchPhase): string | null {
   switch (phase.kind) {
@@ -21,11 +20,31 @@ export function composerDispatchStatusLabel(phase: ComposerDispatchPhase): strin
       return phase.count === 1 ? "Preparing image..." : "Preparing images...";
     case "sending":
       if (phase.creatingThread) {
-        if (!phase.connected) {
-          return phase.hasImages ? "Queueing images..." : "Queueing task...";
-        }
-        return phase.hasImages ? "Sending images..." : "Starting thread...";
+        return phase.connected ? "Starting thread..." : "Queueing task...";
       }
-      return phase.hasImages ? "Sending images..." : "Sending...";
+      return phase.connected ? "Sending..." : "Queueing...";
   }
+}
+
+/**
+ * Keep the local send flag on until the outbox has either started delivering
+ * this thread's message, parked it behind a running turn / offline queue, or
+ * drained it. Closes the gap between enqueue (sync) and startTurn (slow).
+ */
+export function shouldKeepLocalComposerSendBusy(input: {
+  readonly isDeliveringQueuedMessage: boolean;
+  readonly connected: boolean;
+  readonly threadBusy: boolean;
+  readonly queueCount: number;
+}): boolean {
+  if (input.isDeliveringQueuedMessage) {
+    return false;
+  }
+  if (!input.connected) {
+    return false;
+  }
+  if (input.threadBusy && input.queueCount > 0) {
+    return false;
+  }
+  return input.queueCount > 0;
 }

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { composerDispatchStatusLabel } from "./composerDispatchStatus";
+import {
+  composerDispatchStatusLabel,
+  shouldKeepLocalComposerSendBusy,
+} from "./composerDispatchStatus";
 
 describe("composerDispatchStatusLabel", () => {
   it("is silent when the composer is idle", () => {
@@ -22,25 +25,15 @@ describe("composerDispatchStatusLabel", () => {
         kind: "sending",
         creatingThread: true,
         connected: true,
-        hasImages: false,
       }),
     ).toBe("Starting thread...");
     expect(
       composerDispatchStatusLabel({
         kind: "sending",
-        creatingThread: true,
-        connected: true,
-        hasImages: true,
-      }),
-    ).toBe("Sending images...");
-    expect(
-      composerDispatchStatusLabel({
-        kind: "sending",
         creatingThread: false,
         connected: true,
-        hasImages: true,
       }),
-    ).toBe("Sending images...");
+    ).toBe("Sending...");
   });
 
   it("names the offline queue path instead of a fake send", () => {
@@ -49,16 +42,68 @@ describe("composerDispatchStatusLabel", () => {
         kind: "sending",
         creatingThread: true,
         connected: false,
-        hasImages: true,
       }),
-    ).toBe("Queueing images...");
+    ).toBe("Queueing task...");
     expect(
       composerDispatchStatusLabel({
         kind: "sending",
-        creatingThread: true,
+        creatingThread: false,
         connected: false,
-        hasImages: false,
       }),
-    ).toBe("Queueing task...");
+    ).toBe("Queueing...");
+  });
+});
+
+describe("shouldKeepLocalComposerSendBusy", () => {
+  it("holds through the enqueue-to-deliver gap on a live idle thread", () => {
+    expect(
+      shouldKeepLocalComposerSendBusy({
+        isDeliveringQueuedMessage: false,
+        connected: true,
+        threadBusy: false,
+        queueCount: 1,
+      }),
+    ).toBe(true);
+  });
+
+  it("hands off once the outbox is actually delivering", () => {
+    expect(
+      shouldKeepLocalComposerSendBusy({
+        isDeliveringQueuedMessage: true,
+        connected: true,
+        threadBusy: false,
+        queueCount: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it("releases when the message is parked behind a running turn or offline", () => {
+    expect(
+      shouldKeepLocalComposerSendBusy({
+        isDeliveringQueuedMessage: false,
+        connected: true,
+        threadBusy: true,
+        queueCount: 1,
+      }),
+    ).toBe(false);
+    expect(
+      shouldKeepLocalComposerSendBusy({
+        isDeliveringQueuedMessage: false,
+        connected: false,
+        threadBusy: false,
+        queueCount: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it("releases when the outbox has drained", () => {
+    expect(
+      shouldKeepLocalComposerSendBusy({
+        isDeliveringQueuedMessage: false,
+        connected: true,
+        threadBusy: false,
+        queueCount: 0,
+      }),
+    ).toBe(false);
   });
 });

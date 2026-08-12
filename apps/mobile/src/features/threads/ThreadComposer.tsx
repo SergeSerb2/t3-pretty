@@ -44,7 +44,11 @@ import {
   ComposerDispatchStatusLabel,
   type ComposerAttachmentPreview,
 } from "../../components/ComposerAttachmentStrip";
-import { composerDispatchStatusLabel } from "../../lib/composerDispatchStatus";
+import {
+  composerDispatchStatusLabel,
+  shouldKeepLocalComposerSendBusy,
+} from "../../lib/composerDispatchStatus";
+import { COMPOSER_SEND_INDICATOR_MIN_MS } from "../../components/ComposerSendIndicator";
 import {
   ComposerEditor,
   type ComposerEditorHandle,
@@ -107,6 +111,7 @@ export interface ThreadComposerProps {
   readonly selectedThread: OrchestrationThreadShell;
   readonly serverConfig: T3ServerConfig | null;
   readonly queueCount: number;
+  readonly isDeliveringQueuedMessage: boolean;
   readonly activeThreadBusy: boolean;
   readonly environmentId: EnvironmentId;
   readonly projectCwd: string | null;
@@ -293,15 +298,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
-  const [sendingHasImages, setSendingHasImages] = useState(false);
   const [pendingPreviews, setPendingPreviews] = useState<ReadonlyArray<ComposerAttachmentPreview>>(
     [],
   );
+  const sendStartedAtRef = useRef(0);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
   // Opening and closing count as active so the composer stays expanded while
   // focus moves between its native editor and the settings modal.
   const isExpanded = isFocused || settingsSheetPresentation.isActive;
-  const isDispatching = isSending || pendingPreviews.length > 0;
+  const isDispatching = isSending || pendingPreviews.length > 0 || props.isDeliveringQueuedMessage;
   const canSend = hasContent;
   const stripAttachments = useMemo((): ComposerAttachmentPreview[] => {
     const attachedUris = new Set(props.draftAttachments.map((image) => image.previewUri));
@@ -313,15 +318,46 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const dispatchStatus = composerDispatchStatusLabel(
     pendingPreviews.length > 0
       ? { kind: "preparing-images", count: pendingPreviews.length }
-      : isSending
+      : isSending || props.isDeliveringQueuedMessage
         ? {
             kind: "sending",
             creatingThread: false,
             connected: props.connectionState === "connected",
-            hasImages: sendingHasImages,
           }
         : { kind: "idle" },
   );
+
+  useEffect(() => {
+    if (!isSending) {
+      return;
+    }
+    if (
+      shouldKeepLocalComposerSendBusy({
+        isDeliveringQueuedMessage: props.isDeliveringQueuedMessage,
+        connected: props.connectionState === "connected",
+        threadBusy: props.activeThreadBusy,
+        queueCount: props.queueCount,
+      })
+    ) {
+      return;
+    }
+    const remainingMs = Math.max(
+      0,
+      COMPOSER_SEND_INDICATOR_MIN_MS - (Date.now() - sendStartedAtRef.current),
+    );
+    const release = setTimeout(() => {
+      setIsSending(false);
+    }, remainingMs);
+    return () => {
+      clearTimeout(release);
+    };
+  }, [
+    isSending,
+    props.activeThreadBusy,
+    props.connectionState,
+    props.isDeliveringQueuedMessage,
+    props.queueCount,
+  ]);
 
   // Notify the parent from the derived value, not focus events: the parent
   // sizes the feed inset from this, and blur-during-sheet would otherwise
@@ -603,10 +639,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
     if (inFlightThreadIdsRef.current.has(threadKey) || isDispatching) return;
     inFlightThreadIdsRef.current.add(threadKey);
-    setSendingHasImages(props.draftAttachments.length > 0);
+    sendStartedAtRef.current = Date.now();
     setIsSending(true);
     try {
-      await onSendMessage();
+      const messageId = await onSendMessage();
+      if (messageId === null) {
+        setIsSending(false);
+        return;
+      }
       // Sending a prompt starts agent work: arm the lock-screen card while the
       // app is foregrounded and the activity token can be registered. Armed
       // after the send so its preference read and native Activity start don't
@@ -617,13 +657,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       });
     } finally {
       inFlightThreadIdsRef.current.delete(threadKey);
-      setIsSending(false);
-      setSendingHasImages(false);
     }
   }, [
     isDispatching,
     onSendMessage,
-    props.draftAttachments.length,
     props.environmentId,
     props.environmentLabel,
     props.selectedThread.id,

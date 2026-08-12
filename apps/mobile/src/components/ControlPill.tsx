@@ -7,13 +7,14 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { ActivityIndicator, Platform, Pressable, useColorScheme, View } from "react-native";
+import { Platform, Pressable, useColorScheme } from "react-native";
 import { useThemeColor } from "../lib/useThemeColor";
 
 import { cn } from "../lib/cn";
 import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu";
 import { SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
+import { ComposerSendIconSlot } from "./ComposerSendIndicator";
 
 export function ControlPill(props: {
   readonly icon?: ComponentProps<typeof SymbolView>["name"];
@@ -77,12 +78,14 @@ export function ControlPill(props: {
       disabled={props.disabled || isLoading}
       className={containerClassName}
     >
-      {isLoading ? (
-        <ActivityIndicator color={String(iconTintColor)} size="small" />
-      ) : props.iconNode ? (
-        <View className="h-4 w-4 items-center justify-center">{props.iconNode}</View>
-      ) : props.icon ? (
-        <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />
+      {props.iconNode || props.icon || isLoading ? (
+        <ComposerSendIconSlot loading={isLoading} color={String(iconTintColor)}>
+          {props.iconNode ? (
+            props.iconNode
+          ) : props.icon ? (
+            <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />
+          ) : null}
+        </ComposerSendIconSlot>
       ) : null}
       {props.label ? <Text className={labelClassName}>{props.label}</Text> : null}
     </Pressable>

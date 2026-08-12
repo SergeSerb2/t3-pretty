@@ -27,6 +27,7 @@ import {
   ComposerDispatchStatusLabel,
   type ComposerAttachmentPreview,
 } from "../../components/ComposerAttachmentStrip";
+import { waitForComposerSendIndicatorMin } from "../../components/ComposerSendIndicator";
 import { composerDispatchStatusLabel } from "../../lib/composerDispatchStatus";
 import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
@@ -798,9 +799,11 @@ export function NewTaskDraftScreen(props: {
       if (!message) {
         return;
       }
+      const queuedAt = Date.now();
       flow.setSubmitting(true);
       try {
         await enqueueThreadOutboxMessage(message);
+        await waitForComposerSendIndicatorMin(queuedAt);
       } catch (error) {
         Alert.alert(
           "Could not queue task",
@@ -822,6 +825,7 @@ export function NewTaskDraftScreen(props: {
       return;
     }
 
+    const startedAt = Date.now();
     flow.setSubmitting(true);
     // Arm the lock-screen card before the async thread creation: backgrounding
     // the app right after tapping submit would otherwise reject the foreground
@@ -858,6 +862,7 @@ export function NewTaskDraftScreen(props: {
           }
         : {}),
     });
+    await waitForComposerSendIndicatorMin(startedAt);
     flow.setSubmitting(false);
 
     if (result._tag === "Failure") {
@@ -925,7 +930,6 @@ export function NewTaskDraftScreen(props: {
             kind: "sending",
             creatingThread: true,
             connected: environmentConnected,
-            hasImages: flow.attachments.length > 0,
           }
         : { kind: "idle" },
   );

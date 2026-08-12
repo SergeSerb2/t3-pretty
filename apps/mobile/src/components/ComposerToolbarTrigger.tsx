@@ -1,7 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   View,
@@ -12,12 +11,12 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 
 import { useThemeColor } from "../lib/useThemeColor";
 import { cn } from "../lib/cn";
 import { AppText as Text } from "./AppText";
 import { SymbolView } from "./AppSymbol";
+import { ComposerSendIconSlot } from "./ComposerSendIndicator";
 
 export const COMPOSER_TOOLBAR_CONTROL_HEIGHT = 44;
 export const COMPOSER_TOOLBAR_GAP = 8;
@@ -137,9 +136,6 @@ export function ComposerToolbarScroller(props: {
   );
 }
 
-const ICON_CROSSFADE_ENTER = FadeIn.duration(140).reduceMotion(ReduceMotion.System);
-const ICON_CROSSFADE_EXIT = FadeOut.duration(100).reduceMotion(ReduceMotion.System);
-
 export function ComposerToolbarButton(props: {
   readonly icon?: ComponentProps<typeof SymbolView>["name"];
   readonly iconNode?: ReactNode;
@@ -229,14 +225,14 @@ export function ComposerToolbarButton(props: {
         props.style,
       ]}
     >
-      {isLoading ? (
-        <Animated.View entering={ICON_CROSSFADE_ENTER} exiting={ICON_CROSSFADE_EXIT}>
-          <ActivityIndicator color={String(iconTintColor)} size="small" />
-        </Animated.View>
-      ) : props.iconNode ? (
-        <View className="h-4 w-4 items-center justify-center">{props.iconNode}</View>
-      ) : props.icon ? (
-        <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />
+      {props.iconNode || props.icon || isLoading ? (
+        <ComposerSendIconSlot loading={isLoading} color={String(iconTintColor)}>
+          {props.iconNode ? (
+            props.iconNode
+          ) : props.icon ? (
+            <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />
+          ) : null}
+        </ComposerSendIconSlot>
       ) : null}
       {props.label ? (
         <Text
