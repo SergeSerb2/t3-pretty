@@ -219,13 +219,6 @@ export function HomeScreen(props: HomeScreenProps) {
       ? PRE_LIQUID_GLASS_BOTTOM_TOOLBAR_HEIGHT
       : 0;
   const dailySceneryPhoto = useDailySceneryPhoto();
-  // Top edge of the zone the lists reserve for the floating bottom toolbar /
-  // Android FAB, so the credit pill never overlaps either (web keeps the same
-  // clearance for its credits dock).
-  const sceneryCreditBottom =
-    Platform.OS === "ios"
-      ? Math.max(insets.bottom, 24) + 96 + iosBottomToolbarClearance - 8
-      : Math.max(insets.bottom, 16) + 88;
   const searchEnvironmentIds = useMemo(
     () =>
       props.selectedEnvironmentId === null
@@ -1060,9 +1053,7 @@ export function HomeScreen(props: HomeScreenProps) {
             </View>
           ) : null}
         </View>
-        {dailySceneryPhoto !== null ? (
-          <SceneryAttribution photo={dailySceneryPhoto} bottom={sceneryCreditBottom} />
-        ) : null}
+        {dailySceneryPhoto !== null ? <SceneryAttribution photo={dailySceneryPhoto} /> : null}
       </View>
     );
   }
@@ -1149,9 +1140,7 @@ export function HomeScreen(props: HomeScreenProps) {
             }}
           />
         </SwipeableScrollGateProvider>
-        {dailySceneryPhoto !== null ? (
-          <SceneryAttribution photo={dailySceneryPhoto} bottom={sceneryCreditBottom} />
-        ) : null}
+        {dailySceneryPhoto !== null ? <SceneryAttribution photo={dailySceneryPhoto} /> : null}
       </View>
     );
   }
@@ -1207,9 +1196,7 @@ export function HomeScreen(props: HomeScreenProps) {
           }
         />
       </SwipeableScrollGateProvider>
-      {dailySceneryPhoto !== null ? (
-        <SceneryAttribution photo={dailySceneryPhoto} bottom={sceneryCreditBottom} />
-      ) : null}
+      {dailySceneryPhoto !== null ? <SceneryAttribution photo={dailySceneryPhoto} /> : null}
     </View>
   );
 }

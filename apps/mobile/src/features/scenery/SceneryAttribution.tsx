@@ -1,23 +1,30 @@
 /**
  * Unsplash attribution pill for the World Scenery photo behind a screen —
  * "Location · Photo by X", tapping through to the photographer's profile with
- * the required utm parameters. The desktop theme keeps the equivalent credit
- * docked bottom-right; mobile floats it in the same corner, clear of the
- * composer/toolbar via the caller-provided bottom offset.
+ * the required utm parameters. Docked to the screen's bottom-right corner
+ * (desktop uses the same corner via --scenery-dock-block) so it sits below
+ * chat bubbles and list rows instead of covering them.
  */
 import * as Linking from "expo-linking";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
 import { UNSPLASH_UTM, type SceneryPhoto } from "./sceneryLogic";
 
-export function SceneryAttribution(props: {
-  readonly photo: SceneryPhoto;
-  /** Distance from the screen's bottom edge so the pill clears the composer
-   *  or home toolbar. */
-  readonly bottom: number;
-}) {
+/**
+ * Physical-bottom offset on iOS. The composer and home toolbar already pad
+ * by the home-indicator inset, so using that inset here parked the pill on
+ * top of the last chat rows / thread titles. 8pt tucks it into the
+ * bottom-right corner, below that chrome. Android still clears the system
+ * nav bar.
+ */
+const IOS_CREDIT_BOTTOM = 8;
+
+export function SceneryAttribution(props: { readonly photo: SceneryPhoto }) {
   const { photo } = props;
+  const insets = useSafeAreaInsets();
+  const bottom = Platform.OS === "ios" ? IOS_CREDIT_BOTTOM : Math.max(insets.bottom, 8);
   const profileURL =
     photo.photographerProfileURL !== null
       ? `${photo.photographerProfileURL}${UNSPLASH_UTM}`
@@ -31,8 +38,8 @@ export function SceneryAttribution(props: {
         onPress={() => void Linking.openURL(profileURL).catch(() => undefined)}
         style={({ pressed }) => ({
           position: "absolute",
-          right: 12,
-          bottom: props.bottom,
+          right: Math.max(insets.right, 12),
+          bottom,
           maxWidth: 280,
           borderRadius: 999,
           backgroundColor: "rgba(0, 0, 0, 0.45)",

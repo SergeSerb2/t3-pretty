@@ -463,10 +463,10 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
         </KeyboardStickyView>
       ) : null}
 
-      {/* World Scenery credit floats just above the composer overlay — the
-          same clearance the desktop credits dock keeps off the chat box. */}
+      {/* World Scenery credit docks to the screen's bottom-right corner,
+          below the composer / chat boxes rather than covering them. */}
       {showContent && threadSceneryPhoto !== null ? (
-        <SceneryAttribution photo={threadSceneryPhoto} bottom={estimatedOverlayHeight + 6} />
+        <SceneryAttribution photo={threadSceneryPhoto} />
       ) : null}
     </View>
   );
