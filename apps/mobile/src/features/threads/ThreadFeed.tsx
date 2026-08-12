@@ -1386,6 +1386,12 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const bottomContentInset = props.contentBottomInset ?? 18;
   const usesNativeAutomaticInsets =
     props.usesAutomaticContentInsets === true && Platform.OS === "ios";
+  // Footer clears the floating composer. With automatic insets UIKit already
+  // adds the safe-area bottom, so only reserve the overlap above that strip —
+  // same net amount the old animated contentInset path reported.
+  const listFooterInset = usesNativeAutomaticInsets
+    ? Math.max(0, bottomContentInset - insets.bottom)
+    : bottomContentInset;
   // With automatic insets the header inset lives in UIKit's adjustedContentInset,
   // which LegendList's JS anchoring math cannot see — it measures the anchored
   // end space from the scroll view's frame top. Fold the header height back into
@@ -1555,12 +1561,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   );
 
   // The empty↔filled key below remounts the list, which resets its imperative
-  // content-inset override — and useKeyboardChatComposerInset (mounted above
-  // the remount boundary) deduplicates by height, so it never re-reports the
-  // composer inset to the fresh instance. Without this, the remounted list's
-  // initial scroll-to-end computes with a zero end inset and rests one
-  // composer-height short of the end. Layout effect: it must land before the
-  // list's first positioning tick or the one-shot initial scroll misses it.
+  // content-inset override. Keyboard padding re-reports through
+  // onContentInsetChange; re-apply any non-zero end inset so the remounted
+  // list's first end-scroll is not short.
   const listMountKey = `${props.threadId}:${props.feed.length === 0 ? "empty" : "filled"}`;
   useLayoutEffect(() => {
     const bottom = props.contentInsetEndAdjustment.value;
@@ -1945,6 +1948,12 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
                   </Pressable>
                 ) : null}
               </>
+            }
+            // Real footer spacer — not animated contentInset — so full-scroll
+            // end always clears the floating composer even when LegendList's
+            // inset math and UIKit's adjusted inset disagree mid-stream.
+            ListFooterComponent={
+              listFooterInset > 0 ? <View style={{ height: listFooterInset }} /> : null
             }
             contentContainerStyle={{
               paddingTop: 12,
