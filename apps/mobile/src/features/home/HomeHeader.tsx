@@ -27,6 +27,7 @@ import {
   type HomeListFilterMenuEnvironment,
   type HomeListFilterMenuProject,
 } from "./home-list-filter-menu";
+import { presentHomeListFilterMenu } from "./present-home-list-filter-menu";
 import {
   hasCustomHomeListOptions,
   PROJECT_SORT_OPTIONS,
@@ -347,12 +348,12 @@ function IosHomeHeader(props: HomeHeaderProps) {
                   createNativeMailSearchToolbarItem({
                     composeButtonId: "home-new-task",
                     composeSystemImageName: "square.and.pencil",
-                    filterMenu,
                     filterButtonId: "home-filter",
                     filterSystemImageName: hasCustomListOptions
                       ? "line.3.horizontal.decrease.circle.fill"
                       : "line.3.horizontal.decrease",
                     onComposePress: props.onStartNewTask,
+                    onFilterPress: () => presentHomeListFilterMenu(filterMenu, "bottom-start"),
                     onSearchTextChange: props.onSearchQueryChange,
                     placeholder: "Search",
                     searchTextChangeId: "home-search-text",

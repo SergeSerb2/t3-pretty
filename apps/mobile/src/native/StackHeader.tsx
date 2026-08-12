@@ -5,6 +5,7 @@ import type {
   NativeStackNavigationOptions,
   NativeStackNavigationProp,
 } from "@react-navigation/native-stack";
+import type { MenuAction } from "@react-native-menu/menu";
 import {
   Children,
   isValidElement,
@@ -16,6 +17,8 @@ import {
   type ReactNode,
 } from "react";
 import type { ColorValue } from "react-native";
+
+import { presentAppMenu, type MenuEdgePlacement } from "../components/AppMenuHost";
 
 export {
   nativeHeaderScrollEdgeEffects,
@@ -290,7 +293,76 @@ function collectMenuItems(children: ReactNode): NativeStackHeaderItemMenu["menu"
   return items;
 }
 
-function convertToolbarChild(child: ReactNode): NativeStackHeaderItem | null {
+type NativeToolbarMenuItem = NativeStackHeaderItemMenu["menu"]["items"][number];
+
+function nativeMenuItemsToAppMenu(
+  items: readonly NativeToolbarMenuItem[],
+  path = "",
+): {
+  readonly actions: MenuAction[];
+  readonly handlers: Map<string, () => void>;
+} {
+  const handlers = new Map<string, () => void>();
+  const actions: MenuAction[] = items.map((item, index) => {
+    const id = path.length > 0 ? `${path}:${index}` : `${index}`;
+    if (item.type === "submenu") {
+      const nested = nativeMenuItemsToAppMenu(item.items, id);
+      for (const [key, handler] of nested.handlers) {
+        handlers.set(key, handler);
+      }
+      return {
+        id,
+        title: item.label,
+        displayInline: item.inline === true,
+        image: sfSymbolName(item.icon),
+        subactions: nested.actions,
+      };
+    }
+    handlers.set(id, item.onPress);
+    return {
+      id,
+      title: item.label,
+      subtitle: item.description,
+      state: item.state === "on" ? ("on" as const) : undefined,
+      image: sfSymbolName(item.icon),
+      attributes: {
+        disabled: item.disabled === true,
+        destructive: item.destructive === true,
+      },
+    };
+  });
+  return { actions, handlers };
+}
+
+function sfSymbolName(icon: unknown): string | undefined {
+  if (
+    icon !== null &&
+    typeof icon === "object" &&
+    "type" in icon &&
+    icon.type === "sfSymbol" &&
+    "name" in icon
+  ) {
+    return String(icon.name);
+  }
+  return undefined;
+}
+
+function placementForToolbar(
+  placement: "left" | "right" | "bottom" | undefined,
+): MenuEdgePlacement {
+  if (placement === "bottom") {
+    return "bottom-start";
+  }
+  if (placement === "left") {
+    return "top-start";
+  }
+  return "top-end";
+}
+
+function convertToolbarChild(
+  child: ReactNode,
+  toolbarPlacement: "left" | "right" | "bottom" | undefined,
+): NativeStackHeaderItem | null {
   if (!isValidElement<ToolbarElementProps>(child)) {
     return null;
   }
@@ -317,18 +389,27 @@ function convertToolbarChild(child: ReactNode): NativeStackHeaderItem | null {
   }
 
   if (typeName === "NativeHeaderToolbarMenu") {
+    const title = typeof child.props.title === "string" ? child.props.title : "";
+    const { actions, handlers } = nativeMenuItemsToAppMenu(collectMenuItems(child.props.children));
+    const placement = placementForToolbar(toolbarPlacement);
     return {
-      type: "menu",
-      label: typeof child.props.title === "string" ? child.props.title : "",
+      type: "button",
+      label: title,
       accessibilityLabel:
         typeof child.props.accessibilityLabel === "string"
           ? child.props.accessibilityLabel
           : undefined,
       disabled: Boolean(child.props.disabled),
       icon: iconFromProp(child.props.icon),
-      menu: {
-        title: typeof child.props.title === "string" ? child.props.title : undefined,
-        items: collectMenuItems(child.props.children),
+      onPress: () => {
+        presentAppMenu({
+          actions,
+          placement,
+          title: title.length > 0 ? title : undefined,
+          onPressAction: (event) => {
+            handlers.get(event.nativeEvent.event)?.();
+          },
+        });
       },
       sharesBackground: !child.props.separateBackground,
       tintColor: child.props.tintColor as ColorValue | undefined,
@@ -347,10 +428,13 @@ function convertToolbarChild(child: ReactNode): NativeStackHeaderItem | null {
   return null;
 }
 
-function collectToolbarItems(children: ReactNode): NativeStackHeaderItem[] {
+function collectToolbarItems(
+  children: ReactNode,
+  toolbarPlacement: "left" | "right" | "bottom" | undefined,
+): NativeStackHeaderItem[] {
   const items: NativeStackHeaderItem[] = [];
   Children.forEach(children, (child) => {
-    const item = convertToolbarChild(child);
+    const item = convertToolbarChild(child, toolbarPlacement);
     if (item) {
       if (item.type === "spacing") {
         // Native inserts spacing items at `index`, treating a missing index
@@ -368,7 +452,10 @@ function NativeHeaderToolbarRoot(props: {
   readonly children?: ReactNode;
 }) {
   const navigation = useNativeStackNavigation();
-  const items = useMemo(() => collectToolbarItems(props.children), [props.children]);
+  const items = useMemo(
+    () => collectToolbarItems(props.children, props.placement),
+    [props.children, props.placement],
+  );
 
   // Swap toolbar owners before paint so split and compact headers cannot clear each other.
   useLayoutEffect(() => {

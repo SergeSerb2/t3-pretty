@@ -1,8 +1,8 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 
-// Minimal in-tree portal for Android overlays. AndroidAnchoredMenu projects
-// its dropdown here instead of into an RN Modal: a Modal is a separate native
+// Minimal in-tree portal for overlay menus. AnchoredMenu projects its
+// dropdown here instead of into an RN Modal: a Modal is a separate native
 // window, so presenting one moves window focus and closes the soft keyboard —
 // which matters for menus anchored to the keyboard-sticky composer pills.
 type Entries = ReadonlyMap<number, ReactNode>;
