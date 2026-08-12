@@ -91,9 +91,9 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         # `script` supplies the TTY EAS requires for first-time credential
-        # creation. A single newline accepts "Generate a new Apple Distribution
-        # Certificate?" (whose documented/default answer is yes).
+        # creation. Accept the CLI defaults for the certificate and each app
+        # target's provisioning profile.
         run: |
-          printf '\n' | script --return --quiet --command \
+          yes '' | script --return --quiet --command \
             "CI=false eas build --platform ios --profile production --no-wait" \
             /dev/null

@@ -222,6 +222,12 @@ const config: ExpoConfig = {
     ? {
         enabled: true,
         url: mobileUpdateUrl,
+        // EAS Build injects its profile channel, but local Xcode Release builds
+        // do not. Embed the variant channel so those binaries send a valid
+        // expo-channel-name header instead of crashing on the update request.
+        requestHeaders: {
+          "expo-channel-name": APP_VARIANT,
+        },
         checkAutomatically: "ON_LOAD",
         fallbackToCacheTimeout: 0,
       }
