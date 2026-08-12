@@ -95,5 +95,5 @@ jobs:
         # Certificate?" (whose documented/default answer is yes).
         run: |
           printf '\n' | script --return --quiet --command \
-            "eas build --platform ios --profile production --no-wait" \
+            "CI=false eas build --platform ios --profile production --no-wait" \
             /dev/null
