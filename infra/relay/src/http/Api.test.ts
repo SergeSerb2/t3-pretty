@@ -24,6 +24,7 @@ import {
   relayEnvironmentAuthLayer,
   relayNotFoundRoute,
   revokeEnvironmentLinkRecord,
+  serveRelayHttpRequestWith,
   traceRelayHttpRequestWith,
   unlinkEnvironmentRecord,
   verifyRelayClientBearerToken,
@@ -472,6 +473,29 @@ describe("relay request tracing", () => {
       expect(response.status).toBe(504);
       expect(spans[0]?.attributes.get("relay.request.deadline_exceeded")).toBe(true);
       expect(spans[0]?.attributes.get("http.response.status_code")).toBe(504);
+    }),
+  );
+
+  it.effect("keeps health probes off the request-scoped trace exporter", () =>
+    Effect.gen(function* () {
+      const spans: Array<Tracer.NativeSpan> = [];
+      const tracer = Tracer.make({
+        span: (options) => {
+          const span = new Tracer.NativeSpan(options);
+          spans.push(span);
+          return span;
+        },
+      });
+      const request = HttpServerRequest.fromWeb(new Request("https://relay.test/health"));
+      const response = yield* serveRelayHttpRequestWith(
+        Effect.succeed(HttpServerResponse.jsonUnsafe({ ok: true })).pipe(
+          Effect.withSpan("relay.api.health"),
+        ),
+        Layer.succeed(Tracer.Tracer, tracer),
+      ).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request));
+
+      expect(response.status).toBe(200);
+      expect(spans).toEqual([]);
     }),
   );
 });

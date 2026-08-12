@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   type ServerConfig,
   type ServerConfigStreamEvent,
@@ -6,6 +7,7 @@ import {
   WS_METHODS,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import { serverConfigDigest } from "@t3tools/shared/serverConfigDigest";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -44,14 +46,37 @@ import {
 } from "./server.ts";
 
 const CONFIG = {
+  environment: {
+    environmentId: EnvironmentId.make("environment-1"),
+    label: "Test environment",
+    platform: { os: "darwin", arch: "arm64" },
+    serverVersion: "0.0.0-test",
+    capabilities: {
+      repositoryIdentity: true,
+      connectionProbe: true,
+      serverConfigHttp: true,
+    },
+  },
+  auth: {
+    policy: "loopback-browser",
+    bootstrapMethods: ["one-time-token"],
+    sessionMethods: ["browser-session-cookie", "bearer-access-token"],
+    sessionCookieName: "t3_session",
+  },
+  cwd: "/tmp/workspace",
   availableEditors: [],
   issues: [],
-  keybindings: {},
-  keybindingsConfigPath: null,
-  observability: null,
+  keybindings: [],
+  keybindingsConfigPath: "/tmp/workspace/keybindings.json",
+  observability: {
+    logsDirectoryPath: "/tmp/logs",
+    localTracingEnabled: false,
+    otlpTracesEnabled: false,
+    otlpMetricsEnabled: false,
+  },
   providers: [],
-  settings: {},
-} as unknown as ServerConfig;
+  settings: DEFAULT_SERVER_SETTINGS,
+} satisfies ServerConfig;
 
 const snapshotEvent = (config: ServerConfig): ServerConfigStreamEvent => ({
   version: 1,
@@ -348,8 +373,15 @@ describe("server state projection", () => {
   it.effect("starts from cached configuration and persists the live projection", () =>
     Effect.gen(function* () {
       const events = yield* Queue.unbounded<ServerConfigStreamEvent>();
+      const subscriptionInputs = yield* Queue.unbounded<{
+        readonly knownConfigDigest?: string;
+      }>();
       const client = {
-        [WS_METHODS.subscribeServerConfig]: () => Stream.fromQueue(events),
+        [WS_METHODS.subscribeServerConfig]: (input: { readonly knownConfigDigest?: string }) =>
+          Stream.fromEffect(Queue.offer(subscriptionInputs, input)).pipe(
+            Stream.drain,
+            Stream.concat(Stream.fromQueue(events)),
+          ),
       } as unknown as WsRpcProtocolClient;
       const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
         target: TARGET,
@@ -383,14 +415,12 @@ describe("server state projection", () => {
             Effect.provideService(Persistence.EnvironmentCacheStore, cache),
           );
           expect(Option.getOrThrow(yield* SubscriptionRef.get(state)).config).toBe(CONFIG);
+          expect(yield* Queue.take(subscriptionInputs)).toEqual({
+            knownConfigDigest: serverConfigDigest(CONFIG),
+          });
 
           const providers: ServerConfig["providers"] = [];
-          yield* Queue.offer(events, {
-            version: 1,
-            type: "providerStatuses",
-            payload: { providers },
-          });
-          const projected = yield* SubscriptionRef.changes(state).pipe(
+          const projectedFiber = yield* SubscriptionRef.changes(state).pipe(
             Stream.filter((value) =>
               Option.match(value, {
                 onNone: () => false,
@@ -398,7 +428,15 @@ describe("server state projection", () => {
               }),
             ),
             Stream.runHead,
+            Effect.forkChild,
           );
+          yield* Effect.yieldNow;
+          yield* Queue.offer(events, {
+            version: 1,
+            type: "providerStatuses",
+            payload: { providers },
+          });
+          const projected = yield* Fiber.join(projectedFiber);
           expect(Option.getOrThrow(Option.getOrThrow(projected)).config.providers).toBe(providers);
         }),
       );

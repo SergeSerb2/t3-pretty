@@ -212,6 +212,7 @@ describe("AssetAccess", () => {
         kind: "file",
         path: attachmentPath,
         source: "attachment",
+        attachmentId,
       });
     }).pipe(Effect.provide(testLayer)),
   );

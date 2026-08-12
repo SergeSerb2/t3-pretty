@@ -222,6 +222,24 @@ export const traceRelayHttpRequestWith = <E, R, LayerError, LayerRequirements>(
     Effect.provide(Layer.merge(tracerLayer, httpHeaderRedactionLayer)),
   );
 
+/** Health probes stay off the request-scoped OTLP exporter hot path. */
+export const serveRelayHttpRequestWith = <E, R, LayerError, LayerRequirements>(
+  httpEffect: Effect.Effect<
+    HttpServerResponse.HttpServerResponse,
+    E,
+    HttpServerRequest.HttpServerRequest | R
+  >,
+  tracerLayer: Layer.Layer<never, LayerError, LayerRequirements>,
+) =>
+  HttpServerRequest.HttpServerRequest.pipe(
+    Effect.flatMap((request) => {
+      const pathname = new URL(request.url, "https://relay.invalid").pathname;
+      return pathname === "/health"
+        ? relayRequestDeadline(httpEffect)
+        : traceRelayHttpRequestWith(httpEffect, tracerLayer);
+    }),
+  );
+
 export const withoutCapturedParentSpan = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
@@ -390,11 +408,15 @@ export const healthApi = HttpApiBuilder.group(
   "health",
   Effect.fnUntraced(function* (handlers) {
     const db = yield* RelayDb.RelayDb;
+    const checkDatabase = yield* Effect.cachedWithTTL(
+      db.execute(drizzleSql`SELECT 1`),
+      Duration.seconds(2),
+    );
     return handlers.handle(
       "health",
       Effect.fn("relay.api.health")(
         function* () {
-          yield* db.execute(drizzleSql`SELECT 1`);
+          yield* checkDatabase;
           return { ok: true, service: "relay" as const };
         },
         Effect.catch(() => relayInternalErrorResponse("database_unavailable")),

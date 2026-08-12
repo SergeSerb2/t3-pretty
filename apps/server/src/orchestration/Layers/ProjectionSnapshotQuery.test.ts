@@ -16,6 +16,7 @@ import {
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -32,6 +33,7 @@ const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 const projectionSnapshotLayer = it.layer(
   OrchestrationProjectionSnapshotQueryLive.pipe(
@@ -2431,6 +2433,107 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
         assert.equal(snapshot.value.thread.activities.length, 6);
         assert.equal(snapshot.value.page?.hasMore, false);
         assert.equal(snapshot.value.page?.beforeCursor, null);
+      }
+    }),
+  );
+
+  it.effect("filters superseded activity payloads in SQLite before decoding the page", () =>
+    Effect.gen(function* () {
+      yield* seedFanOutThread();
+      const sql = yield* SqlClient.SqlClient;
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const hugePayload = "x".repeat(1_000_000);
+
+      const rows = [
+        {
+          id: "context-old",
+          kind: "context-window.updated",
+          summary: "old context",
+          payload: { usedTokens: 10, discarded: hugePayload },
+          group: null,
+          usedTokens: 10,
+          at: "2026-03-01T00:03:40.000Z",
+        },
+        {
+          id: "context-new",
+          kind: "context-window.updated",
+          summary: "new context",
+          payload: { usedTokens: 20 },
+          group: null,
+          usedTokens: 20,
+          at: "2026-03-01T00:03:41.000Z",
+        },
+        {
+          id: "context-malformed",
+          kind: "context-window.updated",
+          summary: "malformed context",
+          payload: { usedTokens: "unknown" },
+          group: null,
+          usedTokens: null,
+          at: "2026-03-01T00:03:42.000Z",
+        },
+        {
+          id: "tool-old-update",
+          kind: "tool.updated",
+          summary: "running",
+          payload: { data: { toolCallId: "call-1", rawOutput: hugePayload } },
+          group: "id:call-1",
+          usedTokens: null,
+          at: "2026-03-01T00:03:43.000Z",
+        },
+        {
+          id: "tool-completion",
+          kind: "tool.completed",
+          summary: "done",
+          payload: { data: { toolCallId: "call-1" } },
+          group: "id:call-1",
+          usedTokens: null,
+          at: "2026-03-01T00:03:44.000Z",
+        },
+        {
+          id: "tool-later-update",
+          kind: "tool.updated",
+          summary: "running again",
+          payload: { data: { toolCallId: "call-1" } },
+          group: "id:call-1",
+          usedTokens: null,
+          at: "2026-03-01T00:03:45.000Z",
+        },
+        {
+          id: "tool-unmatched-update",
+          kind: "tool.updated",
+          summary: "unmatched",
+          payload: { data: { toolCallId: "call-without-completion" } },
+          group: "id:call-without-completion",
+          usedTokens: null,
+          at: "2026-03-01T00:03:46.000Z",
+        },
+      ] as const;
+      for (const row of rows) {
+        yield* sql`
+          INSERT INTO projection_thread_activities (
+            activity_id, thread_id, turn_id, tone, kind, summary, payload_json,
+            projection_group_key, context_used_tokens, created_at
+          ) VALUES (
+            ${row.id}, 'thread-w', 'turn-4', 'tool', ${row.kind}, ${row.summary},
+            ${encodeUnknownJson(row.payload)}, ${row.group}, ${row.usedTokens}, ${row.at}
+          )
+        `;
+      }
+
+      const snapshot = yield* snapshotQuery.getThreadDetailSnapshot(threadW, { turnLimit: 2 });
+      assert.equal(snapshot._tag, "Some");
+      if (snapshot._tag === "Some") {
+        assert.deepEqual(activityIds(snapshot.value), [
+          "context-malformed",
+          "context-new",
+          "tool-completion",
+          "tool-later-update",
+          "tool-unmatched-update",
+          "turn-4-activity",
+          "turn-5-activity",
+          "turnless-activity",
+        ]);
       }
     }),
   );

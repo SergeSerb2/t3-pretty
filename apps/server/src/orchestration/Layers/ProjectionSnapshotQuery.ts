@@ -1164,22 +1164,74 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     Result: ProjectionThreadActivityDbRowSchema,
     execute: ({ threadId }) =>
       sql`
+        WITH candidates AS MATERIALIZED (
+          SELECT
+            activity_id,
+            thread_id,
+            turn_id,
+            kind,
+            projection_group_key,
+            context_used_tokens,
+            sequence,
+            created_at,
+            CASE
+              WHEN sequence IS NULL THEN '0|' || created_at || '|' || activity_id
+              ELSE '1|' || printf('%020llu', sequence) || '|' || created_at || '|' || activity_id
+            END AS sort_key
+          FROM projection_thread_activities
+          WHERE thread_id = ${threadId}
+        ),
+        latest_context AS MATERIALIZED (
+          SELECT turn_id, MAX(sort_key) AS sort_key
+          FROM candidates
+          WHERE kind = 'context-window.updated' AND context_used_tokens IS NOT NULL
+          GROUP BY turn_id
+        ),
+        latest_completion AS MATERIALIZED (
+          SELECT turn_id, projection_group_key, MAX(sort_key) AS sort_key
+          FROM candidates
+          WHERE kind = 'tool.completed' AND projection_group_key IS NOT NULL
+          GROUP BY turn_id, projection_group_key
+        ),
+        retained AS MATERIALIZED (
+          SELECT candidate.activity_id
+          FROM candidates AS candidate
+          LEFT JOIN latest_context AS context
+            ON candidate.kind = 'context-window.updated'
+            AND candidate.context_used_tokens IS NOT NULL
+            AND context.turn_id IS candidate.turn_id
+          LEFT JOIN latest_completion AS completion
+            ON candidate.kind = 'tool.updated'
+            AND candidate.projection_group_key IS NOT NULL
+            AND completion.turn_id IS candidate.turn_id
+            AND completion.projection_group_key = candidate.projection_group_key
+          WHERE NOT COALESCE((
+              candidate.kind = 'context-window.updated'
+              AND candidate.context_used_tokens IS NOT NULL
+              AND context.sort_key > candidate.sort_key
+            ), 0)
+          AND NOT COALESCE((
+              candidate.kind = 'tool.updated'
+              AND candidate.projection_group_key IS NOT NULL
+              AND completion.sort_key > candidate.sort_key
+            ), 0)
+        )
         SELECT
-          activity_id AS "activityId",
-          thread_id AS "threadId",
-          turn_id AS "turnId",
-          tone,
-          kind,
-          summary,
-          payload_json AS "payload",
-          sequence,
-          created_at AS "createdAt"
-        FROM projection_thread_activities
-        WHERE thread_id = ${threadId}
+          activity.activity_id AS "activityId",
+          activity.thread_id AS "threadId",
+          activity.turn_id AS "turnId",
+          activity.tone,
+          activity.kind,
+          activity.summary,
+          activity.payload_json AS "payload",
+          activity.sequence,
+          activity.created_at AS "createdAt"
+        FROM projection_thread_activities AS activity
+        INNER JOIN retained ON retained.activity_id = activity.activity_id
         ORDER BY
-          sequence ASC,
-          created_at ASC,
-          activity_id ASC
+          activity.sequence ASC,
+          activity.created_at ASC,
+          activity.activity_id ASC
       `,
   });
 
@@ -1396,48 +1448,100 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     Result: ProjectionThreadActivityDbRowSchema,
     execute: ({ threadId, minAnchorAt, minTurnKey, beforeAnchorAt, beforeTurnKey }) =>
       sql`
+        WITH candidates AS MATERIALIZED (
+          SELECT
+            activity_id,
+            thread_id,
+            turn_id,
+            kind,
+            projection_group_key,
+            context_used_tokens,
+            sequence,
+            created_at,
+            CASE
+              WHEN sequence IS NULL THEN '0|' || created_at || '|' || activity_id
+              ELSE '1|' || printf('%020llu', sequence) || '|' || created_at || '|' || activity_id
+            END AS sort_key
+          FROM projection_thread_activities
+          WHERE thread_id = ${threadId}
+            AND (
+              turn_id IN (
+                SELECT turn_id FROM projection_turns
+                WHERE thread_id = ${threadId}
+                  AND turn_id IS NOT NULL
+                  AND (
+                    requested_at > ${minAnchorAt}
+                    OR (
+                      requested_at = ${minAnchorAt}
+                      AND turn_id >= ${minTurnKey}
+                    )
+                  )
+                  AND (
+                    requested_at < ${beforeAnchorAt}
+                    OR (
+                      requested_at = ${beforeAnchorAt}
+                      AND turn_id < ${beforeTurnKey}
+                    )
+                  )
+              )
+              OR (
+                turn_id IS NULL
+                AND created_at >= ${minAnchorAt}
+                AND created_at < ${beforeAnchorAt}
+              )
+            )
+        ),
+        latest_context AS MATERIALIZED (
+          SELECT turn_id, MAX(sort_key) AS sort_key
+          FROM candidates
+          WHERE kind = 'context-window.updated' AND context_used_tokens IS NOT NULL
+          GROUP BY turn_id
+        ),
+        latest_completion AS MATERIALIZED (
+          SELECT turn_id, projection_group_key, MAX(sort_key) AS sort_key
+          FROM candidates
+          WHERE kind = 'tool.completed' AND projection_group_key IS NOT NULL
+          GROUP BY turn_id, projection_group_key
+        ),
+        retained AS MATERIALIZED (
+          SELECT candidate.activity_id
+          FROM candidates AS candidate
+          LEFT JOIN latest_context AS context
+            ON candidate.kind = 'context-window.updated'
+            AND candidate.context_used_tokens IS NOT NULL
+            AND context.turn_id IS candidate.turn_id
+          LEFT JOIN latest_completion AS completion
+            ON candidate.kind = 'tool.updated'
+            AND candidate.projection_group_key IS NOT NULL
+            AND completion.turn_id IS candidate.turn_id
+            AND completion.projection_group_key = candidate.projection_group_key
+          WHERE NOT COALESCE((
+              candidate.kind = 'context-window.updated'
+              AND candidate.context_used_tokens IS NOT NULL
+              AND context.sort_key > candidate.sort_key
+            ), 0)
+          AND NOT COALESCE((
+              candidate.kind = 'tool.updated'
+              AND candidate.projection_group_key IS NOT NULL
+              AND completion.sort_key > candidate.sort_key
+            ), 0)
+        )
         SELECT
-          activity_id AS "activityId",
-          thread_id AS "threadId",
-          turn_id AS "turnId",
-          tone,
-          kind,
-          summary,
-          payload_json AS "payload",
-          sequence,
-          created_at AS "createdAt"
-        FROM projection_thread_activities
-        WHERE thread_id = ${threadId}
-          AND (
-            turn_id IN (
-              SELECT turn_id FROM projection_turns
-              WHERE thread_id = ${threadId}
-                AND turn_id IS NOT NULL
-                AND (
-                  requested_at > ${minAnchorAt}
-                  OR (
-                    requested_at = ${minAnchorAt}
-                    AND turn_id >= ${minTurnKey}
-                  )
-                )
-                AND (
-                  requested_at < ${beforeAnchorAt}
-                  OR (
-                    requested_at = ${beforeAnchorAt}
-                    AND turn_id < ${beforeTurnKey}
-                  )
-                )
-            )
-            OR (
-              turn_id IS NULL
-              AND created_at >= ${minAnchorAt}
-              AND created_at < ${beforeAnchorAt}
-            )
-          )
+          activity.activity_id AS "activityId",
+          activity.thread_id AS "threadId",
+          activity.turn_id AS "turnId",
+          activity.tone,
+          activity.kind,
+          activity.summary,
+          activity.payload_json AS "payload",
+          activity.sequence,
+          activity.created_at AS "createdAt"
+        FROM projection_thread_activities AS activity
+        INNER JOIN retained ON retained.activity_id = activity.activity_id
         ORDER BY
-          sequence ASC,
-          created_at ASC,
-          activity_id ASC
+          activity.sequence ASC,
+          activity.created_at ASC,
+          activity.activity_id ASC
       `,
   });
 

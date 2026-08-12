@@ -58,7 +58,7 @@ import {
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git-actions";
-import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-state";
+import { useSelectedThreadGitOperationLabel } from "../../state/use-selected-thread-git-state";
 import { useSelectedThreadRequests } from "../../state/use-selected-thread-requests";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
@@ -71,6 +71,10 @@ import {
 } from "../layout/AdaptiveWorkspaceLayout";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
+import {
+  recordThreadPerformanceSpan,
+  takeThreadOpenDuration,
+} from "../observability/threadPerformance";
 import { ThreadFileNavigatorPane } from "../files/thread-file-navigator-pane";
 import {
   ThreadInspectorContentStack,
@@ -211,8 +215,8 @@ function ThreadRouteContent(
   }, [selectedThread, selectedThreadDetailState]);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const composer = useThreadComposerState();
-  const gitState = useSelectedThreadGitState();
-  const gitActions = useSelectedThreadGitActions();
+  const gitOperationLabel = useSelectedThreadGitOperationLabel();
+  const gitActions = useSelectedThreadGitActions({ loadInitialState: false });
   const requests = useSelectedThreadRequests();
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, "thread interrupt");
   const navigation = useNavigation();
@@ -222,6 +226,27 @@ function ThreadRouteContent(
   const threadId = firstRouteParam(params.threadId);
   const routeThreadIdentity =
     environmentIdRaw !== null && threadId !== null ? `${environmentIdRaw}:${threadId}` : null;
+  const reportedReadyIdentity = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      environmentIdRaw === null ||
+      threadId === null ||
+      selectedThreadDetail === null ||
+      reportedReadyIdentity.current === routeThreadIdentity
+    ) {
+      return;
+    }
+    reportedReadyIdentity.current = routeThreadIdentity;
+    const openDurationMs = takeThreadOpenDuration(environmentIdRaw, threadId);
+    recordThreadPerformanceSpan("mobile.thread.open.ready", {
+      "thread.environmentId": environmentIdRaw,
+      "thread.id": threadId,
+      "thread.messages": selectedThreadDetail.messages.length,
+      "thread.activities": selectedThreadDetail.activities.length,
+      "thread.open.marked": openDurationMs !== null,
+      ...(openDurationMs === null ? {} : { "thread.open.durationMs": openDurationMs }),
+    });
+  }, [environmentIdRaw, routeThreadIdentity, selectedThreadDetail, threadId]);
   const [inspectorSelection, setInspectorSelection] = useState<ThreadInspectorSelection | null>(
     () => (props.renderInspector ? { routeThreadIdentity, mode: "route" } : null),
   );
@@ -624,7 +649,7 @@ function ThreadRouteContent(
     onOpenGitInspector: fileInspector.supported ? handleOpenGitInspector : undefined,
     currentBranch: selectedThread?.branch ?? null,
     gitStatus: gitStatus.data,
-    gitOperationLabel: gitState.gitOperationLabel,
+    gitOperationLabel,
     canOpenTerminal: Boolean(selectedThreadProject?.workspaceRoot),
     canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
     projectScripts: selectedThreadProject?.scripts ?? [],

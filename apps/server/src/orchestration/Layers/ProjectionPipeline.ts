@@ -54,6 +54,7 @@ import {
   parseThreadSegmentFromAttachmentId,
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
+import { attachmentFeedPreviewPath } from "../../assets/AttachmentPreview.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -380,6 +381,13 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
       yield* fileSystem.remove(path.join(attachmentsRootDir, normalizedEntry), {
         force: true,
       });
+      const previewPath = attachmentFeedPreviewPath({
+        attachmentsDir: attachmentsRootDir,
+        attachmentId,
+      });
+      if (previewPath) {
+        yield* fileSystem.remove(previewPath, { force: true });
+      }
     },
   );
 
@@ -430,6 +438,13 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
 
     if (!keptThreadRelativePaths.has(relativePath)) {
       yield* fileSystem.remove(absolutePath, { force: true });
+      const previewPath = attachmentFeedPreviewPath({
+        attachmentsDir: attachmentsRootDir,
+        attachmentId,
+      });
+      if (previewPath) {
+        yield* fileSystem.remove(previewPath, { force: true });
+      }
     }
   });
 

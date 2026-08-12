@@ -1,4 +1,5 @@
 import * as Haptics from "expo-haptics";
+import { Image as ExpoImage } from "expo-image";
 import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { type LegendListRef } from "@legendapp/list/react-native";
 import type { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contracts";
@@ -73,6 +74,7 @@ import {
 } from "../review/nativeReviewDiffAdapter";
 import { buildReviewParsedDiff } from "../review/reviewModel";
 import { cn } from "../../lib/cn";
+import { recordThreadPerformanceSpan } from "../observability/threadPerformance";
 import { deriveCenteredContentHorizontalPadding, type LayoutVariant } from "../../lib/layout";
 import {
   resolveMarkdownFontSizes,
@@ -164,12 +166,15 @@ function MessageAttachmentImage(props: {
   readonly className: string;
   readonly onPressImage: (uri: string, headers?: Record<string, string>) => void;
 }) {
+  const loadStartedAt = useRef<number | null>(null);
   const uri = useAssetUrl(props.environmentId, {
     _tag: "attachment",
     attachmentId: props.attachmentId,
   });
+  const previewUri =
+    uri === null ? null : `${uri}${uri.includes("?") ? "&" : "?"}variant=feed-preview`;
 
-  if (uri === null) {
+  if (uri === null || previewUri === null) {
     return (
       <View className={`${props.className} items-center justify-center`}>
         <ActivityIndicator />
@@ -179,7 +184,26 @@ function MessageAttachmentImage(props: {
 
   return (
     <TouchableOpacity activeOpacity={0.7} onPress={() => props.onPressImage(uri)}>
-      <Image source={{ uri }} className={props.className} resizeMode="cover" />
+      <ExpoImage
+        source={{ uri: previewUri }}
+        className={props.className}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        recyclingKey={props.attachmentId}
+        allowDownscaling
+        onLoadStart={() => {
+          loadStartedAt.current = performance.now();
+        }}
+        onLoad={() => {
+          const startedAt = loadStartedAt.current;
+          loadStartedAt.current = null;
+          if (startedAt === null) return;
+          recordThreadPerformanceSpan("mobile.thread.image.preview.load", {
+            "attachment.id": props.attachmentId,
+            "attachment.load.durationMs": performance.now() - startedAt,
+          });
+        }}
+      />
     </TouchableOpacity>
   );
 }

@@ -8,6 +8,7 @@ import {
   type ServerSelfUpdateResult,
   WS_METHODS,
 } from "@t3tools/contracts";
+import { serverConfigDigest } from "@t3tools/shared/serverConfigDigest";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -38,6 +39,7 @@ import {
   request,
   runStream,
   subscribe,
+  subscribeDynamic,
   type EnvironmentRpcInput,
 } from "../rpc/client.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
@@ -375,7 +377,37 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
       Effect.forkScoped,
     );
 
-    yield* subscribe(WS_METHODS.subscribeServerConfig, {}).pipe(
+    yield* subscribeDynamic(WS_METHODS.subscribeServerConfig, (session) =>
+      (
+        session.initialConfigSnapshot ??
+        session.initialConfig.pipe(
+          Effect.map((config) => ({ config, digest: serverConfigDigest(config) })),
+        )
+      ).pipe(
+        Effect.tap((snapshot) =>
+          Effect.gen(function* () {
+            const current = yield* SubscriptionRef.get(state);
+            const shouldPersist = Option.match(current, {
+              onNone: () => true,
+              onSome: (projection) => serverConfigDigest(projection.config) !== snapshot.digest,
+            });
+            const event = cachedConfigSnapshotEvent(snapshot.config);
+            const projection: ServerConfigProjection = {
+              config: snapshot.config,
+              latestEvent: event,
+              source: "live",
+            };
+            yield* SubscriptionRef.set(state, Option.some(projection));
+            if (shouldPersist) {
+              yield* Ref.set(pendingPersistence, Option.some(snapshot.config));
+              yield* Queue.offer(persistence, snapshot.config);
+            }
+          }),
+        ),
+        Effect.map((snapshot) => ({ knownConfigDigest: snapshot.digest })),
+        Effect.catch(() => Effect.succeed({})),
+      ),
+    ).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
           const next = applyServerConfigProjection(yield* SubscriptionRef.get(state), event);

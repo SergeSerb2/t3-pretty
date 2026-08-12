@@ -32,6 +32,10 @@ import {
   resolveAsset,
   type ResolvedAssetSource,
 } from "./assets/AssetAccess.ts";
+import {
+  ATTACHMENT_FEED_PREVIEW_VARIANT,
+  resolveAttachmentFeedPreview,
+} from "./assets/AttachmentPreview.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { traceRelayRequest } from "./cloud/traceRelayRequest.ts";
@@ -40,9 +44,11 @@ import {
   failEnvironmentScopeRequired,
   failEnvironmentAuthInvalid,
   failEnvironmentInternal,
+  requireEnvironmentScope,
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
+import { loadServerConfigSnapshot } from "./serverConfigSnapshot.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -150,6 +156,29 @@ export const serverEnvironmentHttpApiLayer = HttpApiBuilder.group(
   }),
 );
 
+export const serverConfigHttpApiLayer = HttpApiBuilder.group(
+  EnvironmentHttpApi,
+  "server",
+  Effect.fnUntraced(function* (handlers) {
+    return handlers.handle(
+      "config",
+      Effect.fn("environment.server.config")(function* (args) {
+        yield* annotateEnvironmentRequest(args.endpoint.name);
+        yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+        return yield* loadServerConfigSnapshot.pipe(
+          Effect.tap((snapshot) =>
+            Effect.annotateCurrentSpan({
+              "server.config.decodedBytes": JSON.stringify(snapshot.config).length,
+              "server.config.transport": "http",
+            }),
+          ),
+          Effect.catch((error) => failEnvironmentInternal("server_config_failed", error)),
+        );
+      }, traceRelayRequest),
+    );
+  }),
+);
+
 class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecordsError")<{
   readonly cause: unknown;
   readonly bodyJson: OtlpTracer.TraceData;
@@ -233,9 +262,20 @@ export const assetRouteLayer = HttpRouter.add(
     if (!asset) {
       return HttpServerResponse.text("Not Found", { status: 404 });
     }
-    return yield* HttpServerResponse.file(asset.path, {
+    const config = yield* ServerConfig.ServerConfig;
+    const requestedPath =
+      asset.source === "attachment" &&
+      asset.attachmentId !== undefined &&
+      url.value.searchParams.get("variant") === ATTACHMENT_FEED_PREVIEW_VARIANT
+        ? yield* resolveAttachmentFeedPreview({
+            attachmentsDir: config.attachmentsDir,
+            attachmentId: asset.attachmentId,
+            sourcePath: asset.path,
+          })
+        : asset.path;
+    return yield* HttpServerResponse.file(requestedPath, {
       status: 200,
-      headers: assetResponseHeaders(asset.path, asset.source),
+      headers: assetResponseHeaders(requestedPath, asset.source),
     }).pipe(
       Effect.orElseSucceed(() => HttpServerResponse.text("Internal Server Error", { status: 500 })),
     );
