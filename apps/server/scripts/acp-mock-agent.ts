@@ -165,6 +165,22 @@ function configOptions(): ReadonlyArray<AcpSchema.SessionConfigOption> {
     ];
 
     switch (currentModelId) {
+      case "default":
+        return [
+          ...baseOptions,
+          {
+            id: "optimize_for",
+            name: "Optimize For",
+            category: "model_option",
+            type: "select",
+            currentValue: "balanced",
+            options: [
+              { value: "cost", name: "Cost" },
+              { value: "balanced", name: "Balance" },
+              { value: "intelligence", name: "Intelligence" },
+            ],
+          },
+        ];
       case "gpt-5.4":
         return [
           ...baseOptions,

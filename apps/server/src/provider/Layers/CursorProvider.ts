@@ -214,6 +214,129 @@ function isCursorThinkingConfigOption(option: EffectAcpSchema.SessionConfigOptio
   return id === "thinking" || name.includes("thinking");
 }
 
+function isCursorOptimizeForConfigOption(option: EffectAcpSchema.SessionConfigOption): boolean {
+  const id = option.id
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  const name = option.name.trim().toLowerCase();
+  return (
+    id === "optimizefor" ||
+    name === "optimize for" ||
+    name.includes("optimize for") ||
+    name === "optimization"
+  );
+}
+
+const CURSOR_AUTO_OPTIMIZE_FOR_CHOICES = [
+  { value: "cost", label: "Cost" },
+  { value: "balanced", label: "Balance", isDefault: true },
+  { value: "intelligence", label: "Intelligence" },
+] as const;
+
+type CursorOptimizeForValue = (typeof CURSOR_AUTO_OPTIMIZE_FOR_CHOICES)[number]["value"];
+
+function normalizeCursorOptimizeForValue(
+  value: string | null | undefined,
+): CursorOptimizeForValue | undefined {
+  const normalized = value?.trim().toLowerCase();
+  switch (normalized) {
+    case "cost":
+      return "cost";
+    case "balance":
+    case "balanced":
+      return "balanced";
+    case "intelligence":
+    case "intel":
+      return "intelligence";
+    default:
+      return undefined;
+  }
+}
+
+export function isCursorAutoModel(
+  slug: string | null | undefined,
+  name?: string | null | undefined,
+): boolean {
+  const trimmedSlug = slug?.trim() ?? "";
+  const baseSlug = trimmedSlug.includes("[")
+    ? trimmedSlug.slice(0, trimmedSlug.indexOf("["))
+    : trimmedSlug;
+  const normalizedSlug = (baseSlug || "default").trim().toLowerCase();
+  const normalizedName = name?.trim().toLowerCase() ?? "";
+  return (
+    normalizedSlug === "default" ||
+    normalizedSlug === "auto" ||
+    normalizedSlug === "auto-smart" ||
+    normalizedName === "auto"
+  );
+}
+
+function cursorOptimizeForChoiceLabel(value: CursorOptimizeForValue): string {
+  return CURSOR_AUTO_OPTIMIZE_FOR_CHOICES.find((choice) => choice.value === value)?.label ?? value;
+}
+
+function buildCursorOptimizeForDescriptor(
+  configOption: EffectAcpSchema.SessionConfigOption | undefined,
+): ReturnType<typeof buildSelectOptionDescriptor> | undefined {
+  if (configOption?.type === "select") {
+    const options = flattenSessionConfigSelectOptions(configOption).flatMap((entry) => {
+      const normalizedValue = normalizeCursorOptimizeForValue(entry.value);
+      if (!normalizedValue) {
+        return [];
+      }
+      const isDefault =
+        normalizeCursorOptimizeForValue(configOption.currentValue) === normalizedValue ||
+        (normalizeCursorOptimizeForValue(configOption.currentValue) === undefined &&
+          normalizedValue === "balanced");
+      return [
+        {
+          value: normalizedValue,
+          label: entry.name.trim() || cursorOptimizeForChoiceLabel(normalizedValue),
+          ...(isDefault ? { isDefault: true as const } : {}),
+        },
+      ];
+    });
+    if (options.length > 0) {
+      return buildSelectOptionDescriptor({
+        id: "optimizeFor",
+        label: configOption.name?.trim() || "Optimize For",
+        description:
+          configOption.description?.trim() ||
+          "Cursor Router mode for Auto: Cost, Balance, or Intelligence.",
+        options,
+      });
+    }
+  }
+
+  return buildSelectOptionDescriptor({
+    id: "optimizeFor",
+    label: "Optimize For",
+    description: "Cursor Router mode for Auto: Cost, Balance, or Intelligence.",
+    options: CURSOR_AUTO_OPTIMIZE_FOR_CHOICES.map((choice) => ({ ...choice })),
+  });
+}
+
+export function enrichCursorAutoModelCapabilities(
+  capabilities: ModelCapabilities,
+  slug: string,
+  name?: string | null,
+): ModelCapabilities {
+  if (!isCursorAutoModel(slug, name)) {
+    return capabilities;
+  }
+  if (capabilities.optionDescriptors.some((descriptor) => descriptor.id === "optimizeFor")) {
+    return capabilities;
+  }
+  const optimizeFor = buildCursorOptimizeForDescriptor(undefined);
+  if (!optimizeFor) {
+    return capabilities;
+  }
+  return createModelCapabilities({
+    optionDescriptors: [...capabilities.optionDescriptors, optimizeFor],
+  });
+}
+
 function isBooleanLikeConfigOption(option: EffectAcpSchema.SessionConfigOption): boolean {
   if (option.type === "boolean") {
     return true;
@@ -302,9 +425,20 @@ export function buildCursorCapabilitiesFromConfigOptions(
   const thinkingOption = configOptions.find(
     (option) => option.category === "model_config" && isCursorThinkingConfigOption(option),
   );
+  const optimizeForOption = configOptions.find(
+    (option) =>
+      (option.category === "model_config" ||
+        option.category === "model_option" ||
+        option.category === undefined) &&
+      isCursorOptimizeForConfigOption(option),
+  );
   const fastCurrentValue = getBooleanCurrentValue(fastOption);
   const thinkingCurrentValue = getBooleanCurrentValue(thinkingOption);
+  const optimizeForDescriptor = optimizeForOption
+    ? buildCursorOptimizeForDescriptor(optimizeForOption)
+    : undefined;
   const optionDescriptors = [
+    ...(optimizeForDescriptor ? [optimizeForDescriptor] : []),
     ...(reasoningEffortLevels.length > 0
       ? [
           buildSelectOptionDescriptor({
@@ -393,7 +527,11 @@ function buildCursorDiscoveredModelsFromAvailableModelsResponse(
         {
           slug,
           name,
-          capabilities: buildCursorCapabilitiesFromConfigOptions(model.configOptions),
+          capabilities: enrichCursorAutoModelCapabilities(
+            buildCursorCapabilitiesFromConfigOptions(model.configOptions),
+            slug,
+            name,
+          ),
         },
       ];
     }),
@@ -473,7 +611,13 @@ function findCursorBooleanConfigValue(
 export function resolveCursorAcpBaseModelId(model: string | null | undefined): string {
   const trimmed = model?.trim();
   const base = trimmed && trimmed.length > 0 ? trimmed : "default";
-  return base.includes("[") ? base.slice(0, base.indexOf("[")) : base;
+  const withoutTraits = base.includes("[") ? base.slice(0, base.indexOf("[")) : base;
+  const normalized = withoutTraits.trim().toLowerCase();
+  // Cursor ACP exposes Auto as `default`; `auto` / `auto-smart` are product/SDK ids.
+  if (normalized === "auto" || normalized === "auto-smart") {
+    return "default";
+  }
+  return withoutTraits;
 }
 
 export function resolveCursorAcpConfigUpdates(
@@ -544,6 +688,21 @@ export function resolveCursorAcpConfigUpdates(
     const value = findCursorBooleanConfigValue(thinkingOption, requestedThinking);
     if (value !== undefined) {
       updates.push({ configId: thinkingOption.id, value });
+    }
+  }
+
+  const optimizeForOption = configOptions.find((option) => isCursorOptimizeForConfigOption(option));
+  const requestedOptimizeFor = normalizeCursorOptimizeForValue(
+    getProviderOptionStringSelectionValue(selections, "optimizeFor"),
+  );
+  if (optimizeForOption && requestedOptimizeFor) {
+    const value = findCursorSelectOptionValue(optimizeForOption, (option) => {
+      const normalizedValue = normalizeCursorOptimizeForValue(option.value);
+      const normalizedName = normalizeCursorOptimizeForValue(option.name);
+      return normalizedValue === requestedOptimizeFor || normalizedName === requestedOptimizeFor;
+    });
+    if (value) {
+      updates.push({ configId: optimizeForOption.id, value });
     }
   }
 
