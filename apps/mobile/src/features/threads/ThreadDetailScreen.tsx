@@ -42,6 +42,7 @@ import {
   KeyboardController,
   KeyboardStickyView,
   useKeyboardState,
+  useReanimatedKeyboardAnimation,
 } from "react-native-keyboard-controller";
 import Animated, {
   Easing,
@@ -69,6 +70,7 @@ import type {
 } from "../../lib/threadActivity";
 import { PendingApprovalCard } from "./PendingApprovalCard";
 import { PendingUserInputCard } from "./PendingUserInputCard";
+import { deriveComposerBottomInset } from "./composerKeyboardLayout";
 import {
   derivePendingUserInputMaxHeight,
   ESTIMATED_KEYBOARD_HEIGHT,
@@ -234,6 +236,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const insets = useSafeAreaInsets();
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
   const liveKeyboardHeight = useKeyboardState((state) => state.height);
+  const { height: animatedKeyboardHeight } = useReanimatedKeyboardAnimation();
   // Android can swallow the IME hide callbacks when the app is backgrounded
   // mid keyboard-hide (the reported repro: send — which blurs and starts the
   // hide — then Home within a second). The keyboard library's height AND
@@ -286,14 +289,18 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   // animation, so the composer would ride down flush to the screen edge and
   // then snap up into the inset. On iOS blur precedes the hide, so the
   // focus-keyed inset is already in place while the composer rides down.
-  const isComposerAtKeyboardEdge =
-    Platform.OS === "android" ? isKeyboardVisible : composerExpanded;
-  const composerSafeAreaInset = isComposerAtKeyboardEdge ? 0 : Math.max(insets.bottom, 12);
+  const isComposerAtKeyboardEdge = Platform.OS === "android" ? isKeyboardVisible : composerExpanded;
+  const keyboardTranslationEnabled = isKeyboardVisible && !keyboardStateSuspect;
   // Reserve a strip under the composer for the scenery credit so the pill
-  // sits below send/stop instead of stealing taps from them. Keyboard-open
-  // hides the credit under the IME, so skip the slot then.
-  const sceneryCreditSlot = threadSceneryPhoto !== null && !isKeyboardVisible ? creditHeight : 0;
-  const composerBottomInset = composerSafeAreaInset + sceneryCreditSlot;
+  // sits below send/stop instead of stealing taps from them. Hide it at the
+  // keyboard edge and while the IME is reported visible so a stream-time
+  // focus flicker cannot jump the resting dock.
+  const composerBottomInset = deriveComposerBottomInset({
+    atKeyboardEdge: isComposerAtKeyboardEdge,
+    keyboardVisible: isKeyboardVisible,
+    safeAreaBottom: insets.bottom,
+    sceneryCreditHeight: threadSceneryPhoto !== null ? creditHeight : 0,
+  });
   const contentPresentationKind = props.contentPresentation.kind;
   // The raw sync status enters "synchronizing" on every full fetch, cached or
   // not. Whether messages are already on screen decides the pill label: no
@@ -389,10 +396,22 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   // coverage on top of T3 Pretty's real footer clearance.
   const userInputCoverageApplies = Platform.OS === "ios" && activeUserInputRequestId !== null;
   const combinedContentInsetEndAdjustment = useSharedValue(0);
+  const keyboardTranslationEnabledSV = useSharedValue(keyboardTranslationEnabled);
+  keyboardTranslationEnabledSV.value = keyboardTranslationEnabled;
+  // KeyboardStickyView `enabled` drops the composer translation when
+  // visibility says the IME is closed. KeyboardChatScrollView still pads by
+  // the animated height, so a stale open height would leave a phantom gap
+  // under the latest rows (especially while a turn streams). Cancel that
+  // padding whenever translation is off so the list and composer stay aligned.
   useAnimatedReaction(
-    () =>
-      contentInsetEndAdjustment.value +
-      (userInputCoverageApplies ? userInputInsetProgress.value * userInputCardCoverage.value : 0),
+    () => {
+      const userInputExtra = userInputCoverageApplies
+        ? userInputInsetProgress.value * userInputCardCoverage.value
+        : 0;
+      const staleKeyboardHeight = Math.max(0, -animatedKeyboardHeight.value);
+      const staleKeyboardCancel = keyboardTranslationEnabledSV.value ? 0 : 0 - staleKeyboardHeight;
+      return contentInsetEndAdjustment.value + userInputExtra + staleKeyboardCancel;
+    },
     (value) => {
       combinedContentInsetEndAdjustment.value = value;
     },
@@ -645,7 +664,9 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
           // The animated keyboard height can remain stale after a dismissed
           // IME on both platforms. Visibility is the authoritative closed
           // state, so disable the translation rather than stranding the pill.
-          enabled={isKeyboardVisible && !keyboardStateSuspect}
+          // ThreadFeed padding is cancelled in lockstep (see the reaction
+          // above) so a stale height cannot open a gap under the transcript.
+          enabled={keyboardTranslationEnabled}
           style={COMPOSER_STICKY_STYLE}
           offset={COMPOSER_STICKY_OFFSET}
         >
