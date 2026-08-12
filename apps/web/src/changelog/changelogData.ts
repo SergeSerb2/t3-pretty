@@ -26,6 +26,26 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260811.1067000088",
+    date: "2026-08-11",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260811.1067000087",
+    date: "2026-08-11",
+    items: [
+      {
+        kind: "fixed",
+        title: "target T3 Pretty App Store record [skip ci]",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260811.1067000086",
     date: "2026-08-11",
     items: [
