@@ -91,6 +91,27 @@ ${">".repeat(7)} theirs
     );
   });
 
+  it("stops extracting repeated conflict contexts when they exhaust the prompt budget", () => {
+    const nearbyConflict = `${"<".repeat(7)} ours
+${"a".repeat(40_000)}
+${"|".repeat(7)} base
+${"=".repeat(7)}
+theirs
+${">".repeat(7)} theirs
+`;
+    const conflictedSource = nearbyConflict.repeat(20);
+
+    assert.throws(
+      () =>
+        prepareConflictPrompt({
+          path: "generated-lockfile.yaml",
+          conflictedSource,
+          forkHistory: "",
+        }),
+      /exceeds the 600000-byte conflict prompt limit/u,
+    );
+  });
+
   it("still refuses files large enough to risk local conflict processing", () => {
     assert.throws(
       () =>
