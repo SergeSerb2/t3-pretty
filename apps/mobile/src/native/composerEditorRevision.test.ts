@@ -4,6 +4,7 @@ import {
   acknowledgeComposerNativeEvent,
   isComposerNativeEcho,
   pruneAcknowledgedComposerNativeEvents,
+  replaceAcknowledgedComposerSnapshot,
   resolveComposerControlledEventCount,
 } from "./composerEditorRevision";
 
@@ -95,7 +96,7 @@ describe("pruneAcknowledgedComposerNativeEvents", () => {
       selection: { start: eventCount, end: eventCount },
     }));
 
-    expect(pruneAcknowledgedComposerNativeEvents(snapshots, 999)).toEqual([]);
+    expect(pruneAcknowledgedComposerNativeEvents(snapshots, 999)).toEqual([snapshots[999]]);
   });
 
   it("retains native events that arrive after the acknowledged render", () => {
@@ -104,6 +105,37 @@ describe("pruneAcknowledgedComposerNativeEvents", () => {
       { eventCount: 41, value: "ab", selection: { start: 2, end: 2 } },
     ];
 
-    expect(pruneAcknowledgedComposerNativeEvents(snapshots, 40)).toEqual([snapshots[1]]);
+    expect(pruneAcknowledgedComposerNativeEvents(snapshots, 40)).toEqual(snapshots);
+  });
+
+  it("keeps the acknowledged document so later parent renders still echo", () => {
+    const snapshots = [
+      { eventCount: 4, value: "ab", selection: { start: 2, end: 2 } },
+      { eventCount: 5, value: "abc", selection: { start: 3, end: 3 } },
+    ];
+    const pruned = pruneAcknowledgedComposerNativeEvents(snapshots, 5);
+
+    expect(isComposerNativeEcho("abc", { start: 3, end: 3 }, 5, pruned)).toBe(true);
+  });
+});
+
+describe("replaceAcknowledgedComposerSnapshot", () => {
+  it("stops the previous document from echoing after a controlled write", () => {
+    const snapshots = [{ eventCount: 5, value: "hello", selection: { start: 5, end: 5 } }];
+    const next = { eventCount: 5, value: "world", selection: { start: 5, end: 5 } };
+    const replaced = replaceAcknowledgedComposerSnapshot(snapshots, next);
+
+    expect(isComposerNativeEcho("hello", { start: 5, end: 5 }, 5, replaced)).toBe(false);
+    expect(isComposerNativeEcho("world", { start: 5, end: 5 }, 5, replaced)).toBe(true);
+  });
+
+  it("keeps newer native events that have not been acknowledged yet", () => {
+    const snapshots = [
+      { eventCount: 5, value: "hello", selection: { start: 5, end: 5 } },
+      { eventCount: 6, value: "hello!", selection: { start: 6, end: 6 } },
+    ];
+    const next = { eventCount: 5, value: "world", selection: { start: 5, end: 5 } };
+
+    expect(replaceAcknowledgedComposerSnapshot(snapshots, next)).toEqual([next, snapshots[1]]);
   });
 });

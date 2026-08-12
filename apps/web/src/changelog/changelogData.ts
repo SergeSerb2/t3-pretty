@@ -26,6 +26,76 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260811.1067000086",
+    date: "2026-08-11",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260811.1067000085",
+    date: "2026-08-11",
+    items: [
+      {
+        kind: "improved",
+        title: "Under-the-hood stability and maintenance",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260811.1067000084",
+    date: "2026-08-11",
+    items: [
+      {
+        kind: "improved",
+        title: "clarify EAS credential bootstrap",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260811.1067000083",
+    date: "2026-08-11",
+    items: [
+      {
+        kind: "fixed",
+        title: "align widget release version",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260811.1067000082",
+    date: "2026-08-11",
+    items: [
+      {
+        kind: "fixed",
+        title: "stabilize production startup",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260811.1067000081",
+    date: "2026-08-11",
+    items: [
+      {
+        kind: "fixed",
+        title: "allow interactive EAS credential bootstrap",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260811.1067000080",
+    date: "2026-08-11",
+    items: [
+      {
+        kind: "improved",
+        title: "bootstrap initial iOS credentials",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260811.1067000079",
     date: "2026-08-11",
     items: [

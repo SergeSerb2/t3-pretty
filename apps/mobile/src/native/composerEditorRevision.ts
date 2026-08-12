@@ -74,5 +74,30 @@ export function pruneAcknowledgedComposerNativeEvents(
   snapshots: ReadonlyArray<ComposerNativeEventSnapshot>,
   acknowledgedEventCount: number,
 ): ComposerNativeEventSnapshot[] {
-  return snapshots.filter((snapshot) => snapshot.eventCount > acknowledgedEventCount);
+  let latestAcknowledged: ComposerNativeEventSnapshot | null = null;
+  const pending: ComposerNativeEventSnapshot[] = [];
+  for (const snapshot of snapshots) {
+    if (snapshot.eventCount > acknowledgedEventCount) {
+      pending.push(snapshot);
+      continue;
+    }
+    if (latestAcknowledged === null || snapshot.eventCount >= latestAcknowledged.eventCount) {
+      latestAcknowledged = snapshot;
+    }
+  }
+
+  // Keep the latest acknowledged document so a later parent re-render (thread
+  // stream, tool call) still matches as a native echo. Dropping it made those
+  // renders look like selection writes, which reloads the iOS keyboard session.
+  return latestAcknowledged === null ? pending : [latestAcknowledged, ...pending];
+}
+
+export function replaceAcknowledgedComposerSnapshot(
+  snapshots: ReadonlyArray<ComposerNativeEventSnapshot>,
+  next: ComposerNativeEventSnapshot,
+): ComposerNativeEventSnapshot[] {
+  // A parent-driven write (thread switch, slash command) applies without a
+  // native event. Replace the acknowledged snapshot so the previous document
+  // cannot be reused as an echo against a different native buffer.
+  return [next, ...snapshots.filter((snapshot) => snapshot.eventCount > next.eventCount)];
 }

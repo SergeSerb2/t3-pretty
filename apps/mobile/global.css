@@ -71,6 +71,9 @@
       --color-header-border: rgba(22, 38, 26, 0.07);
       --color-glass-surface: rgba(255, 255, 255, 0.72);
       --color-glass-tint: rgba(255, 255, 255, 0.18);
+      /* Desktop scenery chrome is 42–52% over the pre-blurred photo. */
+      --color-chrome-glass: rgba(255, 255, 255, 0.52);
+      --color-chrome-glass-border: rgba(22, 38, 26, 0.1);
 
       /* StatusBar */
       --color-status-bar: #f4f6f4;
@@ -165,6 +168,8 @@
       --color-header-border: rgba(222, 236, 226, 0.08);
       --color-glass-surface: rgba(19, 23, 21, 0.78);
       --color-glass-tint: rgba(27, 33, 29, 0.24);
+      --color-chrome-glass: rgba(19, 23, 21, 0.52);
+      --color-chrome-glass-border: rgba(222, 236, 226, 0.1);
 
       /* StatusBar */
       --color-status-bar: #0e1110;

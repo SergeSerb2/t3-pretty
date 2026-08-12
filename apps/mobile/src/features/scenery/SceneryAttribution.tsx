@@ -5,9 +5,10 @@
  * (desktop uses the same corner via --scenery-dock-block) so it sits below
  * chat bubbles and list rows instead of covering them.
  */
+import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
 import * as Linking from "expo-linking";
 import { useRef } from "react";
-import { Pressable, StyleSheet, View, type LayoutChangeEvent } from "react-native";
+import { Pressable, StyleSheet, useColorScheme, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
@@ -34,12 +35,33 @@ export function SceneryAttribution(props: {
 }) {
   const { photo } = props;
   const insets = useSafeAreaInsets();
+  const isDarkMode = useColorScheme() !== "light";
   const reportedHeightRef = useRef(0);
   const bottom = Math.max(insets.bottom, SCENERY_CREDIT_MIN_BOTTOM) + (props.bottomExtra ?? 0);
   const profileURL =
     photo.photographerProfileURL !== null
       ? `${photo.photographerProfileURL}${UNSPLASH_UTM}`
       : `https://unsplash.com/${UNSPLASH_UTM}`;
+  const pillStyle = {
+    borderCurve: "continuous" as const,
+    borderRadius: 999,
+    maxWidth: 280,
+    overflow: "hidden" as const,
+  };
+  const label = (
+    <Text
+      numberOfLines={1}
+      style={{
+        color: isDarkMode ? "rgba(255, 255, 255, 0.92)" : "rgba(0, 0, 0, 0.88)",
+        fontSize: 10,
+        lineHeight: 14,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+      }}
+    >
+      {photo.name} · Photo by {photo.photographerName}
+    </Text>
+  );
 
   const handleLayout = (event: LayoutChangeEvent) => {
     const height = Math.ceil(event.nativeEvent.layout.height);
@@ -58,23 +80,35 @@ export function SceneryAttribution(props: {
         onLayout={handleLayout}
         onPress={() => void Linking.openURL(profileURL).catch(() => undefined)}
         style={({ pressed }) => ({
+          bottom,
+          opacity: pressed ? 0.7 : 1,
           position: "absolute",
           right: Math.max(insets.right, 12),
-          bottom,
-          maxWidth: 280,
-          borderRadius: 999,
-          backgroundColor: "rgba(0, 0, 0, 0.45)",
-          paddingHorizontal: 10,
-          paddingVertical: 4,
-          opacity: pressed ? 0.7 : 1,
         })}
       >
-        <Text
-          numberOfLines={1}
-          style={{ color: "rgba(255, 255, 255, 0.92)", fontSize: 10, lineHeight: 14 }}
-        >
-          {photo.name} · Photo by {photo.photographerName}
-        </Text>
+        {isLiquidGlassSupported ? (
+          <LiquidGlassView
+            colorScheme={isDarkMode ? "dark" : "light"}
+            effect="regular"
+            interactive
+            style={pillStyle}
+          >
+            {label}
+          </LiquidGlassView>
+        ) : (
+          <View
+            style={[
+              pillStyle,
+              {
+                backgroundColor: isDarkMode ? "rgba(0, 0, 0, 0.58)" : "rgba(255, 255, 255, 0.62)",
+                borderColor: isDarkMode ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.12)",
+                borderWidth: StyleSheet.hairlineWidth,
+              },
+            ]}
+          >
+            {label}
+          </View>
+        )}
       </Pressable>
     </View>
   );

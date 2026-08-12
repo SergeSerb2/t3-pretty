@@ -48,6 +48,13 @@ import {
 import { ThreadFeed } from "./ThreadFeed";
 import type { ThreadContentPresentation } from "./threadContentPresentation";
 
+// KeyboardStickyView memos its animated style against `style` identity.
+// An inline object here would rebuild that style on every thread-stream
+// render and briefly drop the keyboard-open translate — the composer
+// jumps, iOS reloads the keyboard session, and typing dies until remount.
+const COMPOSER_STICKY_STYLE = { position: "absolute", bottom: 0, left: 0, right: 0 } as const;
+const COMPOSER_STICKY_OFFSET = { closed: 0, opened: 0 } as const;
+
 export interface ThreadDetailScreenProps {
   readonly selectedThread: OrchestrationThreadShell;
   readonly contentPresentation: ThreadContentPresentation;
@@ -198,8 +205,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   // Reserve a strip under the composer for the scenery credit so the pill
   // sits below send/stop instead of stealing taps from them. Keyboard-open
   // hides the credit under the IME, so skip the slot then.
-  const sceneryCreditSlot =
-    threadSceneryPhoto !== null && !isKeyboardVisible ? creditHeight : 0;
+  const sceneryCreditSlot = threadSceneryPhoto !== null && !isKeyboardVisible ? creditHeight : 0;
   const composerBottomInset =
     (isKeyboardVisible ? 0 : Math.max(insets.bottom, 12)) + sceneryCreditSlot;
   const contentPresentationKind = props.contentPresentation.kind;
@@ -401,13 +407,19 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
       {/* Floating composer — sticks to keyboard via KeyboardStickyView */}
       {showContent ? (
         <KeyboardStickyView
-          style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
-          offset={{ closed: 0, opened: 0 }}
+          collapsable={false}
+          style={COMPOSER_STICKY_STYLE}
+          offset={COMPOSER_STICKY_OFFSET}
         >
           {/* No paddingTop here: the overlay's measured height becomes the
               list's bottom inset, so any padding above the pill/composer
               pushes the resting content floor up by the same amount. */}
-          <View ref={composerOverlayRef} onLayout={onComposerLayout} className="w-full">
+          <View
+            ref={composerOverlayRef}
+            collapsable={false}
+            onLayout={onComposerLayout}
+            className="w-full"
+          >
             <View className="w-full self-center" style={{ maxWidth: contentMaxWidth }}>
               {props.activePendingApproval || props.activePendingUserInput ? (
                 <Animated.View

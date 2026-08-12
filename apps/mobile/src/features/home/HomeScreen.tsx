@@ -31,7 +31,7 @@ import {
   SceneryAttribution,
 } from "../scenery/SceneryAttribution";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
-import { useDailySceneryPhoto } from "../scenery/SceneryProvider";
+import { useDailySceneryPhoto, useSceneryChromeActive } from "../scenery/SceneryProvider";
 
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
@@ -59,14 +59,12 @@ import {
 import {
   buildThreadListV2Items,
   buildThreadListV2ListItems,
+  resolveThreadListV2GlassClusterRole,
   THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   type ThreadListV2ListItem,
 } from "../threads/threadListV2";
-import {
-  ANDROID_HOME_FAB_EDGE_GAP,
-  ANDROID_HOME_FAB_SIZE,
-} from "./AndroidHomeFab";
+import { ANDROID_HOME_FAB_EDGE_GAP, ANDROID_HOME_FAB_SIZE } from "./AndroidHomeFab";
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   buildHomeListLayout,
@@ -228,6 +226,7 @@ export function HomeScreen(props: HomeScreenProps) {
       ? PRE_LIQUID_GLASS_BOTTOM_TOOLBAR_HEIGHT
       : 0;
   const dailySceneryPhoto = useDailySceneryPhoto();
+  const sceneryChrome = useSceneryChromeActive();
   const [creditHeight, setCreditHeight] = useState(SCENERY_CREDIT_HEIGHT);
   // iOS: pre-Liquid-Glass 44pt bottom toolbar. Android: sit the credit just
   // above the new-task FAB (size + edge gap + credit gap, minus the safe
@@ -760,6 +759,9 @@ export function HomeScreen(props: HomeScreenProps) {
       const showTrailingDivider =
         nextItem?.type === "v2-thread" ||
         (nextItem?.type === "v2-pending" && !nextItem.showPendingDivider);
+      const clusterRole = sceneryChrome
+        ? resolveThreadListV2GlassClusterRole(threadListV2Items, index)
+        : null;
       if (item.type === "v2-pending") {
         const pendingScopeKey = scopedProjectKey(
           item.pendingTask.message.environmentId,
@@ -778,6 +780,7 @@ export function HomeScreen(props: HomeScreenProps) {
             }
             showPendingDivider={item.showPendingDivider}
             showTrailingDivider={showTrailingDivider}
+            sceneryChrome={sceneryChrome}
             onSelectPendingTask={props.onSelectPendingTask}
             onDeletePendingTask={props.onDeletePendingTask}
           />
@@ -789,6 +792,8 @@ export function HomeScreen(props: HomeScreenProps) {
             count={item.count}
             expanded={item.expanded}
             onToggle={toggleSnoozedShelf}
+            sceneryChrome={sceneryChrome}
+            clusterRole={clusterRole}
           />
         );
       }
@@ -798,6 +803,8 @@ export function HomeScreen(props: HomeScreenProps) {
             count={item.count}
             expanded={item.expanded}
             onToggle={toggleSettledShelf}
+            sceneryChrome={sceneryChrome}
+            clusterRole={clusterRole}
           />
         );
       }
@@ -808,6 +815,8 @@ export function HomeScreen(props: HomeScreenProps) {
           variant={item.item.variant}
           snoozed={item.item.snoozed}
           pinned={item.item.pinned}
+          sceneryChrome={sceneryChrome}
+          clusterRole={clusterRole}
           snoozePresetMinute={nowMinute}
           snoozeWakeLabelText={item.snoozeWakeLabelText}
           showTrailingDivider={showTrailingDivider}
@@ -898,6 +907,7 @@ export function HomeScreen(props: HomeScreenProps) {
       v2ProjectTitleByProjectKey,
       props.searchQuery,
       nowMinute,
+      sceneryChrome,
     ],
   );
   const v2KeyExtractor = useCallback((item: ThreadListV2ListItem) => item.key, []);
@@ -1146,7 +1156,11 @@ export function HomeScreen(props: HomeScreenProps) {
                   accessibilityRole="button"
                   accessibilityLabel={`Show ${Math.min(threadListV2Layout.hiddenSettledCount, THREAD_LIST_V2_SETTLED_PAGE_COUNT)} more settled threads`}
                   onPress={showMoreSettled}
-                  className="mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
+                  className={
+                    sceneryChrome
+                      ? "mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
+                      : "mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
+                  }
                   style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
                 >
                   <Text className="text-xs font-t3-medium text-foreground-muted">
@@ -1219,17 +1233,13 @@ export function HomeScreen(props: HomeScreenProps) {
             // standard 44pt bottom toolbar that overlays the list and is not
             // reflected in insets while contentInsetAdjustmentBehavior is
             // "never".
-            paddingBottom:
-              Platform.OS === "ios" ? iosListBottomPad : androidListBottomPad,
+            paddingBottom: Platform.OS === "ios" ? iosListBottomPad : androidListBottomPad,
           }}
           scrollIndicatorInsets={
             Platform.OS === "ios"
               ? {
                   bottom:
-                    Math.max(insets.bottom, 16) +
-                    24 +
-                    iosBottomToolbarClearance +
-                    sceneryListPad,
+                    Math.max(insets.bottom, 16) + 24 + iosBottomToolbarClearance + sceneryListPad,
                   top: 0,
                 }
               : undefined

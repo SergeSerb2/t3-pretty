@@ -88,6 +88,8 @@ export function resolveWhatsNewDecision({
     return { releases: [], acknowledgeVersion: null };
   }
 
+  // Hermes does not ship the ES2023 change-by-copy array methods. Sort a
+  // filtered copy so the read-only changelog input remains untouched.
   const unseen = releases
     .filter((release) => {
       const aboveLastSeen = compareAppVersions(release.version, effectiveLastSeen);
@@ -96,7 +98,7 @@ export function resolveWhatsNewDecision({
         aboveLastSeen !== null && aboveLastSeen > 0 && withinCurrent !== null && withinCurrent <= 0
       );
     })
-    .toSorted((a, b) => -(compareAppVersions(a.version, b.version) ?? 0));
+    .sort((a, b) => -(compareAppVersions(a.version, b.version) ?? 0));
 
   if (unseen.length === 0) {
     return { releases: [], acknowledgeVersion: currentVersion };

@@ -17,6 +17,7 @@ import { AsyncResult } from "effect/unstable/reactivity";
 
 import type { MobileSceneryPreferences } from "../../persistence/mobile-preferences";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { useReduceTransparency } from "./useReduceTransparency";
 import {
   capAssignments,
   clampBlur,
@@ -182,6 +183,16 @@ export function useScenery(): SceneryContextValue {
     throw new Error("useScenery must be used within SceneryProvider");
   }
   return context;
+}
+
+/**
+ * True when list chrome should go translucent over the scenery photo.
+ * Reduce Transparency and a disabled engine keep the opaque plates.
+ */
+export function useSceneryChromeActive(): boolean {
+  const context = use(SceneryContext);
+  const reduceTransparency = useReduceTransparency();
+  return context !== null && context.enabled && !reduceTransparency;
 }
 
 /** Photo bound to a thread key, assigning one on first sight. */

@@ -817,6 +817,12 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
           NSMaxRange(nextRange) <= textView.attributedText.length else {
       return
     }
+    // Writing an identical selectedRange still reloads the iOS 26+ keyboard
+    // session when the text view is first responder.
+    guard nextRange != textView.selectedRange else {
+      self.requestedSelection = nil
+      return
+    }
     isApplyingControlledValue = true
     textView.selectedRange = nextRange
     isApplyingControlledValue = false

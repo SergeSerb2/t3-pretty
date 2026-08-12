@@ -1,0 +1,101 @@
+name: Bootstrap iOS EAS Credentials
+
+# One-time helper: EAS deliberately refuses to create the first Apple
+# Distribution certificate in --non-interactive mode. This workflow gives the
+# CLI a pseudo-TTY while authenticating with the repository's ASC API key, then
+# accepts the safe defaults to generate the initial certificate and profiles.
+# The key must be a Team key with Admin role and Certificates, Identifiers &
+# Profiles access enabled in App Store Connect.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-eas-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Create initial iOS build credentials
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      APP_VARIANT: production
+      NODE_OPTIONS: --max-old-space-size=8192
+      T3CODE_MOBILE_UPDATE_URL: ${{ vars.T3CODE_MOBILE_UPDATE_URL }}
+      T3CODE_MOBILE_EAS_PROJECT_ID: ${{ vars.T3CODE_MOBILE_EAS_PROJECT_ID }}
+      T3CODE_MOBILE_EXPO_OWNER: ${{ vars.T3CODE_MOBILE_EXPO_OWNER }}
+      T3CODE_MOBILE_EXPO_SLUG: ${{ vars.T3CODE_MOBILE_EXPO_SLUG }}
+      T3CODE_APPLE_TEAM_ID: ${{ vars.T3CODE_APPLE_TEAM_ID }}
+      T3CODE_IOS_SHARE_EXTENSION: ${{ vars.T3CODE_IOS_SHARE_EXTENSION }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+          "$vp_pnpm_bin/pnpm" --version
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: npm
+
+      - name: Pull production environment variables
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas env:pull production --path ../../.env.local --non-interactive
+
+      - name: Prepare Apple API authentication
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "$name is required to bootstrap iOS credentials." >&2
+              exit 1
+            fi
+          done
+
+          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY" > "$key_path"
+          chmod 600 "$key_path"
+          {
+            echo "EXPO_ASC_API_KEY_PATH=$key_path"
+            echo "EXPO_ASC_KEY_ID=$APPLE_API_KEY_ID"
+            echo "EXPO_ASC_ISSUER_ID=$APPLE_API_ISSUER"
+            echo "EXPO_APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            echo "EXPO_APPLE_TEAM_TYPE=INDIVIDUAL"
+          } >> "$GITHUB_ENV"
+
+      - name: Create credentials and queue the first build
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        # `script` supplies the TTY EAS requires for first-time credential
+        # creation. A finite input stream avoids `yes` exiting with SIGPIPE and
+        # turning a successful build submission into a failed workflow step.
+        run: |
+          printf '\n%.0s' {1..24} | script --return --quiet --command \
+            "CI=false eas build --platform ios --profile production --no-wait" \
+            /dev/null

@@ -252,6 +252,9 @@ class T3ComposerEditorView(context: Context, appContext: AppContext) : ExpoView(
     val textLength = editor.text?.length ?: 0
     val safeStart = start.coerceIn(0, textLength)
     val safeEnd = end.coerceIn(0, textLength)
+    if (editor.selectionStart == safeStart && editor.selectionEnd == safeEnd) {
+      return
+    }
     editor.setSelection(safeStart, safeEnd)
   }
 
