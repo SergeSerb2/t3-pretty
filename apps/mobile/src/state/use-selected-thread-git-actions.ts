@@ -26,7 +26,8 @@ import { showGitActionResult } from "./use-vcs-action-state";
 import { useThreadSelection } from "./use-thread-selection";
 import { useSelectedThreadWorktree } from "./use-selected-thread-worktree";
 
-export function useSelectedThreadGitActions() {
+export function useSelectedThreadGitActions(options?: { readonly loadInitialState?: boolean }) {
+  const loadInitialState = options?.loadInitialState ?? true;
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -47,12 +48,15 @@ export function useSelectedThreadGitActions() {
 
   const selectedThreadGitRootCwd = selectedThreadProject?.workspaceRoot ?? null;
   const branchTarget = useMemo(
-    () => ({
-      environmentId: selectedThread?.environmentId ?? null,
-      cwd: selectedThreadGitRootCwd,
-      query: null,
-    }),
-    [selectedThread?.environmentId, selectedThreadGitRootCwd],
+    () =>
+      loadInitialState
+        ? {
+            environmentId: selectedThread?.environmentId ?? null,
+            cwd: selectedThreadGitRootCwd,
+            query: null,
+          }
+        : { environmentId: null, cwd: null, query: null },
+    [loadInitialState, selectedThread?.environmentId, selectedThreadGitRootCwd],
   );
   const branchState = useBranches(branchTarget);
   const updateThreadGitContext = useCallback(
@@ -116,11 +120,11 @@ export function useSelectedThreadGitActions() {
   );
 
   useEffect(() => {
-    if (!selectedThread || !selectedThreadProject) {
+    if (!loadInitialState || !selectedThread || !selectedThreadProject) {
       return;
     }
     void refreshSelectedThreadGitStatus({ quiet: true });
-  }, [refreshSelectedThreadGitStatus, selectedThread, selectedThreadProject]);
+  }, [loadInitialState, refreshSelectedThreadGitStatus, selectedThread, selectedThreadProject]);
 
   const runSelectedThreadGitMutation = useCallback(
     async <T, E>(

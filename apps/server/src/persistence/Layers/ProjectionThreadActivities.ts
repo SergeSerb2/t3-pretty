@@ -7,6 +7,10 @@ import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
 import { toPersistenceDecodeError, toPersistenceSqlError } from "../Errors.ts";
+import {
+  activityContextUsedTokens,
+  activityProjectionGroupKey,
+} from "../../orchestration/activityProjectionMetadata.ts";
 
 import {
   DeleteProjectionThreadActivitiesInput,
@@ -45,6 +49,8 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
               kind,
               summary,
               payload_json,
+              projection_group_key,
+              context_used_tokens,
               sequence,
               created_at
             )
@@ -56,6 +62,8 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
               ${row.kind},
               ${row.summary},
               ${JSON.stringify(row.payload)},
+              ${activityProjectionGroupKey(row)},
+              ${activityContextUsedTokens(row)},
               ${row.sequence ?? null},
               ${row.createdAt}
             )
@@ -67,6 +75,8 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
               kind = excluded.kind,
               summary = excluded.summary,
               payload_json = excluded.payload_json,
+              projection_group_key = excluded.projection_group_key,
+              context_used_tokens = excluded.context_used_tokens,
               sequence = excluded.sequence,
               created_at = excluded.created_at
           `,

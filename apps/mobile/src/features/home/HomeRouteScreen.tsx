@@ -20,6 +20,7 @@ import { buildHomeProjectScopes } from "./homeThreadList";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
 import { getConnectionAwareBrandHeaderOptions } from "./WorkspaceConnectionTitle";
+import { markThreadOpenStarted } from "../observability/threadPerformance";
 
 /* ─── Route screen ───────────────────────────────────────────────────── */
 
@@ -180,6 +181,7 @@ export function HomeRouteScreen() {
           onSelectThread={(thread) => {
             // Settled threads are live shells: opening one is plain
             // navigation, and sending a message un-settles server-side.
+            markThreadOpenStarted(String(thread.environmentId), String(thread.id));
             navigation.navigate("Thread", {
               environmentId: thread.environmentId,
               threadId: thread.id,

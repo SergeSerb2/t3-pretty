@@ -54,3 +54,17 @@ export function useSelectedThreadGitState() {
     selectedThreadBranchesLoading: selectedThreadBranchState.isPending,
   };
 }
+
+/** Header-only state that avoids source discovery and branch enumeration. */
+export function useSelectedThreadGitOperationLabel(): string | null {
+  const { selectedThread } = useThreadSelection();
+  const { selectedThreadCwd } = useSelectedThreadWorktree();
+  const target = useMemo(
+    () => ({
+      environmentId: selectedThread?.environmentId ?? null,
+      cwd: selectedThreadCwd,
+    }),
+    [selectedThread?.environmentId, selectedThreadCwd],
+  );
+  return useVcsActionState(target).currentLabel;
+}

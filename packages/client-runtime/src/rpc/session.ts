@@ -1,13 +1,21 @@
-import { type ServerConfig, WS_METHODS } from "@t3tools/contracts";
+import {
+  type EnvironmentServerConfigSnapshot,
+  type ServerConfig,
+  WS_METHODS,
+} from "@t3tools/contracts";
+import { serverConfigDigest } from "@t3tools/shared/serverConfigDigest";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
+import * as Option from "effect/Option";
 import type * as Scope from "effect/Scope";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
 import * as Socket from "effect/unstable/socket/Socket";
+import { HttpClient } from "effect/unstable/http";
 
 import { makeWsRpcProtocolClient, type WsRpcProtocolClient } from "./protocol.ts";
 import type {
@@ -19,12 +27,18 @@ import {
   ConnectionBlockedError,
   ConnectionTransientError as ConnectionTransientErrorClass,
 } from "../connection/model.ts";
+import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
+import { fetchEnvironmentServerConfig } from "./serverConfigHttp.ts";
 
 const SOCKET_OPEN_TIMEOUT = "15 seconds";
 
 export interface RpcSession {
   readonly client: WsRpcProtocolClient;
   readonly initialConfig: Effect.Effect<ServerConfig, ConnectionAttemptError>;
+  readonly initialConfigSnapshot?: Effect.Effect<
+    EnvironmentServerConfigSnapshot,
+    ConnectionAttemptError
+  >;
   readonly ready: Effect.Effect<void, ConnectionAttemptError>;
   readonly probe: Effect.Effect<void, ConnectionAttemptError>;
   readonly closed: Effect.Effect<never, ConnectionTransientError>;
@@ -67,6 +81,8 @@ function mapSessionRpcError(error: InitialConfigError | ProbeError): ConnectionA
 
 export const make = Effect.gen(function* () {
   const webSocketConstructor = yield* Socket.WebSocketConstructor;
+  const httpClient = yield* Effect.serviceOption(HttpClient.HttpClient);
+  const dpopSigner = yield* Effect.serviceOption(ManagedRelayDpopSigner);
 
   const connect = Effect.fnUntraced(function* (connection: PreparedConnection) {
     yield* Effect.annotateCurrentSpan({
@@ -114,12 +130,40 @@ export const make = Effect.gen(function* () {
       Effect.withSpan("environment.websocket.connect"),
     );
     const client = yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolContext));
-    const initialConfig = yield* Effect.cached(
-      client[WS_METHODS.serverGetConfig]({}).pipe(
-        Effect.mapError(mapSessionRpcError),
-        Effect.withSpan("environment.initialSync"),
+    const websocketConfig = client[WS_METHODS.serverGetConfig]({}).pipe(
+      Effect.map((config) => ({ config, digest: serverConfigDigest(config) })),
+      Effect.mapError(mapSessionRpcError),
+      Effect.tap((snapshot) =>
+        Effect.annotateCurrentSpan({
+          "server.config.decodedBytes": JSON.stringify(snapshot.config).length,
+          "server.config.transport": "websocket",
+        }),
       ),
     );
+    const initialConfigSnapshot = yield* Effect.cached(
+      (Option.isSome(httpClient)
+        ? fetchEnvironmentServerConfig({
+            prepared: connection,
+            signer: dpopSigner,
+          }).pipe(
+            Effect.provideService(HttpClient.HttpClient, httpClient.value),
+            Effect.tap((snapshot) =>
+              Effect.annotateCurrentSpan({
+                "server.config.decodedBytes": JSON.stringify(snapshot.config).length,
+                "server.config.transport": "http",
+              }),
+            ),
+            Effect.catchCause((cause) =>
+              Effect.logDebug(
+                "Could not load initial server configuration over HTTP; using WebSocket compatibility fallback.",
+                { cause: Cause.pretty(cause) },
+              ).pipe(Effect.andThen(websocketConfig)),
+            ),
+          )
+        : websocketConfig
+      ).pipe(Effect.withSpan("environment.initialSync")),
+    );
+    const initialConfig = initialConfigSnapshot.pipe(Effect.map((snapshot) => snapshot.config));
     const probe = initialConfig.pipe(
       Effect.flatMap((config) =>
         (config.environment.capabilities.connectionProbe === true
@@ -134,6 +178,7 @@ export const make = Effect.gen(function* () {
     return {
       client,
       initialConfig,
+      initialConfigSnapshot,
       ready: Deferred.await(connected).pipe(
         Effect.andThen(initialConfig),
         Effect.asVoid,

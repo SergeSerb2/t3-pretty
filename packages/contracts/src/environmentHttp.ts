@@ -26,6 +26,7 @@ import {
 } from "./auth.ts";
 import { AuthSessionId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import { ServerConfig } from "./server.ts";
 import {
   ClientOrchestrationCommand,
   DispatchResult,
@@ -90,6 +91,7 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "orchestration_snapshot_failed",
   "orchestration_thread_snapshot_failed",
   "orchestration_dispatch_failed",
+  "server_config_failed",
   "internal_error",
 ]);
 export type EnvironmentInternalErrorReason = typeof EnvironmentInternalErrorReason.Type;
@@ -383,6 +385,20 @@ export class EnvironmentMetadataHttpApi extends HttpApiGroup.make("metadata").ad
   }),
 ) {}
 
+export const EnvironmentServerConfigSnapshot = Schema.Struct({
+  config: ServerConfig,
+  digest: TrimmedNonEmptyString,
+});
+export type EnvironmentServerConfigSnapshot = typeof EnvironmentServerConfigSnapshot.Type;
+
+export class EnvironmentServerHttpApi extends HttpApiGroup.make("server").add(
+  HttpApiEndpoint.get("config", "/api/server/config", {
+    headers: OptionalBearerHeaders,
+    success: EnvironmentServerConfigSnapshot,
+    error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
 export class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
   .add(
     HttpApiEndpoint.get("session", "/api/auth/session", {
@@ -585,6 +601,7 @@ export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
 
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
+  .add(EnvironmentServerHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)

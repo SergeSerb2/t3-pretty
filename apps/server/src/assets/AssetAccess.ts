@@ -108,6 +108,7 @@ export type ResolvedAsset = {
   readonly path: string;
   /** Which claim kind authorized the bytes; drives response caching and CORS. */
   readonly source: ResolvedAssetSource;
+  readonly attachmentId?: string;
 };
 
 function decodeClaims(encodedPayload: string): AssetClaims | null {
@@ -504,7 +505,12 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       Effect.orElseSucceed(() => Option.none()),
     );
     return Option.isSome(info) && info.value.type === "File"
-      ? ({ kind: "file", path: attachmentPath, source: "attachment" } satisfies ResolvedAsset)
+      ? ({
+          kind: "file",
+          path: attachmentPath,
+          source: "attachment",
+          attachmentId: claims.attachmentId,
+        } satisfies ResolvedAsset)
       : null;
   }
 

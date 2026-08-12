@@ -62,6 +62,7 @@ import {
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import { serverConfigDigest } from "@t3tools/shared/serverConfigDigest";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
@@ -85,6 +86,7 @@ import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
+import { loadServerConfig, resolveAvailableEditorsForConfig } from "./serverConfigSnapshot.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
@@ -136,15 +138,7 @@ import * as RelayClient from "@t3tools/shared/relayClient";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-const EDITOR_DISCOVERY_TIMEOUT = Duration.seconds(5);
-
-export const resolveAvailableEditorsForConfig = <A, E, R>(
-  discovery: Effect.Effect<ReadonlyArray<A>, E, R>,
-) =>
-  discovery.pipe(
-    Effect.timeoutOption(EDITOR_DISCOVERY_TIMEOUT),
-    Effect.map(Option.getOrElse(() => [])),
-  );
+export { resolveAvailableEditorsForConfig } from "./serverConfigSnapshot.ts";
 
 function unexpectedCompatibilityError(error: never): never {
   throw new Error(`Unhandled compatibility error: ${String(error)}`);
@@ -1049,43 +1043,6 @@ const makeWsRpcLayer = (
             ),
           );
       };
-
-      const loadServerConfig = Effect.gen(function* () {
-        const keybindingsConfig = yield* keybindings.loadConfigState;
-        const providers = yield* providerRegistry.getProviders;
-        const settings = ServerSettings.redactServerSettingsForClient(
-          yield* serverSettings.getSettings,
-        );
-        const environment = yield* serverEnvironment.getDescriptor;
-        const auth = yield* serverAuth.getDescriptor();
-
-        return {
-          environment,
-          auth,
-          cwd: config.cwd,
-          keybindingsConfigPath: config.keybindingsConfigPath,
-          keybindings: keybindingsConfig.keybindings,
-          issues: keybindingsConfig.issues,
-          providers,
-          availableEditors: yield* resolveAvailableEditorsForConfig(
-            externalLauncher.resolveAvailableEditors(),
-          ),
-          observability: {
-            logsDirectoryPath: config.logsDir,
-            localTracingEnabled: true,
-            ...(config.otlpTracesUrl !== undefined ? { otlpTracesUrl: config.otlpTracesUrl } : {}),
-            otlpTracesEnabled: config.otlpTracesUrl !== undefined,
-            ...(config.otlpMetricsUrl !== undefined
-              ? { otlpMetricsUrl: config.otlpMetricsUrl }
-              : {}),
-            otlpMetricsEnabled: config.otlpMetricsUrl !== undefined,
-          },
-          settings,
-          shellResumeCompletionMarker: true,
-          threadResumeCompletionMarker: true,
-          threadSnapshotPagination: true,
-        };
-      });
 
       const refreshGitStatus = (cwd: string) =>
         vcsStatusBroadcaster
@@ -2306,7 +2263,7 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "preview" },
           ),
-        [WS_METHODS.subscribeServerConfig]: (_input) =>
+        [WS_METHODS.subscribeServerConfig]: (input) =>
           observeRpcStreamEffect(
             WS_METHODS.subscribeServerConfig,
             Effect.gen(function* () {
@@ -2346,14 +2303,19 @@ const makeWsRpcLayer = (
                 Stream.merge(providerStatuses, settingsUpdates),
               );
 
-              return Stream.concat(
-                Stream.make({
-                  version: 1 as const,
-                  type: "snapshot" as const,
-                  config: yield* loadServerConfig,
-                }),
-                liveUpdates,
+              const snapshot = yield* loadServerConfig.pipe(
+                Effect.map((config) => ({ config, digest: serverConfigDigest(config) })),
               );
+              return input.knownConfigDigest === snapshot.digest
+                ? liveUpdates
+                : Stream.concat(
+                    Stream.make({
+                      version: 1 as const,
+                      type: "snapshot" as const,
+                      config: snapshot.config,
+                    }),
+                    liveUpdates,
+                  );
             }),
             { "rpc.aggregate": "server" },
           ),

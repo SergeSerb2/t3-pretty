@@ -4,6 +4,11 @@ import type {
   OrchestrationThreadDetailSnapshot,
 } from "@t3tools/contracts";
 
+import {
+  activityContextUsedTokens,
+  activityProjectionGroupKey,
+} from "./activityProjectionMetadata.ts";
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -330,12 +335,7 @@ export function projectActivityPayload(
  * an earlier resolvable row here.
  */
 function isResolvableContextWindowActivity(activity: OrchestrationThreadActivity): boolean {
-  if (activity.kind !== "context-window.updated") {
-    return false;
-  }
-  const payload = asRecord(activity.payload);
-  const usedTokens = payload?.usedTokens;
-  return typeof usedTokens === "number" && Number.isFinite(usedTokens) && usedTokens >= 0;
+  return activityContextUsedTokens(activity) !== null;
 }
 
 /**
@@ -378,27 +378,7 @@ function dropStaleContextWindowActivities(
  * must not be dropped here.
  */
 function toolLifecycleIdentity(activity: OrchestrationThreadActivity): string | null {
-  const payload = asRecord(activity.payload);
-  if (!payload) {
-    return null;
-  }
-
-  const toolCallId = asTrimmedString(asRecord(payload.data)?.toolCallId);
-  if (toolCallId) {
-    return `id:${toolCallId}`;
-  }
-
-  const itemType = asTrimmedString(payload.itemType) ?? "";
-  // Mirrors the clients' `normalizeCompactToolLabel`: a completion's title may
-  // gain a trailing "complete"/"completed" the in-flight updates lack.
-  const label = (asTrimmedString(payload.title) ?? activity.summary)
-    .replace(/\s+(?:complete|completed)\s*$/iu, "")
-    .trim();
-  const detail = asTrimmedString(payload.detail) ?? "";
-  if (itemType.length === 0 && label.length === 0 && detail.length === 0) {
-    return null;
-  }
-  return [itemType, label, detail].join("");
+  return activityProjectionGroupKey(activity);
 }
 
 /**

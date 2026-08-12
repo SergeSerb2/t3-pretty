@@ -3,6 +3,7 @@ import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "node:crypto";
 import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { serverConfigDigest } from "@t3tools/shared/serverConfigDigest";
 
 import {
   AuthAccessTokenType,
@@ -10,6 +11,7 @@ import {
   AuthTokenExchangeGrantType,
   CommandId,
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentServerConfigSnapshot,
   EnvironmentId,
   EventId,
   GitCommandError,
@@ -4593,6 +4595,56 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         type: "keybindingsUpdated",
         payload: { keybindings: [], issues: [] },
       });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("serves initial server config compressed over authenticated HTTP", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const baseUrl = yield* getHttpServerUrl();
+      const cookie = yield* getAuthenticatedSessionCookieHeader();
+      const transfer = yield* measureHttpGet({
+        url: `${baseUrl}/api/server/config`,
+        headers: { cookie },
+      });
+      const snapshot = yield* Schema.decodeUnknownEffect(
+        Schema.fromJsonString(EnvironmentServerConfigSnapshot),
+      )(Buffer.from(transfer.decodedBody).toString("utf8"));
+
+      assert.equal(transfer.status, 200);
+      assert.equal(transfer.contentEncoding, "gzip");
+      assert.isBelow(transfer.encodedBodyBytes, transfer.decodedBodyBytes);
+      assert.isAbove(snapshot.digest.length, 0);
+      assert.equal(
+        snapshot.config.environment.environmentId,
+        testEnvironmentDescriptor.environmentId,
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("suppresses the duplicate config stream snapshot when the digest matches", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          keybindings: {
+            streamChanges: Stream.succeed({ keybindings: [], issues: [] }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const event = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const config = yield* client[WS_METHODS.serverGetConfig]({});
+            return yield* client[WS_METHODS.subscribeServerConfig]({
+              knownConfigDigest: serverConfigDigest(config),
+            }).pipe(Stream.runHead);
+          }),
+        ),
+      );
+
+      assert.equal(Option.getOrThrow(event).type, "keybindingsUpdated");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

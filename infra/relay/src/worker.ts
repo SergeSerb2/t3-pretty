@@ -28,7 +28,7 @@ import {
   relayEnvironmentAuthLayer,
   relayNotFoundRoute,
   serverApi,
-  traceRelayHttpRequestWith,
+  serveRelayHttpRequestWith,
   tokenApi,
   withoutCapturedParentSpan,
 } from "./http/Api.ts";
@@ -291,7 +291,7 @@ export const ApiLive = Api.make(
     ).pipe(
       HttpRouter.toHttpEffect,
       withoutCapturedParentSpan,
-      Effect.flatMap((httpEffect) => traceRelayHttpRequestWith(httpEffect, relayTraceLayer)),
+      Effect.flatMap((httpEffect) => serveRelayHttpRequestWith(httpEffect, relayTraceLayer)),
     );
 
     return { fetch };

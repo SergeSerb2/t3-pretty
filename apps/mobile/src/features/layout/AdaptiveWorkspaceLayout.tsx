@@ -36,6 +36,7 @@ import {
 } from "../../lib/layout";
 import { resolveThreadSelectionNavigationAction } from "../../lib/adaptive-navigation";
 import { scopedThreadKey } from "../../lib/scopedEntities";
+import { markThreadOpenStarted } from "../observability/threadPerformance";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import {
   DEFAULT_MOBILE_PROJECT_GROUPING_SETTINGS,
@@ -493,10 +494,12 @@ function AdaptiveWorkspaceLayoutContent(
         if (nextThreadKey === selectedThreadKey) {
           return;
         }
+        markThreadOpenStarted(String(thread.environmentId), String(thread.id));
         setFileInspectorPreferredVisible(false);
         navigation.navigate("Thread", params);
         return;
       }
+      markThreadOpenStarted(String(thread.environmentId), String(thread.id));
       if (navigationAction === "replace") {
         setFileInspectorPreferredVisible(false);
         navigation.dispatch(StackActions.replace("Thread", params));
