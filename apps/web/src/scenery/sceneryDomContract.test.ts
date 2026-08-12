@@ -141,6 +141,15 @@ describe("scenery attribution contract", () => {
     expect(sceneryLayerSource).toContain(">Photo by </span>");
     expect(sceneryLayerSource).toContain("> on </span>");
   });
+
+  it("hides the scenery dock while the right panel is open", () => {
+    expect(sceneryCssSource).toContain(
+      'html:has([data-right-panel-open="true"]) .scenery-attribution',
+    );
+    expect(sceneryCssSource).toContain(
+      'html:has([data-right-panel-open="true"]) .scenery-quick__trigger',
+    );
+  });
 });
 
 describe("ink override contract with upstream appearance handling", () => {

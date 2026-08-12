@@ -120,6 +120,7 @@ export function PreviewPanelShell(props: {
       )}
       data-preview-panel-mode={props.mode}
       data-preview-panel-maximized={maximized ? "true" : "false"}
+      data-right-panel-open={open ? "true" : "false"}
     >
       {panelContents}
     </div>

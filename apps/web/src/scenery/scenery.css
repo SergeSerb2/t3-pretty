@@ -277,6 +277,16 @@ html[data-scenery-ink-transition]::view-transition-new(root) {
   background: rgb(0 0 0 / 72%);
 }
 
+/* The dock is viewport-fixed in the bottom-right corner — the same place the
+   right panel puts its actions (PR comment submit, etc.). Hide the whole
+   dock while that panel is open rather than stacking over those controls. */
+html:has([data-right-panel-open="true"]) .scenery-attribution,
+html:has([data-right-panel-open="true"]) .scenery-quick__trigger,
+html:has([data-right-panel-open="true"]) .scenery-quick__panel,
+html:has([data-right-panel-open="true"]) .scenery-quick__backdrop {
+  display: none;
+}
+
 /* Light appearance runs a white wash, so a translucent black plate can land
    near-white behind 10px white text. Flip the dock to a light plate with
    near-black ink: dark text over a >=62% white fill stays past 4.5:1 even
