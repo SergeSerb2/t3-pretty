@@ -170,10 +170,12 @@ export function ComposerEditor({
     mostRecentEventCount,
     nativeEventSnapshotsRef.current,
   );
+  // Do not require `includesNativeEvent`: after the echo render, prune used to
+  // drop the snapshot, so a later thread-stream re-render looked like a
+  // selection write and reloaded the iOS keyboard session. Keeping the latest
+  // acknowledged snapshot makes parent re-renders keep echoing.
   const isNativeEcho =
-    includesNativeEvent &&
-    controlledEventCount === mostRecentEventCount &&
-    acknowledgesLatestNativeEvent;
+    controlledEventCount === mostRecentEventCount && acknowledgesLatestNativeEvent;
   const controlledDocumentJson = JSON.stringify({
     value: props.value,
     selection: isNativeEcho ? null : (selection ?? null),
@@ -252,6 +254,7 @@ export function ComposerEditor({
         autoFocus={props.autoFocus ?? false}
         autoCorrect={props.autoCorrect ?? true}
         spellCheck={props.spellCheck ?? true}
+        collapsable={false}
         style={{ flex: 1, minHeight: 0 }}
         onComposerChange={(event) => {
           const acknowledgedEventCount = acceptNativeEvent(

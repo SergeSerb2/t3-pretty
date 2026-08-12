@@ -183,14 +183,13 @@ export function useThreadComposerState() {
 
   const onChangeDraftMessage = useCallback(
     (value: string) => {
-      if (!selectedThreadShell) {
+      if (!selectedThreadKey) {
         return;
       }
 
-      const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
-      setComposerDraftText(threadKey, value);
+      setComposerDraftText(selectedThreadKey, value);
     },
-    [selectedThreadShell],
+    [selectedThreadKey],
   );
 
   const onPickDraftImages = useCallback(async () => {

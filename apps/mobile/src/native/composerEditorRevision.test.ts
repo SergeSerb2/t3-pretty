@@ -95,7 +95,7 @@ describe("pruneAcknowledgedComposerNativeEvents", () => {
       selection: { start: eventCount, end: eventCount },
     }));
 
-    expect(pruneAcknowledgedComposerNativeEvents(snapshots, 999)).toEqual([]);
+    expect(pruneAcknowledgedComposerNativeEvents(snapshots, 999)).toEqual([snapshots[999]]);
   });
 
   it("retains native events that arrive after the acknowledged render", () => {
@@ -104,6 +104,16 @@ describe("pruneAcknowledgedComposerNativeEvents", () => {
       { eventCount: 41, value: "ab", selection: { start: 2, end: 2 } },
     ];
 
-    expect(pruneAcknowledgedComposerNativeEvents(snapshots, 40)).toEqual([snapshots[1]]);
+    expect(pruneAcknowledgedComposerNativeEvents(snapshots, 40)).toEqual(snapshots);
+  });
+
+  it("keeps the acknowledged document so later parent renders still echo", () => {
+    const snapshots = [
+      { eventCount: 4, value: "ab", selection: { start: 2, end: 2 } },
+      { eventCount: 5, value: "abc", selection: { start: 3, end: 3 } },
+    ];
+    const pruned = pruneAcknowledgedComposerNativeEvents(snapshots, 5);
+
+    expect(isComposerNativeEcho("abc", { start: 3, end: 3 }, 5, pruned)).toBe(true);
   });
 });

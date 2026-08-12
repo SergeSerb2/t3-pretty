@@ -74,5 +74,20 @@ export function pruneAcknowledgedComposerNativeEvents(
   snapshots: ReadonlyArray<ComposerNativeEventSnapshot>,
   acknowledgedEventCount: number,
 ): ComposerNativeEventSnapshot[] {
-  return snapshots.filter((snapshot) => snapshot.eventCount > acknowledgedEventCount);
+  let latestAcknowledged: ComposerNativeEventSnapshot | null = null;
+  const pending: ComposerNativeEventSnapshot[] = [];
+  for (const snapshot of snapshots) {
+    if (snapshot.eventCount > acknowledgedEventCount) {
+      pending.push(snapshot);
+      continue;
+    }
+    if (latestAcknowledged === null || snapshot.eventCount >= latestAcknowledged.eventCount) {
+      latestAcknowledged = snapshot;
+    }
+  }
+
+  // Keep the latest acknowledged document so a later parent re-render (thread
+  // stream, tool call) still matches as a native echo. Dropping it made those
+  // renders look like selection writes, which reloads the iOS keyboard session.
+  return latestAcknowledged === null ? pending : [latestAcknowledged, ...pending];
 }
