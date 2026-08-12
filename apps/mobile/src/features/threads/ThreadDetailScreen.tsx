@@ -780,8 +780,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
         </KeyboardStickyView>
       ) : null}
 
-      {/* World Scenery credit docks to the bottom-right corner, in the
-          strip reserved under the composer so it cannot cover send/stop. */}
+      {/* World Scenery credit centers under the composer strip so it cannot
+          cover send/stop and stays clear of the device's rounded corners. */}
       {showContent && threadSceneryPhoto !== null ? (
         <SceneryAttribution photo={threadSceneryPhoto} onHeightChange={setCreditHeight} />
       ) : null}

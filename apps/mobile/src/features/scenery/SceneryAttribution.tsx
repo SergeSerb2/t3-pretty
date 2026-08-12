@@ -1,9 +1,9 @@
 /**
  * Unsplash attribution pill for the World Scenery photo behind a screen —
  * "Location · Photo by X", tapping through to the photographer's profile with
- * the required utm parameters. Docked to the screen's bottom-right corner
- * (desktop uses the same corner via --scenery-dock-block) so it sits below
- * chat bubbles and list rows instead of covering them.
+ * the required utm parameters. Horizontally centered under floating chrome /
+ * above the home-indicator strip so long credits stay clear of the device's
+ * rounded corners (desktop still docks bottom-right via --scenery-dock-block).
  */
 import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
 import * as Linking from "expo-linking";
@@ -95,17 +95,26 @@ export function SceneryAttribution(props: {
   };
 
   return (
-    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+    <View
+      pointerEvents="box-none"
+      style={[
+        StyleSheet.absoluteFill,
+        {
+          alignItems: "center",
+          justifyContent: "flex-end",
+          paddingBottom: bottom,
+          paddingHorizontal: Math.max(insets.left, insets.right, 12),
+        },
+      ]}
+    >
       <Pressable
         accessibilityRole="link"
         accessibilityLabel={`Wallpaper: ${photo.name}. Photo by ${photo.photographerName} on Unsplash.`}
         onLayout={handleLayout}
         onPress={() => void Linking.openURL(profileURL).catch(() => undefined)}
         style={({ pressed }) => ({
-          bottom,
+          maxWidth: "100%",
           opacity: pressed ? 0.7 : 1,
-          position: "absolute",
-          right: Math.max(insets.right, 12),
         })}
       >
         {isLiquidGlassSupported ? (
