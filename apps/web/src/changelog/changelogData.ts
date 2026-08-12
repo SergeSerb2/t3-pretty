@@ -26,6 +26,16 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260811.1067000094",
+    date: "2026-08-12",
+    items: [
+      {
+        kind: "fixed",
+        title: "make upstream retries reliable",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260811.1067000093",
     date: "2026-08-12",
     items: [
