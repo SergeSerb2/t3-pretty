@@ -16,8 +16,8 @@ On desktop, use the scenery controls in the bottom-right dock next to the photo 
 With scenery on, the Home list lets the photo show through:
 
 - Active and queued threads sit on separate frosted cards.
-- Snoozed and Settled threads share one grouped frosted plate. Tap the section label to expand
-  or collapse it.
+- Snoozed and Settled sit under quiet section labels, each thread on its own quieter card. Tap
+  the label to expand or collapse that section.
 
 The list uses solid rows instead when:
 

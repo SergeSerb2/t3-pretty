@@ -3669,11 +3669,12 @@ export default function Sidebar() {
                           className="mb-1 mt-3 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left"
                         >
                           <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                            {snoozedShelfExpanded
-                              ? "Snoozed"
-                              : `Snoozed (${snoozedThreads.length})`}
+                            Snoozed
                           </span>
                           <span className="h-px flex-1 bg-blue-500/20 dark:bg-blue-400/15" />
+                          <span className="text-xs font-medium tabular-nums text-blue-600 dark:text-blue-400">
+                            {snoozedThreads.length}
+                          </span>
                           <ChevronDownIcon
                             aria-hidden
                             className={cn(
@@ -3703,11 +3704,12 @@ export default function Sidebar() {
                           className="mb-1 mt-3 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left"
                         >
                           <span className="text-xs font-medium text-muted-foreground/50">
-                            {settledShelfExpanded
-                              ? "Settled"
-                              : `Settled (${settledThreads.length})`}
+                            Settled
                           </span>
                           <span className="h-px flex-1 bg-sidebar-border/60" />
+                          <span className="text-xs font-medium tabular-nums text-muted-foreground/50">
+                            {settledThreads.length}
+                          </span>
                           <ChevronDownIcon
                             aria-hidden
                             className={cn(

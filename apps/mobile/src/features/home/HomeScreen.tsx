@@ -59,7 +59,6 @@ import {
 import {
   buildThreadListV2Items,
   buildThreadListV2ListItems,
-  resolveThreadListV2GlassClusterRole,
   THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   type ThreadListV2ListItem,
@@ -777,9 +776,6 @@ export function HomeScreen(props: HomeScreenProps) {
       const showTrailingDivider =
         nextItem?.type === "v2-thread" ||
         (nextItem?.type === "v2-pending" && !nextItem.showPendingDivider);
-      const clusterRole = sceneryChrome
-        ? resolveThreadListV2GlassClusterRole(threadListV2Items, index)
-        : null;
       if (item.type === "v2-pending") {
         const pendingScopeKey = scopedProjectKey(
           item.pendingTask.message.environmentId,
@@ -811,7 +807,6 @@ export function HomeScreen(props: HomeScreenProps) {
             expanded={item.expanded}
             onToggle={toggleSnoozedShelf}
             sceneryChrome={sceneryChrome}
-            clusterRole={clusterRole}
           />
         );
       }
@@ -822,7 +817,6 @@ export function HomeScreen(props: HomeScreenProps) {
             expanded={item.expanded}
             onToggle={toggleSettledShelf}
             sceneryChrome={sceneryChrome}
-            clusterRole={clusterRole}
           />
         );
       }
@@ -834,7 +828,6 @@ export function HomeScreen(props: HomeScreenProps) {
           snoozed={item.item.snoozed}
           pinned={item.item.pinned}
           sceneryChrome={sceneryChrome}
-          clusterRole={clusterRole}
           snoozePresetMinute={nowMinute}
           snoozeWakeLabelText={item.snoozeWakeLabelText}
           showTrailingDivider={showTrailingDivider}

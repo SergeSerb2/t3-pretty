@@ -17,7 +17,6 @@ import {
   buildThreadListV2Items,
   buildThreadListV2ListItems,
   resolveThreadListV2Enabled,
-  resolveThreadListV2GlassClusterRole,
   resolveThreadListV2SnoozeMenuSelection,
   resolveThreadListV2SnoozeGateExpiryMs,
   resolveThreadListV2Status,
@@ -853,109 +852,6 @@ describe("buildThreadListV2ListItems", () => {
       "v2-snoozed-shelf",
       "v2-settled-shelf",
       "v2-thread",
-    ]);
-  });
-});
-
-describe("resolveThreadListV2GlassClusterRole", () => {
-  it("groups an expanded settled shelf with its slim rows as one plate", () => {
-    const items = buildThreadListV2ListItems({
-      items: buildThreadListV2Items({
-        threads: [
-          makeThread({ id: ThreadId.make("active"), title: "active" }),
-          makeThread({
-            id: ThreadId.make("settled-1"),
-            title: "settled 1",
-            settledOverride: "settled",
-            settledAt: NOW,
-          }),
-          makeThread({
-            id: ThreadId.make("settled-2"),
-            title: "settled 2",
-            settledOverride: "settled",
-            settledAt: NOW,
-          }),
-        ],
-        environmentId: null,
-        searchQuery: "",
-        now: NOW,
-      }).items,
-      pendingTasks: [],
-      settledCount: 2,
-      settledShelfHeaderIndex: 1,
-    });
-
-    expect(items.map((item, index) => resolveThreadListV2GlassClusterRole(items, index))).toEqual([
-      null,
-      "first",
-      "middle",
-      "last",
-    ]);
-  });
-
-  it("collapses a settled header to a single pill when the shelf is closed", () => {
-    const layout = buildThreadListV2Items({
-      threads: [
-        makeThread({
-          id: ThreadId.make("settled"),
-          title: "settled",
-          settledOverride: "settled",
-          settledAt: NOW,
-        }),
-      ],
-      environmentId: null,
-      searchQuery: "",
-      now: NOW,
-      settledShelfExpanded: false,
-    });
-    const items = buildThreadListV2ListItems({
-      items: layout.items,
-      pendingTasks: [],
-      settledCount: layout.settledCount,
-      settledShelfExpanded: false,
-      settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
-    });
-
-    expect(items.map((item) => item.type)).toEqual(["v2-settled-shelf"]);
-    expect(resolveThreadListV2GlassClusterRole(items, 0)).toBe("single");
-  });
-
-  it("keeps snoozed and settled plates separate", () => {
-    const layout = buildThreadListV2Items({
-      threads: [
-        makeThread({
-          id: ThreadId.make("snoozed"),
-          title: "snoozed",
-          snoozedUntil: "2026-06-03T09:00:00.000Z",
-          snoozedAt: "2026-06-01T12:00:00.000Z",
-        }),
-        makeThread({
-          id: ThreadId.make("settled"),
-          title: "settled",
-          settledOverride: "settled",
-          settledAt: NOW,
-        }),
-      ],
-      environmentId: null,
-      searchQuery: "",
-      now: NOW,
-      snoozedShelfExpanded: true,
-    });
-    const items = buildThreadListV2ListItems({
-      items: layout.items,
-      pendingTasks: [],
-      snoozedCount: layout.snoozedCount,
-      snoozedShelfExpanded: true,
-      snoozedShelfHeaderIndex: layout.snoozedShelfHeaderIndex,
-      settledCount: layout.settledCount,
-      settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
-    });
-
-    expect(items.map((item, index) => resolveThreadListV2GlassClusterRole(items, index))).toEqual([
-      "first",
-      "last",
-      "first",
-      "last",
     ]);
   });
 });

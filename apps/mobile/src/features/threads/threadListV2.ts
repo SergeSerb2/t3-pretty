@@ -241,40 +241,6 @@ export type ThreadListV2ListItem =
   | ThreadListV2SnoozedShelfListItem
   | ThreadListV2SettledShelfListItem;
 
-/** Visual role of a snoozed/settled row inside one frosted plate. */
-export type ThreadListV2GlassClusterRole = "single" | "first" | "middle" | "last";
-
-function glassClusterKind(item: ThreadListV2ListItem): "snoozed" | "settled" | null {
-  if (item.type === "v2-snoozed-shelf") return "snoozed";
-  if (item.type === "v2-settled-shelf") return "settled";
-  if (item.type === "v2-thread" && item.item.variant === "slim") {
-    return item.item.snoozed === true ? "snoozed" : "settled";
-  }
-  return null;
-}
-
-/**
- * Groups a shelf header with its slim rows so they can paint as one inset
- * frosted plate. Active cards and pending rows stay outside the cluster.
- */
-export function resolveThreadListV2GlassClusterRole(
-  items: ReadonlyArray<ThreadListV2ListItem>,
-  index: number,
-): ThreadListV2GlassClusterRole | null {
-  const item = items[index];
-  if (item === undefined) return null;
-  const kind = glassClusterKind(item);
-  if (kind === null) return null;
-  const previous = items[index - 1];
-  const next = items[index + 1];
-  const previousSame = previous !== undefined && glassClusterKind(previous) === kind;
-  const nextSame = next !== undefined && glassClusterKind(next) === kind;
-  if (!previousSame && !nextSame) return "single";
-  if (!previousSame) return "first";
-  if (!nextSame) return "last";
-  return "middle";
-}
-
 /**
  * Builds the shared mobile order: active → pending → snoozed shelf → settled.
  * Pending tasks are waiting rather than asking, and parked work remains
