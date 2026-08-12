@@ -8,7 +8,13 @@
 import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
 import * as Linking from "expo-linking";
 import { useRef } from "react";
-import { Pressable, StyleSheet, useColorScheme, View, type LayoutChangeEvent } from "react-native";
+import {
+  Pressable,
+  StyleSheet,
+  useColorScheme,
+  View,
+  type LayoutChangeEvent,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
@@ -20,16 +26,27 @@ import { UNSPLASH_UTM, type SceneryPhoto } from "./sceneryLogic";
 export const SCENERY_CREDIT_HEIGHT = 22;
 /** Gap between the credit pill and overlaying chrome. */
 export const SCENERY_CREDIT_GAP = 6;
-/** Floor for the pill's bottom offset when the safe-area inset is 0. */
+/**
+ * Minimum gap above the physical bottom edge when a caller opts into
+ * `dockUnderFloatingChrome` (Liquid Glass Home). Elsewhere the credit clears
+ * the home-indicator / system-nav inset via safe area.
+ */
 export const SCENERY_CREDIT_MIN_BOTTOM = 8;
 
 export function SceneryAttribution(props: {
   readonly photo: SceneryPhoto;
-  /** Extra offset above the bottom safe area for overlaying chrome such as
-   *  the pre-Liquid-Glass 44pt home toolbar or the Android new-task FAB.
-   *  Do not pass composer or floating-search heights — those park the pill
-   *  on content. */
+  /** Extra offset above the platform bottom dock for overlaying chrome such
+   *  as the pre-Liquid-Glass 44pt home toolbar or the Android new-task FAB.
+   *  Do not pass composer height — Thread Detail reserves that slot via
+   *  composerBottomInset and keeps safe-area docking. */
   readonly bottomExtra?: number;
+  /**
+   * Liquid Glass Home only: dock 8pt above the physical bottom so the pill
+   * sits under the floating search/compose chrome (which already clears the
+   * home indicator). Leave unset everywhere else so Thread Detail and
+   * pre-Liquid-Glass Home stay above the safe-area inset.
+   */
+  readonly dockUnderFloatingChrome?: boolean;
   /** Painted pill height after layout, including Dynamic Type. */
   readonly onHeightChange?: (height: number) => void;
 }) {
@@ -37,7 +54,12 @@ export function SceneryAttribution(props: {
   const insets = useSafeAreaInsets();
   const isDarkMode = useColorScheme() !== "light";
   const reportedHeightRef = useRef(0);
-  const bottom = Math.max(insets.bottom, SCENERY_CREDIT_MIN_BOTTOM) + (props.bottomExtra ?? 0);
+  // Default: clear the home-indicator / system-nav inset. Liquid Glass Home
+  // opts into a physical-bottom dock under its floating chrome.
+  const bottom =
+    props.dockUnderFloatingChrome === true
+      ? SCENERY_CREDIT_MIN_BOTTOM + (props.bottomExtra ?? 0)
+      : Math.max(insets.bottom, SCENERY_CREDIT_MIN_BOTTOM) + (props.bottomExtra ?? 0);
   const profileURL =
     photo.photographerProfileURL !== null
       ? `${photo.photographerProfileURL}${UNSPLASH_UTM}`

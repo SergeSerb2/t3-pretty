@@ -228,9 +228,10 @@ export function HomeScreen(props: HomeScreenProps) {
   const dailySceneryPhoto = useDailySceneryPhoto();
   const sceneryChrome = useSceneryChromeActive();
   const [creditHeight, setCreditHeight] = useState(SCENERY_CREDIT_HEIGHT);
-  // iOS: pre-Liquid-Glass 44pt bottom toolbar. Android: sit the credit just
-  // above the new-task FAB (size + edge gap + credit gap, minus the safe
-  // area SceneryAttribution already applies).
+  // Liquid Glass Home: dockUnderFloatingChrome puts the pill under the
+  // floating search bar (no extra). Pre-Liquid-Glass: lift by the 44pt
+  // toolbar above the safe-area dock. Android: sit just above the new-task
+  // FAB (size + edge gap + credit gap, minus the safe area already applied).
   const sceneryCreditBottomExtra =
     Platform.OS === "android"
       ? Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +
@@ -239,6 +240,7 @@ export function HomeScreen(props: HomeScreenProps) {
         SCENERY_CREDIT_GAP -
         Math.max(insets.bottom, SCENERY_CREDIT_MIN_BOTTOM)
       : iosBottomToolbarClearance;
+  const sceneryDockUnderFloatingChrome = NATIVE_LIQUID_GLASS_SUPPORTED;
   const sceneryListPad = dailySceneryPhoto !== null ? creditHeight : 0;
   const androidListBottomPad =
     Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) + 88 + sceneryListPad;
@@ -1093,6 +1095,7 @@ export function HomeScreen(props: HomeScreenProps) {
           <SceneryAttribution
             photo={dailySceneryPhoto}
             bottomExtra={sceneryCreditBottomExtra}
+            dockUnderFloatingChrome={sceneryDockUnderFloatingChrome}
             onHeightChange={setCreditHeight}
           />
         ) : null}
@@ -1190,6 +1193,7 @@ export function HomeScreen(props: HomeScreenProps) {
           <SceneryAttribution
             photo={dailySceneryPhoto}
             bottomExtra={sceneryCreditBottomExtra}
+            dockUnderFloatingChrome={sceneryDockUnderFloatingChrome}
             onHeightChange={setCreditHeight}
           />
         ) : null}
@@ -1250,6 +1254,7 @@ export function HomeScreen(props: HomeScreenProps) {
         <SceneryAttribution
           photo={dailySceneryPhoto}
           bottomExtra={sceneryCreditBottomExtra}
+          dockUnderFloatingChrome={sceneryDockUnderFloatingChrome}
           onHeightChange={setCreditHeight}
         />
       ) : null}
