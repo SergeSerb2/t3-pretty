@@ -32,15 +32,18 @@ import {
   resolveThreadListV2SnoozeGateExpiryMs,
   resolveThreadListV2Status,
   resolveThreadListV2SwipeActions,
+  type ThreadListV2GlassClusterRole,
   type ThreadListV2Status,
 } from "./threadListV2";
+import { threadListV2CardPlateStyle, threadListV2ClusterPlateStyle } from "./threadListV2Chrome";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
 /**
- * Thread List v2 renders one flat native list: rich edge-to-edge rows for
- * active work and a receded settled tail, all with native swipe and
- * long-press actions. State reads through colored status labels and text
- * hierarchy rather than card fills.
+ * Thread List v2 renders one flat native list: rich rows for active work and
+ * a receded settled tail, all with native swipe and long-press actions.
+ * Over World Scenery the opaque screen plates lift: active work sits on
+ * frosted cards, snoozed/settled history shares one inset frosted plate,
+ * and the wash — not per-row blur or native glass — carries text contrast.
  */
 
 const MONO_FONT = Platform.select({
@@ -118,8 +121,14 @@ export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedS
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
+  readonly sceneryChrome?: boolean;
+  readonly clusterRole?: ThreadListV2GlassClusterRole | null;
 }) {
   const colorScheme = useColorScheme();
+  const chromeFill = useThemeColor("--color-chrome-glass");
+  const chromeBorder = useThemeColor("--color-chrome-glass-border");
+  const sceneryChrome = props.sceneryChrome === true;
+  const clusterRole = props.clusterRole ?? null;
   return (
     <Pressable
       accessibilityHint={
@@ -128,23 +137,60 @@ export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedS
       accessibilityLabel={props.count === 1 ? "1 snoozed thread" : `${props.count} snoozed threads`}
       accessibilityRole="button"
       accessibilityState={{ expanded: props.expanded }}
-      className={cn(
-        "mb-1.5 mt-4 flex-row items-center gap-2.5",
-        props.pane === "sidebar" ? "px-3" : "px-5",
-      )}
+      className={
+        sceneryChrome
+          ? undefined
+          : cn(
+              "mb-1.5 mt-4 flex-row items-center gap-2.5",
+              props.pane === "sidebar" ? "px-3" : "px-5",
+            )
+      }
       onPress={props.onToggle}
-      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) =>
+        sceneryChrome && clusterRole !== null
+          ? [
+              threadListV2ClusterPlateStyle({
+                role: clusterRole,
+                fill: chromeFill,
+                borderColor: chromeBorder,
+              }),
+              { opacity: pressed ? 0.6 : 1 },
+            ]
+          : { opacity: pressed ? 0.6 : 1 }
+      }
     >
-      <Text className="text-xs font-t3-medium text-blue-600 dark:text-blue-400">
-        {props.expanded ? "Snoozed" : `Snoozed (${props.count})`}
-      </Text>
-      <View className="h-px flex-1 bg-blue-500/20 dark:bg-blue-400/15" />
-      <SymbolView
-        name={props.expanded ? "chevron.up" : "chevron.down"}
-        size={10}
-        tintColor={colorScheme === "dark" ? SNOOZE_ACCENT_DARK : SNOOZE_ACCENT_LIGHT}
-        type="monochrome"
-      />
+      {sceneryChrome ? (
+        <>
+          <View className="flex-row items-center gap-2.5 px-4 py-2.5">
+            <Text className="text-xs font-t3-medium text-blue-600 dark:text-blue-400">
+              {props.expanded ? "Snoozed" : `Snoozed (${props.count})`}
+            </Text>
+            <View className="flex-1" />
+            <SymbolView
+              name={props.expanded ? "chevron.up" : "chevron.down"}
+              size={10}
+              tintColor={colorScheme === "dark" ? SNOOZE_ACCENT_DARK : SNOOZE_ACCENT_LIGHT}
+              type="monochrome"
+            />
+          </View>
+          {clusterRole === "first" ? (
+            <View className="ml-4 h-px bg-blue-500/20 dark:bg-blue-400/15" />
+          ) : null}
+        </>
+      ) : (
+        <>
+          <Text className="text-xs font-t3-medium text-blue-600 dark:text-blue-400">
+            {props.expanded ? "Snoozed" : `Snoozed (${props.count})`}
+          </Text>
+          <View className="h-px flex-1 bg-blue-500/20 dark:bg-blue-400/15" />
+          <SymbolView
+            name={props.expanded ? "chevron.up" : "chevron.down"}
+            size={10}
+            tintColor={colorScheme === "dark" ? SNOOZE_ACCENT_DARK : SNOOZE_ACCENT_LIGHT}
+            type="monochrome"
+          />
+        </>
+      )}
     </Pressable>
   );
 });
@@ -154,8 +200,14 @@ export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledS
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
+  readonly sceneryChrome?: boolean;
+  readonly clusterRole?: ThreadListV2GlassClusterRole | null;
 }) {
   const mutedColor = useThemeColor("--color-foreground-muted");
+  const chromeFill = useThemeColor("--color-chrome-glass");
+  const chromeBorder = useThemeColor("--color-chrome-glass-border");
+  const sceneryChrome = props.sceneryChrome === true;
+  const clusterRole = props.clusterRole ?? null;
   return (
     <Pressable
       accessibilityHint={
@@ -164,23 +216,58 @@ export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledS
       accessibilityLabel={props.count === 1 ? "1 settled thread" : `${props.count} settled threads`}
       accessibilityRole="button"
       accessibilityState={{ expanded: props.expanded }}
-      className={cn(
-        "mb-1.5 mt-4 flex-row items-center gap-2.5",
-        props.pane === "sidebar" ? "px-3" : "px-5",
-      )}
+      className={
+        sceneryChrome
+          ? undefined
+          : cn(
+              "mb-1.5 mt-4 flex-row items-center gap-2.5",
+              props.pane === "sidebar" ? "px-3" : "px-5",
+            )
+      }
       onPress={props.onToggle}
-      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) =>
+        sceneryChrome && clusterRole !== null
+          ? [
+              threadListV2ClusterPlateStyle({
+                role: clusterRole,
+                fill: chromeFill,
+                borderColor: chromeBorder,
+              }),
+              { opacity: pressed ? 0.6 : 1 },
+            ]
+          : { opacity: pressed ? 0.6 : 1 }
+      }
     >
-      <Text className="text-xs font-t3-medium text-foreground-tertiary">
-        {props.expanded ? "Settled" : `Settled (${props.count})`}
-      </Text>
-      <View className="h-px flex-1 bg-border" />
-      <SymbolView
-        name={props.expanded ? "chevron.up" : "chevron.down"}
-        size={10}
-        tintColor={mutedColor}
-        type="monochrome"
-      />
+      {sceneryChrome ? (
+        <>
+          <View className="flex-row items-center gap-2.5 px-4 py-2.5">
+            <Text className="text-xs font-t3-medium text-foreground-tertiary">
+              {props.expanded ? "Settled" : `Settled (${props.count})`}
+            </Text>
+            <View className="flex-1" />
+            <SymbolView
+              name={props.expanded ? "chevron.up" : "chevron.down"}
+              size={10}
+              tintColor={mutedColor}
+              type="monochrome"
+            />
+          </View>
+          {clusterRole === "first" ? <View className="ml-4 h-px bg-border-subtle" /> : null}
+        </>
+      ) : (
+        <>
+          <Text className="text-xs font-t3-medium text-foreground-tertiary">
+            {props.expanded ? "Settled" : `Settled (${props.count})`}
+          </Text>
+          <View className="h-px flex-1 bg-border" />
+          <SymbolView
+            name={props.expanded ? "chevron.up" : "chevron.down"}
+            size={10}
+            tintColor={mutedColor}
+            type="monochrome"
+          />
+        </>
+      )}
     </Pressable>
   );
 });
@@ -206,13 +293,18 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
   readonly showPendingDivider: boolean;
   /** Keeps row hairlines inside a section; section headers draw their own rule. */
   readonly showTrailingDivider?: boolean;
+  /** Translucent chrome over World Scenery; ignored in the sidebar pane. */
+  readonly sceneryChrome?: boolean;
   readonly onSelectPendingTask: (pendingTask: PendingNewTask) => void;
   readonly onDeletePendingTask: (pendingTask: PendingNewTask) => void;
 }) {
   const { pendingTask, onSelectPendingTask, onDeletePendingTask } = props;
   const drawerColor = useThemeColor("--color-drawer");
   const pressedBackgroundColor = useThemeColor("--color-subtle");
+  const chromeFill = useThemeColor("--color-chrome-glass");
+  const chromeBorder = useThemeColor("--color-chrome-glass-border");
   const sidebarPane = props.pane === "sidebar";
+  const sceneryChrome = props.sceneryChrome === true && !sidebarPane;
   const projectTitle =
     props.projectTitle ?? props.project?.title ?? pendingTask.creation.projectTitle ?? "";
   const branch = pendingTask.creation.branch;
@@ -291,6 +383,12 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
         >
           {sidebarPane ? (
             rowContent
+          ) : sceneryChrome ? (
+            <View
+              style={threadListV2CardPlateStyle({ fill: chromeFill, borderColor: chromeBorder })}
+            >
+              <View className="px-4 py-2.5">{rowContent}</View>
+            </View>
           ) : (
             <View className="bg-screen">
               <View className="px-5 py-2.5">{rowContent}</View>
@@ -334,6 +432,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly pane?: "screen" | "sidebar";
   /** Keeps row hairlines inside a section; section headers draw their own rule. */
   readonly showTrailingDivider?: boolean;
+  /** Translucent chrome over World Scenery; ignored in the sidebar pane. */
+  readonly sceneryChrome?: boolean;
+  /** Groups slim settled/snoozed rows into one inset frosted plate. */
+  readonly clusterRole?: ThreadListV2GlassClusterRole | null;
   /** Highlights the thread open in the detail pane (iPad split view). The
       compact Home list never sets it — phones navigate away on select. */
   readonly selected?: boolean;
@@ -409,8 +511,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const pressedBackgroundColor = useThemeColor("--color-subtle");
   const selectedBackgroundColor = useThemeColor("--color-user-bubble");
   const pinTintColor = useThemeColor("--color-foreground-muted");
+  const chromeFill = useThemeColor("--color-chrome-glass");
+  const chromeBorder = useThemeColor("--color-chrome-glass-border");
   const sidebarPane = props.pane === "sidebar";
   const selected = props.selected === true;
+  const sceneryChrome = props.sceneryChrome === true && !sidebarPane;
+  const clusterRole = props.clusterRole ?? null;
 
   const status = resolveThreadListV2Status(thread);
   const statusLabel = STATUS_LABEL_BY_STATUS[status];
@@ -772,11 +878,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       >
         {sidebarPane ? (
           cardContent
+        ) : sceneryChrome ? (
+          <View style={threadListV2CardPlateStyle({ fill: chromeFill, borderColor: chromeBorder })}>
+            <View className="px-4 py-2.5">{cardContent}</View>
+          </View>
         ) : (
-          /* Flat native list rows: no tonal containers — colored status
-             labels and text hierarchy carry state, an inset hairline
-             separates rows. The opaque screen background stays so swipe
-             actions reveal behind the row. */
+          /* Opaque plates when scenery is off so swipe actions reveal a
+             solid screen behind the row. */
           <View className="bg-screen">
             <View className="px-5 py-2.5">{cardContent}</View>
             {props.showTrailingDivider !== false ? (
@@ -791,7 +899,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         accessibilityLabel={thread.title}
         accessibilityRole="button"
         accessibilityState={{ selected }}
-        className={sidebarPane ? undefined : "bg-screen"}
+        className={sidebarPane || sceneryChrome ? undefined : "bg-screen"}
         onPress={() => {
           close();
           onSelectThread(thread);
@@ -806,14 +914,23 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                     : drawerColor,
                 borderRadius: SIDEBAR_V2_ROW_RADIUS,
               })
-            : ({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })
+            : sceneryChrome && clusterRole !== null
+              ? ({ pressed }) => [
+                  threadListV2ClusterPlateStyle({
+                    role: clusterRole,
+                    fill: chromeFill,
+                    borderColor: chromeBorder,
+                  }),
+                  { opacity: pressed ? 0.7 : 1 },
+                ]
+              : ({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })
         }
       >
         {/* Settled history recedes: dimmed favicon + muted title. */}
         <View
           className={cn(
             "min-h-[44px] flex-row items-center gap-2.5 py-2",
-            sidebarPane ? "px-3" : "px-5",
+            sidebarPane ? "px-3" : sceneryChrome ? "px-4" : "px-5",
           )}
         >
           {props.project ? (
@@ -861,13 +978,16 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               : relativeTime(thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt)}
           </Text>
         </View>
+        {sceneryChrome && props.showTrailingDivider !== false && clusterRole !== "last" ? (
+          <View className="ml-4 h-px bg-border-subtle" />
+        ) : null}
       </Pressable>
     );
 
   return (
     <>
       <ThreadSwipeable
-        backgroundColor={sidebarPane ? drawerColor : screenColor}
+        backgroundColor={sidebarPane ? drawerColor : sceneryChrome ? "transparent" : screenColor}
         compactActions={variant === "slim"}
         containerStyle={
           sidebarPane ? { borderRadius: SIDEBAR_V2_ROW_RADIUS, overflow: "hidden" } : undefined

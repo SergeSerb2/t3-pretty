@@ -11,3 +11,6 @@ other connected devices.
 If reordering is unavailable for one environment, update the T3 Code server running in that
 environment. Older servers can still pin and unpin threads, but do not understand synced ordering;
 their pinned threads keep the default newest-first order below the ones you have arranged.
+
+On phone, [World Scenery](./world-scenery.md) draws the Home list as frosted cards and plates over
+the landscape photo. Solid rows return if scenery is off or iOS Reduce Transparency is on.
