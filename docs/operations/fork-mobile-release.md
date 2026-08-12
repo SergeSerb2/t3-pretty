@@ -1,15 +1,16 @@
 # T3 Pretty mobile release train
 
-The iOS app auto-updates through the same two mechanisms as the desktop
-apps: merge-driven releases from CI, and twice-daily upstream ingestion with
+The iOS app auto-updates through the same two mechanisms as the desktop apps:
+merge-driven releases from CI, and upstream ingestion every four hours with
 local build delivery.
 
 ## Upstream ingestion (shared with desktop)
 
-`.github/workflows/fork-upstream-sync.yml` runs at 00:00 and 12:00 UTC,
-merges the newest upstream nightly tag (AI-resolving conflicts via
-`scripts/fork/resolve-git-conflicts.mjs`), and lands it on `main` through an
-auto-merged PR. Mobile code rides along — there is no separate mobile sync.
+`.github/workflows/fork-upstream-sync.yml` runs every four hours at 00:00,
+04:00, 08:00, 12:00, 16:00, and 20:00 UTC, merges the newest upstream nightly
+tag (AI-resolving conflicts via `scripts/fork/resolve-git-conflicts.mjs`), and
+lands it on `main` through an auto-merged PR. Mobile code rides along — there is
+no separate mobile sync.
 
 ## Merge-driven releases
 
@@ -19,7 +20,7 @@ production channel for both platforms and queues a production iOS build with
 automatic TestFlight submission. Native runtime changes therefore receive a
 new binary instead of publishing an OTA that no installed app can consume.
 
-The twice-daily upstream workflow uses the same whole-repository merge and
+The four-hour upstream workflow uses the same whole-repository merge and
 gpt-5.6-sol/xhigh conflict resolver as desktop. Because GitHub-token-authored
 merges do not recursively trigger push workflows, it explicitly dispatches the
 mobile release after an upstream integration only when that integration changed

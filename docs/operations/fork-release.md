@@ -5,9 +5,9 @@ source code on installed machines.
 
 ## Flow
 
-1. `T3 Pretty Upstream Sync` runs at 00:00 and 12:00 UTC. These two scheduled checks per day are
-   the usage ceiling for the quality-first conflict resolver; there is no manual-dispatch bypass.
-   Each check finds the newest `pingdotgg/t3code` nightly tag.
+1. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
+   and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. Maintainers can use
+   the manual dispatch only when an operational fix needs an immediate retry.
 2. It merges that tag into an `automation/upstream-*` branch and opens a pull request. The fork
    deliberately keeps `.github/workflows` from its own `main`; upstream workflow changes cannot
    replace the trusted sync/release boundary or require a personal token with workflow scope.

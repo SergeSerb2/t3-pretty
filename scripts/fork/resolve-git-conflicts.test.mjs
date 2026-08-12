@@ -153,6 +153,22 @@ ${">".repeat(7)} theirs
     assert.include(workflow, "PREVIOUS_UPSTREAM_TAG: ${{ steps.discover.outputs.previous_tag }}");
   });
 
+  it("checks upstream every four hours and supports an explicit retry", () => {
+    const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+
+    assert.include(workflow, "workflow_dispatch:");
+    assert.include(workflow, '- cron: "0 */4 * * *"');
+    assert.include(workflow, "Six checks per day");
+  });
+
+  it("does not reject untouched upstream patch payload whitespace", () => {
+    const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+
+    assert.include(workflow, "mapfile -d '' -t resolver_paths");
+    assert.include(workflow, 'git diff --check --cached -- \\\n            "${resolver_paths[@]}"');
+    assert.notInclude(workflow, "          git diff --check --cached\n");
+  });
+
   it("refuses to reuse a legacy resolution branch without its durable report", () => {
     const temporaryDirectory = NodeFS.mkdtempSync(
       NodePath.join(NodeOS.tmpdir(), "t3-pretty-sync-report-"),

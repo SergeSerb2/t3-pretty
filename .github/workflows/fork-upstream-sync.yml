@@ -1,9 +1,10 @@
 name: T3 Pretty Upstream Sync
 
 on:
+  workflow_dispatch:
   schedule:
-    # Twice daily is the usage ceiling for the xhigh Sol conflict resolver.
-    - cron: "0 0,12 * * *"
+    # Six checks per day keep the fork close to the newest upstream nightly.
+    - cron: "0 */4 * * *"
 
 concurrency:
   group: fork-upstream-sync
@@ -115,8 +116,8 @@ jobs:
           # workflows or requiring a broadly scoped personal token.
           git restore --source=origin/main --staged --worktree -- .github/workflows
 
-          unresolved="$(git diff --name-only --diff-filter=U)"
-          if [[ -z "$unresolved" ]] && (( merge_status != 0 )) &&
+          mapfile -d '' -t resolver_paths < <(git diff --name-only --diff-filter=U -z)
+          if (( ${#resolver_paths[@]} == 0 )) && (( merge_status != 0 )) &&
             ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
             echo "Merge failed without producing resolvable conflicts." >&2
             exit "$merge_status"
@@ -134,7 +135,13 @@ jobs:
           mkdir -p .t3-fork
           printf '%s\n' "$UPSTREAM_TAG" > .t3-fork/upstream-nightly
           git add .t3-fork/upstream-nightly
-          git diff --check --cached
+          # Incoming patch payloads can intentionally encode trailing whitespace.
+          # Check only files authored by the resolver or this workflow, rather
+          # than rejecting untouched content from a trusted upstream release.
+          git diff --check --cached -- \
+            "${resolver_paths[@]}" \
+            .t3-fork/upstream-nightly \
+            .t3-fork/upstream-sync-report.md
 
           if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
             git commit -m "chore(sync): merge upstream $UPSTREAM_TAG"
@@ -164,7 +171,7 @@ jobs:
           pr_body_path="$RUNNER_TEMP/t3-pretty-upstream-sync.md"
           {
             printf '%s\n\n' \
-              'Automated twice-daily integration of the newest parent T3 Code nightly into T3 Pretty.' \
+              'Automated four-hour integration of the newest parent T3 Code nightly into T3 Pretty.' \
               'Clean merges are retained directly. Text conflicts are resolved through CLIProxyAPI with gpt-5.6-sol at xhigh reasoning under the T3 Pretty preservation contract.'
             cat .t3-fork/upstream-sync-report.md
           } > "$pr_body_path"
@@ -243,7 +250,7 @@ jobs:
             -f state=open \
             -f per_page=100 \
             --jq ".[] | select(.pull_request == null and .title == \"$title\") | .number" | head -n 1)"
-          body="The guarded twice-daily T3 Pretty sync could not safely merge $UPSTREAM_TAG. Inspect the failed run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          body="The guarded four-hour T3 Pretty sync could not safely merge $UPSTREAM_TAG. Inspect the failed run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           if [[ -n "$existing" ]]; then
             gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$existing/comments" -f body="$body" >/dev/null
           else
