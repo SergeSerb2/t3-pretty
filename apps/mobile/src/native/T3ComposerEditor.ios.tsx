@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -176,19 +177,6 @@ export function ComposerEditor({
   // acknowledged snapshot makes parent re-renders keep echoing.
   const isNativeEcho =
     controlledEventCount === mostRecentEventCount && acknowledgesLatestNativeEvent;
-  // Parent-driven writes (thread switch, slash command) apply without a native
-  // event. Advance the retained snapshot so the previous document cannot echo
-  // against a different native buffer.
-  if (!includesNativeEvent && !isNativeEcho) {
-    nativeEventSnapshotsRef.current = replaceAcknowledgedComposerSnapshot(
-      nativeEventSnapshotsRef.current,
-      {
-        eventCount: controlledEventCount,
-        value: props.value,
-        selection: selection ?? null,
-      },
-    );
-  }
   const controlledDocumentJson = JSON.stringify({
     value: props.value,
     selection: isNativeEcho ? null : (selection ?? null),
@@ -199,6 +187,20 @@ export function ComposerEditor({
   useEffect(() => {
     previousRenderedEventSequenceRef.current = nativeEventSequence;
   }, [nativeEventSequence]);
+  // Parent-driven writes apply without a native event. Replace the snapshot
+  // only after this render commits so a React 19 retry cannot see the new
+  // document, mark it as an echo, and skip the native write.
+  useLayoutEffect(() => {
+    if (includesNativeEvent || isNativeEcho) return;
+    nativeEventSnapshotsRef.current = replaceAcknowledgedComposerSnapshot(
+      nativeEventSnapshotsRef.current,
+      {
+        eventCount: controlledEventCount,
+        value: props.value,
+        selection: selection ?? null,
+      },
+    );
+  }, [includesNativeEvent, isNativeEcho, controlledEventCount, props.value, selection]);
   useEffect(() => {
     if (!acknowledgesLatestNativeEvent) return;
     nativeEventSnapshotsRef.current = pruneAcknowledgedComposerNativeEvents(
