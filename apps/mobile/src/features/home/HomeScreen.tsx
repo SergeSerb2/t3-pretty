@@ -1053,7 +1053,9 @@ export function HomeScreen(props: HomeScreenProps) {
             </View>
           ) : null}
         </View>
-        {dailySceneryPhoto !== null ? <SceneryAttribution photo={dailySceneryPhoto} /> : null}
+        {dailySceneryPhoto !== null ? (
+          <SceneryAttribution photo={dailySceneryPhoto} bottomExtra={iosBottomToolbarClearance} />
+        ) : null}
       </View>
     );
   }
@@ -1140,7 +1142,9 @@ export function HomeScreen(props: HomeScreenProps) {
             }}
           />
         </SwipeableScrollGateProvider>
-        {dailySceneryPhoto !== null ? <SceneryAttribution photo={dailySceneryPhoto} /> : null}
+        {dailySceneryPhoto !== null ? (
+          <SceneryAttribution photo={dailySceneryPhoto} bottomExtra={iosBottomToolbarClearance} />
+        ) : null}
       </View>
     );
   }
@@ -1196,7 +1200,9 @@ export function HomeScreen(props: HomeScreenProps) {
           }
         />
       </SwipeableScrollGateProvider>
-      {dailySceneryPhoto !== null ? <SceneryAttribution photo={dailySceneryPhoto} /> : null}
+      {dailySceneryPhoto !== null ? (
+        <SceneryAttribution photo={dailySceneryPhoto} bottomExtra={iosBottomToolbarClearance} />
+      ) : null}
     </View>
   );
 }

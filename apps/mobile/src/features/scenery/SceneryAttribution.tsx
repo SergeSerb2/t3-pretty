@@ -6,25 +6,22 @@
  * chat bubbles and list rows instead of covering them.
  */
 import * as Linking from "expo-linking";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
 import { UNSPLASH_UTM, type SceneryPhoto } from "./sceneryLogic";
 
-/**
- * Physical-bottom offset on iOS. The composer and home toolbar already pad
- * by the home-indicator inset, so using that inset here parked the pill on
- * top of the last chat rows / thread titles. 8pt tucks it into the
- * bottom-right corner, below that chrome. Android still clears the system
- * nav bar.
- */
-const IOS_CREDIT_BOTTOM = 8;
-
-export function SceneryAttribution(props: { readonly photo: SceneryPhoto }) {
+export function SceneryAttribution(props: {
+  readonly photo: SceneryPhoto;
+  /** Extra offset above the bottom safe area for overlaying chrome such as
+   *  the pre-Liquid-Glass 44pt home toolbar. Do not pass composer or
+   *  floating-search heights — those park the pill on content. */
+  readonly bottomExtra?: number;
+}) {
   const { photo } = props;
   const insets = useSafeAreaInsets();
-  const bottom = Platform.OS === "ios" ? IOS_CREDIT_BOTTOM : Math.max(insets.bottom, 8);
+  const bottom = Math.max(insets.bottom, 8) + (props.bottomExtra ?? 0);
   const profileURL =
     photo.photographerProfileURL !== null
       ? `${photo.photographerProfileURL}${UNSPLASH_UTM}`
