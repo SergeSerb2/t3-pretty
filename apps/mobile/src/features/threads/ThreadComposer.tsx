@@ -111,6 +111,7 @@ export interface ThreadComposerProps {
   readonly selectedThread: OrchestrationThreadShell;
   readonly serverConfig: T3ServerConfig | null;
   readonly queueCount: number;
+  readonly headQueuedMessageId: MessageId | null;
   readonly isDeliveringQueuedMessage: boolean;
   readonly activeThreadBusy: boolean;
   readonly environmentId: EnvironmentId;
@@ -298,6 +299,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [inFlightMessageId, setInFlightMessageId] = useState<MessageId | null>(null);
   const [pendingPreviews, setPendingPreviews] = useState<ReadonlyArray<ComposerAttachmentPreview>>(
     [],
   );
@@ -334,9 +336,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     if (
       shouldKeepLocalComposerSendBusy({
         isDeliveringQueuedMessage: props.isDeliveringQueuedMessage,
+        isAwaitingEnqueue: inFlightMessageId === null,
         connected: props.connectionState === "connected",
         threadBusy: props.activeThreadBusy,
-        queueCount: props.queueCount,
+        isNextInQueue: props.headQueuedMessageId === inFlightMessageId,
       })
     ) {
       return;
@@ -347,16 +350,18 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     );
     const release = setTimeout(() => {
       setIsSending(false);
+      setInFlightMessageId(null);
     }, remainingMs);
     return () => {
       clearTimeout(release);
     };
   }, [
+    inFlightMessageId,
     isSending,
     props.activeThreadBusy,
     props.connectionState,
+    props.headQueuedMessageId,
     props.isDeliveringQueuedMessage,
-    props.queueCount,
   ]);
 
   // Notify the parent from the derived value, not focus events: the parent
@@ -645,8 +650,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       const messageId = await onSendMessage();
       if (messageId === null) {
         setIsSending(false);
+        setInFlightMessageId(null);
         return;
       }
+      setInFlightMessageId(messageId);
       // Sending a prompt starts agent work: arm the lock-screen card while the
       // app is foregrounded and the activity token can be registered. Armed
       // after the send so its preference read and native Activity start don't

@@ -792,6 +792,7 @@ function ThreadRouteContent(
           projectWorkspaceRoot={selectedThreadProject?.workspaceRoot ?? null}
           threadCwd={selectedThreadCwd}
           selectedThreadQueueCount={composer.selectedThreadQueueCount}
+          headQueuedMessageId={composer.headQueuedMessageId}
           isDeliveringQueuedMessage={composer.isDeliveringQueuedMessage}
           layoutVariant={layout.variant}
           usesAutomaticContentInsets={usesNativeHeaderGlass}

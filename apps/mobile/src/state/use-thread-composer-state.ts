@@ -101,6 +101,7 @@ export function useThreadComposerState() {
   const draftMessage = selectedDraft?.text ?? "";
   const draftAttachments = selectedDraft?.attachments ?? [];
   const selectedThreadQueueCount = selectedThreadQueuedMessages.length;
+  const headQueuedMessageId = selectedThreadQueuedMessages[0]?.messageId ?? null;
   const isDeliveringQueuedMessage =
     dispatchingQueuedMessageId !== null &&
     selectedThreadQueuedMessages.some(
@@ -317,6 +318,7 @@ export function useThreadComposerState() {
   return {
     selectedThreadFeed,
     selectedThreadQueueCount,
+    headQueuedMessageId,
     isDeliveringQueuedMessage,
     activeWorkStartedAt,
     draftMessage,

@@ -1,5 +1,5 @@
 import { SymbolView } from "../components/AppSymbol";
-import { ActivityIndicator, Image, Pressable, ScrollView, View } from "react-native";
+import { Image, Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 import { useThemeColor } from "../lib/useThemeColor";
 
@@ -134,11 +134,9 @@ export function ComposerAttachmentThumb(props: {
           pointerEvents="none"
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
-          className="absolute inset-0 items-center justify-center bg-black/45"
+          className="absolute inset-0 bg-black/45"
           style={{ borderRadius: props.borderRadius }}
-        >
-          <ActivityIndicator color="#ffffff" size="small" />
-        </Animated.View>
+        />
       ) : null}
     </View>
   );

@@ -28,23 +28,25 @@ export function composerDispatchStatusLabel(phase: ComposerDispatchPhase): strin
 
 /**
  * Keep the local send flag on until the outbox has either started delivering
- * this thread's message, parked it behind a running turn / offline queue, or
- * drained it. Closes the gap between enqueue (sync) and startTurn (slow).
+ * this send, parked it behind a running turn / retry / offline queue, or
+ * drained it. Closes the gap between enqueue (sync) and startTurn (slow)
+ * without spinning for a message that is not next to send.
  */
 export function shouldKeepLocalComposerSendBusy(input: {
   readonly isDeliveringQueuedMessage: boolean;
+  readonly isAwaitingEnqueue: boolean;
   readonly connected: boolean;
   readonly threadBusy: boolean;
-  readonly queueCount: number;
+  readonly isNextInQueue: boolean;
 }): boolean {
   if (input.isDeliveringQueuedMessage) {
     return false;
   }
-  if (!input.connected) {
+  if (input.isAwaitingEnqueue) {
+    return true;
+  }
+  if (!input.connected || input.threadBusy) {
     return false;
   }
-  if (input.threadBusy && input.queueCount > 0) {
-    return false;
-  }
-  return input.queueCount > 0;
+  return input.isNextInQueue;
 }

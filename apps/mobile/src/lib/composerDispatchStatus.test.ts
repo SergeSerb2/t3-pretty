@@ -55,13 +55,26 @@ describe("composerDispatchStatusLabel", () => {
 });
 
 describe("shouldKeepLocalComposerSendBusy", () => {
-  it("holds through the enqueue-to-deliver gap on a live idle thread", () => {
+  it("holds through the enqueue-to-deliver gap when this send is next", () => {
     expect(
       shouldKeepLocalComposerSendBusy({
         isDeliveringQueuedMessage: false,
+        isAwaitingEnqueue: false,
         connected: true,
         threadBusy: false,
-        queueCount: 1,
+        isNextInQueue: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("holds while enqueue has not returned a message id yet", () => {
+    expect(
+      shouldKeepLocalComposerSendBusy({
+        isDeliveringQueuedMessage: false,
+        isAwaitingEnqueue: true,
+        connected: true,
+        threadBusy: false,
+        isNextInQueue: false,
       }),
     ).toBe(true);
   });
@@ -70,39 +83,40 @@ describe("shouldKeepLocalComposerSendBusy", () => {
     expect(
       shouldKeepLocalComposerSendBusy({
         isDeliveringQueuedMessage: true,
+        isAwaitingEnqueue: false,
         connected: true,
         threadBusy: false,
-        queueCount: 1,
+        isNextInQueue: true,
       }),
     ).toBe(false);
   });
 
-  it("releases when the message is parked behind a running turn or offline", () => {
+  it("releases when the message is parked behind a running turn, retry, or offline", () => {
     expect(
       shouldKeepLocalComposerSendBusy({
         isDeliveringQueuedMessage: false,
+        isAwaitingEnqueue: false,
         connected: true,
         threadBusy: true,
-        queueCount: 1,
+        isNextInQueue: true,
       }),
     ).toBe(false);
     expect(
       shouldKeepLocalComposerSendBusy({
         isDeliveringQueuedMessage: false,
+        isAwaitingEnqueue: false,
         connected: false,
         threadBusy: false,
-        queueCount: 1,
+        isNextInQueue: true,
       }),
     ).toBe(false);
-  });
-
-  it("releases when the outbox has drained", () => {
     expect(
       shouldKeepLocalComposerSendBusy({
         isDeliveringQueuedMessage: false,
+        isAwaitingEnqueue: false,
         connected: true,
         threadBusy: false,
-        queueCount: 0,
+        isNextInQueue: false,
       }),
     ).toBe(false);
   });
