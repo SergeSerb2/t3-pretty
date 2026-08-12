@@ -24,7 +24,12 @@ import { ActivityIndicator, FlatList, Platform, Pressable, View } from "react-na
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeColor } from "../../lib/useThemeColor";
-import { SceneryAttribution } from "../scenery/SceneryAttribution";
+import {
+  SCENERY_CREDIT_GAP,
+  SCENERY_CREDIT_HEIGHT,
+  SCENERY_CREDIT_MIN_BOTTOM,
+  SceneryAttribution,
+} from "../scenery/SceneryAttribution";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
 import { useDailySceneryPhoto } from "../scenery/SceneryProvider";
 
@@ -58,6 +63,10 @@ import {
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   type ThreadListV2ListItem,
 } from "../threads/threadListV2";
+import {
+  ANDROID_HOME_FAB_EDGE_GAP,
+  ANDROID_HOME_FAB_SIZE,
+} from "./AndroidHomeFab";
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   buildHomeListLayout,
@@ -219,6 +228,21 @@ export function HomeScreen(props: HomeScreenProps) {
       ? PRE_LIQUID_GLASS_BOTTOM_TOOLBAR_HEIGHT
       : 0;
   const dailySceneryPhoto = useDailySceneryPhoto();
+  // iOS: pre-Liquid-Glass 44pt bottom toolbar. Android: sit the credit just
+  // above the new-task FAB (size + edge gap + credit gap, minus the safe
+  // area SceneryAttribution already applies).
+  const sceneryCreditBottomExtra =
+    Platform.OS === "android"
+      ? Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +
+        ANDROID_HOME_FAB_EDGE_GAP +
+        ANDROID_HOME_FAB_SIZE +
+        SCENERY_CREDIT_GAP -
+        Math.max(insets.bottom, SCENERY_CREDIT_MIN_BOTTOM)
+      : iosBottomToolbarClearance;
+  const androidListBottomPad =
+    Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +
+    88 +
+    (dailySceneryPhoto !== null ? SCENERY_CREDIT_HEIGHT : 0);
   const searchEnvironmentIds = useMemo(
     () =>
       props.selectedEnvironmentId === null
@@ -1054,7 +1078,7 @@ export function HomeScreen(props: HomeScreenProps) {
           ) : null}
         </View>
         {dailySceneryPhoto !== null ? (
-          <SceneryAttribution photo={dailySceneryPhoto} bottomExtra={iosBottomToolbarClearance} />
+          <SceneryAttribution photo={dailySceneryPhoto} bottomExtra={sceneryCreditBottomExtra} />
         ) : null}
       </View>
     );
@@ -1138,12 +1162,12 @@ export function HomeScreen(props: HomeScreenProps) {
               paddingBottom:
                 Platform.OS === "ios"
                   ? Math.max(insets.bottom, 24) + 96 + iosBottomToolbarClearance
-                  : Math.max(insets.bottom, 16) + 88,
+                  : androidListBottomPad,
             }}
           />
         </SwipeableScrollGateProvider>
         {dailySceneryPhoto !== null ? (
-          <SceneryAttribution photo={dailySceneryPhoto} bottomExtra={iosBottomToolbarClearance} />
+          <SceneryAttribution photo={dailySceneryPhoto} bottomExtra={sceneryCreditBottomExtra} />
         ) : null}
       </View>
     );
@@ -1188,7 +1212,7 @@ export function HomeScreen(props: HomeScreenProps) {
             paddingBottom:
               Platform.OS === "ios"
                 ? Math.max(insets.bottom, 24) + 24 + iosBottomToolbarClearance
-                : Math.max(insets.bottom, 16) + 88,
+                : androidListBottomPad,
           }}
           scrollIndicatorInsets={
             Platform.OS === "ios"
@@ -1201,7 +1225,7 @@ export function HomeScreen(props: HomeScreenProps) {
         />
       </SwipeableScrollGateProvider>
       {dailySceneryPhoto !== null ? (
-        <SceneryAttribution photo={dailySceneryPhoto} bottomExtra={iosBottomToolbarClearance} />
+        <SceneryAttribution photo={dailySceneryPhoto} bottomExtra={sceneryCreditBottomExtra} />
       ) : null}
     </View>
   );

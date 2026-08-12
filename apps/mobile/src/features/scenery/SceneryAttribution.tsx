@@ -12,16 +12,25 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/AppText";
 import { UNSPLASH_UTM, type SceneryPhoto } from "./sceneryLogic";
 
+/** Painted height of the credit pill (4pt padding + 14pt type). Callers
+ *  reserve this below overlapping chrome so the pill stays tappable. */
+export const SCENERY_CREDIT_HEIGHT = 22;
+/** Gap between the credit pill and overlaying chrome. */
+export const SCENERY_CREDIT_GAP = 6;
+/** Floor for the pill's bottom offset when the safe-area inset is 0. */
+export const SCENERY_CREDIT_MIN_BOTTOM = 8;
+
 export function SceneryAttribution(props: {
   readonly photo: SceneryPhoto;
   /** Extra offset above the bottom safe area for overlaying chrome such as
-   *  the pre-Liquid-Glass 44pt home toolbar. Do not pass composer or
-   *  floating-search heights — those park the pill on content. */
+   *  the pre-Liquid-Glass 44pt home toolbar or the Android new-task FAB.
+   *  Do not pass composer or floating-search heights — those park the pill
+   *  on content. */
   readonly bottomExtra?: number;
 }) {
   const { photo } = props;
   const insets = useSafeAreaInsets();
-  const bottom = Math.max(insets.bottom, 8) + (props.bottomExtra ?? 0);
+  const bottom = Math.max(insets.bottom, SCENERY_CREDIT_MIN_BOTTOM) + (props.bottomExtra ?? 0);
   const profileURL =
     photo.photographerProfileURL !== null
       ? `${photo.photographerProfileURL}${UNSPLASH_UTM}`
