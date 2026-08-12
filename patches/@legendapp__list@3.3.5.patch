@@ -207,7 +207,19 @@ diff --git a/react-native.js b/react-native.js
 index b3c5a306b293f797a8b338adfca3060c0f6db22b..89077be4d6833cfaabf9d6d6205d9551505e32b4 100644
 --- a/react-native.js
 +++ b/react-native.js
-@@ -954,7 +954,7 @@ function setInitialRenderState(ctx, {
+@@ -936,8 +936,11 @@ function resetInitialRenderState(ctx, {
+   if (resetInitialScroll) {
+     state.didFinishInitialScroll = false;
+   }
+-  set$(ctx, "readyToRender", false);
+-  resetAdaptiveRender(ctx);
++  if (resetLayout || !peek$(ctx, "readyToRender")) {
++    set$(ctx, "readyToRender", false);
++    resetAdaptiveRender(ctx);
++  }
+ }
+ function setInitialRenderState(ctx, {
+@@ -954,7 +957,7 @@ function setInitialRenderState(ctx, {
    if (didInitialScroll) {
      state.didFinishInitialScroll = true;
    }
@@ -375,7 +387,10 @@ index b3c5a306b293f797a8b338adfca3060c0f6db22b..89077be4d6833cfaabf9d6d6205d9551
 +  const releaseRevealHold = () => {
 +    if (state.insetEndRevealHold) {
 +      state.insetEndRevealHold = false;
-+      setInitialRenderState(ctx, {});
++      // Streaming maintainScrollAtEnd and footer retargeting can strand
++      // didFinishInitialScroll. Lifting the hold must still open the
++      // opacity gate or the feed stays blank after load.
++      setInitialRenderState(ctx, { didInitialScroll: true });
 +    }
 +  };
 +  // Revealing flips adaptive rendering to "normal", which re-renders rows and
@@ -572,7 +587,19 @@ diff --git a/react-native.mjs b/react-native.mjs
 index 40e87cda8c9bc79a889e5542f29af429a24b24d4..2d556eecb0bafe2f54084c809f82144c7a5dce7f 100644
 --- a/react-native.mjs
 +++ b/react-native.mjs
-@@ -933,7 +933,7 @@ function setInitialRenderState(ctx, {
+@@ -915,8 +915,11 @@ function resetInitialRenderState(ctx, {
+   if (resetInitialScroll) {
+     state.didFinishInitialScroll = false;
+   }
+-  set$(ctx, "readyToRender", false);
+-  resetAdaptiveRender(ctx);
++  if (resetLayout || !peek$(ctx, "readyToRender")) {
++    set$(ctx, "readyToRender", false);
++    resetAdaptiveRender(ctx);
++  }
+ }
+ function setInitialRenderState(ctx, {
+@@ -933,7 +936,7 @@ function setInitialRenderState(ctx, {
    if (didInitialScroll) {
      state.didFinishInitialScroll = true;
    }
@@ -740,7 +767,10 @@ index 40e87cda8c9bc79a889e5542f29af429a24b24d4..2d556eecb0bafe2f54084c809f82144c
 +  const releaseRevealHold = () => {
 +    if (state.insetEndRevealHold) {
 +      state.insetEndRevealHold = false;
-+      setInitialRenderState(ctx, {});
++      // Streaming maintainScrollAtEnd and footer retargeting can strand
++      // didFinishInitialScroll. Lifting the hold must still open the
++      // opacity gate or the feed stays blank after load.
++      setInitialRenderState(ctx, { didInitialScroll: true });
 +    }
 +  };
 +  // Revealing flips adaptive rendering to "normal", which re-renders rows and

@@ -92,7 +92,10 @@ import {
   type ThreadFeedEntry,
   type ThreadFeedLatestTurn,
 } from "../../lib/threadActivity";
-import type { ThreadContentPresentation } from "./threadContentPresentation";
+import {
+  shouldShowThreadFeedLoadingOverlay,
+  type ThreadContentPresentation,
+} from "./threadContentPresentation";
 import {
   resolveThreadFeedLiveFollow,
   type ThreadFeedLiveFollowEvent,
@@ -1650,12 +1653,25 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   // before the fresh instance's first positioning tick so its one-shot initial
   // end-scroll does not rest one composer-height short.
   const listMountKey = `${feedThreadKey}:${props.feed.length === 0 ? "empty" : "filled"}`;
+  const listReadyForKeyRef = useRef<string | null>(null);
+  const [listReady, setListReady] = useState(false);
+  const listReadyForCurrentMount = listReadyForKeyRef.current === listMountKey && listReady;
+  useLayoutEffect(() => {
+    if (listReadyForKeyRef.current !== listMountKey) {
+      setListReady(false);
+    }
+  }, [listMountKey]);
   useLayoutEffect(() => {
     const bottom = props.contentInsetEndAdjustment.value;
     if (bottom > 0) {
       props.listRef.current?.reportContentInset({ bottom });
     }
   }, [listMountKey, props.contentInsetEndAdjustment, props.listRef]);
+  const showLoadingOverlay = shouldShowThreadFeedLoadingOverlay({
+    contentPresentationKind: props.contentPresentation.kind,
+    feedLength: props.feed.length,
+    listReady: listReadyForCurrentMount,
+  });
 
   const anchoredEndSpace = useMemo(
     () =>
@@ -2013,6 +2029,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             // overflow the viewport (the padding clamps to zero).
             alignItemsAtEnd
             initialScrollAtEnd
+            // LegendList holds row opacity at 0 until this fires. A running
+            // turn can delay that; keep the loading overlay up so the feed
+            // cannot look empty after the composer pill goes away.
+            onLoad={() => {
+              listReadyForKeyRef.current = listMountKey;
+              setListReady(true);
+            }}
             onScroll={handleScroll}
             onScrollBeginDrag={handleScrollBeginDrag}
             onScrollEndDrag={handleScrollEndDrag}
@@ -2047,9 +2070,19 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             }}
           />
         </View>
-        {props.feed.length === 0 &&
-        props.activeWorkStartedAt === null &&
-        props.contentPresentation.kind === "ready" ? (
+        {showLoadingOverlay ? (
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <ThreadFeedPlaceholder
+              title="Loading messages"
+              detail="The conversation will appear here once it finishes loading."
+              topInset={topContentInset}
+              bottomInset={bottomContentInset}
+              horizontalPadding={horizontalPadding}
+            />
+          </View>
+        ) : props.feed.length === 0 &&
+          props.activeWorkStartedAt === null &&
+          props.contentPresentation.kind === "ready" ? (
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             <ThreadFeedPlaceholder
               title="No conversation yet"
