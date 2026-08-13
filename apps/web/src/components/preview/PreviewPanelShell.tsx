@@ -68,7 +68,7 @@ export function PreviewPanelShell(props: {
     return (
       <div
         className={cn(
-          "right-panel-inline-frame relative h-full min-h-0 min-w-0 self-stretch",
+          "right-panel-inline-frame relative h-full min-h-0 min-w-0 max-w-full self-stretch",
           maximized
             ? open
               ? "flex-1"
@@ -115,7 +115,7 @@ export function PreviewPanelShell(props: {
   return (
     <div
       className={cn(
-        "relative flex h-full min-h-0 min-w-0 flex-col self-stretch bg-background",
+        "relative flex h-full min-h-0 min-w-0 max-w-full flex-col self-stretch bg-background",
         "w-full",
       )}
       data-preview-panel-mode={props.mode}
