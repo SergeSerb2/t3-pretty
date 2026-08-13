@@ -4,11 +4,12 @@ import { StackActions, useNavigation, usePreventRemove } from "@react-navigation
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, InteractionManager, Platform, View, useColorScheme } from "react-native";
 import {
-  KeyboardAvoidingView,
   KeyboardController,
   KeyboardStickyView,
   useKeyboardState,
+  useReanimatedKeyboardAnimation,
 } from "react-native-keyboard-controller";
+import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { useFontFamily } from "../../lib/useFontFamily";
@@ -62,6 +63,10 @@ import { useCreateProjectThread } from "./use-project-actions";
 import { resolveDraftProjectSelection } from "./new-task-project-selection";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
 
+// KeyboardStickyView memos its animated style against `style` identity.
+const DRAFT_COMPOSER_STICKY_STYLE = { position: "absolute", bottom: 0, left: 0, right: 0 } as const;
+const DRAFT_COMPOSER_STICKY_OFFSET = { closed: 0, opened: 0 } as const;
+
 function formatWorkspaceLabel(input: {
   readonly workspaceMode: string;
   readonly currentBranchName: string | null;
@@ -99,6 +104,20 @@ export function NewTaskDraftScreen(props: {
   const colorScheme = useColorScheme();
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
   const controlsBottomPadding = isKeyboardVisible ? 8 : Math.max(insets.bottom, 10);
+  // Pad from the IME animation instead of KeyboardAvoidingView+automaticOffset.
+  // This screen is pushed inside the new-task formSheet; measureInWindow
+  // under-lifts by the sheet's top inset and leaves the model/device toolbar
+  // behind the keyboard.
+  const { height: draftKeyboardTranslateY } = useReanimatedKeyboardAnimation();
+  const draftKeyboardVisibleSV = useSharedValue(isKeyboardVisible);
+  draftKeyboardVisibleSV.value = isKeyboardVisible;
+  const draftKeyboardAvoidStyle = useAnimatedStyle(
+    () => ({
+      // Matches deriveKeyboardAvoidPadding; inlined so the worklet stays self-contained.
+      paddingBottom: draftKeyboardVisibleSV.value ? Math.max(0, -draftKeyboardTranslateY.value) : 0,
+    }),
+    [],
+  );
   const { projectScopes, selectedProject, selectedProjectKey, setProject } = flow;
   const { connectedEnvironments } = useRemoteConnectionStatus();
   const selectedEnvironmentServerConfig = useEnvironmentServerConfig(
@@ -244,10 +263,8 @@ export function NewTaskDraftScreen(props: {
   const bodyText = useScaledTextRole("body");
   const headlineText = useScaledTextRole("headline");
   // Match --color-sheet (World Scenery) so toolbar fades blend into the draft surface.
-  const sheetFadeOpaque =
-    colorScheme === "dark" ? "rgba(14,17,16,0.98)" : "rgba(244,246,244,0.98)";
-  const sheetFadeTransparent =
-    colorScheme === "dark" ? "rgba(14,17,16,0)" : "rgba(244,246,244,0)";
+  const sheetFadeOpaque = colorScheme === "dark" ? "rgba(14,17,16,0.98)" : "rgba(244,246,244,0.98)";
+  const sheetFadeTransparent = colorScheme === "dark" ? "rgba(14,17,16,0)" : "rgba(244,246,244,0)";
 
   // A new navigation to this mounted screen delivers a fresh initialProjectRef
   // reference — treat it as a new request and let it apply again.
@@ -793,7 +810,7 @@ export function NewTaskDraftScreen(props: {
 
     // The composer is a custom native text view, so RN Keyboard.dismiss()
     // would miss it. Resign first responder through the library so its
-    // visibility flag (which gates KeyboardAvoidingView below) updates.
+    // visibility flag (which gates draft keyboard padding below) updates.
     promptInputRef.current?.blur();
     void KeyboardController.dismiss();
 
@@ -1109,8 +1126,8 @@ export function NewTaskDraftScreen(props: {
 
         <KeyboardStickyView
           enabled={isKeyboardVisible}
-          style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
-          offset={{ closed: 0, opened: 0 }}
+          style={DRAFT_COMPOSER_STICKY_STYLE}
+          offset={DRAFT_COMPOSER_STICKY_OFFSET}
         >
           <View
             className="px-4 pt-2"
@@ -1190,12 +1207,11 @@ export function NewTaskDraftScreen(props: {
     <View className="flex-1 bg-sheet">
       <NativeStackScreenOptions options={{ title: selectedProject.title }} />
 
-      {/* Pad the whole draft chrome for the IME. automaticOffset only lifted
-          the focused native editor, which left the toolbar under the keyboard.
-          Gate on visibility rather than animated height: the custom composer
-          can dismiss the IME without updating keyboard-controller's height,
-          which otherwise left this padding stranded during send. */}
-      <KeyboardAvoidingView behavior="padding" className="flex-1" enabled={isKeyboardVisible}>
+      {/* Pad the whole draft chrome from the live IME height. formSheet
+          measureInWindow under-lifts automaticOffset; visibility still gates
+          the padding so a dismiss that leaves height stale cannot strand it
+          during send. */}
+      <Animated.View className="flex-1" style={draftKeyboardAvoidStyle}>
         <View className="min-h-0 flex-1 px-5 pt-2">{promptEditor}</View>
 
         <View className="border-t border-border" style={{ paddingBottom: controlsBottomPadding }}>
@@ -1229,7 +1245,7 @@ export function NewTaskDraftScreen(props: {
             {startButton}
           </ComposerToolbarRow>
         </View>
-      </KeyboardAvoidingView>
+      </Animated.View>
       {settingsSheet}
     </View>
   );
