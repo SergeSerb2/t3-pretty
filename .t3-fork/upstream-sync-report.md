@@ -1,7 +1,7 @@
 # T3 Pretty upstream integration report
 
-- Parent nightly: `v0.0.34-nightly.20260813.1082`
-- Previously integrated parent nightly: `v0.0.34-nightly.20260813.1081`
+- Parent nightly: `v0.0.34-nightly.20260813.1084`
+- Previously integrated parent nightly: `v0.0.34-nightly.20260813.1082`
 - Conflict resolver: not invoked; Git reported no text conflicts
 
 ## T3 Pretty changes preserved at conflict boundaries
