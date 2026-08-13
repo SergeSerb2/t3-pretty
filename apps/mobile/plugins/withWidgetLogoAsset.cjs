@@ -7,10 +7,13 @@
 // has no asset support, so this plugin (a) writes an SVG template image set into
 // the generated widget asset catalog and (b) wires that catalog into the widget
 // target with an actool build phase. It also overwrites MARKETING_VERSION and
-// CURRENT_PROJECT_VERSION: expo-widgets still hardcodes those to 1.0 / 1, and
+// CURRENT_PROJECT_VERSION, and adds a late "Sync Widget Bundle Version" phase.
+// expo-widgets still hardcodes those settings to 1.0 / 1, and
 // GENERATE_INFOPLIST_FILE=YES makes Xcode ignore the widget Info.plist
-// (expo/expo#43740). EAS autoIncrement then archives the app at N and the
-// extension at 1, which App Store validation rejects.
+// (expo/expo#43740). EAS remote autoIncrement writes the real CFBundleVersion
+// onto Info.plist files only after prebuild, so a config plugin alone still
+// archives the extension at 1. The build phase copies the parent app's
+// versions onto the generated widget plist before signing.
 //
 // ORDERING: must be listed BEFORE "expo-widgets" in the plugins array. Expo
 // chains same-type mods so the last-registered runs FIRST; registering this
@@ -24,6 +27,7 @@ const path = require("path");
 const fs = require("fs");
 const { withDangerousMod, withXcodeProject } = require("expo/config-plugins");
 const { addWidgetAssetCatalog } = require("./lib/addWidgetAssetCatalog.cjs");
+const { addWidgetVersionSync } = require("./lib/addWidgetVersionSync.cjs");
 
 const TARGET_NAME = "ExpoWidgetsTarget";
 const CATALOG_NAME = "Assets.xcassets";
@@ -119,6 +123,7 @@ function syncWidgetReleaseVersions(objects, { targetName, marketingVersion, buil
 function withAssetWiring(config) {
   return withXcodeProject(config, (cfg) => {
     addWidgetAssetCatalog(cfg.modResults, { targetName: TARGET_NAME });
+    addWidgetVersionSync(cfg.modResults, { targetName: TARGET_NAME });
 
     const objects = cfg.modResults.hash.project.objects;
     syncWidgetReleaseVersions(objects, {
