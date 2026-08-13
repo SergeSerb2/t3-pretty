@@ -1,20 +1,19 @@
 # T3 Pretty upstream integration report
 
-- Parent nightly: `v0.0.34-nightly.20260813.1086`
-- Previously integrated parent nightly: `v0.0.34-nightly.20260813.1084`
-- Conflict resolver: `grok-4.6` with manual resolution (scheduled CLIProxyAPI token returned HTTP 401)
+- Parent nightly: `v0.0.34-nightly.20260813.1087`
+- Previously integrated parent nightly: `v0.0.34-nightly.20260813.1086`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
 
 ## T3 Pretty changes preserved at conflict boundaries
 
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — keep the Pretty split inline/sheet layout (`right-panel-inline-frame`, exit animation, resize handle isolation)
-- `apps/web/src/components/preview/PreviewPanelShell.test.ts` — keep the Pretty `createElement` helper and lifecycle/exit coverage
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — Preserved the memoized MarkdownLinkCallbacksContext provider used to expose link press and long-press actions throughout native markdown rendering.
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — Preserved onLinkLongPress forwarding to selectable native markdown text so long-pressed chat links continue to offer copy/open actions.
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — Preserved the highlightCodeEnabled gate on rich native markdown blocks, retaining the fork's code-highlighting behavior and hot-path control.
 
 ## Parent changes integrated at conflict boundaries
 
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — add `max-w-full` so the preview panel cannot overflow its workspace
-- `apps/web/src/components/preview/PreviewPanelShell.test.ts` — add the parent `max-w-full` regression test
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — Passed skills into NativeMarkdownBlock so upstream skill handling also applies to rich markdown chunks.
 
 ## Parent changes intentionally omitted
 
-- `apps/web/src/components/preview/PreviewPanelShell.tsx` — parent single-return `isInline ? flex-1/shrink-0 : w-full` class split. Reason: that branch is dead in Pretty's non-inline return; Pretty already owns inline sizing in the earlier return
-- `.github/workflows` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- None. The resolver did not omit any parent change to protect T3 Pretty.
