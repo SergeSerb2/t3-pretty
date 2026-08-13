@@ -228,7 +228,7 @@ jobs:
           # is commit-idempotent if a normal push event also arrives.
           gh workflow run fork-release.yml -R "$GITHUB_REPOSITORY" --ref main
           if [[ "$mobile_release_needed" == "true" ]]; then
-            gh workflow run mobile-eas-production.yml \
+            gh workflow run fork-mobile-release.yml \
               -R "$GITHUB_REPOSITORY" \
               --ref main \
               -f mode=release \

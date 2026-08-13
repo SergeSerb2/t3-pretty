@@ -88,15 +88,24 @@ node ../../scripts/mobile-native-static-check.ts
 
 The native lint task runs SwiftLint for Swift plus ktlint and detekt for Kotlin. Missing native tools are reported as warnings and skipped locally. CI installs the default toolset from `apps/mobile/Brewfile` before running the native checks.
 
-## EAS Builds
+## Production builds
 
-CI uses Expo fingerprinting with the `preview:dev` profile to reuse an existing compatible build when possible, or start a new internal EAS build when native runtime inputs change. Production and default local builds continue to use the `appVersion` runtime policy.
+CI compiles iOS on the self-hosted Mac runner with `eas build --local` and
+submits the IPA to TestFlight. That does not consume Expo cloud iOS credits.
+OTA JavaScript updates still publish through the fork-owned EAS project.
 
-For preview or production EAS environments, set `T3CODE_CLERK_PUBLISHABLE_KEY`,
-`T3CODE_CLERK_JWT_TEMPLATE`, and `T3CODE_RELAY_URL`
-as EAS environment variables. Expo config maps the canonical values into the mobile build.
+JS-only production changes ship as an OTA from CI. Use `vp run ios:release`
+only when you want a self-contained local Release app that does not need Metro.
+`vp run eas:ios:*` still starts a **cloud** build and counts against the Expo
+monthly iOS quota — do not use those unless you intend to.
 
-Create a PR preview dev-client build manually:
+Create a local production IPA (Mac with Xcode):
+
+```bash
+vp run ios:prod:local
+```
+
+Create a PR preview dev-client build manually (cloud, counts against quota):
 
 ```bash
 vp run eas:ios:preview:dev
@@ -114,7 +123,7 @@ Create a persistent preview build:
 vp run eas:ios:preview
 ```
 
-Android equivalents:
+Android equivalents (still cloud):
 
 ```bash
 vp run eas:android:dev

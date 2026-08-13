@@ -14,37 +14,51 @@ no separate mobile sync.
 
 ## Merge-driven releases
 
-`.github/workflows/mobile-eas-production.yml` triggers on every push to `main`
+`.github/workflows/fork-mobile-release.yml` triggers on every push to `main`
 that touches mobile-relevant paths. A release publishes an OTA update on the
-production channel for both platforms and queues a production iOS build with
-automatic TestFlight submission. Native runtime changes therefore receive a
-new binary instead of publishing an OTA that no installed app can consume.
+production channel for both platforms, then compiles a production iOS IPA on
+the self-hosted Mac runner (`m1-dev-t3code-fork`, same labels as desktop) and
+submits it to TestFlight when the native runtime fingerprint changed.
+
+JavaScript-only changes therefore ship as an OTA without occupying Xcode or
+touching Expo's cloud iOS quota. Native runtime changes still receive a new
+binary instead of publishing an OTA that no installed app can consume.
+
+iOS store binaries cannot be compiled on the Windows runner. Registering a
+second Mac (for example the M5) with the same `self-hosted`, `macOS`,
+`ARM64`, `t3code-fork`, `release-only` labels lets GitHub run a desktop
+release and an iOS compile in parallel.
 
 The four-hour upstream workflow uses the same whole-repository merge and
 gpt-5.6-sol/xhigh conflict resolver as desktop. Because GitHub-token-authored
 merges do not recursively trigger push workflows, it explicitly dispatches the
 mobile release after an upstream integration only when that integration changed
 `apps/mobile`, shared packages, patches, or the lockfile. Server/web-only parent
-changes do not consume an EAS build.
+changes do not start a mobile release.
 
 The workflow fails early when required release credentials are missing instead
 of reporting a green release that shipped nothing. To activate:
 
-1. Create an Expo account and fork-owned EAS project.
+1. Create an Expo account and fork-owned EAS project. EAS Update (OTA) and
+   managed credentials still go through Expo; only IPA compilation is local.
 2. Set repo secret `EXPO_TOKEN`.
 3. Set `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` from a Team
    App Store Connect API key with the Admin role and **Access to Certificates,
    Identifiers & Profiles** enabled, plus repo variable `APPLE_TEAM_ID`. The
    workflow exposes Expo's supported ASC CI variables so EAS can create or
    repair distribution credentials, and injects the same key into the submit
-   profile for deferred TestFlight submission.
+   profile for TestFlight upload.
 4. In App Store Connect, create the iOS app record once (`T3 Pretty`, bundle ID
    `com.sergeserbinenko.t3pretty`, SKU `t3-pretty-ios`).
 5. Initialize EAS credentials once from an interactive local terminal with
-   `eas build --platform ios --profile production --no-wait`. After it creates
+   `eas build --platform ios --profile production --local`. After it creates
    the first Apple Distribution certificate and both provisioning profiles,
-   normal mobile releases are fully non-interactive.
-6. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
+   normal mobile releases are fully non-interactive. Do not use a cloud
+   `eas build` for this bootstrap unless you intend to spend an Expo iOS
+   build credit.
+6. On the Mac runner: Xcode, CocoaPods, and Fastlane. The workflow installs
+   CocoaPods or Fastlane via Homebrew only when they are missing.
+7. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
    `T3CODE_MOBILE_EAS_PROJECT_ID`, `T3CODE_MOBILE_EXPO_OWNER`,
    optionally `T3CODE_MOBILE_EXPO_SLUG`.
 
@@ -68,6 +82,9 @@ DMG. It now also calls `scenery-ios-build.sh`, which:
   `devicectl` whenever it is reachable, retrying on later cycles;
 - never fails the desktop pipeline, and skips in O(1) when the built head is
   unchanged.
+
+That path is Development-signed device installs, not TestFlight. Store
+binaries come from `fork-mobile-release.yml` on the GitHub runner.
 
 Configuration lives in `~/.t3-scenery-updater/ios.env` (Xcode path, team id,
 device opt-in). Every assignment in that file must be `export`ed — the app
