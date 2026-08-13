@@ -24,14 +24,8 @@ import { ActivityIndicator, FlatList, Platform, Pressable, View } from "react-na
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeColor } from "../../lib/useThemeColor";
-import {
-  SCENERY_CREDIT_GAP,
-  SCENERY_CREDIT_HEIGHT,
-  SCENERY_CREDIT_MIN_BOTTOM,
-  SceneryAttribution,
-} from "../scenery/SceneryAttribution";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
-import { useDailySceneryPhoto, useSceneryChromeActive } from "../scenery/SceneryProvider";
+import { useSceneryChromeActive } from "../scenery/SceneryProvider";
 
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
@@ -63,7 +57,7 @@ import {
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   type ThreadListV2ListItem,
 } from "../threads/threadListV2";
-import { ANDROID_HOME_FAB_EDGE_GAP, ANDROID_HOME_FAB_SIZE } from "./AndroidHomeFab";
+import { ANDROID_HOME_FAB_EDGE_GAP } from "./AndroidHomeFab";
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   buildHomeListLayout,
@@ -225,27 +219,9 @@ export function HomeScreen(props: HomeScreenProps) {
     Platform.OS === "ios" && !NATIVE_LIQUID_GLASS_SUPPORTED
       ? PRE_LIQUID_GLASS_BOTTOM_TOOLBAR_HEIGHT
       : 0;
-  const dailySceneryPhoto = useDailySceneryPhoto();
   const sceneryChrome = useSceneryChromeActive();
-  const [creditHeight, setCreditHeight] = useState(SCENERY_CREDIT_HEIGHT);
-  // Liquid Glass Home: dockUnderFloatingChrome puts the pill under the
-  // floating search bar (no extra). Pre-Liquid-Glass: lift by the 44pt
-  // toolbar above the safe-area dock. Android: sit just above the new-task
-  // FAB (size + edge gap + credit gap, minus the safe area already applied).
-  const sceneryCreditBottomExtra =
-    Platform.OS === "android"
-      ? Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) +
-        ANDROID_HOME_FAB_EDGE_GAP +
-        ANDROID_HOME_FAB_SIZE +
-        SCENERY_CREDIT_GAP -
-        Math.max(insets.bottom, SCENERY_CREDIT_MIN_BOTTOM)
-      : iosBottomToolbarClearance;
-  const sceneryDockUnderFloatingChrome = NATIVE_LIQUID_GLASS_SUPPORTED;
-  const sceneryListPad = dailySceneryPhoto !== null ? creditHeight : 0;
-  const androidListBottomPad =
-    Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) + 88 + sceneryListPad;
-  const iosListBottomPad =
-    Math.max(insets.bottom, 24) + 24 + iosBottomToolbarClearance + sceneryListPad;
+  const androidListBottomPad = Math.max(insets.bottom, ANDROID_HOME_FAB_EDGE_GAP) + 88;
+  const iosListBottomPad = Math.max(insets.bottom, 24) + 24 + iosBottomToolbarClearance;
   const searchEnvironmentIds = useMemo(
     () =>
       props.selectedEnvironmentId === null
@@ -1108,14 +1084,6 @@ export function HomeScreen(props: HomeScreenProps) {
             </View>
           ) : null}
         </View>
-        {dailySceneryPhoto !== null ? (
-          <SceneryAttribution
-            photo={dailySceneryPhoto}
-            bottomExtra={sceneryCreditBottomExtra}
-            dockUnderFloatingChrome={sceneryDockUnderFloatingChrome}
-            onHeightChange={setCreditHeight}
-          />
-        ) : null}
       </View>
     );
   }
@@ -1201,19 +1169,11 @@ export function HomeScreen(props: HomeScreenProps) {
             contentContainerStyle={{
               paddingBottom:
                 Platform.OS === "ios"
-                  ? Math.max(insets.bottom, 24) + 96 + iosBottomToolbarClearance + sceneryListPad
+                  ? Math.max(insets.bottom, 24) + 96 + iosBottomToolbarClearance
                   : androidListBottomPad,
             }}
           />
         </SwipeableScrollGateProvider>
-        {dailySceneryPhoto !== null ? (
-          <SceneryAttribution
-            photo={dailySceneryPhoto}
-            bottomExtra={sceneryCreditBottomExtra}
-            dockUnderFloatingChrome={sceneryDockUnderFloatingChrome}
-            onHeightChange={setCreditHeight}
-          />
-        ) : null}
       </View>
     );
   }
@@ -1259,22 +1219,13 @@ export function HomeScreen(props: HomeScreenProps) {
           scrollIndicatorInsets={
             Platform.OS === "ios"
               ? {
-                  bottom:
-                    Math.max(insets.bottom, 16) + 24 + iosBottomToolbarClearance + sceneryListPad,
+                  bottom: Math.max(insets.bottom, 16) + 24 + iosBottomToolbarClearance,
                   top: 0,
                 }
               : undefined
           }
         />
       </SwipeableScrollGateProvider>
-      {dailySceneryPhoto !== null ? (
-        <SceneryAttribution
-          photo={dailySceneryPhoto}
-          bottomExtra={sceneryCreditBottomExtra}
-          dockUnderFloatingChrome={sceneryDockUnderFloatingChrome}
-          onHeightChange={setCreditHeight}
-        />
-      ) : null}
     </View>
   );
 }

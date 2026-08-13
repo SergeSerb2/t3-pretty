@@ -5,6 +5,9 @@
  * `dockUnderFloatingChrome` sits the pill in the home-indicator strip under
  * Liquid Glass Home search and the thread composer; otherwise the pill clears
  * the system inset (desktop still docks bottom-right via --scenery-dock-block).
+ *
+ * Currently unmounted from Home and thread chrome while we find a better
+ * credit treatment. Keep this component; do not delete it.
  */
 import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
 import * as Linking from "expo-linking";

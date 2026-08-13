@@ -61,9 +61,6 @@ import type { StatusTone } from "../../components/StatusPill";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import { CHAT_CONTENT_MAX_WIDTH, type LayoutVariant } from "../../lib/layout";
 import { scopedThreadKey } from "../../lib/scopedEntities";
-import { SceneryAttribution } from "../scenery/SceneryAttribution";
-import { SCENERY_CREDIT_HEIGHT } from "../scenery/sceneryDock";
-import { useThreadSceneryPhoto } from "../scenery/SceneryProvider";
 import type {
   PendingApproval,
   PendingUserInput,
@@ -286,7 +283,6 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const navigationHeaderHeight = useContext(HeaderHeightContext) || insets.top + 44;
   const agentLabel = `${props.selectedThread.modelSelection.instanceId} agent`;
   const selectedThreadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
-  const threadSceneryPhoto = useThreadSceneryPhoto(selectedThreadKey);
   const composerEditorRef = useRef<ComposerEditorHandle>(null);
   const listRef = useRef<LegendListRef>(null);
   const feedTouchStartRef = useRef<{ pageX: number; pageY: number } | null>(null);
@@ -295,7 +291,6 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const [composerExpanded, setComposerExpanded] = useState(false);
   const [anchorMessageId, setAnchorMessageId] = useState<MessageId | null>(null);
   const [endFollowEnabled, setEndFollowEnabled] = useState(true);
-  const [creditHeight, setCreditHeight] = useState(SCENERY_CREDIT_HEIGHT);
   // Android keys the safe-area padding on keyboard visibility (#5988): the
   // back gesture closes the keyboard while the editor stays focused, and a
   // focus-keyed inset would leave the toolbar under the gesture bar. iOS must
@@ -305,18 +300,15 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   // focus-keyed inset is already in place while the composer rides down.
   const isComposerAtKeyboardEdge = Platform.OS === "android" ? isKeyboardVisible : composerExpanded;
   const keyboardTranslationEnabled = isKeyboardVisible && !keyboardStateSuspect;
-  // Reserve a strip under the composer for the scenery credit so the pill
-  // sits below send/stop instead of stealing taps from them. Keyboard-open
-  // hides the credit under the IME; at-edge also drops it so a stream-time
-  // focus flicker cannot jump the resting dock. iOS matches Liquid Glass
-  // Home: dock in the home-indicator strip instead of stacking a full
-  // safe-area inset under the credit.
+  // Dock the composer in the home-indicator strip on iOS (matching Liquid
+  // Glass Home) instead of stacking a full safe-area inset. Credits are
+  // hidden for now, so this inset is only that dock / IME-edge clearance.
   const composerBottomInset = deriveComposerBottomInset({
     atKeyboardEdge: isComposerAtKeyboardEdge,
     keyboardVisible: isKeyboardVisible,
     platform: Platform.OS === "android" ? "android" : "ios",
     safeAreaBottom: insets.bottom,
-    sceneryCreditHeight: threadSceneryPhoto !== null ? creditHeight : 0,
+    sceneryCreditHeight: 0,
   });
   const contentPresentationKind = props.contentPresentation.kind;
   // The raw sync status enters "synchronizing" on every full fetch, cached or
@@ -816,16 +808,6 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             </View>
           </View>
         </KeyboardStickyView>
-      ) : null}
-
-      {/* World Scenery credit centers under the composer strip so it cannot
-          cover send/stop. On iOS it docks in the home-indicator strip. */}
-      {showContent && threadSceneryPhoto !== null ? (
-        <SceneryAttribution
-          photo={threadSceneryPhoto}
-          dockUnderFloatingChrome={Platform.OS === "ios"}
-          onHeightChange={setCreditHeight}
-        />
       ) : null}
     </View>
   );
