@@ -81,7 +81,9 @@ for (let index = 2; index < NodeProcess.argv.length; index += 1) {
   if (!arg.startsWith("--")) continue;
   const key = arg.slice(2);
   const next = NodeProcess.argv[index + 1];
-  if (next && !next.startsWith("--")) {
+  // An empty string is a real value (`--submitted-fingerprint ""`). Treat only
+  // a missing argv slot or another `--flag` as a boolean switch.
+  if (next !== undefined && !next.startsWith("--")) {
     args.set(key, next);
     index += 1;
   } else {
@@ -92,10 +94,9 @@ for (let index = 2; index < NodeProcess.argv.length; index += 1) {
 const fingerprint = readFingerprintInput(args);
 const forceBuild = args.get("force") === "true" || args.get("force") === "1";
 const builds = readBuildList(args);
-// Local `eas build --local` binaries never appear in `eas build:list`. The
-// workflow therefore also persists the last successfully submitted fingerprint
-// (`.t3-fork/ios-production-fingerprint`) so JavaScript-only releases do not
-// rebuild forever after the first local IPA.
+// Hosted EAS builds appear in `eas build:list`. A leftover
+// `.t3-fork/ios-production-fingerprint` from an earlier local-submit attempt
+// is still treated as a known production binary if present.
 const submittedFingerprint = (args.get("submitted-fingerprint") ?? "").trim();
 const easRuntimeVersion = runtimeVersionOf(builds.find(isIosProductionBuild) ?? builds[0]);
 const knownFingerprints = new Set(

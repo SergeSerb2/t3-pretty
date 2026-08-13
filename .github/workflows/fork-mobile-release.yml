@@ -1,16 +1,15 @@
 name: T3 Pretty Mobile Release
 
-# Production iOS binaries compile on the fork's self-hosted Macs (the same
-# machines that already ship desktop). That avoids Expo's cloud iOS quota
-# ($2/build on paid plans, 15/month on free). OTA updates and TestFlight
-# upload still use the fork-owned EAS project; those are not iOS cloud builds.
+# Production builds and OTA updates run from GitHub-hosted Linux — never from
+# the Mac desktop runner. Under the fingerprint runtime-version policy the hash
+# must be computed on the same OS as the EAS worker; a macOS `eas update`
+# publishes a runtime no existing TestFlight binary can consume, and
+# `m1-dev-t3code-fork` does not have Xcode.app for a local EAS compile.
 #
-# Fingerprint is computed on this Mac so `eas update` and `eas build --local`
-# share one runtime version. A new IPA is submitted only when that fingerprint
-# differs from both the latest hosted EAS production binary and the last
-# locally submitted fingerprint (`.t3-fork/ios-production-fingerprint`).
-# Local builds never appear in `eas build:list`, so that file is what keeps
-# JS-only releases from recompiling after the first local IPA.
+# A new IPA is submitted only when the Linux fingerprint differs from the
+# latest finished production iOS binary (and any previously recorded local
+# submit in `.t3-fork/ios-production-fingerprint`). JavaScript-only releases
+# therefore spend no Expo iOS cloud credit.
 #
 # See docs/operations/fork-mobile-release.md.
 on:
@@ -35,7 +34,7 @@ on:
           - build
           - update
       platform:
-        description: "OTA target platform. Native binaries are iOS-only and always local."
+        description: "OTA target platform. Native binaries are iOS-only cloud builds."
         required: true
         type: choice
         default: ios
@@ -55,19 +54,13 @@ concurrency:
 jobs:
   production:
     name: Mobile ${{ github.event_name == 'push' && 'release' || inputs.mode }}
-    runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
-      # contents:write records `.t3-fork/ios-production-fingerprint` after a
-      # local TestFlight submit. GITHUB_TOKEN cannot write repository Variables
-      # (`variables` is not a valid permissions key), so the durable store is a
-      # committed fork-state file instead.
-      contents: write
+      contents: read
     env:
       APP_VARIANT: production
       NODE_OPTIONS: --max-old-space-size=8192
-      LANG: en_US.UTF-8
-      LC_ALL: en_US.UTF-8
       # Public fork-owned EAS identity. These must be available before
       # `eas env:pull` so app.config.ts can resolve the project being pulled.
       T3CODE_MOBILE_UPDATE_URL: ${{ vars.T3CODE_MOBILE_UPDATE_URL }}
@@ -82,91 +75,6 @@ jobs:
       MODE: ${{ github.event_name == 'push' && 'release' || inputs.mode }}
       PLATFORM: ${{ github.event_name == 'push' && 'all' || inputs.platform }}
     steps:
-      - name: Ensure runner action externals
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Every `uses:` step runs under the runner's own bundled Node. When
-          # that tree goes missing - an interrupted runner self-update, macOS
-          # quarantining the binary, or a disk sweep that reaps `externals/` -
-          # `run:` steps keep working while every action dies with a bare
-          # ENOENT naming the node binary. Without this guard the first
-          # casualty is whichever action follows the build, so a signed
-          # release burns several minutes before failing. Check it up front
-          # and restore the runtime from nodejs.org, so a broken runner costs
-          # one download instead of parking every release until someone
-          # re-extracts the runner package by hand.
-          runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
-          externals="${runner_root}/externals"
-          case "$(uname -m)" in
-            arm64|aarch64) node_arch=arm64 ;;
-            x86_64) node_arch=x64 ;;
-            *) node_arch="" ;;
-          esac
-
-          node_ok() {
-            [[ -x "$1/bin/node" ]] && "$1/bin/node" --version >/dev/null 2>&1
-          }
-
-          # Deliberately no `set -e` reliance: this is called from an `if`,
-          # which suppresses errexit for the whole call, so every fallible
-          # command has to be checked by hand.
-          restore_node() {
-            local major="$1" dest="$2" base tmp line sha name src
-            [[ -n "$node_arch" ]] || { echo "Unsupported machine $(uname -m)."; return 1; }
-            base="https://nodejs.org/download/release/latest-v${major}.x"
-            tmp="$(mktemp -d)" || return 1
-            echo "Restoring ${dest} from ${base} (darwin-${node_arch})."
-            line="$(curl -fsSL --retry 3 "${base}/SHASUMS256.txt" \
-              | grep -E "node-v${major}\.[0-9.]+-darwin-${node_arch}\.tar\.gz$" | head -n1)"
-            if [[ -z "$line" ]]; then
-              echo "No darwin-${node_arch} build listed for node ${major}.x."
-              rm -rf "$tmp"; return 1
-            fi
-            sha="${line%% *}"
-            name="${line##* }"
-            src="${tmp}/${name%.tar.gz}"
-            if ! curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"; then
-              rm -rf "$tmp"; return 1
-            fi
-            if ! (cd "$tmp" && printf '%s  %s\n' "$sha" "$name" | shasum -a 256 -c - >/dev/null); then
-              echo "Checksum mismatch for ${name}."
-              rm -rf "$tmp"; return 1
-            fi
-            if ! tar -xzf "${tmp}/${name}" -C "$tmp"; then rm -rf "$tmp"; return 1; fi
-            rm -rf "${dest}.repair" "${dest}.broken"
-            if ! mv "$src" "${dest}.repair"; then rm -rf "$tmp"; return 1; fi
-            # A quarantined download is exactly the failure being repaired.
-            xattr -rc "${dest}.repair" >/dev/null 2>&1 || true
-            if [[ -e "$dest" ]] && ! mv "$dest" "${dest}.broken"; then
-              rm -rf "$tmp" "${dest}.repair"; return 1
-            fi
-            if ! mv "${dest}.repair" "$dest"; then rm -rf "$tmp"; return 1; fi
-            rm -rf "${dest}.broken" "$tmp"
-            node_ok "$dest"
-          }
-
-          for runtime in node24 node20; do
-            dest="${externals}/${runtime}"
-            # node20 only matters while some action still declares it. Do not
-            # conjure it onto runners that have already dropped the runtime.
-            if [[ "$runtime" != node24 && ! -d "$dest" ]]; then continue; fi
-            if node_ok "$dest"; then
-              echo "${runtime} OK (node $("${dest}/bin/node" --version))."
-              continue
-            fi
-            echo "::warning::${dest}/bin/node is missing or unusable; restoring it."
-            ls -la "$dest" 2>/dev/null || echo "${dest} does not exist."
-            if ! restore_node "${runtime#node}" "$dest"; then
-              echo "::error::Runner cannot execute actions: ${dest}/bin/node is missing and could not be restored."
-              echo "Repair on the runner host: stop the runner service, re-extract the"
-              echo "actions-runner release package over ${runner_root} to restore externals/,"
-              echo "then start the service again."
-              exit 1
-            fi
-            echo "Restored ${runtime} (node $("${dest}/bin/node" --version))."
-          done
-
       - id: expo-token
         name: Check for EXPO_TOKEN
         env:
@@ -184,19 +92,10 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          clean: true
           # No sparse-checkout here: it makes actions/checkout fetch with
           # --filter=blob:none, and eas-cli archives the project via
           # `git clone --depth 1 file://<workspace>`, which fails (exit 128)
           # when the partial clone can't serve the unfetched blobs.
-
-      - name: Prepare macOS runner PATH
-        if: steps.expo-token.outputs.present == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-          echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
 
       - name: Setup Vite+
         if: steps.expo-token.outputs.present == 'true'
@@ -234,14 +133,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         # app.config.ts reads the repository-root env files, not apps/mobile/.env.local.
-        # Local EAS builds pack a gitignore-filtered copy, so also export the
-        # pulled values into the job environment for child processes.
-        run: |
-          set -euo pipefail
-          eas env:pull production --path ../../.env.local --non-interactive
-          if [[ -f ../../.env.local ]]; then
-            grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> "$GITHUB_ENV"
-          fi
+        run: eas env:pull production --path ../../.env.local --non-interactive
 
       - name: Prepare Apple CI credentials
         if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'build' || env.MODE == 'release')
@@ -270,6 +162,8 @@ jobs:
             echo "EXPO_APPLE_TEAM_TYPE=INDIVIDUAL"
           } >> "$GITHUB_ENV"
 
+          # Auto-submit runs after the remote build completes. Add the same ASC
+          # key to the submit profile so EAS can retain it for that deferred job.
           node --input-type=module - "$key_path" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER" <<'NODE'
           import fs from "node:fs";
           const [keyPath, keyId, issuer] = process.argv.slice(2);
@@ -312,7 +206,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$MODE" == "build" && "$PLATFORM" == "android" ]]; then
-            echo "Native Android cloud builds are retired. iOS compiles locally on the Mac runner; Android store binaries are not wired yet." >&2
+            echo "Native Android cloud builds are not wired for this fork yet. Production store binaries are iOS-only." >&2
             exit 1
           fi
 
@@ -348,27 +242,6 @@ jobs:
             --submitted-fingerprint "$submitted_fingerprint" \
             --force "$([[ "$MODE" == "build" ]] && echo true || echo false)"
 
-      - name: Prepare iOS toolchain
-        if: steps.expo-token.outputs.present == 'true' && steps.native.outputs.should_build == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ ! -d /Applications/Xcode.app ]]; then
-            echo "Xcode.app is required on this runner for local iOS production builds." >&2
-            exit 1
-          fi
-          echo "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer" >> "$GITHUB_ENV"
-          export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-          xcodebuild -version
-          if ! command -v pod >/dev/null; then
-            brew install cocoapods
-          fi
-          pod --version
-          if ! command -v fastlane >/dev/null; then
-            brew install fastlane
-          fi
-          fastlane --version
-
       - name: Build and submit
         if: steps.expo-token.outputs.present == 'true' && steps.native.outputs.should_build == 'true'
         working-directory: apps/mobile
@@ -376,49 +249,9 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
-          ipa_path="$RUNNER_TEMP/t3-pretty.ipa"
-          export EAS_LOCAL_BUILD_ARTIFACTS_DIR="$RUNNER_TEMP/eas-artifacts"
-          mkdir -p "$EAS_LOCAL_BUILD_ARTIFACTS_DIR"
           eas build \
             --platform ios \
             --profile production \
-            --local \
-            --output "$ipa_path" \
-            --non-interactive
-          if [[ ! -f "$ipa_path" ]]; then
-            ipa_path="$(find "$EAS_LOCAL_BUILD_ARTIFACTS_DIR" -name '*.ipa' -print -quit)"
-          fi
-          test -n "$ipa_path"
-          test -f "$ipa_path"
-          eas submit \
-            --platform ios \
-            --profile production \
-            --path "$ipa_path" \
-            --non-interactive
-
-      - name: Record submitted iOS fingerprint
-        if: >-
-          steps.expo-token.outputs.present == 'true' &&
-          steps.native.outputs.should_build == 'true' &&
-          steps.native.outputs.fingerprint != ''
-        env:
-          FINGERPRINT: ${{ steps.native.outputs.fingerprint }}
-        run: |
-          set -euo pipefail
-          # Local builds never show up in `eas build:list`. Persist the hash
-          # that just landed in TestFlight so the next JS-only release can
-          # skip Xcode without consulting a hosted EAS build record.
-          # `.t3-fork/` is outside the workflow path filters, so this commit
-          # does not schedule another mobile release.
-          mkdir -p .t3-fork
-          printf '%s\n' "$FINGERPRINT" > .t3-fork/ios-production-fingerprint
-          git add -- .t3-fork/ios-production-fingerprint
-          if git diff --cached --quiet -- .t3-fork/ios-production-fingerprint; then
-            echo "T3CODE iOS production fingerprint already recorded: $FINGERPRINT"
-            exit 0
-          fi
-          git config user.name "t3-pretty-mobile[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore(mobile): record iOS production fingerprint"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
-          echo "Recorded .t3-fork/ios-production-fingerprint=$FINGERPRINT"
+            --auto-submit \
+            --non-interactive \
+            --no-wait

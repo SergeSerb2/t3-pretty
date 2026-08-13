@@ -44,11 +44,11 @@ source code on installed machines.
    recognizes the tagged changelog child of the triggering commit, so re-running a completed
    Actions run stays a no-op. Generation failures downgrade to warnings: the release ships
    without new entries and the next run regenerates everything missing.
-8. `m1-dev-t3code-fork` builds macOS arm64 desktop and, through
-   `fork-mobile-release.yml`, local iOS TestFlight IPAs. `windows-5080-t3code-fork`
-   builds Windows x64. Only trusted `main` commits run on these self-hosted
-   machines; pull requests use GitHub-hosted runners. iOS store binaries cannot
-   compile on Windows.
+8. `m1-dev-t3code-fork` builds macOS arm64 desktop.
+   `windows-5080-t3code-fork` builds Windows x64. Only trusted `main` commits
+   run on these self-hosted machines; pull requests use GitHub-hosted runners.
+   iOS TestFlight binaries compile on GitHub-hosted Linux through
+   `fork-mobile-release.yml` (EAS cloud), not on the Mac runner.
 9. GitHub publishes a public prerelease with the installers, blockmaps, and `nightly` update
    manifests. Packaged fork apps point `electron-updater` at
    `SergeSerb2/t3-pretty`, so no per-machine GitHub token is required.

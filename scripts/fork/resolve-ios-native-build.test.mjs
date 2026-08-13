@@ -88,6 +88,21 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "none -> abc123");
   });
 
+  it("treats an empty submitted fingerprint as missing instead of the flag true", () => {
+    const output = run([
+      "--fingerprint-json",
+      JSON.stringify({ hash: "abc123" }),
+      "--builds-json",
+      "[]",
+      "--submitted-fingerprint",
+      "",
+    ]);
+
+    assert.match(output, /^submitted_fingerprint=$/mu);
+    assert.notInclude(output, "submitted_fingerprint=true");
+    assert.include(output, "none -> abc123");
+  });
+
   it("forces a rebuild for explicit build mode even when fingerprints match", () => {
     const output = run([
       "--fingerprint-json",
