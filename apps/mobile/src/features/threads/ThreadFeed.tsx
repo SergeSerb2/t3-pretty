@@ -96,6 +96,7 @@ import {
 } from "../../lib/threadActivity";
 import {
   shouldShowThreadFeedLoadingOverlay,
+  THREAD_FEED_LIST_READY_FALLBACK_MS,
   type ThreadContentPresentation,
 } from "./threadContentPresentation";
 import {
@@ -1732,6 +1733,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const listReadyForKeyRef = useRef<string | null>(null);
   const [listReady, setListReady] = useState(false);
   const listReadyForCurrentMount = listReadyForKeyRef.current === listMountKey && listReady;
+  const markListReady = useCallback(() => {
+    listReadyForKeyRef.current = listMountKey;
+    setListReady(true);
+  }, [listMountKey]);
   useLayoutEffect(() => {
     if (listReadyForKeyRef.current !== listMountKey) {
       setListReady(false);
@@ -1743,6 +1748,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.listRef.current?.reportContentInset({ bottom });
     }
   }, [listMountKey, props.contentInsetEndAdjustment, props.listRef]);
+  useEffect(() => {
+    if (listReadyForCurrentMount || props.feed.length === 0) {
+      return;
+    }
+    const timeout = setTimeout(markListReady, THREAD_FEED_LIST_READY_FALLBACK_MS);
+    return () => clearTimeout(timeout);
+  }, [listReadyForCurrentMount, markListReady, props.feed.length]);
   const showLoadingOverlay = shouldShowThreadFeedLoadingOverlay({
     contentPresentationKind: props.contentPresentation.kind,
     feedLength: props.feed.length,
@@ -2110,10 +2122,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             // LegendList holds row opacity at 0 until this fires. A running
             // turn can delay that; keep the loading overlay up so the feed
             // cannot look empty after the composer pill goes away.
-            onLoad={() => {
-              listReadyForKeyRef.current = listMountKey;
-              setListReady(true);
-            }}
+            onLoad={markListReady}
             onScroll={handleScroll}
             onScrollBeginDrag={handleScrollBeginDrag}
             onScrollEndDrag={handleScrollEndDrag}

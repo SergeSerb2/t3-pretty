@@ -53,6 +53,10 @@ export function projectThreadContentPresentation(input: {
  * end-scroll is still holding rows at opacity 0. Without this, a running
  * turn can leave the scenery visible and the conversation looking empty
  * after "Loading messages..." disappears.
+ *
+ * Once rows exist and the list has opened its opacity gate, never keep the
+ * overlay up — `contentPresentationKind === "loading"` used to win even after
+ * the conversation was already on screen.
  */
 export function shouldShowThreadFeedLoadingOverlay(input: {
   readonly contentPresentationKind: ThreadContentPresentation["kind"];
@@ -62,8 +66,18 @@ export function shouldShowThreadFeedLoadingOverlay(input: {
   if (input.contentPresentationKind === "unavailable") {
     return false;
   }
+  if (input.listReady && input.feedLength > 0) {
+    return false;
+  }
   if (input.contentPresentationKind === "loading") {
     return true;
   }
   return input.feedLength > 0 && !input.listReady;
 }
+
+/**
+ * LegendList's patched inset-end reveal hold is capped around 40 frames
+ * (~700ms). If `onLoad` never fires after that, drop the overlay so a
+ * painted conversation is not covered forever.
+ */
+export const THREAD_FEED_LIST_READY_FALLBACK_MS = 800;

@@ -90,6 +90,16 @@ describe("thread feed loading overlay", () => {
     ).toBe(false);
   });
 
+  it("clears over a painted conversation even if presentation is still loading", () => {
+    expect(
+      shouldShowThreadFeedLoadingOverlay({
+        contentPresentationKind: "loading",
+        feedLength: 12,
+        listReady: true,
+      }),
+    ).toBe(false);
+  });
+
   it("does not cover a genuinely empty ready thread", () => {
     expect(
       shouldShowThreadFeedLoadingOverlay({
