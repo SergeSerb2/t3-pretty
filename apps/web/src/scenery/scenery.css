@@ -277,13 +277,25 @@ html[data-scenery-ink-transition]::view-transition-new(root) {
   background: rgb(0 0 0 / 72%);
 }
 
-/* The dock is viewport-fixed in the bottom-right corner — the same place the
-   right panel puts its actions (PR comment submit, etc.). Hide the whole
-   dock while that panel is open rather than stacking over those controls. */
-html:has([data-right-panel-open="true"]) .scenery-attribution,
+/* The settings trigger shares the bottom-right corner with right-panel
+   actions (PR Comment, etc.). Hide only those controls while the panel is
+   open. Keep the Unsplash attribution: relocate it to the bottom-left so
+   the credit stays visible wherever the photo remains prominent behind chat. */
 html:has([data-right-panel-open="true"]) .scenery-quick__trigger,
 html:has([data-right-panel-open="true"]) .scenery-quick__panel,
 html:has([data-right-panel-open="true"]) .scenery-quick__backdrop {
+  display: none;
+}
+
+html:has([data-right-panel-open="true"]) .scenery-attribution {
+  right: auto;
+  left: max(0.5rem, env(safe-area-inset-left));
+  border-radius: 999px;
+}
+
+/* Maximized inline panel covers the chat column; the photo is no longer
+   prominent, so the credit can hide with the rest of the dock. */
+html:has([data-preview-panel-maximized="true"][data-right-panel-open="true"]) .scenery-attribution {
   display: none;
 }
 

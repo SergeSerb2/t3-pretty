@@ -142,12 +142,16 @@ describe("scenery attribution contract", () => {
     expect(sceneryLayerSource).toContain("> on </span>");
   });
 
-  it("hides the scenery dock while the right panel is open", () => {
-    expect(sceneryCssSource).toContain(
-      'html:has([data-right-panel-open="true"]) .scenery-attribution',
-    );
+  it("keeps Unsplash attribution while clearing right-panel actions", () => {
     expect(sceneryCssSource).toContain(
       'html:has([data-right-panel-open="true"]) .scenery-quick__trigger',
+    );
+    expect(sceneryCssSource).toMatch(
+      /html:has\(\[data-right-panel-open="true"\]\) \.scenery-attribution\s*\{[^}]*left:/s,
+    );
+    // Ordinary open panels must not blanket-hide the required credit pill.
+    expect(sceneryCssSource).not.toMatch(
+      /html:has\(\[data-right-panel-open="true"\]\) \.scenery-attribution,\s*\n\s*html:has\(\[data-right-panel-open="true"\]\) \.scenery-quick__trigger/s,
     );
   });
 });
