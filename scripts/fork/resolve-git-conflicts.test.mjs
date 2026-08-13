@@ -22,7 +22,7 @@ const syncWorkflowPath = NodePath.resolve(
 );
 const mobileWorkflowPath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
-  "../../.github/workflows/mobile-eas-production.yml",
+  "../../.github/workflows/fork-mobile-release.yml",
 );
 
 describe("T3 Pretty upstream conflict resolver", () => {
@@ -137,7 +137,7 @@ ${">".repeat(7)} theirs
 
     assert.include(syncWorkflow, "git diff --quiet origin/main...HEAD");
     assert.include(syncWorkflow, "mobile_release_needed=true");
-    assert.include(syncWorkflow, "gh workflow run mobile-eas-production.yml");
+    assert.include(syncWorkflow, "gh workflow run fork-mobile-release.yml");
     assert.include(syncWorkflow, "-f mode=release");
     assert.include(mobileWorkflow, "paths:");
     assert.include(mobileWorkflow, "- apps/mobile/**");
@@ -146,6 +146,13 @@ ${">".repeat(7)} theirs
     assert.include(mobileWorkflow, "EXPO_ASC_API_KEY_PATH");
     assert.include(mobileWorkflow, "ascApiKeyIssuerId");
     assert.include(mobileWorkflow, "Publish OTA update");
+    assert.include(mobileWorkflow, "self-hosted");
+    assert.include(mobileWorkflow, "macOS");
+    assert.include(mobileWorkflow, "t3code-fork");
+    assert.include(mobileWorkflow, "--local");
+    assert.include(mobileWorkflow, "eas submit");
+    assert.notInclude(mobileWorkflow, "ubuntu-latest");
+    assert.notInclude(mobileWorkflow, "--no-wait");
     assert.isBelow(
       mobileWorkflow.indexOf("- name: Publish OTA update"),
       mobileWorkflow.indexOf("- name: Build and submit"),
