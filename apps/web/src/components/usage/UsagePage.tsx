@@ -44,9 +44,10 @@ export function UsagePage() {
   const isPast24Hours = windowDays === 1;
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
 
-  // Hold the content until every environment is terminal. Rendering merged
-  // totals while devices are still answering makes every number on the page
-  // jump as each one lands.
+  // Hold the content until every connected environment is terminal. Rendering
+  // merged totals while devices are still answering makes every number on the
+  // page jump as each one lands. Disabled and offline environments are not
+  // queried, so they must not keep the page on the skeleton.
   const settling = isPending || isPartial;
 
   const days = useMemo(
@@ -473,7 +474,7 @@ function Metric({
  * Says plainly when the totals are incomplete: an environment that failed, or
  * one whose transcripts another environment already reported. Environments
  * that are still answering never reach this notice; the page shows the
- * loading skeleton until every one is terminal.
+ * loading skeleton until every connected environment is terminal.
  */
 function UsageCoverageNotice({
   environments,

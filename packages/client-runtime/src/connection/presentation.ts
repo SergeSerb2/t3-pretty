@@ -89,6 +89,31 @@ export function presentEnvironmentConnection(
   return presentConnectionState(state);
 }
 
+/**
+ * How the usage page should treat an environment.
+ *
+ * Reading the usage query atom follows the connection supervisor. That
+ * reconnects disabled or offline environments, then never settles if they stay
+ * unreachable. Only already-connected environments are safe to query.
+ * First-attempt `connecting` environments are waited on without querying so a
+ * just-opened app does not flash empty totals.
+ */
+export type UsageConnectionPlan = "query" | "await-connect" | "skip";
+
+export function usageConnectionPlan(phase: EnvironmentConnectionPhase): UsageConnectionPlan {
+  switch (phase) {
+    case "connected":
+      return "query";
+    case "connecting":
+      return "await-connect";
+    case "available":
+    case "offline":
+    case "reconnecting":
+    case "error":
+      return "skip";
+  }
+}
+
 export function connectionCatalogDisplayUrl(entry: ConnectionCatalogEntry): string | null {
   switch (entry.target._tag) {
     case "PrimaryConnectionTarget":
