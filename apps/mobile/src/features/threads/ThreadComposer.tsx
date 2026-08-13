@@ -92,14 +92,16 @@ import {
 import { useComposerPathSearch } from "../../state/use-composer-path-search";
 import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerCommandPopover";
 import { buildThreadSettingsMenu } from "./thread-settings-menu";
+import { ThreadModelIdentityCaption } from "./ThreadModelIdentityCaption";
 import { ThreadSettingsSheet, threadSettingsSummaryLabel } from "./ThreadSettingsSheet";
+import { buildThreadModelIdentity } from "./threadModelIdentity";
 import { useThreadSettingsSheetPresentation } from "./use-thread-settings-sheet-presentation";
 
 /**
  * Height of the collapsed composer (pill + vertical padding, excluding safe-area inset).
  * Exported so the parent can compute feed overlap / content insets.
  */
-export const COMPOSER_COLLAPSED_CHROME = 60;
+export const COMPOSER_COLLAPSED_CHROME = 86;
 
 /**
  * Height of the expanded composer (card + toolbar + vertical padding, excluding safe-area inset).
@@ -827,8 +829,23 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       }),
     [currentModelOption?.capabilities, currentModelSelection.options],
   );
+  const modelLabel = currentModelOption?.label ?? currentModelSelection.model;
+  const modelIdentity = useMemo(
+    () =>
+      buildThreadModelIdentity({
+        modelLabel,
+        providerDriver: currentModelOption?.providerDriver ?? currentModelSelection.instanceId,
+        optionDescriptors: providerOptionDescriptors,
+      }),
+    [
+      currentModelOption?.providerDriver,
+      currentModelSelection.instanceId,
+      modelLabel,
+      providerOptionDescriptors,
+    ],
+  );
   const settingsSummaryLabel = threadSettingsSummaryLabel({
-    modelLabel: currentModelOption?.label ?? currentModelSelection.model,
+    modelLabel,
     optionDescriptors: providerOptionDescriptors,
     runtimeMode: currentRuntimeMode,
     interactionMode: currentInteractionMode,
@@ -932,6 +949,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           <ComposerConnectionStatusPill
             status={connectionStatus}
             onPress={props.onReconnectEnvironment}
+          />
+        ) : null}
+
+        {!isExpanded ? (
+          <ThreadModelIdentityCaption
+            identity={modelIdentity}
+            menu={settingsMenu}
+            onMenuAction={handleSettingsMenuAction}
+            onPressFallback={settingsSheetPresentation.open}
           />
         ) : null}
 

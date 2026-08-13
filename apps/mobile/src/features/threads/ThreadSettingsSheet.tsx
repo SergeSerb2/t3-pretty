@@ -29,9 +29,10 @@ import { AppText as Text } from "../../components/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
-import { applyProviderOptionSelection, providerOptionValueLabels } from "../../lib/providerOptions";
+import { applyProviderOptionSelection } from "../../lib/providerOptions";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { RUNTIME_MODE_CHOICES, selectableChoices } from "./thread-settings-menu";
+import { buildThreadModelIdentity } from "./threadModelIdentity";
 import {
   pendingModelAfterPress,
   usesInlineSelectChoices,
@@ -69,10 +70,14 @@ export function threadSettingsSummaryLabel(input: {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
 }): string {
+  const identity = buildThreadModelIdentity({
+    modelLabel: input.modelLabel,
+    providerDriver: null,
+    optionDescriptors: input.optionDescriptors,
+  });
   const runtime = RUNTIME_MODE_CHOICES.find((choice) => choice.mode === input.runtimeMode);
   return [
-    input.modelLabel,
-    ...providerOptionValueLabels(input.optionDescriptors),
+    identity.summary,
     ...(runtime ? [runtime.shortLabel] : []),
     ...(input.interactionMode === "plan" ? ["Plan"] : []),
   ].join(" · ");
