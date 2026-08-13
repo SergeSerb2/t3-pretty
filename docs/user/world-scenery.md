@@ -23,6 +23,3 @@ The list uses solid rows instead when:
 
 - **Scenery photos** is off, or
 - iOS **Reduce Transparency** is on (**Settings → Accessibility → Display & Text Size**).
-
-The current landscape's photo credit sits in the bottom-right corner. Tap it to open the
-photographer's Unsplash profile.

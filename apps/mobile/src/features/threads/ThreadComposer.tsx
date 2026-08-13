@@ -98,8 +98,9 @@ import { buildThreadModelIdentity } from "./threadModelIdentity";
 import { useThreadSettingsSheetPresentation } from "./use-thread-settings-sheet-presentation";
 
 /**
- * Height of the collapsed composer (pill + vertical padding, excluding safe-area inset).
- * Exported so the parent can compute feed overlap / content insets.
+ * Height of the collapsed composer (pill + model caption below it + vertical
+ * padding, excluding safe-area inset). Exported so the parent can compute
+ * feed overlap / content insets.
  */
 export const COMPOSER_COLLAPSED_CHROME = 86;
 
@@ -952,15 +953,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           />
         ) : null}
 
-        {!isExpanded ? (
-          <ThreadModelIdentityCaption
-            identity={modelIdentity}
-            menu={settingsMenu}
-            onMenuAction={handleSettingsMenuAction}
-            onPressFallback={settingsSheetPresentation.open}
-          />
-        ) : null}
-
         <ComposerSurface
           isDarkMode={isDarkMode}
           animateLayout={composerLayoutTransition !== undefined}
@@ -1047,6 +1039,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             </Animated.View>
           ) : null}
         </ComposerSurface>
+
+        {!isExpanded ? (
+          <ThreadModelIdentityCaption
+            identity={modelIdentity}
+            menu={settingsMenu}
+            onMenuAction={handleSettingsMenuAction}
+            onPressFallback={settingsSheetPresentation.open}
+          />
+        ) : null}
 
         {isExpanded ? (
           // Toolbar row — matches draft page layout (expanded only)
