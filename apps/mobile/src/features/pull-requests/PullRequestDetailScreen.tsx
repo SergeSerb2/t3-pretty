@@ -5,9 +5,10 @@ import type {
 } from "@t3tools/contracts";
 import { EnvironmentId } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -26,11 +27,13 @@ import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { ControlPillMenu } from "../../components/ControlPill";
 import { EmptyState } from "../../components/EmptyState";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
+import { nativeGlassHeaderOverlapInset } from "../../lib/layoutMetrics";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { relativeTime } from "../../lib/time";
 import { useThemeColor } from "../../lib/useThemeColor";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { useEnvironmentQuery } from "../../state/query";
 import { pullRequestEnvironment } from "../../state/pullRequests";
@@ -88,6 +91,12 @@ type PullRequestDetailScreenProps = StaticScreenProps<PullRequestDetailRoutePara
 export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const navigationHeaderHeight = useContext(HeaderHeightContext);
+  const glassHeaderInset = nativeGlassHeaderOverlapInset({
+    glassSupported: NATIVE_LIQUID_GLASS_SUPPORTED,
+    headerHeight: navigationHeaderHeight,
+    safeAreaTop: insets.top,
+  });
   const iconColor = useThemeColor("--color-icon");
   const environmentId = EnvironmentId.make(props.route.params.environmentId);
   const number = parseRoutePositiveInt(props.route.params.number);
@@ -428,7 +437,10 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
 
   if (number === null || reference === null) {
     return (
-      <View className="flex-1 items-center justify-center bg-sheet px-8">
+      <View
+        className="flex-1 items-center justify-center bg-sheet px-8"
+        style={glassHeaderInset > 0 ? { paddingTop: glassHeaderInset } : undefined}
+      >
         <EmptyState
           title="Pull request not found"
           detail={
@@ -493,260 +505,270 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
         />
       )}
 
-      {detailQuery.isPending && detail === null ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={iconColor} />
-        </View>
-      ) : detailQuery.error && detail === null ? (
-        <View className="flex-1 justify-center px-6">
-          <EmptyState
-            title="Could not load this pull request"
-            detail={detailQuery.error}
-            actionLabel="Retry"
-            onAction={() => void refresh()}
-          />
-        </View>
-      ) : detail === null || presentation === null ? null : (
-        <>
-          <View className="px-4 pb-2 pt-3">
-            <View className="flex-row items-center gap-2">
-              <PullRequestStateBadge
-                isDraft={detail.isDraft}
-                mergeability={detail.mergeability}
-                state={detail.state}
-                baseBranch={detail.baseBranch}
-              />
-              <Text className="flex-1 text-xs text-foreground-muted" numberOfLines={1}>
-                {detail.repository}
+      {/* Glass headers overlay the screen. This chrome is not in a primary
+          ScrollView, so automatic content inset never runs — pad it ourselves. */}
+      <View
+        className="flex-1"
+        style={glassHeaderInset > 0 ? { paddingTop: glassHeaderInset } : undefined}
+      >
+        {detailQuery.isPending && detail === null ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator color={iconColor} />
+          </View>
+        ) : detailQuery.error && detail === null ? (
+          <View className="flex-1 justify-center px-6">
+            <EmptyState
+              title="Could not load this pull request"
+              detail={detailQuery.error}
+              actionLabel="Retry"
+              onAction={() => void refresh()}
+            />
+          </View>
+        ) : detail === null || presentation === null ? null : (
+          <>
+            <View className="px-4 pb-3 pt-2">
+              <View className="flex-row items-center gap-2">
+                <PullRequestStateBadge
+                  isDraft={detail.isDraft}
+                  mergeability={detail.mergeability}
+                  state={detail.state}
+                  baseBranch={detail.baseBranch}
+                />
+                <Text className="min-w-0 flex-1 text-xs text-foreground-muted" numberOfLines={1}>
+                  {detail.repository}
+                </Text>
+              </View>
+              <Text
+                className="mt-2.5 text-xl font-t3-bold leading-tight text-foreground"
+                numberOfLines={4}
+              >
+                {detail.title}
               </Text>
-            </View>
-            <Text className="mt-2 text-xl font-t3-bold leading-snug text-foreground">
-              {detail.title}
-            </Text>
-            <View className="mt-3 flex-row rounded-full bg-subtle p-1">
-              {visibleTabs.map((item) => {
-                const selected = tab === item.value;
-                return (
-                  <Pressable
-                    key={item.value}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    onPress={() => setTab(item.value)}
-                    className={cn(
-                      "flex-1 items-center rounded-full py-2",
-                      selected ? "bg-card" : undefined,
-                    )}
-                  >
-                    <Text
+              <View className="mt-4 flex-row rounded-full bg-subtle p-1">
+                {visibleTabs.map((item) => {
+                  const selected = tab === item.value;
+                  return (
+                    <Pressable
+                      key={item.value}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      onPress={() => setTab(item.value)}
                       className={cn(
-                        "text-sm font-t3-bold",
-                        selected ? "text-foreground" : "text-foreground-muted",
+                        "flex-1 items-center rounded-full py-2",
+                        selected ? "bg-card" : undefined,
                       )}
                     >
-                      {item.label}
+                      <Text
+                        className={cn(
+                          "text-sm font-t3-bold",
+                          selected ? "text-foreground" : "text-foreground-muted",
+                        )}
+                      >
+                        {item.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <ScrollView
+              className="flex-1"
+              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
+              contentInsetAdjustmentBehavior="automatic"
+              refreshControl={
+                <RefreshControl
+                  refreshing={detailQuery.isPending && detail !== null}
+                  onRefresh={() => void refresh()}
+                  tintColor={String(iconColor)}
+                />
+              }
+            >
+              {tab === "overview" ? (
+                <OverviewTab
+                  detail={detail}
+                  onRequestReviewers={() =>
+                    navigation.navigate("PullRequestReviewers", {
+                      environmentId: String(environmentId),
+                      projectId: props.route.params.projectId,
+                      repository,
+                      number: String(number),
+                    })
+                  }
+                />
+              ) : null}
+              {tab === "conversation" ? (
+                activityQuery.isPending && activityQuery.data === null ? (
+                  <View className="items-center py-16">
+                    <ActivityIndicator color={iconColor} />
+                  </View>
+                ) : activityQuery.error && activityQuery.data === null ? (
+                  <EmptyState
+                    title="Could not load the conversation"
+                    detail={activityQuery.error}
+                    actionLabel="Retry"
+                    onAction={() => activityQuery.refresh()}
+                  />
+                ) : (
+                  <ConversationTab
+                    busy={busy}
+                    canReview={reviewVerdicts.length > 0}
+                    conversation={conversation}
+                    detail={detail}
+                    timeline={timeline}
+                    onComment={() =>
+                      navigation.navigate("PullRequestComment", {
+                        environmentId: String(environmentId),
+                        projectId: props.route.params.projectId,
+                        repository,
+                        number: String(number),
+                        mode: "comment",
+                      })
+                    }
+                    onFixThread={(thread) =>
+                      void handoff(
+                        `finding:thread:${thread.id}`,
+                        buildFixFindingPrompt({
+                          provider: detail.provider,
+                          host: pullRequestUrlHost(detail.url) ?? detail.repository,
+                          number: detail.number,
+                          title: detail.title,
+                          url: detail.url,
+                          headBranch: detail.headBranch,
+                          baseBranch: detail.baseBranch,
+                          finding: { kind: "thread", thread },
+                          canResolve:
+                            detail.viewerPermissions.resolve && detail.capabilities.review.resolve,
+                        }),
+                      )
+                    }
+                    onReply={(threadId) =>
+                      navigation.navigate("PullRequestComment", {
+                        environmentId: String(environmentId),
+                        projectId: props.route.params.projectId,
+                        repository,
+                        number: String(number),
+                        mode: "reply",
+                        threadId,
+                      })
+                    }
+                    onReview={openReview}
+                    onToggleResolved={async (thread, resolved) => {
+                      const result = await setThreadResolution({
+                        environmentId,
+                        input: { ...reference, threadId: thread.id, resolved },
+                      });
+                      if (AsyncResult.isFailure(result)) {
+                        Alert.alert(
+                          resolved ? "Could not resolve" : "Could not unresolve",
+                          readableFailure(
+                            squashAtomCommandFailure(result),
+                            "The host refused to change this conversation.",
+                          ),
+                        );
+                        return;
+                      }
+                      await invalidate({ environmentId, input: { reference } });
+                      activityQuery.refresh();
+                    }}
+                  />
+                )
+              ) : null}
+              {tab === "files" ? (
+                <FilesTab
+                  error={diffSlices.error}
+                  files={diffSlices.files}
+                  loading={diffSlices.loading}
+                  loadingMore={diffSlices.loadingMore}
+                  nextCursor={diffSlices.nextCursor}
+                  truncated={diffSlices.truncated}
+                  onLoadMore={diffSlices.loadMore}
+                  onOpenFile={(path) =>
+                    navigation.navigate("PullRequestDiff", {
+                      environmentId: String(environmentId),
+                      projectId: props.route.params.projectId,
+                      repository,
+                      number: String(number),
+                      path,
+                    })
+                  }
+                />
+              ) : null}
+            </ScrollView>
+
+            {detail.state === "open" ? (
+              <View
+                className="absolute inset-x-0 bottom-0 border-t border-border bg-sheet px-4 pt-3"
+                style={{ paddingBottom: Math.max(insets.bottom, 12) }}
+              >
+                {conflicting ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={busy}
+                    onPress={() =>
+                      void handoff(
+                        "conflicts",
+                        buildResolveConflictsPrompt({
+                          number: detail.number,
+                          url: detail.url,
+                          headBranch: detail.headBranch,
+                          baseBranch: detail.baseBranch,
+                        }),
+                      )
+                    }
+                    className="h-12 items-center justify-center rounded-full bg-danger active:opacity-80"
+                  >
+                    <Text className="text-base font-t3-bold text-danger-foreground">
+                      {pendingKind === "conflicts" ? "Preparing…" : "Resolve conflicts in a thread"}
                     </Text>
                   </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          <ScrollView
-            className="flex-1"
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
-            contentInsetAdjustmentBehavior="automatic"
-            refreshControl={
-              <RefreshControl
-                refreshing={detailQuery.isPending && detail !== null}
-                onRefresh={() => void refresh()}
-                tintColor={String(iconColor)}
-              />
-            }
-          >
-            {tab === "overview" ? (
-              <OverviewTab
-                detail={detail}
-                onRequestReviewers={() =>
-                  navigation.navigate("PullRequestReviewers", {
-                    environmentId: String(environmentId),
-                    projectId: props.route.params.projectId,
-                    repository,
-                    number: String(number),
-                  })
-                }
-              />
-            ) : null}
-            {tab === "conversation" ? (
-              activityQuery.isPending && activityQuery.data === null ? (
-                <View className="items-center py-16">
-                  <ActivityIndicator color={iconColor} />
-                </View>
-              ) : activityQuery.error && activityQuery.data === null ? (
-                <EmptyState
-                  title="Could not load the conversation"
-                  detail={activityQuery.error}
-                  actionLabel="Retry"
-                  onAction={() => activityQuery.refresh()}
-                />
-              ) : (
-                <ConversationTab
-                  busy={busy}
-                  canReview={reviewVerdicts.length > 0}
-                  conversation={conversation}
-                  detail={detail}
-                  timeline={timeline}
-                  onComment={() =>
-                    navigation.navigate("PullRequestComment", {
-                      environmentId: String(environmentId),
-                      projectId: props.route.params.projectId,
-                      repository,
-                      number: String(number),
-                      mode: "comment",
-                    })
-                  }
-                  onFixThread={(thread) =>
-                    void handoff(
-                      `finding:thread:${thread.id}`,
-                      buildFixFindingPrompt({
-                        provider: detail.provider,
-                        host: pullRequestUrlHost(detail.url) ?? detail.repository,
-                        number: detail.number,
-                        title: detail.title,
-                        url: detail.url,
-                        headBranch: detail.headBranch,
-                        baseBranch: detail.baseBranch,
-                        finding: { kind: "thread", thread },
-                        canResolve:
-                          detail.viewerPermissions.resolve && detail.capabilities.review.resolve,
-                      }),
-                    )
-                  }
-                  onReply={(threadId) =>
-                    navigation.navigate("PullRequestComment", {
-                      environmentId: String(environmentId),
-                      projectId: props.route.params.projectId,
-                      repository,
-                      number: String(number),
-                      mode: "reply",
-                      threadId,
-                    })
-                  }
-                  onReview={openReview}
-                  onToggleResolved={async (thread, resolved) => {
-                    const result = await setThreadResolution({
-                      environmentId,
-                      input: { ...reference, threadId: thread.id, resolved },
-                    });
-                    if (AsyncResult.isFailure(result)) {
-                      Alert.alert(
-                        resolved ? "Could not resolve" : "Could not unresolve",
-                        readableFailure(
-                          squashAtomCommandFailure(result),
-                          "The host refused to change this conversation.",
-                        ),
-                      );
-                      return;
-                    }
-                    await invalidate({ environmentId, input: { reference } });
-                    activityQuery.refresh();
-                  }}
-                />
-              )
-            ) : null}
-            {tab === "files" ? (
-              <FilesTab
-                error={diffSlices.error}
-                files={diffSlices.files}
-                loading={diffSlices.loading}
-                loadingMore={diffSlices.loadingMore}
-                nextCursor={diffSlices.nextCursor}
-                truncated={diffSlices.truncated}
-                onLoadMore={diffSlices.loadMore}
-                onOpenFile={(path) =>
-                  navigation.navigate("PullRequestDiff", {
-                    environmentId: String(environmentId),
-                    projectId: props.route.params.projectId,
-                    repository,
-                    number: String(number),
-                    path,
-                  })
-                }
-              />
-            ) : null}
-          </ScrollView>
-
-          {detail.state === "open" ? (
-            <View
-              className="absolute inset-x-0 bottom-0 border-t border-border bg-sheet px-4 pt-3"
-              style={{ paddingBottom: Math.max(insets.bottom, 12) }}
-            >
-              {conflicting ? (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={busy}
-                  onPress={() =>
-                    void handoff(
-                      "conflicts",
-                      buildResolveConflictsPrompt({
-                        number: detail.number,
-                        url: detail.url,
-                        headBranch: detail.headBranch,
-                        baseBranch: detail.baseBranch,
-                      }),
-                    )
-                  }
-                  className="h-12 items-center justify-center rounded-full bg-danger active:opacity-80"
-                >
-                  <Text className="text-base font-t3-bold text-danger-foreground">
-                    {pendingKind === "conflicts" ? "Preparing…" : "Resolve conflicts in a thread"}
-                  </Text>
-                </Pressable>
-              ) : canMerge ? (
-                Platform.OS === "android" && androidMergeActions.length > 1 ? (
-                  <ControlPillMenu
-                    title="Merge pull request"
-                    actions={androidMergeActions}
-                    onPressAction={({ nativeEvent }) => {
-                      void perform("merge", nativeEvent.event as PullRequestMergeMethod);
-                    }}
-                  >
+                ) : canMerge ? (
+                  Platform.OS === "android" && androidMergeActions.length > 1 ? (
+                    <ControlPillMenu
+                      title="Merge pull request"
+                      actions={androidMergeActions}
+                      onPressAction={({ nativeEvent }) => {
+                        void perform("merge", nativeEvent.event as PullRequestMergeMethod);
+                      }}
+                    >
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={busy}
+                        className="h-12 items-center justify-center rounded-full bg-primary active:opacity-80"
+                      >
+                        <Text className="text-base font-t3-bold text-primary-foreground">
+                          {actionPending ? "Merging…" : "Merge pull request"}
+                        </Text>
+                      </Pressable>
+                    </ControlPillMenu>
+                  ) : (
                     <Pressable
                       accessibilityRole="button"
                       disabled={busy}
+                      onPress={confirmMerge}
                       className="h-12 items-center justify-center rounded-full bg-primary active:opacity-80"
                     >
                       <Text className="text-base font-t3-bold text-primary-foreground">
                         {actionPending ? "Merging…" : "Merge pull request"}
                       </Text>
                     </Pressable>
-                  </ControlPillMenu>
-                ) : (
+                  )
+                ) : reviewVerdicts.length > 0 ? (
                   <Pressable
                     accessibilityRole="button"
-                    disabled={busy}
-                    onPress={confirmMerge}
+                    onPress={openReview}
                     className="h-12 items-center justify-center rounded-full bg-primary active:opacity-80"
                   >
                     <Text className="text-base font-t3-bold text-primary-foreground">
-                      {actionPending ? "Merging…" : "Merge pull request"}
+                      Submit a review
                     </Text>
                   </Pressable>
-                )
-              ) : reviewVerdicts.length > 0 ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={openReview}
-                  className="h-12 items-center justify-center rounded-full bg-primary active:opacity-80"
-                >
-                  <Text className="text-base font-t3-bold text-primary-foreground">
-                    Submit a review
-                  </Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : null}
-        </>
-      )}
+                ) : null}
+              </View>
+            ) : null}
+          </>
+        )}
+      </View>
     </View>
   );
 }
