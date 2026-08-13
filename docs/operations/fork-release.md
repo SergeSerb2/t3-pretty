@@ -18,7 +18,10 @@ source code on installed machines.
    T3 Pretty side when both intents genuinely cannot coexist. One exception: if the parent later
    ships a first-party implementation of a feature T3 Pretty added as fork-only (for example a
    native mobile pull-request manager), the resolver replaces the fork copy with the parent
-   version and re-applies only Pretty branding.
+   version and re-applies only Pretty branding. Generated lockfiles are the one path the model
+   never sees: a conflicted `pnpm-lock.yaml` takes the parent nightly's copy, and the workflow
+   then regenerates it against the merged package manifests, which re-derives the fork-only
+   dependency entries.
 4. Every sync commits `.t3-fork/upstream-sync-report.md`. It identifies T3 Pretty behavior
    preserved at conflict boundaries, compatible parent behavior integrated there, and every
    parent change intentionally omitted to protect T3 Pretty. Fork-owned parent workflow changes
