@@ -35,6 +35,10 @@ const setup = Layer.effectDiscard(
     const sql = yield* SqlClient.SqlClient;
     yield* sql`PRAGMA foreign_keys = ON;`;
     yield* sql`PRAGMA journal_mode = WAL;`;
+    // WAL stays consistent with NORMAL but only syncs at checkpoint time
+    // instead of on every commit — the default FULL fsyncs each transaction,
+    // which dominates the orchestration write path during streaming turns.
+    yield* sql`PRAGMA synchronous = NORMAL;`;
     yield* runMigrations();
   }),
 );

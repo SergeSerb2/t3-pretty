@@ -72,6 +72,24 @@ type ProjectorName =
   (typeof ORCHESTRATION_PROJECTOR_NAMES)[keyof typeof ORCHESTRATION_PROJECTOR_NAMES];
 
 /**
+ * Activity kinds that can move a shell's pending approval / user-input
+ * counts — the same kinds the pending-approvals projector and
+ * derivePendingUserInputCountFromActivities react to. Any other activity
+ * kind (tool calls, progress, …) leaves those counts untouched, so
+ * refreshing the shell summary for it only re-reads rows that cannot have
+ * changed. Tool activities stream in constantly during a turn, which makes
+ * an unguarded refresh the hottest query path in the pipeline.
+ */
+const SHELL_SUMMARY_COUNT_ACTIVITY_KINDS: ReadonlySet<string> = new Set([
+  "approval.requested",
+  "approval.resolved",
+  "provider.approval.respond.failed",
+  "user-input.requested",
+  "user-input.resolved",
+  "provider.user-input.respond.failed",
+]);
+
+/**
  * Turn state to settle still-running turns with when their session leaves the
  * "running" status, or null while the session is (re)starting or running and
  * turns must stay unsettled.
@@ -577,22 +595,15 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         return;
       }
 
-      const [messages, proposedPlans, activities, pendingApprovals] = yield* Effect.all([
-        projectionThreadMessageRepository.listByThreadId({ threadId }),
+      // latestUserMessageAt comes from a MAX() aggregate — listing the full
+      // text of every message in the thread just to find its newest user
+      // message was the most expensive part of this refresh.
+      const [latestUserMessageAt, proposedPlans, activities, pendingApprovals] = yield* Effect.all([
+        projectionThreadMessageRepository.getLatestUserMessageAt({ threadId }),
         projectionThreadProposedPlanRepository.listByThreadId({ threadId }),
         projectionThreadActivityRepository.listByThreadId({ threadId }),
         projectionPendingApprovalRepository.listByThreadId({ threadId }),
       ]);
-
-      let latestUserMessageAt: string | null = null;
-      for (const message of messages) {
-        if (
-          message.role === "user" &&
-          (latestUserMessageAt === null || message.createdAt > latestUserMessageAt)
-        ) {
-          latestUserMessageAt = message.createdAt;
-        }
-      }
 
       const pendingApprovalCount = pendingApprovals.filter(
         (approval) => approval.status === "pending",
@@ -605,7 +616,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
       yield* projectionThreadRepository.upsert({
         ...existingRow.value,
-        latestUserMessageAt,
+        latestUserMessageAt: Option.getOrNull(latestUserMessageAt),
         pendingApprovalCount,
         pendingUserInputCount,
         hasActionableProposedPlan: hasActionableProposedPlan ? 1 : 0,
@@ -895,9 +906,51 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
         }
 
-        case "thread.message-sent":
+        case "thread.message-sent": {
+          // A message event only appends text — pending approval / user-input
+          // counts and plan actionability cannot change, so the shell summary
+          // refresh is skipped. It used to re-read every message, activity,
+          // plan, and approval row of the thread once per streaming delta.
+          // User messages advance latestUserMessageAt incrementally instead.
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          const latestUserMessageAt =
+            event.payload.role === "user" &&
+            !event.payload.streaming &&
+            (existingRow.value.latestUserMessageAt === null ||
+              event.payload.createdAt > existingRow.value.latestUserMessageAt)
+              ? event.payload.createdAt
+              : existingRow.value.latestUserMessageAt;
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            latestUserMessageAt,
+            updatedAt: event.occurredAt,
+          });
+          return;
+        }
+
+        case "thread.activity-appended": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            updatedAt: event.occurredAt,
+          });
+          if (SHELL_SUMMARY_COUNT_ACTIVITY_KINDS.has(event.payload.activity.kind)) {
+            yield* refreshThreadShellSummary(event.payload.threadId);
+          }
+          return;
+        }
+
         case "thread.proposed-plan-upserted":
-        case "thread.activity-appended":
         case "thread.approval-response-requested":
         case "thread.user-input-response-requested": {
           const existingRow = yield* projectionThreadRepository.getById({
@@ -1364,6 +1417,16 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             turnId: event.payload.turnId,
           });
           if (Option.isSome(existingTurn)) {
+            // Streaming deltas repeat this write once per flushed chunk; skip
+            // it when the turn row would not change.
+            if (
+              !settlesTurn &&
+              existingTurn.value.assistantMessageId === event.payload.messageId &&
+              existingTurn.value.startedAt !== null &&
+              existingTurn.value.requestedAt !== null
+            ) {
+              return;
+            }
             yield* projectionTurnRepository.upsertByTurnId({
               ...existingTurn.value,
               assistantMessageId: event.payload.messageId,
