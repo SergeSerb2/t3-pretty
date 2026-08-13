@@ -130,7 +130,7 @@
     "typescript": "catalog:"
   },
   "overrides": {
-    "react-native-nitro-markdown": "file:deps/react-native-nitro-markdown-0.5.0.tgz"
+    "react-native-nitro-markdown": "$react-native-nitro-markdown"
   },
   "expo": {
     "autolinking": {
