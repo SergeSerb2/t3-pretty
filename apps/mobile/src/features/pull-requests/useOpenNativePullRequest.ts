@@ -1,11 +1,43 @@
 import { StackActions, useNavigation } from "@react-navigation/native";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback } from "react";
 import { Alert } from "react-native";
 
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
-import { useServerConfigs } from "../../state/entities";
+import { useProjects, useServerConfigs } from "../../state/entities";
 import { useThreadSelection } from "../../state/use-thread-selection";
-import { resolveNativePullRequestTarget } from "./pullRequestNavigation";
+import { resolveChangeRequestRoute, resolveNativePullRequestTarget } from "./pullRequestNavigation";
+
+/**
+ * Opens a change-request URL in the native pull-request manager when a project
+ * on this environment matches the host and repository. Returns false when the
+ * link should stay an ordinary system-browser URL.
+ */
+export function useOpenChangeRequestLink(environmentId: EnvironmentId) {
+  const navigation = useNavigation();
+  const projects = useProjects();
+  const serverConfigs = useServerConfigs();
+  const { selectedThread } = useThreadSelection();
+  const fallbackProjectId =
+    selectedThread?.environmentId === environmentId ? String(selectedThread.projectId) : undefined;
+
+  return useCallback(
+    (url: string): boolean => {
+      const target = resolveChangeRequestRoute({
+        environmentId: String(environmentId),
+        url,
+        pullRequestsSupported:
+          serverConfigs.get(environmentId)?.environment.capabilities.pullRequests === true,
+        projects,
+        fallbackProjectId,
+      });
+      if (target === null) return false;
+      navigation.navigate("PullRequestDetail", target);
+      return true;
+    },
+    [environmentId, fallbackProjectId, navigation, projects, serverConfigs],
+  );
+}
 
 /**
  * Opens the native pull-request manager when the git status already names a change

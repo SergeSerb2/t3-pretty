@@ -77,6 +77,7 @@ import {
 import { buildReviewParsedDiff } from "../review/reviewModel";
 import { cn } from "../../lib/cn";
 import { recordThreadPerformanceSpan } from "../observability/threadPerformance";
+import { useOpenChangeRequestLink } from "../pull-requests/useOpenNativePullRequest";
 import { deriveCenteredContentHorizontalPadding, type LayoutVariant } from "../../lib/layout";
 import {
   resolveMarkdownFontSizes,
@@ -303,16 +304,14 @@ const MarkdownExternalLink = memo(function MarkdownExternalLink(props: {
   readonly children: ReactNode;
   readonly color: string;
   readonly host: string;
-  readonly href: string;
+  readonly onPress: () => void;
 }) {
   const [failed, setFailed] = useState(() => failedMarkdownFaviconHosts.has(props.host));
 
   return (
     <NativeText
       className="font-sans"
-      onPress={() => {
-        void Linking.openURL(props.href);
-      }}
+      onPress={props.onPress}
       style={{
         color: props.color,
         textDecorationLine: "none",
@@ -626,9 +625,9 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
         if (presentation.kind === "external") {
           return (
             <MarkdownExternalLink
-              href={presentation.href}
               host={presentation.host}
               color={markdownLinkColor}
+              onPress={() => onLinkPress(href)}
             >
               {children}
             </MarkdownExternalLink>
@@ -638,13 +637,7 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
         return (
           <NativeText
             className="underline"
-            onPress={
-              linkHref
-                ? () => {
-                    void Linking.openURL(linkHref);
-                  }
-                : undefined
-            }
+            onPress={linkHref ? () => onLinkPress(href) : undefined}
             style={{ color: markdownLinkColor }}
           >
             {children}
@@ -1439,6 +1432,7 @@ function ThreadFeedPlaceholder(props: {
 
 export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const navigation = useNavigation();
+  const openChangeRequestLink = useOpenChangeRequestLink(props.environmentId);
   const isFocused = useIsFocused();
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const foldSettleFrameRef = useRef<number | null>(null);
@@ -1553,10 +1547,14 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       }
 
       if (presentation.href) {
+        if (openChangeRequestLink(presentation.href)) {
+          void Haptics.selectionAsync();
+          return;
+        }
         void Linking.openURL(presentation.href);
       }
     },
-    [props.environmentId, props.threadId, props.workspaceRoot, navigation],
+    [openChangeRequestLink, props.environmentId, props.threadId, props.workspaceRoot, navigation],
   );
   const markdownStyles = useMarkdownStyles(onMarkdownLinkPress);
   const reviewCommentColors = useReviewCommentColors();

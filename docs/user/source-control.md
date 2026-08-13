@@ -42,8 +42,8 @@ T3 Code works with the platforms your team already uses:
   state: running, complete, feedback, an earlier result, or no public signal
 - Open several reviews from the **Pull requests** page as tabs in the right panel
 - On iPhone and iPad, open **Pull Requests** from the home header or sidebar to browse, review,
-  merge, comment, and resolve conflicts in the app. A thread's git controls open the same native
-  manager instead of GitHub in the browser
+  merge, comment, and resolve conflicts in the app. A thread's git controls and pull request
+  links in the conversation open the same native manager instead of GitHub in the browser
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation
 - On GitHub pull requests, see emoji reactions on the description and comments — including Codex's

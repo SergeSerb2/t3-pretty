@@ -1,7 +1,17 @@
+import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
+
 export interface ChangeRequestLink {
   readonly host: string;
   readonly repository: string;
   readonly number: number;
+}
+
+export interface ChangeRequestProjectIdentity {
+  readonly canonicalKey?: string;
+  readonly displayName?: string | null;
+  readonly owner?: string | null;
+  readonly name?: string | null;
+  readonly provider?: string | null;
 }
 
 function isHostOf(hostname: string, apex: string, label?: string): boolean {
@@ -63,4 +73,28 @@ export function repositoryFromIdentity(
     return `${identity.owner}/${identity.name}`;
   }
   return null;
+}
+
+/**
+ * The project a change-request link belongs to, or nothing. Matched the way the
+ * server matches: the repository identity is the full path below the host, and
+ * the host is the first segment of the canonical remote.
+ *
+ * A lookalike hostname matches no project and stays an ordinary link.
+ */
+export function findProjectForChangeRequest<
+  T extends { readonly repositoryIdentity?: ChangeRequestProjectIdentity | null },
+>(projects: ReadonlyArray<T>, link: ChangeRequestLink): T | undefined {
+  return projects.find((project) => {
+    const identity = project.repositoryIdentity;
+    if (!identity) return false;
+    const kind = identity.provider as SourceControlProviderKind | undefined;
+    if (kind === undefined) return false;
+    const repository = repositoryFromIdentity(identity);
+    return (
+      repository !== null &&
+      repository.toLowerCase() === link.repository.toLowerCase() &&
+      pullRequestHostOf(identity, kind) === link.host.toLowerCase()
+    );
+  });
 }
