@@ -1,5 +1,5 @@
 diff --git a/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift b/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
-index a0e3e24d6070c5ec0a220af3cb56fe3373fe1968..d610cc38dd8dee363ea2f1822aea0c4a492cf825 100644
+index a0e3e24..d610cc3 100644
 --- a/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
 +++ b/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
 @@ -215,8 +215,15 @@ open class JavaScriptRuntime: Equatable, @unchecked Sendable {
@@ -19,3 +19,41 @@ index a0e3e24d6070c5ec0a220af3cb56fe3373fe1968..d610cc38dd8dee363ea2f1822aea0c4a
      let hostObject = expo.HostObject.makeObject(pointee, consume callbacks)
  
      return JavaScriptObject(self, hostObject)
+diff --git a/apple/scripts/build-xcframework.sh b/apple/scripts/build-xcframework.sh
+index 7c2587a..c26a82b 100755
+--- a/apple/scripts/build-xcframework.sh
++++ b/apple/scripts/build-xcframework.sh
+@@ -199,7 +199,17 @@ build_slice() {
+     env_args+=(DEVELOPER_DIR="$DEVELOPER_DIR")
+   fi
+ 
+-  (cd "$PACKAGE_DIR" && env -i "${env_args[@]}" \
++  # Buffer the nested build's output instead of streaming it into the phase
++  # log. On a cold (full) compile, the new Swift Build system can emit
++  # spurious "error: the following command failed with exit code 0 but
++  # produced no further output" lines for SwiftCompile tasks even though the
++  # build succeeds and this script exits 0. The outer xcodebuild scans phase
++  # output for error-looking lines and then fails the whole build with
++  # "Command PhaseScriptExecution emitted errors but did not return a nonzero
++  # exit code". Keep the output unless the nested build genuinely fails.
++  local nested_log
++  nested_log="$(mktemp -t expo-modules-jsi-build)"
++  if ! (cd "$PACKAGE_DIR" && env -i "${env_args[@]}" \
+     xcodebuild \
+     build \
+     -scheme "$PACKAGE_NAME" \
+@@ -217,7 +227,13 @@ build_slice() {
+     DEBUG_INFORMATION_FORMAT=dwarf-with-dsym \
+     COMPILER_INDEX_STORE_ENABLE=NO \
+     SWIFT_COMPILATION_MODE=wholemodule \
+-  )
++    >"$nested_log" 2>&1); then
++    cat "$nested_log" >&2
++    rm -f "$nested_log"
++    log "error: nested xcodebuild failed for ${platform} (full output above)"
++    exit 1
++  fi
++  rm -f "$nested_log"
+ 
+   local product_path="${BUILD_PRODUCTS_PATH}/${build_dir_name}"
+   local framework_src="${product_path}/PackageFrameworks/${PACKAGE_NAME}.framework"
