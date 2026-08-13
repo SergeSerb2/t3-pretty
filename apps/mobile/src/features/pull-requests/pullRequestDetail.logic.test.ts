@@ -15,6 +15,7 @@ import {
   describePullRequestState,
   groupPullRequestConversation,
   groupPullRequestTimelineConversations,
+  handoffPrompt,
   orderPullRequestComments,
   pullRequestUrlHost,
   readableFailure,
@@ -356,5 +357,35 @@ describe("handoffs and failures", () => {
     });
     expect(prompt).toContain("revert the middleware change");
     expect(prompt).not.toContain("No unresolved review findings");
+  });
+});
+
+describe("handoffPrompt", () => {
+  it("replaces the last hand-off when the reader has not edited it", () => {
+    const handed = "Explain this pull request.";
+    expect(handoffPrompt({ prompt: handed, lastHandoffPrompt: handed }, "Why the cache key?")).toBe(
+      "Why the cache key?",
+    );
+  });
+
+  it("puts a new hand-off under text the reader typed", () => {
+    expect(
+      handoffPrompt(
+        { prompt: "check the migration first", lastHandoffPrompt: undefined },
+        "Explain this pull request.",
+      ),
+    ).toBe("check the migration first\n\nExplain this pull request.");
+  });
+
+  it("replaces only its own sentence under text the reader typed", () => {
+    expect(
+      handoffPrompt(
+        {
+          prompt: "check the migration first\n\nExplain this pull request.",
+          lastHandoffPrompt: "Explain this pull request.",
+        },
+        "Why the cache key?",
+      ),
+    ).toBe("check the migration first\n\nWhy the cache key?");
   });
 });

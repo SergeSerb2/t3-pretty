@@ -95,7 +95,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
   const repository = reference?.repository ?? props.route.params.repository ?? "";
   const [tab, setTab] = useState<DetailTab>("overview");
   const [actionPending, setActionPending] = useState(false);
-  const { pendingKind, startHandoff } = usePullRequestHandoff();
+  const { startHandoff } = usePullRequestHandoff();
   const skipFocusRefresh = useRef(true);
 
   const detailQuery = useEnvironmentQuery(
@@ -238,13 +238,11 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
   );
 
   const handoff = useCallback(
-    async (kind: string, prompt: string) => {
+    (prompt: string) => {
       if (detail === null) return;
-      await startHandoff({
-        kind,
+      startHandoff({
         environmentId,
         projectId: detail.projectId,
-        url: detail.url,
         prompt,
       });
     },
@@ -285,8 +283,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
         type: "action",
         title: "Explain this PR",
         onPress: () =>
-          void handoff(
-            "explain",
+          handoff(
             buildExplainPullRequestPrompt({
               number: detail.number,
               title: detail.title,
@@ -302,8 +299,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
         type: "action",
         title: "Fix findings in a thread",
         onPress: () =>
-          void handoff(
-            "findings",
+          handoff(
             buildFixFindingsPrompt({
               provider: detail.provider,
               host: pullRequestUrlHost(detail.url) ?? detail.repository,
@@ -424,7 +420,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     !detail.isDraft &&
     can("merge") &&
     mergeMethods.length > 0;
-  const busy = actionPending || pendingKind !== null;
+  const busy = actionPending;
 
   if (number === null || reference === null) {
     return (
@@ -605,8 +601,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                     })
                   }
                   onFixThread={(thread) =>
-                    void handoff(
-                      `finding:thread:${thread.id}`,
+                    handoff(
                       buildFixFindingPrompt({
                         provider: detail.provider,
                         host: pullRequestUrlHost(detail.url) ?? detail.repository,
@@ -685,8 +680,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                   accessibilityRole="button"
                   disabled={busy}
                   onPress={() =>
-                    void handoff(
-                      "conflicts",
+                    handoff(
                       buildResolveConflictsPrompt({
                         number: detail.number,
                         url: detail.url,
@@ -698,7 +692,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                   className="h-12 items-center justify-center rounded-full bg-danger active:opacity-80"
                 >
                   <Text className="text-base font-t3-bold text-danger-foreground">
-                    {pendingKind === "conflicts" ? "Preparing…" : "Resolve conflicts in a thread"}
+                    Resolve conflicts in a thread
                   </Text>
                 </Pressable>
               ) : canMerge ? (
@@ -962,9 +956,9 @@ function ConversationTab(props: {
                 ) : null}
                 {!thread.isResolved ? (
                   <Pressable
-                    disabled={props.busy}
+                    accessibilityRole="button"
                     onPress={() => props.onFixThread(thread)}
-                    className="rounded-full bg-subtle px-3 py-1.5"
+                    className="rounded-full bg-subtle px-3 py-1.5 active:opacity-80"
                   >
                     <Text className="text-xs font-t3-bold text-foreground">Fix in a thread</Text>
                   </Pressable>
