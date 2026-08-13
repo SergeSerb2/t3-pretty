@@ -110,4 +110,20 @@ describe("showMarkdownLinkActionSheet", () => {
       ]),
     );
   });
+
+  it("limits the Android alert to three buttons by omitting Share", () => {
+    Object.assign(Platform, { OS: "android", isPad: false });
+
+    showMarkdownLinkActionSheet({
+      href: "https://example.com/docs",
+      onOpen,
+    });
+
+    expect(mocks.showActionSheetWithOptions).not.toHaveBeenCalled();
+    expect(mocks.alert).toHaveBeenCalledWith("example.com", "https://example.com/docs", [
+      expect.objectContaining({ text: "Open" }),
+      expect.objectContaining({ text: "Copy Link" }),
+      expect.objectContaining({ text: "Cancel", style: "cancel" }),
+    ]);
+  });
 });

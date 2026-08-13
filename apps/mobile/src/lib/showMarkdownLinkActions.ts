@@ -53,8 +53,12 @@ export function showMarkdownLinkActionSheet(options: {
     return;
   }
 
+  // Android Alert supports at most three buttons; keep Open/Copy + Cancel.
+  const alertActions =
+    Platform.OS === "android" ? actions.filter((action) => action.id !== "share") : actions;
+
   Alert.alert(title ?? "Link", options.href, [
-    ...actions.map((action) => ({
+    ...alertActions.map((action) => ({
       text: action.label,
       onPress: () => runAction(action.id),
     })),
