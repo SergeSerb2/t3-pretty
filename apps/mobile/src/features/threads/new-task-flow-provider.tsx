@@ -14,6 +14,7 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   MessageId,
+  resolveRuntimeModeForProviderDriver,
   T3_PROJECT_FILE_NAME,
   ThreadId,
 } from "@t3tools/contracts";
@@ -506,9 +507,13 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       }
       updateComposerDraftSettings(selectedProjectDraftKey, {
         modelSelection: options ? { ...option.selection, options } : option.selection,
+        // Kimi's "yolo" mode has no equivalent on other providers; normalize
+        // to the generic full-access mode in the same write so the Kimi-only
+        // literal never reaches another provider's session config.
+        runtimeMode: resolveRuntimeModeForProviderDriver(option.providerDriver, runtimeMode),
       });
     },
-    [modelOptions, selectedProjectDraftKey],
+    [modelOptions, runtimeMode, selectedProjectDraftKey],
   );
   const setSelectedModelOptions = useCallback(
     (options: ReadonlyArray<ProviderOptionSelection> | undefined) => {

@@ -19,6 +19,7 @@ import {
   OrchestrationThreadActivity,
   ProviderInteractionMode,
   ProviderDriverKind,
+  resolveRuntimeModeForProviderDriver,
   RuntimeMode,
   TerminalOpenInput,
 } from "@t3tools/contracts";
@@ -6101,6 +6102,14 @@ function ChatViewContent(props: ChatViewProps) {
         nextModelSelection,
       );
       setStickyComposerModelSelection(nextModelSelection);
+      // Kimi's "yolo" mode has no equivalent on other providers; switching
+      // providers falls back to the generic full-access mode instead of
+      // leaking the Kimi-only literal into another provider's session config.
+      if (resolvedDriverKind !== "kimi") {
+        handleRuntimeModeChange(
+          resolveRuntimeModeForProviderDriver(resolvedDriverKind, runtimeMode),
+        );
+      }
       scheduleComposerFocus();
     },
     [
@@ -6109,6 +6118,8 @@ function ChatViewContent(props: ChatViewProps) {
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
+      handleRuntimeModeChange,
+      runtimeMode,
       providerStatuses,
       settings,
       supportsProviderHandoff,

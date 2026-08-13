@@ -18,6 +18,7 @@ import {
   OrchestrationThread,
   OrchestrationThreadShell,
   ProjectCreateCommand,
+  resolveRuntimeModeForProviderDriver,
   ThreadMetaUpdatedPayload,
   ThreadTurnStartCommand,
   ThreadCreatedPayload,
@@ -949,3 +950,15 @@ it.effect("project favicon overrides accept only supported image files", () =>
     assert.strictEqual(invalid._tag, "Failure");
   }),
 );
+
+it("resolveRuntimeModeForProviderDriver maps yolo to full-access off Kimi", () => {
+  assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "yolo"), "full-access");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver("claudeAgent", "yolo"), "full-access");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver(null, "yolo"), "full-access");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "full-access"), "full-access");
+  assert.strictEqual(
+    resolveRuntimeModeForProviderDriver("codex", "approval-required"),
+    "approval-required",
+  );
+});
