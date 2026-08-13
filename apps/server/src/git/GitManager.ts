@@ -129,6 +129,7 @@ const TOAST_DESCRIPTION_MAX = 72;
 const STATUS_RESULT_CACHE_TTL = Duration.seconds(1);
 const STATUS_RESULT_CACHE_CAPACITY = 2_048;
 const PR_LOOKUP_CACHE_TTL = Duration.minutes(2);
+const PR_LOOKUP_NEGATIVE_TTL = Duration.seconds(20);
 const PR_LOOKUP_FAILURE_BASE_TTL = Duration.seconds(20);
 const PR_LOOKUP_FAILURE_MAX_TTL = Duration.minutes(15);
 const PR_LOOKUP_CACHE_CAPACITY = 2_048;
@@ -907,9 +908,11 @@ export const make = Effect.gen(function* () {
     );
   // PR lookups hit the hosting provider's API (gh/glab/...), so they refresh
   // on their own, slower cadence: ahead/behind counts stay fresh on every
-  // status poll while the PR association is re-fetched at most once per
-  // PR_LOOKUP_CACHE_TTL per branch. Git actions and user-driven refreshes bump
-  // the epoch (invalidateStatus) to bypass the cache immediately.
+  // status poll while a *found* PR is re-fetched at most once per
+  // PR_LOOKUP_CACHE_TTL per branch. Empty and unpublished answers expire
+  // faster so a PR created at the end of a turn is not stuck behind that
+  // window. Git actions and user-driven refreshes bump the epoch
+  // (invalidateStatus) to bypass the cache immediately.
   const prLookupEpochByCwd = new Map<string, number>();
   const prLookupEpoch = (cwd: string) => prLookupEpochByCwd.get(cwd) ?? 0;
   const bumpPrLookupEpoch = (cwd: string) =>
@@ -998,7 +1001,12 @@ export const make = Effect.gen(function* () {
           details.upstreamRef === null &&
           (yield* isUnpublishedBranch(cwd, headContext))
         ) {
-          return { latest: null, automatedReview: undefined, headContext };
+          return {
+            latest: null,
+            automatedReview: undefined,
+            headContext,
+            skippedUnpublished: true,
+          };
         }
         const latest = yield* findLatestPrForHeadContext(
           cwd,
@@ -1006,7 +1014,7 @@ export const make = Effect.gen(function* () {
           selection === "latest" ? "latest" : "prefer-open",
         );
         if (!latest || latest.state !== "open") {
-          return { latest, automatedReview: undefined, headContext };
+          return { latest, automatedReview: undefined, headContext, skippedUnpublished: false };
         }
         const provider = yield* sourceControlProvider(cwd);
         const automatedReview = provider.getAutomatedReview
@@ -1026,7 +1034,7 @@ export const make = Effect.gen(function* () {
               ),
             )
           : undefined;
-        return { latest, automatedReview, headContext };
+        return { latest, automatedReview, headContext, skippedUnpublished: false };
       });
     },
     {
@@ -1034,6 +1042,16 @@ export const make = Effect.gen(function* () {
       timeToLive: (exit, key) => {
         if (Exit.isSuccess(exit)) {
           prLookupFailureStreakByKey.delete(key);
+          // An unpublished skip must not occupy the cache: the next `git push`
+          // (often without `-u`) would otherwise reuse "no PR" until the 2
+          // minute success TTL. Empty forge answers are only held briefly so a
+          // PR created at the end of a turn is visible on the next poll.
+          if (exit.value.skippedUnpublished) {
+            return Duration.zero;
+          }
+          if (exit.value.latest == null) {
+            return PR_LOOKUP_NEGATIVE_TTL;
+          }
           return PR_LOOKUP_CACHE_TTL;
         }
         return nextPrLookupFailureTtl(key);
