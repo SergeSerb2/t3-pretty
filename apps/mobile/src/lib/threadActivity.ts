@@ -99,6 +99,8 @@ type RawThreadFeedEntry =
       readonly activity: ThreadFeedActivity;
     };
 
+type MessageThreadFeedEntry = Extract<RawThreadFeedEntry, { readonly type: "message" }>;
+
 export type ThreadFeedEntry =
   | Extract<RawThreadFeedEntry, { type: "message" }>
   | {
@@ -1524,16 +1526,114 @@ const rawThreadFeedEntryCreatedAtOrder = Order.mapInput(
 
 function buildMessageFeedEntries(
   messages: ReadonlyArray<OrchestrationThread["messages"][number]>,
-): ReadonlyArray<RawThreadFeedEntry> {
-  return Arr.sort(
-    messages.map<RawThreadFeedEntry>((message) => ({
+): ReadonlyArray<MessageThreadFeedEntry> {
+  const entries = messages.map<MessageThreadFeedEntry>((message) => ({
+    type: "message",
+    id: message.id,
+    createdAt: message.createdAt,
+    message,
+  }));
+  for (let index = 1; index < entries.length; index += 1) {
+    const previous = entries[index - 1];
+    const current = entries[index];
+    if (previous && current && rawThreadFeedEntryCreatedAtOrder(previous, current) > 0) {
+      return Arr.sort(entries, rawThreadFeedEntryCreatedAtOrder);
+    }
+  }
+  return entries;
+}
+
+interface MessageFeedEntryCache {
+  readonly entries: ReadonlyArray<MessageThreadFeedEntry>;
+  readonly sortedIndexById: ReadonlyMap<string, number>;
+}
+
+interface IncrementalMessageFeedEntryUpdate {
+  readonly cache: MessageFeedEntryCache;
+  readonly changedEntries: ReadonlyArray<MessageThreadFeedEntry>;
+  readonly visibilityChanged: boolean;
+}
+
+function buildMessageFeedEntryCache(
+  messages: ReadonlyArray<OrchestrationThread["messages"][number]>,
+): MessageFeedEntryCache {
+  const entries = buildMessageFeedEntries(messages);
+  return {
+    entries,
+    sortedIndexById: new Map(entries.map((entry, index) => [entry.id, index])),
+  };
+}
+
+/**
+ * Reuses sorted entry wrappers when the source topology is unchanged. Message
+ * ids and timestamps define sort/group placement, while object identity tells
+ * us exactly which immutable message payloads the reducer replaced.
+ */
+function updateMessageFeedEntryCache(
+  messages: ReadonlyArray<OrchestrationThread["messages"][number]>,
+  previousMessages: ReadonlyArray<OrchestrationThread["messages"][number]>,
+  previousCache: MessageFeedEntryCache,
+): IncrementalMessageFeedEntryUpdate | null {
+  if (
+    messages.length !== previousMessages.length ||
+    previousCache.sortedIndexById.size !== previousCache.entries.length
+  ) {
+    return null;
+  }
+
+  let nextEntries: MessageThreadFeedEntry[] | null = null;
+  const changedEntries: MessageThreadFeedEntry[] = [];
+  let visibilityChanged = false;
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    const previousMessage = previousMessages[index];
+    if (
+      !message ||
+      !previousMessage ||
+      message.id !== previousMessage.id ||
+      message.createdAt !== previousMessage.createdAt
+    ) {
+      // Reorders, inserts, removals, and timestamp corrections can all change
+      // stable sort order, so let the full builder handle them.
+      return null;
+    }
+
+    const sortedIndex = previousCache.sortedIndexById.get(message.id);
+    if (sortedIndex === undefined) {
+      return null;
+    }
+    const previousEntry = previousCache.entries[sortedIndex];
+    if (!previousEntry || previousEntry.id !== message.id) {
+      return null;
+    }
+    if (message === previousEntry.message) {
+      continue;
+    }
+
+    const nextEntry: MessageThreadFeedEntry = {
       type: "message",
       id: message.id,
       createdAt: message.createdAt,
       message,
-    })),
-    rawThreadFeedEntryCreatedAtOrder,
-  );
+    };
+    nextEntries ??= previousCache.entries.slice();
+    nextEntries[sortedIndex] = nextEntry;
+    changedEntries.push(nextEntry);
+    visibilityChanged ||= isEmptyMessage(previousEntry) !== isEmptyMessage(nextEntry);
+  }
+
+  return {
+    cache:
+      nextEntries === null
+        ? previousCache
+        : {
+            entries: nextEntries,
+            sortedIndexById: previousCache.sortedIndexById,
+          },
+    changedEntries,
+    visibilityChanged,
+  };
 }
 
 function buildActivityFeedEntries(
@@ -1625,33 +1725,39 @@ function assembleThreadFeed(
   return groupAdjacentActivities(mergeThreadFeedEntries(messages, visibleActivities));
 }
 
-function hasSameMessageTopology(
-  previous: ReadonlyArray<RawThreadFeedEntry>,
-  next: ReadonlyArray<RawThreadFeedEntry>,
-): boolean {
-  if (previous.length !== next.length) return false;
-  return previous.every((entry, index) => {
-    const nextEntry = next[index];
-    return (
-      entry.type === "message" &&
-      nextEntry?.type === "message" &&
-      entry.id === nextEntry.id &&
-      entry.createdAt === nextEntry.createdAt &&
-      isEmptyMessage(entry) === isEmptyMessage(nextEntry)
-    );
-  });
+function indexThreadFeedMessages(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+): ReadonlyMap<string, number> {
+  const indexes = new Map<string, number>();
+  for (let index = 0; index < feed.length; index += 1) {
+    const entry = feed[index];
+    if (entry?.type === "message") {
+      indexes.set(entry.id, index);
+    }
+  }
+  return indexes;
 }
 
 function replaceThreadFeedMessages(
-  feed: ReadonlyArray<ThreadFeedEntry>,
-  messages: ReadonlyArray<RawThreadFeedEntry>,
-): ThreadFeedEntry[] {
-  const messagesById = new Map(messages.map((entry) => [entry.id, entry]));
-  return feed.map((entry) => {
-    if (entry.type !== "message") return entry;
-    const nextEntry = messagesById.get(entry.id);
-    return nextEntry?.type === "message" ? nextEntry : entry;
-  });
+  feed: ThreadFeedEntry[],
+  changedEntries: ReadonlyArray<MessageThreadFeedEntry>,
+  messageIndexById: ReadonlyMap<string, number>,
+): ThreadFeedEntry[] | null {
+  let nextFeed: ThreadFeedEntry[] | null = null;
+  for (const entry of changedEntries) {
+    const feedIndex = messageIndexById.get(entry.id);
+    if (feedIndex === undefined) {
+      if (isEmptyMessage(entry)) continue;
+      return null;
+    }
+    const previousEntry = feed[feedIndex];
+    if (previousEntry?.type !== "message" || previousEntry.id !== entry.id) {
+      return null;
+    }
+    nextFeed ??= feed.slice();
+    nextFeed[feedIndex] = entry;
+  }
+  return nextFeed ?? feed;
 }
 
 /**
@@ -1661,12 +1767,16 @@ function replaceThreadFeedMessages(
  */
 export function createThreadFeedBuilder() {
   let previousMessages: ReadonlyArray<OrchestrationThread["messages"][number]> | null = null;
-  let previousMessageEntries: ReadonlyArray<RawThreadFeedEntry> = [];
+  let previousMessageCache: MessageFeedEntryCache = {
+    entries: [],
+    sortedIndexById: new Map(),
+  };
   let previousActivities: ReadonlyArray<OrchestrationThreadActivity> | null = null;
   let previousActivityEntries: ReadonlyArray<RawThreadFeedEntry> = [];
   let previousOldestLoadedMessageCreatedAt: string | null = null;
   let previousUsedLoadedMessages = false;
   let previousFeed: ThreadFeedEntry[] | null = null;
+  let previousFeedMessageIndexById: ReadonlyMap<string, number> = new Map();
 
   return (thread: ThreadFeedSource, options?: BuildThreadFeedOptions): ThreadFeedEntry[] => {
     const loadedMessages = options?.loadedMessages ?? thread.messages;
@@ -1676,14 +1786,17 @@ export function createThreadFeedBuilder() {
     const oldestLoadedMessageCreatedAt = usedLoadedMessages
       ? (loadedMessages[0]?.createdAt ?? null)
       : null;
-    const priorMessageEntries = previousMessageEntries;
-    const nextMessageEntries = messagesChanged
-      ? buildMessageFeedEntries(loadedMessages)
-      : previousMessageEntries;
+    const incrementalMessageUpdate =
+      messagesChanged && previousMessages !== null
+        ? updateMessageFeedEntryCache(loadedMessages, previousMessages, previousMessageCache)
+        : null;
+    const nextMessageCache = messagesChanged
+      ? (incrementalMessageUpdate?.cache ?? buildMessageFeedEntryCache(loadedMessages))
+      : previousMessageCache;
 
     if (messagesChanged) {
       previousMessages = loadedMessages;
-      previousMessageEntries = nextMessageEntries;
+      previousMessageCache = nextMessageCache;
     }
     if (activitiesChanged) {
       previousActivities = thread.activities;
@@ -1696,23 +1809,33 @@ export function createThreadFeedBuilder() {
       !activitiesChanged &&
       usedLoadedMessages === previousUsedLoadedMessages &&
       oldestLoadedMessageCreatedAt === previousOldestLoadedMessageCreatedAt &&
-      hasSameMessageTopology(priorMessageEntries, nextMessageEntries);
+      incrementalMessageUpdate !== null &&
+      !incrementalMessageUpdate.visibilityChanged;
     const canReuseFeed =
       previousFeed !== null &&
       !messagesChanged &&
       !activitiesChanged &&
       usedLoadedMessages === previousUsedLoadedMessages &&
       oldestLoadedMessageCreatedAt === previousOldestLoadedMessageCreatedAt;
+    const replacedFeed =
+      canReplaceMessages && previousFeed !== null && incrementalMessageUpdate !== null
+        ? replaceThreadFeedMessages(
+            previousFeed,
+            incrementalMessageUpdate.changedEntries,
+            previousFeedMessageIndexById,
+          )
+        : null;
+    const reusedFeed = replacedFeed ?? (canReuseFeed ? previousFeed : null);
     const nextFeed =
-      canReplaceMessages && previousFeed !== null
-        ? replaceThreadFeedMessages(previousFeed, nextMessageEntries)
-        : canReuseFeed && previousFeed !== null
-          ? previousFeed
-          : assembleThreadFeed(
-              nextMessageEntries,
-              previousActivityEntries,
-              oldestLoadedMessageCreatedAt,
-            );
+      reusedFeed ??
+      assembleThreadFeed(
+        nextMessageCache.entries,
+        previousActivityEntries,
+        oldestLoadedMessageCreatedAt,
+      );
+    if (reusedFeed === null) {
+      previousFeedMessageIndexById = indexThreadFeedMessages(nextFeed);
+    }
     previousFeed = nextFeed;
     previousUsedLoadedMessages = usedLoadedMessages;
     previousOldestLoadedMessageCreatedAt = oldestLoadedMessageCreatedAt;

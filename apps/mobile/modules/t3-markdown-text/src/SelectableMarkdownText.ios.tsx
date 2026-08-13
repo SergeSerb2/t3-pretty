@@ -34,6 +34,7 @@ export function SelectableMarkdownText({
   skills = EMPTY_SKILLS,
   textStyle,
   highlightCode,
+  highlightCodeEnabled = true,
   preserveSoftBreaks = false,
   onLinkPress,
   marginTop = 0,
@@ -71,6 +72,7 @@ export function SelectableMarkdownText({
               node={chunk.node}
               textStyle={textStyle}
               highlightCode={highlightCode}
+              highlightCodeEnabled={highlightCodeEnabled}
               onLinkPress={onLinkPress}
             />
           ) : (

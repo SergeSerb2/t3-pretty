@@ -22,7 +22,7 @@ import {
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { createThreadFeedBuilder } from "../lib/threadActivity";
-import { recordThreadPerformanceSpan } from "../features/observability/threadPerformance";
+import { recordThreadFeedBuildPerformanceSpan } from "../features/observability/threadPerformance";
 import { appAtomRegistry } from "../state/atom-registry";
 import {
   appendComposerDraftAttachments,
@@ -114,14 +114,18 @@ export function useThreadComposerState() {
   const selectedThreadFeed = selectedThreadFeedBuild.feed;
   useEffect(() => {
     if (!selectedThreadDetail || !selectedThreadShell) return;
-    recordThreadPerformanceSpan("mobile.thread.feed.build", {
-      "thread.environmentId": String(selectedThreadShell.environmentId),
-      "thread.id": String(selectedThreadShell.id),
-      "thread.feed.durationMs": selectedThreadFeedBuild.durationMs,
-      "thread.feed.entries": selectedThreadFeedBuild.feed.length,
-      "thread.messages": selectedThreadDetail.messages.length,
-      "thread.activities": selectedThreadDetail.activities.length,
-    });
+    recordThreadFeedBuildPerformanceSpan(
+      String(selectedThreadShell.environmentId),
+      String(selectedThreadShell.id),
+      {
+        "thread.environmentId": String(selectedThreadShell.environmentId),
+        "thread.id": String(selectedThreadShell.id),
+        "thread.feed.durationMs": selectedThreadFeedBuild.durationMs,
+        "thread.feed.entries": selectedThreadFeedBuild.feed.length,
+        "thread.messages": selectedThreadDetail.messages.length,
+        "thread.activities": selectedThreadDetail.activities.length,
+      },
+    );
   }, [selectedThreadDetail, selectedThreadFeedBuild, selectedThreadShell]);
 
   const selectedDraft = selectedThreadKey ? composerDrafts[selectedThreadKey] : null;

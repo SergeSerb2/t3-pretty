@@ -207,7 +207,7 @@ diff --git a/react-native.js b/react-native.js
 index b3c5a306b293f797a8b338adfca3060c0f6db22b..89077be4d6833cfaabf9d6d6205d9551505e32b4 100644
 --- a/react-native.js
 +++ b/react-native.js
-@@ -936,8 +936,11 @@ function resetInitialRenderState(ctx, {
+@@ -936,7 +936,9 @@ function resetInitialRenderState(ctx, {
    if (resetInitialScroll) {
      state.didFinishInitialScroll = false;
    }
@@ -361,7 +361,7 @@ index b3c5a306b293f797a8b338adfca3060c0f6db22b..89077be4d6833cfaabf9d6d6205d9551
                state.scroll = maxScroll;
                state.scrollPending = maxScroll;
                diff = 0;
-@@ -2320,8 +2352,121 @@ function scrollToIndex(ctx, {
+@@ -2320,8 +2352,124 @@ function scrollToIndex(ctx, {
  }
  
  // src/core/initialScroll.ts
@@ -587,7 +587,7 @@ diff --git a/react-native.mjs b/react-native.mjs
 index 40e87cda8c9bc79a889e5542f29af429a24b24d4..2d556eecb0bafe2f54084c809f82144c7a5dce7f 100644
 --- a/react-native.mjs
 +++ b/react-native.mjs
-@@ -915,8 +915,11 @@ function resetInitialRenderState(ctx, {
+@@ -915,7 +915,9 @@ function resetInitialRenderState(ctx, {
    if (resetInitialScroll) {
      state.didFinishInitialScroll = false;
    }
@@ -741,7 +741,7 @@ index 40e87cda8c9bc79a889e5542f29af429a24b24d4..2d556eecb0bafe2f54084c809f82144c
                state.scroll = maxScroll;
                state.scrollPending = maxScroll;
                diff = 0;
-@@ -2299,8 +2331,121 @@ function scrollToIndex(ctx, {
+@@ -2299,8 +2331,124 @@ function scrollToIndex(ctx, {
  }
  
  // src/core/initialScroll.ts

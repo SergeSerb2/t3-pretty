@@ -59,6 +59,7 @@ import {
   type NativeMarkdownTextStyle,
   type SelectableMarkdownSkill,
 } from "../../native/SelectableMarkdownText";
+import { createStreamingTextCadence } from "./streamingTextCadence";
 
 import { AppText as Text } from "../../components/AppText";
 import { CopyTextButton } from "../../components/CopyTextButton";
@@ -846,6 +847,73 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
   ]);
 }
 
+function useCadencedStreamingText(text: string, streaming: boolean): string {
+  const [displayedText, setDisplayedText] = useState(text);
+  const cadenceRef = useRef<ReturnType<typeof createStreamingTextCadence> | null>(null);
+  if (cadenceRef.current === null) {
+    cadenceRef.current = createStreamingTextCadence(text, setDisplayedText);
+  }
+  const cadence = cadenceRef.current;
+
+  useEffect(() => {
+    cadence.push(text, streaming);
+  }, [cadence, streaming, text]);
+  useEffect(() => () => cadence.dispose(), [cadence]);
+
+  // The final transport value must be visible in the same render that settles
+  // the message; the effect above only synchronizes the cadence's saved value.
+  return streaming ? displayedText : text;
+}
+
+const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
+  readonly markdown: string;
+  readonly streaming: boolean;
+  readonly markdownStyles: MarkdownStyleSet;
+  readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
+  readonly onLinkPress: (href: string) => void;
+}) {
+  if (hasNativeSelectableMarkdownText()) {
+    return (
+      <SelectableMarkdownText
+        markdown={props.markdown}
+        skills={props.skills}
+        textStyle={props.markdownStyles.nativeTextStyle}
+        highlightCodeEnabled={!props.streaming}
+        onLinkPress={props.onLinkPress}
+      />
+    );
+  }
+  return (
+    <Markdown
+      options={{ gfm: true }}
+      renderers={props.markdownStyles.renderers}
+      styles={props.markdownStyles.styles}
+      theme={props.markdownStyles.theme}
+    >
+      {props.markdown}
+    </Markdown>
+  );
+});
+
+const CadencedAssistantMarkdown = memo(function CadencedAssistantMarkdown(props: {
+  readonly text: string;
+  readonly streaming: boolean;
+  readonly markdownStyles: MarkdownStyleSet;
+  readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
+  readonly onLinkPress: (href: string) => void;
+}) {
+  const displayedText = useCadencedStreamingText(props.text, props.streaming);
+  return (
+    <AssistantMarkdownContent
+      markdown={displayedText}
+      streaming={props.streaming}
+      markdownStyles={props.markdownStyles}
+      skills={props.skills}
+      onLinkPress={props.onLinkPress}
+    />
+  );
+});
+
 function renderFeedEntry(
   info: { item: ThreadFeedEntry; index: number },
   props: Pick<ThreadFeedProps, "environmentId" | "skills"> & {
@@ -1005,22 +1073,23 @@ function renderFeedEntry(
         {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
       >
         {message.text.trim().length > 0 ? (
-          hasNativeSelectableMarkdownText() ? (
-            <SelectableMarkdownText
-              markdown={message.text}
+          message.streaming ? (
+            <CadencedAssistantMarkdown
+              key={message.id}
+              text={message.text}
+              streaming
+              markdownStyles={styles}
               skills={props.skills}
-              textStyle={styles.nativeTextStyle}
               onLinkPress={props.onMarkdownLinkPress}
             />
           ) : (
-            <Markdown
-              options={{ gfm: true }}
-              renderers={styles.renderers}
-              styles={styles.styles}
-              theme={styles.theme}
-            >
-              {message.text}
-            </Markdown>
+            <AssistantMarkdownContent
+              markdown={message.text}
+              streaming={false}
+              markdownStyles={styles}
+              skills={props.skills}
+              onLinkPress={props.onMarkdownLinkPress}
+            />
           )
         ) : null}
         {attachments.map((attachment) => {

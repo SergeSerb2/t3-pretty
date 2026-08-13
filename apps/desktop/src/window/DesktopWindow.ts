@@ -346,7 +346,7 @@ export const make = Effect.gen(function* () {
       ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
       webPreferences: {
         preload: environment.preloadPath,
-        backgroundThrottling: false,
+        backgroundThrottling: true,
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,

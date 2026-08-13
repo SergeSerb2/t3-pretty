@@ -671,7 +671,7 @@ export const DesktopPreviewAnnotationThemeSchema: Schema.Codec<DesktopPreviewAnn
 
 export interface DesktopPreviewRecordingFrame {
   tabId: string;
-  data: string;
+  data: Uint8Array;
   width: number;
   height: number;
   receivedAt: string;
@@ -680,7 +680,7 @@ export interface DesktopPreviewRecordingFrame {
 export const DesktopPreviewRecordingFrameSchema: Schema.Codec<DesktopPreviewRecordingFrame> =
   Schema.Struct({
     tabId: DesktopPreviewTabIdSchema,
-    data: Schema.String,
+    data: Schema.Uint8Array,
     width: Schema.Number,
     height: Schema.Number,
     receivedAt: Schema.String,
