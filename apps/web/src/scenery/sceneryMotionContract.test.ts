@@ -28,6 +28,15 @@ describe("row arrival contract with the messages timeline", () => {
     expect(messagesTimelineSource).toContain('data-timeline-root="true"');
   });
 
+  it("seeds the first paint of a thread instead of racing the load window", () => {
+    expect(motionDriverSource).toContain("shouldDeferThreadSeed");
+    expect(motionDriverSource).toContain("firstPaintForThread");
+    expect(motionDriverSource).toContain("ENTER_CLEAR_MS");
+    expect(motionStylesSource).toContain(
+      "animation: scenery-row-rise 220ms var(--sc-ease-out) both",
+    );
+  });
+
   it("rows still expose id, kind and role attributes", () => {
     expect(messagesTimelineSource).toContain("data-timeline-row-id={row.id}");
     expect(messagesTimelineSource).toContain("data-timeline-row-kind={row.kind}");

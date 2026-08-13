@@ -8,7 +8,8 @@
  * 1. Row arrivals — tag a timeline row wrapper with `scenery-row-enter`
  *    (motion.css animates it) the FIRST time its row id is seen. Guards
  *    against the two virtualization traps: a thread switch replays every
- *    row (suppressed by a silent window keyed on the active thread), and
+ *    row (suppressed by seeding the first paint for that thread, not a
+ *    wall-clock window that expires while messages are still loading), and
  *    scrolling up mounts older rows (suppressed by only animating rows
  *    that sit at/after the furthest content already seen).
  *
@@ -38,18 +39,20 @@ import {
   ROW_WRAPPER_SELECTOR,
   WORKING_ROW_SELECTOR,
 } from "./sceneryMotionMutations";
+import {
+  ENTER_CLASS,
+  ENTER_CLEAR_MS,
+  ENTER_DELAY_PROP,
+  enterDelayMs,
+  isSceneryInkTransitionActive,
+  shouldAnimateRowArrival,
+  shouldDeferThreadSeed,
+  SILENT_WINDOW_MS,
+} from "./sceneryMotionRowArrivals";
 import "./motion.css";
 
-const ENTER_CLASS = "scenery-row-enter";
-const ENTER_DELAY_PROP = "--sc-enter-delay";
 const DIP_CLASS = "scenery-orb-dip";
 
-const STAGGER_MS = 40;
-const STAGGER_CAP = 3;
-/** Rows appearing this soon after a thread switch seed silently. */
-const SILENT_WINDOW_MS = 600;
-/** Rows mounting above the furthest seen content are history, not news. */
-const SEEN_TOP_SLACK_PX = 8;
 /** Minimum time the orb holds a verb before switching to the next one. */
 const MIN_HOLD_MS = 1500;
 const SEEN_CAP = 5000;
@@ -142,9 +145,15 @@ export function SceneryMotion() {
   const [slots, setSlots] = useState<OrbSlots>(NO_SLOTS);
   const [orbState, setOrbState] = useState<OrbState>("working");
 
-  // A thread switch (or first mount) opens the silent window: the burst of
-  // rows a freshly mounted timeline renders must seed, not animate.
+  // A thread switch (or first mount) opens the silent window. Loading often
+  // outlasts that window, so the first observation that actually sees rows
+  // for this thread also seeds instead of animating — otherwise
+  // `scenery-row-enter` with fill-mode `both` can leave the timeline at
+  // opacity 0 if animationend never fires.
   const silentUntilRef = useRef(0);
+  const threadKeyRef = useRef(threadKey);
+  const seededThreadKeyRef = useRef<string | null>(null);
+  threadKeyRef.current = threadKey;
   useEffect(() => {
     silentUntilRef.current = performance.now() + SILENT_WINDOW_MS;
   }, [threadKey]);
@@ -157,16 +166,49 @@ export function SceneryMotion() {
 
     const seenRowIds = new Set<string>();
     const managedSlots = new Map<string, HTMLElement>();
+    const enterCleanups = new Set<() => void>();
     const orbHold = { state: "working" as OrbState, since: 0 };
     let holdTimer: number | null = null;
     let queued = false;
     let disposed = false;
 
+    const clearEnter = (wrapper: HTMLElement) => {
+      wrapper.classList.remove(ENTER_CLASS);
+      wrapper.style.removeProperty(ENTER_DELAY_PROP);
+    };
+
+    const tagEnter = (wrapper: HTMLElement, delayMs: number) => {
+      wrapper.style.setProperty(ENTER_DELAY_PROP, `${delayMs}ms`);
+      wrapper.classList.add(ENTER_CLASS);
+      let cleaned = false;
+      const cleanup = () => {
+        if (cleaned) {
+          return;
+        }
+        cleaned = true;
+        clearEnter(wrapper);
+        wrapper.removeEventListener("animationend", cleanup);
+        wrapper.removeEventListener("animationcancel", cleanup);
+        window.clearTimeout(timeout);
+        enterCleanups.delete(cleanup);
+      };
+      const timeout = window.setTimeout(cleanup, ENTER_CLEAR_MS);
+      wrapper.addEventListener("animationend", cleanup);
+      wrapper.addEventListener("animationcancel", cleanup);
+      enterCleanups.add(cleanup);
+    };
+
     const syncRowArrivals = () => {
       const wrappers = [...document.querySelectorAll<HTMLElement>(ROW_WRAPPER_SELECTOR)];
-      const silent = performance.now() < silentUntilRef.current;
+      const currentThreadKey = threadKeyRef.current;
+      const firstPaintForThread = seededThreadKeyRef.current !== currentThreadKey;
+      const root = document.documentElement;
+      const silentWindowActive = performance.now() < silentUntilRef.current;
+      const inkTransitionActive = isSceneryInkTransitionActive(root);
+      const noTransitions = root.classList.contains("no-transitions");
       let maxSeenTop = Number.NEGATIVE_INFINITY;
       const unseen: Array<{ wrapper: HTMLElement; id: string; top: number }> = [];
+      let observed = 0;
       for (const wrapper of wrappers) {
         const id = wrapper
           .querySelector("[data-timeline-row-id]")
@@ -174,11 +216,15 @@ export function SceneryMotion() {
         if (!id) {
           continue;
         }
+        observed++;
         if (seenRowIds.has(id)) {
           maxSeenTop = Math.max(maxSeenTop, wrapper.getBoundingClientRect().top);
         } else {
           unseen.push({ wrapper, id, top: wrapper.getBoundingClientRect().top });
         }
+      }
+      if (shouldDeferThreadSeed(firstPaintForThread, observed)) {
+        return;
       }
       if (seenRowIds.size > SEEN_CAP) {
         seenRowIds.clear();
@@ -188,25 +234,23 @@ export function SceneryMotion() {
       let batchIndex = 0;
       for (const { wrapper, id, top } of unseen) {
         seenRowIds.add(id);
-        // History mounting in from a scroll-up (or an expanded fold) sits
-        // above content we have already seen — seed it without animating.
-        if (silent || top < maxSeenTop - SEEN_TOP_SLACK_PX) {
+        const animate = shouldAnimateRowArrival({
+          firstPaintForThread,
+          silentWindowActive,
+          inkTransitionActive,
+          noTransitions,
+          top,
+          maxSeenTop,
+        });
+        if (!animate) {
+          clearEnter(wrapper);
           continue;
         }
-        wrapper.style.setProperty(
-          ENTER_DELAY_PROP,
-          `${Math.min(batchIndex, STAGGER_CAP) * STAGGER_MS}ms`,
-        );
-        wrapper.classList.add(ENTER_CLASS);
-        wrapper.addEventListener(
-          "animationend",
-          () => {
-            wrapper.classList.remove(ENTER_CLASS);
-            wrapper.style.removeProperty(ENTER_DELAY_PROP);
-          },
-          { once: true },
-        );
+        tagEnter(wrapper, enterDelayMs(batchIndex));
         batchIndex++;
+      }
+      if (firstPaintForThread) {
+        seededThreadKeyRef.current = currentThreadKey;
       }
     };
 
@@ -331,6 +375,10 @@ export function SceneryMotion() {
       if (holdTimer !== null) {
         window.clearTimeout(holdTimer);
       }
+      for (const cleanup of enterCleanups) {
+        cleanup();
+      }
+      enterCleanups.clear();
       for (const slot of managedSlots.values()) {
         slot.remove();
       }

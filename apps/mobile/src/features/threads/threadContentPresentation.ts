@@ -47,3 +47,23 @@ export function projectThreadContentPresentation(input: {
     detail: "Reconnect this environment to load the conversation.",
   };
 }
+
+/**
+ * Cover the feed while messages are fetching, and while LegendList's first
+ * end-scroll is still holding rows at opacity 0. Without this, a running
+ * turn can leave the scenery visible and the conversation looking empty
+ * after "Loading messages..." disappears.
+ */
+export function shouldShowThreadFeedLoadingOverlay(input: {
+  readonly contentPresentationKind: ThreadContentPresentation["kind"];
+  readonly feedLength: number;
+  readonly listReady: boolean;
+}): boolean {
+  if (input.contentPresentationKind === "unavailable") {
+    return false;
+  }
+  if (input.contentPresentationKind === "loading") {
+    return true;
+  }
+  return input.feedLength > 0 && !input.listReady;
+}
