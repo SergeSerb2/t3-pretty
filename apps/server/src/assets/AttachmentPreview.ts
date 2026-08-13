@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeCrypto from "node:crypto";
 
@@ -40,13 +40,13 @@ async function createAttachmentFeedPreview(input: {
   readonly previewPath: string;
 }): Promise<string> {
   try {
-    await NodeFS.access(input.previewPath);
+    await NodeFSP.access(input.previewPath);
     return input.previewPath;
   } catch {
     // Generate below.
   }
 
-  await NodeFS.mkdir(NodePath.dirname(input.previewPath), { recursive: true });
+  await NodeFSP.mkdir(NodePath.dirname(input.previewPath), { recursive: true });
   const temporaryPath = `${input.previewPath}.${process.pid}.${NodeCrypto.randomUUID()}.tmp`;
   try {
     await sharp(input.sourcePath)
@@ -60,10 +60,10 @@ async function createAttachmentFeedPreview(input: {
       })
       .webp({ quality: 78, effort: 4 })
       .toFile(temporaryPath);
-    await NodeFS.rename(temporaryPath, input.previewPath);
+    await NodeFSP.rename(temporaryPath, input.previewPath);
     return input.previewPath;
   } finally {
-    await NodeFS.rm(temporaryPath, { force: true }).catch(() => undefined);
+    await NodeFSP.rm(temporaryPath, { force: true }).catch(() => undefined);
   }
 }
 

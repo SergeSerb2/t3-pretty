@@ -1,6 +1,6 @@
+import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import type * as EffectAcpSchema from "effect-acp/schema";
-import { describe, expect, it } from "vite-plus/test";
 
 import { applyCursorAcpModelSelection, buildCursorAcpSpawnInput } from "./CursorAcpSupport.ts";
 
@@ -77,26 +77,26 @@ describe("buildCursorAcpSpawnInput", () => {
 });
 
 describe("applyCursorAcpModelSelection", () => {
-  it("sets the base model before applying separate config options", async () => {
-    const calls: Array<
-      | { readonly type: "model"; readonly value: string }
-      | { readonly type: "config"; readonly configId: string; readonly value: string | boolean }
-    > = [];
+  it.effect("sets the base model before applying separate config options", () =>
+    Effect.gen(function* () {
+      const calls: Array<
+        | { readonly type: "model"; readonly value: string }
+        | { readonly type: "config"; readonly configId: string; readonly value: string | boolean }
+      > = [];
 
-    const runtime = {
-      getConfigOptions: Effect.succeed(parameterizedGpt54ConfigOptions),
-      setModel: (value: string) =>
-        Effect.sync(() => {
-          calls.push({ type: "model", value });
-        }),
-      setConfigOption: (configId: string, value: string | boolean) =>
-        Effect.sync(() => {
-          calls.push({ type: "config", configId, value });
-        }),
-    };
+      const runtime = {
+        getConfigOptions: Effect.succeed(parameterizedGpt54ConfigOptions),
+        setModel: (value: string) =>
+          Effect.sync(() => {
+            calls.push({ type: "model", value });
+          }),
+        setConfigOption: (configId: string, value: string | boolean) =>
+          Effect.sync(() => {
+            calls.push({ type: "config", configId, value });
+          }),
+      };
 
-    await Effect.runPromise(
-      applyCursorAcpModelSelection({
+      yield* applyCursorAcpModelSelection({
         runtime,
         model: "gpt-5.4-medium-fast[reasoning=medium,context=272k]",
         selections: [
@@ -108,50 +108,50 @@ describe("applyCursorAcpModelSelection", () => {
           step === "set-config-option"
             ? `failed to set config option ${configId}: ${cause.message}`
             : `failed to set model: ${cause.message}`,
-      }),
-    );
+      });
 
-    expect(calls).toEqual([
-      { type: "model", value: "gpt-5.4-medium-fast" },
-      { type: "config", configId: "reasoning", value: "extra-high" },
-      { type: "config", configId: "context", value: "1m" },
-      { type: "config", configId: "fast", value: "true" },
-    ]);
-  });
+      expect(calls).toEqual([
+        { type: "model", value: "gpt-5.4-medium-fast" },
+        { type: "config", configId: "reasoning", value: "extra-high" },
+        { type: "config", configId: "context", value: "1m" },
+        { type: "config", configId: "fast", value: "true" },
+      ]);
+    }),
+  );
 
-  it("maps Auto Optimize For through ACP when the config option is present", async () => {
-    const calls: Array<
-      | { readonly type: "model"; readonly value: string }
-      | { readonly type: "config"; readonly configId: string; readonly value: string | boolean }
-    > = [];
+  it.effect("maps Auto Optimize For through ACP when the config option is present", () =>
+    Effect.gen(function* () {
+      const calls: Array<
+        | { readonly type: "model"; readonly value: string }
+        | { readonly type: "config"; readonly configId: string; readonly value: string | boolean }
+      > = [];
 
-    const runtime = {
-      getConfigOptions: Effect.succeed([
-        {
-          id: "optimize_for",
-          name: "Optimize For",
-          category: "model_option",
-          type: "select" as const,
-          currentValue: "balanced",
-          options: [
-            { value: "cost", name: "Cost" },
-            { value: "balanced", name: "Balance" },
-            { value: "intelligence", name: "Intelligence" },
-          ],
-        },
-      ]),
-      setModel: (value: string) =>
-        Effect.sync(() => {
-          calls.push({ type: "model", value });
-        }),
-      setConfigOption: (configId: string, value: string | boolean) =>
-        Effect.sync(() => {
-          calls.push({ type: "config", configId, value });
-        }),
-    };
+      const runtime = {
+        getConfigOptions: Effect.succeed([
+          {
+            id: "optimize_for",
+            name: "Optimize For",
+            category: "model_option",
+            type: "select" as const,
+            currentValue: "balanced",
+            options: [
+              { value: "cost", name: "Cost" },
+              { value: "balanced", name: "Balance" },
+              { value: "intelligence", name: "Intelligence" },
+            ],
+          },
+        ]),
+        setModel: (value: string) =>
+          Effect.sync(() => {
+            calls.push({ type: "model", value });
+          }),
+        setConfigOption: (configId: string, value: string | boolean) =>
+          Effect.sync(() => {
+            calls.push({ type: "config", configId, value });
+          }),
+      };
 
-    await Effect.runPromise(
-      applyCursorAcpModelSelection({
+      yield* applyCursorAcpModelSelection({
         runtime,
         model: "auto",
         selections: [{ id: "optimizeFor", value: "cost" }],
@@ -159,12 +159,12 @@ describe("applyCursorAcpModelSelection", () => {
           step === "set-config-option"
             ? `failed to set config option ${configId}: ${cause.message}`
             : `failed to set model: ${cause.message}`,
-      }),
-    );
+      });
 
-    expect(calls).toEqual([
-      { type: "model", value: "default" },
-      { type: "config", configId: "optimize_for", value: "cost" },
-    ]);
-  });
+      expect(calls).toEqual([
+        { type: "model", value: "default" },
+        { type: "config", configId: "optimize_for", value: "cost" },
+      ]);
+    }),
+  );
 });
