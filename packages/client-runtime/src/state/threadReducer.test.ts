@@ -414,6 +414,123 @@ describe("applyThreadDetailEvent", () => {
       }
     });
 
+    it("clones only the updated message and preserves an already-bound checkpoint array", () => {
+      const untouchedMessage = {
+        id: MessageId.make("msg-1"),
+        role: "user" as const,
+        text: "Question",
+        turnId: null,
+        streaming: false,
+        createdAt: "2026-04-01T06:00:00.000Z",
+        updatedAt: "2026-04-01T06:00:00.000Z",
+      };
+      const streamingMessage = {
+        id: MessageId.make("msg-2"),
+        role: "assistant" as const,
+        text: "Hello",
+        turnId: TurnId.make("turn-1"),
+        streaming: true,
+        createdAt: "2026-04-01T06:00:00.000Z",
+        updatedAt: "2026-04-01T06:00:00.000Z",
+      };
+      const checkpoints = [
+        {
+          turnId: TurnId.make("turn-1"),
+          checkpointTurnCount: 1,
+          checkpointRef: CheckpointRef.make("ref-1"),
+          status: "ready" as const,
+          files: [],
+          assistantMessageId: MessageId.make("msg-2"),
+          completedAt: "2026-04-01T06:00:00.000Z",
+        },
+      ];
+      const thread = {
+        ...baseThread,
+        messages: [untouchedMessage, streamingMessage],
+        checkpoints,
+      };
+
+      const result = applyThreadDetailEvent(thread, {
+        ...baseEventFields,
+        sequence: 8,
+        occurredAt: "2026-04-01T06:01:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.message-sent",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: MessageId.make("msg-2"),
+          role: "assistant",
+          text: ", world!",
+          turnId: TurnId.make("turn-1"),
+          streaming: true,
+          createdAt: "2026-04-01T06:00:00.000Z",
+          updatedAt: "2026-04-01T06:01:00.000Z",
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.messages).not.toBe(thread.messages);
+        expect(result.thread.messages[0]).toBe(untouchedMessage);
+        expect(result.thread.messages[1]).not.toBe(streamingMessage);
+        expect(result.thread.messages[1]?.text).toBe("Hello, world!");
+        expect(result.thread.checkpoints).toBe(checkpoints);
+      }
+    });
+
+    it("clones checkpoints only when their assistant message binding changes", () => {
+      const untouchedCheckpoint = {
+        turnId: TurnId.make("turn-0"),
+        checkpointTurnCount: 1,
+        checkpointRef: CheckpointRef.make("ref-0"),
+        status: "ready" as const,
+        files: [],
+        assistantMessageId: MessageId.make("msg-0"),
+        completedAt: "2026-04-01T05:00:00.000Z",
+      };
+      const reboundCheckpoint = {
+        turnId: TurnId.make("turn-1"),
+        checkpointTurnCount: 2,
+        checkpointRef: CheckpointRef.make("ref-1"),
+        status: "ready" as const,
+        files: [],
+        assistantMessageId: null,
+        completedAt: "2026-04-01T06:00:00.000Z",
+      };
+      const thread = {
+        ...baseThread,
+        checkpoints: [untouchedCheckpoint, reboundCheckpoint],
+      };
+
+      const result = applyThreadDetailEvent(thread, {
+        ...baseEventFields,
+        sequence: 8,
+        occurredAt: "2026-04-01T06:01:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.message-sent",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: MessageId.make("msg-2"),
+          role: "assistant",
+          text: "Done",
+          turnId: TurnId.make("turn-1"),
+          streaming: false,
+          createdAt: "2026-04-01T06:00:00.000Z",
+          updatedAt: "2026-04-01T06:01:00.000Z",
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.checkpoints).not.toBe(thread.checkpoints);
+        expect(result.thread.checkpoints[0]).toBe(untouchedCheckpoint);
+        expect(result.thread.checkpoints[1]).not.toBe(reboundCheckpoint);
+        expect(result.thread.checkpoints[1]?.assistantMessageId).toBe("msg-2");
+      }
+    });
+
     it("updates latestTurn for assistant messages with a turn", () => {
       const result = applyThreadDetailEvent(baseThread, {
         ...baseEventFields,

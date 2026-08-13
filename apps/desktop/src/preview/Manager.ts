@@ -140,7 +140,7 @@ export const buildPreviewPictureInPictureDataUrl = (): string => {
     <meta charset="utf-8">
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+      content="default-src 'none'; img-src blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
     >
     <meta name="color-scheme" content="dark">
     <style>
@@ -153,8 +153,21 @@ export const buildPreviewPictureInPictureDataUrl = (): string => {
     <img id="preview-frame" alt="Live browser preview">
     <script>
       const frame = document.getElementById("preview-frame");
+      let activeFrameUrl = null;
       window.previewPictureInPicture.onFrame((next) => {
-        frame.src = "data:image/jpeg;base64," + next.data;
+        const frameUrl = URL.createObjectURL(new Blob([next.data], { type: "image/jpeg" }));
+        const previousFrameUrl = activeFrameUrl;
+        activeFrameUrl = frameUrl;
+        frame.src = frameUrl;
+        if (previousFrameUrl !== null) URL.revokeObjectURL(previousFrameUrl);
+        void frame.decode().catch(() => undefined).finally(() => {
+          URL.revokeObjectURL(frameUrl);
+          if (activeFrameUrl === frameUrl) activeFrameUrl = null;
+        });
+      });
+      window.addEventListener("unload", () => {
+        if (activeFrameUrl !== null) URL.revokeObjectURL(activeFrameUrl);
+        activeFrameUrl = null;
       });
     </script>
   </body>
@@ -356,7 +369,17 @@ type FrameCaptureConsumer = "picture-in-picture" | "recording";
 interface FrameCaptureSession {
   readonly scope: Scope.Closeable;
   readonly consumers: ReadonlySet<FrameCaptureConsumer>;
+  readonly sourceState: SynchronizedRef.SynchronizedRef<FrameCaptureSourceState>;
 }
+
+interface FrameCaptureSource {
+  readonly webContents: Electron.WebContents;
+  readonly restoreBackgroundThrottling: boolean;
+}
+
+type FrameCaptureSourceState =
+  | { readonly _tag: "Released" }
+  | { readonly _tag: "Active"; readonly source: FrameCaptureSource };
 
 interface PictureInPictureSession {
   readonly window: BrowserWindow;
@@ -558,6 +581,63 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         ),
       );
     });
+  const restoreFrameCaptureSource = Effect.fn("PreviewManager.restoreFrameCaptureSource")(
+    function* (tabId: string, source: FrameCaptureSource) {
+      if (source.webContents.isDestroyed()) return;
+      yield* attempt(
+        {
+          operation: "frameCapture.restoreBackgroundThrottling",
+          tabId,
+          webContentsId: source.webContents.id,
+        },
+        () => source.webContents.setBackgroundThrottling(source.restoreBackgroundThrottling),
+      );
+    },
+  );
+  const activateFrameCaptureSource = Effect.fn("PreviewManager.activateFrameCaptureSource")(
+    function* (tabId: string, session: FrameCaptureSession, wc: Electron.WebContents) {
+      yield* SynchronizedRef.modifyEffect(session.sourceState, (state) => {
+        // A released session may still be observed by an in-flight capture.
+        // Never resurrect its throttling lease after the last consumer stops.
+        if (state._tag === "Released" || state.source.webContents === wc) {
+          return Effect.succeed([undefined, state] as const);
+        }
+        return Effect.gen(function* () {
+          const restoreBackgroundThrottling = yield* attempt(
+            {
+              operation: "frameCapture.readBackgroundThrottling",
+              tabId,
+              webContentsId: wc.id,
+            },
+            () => wc.getBackgroundThrottling(),
+          );
+          yield* attempt(
+            {
+              operation: "frameCapture.disableBackgroundThrottling",
+              tabId,
+              webContentsId: wc.id,
+            },
+            () => wc.setBackgroundThrottling(false),
+          );
+          yield* restoreFrameCaptureSource(tabId, state.source).pipe(
+            Effect.catch((error) =>
+              Effect.logWarning("Previous preview capture source could not restore throttling.", {
+                tabId,
+                error,
+              }),
+            ),
+          );
+          return [
+            undefined,
+            {
+              _tag: "Active" as const,
+              source: { webContents: wc, restoreBackgroundThrottling },
+            },
+          ] as const;
+        });
+      });
+    },
+  );
   const stopFrameCapture = Effect.fn("PreviewManager.stopFrameCapture")(function* (
     tabId: string,
     consumer: FrameCaptureConsumer,
@@ -898,7 +978,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                   const listeners = yield* Ref.get(recordingFrameListenersRef);
                   const frame: DesktopPreviewRecordingFrame = {
                     tabId,
-                    data: params["data"],
+                    data: Buffer.from(params["data"], "base64"),
                     width:
                       typeof metadata["deviceWidth"] === "number" ? metadata["deviceWidth"] : 0,
                     height:
@@ -1657,6 +1737,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       return yield* new PreviewTabNotFoundError({ tabId });
     }
     const { state: registered, pendingUrl } = registration.value;
+    const frameCaptureSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
+    if (frameCaptureSession) {
+      yield* activateFrameCaptureSource(tabId, frameCaptureSession, wc);
+    }
     runFork(restoreControlSession(tabId, wc));
     yield* emit(tabId, registered);
     yield* attempt({ operation: "registerWebview.sendTheme", tabId, webContentsId }, () =>
@@ -2102,6 +2186,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const captureSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
     if (!captureSession) return;
     const wc = yield* requireWebContents(tabId);
+    yield* activateFrameCaptureSource(tabId, captureSession, wc);
     const image = yield* attemptPromise(
       {
         operation: "frameCapture.capturePage",
@@ -2146,7 +2231,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         tabId,
         webContentsId: wc.id,
       },
-      () => image.toJPEG(RECORDING_JPEG_QUALITY).toString("base64"),
+      () => image.toJPEG(RECORDING_JPEG_QUALITY),
     );
     const receivedAt = yield* currentIso;
     const frame: DesktopPreviewRecordingFrame = {
@@ -2239,7 +2324,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     // transient. Chromium can return UnknownVizError while a hidden guest is
     // warming its first compositor frame; the scheduled loop should keep the
     // consumer alive and recover instead of tearing recording/PiP back down.
-    yield* requireWebContents(tabId);
+    const wc = yield* requireWebContents(tabId);
     const captureNextFrame = Effect.sleep(RECORDING_FRAME_INTERVAL_MS).pipe(
       Effect.andThen(capturePreviewFrame(tabId)),
       Effect.catch((error) =>
@@ -2270,14 +2355,59 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             }),
           ] as const;
         }
+        const restoreBackgroundThrottling = yield* attempt(
+          {
+            operation: "frameCapture.readBackgroundThrottling",
+            tabId,
+            webContentsId: wc.id,
+          },
+          () => wc.getBackgroundThrottling(),
+        );
         const scope = yield* Scope.fork(parentScope, "sequential");
-        yield* Effect.forkIn(Effect.forever(captureNextFrame), scope);
+        const sourceState = yield* SynchronizedRef.make<FrameCaptureSourceState>({
+          _tag: "Active",
+          source: {
+            webContents: wc,
+            restoreBackgroundThrottling,
+          },
+        });
+        const initialize = Effect.gen(function* () {
+          yield* Scope.addFinalizer(
+            scope,
+            SynchronizedRef.modifyEffect(sourceState, (state) =>
+              state._tag === "Released"
+                ? Effect.succeed([undefined, state] as const)
+                : restoreFrameCaptureSource(tabId, state.source).pipe(
+                    Effect.catch((error) =>
+                      Effect.logWarning("Preview capture source could not restore throttling.", {
+                        tabId,
+                        error,
+                      }),
+                    ),
+                    Effect.as([undefined, { _tag: "Released" as const }] as const),
+                  ),
+            ),
+          );
+          yield* attempt(
+            {
+              operation: "frameCapture.disableBackgroundThrottling",
+              tabId,
+              webContentsId: wc.id,
+            },
+            () => wc.setBackgroundThrottling(false),
+          );
+          yield* Effect.forkIn(Effect.forever(captureNextFrame), scope);
+        });
+        yield* initialize.pipe(
+          Effect.onError(() => Scope.close(scope, Exit.void).pipe(Effect.ignore)),
+        );
         return [
           true,
           replaceMap(sessions, (copy) => {
             copy.set(tabId, {
               scope,
               consumers: new Set([consumer]),
+              sourceState,
             });
           }),
         ] as const;

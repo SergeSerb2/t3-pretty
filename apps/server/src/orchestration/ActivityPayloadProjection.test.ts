@@ -95,13 +95,13 @@ describe("projectActivityPayload agent-field survival", () => {
     expect(JSON.stringify(projected.payload).length).toBeLessThan(500);
   });
 
-  it("slims Claude-shaped mcp_tool_call data (toolName/input/result block)", () => {
+  it("slims Claude-shaped mcp_tool_call data without retaining unbounded input", () => {
     const projected = projectActivityPayload(
       activity({
         itemType: "mcp_tool_call",
         data: {
           toolName: "mcp__github__fetch_pr",
-          input: { pr: 42 },
+          input: { path: "apps/server/src/index.ts", body: "x".repeat(1_000_000) },
           result: {
             type: "tool_result",
             tool_use_id: "toolu_1",
@@ -112,9 +112,126 @@ describe("projectActivityPayload agent-field survival", () => {
     );
     const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
     expect(data.toolName).toBe("mcp__github__fetch_pr");
-    expect(data.input).toEqual({ pr: 42 });
+    expect(data.input).toBeUndefined();
+    expect(data.files).toEqual([{ path: "apps/server/src/index.ts" }]);
     expect(data.result).toEqual({ content: "first line of output" });
     expect(JSON.stringify(projected.payload).length).toBeLessThan(500);
+  });
+
+  it("keeps first-line summary semantics across MCP text blocks", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          toolName: "mcp__github__fetch_pr",
+          result: {
+            content: [
+              { type: "text", text: "  ```  " },
+              { type: "image", data: "discarded" },
+              { type: "text", text: "  first   useful\tline  \nsecond line" },
+            ],
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+
+    expect(data.result).toEqual({ content: "first useful line" });
+  });
+
+  it("preserves fence-only and long-line raw output summaries", () => {
+    const fenceOnly = projectActivityPayload(
+      activity({ itemType: "command_execution", data: { rawOutput: { content: "```\n```" } } }),
+    );
+    const longLine = projectActivityPayload(
+      activity({
+        itemType: "command_execution",
+        data: { rawOutput: { content: `first ${"x".repeat(1_000_000)}` } },
+      }),
+    );
+    const fenceData = (fenceOnly.payload as Record<string, unknown>).data as Record<
+      string,
+      unknown
+    >;
+    const longData = (longLine.payload as Record<string, unknown>).data as Record<string, unknown>;
+
+    expect(fenceData.rawOutput).toEqual({ content: "2 lines" });
+    expect(longData.rawOutput).toEqual({ content: `first ${"x".repeat(77)}…` });
+  });
+
+  it("falls back to stdout when content has no meaningful summary", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "command_execution",
+        data: { rawOutput: { content: " \n\t ", stdout: " useful   stdout " } },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+
+    expect(data.rawOutput).toEqual({ content: "useful stdout" });
+  });
+
+  it("bounds MCP block scanning when no renderable text is near the front", () => {
+    let textReads = 0;
+    const content = Array.from({ length: 1_000 }, () => {
+      const block: Record<string, unknown> = { type: "image" };
+      Object.defineProperty(block, "text", {
+        get() {
+          textReads += 1;
+          return undefined;
+        },
+      });
+      return block;
+    });
+
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: { toolName: "mcp__images__inspect", result: { content } },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+
+    expect(data.result).toBeUndefined();
+    expect(textReads).toBeLessThanOrEqual(256);
+  });
+
+  it("bounds changed-file traversal for pathless collections", () => {
+    let pathReads = 0;
+    const files = Array.from({ length: 10_000 }, () => {
+      const file: Record<string, unknown> = {};
+      Object.defineProperty(file, "path", {
+        get() {
+          pathReads += 1;
+          return undefined;
+        },
+      });
+      return file;
+    });
+
+    const projected = projectActivityPayload(
+      activity({ itemType: "dynamic_tool_call", data: { toolName: "Read", files } }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+
+    expect(data.files).toBeUndefined();
+    expect(pathReads).toBeLessThanOrEqual(512);
+  });
+
+  it("finds direct file siblings before traversing large generic payloads", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        data: {
+          toolName: "Edit",
+          input: Array.from({ length: 10_000 }, () => ({})),
+          files: [{ path: "apps/mobile/src/App.tsx" }],
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+
+    expect(data.files).toEqual([{ path: "apps/mobile/src/App.tsx" }]);
   });
 
   it("passes task lifecycle payloads (no data field) through untouched", () => {

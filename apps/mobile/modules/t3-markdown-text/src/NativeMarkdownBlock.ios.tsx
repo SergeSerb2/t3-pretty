@@ -117,17 +117,24 @@ function useHighlightedCode(
   language: string | undefined,
   theme: "light" | "dark",
   highlightCode: MarkdownCodeHighlighter,
+  enabled: boolean,
 ): HighlightedCode | null {
-  const key = codeHighlightCacheKey(code, language, theme);
+  // Streaming code is intentionally rendered as plain text. Avoid creating a
+  // cache key containing the entire growing code prefix until highlighting is
+  // enabled for the settled message.
+  const key = enabled ? codeHighlightCacheKey(code, language, theme) : "";
   const [highlighted, setHighlighted] = useState<{
     readonly key: string;
     readonly tokens: HighlightedCode | null;
   }>(() => ({
     key,
-    tokens: highlightedCodeCache.get(key) ?? null,
+    tokens: enabled ? (highlightedCodeCache.get(key) ?? null) : null,
   }));
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     let active = true;
     const cached = highlightedCodeCache.get(key);
     if (cached) {
@@ -152,9 +159,9 @@ function useHighlightedCode(
     return () => {
       active = false;
     };
-  }, [code, highlightCode, key, language, theme]);
+  }, [enabled, highlightCode, key]);
 
-  return highlighted.key === key ? highlighted.tokens : null;
+  return enabled && highlighted.key === key ? highlighted.tokens : null;
 }
 
 function HighlightedCodeText(props: {
@@ -236,12 +243,19 @@ function NativeCodeBlock(props: {
   readonly node: MarkdownNode;
   readonly textStyle: NativeMarkdownTextStyle;
   readonly highlightCode: MarkdownCodeHighlighter;
+  readonly highlightCodeEnabled: boolean;
   readonly compact?: boolean;
 }) {
   const content = nodeText(props.node).replace(/\n$/, "");
   const colorScheme = useColorScheme();
   const theme = colorScheme === "dark" ? "dark" : "light";
-  const highlighted = useHighlightedCode(content, props.node.language, theme, props.highlightCode);
+  const highlighted = useHighlightedCode(
+    content,
+    props.node.language,
+    theme,
+    props.highlightCode,
+    props.highlightCodeEnabled,
+  );
   const languageLabel = props.node.language?.toUpperCase() ?? "CODE";
   return (
     <View
@@ -475,6 +489,7 @@ function NativeList(props: {
   readonly node: MarkdownNode;
   readonly textStyle: NativeMarkdownTextStyle;
   readonly highlightCode: MarkdownCodeHighlighter;
+  readonly highlightCodeEnabled: boolean;
   readonly onLinkPress?: (href: string) => void;
   readonly depth: number;
 }) {
@@ -536,6 +551,7 @@ function NativeList(props: {
                   node={child}
                   textStyle={props.textStyle}
                   highlightCode={props.highlightCode}
+                  highlightCodeEnabled={props.highlightCodeEnabled}
                   onLinkPress={props.onLinkPress}
                   depth={props.depth + 1}
                   compact
@@ -553,6 +569,7 @@ export function NativeMarkdownBlock(props: {
   readonly node: MarkdownNode;
   readonly textStyle: NativeMarkdownTextStyle;
   readonly highlightCode: MarkdownCodeHighlighter;
+  readonly highlightCodeEnabled: boolean;
   readonly onLinkPress?: (href: string) => void;
   readonly depth?: number;
   readonly compact?: boolean;
@@ -568,6 +585,7 @@ export function NativeMarkdownBlock(props: {
               node={child}
               textStyle={props.textStyle}
               highlightCode={props.highlightCode}
+              highlightCodeEnabled={props.highlightCodeEnabled}
               onLinkPress={props.onLinkPress}
               depth={depth}
             />
@@ -580,6 +598,7 @@ export function NativeMarkdownBlock(props: {
           node={props.node}
           textStyle={props.textStyle}
           highlightCode={props.highlightCode}
+          highlightCodeEnabled={props.highlightCodeEnabled}
           compact={props.compact}
         />
       );
@@ -626,6 +645,7 @@ export function NativeMarkdownBlock(props: {
               node={child}
               textStyle={props.textStyle}
               highlightCode={props.highlightCode}
+              highlightCodeEnabled={props.highlightCodeEnabled}
               onLinkPress={props.onLinkPress}
               depth={depth}
               compact
@@ -639,6 +659,7 @@ export function NativeMarkdownBlock(props: {
           node={props.node}
           textStyle={props.textStyle}
           highlightCode={props.highlightCode}
+          highlightCodeEnabled={props.highlightCodeEnabled}
           onLinkPress={props.onLinkPress}
           depth={depth}
         />
@@ -692,6 +713,7 @@ export function NativeMarkdownBlock(props: {
               node={child}
               textStyle={props.textStyle}
               highlightCode={props.highlightCode}
+              highlightCodeEnabled={props.highlightCodeEnabled}
               onLinkPress={props.onLinkPress}
               depth={depth}
               compact

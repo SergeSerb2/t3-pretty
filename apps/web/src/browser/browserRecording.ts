@@ -97,8 +97,8 @@ interface ActiveRecording {
   recorder: MediaRecorder | null;
   mimeType: string | null;
   frameSizeEstablished: boolean;
-  frameSequence: number;
-  lastDrawnFrameSequence: number;
+  frameDecodeInFlight: boolean;
+  pendingFrame: DesktopPreviewRecordingFrame | null;
   lifecycle: BrowserRecordingLifecycle;
 }
 
@@ -166,6 +166,53 @@ const preferredMimeType = (): string => {
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "video/webm";
 };
 
+const recordingFrameBlobPart = (data: Uint8Array): Uint8Array<ArrayBuffer> =>
+  data.buffer instanceof ArrayBuffer
+    ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+    : new Uint8Array(data);
+
+const decodeFrame = async (
+  recording: ActiveRecording,
+  frame: DesktopPreviewRecordingFrame,
+): Promise<void> => {
+  const image = await createImageBitmap(
+    new Blob([recordingFrameBlobPart(frame.data)], { type: "image/jpeg" }),
+  );
+  try {
+    if (activeRecordings.get(frame.tabId) !== recording) return;
+    const width = Math.max(1, Math.round(frame.width));
+    const height = Math.max(1, Math.round(frame.height));
+    const scale = Math.min(recording.canvas.width / width, recording.canvas.height / height);
+    const targetWidth = width * scale;
+    const targetHeight = height * scale;
+    const targetX = (recording.canvas.width - targetWidth) / 2;
+    const targetY = (recording.canvas.height - targetHeight) / 2;
+    recording.context.fillStyle = "#000000";
+    recording.context.fillRect(0, 0, recording.canvas.width, recording.canvas.height);
+    recording.context.drawImage(image, targetX, targetY, targetWidth, targetHeight);
+  } finally {
+    image.close();
+  }
+};
+
+const drainFrameDecode = (
+  recording: ActiveRecording,
+  frame: DesktopPreviewRecordingFrame,
+): void => {
+  recording.frameDecodeInFlight = true;
+  void decodeFrame(recording, frame)
+    .catch(() => undefined)
+    .finally(() => {
+      const pendingFrame = recording.pendingFrame;
+      recording.pendingFrame = null;
+      if (activeRecordings.get(recording.tabId) === recording && pendingFrame !== null) {
+        drainFrameDecode(recording, pendingFrame);
+        return;
+      }
+      recording.frameDecodeInFlight = false;
+    });
+};
+
 const drawFrame = (frame: DesktopPreviewRecordingFrame): void => {
   const recording = activeRecordings.get(frame.tabId);
   if (!recording) return;
@@ -185,30 +232,11 @@ const drawFrame = (frame: DesktopPreviewRecordingFrame): void => {
     recording.frameSizeEstablished = true;
     recording.settleFirstFrameSize("frame");
   }
-  const frameSequence = ++recording.frameSequence;
-  const image = new Image();
-  image.addEventListener(
-    "load",
-    () => {
-      if (
-        activeRecordings.get(frame.tabId) !== recording ||
-        frameSequence <= recording.lastDrawnFrameSequence
-      ) {
-        return;
-      }
-      recording.lastDrawnFrameSequence = frameSequence;
-      const scale = Math.min(recording.canvas.width / width, recording.canvas.height / height);
-      const targetWidth = width * scale;
-      const targetHeight = height * scale;
-      const targetX = (recording.canvas.width - targetWidth) / 2;
-      const targetY = (recording.canvas.height - targetHeight) / 2;
-      recording.context.fillStyle = "#000000";
-      recording.context.fillRect(0, 0, recording.canvas.width, recording.canvas.height);
-      recording.context.drawImage(image, targetX, targetY, targetWidth, targetHeight);
-    },
-    { once: true },
-  );
-  image.src = `data:image/jpeg;base64,${frame.data}`;
+  if (recording.frameDecodeInFlight) {
+    recording.pendingFrame = frame;
+    return;
+  }
+  drainFrameDecode(recording, frame);
 };
 
 const stopMediaRecorder = async (recorder: MediaRecorder | null): Promise<void> => {
@@ -372,8 +400,8 @@ export async function startBrowserRecording(
     recorder: null,
     mimeType: null,
     frameSizeEstablished: false,
-    frameSequence: 0,
-    lastDrawnFrameSequence: 0,
+    frameDecodeInFlight: false,
+    pendingFrame: null,
     lifecycle: { phase: "starting" },
   };
   activeRecordings.set(tabId, recording);

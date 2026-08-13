@@ -305,27 +305,28 @@ export function applyThreadDetailEvent(
         updatedAt: event.payload.updatedAt,
       };
 
-      const existingMessage = thread.messages.find((entry) => entry.id === message.id);
-      const messages = existingMessage
-        ? Arr.map(thread.messages, (entry) =>
-            entry.id !== message.id
-              ? entry
-              : {
-                  ...entry,
-                  text: message.streaming
-                    ? `${entry.text}${message.text}`
-                    : message.text.length > 0
-                      ? message.text
-                      : entry.text,
-                  streaming: message.streaming,
-                  ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
-                  ...(message.streaming ? {} : { updatedAt: message.updatedAt }),
-                  ...(message.attachments !== undefined
-                    ? { attachments: message.attachments }
-                    : {}),
-                },
-          )
-        : Arr.append(thread.messages, message);
+      const existingMessageIndex = findMessageIndexFromEnd(thread.messages, message.id);
+      const messages = (() => {
+        if (existingMessageIndex < 0) {
+          return Arr.append(thread.messages, message);
+        }
+
+        const entry = thread.messages[existingMessageIndex]!;
+        const nextMessages = [...thread.messages];
+        nextMessages[existingMessageIndex] = {
+          ...entry,
+          text: message.streaming
+            ? `${entry.text}${message.text}`
+            : message.text.length > 0
+              ? message.text
+              : entry.text,
+          streaming: message.streaming,
+          ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
+          ...(message.streaming ? {} : { updatedAt: message.updatedAt }),
+          ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
+        };
+        return nextMessages;
+      })();
       // Update latestTurn for assistant messages bound to a turn. A completed
       // assistant message only settles the turn once the session is no longer
       // running it — providers may emit several assistant messages per turn
@@ -651,14 +652,32 @@ function checkpointStatusToTurnState(
   }
 }
 
+function findMessageIndexFromEnd(
+  messages: ReadonlyArray<OrchestrationMessage>,
+  messageId: MessageId,
+): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]!.id === messageId) {
+      return index;
+    }
+  }
+  return -1;
+}
+
 function rebindCheckpointAssistantMessage(
   checkpoints: ReadonlyArray<OrchestrationCheckpointSummary>,
   turnId: TurnId,
   messageId: MessageId,
-): OrchestrationCheckpointSummary[] {
-  return Arr.map(checkpoints, (entry) =>
-    entry.turnId === turnId ? { ...entry, assistantMessageId: messageId } : entry,
-  );
+): ReadonlyArray<OrchestrationCheckpointSummary> {
+  for (let index = checkpoints.length - 1; index >= 0; index -= 1) {
+    const entry = checkpoints[index]!;
+    if (entry.turnId !== turnId) continue;
+    if (entry.assistantMessageId === messageId) return checkpoints;
+    const next = [...checkpoints];
+    next[index] = { ...entry, assistantMessageId: messageId };
+    return next;
+  }
+  return checkpoints;
 }
 
 function retainMessagesAfterRevert(

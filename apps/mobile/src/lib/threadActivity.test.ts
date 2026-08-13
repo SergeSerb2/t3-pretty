@@ -151,6 +151,20 @@ function makeThread(
   };
 }
 
+type ThreadMessage = OrchestrationThread["messages"][number];
+
+function makeMessage(
+  input: Pick<ThreadMessage, "id" | "createdAt" | "text"> & Partial<ThreadMessage>,
+): ThreadMessage {
+  return {
+    role: "assistant",
+    turnId: null,
+    streaming: false,
+    updatedAt: input.createdAt,
+    ...input,
+  };
+}
+
 describe("buildThreadFeed", () => {
   it("reuses derived work entries across streaming message updates", () => {
     const activity = makeActivity({
@@ -193,6 +207,191 @@ describe("buildThreadFeed", () => {
     }
     expect(secondGroup).toBe(firstGroup);
     expect(secondFeed.find((entry) => entry.type === "message")?.message.text).toBe("One two");
+  });
+
+  it("replaces only identity-changed message rows during streaming", () => {
+    const firstMessage = makeMessage({
+      id: MessageId.make("assistant-first"),
+      text: "First",
+      createdAt: "2026-04-01T00:00:00.000Z",
+    });
+    const middleMessage = makeMessage({
+      id: MessageId.make("assistant-middle"),
+      text: "Middle",
+      createdAt: "2026-04-01T00:00:02.000Z",
+    });
+    const streamingMessage = makeMessage({
+      id: MessageId.make("assistant-streaming"),
+      text: "One",
+      streaming: true,
+      createdAt: "2026-04-01T00:00:03.000Z",
+    });
+    const thread = makeThread({
+      id: ThreadId.make("thread-incremental-message-feed"),
+      projectId: ProjectId.make("project-1"),
+      title: "Incremental messages",
+      messages: [firstMessage, middleMessage, streamingMessage],
+      activities: [
+        makeActivity({
+          id: EventId.make("activity-between-messages"),
+          kind: "runtime.warning",
+          summary: "Between",
+          createdAt: "2026-04-01T00:00:01.000Z",
+        }),
+      ],
+    });
+    const builder = createThreadFeedBuilder();
+    const firstFeed = builder(thread);
+    const nextStreamingMessage = { ...streamingMessage, text: "One two" };
+    const secondFeed = builder({
+      ...thread,
+      messages: [firstMessage, middleMessage, nextStreamingMessage],
+    });
+    const firstEntriesById = new Map(firstFeed.map((entry) => [entry.id, entry]));
+    const secondEntriesById = new Map(secondFeed.map((entry) => [entry.id, entry]));
+
+    expect(secondFeed).not.toBe(firstFeed);
+    expect(secondEntriesById.get(firstMessage.id)).toBe(firstEntriesById.get(firstMessage.id));
+    expect(secondEntriesById.get(middleMessage.id)).toBe(firstEntriesById.get(middleMessage.id));
+    expect(secondEntriesById.get("activity-between-messages")).toBe(
+      firstEntriesById.get("activity-between-messages"),
+    );
+    expect(secondEntriesById.get(streamingMessage.id)).not.toBe(
+      firstEntriesById.get(streamingMessage.id),
+    );
+    expect(secondEntriesById.get(streamingMessage.id)).toMatchObject({
+      type: "message",
+      message: { text: "One two" },
+    });
+  });
+
+  it("incrementally updates an older replayed message without changing sorted semantics", () => {
+    const lateMessage = makeMessage({
+      id: MessageId.make("assistant-late"),
+      text: "Late",
+      createdAt: "2026-04-01T00:00:03.000Z",
+    });
+    const earlyMessage = makeMessage({
+      id: MessageId.make("assistant-early"),
+      text: "Early",
+      createdAt: "2026-04-01T00:00:01.000Z",
+    });
+    const middleMessage = makeMessage({
+      id: MessageId.make("assistant-middle"),
+      text: "Middle",
+      createdAt: "2026-04-01T00:00:02.000Z",
+    });
+    const thread = makeThread({
+      id: ThreadId.make("thread-out-of-order-replay"),
+      projectId: ProjectId.make("project-1"),
+      title: "Out-of-order replay",
+      messages: [lateMessage, earlyMessage, middleMessage],
+    });
+    const builder = createThreadFeedBuilder();
+    const firstFeed = builder(thread);
+    const replayedEarlyMessage = { ...earlyMessage, text: "Early replayed" };
+    const replayedThread = {
+      ...thread,
+      messages: [lateMessage, replayedEarlyMessage, middleMessage],
+    };
+    const nextFeed = builder(replayedThread);
+    const statelessFeed = buildThreadFeed(replayedThread);
+
+    expect(nextFeed).toEqual(statelessFeed);
+    expect(nextFeed.map((entry) => entry.id)).toEqual([
+      earlyMessage.id,
+      middleMessage.id,
+      lateMessage.id,
+    ]);
+    expect(nextFeed.find((entry) => entry.id === lateMessage.id)).toBe(
+      firstFeed.find((entry) => entry.id === lateMessage.id),
+    );
+    expect(nextFeed.find((entry) => entry.id === middleMessage.id)).toBe(
+      firstFeed.find((entry) => entry.id === middleMessage.id),
+    );
+  });
+
+  it("falls back to stable sorting when equal-timestamp messages reorder", () => {
+    const firstMessage = makeMessage({
+      id: MessageId.make("assistant-tied-first"),
+      text: "First",
+      createdAt: "2026-04-01T00:00:01.000Z",
+    });
+    const secondMessage = makeMessage({
+      id: MessageId.make("assistant-tied-second"),
+      text: "Second",
+      createdAt: "2026-04-01T00:00:01.000Z",
+    });
+    const thread = makeThread({
+      id: ThreadId.make("thread-tied-reorder"),
+      projectId: ProjectId.make("project-1"),
+      title: "Tied reorder",
+      messages: [firstMessage, secondMessage],
+    });
+    const builder = createThreadFeedBuilder();
+    builder(thread);
+
+    const reorderedThread = { ...thread, messages: [secondMessage, firstMessage] };
+    const reorderedFeed = builder(reorderedThread);
+    expect(reorderedFeed).toEqual(buildThreadFeed(reorderedThread));
+    expect(reorderedFeed.map((entry) => entry.id)).toEqual([secondMessage.id, firstMessage.id]);
+  });
+
+  it("keeps loaded-message windows equivalent as their boundary changes", () => {
+    const oldestMessage = makeMessage({
+      id: MessageId.make("assistant-oldest"),
+      text: "Oldest",
+      createdAt: "2026-04-01T00:00:01.000Z",
+    });
+    const middleMessage = makeMessage({
+      id: MessageId.make("assistant-window-middle"),
+      text: "Middle",
+      createdAt: "2026-04-01T00:00:03.000Z",
+    });
+    const newestMessage = makeMessage({
+      id: MessageId.make("assistant-window-newest"),
+      text: "Newest",
+      streaming: true,
+      createdAt: "2026-04-01T00:00:05.000Z",
+    });
+    const thread = makeThread({
+      id: ThreadId.make("thread-loaded-window"),
+      projectId: ProjectId.make("project-1"),
+      title: "Loaded window",
+      messages: [oldestMessage, middleMessage, newestMessage],
+      activities: [
+        makeActivity({
+          id: EventId.make("activity-before-window"),
+          kind: "runtime.warning",
+          summary: "Before window",
+          createdAt: "2026-04-01T00:00:02.000Z",
+        }),
+        makeActivity({
+          id: EventId.make("activity-inside-window"),
+          kind: "runtime.warning",
+          summary: "Inside window",
+          createdAt: "2026-04-01T00:00:04.000Z",
+        }),
+      ],
+    });
+    const builder = createThreadFeedBuilder();
+    const initialLoadedMessages = [middleMessage, newestMessage];
+    builder(thread, { loadedMessages: initialLoadedMessages });
+
+    const nextNewestMessage = { ...newestMessage, text: "Newest delta" };
+    const nextThread = {
+      ...thread,
+      messages: [oldestMessage, middleMessage, nextNewestMessage],
+    };
+    const nextLoadedMessages = [middleMessage, nextNewestMessage];
+    expect(JSON.stringify(builder(nextThread, { loadedMessages: nextLoadedMessages }))).toBe(
+      JSON.stringify(buildThreadFeed(nextThread, { loadedMessages: nextLoadedMessages })),
+    );
+
+    const expandedLoadedMessages = [oldestMessage, middleMessage, nextNewestMessage];
+    expect(JSON.stringify(builder(nextThread, { loadedMessages: expandedLoadedMessages }))).toBe(
+      JSON.stringify(buildThreadFeed(nextThread, { loadedMessages: expandedLoadedMessages })),
+    );
   });
 
   it("rebuilds activity groups when a streaming message becomes visible", () => {

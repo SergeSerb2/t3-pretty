@@ -9,6 +9,10 @@ import {
   activityProjectionGroupKey,
 } from "./activityProjectionMetadata.ts";
 
+const TOOL_TEXT_SCAN_MAX_CHARS = 64 * 1_024;
+const MCP_RESULT_SCAN_MAX_BLOCKS = 256;
+const CHANGED_FILE_SCAN_MAX_NODES = 512;
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -37,14 +41,16 @@ function collectChangedFiles(
   target: string[],
   seen: Set<string>,
   depth: number,
+  budget: { remaining: number },
 ): void {
-  if (depth > 4 || target.length >= 12) {
+  if (depth > 4 || target.length >= 12 || budget.remaining <= 0) {
     return;
   }
+  budget.remaining -= 1;
   if (Array.isArray(value)) {
     for (const entry of value) {
-      collectChangedFiles(entry, target, seen, depth + 1);
-      if (target.length >= 12) {
+      collectChangedFiles(entry, target, seen, depth + 1, budget);
+      if (target.length >= 12 || budget.remaining <= 0) {
         return;
       }
     }
@@ -64,22 +70,22 @@ function collectChangedFiles(
   pushChangedFile(target, seen, record.oldPath);
 
   for (const nestedKey of [
-    "item",
-    "result",
-    "input",
-    "data",
-    "changes",
     "files",
+    "changes",
     "edits",
     "patch",
     "patches",
     "operations",
+    "item",
+    "result",
+    "input",
+    "data",
   ]) {
     if (!(nestedKey in record)) {
       continue;
     }
-    collectChangedFiles(record[nestedKey], target, seen, depth + 1);
-    if (target.length >= 12) {
+    collectChangedFiles(record[nestedKey], target, seen, depth + 1, budget);
+    if (target.length >= 12 || budget.remaining <= 0) {
       return;
     }
   }
@@ -110,20 +116,32 @@ function projectCommandData(data: Record<string, unknown>): Record<string, unkno
 }
 
 function summarizeToolTextOutput(value: string): string | null {
-  const lines: string[] = [];
-  for (const rawLine of value.split(/\r?\n/u)) {
-    const line = rawLine.replace(/\s+/g, " ").trim();
-    if (line.length > 0) {
-      lines.push(line);
+  const scanEnd = Math.min(value.length, TOOL_TEXT_SCAN_MAX_CHARS);
+  let meaningfulLineCount = 0;
+  let lineStart = 0;
+
+  for (let cursor = 0; cursor <= scanEnd; cursor += 1) {
+    if (cursor < scanEnd && value.charCodeAt(cursor) !== 10) {
+      continue;
     }
+    const line = value.slice(lineStart, cursor).replace(/\s+/g, " ").trim();
+    if (line.length > 0) {
+      meaningfulLineCount += 1;
+      if (line !== "```") {
+        return line.length <= 84 ? line : `${line.slice(0, 83).trimEnd()}…`;
+      }
+    }
+    lineStart = cursor + 1;
   }
 
-  const firstLine = lines.find((line) => line !== "```");
-  if (firstLine) {
-    return firstLine.length <= 84 ? firstLine : `${firstLine.slice(0, 83).trimEnd()}…`;
+  // A count is only exact when the complete value was inspected. If the scan
+  // ceiling was reached, omit the cosmetic fence-only fallback instead of
+  // reporting a partial line count.
+  if (scanEnd < value.length) {
+    return null;
   }
-  if (lines.length > 1) {
-    return `${lines.length.toLocaleString()} lines`;
+  if (meaningfulLineCount > 1) {
+    return `${meaningfulLineCount.toLocaleString()} lines`;
   }
   return null;
 }
@@ -161,10 +179,26 @@ function extractMcpResultText(result: unknown): string | null {
   }
   if (Array.isArray(record.content)) {
     const texts: string[] = [];
-    for (const entry of record.content) {
+    let remainingChars = TOOL_TEXT_SCAN_MAX_CHARS;
+    for (
+      let index = 0;
+      index < record.content.length && index < MCP_RESULT_SCAN_MAX_BLOCKS;
+      index += 1
+    ) {
+      const entry = record.content[index];
       const text = asRecord(entry)?.text;
-      if (typeof text === "string" && text.trim().length > 0) {
-        texts.push(text);
+      if (typeof text !== "string") {
+        continue;
+      }
+      const separatorLength = texts.length > 0 ? 1 : 0;
+      if (remainingChars <= separatorLength) {
+        break;
+      }
+      const clipped = text.slice(0, remainingChars - separatorLength);
+      texts.push(clipped);
+      remainingChars -= clipped.length + separatorLength;
+      if (clipped.length < text.length || remainingChars <= 0) {
+        break;
       }
     }
     if (texts.length > 0) {
@@ -210,9 +244,6 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
   if ("toolName" in data) {
     projectedData.toolName = data.toolName;
   }
-  if ("input" in data) {
-    projectedData.input = data.input;
-  }
   if (!item) {
     const result = summarizeMcpResult(data.result);
     if (result) {
@@ -228,7 +259,9 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
   }
 
   const changedFiles: string[] = [];
-  collectChangedFiles(data, changedFiles, new Set<string>(), 0);
+  collectChangedFiles(data, changedFiles, new Set<string>(), 0, {
+    remaining: CHANGED_FILE_SCAN_MAX_NODES,
+  });
   if (changedFiles.length > 0) {
     projectedData.files = changedFiles.map((path) => ({ path }));
   }
@@ -249,16 +282,18 @@ function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
     };
   }
 
-  const content = asTrimmedString(rawOutput.content);
-  if (content) {
-    const summary = summarizeToolTextOutput(content);
-    return summary ? { content: summary } : undefined;
+  if (typeof rawOutput.content === "string") {
+    const summary = summarizeToolTextOutput(rawOutput.content);
+    if (summary) {
+      return { content: summary };
+    }
   }
 
-  const stdout = asTrimmedString(rawOutput.stdout);
-  if (stdout) {
-    const summary = summarizeToolTextOutput(stdout);
-    return summary ? { content: summary } : undefined;
+  if (typeof rawOutput.stdout === "string") {
+    const summary = summarizeToolTextOutput(rawOutput.stdout);
+    if (summary) {
+      return { content: summary };
+    }
   }
 
   return undefined;
@@ -297,7 +332,9 @@ export function projectActivityPayload(
   }
 
   const changedFiles: string[] = [];
-  collectChangedFiles(data, changedFiles, new Set<string>(), 0);
+  collectChangedFiles(data, changedFiles, new Set<string>(), 0, {
+    remaining: CHANGED_FILE_SCAN_MAX_NODES,
+  });
   if (changedFiles.length > 0) {
     // Both clients discover file names by walking objects with path-like keys.
     projectedData.files = changedFiles.map((path) => ({ path }));

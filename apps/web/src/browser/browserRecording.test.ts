@@ -14,7 +14,7 @@ const {
   const events: string[] = [];
   type Frame = {
     readonly tabId: string;
-    readonly data: string;
+    readonly data: Uint8Array;
     readonly width: number;
     readonly height: number;
     readonly receivedAt: string;
@@ -58,7 +58,7 @@ const {
       const size = surface?.content ?? surface?.rect;
       frameSubscription.listener?.({
         tabId,
-        data: "initial-frame",
+        data: new TextEncoder().encode("initial-frame"),
         width: size?.width ?? 1280,
         height: size?.height ?? 800,
         receivedAt: "2026-06-26T00:00:00.000Z",
@@ -97,6 +97,8 @@ import {
 } from "./browserRecording";
 import { previewRuntimeTabId } from "./previewRuntimeTabId";
 
+const frameBytes = (value: string): Uint8Array => new TextEncoder().encode(value);
+
 class FakeMediaRecorder {
   static isTypeSupported(): boolean {
     return true;
@@ -127,7 +129,7 @@ class FakeMediaRecorder {
 const emitRecordingFrame = () => {
   frameSubscription.listener?.({
     tabId: "recording-tab",
-    data: "startup-frame",
+    data: frameBytes("startup-frame"),
     width: 800,
     height: 600,
     receivedAt: "2026-06-26T00:00:00.000Z",
@@ -148,20 +150,10 @@ describe("browser recording", () => {
     vi.clearAllMocks();
     vi.stubGlobal("window", globalThis);
     vi.stubGlobal("MediaRecorder", FakeMediaRecorder as unknown as typeof MediaRecorder);
-    class ImmediateImage {
-      private loadListener: EventListenerOrEventListenerObject | undefined;
-
-      addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-        if (type === "load") this.loadListener = listener;
-      }
-
-      set src(_value: string) {
-        const event = new Event("load");
-        if (typeof this.loadListener === "function") this.loadListener(event);
-        else this.loadListener?.handleEvent(event);
-      }
-    }
-    vi.stubGlobal("Image", ImmediateImage as unknown as typeof Image);
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => ({ close: vi.fn() }) as unknown as ImageBitmap),
+    );
     vi.stubGlobal("document", {
       createElement: () => ({
         width: 0,
@@ -242,7 +234,7 @@ describe("browser recording", () => {
       events.push("start-screencast");
       frameSubscription.listener?.({
         tabId,
-        data: "captured-frame",
+        data: frameBytes("captured-frame"),
         width: 390,
         height: 844,
         receivedAt: "2026-06-26T00:00:00.000Z",
@@ -257,7 +249,7 @@ describe("browser recording", () => {
 
     frameSubscription.listener?.({
       tabId: "recording-tab",
-      data: "different-sized-frame",
+      data: frameBytes("different-sized-frame"),
       width: 1280,
       height: 720,
       receivedAt: "2026-06-26T00:00:01.000Z",
@@ -269,29 +261,18 @@ describe("browser recording", () => {
     await stopBrowserRecording("recording-tab");
   });
 
-  it("draws the newest decoded frames without starving behind decode latency", async () => {
+  it("bounds decode concurrency and keeps only the newest queued frame", async () => {
     const drawImage = vi.fn();
-    class DeferredImage {
-      static readonly instances: DeferredImage[] = [];
-      private loadListener: EventListenerOrEventListenerObject | undefined;
-
-      constructor() {
-        DeferredImage.instances.push(this);
-      }
-
-      addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-        if (type === "load") this.loadListener = listener;
-      }
-
-      set src(_value: string) {}
-
-      finishLoading(): void {
-        const event = new Event("load");
-        if (typeof this.loadListener === "function") this.loadListener(event);
-        else this.loadListener?.handleEvent(event);
-      }
-    }
-    vi.stubGlobal("Image", DeferredImage as unknown as typeof Image);
+    const pendingDecodes: Array<(image: ImageBitmap) => void> = [];
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(
+        () =>
+          new Promise<ImageBitmap>((resolve) => {
+            pendingDecodes.push(resolve);
+          }),
+      ),
+    );
     vi.stubGlobal("document", {
       createElement: () => ({
         width: 0,
@@ -304,25 +285,39 @@ describe("browser recording", () => {
     await startBrowserRecording("recording-tab");
     frameSubscription.listener?.({
       tabId: "recording-tab",
-      data: "second-frame",
+      data: frameBytes("second-frame"),
       width: 800,
       height: 600,
       receivedAt: "2026-06-26T00:00:01.000Z",
     });
     frameSubscription.listener?.({
       tabId: "recording-tab",
-      data: "third-frame",
+      data: frameBytes("third-frame"),
       width: 800,
       height: 600,
       receivedAt: "2026-06-26T00:00:02.000Z",
     });
 
-    DeferredImage.instances[1]?.finishLoading();
+    expect(createImageBitmap).toHaveBeenCalledOnce();
+    expect(pendingDecodes).toHaveLength(1);
+
+    const resolveDecode = async (index: number) => {
+      pendingDecodes[index]?.({ close: vi.fn() } as unknown as ImageBitmap);
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+
+    await resolveDecode(0);
     expect(drawImage).toHaveBeenCalledOnce();
-    DeferredImage.instances[2]?.finishLoading();
+    expect(createImageBitmap).toHaveBeenCalledTimes(2);
+    expect(pendingDecodes).toHaveLength(2);
+    const newestQueuedBlob = vi.mocked(createImageBitmap).mock.calls[1]?.[0];
+    expect(newestQueuedBlob).toBeInstanceOf(Blob);
+    expect(await (newestQueuedBlob as Blob).text()).toBe("third-frame");
+
+    await resolveDecode(1);
     expect(drawImage).toHaveBeenCalledTimes(2);
-    DeferredImage.instances[0]?.finishLoading();
-    expect(drawImage).toHaveBeenCalledTimes(2);
+    expect(createImageBitmap).toHaveBeenCalledTimes(2);
 
     await stopBrowserRecording("recording-tab");
   });
@@ -412,7 +407,7 @@ describe("browser recording", () => {
       events.push("start-screencast");
       frameSubscription.listener?.({
         tabId,
-        data: "initial-frame",
+        data: frameBytes("initial-frame"),
         width: 800,
         height: 600,
         receivedAt: "2026-06-26T00:00:00.000Z",

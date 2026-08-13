@@ -36,6 +36,21 @@ describe("fitPictureInPictureContentSize", () => {
   });
 });
 
+describe("buildPreviewPictureInPictureDataUrl", () => {
+  it("decodes byte frames through bounded blob URLs instead of base64 strings", () => {
+    const html = decodeURIComponent(
+      PreviewManager.buildPreviewPictureInPictureDataUrl().slice(
+        "data:text/html;charset=utf-8,".length,
+      ),
+    );
+
+    expect(html).toContain("img-src blob:");
+    expect(html).toContain('new Blob([next.data], { type: "image/jpeg" })');
+    expect(html).toContain("URL.revokeObjectURL(frameUrl)");
+    expect(html).not.toContain("data:image/jpeg;base64");
+  });
+});
+
 describe("isPreviewRefreshShortcut", () => {
   const input = (overrides: Partial<Electron.Input> = {}) =>
     ({
@@ -160,6 +175,13 @@ interface TestCapturedPreviewImage {
 const makeTestPreviewWebContents = (
   capturePage: () => Promise<TestCapturedPreviewImage>,
   id = 42,
+  backgroundThrottling: {
+    readonly get: () => boolean;
+    readonly set: (allowed: boolean) => void;
+  } = {
+    get: vi.fn(() => true),
+    set: vi.fn((_allowed: boolean) => undefined),
+  },
 ) =>
   ({
     id,
@@ -170,6 +192,8 @@ const makeTestPreviewWebContents = (
     isLoading: () => false,
     getZoomFactor: () => 1,
     setZoomFactor: vi.fn(),
+    getBackgroundThrottling: backgroundThrottling.get,
+    setBackgroundThrottling: backgroundThrottling.set,
     on: vi.fn(),
     off: vi.fn(),
     ipc: { on: vi.fn(), off: vi.fn() },
@@ -817,6 +841,8 @@ describe("PreviewManager", () => {
             isLoading: () => false,
             getZoomFactor: () => 1,
             setZoomFactor: vi.fn(),
+            getBackgroundThrottling: vi.fn(() => true),
+            setBackgroundThrottling: vi.fn(),
             on: vi.fn(),
             off: vi.fn(),
             ipc: { on: vi.fn(), off: vi.fn() },
@@ -862,13 +888,13 @@ describe("PreviewManager", () => {
           expect.arrayContaining([
             expect.objectContaining({
               tabId: "tab_1",
-              data: firstJpeg.toString("base64"),
+              data: firstJpeg,
               width: 800,
               height: 600,
             }),
             expect.objectContaining({
               tabId: "tab_2",
-              data: secondJpeg.toString("base64"),
+              data: secondJpeg,
               width: 390,
               height: 844,
             }),
@@ -948,6 +974,78 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("transfers the capture throttling lease to a replacement webview", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const capturePage = vi.fn(async () => ({
+          toJPEG: () => Buffer.from("recording-frame"),
+          getSize: () => ({ width: 1280, height: 720 }),
+        }));
+        const initialSetBackgroundThrottling = vi.fn();
+        const replacementSetBackgroundThrottling = vi.fn();
+        const initialWebContents = makeTestPreviewWebContents(capturePage, 42, {
+          get: vi.fn(() => true),
+          set: initialSetBackgroundThrottling,
+        });
+        const replacementWebContents = makeTestPreviewWebContents(capturePage, 43, {
+          get: vi.fn(() => true),
+          set: replacementSetBackgroundThrottling,
+        });
+        fromId.mockImplementation((webContentsId?: number) => {
+          if (webContentsId === 42) return initialWebContents;
+          if (webContentsId === 43) return replacementWebContents;
+          return null;
+        });
+
+        yield* manager.createTab("tab_capture_replaced_throttling");
+        yield* manager.registerWebview("tab_capture_replaced_throttling", 42);
+        yield* manager.startRecording("tab_capture_replaced_throttling");
+
+        expect(initialSetBackgroundThrottling.mock.calls).toEqual([[false]]);
+
+        yield* manager.registerWebview("tab_capture_replaced_throttling", 43);
+
+        expect(initialSetBackgroundThrottling.mock.calls).toEqual([[false], [true]]);
+        expect(replacementSetBackgroundThrottling.mock.calls).toEqual([[false]]);
+
+        yield* manager.stopRecording("tab_capture_replaced_throttling");
+
+        expect(replacementSetBackgroundThrottling.mock.calls).toEqual([[false], [true]]);
+      }),
+    ),
+  );
+
+  effectIt.effect("restores throttling when capture setup fails", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const setBackgroundThrottling = vi.fn((allowed: boolean) => {
+          if (!allowed) throw new Error("throttling change failed");
+        });
+        fromId.mockReturnValue(
+          makeTestPreviewWebContents(
+            vi.fn(async () => ({
+              toJPEG: () => Buffer.from("unused-frame"),
+              getSize: () => ({ width: 1280, height: 720 }),
+            })),
+            42,
+            {
+              get: vi.fn(() => true),
+              set: setBackgroundThrottling,
+            },
+          ),
+        );
+
+        yield* manager.createTab("tab_capture_setup_failure");
+        yield* manager.registerWebview("tab_capture_setup_failure", 42);
+
+        const exit = yield* Effect.exit(manager.startRecording("tab_capture_setup_failure"));
+
+        expect(Exit.isFailure(exit)).toBe(true);
+        expect(setBackgroundThrottling.mock.calls).toEqual([[false], [true]]);
+      }),
+    ),
+  );
+
   effectIt.effect("keeps an in-flight frame when a capture consumer is added", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -994,7 +1092,7 @@ describe("PreviewManager", () => {
           "desktop:preview-pip-frame",
           expect.objectContaining({
             tabId: "tab_capture_consumer_added",
-            data: Buffer.from("shared-in-flight-frame").toString("base64"),
+            data: Buffer.from("shared-in-flight-frame"),
           }),
         );
 
@@ -1027,6 +1125,8 @@ describe("PreviewManager", () => {
           isDevToolsOpened: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
+          getBackgroundThrottling: vi.fn(() => true),
+          setBackgroundThrottling: vi.fn(),
           on: vi.fn(),
           off: vi.fn(),
           ipc: { on: vi.fn(), off: vi.fn() },
@@ -1062,7 +1162,7 @@ describe("PreviewManager", () => {
 
         debuggerMessage?.({}, "Page.screencastFrame", {
           sessionId: 1,
-          data: "inactive-frame",
+          data: Buffer.from("inactive-frame").toString("base64"),
           metadata: { deviceWidth: 1280, deviceHeight: 720 },
         });
         yield* Effect.yieldNow;
@@ -1072,7 +1172,7 @@ describe("PreviewManager", () => {
         recordingFrames.length = 0;
         debuggerMessage?.({}, "Page.screencastFrame", {
           sessionId: 2,
-          data: "active-frame",
+          data: Buffer.from("active-frame").toString("base64"),
           metadata: { deviceWidth: 1280, deviceHeight: 720 },
         });
         yield* Effect.yieldNow;
@@ -1080,7 +1180,7 @@ describe("PreviewManager", () => {
         expect(recordingFrames).toEqual([
           expect.objectContaining({
             tabId: "tab_screencast_guard",
-            data: "active-frame",
+            data: Buffer.from("active-frame"),
             width: 1280,
             height: 720,
           }),
@@ -1098,6 +1198,7 @@ describe("PreviewManager", () => {
           toJPEG: () => jpeg,
           getSize: () => ({ width: 1280, height: 720 }),
         }));
+        const setBackgroundThrottling = vi.fn();
         fromId.mockReturnValue({
           id: 42,
           isDestroyed: () => false,
@@ -1107,6 +1208,8 @@ describe("PreviewManager", () => {
           isLoading: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
+          getBackgroundThrottling: vi.fn(() => true),
+          setBackgroundThrottling,
           on: vi.fn(),
           off: vi.fn(),
           ipc: { on: vi.fn(), off: vi.fn() },
@@ -1192,23 +1295,26 @@ describe("PreviewManager", () => {
           "desktop:preview-pip-frame",
           expect.objectContaining({
             tabId: "tab_pip",
-            data: jpeg.toString("base64"),
+            data: jpeg,
             width: 1280,
             height: 720,
           }),
         );
         expect(states.at(-1)?.pictureInPicture).toBe(true);
         expect(capturePage).toHaveBeenCalledOnce();
+        expect(setBackgroundThrottling.mock.calls).toEqual([[false]]);
 
         yield* manager.startRecording("tab_pip");
         expect(capturePage).toHaveBeenCalledOnce();
         expect(recordingFrames).toHaveLength(0);
+        expect(setBackgroundThrottling.mock.calls).toEqual([[false]]);
 
         yield* TestClock.adjust(100);
         expect(capturePage).toHaveBeenCalledTimes(2);
         expect(recordingFrames).toHaveLength(1);
 
         yield* manager.stopRecording("tab_pip");
+        expect(setBackgroundThrottling.mock.calls).toEqual([[false]]);
         const framesBeforePictureInPictureOnlyTick = pictureInPictureSend.mock.calls.length;
         yield* TestClock.adjust(100);
         expect(capturePage).toHaveBeenCalledTimes(3);
@@ -1219,6 +1325,7 @@ describe("PreviewManager", () => {
 
         yield* manager.closePictureInPicture("tab_pip");
         expect(pictureInPictureWindow.close).toHaveBeenCalledOnce();
+        expect(setBackgroundThrottling.mock.calls).toEqual([[false], [true]]);
         expect(states.at(-1)?.pictureInPicture).toBe(false);
         const capturesAfterClose = capturePage.mock.calls.length;
         yield* TestClock.adjust(200);
@@ -1258,7 +1365,7 @@ describe("PreviewManager", () => {
         expect(frames).toEqual([
           expect.objectContaining({
             tabId: "tab_cold_capture",
-            data: jpeg.toString("base64"),
+            data: jpeg,
             width: 1280,
             height: 720,
           }),
