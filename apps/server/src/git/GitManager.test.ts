@@ -1406,6 +1406,49 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect("status looks up a PR after a previously unpublished branch is pushed", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/published-after-status"]);
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify([
+              {
+                number: 318,
+                title: "Opened after the first unpublished skip",
+                url: "https://github.com/pingdotgg/t3code/pull/318",
+                baseRefName: "main",
+                headRefName: "feature/published-after-status",
+                state: "OPEN",
+                updatedAt: "2026-04-01T15:00:00Z",
+              },
+            ]),
+          ],
+        },
+      });
+
+      const beforePush = yield* manager.status({ cwd: repoDir });
+      expect(beforePush.pr).toBeNull();
+      expect(ghCalls.filter((call) => call.startsWith("pr list "))).toHaveLength(0);
+
+      yield* runGit(repoDir, ["push", "origin", "feature/published-after-status"]);
+      // Drop the 1s remote-status cache without bumping the PR-lookup epoch, so
+      // this asserts the unpublished skip itself is not sticky.
+      yield* manager.invalidateRemoteStatus(repoDir);
+
+      const afterPush = yield* manager.status({ cwd: repoDir });
+      expect(afterPush.pr?.number).toBe(318);
+      expect(ghCalls.filter((call) => call.startsWith("pr list ")).length).toBeGreaterThan(0);
+    }),
+  );
+
   it.effect("status still looks up PRs for a branch pushed without --set-upstream", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");

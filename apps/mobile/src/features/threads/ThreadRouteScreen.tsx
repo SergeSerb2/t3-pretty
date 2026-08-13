@@ -80,6 +80,8 @@ import {
   ThreadInspectorContentStack,
   type ThreadInspectorMode,
 } from "./thread-inspector-content-stack";
+import { ThreadChatHeaderTitle } from "./ThreadChatHeaderTitle";
+import { useThreadModelIdentity } from "./use-thread-model-identity";
 
 interface ThreadInspectorSelection {
   readonly routeThreadIdentity: string | null;
@@ -324,12 +326,17 @@ function ThreadRouteContent(
 
   /* ─── Native header theming ──────────────────────────────────────── */
   const usesNativeHeaderGlass = NATIVE_LIQUID_GLASS_SUPPORTED;
-  const headerSubtitle = [
+  const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
+  const headerLocation = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
   ]
     .filter(Boolean)
     .join(" · ");
+  const modelIdentity = useThreadModelIdentity(
+    serverConfig,
+    composer.modelSelection ?? selectedThread?.modelSelection ?? null,
+  );
   /* ─── Git status for native header trigger ───────────────────────── */
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
@@ -770,6 +777,18 @@ function ThreadRouteContent(
     [navigation],
   );
 
+  const renderHeaderTitle = useCallback(
+    ({ tintColor }: { readonly tintColor?: string }) => (
+      <ThreadChatHeaderTitle
+        title={selectedThread?.title ?? ""}
+        location={headerLocation}
+        identity={modelIdentity}
+        tintColor={tintColor}
+      />
+    ),
+    [headerLocation, modelIdentity, selectedThread?.title],
+  );
+
   if (!environmentId || !threadId) {
     return <OpeningThreadLoadingScreen />;
   }
@@ -784,7 +803,6 @@ function ThreadRouteContent(
     detailDeleted: selectedThreadDetailState.status === "deleted",
     connectionState: routeConnectionState,
   });
-  const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
   const renderThreadRouteBody = (showActionControls: boolean) => (
     <>
       <ThreadGitControls {...threadGitControlProps} showActionControls={showActionControls} />
@@ -851,13 +869,7 @@ function ThreadRouteContent(
           // Android draws its own in-flow header (AndroidScreenHeader below);
           // the native stack header stays iOS-only.
           headerShown: Platform.OS !== "android",
-          headerTitle: selectedThread.title,
-          headerTitleStyle: usesNativeHeaderGlass
-            ? {
-                fontSize: 17,
-                fontWeight: "800",
-              }
-            : undefined,
+          headerTitle: Platform.OS === "ios" ? renderHeaderTitle : selectedThread.title,
           title: selectedThread.title,
           headerBackVisible: !layout.usesSplitView,
           // Compact uses the NATIVE back button when a previous route exists;
@@ -878,14 +890,14 @@ function ThreadRouteContent(
             Platform.OS === "ios"
               ? () => (layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems)
               : undefined,
-          unstable_headerSubtitle: usesNativeHeaderGlass ? headerSubtitle : undefined,
         }}
       />
 
       {Platform.OS === "android" ? (
         <AndroidScreenHeader
           title={selectedThread.title}
-          subtitle={headerSubtitle}
+          subtitle={headerLocation}
+          meta={modelIdentity?.summary}
           onBack={layout.usesSplitView ? undefined : () => navigation.goBack()}
           actions={androidHeaderActions}
         />

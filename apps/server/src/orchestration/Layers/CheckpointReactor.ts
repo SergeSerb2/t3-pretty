@@ -554,6 +554,13 @@ const make = Effect.gen(function* () {
         local,
       });
     }
+
+    // Local refresh is cheap and must stay on the checkpoint path. A PR the
+    // agent just opened lives on the remote side of status, behind GitManager's
+    // lookup cache — bump that cache (refreshStatus) without blocking capture.
+    yield* vcsStatusBroadcaster
+      .refreshStatus(sessionRuntime.value.cwd)
+      .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
   });
 
   // A `git checkout` run inside a thread's dedicated worktree (by an agent or

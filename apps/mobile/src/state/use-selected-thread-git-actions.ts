@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { EnvironmentProject, EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
@@ -6,6 +6,7 @@ import {
   type GitActionRequestInput,
   type VcsActionOperation,
   type VcsRef,
+  shouldRefreshGitStatusAfterTurnComplete,
 } from "@t3tools/client-runtime/state/vcs";
 import type { GitRunStackedActionResult } from "@t3tools/contracts";
 import {
@@ -125,6 +126,28 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
     }
     void refreshSelectedThreadGitStatus({ quiet: true });
   }, [loadInitialState, refreshSelectedThreadGitStatus, selectedThread, selectedThreadProject]);
+
+  const turnCompleteRefreshRef = useRef<{
+    threadId: string | null;
+    completedAt: string | null;
+  }>({ threadId: null, completedAt: null });
+  useEffect(() => {
+    const threadId = selectedThread?.id ?? null;
+    const completedAt = selectedThread?.latestTurn?.completedAt ?? null;
+    const previous = turnCompleteRefreshRef.current;
+    turnCompleteRefreshRef.current = { threadId, completedAt };
+    if (
+      !shouldRefreshGitStatusAfterTurnComplete({
+        previousThreadId: previous.threadId,
+        threadId,
+        previousCompletedAt: previous.completedAt,
+        completedAt,
+      })
+    ) {
+      return;
+    }
+    void refreshSelectedThreadGitStatus({ quiet: true });
+  }, [refreshSelectedThreadGitStatus, selectedThread?.id, selectedThread?.latestTurn?.completedAt]);
 
   const runSelectedThreadGitMutation = useCallback(
     async <T, E>(
