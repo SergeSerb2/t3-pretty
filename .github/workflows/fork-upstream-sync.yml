@@ -213,7 +213,7 @@ jobs:
             sleep 5
           done
           [[ "$merge_state" == "clean" || "$merge_state" == "unstable" ]] || {
-            echo "Pull request remained $merge_state after CI statuses were published." >&2
+            echo "Pull request remained $merge_state and could not be merged." >&2
             exit 1
           }
 

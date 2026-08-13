@@ -2,7 +2,9 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs four jobs on pull requests and
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) defines four jobs. T3 Pretty does not
+run them automatically: fork-only types fail Check, and the jobs do not gate releases. Dispatch
+the workflow manually if a one-off run is needed. On the parent repo the same jobs run on
 pushes to `main`:
 
 - **Check**: `vp check` (format and lint; this repo sets `typeCheck: false` in its lint options),
