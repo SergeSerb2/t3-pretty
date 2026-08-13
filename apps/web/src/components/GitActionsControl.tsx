@@ -4,6 +4,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { shouldRefreshGitStatusAfterTurnComplete } from "@t3tools/client-runtime/state/vcs";
 import type {
   GitActionProgressEvent,
   GitRunStackedActionResult,
@@ -1257,6 +1258,34 @@ export default function GitActionsControl({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [activeEnvironmentId, gitCwd, refreshVcsStatus]);
+
+  const turnCompleteRefreshRef = useRef<{
+    threadId: string | null;
+    completedAt: string | null;
+  }>({ threadId: null, completedAt: null });
+  useEffect(() => {
+    const threadId = activeServerThread?.id ?? null;
+    const completedAt = activeServerThread?.latestTurn?.completedAt ?? null;
+    const previous = turnCompleteRefreshRef.current;
+    turnCompleteRefreshRef.current = { threadId, completedAt };
+    if (
+      !shouldRefreshGitStatusAfterTurnComplete({
+        previousThreadId: previous.threadId,
+        threadId,
+        previousCompletedAt: previous.completedAt,
+        completedAt,
+      })
+    ) {
+      return;
+    }
+    requestVcsStatusRefresh(refreshVcsStatus, activeEnvironmentId, gitCwd);
+  }, [
+    activeEnvironmentId,
+    activeServerThread?.id,
+    activeServerThread?.latestTurn?.completedAt,
+    gitCwd,
+    refreshVcsStatus,
+  ]);
 
   const openExistingPr = useCallback(async () => {
     const openPr = gitStatusForActions?.pr?.state === "open" ? gitStatusForActions.pr : null;

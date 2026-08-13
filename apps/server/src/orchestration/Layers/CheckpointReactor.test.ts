@@ -285,6 +285,7 @@ describe("CheckpointReactor", () => {
     readonly providerSessionCwd?: string;
     readonly providerName?: ProviderDriverKind;
     readonly gitStatusRefreshCalls?: Array<string>;
+    readonly gitStatusFullRefreshCalls?: Array<string>;
   }) {
     const cwd = createGitRepository();
     tempDirs.push(cwd);
@@ -314,24 +315,33 @@ describe("CheckpointReactor", () => {
     const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
       prefix: "t3-checkpoint-reactor-test-",
     });
+    const dummyLocalStatus = {
+      isRepo: true,
+      hasPrimaryRemote: false,
+      isDefaultRef: true,
+      refName: options?.localStatusRefName !== undefined ? options.localStatusRefName : "main",
+      hasWorkingTreeChanges: false,
+      workingTree: { files: [], insertions: 0, deletions: 0 },
+    };
     const vcsStatusBroadcasterLayer = Layer.succeed(VcsStatusBroadcaster, {
       getStatus: () => Effect.die("getStatus should not be called in this test"),
       peekStatus: () => Effect.succeed(null),
       refreshLocalStatus: (cwd: string) =>
         Effect.sync(() => {
           options?.gitStatusRefreshCalls?.push(cwd);
+        }).pipe(Effect.as(dummyLocalStatus)),
+      refreshStatus: (cwd: string) =>
+        Effect.sync(() => {
+          options?.gitStatusFullRefreshCalls?.push(cwd);
         }).pipe(
           Effect.as({
-            isRepo: true,
-            hasPrimaryRemote: false,
-            isDefaultRef: true,
-            refName:
-              options?.localStatusRefName !== undefined ? options.localStatusRefName : "main",
-            hasWorkingTreeChanges: false,
-            workingTree: { files: [], insertions: 0, deletions: 0 },
+            ...dummyLocalStatus,
+            hasUpstream: false,
+            aheadCount: 0,
+            behindCount: 0,
+            pr: null,
           }),
         ),
-      refreshStatus: () => Effect.die("refreshStatus should not be called in this test"),
       streamStatus: () => Stream.empty,
     });
 
