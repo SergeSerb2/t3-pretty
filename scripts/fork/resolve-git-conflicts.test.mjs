@@ -35,6 +35,8 @@ describe("T3 Pretty upstream conflict resolver", () => {
     });
 
     assert.include(prompt, "OURS is T3 Pretty main");
+    assert.include(prompt, "parent first-party replacement");
+    assert.include(prompt, "native mobile pull-request manager");
     assert.include(prompt, "Integrate every compatible parent improvement");
     assert.include(prompt, "omit only the smallest conflicting portion");
     assert.include(prompt, "An omission must never be silent");
@@ -42,6 +44,7 @@ describe("T3 Pretty upstream conflict resolver", () => {
     assert.include(prompt, "upstream_changes_omitted");
     assert.include(prompt, "fork-owned Expo project and OTA boundary");
     assert.include(prompt, "integrate compatible upstream mobile features");
+    assert.include(prompt, "take upstream's implementation and keep only Pretty branding");
   });
 
   it("allows a large generated file when its conflict prompt remains bounded", () => {

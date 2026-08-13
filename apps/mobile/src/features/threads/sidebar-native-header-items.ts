@@ -18,6 +18,7 @@ function sfSymbolIcon(name: string): NativeHeaderIcon {
 export function createSidebarHeaderItems(input: {
   readonly filterIcon: string;
   readonly filterMenu: HomeListFilterMenu;
+  readonly onOpenPullRequests: () => void;
   readonly onOpenSettings: () => void;
 }): NativeStackHeaderItem[] {
   return [
@@ -27,6 +28,13 @@ export function createSidebarHeaderItems(input: {
       accessibilityLabel: "Filter and sort threads",
       icon: sfSymbolIcon(input.filterIcon),
       onPress: () => presentHomeListFilterMenu(input.filterMenu, "top-start"),
+    }),
+    withNativeGlassHeaderItem({
+      type: "button",
+      label: "",
+      accessibilityLabel: "Open pull requests",
+      icon: sfSymbolIcon("arrow.triangle.pull"),
+      onPress: input.onOpenPullRequests,
     }),
     withNativeGlassHeaderItem({
       type: "button",
