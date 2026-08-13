@@ -26,6 +26,7 @@ import { makeRelayDeviceRegistrationRequest, resolveApsEnvironment } from "./reg
 import {
   AgentAwarenessOperationError,
   __resetAgentAwarenessRemoteRegistrationForTest,
+  applyLocalLiveActivityProps,
   getAgentAwarenessRegistrationStatus,
   mergeAgentAwarenessRegistrationPreferences,
   refreshActiveLiveActivityRemoteRegistration,
@@ -43,6 +44,9 @@ import * as Notifications from "expo-notifications";
 const secureStore = vi.hoisted(() => new Map<string, string>());
 const widgetMocks = vi.hoisted(() => ({
   getInstances: vi.fn(() => []),
+  start: vi.fn(),
+  update: vi.fn(() => Promise.resolve()),
+  end: vi.fn(() => Promise.resolve()),
 }));
 const backgroundRuntime = vi.hoisted(() => ({
   pending: [] as Array<{
@@ -77,6 +81,7 @@ vi.mock("expo-widgets", () => ({
 vi.mock("../../widgets/AgentActivity", () => ({
   default: {
     getInstances: widgetMocks.getInstances,
+    start: widgetMocks.start,
   },
 }));
 
@@ -227,6 +232,9 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     vi.mocked(loadOrCreateAgentAwarenessDeviceId).mockResolvedValue("device-1");
     widgetMocks.getInstances.mockReset();
     widgetMocks.getInstances.mockReturnValue([]);
+    widgetMocks.start.mockReset();
+    widgetMocks.update.mockReset();
+    widgetMocks.end.mockReset();
   });
 
   it("preserves disabled Live Activity preferences in relay registrations", () => {
@@ -856,4 +864,72 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       }).pipe(Effect.provide(relayTestLayer));
     },
   );
+
+  it("starts a Live Activity from local thread state when none is armed", () => {
+    const activity = {
+      getPushToken: vi.fn(() => Promise.resolve("activity-token")),
+      addPushTokenListener: vi.fn(),
+      update: vi.fn(() => Promise.resolve()),
+    };
+    widgetMocks.start.mockReturnValue(activity);
+
+    applyLocalLiveActivityProps({
+      title: "T3 Pretty",
+      subtitle: "Agent work in progress",
+      activeCount: 1,
+      updatedAt: "2026-06-02T00:00:00.000Z",
+      activities: [
+        {
+          environmentId: "env-1",
+          threadId: "thread-1",
+          projectTitle: "t3-pretty",
+          threadTitle: "Fix Live Activities",
+          modelTitle: "gpt-5.4",
+          phase: "running",
+          status: "Editing AgentActivity.tsx",
+          updatedAt: "2026-06-02T00:00:00.000Z",
+          deepLink: "/threads/env-1/thread-1",
+        },
+      ],
+    });
+
+    expect(widgetMocks.start).toHaveBeenCalledTimes(1);
+    expect(activity.update).not.toHaveBeenCalled();
+  });
+
+  it("updates an armed Live Activity from local thread state", () => {
+    const activity = {
+      getPushToken: vi.fn(() => Promise.resolve("activity-token")),
+      addPushTokenListener: vi.fn(),
+      update: vi.fn(() => Promise.resolve()),
+      end: vi.fn(() => Promise.resolve()),
+    };
+    widgetMocks.getInstances.mockReturnValue([activity] as never);
+
+    const props = {
+      title: "T3 Pretty",
+      subtitle: "Agent work in progress",
+      activeCount: 1,
+      updatedAt: "2026-06-02T00:00:00.000Z",
+      activities: [
+        {
+          environmentId: "env-1",
+          threadId: "thread-1",
+          projectTitle: "t3-pretty",
+          threadTitle: "Fix Live Activities",
+          modelTitle: "gpt-5.4",
+          phase: "running" as const,
+          status: "Working",
+          updatedAt: "2026-06-02T00:00:00.000Z",
+          deepLink: "/threads/env-1/thread-1",
+        },
+      ],
+    };
+
+    applyLocalLiveActivityProps(props);
+    applyLocalLiveActivityProps(props);
+
+    expect(activity.update).toHaveBeenCalledTimes(1);
+    expect(widgetMocks.start).not.toHaveBeenCalled();
+  });
 });

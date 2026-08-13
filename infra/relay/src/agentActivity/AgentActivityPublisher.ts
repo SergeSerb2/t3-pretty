@@ -202,6 +202,15 @@ function statusForPhase(phase: RelayAgentActivityState["phase"]): string {
   }
 }
 
+function statusForState(state: RelayAgentActivityState): string {
+  // Running work otherwise reads as a frozen "Working" label for the whole
+  // turn. The awareness projection puts the current plan step in `detail`.
+  if (state.phase === "running" && state.detail) {
+    return state.detail;
+  }
+  return statusForPhase(state.phase);
+}
+
 function aggregateRowForState(state: RelayAgentActivityState) {
   return {
     environmentId: state.environmentId,
@@ -210,7 +219,7 @@ function aggregateRowForState(state: RelayAgentActivityState) {
     threadTitle: state.threadTitle,
     modelTitle: state.modelTitle,
     phase: state.phase,
-    status: statusForPhase(state.phase),
+    status: statusForState(state),
     updatedAt: state.updatedAt,
     deepLink: state.deepLink,
   };

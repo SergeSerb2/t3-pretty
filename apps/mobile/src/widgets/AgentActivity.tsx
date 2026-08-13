@@ -1,13 +1,16 @@
-import { HStack, Image, Spacer, Text, VStack, ZStack } from "@expo/ui/swift-ui";
+import { HStack, Image, ProgressView, Spacer, Text, VStack } from "@expo/ui/swift-ui";
 import type { ComponentProps } from "react";
 import {
+  activityBackgroundTint,
   font,
   foregroundStyle,
   frame,
   layoutPriority,
   lineLimit,
   padding,
+  progressViewStyle,
   resizable,
+  tint,
   widgetURL,
 } from "@expo/ui/swift-ui/modifiers";
 import {
@@ -37,6 +40,7 @@ export interface AgentActivityRowProps {
   readonly status: string;
   readonly updatedAt: string;
   readonly deepLink: string;
+  readonly progress?: number;
 }
 
 export interface AgentActivityProps {
@@ -61,7 +65,8 @@ export function AgentActivity(
   // system material regardless of the device's light/dark setting, so
   // scheme-derived dark text read as unreadable dark-on-dark on the lock
   // screen. Semantic colors adapt to whatever material the OS places them on:
-  // the dark LA banner and the (light or dark) home-screen widget alike.
+  // the dark LA banner, iOS 26 liquid glass, and the (light or dark)
+  // home-screen widget alike.
   const primaryForeground = "primary";
   const secondaryForeground = "secondary";
 
@@ -103,11 +108,11 @@ export function AgentActivity(
   const ordered = [...props.activities].sort(
     (a, b) => phasePriority(a.phase) - phasePriority(b.phase),
   );
+  // Glass Live Activities have a tight height budget once the header and
+  // elapsed time are on the card; three attention-first rows stay readable.
   const row0 = ordered[0];
   const row1 = ordered[1];
   const row2 = ordered[2];
-  const row3 = ordered[3];
-  const row4 = ordered[4];
 
   const attentionRows = props.activities.filter(
     (row) => row.phase === "waiting_for_approval" || row.phase === "waiting_for_input",
@@ -115,13 +120,13 @@ export function AgentActivity(
   const attentionRow = attentionRows[0];
   const failedRow = props.activities.find((row) => row.phase === "failed");
   const heroRow = attentionRow ?? failedRow ?? row0;
-  const tint = phaseTint(heroRow?.phase);
+  const tintColor = phaseTint(heroRow?.phase);
   // Headline count leans on the accent when a human is actually blocked.
   const headerTint = attentionRow
     ? phaseTint(attentionRow.phase)
     : failedRow
       ? phaseTint(failedRow.phase)
-      : tint;
+      : tintColor;
 
   // With nothing active the aggregate only carries recently finished work, so
   // "0 active agents" (and a lone "0" in the expanded island) read as broken.
@@ -154,6 +159,21 @@ export function AgentActivity(
       ? `t3code://${deepLinkRow.deepLink.slice(1)}`
       : null;
 
+  const inFlightPhase = (phase: AgentActivityPhase | undefined): boolean =>
+    phase === "running" || phase === "starting";
+  const heroInFlight = inFlightPhase(heroRow?.phase) && !allDone;
+  const allowMotion = !environment.isLuminanceReduced;
+  const simplified = environment.levelOfDetail === "simplified";
+
+  const parseDate = (value: string | undefined): Date | null => {
+    if (!value) {
+      return null;
+    }
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+  const clockDate = parseDate(heroRow?.updatedAt ?? props.updatedAt);
+
   // A scannable status glyph per phase — reads faster than colored words and
   // ties the compact / expanded / banner / watch presentations together.
   type SFName = NonNullable<ComponentProps<typeof Image>["systemName"]>;
@@ -185,37 +205,71 @@ export function AgentActivity(
     </HStack>
   );
 
-  // Single-line row used by every presentation: glyph, title, inline project,
-  // status. The project and status carry layoutPriority(1) so when space runs
-  // out it's the title that truncates, never the (short) project name or the
-  // status label. Single-line keeps rows inside the expanded island's hard
-  // height budget (~160pt) and lets the banner fit more agents.
+  // Live Activities cannot run JS timers. A circular ProgressView is the
+  // system-native in-flight mark — the SF Symbol it replaced was a still
+  // frame, which is why the island looked frozen.
+  const renderPhaseMark = (phase: AgentActivityPhase, size: number, color: string) =>
+    inFlightPhase(phase) && allowMotion ? (
+      <ProgressView
+        modifiers={[
+          progressViewStyle("circular"),
+          tint(color),
+          frame({ width: size, height: size }),
+        ]}
+      />
+    ) : (
+      renderGlyph(phaseSymbol(phase), size, color)
+    );
+
+  // Relative dates keep ticking on the lock screen without a push update.
+  const renderClock = (size: number, color: string) =>
+    clockDate ? (
+      <Text
+        date={clockDate}
+        dateStyle="relative"
+        modifiers={[
+          font({ design: "rounded", weight: "semibold", size }),
+          foregroundStyle(color),
+          layoutPriority(1),
+          lineLimit(1),
+        ]}
+      />
+    ) : null;
+
+  const renderProgressBar = (row: AgentActivityRowProps | undefined, color: string) =>
+    typeof row?.progress === "number" ? (
+      <ProgressView
+        value={Math.max(0, Math.min(1, row.progress))}
+        modifiers={[progressViewStyle("linear"), tint(color)]}
+      />
+    ) : null;
+
+  // Single-line row used by every presentation: mark, title, inline project,
+  // status. The status carries layoutPriority(1) so when space runs out it's
+  // the title that truncates. Single-line keeps rows inside the expanded
+  // island's hard height budget (~160pt).
   const renderCompactRow = (row: AgentActivityRowProps) => (
-    <HStack spacing={7} alignment="center">
+    <HStack spacing={8} alignment="center">
+      {renderPhaseMark(row.phase, 14, phaseTint(row.phase))}
       <Text
         modifiers={[
-          font({ weight: "semibold", size: 13 }),
+          font({ design: "rounded", weight: "semibold", size: 13 }),
           foregroundStyle(primaryForeground),
           lineLimit(1),
         ]}
       >
         {row.threadTitle}
       </Text>
-      {/* No layoutPriority and no frame on the project: two bare texts take
-          their ideal width when it fits and shrink proportionally only when it
-          doesn't — so short rows never truncate, and long title + long project
-          truncate together. (A maxWidth frame is greedy and reserved its full
-          width even for short names; layoutPriority let the project starve the
-          title.) */}
-      <Text modifiers={[font({ size: 11 }), foregroundStyle(secondaryForeground), lineLimit(1)]}>
+      <Text modifiers={[font({ size: 12 }), foregroundStyle(secondaryForeground), lineLimit(1)]}>
         {row.projectTitle}
       </Text>
       <Spacer minLength={8} />
       <Text
         modifiers={[
-          font({ weight: "semibold", size: 11 }),
+          font({ design: "rounded", weight: "semibold", size: 12 }),
           foregroundStyle(phaseTint(row.phase)),
           layoutPriority(1),
+          lineLimit(1),
         ]}
       >
         {row.status}
@@ -235,67 +289,72 @@ export function AgentActivity(
     </HStack>
   );
 
+  const bannerModifiers = [
+    padding({ all: 16 }),
+    // nil tint lets iOS 26 apply Liquid Glass instead of the old opaque
+    // Live Activity material. Pre-glass iOS keeps the system default.
+    activityBackgroundTint(null),
+    ...(deepLink ? [widgetURL(deepLink)] : []),
+  ];
+
+  const header = (
+    <HStack spacing={8} alignment="center">
+      {renderLogo(14, primaryForeground)}
+      <Text
+        modifiers={[
+          font({ design: "rounded", weight: "semibold", size: 13 }),
+          foregroundStyle(allDone ? headerTint : primaryForeground),
+          lineLimit(1),
+        ]}
+      >
+        {agentsLabel}
+      </Text>
+      {attentionSuffix ? (
+        <Text modifiers={[font({ size: 13 }), foregroundStyle(secondaryForeground)]}>·</Text>
+      ) : null}
+      {attentionSuffix ? (
+        <Text
+          modifiers={[
+            font({ design: "rounded", weight: "semibold", size: 13 }),
+            foregroundStyle(headerTint),
+            lineLimit(1),
+          ]}
+        >
+          {attentionSuffix}
+        </Text>
+      ) : null}
+      <Spacer minLength={8} />
+      {renderClock(12, secondaryForeground)}
+    </HStack>
+  );
+
+  const bannerBody = simplified ? (
+    header
+  ) : (
+    <VStack alignment="leading" spacing={10}>
+      {header}
+      {row0 ? renderCompactRow(row0) : null}
+      {renderProgressBar(heroRow, tintColor)}
+      {row1 ? renderCompactRow(row1) : null}
+      {row2 ? renderCompactRow(row2) : null}
+    </VStack>
+  );
+
   return {
     banner: (
-      <VStack
-        alignment="leading"
-        spacing={6}
-        modifiers={deepLink ? [padding({ all: 14 }), widgetURL(deepLink)] : [padding({ all: 14 })]}
-      >
-        {/* Logo pinned to the leading edge; the status texts centered across the
-            full width (ZStack so the logo doesn't skew the centering). No footer —
-            overflow beyond the visible rows is inferable from the count. */}
-        <ZStack>
-          <HStack spacing={0} alignment="center">
-            {renderLogo(13, primaryForeground)}
-            <Spacer minLength={0} />
-          </HStack>
-          <HStack spacing={6} alignment="center">
-            <Spacer minLength={0} />
-            <Text
-              modifiers={[
-                font({ weight: "semibold", size: 13 }),
-                // The all-done header carries the outcome tint (emerald /
-                // red) the way the Done/Failed status labels do.
-                foregroundStyle(allDone ? headerTint : primaryForeground),
-                lineLimit(1),
-              ]}
-            >
-              {agentsLabel}
-            </Text>
-            {attentionSuffix ? (
-              <Text modifiers={[font({ size: 13 }), foregroundStyle(secondaryForeground)]}>·</Text>
-            ) : null}
-            {attentionSuffix ? (
-              <Text
-                modifiers={[
-                  font({ weight: "semibold", size: 13 }),
-                  foregroundStyle(headerTint),
-                  lineLimit(1),
-                ]}
-              >
-                {attentionSuffix}
-              </Text>
-            ) : null}
-            <Spacer minLength={0} />
-          </HStack>
-        </ZStack>
-        {row0 ? renderCompactRow(row0) : null}
-        {row1 ? renderCompactRow(row1) : null}
-        {row2 ? renderCompactRow(row2) : null}
-        {row3 ? renderCompactRow(row3) : null}
-        {row4 ? renderCompactRow(row4) : null}
+      <VStack alignment="leading" spacing={0} modifiers={bannerModifiers}>
+        {bannerBody}
       </VStack>
     ),
     // Compact card for the watchOS Smart Stack + CarPlay (the `.small` family):
     // brand + count, then the single most important agent with its status glyph.
     bannerSmall: (
-      <VStack alignment="leading" spacing={5} modifiers={[padding({ all: 10 })]}>
+      <VStack alignment="leading" spacing={6} modifiers={[padding({ all: 10 })]}>
         <HStack spacing={7} alignment="center">
           {renderLogo(14, primaryForeground)}
           <Text
             modifiers={[
-              font({ weight: "bold", size: 13 }),
+              font({ design: "rounded", weight: "bold", size: 13 }),
               foregroundStyle(headerTint),
               lineLimit(1),
             ]}
@@ -306,9 +365,10 @@ export function AgentActivity(
         </HStack>
         {row0 ? (
           <HStack spacing={7} alignment="center">
+            {renderPhaseMark(row0.phase, 12, phaseTint(row0.phase))}
             <Text
               modifiers={[
-                font({ weight: "semibold", size: 12 }),
+                font({ design: "rounded", weight: "semibold", size: 12 }),
                 foregroundStyle(primaryForeground),
                 lineLimit(1),
               ]}
@@ -316,16 +376,29 @@ export function AgentActivity(
               {row0.threadTitle}
             </Text>
             <Spacer minLength={6} />
-            <Text modifiers={[font({ size: 11 }), foregroundStyle(phaseTint(row0.phase))]}>
+            <Text
+              modifiers={[
+                font({ design: "rounded", size: 11 }),
+                foregroundStyle(phaseTint(row0.phase)),
+              ]}
+            >
               {row0.status}
             </Text>
           </HStack>
         ) : null}
       </VStack>
     ),
-    compactLeading: renderLogo(14, tint),
+    compactLeading:
+      heroRow && (heroInFlight || attentionRow || failedRow || allDone)
+        ? renderPhaseMark(heroRow.phase, 20, tintColor)
+        : renderLogo(14, tintColor),
     compactTrailing: (
-      <Text modifiers={[font({ weight: "semibold", size: 11 }), foregroundStyle(tint)]}>
+      <Text
+        modifiers={[
+          font({ design: "rounded", weight: "semibold", size: 12 }),
+          foregroundStyle(tintColor),
+        ]}
+      >
         {attentionRow
           ? attentionRow.phase === "waiting_for_approval"
             ? "Approval"
@@ -334,28 +407,31 @@ export function AgentActivity(
       </Text>
     ),
     // The shared/minimal form is a ~22pt circle — a single signal reads there,
-    // the wordmark does not. Show the blocking/outcome phase glyph, else the
+    // the wordmark does not. Show the blocking/outcome phase mark, else the
     // mark (all-done shows the hero row's checkmark/cross).
     minimal:
       (attentionRow || failedRow || allDone) && heroRow
-        ? renderGlyph(phaseSymbol(heroRow.phase), 13, phaseTint(heroRow.phase))
-        : renderLogo(11, tint),
+        ? renderPhaseMark(heroRow.phase, 13, phaseTint(heroRow.phase))
+        : heroInFlight && heroRow
+          ? renderPhaseMark(heroRow.phase, 13, tintColor)
+          : renderLogo(11, tintColor),
     expandedLeading: (
       <HStack spacing={5} alignment="center" modifiers={[padding({ leading: 4, vertical: 4 })]}>
-        {renderLogo(15, tint)}
-        <Text modifiers={[font({ weight: "bold", size: 13 }), foregroundStyle(tint)]}>
+        {heroInFlight && heroRow
+          ? renderPhaseMark(heroRow.phase, 16, tintColor)
+          : renderLogo(15, tintColor)}
+        <Text
+          modifiers={[
+            font({ design: "rounded", weight: "bold", size: 13 }),
+            foregroundStyle(tintColor),
+          ]}
+        >
           {allDone ? doneLabel : `${props.activeCount}`}
         </Text>
       </HStack>
     ),
-    // No center content: the phase glyphs + statuses in expandedBottom already
-    // carry the attention signal, and the expanded island's height budget is
-    // tight enough that a summary line there pushed the third row off.
     expandedCenter: null,
-    // No trailing content: a timestamp is glanceable-lock-screen info, not
-    // useful in a view the user is actively holding open — and the trailing
-    // region hugs the island's corner radius, which clipped it anyway.
-    expandedTrailing: null,
+    expandedTrailing: renderClock(11, tintColor),
     expandedBottom: (
       // Vertical padding only: the expanded region provides its own horizontal
       // content margins, so `all` padding double-indented the rows.
@@ -363,14 +439,15 @@ export function AgentActivity(
       // curvature (right edge clipped status labels; titles hugged the left).
       <VStack
         alignment="leading"
-        spacing={5}
+        spacing={8}
         modifiers={
           deepLink
-            ? [padding({ vertical: 2, horizontal: 8 }), widgetURL(deepLink)]
-            : [padding({ vertical: 2, horizontal: 8 })]
+            ? [padding({ vertical: 4, horizontal: 8 }), widgetURL(deepLink)]
+            : [padding({ vertical: 4, horizontal: 8 })]
         }
       >
         {row0 ? renderCompactRow(row0) : null}
+        {renderProgressBar(heroRow, tintColor)}
         {row1 ? renderCompactRow(row1) : null}
         {row2 ? renderCompactRow(row2) : null}
       </VStack>
