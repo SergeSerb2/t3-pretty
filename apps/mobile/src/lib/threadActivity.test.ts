@@ -14,6 +14,7 @@ import {
 import {
   buildPendingUserInputAnswers,
   buildThreadFeed,
+  createThreadFeedBuilder,
   deriveThreadFeedPresentation,
   isPendingUserInputOptionSelected,
   setPendingUserInputCustomAnswer,
@@ -151,6 +152,99 @@ function makeThread(
 }
 
 describe("buildThreadFeed", () => {
+  it("reuses derived work entries across streaming message updates", () => {
+    const activity = makeActivity({
+      id: EventId.make("activity-cached"),
+      kind: "runtime.warning",
+      summary: "Runtime warning",
+      createdAt: "2026-04-01T00:00:01.000Z",
+      payload: { message: "Keep this work row" },
+    });
+    const thread = makeThread({
+      id: ThreadId.make("thread-cached-feed"),
+      projectId: ProjectId.make("project-1"),
+      title: "Cached feed",
+      activities: [activity],
+      messages: [
+        {
+          id: MessageId.make("assistant-stream"),
+          role: "assistant",
+          text: "One",
+          turnId: null,
+          streaming: true,
+          createdAt: "2026-04-01T00:00:02.000Z",
+          updatedAt: "2026-04-01T00:00:02.000Z",
+        },
+      ],
+    });
+    const builder = createThreadFeedBuilder();
+    const firstFeed = builder(thread);
+    const secondFeed = builder({
+      ...thread,
+      messages: [{ ...thread.messages[0]!, text: "One two" }],
+    });
+    const firstGroup = firstFeed.find((entry) => entry.type === "activity-group");
+    const secondGroup = secondFeed.find((entry) => entry.type === "activity-group");
+
+    expect(firstGroup?.type).toBe("activity-group");
+    expect(secondGroup?.type).toBe("activity-group");
+    if (firstGroup?.type !== "activity-group" || secondGroup?.type !== "activity-group") {
+      return;
+    }
+    expect(secondGroup).toBe(firstGroup);
+    expect(secondFeed.find((entry) => entry.type === "message")?.message.text).toBe("One two");
+  });
+
+  it("rebuilds activity groups when a streaming message becomes visible", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-visible-stream"),
+      projectId: ProjectId.make("project-1"),
+      title: "Visible stream",
+      activities: [
+        makeActivity({
+          id: EventId.make("activity-before-stream"),
+          kind: "runtime.warning",
+          summary: "Before",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          turnId: TurnId.make("turn-1"),
+          payload: { message: "Before" },
+        }),
+        makeActivity({
+          id: EventId.make("activity-after-stream"),
+          kind: "runtime.warning",
+          summary: "After",
+          createdAt: "2026-04-01T00:00:03.000Z",
+          turnId: TurnId.make("turn-1"),
+          payload: { message: "After" },
+        }),
+      ],
+      messages: [
+        {
+          id: MessageId.make("assistant-stream"),
+          role: "assistant",
+          text: "",
+          turnId: TurnId.make("turn-1"),
+          streaming: true,
+          createdAt: "2026-04-01T00:00:02.000Z",
+          updatedAt: "2026-04-01T00:00:02.000Z",
+        },
+      ],
+    });
+    const builder = createThreadFeedBuilder();
+    expect(builder(thread).map((entry) => entry.type)).toEqual(["activity-group"]);
+
+    const visibleFeed = builder({
+      ...thread,
+      messages: [{ ...thread.messages[0]!, text: "Now visible" }],
+    });
+
+    expect(visibleFeed.map((entry) => entry.type)).toEqual([
+      "activity-group",
+      "message",
+      "activity-group",
+    ]);
+  });
+
   it("keeps historic work entries attributed to their turns", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-1"),

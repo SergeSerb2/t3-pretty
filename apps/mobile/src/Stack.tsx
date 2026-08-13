@@ -140,6 +140,7 @@ const SettingsContentStack = createNativeStackNavigator({
   initialRouteName: "Settings",
   screenOptions: {
     ...GLASS_HEADER_OPTIONS,
+    freezeOnBlur: true,
     // Sheets read better with the iOS-default centered title (no editor style).
     unstable_navigationItemStyle: undefined,
   },
@@ -209,6 +210,7 @@ const SettingsContentStack = createNativeStackNavigator({
 const SettingsSheetStack = createNativeStackNavigator({
   initialRouteName: "SettingsContent",
   screenOptions: {
+    freezeOnBlur: true,
     headerShown: false,
   },
   screens: {
@@ -242,6 +244,7 @@ const NewTaskSheetStack = createNativeStackNavigator({
   initialRouteName: "NewTask",
   screenOptions: {
     ...GLASS_HEADER_OPTIONS,
+    freezeOnBlur: true,
     // Sheets read better with the iOS-default centered title (no editor style).
     unstable_navigationItemStyle: undefined,
   },
@@ -409,6 +412,7 @@ export const RootStack = createNativeStackNavigator({
   initialRouteName: "Home",
   layout: RootStackLayout,
   screenOptions: {
+    freezeOnBlur: true,
     headerShown: false,
   },
   screens: {

@@ -1511,6 +1511,215 @@ export function buildPendingUserInputAnswers(
   return answers;
 }
 
+type ThreadFeedSource = Pick<OrchestrationThread, "messages" | "activities">;
+
+type BuildThreadFeedOptions = {
+  readonly loadedMessages?: ReadonlyArray<OrchestrationThread["messages"][number]>;
+};
+
+const rawThreadFeedEntryCreatedAtOrder = Order.mapInput(
+  Order.Date,
+  (entry: RawThreadFeedEntry) => new Date(entry.createdAt),
+);
+
+function buildMessageFeedEntries(
+  messages: ReadonlyArray<OrchestrationThread["messages"][number]>,
+): ReadonlyArray<RawThreadFeedEntry> {
+  return Arr.sort(
+    messages.map<RawThreadFeedEntry>((message) => ({
+      type: "message",
+      id: message.id,
+      createdAt: message.createdAt,
+      message,
+    })),
+    rawThreadFeedEntryCreatedAtOrder,
+  );
+}
+
+function buildActivityFeedEntries(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): ReadonlyArray<RawThreadFeedEntry> {
+  return Arr.sort(
+    deriveWorkLogEntries(activities).map<RawThreadFeedEntry>((entry) => {
+      const summary = workEntryHeading(entry);
+      const detail = workEntryPreview(entry);
+      const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry));
+      const getCopyText = memoizeValue(() =>
+        [summary, detail, getFullDetail()]
+          .filter((value, index, values): value is string => {
+            return Boolean(value) && values.indexOf(value) === index;
+          })
+          .join("\n"),
+      );
+      return {
+        type: "activity",
+        id: entry.id,
+        createdAt: entry.createdAt,
+        turnId: entry.turnId,
+        activity: {
+          id: entry.id,
+          createdAt: entry.createdAt,
+          turnId: entry.turnId,
+          summary,
+          detail,
+          canExpand: workEntryHasExpandedBody(entry),
+          getFullDetail,
+          getCopyText,
+          icon: workEntryIcon(entry),
+          toolLike: workLogEntryIsToolLike(entry),
+          status: workEntryStatus(entry),
+        },
+      };
+    }),
+    rawThreadFeedEntryCreatedAtOrder,
+  );
+}
+
+function mergeThreadFeedEntries(
+  messages: ReadonlyArray<RawThreadFeedEntry>,
+  activities: ReadonlyArray<RawThreadFeedEntry>,
+): ReadonlyArray<RawThreadFeedEntry> {
+  const merged: RawThreadFeedEntry[] = [];
+  let messageIndex = 0;
+  let activityIndex = 0;
+
+  while (messageIndex < messages.length && activityIndex < activities.length) {
+    const message = messages[messageIndex];
+    const activity = activities[activityIndex];
+    if (!message || !activity) break;
+
+    // The old stable combined sort received messages before activities, so a
+    // timestamp tie must keep the message first.
+    if (Date.parse(message.createdAt) <= Date.parse(activity.createdAt)) {
+      merged.push(message);
+      messageIndex += 1;
+    } else {
+      merged.push(activity);
+      activityIndex += 1;
+    }
+  }
+
+  while (messageIndex < messages.length) {
+    const message = messages[messageIndex];
+    if (message) merged.push(message);
+    messageIndex += 1;
+  }
+  while (activityIndex < activities.length) {
+    const activity = activities[activityIndex];
+    if (activity) merged.push(activity);
+    activityIndex += 1;
+  }
+
+  return merged;
+}
+
+function assembleThreadFeed(
+  messages: ReadonlyArray<RawThreadFeedEntry>,
+  activities: ReadonlyArray<RawThreadFeedEntry>,
+  oldestLoadedMessageCreatedAt: string | null,
+): ThreadFeedEntry[] {
+  const visibleActivities =
+    oldestLoadedMessageCreatedAt === null
+      ? activities
+      : activities.filter((entry) => entry.createdAt >= oldestLoadedMessageCreatedAt);
+  return groupAdjacentActivities(mergeThreadFeedEntries(messages, visibleActivities));
+}
+
+function hasSameMessageTopology(
+  previous: ReadonlyArray<RawThreadFeedEntry>,
+  next: ReadonlyArray<RawThreadFeedEntry>,
+): boolean {
+  if (previous.length !== next.length) return false;
+  return previous.every((entry, index) => {
+    const nextEntry = next[index];
+    return (
+      entry.type === "message" &&
+      nextEntry?.type === "message" &&
+      entry.id === nextEntry.id &&
+      entry.createdAt === nextEntry.createdAt &&
+      isEmptyMessage(entry) === isEmptyMessage(nextEntry)
+    );
+  });
+}
+
+function replaceThreadFeedMessages(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+  messages: ReadonlyArray<RawThreadFeedEntry>,
+): ThreadFeedEntry[] {
+  const messagesById = new Map(messages.map((entry) => [entry.id, entry]));
+  return feed.map((entry) => {
+    if (entry.type !== "message") return entry;
+    const nextEntry = messagesById.get(entry.id);
+    return nextEntry?.type === "message" ? nextEntry : entry;
+  });
+}
+
+/**
+ * Builds a feed while reusing the expensive derived half when only messages or
+ * activities changed. Streaming message deltas normally preserve the activity
+ * array identity, so they no longer re-sort and re-interpret the full work log.
+ */
+export function createThreadFeedBuilder() {
+  let previousMessages: ReadonlyArray<OrchestrationThread["messages"][number]> | null = null;
+  let previousMessageEntries: ReadonlyArray<RawThreadFeedEntry> = [];
+  let previousActivities: ReadonlyArray<OrchestrationThreadActivity> | null = null;
+  let previousActivityEntries: ReadonlyArray<RawThreadFeedEntry> = [];
+  let previousOldestLoadedMessageCreatedAt: string | null = null;
+  let previousUsedLoadedMessages = false;
+  let previousFeed: ThreadFeedEntry[] | null = null;
+
+  return (thread: ThreadFeedSource, options?: BuildThreadFeedOptions): ThreadFeedEntry[] => {
+    const loadedMessages = options?.loadedMessages ?? thread.messages;
+    const messagesChanged = loadedMessages !== previousMessages;
+    const activitiesChanged = thread.activities !== previousActivities;
+    const usedLoadedMessages = options?.loadedMessages !== undefined;
+    const oldestLoadedMessageCreatedAt = usedLoadedMessages
+      ? (loadedMessages[0]?.createdAt ?? null)
+      : null;
+    const priorMessageEntries = previousMessageEntries;
+    const nextMessageEntries = messagesChanged
+      ? buildMessageFeedEntries(loadedMessages)
+      : previousMessageEntries;
+
+    if (messagesChanged) {
+      previousMessages = loadedMessages;
+      previousMessageEntries = nextMessageEntries;
+    }
+    if (activitiesChanged) {
+      previousActivities = thread.activities;
+      previousActivityEntries = buildActivityFeedEntries(thread.activities);
+    }
+
+    const canReplaceMessages =
+      previousFeed !== null &&
+      messagesChanged &&
+      !activitiesChanged &&
+      usedLoadedMessages === previousUsedLoadedMessages &&
+      oldestLoadedMessageCreatedAt === previousOldestLoadedMessageCreatedAt &&
+      hasSameMessageTopology(priorMessageEntries, nextMessageEntries);
+    const canReuseFeed =
+      previousFeed !== null &&
+      !messagesChanged &&
+      !activitiesChanged &&
+      usedLoadedMessages === previousUsedLoadedMessages &&
+      oldestLoadedMessageCreatedAt === previousOldestLoadedMessageCreatedAt;
+    const nextFeed =
+      canReplaceMessages && previousFeed !== null
+        ? replaceThreadFeedMessages(previousFeed, nextMessageEntries)
+        : canReuseFeed && previousFeed !== null
+          ? previousFeed
+          : assembleThreadFeed(
+              nextMessageEntries,
+              previousActivityEntries,
+              oldestLoadedMessageCreatedAt,
+            );
+    previousFeed = nextFeed;
+    previousUsedLoadedMessages = usedLoadedMessages;
+    previousOldestLoadedMessageCreatedAt = oldestLoadedMessageCreatedAt;
+    return nextFeed;
+  };
+}
+
 export function buildThreadFeed(
   thread: OrchestrationThread,
   options?: {
@@ -1518,61 +1727,9 @@ export function buildThreadFeed(
   },
 ): ThreadFeedEntry[] {
   const loadedMessages = options?.loadedMessages ?? thread.messages;
-  const oldestLoadedMessageCreatedAt =
-    options?.loadedMessages !== undefined ? (loadedMessages[0]?.createdAt ?? null) : null;
-  const workLogEntries = deriveWorkLogEntries(thread.activities);
-  const entries = Arr.sortWith(
-    [
-      ...loadedMessages.map<RawThreadFeedEntry>((message) => ({
-        type: "message",
-        id: message.id,
-        createdAt: message.createdAt,
-        message,
-      })),
-      ...workLogEntries
-        .filter((entry) => {
-          if (options?.loadedMessages === undefined) {
-            return true;
-          }
-          return (
-            oldestLoadedMessageCreatedAt === null || entry.createdAt >= oldestLoadedMessageCreatedAt
-          );
-        })
-        .map<RawThreadFeedEntry>((entry) => {
-          const summary = workEntryHeading(entry);
-          const detail = workEntryPreview(entry);
-          const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry));
-          const getCopyText = memoizeValue(() =>
-            [summary, detail, getFullDetail()]
-              .filter((value, index, values): value is string => {
-                return Boolean(value) && values.indexOf(value) === index;
-              })
-              .join("\n"),
-          );
-          return {
-            type: "activity",
-            id: entry.id,
-            createdAt: entry.createdAt,
-            turnId: entry.turnId,
-            activity: {
-              id: entry.id,
-              createdAt: entry.createdAt,
-              turnId: entry.turnId,
-              summary,
-              detail,
-              canExpand: workEntryHasExpandedBody(entry),
-              getFullDetail,
-              getCopyText,
-              icon: workEntryIcon(entry),
-              toolLike: workLogEntryIsToolLike(entry),
-              status: workEntryStatus(entry),
-            },
-          };
-        }),
-    ],
-    (s) => new Date(s.createdAt),
-    Order.Date,
+  return assembleThreadFeed(
+    buildMessageFeedEntries(loadedMessages),
+    buildActivityFeedEntries(thread.activities),
+    options?.loadedMessages === undefined ? null : (loadedMessages[0]?.createdAt ?? null),
   );
-
-  return groupAdjacentActivities(entries);
 }

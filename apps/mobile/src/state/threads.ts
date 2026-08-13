@@ -15,10 +15,17 @@ import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { environmentSnapshotAtom } from "./shell";
 
+// Keep back-navigation warm without retaining every opened thread's WebSocket
+// stream and full event history for the shared five-minute desktop TTL.
+export const MOBILE_THREAD_STATE_IDLE_TTL_MS = 15_000;
+
 export const threadEnvironment = createThreadEnvironmentAtoms(connectionAtomRuntime);
-export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
+export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime, {
+  idleTtlMs: MOBILE_THREAD_STATE_IDLE_TTL_MS,
+});
 export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
   environmentThreads.stateAtom,
+  { idleTtlMs: MOBILE_THREAD_STATE_IDLE_TTL_MS },
 );
 export const environmentThreadShells = createEnvironmentThreadShellAtoms({
   catalogValueAtom: environmentCatalog.catalogValueAtom,

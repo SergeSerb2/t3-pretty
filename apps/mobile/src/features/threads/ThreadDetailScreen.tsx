@@ -3,6 +3,7 @@ import type { EnvironmentThreadStatus } from "@t3tools/client-runtime/state/thre
 import { useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
 import type { LegendListRef } from "@legendapp/list/react-native";
 import { HeaderHeightContext } from "@react-navigation/elements";
+import { useIsFocused } from "@react-navigation/native";
 import type {
   ApprovalRequestId,
   EnvironmentId,
@@ -89,6 +90,7 @@ import type { ThreadContentPresentation } from "./threadContentPresentation";
 // jumps, iOS reloads the keyboard session, and typing dies until remount.
 const COMPOSER_STICKY_STYLE = { position: "absolute", bottom: 0, left: 0, right: 0 } as const;
 const COMPOSER_STICKY_OFFSET = { closed: 0, opened: 0 } as const;
+const STREAMING_HAPTIC_INTERVAL_MS = 1_000;
 
 export interface ThreadDetailScreenProps {
   readonly selectedThread: OrchestrationThreadShell;
@@ -176,7 +178,11 @@ function latestStreamingAssistantMessage(
   return null;
 }
 
-function useStreamingHaptics(threadId: ThreadId, feed: ReadonlyArray<ThreadFeedEntry>) {
+function useStreamingHaptics(
+  threadId: ThreadId,
+  feed: ReadonlyArray<ThreadFeedEntry>,
+  enabled: boolean,
+) {
   const lastStreamingAssistantRef = useRef<{
     readonly id: string;
     readonly textLength: number;
@@ -192,6 +198,12 @@ function useStreamingHaptics(threadId: ThreadId, feed: ReadonlyArray<ThreadFeedE
     }
 
     const latestStreamingMessage = latestStreamingAssistantMessage(feed);
+
+    if (!enabled) {
+      hydratedRef.current = true;
+      lastStreamingAssistantRef.current = latestStreamingMessage;
+      return;
+    }
 
     if (!hydratedRef.current) {
       hydratedRef.current = true;
@@ -217,13 +229,13 @@ function useStreamingHaptics(threadId: ThreadId, feed: ReadonlyArray<ThreadFeedE
     }
 
     const now = Date.now();
-    if (!isNewStream && now - lastStreamHapticAtRef.current < 320) {
+    if (!isNewStream && now - lastStreamHapticAtRef.current < STREAMING_HAPTIC_INTERVAL_MS) {
       return;
     }
 
     lastStreamHapticAtRef.current = now;
     void Haptics.selectionAsync();
-  }, [threadId, feed]);
+  }, [enabled, threadId, feed]);
 }
 
 const USER_INPUT_TOGGLE_TIMING = {
@@ -233,6 +245,7 @@ const USER_INPUT_TOGGLE_TIMING = {
 
 export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: ThreadDetailScreenProps) {
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
   const liveKeyboardHeight = useKeyboardState((state) => state.height);
   // Android can swallow the IME hide callbacks when the app is backgrounded
@@ -478,7 +491,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const isSplitLayout = layoutVariant === "split";
   const contentMaxWidth = isSplitLayout ? CHAT_CONTENT_MAX_WIDTH : undefined;
   const selectedInstanceId = props.selectedThread.modelSelection.instanceId;
-  useStreamingHaptics(props.selectedThread.id, props.selectedThreadFeed);
+  useStreamingHaptics(props.selectedThread.id, props.selectedThreadFeed, isFocused);
   const selectedProviderSkills = useMemo(
     () =>
       props.serverConfig?.providers.find((provider) => provider.instanceId === selectedInstanceId)
