@@ -5,6 +5,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   resolveInitialThreadSidebarWidth,
+  resolveThreadSidebarCssWidth,
+  resolveThreadSidebarMaximumWidth,
   THREAD_MAIN_CONTENT_MIN_WIDTH,
   THREAD_SIDEBAR_DEFAULT_WIDTH,
   THREAD_SIDEBAR_MIN_WIDTH,
@@ -12,27 +14,37 @@ import {
 
 describe("thread sidebar width", () => {
   it("uses the default width when no preference is stored", () => {
-    expect(resolveInitialThreadSidebarWidth(null, 1200)).toBe(THREAD_SIDEBAR_DEFAULT_WIDTH);
+    expect(resolveInitialThreadSidebarWidth(null)).toBe(THREAD_SIDEBAR_DEFAULT_WIDTH);
   });
 
   it("uses a stored width in the initial render", () => {
-    expect(resolveInitialThreadSidebarWidth(360, 1200)).toBe(360);
+    expect(resolveInitialThreadSidebarWidth(360)).toBe(360);
   });
 
   it("clamps a stored width to the sidebar minimum", () => {
-    expect(resolveInitialThreadSidebarWidth(120, 1200)).toBe(THREAD_SIDEBAR_MIN_WIDTH);
+    expect(resolveInitialThreadSidebarWidth(120)).toBe(THREAD_SIDEBAR_MIN_WIDTH);
   });
 
-  it("leaves enough room for the main content on a smaller window", () => {
-    const viewportWidth = 1000;
+  it("keeps stored widths above the current viewport maximum as preferences", () => {
+    // The rendered clamp lives in CSS so a window resized without a resize
+    // event cannot strand the sidebar; the preference survives to fill a
+    // larger window later.
+    expect(resolveInitialThreadSidebarWidth(900)).toBe(900);
+  });
 
-    expect(resolveInitialThreadSidebarWidth(900, viewportWidth)).toBe(
-      viewportWidth - THREAD_MAIN_CONTENT_MIN_WIDTH,
-    );
+  it("resolves the maximum against the live viewport", () => {
+    expect(resolveThreadSidebarMaximumWidth(1000)).toBe(1000 - THREAD_MAIN_CONTENT_MIN_WIDTH);
+    expect(resolveThreadSidebarMaximumWidth(1800)).toBe(1800 - THREAD_MAIN_CONTENT_MIN_WIDTH);
   });
 
   it("keeps the sidebar minimum when the whole layout is narrower than its minimums", () => {
-    expect(resolveInitialThreadSidebarWidth(900, 700)).toBe(THREAD_SIDEBAR_MIN_WIDTH);
+    expect(resolveThreadSidebarMaximumWidth(700)).toBe(THREAD_SIDEBAR_MIN_WIDTH);
+  });
+
+  it("expresses the width with a live viewport clamp", () => {
+    expect(resolveThreadSidebarCssWidth(400)).toBe(
+      `min(400px, max(${THREAD_SIDEBAR_MIN_WIDTH}px, calc(100vw - ${THREAD_MAIN_CONTENT_MIN_WIDTH}px)))`,
+    );
   });
 
   it("shows the desktop wordmark across the sidebar's full legal width range", () => {

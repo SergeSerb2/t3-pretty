@@ -18,7 +18,7 @@ import {
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useIsMobile } from "~/hooks/useMediaQuery";
-import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
+import { setLocalStorageItem } from "~/hooks/useLocalStorage";
 import { resolveSidebarState, type ResponsiveSidebarState } from "./sidebarState";
 import * as Schema from "effect/Schema";
 
@@ -40,7 +40,13 @@ type SidebarContextProps = {
 };
 
 type SidebarResizableOptions = {
-  maxWidth?: number;
+  // Formats a width for the wrapper's `--sidebar-width` custom property.
+  // Consumers can return a viewport-clamped CSS expression so the rendered
+  // width stays legal even when the window resizes without a resize event.
+  getCssWidth?: (width: number) => string;
+  // A getter is resolved on every drag frame so the cap tracks the live
+  // window size instead of a render-time snapshot.
+  maxWidth?: number | (() => number);
   minWidth?: number;
   onResize?: (width: number) => void;
   shouldAcceptWidth?: (context: {
@@ -55,7 +61,8 @@ type SidebarResizableOptions = {
 };
 
 type SidebarResolvedResizableOptions = {
-  maxWidth: number;
+  getCssWidth?: (width: number) => string;
+  maxWidth: number | (() => number);
   minWidth: number;
   onResize?: (width: number) => void;
   shouldAcceptWidth?: (context: {
@@ -202,6 +209,7 @@ function Sidebar({
       maxWidth: options.maxWidth ?? Number.POSITIVE_INFINITY,
       minWidth: options.minWidth ?? SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH,
       storageKey: options.storageKey ?? null,
+      ...(options.getCssWidth ? { getCssWidth: options.getCssWidth } : {}),
       ...(options.onResize ? { onResize: options.onResize } : {}),
       ...(options.shouldAcceptWidth ? { shouldAcceptWidth: options.shouldAcceptWidth } : {}),
     };
@@ -344,7 +352,12 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
 }
 
 function clampSidebarWidth(width: number, options: SidebarResolvedResizableOptions): number {
-  return Math.max(options.minWidth, Math.min(width, options.maxWidth));
+  const maxWidth = typeof options.maxWidth === "function" ? options.maxWidth() : options.maxWidth;
+  return Math.max(options.minWidth, Math.min(width, maxWidth));
+}
+
+function formatSidebarWidth(width: number, options: SidebarResolvedResizableOptions): string {
+  return options.getCssWidth?.(width) ?? `${width}px`;
 }
 
 function SidebarRail({
@@ -358,10 +371,13 @@ function SidebarRail({
 }: React.ComponentProps<"button">) {
   const { open, toggleSidebar } = useSidebar();
   const sidebarInstance = React.use(SidebarInstanceContext);
-  const railRef = React.useRef<HTMLButtonElement | null>(null);
   const suppressClickRef = React.useRef(false);
   const resizeStateRef = React.useRef<{
     moved: boolean;
+    // Captured before any drag-time writes so a no-op / fully-clamped drag can
+    // put the preference-backed CSS expression back instead of leaving a
+    // transiently clamped value on the wrapper.
+    originalCssWidth: string;
     pointerId: number;
     pendingWidth: number;
     rail: HTMLButtonElement;
@@ -391,10 +407,24 @@ function SidebarRail({
       resizeState.transitionTargets.forEach((element) => {
         element.style.removeProperty("transition-duration");
       });
-      if (resolvedResizable?.storageKey && typeof window !== "undefined") {
-        setLocalStorageItem(resolvedResizable.storageKey, resizeState.width, Schema.Finite);
+      // Commit only when the drag actually changed the width: a plain click or
+      // a fully clamped drag must not overwrite the stored preference with a
+      // transiently clamped visual width.
+      if (resizeState.width !== resizeState.startWidth) {
+        if (resolvedResizable?.storageKey && typeof window !== "undefined") {
+          setLocalStorageItem(resolvedResizable.storageKey, resizeState.width, Schema.Finite);
+        }
+        resolvedResizable?.onResize?.(resizeState.width);
+      } else if (
+        resizeState.wrapper.style.getPropertyValue("--sidebar-width") !==
+        resizeState.originalCssWidth
+      ) {
+        // Drag frames may have rewritten `--sidebar-width` with a clamped
+        // numeric basis (e.g. 460px) even though the preference (e.g. 900px)
+        // never committed. Restore the pre-drag expression so a later wider
+        // viewport can still grow into the stored preference.
+        resizeState.wrapper.style.setProperty("--sidebar-width", resizeState.originalCssWidth);
       }
-      resolvedResizable?.onResize?.(resizeState.width);
       resizeStateRef.current = null;
       if (resizeState.rail.hasPointerCapture(pointerId)) {
         resizeState.rail.releasePointerCapture(pointerId);
@@ -438,6 +468,7 @@ function SidebarRail({
       event.stopPropagation();
       resizeStateRef.current = {
         moved: false,
+        originalCssWidth: wrapper.style.getPropertyValue("--sidebar-width"),
         pointerId: event.pointerId,
         pendingWidth: initialWidth,
         rail: event.currentTarget,
@@ -450,7 +481,16 @@ function SidebarRail({
         width: initialWidth,
         wrapper,
       };
-      wrapper.style.setProperty("--sidebar-width", `${initialWidth}px`);
+      // Normalize an out-of-range width before the drag starts. An in-range
+      // width needs no write: the wrapper already renders it, and touching the
+      // custom property would replace a viewport-clamped CSS expression with
+      // a static value.
+      if (initialWidth !== startWidth) {
+        wrapper.style.setProperty(
+          "--sidebar-width",
+          formatSidebarWidth(initialWidth, resolvedResizable),
+        );
+      }
       event.currentTarget.setPointerCapture(event.pointerId);
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
@@ -500,7 +540,19 @@ function SidebarRail({
           return;
         }
 
-        activeResizeState.wrapper.style.setProperty("--sidebar-width", `${nextWidth}px`);
+        // Unchanged widths must not rewrite `--sidebar-width`: when the
+        // preference is above the live viewport cap, dragging toward the wider
+        // side keeps `nextWidth === startWidth` but `formatSidebarWidth` would
+        // replace the preference-backed expression with one based on the
+        // clamped visual width.
+        if (nextWidth === activeResizeState.width) {
+          return;
+        }
+
+        activeResizeState.wrapper.style.setProperty(
+          "--sidebar-width",
+          formatSidebarWidth(nextWidth, resolvedResizable),
+        );
         activeResizeState.width = nextWidth;
       });
     },
@@ -555,28 +607,6 @@ function SidebarRail({
     [onClick, open, resolvedResizable, toggleSidebar],
   );
 
-  React.useLayoutEffect(() => {
-    if (!resolvedResizable?.storageKey || typeof window === "undefined") return;
-    const rail = railRef.current;
-    if (!rail) return;
-    const wrapper = rail.closest<HTMLElement>("[data-slot='sidebar-wrapper']");
-    if (!wrapper) return;
-
-    let storedWidth: number | null;
-    try {
-      storedWidth = getLocalStorageItem(resolvedResizable.storageKey, Schema.Finite);
-    } catch (error) {
-      console.error("Could not restore persisted sidebar width.", error);
-      return;
-    }
-    if (storedWidth === null) return;
-    const clampedWidth = clampSidebarWidth(storedWidth, resolvedResizable);
-    // Hydrate the CSS variable before the browser paints so a restored sidebar
-    // never flashes at the default width first.
-    wrapper.style.setProperty("--sidebar-width", `${clampedWidth}px`);
-    resolvedResizable.onResize?.(clampedWidth);
-  }, [resolvedResizable]);
-
   React.useEffect(() => {
     return () => {
       const resizeState = resizeStateRef.current;
@@ -614,7 +644,6 @@ function SidebarRail({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
-            ref={railRef}
             tabIndex={-1}
             type="button"
             {...props}
@@ -1039,3 +1068,4 @@ export {
   useSidebar,
   useSidebarVisibility,
 };
+export type { SidebarResizableOptions };
