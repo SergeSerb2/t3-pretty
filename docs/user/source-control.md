@@ -51,6 +51,7 @@ T3 Code works with the platforms your team already uses:
 - Resolved review conversations collapse in the pull request conversation and on the diff, so you
   can see which comments are done without opening GitHub. Hide them entirely with **Hide resolved**
 - Open the review directly in your browser with one click
+- Command-click (Control-click on Windows and Linux) a pull request number in the sidebar to open it in your browser instead of in T3 Code
 - Check out a teammate's branch to review code locally
 
 When a PR/MR merges, its thread settles automatically across clients. Pinned threads and threads you explicitly kept active remain in the active list.
@@ -60,6 +61,14 @@ reviewing, thumbs-up when it finishes without comments, or a posted Codex review
 issues. **No public signal** is intentionally not labeled as “skipped”: it can also mean Smart Review
 is still deciding or Auto Review is disabled. Codex's current Smart Review setting remains the source
 of truth for that configuration.
+
+**Fix what you wrote, in place**
+
+- Rewrite a pull request's title and description from the review itself, in Markdown, with a
+  preview before you save
+- Rewrite your own comments the same way, wherever they are shown
+- Works on GitHub, GitLab, and Bitbucket. Azure DevOps takes a new title and description; its
+  comments stay read-only here, as they already were
 
 ### Know Your Setup at a Glance
 

@@ -2,13 +2,14 @@ import type {
   PullRequestActor,
   PullRequestCheck,
   PullRequestCheckStatus,
+  PullRequestChecksState,
   PullRequestMergeability,
-  PullRequestReaction,
   PullRequestState,
 } from "@t3tools/contracts";
 import {
   CircleCheckIcon,
   CircleDashedIcon,
+  CircleDotIcon,
   CircleXIcon,
   GitMergeIcon,
   GitPullRequestClosedIcon,
@@ -22,7 +23,6 @@ import { Children, isValidElement, type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { presentPullRequestReactions } from "./pullRequestReactions";
 
 interface StatePresentation {
   readonly label: string;
@@ -146,6 +146,51 @@ export function PullRequestCheckStatusIcon({ status }: { status: PullRequestChec
   );
 }
 
+/**
+ * The rollup a listing row carries, which is one word rather than the checks behind it. The
+ * headline is GitHub's own wording, so a reader who knows that page reads this one the same way.
+ */
+const CHECKS_STATE_PRESENTATION = {
+  passing: {
+    label: "All checks have passed",
+    Icon: CircleCheckIcon,
+    toneClassName: "text-emerald-600 dark:text-emerald-300/90",
+  },
+  failing: {
+    label: "Some checks were not successful",
+    Icon: CircleXIcon,
+    toneClassName: "text-destructive",
+  },
+  pending: {
+    label: "Some checks haven't completed yet",
+    Icon: CircleDotIcon,
+    toneClassName: "text-amber-600 dark:text-amber-400/90",
+  },
+} as const satisfies Record<
+  PullRequestChecksState,
+  { label: string; Icon: typeof CircleCheckIcon; toneClassName: string }
+>;
+
+export function pullRequestChecksStatePresentation(state: PullRequestChecksState) {
+  return CHECKS_STATE_PRESENTATION[state];
+}
+
+/**
+ * The same rollup the server sends with a listing row, worked out here from the checks a detail
+ * already holds — so the header shows the icon without a second field travelling with it.
+ *
+ * Null for a change request with no checks: nothing to show beats a tick nobody earned.
+ */
+export function pullRequestChecksState(
+  checks: ReadonlyArray<PullRequestCheck>,
+): PullRequestChecksState | null {
+  if (checks.length === 0) return null;
+  const statuses = checks.map((check) => check.status);
+  if (statuses.includes("failure") || statuses.includes("cancelled")) return "failing";
+  if (statuses.includes("pending")) return "pending";
+  return statuses.includes("success") ? "passing" : null;
+}
+
 export function PullRequestActorAvatar({
   actor,
   className,
@@ -255,34 +300,6 @@ export function PullRequestMetaLine({
             ],
       )}
     </span>
-  );
-}
-
-/**
- * GitHub-style reaction pills under a summary or a comment. Display only: toggling one would
- * be a write the rest of this page does not offer, and the point is seeing Codex's eyes or
- * thumbs-up without leaving the sidebar.
- */
-export function PullRequestReactions({
-  reactions,
-}: {
-  reactions: ReadonlyArray<PullRequestReaction> | undefined;
-}) {
-  const visible = presentPullRequestReactions(reactions);
-  if (visible.length === 0) return null;
-  return (
-    <ul className="mt-2 flex flex-wrap gap-1" aria-label="Reactions">
-      {visible.map((reaction) => (
-        <li
-          key={reaction.content}
-          className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/50 px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground"
-          aria-label={`${reaction.count} ${reaction.label.toLowerCase()}`}
-        >
-          <span aria-hidden>{reaction.emoji}</span>
-          {reaction.count}
-        </li>
-      ))}
-    </ul>
   );
 }
 
