@@ -1,12 +1,14 @@
 /**
  * Multi-environment usage state.
  *
- * Every connected environment answers the same typed query; the client merges
- * the results. Raw transcripts never leave the machine that produced them.
+ * Each connected environment answers the same typed query; the client merges
+ * the results. Disabled and offline environments are not queried. Raw
+ * transcripts never leave the machine that produced them.
  *
  * @module state/usage
  */
 import { useAtomValue } from "@effect/atom-react";
+import { usageConnectionPlan } from "@t3tools/client-runtime/connection";
 import {
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
@@ -31,7 +33,11 @@ export interface EnvironmentUsageStatus {
 }
 
 /**
- * Reads every environment's summary for one window.
+ * Reads each connected environment's summary for one window.
+ *
+ * Disabled, offline, and reconnecting environments are skipped: the usage query
+ * atom follows the connection supervisor, which would reconnect them and then
+ * hang until they come online.
  *
  * Keyed by the serialised window so switching ranges does not thrash the atom
  * cache, and so each environment's query is shared with any other reader of the
@@ -44,6 +50,20 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
 
     const statuses: EnvironmentUsageStatus[] = [];
     for (const [environmentId, presentation] of presentations) {
+      const plan = usageConnectionPlan(presentation.connection.phase);
+      if (plan === "skip") {
+        continue;
+      }
+      if (plan === "await-connect") {
+        statuses.push({
+          environmentId,
+          label: presentation.entry.target.label,
+          isPending: true,
+          error: null,
+          summary: null,
+        });
+        continue;
+      }
       const result = get(serverEnvironment.usageSummary({ environmentId, input }));
       statuses.push({
         environmentId,

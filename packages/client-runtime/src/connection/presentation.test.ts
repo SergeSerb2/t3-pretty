@@ -15,6 +15,7 @@ import {
   connectionStatusTitle,
   presentEnvironmentConnection,
   presentConnectionState,
+  usageConnectionPlan,
 } from "./presentation.ts";
 
 const TARGET = new BearerConnectionTarget({
@@ -183,5 +184,14 @@ describe("connection presentation", () => {
       error: null,
       traceId: null,
     });
+  });
+
+  it("only queries usage from already-connected environments", () => {
+    expect(usageConnectionPlan("connected")).toBe("query");
+    expect(usageConnectionPlan("connecting")).toBe("await-connect");
+    expect(usageConnectionPlan("available")).toBe("skip");
+    expect(usageConnectionPlan("offline")).toBe("skip");
+    expect(usageConnectionPlan("reconnecting")).toBe("skip");
+    expect(usageConnectionPlan("error")).toBe("skip");
   });
 });
