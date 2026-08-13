@@ -152,6 +152,7 @@ ${">".repeat(7)} theirs
     assert.include(mobileWorkflow, "--local");
     assert.include(mobileWorkflow, "Xcode-beta.app");
     assert.include(mobileWorkflow, "xcode-select -s");
+    assert.include(mobileWorkflow, "security-eas-local-keychain");
     assert.include(mobileWorkflow, "eas submit");
     assert.include(mobileWorkflow, "eas build:list");
     assert.notInclude(mobileWorkflow, "--status finished");

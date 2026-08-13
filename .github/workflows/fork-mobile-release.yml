@@ -23,6 +23,7 @@ on:
       - pnpm-lock.yaml
       - .github/workflows/fork-mobile-release.yml
       - scripts/fork/resolve-ios-native-build.mjs
+      - scripts/fork/security-eas-local-keychain
   workflow_dispatch:
     inputs:
       mode:
@@ -411,6 +412,15 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
+          # EAS local builds on macOS 26 / Xcode 27 fail Prepare credentials
+          # because `security find-identity -v` cannot validate a dist cert in
+          # an ephemeral keychain (expo/eas-cli#3678). Put a shim named
+          # `security` first on PATH so that lookup drops -v.
+          security_wrap="$RUNNER_TEMP/t3-security-wrap"
+          mkdir -p "$security_wrap"
+          cp "$GITHUB_WORKSPACE/scripts/fork/security-eas-local-keychain" "$security_wrap/security"
+          chmod +x "$security_wrap/security"
+          export PATH="$security_wrap:$PATH"
           ipa_path="$RUNNER_TEMP/t3-pretty.ipa"
           export EAS_LOCAL_BUILD_ARTIFACTS_DIR="$RUNNER_TEMP/eas-artifacts"
           mkdir -p "$EAS_LOCAL_BUILD_ARTIFACTS_DIR"

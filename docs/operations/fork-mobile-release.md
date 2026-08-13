@@ -71,6 +71,9 @@ of reporting a green release that shipped nothing. To activate:
    if `xcode-select -p` still points at them, run once:
    `sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer`.
    The workflow retries that switch with passwordless sudo during the job.
+   Local EAS on macOS 26 / Xcode 27 also needs the `security` PATH shim in
+   `scripts/fork/security-eas-local-keychain` so Prepare credentials does not
+   reject a successfully imported distribution certificate.
 7. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
    `T3CODE_MOBILE_EAS_PROJECT_ID`, `T3CODE_MOBILE_EXPO_OWNER`,
    optionally `T3CODE_MOBILE_EXPO_SLUG`.
