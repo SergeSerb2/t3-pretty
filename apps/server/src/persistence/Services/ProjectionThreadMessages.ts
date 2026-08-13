@@ -79,6 +79,15 @@ export interface ProjectionThreadMessageRepositoryShape {
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadMessage>, ProjectionRepositoryError>;
 
   /**
+   * Newest `createdAt` across the thread's user messages, or None when the
+   * thread has none. Reads one aggregate row instead of the full text of
+   * every message in the thread.
+   */
+  readonly getLatestUserMessageAt: (
+    input: ListProjectionThreadMessagesInput,
+  ) => Effect.Effect<Option.Option<IsoDateTime>, ProjectionRepositoryError>;
+
+  /**
    * Delete projected thread messages by thread.
    */
   readonly deleteByThreadId: (

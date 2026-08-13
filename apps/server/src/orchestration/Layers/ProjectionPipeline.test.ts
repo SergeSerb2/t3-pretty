@@ -2471,6 +2471,342 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       ]);
     }),
   );
+
+  it.effect("tracks latestUserMessageAt from user messages without a full shell rescan", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+        eventStore
+          .append(event)
+          .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+      const readShell = () => sql<{
+        readonly latestUserMessageAt: string | null;
+        readonly updatedAt: string;
+        readonly pendingApprovalCount: number;
+      }>`
+        SELECT
+          latest_user_message_at AS "latestUserMessageAt",
+          updated_at AS "updatedAt",
+          pending_approval_count AS "pendingApprovalCount"
+        FROM projection_threads
+        WHERE thread_id = 'thread-latest-user-message'
+      `;
+
+      yield* appendAndProject({
+        type: "project.created",
+        eventId: EventId.make("evt-latest-user-message-1"),
+        aggregateKind: "project",
+        aggregateId: ProjectId.make("project-latest-user-message"),
+        occurredAt: "2026-03-01T00:00:00.000Z",
+        commandId: CommandId.make("cmd-latest-user-message-1"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-latest-user-message-1"),
+        metadata: {},
+        payload: {
+          projectId: ProjectId.make("project-latest-user-message"),
+          title: "Project Latest User Message",
+          workspaceRoot: "/tmp/project-latest-user-message",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-03-01T00:00:00.000Z",
+          updatedAt: "2026-03-01T00:00:00.000Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.created",
+        eventId: EventId.make("evt-latest-user-message-2"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-latest-user-message"),
+        occurredAt: "2026-03-01T00:00:00.000Z",
+        commandId: CommandId.make("cmd-latest-user-message-2"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-latest-user-message-2"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-latest-user-message"),
+          projectId: ProjectId.make("project-latest-user-message"),
+          title: "Thread Latest User Message",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt: "2026-03-01T00:00:00.000Z",
+          updatedAt: "2026-03-01T00:00:00.000Z",
+        },
+      });
+
+      const appendMessage = (input: {
+        readonly eventId: string;
+        readonly messageId: string;
+        readonly role: "user" | "assistant";
+        readonly streaming: boolean;
+        readonly occurredAt: string;
+      }) =>
+        appendAndProject({
+          type: "thread.message-sent",
+          eventId: EventId.make(input.eventId),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-latest-user-message"),
+          occurredAt: input.occurredAt,
+          commandId: CommandId.make(`cmd-${input.eventId}`),
+          causationEventId: null,
+          correlationId: CommandId.make(`cmd-${input.eventId}`),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-latest-user-message"),
+            messageId: MessageId.make(input.messageId),
+            role: input.role,
+            text: "chunk",
+            turnId: null,
+            streaming: input.streaming,
+            createdAt: input.occurredAt,
+            updatedAt: input.occurredAt,
+          },
+        });
+
+      // A completed user message moves latestUserMessageAt.
+      yield* appendMessage({
+        eventId: "evt-latest-user-message-3",
+        messageId: "message-latest-user-1",
+        role: "user",
+        streaming: false,
+        occurredAt: "2026-03-01T00:00:01.000Z",
+      });
+      assert.deepEqual(yield* readShell(), [
+        {
+          latestUserMessageAt: "2026-03-01T00:00:01.000Z",
+          updatedAt: "2026-03-01T00:00:01.000Z",
+          pendingApprovalCount: 0,
+        },
+      ]);
+
+      // A streaming assistant delta bumps updatedAt but leaves
+      // latestUserMessageAt alone.
+      yield* appendMessage({
+        eventId: "evt-latest-user-message-4",
+        messageId: "message-latest-assistant-1",
+        role: "assistant",
+        streaming: true,
+        occurredAt: "2026-03-01T00:00:02.000Z",
+      });
+      assert.deepEqual(yield* readShell(), [
+        {
+          latestUserMessageAt: "2026-03-01T00:00:01.000Z",
+          updatedAt: "2026-03-01T00:00:02.000Z",
+          pendingApprovalCount: 0,
+        },
+      ]);
+
+      // An older user message never moves the marker backwards.
+      yield* appendMessage({
+        eventId: "evt-latest-user-message-5",
+        messageId: "message-latest-user-2",
+        role: "user",
+        streaming: false,
+        occurredAt: "2026-03-01T00:00:00.500Z",
+      });
+      assert.deepEqual(yield* readShell(), [
+        {
+          latestUserMessageAt: "2026-03-01T00:00:01.000Z",
+          updatedAt: "2026-03-01T00:00:00.500Z",
+          pendingApprovalCount: 0,
+        },
+      ]);
+
+      // A newer user message advances it again.
+      yield* appendMessage({
+        eventId: "evt-latest-user-message-6",
+        messageId: "message-latest-user-3",
+        role: "user",
+        streaming: false,
+        occurredAt: "2026-03-01T00:00:03.000Z",
+      });
+      assert.deepEqual(yield* readShell(), [
+        {
+          latestUserMessageAt: "2026-03-01T00:00:03.000Z",
+          updatedAt: "2026-03-01T00:00:03.000Z",
+          pendingApprovalCount: 0,
+        },
+      ]);
+
+      // A count-affecting activity still triggers the shell refresh, and the
+      // MAX() recomputation agrees with the incrementally tracked value.
+      yield* appendAndProject({
+        type: "thread.activity-appended",
+        eventId: EventId.make("evt-latest-user-message-7"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-latest-user-message"),
+        occurredAt: "2026-03-01T00:00:04.000Z",
+        commandId: CommandId.make("cmd-latest-user-message-7"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-latest-user-message-7"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-latest-user-message"),
+          activity: {
+            id: EventId.make("activity-latest-user-message-approval"),
+            tone: "approval",
+            kind: "approval.requested",
+            summary: "Approval requested",
+            payload: { requestId: "approval-request-latest-user-message" },
+            turnId: null,
+            createdAt: "2026-03-01T00:00:04.000Z",
+          },
+        },
+      });
+      assert.deepEqual(yield* readShell(), [
+        {
+          latestUserMessageAt: "2026-03-01T00:00:03.000Z",
+          updatedAt: "2026-03-01T00:00:04.000Z",
+          pendingApprovalCount: 1,
+        },
+      ]);
+    }),
+  );
+
+  it.effect("does not recompute shell counts for tool progress activities", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+        eventStore
+          .append(event)
+          .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+      yield* appendAndProject({
+        type: "project.created",
+        eventId: EventId.make("evt-tool-activity-1"),
+        aggregateKind: "project",
+        aggregateId: ProjectId.make("project-tool-activity"),
+        occurredAt: "2026-03-02T00:00:00.000Z",
+        commandId: CommandId.make("cmd-tool-activity-1"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-tool-activity-1"),
+        metadata: {},
+        payload: {
+          projectId: ProjectId.make("project-tool-activity"),
+          title: "Project Tool Activity",
+          workspaceRoot: "/tmp/project-tool-activity",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-03-02T00:00:00.000Z",
+          updatedAt: "2026-03-02T00:00:00.000Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.created",
+        eventId: EventId.make("evt-tool-activity-2"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-tool-activity"),
+        occurredAt: "2026-03-02T00:00:00.000Z",
+        commandId: CommandId.make("cmd-tool-activity-2"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-tool-activity-2"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-tool-activity"),
+          projectId: ProjectId.make("project-tool-activity"),
+          title: "Thread Tool Activity",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt: "2026-03-02T00:00:00.000Z",
+          updatedAt: "2026-03-02T00:00:00.000Z",
+        },
+      });
+
+      const appendActivity = (input: {
+        readonly eventId: string;
+        readonly activityId: string;
+        readonly kind: string;
+        readonly requestId?: string;
+        readonly occurredAt: string;
+      }) =>
+        appendAndProject({
+          type: "thread.activity-appended",
+          eventId: EventId.make(input.eventId),
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-tool-activity"),
+          occurredAt: input.occurredAt,
+          commandId: CommandId.make(`cmd-${input.eventId}`),
+          causationEventId: null,
+          correlationId: CommandId.make(`cmd-${input.eventId}`),
+          metadata: {},
+          payload: {
+            threadId: ThreadId.make("thread-tool-activity"),
+            activity: {
+              id: EventId.make(input.activityId),
+              tone: "info",
+              kind: input.kind,
+              summary: `${input.kind} summary`,
+              payload: input.requestId !== undefined ? { requestId: input.requestId } : {},
+              turnId: null,
+              createdAt: input.occurredAt,
+            },
+          },
+        });
+
+      const readCounts = () => sql<{
+        readonly pendingUserInputCount: number;
+        readonly updatedAt: string;
+      }>`
+        SELECT
+          pending_user_input_count AS "pendingUserInputCount",
+          updated_at AS "updatedAt"
+        FROM projection_threads
+        WHERE thread_id = 'thread-tool-activity'
+      `;
+
+      yield* appendActivity({
+        eventId: "evt-tool-activity-3",
+        activityId: "activity-tool-activity-requested",
+        kind: "user-input.requested",
+        requestId: "user-input-request-tool-activity",
+        occurredAt: "2026-03-02T00:00:01.000Z",
+      });
+      assert.deepEqual(yield* readCounts(), [
+        { pendingUserInputCount: 1, updatedAt: "2026-03-02T00:00:01.000Z" },
+      ]);
+
+      // High-frequency tool activities still bump updatedAt but must not
+      // disturb the pending counts.
+      yield* appendActivity({
+        eventId: "evt-tool-activity-4",
+        activityId: "activity-tool-activity-started",
+        kind: "tool.started",
+        occurredAt: "2026-03-02T00:00:02.000Z",
+      });
+      assert.deepEqual(yield* readCounts(), [
+        { pendingUserInputCount: 1, updatedAt: "2026-03-02T00:00:02.000Z" },
+      ]);
+
+      yield* appendActivity({
+        eventId: "evt-tool-activity-5",
+        activityId: "activity-tool-activity-resolved",
+        kind: "user-input.resolved",
+        requestId: "user-input-request-tool-activity",
+        occurredAt: "2026-03-02T00:00:03.000Z",
+      });
+      assert.deepEqual(yield* readCounts(), [
+        { pendingUserInputCount: 0, updatedAt: "2026-03-02T00:00:03.000Z" },
+      ]);
+    }),
+  );
 });
 
 it.layer(makeProjectionPipelinePrefixedTestLayer("t3-pending-turn-terminal-test-"))(
