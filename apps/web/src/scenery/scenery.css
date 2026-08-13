@@ -278,12 +278,12 @@ html[data-scenery-ink-transition]::view-transition-new(root) {
 }
 
 /* The settings trigger shares the bottom-right corner with right-panel
-   actions (PR Comment, etc.). Hide only those controls while the panel is
-   open. Keep the Unsplash attribution: relocate it to the bottom-left so
-   the credit stays visible wherever the photo remains prominent behind chat. */
-html:has([data-right-panel-open="true"]) .scenery-quick__trigger,
-html:has([data-right-panel-open="true"]) .scenery-quick__panel,
-html:has([data-right-panel-open="true"]) .scenery-quick__backdrop {
+   actions (PR Comment, etc.). Hide the trigger while the panel is open;
+   SceneryQuickSettings also dismisses its dialog so the panel/backdrop do
+   not stay mounted behind display:none and resurrect when the panel closes.
+   Keep the Unsplash attribution: relocate it to the bottom-left so the
+   credit stays visible wherever the photo remains prominent behind chat. */
+html:has([data-right-panel-open="true"]) .scenery-quick__trigger {
   display: none;
 }
 
