@@ -31,7 +31,11 @@ import { cn } from "../../lib/cn";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { applyProviderOptionSelection } from "../../lib/providerOptions";
 import { useThemeColor } from "../../lib/useThemeColor";
-import { RUNTIME_MODE_CHOICES, selectableChoices } from "./thread-settings-menu";
+import {
+  runtimeModeChoicesForProvider,
+  selectableChoices,
+  selectedModelProviderDriver,
+} from "./thread-settings-menu";
 import { buildThreadModelIdentity } from "./threadModelIdentity";
 import {
   pendingModelAfterPress,
@@ -69,13 +73,16 @@ export function threadSettingsSummaryLabel(input: {
   readonly optionDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
+  readonly providerDriver?: string | null;
 }): string {
   const identity = buildThreadModelIdentity({
     modelLabel: input.modelLabel,
     providerDriver: null,
     optionDescriptors: input.optionDescriptors,
   });
-  const runtime = RUNTIME_MODE_CHOICES.find((choice) => choice.mode === input.runtimeMode);
+  const runtime = runtimeModeChoicesForProvider(input.providerDriver).find(
+    (choice) => choice.mode === input.runtimeMode,
+  );
   return [
     identity.summary,
     ...(runtime ? [runtime.shortLabel] : []),
@@ -405,6 +412,15 @@ export function ThreadSettingsSheet(props: {
   const hasLegacyModels = props.providerGroups.some((group) =>
     group.models.some((model) => model.isLegacy),
   );
+  // Runtime modes follow the same staged model as the option rows above, so
+  // a staged Kimi pick already shows Kimi's Auto/Yolo naming before Save.
+  const runtimeModeChoices = runtimeModeChoicesForProvider(
+    pendingModel?.providerDriver ??
+      selectedModelProviderDriver({
+        providerGroups: props.providerGroups,
+        selectedModel: props.selectedModel,
+      }),
+  );
   // Legacy stays hidden unless the pill is toggled this open; a highlighted
   // legacy model is exempted from the filter instead of forcing the whole
   // legacy list visible.
@@ -612,13 +628,13 @@ export function ThreadSettingsSheet(props: {
             <ChoiceChipRow
               label="Runtime"
               selectedId={props.runtimeMode}
-              choices={RUNTIME_MODE_CHOICES.map((choice) => ({
+              choices={runtimeModeChoices.map((choice) => ({
                 id: choice.mode,
                 label: choice.shortLabel,
                 accessibilityLabel: `Runtime, ${choice.label}`,
               }))}
               onSelect={(id) => {
-                const choice = RUNTIME_MODE_CHOICES.find((candidate) => candidate.mode === id);
+                const choice = runtimeModeChoices.find((candidate) => candidate.mode === id);
                 if (choice) {
                   props.onUpdateRuntimeMode(choice.mode);
                 }

@@ -7,7 +7,9 @@ import { buildThreadSettingsMenu, type ThreadSettingsMenuEvent } from "./thread-
 
 function modelOption(
   model: string,
-  overrides: Partial<Pick<ModelOption, "isDefault" | "isLegacy" | "providerKey">> = {},
+  overrides: Partial<
+    Pick<ModelOption, "isDefault" | "isLegacy" | "providerKey" | "providerLabel" | "providerDriver">
+  > = {},
 ): ModelOption {
   const providerKey = overrides.providerKey ?? "codex";
   return {
@@ -15,8 +17,8 @@ function modelOption(
     label: model,
     subtitle: providerKey,
     providerKey,
-    providerLabel: providerKey === "codex" ? "Codex" : "Claude",
-    providerDriver: providerKey === "codex" ? "codex" : "claudeAgent",
+    providerLabel: overrides.providerLabel ?? (providerKey === "codex" ? "Codex" : "Claude"),
+    providerDriver: overrides.providerDriver ?? (providerKey === "codex" ? "codex" : "claudeAgent"),
     isDefault: overrides.isDefault ?? false,
     isLegacy: overrides.isLegacy ?? false,
     capabilities: null,
@@ -179,6 +181,29 @@ describe("buildThreadSettingsMenu", () => {
     expect(
       eventFor(menu, runtimeItems.find((action) => action.title === "Full access")?.id),
     ).toEqual({ type: "set-runtime", mode: "full-access" });
+  });
+
+  it("offers Kimi's Auto and Yolo modes instead of Full access for Kimi models", () => {
+    const kimiModels = [
+      modelOption("k3", { providerKey: "kimi", providerLabel: "Kimi", providerDriver: "kimi" }),
+    ];
+    const menu = buildThreadSettingsMenu({
+      providerGroups: [group(kimiModels)],
+      selectedModel: kimiModels[0]?.selection ?? null,
+      optionDescriptors: [],
+      runtimeMode: "full-access",
+    });
+
+    const runtime = menu.actions.find((action) => action.title === "Runtime");
+    // Kimi's "Auto" is full access that never stops to ask.
+    expect(runtime?.subtitle).toBe("Auto");
+    const runtimeItems = runtime?.subactions ?? [];
+    expect(runtimeItems.map((action) => action.title)).toEqual(["Approve actions", "Auto", "Yolo"]);
+    expect(runtimeItems.find((action) => action.title === "Auto")?.state).toBe("on");
+    expect(eventFor(menu, runtimeItems.find((action) => action.title === "Yolo")?.id)).toEqual({
+      type: "set-runtime",
+      mode: "yolo",
+    });
   });
 
   it("toggles boolean options with the inverted current value", () => {

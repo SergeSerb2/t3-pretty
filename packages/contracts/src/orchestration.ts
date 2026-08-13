@@ -121,9 +121,28 @@ export const RuntimeMode = Schema.Literals([
   "auto-accept-edits",
   "auto",
   "full-access",
+  // Kimi-only full-access variant: the session runs with full access, but
+  // permission requests are forwarded to the user instead of being
+  // auto-approved. Clients normalize it to "full-access" when switching to
+  // another provider (see resolveRuntimeModeForProviderDriver); adapters
+  // should not rely on receiving it.
+  "yolo",
 ]);
 export type RuntimeMode = typeof RuntimeMode.Type;
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
+
+// "yolo" is a Kimi-only mode that other providers never offer. When a
+// selection moves from Kimi to another provider, clients normalize the mode
+// with this helper so the Kimi-specific literal never reaches another
+// provider's session config (where it would hit an unintended default
+// branch). "full-access" is the generic equivalent: same unrestricted
+// session, provider-native approval behavior.
+export function resolveRuntimeModeForProviderDriver(
+  providerDriver: string | null | undefined,
+  runtimeMode: RuntimeMode,
+): RuntimeMode {
+  return runtimeMode === "yolo" && providerDriver !== "kimi" ? "full-access" : runtimeMode;
+}
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
 export const DEFAULT_PROVIDER_INTERACTION_MODE: ProviderInteractionMode = "default";

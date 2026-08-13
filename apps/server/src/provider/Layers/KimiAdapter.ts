@@ -208,7 +208,7 @@ function resolveRequestedModeId(input: {
   const requestedAliases =
     input.runtimeMode === "approval-required"
       ? ACP_APPROVAL_MODE_ALIASES
-      : input.runtimeMode === "full-access"
+      : input.runtimeMode === "full-access" || input.runtimeMode === "yolo"
         ? ACP_FULL_ACCESS_MODE_ALIASES
         : ACP_AUTO_MODE_ALIASES;
   return (
@@ -549,6 +549,8 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
                     params,
                     "acp.jsonrpc",
                   );
+                  // "full-access" (Kimi's "Auto") never asks; "yolo" runs the
+                  // same full-access session mode but lets the user answer.
                   if (input.runtimeMode === "full-access") {
                     const autoApprovedOptionId = selectAutoApprovedPermissionOption(params);
                     if (autoApprovedOptionId !== undefined) {

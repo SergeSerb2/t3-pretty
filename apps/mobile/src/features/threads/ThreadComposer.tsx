@@ -8,6 +8,7 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
+import { resolveRuntimeModeForProviderDriver } from "@t3tools/contracts";
 import {
   detectComposerTrigger,
   replaceTextRange,
@@ -76,6 +77,7 @@ import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import {
   buildModelOptions,
   groupByProvider,
+  type ModelOption,
   resolveThreadProviderGroups,
 } from "../../lib/modelOptions";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
@@ -850,6 +852,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     optionDescriptors: providerOptionDescriptors,
     runtimeMode: currentRuntimeMode,
     interactionMode: currentInteractionMode,
+    providerDriver: currentModelOption?.providerDriver ?? null,
   });
 
   // iOS gets a native menu on the trigger pill: the everyday adjustments
@@ -870,6 +873,22 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const onUpdateModelSelection = props.onUpdateModelSelection;
   const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
+  // Kimi's "yolo" mode has no equivalent on other providers; a model pick
+  // that crosses providers normalizes it to the generic full-access mode in
+  // the same gesture.
+  const handleSelectModelOption = useCallback(
+    (option: ModelOption) => {
+      onUpdateModelSelection(option.selection);
+      const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
+        option.providerDriver,
+        currentRuntimeMode,
+      );
+      if (nextRuntimeMode !== currentRuntimeMode) {
+        onUpdateRuntimeMode(nextRuntimeMode);
+      }
+    },
+    [currentRuntimeMode, onUpdateModelSelection, onUpdateRuntimeMode],
+  );
   const handleSettingsMenuAction = useCallback(
     (eventId: string) => {
       const event = settingsMenu?.events.get(eventId);
@@ -879,7 +898,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       switch (event.type) {
         case "select-model":
           void Haptics.selectionAsync();
-          onUpdateModelSelection(event.option.selection);
+          handleSelectModelOption(event.option);
           return;
         case "set-option": {
           const options = applyProviderOptionSelection(providerOptionDescriptors, {
@@ -900,6 +919,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     },
     [
       currentModelSelection,
+      handleSelectModelOption,
       onUpdateModelSelection,
       onUpdateRuntimeMode,
       providerOptionDescriptors,
@@ -1131,7 +1151,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         onDismissed={settingsSheetPresentation.onDismissed}
         providerGroups={threadProviderGroups}
         selectedModel={currentModelSelection}
-        onSelectModel={(option) => props.onUpdateModelSelection(option.selection)}
+        onSelectModel={handleSelectModelOption}
         optionDescriptors={providerOptionDescriptors}
         onUpdateOptionSelections={(options) =>
           props.onUpdateModelSelection({ ...currentModelSelection, options })

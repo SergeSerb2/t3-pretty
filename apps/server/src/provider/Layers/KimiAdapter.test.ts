@@ -6,7 +6,15 @@ import * as NodeURL from "node:url";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { KimiSettings, ProviderDriverKind, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  ApprovalRequestId,
+  KimiSettings,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+  type ProviderRuntimeEvent,
+} from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -20,13 +28,16 @@ const decodeKimiSettings = Schema.decodeSync(KimiSettings);
 const currentDirectory = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const mockAgentPath = NodePath.join(currentDirectory, "../../../scripts/acp-mock-agent.ts");
 
-async function makeKimiMockWrapper(requestLogPath: string) {
+async function makeKimiMockWrapper(
+  requestLogPath: string,
+  options?: { readonly emitToolCalls?: boolean },
+) {
   const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "kimi-acp-mock-"));
   const wrapperPath = NodePath.join(directory, "kimi");
   const script = `#!/bin/sh
 export T3_ACP_KIMI=1
 export T3_ACP_REQUEST_LOG_PATH=${JSON.stringify(requestLogPath)}
-exec node ${JSON.stringify(mockAgentPath)} "$@"
+${options?.emitToolCalls ? "export T3_ACP_EMIT_TOOL_CALLS=1\n" : ""}exec node ${JSON.stringify(mockAgentPath)} "$@"
 `;
   await NodeFSP.writeFile(wrapperPath, script, "utf8");
   await NodeFSP.chmod(wrapperPath, 0o755);
@@ -101,6 +112,98 @@ it.effect("runs Kimi sessions through ACP with models, thinking, modes, and stre
     assert.include(requestLog, '"value":"kimi-code/k3-256k"');
     assert.include(requestLog, '"value":"max"');
     assert.include(requestLog, '"value":"yolo"');
+
+    yield* adapter.stopSession(threadId);
+  }).pipe(Effect.provide(testServices)),
+);
+
+it.effect("yolo keeps Kimi's full-access mode but forwards permission prompts", () =>
+  Effect.gen(function* () {
+    const directory = yield* Effect.promise(() =>
+      NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "kimi-acp-log-")),
+    );
+    const requestLogPath = NodePath.join(directory, "requests.ndjson");
+    const binaryPath = yield* Effect.promise(() =>
+      makeKimiMockWrapper(requestLogPath, { emitToolCalls: true }),
+    );
+    const adapter = yield* makeKimiAdapter(decodeKimiSettings({ binaryPath }));
+    const threadId = ThreadId.make("kimi-mock-yolo-thread");
+    const requestOpened =
+      yield* Deferred.make<Extract<ProviderRuntimeEvent, { type: "request.opened" }>>();
+    const eventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+      event.type === "request.opened"
+        ? Deferred.succeed(requestOpened, event).pipe(Effect.ignore)
+        : Effect.void,
+    ).pipe(Effect.forkChild);
+
+    yield* adapter.startSession({
+      threadId,
+      provider: ProviderDriverKind.make("kimi"),
+      cwd: process.cwd(),
+      runtimeMode: "yolo",
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("kimi"),
+        model: "kimi-code/k3-256k",
+      },
+    });
+
+    const sendTurnFiber = yield* adapter
+      .sendTurn({ threadId, input: "Run the tool call.", attachments: [] })
+      .pipe(Effect.forkChild);
+    const requestOpenedEvent = yield* Deferred.await(requestOpened);
+    assert.equal(requestOpenedEvent.threadId, threadId);
+
+    yield* adapter.respondToRequest(
+      threadId,
+      ApprovalRequestId.make(String(requestOpenedEvent.requestId)),
+      "accept",
+    );
+    yield* Fiber.join(sendTurnFiber);
+
+    const requestLog = yield* Effect.promise(() => NodeFSP.readFile(requestLogPath, "utf8"));
+    assert.include(requestLog, '"value":"yolo"');
+
+    yield* Fiber.interrupt(eventsFiber);
+    yield* adapter.stopSession(threadId);
+  }).pipe(Effect.provide(testServices)),
+);
+
+it.effect("full-access auto-approves permission prompts without asking", () =>
+  Effect.gen(function* () {
+    const directory = yield* Effect.promise(() =>
+      NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "kimi-acp-log-")),
+    );
+    const requestLogPath = NodePath.join(directory, "requests.ndjson");
+    const binaryPath = yield* Effect.promise(() =>
+      makeKimiMockWrapper(requestLogPath, { emitToolCalls: true }),
+    );
+    const adapter = yield* makeKimiAdapter(decodeKimiSettings({ binaryPath }));
+    const threadId = ThreadId.make("kimi-mock-full-access-thread");
+    const eventsFiber = yield* adapter.streamEvents.pipe(
+      Stream.filter((event) => event.threadId === threadId),
+      Stream.takeUntil((event) => event.type === "turn.completed"),
+      Stream.runCollect,
+      Effect.forkChild,
+    );
+
+    yield* adapter.startSession({
+      threadId,
+      provider: ProviderDriverKind.make("kimi"),
+      cwd: process.cwd(),
+      runtimeMode: "full-access",
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("kimi"),
+        model: "kimi-code/k3-256k",
+      },
+    });
+    yield* adapter.sendTurn({ threadId, input: "Run the tool call.", attachments: [] });
+
+    const events = Array.from(yield* Fiber.join(eventsFiber));
+    assert.isFalse(events.some((event) => event.type === "request.opened"));
+    assert.include(
+      events.map((event) => event.type),
+      "content.delta",
+    );
 
     yield* adapter.stopSession(threadId);
   }).pipe(Effect.provide(testServices)),

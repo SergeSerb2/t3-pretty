@@ -27,6 +27,38 @@ export const RUNTIME_MODE_CHOICES: ReadonlyArray<{
   { mode: "full-access", label: "Full access", shortLabel: "Full" },
 ];
 
+// Kimi names its full-access modes after the CLI: "Auto" never stops to ask,
+// "Yolo" runs the same full-access session but can stop to ask questions.
+const KIMI_RUNTIME_MODE_CHOICES: typeof RUNTIME_MODE_CHOICES = [
+  { mode: "approval-required", label: "Approve actions", shortLabel: "Approve" },
+  { mode: "full-access", label: "Auto", shortLabel: "Auto" },
+  { mode: "yolo", label: "Yolo", shortLabel: "Yolo" },
+];
+
+export function runtimeModeChoicesForProvider(
+  providerDriver: string | null | undefined,
+): typeof RUNTIME_MODE_CHOICES {
+  return providerDriver === "kimi" ? KIMI_RUNTIME_MODE_CHOICES : RUNTIME_MODE_CHOICES;
+}
+
+/** Driver of the provider backing the selected model, when it is in the list. */
+export function selectedModelProviderDriver(input: {
+  readonly providerGroups: ReadonlyArray<ProviderGroup>;
+  readonly selectedModel: ModelSelection | null;
+}): string | null {
+  for (const group of input.providerGroups) {
+    for (const option of group.models) {
+      if (
+        option.selection.instanceId === input.selectedModel?.instanceId &&
+        option.selection.model === input.selectedModel.model
+      ) {
+        return option.providerDriver;
+      }
+    }
+  }
+  return null;
+}
+
 export function selectableChoices(
   descriptor: Extract<ProviderOptionDescriptor, { type: "select" }>,
 ) {
@@ -180,14 +212,20 @@ export function buildThreadSettingsMenu(input: {
     });
   }
 
-  const runtimeLabel = RUNTIME_MODE_CHOICES.find(
+  const runtimeModeChoices = runtimeModeChoicesForProvider(
+    selectedModelProviderDriver({
+      providerGroups: input.providerGroups,
+      selectedModel: input.selectedModel,
+    }),
+  );
+  const runtimeLabel = runtimeModeChoices.find(
     (choice) => choice.mode === input.runtimeMode,
   )?.label;
   actions.push({
     id: "runtime",
     title: "Runtime",
     ...(runtimeLabel === undefined ? {} : { subtitle: runtimeLabel }),
-    subactions: RUNTIME_MODE_CHOICES.map((choice): MenuAction => {
+    subactions: runtimeModeChoices.map((choice): MenuAction => {
       const id = `runtime:${choice.mode}`;
       events.set(id, { type: "set-runtime", mode: choice.mode });
       return {
