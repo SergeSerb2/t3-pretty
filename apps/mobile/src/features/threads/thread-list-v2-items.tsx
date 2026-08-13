@@ -22,6 +22,7 @@ import { ControlPillMenu } from "../../components/ControlPill";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
+import { HOME_HORIZONTAL_INSET } from "../../lib/layoutMetrics";
 import { relativeTime } from "../../lib/time";
 import { useThemeColor } from "../../lib/useThemeColor";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
@@ -33,18 +34,18 @@ import {
   resolveThreadListV2SnoozeGateExpiryMs,
   resolveThreadListV2Status,
   resolveThreadListV2SwipeActions,
-  type ThreadListV2GlassClusterRole,
   type ThreadListV2Status,
 } from "./threadListV2";
-import { threadListV2CardPlateStyle, threadListV2ClusterPlateStyle } from "./threadListV2Chrome";
+import { threadListV2CardPlateStyle } from "./threadListV2Chrome";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
 /**
  * Thread List v2 renders one flat native list: rich rows for active work and
  * a receded settled tail, all with native swipe and long-press actions.
  * Over World Scenery the opaque screen plates lift: active work sits on
- * frosted cards, snoozed/settled history shares one inset frosted plate,
- * and the wash — not per-row blur or native glass — carries text contrast.
+ * frosted cards, snoozed/settled history uses the same card language at a
+ * quieter density under typographic section labels, and the wash — not
+ * per-row blur or native glass — carries text contrast.
  */
 
 const MONO_FONT = Platform.select({
@@ -117,83 +118,95 @@ export const ThreadListV2SectionDivider = memo(function ThreadListV2SectionDivid
 const SNOOZE_ACCENT_LIGHT = "#2563eb";
 const SNOOZE_ACCENT_DARK = "#60a5fa";
 
+/**
+ * Quiet section label for parked work. Not a plate: the inbox cards already
+ * carry the surface, and a filled pill here reads as a second primary action.
+ * Count stays visible while expanded so the shelf never hides its size.
+ */
+const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
+  readonly kind: "snoozed" | "settled";
+  readonly count: number;
+  readonly expanded: boolean;
+  readonly onToggle: () => void;
+  readonly pane?: "screen" | "sidebar";
+  readonly sceneryChrome?: boolean;
+}) {
+  const colorScheme = useColorScheme();
+  const mutedColor = useThemeColor("--color-foreground-muted");
+  const tertiaryColor = useThemeColor("--color-foreground-tertiary");
+  const snoozed = props.kind === "snoozed";
+  const sceneryChrome = props.sceneryChrome === true;
+  const sidebarPane = props.pane === "sidebar";
+  const snoozeTint = colorScheme === "dark" ? SNOOZE_ACCENT_DARK : SNOOZE_ACCENT_LIGHT;
+  const iconTint = snoozed ? snoozeTint : tertiaryColor;
+  const chevronTint = snoozed ? snoozeTint : mutedColor;
+  const label = snoozed ? "Snoozed" : "Settled";
+  const noun = snoozed ? "snoozed" : "settled";
+  return (
+    <Pressable
+      accessibilityHint={
+        props.expanded ? `Collapses the ${noun} threads.` : `Expands the ${noun} threads.`
+      }
+      accessibilityLabel={props.count === 1 ? `1 ${noun} thread` : `${props.count} ${noun} threads`}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: props.expanded }}
+      className="w-full"
+      onPress={props.onToggle}
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+    >
+      <View
+        className={cn(
+          "min-h-[44px] flex-row items-center gap-2",
+          sidebarPane ? "mt-2 px-3" : sceneryChrome ? "mt-1" : "mb-1.5 mt-4 px-5",
+        )}
+        style={
+          sceneryChrome && !sidebarPane
+            ? { paddingHorizontal: HOME_HORIZONTAL_INSET + 16 }
+            : undefined
+        }
+      >
+        <SymbolView
+          name={snoozed ? "clock" : "checkmark.circle"}
+          size={13}
+          tintColor={iconTint}
+          type="monochrome"
+        />
+        <Text
+          className={cn(
+            "text-xs font-t3-medium",
+            snoozed ? "text-foreground-muted" : "text-foreground-tertiary",
+          )}
+        >
+          {label}
+        </Text>
+        <View className="flex-1" />
+        <Text
+          className={cn(
+            "text-xs font-t3-medium tabular-nums",
+            snoozed ? "text-blue-600 dark:text-blue-400" : "text-foreground-tertiary",
+          )}
+        >
+          {props.count}
+        </Text>
+        <SymbolView
+          name={props.expanded ? "chevron.up" : "chevron.down"}
+          size={10}
+          tintColor={chevronTint}
+          type="monochrome"
+        />
+      </View>
+    </Pressable>
+  );
+});
+
 export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedShelfHeader(props: {
   readonly count: number;
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
   readonly sceneryChrome?: boolean;
-  readonly clusterRole?: ThreadListV2GlassClusterRole | null;
 }) {
-  const colorScheme = useColorScheme();
-  const chromeFill = useThemeColor("--color-chrome-glass");
-  const chromeBorder = useThemeColor("--color-chrome-glass-border");
-  const sceneryChrome = props.sceneryChrome === true;
-  const clusterRole = props.clusterRole ?? null;
-  return (
-    <Pressable
-      accessibilityHint={
-        props.expanded ? "Collapses the snoozed threads." : "Expands the snoozed threads."
-      }
-      accessibilityLabel={props.count === 1 ? "1 snoozed thread" : `${props.count} snoozed threads`}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: props.expanded }}
-      className={
-        sceneryChrome
-          ? undefined
-          : cn(
-              "mb-1.5 mt-4 flex-row items-center gap-2.5",
-              props.pane === "sidebar" ? "px-3" : "px-5",
-            )
-      }
-      onPress={props.onToggle}
-      style={({ pressed }) =>
-        sceneryChrome && clusterRole !== null
-          ? [
-              threadListV2ClusterPlateStyle({
-                role: clusterRole,
-                fill: chromeFill,
-                borderColor: chromeBorder,
-              }),
-              { opacity: pressed ? 0.6 : 1 },
-            ]
-          : { opacity: pressed ? 0.6 : 1 }
-      }
-    >
-      {sceneryChrome ? (
-        <>
-          <View className="flex-row items-center gap-2.5 px-4 py-2.5">
-            <Text className="text-xs font-t3-medium text-blue-600 dark:text-blue-400">
-              {props.expanded ? "Snoozed" : `Snoozed (${props.count})`}
-            </Text>
-            <View className="flex-1" />
-            <SymbolView
-              name={props.expanded ? "chevron.up" : "chevron.down"}
-              size={10}
-              tintColor={colorScheme === "dark" ? SNOOZE_ACCENT_DARK : SNOOZE_ACCENT_LIGHT}
-              type="monochrome"
-            />
-          </View>
-          {clusterRole === "first" ? (
-            <View className="ml-4 h-px bg-blue-500/20 dark:bg-blue-400/15" />
-          ) : null}
-        </>
-      ) : (
-        <>
-          <Text className="text-xs font-t3-medium text-blue-600 dark:text-blue-400">
-            {props.expanded ? "Snoozed" : `Snoozed (${props.count})`}
-          </Text>
-          <View className="h-px flex-1 bg-blue-500/20 dark:bg-blue-400/15" />
-          <SymbolView
-            name={props.expanded ? "chevron.up" : "chevron.down"}
-            size={10}
-            tintColor={colorScheme === "dark" ? SNOOZE_ACCENT_DARK : SNOOZE_ACCENT_LIGHT}
-            type="monochrome"
-          />
-        </>
-      )}
-    </Pressable>
-  );
+  return <ThreadListV2ShelfHeader {...props} kind="snoozed" />;
 });
 
 export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledShelfHeader(props: {
@@ -202,75 +215,8 @@ export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledS
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
   readonly sceneryChrome?: boolean;
-  readonly clusterRole?: ThreadListV2GlassClusterRole | null;
 }) {
-  const mutedColor = useThemeColor("--color-foreground-muted");
-  const chromeFill = useThemeColor("--color-chrome-glass");
-  const chromeBorder = useThemeColor("--color-chrome-glass-border");
-  const sceneryChrome = props.sceneryChrome === true;
-  const clusterRole = props.clusterRole ?? null;
-  return (
-    <Pressable
-      accessibilityHint={
-        props.expanded ? "Collapses the settled threads." : "Expands the settled threads."
-      }
-      accessibilityLabel={props.count === 1 ? "1 settled thread" : `${props.count} settled threads`}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: props.expanded }}
-      className={
-        sceneryChrome
-          ? undefined
-          : cn(
-              "mb-1.5 mt-4 flex-row items-center gap-2.5",
-              props.pane === "sidebar" ? "px-3" : "px-5",
-            )
-      }
-      onPress={props.onToggle}
-      style={({ pressed }) =>
-        sceneryChrome && clusterRole !== null
-          ? [
-              threadListV2ClusterPlateStyle({
-                role: clusterRole,
-                fill: chromeFill,
-                borderColor: chromeBorder,
-              }),
-              { opacity: pressed ? 0.6 : 1 },
-            ]
-          : { opacity: pressed ? 0.6 : 1 }
-      }
-    >
-      {sceneryChrome ? (
-        <>
-          <View className="flex-row items-center gap-2.5 px-4 py-2.5">
-            <Text className="text-xs font-t3-medium text-foreground-tertiary">
-              {props.expanded ? "Settled" : `Settled (${props.count})`}
-            </Text>
-            <View className="flex-1" />
-            <SymbolView
-              name={props.expanded ? "chevron.up" : "chevron.down"}
-              size={10}
-              tintColor={mutedColor}
-              type="monochrome"
-            />
-          </View>
-          {clusterRole === "first" ? <View className="ml-4 h-px bg-border-subtle" /> : null}
-        </>
-      ) : (
-        <>
-          <Text className="text-xs font-t3-medium text-foreground-tertiary">
-            {props.expanded ? "Settled" : `Settled (${props.count})`}
-          </Text>
-          <View className="h-px flex-1 bg-border" />
-          <SymbolView
-            name={props.expanded ? "chevron.up" : "chevron.down"}
-            size={10}
-            tintColor={mutedColor}
-            type="monochrome"
-          />
-        </>
-      )}
-    </Pressable>
-  );
+  return <ThreadListV2ShelfHeader {...props} kind="settled" />;
 });
 
 const PENDING_TASK_MENU_ACTIONS: MenuAction[] = [
@@ -435,8 +381,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly showTrailingDivider?: boolean;
   /** Translucent chrome over World Scenery; ignored in the sidebar pane. */
   readonly sceneryChrome?: boolean;
-  /** Groups slim settled/snoozed rows into one inset frosted plate. */
-  readonly clusterRole?: ThreadListV2GlassClusterRole | null;
   /** Highlights the thread open in the detail pane (iPad split view). The
       compact Home list never sets it — phones navigate away on select. */
   readonly selected?: boolean;
@@ -521,7 +465,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const sidebarPane = props.pane === "sidebar";
   const selected = props.selected === true;
   const sceneryChrome = props.sceneryChrome === true && !sidebarPane;
-  const clusterRole = props.clusterRole ?? null;
 
   const status = resolveThreadListV2Status(thread);
   const statusLabel = STATUS_LABEL_BY_STATUS[status];
@@ -887,6 +830,55 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     </>
   );
 
+  const slimContent = (
+    <>
+      {props.project ? (
+        <View className="opacity-40">
+          <ProjectFavicon
+            environmentId={thread.environmentId}
+            faviconPath={props.project.faviconPath}
+            size={15}
+            projectTitle={props.projectTitle ?? props.project.title}
+            workspaceRoot={props.project.workspaceRoot}
+          />
+        </View>
+      ) : null}
+      <View className="min-w-0 flex-1">
+        <Text
+          className={cn(
+            "text-base",
+            selected ? "text-user-bubble-foreground" : "text-foreground-muted",
+          )}
+          numberOfLines={1}
+        >
+          {thread.title}
+        </Text>
+        {props.searchMatch ? (
+          <ThreadSearchMatchExcerpt
+            match={props.searchMatch}
+            query={props.searchQuery ?? ""}
+            selected={selected}
+          />
+        ) : null}
+      </View>
+      <Text
+        className={cn(
+          "text-sm tabular-nums",
+          selected
+            ? "text-user-bubble-foreground-muted"
+            : snoozedRow
+              ? "text-blue-600 dark:text-blue-400"
+              : "text-foreground-tertiary",
+        )}
+        style={{ fontFamily: MONO_FONT }}
+      >
+        {snoozedRow && props.snoozeWakeLabelText !== undefined
+          ? props.snoozeWakeLabelText
+          : relativeTime(thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt)}
+      </Text>
+    </>
+  );
+
   const rowContent = (close: () => void) =>
     variant === "card" ? (
       <Pressable
@@ -951,73 +943,33 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                     : drawerColor,
                 borderRadius: SIDEBAR_V2_ROW_RADIUS,
               })
-            : sceneryChrome && clusterRole !== null
-              ? ({ pressed }) => [
-                  threadListV2ClusterPlateStyle({
-                    role: clusterRole,
-                    fill: chromeFill,
-                    borderColor: chromeBorder,
-                  }),
-                  { opacity: pressed ? 0.7 : 1 },
-                ]
-              : ({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })
+            : ({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })
         }
       >
-        {/* Settled history recedes: dimmed favicon + muted title. */}
-        <View
-          className={cn(
-            "min-h-[44px] flex-row items-center gap-2.5 py-2",
-            sidebarPane ? "px-3" : sceneryChrome ? "px-4" : "px-5",
-          )}
-        >
-          {props.project ? (
-            <View className="opacity-40">
-              <ProjectFavicon
-                environmentId={thread.environmentId}
-                faviconPath={props.project.faviconPath}
-                size={15}
-                projectTitle={props.projectTitle ?? props.project.title}
-                workspaceRoot={props.project.workspaceRoot}
-              />
-            </View>
-          ) : null}
-          <View className="min-w-0 flex-1">
-            <Text
-              className={cn(
-                "text-base",
-                selected ? "text-user-bubble-foreground" : "text-foreground-muted",
-              )}
-              numberOfLines={1}
-            >
-              {thread.title}
-            </Text>
-            {props.searchMatch ? (
-              <ThreadSearchMatchExcerpt
-                match={props.searchMatch}
-                query={props.searchQuery ?? ""}
-                selected={selected}
-              />
-            ) : null}
-          </View>
-          <Text
-            className={cn(
-              "text-sm tabular-nums",
-              selected
-                ? "text-user-bubble-foreground-muted"
-                : snoozedRow
-                  ? "text-blue-600 dark:text-blue-400"
-                  : "text-foreground-tertiary",
-            )}
-            style={{ fontFamily: MONO_FONT }}
+        {/* Settled history recedes: dimmed favicon + muted title. Over
+            scenery it still sits on a card, just quieter than the inbox. */}
+        {sceneryChrome ? (
+          <View
+            style={threadListV2CardPlateStyle({
+              fill: chromeFill,
+              borderColor: chromeBorder,
+              compact: true,
+            })}
           >
-            {snoozedRow && props.snoozeWakeLabelText !== undefined
-              ? props.snoozeWakeLabelText
-              : relativeTime(thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt)}
-          </Text>
-        </View>
-        {sceneryChrome && props.showTrailingDivider !== false && clusterRole !== "last" ? (
-          <View className="ml-4 h-px bg-border-subtle" />
-        ) : null}
+            <View className="min-h-[44px] flex-row items-center gap-2.5 px-4 py-2.5">
+              {slimContent}
+            </View>
+          </View>
+        ) : (
+          <View
+            className={cn(
+              "min-h-[44px] flex-row items-center gap-2.5 py-2",
+              sidebarPane ? "px-3" : "px-5",
+            )}
+          >
+            {slimContent}
+          </View>
+        )}
       </Pressable>
     );
 

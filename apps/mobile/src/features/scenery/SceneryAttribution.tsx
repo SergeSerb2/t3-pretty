@@ -1,50 +1,38 @@
 /**
  * Unsplash attribution pill for the World Scenery photo behind a screen —
  * "Location · Photo by X", tapping through to the photographer's profile with
- * the required utm parameters. Horizontally centered under floating chrome /
- * above the home-indicator strip so long credits stay clear of the device's
- * rounded corners (desktop still docks bottom-right via --scenery-dock-block).
+ * the required utm parameters. Horizontally centered under floating chrome.
+ * `dockUnderFloatingChrome` sits the pill in the home-indicator strip under
+ * Liquid Glass Home search and the thread composer; otherwise the pill clears
+ * the system inset (desktop still docks bottom-right via --scenery-dock-block).
  */
 import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
 import * as Linking from "expo-linking";
 import { useRef } from "react";
-import {
-  Pressable,
-  StyleSheet,
-  useColorScheme,
-  View,
-  type LayoutChangeEvent,
-} from "react-native";
+import { Pressable, StyleSheet, useColorScheme, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
+import { SCENERY_CREDIT_MIN_BOTTOM } from "./sceneryDock";
 import { UNSPLASH_UTM, type SceneryPhoto } from "./sceneryLogic";
 
-/** Unscaled first-frame estimate (4pt padding + 14pt type). Callers use this
- *  until onHeightChange reports the painted size, which grows with Dynamic
- *  Type. */
-export const SCENERY_CREDIT_HEIGHT = 22;
-/** Gap between the credit pill and overlaying chrome. */
-export const SCENERY_CREDIT_GAP = 6;
-/**
- * Minimum gap above the physical bottom edge when a caller opts into
- * `dockUnderFloatingChrome` (Liquid Glass Home). Elsewhere the credit clears
- * the home-indicator / system-nav inset via safe area.
- */
-export const SCENERY_CREDIT_MIN_BOTTOM = 8;
+export {
+  SCENERY_CREDIT_GAP,
+  SCENERY_CREDIT_HEIGHT,
+  SCENERY_CREDIT_MIN_BOTTOM,
+} from "./sceneryDock";
 
 export function SceneryAttribution(props: {
   readonly photo: SceneryPhoto;
   /** Extra offset above the platform bottom dock for overlaying chrome such
    *  as the pre-Liquid-Glass 44pt home toolbar or the Android new-task FAB.
    *  Do not pass composer height — Thread Detail reserves that slot via
-   *  composerBottomInset and keeps safe-area docking. */
+   *  composerBottomInset and docks with `dockUnderFloatingChrome`. */
   readonly bottomExtra?: number;
   /**
-   * Liquid Glass Home only: dock 8pt above the physical bottom so the pill
-   * sits under the floating search/compose chrome (which already clears the
-   * home indicator). Leave unset everywhere else so Thread Detail and
-   * pre-Liquid-Glass Home stay above the safe-area inset.
+   * Dock 8pt above the physical bottom so the pill sits under floating
+   * Home search / thread compose chrome. Leave unset on pre-Liquid-Glass
+   * Home and Android so the pill still clears the system inset.
    */
   readonly dockUnderFloatingChrome?: boolean;
   /** Painted pill height after layout, including Dynamic Type. */
@@ -55,7 +43,7 @@ export function SceneryAttribution(props: {
   const isDarkMode = useColorScheme() !== "light";
   const reportedHeightRef = useRef(0);
   // Default: clear the home-indicator / system-nav inset. Liquid Glass Home
-  // opts into a physical-bottom dock under its floating chrome.
+  // and the iOS thread composer opt into a physical-bottom dock.
   const bottom =
     props.dockUnderFloatingChrome === true
       ? SCENERY_CREDIT_MIN_BOTTOM + (props.bottomExtra ?? 0)

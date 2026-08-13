@@ -1,33 +1,56 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { SCENERY_CREDIT_MIN_BOTTOM } from "../scenery/sceneryDock";
 import {
-  COMPOSER_RESTING_SAFE_AREA,
   deriveComposerBottomInset,
   deriveKeyboardAvoidPadding,
   deriveStaleKeyboardPaddingCancel,
 } from "./composerKeyboardLayout";
 
 describe("deriveComposerBottomInset", () => {
-  it("docks below the home indicator and scenery credit at rest", () => {
+  it("docks iOS chrome into the home-indicator strip with the scenery credit", () => {
     expect(
       deriveComposerBottomInset({
         atKeyboardEdge: false,
         keyboardVisible: false,
+        platform: "ios",
         safeAreaBottom: 34,
         sceneryCreditHeight: 22,
       }),
-    ).toBe(56);
+    ).toBe(SCENERY_CREDIT_MIN_BOTTOM + 22);
   });
 
-  it("uses the resting minimum when the safe-area inset is smaller", () => {
+  it("uses the iOS resting minimum when there is no credit", () => {
     expect(
       deriveComposerBottomInset({
         atKeyboardEdge: false,
         keyboardVisible: false,
+        platform: "ios",
         safeAreaBottom: 0,
         sceneryCreditHeight: 0,
       }),
-    ).toBe(COMPOSER_RESTING_SAFE_AREA);
+    ).toBe(SCENERY_CREDIT_MIN_BOTTOM);
+  });
+
+  it("keeps Android chrome above the system navigation inset", () => {
+    expect(
+      deriveComposerBottomInset({
+        atKeyboardEdge: false,
+        keyboardVisible: false,
+        platform: "android",
+        safeAreaBottom: 48,
+        sceneryCreditHeight: 22,
+      }),
+    ).toBe(70);
+    expect(
+      deriveComposerBottomInset({
+        atKeyboardEdge: false,
+        keyboardVisible: false,
+        platform: "android",
+        safeAreaBottom: 0,
+        sceneryCreditHeight: 0,
+      }),
+    ).toBe(12);
   });
 
   it("sits flush on the IME when the composer is at the keyboard edge", () => {
@@ -35,6 +58,7 @@ describe("deriveComposerBottomInset", () => {
       deriveComposerBottomInset({
         atKeyboardEdge: true,
         keyboardVisible: true,
+        platform: "ios",
         safeAreaBottom: 34,
         sceneryCreditHeight: 22,
       }),
@@ -46,6 +70,7 @@ describe("deriveComposerBottomInset", () => {
       deriveComposerBottomInset({
         atKeyboardEdge: true,
         keyboardVisible: false,
+        platform: "ios",
         safeAreaBottom: 34,
         sceneryCreditHeight: 22,
       }),
@@ -57,10 +82,11 @@ describe("deriveComposerBottomInset", () => {
       deriveComposerBottomInset({
         atKeyboardEdge: false,
         keyboardVisible: true,
+        platform: "ios",
         safeAreaBottom: 34,
         sceneryCreditHeight: 22,
       }),
-    ).toBe(34);
+    ).toBe(SCENERY_CREDIT_MIN_BOTTOM);
   });
 });
 

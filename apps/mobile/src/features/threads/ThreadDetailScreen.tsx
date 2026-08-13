@@ -60,7 +60,8 @@ import type { StatusTone } from "../../components/StatusPill";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import { CHAT_CONTENT_MAX_WIDTH, type LayoutVariant } from "../../lib/layout";
 import { scopedThreadKey } from "../../lib/scopedEntities";
-import { SCENERY_CREDIT_HEIGHT, SceneryAttribution } from "../scenery/SceneryAttribution";
+import { SceneryAttribution } from "../scenery/SceneryAttribution";
+import { SCENERY_CREDIT_HEIGHT } from "../scenery/sceneryDock";
 import { useThreadSceneryPhoto } from "../scenery/SceneryProvider";
 import type {
   PendingApproval,
@@ -292,12 +293,15 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const isComposerAtKeyboardEdge = Platform.OS === "android" ? isKeyboardVisible : composerExpanded;
   const keyboardTranslationEnabled = isKeyboardVisible && !keyboardStateSuspect;
   // Reserve a strip under the composer for the scenery credit so the pill
-  // sits below send/stop instead of stealing taps from them. Hide it at the
-  // keyboard edge and while the IME is reported visible so a stream-time
-  // focus flicker cannot jump the resting dock.
+  // sits below send/stop instead of stealing taps from them. Keyboard-open
+  // hides the credit under the IME; at-edge also drops it so a stream-time
+  // focus flicker cannot jump the resting dock. iOS matches Liquid Glass
+  // Home: dock in the home-indicator strip instead of stacking a full
+  // safe-area inset under the credit.
   const composerBottomInset = deriveComposerBottomInset({
     atKeyboardEdge: isComposerAtKeyboardEdge,
     keyboardVisible: isKeyboardVisible,
+    platform: Platform.OS === "android" ? "android" : "ios",
     safeAreaBottom: insets.bottom,
     sceneryCreditHeight: threadSceneryPhoto !== null ? creditHeight : 0,
   });
@@ -802,9 +806,13 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
       ) : null}
 
       {/* World Scenery credit centers under the composer strip so it cannot
-          cover send/stop and stays clear of the device's rounded corners. */}
+          cover send/stop. On iOS it docks in the home-indicator strip. */}
       {showContent && threadSceneryPhoto !== null ? (
-        <SceneryAttribution photo={threadSceneryPhoto} onHeightChange={setCreditHeight} />
+        <SceneryAttribution
+          photo={threadSceneryPhoto}
+          dockUnderFloatingChrome={Platform.OS === "ios"}
+          onHeightChange={setCreditHeight}
+        />
       ) : null}
     </View>
   );

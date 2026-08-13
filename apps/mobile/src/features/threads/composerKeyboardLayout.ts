@@ -1,27 +1,31 @@
-/** Safe-area padding under the floating composer when it is not sitting on the IME. */
-export const COMPOSER_RESTING_SAFE_AREA = 12;
+import { deriveFloatingChromeBottomInset } from "../scenery/sceneryDock";
 
 /**
- * Bottom padding inside the floating composer: home-indicator clearance plus
- * the scenery-credit strip. Both drop away when the composer is at the
+ * Bottom padding inside the floating composer: home-indicator / nav clearance
+ * plus the scenery-credit strip. Both drop away when the composer is at the
  * keyboard edge so the pill can sit flush on the IME.
  *
- * Scenery also keys off keyboard visibility: iOS focus can flicker during a
- * stream while the IME is still up, and showing the credit then jumps the
- * composer. Visibility-false + not-at-edge is the resting dock.
+ * Dock math comes from `deriveFloatingChromeBottomInset` so thread chrome
+ * matches Liquid Glass Home on iOS. Scenery also keys off keyboard visibility:
+ * iOS focus can flicker during a stream while the IME is still up, and showing
+ * the credit then jumps the composer. Visibility-false + not-at-edge is the
+ * resting dock.
  */
 export function deriveComposerBottomInset(input: {
   readonly atKeyboardEdge: boolean;
   readonly keyboardVisible: boolean;
+  readonly platform: "ios" | "android";
   readonly safeAreaBottom: number;
   readonly sceneryCreditHeight: number;
 }): number {
-  const safeArea = input.atKeyboardEdge
-    ? 0
-    : Math.max(input.safeAreaBottom, COMPOSER_RESTING_SAFE_AREA);
   const showSceneryCredit =
     input.sceneryCreditHeight > 0 && !input.keyboardVisible && !input.atKeyboardEdge;
-  return safeArea + (showSceneryCredit ? input.sceneryCreditHeight : 0);
+  return deriveFloatingChromeBottomInset({
+    isAtKeyboardEdge: input.atKeyboardEdge,
+    platform: input.platform,
+    safeAreaBottom: input.safeAreaBottom,
+    creditHeight: showSceneryCredit ? input.sceneryCreditHeight : 0,
+  });
 }
 
 /**
