@@ -44,6 +44,7 @@ export interface SelectableMarkdownTextProps {
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly preserveSoftBreaks?: boolean;
   readonly onLinkPress?: (href: string) => void;
+  readonly onLinkLongPress?: (href: string) => void;
   readonly marginTop?: number;
   readonly marginBottom?: number;
 }

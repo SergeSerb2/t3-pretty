@@ -550,6 +550,10 @@ T3MarkdownOutsideTapCoordinatorForWindow(UIWindow *window)
 
 - (void)handleLongPressIfNecessary:(UILongPressGestureRecognizer*)sender
 {
+  if (sender.state != UIGestureRecognizerStateBegan) {
+    return;
+  }
+
   const auto location = [self getLocationOfPress:sender];
   const auto child = [self getTouchChild:location];
 

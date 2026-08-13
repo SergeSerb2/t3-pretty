@@ -1,9 +1,19 @@
+import { createContext, useContext } from "react";
 import { Image, Linking, type TextStyle, useColorScheme } from "react-native";
 
 import { MarkdownTextPrimitive } from "./MarkdownTextPrimitive";
 import { markdownFileIconSource } from "./markdownFileIcons";
 import type { NativeMarkdownTextRun } from "./nativeMarkdownText";
 import type { NativeMarkdownTextStyle } from "./SelectableMarkdownText.types";
+
+type MarkdownLinkCallbacks = {
+  readonly onLinkPress?: (href: string) => void;
+  readonly onLinkLongPress?: (href: string) => void;
+};
+
+// NativeMarkdownBlock recurses without a long-press prop. Selectable runs
+// read both callbacks from this context.
+export const MarkdownLinkCallbacksContext = createContext<MarkdownLinkCallbacks>({});
 
 const EXTERNAL_LINK_PREFIX = "◉ ";
 const INLINE_ATTACHMENT_PREFIX = "\uFFFC\u00A0";
@@ -137,7 +147,11 @@ export function NativeMarkdownSelectableText(props: {
   readonly runs: ReadonlyArray<NativeMarkdownTextRun>;
   readonly textStyle: NativeMarkdownTextStyle;
   readonly onLinkPress?: (href: string) => void;
+  readonly onLinkLongPress?: (href: string) => void;
 }) {
+  const linkCallbacks = useContext(MarkdownLinkCallbacksContext);
+  const onLinkPress = props.onLinkPress ?? linkCallbacks.onLinkPress;
+  const onLinkLongPress = props.onLinkLongPress ?? linkCallbacks.onLinkLongPress;
   const colorScheme = useColorScheme();
   const occurrences = new Map<string, number>();
   const prefixedExternalLinks = new Set<string>();
@@ -209,11 +223,18 @@ export function NativeMarkdownSelectableText(props: {
             onPress={
               href
                 ? () => {
-                    if (props.onLinkPress) {
-                      props.onLinkPress(href);
+                    if (onLinkPress) {
+                      onLinkPress(href);
                     } else {
                       void Linking.openURL(href);
                     }
+                  }
+                : undefined
+            }
+            onLongPress={
+              href && onLinkLongPress
+                ? () => {
+                    onLinkLongPress(href);
                   }
                 : undefined
             }
