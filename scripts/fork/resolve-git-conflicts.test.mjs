@@ -8,6 +8,7 @@ import { assert, describe, it } from "vite-plus/test";
 import {
   buildConflictPrompt,
   formatSyncReport,
+  isGeneratedLockfile,
   prepareConflictPrompt,
   readReusedSyncReport,
 } from "./resolve-git-conflicts.mjs";
@@ -264,5 +265,49 @@ ${">".repeat(7)} theirs
 
     assert.include(report, "Conflict resolver: not invoked");
     assert.include(report, "The resolver did not omit any parent change");
+  });
+
+  it("keeps generated lockfiles out of the model and regenerates them in the workflow", () => {
+    assert.isTrue(isGeneratedLockfile("pnpm-lock.yaml"));
+    assert.isTrue(isGeneratedLockfile("apps/web/pnpm-lock.yaml"));
+    assert.isFalse(isGeneratedLockfile("pnpm-lock.yaml.bak"));
+    assert.isFalse(isGeneratedLockfile("apps/web/package.json"));
+
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+    assert.include(resolver, 'git(["checkout", "--theirs", "--", path])');
+    assert.include(resolver, 'git(["checkout", "--ours", "--", path])');
+
+    const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+    assert.include(workflow, 'grep -qx "pnpm-lock.yaml"');
+    assert.include(workflow, "corepack pnpm install --lockfile-only --no-frozen-lockfile");
+    assert.include(workflow, "git add pnpm-lock.yaml");
+  });
+
+  it("reports deterministic lockfile resolutions without crediting the model", () => {
+    const report = formatSyncReport({
+      upstreamTag: "v0.0.34-nightly.20260813.1087",
+      previousUpstreamTag: "v0.0.34-nightly.20260813.1086",
+      model: "gpt-5.6-sol",
+      reasoningEffort: "xhigh",
+      protectedWorkflowPaths: [],
+      resolutions: [
+        {
+          path: "pnpm-lock.yaml",
+          deterministic: true,
+          forkChangesPreserved: [
+            "fork-only dependency entries are re-derived by lockfile regeneration against the merged package manifests",
+          ],
+          upstreamChangesIntegrated: [
+            "took the parent nightly's generated lockfile wholesale instead of AI-splicing it",
+          ],
+          upstreamChangesOmitted: [],
+        },
+      ],
+    });
+
+    assert.include(report, "generated lockfiles resolved deterministically");
+    assert.notInclude(report, "`gpt-5.6-sol` with `xhigh` reasoning");
+    assert.include(report, "AI-splicing");
+    assert.include(report, "fork-only dependency entries");
   });
 });

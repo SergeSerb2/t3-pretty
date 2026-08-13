@@ -127,6 +127,16 @@ jobs:
           # parent change intentionally omitted to protect T3 Pretty.
           node scripts/fork/resolve-git-conflicts.mjs
 
+          # The resolver side-picks a conflicted generated lockfile instead of
+          # AI-splicing it. Reconcile that copy with the merged package
+          # manifests so the committed lockfile actually installs (the runner
+          # sets CI=true, which would force a frozen lockfile, so opt out).
+          if printf '%s\n' "${resolver_paths[@]}" | grep -qx "pnpm-lock.yaml"; then
+            corepack enable
+            corepack pnpm install --lockfile-only --no-frozen-lockfile
+            git add pnpm-lock.yaml
+          fi
+
           if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
             echo "Unresolved merge conflicts remain." >&2
             exit 1

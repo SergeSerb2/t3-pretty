@@ -16,7 +16,12 @@ const MAX_CONFLICT_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PROMPT_BYTES = 600_000;
 const MAX_EDIT_DISTANCE = 20_000;
 const CONFLICT_PATTERN = /^<<<<<<<[^\n]*\n[\s\S]*?^>>>>>>>[^\n]*(?:\n|$)/gmu;
+const GENERATED_LOCKFILE_PATTERN = /(?:^|\/)pnpm-lock\.yaml$/u;
 const REPORT_PATH = ".t3-fork/upstream-sync-report.md";
+
+export function isGeneratedLockfile(path) {
+  return GENERATED_LOCKFILE_PATTERN.test(path);
+}
 
 function git(args, options = {}) {
   return NodeChildProcess.execFileSync("git", args, {
@@ -269,9 +274,11 @@ export function formatSyncReport({
     "",
     `- Parent nightly: \`${oneLine(upstreamTag)}\``,
     `- Previously integrated parent nightly: \`${oneLine(previousUpstreamTag || "none recorded")}\``,
-    resolutions.length > 0
+    resolutions.some((resolution) => !resolution.deterministic)
       ? `- Conflict resolver: \`${oneLine(model)}\` with \`${oneLine(reasoningEffort)}\` reasoning`
-      : "- Conflict resolver: not invoked; Git reported no text conflicts",
+      : resolutions.length > 0
+        ? "- Conflict resolver: generated lockfiles resolved deterministically; no model request needed"
+        : "- Conflict resolver: not invoked; Git reported no text conflicts",
     "",
     "## T3 Pretty changes preserved at conflict boundaries",
     "",
@@ -497,20 +504,55 @@ async function resolveConflict(path, token) {
   };
 }
 
+function resolveGeneratedLockfile(path) {
+  // A generated lockfile is never model input: an AI-spliced lockfile can
+  // carry mismatched integrity hashes and stale dependency snapshots that a
+  // text merge cannot validate. Take the parent nightly's copy wholesale; the
+  // sync workflow then regenerates it against the merged package manifests,
+  // which re-derives the fork-only dependency entries. Fall back to the fork
+  // copy when the parent side has no version of the file.
+  try {
+    git(["checkout", "--theirs", "--", path]);
+  } catch {
+    git(["checkout", "--ours", "--", path]);
+  }
+  git(["add", "--", path]);
+  process.stdout.write(
+    `[fork-sync] resolved generated lockfile ${path} deterministically (parent copy; regeneration follows)\n`,
+  );
+  return {
+    path,
+    deterministic: true,
+    forkChangesPreserved: [
+      "fork-only dependency entries are re-derived by lockfile regeneration against the merged package manifests",
+    ],
+    upstreamChangesIntegrated: [
+      "took the parent nightly's generated lockfile wholesale instead of AI-splicing it",
+    ],
+    upstreamChangesOmitted: [],
+  };
+}
+
 async function main() {
   const paths = git(["diff", "--name-only", "--diff-filter=U"]).split("\n").filter(Boolean);
   if (paths.length > MAX_CONFLICTS) {
     throw new Error(`Refusing to resolve ${paths.length} conflicts; limit is ${MAX_CONFLICTS}`);
   }
 
+  const lockfilePaths = paths.filter(isGeneratedLockfile);
+  const modelPaths = paths.filter((path) => !isGeneratedLockfile(path));
+
   const token = process.env.CLI_PROXY_API_KEY?.trim();
-  if (paths.length > 0 && !token) {
+  if (modelPaths.length > 0 && !token) {
     throw new Error("CLI_PROXY_API_KEY is required when merge conflicts exist");
   }
 
   const unmergedModes = git(["ls-files", "-u"]);
   const resolutions = [];
-  for (const path of paths) {
+  for (const path of lockfilePaths) {
+    resolutions.push(resolveGeneratedLockfile(path));
+  }
+  for (const path of modelPaths) {
     const entries = unmergedModes.split("\n").filter((line) => line.endsWith(`\t${path}`));
     if (entries.some((entry) => !entry.startsWith("100644 ") && !entry.startsWith("100755 "))) {
       throw new Error(`${path} has a non-regular git mode and requires manual resolution`);
