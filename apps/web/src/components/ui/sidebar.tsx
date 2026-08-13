@@ -374,6 +374,10 @@ function SidebarRail({
   const suppressClickRef = React.useRef(false);
   const resizeStateRef = React.useRef<{
     moved: boolean;
+    // Captured before any drag-time writes so a no-op / fully-clamped drag can
+    // put the preference-backed CSS expression back instead of leaving a
+    // transiently clamped value on the wrapper.
+    originalCssWidth: string;
     pointerId: number;
     pendingWidth: number;
     rail: HTMLButtonElement;
@@ -411,6 +415,15 @@ function SidebarRail({
           setLocalStorageItem(resolvedResizable.storageKey, resizeState.width, Schema.Finite);
         }
         resolvedResizable?.onResize?.(resizeState.width);
+      } else if (
+        resizeState.wrapper.style.getPropertyValue("--sidebar-width") !==
+        resizeState.originalCssWidth
+      ) {
+        // Drag frames may have rewritten `--sidebar-width` with a clamped
+        // numeric basis (e.g. 460px) even though the preference (e.g. 900px)
+        // never committed. Restore the pre-drag expression so a later wider
+        // viewport can still grow into the stored preference.
+        resizeState.wrapper.style.setProperty("--sidebar-width", resizeState.originalCssWidth);
       }
       resizeStateRef.current = null;
       if (resizeState.rail.hasPointerCapture(pointerId)) {
@@ -455,6 +468,7 @@ function SidebarRail({
       event.stopPropagation();
       resizeStateRef.current = {
         moved: false,
+        originalCssWidth: wrapper.style.getPropertyValue("--sidebar-width"),
         pointerId: event.pointerId,
         pendingWidth: initialWidth,
         rail: event.currentTarget,
@@ -523,6 +537,15 @@ function SidebarRail({
             wrapper: activeResizeState.wrapper,
           }) ?? true;
         if (!accepted) {
+          return;
+        }
+
+        // Unchanged widths must not rewrite `--sidebar-width`: when the
+        // preference is above the live viewport cap, dragging toward the wider
+        // side keeps `nextWidth === startWidth` but `formatSidebarWidth` would
+        // replace the preference-backed expression with one based on the
+        // clamped visual width.
+        if (nextWidth === activeResizeState.width) {
           return;
         }
 
