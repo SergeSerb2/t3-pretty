@@ -1,20 +1,25 @@
 "use strict";
 
 // Ships the branded T3 mark to the Live Activity / widget extension, and
-// keeps that extension's store versions in lockstep with the app.
+// makes the extension archive with the app's store versions.
 //
 // expo-widgets generates ExpoWidgetsTarget without a Resources build phase and
 // has no asset support, so this plugin (a) writes an SVG template image set into
 // the generated widget asset catalog and (b) wires that catalog into the widget
-// target with an actool build phase. It also overwrites MARKETING_VERSION and
-// CURRENT_PROJECT_VERSION, and adds a late "Sync Widget Bundle Version" phase.
-// expo-widgets still hardcodes those settings to 1.0 / 1, and
-// GENERATE_INFOPLIST_FILE=YES makes Xcode ignore the widget Info.plist
-// (expo/expo#43740). EAS remote autoIncrement writes the real CFBundleVersion
-// onto Info.plist files only after prebuild, so a config plugin alone still
-// archives the extension at 1. The build phase runs a disk script that copies
-// the parent app's versions onto the generated widget plist before signing.
-// Keep that script out of the pbxproj: nested quotes broke Nanaimo / pod install.
+// target with an actool build phase.
+//
+// Versioning: expo-widgets sets GENERATE_INFOPLIST_FILE=YES and hardcodes
+// CURRENT_PROJECT_VERSION=1, so Xcode synthesised the appex Info.plist at
+// CFBundleVersion=1 while EAS remote autoIncrement stamped the real number
+// into the app — App Store validation rejects that mismatch. EAS's configure
+// step rewrites ios/<target>/Info.plist (widget included) with the resolved
+// versions before fastlane runs, so this plugin completes the widget's source
+// Info.plist with the keys Xcode was synthesising and flips
+// GENERATE_INFOPLIST_FILE off. The built appex then carries exactly what EAS
+// wrote — no build-phase plist copying. (The previous "Sync Widget Bundle
+// Version" phase globbed ios/*\/Info.plist at archive time; under the CI
+// locale that matched the derived-data build/info.plist first and failed
+// every archive with 'Print: Entry, ":CFBundleVersion", Does Not Exist'.)
 //
 // ORDERING: must be listed BEFORE "expo-widgets" in the plugins array. Expo
 // chains same-type mods so the last-registered runs FIRST; registering this
@@ -28,7 +33,7 @@ const path = require("path");
 const fs = require("fs");
 const { withDangerousMod, withXcodeProject } = require("expo/config-plugins");
 const { addWidgetAssetCatalog } = require("./lib/addWidgetAssetCatalog.cjs");
-const { addWidgetVersionSync, SCRIPT_NAME } = require("./lib/addWidgetVersionSync.cjs");
+const { completeWidgetInfoPlist, useSourceInfoPlistFile } = require("./lib/widgetInfoPlist.cjs");
 
 const TARGET_NAME = "ExpoWidgetsTarget";
 const CATALOG_NAME = "Assets.xcassets";
@@ -61,81 +66,19 @@ function withAssetFiles(config) {
       fs.writeFileSync(path.join(catalogDir, "Contents.json"), CATALOG_CONTENTS);
       fs.writeFileSync(path.join(imageSetDir, "Contents.json"), IMAGE_SET_CONTENTS);
       fs.copyFileSync(source, path.join(imageSetDir, SVG_NAME));
-      fs.copyFileSync(
-        path.join(__dirname, "lib", SCRIPT_NAME),
-        path.join(cfg.modRequest.platformProjectRoot, TARGET_NAME, SCRIPT_NAME),
-      );
+      completeWidgetInfoPlist({
+        platformProjectRoot: cfg.modRequest.platformProjectRoot,
+        targetName: TARGET_NAME,
+      });
       return cfg;
     },
   ]);
 }
 
-function stripQuotes(value) {
-  return String(value ?? "").replace(/^"|"$/g, "");
-}
-
-function findNativeTarget(objects, name) {
-  return Object.entries(objects.PBXNativeTarget || {}).find(
-    ([key, value]) => !key.endsWith("_comment") && value?.name === name,
-  )?.[1];
-}
-
-function firstBuildSetting(objects, target, key) {
-  if (!target) return undefined;
-  const configurationList = objects.XCConfigurationList?.[target.buildConfigurationList];
-  for (const reference of configurationList?.buildConfigurations || []) {
-    const raw = objects.XCBuildConfiguration?.[reference.value]?.buildSettings?.[key];
-    if (raw == null || raw === "") continue;
-    return stripQuotes(raw);
-  }
-  return undefined;
-}
-
-function resolveWidgetBuildNumber(config, objects) {
-  if (config.ios?.buildNumber) return String(config.ios.buildNumber);
-  const mainTarget = Object.values(objects.PBXNativeTarget || {}).find(
-    (value) =>
-      value &&
-      typeof value === "object" &&
-      value.name &&
-      value.name !== TARGET_NAME &&
-      String(value.productType || "").includes("application"),
-  );
-  return firstBuildSetting(objects, mainTarget, "CURRENT_PROJECT_VERSION") || "1";
-}
-
-function syncWidgetReleaseVersions(objects, { targetName, marketingVersion, buildNumber }) {
-  const target = findNativeTarget(objects, targetName);
-  const configurationList = target
-    ? objects.XCConfigurationList?.[target.buildConfigurationList]
-    : undefined;
-  if (!configurationList) {
-    throw new Error(`withWidgetLogoAsset: build configurations for "${targetName}" not found.`);
-  }
-
-  for (const reference of configurationList.buildConfigurations || []) {
-    const buildConfiguration = objects.XCBuildConfiguration?.[reference.value];
-    if (!buildConfiguration?.buildSettings) continue;
-    // expo-widgets hardcodes MARKETING_VERSION to 1.0 and CURRENT_PROJECT_VERSION
-    // to 1. App Store validation requires both to match the containing app
-    // (CFBundleShortVersionString / CFBundleVersion). GENERATE_INFOPLIST_FILE
-    // makes the build settings win over Info.plist.
-    buildConfiguration.buildSettings.MARKETING_VERSION = marketingVersion;
-    buildConfiguration.buildSettings.CURRENT_PROJECT_VERSION = buildNumber;
-  }
-}
-
 function withAssetWiring(config) {
   return withXcodeProject(config, (cfg) => {
     addWidgetAssetCatalog(cfg.modResults, { targetName: TARGET_NAME });
-    addWidgetVersionSync(cfg.modResults, { targetName: TARGET_NAME });
-
-    const objects = cfg.modResults.hash.project.objects;
-    syncWidgetReleaseVersions(objects, {
-      targetName: TARGET_NAME,
-      marketingVersion: cfg.version,
-      buildNumber: resolveWidgetBuildNumber(cfg, objects),
-    });
+    useSourceInfoPlistFile(cfg.modResults, { targetName: TARGET_NAME });
     return cfg;
   });
 }
@@ -143,6 +86,3 @@ function withAssetWiring(config) {
 module.exports = function withWidgetLogoAsset(config) {
   return withAssetWiring(withAssetFiles(config));
 };
-
-module.exports.resolveWidgetBuildNumber = resolveWidgetBuildNumber;
-module.exports.syncWidgetReleaseVersions = syncWidgetReleaseVersions;
