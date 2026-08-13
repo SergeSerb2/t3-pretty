@@ -1,4 +1,4 @@
-import { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
@@ -11,8 +11,10 @@ import {
   MenuSeparator as MenuDivider,
   MenuTrigger,
 } from "../ui/menu";
+import { resolveRuntimeModeOption, runtimeModeOptionsForProvider } from "./runtimeModeOptions";
 
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
+  provider: ProviderDriverKind;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
@@ -68,10 +70,11 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             props.onRuntimeModeChange(value as RuntimeMode);
           }}
         >
-          <MenuRadioItem value="approval-required">Supervised</MenuRadioItem>
-          <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
-          <MenuRadioItem value="auto">Auto</MenuRadioItem>
-          <MenuRadioItem value="full-access">Full access</MenuRadioItem>
+          {runtimeModeOptionsForProvider(props.provider).map((mode) => (
+            <MenuRadioItem key={mode} value={mode}>
+              {resolveRuntimeModeOption(props.provider, mode).label}
+            </MenuRadioItem>
+          ))}
         </MenuRadioGroup>
         {props.showAutoCreatePullRequestToggle ? (
           <>

@@ -850,6 +850,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     optionDescriptors: providerOptionDescriptors,
     runtimeMode: currentRuntimeMode,
     interactionMode: currentInteractionMode,
+    providerDriver: currentModelOption?.providerDriver ?? null,
   });
 
   // iOS gets a native menu on the trigger pill: the everyday adjustments

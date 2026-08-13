@@ -121,6 +121,11 @@ export const RuntimeMode = Schema.Literals([
   "auto-accept-edits",
   "auto",
   "full-access",
+  // Kimi-only full-access variant: the session runs with full access, but
+  // permission requests are forwarded to the user instead of being
+  // auto-approved. Other providers treat it as "ask" (their full-access
+  // checks match on the "full-access" literal only).
+  "yolo",
 ]);
 export type RuntimeMode = typeof RuntimeMode.Type;
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";

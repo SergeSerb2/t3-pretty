@@ -23,6 +23,11 @@ Supervised.
 **Full access**: allow commands and edits without prompts. The default. The agent runs
 unattended until it finishes or asks a question of its own.
 
+Kimi threads use the CLI's own names for the unattended modes instead: **Auto** is full access
+that never stops to ask, and **Yolo** is the same full access but can stop to ask you questions.
+Kimi offers **Supervised**, **Auto**, and **Yolo** — the generic Auto and Auto-accept edits modes
+are not offered for Kimi.
+
 Approvals appear inline in the conversation. Approve or reject one and the agent continues from
 there.
 
@@ -44,5 +49,5 @@ with prompting enabled and a restricted workspace while **Full access** disables
 labels above describe what you get; the exact per-provider translation is internal and may
 change.
 
-Mobile offers the same four modes. It labels the first one **Approve actions** rather than
-**Supervised**.
+Mobile offers the same four modes (Supervised, Auto, and Yolo for Kimi threads). It labels the
+first one **Approve actions** rather than **Supervised**.
