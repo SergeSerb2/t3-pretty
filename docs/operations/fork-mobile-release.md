@@ -24,6 +24,12 @@ JavaScript-only changes therefore ship as an OTA without occupying Xcode or
 touching Expo's cloud iOS quota. Native runtime changes still receive a new
 binary instead of publishing an OTA that no installed app can consume.
 
+Local `eas build --local` IPAs do not create hosted EAS Build records, so
+`eas build:list` alone cannot gate later releases. After a successful
+TestFlight submit the workflow writes the fingerprint to the repository
+variable `T3CODE_IOS_PRODUCTION_FINGERPRINT`, and the next release treats that
+value as a known production binary alongside any hosted EAS result.
+
 iOS store binaries cannot be compiled on the Windows runner. Registering a
 second Mac (for example the M5) with the same `self-hosted`, `macOS`,
 `ARM64`, `t3code-fork`, `release-only` labels lets GitHub run a desktop

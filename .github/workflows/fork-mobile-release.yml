@@ -7,7 +7,11 @@ name: T3 Pretty Mobile Release
 #
 # Fingerprint is computed on this Mac so `eas update` and `eas build --local`
 # share one runtime version. A new IPA is submitted only when that fingerprint
-# differs from the latest finished production iOS binary.
+# differs from both the latest hosted EAS production binary and the last
+# locally submitted fingerprint (repo variable
+# T3CODE_IOS_PRODUCTION_FINGERPRINT). Local builds never appear in
+# `eas build:list`, so the variable is what keeps JS-only releases from
+# recompiling after the first local IPA.
 #
 # See docs/operations/fork-mobile-release.md.
 on:
@@ -56,6 +60,9 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
+      # Persist the last locally submitted iOS fingerprint (local EAS builds
+      # do not create hosted build records that `eas build:list` can see).
+      variables: write
     env:
       APP_VARIANT: production
       NODE_OPTIONS: --max-old-space-size=8192
@@ -334,6 +341,7 @@ jobs:
           node ../../scripts/fork/resolve-ios-native-build.mjs \
             --fingerprint-file "$fingerprint_file" \
             --builds-file "$builds_file" \
+            --submitted-fingerprint "${{ vars.T3CODE_IOS_PRODUCTION_FINGERPRINT }}" \
             --force "$([[ "$MODE" == "build" ]] && echo true || echo false)"
 
       - name: Prepare iOS toolchain
@@ -383,3 +391,19 @@ jobs:
             --profile production \
             --path "$ipa_path" \
             --non-interactive
+
+      - name: Record submitted iOS fingerprint
+        if: >-
+          steps.expo-token.outputs.present == 'true' &&
+          steps.native.outputs.should_build == 'true' &&
+          steps.native.outputs.fingerprint != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FINGERPRINT: ${{ steps.native.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          # Local builds never show up in `eas build:list`. Persist the hash
+          # that just landed in TestFlight so the next JS-only release can
+          # skip Xcode without consulting a hosted EAS build record.
+          gh variable set T3CODE_IOS_PRODUCTION_FINGERPRINT --body "$FINGERPRINT"
+          echo "Recorded T3CODE_IOS_PRODUCTION_FINGERPRINT=$FINGERPRINT"

@@ -19,6 +19,39 @@ function run(args, env = {}) {
 }
 
 describe("T3 Pretty iOS native-build gate", () => {
+  it("skips Xcode when a previously submitted local fingerprint still matches", () => {
+    const output = run([
+      "--fingerprint-json",
+      JSON.stringify({ hash: "local-abc" }),
+      "--builds-json",
+      JSON.stringify([
+        { platform: "IOS", buildProfile: "production", runtimeVersion: "cloud-old" },
+      ]),
+      "--submitted-fingerprint",
+      "local-abc",
+    ]);
+
+    assert.include(output, "should_build=false");
+    assert.include(output, "submitted_fingerprint=local-abc");
+    assert.include(output, "already has a production binary");
+  });
+
+  it("rebuilds when both the hosted EAS binary and submitted fingerprint are stale", () => {
+    const output = run([
+      "--fingerprint-json",
+      JSON.stringify({ hash: "new-hash" }),
+      "--builds-json",
+      JSON.stringify([
+        { platform: "IOS", buildProfile: "production", runtimeVersion: "cloud-old" },
+      ]),
+      "--submitted-fingerprint",
+      "local-old",
+    ]);
+
+    assert.include(output, "should_build=true");
+    assert.include(output, "local-old -> new-hash");
+  });
+
   it("skips Xcode when the latest production binary already has this fingerprint", () => {
     const output = run([
       "--fingerprint-json",

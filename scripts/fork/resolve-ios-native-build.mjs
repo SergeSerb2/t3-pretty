@@ -92,13 +92,24 @@ for (let index = 2; index < NodeProcess.argv.length; index += 1) {
 const fingerprint = readFingerprintInput(args);
 const forceBuild = args.get("force") === "true" || args.get("force") === "1";
 const builds = readBuildList(args);
-const lastRuntimeVersion = runtimeVersionOf(builds.find(isIosProductionBuild) ?? builds[0]);
-const shouldBuild = forceBuild || !lastRuntimeVersion || lastRuntimeVersion !== fingerprint;
+// Local `eas build --local` binaries never appear in `eas build:list`. The
+// workflow therefore also persists the last successfully submitted fingerprint
+// (repo variable) so JavaScript-only releases do not rebuild forever after the
+// first local IPA.
+const submittedFingerprint = (args.get("submitted-fingerprint") ?? "").trim();
+const easRuntimeVersion = runtimeVersionOf(builds.find(isIosProductionBuild) ?? builds[0]);
+const knownFingerprints = new Set(
+  [easRuntimeVersion, submittedFingerprint].filter((value) => Boolean(value)),
+);
+const lastRuntimeVersion = submittedFingerprint || easRuntimeVersion;
+const shouldBuild = forceBuild || !knownFingerprints.has(fingerprint);
 
 const outputPath = args.get("github-output") || NodeProcess.env.GITHUB_OUTPUT;
 const lines = [
   `fingerprint=${fingerprint}`,
   `last_runtime_version=${lastRuntimeVersion}`,
+  `eas_runtime_version=${easRuntimeVersion}`,
+  `submitted_fingerprint=${submittedFingerprint}`,
   `should_build=${shouldBuild ? "true" : "false"}`,
 ];
 
