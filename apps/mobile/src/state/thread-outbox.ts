@@ -1,6 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { appAtomRegistry } from "./atom-registry";
+import { rememberOutgoingMessageDraftAttachments } from "./outgoing-message-previews";
 import { createThreadOutboxManager } from "./thread-outbox-manager";
 import type { QueuedThreadMessage } from "./thread-outbox-model";
 import { expoThreadOutboxStorage } from "./thread-outbox-storage";
@@ -17,6 +18,7 @@ export function ensureThreadOutboxLoaded(): void {
 }
 
 export function enqueueThreadOutboxMessage(message: QueuedThreadMessage): Promise<void> {
+  rememberOutgoingMessageDraftAttachments(message.messageId, message.attachments);
   return threadOutboxManager.enqueue(message);
 }
 
@@ -27,6 +29,7 @@ export function confirmThreadOutboxMessageQueued(message: QueuedThreadMessage): 
 
 /** Rewrite a queued message; no-op (false) if it was removed in the meantime. */
 export function updateThreadOutboxMessage(message: QueuedThreadMessage): Promise<boolean> {
+  rememberOutgoingMessageDraftAttachments(message.messageId, message.attachments);
   return threadOutboxManager.update(message);
 }
 
