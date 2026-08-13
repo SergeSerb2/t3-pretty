@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
@@ -15,7 +15,7 @@ import {
 
 it.effect("creates and reuses a bounded WebP feed preview", () =>
   Effect.acquireUseRelease(
-    Effect.promise(() => NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-preview-test-"))),
+    Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-preview-test-"))),
     (attachmentsDir) =>
       Effect.gen(function* () {
         const attachmentId = "thread-1-00000000-0000-4000-8000-000000000001";
@@ -45,7 +45,7 @@ it.effect("creates and reuses a bounded WebP feed preview", () =>
         });
         const metadata = yield* Effect.promise(() => sharp(first).metadata());
         const [sourceStat, previewStat] = yield* Effect.promise(() =>
-          Promise.all([NodeFS.stat(sourcePath), NodeFS.stat(first)]),
+          Promise.all([NodeFSP.stat(sourcePath), NodeFSP.stat(first)]),
         );
 
         expect(second).toBe(first);
@@ -55,6 +55,6 @@ it.effect("creates and reuses a bounded WebP feed preview", () =>
         expect(previewStat.size).toBeLessThan(sourceStat.size);
       }),
     (attachmentsDir) =>
-      Effect.promise(() => NodeFS.rm(attachmentsDir, { recursive: true, force: true })),
+      Effect.promise(() => NodeFSP.rm(attachmentsDir, { recursive: true, force: true })),
   ),
 );
