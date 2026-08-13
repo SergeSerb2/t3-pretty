@@ -10,13 +10,16 @@ export function resolveThreadSidebarMaximumWidth(viewportWidth: number): number 
   );
 }
 
-export function resolveInitialThreadSidebarWidth(
-  storedWidth: number | null,
-  viewportWidth: number,
-): number {
-  const preferredWidth =
-    storedWidth === null
-      ? THREAD_SIDEBAR_DEFAULT_WIDTH
-      : Math.max(THREAD_SIDEBAR_MIN_WIDTH, storedWidth);
-  return Math.min(preferredWidth, resolveThreadSidebarMaximumWidth(viewportWidth));
+// The stored width is a preference, not a pixel-perfect layout value: the
+// rendered width is clamped by CSS against the live viewport, so a window
+// resized without a delivered resize event can never leave the sidebar stuck
+// outside its legal range, and growing the window restores the preference.
+export function resolveThreadSidebarCssWidth(width: number): string {
+  return `min(${width}px, max(${THREAD_SIDEBAR_MIN_WIDTH}px, calc(100vw - ${THREAD_MAIN_CONTENT_MIN_WIDTH}px)))`;
+}
+
+export function resolveInitialThreadSidebarWidth(storedWidth: number | null): number {
+  return storedWidth === null
+    ? THREAD_SIDEBAR_DEFAULT_WIDTH
+    : Math.max(THREAD_SIDEBAR_MIN_WIDTH, storedWidth);
 }

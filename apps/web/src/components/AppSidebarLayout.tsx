@@ -1,12 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
-import {
-  useEffect,
-  useState,
-  useSyncExternalStore,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
@@ -26,8 +20,10 @@ import {
 import { useProjects } from "../state/entities";
 import {
   resolveInitialThreadSidebarWidth,
+  resolveThreadSidebarCssWidth,
   resolveThreadSidebarMaximumWidth,
   THREAD_MAIN_CONTENT_MIN_WIDTH,
+  THREAD_SIDEBAR_DEFAULT_WIDTH,
   THREAD_SIDEBAR_MIN_WIDTH,
   THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
 } from "./threadSidebarWidth";
@@ -38,29 +34,20 @@ import {
   SidebarTrigger,
   useSidebar,
   useSidebarVisibility,
+  type SidebarResizableOptions,
 } from "./ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
 
-function subscribeToViewportWidth(onChange: () => void): () => void {
-  window.addEventListener("resize", onChange);
-  return () => window.removeEventListener("resize", onChange);
-}
-
-function readViewportWidth(): number {
-  return window.innerWidth;
-}
-
 function readInitialThreadSidebarWidth(): number {
   try {
     return resolveInitialThreadSidebarWidth(
       getLocalStorageItem(THREAD_SIDEBAR_WIDTH_STORAGE_KEY, Schema.Finite),
-      window.innerWidth,
     );
   } catch (error) {
     console.error("Could not read persisted thread sidebar width.", error);
-    return resolveInitialThreadSidebarWidth(null, window.innerWidth);
+    return resolveInitialThreadSidebarWidth(null);
   }
 }
 
@@ -142,18 +129,29 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
-  // Subscribed rather than read once: the clamp must track live window size,
-  // and a clamped drag ends with an unchanged width, which skips the re-render
-  // that would otherwise refresh a render-time snapshot.
-  const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, readViewportWidth);
-  const sidebarMaximumWidth = resolveThreadSidebarMaximumWidth(viewportWidth);
+  // Stable options object: the drag limits resolve against the live window at
+  // drag time, so no viewport subscription is needed here and the rail never
+  // sees a stale cap.
+  const sidebarResizable = useMemo<SidebarResizableOptions>(
+    () => ({
+      getCssWidth: resolveThreadSidebarCssWidth,
+      maxWidth: () => resolveThreadSidebarMaximumWidth(window.innerWidth),
+      minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+      shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+        nextWidth <= currentWidth ||
+        wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+      storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+      onResize: setSidebarWidth,
+    }),
+    [],
+  );
   const resetSidebarWidth = () => {
     try {
       removeLocalStorageItem(THREAD_SIDEBAR_WIDTH_STORAGE_KEY);
     } catch (error) {
       console.error("Could not clear persisted thread sidebar width.", error);
     }
-    setSidebarWidth(resolveInitialThreadSidebarWidth(null, viewportWidth));
+    setSidebarWidth(THREAD_SIDEBAR_DEFAULT_WIDTH);
   };
   const [isWindowFullscreen, setIsWindowFullscreen] = useState(() => {
     const getWindowFullscreenState = window.desktopBridge?.getWindowFullscreenState;
@@ -162,7 +160,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       : false;
   });
   const sidebarProviderStyle = {
-    "--sidebar-width": `${sidebarWidth}px`,
+    "--sidebar-width": resolveThreadSidebarCssWidth(sidebarWidth),
     ...(isMacosDesktop && !isWindowFullscreen
       ? { "--workspace-controls-left": MACOS_TRAFFIC_LIGHTS_LEFT_INSET }
       : {}),
@@ -213,15 +211,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         collapsible="offcanvas"
         data-app-sidebar=""
         className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
-        resizable={{
-          maxWidth: sidebarMaximumWidth,
-          minWidth: THREAD_SIDEBAR_MIN_WIDTH,
-          shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-            nextWidth <= currentWidth ||
-            wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-          storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-          onResize: setSidebarWidth,
-        }}
+        resizable={sidebarResizable}
       >
         {isOnSettings ? (
           <>
