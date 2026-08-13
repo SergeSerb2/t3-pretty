@@ -25,13 +25,13 @@ function mutation(
 }
 
 describe("scenery motion mutation filter", () => {
-  it("covers every structural portal and row target", () => {
+  it("covers every structural row target", () => {
     expect(SCENERY_MOTION_STRUCTURE_SELECTOR).toContain("[data-timeline-root]");
     expect(SCENERY_MOTION_STRUCTURE_SELECTOR).toContain("[data-timeline-row-id]");
     expect(SCENERY_MOTION_STRUCTURE_SELECTOR).toContain("[data-timeline-row-kind]");
-    expect(SCENERY_MOTION_STRUCTURE_SELECTOR).toContain("[data-approval-detail]");
-    expect(SCENERY_MOTION_STRUCTURE_SELECTOR).toContain('button[aria-label="Scroll to end"]');
-    expect(SCENERY_MOTION_STRUCTURE_SELECTOR).toContain("[data-chat-composer-overlay] h1");
+    expect(SCENERY_MOTION_STRUCTURE_SELECTOR).not.toContain("[data-approval-detail]");
+    expect(SCENERY_MOTION_STRUCTURE_SELECTOR).not.toContain('button[aria-label="Scroll to end"]');
+    expect(SCENERY_MOTION_STRUCTURE_SELECTOR).not.toContain("[data-chat-composer-overlay] h1");
     expect(SCENERY_MOTION_STRUCTURE_SELECTOR).not.toContain("svg.lucide-circle-dashed");
   });
 

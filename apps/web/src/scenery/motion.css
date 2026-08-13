@@ -19,7 +19,6 @@
 
 html[data-scenery-motion] {
   --sc-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --sc-ease-inout: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
 /* ------------------------------------------------------- row arrivals -- */
@@ -44,61 +43,8 @@ html[data-scenery-motion] [data-timeline-root].scenery-row-enter {
   }
 }
 
-/* ------------------------------------------------------ working row orb -- */
-/* The orb slot is inserted directly before the three-dot pulse cluster;
-   the adjacent-sibling rule retires the dots while the orb is present. */
-
-html[data-scenery-motion] [data-timeline-row-kind="working"] .scenery-orb-slot + span {
-  display: none;
-}
-
-.scenery-orb-slot {
-  display: inline-flex;
-  align-items: center;
-  /* The 20px orb is taller than the dot cluster it replaces; pull the
-     vertical box in so the working row keeps its compact height. */
-  margin-block: -4px;
-  contain: layout paint;
-}
-
-/* Soft dip while the orb switches verbs (working → searching → …), so a
-   mode change reads as one indicator changing gear, not a hard cut. */
-.scenery-orb-dip {
-  animation: scenery-orb-dip 240ms var(--sc-ease-inout);
-}
-
-@keyframes scenery-orb-dip {
-  0% {
-    opacity: 1;
-  }
-  45% {
-    opacity: 0.35;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-
-/* ------------------------------------------------------- hero orb slot -- */
-
-.scenery-orb-hero {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 1.25rem;
-  contain: layout paint;
-}
-
-html[data-scenery-motion] .scenery-orb-hero {
-  transition:
-    opacity 300ms var(--sc-ease-out),
-    translate 300ms var(--sc-ease-out);
-  @starting-style {
-    opacity: 0;
-    translate: 0 10px;
-  }
-}
-
-/* Draft hero headline rises with the orb on a fresh thread. */
+/* ------------------------------------------------------- draft hero -- */
+/* Draft hero headline rises on a fresh thread. */
 html[data-scenery-motion] [data-chat-composer-overlay] h1 {
   transition:
     opacity 300ms var(--sc-ease-out),
@@ -151,7 +97,7 @@ html[data-scenery-motion] [data-changed-files-state] {
 }
 
 /* -------------------------------------------------- sidebar working label -- */
-/* Working threads keep the status text only — no dashed icon, no orb. */
+/* Working threads keep the status text only — no dashed icon. */
 
 html[data-scenery-motion] [data-thread-item] [data-sidebar-working-label] {
   opacity: 0.9;
@@ -229,15 +175,13 @@ html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"]:act
 }
 
 /* ------------------------------------------------------ reduced motion -- */
-/* Gentler, not zero: comprehension-aiding opacity stays, movement goes.
-   The orb component renders its own static frame under reduced motion. */
+/* Gentler, not zero: comprehension-aiding opacity stays, movement goes. */
 
 @media (prefers-reduced-motion: reduce) {
   html[data-scenery-motion] [data-timeline-root].scenery-row-enter {
     animation: scenery-row-fade 150ms ease-out both;
   }
 
-  html[data-scenery-motion] .scenery-orb-hero,
   html[data-scenery-motion] [data-chat-composer-overlay] h1,
   html[data-scenery-motion] [data-timeline-row-kind="work"] div[class*="ms-7"],
   html[data-scenery-motion] [data-timeline-row-kind="work"] [class*="gap-px"] svg,
@@ -257,10 +201,6 @@ html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"]:act
   html[data-scenery-motion] button[aria-label="Scroll to end"]:active,
   html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"]:active {
     scale: none;
-  }
-
-  html[data-scenery-motion] .scenery-orb-dip {
-    animation: none;
   }
 
   html[data-scenery-motion] [data-changed-files-state] {

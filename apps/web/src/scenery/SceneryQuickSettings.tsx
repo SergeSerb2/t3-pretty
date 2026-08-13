@@ -165,7 +165,7 @@ export function SceneryQuickSettings() {
             <div className="scenery-quick__segments" role="group" aria-label="Motion">
               <button
                 type="button"
-                title="Animate the chat thread and show thinking orbs"
+                title="Animate the chat thread"
                 aria-pressed={motionEnabled}
                 onClick={() => setMotionEnabled(true)}
               >

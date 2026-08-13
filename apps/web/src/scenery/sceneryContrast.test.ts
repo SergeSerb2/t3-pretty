@@ -22,7 +22,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { clampTranslucency, coverage, layerStack } from "./glass";
-import { paint } from "./orbs/vendor/engine/core";
 import { stableIndex } from "./palette";
 import { WORLD_SCENERY_THEME } from "./worldSceneryTheme";
 
@@ -79,28 +78,6 @@ function worstBackdrops(
 
 function worstContrast(foregroundHex: string, backdrops: ReadonlyArray<Rgb>): number {
   return Math.min(...backdrops.map((backdrop) => contrastRatio(hexToRgb(foregroundHex), backdrop)));
-}
-
-function renderOrbInk(white: number, alpha: number, dark: boolean): { color: Rgb; alpha: number } {
-  let fillStyle = "";
-  const context = {
-    set fillStyle(value: string) {
-      fillStyle = value;
-    },
-    beginPath() {},
-    arc() {},
-    fill() {},
-    fillRect() {},
-  } as unknown as CanvasRenderingContext2D;
-  paint(context, [{ x: 0, y: 0, z: 0, r: 1, white, a: alpha }], dark);
-  const match = /^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/.exec(fillStyle);
-  if (!match) {
-    throw new Error(`Unexpected orb fill: ${fillStyle}`);
-  }
-  return {
-    color: [Number(match[1]), Number(match[2]), Number(match[3])],
-    alpha: Number(match[4]),
-  };
 }
 
 /** Mirror of the plate fills declared in scenery.css. */
@@ -175,31 +152,6 @@ describe("world scenery contrast contract", () => {
       });
     }
   }
-
-  it("leaves the dark-mode orb ramp unchanged", () => {
-    expect(renderOrbInk(0.72, 0.2, true)).toEqual({ color: [71, 71, 71], alpha: 0.2 });
-  });
-
-  it("keeps light-mode orb marks visible over every scenery extreme", () => {
-    const colors = WORLD_SCENERY_THEME.variants!.light!;
-    for (const translucency of TRANSLUCENCIES) {
-      const backdrops = worstBackdrops(colors.canvas, "light", translucency);
-      // Cover the full grayscale input range and the weakest alpha that the
-      // canvas painters allow through their existing 0.02 visibility gate.
-      for (const white of [0, 0.25, 0.5, 0.75, 1]) {
-        const ink = renderOrbInk(white, 0.02, false);
-        for (const backdrop of backdrops) {
-          const rendered = blend(ink.color, ink.alpha, backdrop);
-          expect
-            .soft(
-              contrastRatio(rendered, backdrop),
-              `white=${white} t=${translucency} backdrop=${backdrop.join(",")}`,
-            )
-            .toBeGreaterThanOrEqual(3);
-        }
-      }
-    }
-  });
 });
 
 describe("glass layering invariant", () => {

@@ -1,7 +1,7 @@
 /**
- * One shared MutationObserver over <html>'s `data-theme-id` and `class`,
- * exposed as an external store so every scenery hook rides the same
- * subscription instead of installing its own observer.
+ * One shared MutationObserver over <html>'s `data-theme-id`, exposed as an
+ * external store so every scenery hook rides the same subscription instead
+ * of installing its own observer.
  */
 import { useSyncExternalStore } from "react";
 
@@ -20,7 +20,7 @@ function subscribe(listener: () => void): () => void {
     });
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-theme-id", "class"],
+      attributeFilter: ["data-theme-id"],
     });
   }
   return () => {
@@ -37,13 +37,5 @@ export function useSceneryThemeActive(): boolean {
     subscribe,
     () => document.documentElement.dataset.themeId === WORLD_SCENERY_THEME_ID,
     () => false,
-  );
-}
-
-export function useIsDarkAppearance(): boolean {
-  return useSyncExternalStore(
-    subscribe,
-    () => document.documentElement.classList.contains("dark"),
-    () => true,
   );
 }
