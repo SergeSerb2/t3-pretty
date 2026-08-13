@@ -5,7 +5,11 @@ import type {
 } from "@t3tools/contracts";
 import { ProjectId } from "@t3tools/contracts";
 
-import { parseChangeRequestUrl, repositoryFromIdentity } from "./pullRequestLinks";
+import {
+  findProjectForChangeRequest,
+  parseChangeRequestUrl,
+  repositoryFromIdentity,
+} from "./pullRequestLinks";
 
 export type PullRequestDetailRouteParams = {
   readonly environmentId: string;
@@ -98,5 +102,52 @@ export function resolveNativePullRequestTarget(input: {
     projectId: input.projectId,
     repository,
     number: String(number),
+  };
+}
+
+/**
+ * The native detail route for a change-request URL this environment can read,
+ * or null when the link should stay in the system browser.
+ *
+ * Prefers a project whose repository identity matches the host and path. When
+ * none does and the current thread's project has no identity to compare, that
+ * project stands in so an agent-created pull request still opens in-app.
+ */
+export function resolveChangeRequestRoute(input: {
+  readonly environmentId: string;
+  readonly url: string;
+  readonly pullRequestsSupported: boolean;
+  readonly projects: ReadonlyArray<{
+    readonly environmentId: unknown;
+    readonly id: unknown;
+    readonly repositoryIdentity?: Pick<
+      RepositoryIdentity,
+      "canonicalKey" | "displayName" | "owner" | "name" | "provider"
+    > | null;
+  }>;
+  readonly fallbackProjectId?: string;
+}): PullRequestDetailRouteParams | null {
+  if (!input.pullRequestsSupported) return null;
+  const parsed = parseChangeRequestUrl(input.url);
+  if (parsed === null) return null;
+  const projects = input.projects.filter(
+    (project) => String(project.environmentId) === input.environmentId,
+  );
+  const matched = findProjectForChangeRequest(projects, parsed);
+  const fallback =
+    matched === undefined
+      ? projects.find(
+          (candidate) =>
+            String(candidate.id) === input.fallbackProjectId &&
+            candidate.repositoryIdentity == null,
+        )
+      : undefined;
+  const project = matched ?? fallback;
+  if (project === undefined) return null;
+  return {
+    environmentId: input.environmentId,
+    projectId: String(project.id),
+    repository: repositoryFromIdentity(project.repositoryIdentity ?? null) ?? parsed.repository,
+    number: String(parsed.number),
   };
 }

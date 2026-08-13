@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseChangeRequestUrl, repositoryFromIdentity } from "./pullRequestLinks";
+import {
+  findProjectForChangeRequest,
+  parseChangeRequestUrl,
+  repositoryFromIdentity,
+} from "./pullRequestLinks";
 
 describe("parseChangeRequestUrl", () => {
   it("reads a GitHub pull request", () => {
@@ -52,5 +56,85 @@ describe("repositoryFromIdentity", () => {
       "acme/app",
     );
     expect(repositoryFromIdentity(null)).toBeNull();
+  });
+});
+
+describe("findProjectForChangeRequest", () => {
+  const project = (identity: Record<string, unknown>) => ({
+    id: "p1",
+    repositoryIdentity: identity,
+  });
+
+  it("matches a GitHub pull request by host and owner/name", () => {
+    const projects = [
+      project({
+        canonicalKey: "github.com/t3tools/t3code",
+        provider: "github",
+        owner: "t3tools",
+        name: "t3code",
+      }),
+    ];
+    expect(
+      findProjectForChangeRequest(projects, {
+        host: "github.com",
+        repository: "t3tools/t3code",
+        number: 123,
+      }),
+    ).toBe(projects[0]);
+  });
+
+  it("matches a nested GitLab group by the whole path below the host", () => {
+    const projects = [
+      project({
+        canonicalKey: "gitlab.com/t3tools/platform/t3code",
+        provider: "gitlab",
+        displayName: "t3tools/platform/t3code",
+        owner: "t3tools",
+        name: "t3code",
+      }),
+    ];
+    expect(
+      findProjectForChangeRequest(projects, {
+        host: "gitlab.com",
+        repository: "t3tools/platform/t3code",
+        number: 42,
+      }),
+    ).toBe(projects[0]);
+  });
+
+  it("keeps two hosts apart, so an Enterprise link does not open the public one", () => {
+    const projects = [
+      project({
+        canonicalKey: "github.com/pingdotgg/t3code",
+        provider: "github",
+        owner: "pingdotgg",
+        name: "t3code",
+      }),
+    ];
+    expect(
+      findProjectForChangeRequest(projects, {
+        host: "github.acme.test",
+        repository: "pingdotgg/t3code",
+        number: 1,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("claims nothing for a lookalike host, which is what keeps a link a link", () => {
+    const projects = [
+      project({
+        canonicalKey: "github.com/pingdotgg/t3code",
+        provider: "github",
+        owner: "pingdotgg",
+        name: "t3code",
+      }),
+    ];
+    expect(
+      findProjectForChangeRequest(projects, {
+        host: "github.com-evil.test",
+        repository: "pingdotgg/t3code",
+        number: 1,
+      }),
+    ).toBeUndefined();
   });
 });
