@@ -13,6 +13,7 @@ import {
 import { resolveAutomatedReviewPresentation } from "@t3tools/shared/sourceControl";
 import { useNavigation } from "@react-navigation/native";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
+import { presentActionListMenu } from "../../components/AppMenuHost";
 import { useCallback, useMemo } from "react";
 import { Alert } from "react-native";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
@@ -262,54 +263,52 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
         icon: { name: "terminal", type: "sfSymbol" },
         identifier: "thread-right-terminal",
         label: "Terminal",
-        menu: {
-          items: [
-            ...props.projectScripts.map((script) => ({
-              description: script.command,
-              icon: { name: projectScriptMenuIcon(script.icon), type: "sfSymbol" as const },
-              label: projectScriptMenuLabel(script),
-              onPress: () => void props.onRunProjectScript(script),
-              type: "action" as const,
-            })),
-            ...(props.projectScripts.length === 0
-              ? [
-                  {
-                    description: "This project has no saved scripts yet",
-                    disabled: true,
-                    icon: { name: "play", type: "sfSymbol" as const },
-                    label: "No project scripts",
-                    onPress: () => {},
-                    type: "action" as const,
-                  },
+        onPress: () =>
+          presentActionListMenu({
+            placement: "top-end",
+            title: "Terminal",
+            items: [
+              ...props.projectScripts.map((script) => ({
+                description: script.command,
+                iconName: projectScriptMenuIcon(script.icon),
+                label: projectScriptMenuLabel(script),
+                onPress: () => void props.onRunProjectScript(script),
+              })),
+              ...(props.projectScripts.length === 0
+                ? [
+                    {
+                      description: "This project has no saved scripts yet",
+                      disabled: true,
+                      iconName: "play",
+                      label: "No project scripts",
+                      onPress: () => {},
+                    },
+                  ]
+                : []),
+              ...props.terminalSessions.map((session) => ({
+                description: [
+                  getTerminalStatusLabel({
+                    status: session.status,
+                    hasRunningSubprocess: session.hasRunningSubprocess,
+                  }),
+                  basename(session.cwd),
                 ]
-              : []),
-            ...props.terminalSessions.map((session) => ({
-              description: [
-                getTerminalStatusLabel({
-                  status: session.status,
-                  hasRunningSubprocess: session.hasRunningSubprocess,
-                }),
-                basename(session.cwd),
-              ]
-                .filter(Boolean)
-                .join(" · "),
-              icon: { name: "terminal", type: "sfSymbol" as const },
-              label: session.displayLabel,
-              onPress: () => props.onOpenTerminal(session.terminalId),
-              type: "action" as const,
-            })),
-            {
-              description: "Start another shell for this thread",
-              icon: { name: "plus", type: "sfSymbol" },
-              label: "Open new terminal",
-              onPress: props.onOpenNewTerminal,
-              type: "action",
-            },
-          ],
-          title: "Terminal",
-        },
+                  .filter(Boolean)
+                  .join(" · "),
+                iconName: "terminal",
+                label: session.displayLabel,
+                onPress: () => props.onOpenTerminal(session.terminalId),
+              })),
+              {
+                description: "Start another shell for this thread",
+                iconName: "plus",
+                label: "Open new terminal",
+                onPress: props.onOpenNewTerminal,
+              },
+            ],
+          }),
         sharesBackground: true,
-        type: "menu",
+        type: "button",
         variant: "plain",
       },
       files: {
@@ -328,47 +327,42 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
         icon: { name: "point.topleft.down.curvedto.point.bottomright.up", type: "sfSymbol" },
         identifier: "thread-right-git",
         label: "Git",
-        menu: {
-          items: [
-            {
-              description: compactMenuStatus(props.gitStatus),
-              disabled: true,
-              icon: {
-                name: "point.topleft.down.curvedto.point.bottomright.up",
-                type: "sfSymbol",
+        onPress: () =>
+          presentActionListMenu({
+            placement: "top-end",
+            title: "Git",
+            items: [
+              {
+                description: compactMenuStatus(props.gitStatus),
+                disabled: true,
+                iconName: "point.topleft.down.curvedto.point.bottomright.up",
+                label: compactMenuBranchLabel(model.currentBranchLabel),
+                onPress: (): void => {},
               },
-              label: compactMenuBranchLabel(model.currentBranchLabel),
-              onPress: (): void => {},
-              type: "action",
-            },
-            {
-              description: model.quickActionHint ?? undefined,
-              disabled: model.quickAction.disabled,
-              icon: { name: model.quickActionIcon, type: "sfSymbol" },
-              label: model.quickAction.label,
-              onPress: (): void => void model.runQuickAction(),
-              type: "action",
-            },
-            {
-              description: "Turn diffs and worktree changes",
-              disabled: !model.isRepo,
-              icon: { name: "text.bubble", type: "sfSymbol" },
-              label: "Review changes",
-              onPress: model.openReview,
-              type: "action",
-            },
-            {
-              description: "Commit, files, branches",
-              icon: { name: "ellipsis", type: "sfSymbol" },
-              label: "More",
-              onPress: model.openGitInspector,
-              type: "action",
-            },
-          ],
-          title: "Git",
-        },
+              {
+                description: model.quickActionHint ?? undefined,
+                disabled: model.quickAction.disabled,
+                iconName: model.quickActionIcon,
+                label: model.quickAction.label,
+                onPress: (): void => void model.runQuickAction(),
+              },
+              {
+                description: "Turn diffs and worktree changes",
+                disabled: !model.isRepo,
+                iconName: "text.bubble",
+                label: "Review changes",
+                onPress: model.openReview,
+              },
+              {
+                description: "Commit, files, branches",
+                iconName: "ellipsis",
+                label: "More",
+                onPress: model.openGitInspector,
+              },
+            ],
+          }),
         sharesBackground: true,
-        type: "menu",
+        type: "button",
         variant: "plain",
       },
     }),

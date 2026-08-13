@@ -12,7 +12,7 @@ import { Platform, Pressable, useColorScheme } from "react-native";
 import { useThemeColor } from "../lib/useThemeColor";
 
 import { cn } from "../lib/cn";
-import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu";
+import { AnchoredMenu } from "./AnchoredMenu";
 import { SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
 import { ComposerSendIconSlot } from "./ComposerSendIndicator";
@@ -117,10 +117,10 @@ export function ControlPill(props: {
   );
 }
 
-// iOS renders the native UIMenu (standard checkmark for `state: "on"`);
-// Android renders the token-styled AndroidAnchoredMenu, since the native
-// AppCompat popup can't be themed past its stock animation, metrics, and
-// submenu chrome.
+// Tap menus use the token-styled AnchoredMenu on every platform so World
+// Scenery chrome isn't interrupted by a stock UIMenu / AppCompat popup.
+// iOS long-press row actions keep MenuView: that path is a real
+// UIContextMenuInteraction with the row as the zoom preview.
 export function ControlPillMenu(
   props: Omit<ComponentProps<typeof MenuView>, "children" | "themeVariant"> & {
     readonly children: ReactNode;
@@ -136,14 +136,15 @@ export function ControlPillMenu(
     return props.children;
   }
 
-  if (Platform.OS === "android") {
+  const useNativeContextMenu = Platform.OS === "ios" && props.shouldOpenOnLongPress === true;
+  if (!useNativeContextMenu) {
     // Long-press menus keep their child interactive: the child element gets
     // an injected onLongPress (mirroring the iOS context-menu interaction)
     // so its own tap handling still works.
     if (props.shouldOpenOnLongPress && isValidElement(props.children)) {
       const child = props.children as ReactElement<{ onLongPress?: () => void }>;
       return (
-        <AndroidAnchoredMenu
+        <AnchoredMenu
           actions={props.actions}
           className={props.className}
           title={props.title}
@@ -158,11 +159,11 @@ export function ControlPillMenu(
               },
             })
           }
-        </AndroidAnchoredMenu>
+        </AnchoredMenu>
       );
     }
     return (
-      <AndroidAnchoredMenu
+      <AnchoredMenu
         actions={props.actions}
         className={props.className}
         title={props.title}
@@ -170,7 +171,7 @@ export function ControlPillMenu(
         onPressAction={props.onPressAction}
       >
         {props.children}
-      </AndroidAnchoredMenu>
+      </AnchoredMenu>
     );
   }
 
@@ -184,7 +185,7 @@ export function ControlPillMenu(
   // onLongPress makes Pressability swallow the release, so holds past 350ms
   // (below the ~500ms context-menu threshold) can only open the menu, never
   // tap through.
-  if (props.shouldOpenOnLongPress && isValidElement(children)) {
+  if (isValidElement(children)) {
     const child = children as ReactElement<{ onLongPress?: () => void; delayLongPress?: number }>;
     children = cloneElement(child, {
       onLongPress: child.props.onLongPress ?? (() => undefined),

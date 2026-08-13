@@ -33,6 +33,8 @@ import {
   createNativeMailSearchToolbarItem,
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
+import { presentAppMenu } from "../../components/AppMenuHost";
+import { homeListFilterItemsToActions } from "../../components/anchored-menu.logic";
 import type { ArchivedThreadGroup, ArchivedThreadSortOrder } from "./archivedThreadList";
 
 export interface ArchivedThreadsHeaderEnvironment {
@@ -258,12 +260,24 @@ function ArchivedThreadsHeader(props: {
                 createNativeMailSearchToolbarItem({
                   composeButtonId: "archived-refresh",
                   composeSystemImageName: "arrow.clockwise",
-                  filterMenu: archiveFilterMenu,
                   filterButtonId: "archived-filter",
                   filterSystemImageName: hasCustomFilter
                     ? "line.3.horizontal.decrease.circle.fill"
                     : "line.3.horizontal.decrease",
                   onComposePress: props.onRefresh,
+                  onFilterPress: () => {
+                    const { actions, handlers } = homeListFilterItemsToActions(
+                      archiveFilterMenu.items,
+                    );
+                    presentAppMenu({
+                      actions,
+                      placement: "bottom-start",
+                      title: archiveFilterMenu.title,
+                      onPressAction: (event) => {
+                        handlers.get(event.nativeEvent.event)?.();
+                      },
+                    });
+                  },
                   onSearchTextChange: props.onSearchQueryChange,
                   placeholder: "Search",
                   searchTextChangeId: "archived-search-text",
