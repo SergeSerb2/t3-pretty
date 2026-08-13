@@ -80,7 +80,7 @@ import {
   ThreadInspectorContentStack,
   type ThreadInspectorMode,
 } from "./thread-inspector-content-stack";
-import { ThreadChatHeaderTitle } from "./ThreadChatHeaderTitle";
+import { threadChatHeaderSubtitle } from "./threadModelIdentity";
 import { useThreadModelIdentity } from "./use-thread-model-identity";
 
 interface ThreadInspectorSelection {
@@ -337,6 +337,12 @@ function ThreadRouteContent(
     serverConfig,
     composer.modelSelection ?? selectedThread?.modelSelection ?? null,
   );
+  // Native title + one subtitle. A custom 3-line title view overflows the
+  // iOS 26 editor-style bar and collides with the trailing glass controls.
+  const headerSubtitle = threadChatHeaderSubtitle({
+    identity: modelIdentity,
+    location: headerLocation,
+  });
   /* ─── Git status for native header trigger ───────────────────────── */
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
@@ -777,18 +783,6 @@ function ThreadRouteContent(
     [navigation],
   );
 
-  const renderHeaderTitle = useCallback(
-    ({ tintColor }: { readonly tintColor?: string }) => (
-      <ThreadChatHeaderTitle
-        title={selectedThread?.title ?? ""}
-        location={headerLocation}
-        identity={modelIdentity}
-        tintColor={tintColor}
-      />
-    ),
-    [headerLocation, modelIdentity, selectedThread?.title],
-  );
-
   if (!environmentId || !threadId) {
     return <OpeningThreadLoadingScreen />;
   }
@@ -869,8 +863,10 @@ function ThreadRouteContent(
           // Android draws its own in-flow header (AndroidScreenHeader below);
           // the native stack header stays iOS-only.
           headerShown: Platform.OS !== "android",
-          headerTitle: Platform.OS === "ios" ? renderHeaderTitle : selectedThread.title,
+          headerTitle: selectedThread.title,
           title: selectedThread.title,
+          unstable_headerSubtitle:
+            Platform.OS === "ios" && headerSubtitle.length > 0 ? headerSubtitle : undefined,
           headerBackVisible: !layout.usesSplitView,
           // Compact uses the NATIVE back button when a previous route exists;
           // deep links / cold starts get an explicit Home button instead.
