@@ -12,6 +12,10 @@ import {
   readReusedSyncReport,
 } from "./resolve-git-conflicts.mjs";
 
+const resolverPath = NodePath.resolve(
+  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+  "./resolve-git-conflicts.mjs",
+);
 const syncWorkflowPath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "../../.github/workflows/fork-upstream-sync.yml",
@@ -162,6 +166,14 @@ ${">".repeat(7)} theirs
     assert.include(workflow, "workflow_dispatch:");
     assert.include(workflow, '- cron: "0 */4 * * *"');
     assert.include(workflow, "Six checks per day");
+  });
+
+  it("accepts a clustered nightly that exceeds a dozen conflicted files", () => {
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+    const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+
+    assert.include(resolver, "const MAX_CONFLICTS = 24");
+    assert.include(workflow, "timeout-minutes: 45");
   });
 
   it("does not reject untouched upstream patch payload whitespace", () => {

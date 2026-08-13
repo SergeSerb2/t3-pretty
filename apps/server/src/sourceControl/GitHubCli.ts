@@ -61,6 +61,19 @@ export class GitHubCliAuthenticationError extends Schema.TaggedErrorClass<GitHub
   }
 }
 
+export class GitHubCliRateLimitError extends Schema.TaggedErrorClass<GitHubCliRateLimitError>()(
+  "GitHubCliRateLimitError",
+  gitHubCliFailureFields,
+) {
+  get detail(): string {
+    return "GitHub API rate limit exceeded. Run `gh api rate_limit` to inspect the quota and reset time.";
+  }
+
+  override get message(): string {
+    return `GitHub CLI failed in execute: ${this.detail}`;
+  }
+}
+
 export class GitHubPullRequestNotFoundError extends Schema.TaggedErrorClass<GitHubPullRequestNotFoundError>()(
   "GitHubPullRequestNotFoundError",
   gitHubCliFailureFields,
@@ -161,6 +174,7 @@ export class GitHubRepositoryDecodeError extends Schema.TaggedErrorClass<GitHubR
 export const GitHubCliError = Schema.Union([
   GitHubCliUnavailableError,
   GitHubCliAuthenticationError,
+  GitHubCliRateLimitError,
   GitHubPullRequestNotFoundError,
   GitHubCliCommandError,
   GitHubPullRequestListDecodeError,
@@ -193,6 +207,9 @@ export function fromVcsError(
   if (error._tag === "VcsProcessExitError") {
     if (error.failureKind === "authentication") {
       return new GitHubCliAuthenticationError({ ...context, cause: error });
+    }
+    if (error.failureKind === "rate-limited") {
+      return new GitHubCliRateLimitError({ ...context, cause: error });
     }
     if (error.failureKind === "not-found") {
       return new GitHubPullRequestNotFoundError({ ...context, cause: error });
