@@ -49,6 +49,7 @@ import Animated, {
   Easing,
   FadeInDown,
   FadeOut,
+  ReduceMotion,
   useAnimatedReaction,
   useSharedValue,
   withTiming,
@@ -695,8 +696,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
               <Animated.View
                 pointerEvents="box-none"
                 className="absolute -top-11 left-0 right-0 z-20 items-center"
-                entering={FadeInDown.duration(160)}
-                exiting={FadeOut.duration(100)}
+                entering={FadeInDown.duration(160).reduceMotion(ReduceMotion.System)}
+                exiting={FadeOut.duration(100).reduceMotion(ReduceMotion.System)}
               >
                 {isLiquidGlassSupported ? (
                   <LiquidGlassView
@@ -745,8 +746,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                       ? { paddingBottom: composerBottomInset }
                       : undefined
                   }
-                  entering={FadeInDown.duration(220)}
-                  exiting={FadeOut.duration(140)}
+                  entering={FadeInDown.duration(220).reduceMotion(ReduceMotion.System)}
+                  exiting={FadeOut.duration(140).reduceMotion(ReduceMotion.System)}
                 >
                   {props.activePendingApproval ? (
                     <PendingApprovalCard

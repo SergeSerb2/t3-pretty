@@ -14,6 +14,7 @@ import {
 import { sortPinnedThreadsByOrderKey } from "@t3tools/client-runtime/state/thread-sort";
 import type {
   EnvironmentId,
+  ProjectId,
   SidebarProjectGroupingMode,
   SidebarThreadSortOrder,
 } from "@t3tools/contracts";
@@ -59,12 +60,20 @@ import {
 import {
   buildThreadListV2Items,
   buildThreadListV2ListItems,
+  resolveThreadListV2Status,
   THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   type ThreadListV2ListItem,
 } from "../threads/threadListV2";
 import { ANDROID_HOME_FAB_EDGE_GAP, ANDROID_HOME_FAB_SIZE } from "./AndroidHomeFab";
+import { HomeThreadListContent } from "./HomeThreadListContent";
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
+import {
+  buildHomeStatusBriefing,
+  countDistinctHomeScopeProjects,
+  deriveHomeStatusCounts,
+  homeBriefingScopeLabel,
+} from "./homeStatusBriefing";
 import {
   buildHomeListLayout,
   DEFAULT_GROUP_DISPLAY_STATE,
@@ -198,8 +207,8 @@ function deriveEmptyState(props: {
   }
 
   return {
-    title: "No threads yet",
-    detail: "Create a task to start a new coding session in one of your connected projects.",
+    title: "Ready for a new task",
+    detail: "Choose a connected project and start when you’re ready.",
     loading: false,
   };
 }
@@ -769,6 +778,78 @@ export function HomeScreen(props: HomeScreenProps) {
       }),
     [settledShelfExpanded, snoozedShelfExpanded, threadListV2Layout, v2PendingTasks],
   );
+  const threadListV2Briefing = useMemo(() => {
+    const liveEnd =
+      threadListV2Layout.snoozedShelfHeaderIndex ??
+      threadListV2Layout.settledShelfHeaderIndex ??
+      threadListV2Layout.items.length;
+    const liveStatuses = threadListV2Layout.items
+      .slice(0, liveEnd)
+      .map((item) => resolveThreadListV2Status(item.thread));
+    const counts = deriveHomeStatusCounts({
+      liveStatuses,
+      queued: v2PendingTasks.length,
+      snoozed: threadListV2Layout.snoozedCount,
+      settled: threadListV2Layout.settledCount,
+    });
+    return buildHomeStatusBriefing(counts, props.searchQuery, {
+      searchPending: threadSearch.isPending,
+    });
+  }, [props.searchQuery, threadListV2Layout, threadSearch.isPending, v2PendingTasks.length]);
+  const threadListV2ScopeProjectCount = useMemo(() => {
+    const catalogProjectKeys = v2ScopeProjects.flatMap((scope) =>
+      scope.projectRefs.map((projectRef) =>
+        scopedProjectKey(projectRef.environmentId, projectRef.projectId),
+      ),
+    );
+    const inCurrentScope = (environmentId: EnvironmentId, projectId: ProjectId) => {
+      const projectKey = scopedProjectKey(environmentId, projectId);
+      return (
+        (props.selectedEnvironmentId === null || environmentId === props.selectedEnvironmentId) &&
+        (v2ScopedProjectKeys === null || v2ScopedProjectKeys.has(projectKey))
+      );
+    };
+    const workProjectKeys = [
+      ...props.threads
+        .filter(
+          (thread) =>
+            thread.archivedAt === null && inCurrentScope(thread.environmentId, thread.projectId),
+        )
+        .map((thread) => scopedProjectKey(thread.environmentId, thread.projectId)),
+      ...props.pendingTasks
+        .filter((task) => inCurrentScope(task.message.environmentId, task.creation.projectId))
+        .map((task) => scopedProjectKey(task.message.environmentId, task.creation.projectId)),
+    ];
+    return countDistinctHomeScopeProjects({ catalogProjectKeys, workProjectKeys });
+  }, [
+    props.pendingTasks,
+    props.selectedEnvironmentId,
+    props.threads,
+    v2ScopeProjects,
+    v2ScopedProjectKeys,
+  ]);
+  const threadListV2ScopeLabel = useMemo(
+    () =>
+      homeBriefingScopeLabel({
+        connectedEnvironmentCount: props.environments.filter(
+          (environment) => environment.connectionState === "connected",
+        ).length,
+        projectCount: threadListV2ScopeProjectCount,
+        selectedEnvironmentLabel:
+          props.selectedEnvironmentId === null
+            ? null
+            : (props.savedConnectionsById[props.selectedEnvironmentId]?.environmentLabel ??
+              "Selected environment"),
+        selectedProjectTitle: v2ScopedProjectGroup?.title ?? null,
+      }),
+    [
+      props.environments,
+      props.savedConnectionsById,
+      props.selectedEnvironmentId,
+      threadListV2ScopeProjectCount,
+      v2ScopedProjectGroup,
+    ],
+  );
 
   const renderV2Item = useCallback(
     ({ item, index }: { readonly item: ThreadListV2ListItem; readonly index: number }) => {
@@ -1123,8 +1204,14 @@ export function HomeScreen(props: HomeScreenProps) {
   const listHeader = Platform.OS === "ios" ? null : <HomeTopContentSpacer />;
 
   // Project scoping lives in the header filter menu (no inline chip row on
-  // mobile — the menu is the one filter surface).
-  const v2ListHeader = listHeader;
+  // mobile — the menu is the one filter surface). The briefing scrolls with
+  // the list, preserving the native header's compact title and search morph.
+  const v2ListHeader = (
+    <>
+      {listHeader}
+      <HomeThreadListContent briefing={threadListV2Briefing} scopeLabel={threadListV2ScopeLabel} />
+    </>
+  );
 
   const listEmpty = !hasResults ? (
     hasSearchQuery && threadSearch.isPending ? null : hasSearchQuery ? (
@@ -1149,14 +1236,29 @@ export function HomeScreen(props: HomeScreenProps) {
   // is a list row even while collapsed.
   const v2ListEmpty =
     hasSearchQuery && threadSearch.isPending ? null : hasSearchQuery ? (
-      <EmptyState title="No results" detail={`No threads matching "${props.searchQuery}".`} />
+      <EmptyState
+        title="No results"
+        detail={`No threads matching “${props.searchQuery}”.`}
+        variant="plain"
+      />
     ) : v2ScopedProjectGroup !== null ? (
       <EmptyState
         title={`No threads in ${v2ScopedProjectGroup.title}`}
         detail="Choose another project or create a new task."
+        variant="plain"
+      />
+    ) : selectedEnvironmentLabel ? (
+      <EmptyState
+        title={`No threads in ${selectedEnvironmentLabel}`}
+        detail="Choose another environment or create a new task."
+        variant="plain"
       />
     ) : (
-      listEmpty
+      <EmptyState
+        title="No live work"
+        detail="Start a new task when you’re ready."
+        variant="plain"
+      />
     );
 
   if (threadListV2Enabled) {
@@ -1176,15 +1278,16 @@ export function HomeScreen(props: HomeScreenProps) {
                   accessibilityRole="button"
                   accessibilityLabel={`Show ${Math.min(threadListV2Layout.hiddenSettledCount, THREAD_LIST_V2_SETTLED_PAGE_COUNT)} more settled threads`}
                   onPress={showMoreSettled}
-                  className={
-                    sceneryChrome
-                      ? "mx-5 mt-2 items-center rounded-2xl border border-dashed border-border bg-chrome-glass py-2.5"
-                      : "mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
-                  }
+                  className="mx-5 mt-1 min-h-[44px] items-center justify-center border-t border-border-subtle px-4 py-2"
                   style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
                 >
                   <Text className="text-xs font-t3-medium text-foreground-muted">
-                    Show more ({threadListV2Layout.hiddenSettledCount} settled hidden)
+                    Show{" "}
+                    {Math.min(
+                      threadListV2Layout.hiddenSettledCount,
+                      THREAD_LIST_V2_SETTLED_PAGE_COUNT,
+                    )}{" "}
+                    more settled
                   </Text>
                 </Pressable>
               ) : null

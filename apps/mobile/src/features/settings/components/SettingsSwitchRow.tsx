@@ -14,7 +14,7 @@ export function SettingsSwitchRow(props: {
   readonly value: boolean;
   readonly onValueChange: (value: boolean) => void;
 }) {
-  const icon = useThemeColor("--color-icon");
+  const icon = useThemeColor("--color-primary");
   const activeTrack = String(useThemeColor("--color-switch-active"));
   const track = String(useThemeColor("--color-secondary-border"));
 
@@ -22,19 +22,32 @@ export function SettingsSwitchRow(props: {
     <View
       className={
         props.disabled
-          ? "flex-row items-center gap-4 p-4 opacity-[0.45]"
-          : "flex-row items-center gap-4 p-4"
+          ? "min-h-[60px] flex-row items-center gap-3 px-3.5 py-2.5 opacity-[0.45]"
+          : "min-h-[60px] flex-row items-center gap-3 px-3.5 py-2.5"
       }
     >
-      <SymbolView name={props.icon} size={22} tintColor={icon} type="monochrome" weight="regular" />
-      <Text className="flex-1 text-lg text-foreground">{props.label}</Text>
-      <Switch
-        disabled={props.disabled}
-        ios_backgroundColor={track}
-        onValueChange={props.onValueChange}
-        trackColor={{ false: track, true: activeTrack }}
-        value={props.value}
-      />
+      <View className="size-10 shrink-0 items-center justify-center rounded-[12px] border border-border-subtle bg-subtle">
+        <SymbolView
+          name={props.icon}
+          size={19}
+          tintColor={icon}
+          type="monochrome"
+          weight="medium"
+        />
+      </View>
+      <Text className="min-w-0 flex-1 text-base font-t3-medium text-foreground">{props.label}</Text>
+      <View className="min-h-11 min-w-[56px] shrink-0 items-end justify-center">
+        <Switch
+          accessibilityLabel={props.label}
+          accessibilityState={{ checked: props.value, disabled: props.disabled === true }}
+          disabled={props.disabled}
+          hitSlop={8}
+          ios_backgroundColor={track}
+          onValueChange={props.onValueChange}
+          trackColor={{ false: track, true: activeTrack }}
+          value={props.value}
+        />
+      </View>
     </View>
   );
 }

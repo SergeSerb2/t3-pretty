@@ -36,16 +36,16 @@ import {
   resolveThreadListV2SwipeActions,
   type ThreadListV2Status,
 } from "./threadListV2";
-import { threadListV2CardPlateStyle } from "./threadListV2Chrome";
+import { threadListV2CardPlateStyle, threadListV2QuietRowStyle } from "./threadListV2Chrome";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
 /**
  * Thread List v2 renders one flat native list: rich rows for active work and
  * a receded settled tail, all with native swipe and long-press actions.
  * Over World Scenery the opaque screen plates lift: active work sits on
- * frosted cards, snoozed/settled history uses the same card language at a
- * quieter density under typographic section labels, and the wash — not
- * per-row blur or native glass — carries text contrast.
+ * frosted cards, queued work uses a tighter plate, and snoozed/settled
+ * history recedes into a flat inset ledger. The wash — not per-row blur or
+ * native glass — carries text contrast.
  */
 
 const MONO_FONT = Platform.select({
@@ -58,12 +58,28 @@ const MONO_FONT = Platform.select({
 // Live Activity/widgets (amber approval, indigo input, sky working) so a
 // thread reads the same color everywhere it surfaces.
 const STATUS_LABEL_BY_STATUS: Partial<
-  Record<ThreadListV2Status, { label: string; className: string }>
+  Record<ThreadListV2Status, { label: string; className: string; dotClassName: string }>
 > = {
-  approval: { label: "Approval", className: "text-amber-700 dark:text-amber-300" },
-  input: { label: "Input", className: "text-indigo-600 dark:text-indigo-300" },
-  working: { label: "Working", className: "text-sky-600 dark:text-sky-400" },
-  failed: { label: "Failed", className: "text-red-700 dark:text-red-300" },
+  approval: {
+    label: "Approval",
+    className: "text-amber-700 dark:text-amber-300",
+    dotClassName: "bg-amber-600 dark:bg-amber-300",
+  },
+  input: {
+    label: "Input",
+    className: "text-indigo-600 dark:text-indigo-300",
+    dotClassName: "bg-indigo-500 dark:bg-indigo-300",
+  },
+  working: {
+    label: "Working",
+    className: "text-sky-600 dark:text-sky-400",
+    dotClassName: "bg-sky-500 dark:bg-sky-400",
+  },
+  failed: {
+    label: "Failed",
+    className: "text-red-700 dark:text-red-300",
+    dotClassName: "bg-red-600 dark:bg-red-300",
+  },
 };
 
 function threadTimeLabel(thread: EnvironmentThreadShell): string {
@@ -142,12 +158,15 @@ const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
   const chevronTint = snoozed ? snoozeTint : mutedColor;
   const label = snoozed ? "Snoozed" : "Settled";
   const noun = snoozed ? "snoozed" : "settled";
+  const detail = snoozed ? "Returns on schedule" : "Quiet history";
   return (
     <Pressable
       accessibilityHint={
         props.expanded ? `Collapses the ${noun} threads.` : `Expands the ${noun} threads.`
       }
-      accessibilityLabel={props.count === 1 ? `1 ${noun} thread` : `${props.count} ${noun} threads`}
+      accessibilityLabel={`${label}. ${
+        props.count === 1 ? `1 ${noun} thread` : `${props.count} ${noun} threads`
+      }. ${detail}.`}
       accessibilityRole="button"
       accessibilityState={{ expanded: props.expanded }}
       className="w-full"
@@ -156,12 +175,12 @@ const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
     >
       <View
         className={cn(
-          "min-h-[44px] flex-row items-center gap-2",
-          sidebarPane ? "mt-2 px-3" : sceneryChrome ? "mt-1" : "mb-1.5 mt-4 px-5",
+          "flex-row items-center gap-2.5",
+          sidebarPane ? "mt-2 min-h-[44px] px-3" : "mb-1 mt-4 min-h-[56px] px-5",
         )}
         style={
           sceneryChrome && !sidebarPane
-            ? { paddingHorizontal: HOME_HORIZONTAL_INSET + 16 }
+            ? { paddingHorizontal: HOME_HORIZONTAL_INSET + 4 }
             : undefined
         }
       >
@@ -171,23 +190,29 @@ const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
           tintColor={iconTint}
           type="monochrome"
         />
-        <Text
-          className={cn(
-            "text-xs font-t3-medium",
-            snoozed ? "text-foreground-muted" : "text-foreground-tertiary",
+        <View className="min-w-0 flex-1">
+          <View className="flex-row items-baseline gap-2">
+            <Text
+              className={cn(
+                "text-sm font-t3-bold",
+                snoozed ? "text-foreground-muted" : "text-foreground-secondary",
+              )}
+            >
+              {label}
+            </Text>
+            <Text
+              className={cn(
+                "text-xs font-t3-medium tabular-nums",
+                snoozed ? "text-blue-600 dark:text-blue-400" : "text-foreground-tertiary",
+              )}
+            >
+              {props.count}
+            </Text>
+          </View>
+          {sidebarPane ? null : (
+            <Text className="mt-0.5 text-3xs text-foreground-tertiary">{detail}</Text>
           )}
-        >
-          {label}
-        </Text>
-        <View className="flex-1" />
-        <Text
-          className={cn(
-            "text-xs font-t3-medium tabular-nums",
-            snoozed ? "text-blue-600 dark:text-blue-400" : "text-foreground-tertiary",
-          )}
-        >
-          {props.count}
-        </Text>
+        </View>
         <SymbolView
           name={props.expanded ? "chevron.up" : "chevron.down"}
           size={10}
@@ -236,7 +261,7 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
   readonly projectTitle?: string;
   readonly environmentLabel: string | null;
   readonly pane?: "screen" | "sidebar";
-  /** Draws the "Pending" divider above the first queued row. */
+  /** Draws the waiting-to-send divider above the first queued row. */
   readonly showPendingDivider: boolean;
   /** Keeps row hairlines inside a section; section headers draw their own rule. */
   readonly showTrailingDivider?: boolean;
@@ -305,7 +330,7 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
   return (
     <>
       {props.showPendingDivider ? (
-        <ThreadListV2SectionDivider label="Pending" pane={props.pane} />
+        <ThreadListV2SectionDivider label="Waiting to send" pane={props.pane} />
       ) : null}
       <ControlPillMenu
         actions={PENDING_TASK_MENU_ACTIONS}
@@ -332,7 +357,11 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
             rowContent
           ) : sceneryChrome ? (
             <View
-              style={threadListV2CardPlateStyle({ fill: chromeFill, borderColor: chromeBorder })}
+              style={threadListV2CardPlateStyle({
+                fill: chromeFill,
+                borderColor: chromeBorder,
+                compact: true,
+              })}
             >
               <View className="px-4 py-2.5">{rowContent}</View>
             </View>
@@ -735,14 +764,33 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         {pinnedRow ? (
           <SymbolView name="pin" size={11} tintColor={pinTintColor} type="monochrome" />
         ) : null}
-        <Text
-          className={cn(
-            "text-xs tabular-nums",
-            selected ? "text-white" : (statusLabel?.className ?? "text-foreground-tertiary"),
-          )}
-        >
-          {statusLabel?.label ?? timeLabel}
-        </Text>
+        {statusLabel ? (
+          <View className="flex-row items-center gap-1.5">
+            <View
+              className={cn(
+                "size-1.5 rounded-full",
+                selected ? "bg-white" : statusLabel.dotClassName,
+              )}
+            />
+            <Text
+              className={cn(
+                "text-xs tabular-nums",
+                selected ? "text-white" : statusLabel.className,
+              )}
+            >
+              {statusLabel.label}
+            </Text>
+          </View>
+        ) : (
+          <Text
+            className={cn(
+              "text-xs tabular-nums",
+              selected ? "text-white" : "text-foreground-tertiary",
+            )}
+          >
+            {timeLabel}
+          </Text>
+        )}
       </View>
       <Text
         className={cn(
@@ -946,17 +994,17 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             : ({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })
         }
       >
-        {/* Settled history recedes: dimmed favicon + muted title. Over
-            scenery it still sits on a card, just quieter than the inbox. */}
+        {/* Parked history recedes: dimmed favicon + muted title. Over
+            scenery the wash carries contrast, so rows only need an inset
+            hairline rather than another field of glass cards. */}
         {sceneryChrome ? (
           <View
-            style={threadListV2CardPlateStyle({
-              fill: chromeFill,
+            style={threadListV2QuietRowStyle({
               borderColor: chromeBorder,
-              compact: true,
+              showTrailingDivider: props.showTrailingDivider !== false,
             })}
           >
-            <View className="min-h-[44px] flex-row items-center gap-2.5 px-4 py-2.5">
+            <View className="min-h-[44px] flex-row items-center gap-2.5 px-1 py-2.5">
               {slimContent}
             </View>
           </View>

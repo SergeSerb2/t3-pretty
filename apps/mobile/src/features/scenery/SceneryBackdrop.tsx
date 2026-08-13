@@ -27,6 +27,7 @@ import {
   type SceneryPhoto,
 } from "./sceneryLogic";
 import { useScenery } from "./SceneryProvider";
+import { useReduceMotion } from "./useReduceMotion";
 import { useReduceTransparency } from "./useReduceTransparency";
 
 function SceneryGradient(props: { readonly seed: string; readonly opacity?: number }) {
@@ -74,6 +75,7 @@ export function SceneryBackdrop(props: {
   const { enabled, blur, translucency, dailyPhoto, photoForThreadKey, ensureThreadAssignment } =
     useScenery();
   const colorScheme = useColorScheme() === "light" ? "light" : "dark";
+  const reduceMotion = useReduceMotion();
   const reduceTransparency = useReduceTransparency();
   const { width: windowWidth } = useWindowDimensions();
 
@@ -110,7 +112,7 @@ export function SceneryBackdrop(props: {
             source={{ uri: imageSource }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
-            transition={250}
+            transition={reduceMotion ? 0 : 220}
           />
         ) : null}
       </View>

@@ -47,7 +47,12 @@ import {
 import { TouchableOpacity } from "react-native-gesture-handler";
 import ImageViewing from "react-native-image-viewing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeIn, FadeInUp, type SharedValue } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInUp,
+  ReduceMotion,
+  type SharedValue,
+} from "react-native-reanimated";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { useFontFamily } from "../../lib/useFontFamily";
 import { scopedThreadKey } from "../../lib/scopedEntities";
@@ -937,10 +942,12 @@ function renderFeedEntry(
       return (
         <Animated.View
           className="mb-5 items-end"
-          {...(enterAnimated ? { entering: FadeInUp.duration(220) } : {})}
+          {...(enterAnimated
+            ? { entering: FadeInUp.duration(220).reduceMotion(ReduceMotion.System) }
+            : {})}
         >
           <View
-            className="min-w-0 gap-2 rounded-[20px] px-3.5 py-2.5"
+            className="min-w-0 gap-2 rounded-2xl px-3.5 py-2.5"
             style={{
               backgroundColor: userBubbleColor,
               maxWidth: props.userBubbleMaxWidth,
@@ -973,7 +980,7 @@ function renderFeedEntry(
             })}
           </View>
           <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
-            <Text className="font-t3-medium text-xs tabular-nums text-neutral-600 dark:text-neutral-400">
+            <Text className="font-t3-medium text-xs tabular-nums text-foreground-tertiary">
               {timestampLabel}
             </Text>
             {message.text.trim().length > 0 ? (
@@ -1002,7 +1009,9 @@ function renderFeedEntry(
     return (
       <Animated.View
         className={cn(showAssistantMeta ? "mb-5 px-1" : "mb-2 px-1")}
-        {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
+        {...(enterAnimated
+          ? { entering: FadeIn.duration(220).reduceMotion(ReduceMotion.System) }
+          : {})}
       >
         {message.text.trim().length > 0 ? (
           hasNativeSelectableMarkdownText() ? (
@@ -1029,7 +1038,7 @@ function renderFeedEntry(
               key={attachment.id}
               environmentId={props.environmentId}
               attachmentId={attachment.id}
-              className="mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-neutral-200 dark:bg-neutral-800"
+              className="mt-1.5 aspect-[1.3] w-full rounded-2xl bg-subtle-strong"
               onPressImage={props.onPressImage}
             />
           );
@@ -1043,7 +1052,7 @@ function renderFeedEntry(
               buttonSize={28}
               iconSize={13}
             />
-            <Text className="font-t3-medium text-xs tabular-nums text-neutral-600 dark:text-neutral-400">
+            <Text className="font-t3-medium text-xs tabular-nums text-foreground-tertiary">
               {timestampLabel}
             </Text>
           </View>

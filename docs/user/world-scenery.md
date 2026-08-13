@@ -13,16 +13,18 @@ On desktop, use the scenery controls in the bottom-right dock next to the photo 
 
 ## How the phone thread list looks
 
-With scenery on, the Home list lets the photo show through:
+With scenery on, Home reads like a status briefing over the current landscape:
 
-- Active and queued threads sit on separate frosted cards.
-- Snoozed and Settled sit under quiet section labels, each thread on its own quieter card. Tap
-  the label to expand or collapse that section.
+- **Needs you**, **In motion**, and **Queued** counts summarize the current scope before the list.
+- Active work keeps the strongest frosted cards. Queued work uses a tighter **Waiting to send**
+  plate so it stays visible without competing with live work.
+- Snoozed and Settled sit in flat, inset history rows under quiet section labels. Tap a label to
+  expand or collapse that section.
 
 The list uses solid rows instead when:
 
 - **Scenery photos** is off, or
 - iOS **Reduce Transparency** is on (**Settings → Accessibility → Display & Text Size**).
 
-The current landscape's photo credit sits in the bottom-right corner. Tap it to open the
-photographer's Unsplash profile.
+The current landscape's photo credit sits near the bottom edge. Tap it to open the photographer's
+Unsplash profile.

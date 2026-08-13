@@ -28,8 +28,10 @@ if (
 
 const DEVELOPMENT_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIconComposerProject),
-  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
+  // Keep local iOS builds inside the same alpine visual system users ship.
+  // The stage badge and app name still make the development channel explicit.
+  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.prettyIosIconPng),
+  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.prettyIosIconPng),
   androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.developmentUniversalIconPng),
   androidAdaptiveBackgroundColor: "#00639B",
   androidMonochromeIcon: "./assets/android-icon-mark.png",

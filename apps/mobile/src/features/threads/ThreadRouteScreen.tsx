@@ -13,10 +13,11 @@ import {
   threadHasOlderTurns,
 } from "@t3tools/client-runtime/state/threads";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
-import { Platform, ScrollView, View } from "react-native";
+import { Platform, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
 import { useEnvironmentQuery } from "../../state/query";
+import { useThemeColor } from "../../lib/useThemeColor";
 import { dismissGitActionResult, useGitActionProgress } from "../../state/use-vcs-action-state";
 import { vcsEnvironment } from "../../state/vcs";
 
@@ -71,6 +72,7 @@ import {
 } from "../layout/AdaptiveWorkspaceLayout";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
+import { useSceneryChromeActive } from "../scenery/SceneryProvider";
 import {
   recordThreadPerformanceSpan,
   takeThreadOpenDuration,
@@ -185,6 +187,8 @@ function ThreadRouteContent(
     readonly selectedThreadDetailState: ReturnType<typeof useSelectedThreadDetailState>;
   },
 ) {
+  const sceneryChromeActive = useSceneryChromeActive();
+  const conversationSurface = useThemeColor("--color-conversation-surface");
   const {
     fileInspector,
     layout,
@@ -793,6 +797,23 @@ function ThreadRouteContent(
 
       <View className="flex-1 bg-screen">
         {routeThreadIdentity !== null ? <SceneryBackdrop threadKey={routeThreadIdentity} /> : null}
+        {sceneryChromeActive ? (
+          <View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: conversationSurface,
+                borderCurve: "continuous",
+                borderRadius: 22,
+                bottom: 6,
+                left: 6,
+                right: 6,
+                top: 6,
+              },
+            ]}
+          />
+        ) : null}
         <ThreadDetailScreen
           selectedThread={selectedThreadWithDraftSettings ?? selectedThread}
           contentPresentation={contentPresentation}

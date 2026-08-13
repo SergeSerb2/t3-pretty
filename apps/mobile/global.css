@@ -74,6 +74,8 @@
       /* Desktop scenery chrome is 42–52% over the pre-blurred photo. */
       --color-chrome-glass: rgba(255, 255, 255, 0.52);
       --color-chrome-glass-border: rgba(22, 38, 26, 0.1);
+      /* Quiet editorial plane for long-form agent output over scenery. */
+      --color-conversation-surface: rgba(250, 252, 250, 0.86);
 
       /* StatusBar */
       --color-status-bar: #f4f6f4;
@@ -170,6 +172,7 @@
       --color-glass-tint: rgba(27, 33, 29, 0.24);
       --color-chrome-glass: rgba(19, 23, 21, 0.52);
       --color-chrome-glass-border: rgba(222, 236, 226, 0.1);
+      --color-conversation-surface: rgba(14, 18, 16, 0.86);
 
       /* StatusBar */
       --color-status-bar: #0e1110;

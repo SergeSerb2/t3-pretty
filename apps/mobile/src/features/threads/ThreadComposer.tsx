@@ -42,6 +42,7 @@ import Animated, {
   FadeOut,
   FadeOutDown,
   LinearTransition,
+  ReduceMotion,
 } from "react-native-reanimated";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
@@ -163,10 +164,12 @@ export interface ThreadComposerProps {
 // running alongside that translate reads as jitter. Snapping the layout and
 // letting the keyboard-synced slide be the only motion looks native there.
 const COMPOSER_LAYOUT_TRANSITION =
-  Platform.OS === "android" ? undefined : LinearTransition.duration(220);
+  Platform.OS === "android"
+    ? undefined
+    : LinearTransition.duration(220).reduceMotion(ReduceMotion.System);
 
 const COMPOSER_EXPANDED_SURFACE_STYLE: ViewStyle = {
-  borderRadius: 20,
+  borderRadius: 18,
   overflow: "hidden",
   paddingHorizontal: 14,
   paddingVertical: 12,
@@ -205,10 +208,10 @@ export function ComposerSurface(props: {
   const shadowStyle: ViewStyle = {
     borderRadius: props.style.borderRadius,
     shadowColor: "#000000",
-    shadowOpacity: props.isDarkMode ? 0.35 : 0.12,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
+    shadowOpacity: props.isDarkMode ? 0.26 : 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
   };
   const layout = props.animateLayout === false ? undefined : COMPOSER_LAYOUT_TRANSITION;
 
@@ -305,8 +308,8 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
   return (
     <Animated.View
       className="absolute inset-x-0 bottom-full items-center pb-2"
-      entering={FadeInDown.duration(180)}
-      exiting={FadeOutDown.duration(140)}
+      entering={FadeInDown.duration(180).reduceMotion(ReduceMotion.System)}
+      exiting={FadeOutDown.duration(140).reduceMotion(ReduceMotion.System)}
       pointerEvents="box-none"
     >
       <Pressable
@@ -944,8 +947,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           {isExpanded ? (
             <Animated.View
               className={props.draftAttachments.length > 0 ? "pb-2.5" : undefined}
-              entering={FadeIn.duration(160)}
-              exiting={FadeOut.duration(120)}
+              entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}
+              exiting={FadeOut.duration(120).reduceMotion(ReduceMotion.System)}
             >
               <ComposerAttachmentStrip
                 attachments={stripAttachments}
@@ -1006,7 +1009,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             </View>
           ) : null}
           {!isExpanded ? (
-            <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(100)}>
+            <Animated.View
+              entering={FadeIn.duration(180).reduceMotion(ReduceMotion.System)}
+              exiting={FadeOut.duration(100).reduceMotion(ReduceMotion.System)}
+            >
               {showStopAction ? (
                 <ControlPill icon="stop.fill" variant="danger" onPress={props.onStopThread} />
               ) : (
@@ -1024,7 +1030,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
         {isExpanded ? (
           // Toolbar row — matches draft page layout (expanded only)
-          <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)}>
+          <Animated.View
+            entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}
+            exiting={FadeOut.duration(120).reduceMotion(ReduceMotion.System)}
+          >
             <ComposerToolbarRow paddingBottom={8} paddingHorizontal={0} paddingTop={8}>
               <ComposerToolbarScroller
                 fadeOpaque={toolbarFadeOpaque}
@@ -1089,7 +1098,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
         {/* Queue count */}
         {props.queueCount > 0 ? (
-          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
+          <Animated.View
+            entering={FadeIn.duration(180).reduceMotion(ReduceMotion.System)}
+            exiting={FadeOut.duration(120).reduceMotion(ReduceMotion.System)}
+          >
             <Text className="pt-2 text-xs text-foreground-muted">
               {props.queueCount} queued message{props.queueCount === 1 ? "" : "s"} will send
               automatically.

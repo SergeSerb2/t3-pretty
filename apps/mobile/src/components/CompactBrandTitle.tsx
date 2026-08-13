@@ -55,8 +55,11 @@ export function CompactBrandTitle(
         marginLeft: titleOffset,
       }}
     >
-      <T3Wordmark color={iconColor} height={15} />
+      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <T3Wordmark color={iconColor} height={15} />
+      </View>
       <Text
+        maxFontSizeMultiplier={1.5}
         style={{
           color: mutedColor,
           fontFamily: "DMSans-Medium",
@@ -75,6 +78,7 @@ export function CompactBrandTitle(
         }}
       >
         <Text
+          maxFontSizeMultiplier={1.5}
           style={{
             color: mutedColor,
             fontFamily: "DMSans-Bold",
