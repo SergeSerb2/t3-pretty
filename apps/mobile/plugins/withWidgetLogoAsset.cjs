@@ -1,11 +1,16 @@
 "use strict";
 
-// Ships the branded T3 mark to the Live Activity / widget extension.
+// Ships the branded T3 mark to the Live Activity / widget extension, and
+// keeps that extension's store versions in lockstep with the app.
 //
 // expo-widgets generates ExpoWidgetsTarget without a Resources build phase and
 // has no asset support, so this plugin (a) writes an SVG template image set into
 // the generated widget asset catalog and (b) wires that catalog into the widget
-// target with an actool build phase.
+// target with an actool build phase. It also overwrites MARKETING_VERSION and
+// CURRENT_PROJECT_VERSION: expo-widgets still hardcodes those to 1.0 / 1, and
+// GENERATE_INFOPLIST_FILE=YES makes Xcode ignore the widget Info.plist
+// (expo/expo#43740). EAS autoIncrement then archives the app at N and the
+// extension at 1, which App Store validation rejects.
 //
 // ORDERING: must be listed BEFORE "expo-widgets" in the plugins array. Expo
 // chains same-type mods so the last-registered runs FIRST; registering this
@@ -56,28 +61,71 @@ function withAssetFiles(config) {
   ]);
 }
 
+function stripQuotes(value) {
+  return String(value ?? "").replace(/^"|"$/g, "");
+}
+
+function findNativeTarget(objects, name) {
+  return Object.entries(objects.PBXNativeTarget || {}).find(
+    ([key, value]) => !key.endsWith("_comment") && value?.name === name,
+  )?.[1];
+}
+
+function firstBuildSetting(objects, target, key) {
+  if (!target) return undefined;
+  const configurationList = objects.XCConfigurationList?.[target.buildConfigurationList];
+  for (const reference of configurationList?.buildConfigurations || []) {
+    const raw = objects.XCBuildConfiguration?.[reference.value]?.buildSettings?.[key];
+    if (raw == null || raw === "") continue;
+    return stripQuotes(raw);
+  }
+  return undefined;
+}
+
+function resolveWidgetBuildNumber(config, objects) {
+  if (config.ios?.buildNumber) return String(config.ios.buildNumber);
+  const mainTarget = Object.values(objects.PBXNativeTarget || {}).find(
+    (value) =>
+      value &&
+      typeof value === "object" &&
+      value.name &&
+      value.name !== TARGET_NAME &&
+      String(value.productType || "").includes("application"),
+  );
+  return firstBuildSetting(objects, mainTarget, "CURRENT_PROJECT_VERSION") || "1";
+}
+
+function syncWidgetReleaseVersions(objects, { targetName, marketingVersion, buildNumber }) {
+  const target = findNativeTarget(objects, targetName);
+  const configurationList = target
+    ? objects.XCConfigurationList?.[target.buildConfigurationList]
+    : undefined;
+  if (!configurationList) {
+    throw new Error(`withWidgetLogoAsset: build configurations for "${targetName}" not found.`);
+  }
+
+  for (const reference of configurationList.buildConfigurations || []) {
+    const buildConfiguration = objects.XCBuildConfiguration?.[reference.value];
+    if (!buildConfiguration?.buildSettings) continue;
+    // expo-widgets hardcodes MARKETING_VERSION to 1.0 and CURRENT_PROJECT_VERSION
+    // to 1. App Store validation requires both to match the containing app
+    // (CFBundleShortVersionString / CFBundleVersion). GENERATE_INFOPLIST_FILE
+    // makes the build settings win over Info.plist.
+    buildConfiguration.buildSettings.MARKETING_VERSION = marketingVersion;
+    buildConfiguration.buildSettings.CURRENT_PROJECT_VERSION = buildNumber;
+  }
+}
+
 function withAssetWiring(config) {
   return withXcodeProject(config, (cfg) => {
     addWidgetAssetCatalog(cfg.modResults, { targetName: TARGET_NAME });
 
     const objects = cfg.modResults.hash.project.objects;
-    // expo-widgets currently hardcodes the extension MARKETING_VERSION to 1.0.
-    // App Store validation requires it to match the containing app version.
-    const target = Object.entries(objects.PBXNativeTarget || {}).find(
-      ([key, value]) => !key.endsWith("_comment") && value?.name === TARGET_NAME,
-    )?.[1];
-    const configurationList = target
-      ? objects.XCConfigurationList?.[target.buildConfigurationList]
-      : undefined;
-    if (!configurationList) {
-      throw new Error(`withWidgetLogoAsset: build configurations for "${TARGET_NAME}" not found.`);
-    }
-
-    for (const reference of configurationList.buildConfigurations || []) {
-      const buildConfiguration = objects.XCBuildConfiguration?.[reference.value];
-      if (!buildConfiguration?.buildSettings) continue;
-      buildConfiguration.buildSettings.MARKETING_VERSION = cfg.version;
-    }
+    syncWidgetReleaseVersions(objects, {
+      targetName: TARGET_NAME,
+      marketingVersion: cfg.version,
+      buildNumber: resolveWidgetBuildNumber(cfg, objects),
+    });
     return cfg;
   });
 }
@@ -85,3 +133,6 @@ function withAssetWiring(config) {
 module.exports = function withWidgetLogoAsset(config) {
   return withAssetWiring(withAssetFiles(config));
 };
+
+module.exports.resolveWidgetBuildNumber = resolveWidgetBuildNumber;
+module.exports.syncWidgetReleaseVersions = syncWidgetReleaseVersions;
