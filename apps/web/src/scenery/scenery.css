@@ -277,6 +277,28 @@ html[data-scenery-ink-transition]::view-transition-new(root) {
   background: rgb(0 0 0 / 72%);
 }
 
+/* The settings trigger shares the bottom-right corner with right-panel
+   actions (PR Comment, etc.). Hide the trigger while the panel is open;
+   SceneryQuickSettings also dismisses its dialog so the panel/backdrop do
+   not stay mounted behind display:none and resurrect when the panel closes.
+   Keep the Unsplash attribution: relocate it to the bottom-left so the
+   credit stays visible wherever the photo remains prominent behind chat. */
+html:has([data-right-panel-open="true"]) .scenery-quick__trigger {
+  display: none;
+}
+
+html:has([data-right-panel-open="true"]) .scenery-attribution {
+  right: auto;
+  left: max(0.5rem, env(safe-area-inset-left));
+  border-radius: 999px;
+}
+
+/* Maximized inline panel covers the chat column; the photo is no longer
+   prominent, so the credit can hide with the rest of the dock. */
+html:has([data-preview-panel-maximized="true"][data-right-panel-open="true"]) .scenery-attribution {
+  display: none;
+}
+
 /* Light appearance runs a white wash, so a translucent black plate can land
    near-white behind 10px white text. Flip the dock to a light plate with
    near-black ink: dark text over a >=62% white fill stays past 4.5:1 even

@@ -18,6 +18,7 @@ import rootRouteSource from "../routes/__root.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
 import sceneryLayerSource from "./SceneryLayer.tsx?raw";
+import sceneryQuickSettingsSource from "./SceneryQuickSettings.tsx?raw";
 import activeScenerySource from "./ActiveScenery.tsx?raw";
 import useInkOverrideSource from "./useInkOverride.ts?raw";
 import sceneryInkTransitionSource from "./sceneryInkTransition.ts?raw";
@@ -140,6 +141,30 @@ describe("scenery attribution contract", () => {
     );
     expect(sceneryLayerSource).toContain(">Photo by </span>");
     expect(sceneryLayerSource).toContain("> on </span>");
+  });
+
+  it("keeps Unsplash attribution while clearing right-panel actions", () => {
+    expect(sceneryCssSource).toContain(
+      'html:has([data-right-panel-open="true"]) .scenery-quick__trigger',
+    );
+    // Dialog/backdrop dismiss in SceneryQuickSettings when the panel opens;
+    // do not rely on CSS display:none for those nodes alone.
+    expect(sceneryCssSource).not.toContain(
+      'html:has([data-right-panel-open="true"]) .scenery-quick__panel',
+    );
+    expect(sceneryCssSource).not.toContain(
+      'html:has([data-right-panel-open="true"]) .scenery-quick__backdrop',
+    );
+    expect(sceneryQuickSettingsSource).toContain("rightPanelOpen");
+    expect(sceneryQuickSettingsSource).toContain("dialogOpen");
+    expect(sceneryQuickSettingsSource).toContain("setOpen(false)");
+    expect(sceneryCssSource).toMatch(
+      /html:has\(\[data-right-panel-open="true"\]\) \.scenery-attribution\s*\{[^}]*left:/s,
+    );
+    // Ordinary open panels must not blanket-hide the required credit pill.
+    expect(sceneryCssSource).not.toMatch(
+      /html:has\(\[data-right-panel-open="true"\]\) \.scenery-attribution,\s*\n\s*html:has\(\[data-right-panel-open="true"\]\) \.scenery-quick__trigger/s,
+    );
   });
 });
 

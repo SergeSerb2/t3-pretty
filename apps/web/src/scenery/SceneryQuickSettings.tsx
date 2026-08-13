@@ -7,11 +7,14 @@
  * render, so committing mid-drag would fetch a wallpaper per slider step.
  * Translucency and ink are plain CSS/state changes and commit immediately.
  */
-import { useEffect, useRef, useState } from "react";
+import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 import { TRANSLUCENCY_RANGE } from "./glass";
 import { useMotionStore } from "./motionStore";
 import { BLUR_RANGE, useSceneryStore, type SceneryInkMode } from "./sceneryStore";
+import { useActiveThreadKey } from "./useActiveThreadKey";
 
 const BLUR_COMMIT_DELAY_MS = 250;
 
@@ -35,6 +38,22 @@ function percentToTranslucency(percent: number): number {
 
 export function SceneryQuickSettings() {
   const [open, setOpen] = useState(false);
+  const threadKey = useActiveThreadKey();
+  const threadRef = useMemo(
+    () => (threadKey ? parseScopedThreadKey(threadKey) : null),
+    [threadKey],
+  );
+  // Closing via CSS alone would leave open=true; when the panel closes the
+  // dialog and backdrop would resurrect. Dismiss here so state matches.
+  const rightPanelOpen = useRightPanelStore(
+    (state) => selectThreadRightPanelState(state.byThreadKey, threadRef).isOpen,
+  );
+  useEffect(() => {
+    if (rightPanelOpen) {
+      setOpen(false);
+    }
+  }, [rightPanelOpen]);
+  const dialogOpen = open && !rightPanelOpen;
   const translucency = useSceneryStore((state) => state.translucency);
   const blur = useSceneryStore((state) => state.blur);
   const inkMode = useSceneryStore((state) => state.inkMode);
@@ -66,7 +85,7 @@ export function SceneryQuickSettings() {
   );
 
   useEffect(() => {
-    if (!open) {
+    if (!dialogOpen) {
       return;
     }
     const onKeyDown = (event: KeyboardEvent) => {
@@ -76,19 +95,26 @@ export function SceneryQuickSettings() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  }, [dialogOpen]);
 
   return (
     <>
-      {open ? <div className="scenery-quick__backdrop" onClick={() => setOpen(false)} /> : null}
+      {dialogOpen ? (
+        <div className="scenery-quick__backdrop" onClick={() => setOpen(false)} />
+      ) : null}
       <button
         type="button"
         className="scenery-quick__trigger"
         aria-label="Scenery settings"
-        aria-expanded={open}
+        aria-expanded={dialogOpen}
         aria-controls="scenery-quick-settings"
         title="Scenery settings"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (rightPanelOpen) {
+            return;
+          }
+          setOpen((value) => !value);
+        }}
       >
         <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden fill="none">
           <path
@@ -99,7 +125,7 @@ export function SceneryQuickSettings() {
           />
         </svg>
       </button>
-      {open ? (
+      {dialogOpen ? (
         <div
           id="scenery-quick-settings"
           className="scenery-quick__panel"

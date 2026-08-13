@@ -79,5 +79,6 @@ describe("PreviewPanelShell", () => {
 
     expect(html).not.toContain("right-panel-inline-gap");
     expect(html).not.toContain("right-panel-inline-surface");
+    expect(html).toContain('data-right-panel-open="true"');
   });
 });
