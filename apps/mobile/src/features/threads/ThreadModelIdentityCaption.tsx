@@ -10,8 +10,9 @@ import type { ThreadSettingsMenu } from "./thread-settings-menu";
 import type { ThreadModelIdentity } from "./threadModelIdentity";
 
 /**
- * Collapsed-composer caption: the full model / effort / tier / context
- * identity, tappable so settings can change without focusing the input.
+ * Collapsed-composer caption below the chat pill: the full model / effort /
+ * tier / context identity, tappable so settings can change without focusing
+ * the input. Lives under the pill so it cannot cover the last feed messages.
  */
 export function ThreadModelIdentityCaption(props: {
   readonly identity: ThreadModelIdentity;
@@ -59,7 +60,7 @@ export function ThreadModelIdentityCaption(props: {
       accessibilityHint="Opens model and reasoning settings"
       accessibilityLabel={props.identity.accessibilityLabel}
       accessibilityRole="button"
-      hitSlop={{ top: 8, bottom: 4, left: 12, right: 12 }}
+      hitSlop={{ top: 4, bottom: 8, left: 12, right: 12 }}
       onPress={props.onPressFallback}
       className="items-center py-1 active:opacity-70"
     >
