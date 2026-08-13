@@ -24,11 +24,10 @@ source code on installed machines.
    parent change intentionally omitted to protect T3 Pretty. Fork-owned parent workflow changes
    are enumerated as omissions too. The report is copied into the sync pull request and every
    T3 Pretty desktop release note, so an omission cannot exist only in a transient Actions log.
-5. The workflow dispatches the normal fork CI on the result and merges the pull request only after
-   every required check passes. It publishes the four required commit statuses with links to that
-   exact run because GitHub suppresses normal push-triggered checks for `GITHUB_TOKEN` automation.
-   Unsafe, binary, oversized, uncertain, or test-failing changes stop and create an issue pointing
-   to the failed run.
+5. The workflow merges the pull request once GitHub reports it mergeable. Parent CI is disabled
+   on this fork, so sync does not wait on Check, Test, Mobile Native Static Analysis, or Release
+   Smoke. Unsafe, binary, oversized, or uncertain resolver results still stop and create an issue
+   pointing to the failed run.
 6. Every commit merged to `main`, whether from the parent sync or a T3 Pretty pull request,
    starts its own `T3 Pretty Desktop Release`. Release runs are not collapsed through a workflow
    concurrency group: the dedicated runners queue every main commit, and the GitHub run number
@@ -68,7 +67,8 @@ newer upstream tag was integrated before its sync pull request merged.
   own CLI creates the release and uploads its assets without handing this credential to a
   third-party action. Prefer replacing the bootstrap OAuth token with a fine-grained token limited
   to this repository.
-- `Check`, `Test`, `Mobile Native Static Analysis`, and `Release Smoke` required on `main`.
+- Parent CI (`Check`, `Test`, `Mobile Native Static Analysis`, `Release Smoke`) is disabled on
+  this fork. Do not require those checks on `main`.
 - Dedicated runner labels:
   - macOS: `self-hosted`, `macOS`, `ARM64`, `t3code-fork`, `release-only`
   - Windows: `self-hosted`, `Windows`, `X64`, `t3code-fork`, `release-only`

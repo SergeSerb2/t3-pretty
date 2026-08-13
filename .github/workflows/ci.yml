@@ -1,9 +1,10 @@
 name: CI
 
+# T3 Pretty does not run the parent CI suite. Fork-only types fail Check on
+# every merge, and the four GitHub-hosted jobs burn minutes without gating
+# releases. Keep this file so upstream sync cannot resurrect the parent
+# triggers; dispatch remains available if a maintainer wants a one-off run.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:
