@@ -8,10 +8,9 @@ name: T3 Pretty Mobile Release
 # Fingerprint is computed on this Mac so `eas update` and `eas build --local`
 # share one runtime version. A new IPA is submitted only when that fingerprint
 # differs from both the latest hosted EAS production binary and the last
-# locally submitted fingerprint (repo variable
-# T3CODE_IOS_PRODUCTION_FINGERPRINT). Local builds never appear in
-# `eas build:list`, so the variable is what keeps JS-only releases from
-# recompiling after the first local IPA.
+# locally submitted fingerprint (`.t3-fork/ios-production-fingerprint`).
+# Local builds never appear in `eas build:list`, so that file is what keeps
+# JS-only releases from recompiling after the first local IPA.
 #
 # See docs/operations/fork-mobile-release.md.
 on:
@@ -59,10 +58,11 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 90
     permissions:
-      contents: read
-      # Persist the last locally submitted iOS fingerprint (local EAS builds
-      # do not create hosted build records that `eas build:list` can see).
-      variables: write
+      # contents:write records `.t3-fork/ios-production-fingerprint` after a
+      # local TestFlight submit. GITHUB_TOKEN cannot write repository Variables
+      # (`variables` is not a valid permissions key), so the durable store is a
+      # committed fork-state file instead.
+      contents: write
     env:
       APP_VARIANT: production
       NODE_OPTIONS: --max-old-space-size=8192
@@ -338,10 +338,14 @@ jobs:
             echo "[]" > "$builds_file"
           fi
 
+          submitted_fingerprint=""
+          if [[ -f ../../.t3-fork/ios-production-fingerprint ]]; then
+            submitted_fingerprint="$(tr -d '[:space:]' < ../../.t3-fork/ios-production-fingerprint)"
+          fi
           node ../../scripts/fork/resolve-ios-native-build.mjs \
             --fingerprint-file "$fingerprint_file" \
             --builds-file "$builds_file" \
-            --submitted-fingerprint "${{ vars.T3CODE_IOS_PRODUCTION_FINGERPRINT }}" \
+            --submitted-fingerprint "$submitted_fingerprint" \
             --force "$([[ "$MODE" == "build" ]] && echo true || echo false)"
 
       - name: Prepare iOS toolchain
@@ -398,12 +402,23 @@ jobs:
           steps.native.outputs.should_build == 'true' &&
           steps.native.outputs.fingerprint != ''
         env:
-          GH_TOKEN: ${{ github.token }}
           FINGERPRINT: ${{ steps.native.outputs.fingerprint }}
         run: |
           set -euo pipefail
           # Local builds never show up in `eas build:list`. Persist the hash
           # that just landed in TestFlight so the next JS-only release can
           # skip Xcode without consulting a hosted EAS build record.
-          gh variable set T3CODE_IOS_PRODUCTION_FINGERPRINT --body "$FINGERPRINT"
-          echo "Recorded T3CODE_IOS_PRODUCTION_FINGERPRINT=$FINGERPRINT"
+          # `.t3-fork/` is outside the workflow path filters, so this commit
+          # does not schedule another mobile release.
+          mkdir -p .t3-fork
+          printf '%s\n' "$FINGERPRINT" > .t3-fork/ios-production-fingerprint
+          git add -- .t3-fork/ios-production-fingerprint
+          if git diff --cached --quiet -- .t3-fork/ios-production-fingerprint; then
+            echo "T3CODE iOS production fingerprint already recorded: $FINGERPRINT"
+            exit 0
+          fi
+          git config user.name "t3-pretty-mobile[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(mobile): record iOS production fingerprint"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          echo "Recorded .t3-fork/ios-production-fingerprint=$FINGERPRINT"

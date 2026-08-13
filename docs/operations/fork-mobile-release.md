@@ -26,9 +26,11 @@ binary instead of publishing an OTA that no installed app can consume.
 
 Local `eas build --local` IPAs do not create hosted EAS Build records, so
 `eas build:list` alone cannot gate later releases. After a successful
-TestFlight submit the workflow writes the fingerprint to the repository
-variable `T3CODE_IOS_PRODUCTION_FINGERPRINT`, and the next release treats that
-value as a known production binary alongside any hosted EAS result.
+TestFlight submit the workflow commits the fingerprint to
+`.t3-fork/ios-production-fingerprint` (a durable store `GITHUB_TOKEN` can
+update; repository Variables are not writable via workflow `permissions`),
+and the next release treats that value as a known production binary alongside
+any hosted EAS result.
 
 iOS store binaries cannot be compiled on the Windows runner. Registering a
 second Mac (for example the M5) with the same `self-hosted`, `macOS`,

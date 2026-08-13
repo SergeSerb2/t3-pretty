@@ -94,8 +94,8 @@ const forceBuild = args.get("force") === "true" || args.get("force") === "1";
 const builds = readBuildList(args);
 // Local `eas build --local` binaries never appear in `eas build:list`. The
 // workflow therefore also persists the last successfully submitted fingerprint
-// (repo variable) so JavaScript-only releases do not rebuild forever after the
-// first local IPA.
+// (`.t3-fork/ios-production-fingerprint`) so JavaScript-only releases do not
+// rebuild forever after the first local IPA.
 const submittedFingerprint = (args.get("submitted-fingerprint") ?? "").trim();
 const easRuntimeVersion = runtimeVersionOf(builds.find(isIosProductionBuild) ?? builds[0]);
 const knownFingerprints = new Set(
