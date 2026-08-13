@@ -12,8 +12,9 @@
 // GENERATE_INFOPLIST_FILE=YES makes Xcode ignore the widget Info.plist
 // (expo/expo#43740). EAS remote autoIncrement writes the real CFBundleVersion
 // onto Info.plist files only after prebuild, so a config plugin alone still
-// archives the extension at 1. The build phase copies the parent app's
-// versions onto the generated widget plist before signing.
+// archives the extension at 1. The build phase runs a disk script that copies
+// the parent app's versions onto the generated widget plist before signing.
+// Keep that script out of the pbxproj: nested quotes broke Nanaimo / pod install.
 //
 // ORDERING: must be listed BEFORE "expo-widgets" in the plugins array. Expo
 // chains same-type mods so the last-registered runs FIRST; registering this
@@ -27,7 +28,7 @@ const path = require("path");
 const fs = require("fs");
 const { withDangerousMod, withXcodeProject } = require("expo/config-plugins");
 const { addWidgetAssetCatalog } = require("./lib/addWidgetAssetCatalog.cjs");
-const { addWidgetVersionSync } = require("./lib/addWidgetVersionSync.cjs");
+const { addWidgetVersionSync, SCRIPT_NAME } = require("./lib/addWidgetVersionSync.cjs");
 
 const TARGET_NAME = "ExpoWidgetsTarget";
 const CATALOG_NAME = "Assets.xcassets";
@@ -60,6 +61,10 @@ function withAssetFiles(config) {
       fs.writeFileSync(path.join(catalogDir, "Contents.json"), CATALOG_CONTENTS);
       fs.writeFileSync(path.join(imageSetDir, "Contents.json"), IMAGE_SET_CONTENTS);
       fs.copyFileSync(source, path.join(imageSetDir, SVG_NAME));
+      fs.copyFileSync(
+        path.join(__dirname, "lib", SCRIPT_NAME),
+        path.join(cfg.modRequest.platformProjectRoot, TARGET_NAME, SCRIPT_NAME),
+      );
       return cfg;
     },
   ]);
