@@ -4,6 +4,7 @@ import { StackActions, useNavigation, usePreventRemove } from "@react-navigation
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, InteractionManager, Platform, View, useColorScheme } from "react-native";
 import {
+  KeyboardController,
   KeyboardStickyView,
   useKeyboardState,
   useReanimatedKeyboardAnimation,
@@ -807,6 +808,12 @@ export function NewTaskDraftScreen(props: {
       return;
     }
 
+    // The composer is a custom native text view, so RN Keyboard.dismiss()
+    // would miss it. Resign first responder through the library so its
+    // visibility flag (which gates draft keyboard padding below) updates.
+    promptInputRef.current?.blur();
+    void KeyboardController.dismiss();
+
     const editingPendingTask = flow.editingPendingTask;
 
     if (!environmentConnected) {
@@ -1200,6 +1207,10 @@ export function NewTaskDraftScreen(props: {
     <View className="flex-1 bg-sheet">
       <NativeStackScreenOptions options={{ title: selectedProject.title }} />
 
+      {/* Pad the whole draft chrome from the live IME height. formSheet
+          measureInWindow under-lifts automaticOffset; visibility still gates
+          the padding so a dismiss that leaves height stale cannot strand it
+          during send. */}
       <Animated.View className="flex-1" style={draftKeyboardAvoidStyle}>
         <View className="min-h-0 flex-1 px-5 pt-2">{promptEditor}</View>
 
