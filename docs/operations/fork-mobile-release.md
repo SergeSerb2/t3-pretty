@@ -15,22 +15,27 @@ no separate mobile sync.
 ## Merge-driven releases
 
 `.github/workflows/fork-mobile-release.yml` triggers on every push to `main`
-that touches mobile-relevant paths. It runs on GitHub-hosted Linux so the
-fingerprint runtime version matches Expo's iOS cloud workers and the
-TestFlight binaries already in the wild. A release publishes an OTA update on
-the production channel for both platforms, then queues a production iOS cloud
-build for TestFlight only when that Linux fingerprint differs from the latest
-finished EAS production binary.
+that touches mobile-relevant paths. A release publishes an OTA update on the
+production channel for both platforms, then compiles a production iOS IPA on
+the self-hosted Mac runner (`m1-dev-t3code-fork`, same labels as desktop) and
+submits it to TestFlight when the native runtime fingerprint changed.
 
-JavaScript-only changes therefore ship as an OTA without spending an Expo iOS
-cloud credit. Native runtime changes still receive a new binary instead of
-publishing an OTA that no installed app can consume.
+JavaScript-only changes therefore ship as an OTA without occupying Xcode or
+touching Expo's cloud iOS quota. Native runtime changes still receive a new
+binary instead of publishing an OTA that no installed app can consume.
 
-Do not move this job onto `m1-dev-t3code-fork`. That Mac has no `Xcode.app`,
-so `eas build --local` dies in toolchain setup, and a macOS fingerprint does
-not match the Linux hashes already embedded in TestFlight. Local Mac IPAs
-remain a manual path (`vp run ios:prod:local`) for a developer machine that
-has Xcode.
+Local `eas build --local` IPAs do not create hosted EAS Build records, so
+`eas build:list` alone cannot gate later releases. After a successful
+TestFlight submit the workflow commits the fingerprint to
+`.t3-fork/ios-production-fingerprint` (a durable store `GITHUB_TOKEN` can
+update; repository Variables are not writable via workflow `permissions`),
+and the next release treats that value as a known production binary alongside
+any hosted EAS result.
+
+iOS store binaries cannot be compiled on the Windows runner. Registering a
+second Mac (for example the M5) with the same `self-hosted`, `macOS`,
+`ARM64`, `t3code-fork`, `release-only` labels lets GitHub run a desktop
+release and an iOS compile in parallel.
 
 The four-hour upstream workflow uses the same whole-repository merge and
 gpt-5.6-sol/xhigh conflict resolver as desktop. Because GitHub-token-authored
@@ -42,8 +47,8 @@ changes do not start a mobile release.
 The workflow fails early when required release credentials are missing instead
 of reporting a green release that shipped nothing. To activate:
 
-1. Create an Expo account and fork-owned EAS project. OTA publishing, managed
-   credentials, and production IPA compilation all go through that project.
+1. Create an Expo account and fork-owned EAS project. EAS Update (OTA) and
+   managed credentials still go through Expo; only IPA compilation is local.
 2. Set repo secret `EXPO_TOKEN`.
 3. Set `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` from a Team
    App Store Connect API key with the Admin role and **Access to Certificates,
@@ -53,10 +58,17 @@ of reporting a green release that shipped nothing. To activate:
    profile for TestFlight upload.
 4. In App Store Connect, create the iOS app record once (`T3 Pretty`, bundle ID
    `com.sergeserbinenko.t3pretty`, SKU `t3-pretty-ios`).
-5. The first production iOS cloud build creates the Apple Distribution
-   certificate and provisioning profiles through EAS managed credentials.
-   Later fingerprint-gated releases are fully non-interactive.
-6. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
+5. Initialize EAS credentials once from an interactive local terminal with
+   `eas build --platform ios --profile production --local`. After it creates
+   the first Apple Distribution certificate and both provisioning profiles,
+   normal mobile releases are fully non-interactive. Do not use a cloud
+   `eas build` for this bootstrap unless you intend to spend an Expo iOS
+   build credit.
+6. On the Mac runner: Xcode (stable `Xcode.app` or `Xcode-beta.app`),
+   CocoaPods, and Fastlane. The workflow selects the first of those that
+   contains `xcodebuild`, then installs CocoaPods or Fastlane via Homebrew
+   only when they are missing.
+7. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
    `T3CODE_MOBILE_EAS_PROJECT_ID`, `T3CODE_MOBILE_EXPO_OWNER`,
    optionally `T3CODE_MOBILE_EXPO_SLUG`.
 
@@ -82,8 +94,7 @@ DMG. It now also calls `scenery-ios-build.sh`, which:
   unchanged.
 
 That path is Development-signed device installs, not TestFlight. Store
-binaries come from `fork-mobile-release.yml` on GitHub-hosted Linux (EAS
-cloud), not from this Development-signed Mac pipeline.
+binaries come from `fork-mobile-release.yml` on the GitHub runner.
 
 Configuration lives in `~/.t3-scenery-updater/ios.env` (Xcode path, team id,
 device opt-in). Every assignment in that file must be `export`ed — the app

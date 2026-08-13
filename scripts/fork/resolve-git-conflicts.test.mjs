@@ -146,12 +146,14 @@ ${">".repeat(7)} theirs
     assert.include(mobileWorkflow, "EXPO_ASC_API_KEY_PATH");
     assert.include(mobileWorkflow, "ascApiKeyIssuerId");
     assert.include(mobileWorkflow, "Publish OTA update");
-    assert.include(mobileWorkflow, "ubuntu-latest");
-    assert.include(mobileWorkflow, "--auto-submit");
-    assert.include(mobileWorkflow, "--no-wait");
-    assert.include(mobileWorkflow, "Decide whether a new iOS binary is required");
-    assert.notInclude(mobileWorkflow, "self-hosted");
-    assert.notInclude(mobileWorkflow, "--local");
+    assert.include(mobileWorkflow, "self-hosted");
+    assert.include(mobileWorkflow, "macOS");
+    assert.include(mobileWorkflow, "t3code-fork");
+    assert.include(mobileWorkflow, "--local");
+    assert.include(mobileWorkflow, "Xcode-beta.app");
+    assert.include(mobileWorkflow, "eas submit");
+    assert.notInclude(mobileWorkflow, "ubuntu-latest");
+    assert.notInclude(mobileWorkflow, "--no-wait");
     assert.isBelow(
       mobileWorkflow.indexOf("- name: Publish OTA update"),
       mobileWorkflow.indexOf("- name: Build and submit"),
