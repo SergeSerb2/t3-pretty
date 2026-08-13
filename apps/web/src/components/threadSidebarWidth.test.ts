@@ -52,4 +52,19 @@ describe("thread sidebar width", () => {
     expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(13 * 16);
     expect(Number(stageLabelThreshold) * 16).toBeGreaterThan(THREAD_SIDEBAR_MIN_WIDTH);
   });
+
+  it("puts the environment identification pill behind the stage-label container query", () => {
+    // The pill Badge ships its own `inline-flex` utility, which outranks the
+    // components-layer `sidebar-brand-stage` display rules — the class must sit
+    // on a wrapper without a display utility, or the pill overflows the sidebar
+    // header at narrow widths instead of hiding.
+    const sidebarChrome = NodeFS.readFileSync(
+      new URL("./sidebar/SidebarChrome.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(sidebarChrome).toMatch(
+      /className="sidebar-brand-stage[^"]*"[^>]*>\s*<Badge[^>]*data-environment-identification="pill"/s,
+    );
+  });
 });
