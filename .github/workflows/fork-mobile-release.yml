@@ -355,13 +355,16 @@ jobs:
           set -euo pipefail
           # m1-dev ships Xcode-beta.app, not Xcode.app. Prefer a pre-set
           # DEVELOPER_DIR, then stable Xcode, then beta, then any other
-          # Xcode*.app. Command Line Tools are not enough for an IPA.
+          # Xcode*.app. Command Line Tools have no iOS SDK; skip them.
+          is_full_xcode() {
+            [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]]
+          }
           developer_dir=""
-          if [[ -n "${DEVELOPER_DIR:-}" && -x "${DEVELOPER_DIR}/usr/bin/xcodebuild" ]]; then
+          if is_full_xcode "${DEVELOPER_DIR:-}"; then
             developer_dir="$DEVELOPER_DIR"
           else
             for app in /Applications/Xcode.app /Applications/Xcode-beta.app /Applications/Xcode*.app; do
-              if [[ -x "$app/Contents/Developer/usr/bin/xcodebuild" ]]; then
+              if is_full_xcode "$app/Contents/Developer"; then
                 developer_dir="$app/Contents/Developer"
                 break
               fi
@@ -376,6 +379,17 @@ jobs:
           echo "Using Xcode at $developer_dir"
           echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
           export DEVELOPER_DIR="$developer_dir"
+          # Fastlane/EAS often call `xcode-select -p` and ignore DEVELOPER_DIR.
+          # If CLT is still selected, switch the active directory for this job.
+          selected="$(xcode-select -p 2>/dev/null || true)"
+          if [[ "$selected" != "$developer_dir" ]]; then
+            if sudo -n xcode-select -s "$developer_dir" 2>/dev/null; then
+              echo "Switched xcode-select from ${selected:-none} to $developer_dir"
+            else
+              echo "xcode-select is ${selected:-unset}; could not switch without passwordless sudo." >&2
+              echo "On the runner once: sudo xcode-select -s $developer_dir" >&2
+            fi
+          fi
           xcodebuild -version
           if ! command -v pod >/dev/null; then
             brew install cocoapods

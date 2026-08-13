@@ -67,7 +67,10 @@ of reporting a green release that shipped nothing. To activate:
 6. On the Mac runner: Xcode (stable `Xcode.app` or `Xcode-beta.app`),
    CocoaPods, and Fastlane. The workflow selects the first of those that
    contains `xcodebuild`, then installs CocoaPods or Fastlane via Homebrew
-   only when they are missing.
+   only when they are missing. Command Line Tools cannot compile an IPA;
+   if `xcode-select -p` still points at them, run once:
+   `sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer`.
+   The workflow retries that switch with passwordless sudo during the job.
 7. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
    `T3CODE_MOBILE_EAS_PROJECT_ID`, `T3CODE_MOBILE_EXPO_OWNER`,
    optionally `T3CODE_MOBILE_EXPO_SLUG`.

@@ -151,6 +151,7 @@ ${">".repeat(7)} theirs
     assert.include(mobileWorkflow, "t3code-fork");
     assert.include(mobileWorkflow, "--local");
     assert.include(mobileWorkflow, "Xcode-beta.app");
+    assert.include(mobileWorkflow, "xcode-select -s");
     assert.include(mobileWorkflow, "eas submit");
     assert.notInclude(mobileWorkflow, "ubuntu-latest");
     assert.notInclude(mobileWorkflow, "--no-wait");
