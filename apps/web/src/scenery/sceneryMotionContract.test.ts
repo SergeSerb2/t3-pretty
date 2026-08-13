@@ -3,8 +3,8 @@
  * Rebase tripwire for the motion layer's structural assumptions about
  * upstream markup. motion.css and SceneryMotion.tsx target these hooks by
  * selector only; if a nightly rebase renames an attribute, an aria-label,
- * or one of the pinned class strings, an animation (or an orb slot)
- * silently stops appearing. This test makes that failure loud.
+ * or one of the pinned class strings, an animation silently stops appearing.
+ * This test makes that failure loud.
  */
 import * as NodeFS from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
@@ -19,7 +19,6 @@ import providerBannerSource from "../components/chat/ProviderStatusBanner.tsx?ra
 import sidebarSource from "../components/Sidebar.tsx?raw";
 import alertSource from "../components/ui/alert.tsx?raw";
 import motionDriverSource from "./SceneryMotion.tsx?raw";
-import thinkingOrbSource from "./orbs/vendor/ThinkingOrb.tsx?raw";
 
 const motionStylesSource = NodeFS.readFileSync(new URL("./motion.css", import.meta.url), "utf8");
 
@@ -44,27 +43,18 @@ describe("row arrival contract with the messages timeline", () => {
   });
 });
 
-describe("working-row orb contract", () => {
-  it("the working row still renders the pulse-dot cluster the orb replaces", () => {
+describe("working-row thinking indicator contract", () => {
+  it("the working row still renders the original pulse-dot cluster", () => {
     expect(messagesTimelineSource).toContain('"working"');
     expect(messagesTimelineSource).toContain("inline-flex items-center gap-[3px]");
     expect(messagesTimelineSource).toContain("animate-status-pulse");
   });
 
-  it("tool rows still expose the heading span the orb verb is read from", () => {
-    expect(messagesTimelineSource).toContain("min-w-0 shrink truncate");
-  });
-
-  it("pins every orb to the app's resolved appearance", () => {
-    expect(motionDriverSource).toContain("const isDark = useIsDarkAppearance()");
-    expect(motionDriverSource).toContain('const orbTheme = isDark ? "dark" : "light"');
-    expect(motionDriverSource.match(/theme=\{orbTheme\}/g)).toHaveLength(3);
-  });
-
-  it("keeps thinking orbs on a paint-contained 30fps canvas", () => {
-    expect(thinkingOrbSource).toContain("subscribeOrbAnimationFrame");
-    expect(thinkingOrbSource).toContain('contain: "strict"');
-    expect(motionStylesSource).toContain("contain: layout paint");
+  it("does not overlay thinking orbs on the working row, scroll pill, or hero", () => {
+    expect(motionDriverSource).not.toContain("ThinkingOrb");
+    expect(motionDriverSource).not.toContain("scenery-orb-slot");
+    expect(motionStylesSource).not.toContain("scenery-orb-slot");
+    expect(motionStylesSource).not.toContain("scenery-orb-hero");
   });
 
   it("never clones the transient working row into a fixed-position exit ghost", () => {

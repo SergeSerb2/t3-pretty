@@ -28,8 +28,8 @@ export function SceneryHost() {
     <>
       {/* Theme-independent fork feature: the composer attach button. */}
       <ComposerAttachControl />
-      {/* Theme-independent fork feature: thread motion + thinking orbs.
-          Lazy so the orb engine stays out of the startup chunk. */}
+      {/* Theme-independent fork feature: thread motion.
+          Lazy so the observer and motion.css stay out of the startup chunk. */}
       <Suspense fallback={null}>
         <SceneryMotion />
       </Suspense>
