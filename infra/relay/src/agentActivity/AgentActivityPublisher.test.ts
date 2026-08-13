@@ -811,4 +811,22 @@ describe("makeAggregateState", () => {
       { threadId: "a-5" },
     ]);
   });
+
+  it("uses the running plan step as the row status instead of a frozen Working label", () => {
+    const aggregate = AgentActivityPublisher.makeAggregateState({
+      activeStates: [
+        {
+          ...state,
+          detail: "Editing AgentActivity.tsx",
+          updatedAt: "1970-01-01T00:58:00.000Z",
+        },
+      ],
+      terminalState: null,
+      nowMs: hourMs,
+    });
+
+    expect(aggregate?.activities).toMatchObject([
+      { phase: "running", status: "Editing AgentActivity.tsx" },
+    ]);
+  });
 });

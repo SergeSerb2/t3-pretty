@@ -23,6 +23,7 @@ import { RegistryContext } from "@effect/atom-react";
 import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { AppMenuHost } from "./components/AppMenuHost";
 import { WhatsNewHost } from "./features/whats-new/WhatsNewHost";
+import { LocalLiveActivitySync } from "./features/agent-awareness/LocalLiveActivitySync";
 import { CloudAuthProvider } from "./features/cloud/CloudAuthProvider";
 import { prepareNativeShowcaseCapture } from "./features/showcase/nativeShowcaseScene";
 import { IncomingShareProvider } from "./features/sharing/IncomingShareProvider";
@@ -97,6 +98,7 @@ export default function App() {
                   {/* Blur target for Android dropdown backdrops — see appBlurTarget.ts. */}
                   <BlurTargetView ref={appBlurTargetRef} style={{ flex: 1 }}>
                     <IncomingShareProvider>
+                      <LocalLiveActivitySync />
                       <Navigation
                         linking={appLinking}
                         theme={colorScheme === "dark" ? SCENERY_NAV_DARK : SCENERY_NAV_LIGHT}

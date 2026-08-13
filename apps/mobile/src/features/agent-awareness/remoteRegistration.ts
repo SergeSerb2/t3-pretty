@@ -30,6 +30,7 @@ import {
   saveAgentAwarenessRegistrationRecord,
 } from "../../persistence/imperative";
 import AgentActivity, { type AgentActivityProps } from "../../widgets/AgentActivity";
+import { liveActivityContentFingerprint } from "./localLiveActivity";
 import { resolveCloudPublicConfig } from "../cloud/publicConfig";
 import { supportsAgentAwarenessPush } from "./capabilities";
 import { makeRelayDeviceRegistrationRequest, resolveApsEnvironment } from "./registrationPayload";
@@ -77,6 +78,7 @@ const activityPushTokenListeners = new WeakSet<LiveActivity<AgentActivityProps>>
 // sign-out/identity change alongside the device registration state.
 const ACTIVITY_TOKEN_REREGISTER_INTERVAL_MS = 60_000;
 const registeredActivityPushTokens = new Map<string, number>();
+let lastAppliedLiveActivityFingerprint: string | null = null;
 let pushTokenSubscription: { remove: () => void } | null = null;
 let appStateSubscription: { remove: () => void } | null = null;
 
@@ -195,6 +197,7 @@ export function setAgentAwarenessRelayTokenProvider(
     // Without a signed-in user the relay can no longer update or end these
     // activities, so they would sit orphaned on the lock screen.
     endLocalLiveActivities("live activity cleanup after cloud sign-out failed");
+    lastAppliedLiveActivityFingerprint = null;
     setRegistrationStatus("unknown");
     // Sign-out is the only thing that invalidates a stored registration, so the
     // next sign-in re-registers.
@@ -457,7 +460,7 @@ export function armAgentAwarenessLiveActivityForLocalWork(input: {
   readonly threadTitle: string;
   readonly projectTitle: string;
 }): void {
-  if (!canRegisterRemoteLiveActivities() || !relayTokenProvider) {
+  if (!canRegisterRemoteLiveActivities()) {
     return;
   }
   void loadPreferences()
@@ -507,6 +510,51 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
     );
   } catch (error) {
     logRegistrationError("live activity arming failed", error);
+  }
+}
+
+// Paints the lock-screen card from the threads this phone can already see.
+// APNs still owns updates while the app is suspended; this path is what
+// keeps the card moving for local pairing and while the process is awake.
+export function applyLocalLiveActivityProps(props: AgentActivityProps): void {
+  if (!canRegisterRemoteLiveActivities()) {
+    return;
+  }
+  try {
+    let instances = AgentActivity.getInstances();
+    if (instances.length > 1) {
+      for (const extra of instances.slice(1)) {
+        extra.end("immediate").catch((error: unknown) => {
+          logRegistrationError("duplicate live activity cleanup failed", error);
+        });
+      }
+      instances = instances.slice(0, 1);
+    }
+    const fingerprint = liveActivityContentFingerprint(props);
+    if (fingerprint === lastAppliedLiveActivityFingerprint && instances.length > 0) {
+      return;
+    }
+    lastAppliedLiveActivityFingerprint = fingerprint;
+    if (instances.length === 0) {
+      const activity = AgentActivity.start(props);
+      logRegistrationDebug("live activity card started from local work", {
+        activeCount: props.activeCount,
+      });
+      runRegistrationInBackground(
+        registerLiveActivityPushToken({ activity }).pipe(Effect.asVoid),
+        "live activity token registration after local sync failed",
+      );
+      return;
+    }
+    const activity = instances[0];
+    if (!activity) {
+      return;
+    }
+    void activity.update(props).catch((error: unknown) => {
+      logRegistrationError("live activity local update failed", error);
+    });
+  } catch (error) {
+    logRegistrationError("live activity local sync failed", error);
   }
 }
 
@@ -870,6 +918,7 @@ export function __resetAgentAwarenessRemoteRegistrationForTest(): void {
   registrationStatus = "unknown";
   registrationStatusListeners.clear();
   registeredActivityPushTokens.clear();
+  lastAppliedLiveActivityFingerprint = null;
 }
 
 export function unregisterAgentAwarenessDeviceForCurrentUser(

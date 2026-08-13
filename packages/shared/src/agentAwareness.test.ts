@@ -29,6 +29,8 @@ function thread(
   | "updatedAt"
   | "hasPendingApprovals"
   | "hasPendingUserInput"
+  | "backgroundLiveness"
+  | "planProgress"
 > {
   return {
     id: "thread-1" as ThreadId,
@@ -96,10 +98,57 @@ describe("projectThreadAwareness", () => {
     expect(state).toMatchObject({
       phase: "running",
       headline: "Agent is working",
-      detail: "Codex is active.",
       modelTitle: "gpt-5.4",
       deepLink: "/threads/env-1/thread-1",
     });
+    expect(state?.detail).toBeUndefined();
+  });
+
+  it("surfaces the current plan step as the running detail", () => {
+    const state = projectThreadAwareness({
+      environmentId: "env-1" as EnvironmentId,
+      project,
+      thread: thread({
+        planProgress: {
+          step: "Editing AgentActivity.tsx",
+          completedSteps: 2,
+          totalSteps: 5,
+        },
+        session: {
+          threadId: "thread-1" as ThreadId,
+          status: "running",
+          providerName: "Codex",
+          runtimeMode: "full-access",
+          activeTurnId: "turn-1" as TurnId,
+          lastError: null,
+          updatedAt: NOW,
+        },
+      }),
+    });
+
+    expect(state?.phase).toBe("running");
+    expect(state?.detail).toBe("Editing AgentActivity.tsx");
+  });
+
+  it("keeps background fleets running after the parent session settles", () => {
+    const state = projectThreadAwareness({
+      environmentId: "env-1" as EnvironmentId,
+      project,
+      thread: thread({
+        backgroundLiveness: "working",
+        session: {
+          threadId: "thread-1" as ThreadId,
+          status: "ready",
+          providerName: "Codex",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: NOW,
+        },
+      }),
+    });
+
+    expect(state?.phase).toBe("running");
   });
 
   it("projects completed turns as completed even when teardown settled them as interrupted", () => {

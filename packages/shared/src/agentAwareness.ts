@@ -40,6 +40,8 @@ export interface ProjectThreadAwarenessInput {
     | "updatedAt"
     | "hasPendingApprovals"
     | "hasPendingUserInput"
+    | "backgroundLiveness"
+    | "planProgress"
   >;
 }
 
@@ -90,6 +92,12 @@ function resolveThreadAwarenessPhase(
     return "starting";
   }
   if (thread.session?.status === "running" || thread.latestTurn?.state === "running") {
+    return "running";
+  }
+  // Background fleets keep the lock-screen card in motion after the parent
+  // turn has settled. Without this they project as completed the moment the
+  // session flips to ready/idle.
+  if (thread.backgroundLiveness === "working" || thread.backgroundLiveness === "monitoring") {
     return "running";
   }
   if (thread.latestTurn?.state === "completed") {
@@ -145,8 +153,11 @@ function detailForPhase(
   if (phase === "completed") {
     return "Review the completed task.";
   }
-  if (phase === "running" && thread.session?.providerName) {
-    return `${thread.session.providerName} is active.`;
+  if (phase === "running") {
+    const step = thread.planProgress?.step.trim();
+    if (step) {
+      return step;
+    }
   }
   return undefined;
 }

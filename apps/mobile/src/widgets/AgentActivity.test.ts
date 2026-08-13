@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 vi.mock("@expo/ui/swift-ui", () => ({
   HStack: "HStack",
   Image: "Image",
+  ProgressView: "ProgressView",
   Spacer: "Spacer",
   Text: "Text",
   VStack: "VStack",
@@ -10,13 +11,16 @@ vi.mock("@expo/ui/swift-ui", () => ({
 }));
 
 vi.mock("@expo/ui/swift-ui/modifiers", () => ({
+  activityBackgroundTint: (value: unknown) => ({ activityBackgroundTint: value }),
   font: (value: unknown) => value,
   foregroundStyle: (value: unknown) => value,
   frame: (value: unknown) => value,
   layoutPriority: (value: unknown) => value,
   lineLimit: (value: unknown) => value,
   padding: (value: unknown) => value,
+  progressViewStyle: (value: unknown) => ({ progressViewStyle: value }),
   resizable: (value: unknown) => value,
+  tint: (value: unknown) => ({ tint: value }),
   widgetURL: (value: unknown) => ({ widgetURL: value }),
 }));
 
@@ -46,7 +50,7 @@ function makeRow(overrides: Partial<AgentActivityRowProps>): AgentActivityRowPro
 }
 
 const props = {
-  title: "T3 Code",
+  title: "T3 Pretty",
   subtitle: "Agent work in progress",
   activeCount: 1,
   updatedAt: "2026-05-25T13:07:00.000Z",
@@ -79,6 +83,57 @@ describe("AgentActivity widget layout", () => {
     const banner = JSON.stringify(layout.banner);
     expect(banner).toContain("#7dd3fc"); // sky-300: running
     expect(banner).toContain("#fcd34d"); // amber-300: waiting_for_approval
+  });
+
+  it("lets the system paint Liquid Glass instead of an opaque Live Activity fill", () => {
+    const layout = AgentActivity({ ...props, activities: [makeRow({})] }, environment as never);
+    expect(JSON.stringify(layout.banner)).toContain('"activityBackgroundTint":null');
+  });
+
+  it("uses a live ProgressView for in-flight work instead of a still spinner glyph", () => {
+    const layout = AgentActivity({ ...props, activities: [makeRow({})] }, environment as never);
+    expect(JSON.stringify(layout.banner)).toContain("ProgressView");
+    expect(JSON.stringify(layout.compactLeading)).toContain("ProgressView");
+    expect(JSON.stringify(layout.compactLeading)).toContain('"progressViewStyle":"circular"');
+  });
+
+  it("keeps a relative clock on the banner so the card still ticks between pushes", () => {
+    const layout = AgentActivity({ ...props, activities: [makeRow({})] }, environment as never);
+    expect(JSON.stringify(layout.banner)).toContain("2026-05-25T13:07:00.000Z");
+    expect(JSON.stringify(layout.banner)).toContain('"dateStyle":"relative"');
+  });
+
+  it("renders a linear progress bar when a row carries plan progress", () => {
+    const layout = AgentActivity(
+      { ...props, activities: [makeRow({ progress: 0.4 })] },
+      environment as never,
+    );
+    const banner = JSON.stringify(layout.banner);
+    expect(banner).toContain('"progressViewStyle":"linear"');
+    expect(banner).toContain('"value":0.4');
+  });
+
+  it("drops thread rows when iOS asks for a simplified glass presentation", () => {
+    const layout = AgentActivity(
+      {
+        ...props,
+        activeCount: 2,
+        activities: [
+          makeRow({ threadTitle: "Working thread" }),
+          makeRow({
+            threadId: "thread-2",
+            threadTitle: "Blocked thread",
+            phase: "waiting_for_approval",
+            status: "Approval",
+          }),
+        ],
+      },
+      { ...environment, levelOfDetail: "simplified" } as never,
+    );
+    const banner = JSON.stringify(layout.banner);
+    expect(banner).toContain("2 active agents");
+    expect(banner).not.toContain("Working thread");
+    expect(banner).not.toContain("Blocked thread");
   });
 
   it("switches to the web sidebar's light palette when the scheme is light", () => {
@@ -263,7 +318,7 @@ describe("AgentActivity widget layout", () => {
     expect(JSON.stringify(layout.minimal)).toContain("xmark.octagon.fill");
   });
 
-  it("renders up to five rows in the banner", () => {
+  it("renders up to three rows in the glass banner", () => {
     const layout = AgentActivity(
       {
         ...props,
@@ -275,9 +330,10 @@ describe("AgentActivity widget layout", () => {
       environment as never,
     );
     const banner = JSON.stringify(layout.banner);
-    for (const visible of [1, 2, 3, 4, 5]) {
+    for (const visible of [1, 2, 3]) {
       expect(banner).toContain(`Thread ${visible}`);
     }
+    expect(banner).not.toContain("Thread 4");
     expect(banner).not.toContain("Thread 6");
   });
 });
