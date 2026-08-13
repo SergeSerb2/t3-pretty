@@ -112,7 +112,9 @@ import {
 } from "./thread-work-log";
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
 import { useAssetUrl } from "../../state/assets";
+import { useOutgoingMessagePreviewUris } from "../../state/outgoing-message-previews";
 import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
+import { resolveUserMessageImageSources, type UserMessageImageSource } from "./userMessageImages";
 
 const WIDE_MARKDOWN_BLOCK_OPTIONS = {
   includeOrderedLists: Platform.OS === "android",
@@ -177,21 +179,35 @@ export interface ThreadFeedProps {
   } | null;
 }
 
+const USER_MESSAGE_IMAGE_FILL_STYLE = { width: "100%", height: "100%" } as const;
+
 function MessageAttachmentImage(props: {
   readonly environmentId: EnvironmentId;
-  readonly attachmentId: string;
+  readonly image: UserMessageImageSource;
   readonly className: string;
   readonly onPressImage: (uri: string, headers?: Record<string, string>) => void;
 }) {
   const loadStartedAt = useRef<number | null>(null);
-  const uri = useAssetUrl(props.environmentId, {
-    _tag: "attachment",
-    attachmentId: props.attachmentId,
-  });
-  const previewUri =
-    uri === null ? null : `${uri}${uri.includes("?") ? "&" : "?"}variant=feed-preview`;
+  const remoteUri = useAssetUrl(
+    props.environmentId,
+    props.image.attachmentId === null
+      ? null
+      : {
+          _tag: "attachment",
+          attachmentId: props.image.attachmentId,
+        },
+  );
+  const remotePreviewUri =
+    remoteUri === null
+      ? null
+      : `${remoteUri}${remoteUri.includes("?") ? "&" : "?"}variant=feed-preview`;
+  // Local composer thumbnails are available on the send frame. Prefer them
+  // until the signed asset URL exists so a new-thread navigation does not
+  // flash an empty bubble.
+  const displayUri = props.image.localPreviewUri ?? remotePreviewUri;
+  const expandedUri = remoteUri ?? props.image.localPreviewUri;
 
-  if (uri === null || previewUri === null) {
+  if (displayUri === null || expandedUri === null) {
     return (
       <View className={`${props.className} items-center justify-center`}>
         <ActivityIndicator />
@@ -200,27 +216,29 @@ function MessageAttachmentImage(props: {
   }
 
   return (
-    <TouchableOpacity activeOpacity={0.7} onPress={() => props.onPressImage(uri)}>
-      <ExpoImage
-        source={{ uri: previewUri }}
-        className={props.className}
-        contentFit="cover"
-        cachePolicy="memory-disk"
-        recyclingKey={props.attachmentId}
-        allowDownscaling
-        onLoadStart={() => {
-          loadStartedAt.current = performance.now();
-        }}
-        onLoad={() => {
-          const startedAt = loadStartedAt.current;
-          loadStartedAt.current = null;
-          if (startedAt === null) return;
-          recordThreadPerformanceSpan("mobile.thread.image.preview.load", {
-            "attachment.id": props.attachmentId,
-            "attachment.load.durationMs": performance.now() - startedAt,
-          });
-        }}
-      />
+    <TouchableOpacity activeOpacity={0.7} onPress={() => props.onPressImage(expandedUri)}>
+      <View className={`${props.className} overflow-hidden`}>
+        <ExpoImage
+          source={{ uri: displayUri }}
+          style={USER_MESSAGE_IMAGE_FILL_STYLE}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={props.image.attachmentId ?? props.image.key}
+          allowDownscaling
+          onLoadStart={() => {
+            loadStartedAt.current = performance.now();
+          }}
+          onLoad={() => {
+            const startedAt = loadStartedAt.current;
+            loadStartedAt.current = null;
+            if (startedAt === null || props.image.attachmentId === null) return;
+            recordThreadPerformanceSpan("mobile.thread.image.preview.load", {
+              "attachment.id": props.image.attachmentId,
+              "attachment.load.durationMs": performance.now() - startedAt,
+            });
+          }}
+        />
+      </View>
     </TouchableOpacity>
   );
 }
@@ -936,6 +954,7 @@ function renderFeedEntry(
     readonly reviewCommentColors: ReviewCommentColors;
     readonly reviewCommentBubbleWidth: number;
     readonly userBubbleMaxWidth: number;
+    readonly localPreviewUrisByMessageId: Readonly<Record<string, ReadonlyArray<string>>>;
     readonly active: boolean;
   },
 ) {
@@ -986,6 +1005,12 @@ function renderFeedEntry(
     const styles = isUser ? markdownStyles.user : markdownStyles.assistant;
     const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);
     const attachments = message.attachments ?? [];
+    const userImages = isUser
+      ? resolveUserMessageImageSources({
+          attachments,
+          localPreviewUris: props.localPreviewUrisByMessageId[message.id],
+        })
+      : [];
     const hasReviewCommentContext = message.text.includes("<review_comment");
     // A bubble that sizes itself from its content cannot lay out a block whose
     // intrinsic width overflows `maxWidth`: Android positions the bubble's
@@ -1017,7 +1042,7 @@ function renderFeedEntry(
               maxWidth: props.userBubbleMaxWidth,
               ...(hasReviewCommentContext
                 ? { width: props.reviewCommentBubbleWidth }
-                : hasWideBlock
+                : hasWideBlock || userImages.length > 0
                   ? { width: props.userBubbleMaxWidth }
                   : null),
             }}
@@ -1031,12 +1056,12 @@ function renderFeedEntry(
                 onLinkPress={props.onMarkdownLinkPress}
               />
             ) : null}
-            {attachments.map((attachment) => {
+            {userImages.map((image) => {
               return (
                 <MessageAttachmentImage
-                  key={attachment.id}
+                  key={image.key}
                   environmentId={props.environmentId}
-                  attachmentId={attachment.id}
+                  image={image}
                   className="aspect-[1.3] w-full rounded-[14px] bg-white/15"
                   onPressImage={props.onPressImage}
                 />
@@ -1100,7 +1125,11 @@ function renderFeedEntry(
             <MessageAttachmentImage
               key={attachment.id}
               environmentId={props.environmentId}
-              attachmentId={attachment.id}
+              image={{
+                key: attachment.id,
+                attachmentId: attachment.id,
+                localPreviewUri: null,
+              }}
               className="mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-neutral-200 dark:bg-neutral-800"
               onPressImage={props.onPressImage}
             />
@@ -1453,6 +1482,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const userScrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { width: windowWidth } = useWindowDimensions();
   const { appearance } = useAppearancePreferences();
+  const localPreviewUrisByMessageId = useOutgoingMessagePreviewUris();
   const [viewportWidth, setViewportWidth] = useState(() =>
     props.layoutVariant === "split" ? 0 : windowWidth,
   );
@@ -1579,6 +1609,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       reviewCommentColors,
       userBubbleColor,
       viewportWidth,
+      localPreviewUrisByMessageId,
     }),
     [
       copiedRowId,
@@ -1588,6 +1619,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       reviewCommentColors,
       userBubbleColor,
       viewportWidth,
+      localPreviewUrisByMessageId,
     ],
   );
   const reportHeaderMaterialVisibility = useCallback(
@@ -1985,6 +2017,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         reviewCommentColors,
         reviewCommentBubbleWidth,
         userBubbleMaxWidth,
+        localPreviewUrisByMessageId,
         skills: props.skills,
         active: isFocused,
       }),
@@ -1999,6 +2032,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       reviewCommentColors,
       reviewCommentBubbleWidth,
       userBubbleMaxWidth,
+      localPreviewUrisByMessageId,
       onCopyWorkRow,
       onMarkdownLinkPress,
       onPressImage,
