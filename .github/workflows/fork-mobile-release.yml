@@ -327,12 +327,16 @@ jobs:
             echo "should_build=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Do not filter to finished builds alone. A follow-up push can
+          # otherwise miss an identical production build that is still new,
+          # queued, or in progress and start another paid compile. Local builds
+          # hold the workflow concurrency lock, but hosted builds (manual or
+          # historical) do not, so the gate must see in-flight records too.
           if ! eas build:list \
             --platform ios \
             --build-profile production \
             --distribution store \
-            --status finished \
-            --limit 1 \
+            --limit 20 \
             --json \
             --non-interactive > "$builds_file"; then
             echo "[]" > "$builds_file"

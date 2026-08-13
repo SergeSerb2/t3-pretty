@@ -153,6 +153,8 @@ ${">".repeat(7)} theirs
     assert.include(mobileWorkflow, "Xcode-beta.app");
     assert.include(mobileWorkflow, "xcode-select -s");
     assert.include(mobileWorkflow, "eas submit");
+    assert.include(mobileWorkflow, "eas build:list");
+    assert.notInclude(mobileWorkflow, "--status finished");
     assert.notInclude(mobileWorkflow, "ubuntu-latest");
     assert.notInclude(mobileWorkflow, "--no-wait");
     assert.isBelow(

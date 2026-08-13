@@ -57,11 +57,68 @@ describe("T3 Pretty iOS native-build gate", () => {
       "--fingerprint-json",
       JSON.stringify({ hash: "abc123" }),
       "--builds-json",
-      JSON.stringify([{ platform: "IOS", buildProfile: "production", runtimeVersion: "abc123" }]),
+      JSON.stringify([
+        {
+          platform: "IOS",
+          buildProfile: "production",
+          status: "finished",
+          runtimeVersion: "abc123",
+        },
+      ]),
     ]);
 
     assert.include(output, "should_build=false");
     assert.include(output, "already has a production binary");
+  });
+
+  it("skips Xcode when an identical production build is still queued or in progress", () => {
+    const output = run([
+      "--fingerprint-json",
+      JSON.stringify({ hash: "abc123" }),
+      "--builds-json",
+      JSON.stringify([
+        {
+          platform: "IOS",
+          buildProfile: "production",
+          status: "finished",
+          runtimeVersion: "old-hash",
+        },
+        {
+          platform: "IOS",
+          buildProfile: "production",
+          status: "in-queue",
+          runtimeVersion: "abc123",
+        },
+      ]),
+    ]);
+
+    assert.include(output, "should_build=false");
+    assert.include(output, "already has an in-queue production build");
+  });
+
+  it("rebuilds when only a canceled or errored build matches the fingerprint", () => {
+    const output = run([
+      "--fingerprint-json",
+      JSON.stringify({ hash: "abc123" }),
+      "--builds-json",
+      JSON.stringify([
+        {
+          platform: "IOS",
+          buildProfile: "production",
+          status: "errored",
+          runtimeVersion: "abc123",
+        },
+        {
+          platform: "IOS",
+          buildProfile: "production",
+          status: "canceled",
+          runtimeVersion: "abc123",
+        },
+      ]),
+    ]);
+
+    assert.include(output, "should_build=true");
+    assert.include(output, "none -> abc123");
   });
 
   it("rebuilds when the native fingerprint changed", () => {
@@ -69,7 +126,14 @@ describe("T3 Pretty iOS native-build gate", () => {
       "--fingerprint-json",
       JSON.stringify({ hash: "new-hash" }),
       "--builds-json",
-      JSON.stringify([{ platform: "IOS", buildProfile: "production", runtimeVersion: "old-hash" }]),
+      JSON.stringify([
+        {
+          platform: "IOS",
+          buildProfile: "production",
+          status: "finished",
+          runtimeVersion: "old-hash",
+        },
+      ]),
     ]);
 
     assert.include(output, "should_build=true");

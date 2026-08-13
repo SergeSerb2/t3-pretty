@@ -75,6 +75,20 @@ function isIosProductionBuild(build) {
   return !profile || profile === "production";
 }
 
+// Finished binaries and still-running production compiles both count. A gate
+// that only sees `finished` will queue a duplicate paid build while the first
+// one is new / in-queue / in-progress. Errored and canceled builds do not.
+const ACTIVE_BUILD_STATUSES = new Set(["", "new", "in-queue", "in-progress", "finished"]);
+
+function isActiveProductionBuild(build) {
+  if (!isIosProductionBuild(build)) return false;
+  const status = String(build.status ?? build.buildStatus ?? "")
+    .trim()
+    .toLowerCase()
+    .replaceAll("_", "-");
+  return ACTIVE_BUILD_STATUSES.has(status);
+}
+
 const args = new Map();
 for (let index = 2; index < NodeProcess.argv.length; index += 1) {
   const arg = NodeProcess.argv[index];
@@ -99,12 +113,23 @@ const builds = readBuildList(args);
 // (`.t3-fork/ios-production-fingerprint`) so JavaScript-only releases do not
 // rebuild forever after the first local IPA.
 const submittedFingerprint = (args.get("submitted-fingerprint") ?? "").trim();
-const easRuntimeVersion = runtimeVersionOf(builds.find(isIosProductionBuild) ?? builds[0]);
+const activeBuilds = builds.filter(isActiveProductionBuild);
+const easRuntimeVersions = activeBuilds
+  .map((build) => runtimeVersionOf(build))
+  .filter((value) => Boolean(value));
+const easRuntimeVersion = easRuntimeVersions[0] ?? "";
 const knownFingerprints = new Set(
-  [easRuntimeVersion, submittedFingerprint].filter((value) => Boolean(value)),
+  [...easRuntimeVersions, submittedFingerprint].filter((value) => Boolean(value)),
 );
 const lastRuntimeVersion = submittedFingerprint || easRuntimeVersion;
 const shouldBuild = forceBuild || !knownFingerprints.has(fingerprint);
+const matchingActiveBuild = activeBuilds.find((build) => runtimeVersionOf(build) === fingerprint);
+const matchingBuildStatus = String(
+  matchingActiveBuild?.status ?? matchingActiveBuild?.buildStatus ?? "",
+)
+  .trim()
+  .toLowerCase()
+  .replaceAll("_", "-");
 
 const outputPath = args.get("github-output") || NodeProcess.env.GITHUB_OUTPUT;
 const lines = [
@@ -128,6 +153,10 @@ if (forceBuild) {
 } else if (shouldBuild) {
   NodeProcess.stdout.write(
     `iOS runtime fingerprint changed (${lastRuntimeVersion || "none"} -> ${fingerprint}).\n`,
+  );
+} else if (matchingBuildStatus && matchingBuildStatus !== "finished") {
+  NodeProcess.stdout.write(
+    `iOS runtime fingerprint ${fingerprint} already has an ${matchingBuildStatus} production build; skipping Xcode.\n`,
   );
 } else {
   NodeProcess.stdout.write(
