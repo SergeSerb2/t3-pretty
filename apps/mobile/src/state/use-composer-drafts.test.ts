@@ -97,6 +97,7 @@ describe("mobile composer drafts", () => {
       text: "send this",
       attachments: [],
       importedShareIds: ["share-1"],
+      lastHandoffPrompt: "send this",
       modelSelection: {
         instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5.4",
@@ -266,6 +267,27 @@ describe("mobile composer drafts", () => {
     ).toEqual({
       [`${retainedEnvironmentId}:thread-local`]: DRAFT,
       [`new-task:${retainedEnvironmentId}:project-local`]: DRAFT,
+    });
+  });
+
+  it("hydrates hand-off ownership with the draft text", () => {
+    expect(
+      decodePersistedComposerDrafts({
+        schemaVersion: 1,
+        drafts: {
+          "new-task:environment-1:project-1": {
+            text: "Explain this pull request.",
+            attachments: [],
+            lastHandoffPrompt: "Explain this pull request.",
+          },
+        },
+      }),
+    ).toEqual({
+      "new-task:environment-1:project-1": {
+        text: "Explain this pull request.",
+        attachments: [],
+        lastHandoffPrompt: "Explain this pull request.",
+      },
     });
   });
 });

@@ -621,3 +621,32 @@ export const OPEN_ON_HOST_LABELS: Partial<Record<string, string>> = {
   bitbucket: "Open on Bitbucket",
   "azure-devops": "Open on Azure DevOps",
 };
+
+/**
+ * The prompt the new-task composer should hold once a hand-off lands there.
+ *
+ * A hand-off owns what an earlier hand-off wrote and nothing else: pressing Fix and then Explain
+ * used to stack both in the composer. What says an earlier one wrote it is the text itself — the
+ * draft remembers what it last put in via `lastHandoffPrompt`, and only that exact sentence is
+ * replaced. Text the reader typed themselves is kept, and a new prompt goes underneath it.
+ */
+export function handoffPrompt(
+  existing: {
+    readonly prompt: string;
+    readonly lastHandoffPrompt: string | undefined;
+  },
+  incoming: string,
+): string {
+  if (existing.prompt.trim().length === 0) return incoming;
+  const last = existing.lastHandoffPrompt ?? "";
+  const kept =
+    last.length === 0
+      ? existing.prompt
+      : existing.prompt === last
+        ? ""
+        : existing.prompt.endsWith(`\n\n${last}`)
+          ? existing.prompt.slice(0, -(last.length + 2))
+          : existing.prompt;
+  if (kept.trim().length === 0) return incoming;
+  return incoming.length === 0 ? kept : `${kept}\n\n${incoming}`;
+}
