@@ -14,11 +14,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { useFontFamily } from "../../lib/useFontFamily";
 
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/unstable/reactivity";
 
 import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
 import {
@@ -53,6 +54,8 @@ import {
   type ComposerDraft,
 } from "../../state/use-composer-drafts";
 import { useEnvironmentServerConfig, useProjects } from "../../state/entities";
+import { gitEnvironment } from "../../state/git";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { resolveSelectableModelSelection } from "../../lib/modelOptions";
 import { deriveThreadTitleFromPrompt } from "../../lib/projectThreadStartTurn";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
@@ -91,6 +94,9 @@ export function NewTaskDraftScreen(props: {
 }) {
   const projects = useProjects();
   const createProjectThread = useCreateProjectThread();
+  const preparePullRequestThread = useAtomCommand(gitEnvironment.preparePullRequestThread, {
+    reportFailure: false,
+  });
   const flow = useNewTaskFlow();
   const navigation = useNavigation();
   const {
@@ -788,11 +794,11 @@ export function NewTaskDraftScreen(props: {
         selectedEnvironmentServerConfig,
         draft.modelSelection ?? null,
       ) ?? flow.selectedModel;
-    const workspaceMode = draft.workspaceSelection?.mode ?? flow.workspaceMode;
-    const selectedBranchName = draft.workspaceSelection?.branch ?? flow.selectedBranchName;
-    const selectedWorktreePath =
-      draft.workspaceSelection?.worktreePath ?? flow.selectedWorktreePath;
-    const startFromOrigin = draft.workspaceSelection?.startFromOrigin ?? flow.startFromOrigin;
+    const pullRequestReference = draft.pullRequestReference?.trim() ?? "";
+    let workspaceMode = draft.workspaceSelection?.mode ?? flow.workspaceMode;
+    let selectedBranchName = draft.workspaceSelection?.branch ?? flow.selectedBranchName;
+    let selectedWorktreePath = draft.workspaceSelection?.worktreePath ?? flow.selectedWorktreePath;
+    let startFromOrigin = draft.workspaceSelection?.startFromOrigin ?? flow.startFromOrigin;
     const runtimeMode = draft.runtimeMode ?? flow.runtimeMode;
     const interactionMode = draft.interactionMode ?? flow.interactionMode;
     const initialMessageText = draft.text.trim();
@@ -803,7 +809,7 @@ export function NewTaskDraftScreen(props: {
       flow.submitting ||
       pendingPreviews.length > 0 ||
       !flow.autoCreatePullRequestSettled ||
-      (workspaceMode === "worktree" && !selectedBranchName)
+      (pullRequestReference.length === 0 && workspaceMode === "worktree" && !selectedBranchName)
     ) {
       return;
     }
@@ -817,6 +823,13 @@ export function NewTaskDraftScreen(props: {
     const editingPendingTask = flow.editingPendingTask;
 
     if (!environmentConnected) {
+      if (pullRequestReference.length > 0) {
+        Alert.alert(
+          "Could not prepare the pull request checkout",
+          "Reconnect to this environment, then start the task so the branch can be checked out first.",
+        );
+        return;
+      }
       // Offline: park the task in the outbox; the drain sends it when the
       // environment reconnects. Editing an existing pending task re-queues it
       // under its original identifiers.
@@ -868,6 +881,56 @@ export function NewTaskDraftScreen(props: {
       threadTitle: deriveThreadTitleFromPrompt(initialMessageText),
       projectTitle: selectedProject.title,
     });
+    const turnMetadata = editingPendingTask
+      ? {
+          threadId: editingPendingTask.threadId,
+          commandId: editingPendingTask.commandId,
+          messageId: editingPendingTask.messageId,
+          createdAt: editingPendingTask.createdAt,
+        }
+      : makeTurnCommandMetadata();
+
+    let stalePullRequestCheckout = false;
+    if (pullRequestReference.length > 0) {
+      const prepared = await preparePullRequestThread({
+        environmentId: selectedProject.environmentId,
+        input: {
+          cwd: selectedProject.workspaceRoot,
+          reference: pullRequestReference,
+          mode: "worktree",
+          threadId: ThreadId.make(turnMetadata.threadId),
+        },
+      });
+      if (AsyncResult.isFailure(prepared)) {
+        flow.setSubmitting(false);
+        if (!isAtomCommandInterrupted(prepared)) {
+          const error = squashAtomCommandFailure(prepared);
+          Alert.alert(
+            "Could not prepare the pull request checkout",
+            error instanceof Error
+              ? error.message
+              : "The branch could not be checked out. Try again from the project.",
+          );
+        }
+        return;
+      }
+      if (prepared.value.worktreePath === null) {
+        flow.setSubmitting(false);
+        Alert.alert(
+          "Could not prepare the pull request checkout",
+          "The environment did not return a worktree for this pull request.",
+        );
+        return;
+      }
+      // The worktree already exists; create the thread in local mode pointed at
+      // that path so startTurn does not mint another worktree.
+      workspaceMode = "local";
+      selectedBranchName = prepared.value.branch;
+      selectedWorktreePath = prepared.value.worktreePath;
+      startFromOrigin = false;
+      stalePullRequestCheckout = !prepared.value.isOnPullRequestHead;
+    }
+
     const result = await createProjectThread({
       project: selectedProject,
       modelSelection,
@@ -884,16 +947,7 @@ export function NewTaskDraftScreen(props: {
         model: modelSelection.model,
       }),
       initialAttachments: draft.attachments,
-      ...(editingPendingTask
-        ? {
-            turnMetadata: {
-              threadId: editingPendingTask.threadId,
-              commandId: editingPendingTask.commandId,
-              messageId: editingPendingTask.messageId,
-              createdAt: editingPendingTask.createdAt,
-            },
-          }
-        : {}),
+      turnMetadata,
     });
     await waitForComposerSendIndicatorMin(startedAt);
     flow.setSubmitting(false);
@@ -902,11 +956,24 @@ export function NewTaskDraftScreen(props: {
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         Alert.alert(
-          "Could not start task",
-          error instanceof Error ? error.message : "The task could not be started.",
+          pullRequestReference.length > 0
+            ? "Checked out, but the thread could not start"
+            : "Could not start task",
+          pullRequestReference.length > 0
+            ? `The checkout is ready on \`${selectedBranchName}\`. Start a task from the project and point it at that branch.`
+            : error instanceof Error
+              ? error.message
+              : "The task could not be started.",
         );
       }
       return;
+    }
+
+    if (stalePullRequestCheckout) {
+      Alert.alert(
+        "Checked out, but not on the latest commits",
+        "The checkout could not be moved onto the pull request's latest commits, so the code there is older than the pull request. Uncommitted work or local commits keep it where it is.",
+      );
     }
 
     if (editingPendingTask) {
@@ -975,7 +1042,10 @@ export function NewTaskDraftScreen(props: {
     // The auto-PR choice must be settled (draft override or hydrated
     // preferences) so a cold-start send cannot race the stored setting.
     flow.autoCreatePullRequestSettled &&
-    !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
+    // Pull-request hand-offs prepare their own checkout on Start, so they do
+    // not need the ordinary worktree branch pick to be complete.
+    (Boolean(flow.draftKey && getComposerDraftSnapshot(flow.draftKey).pullRequestReference) ||
+      !(flow.workspaceMode === "worktree" && !flow.selectedBranchName));
   const promptEditor = (
     <ComposerEditor
       ref={promptInputRef}

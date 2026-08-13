@@ -249,9 +249,10 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
   const handoff = useCallback(
     (prompt: string) => {
       if (detail === null) return;
-      startHandoff({
+      void startHandoff({
         environmentId,
         projectId: detail.projectId,
+        url: detail.url,
         prompt,
       });
     },

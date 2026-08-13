@@ -8,16 +8,18 @@ import { writePullRequestHandoffDraft } from "./pullRequestHandoff";
 
 /**
  * Opens the existing new-task sheet with the hand-off prompt already in the
- * composer, so the reader can pick a model before anything is sent.
+ * composer, so the reader can pick a model before anything is sent. The pull
+ * request URL travels with the draft so Start prepares that checkout.
  */
 export function usePullRequestHandoff() {
   const navigation = useNavigation();
   const projects = useProjects();
 
   const startHandoff = useCallback(
-    (input: {
+    async (input: {
       readonly environmentId: EnvironmentId;
       readonly projectId: ProjectId;
+      readonly url: string;
       readonly prompt: string;
     }) => {
       const project = projects.find(
@@ -32,10 +34,11 @@ export function usePullRequestHandoff() {
         return false;
       }
 
-      writePullRequestHandoffDraft({
+      await writePullRequestHandoffDraft({
         environmentId: project.environmentId,
         projectId: project.id,
         prompt: input.prompt,
+        url: input.url,
       });
       navigation.navigate("NewTaskSheet", {
         screen: "NewTaskDraft",

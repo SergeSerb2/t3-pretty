@@ -627,8 +627,8 @@ export const OPEN_ON_HOST_LABELS: Partial<Record<string, string>> = {
  *
  * A hand-off owns what an earlier hand-off wrote and nothing else: pressing Fix and then Explain
  * used to stack both in the composer. What says an earlier one wrote it is the text itself — the
- * caller remembers what it last put in this draft, and only that exact sentence is replaced. Text
- * the reader typed themselves is kept, and a new prompt goes underneath it.
+ * draft remembers what it last put in via `lastHandoffPrompt`, and only that exact sentence is
+ * replaced. Text the reader typed themselves is kept, and a new prompt goes underneath it.
  */
 export function handoffPrompt(
   existing: {

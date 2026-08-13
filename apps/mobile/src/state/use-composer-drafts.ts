@@ -51,6 +51,16 @@ export interface ComposerDraft {
    * captured choice survives preference changes.
    */
   readonly autoCreatePullRequest?: boolean;
+  /**
+   * Exact prompt the last pull-request hand-off wrote into this draft. Survives
+   * persistence so a later hand-off can replace that sentence after restart.
+   */
+  readonly lastHandoffPrompt?: string;
+  /**
+   * Pull-request URL/reference from a hand-off. Start prepares that checkout
+   * instead of using the draft's ordinary workspace selection.
+   */
+  readonly pullRequestReference?: string;
 }
 
 export interface ComposerDraftContent {
@@ -91,6 +101,8 @@ const ComposerDraftSchema = Schema.Struct({
   interactionMode: Schema.optional(ProviderInteractionModeSchema),
   workspaceSelection: Schema.optional(ComposerDraftWorkspaceSelectionSchema),
   autoCreatePullRequest: Schema.optional(Schema.Boolean),
+  lastHandoffPrompt: Schema.optional(Schema.String),
+  pullRequestReference: Schema.optional(Schema.String),
 });
 
 const PersistedComposerDraftsSchema = Schema.Struct({
@@ -143,7 +155,9 @@ function isEmptyDraft(draft: ComposerDraft): boolean {
     draft.runtimeMode === undefined &&
     draft.interactionMode === undefined &&
     draft.workspaceSelection === undefined &&
-    draft.autoCreatePullRequest === undefined
+    draft.autoCreatePullRequest === undefined &&
+    draft.lastHandoffPrompt === undefined &&
+    draft.pullRequestReference === undefined
   );
 }
 
@@ -233,9 +247,9 @@ function schedulePersistComposerDrafts(drafts: Record<string, ComposerDraft>): v
   }, PERSIST_DEBOUNCE_MS);
 }
 
-export function ensureComposerDraftsLoaded(): void {
+export function ensureComposerDraftsLoaded(): Promise<void> {
   if (loadPromise !== null) {
-    return;
+    return loadPromise;
   }
   loadPromise = loadPersistedComposerDrafts()
     .then((persistedDrafts) => {
@@ -260,6 +274,7 @@ export function ensureComposerDraftsLoaded(): void {
       );
       // Draft loading is best-effort; in-memory drafts still keep working.
     });
+  return loadPromise;
 }
 
 function updateComposerDrafts(
@@ -272,9 +287,49 @@ function updateComposerDrafts(
 
 export function setComposerDraftText(draftKey: string, value: string): void {
   updateComposerDrafts((current) => {
+    const existing = normalizeDraft(current[draftKey]);
+    // Clearing the composer also drops hand-off ownership — there is nothing left to replace.
+    let draft: ComposerDraft;
+    if (value.length === 0) {
+      const {
+        lastHandoffPrompt: _lastHandoffPrompt,
+        pullRequestReference: _pullRequestReference,
+        ...rest
+      } = existing;
+      draft = { ...rest, text: value };
+    } else {
+      draft = { ...existing, text: value };
+    }
+    if (isEmptyDraft(draft)) {
+      const next = { ...current };
+      delete next[draftKey];
+      return next;
+    }
+    return {
+      ...current,
+      [draftKey]: draft,
+    };
+  });
+}
+
+/**
+ * Writes composer text together with the hand-off that produced it, so a later
+ * hand-off can replace that sentence and Start can prepare the same checkout.
+ */
+export function setComposerDraftHandoffText(
+  draftKey: string,
+  text: string,
+  lastHandoffPrompt: string,
+  options?: { readonly pullRequestReference?: string },
+): void {
+  updateComposerDrafts((current) => {
     const draft = {
       ...normalizeDraft(current[draftKey]),
-      text: value,
+      text,
+      lastHandoffPrompt,
+      ...(options?.pullRequestReference !== undefined
+        ? { pullRequestReference: options.pullRequestReference }
+        : {}),
     };
     if (isEmptyDraft(draft)) {
       const next = { ...current };
@@ -394,10 +449,13 @@ export function clearComposerDraftContentState(
     importedShareIds: _importedShareIds,
     workspaceSelection,
     autoCreatePullRequest,
+    lastHandoffPrompt: _lastHandoffPrompt,
+    pullRequestReference: _pullRequestReference,
     ...retained
   } = existing;
   // The auto-PR override travels with the workspace selection: both describe
-  // this task's picks, so the next task re-resolves from defaults.
+  // this task's picks, so the next task re-resolves from defaults. Hand-off
+  // ownership and its checkout reference leave with the cleared prompt text.
   const draft = {
     ...retained,
     ...(options?.clearWorkspaceSelection || workspaceSelection === undefined
@@ -500,10 +558,7 @@ export async function mergeComposerDraftContent(
   draftKey: string,
   content: ComposerDraftContent,
 ): Promise<{ readonly skippedAttachmentCount: number }> {
-  ensureComposerDraftsLoaded();
-  if (loadPromise !== null) {
-    await loadPromise;
-  }
+  await ensureComposerDraftsLoaded();
   if (persistTimer !== null) {
     clearTimeout(persistTimer);
     persistTimer = null;
@@ -535,10 +590,7 @@ export async function restoreComposerDraftSnapshot(
   draftKey: string,
   snapshot: ComposerDraft,
 ): Promise<void> {
-  ensureComposerDraftsLoaded();
-  if (loadPromise !== null) {
-    await loadPromise;
-  }
+  await ensureComposerDraftsLoaded();
   if (persistTimer !== null) {
     clearTimeout(persistTimer);
     persistTimer = null;
@@ -585,10 +637,7 @@ export function removeComposerDraftsForEnvironment(
 }
 
 export async function clearComposerDraftsEnvironment(environmentId: EnvironmentId): Promise<void> {
-  ensureComposerDraftsLoaded();
-  if (loadPromise !== null) {
-    await loadPromise;
-  }
+  await ensureComposerDraftsLoaded();
 
   const next = removeComposerDraftsForEnvironment(
     appAtomRegistry.get(composerDraftsAtom),
