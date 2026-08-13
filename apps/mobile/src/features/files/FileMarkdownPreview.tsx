@@ -8,6 +8,7 @@ import {
 import { RefreshControl, ScrollView, Text as NativeText, View } from "react-native";
 
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
+import { showMarkdownLinkActionSheet } from "../../lib/showMarkdownLinkActions";
 import { useFontFamily } from "../../lib/useFontFamily";
 import {
   resolveMarkdownFontSizes,
@@ -58,6 +59,16 @@ function useMarkdownPreviewStyles(): MarkdownPreviewStyles {
           onPress={() => {
             if (href) {
               void tryOpenExternalUrl(href, "markdown-link");
+            }
+          }}
+          onLongPress={() => {
+            if (href) {
+              showMarkdownLinkActionSheet({
+                href,
+                onOpen: (target) => {
+                  void tryOpenExternalUrl(target, "markdown-link");
+                },
+              });
             }
           }}
           style={{

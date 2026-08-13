@@ -8,6 +8,7 @@ import {
 import { Text as NativeText, View } from "react-native";
 
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
+import { showMarkdownLinkActionSheet } from "../../lib/showMarkdownLinkActions";
 import { useFontFamily } from "../../lib/useFontFamily";
 import {
   resolveMarkdownFontSizes,
@@ -44,6 +45,12 @@ export function PullRequestMarkdown(props: { readonly markdown: string }) {
   const onLinkPress = useCallback((href: string) => {
     void tryOpenExternalUrl(href, "markdown-link");
   }, []);
+  const onLinkLongPress = useCallback(
+    (href: string) => {
+      showMarkdownLinkActionSheet({ href, onOpen: onLinkPress });
+    },
+    [onLinkPress],
+  );
 
   const renderers: CustomRenderers = useMemo(
     () => ({
@@ -53,13 +60,16 @@ export function PullRequestMarkdown(props: { readonly markdown: string }) {
           onPress={() => {
             if (href) onLinkPress(href);
           }}
+          onLongPress={() => {
+            if (href) onLinkLongPress(href);
+          }}
           style={{ color: link, textDecorationLine: "none" }}
         >
           {children}
         </NativeText>
       ),
     }),
-    [link, onLinkPress],
+    [link, onLinkLongPress, onLinkPress],
   );
   const theme: PartialMarkdownTheme = useMemo(
     () => ({

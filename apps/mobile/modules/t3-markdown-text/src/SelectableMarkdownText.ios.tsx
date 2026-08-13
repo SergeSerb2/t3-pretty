@@ -9,7 +9,10 @@ import {
   nativeMarkdownWithPreservedSoftBreaks,
 } from "./nativeMarkdownText";
 import { NativeMarkdownBlock } from "./NativeMarkdownBlock.ios";
-import { NativeMarkdownSelectableText } from "./NativeMarkdownSelectableText.ios";
+import {
+  MarkdownLinkCallbacksContext,
+  NativeMarkdownSelectableText,
+} from "./NativeMarkdownSelectableText.ios";
 import type {
   SelectableMarkdownSkill,
   SelectableMarkdownTextProps,
@@ -37,6 +40,7 @@ export function SelectableMarkdownText({
   highlightCodeEnabled = true,
   preserveSoftBreaks = false,
   onLinkPress,
+  onLinkLongPress,
   marginTop = 0,
   marginBottom = 0,
 }: SelectableMarkdownTextProps) {
@@ -59,39 +63,47 @@ export function SelectableMarkdownText({
     );
   }, [markdown, preserveSoftBreaks, skills]);
 
+  const linkCallbacks = useMemo(
+    () => ({ onLinkPress, onLinkLongPress }),
+    [onLinkPress, onLinkLongPress],
+  );
+
   return (
     // A percentage width here creates a cyclic intrinsic measurement inside
     // shrink-to-fit containers such as user-message bubbles. Yoga then gives
     // the native text node an unbounded second pass and the parent only clips
     // the resulting single-line width instead of reflowing it.
     <View style={{ flexShrink: 1, minWidth: 0, marginTop, marginBottom }}>
-      {chunks.map((chunk, index) => {
-        const content =
-          chunk.kind === "rich" ? (
-            <NativeMarkdownBlock
-              node={chunk.node}
-              textStyle={textStyle}
-              highlightCode={highlightCode}
-              highlightCodeEnabled={highlightCodeEnabled}
-              onLinkPress={onLinkPress}
-            />
-          ) : (
-            <NativeMarkdownSelectableText
-              runs={chunk.runs}
-              textStyle={textStyle}
-              onLinkPress={onLinkPress}
-            />
-          );
+      <MarkdownLinkCallbacksContext.Provider value={linkCallbacks}>
+        {chunks.map((chunk, index) => {
+          const content =
+            chunk.kind === "rich" ? (
+              <NativeMarkdownBlock
+                node={chunk.node}
+                textStyle={textStyle}
+                highlightCode={highlightCode}
+                highlightCodeEnabled={highlightCodeEnabled}
+                onLinkPress={onLinkPress}
+              />
+            ) : (
+              <NativeMarkdownSelectableText
+                runs={chunk.runs}
+                textStyle={textStyle}
+                onLinkPress={onLinkPress}
+                onLinkLongPress={onLinkLongPress}
+              />
+            );
 
-        return (
-          <View
-            key={chunk.key}
-            style={{ paddingTop: nativeMarkdownChunkSpacing(chunks[index - 1], chunk) }}
-          >
-            {content}
-          </View>
-        );
-      })}
+          return (
+            <View
+              key={chunk.key}
+              style={{ paddingTop: nativeMarkdownChunkSpacing(chunks[index - 1], chunk) }}
+            >
+              {content}
+            </View>
+          );
+        })}
+      </MarkdownLinkCallbacksContext.Provider>
     </View>
   );
 }

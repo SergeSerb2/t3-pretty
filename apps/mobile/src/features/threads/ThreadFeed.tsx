@@ -52,6 +52,7 @@ import { useThemeColor } from "../../lib/useThemeColor";
 import { useFontFamily } from "../../lib/useFontFamily";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
+import { showMarkdownLinkActionSheet } from "../../lib/showMarkdownLinkActions";
 import { hasWideMarkdownBlock } from "../../lib/wideMarkdownBlocks";
 import {
   hasNativeSelectableMarkdownText,
@@ -306,6 +307,7 @@ const MarkdownExternalLink = memo(function MarkdownExternalLink(props: {
   readonly color: string;
   readonly host: string;
   readonly onPress: () => void;
+  readonly onLongPress?: () => void;
 }) {
   const [failed, setFailed] = useState(() => failedMarkdownFaviconHosts.has(props.host));
 
@@ -313,6 +315,7 @@ const MarkdownExternalLink = memo(function MarkdownExternalLink(props: {
     <NativeText
       className="font-sans"
       onPress={props.onPress}
+      onLongPress={props.onLongPress}
       style={{
         color: props.color,
         textDecorationLine: "none",
@@ -608,11 +611,15 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
     ): CustomRenderers => ({
       link: ({ children, href = "" }) => {
         const presentation = resolveMarkdownLinkPresentation(href);
+        const onLinkLongPress = () => {
+          showMarkdownLinkActionSheet({ href, onOpen: onLinkPress });
+        };
         if (presentation.kind === "file") {
           return (
             <NativeText
               className="font-t3-bold"
               onPress={() => onLinkPress(href)}
+              onLongPress={onLinkLongPress}
               style={{ color: inlineTextColor }}
             >
               <Image
@@ -629,6 +636,7 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
               host={presentation.host}
               color={markdownLinkColor}
               onPress={() => onLinkPress(href)}
+              onLongPress={onLinkLongPress}
             >
               {children}
             </MarkdownExternalLink>
@@ -639,6 +647,7 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
           <NativeText
             className="underline"
             onPress={linkHref ? () => onLinkPress(href) : undefined}
+            onLongPress={linkHref ? onLinkLongPress : undefined}
             style={{ color: markdownLinkColor }}
           >
             {children}
