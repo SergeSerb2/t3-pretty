@@ -65,14 +65,19 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       />
       <SidebarBrand onBackdrop={backdropVariant !== null} />
       {pillLabel ? (
-        <Badge
-          className="relative z-10 ml-1 rounded-full px-1.5 text-muted-foreground"
-          data-environment-identification="pill"
-          size="sm"
-          variant="secondary"
-        >
-          {pillLabel}
-        </Badge>
+        // The wrapper carries the hiding: Badge's own `inline-flex` utility
+        // outranks the components-layer `sidebar-brand-stage` display rules,
+        // so the class has to live on an element without a display utility.
+        <span className="sidebar-brand-stage relative z-10 ml-1 items-center">
+          <Badge
+            className="rounded-full px-1.5 text-muted-foreground"
+            data-environment-identification="pill"
+            size="sm"
+            variant="secondary"
+          >
+            {pillLabel}
+          </Badge>
+        </span>
       ) : null}
     </SidebarHeader>
   );
