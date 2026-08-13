@@ -327,12 +327,16 @@ jobs:
             echo "should_build=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Do not filter to finished builds alone. A follow-up push can
+          # otherwise miss an identical production build that is still new,
+          # queued, or in progress and start another paid compile. Local builds
+          # hold the workflow concurrency lock, but hosted builds (manual or
+          # historical) do not, so the gate must see in-flight records too.
           if ! eas build:list \
             --platform ios \
             --build-profile production \
             --distribution store \
-            --status finished \
-            --limit 1 \
+            --limit 20 \
             --json \
             --non-interactive > "$builds_file"; then
             echo "[]" > "$builds_file"
@@ -353,12 +357,43 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! -d /Applications/Xcode.app ]]; then
-            echo "Xcode.app is required on this runner for local iOS production builds." >&2
+          # m1-dev ships Xcode-beta.app, not Xcode.app. Prefer a pre-set
+          # DEVELOPER_DIR, then stable Xcode, then beta, then any other
+          # Xcode*.app. Command Line Tools have no iOS SDK; skip them.
+          is_full_xcode() {
+            [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]]
+          }
+          developer_dir=""
+          if is_full_xcode "${DEVELOPER_DIR:-}"; then
+            developer_dir="$DEVELOPER_DIR"
+          else
+            for app in /Applications/Xcode.app /Applications/Xcode-beta.app /Applications/Xcode*.app; do
+              if is_full_xcode "$app/Contents/Developer"; then
+                developer_dir="$app/Contents/Developer"
+                break
+              fi
+            done
+          fi
+          if [[ -z "$developer_dir" ]]; then
+            echo "A full Xcode.app (stable or beta) is required on this runner for local iOS production builds." >&2
+            ls -ld /Applications/Xcode*.app 2>/dev/null || echo "No Xcode*.app under /Applications." >&2
+            xcode-select -p 2>/dev/null || true
             exit 1
           fi
-          echo "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer" >> "$GITHUB_ENV"
-          export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+          echo "Using Xcode at $developer_dir"
+          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$developer_dir"
+          # Fastlane/EAS often call `xcode-select -p` and ignore DEVELOPER_DIR.
+          # If CLT is still selected, switch the active directory for this job.
+          selected="$(xcode-select -p 2>/dev/null || true)"
+          if [[ "$selected" != "$developer_dir" ]]; then
+            if sudo -n xcode-select -s "$developer_dir" 2>/dev/null; then
+              echo "Switched xcode-select from ${selected:-none} to $developer_dir"
+            else
+              echo "xcode-select is ${selected:-unset}; could not switch without passwordless sudo." >&2
+              echo "On the runner once: sudo xcode-select -s $developer_dir" >&2
+            fi
+          fi
           xcodebuild -version
           if ! command -v pod >/dev/null; then
             brew install cocoapods
