@@ -6,12 +6,13 @@ import { getPreviewPanelMaxWidth, PreviewPanelShell } from "./PreviewPanelShell"
 
 function renderPreviewPanelShell(
   mode: ComponentProps<typeof PreviewPanelShell>["mode"],
-  options?: { open?: boolean; maximized?: boolean },
+  options?: { open?: boolean; maximized?: boolean; defaultWidth?: number },
 ): string {
   const props: ComponentProps<typeof PreviewPanelShell> = {
     mode,
     ...(options?.open !== undefined ? { open: options.open } : {}),
     ...(options?.maximized !== undefined ? { maximized: options.maximized } : {}),
+    ...(options?.defaultWidth !== undefined ? { defaultWidth: options.defaultWidth } : {}),
     children: createElement("div", null, "Panel content"),
   };
   return renderToStaticMarkup(createElement(PreviewPanelShell, props));
@@ -24,6 +25,12 @@ describe("getPreviewPanelMaxWidth", () => {
 
   it("rounds fractional CSS pixels down", () => {
     expect(getPreviewPanelMaxWidth(2_001)).toBe(1_400);
+  });
+
+  it("keeps inline panels inside their containing workspace", () => {
+    const html = renderPreviewPanelShell("inline", { defaultWidth: 1_000 });
+
+    expect(html).toContain("max-w-full");
   });
 });
 
