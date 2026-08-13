@@ -21,7 +21,7 @@ import {
 } from "../lib/composerImages";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
-import { buildThreadFeed } from "../lib/threadActivity";
+import { createThreadFeedBuilder } from "../lib/threadActivity";
 import { recordThreadPerformanceSpan } from "../features/observability/threadPerformance";
 import { appAtomRegistry } from "../state/atom-registry";
 import {
@@ -85,6 +85,7 @@ export function useThreadComposerState() {
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
   const dispatchingQueuedMessageId = useAtomValue(dispatchingQueuedMessageIdAtom);
   const retryingQueuedMessageIds = useAtomValue(retryingQueuedMessageIdsAtom);
+  const feedBuilder = useMemo(() => createThreadFeedBuilder(), []);
 
   useEffect(() => {
     ensureComposerDraftsLoaded();
@@ -97,12 +98,19 @@ export function useThreadComposerState() {
     () => (selectedThreadKey ? (queuedMessagesByThreadKey[selectedThreadKey] ?? []) : []),
     [queuedMessagesByThreadKey, selectedThreadKey],
   );
+  const selectedThreadMessages = selectedThreadDetail?.messages ?? null;
+  const selectedThreadActivities = selectedThreadDetail?.activities ?? null;
   const selectedThreadFeedBuild = useMemo(() => {
-    if (!selectedThreadDetail) return { feed: [], durationMs: 0 };
+    if (selectedThreadMessages === null || selectedThreadActivities === null) {
+      return { feed: [], durationMs: 0 };
+    }
     const startedAt = performance.now();
-    const feed = buildThreadFeed(selectedThreadDetail);
+    const feed = feedBuilder({
+      messages: selectedThreadMessages,
+      activities: selectedThreadActivities,
+    });
     return { feed, durationMs: performance.now() - startedAt };
-  }, [selectedThreadDetail]);
+  }, [feedBuilder, selectedThreadActivities, selectedThreadMessages]);
   const selectedThreadFeed = selectedThreadFeedBuild.feed;
   useEffect(() => {
     if (!selectedThreadDetail || !selectedThreadShell) return;

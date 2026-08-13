@@ -23,4 +23,15 @@ describe("createEnvironmentThreadStateAtoms", () => {
     expect(threads.stateAtom(environmentId, threadId)).toBe(atom);
     expect(threads.stateAtom(environmentId, ThreadId.make("thread-2"))).not.toBe(atom);
   });
+
+  it("supports a client-specific retention window", () => {
+    const runtime = Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+      EnvironmentRegistry | EnvironmentCacheStore | ThreadSnapshotLoader,
+      never
+    >;
+    const threads = createEnvironmentThreadStateAtoms(runtime, { idleTtlMs: 15_000 });
+    const atom = threads.stateAtom(EnvironmentId.make("environment-1"), ThreadId.make("thread-1"));
+
+    expect(atom.idleTTL).toBe(15_000);
+  });
 });
