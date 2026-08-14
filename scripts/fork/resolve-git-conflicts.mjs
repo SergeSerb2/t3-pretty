@@ -220,6 +220,104 @@ function forkHistoryForPath(path, previousUpstreamTag) {
   }
 }
 
+// The model cannot responsibly decide keep-versus-delete from the surviving
+// file alone — it asked for "the parent replacement or relevant updated call
+// sites" when declining a modify/delete on nightly 1093. Collect exactly
+// that: the deletion commit subjects, the files those commits touched near
+// this path (the replacement surface usually lands in the same commit), and
+// any parent-nightly files still referencing the module by name.
+function parentDeletionEvidence(path) {
+  const upstreamTag = process.env.UPSTREAM_TAG?.trim() ?? "";
+  if (!upstreamTag) return "";
+  const previousUpstreamTag = process.env.PREVIOUS_UPSTREAM_TAG?.trim() ?? "";
+  const range = previousUpstreamTag ? `${previousUpstreamTag}..${upstreamTag}` : upstreamTag;
+  let deletionLog = "";
+  try {
+    git(["rev-parse", "--verify", `${upstreamTag}^{commit}`]);
+    deletionLog = git([
+      "log",
+      "--format=- %h %s",
+      "--max-count=3",
+      "--diff-filter=D",
+      range,
+      "--",
+      path,
+    ]).trim();
+    if (!deletionLog && previousUpstreamTag) {
+      // The deletion may predate the previously integrated nightly (the fork
+      // kept the file then; the conflict only resurfaces now). Fall back to
+      // the newest deletion anywhere in the tag's history.
+      deletionLog = git([
+        "log",
+        "--format=- %h %s",
+        "--max-count=3",
+        "--diff-filter=D",
+        upstreamTag,
+        "--",
+        path,
+      ]).trim();
+    }
+  } catch {
+    return "";
+  }
+  if (!deletionLog) return "";
+
+  const lines = [`- Parent commits deleting this file:\n${deletionLog}`];
+  const deletionSha = /^- ([0-9a-f]+)/u.exec(deletionLog)?.[1];
+  if (deletionSha) {
+    let touched = "";
+    try {
+      touched = git([
+        "show",
+        "--name-status",
+        "--format=",
+        deletionSha,
+        "--",
+        NodePath.dirname(path),
+      ]).trim();
+    } catch {
+      touched = "";
+    }
+    if (touched) {
+      const touchedLines = touched.split("\n");
+      lines.push(
+        `- Files the deletion commit touched near this path:\n${touchedLines
+          .slice(0, 20)
+          .map((line) => `  ${line}`)
+          .join("\n")}${touchedLines.length > 20 ? "\n  …" : ""}`,
+      );
+    }
+  }
+
+  const base = NodePath.basename(path).replace(/\.[^.]*$/u, "");
+  let references = "";
+  try {
+    references = git([
+      "grep",
+      "-l",
+      base,
+      `${upstreamTag}^{commit}`,
+      "--",
+      "apps",
+      "packages",
+    ]).trim();
+  } catch {
+    references = "";
+  }
+  if (references) {
+    const referenceLines = references.split("\n");
+    lines.push(
+      `- Parent nightly files still referencing \`${base}\`:\n${referenceLines
+        .slice(0, 8)
+        .map((line) => `  ${line}`)
+        .join("\n")}${referenceLines.length > 8 ? "\n  …" : ""}`,
+    );
+  } else {
+    lines.push(`- No parent nightly file references \`${base}\` any more.`);
+  }
+  return lines.join("\n");
+}
+
 export function buildConflictPrompt({ path, conflicts, forkHistory, deleteConflict }) {
   const deleteGuidance = deleteConflict
     ? `
@@ -230,7 +328,14 @@ Delete-conflict context for this file:
           : "T3 Pretty deleted this file while the parent nightly still carries a modified copy"
       }. The surviving side's complete content is wrapped in one whole-file conflict; the deleted side is empty.
 - To follow the deletion, return one edit that replaces the entire conflict with empty new_text; the resolver then removes the file. Follow a parent deletion when the file's behavior moved to another parent file or became first-party (rule 2). Follow a fork deletion only when the fork removed the feature outright; integrate compatible parent improvements into whatever replaced it instead of resurrecting the file.
-- To keep the file, return one edit that replaces the entire conflict with the exact final content to keep.
+- To keep the file, return one edit that replaces the entire conflict with the exact final content to keep.${
+        deleteConflict.evidence
+          ? `
+- Parent deletion evidence for this file (from the parent nightly history):
+${deleteConflict.evidence}
+Use it to decide whether a first-party replacement exists (rule 2) and where any surviving fork behavior belongs before choosing delete versus keep.`
+          : ""
+      }
 `
     : "";
   return `You are resolving one git merge conflict while integrating the newest parent T3 Code nightly into T3 Pretty, a long-lived custom fork.
@@ -655,6 +760,11 @@ function applyResolutionEdits({ path, source, conflicts, resolution }) {
 
 async function resolveConflict(path, token) {
   const { conflictedSource, deleteConflict } = conflictSourceForPath(path);
+  // A parent deletion is judged against where the behavior went upstream;
+  // attach that evidence before the prompt is built.
+  if (deleteConflict?.deletedSide === "theirs") {
+    deleteConflict.evidence = parentDeletionEvidence(path);
+  }
 
   // Resume from the checkpoint cache when an earlier run already completed
   // this exact conflicted input; only never-finished files reach the model.
@@ -841,12 +951,30 @@ async function main() {
   for (const path of lockfilePaths) {
     resolutions.push(resolveGeneratedLockfile(path));
   }
+  const failures = [];
   for (const path of modelPaths) {
     const entries = unmergedModes.split("\n").filter((line) => line.endsWith(`\t${path}`));
     if (entries.some((entry) => !entry.startsWith("100644 ") && !entry.startsWith("100755 "))) {
-      throw new Error(`${path} has a non-regular git mode and requires manual resolution`);
+      failures.push({ path, reason: "has a non-regular git mode and requires manual resolution" });
+      continue;
     }
-    resolutions.push(await resolveConflict(path, token));
+    try {
+      resolutions.push(await resolveConflict(path, token));
+    } catch (error) {
+      // A file the model declines or repeatedly mis-edits must not block the
+      // rest of the merge: every other completed file is checkpointed, so the
+      // next run only faces the paths that failed this one.
+      const reason = error instanceof Error ? error.message : String(error);
+      failures.push({ path, reason });
+      process.stdout.write(`[fork-sync] leaving ${path} unresolved this run: ${reason}\n`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `${failures.length} path(s) could not be resolved this run:\n${failures
+        .map((failure) => `- ${failure.path}: ${failure.reason}`)
+        .join("\n")}`,
+    );
   }
 
   const remaining = git(["diff", "--name-only", "--diff-filter=U"]).trim();
