@@ -79,6 +79,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
   return {
     id: threadId,
     environmentId,
+    enabledSkillIds: [],
     projectId,
     title: "Thread",
     modelSelection: {
@@ -153,6 +154,7 @@ describe("buildLoadingThreadFromShell", () => {
       hasPendingApprovals: false,
       hasPendingUserInput: false,
       hasActionableProposedPlan: false,
+      enabledSkillIds: [],
     } satisfies ThreadShell;
 
     expect(buildLoadingThreadFromShell(shell)).toMatchObject({
