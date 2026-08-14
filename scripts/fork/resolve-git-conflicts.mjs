@@ -164,7 +164,11 @@ function contextAround(source, start, end, maxBytes, conflictBounds = []) {
 
   return {
     byteLength,
-    context: `${source.slice(contextStart, start)}\n${source.slice(start, end)}${source.slice(end, contextEnd)}`,
+    // Byte-exact slice of the working file. Injecting anything here (the
+    // previous version joined the before-context with an extra "\n") makes
+    // old_text copied from the junction impossible to match in the file,
+    // which fails the file deterministically on every run.
+    context: source.slice(contextStart, contextEnd),
   };
 }
 
