@@ -18,8 +18,10 @@ import {
   EventId,
   MessageId,
   ProjectId,
+  SkillsError,
   ThreadId,
   TurnId,
+  type SkillId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
@@ -66,6 +68,7 @@ import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
+import { SkillMaterializer, type SkillMaterializeResult } from "../../skills/SkillMaterializer.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
@@ -157,6 +160,11 @@ describe("ProviderCommandReactor", () => {
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
     readonly unresolvedInstanceIds?: ReadonlyArray<string>;
+    readonly globalEnabledSkillIds?: ReadonlyArray<SkillId>;
+    readonly materializeSkillsEffect?: (materializeInput: {
+      readonly cwd: string;
+      readonly skillIds: ReadonlyArray<SkillId>;
+    }) => Effect.Effect<SkillMaterializeResult, SkillsError>;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -310,6 +318,11 @@ describe("ProviderCommandReactor", () => {
         }),
       ),
     );
+    const materializeSkills = vi.fn(
+      (materializeInput: { readonly cwd: string; readonly skillIds: ReadonlyArray<SkillId> }) =>
+        input?.materializeSkillsEffect?.(materializeInput) ??
+        Effect.succeed({ written: [], removed: [] } satisfies SkillMaterializeResult),
+    );
     const providerSnapshots = [
       {
         instanceId: modelSelection.instanceId,
@@ -428,7 +441,16 @@ describe("ProviderCommandReactor", () => {
           generateThreadTitle,
         }),
       ),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(
+        ServerSettingsService.layerTest({
+          skills: { enabledSkillIds: [...(input?.globalEnabledSkillIds ?? [])] },
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(SkillMaterializer, {
+          materialize: materializeSkills,
+        } satisfies SkillMaterializer["Service"]),
+      ),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
     );
@@ -462,6 +484,7 @@ describe("ProviderCommandReactor", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        enabledSkillIds: [],
         createdAt: now,
       }),
     );
@@ -478,6 +501,7 @@ describe("ProviderCommandReactor", () => {
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
+          enabledSkillIds: [],
           createdAt: now,
         }),
       );
@@ -518,6 +542,7 @@ describe("ProviderCommandReactor", () => {
       refreshStatus,
       generateBranchName,
       generateThreadTitle,
+      materializeSkills,
       runtimeSessions,
       stateDir,
       drain,
@@ -567,6 +592,93 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("materializes the union of global and thread skills into the turn cwd before session start", async () => {
+    const harness = await createHarness({
+      globalEnabledSkillIds: ["acme/skills:global-skill"],
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.skills.set",
+        commandId: CommandId.make("cmd-thread-skills-set-1"),
+        threadId: ThreadId.make("thread-1"),
+        enabledSkillIds: ["acme/skills:thread-skill"],
+        createdAt: now,
+      }),
+    );
+    // Wait on the projection, not a sleep: the reactor reads the per-thread
+    // skill set from the read model at turn start.
+    await waitFor(async () => {
+      const model = await harness.readModel();
+      return (
+        model.threads
+          .find((entry) => entry.id === ThreadId.make("thread-1"))
+          ?.enabledSkillIds.includes("acme/skills:thread-skill") ?? false
+      );
+    });
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-skills"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-skills"),
+          role: "user",
+          text: "hello skills",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.materializeSkills).toHaveBeenCalledTimes(1);
+    expect(harness.materializeSkills.mock.calls[0]?.[0]).toEqual({
+      cwd: "/tmp/provider-project",
+      skillIds: ["acme/skills:global-skill", "acme/skills:thread-skill"],
+    });
+    const materializeOrder = harness.materializeSkills.mock.invocationCallOrder[0];
+    const startSessionOrder = harness.startSession.mock.invocationCallOrder[0];
+    expect(materializeOrder).toBeDefined();
+    expect(startSessionOrder).toBeDefined();
+    expect(materializeOrder!).toBeLessThan(startSessionOrder!);
+  });
+
+  it("starts the turn even when skill materialization fails", async () => {
+    const harness = await createHarness({
+      materializeSkillsEffect: () =>
+        Effect.fail(
+          new SkillsError({ operation: "materialize", message: "store unavailable in test" }),
+        ),
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-skills-failure"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-skills-failure"),
+          role: "user",
+          text: "hello despite skills failure",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.materializeSkills).toHaveBeenCalledTimes(1);
+    expect(harness.startSession).toHaveBeenCalledTimes(1);
   });
 
   effectIt.effect("projects starting before a slow provider session finishes", () =>

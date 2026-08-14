@@ -31,6 +31,8 @@ export interface ServerDerivedPaths {
   readonly keybindingsConfigPath: string;
   readonly settingsPath: string;
   readonly providerStatusCacheDir: string;
+  readonly skillMarketplaceCacheDir: string;
+  readonly skillsDir: string;
   readonly worktreesDir: string;
   readonly attachmentsDir: string;
   readonly projectIconsDir: string;
@@ -119,6 +121,8 @@ export const deriveServerPaths = Effect.fn(function* (
     keybindingsConfigPath: join(stateDir, "keybindings.json"),
     settingsPath: join(stateDir, "settings.json"),
     providerStatusCacheDir,
+    skillMarketplaceCacheDir: join(providerStatusCacheDir, "skill-marketplace"),
+    skillsDir: join(stateDir, "skills"),
     worktreesDir: join(baseDir, "worktrees"),
     attachmentsDir,
     projectIconsDir,
@@ -151,6 +155,8 @@ export const ensureServerDirectories = Effect.fn(function* (derivedPaths: Server
       fs.makeDirectory(path.dirname(derivedPaths.keybindingsConfigPath), { recursive: true }),
       fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true }),
       fs.makeDirectory(derivedPaths.providerStatusCacheDir, { recursive: true }),
+      fs.makeDirectory(derivedPaths.skillMarketplaceCacheDir, { recursive: true }),
+      fs.makeDirectory(derivedPaths.skillsDir, { recursive: true }),
       fs.makeDirectory(path.dirname(derivedPaths.anonymousIdPath), { recursive: true }),
       fs.makeDirectory(path.dirname(derivedPaths.serverRuntimeStatePath), { recursive: true }),
     ],

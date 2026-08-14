@@ -4,6 +4,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/providers"
   | "/settings/instructions"
+  | "/settings/skills"
   | "/settings/source-control"
   | "/settings/connections"
   | "/settings/archived";
@@ -25,6 +26,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/providers": "Providers",
   "/settings/instructions": "Instructions",
+  "/settings/skills": "Skills",
   "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
   "/settings/archived": "Archive",
@@ -195,6 +197,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "agent-instructions-project",
     title: "Project agent instructions",
     to: "/settings/instructions",
+  },
+  {
+    id: "skills-installed",
+    title: "Installed skills",
+    to: "/settings/skills",
+  },
+  {
+    id: "skills-marketplace",
+    title: "Skills marketplace",
+    to: "/settings/skills",
   },
   {
     id: "source-control",

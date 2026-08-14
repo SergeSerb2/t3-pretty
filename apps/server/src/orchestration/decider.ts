@@ -377,6 +377,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          enabledSkillIds: command.enabledSkillIds,
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -849,6 +850,34 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           threadId: command.threadId,
           scenery: existing ?? { ...command.scenery, assignedAt: occurredAt },
           updatedAt: existing !== null ? thread.updatedAt : occurredAt,
+        },
+      };
+    }
+
+    case "thread.skills.set": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const occurredAt = yield* nowIso;
+      // Full replacement, not a diff: the client always sends the complete set
+      // it wants enabled, so the event carries it verbatim and every client
+      // converges on the same list. Skills have no lifecycle invariants —
+      // like scenery, an archived thread keeps its picks, so requireThread
+      // (not requireThreadNotArchived) is the right guard.
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.skills-set" as const,
+        payload: {
+          threadId: command.threadId,
+          enabledSkillIds: command.enabledSkillIds,
+          updatedAt: occurredAt,
         },
       };
     }

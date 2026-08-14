@@ -25,6 +25,7 @@ export * from "./editor.ts";
 export * from "./project.ts";
 export * from "./filesystem.ts";
 export * from "./agentInstructions.ts";
+export * from "./skills.ts";
 export * from "./assets.ts";
 export * from "./review.ts";
 export * from "./canvas.ts";

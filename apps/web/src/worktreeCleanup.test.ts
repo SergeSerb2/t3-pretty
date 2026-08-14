@@ -10,6 +10,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
   return {
     id: ThreadId.make("thread-1"),
     environmentId: localEnvironmentId,
+    enabledSkillIds: [],
     projectId: ProjectId.make("project-1"),
     title: "Thread",
     modelSelection: {

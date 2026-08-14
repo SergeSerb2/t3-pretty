@@ -11,6 +11,7 @@ import {
 } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
+import { SkillId, SkillMarketplaceSource, SkillsSettings } from "./skills.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -647,6 +648,7 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  skills: SkillsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
@@ -775,6 +777,14 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  // Deep-merged into ServerSettings.skills; each array replaces wholesale
+  // when present (the client always sends the full list it wants).
+  skills: Schema.optionalKey(
+    Schema.Struct({
+      enabledSkillIds: Schema.optionalKey(Schema.Array(SkillId)),
+      marketplaceSources: Schema.optionalKey(Schema.Array(SkillMarketplaceSource)),
+    }),
+  ),
   observability: Schema.optionalKey(
     Schema.Struct({
       otlpTracesUrl: Schema.optionalKey(TrimmedString),

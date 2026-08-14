@@ -74,6 +74,9 @@ import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as AgentInstructionFiles from "./instructions/AgentInstructionFiles.ts";
+import * as SkillMarketplace from "./skills/SkillMarketplace.ts";
+import * as SkillMaterializer from "./skills/SkillMaterializer.ts";
+import * as SkillStore from "./skills/SkillStore.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
@@ -169,6 +172,15 @@ const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
 );
 
 const UsageLayerLive = UsageService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
+
+const SkillsLayerLive = Layer.mergeAll(
+  SkillStore.layer,
+  SkillMaterializer.layer.pipe(Layer.provide(SkillStore.layer)),
+  SkillMarketplace.layer.pipe(
+    Layer.provide(SkillStore.layer),
+    Layer.provide(ServerSettingsLayerLive),
+  ),
+);
 
 const ResourceDiagnosticsLayerLive = Layer.mergeAll(
   ResourceTelemetryLayerLive,
@@ -382,7 +394,10 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
 
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // Core Services
-  Layer.provideMerge(ServerSettingsLayerLive),
+  // SkillsLayerLive rides the settings merge to stay inside pipe()'s
+  // 20-argument ceiling (see the AgentInstructionFiles note below); layer
+  // memoization dedupes the shared ServerSettingsLayerLive dependency.
+  Layer.provideMerge(Layer.mergeAll(ServerSettingsLayerLive, SkillsLayerLive)),
   Layer.provideMerge(CheckpointingLayerLive),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(GitLayerLive),

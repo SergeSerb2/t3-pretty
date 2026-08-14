@@ -13,6 +13,13 @@ import {
   AgentInstructionsWriteResult,
 } from "./agentInstructions.ts";
 import {
+  SkillId,
+  SkillMarketplaceListing,
+  SkillMarketplaceSource,
+  SkillsError,
+  SkillsState,
+} from "./skills.ts";
+import {
   AuthAccessStreamError,
   AuthAccessStreamEvent,
   EnvironmentAuthorizationError,
@@ -228,6 +235,13 @@ export const WS_METHODS = {
   agentInstructionsList: "agentInstructions.list",
   agentInstructionsRead: "agentInstructions.read",
   agentInstructionsWrite: "agentInstructions.write",
+
+  // Skills registry and marketplace methods
+  skillsGetState: "skills.getState",
+  skillsInstall: "skills.install",
+  skillsUninstall: "skills.uninstall",
+  skillsListMarketplace: "skills.listMarketplace",
+  skillsRefreshMarketplace: "skills.refreshMarketplace",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -696,6 +710,41 @@ export const WsAgentInstructionsWriteRpc = Rpc.make(WS_METHODS.agentInstructions
   error: Schema.Union([AgentInstructionsError, EnvironmentAuthorizationError]),
 });
 
+export const WsSkillsGetStateRpc = Rpc.make(WS_METHODS.skillsGetState, {
+  payload: Schema.Struct({}),
+  success: SkillsState,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
+export const WsSkillsInstallRpc = Rpc.make(WS_METHODS.skillsInstall, {
+  payload: Schema.Struct({ skillId: SkillId }),
+  success: SkillsState,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
+export const WsSkillsUninstallRpc = Rpc.make(WS_METHODS.skillsUninstall, {
+  payload: Schema.Struct({ skillId: SkillId }),
+  success: SkillsState,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
+const SkillsMarketplaceQuery = Schema.Struct({
+  // Restrict to one source; omitted means all configured sources.
+  repo: Schema.optionalKey(SkillMarketplaceSource.fields.repo),
+});
+
+export const WsSkillsListMarketplaceRpc = Rpc.make(WS_METHODS.skillsListMarketplace, {
+  payload: SkillsMarketplaceQuery,
+  success: Schema.Array(SkillMarketplaceListing),
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
+export const WsSkillsRefreshMarketplaceRpc = Rpc.make(WS_METHODS.skillsRefreshMarketplace, {
+  payload: SkillsMarketplaceQuery,
+  success: Schema.Array(SkillMarketplaceListing),
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
 export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   payload: LaunchEditorInput,
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
@@ -1106,6 +1155,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsAgentInstructionsListRpc,
   WsAgentInstructionsReadRpc,
   WsAgentInstructionsWriteRpc,
+  WsSkillsGetStateRpc,
+  WsSkillsInstallRpc,
+  WsSkillsUninstallRpc,
+  WsSkillsListMarketplaceRpc,
+  WsSkillsRefreshMarketplaceRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,

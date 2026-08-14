@@ -107,9 +107,11 @@ import {
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
+import { SkillsMenuContent, SkillsPicker } from "./SkillsPicker";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
+import { MenuSeparator as MenuDivider } from "../ui/menu";
 
 type ComposerCommandMenuPosition = {
   bottom: number;
@@ -1254,6 +1256,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     prompt,
     onPromptChange: setPromptFromTraits,
   });
+  // Skill picks are provider-agnostic: drafts stage them in the composer
+  // draft store (they ride `bootstrap.createThread` on the first turn);
+  // server threads read the orchestration read model and dispatch
+  // `thread.skills.set` on toggle.
+  const skillsPickerProps = {
+    environmentId,
+    ...(routeKind === "server"
+      ? { threadRef: routeThreadRef, enabledSkillIds: activeThread?.enabledSkillIds }
+      : {}),
+    ...(routeKind === "draft" && draftId ? { draftId } : {}),
+  };
+  const skillsPicker = <SkillsPicker {...skillsPickerProps} />;
+  const skillsMenuContent = <SkillsMenuContent {...skillsPickerProps} />;
   const pendingPrimaryAction = useMemo(
     () =>
       activePendingProgress
@@ -3214,7 +3229,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     autoCreatePullRequest={autoCreatePullRequest}
                     showAutoCreatePullRequestToggle={showAutoCreatePullRequestToggle}
                     onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
-                    traitsMenuContent={providerTraitsMenuContent}
+                    traitsMenuContent={
+                      providerTraitsMenuContent ? (
+                        <>
+                          {providerTraitsMenuContent}
+                          <MenuDivider />
+                          {skillsMenuContent}
+                        </>
+                      ) : (
+                        skillsMenuContent
+                      )
+                    }
                     onToggleInteractionMode={toggleInteractionMode}
                     onRuntimeModeChange={handleRuntimeModeChange}
                   />
@@ -3226,6 +3251,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         {providerTraitsPicker}
                       </>
                     ) : null}
+                    <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                    {skillsPicker}
                     <ComposerFooterModeControls
                       provider={selectedProvider}
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}

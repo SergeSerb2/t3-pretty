@@ -105,6 +105,7 @@ export function buildLocalDraftThread(
     checkpoints: [],
     activities: [],
     proposedPlans: [],
+    enabledSkillIds: [],
   };
 }
 
