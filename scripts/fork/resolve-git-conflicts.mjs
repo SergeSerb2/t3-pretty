@@ -359,85 +359,125 @@ async function resolveConflict(path, token) {
     forkHistory: forkHistoryForPath(path, previousUpstreamTag),
   });
 
-  const response = await fetch(`${API_URL}/responses`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      reasoning: { effort: REASONING_EFFORT },
-      service_tier: SERVICE_TIER,
-      input: prompt,
-      text: {
-        format: {
-          type: "json_schema",
-          name: "git_conflict_resolution",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            required: [
-              "safe",
-              "edits",
-              "fork_changes_preserved",
-              "upstream_changes_integrated",
-              "upstream_changes_omitted",
-              "summary",
-            ],
-            properties: {
-              safe: { type: "boolean" },
-              edits: {
-                type: "array",
-                minItems: conflicts.length,
-                maxItems: conflicts.length * 4,
-                items: {
-                  type: "object",
-                  additionalProperties: false,
-                  required: ["old_text", "new_text", "summary"],
-                  properties: {
-                    old_text: { type: "string" },
-                    new_text: { type: "string" },
-                    summary: { type: "string" },
+  // The proxy intermittently 502s when a single xhigh call reasons for very
+  // long, and one gateway blip otherwise aborts the whole sync (seen
+  // 2026-08-14 on nightly 1089). Retry transient failures — network errors,
+  // 429, 5xx, and incomplete responses — dropping to high effort on the last
+  // attempt so one pathological long-think cannot sink the run. Model
+  // declines (safe=false on a completed response) never retry.
+  const maxAttempts = 3;
+  let apiResponse;
+  let usedEffort = REASONING_EFFORT;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const effort = attempt < maxAttempts ? REASONING_EFFORT : "high";
+    let response;
+    let raw = "";
+    try {
+      response = await fetch(`${API_URL}/responses`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          reasoning: { effort },
+          service_tier: SERVICE_TIER,
+          input: prompt,
+          text: {
+            format: {
+              type: "json_schema",
+              name: "git_conflict_resolution",
+              strict: true,
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: [
+                  "safe",
+                  "edits",
+                  "fork_changes_preserved",
+                  "upstream_changes_integrated",
+                  "upstream_changes_omitted",
+                  "summary",
+                ],
+                properties: {
+                  safe: { type: "boolean" },
+                  edits: {
+                    type: "array",
+                    minItems: conflicts.length,
+                    maxItems: conflicts.length * 4,
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      required: ["old_text", "new_text", "summary"],
+                      properties: {
+                        old_text: { type: "string" },
+                        new_text: { type: "string" },
+                        summary: { type: "string" },
+                      },
+                    },
                   },
+                  fork_changes_preserved: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                  upstream_changes_integrated: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                  upstream_changes_omitted: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      required: ["change", "reason"],
+                      properties: {
+                        change: { type: "string" },
+                        reason: { type: "string" },
+                      },
+                    },
+                  },
+                  summary: { type: "string" },
                 },
               },
-              fork_changes_preserved: {
-                type: "array",
-                items: { type: "string" },
-              },
-              upstream_changes_integrated: {
-                type: "array",
-                items: { type: "string" },
-              },
-              upstream_changes_omitted: {
-                type: "array",
-                items: {
-                  type: "object",
-                  additionalProperties: false,
-                  required: ["change", "reason"],
-                  properties: {
-                    change: { type: "string" },
-                    reason: { type: "string" },
-                  },
-                },
-              },
-              summary: { type: "string" },
             },
           },
-        },
-      },
-    }),
-  });
-
-  const raw = await response.text();
-  if (!response.ok) {
-    throw new Error(`CLIProxyAPI returned HTTP ${response.status}: ${raw.slice(0, 500)}`);
+        }),
+      });
+      raw = await response.text();
+    } catch (error) {
+      raw = error instanceof Error ? error.message : String(error);
+    }
+    if (response?.ok) {
+      try {
+        apiResponse = JSON.parse(raw);
+      } catch {
+        apiResponse = undefined;
+      }
+      if (apiResponse?.status === "completed") {
+        usedEffort = effort;
+        break;
+      }
+      process.stdout.write(
+        `[fork-sync] attempt ${attempt}/${maxAttempts} for ${path} returned an unparseable or incomplete response; retrying\n`,
+      );
+    } else {
+      const status = response?.status ?? 0;
+      if (status !== 0 && status !== 429 && status < 500) {
+        throw new Error(`CLIProxyAPI returned HTTP ${status}: ${raw.slice(0, 500)}`);
+      }
+      process.stdout.write(
+        `[fork-sync] attempt ${attempt}/${maxAttempts} for ${path} hit a transient failure (HTTP ${status || "network error"}: ${raw.slice(0, 200)}); retrying\n`,
+      );
+    }
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 15_000));
+    }
   }
-  const apiResponse = JSON.parse(raw);
-  if (apiResponse.status !== "completed") {
-    throw new Error(`CLIProxyAPI response status was ${apiResponse.status ?? "missing"}`);
+  if (apiResponse?.status !== "completed") {
+    throw new Error(
+      `CLIProxyAPI did not produce a completed response for ${path} after ${maxAttempts} attempts`,
+    );
   }
   const resolution = JSON.parse(extractResponseText(apiResponse));
   if (resolution.safe !== true) {
@@ -491,7 +531,7 @@ async function resolveConflict(path, token) {
   git(["add", "--", path]);
 
   process.stdout.write(
-    `[fork-sync] resolved ${path} with ${MODEL}/${REASONING_EFFORT} (requested tier=${SERVICE_TIER}, effective tier=${apiResponse.service_tier ?? "unknown"}): ${resolution.summary}\n`,
+    `[fork-sync] resolved ${path} with ${MODEL}/${usedEffort} (requested tier=${SERVICE_TIER}, effective tier=${apiResponse.service_tier ?? "unknown"}): ${resolution.summary}\n`,
   );
   return {
     path,
