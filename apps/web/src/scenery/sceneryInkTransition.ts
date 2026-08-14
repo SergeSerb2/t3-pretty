@@ -39,11 +39,16 @@ export function canAnimateSceneryInkTransition(): boolean {
 
 /**
  * Run `update` inside a document view transition when the ink appearance
- * actually flips. Always invokes `update` exactly once.
+ * actually flips. Always invokes `update` exactly once, with `animating`
+ * telling it whether a snapshot will really crossfade the change: every
+ * fallback (no View Transitions API, reduced motion, a start that throws or
+ * is skipped before its callback runs) passes false so the update can keep
+ * its own CSS fallback instead of parking layers for a snapshot that never
+ * happens.
  */
-export function runSceneryInkTransition(update: () => void): void {
+export function runSceneryInkTransition(update: (animating: boolean) => void): void {
   if (!canAnimateSceneryInkTransition()) {
-    update();
+    update(false);
     return;
   }
 
@@ -51,12 +56,12 @@ export function runSceneryInkTransition(update: () => void): void {
   const root = transitionDocument.documentElement;
   const generation = ++inkTransitionGeneration;
   let updateStarted = false;
-  const runUpdate = () => {
+  const runUpdate = (animating: boolean) => {
     if (updateStarted) {
       return;
     }
     updateStarted = true;
-    update();
+    update(animating);
   };
 
   root.dataset.sceneryInkTransition = "true";
@@ -68,13 +73,13 @@ export function runSceneryInkTransition(update: () => void): void {
   };
 
   try {
-    const transition = transitionDocument.startViewTransition!(runUpdate);
+    const transition = transitionDocument.startViewTransition!(() => runUpdate(true));
     void transition.finished.then(clear, () => {
-      runUpdate();
+      runUpdate(false);
       clear();
     });
   } catch {
     clear();
-    runUpdate();
+    runUpdate(false);
   }
 }

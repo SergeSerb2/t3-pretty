@@ -62,6 +62,7 @@ describe("runSceneryInkTransition", () => {
 
     expect(startViewTransition).toHaveBeenCalledOnce();
     expect(update).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(true);
     expect(dataset.sceneryInkTransition).toBe("true");
 
     finishTransition?.();
@@ -85,6 +86,27 @@ describe("runSceneryInkTransition", () => {
 
     expect(startViewTransition).not.toHaveBeenCalled();
     expect(update).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(false);
+  });
+
+  it("reports not animating when the transition is skipped before its callback", async () => {
+    vi.stubGlobal("document", {
+      documentElement: { dataset: {} },
+      // The callback never runs; finished rejects, so the update must land
+      // through the fallback with animating=false.
+      startViewTransition: () => ({ finished: Promise.reject(new Error("skipped")) }),
+    });
+    vi.stubGlobal("window", {
+      matchMedia: () => ({ matches: false }),
+    });
+    const update = vi.fn();
+
+    runSceneryInkTransition(update);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(update).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(false);
   });
 
   it("falls back to a direct update when startViewTransition throws", () => {
@@ -103,6 +125,7 @@ describe("runSceneryInkTransition", () => {
     runSceneryInkTransition(update);
 
     expect(update).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(false);
     expect(dataset).not.toHaveProperty("sceneryInkTransition");
   });
 });
