@@ -167,8 +167,12 @@ html[data-scenery-ink-transition] .scenery-layer__edges {
   transition: none;
 }
 
-html[data-scenery-ink-transition] .scenery-layer__photo--current,
-html[data-scenery-ink-transition] .scenery-layer__photo--outgoing {
+/* --outgoing is deliberately NOT parked: the attribute is set before the old
+   snapshot is captured, and stripping the dissolve there would snap a
+   half-faded photo back to full opacity in that snapshot. The commit drops
+   the outgoing layer from the live DOM anyway, so it never outlives the
+   transition. */
+html[data-scenery-ink-transition] .scenery-layer__photo--current {
   animation: none;
 }
 

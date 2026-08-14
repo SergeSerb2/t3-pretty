@@ -238,4 +238,19 @@ describe("scenery photo swap animations", () => {
     expect(sceneryCssSource).toContain("--scenery-swap-out: 0.6s");
     expect(sceneryLayerSource).toContain("SCENERY_SWAP_OUT_MS = 600");
   });
+
+  it("keys the outgoing layer so a new dissolve restarts the animation", () => {
+    // Unkeyed, React reuses the node when outgoing changes mid-fade and the
+    // new photo inherits the previous one's half-finished dissolve.
+    expect(sceneryLayerSource).toContain("key={displayedPhotoKey(outgoing)}");
+  });
+
+  it("does not strip the outgoing fade when the ink gate opens", () => {
+    // The attribute is set before the old view-transition snapshot is
+    // captured; animation:none there would resurrect a half-dissolved photo
+    // at full opacity inside that snapshot.
+    expect(sceneryCssSource).not.toContain(
+      "html[data-scenery-ink-transition] .scenery-layer__photo--outgoing",
+    );
+  });
 });

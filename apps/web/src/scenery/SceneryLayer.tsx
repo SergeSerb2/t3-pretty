@@ -187,6 +187,10 @@ export function SceneryLayer({
           <div className="scenery-layer__gradient" style={{ background: gradientCss(seed) }} />
           {outgoing ? (
             <div
+              // Keyed like the current photo: without it React reuses the
+              // node when outgoing changes mid-dissolve, and the new photo
+              // would inherit the previous one's half-finished fade.
+              key={displayedPhotoKey(outgoing)}
               className="scenery-layer__photo scenery-layer__photo--outgoing"
               style={{ backgroundImage: `url(${outgoing.url})` }}
             />
