@@ -211,4 +211,31 @@ describe("scenery light/dark appearance crossfade", () => {
     expect(sceneryCssSource).toContain("mix-blend-mode: normal");
     expect(sceneryInkTransitionSource).toContain("sceneryInkTransition");
   });
+
+  it("parks the CSS layers only when the view transition really animates", () => {
+    // Fallbacks (no API, reduced motion, a skipped start) must keep the CSS
+    // dissolve; parking layers for a snapshot that never happens hard-cuts
+    // the swap on browsers without View Transitions.
+    expect(sceneryInkTransitionSource).toContain("runUpdate(true)");
+    expect(sceneryInkTransitionSource).toContain("runUpdate(false)");
+    expect(sceneryLayerSource).toContain("inkAnimating = animating");
+  });
+});
+
+describe("scenery photo swap animations", () => {
+  it("keeps exactly one timing function in each animation shorthand", () => {
+    // The --scenery-swap-* vars already carry duration + easing; a second
+    // timing function after the var() invalidates the whole shorthand at
+    // computed-value time and the fades silently stop running.
+    for (const keyframes of ["scenery-fade-in", "scenery-fade-out"]) {
+      const declaration = new RegExp(`animation: ${keyframes} [^;]+;`).exec(sceneryCssSource)?.[0];
+      expect(declaration, `missing animation for ${keyframes}`).toBeTruthy();
+      expect(declaration?.match(/cubic-bezier\(/g)).toHaveLength(1);
+    }
+  });
+
+  it("keeps the fade-out duration mirrored with the React unmount timer", () => {
+    expect(sceneryCssSource).toContain("--scenery-swap-out: 0.6s");
+    expect(sceneryLayerSource).toContain("SCENERY_SWAP_OUT_MS = 600");
+  });
 });

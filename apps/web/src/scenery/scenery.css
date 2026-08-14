@@ -81,15 +81,17 @@ html[data-theme-id="world-scenery"] {
 
 .scenery-layer__photo--current {
   /* backwards: the first frame is opacity 0, otherwise a cached decode can
-     paint the new photo at full opacity for one frame before the fade runs. */
-  animation: scenery-fade-in var(--scenery-swap-in, 0.45s) cubic-bezier(0.4, 0, 0.2, 1) backwards;
+     paint the new photo at full opacity for one frame before the fade runs.
+     The var already carries duration + easing; appending another timing
+     function here would invalidate the whole shorthand. */
+  animation: scenery-fade-in var(--scenery-swap-in, 0.45s cubic-bezier(0.4, 0, 0.2, 1)) backwards;
 }
 
 /* The photo being left: dissolves as soon as the route changes so a thread
    switch animates immediately instead of holding a stale photo through the
    next one's download. forwards pins opacity 0 until React drops the layer. */
 .scenery-layer__photo--outgoing {
-  animation: scenery-fade-out var(--scenery-swap-out, 0.6s) cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: scenery-fade-out var(--scenery-swap-out, 0.6s cubic-bezier(0.4, 0, 0.2, 1)) forwards;
 }
 
 @keyframes scenery-fade-in {

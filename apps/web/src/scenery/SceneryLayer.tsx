@@ -123,8 +123,12 @@ export function SceneryLayer({
           photographerName: photo.photographerName,
           photographerProfileURL: photo.photographerProfileURL,
         };
+        // True only while the commit runs inside a live view transition.
+        // The fallbacks (no API, reduced motion, a skipped start) commit the
+        // same way a normal swap does, keeping the CSS dissolve.
+        let inkAnimating = false;
         const commit = () => {
-          if (appearanceCrossfadeRef.current) {
+          if (inkAnimating) {
             // The snapshot is the crossfade: park the CSS layers so they do
             // not re-animate when the view transition hands back the live DOM.
             setOutgoing(null);
@@ -146,7 +150,8 @@ export function SceneryLayer({
         if (appearanceCrossfadeRef.current) {
           // The view-transition callback must mutate the DOM before it
           // returns, so React's photo + ink state have to flush together.
-          runSceneryInkTransition(() => {
+          runSceneryInkTransition((animating) => {
+            inkAnimating = animating;
             flushSync(commit);
           });
           return;
