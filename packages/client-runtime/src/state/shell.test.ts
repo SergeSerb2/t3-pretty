@@ -1,12 +1,20 @@
 import type { ServerConfig } from "@t3tools/contracts";
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/unstable/reactivity";
 
 import { PrimaryConnectionTarget } from "../connection/model.ts";
-import type { EnvironmentShellState } from "./shell.ts";
-import { createEnvironmentServerConfigsAtom, createEnvironmentShellSummaryAtom } from "./shell.ts";
+import type { EnvironmentRegistry } from "../connection/registry.ts";
+import type { EnvironmentCacheStore } from "../platform/persistence.ts";
+import type { EnvironmentShellState, ShellSnapshotLoader } from "./shell.ts";
+import {
+  createEnvironmentServerConfigsAtom,
+  createEnvironmentShellAtoms,
+  createEnvironmentShellSummaryAtom,
+  SHELL_STATE_IDLE_TTL_MS,
+} from "./shell.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
 const OTHER_ENVIRONMENT_ID = EnvironmentId.make("environment-2");
@@ -86,6 +94,29 @@ function makeHarness() {
     serverConfigsAtom,
   };
 }
+
+describe("createEnvironmentShellAtoms", () => {
+  const shellRuntime = () =>
+    Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+      EnvironmentRegistry | EnvironmentCacheStore | ShellSnapshotLoader,
+      never
+    >;
+
+  it("retains shell state across short subscriber gaps", () => {
+    const shells = createEnvironmentShellAtoms(shellRuntime());
+    const atom = shells.stateAtom(ENVIRONMENT_ID);
+
+    expect(atom.idleTTL).toBe(SHELL_STATE_IDLE_TTL_MS);
+    expect(shells.stateAtom(ENVIRONMENT_ID)).toBe(atom);
+    expect(shells.stateAtom(OTHER_ENVIRONMENT_ID)).not.toBe(atom);
+  });
+
+  it("supports a client-specific retention window", () => {
+    const shells = createEnvironmentShellAtoms(shellRuntime(), { idleTtlMs: 15_000 });
+
+    expect(shells.stateAtom(ENVIRONMENT_ID).idleTTL).toBe(15_000);
+  });
+});
 
 describe("environment shell projections", () => {
   it("summarizes shell state and preserves identity when only irrelevant snapshot data changes", () => {

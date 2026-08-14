@@ -68,6 +68,8 @@ import {
 } from "./features/sharing/incoming-share-presentation";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
 import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
+import { ensureThreadOutboxLoaded } from "./state/thread-outbox";
+import { useThreadOutboxHasQueuedMessages } from "./state/use-thread-outbox";
 import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
@@ -327,7 +329,25 @@ function workspacePathFromState(state: NavigationState): string {
 // connection statuses. Hosting it in a null-rendering leaf keeps those
 // updates from re-rendering RootStackLayout (and with it every screen) on
 // each enqueue, shell change, or reconnect.
+//
+// The leaf is gated: the shell/project subscriptions pin every catalog
+// environment's shell stream, so the inner worker only mounts while the
+// outbox actually holds messages. The gate itself subscribes to the cheap
+// queue-empty flag alone, and still loads the persisted outbox once on
+// launch — messages queued before a restart mount the worker as soon as they
+// hydrate, and a message queued while offline mounts it immediately.
 function ThreadOutboxDrainWorker() {
+  const hasQueuedMessages = useThreadOutboxHasQueuedMessages();
+  useEffect(() => {
+    ensureThreadOutboxLoaded();
+  }, []);
+  if (!hasQueuedMessages) {
+    return null;
+  }
+  return <ThreadOutboxDrainWorkerInner />;
+}
+
+function ThreadOutboxDrainWorkerInner() {
   useThreadOutboxDrain();
   return null;
 }

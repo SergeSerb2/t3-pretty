@@ -13,6 +13,7 @@ import {
   decodeQueuedThreadMessage,
   encodeQueuedThreadMessage,
   groupQueuedThreadMessages,
+  hasQueuedThreadOutboxMessages,
   isQueuedThreadCreationSendable,
   modelSelectionsEqual,
   resolveThreadOutboxDeliveryAction,
@@ -56,6 +57,17 @@ describe("thread outbox", () => {
     expect(groupQueuedThreadMessages([later, earlier])).toEqual({
       "environment-1:thread-1": [earlier, later],
     });
+  });
+
+  it("reports an empty outbox for the drain worker mount gate", () => {
+    const message = queuedMessage({
+      messageId: "message-1",
+      createdAt: "2026-06-08T10:00:01.000Z",
+    });
+
+    expect(hasQueuedThreadOutboxMessages({})).toBe(false);
+    expect(hasQueuedThreadOutboxMessages({ "environment-1:thread-1": [] })).toBe(false);
+    expect(hasQueuedThreadOutboxMessages({ "environment-1:thread-1": [message] })).toBe(true);
   });
 
   it("decodes the persisted schema and rejects incomplete messages", () => {
