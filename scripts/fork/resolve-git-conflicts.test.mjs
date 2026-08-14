@@ -189,17 +189,34 @@ ${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
       path: "apps/mobile/src/features/threads/thread-settings-menu.ts",
       forkHistory: "",
       conflicts: [],
-      deleteConflict: { deletedSide: "theirs" },
+      deleteConflict: {
+        deletedSide: "theirs",
+        evidence:
+          "- Parent commits deleting this file:\n- 85389b988 Nest mobile task settings in bottom sheets (#6224)",
+      },
     });
 
     assert.include(prompt, "parent nightly deleted this file");
     assert.include(prompt, "empty new_text");
     assert.include(prompt, "parent first-party replacement");
+    assert.include(prompt, "Parent deletion evidence");
+    assert.include(prompt, "Nest mobile task settings in bottom sheets");
 
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, "<<<<<<< OURS (T3 Pretty main");
     assert.include(resolver, 'git(["rm", "-q", "--", path])');
     assert.include(resolver, 'git(["ls-files", "-u", "--", path])');
+    assert.include(resolver, "parentDeletionEvidence");
+  });
+
+  it("resolves every resolvable file before reporting the ones that failed", () => {
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+
+    // A declined or repeatedly invalid file must not stop the run: later
+    // files still resolve and checkpoint, so the next run only faces the
+    // paths that failed this one.
+    assert.include(resolver, "leaving ${path} unresolved this run");
+    assert.include(resolver, "could not be resolved this run");
   });
 
   it("still refuses files large enough to risk local conflict processing", () => {
