@@ -6,6 +6,7 @@ import * as NodeURL from "node:url";
 import { assert, describe, it } from "vite-plus/test";
 
 import {
+  applyResolutionEdits,
   buildConflictPrompt,
   formatSyncReport,
   isGeneratedLockfile,
@@ -512,5 +513,74 @@ ${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
     // failure: one fresh request usually validates (seen on nightly 1093).
     assert.include(resolver, "returned an invalid edit set");
     assert.include(resolver, "requesting a fresh resolution");
+  });
+
+  it("disambiguates a repeated old_text by conflict proximity", () => {
+    const conflictBlock = `${"<".repeat(7)} ours
+shared token
+${"|".repeat(7)} base
+base
+${"=".repeat(7)}
+theirs
+${">".repeat(7)} theirs
+`;
+    const conflicts = [{ index: 0, start: 0, end: conflictBlock.length }];
+    const edit = { old_text: "shared token\n", new_text: "resolved token\n", summary: "s" };
+
+    // One occurrence inside the conflict, a duplicate 25 KB away: the
+    // conflict-side occurrence wins and the far one stays untouched.
+    const nearSource = `${conflictBlock}${"y".repeat(25_000)}shared token\n`;
+    const resolved = applyResolutionEdits({
+      path: "f.ts",
+      source: nearSource,
+      conflicts,
+      resolution: { edits: [edit] },
+    });
+    assert.include(resolved, "resolved token");
+    assert.isTrue(resolved.endsWith("shared token\n"));
+
+    // Several occurrences next to the conflict: still ambiguous, still fatal.
+    assert.throws(
+      () =>
+        applyResolutionEdits({
+          path: "f.ts",
+          source: `shared token\n${conflictBlock}shared token\n`,
+          conflicts,
+          resolution: { edits: [edit] },
+        }),
+      /\d+ locations near this batch's conflicts/u,
+    );
+
+    // Only far-away occurrences: nothing to anchor to. Use a block that does
+    // not itself contain the token.
+    const otherBlock = `${"<".repeat(7)} ours
+aaa
+${"|".repeat(7)} base
+bbb
+${"=".repeat(7)}
+ccc
+${">".repeat(7)} theirs
+`;
+    assert.throws(
+      () =>
+        applyResolutionEdits({
+          path: "f.ts",
+          source: `${otherBlock}${"y".repeat(25_000)}shared token\n${"z".repeat(25_000)}shared token\n`,
+          conflicts: [{ index: 0, start: 0, end: otherBlock.length }],
+          resolution: { edits: [edit] },
+        }),
+      /no location near this batch's conflicts/u,
+    );
+
+    assert.throws(
+      () =>
+        applyResolutionEdits({
+          path: "f.ts",
+          source: conflictBlock,
+          conflicts,
+          resolution: { edits: [{ ...edit, old_text: "absent\n" }] },
+        }),
+      /does not appear in the working file/u,
+    );
   });
 });

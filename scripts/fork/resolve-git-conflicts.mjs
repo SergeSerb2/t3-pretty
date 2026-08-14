@@ -364,6 +364,7 @@ Resolution and reporting contract:
 - Return exact search-and-replace edits against the conflict-marked working file. Every conflict marker must be removed by the edits.
 - You may add a narrowly adjacent edit when preserving both sides requires updating nearby code.
 - old_text must be copied byte-for-byte from the supplied context and occur exactly once.
+- When the conflict's sides share long repeated chunks, a short span copied from that shared content occurs multiple times and is rejected; anchor old_text at the whole conflict block, from its <<<<<<< line through its >>>>>>> line.
 - new_text contains its complete replacement without markdown fences.
 - fork_changes_preserved must identify each material T3 Pretty behavior protected by the resolution.
 - upstream_changes_integrated must identify each material parent behavior incorporated at the conflict boundary.
@@ -715,7 +716,7 @@ async function requestConflictResolution({ path, prompt, conflictCount, token })
   return { resolution, usedEffort, effectiveTier: apiResponse.service_tier ?? "unknown" };
 }
 
-function applyResolutionEdits({ path, source, conflicts, resolution }) {
+export function applyResolutionEdits({ path, source, conflicts, resolution }) {
   const edits = resolution.edits.map((edit) => {
     if (
       typeof edit.old_text !== "string" ||
@@ -728,9 +729,33 @@ function applyResolutionEdits({ path, source, conflicts, resolution }) {
     if (LEFTOVER_MARKER_PATTERN.test(edit.new_text)) {
       throw new Error(`${path} returned new_text that reintroduces conflict markers`);
     }
-    const start = source.indexOf(edit.old_text);
-    if (start === -1 || source.indexOf(edit.old_text, start + 1) !== -1) {
-      throw new Error(`${path} returned old_text that was missing or not unique`);
+    const firstIndex = source.indexOf(edit.old_text);
+    if (firstIndex === -1) {
+      throw new Error(`${path} returned old_text that does not appear in the working file`);
+    }
+    let start = firstIndex;
+    if (source.indexOf(edit.old_text, firstIndex + 1) !== -1) {
+      // Sides of a dense conflict often share long repeated chunks, so a
+      // copied span can match several places. Accept the occurrence next to
+      // a conflict this batch covers when exactly one qualifies.
+      const candidates = [];
+      for (let from = firstIndex; from !== -1; from = source.indexOf(edit.old_text, from + 1)) {
+        if (
+          distanceFromConflict(from, from + edit.old_text.length, conflicts) <= MAX_EDIT_DISTANCE
+        ) {
+          candidates.push(from);
+        }
+      }
+      if (candidates.length !== 1) {
+        throw new Error(
+          `${path} returned old_text matching ${
+            candidates.length === 0
+              ? "no location near this batch's conflicts"
+              : `${candidates.length} locations near this batch's conflicts`
+          }`,
+        );
+      }
+      [start] = candidates;
     }
     const end = start + edit.old_text.length;
     if (distanceFromConflict(start, end, conflicts) > MAX_EDIT_DISTANCE) {
