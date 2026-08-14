@@ -21,11 +21,7 @@ import { toUploadChatImageAttachments } from "../lib/composerImages";
 import { randomHex } from "../lib/uuid";
 import { appAtomRegistry } from "./atom-registry";
 import { useProjects, useThreadShells } from "./entities";
-import {
-  confirmThreadOutboxMessageQueued,
-  ensureThreadOutboxLoaded,
-  removeThreadOutboxMessage,
-} from "./thread-outbox";
+import { confirmThreadOutboxMessageQueued, removeThreadOutboxMessage } from "./thread-outbox";
 import {
   isQueuedThreadCreationSendable,
   modelSelectionsEqual,
@@ -133,8 +129,9 @@ export function useThreadOutboxDrain(): void {
   const retryNotBeforeRef = useRef(new Map<MessageId, number>());
   const retryTimersRef = useRef(new Map<MessageId, ReturnType<typeof setTimeout>>());
 
+  // Unmounting (app teardown, or the mount gate closing when the outbox
+  // empties) must not leave a retry timer firing into a dead worker.
   useEffect(() => {
-    ensureThreadOutboxLoaded();
     return () => {
       for (const timer of retryTimersRef.current.values()) {
         clearTimeout(timer);

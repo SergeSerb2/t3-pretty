@@ -36,6 +36,10 @@ import { supportsAgentAwarenessPush } from "./capabilities";
 import { makeRelayDeviceRegistrationRequest, resolveApsEnvironment } from "./registrationPayload";
 
 const REMOTE_ACTIVITY_REGISTRATION_RETRY_MS = 15_000;
+const REMOTE_ACTIVITY_REGISTRATION_RETRY_MAX_MS = 5 * 60_000;
+// After this many consecutive failures the retry loop suspends until the next
+// foreground/registration event re-arms it.
+const REMOTE_ACTIVITY_REGISTRATION_MAX_ATTEMPTS = 5;
 
 const AgentAwarenessOperation = Schema.Literals([
   "read-notification-permissions",
@@ -111,7 +115,53 @@ export function subscribeAgentAwarenessRegistrationStatus(listener: () => void):
     registrationStatusListeners.delete(listener);
   };
 }
+
+// Observable "a Live Activity card is armed on this device" state, so UI roots
+// can gate their broad shell/project subscriptions on there being a card to
+// sync at all. Tracked from the local start/end paths below and re-synced from
+// the native instance list on every registration refresh; a card dismissed
+// from the lock screen is only noticed at that resync, so this can briefly
+// over-report. Lazily initialized from native on first read.
+let hasArmedLiveActivityState: boolean | null = null;
+const armedLiveActivityListeners = new Set<() => void>();
+
+function readNativeHasArmedLiveActivity(): boolean {
+  try {
+    return AgentActivity.getInstances().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function setHasArmedLiveActivity(next: boolean): void {
+  if (hasArmedLiveActivityState === next) {
+    return;
+  }
+  hasArmedLiveActivityState = next;
+  for (const listener of armedLiveActivityListeners) {
+    listener();
+  }
+}
+
+export function hasArmedLiveActivity(): boolean {
+  if (hasArmedLiveActivityState === null) {
+    hasArmedLiveActivityState =
+      canRegisterRemoteLiveActivities() && readNativeHasArmedLiveActivity();
+  }
+  return hasArmedLiveActivityState;
+}
+
+export function subscribeHasArmedLiveActivity(listener: () => void): () => void {
+  armedLiveActivityListeners.add(listener);
+  return () => {
+    armedLiveActivityListeners.delete(listener);
+  };
+}
+
 let activeLiveActivityRegistrationRetry: ReturnType<typeof setTimeout> | null = null;
+// Consecutive failed token-registration attempts backing the retry timer.
+// Foreground/registration events reset it so a recovered relay retries fast.
+let liveActivityRegistrationRetryAttempt = 0;
 let relayTokenProvider: (() => Promise<string | null>) | null = null;
 let relayTokenProviderIdentity: string | null = null;
 let deviceRegistrationGeneration = 0;
@@ -208,8 +258,7 @@ export function setAgentAwarenessRelayTokenProvider(
   }
   ensurePushTokenListener();
   ensureAppStateListener();
-  runRegistrationInBackground(
-    refreshActiveLiveActivityRemoteRegistration(),
+  runActiveLiveActivityRegistrationRefresh(
     "active live activity registration after cloud sign-in failed",
   );
   if (isExistingIdentity) {
@@ -504,6 +553,7 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
     logRegistrationDebug("live activity card armed for local work", {
       threadTitle: input.threadTitle,
     });
+    setHasArmedLiveActivity(true);
     runRegistrationInBackground(
       registerLiveActivityPushToken({ activity }).pipe(Effect.asVoid),
       "live activity arming after local task start failed",
@@ -521,7 +571,16 @@ export function applyLocalLiveActivityProps(props: AgentActivityProps): void {
     return;
   }
   try {
+    const fingerprint = liveActivityContentFingerprint(props);
+    // Unchanged content on an armed card is a no-op; skip the native instance
+    // round-trip entirely. (Tracked presence can lag a lock-screen dismissal,
+    // which just means the card is not re-armed until the next registration
+    // refresh re-syncs it.)
+    if (fingerprint === lastAppliedLiveActivityFingerprint && hasArmedLiveActivity()) {
+      return;
+    }
     let instances = AgentActivity.getInstances();
+    setHasArmedLiveActivity(instances.length > 0);
     if (instances.length > 1) {
       for (const extra of instances.slice(1)) {
         extra.end("immediate").catch((error: unknown) => {
@@ -530,13 +589,13 @@ export function applyLocalLiveActivityProps(props: AgentActivityProps): void {
       }
       instances = instances.slice(0, 1);
     }
-    const fingerprint = liveActivityContentFingerprint(props);
     if (fingerprint === lastAppliedLiveActivityFingerprint && instances.length > 0) {
       return;
     }
     lastAppliedLiveActivityFingerprint = fingerprint;
     if (instances.length === 0) {
       const activity = AgentActivity.start(props);
+      setHasArmedLiveActivity(true);
       logRegistrationDebug("live activity card started from local work", {
         activeCount: props.activeCount,
       });
@@ -809,8 +868,7 @@ function ensureAppStateListener(): void {
     if (state !== "active") {
       return;
     }
-    runRegistrationInBackground(
-      refreshActiveLiveActivityRemoteRegistration(),
+    runActiveLiveActivityRegistrationRefresh(
       "active live activity reconciliation after app foreground failed",
     );
   });
@@ -826,6 +884,7 @@ function endLocalLiveActivities(context: string): void {
         logRegistrationError(context, error);
       });
     }
+    setHasArmedLiveActivity(false);
   } catch (error) {
     logRegistrationError(context, error);
   }
@@ -840,8 +899,7 @@ export function registerAgentAwarenessConnection(connection: SavedRemoteConnecti
   ensurePushTokenListener();
   ensureAppStateListener();
   enqueueDeviceRegistration({}, "device registration failed");
-  runRegistrationInBackground(
-    refreshActiveLiveActivityRemoteRegistration(),
+  runActiveLiveActivityRegistrationRefresh(
     "active live activity registration after environment connection failed",
   );
 }
@@ -910,6 +968,7 @@ export function __resetAgentAwarenessRemoteRegistrationForTest(): void {
     clearTimeout(activeLiveActivityRegistrationRetry);
     activeLiveActivityRegistrationRetry = null;
   }
+  liveActivityRegistrationRetryAttempt = 0;
   relayTokenProvider = null;
   relayTokenProviderIdentity = null;
   deviceRegistrationGeneration++;
@@ -919,6 +978,8 @@ export function __resetAgentAwarenessRemoteRegistrationForTest(): void {
   registrationStatusListeners.clear();
   registeredActivityPushTokens.clear();
   lastAppliedLiveActivityFingerprint = null;
+  hasArmedLiveActivityState = null;
+  armedLiveActivityListeners.clear();
 }
 
 export function unregisterAgentAwarenessDeviceForCurrentUser(
@@ -1039,6 +1100,18 @@ function scheduleActiveLiveActivityRegistrationRetry(): void {
   if (activeLiveActivityRegistrationRetry || !relayTokenProvider) {
     return;
   }
+  liveActivityRegistrationRetryAttempt += 1;
+  if (liveActivityRegistrationRetryAttempt > REMOTE_ACTIVITY_REGISTRATION_MAX_ATTEMPTS) {
+    logRegistrationDebug("active live activity token retry suspended after repeated failures", {
+      attempts: liveActivityRegistrationRetryAttempt - 1,
+    });
+    liveActivityRegistrationRetryAttempt = REMOTE_ACTIVITY_REGISTRATION_MAX_ATTEMPTS;
+    return;
+  }
+  const retryDelayMs = Math.min(
+    REMOTE_ACTIVITY_REGISTRATION_RETRY_MS * 2 ** (liveActivityRegistrationRetryAttempt - 1),
+    REMOTE_ACTIVITY_REGISTRATION_RETRY_MAX_MS,
+  );
 
   activeLiveActivityRegistrationRetry = setTimeout(() => {
     activeLiveActivityRegistrationRetry = null;
@@ -1046,7 +1119,15 @@ function scheduleActiveLiveActivityRegistrationRetry(): void {
       refreshActiveLiveActivityRemoteRegistration(),
       "active live activity token retry failed",
     );
-  }, REMOTE_ACTIVITY_REGISTRATION_RETRY_MS);
+  }, retryDelayMs);
+}
+
+// Foreground-style triggers (sign-in, app foreground, environment connection)
+// restart the backoff from scratch: the relay may be reachable again, and a
+// redundant refresh collapses into the re-register dedupe window.
+function runActiveLiveActivityRegistrationRefresh(context: string): void {
+  liveActivityRegistrationRetryAttempt = 0;
+  runRegistrationInBackground(refreshActiveLiveActivityRemoteRegistration(), context);
 }
 
 export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
@@ -1059,7 +1140,7 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
       return;
     }
 
-    let activities = yield* Effect.try({
+    const activityLookup = yield* Effect.try({
       try: () => AgentActivity.getInstances(),
       catch: (cause) =>
         new AgentAwarenessOperationError({
@@ -1067,13 +1148,18 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
           cause,
         }),
     }).pipe(
+      Effect.map((instances) => ({ instances, failed: false })),
       Effect.catch((error) =>
         Effect.sync(() => {
           logRegistrationError("active live activity lookup failed", error);
-          return [] as ReadonlyArray<LiveActivity<AgentActivityProps>>;
+          return {
+            instances: [] as ReadonlyArray<LiveActivity<AgentActivityProps>>,
+            failed: true,
+          };
         }),
       ),
     );
+    let activities = activityLookup.instances;
 
     // The relay tracks exactly one card per device; if concurrent arming ever
     // produced extras, end them so only one keeps receiving updates.
@@ -1148,6 +1234,13 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
       }
     }
 
+    // Publish the armed state after all start/end reconciliation so gated
+    // subscribers (LocalLiveActivitySync) mount or release their shell streams.
+    // A failed native lookup says nothing, so it leaves the state alone.
+    if (!activityLookup.failed) {
+      setHasArmedLiveActivity(activities.length > 0);
+    }
+
     const registrationResults = yield* Effect.forEach(activities, (activity) =>
       registerLiveActivityPushToken({ activity }).pipe(
         Effect.map((registered) => !registered),
@@ -1162,6 +1255,8 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
 
     if (registrationResults.some(Boolean)) {
       scheduleActiveLiveActivityRegistrationRetry();
+    } else {
+      liveActivityRegistrationRetryAttempt = 0;
     }
   });
 }

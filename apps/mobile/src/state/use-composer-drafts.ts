@@ -13,7 +13,7 @@ import * as Schema from "effect/Schema";
 import { useEffect } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
-import { DraftComposerImageAttachmentSchema } from "../lib/composer-image-schema";
+import { PersistedComposerImageAttachmentSchema } from "../lib/composer-image-schema";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { SerializedAsyncQueue } from "../lib/serialized-async-queue";
 import { appAtomRegistry } from "./atom-registry";
@@ -94,7 +94,7 @@ const ComposerDraftWorkspaceSelectionSchema = Schema.Struct({
 
 const ComposerDraftSchema = Schema.Struct({
   text: Schema.String,
-  attachments: Schema.Array(DraftComposerImageAttachmentSchema),
+  attachments: Schema.Array(PersistedComposerImageAttachmentSchema),
   importedShareIds: Schema.optional(Schema.Array(Schema.String)),
   modelSelection: Schema.optional(ModelSelectionSchema),
   runtimeMode: Schema.optional(RuntimeModeSchema),
@@ -164,7 +164,47 @@ function isEmptyDraft(draft: ComposerDraft): boolean {
 export function decodePersistedComposerDrafts(value: unknown): Record<string, ComposerDraft> {
   const parsed = decodePersistedComposerDraftsDocument(value);
   return Object.fromEntries(
-    Object.entries(parsed.drafts).filter(([, draft]) => !isEmptyDraft(draft)),
+    Object.entries(parsed.drafts)
+      .map(([draftKey, draft]): [string, ComposerDraft] => [
+        draftKey,
+        {
+          ...draft,
+          // Persisted drafts omit the payload; an empty dataUrl marks the
+          // attachment for rehydration from its preview file on load.
+          attachments: draft.attachments.map((attachment) => ({
+            ...attachment,
+            dataUrl: attachment.dataUrl ?? "",
+          })),
+        },
+      ])
+      .filter(([, draft]) => !isEmptyDraft(draft)),
+  );
+}
+
+type PersistedComposerDraft = Omit<ComposerDraft, "attachments"> & {
+  readonly attachments: ReadonlyArray<
+    Omit<DraftComposerImageAttachment, "dataUrl"> & { readonly dataUrl?: string }
+  >;
+};
+
+/**
+ * The whole drafts record is rewritten on every debounced keystroke, so the
+ * persisted document must stay small: image payloads live in app-owned
+ * preview files and only their URIs are persisted.
+ */
+export function encodePersistedComposerDrafts(
+  drafts: Record<string, ComposerDraft>,
+): Record<string, PersistedComposerDraft> {
+  return Object.fromEntries(
+    Object.entries(drafts)
+      .filter(([, draft]) => !isEmptyDraft(draft))
+      .map(([draftKey, draft]): [string, PersistedComposerDraft] => [
+        draftKey,
+        {
+          ...draft,
+          attachments: draft.attachments.map(({ dataUrl: _dataUrl, ...attachment }) => attachment),
+        },
+      ]),
   );
 }
 
@@ -185,7 +225,9 @@ async function loadPersistedComposerDrafts(): Promise<Record<string, ComposerDra
     operation = "read";
     const raw = await file.text();
     operation = "decode";
-    return decodePersistedComposerDrafts(JSON.parse(raw) as unknown);
+    const decoded = decodePersistedComposerDrafts(JSON.parse(raw) as unknown);
+    operation = "hydrate";
+    return await rehydrateDraftAttachments(decoded);
   } catch (cause) {
     console.warn(
       "[composer-drafts] ignored persisted draft failure",
@@ -200,17 +242,55 @@ async function loadPersistedComposerDrafts(): Promise<Record<string, ComposerDra
   }
 }
 
+/**
+ * Restores attachment payloads stripped by `encodePersistedComposerDrafts`.
+ * Attachments whose preview bytes are gone are dropped, and a draft left with
+ * nothing is dropped with them. Lazy-imported so the fs-backed resolver stays
+ * out of this module's graph (it loads in tests and headless contexts).
+ */
+async function rehydrateDraftAttachments(
+  drafts: Record<string, ComposerDraft>,
+): Promise<Record<string, ComposerDraft>> {
+  const needsRehydration = Object.values(drafts).some((draft) =>
+    draft.attachments.some((attachment) => attachment.dataUrl.length === 0),
+  );
+  if (!needsRehydration) {
+    return drafts;
+  }
+  const { resolveComposerAttachmentDataUrl } = await import("../lib/composerImages");
+  const rehydrated: Record<string, ComposerDraft> = {};
+  for (const [draftKey, draft] of Object.entries(drafts)) {
+    const attachments = (
+      await Promise.all(
+        draft.attachments.map(async (attachment) => {
+          if (attachment.dataUrl.length > 0) {
+            return attachment;
+          }
+          const dataUrl = await resolveComposerAttachmentDataUrl(attachment);
+          return dataUrl === null ? null : { ...attachment, dataUrl };
+        }),
+      )
+    ).filter((attachment) => attachment !== null);
+    const nextDraft =
+      attachments.length === draft.attachments.length &&
+      attachments.every((a, i) => a === draft.attachments[i])
+        ? draft
+        : { ...draft, attachments };
+    if (!isEmptyDraft(nextDraft)) {
+      rehydrated[draftKey] = nextDraft;
+    }
+  }
+  return rehydrated;
+}
+
 async function writePersistedComposerDrafts(drafts: Record<string, ComposerDraft>): Promise<void> {
   let operation: ComposerDraftPersistenceError["operation"] = "open";
   try {
     const file = await getComposerDraftsFile();
     operation = "encode";
-    const nonEmptyDrafts = Object.fromEntries(
-      Object.entries(drafts).filter(([, draft]) => !isEmptyDraft(draft)),
-    );
     const document = {
       schemaVersion: COMPOSER_DRAFTS_SCHEMA_VERSION,
-      drafts: nonEmptyDrafts,
+      drafts: encodePersistedComposerDrafts(drafts),
     } as const;
     const encoded = JSON.stringify(document);
     operation = "write";

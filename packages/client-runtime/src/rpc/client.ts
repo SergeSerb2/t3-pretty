@@ -1,9 +1,11 @@
 import { ORCHESTRATION_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import type * as Duration from "effect/Duration";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Random from "effect/Random";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -176,6 +178,24 @@ interface SubscriptionOptions<TTag extends EnvironmentSubscriptionRpcTag> {
   readonly resubscribe?: Stream.Stream<unknown, never, never>;
 }
 
+const SUBSCRIPTION_RETRY_MAX_DELAY_MS = 30_000;
+
+// Escalating delay for retried durable subscriptions: the configured delay is
+// the first rung, doubling per consecutive rejection and capped at 30s, with
+// ±20% jitter so rejected subscriptions do not retry in lockstep.
+const subscriptionRetryDelay = (
+  initial: Duration.Input,
+  consecutiveFailures: number,
+): Effect.Effect<number> =>
+  Effect.map(Random.next, (factor) => {
+    const initialMs = Duration.toMillis(Duration.fromInputUnsafe(initial));
+    const escalatedMs = Math.min(
+      initialMs * 2 ** consecutiveFailures,
+      SUBSCRIPTION_RETRY_MAX_DELAY_MS,
+    );
+    return Math.round(escalatedMs * (0.8 + factor * 0.4));
+  });
+
 export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
   tag: TTag,
   makeInput: (session: RpcSession) => Effect.Effect<EnvironmentRpcInput<TTag>>,
@@ -210,7 +230,12 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                 EnvironmentRpcStreamValue<TTag>,
                 EnvironmentRpcStreamFailure<TTag>
               >;
-              const subscribeToSession = (): Stream.Stream<
+              // `consecutiveFailures` counts rejections since the last
+              // delivered value; a subscription that emitted is healthy, so
+              // its next retry starts from the initial delay again.
+              const subscribeToSession = (
+                consecutiveFailures: number,
+              ): Stream.Stream<
                 EnvironmentRpcStreamValue<TTag>,
                 EnvironmentRpcStreamFailure<TTag>
               > =>
@@ -223,7 +248,9 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                         method: tag,
                         input,
                       });
+                      const delivered = yield* Ref.make(false);
                       return method(input).pipe(
+                        Stream.tap(() => Ref.set(delivered, true)),
                         Stream.ensuring(completeObservation),
                         Stream.catchCause((cause) => {
                           const hasOnlyExpectedFailures =
@@ -253,13 +280,20 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                             if (options.retryExpectedFailureAfter === undefined) {
                               return handled;
                             }
-                            return handled.pipe(
-                              Stream.concat(
-                                Stream.fromEffect(
-                                  Effect.sleep(options.retryExpectedFailureAfter),
-                                ).pipe(Stream.drain),
-                              ),
-                              Stream.concat(subscribeToSession()),
+                            const retryAfter = options.retryExpectedFailureAfter;
+                            return Stream.unwrap(
+                              Effect.gen(function* () {
+                                const failures = (yield* Ref.get(delivered))
+                                  ? 0
+                                  : consecutiveFailures;
+                                const delayMs = yield* subscriptionRetryDelay(retryAfter, failures);
+                                return handled.pipe(
+                                  Stream.concat(
+                                    Stream.fromEffect(Effect.sleep(delayMs)).pipe(Stream.drain),
+                                  ),
+                                  Stream.concat(subscribeToSession(failures + 1)),
+                                );
+                              }),
                             );
                           }
                           return Stream.failCause(cause);
@@ -268,7 +302,7 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                     }),
                   ),
                 );
-              return subscribeToSession();
+              return subscribeToSession(0);
             },
           }),
         ),

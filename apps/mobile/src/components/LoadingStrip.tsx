@@ -3,6 +3,7 @@ import { View } from "react-native";
 import Animated, {
   cancelAnimation,
   Easing,
+  ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -46,6 +47,7 @@ function IndeterminateLoadingStrip() {
       withTiming(1, {
         duration: 1100,
         easing: Easing.inOut(Easing.quad),
+        reduceMotion: ReduceMotion.System,
       }),
       -1,
       false,

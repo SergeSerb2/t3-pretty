@@ -10,7 +10,7 @@ import {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
-import type { OrchestrationThread } from "@t3tools/contracts";
+import type { OrchestrationThread, OrchestrationThreadActivity } from "@t3tools/contracts";
 
 import { applyThreadDetailEvent } from "./threadReducer.ts";
 
@@ -608,6 +608,82 @@ describe("applyThreadDetailEvent", () => {
         expect(result.thread.latestTurn?.completedAt).toBeNull();
       }
     });
+
+    it("keeps the messages array identity when a delivery replays unchanged", () => {
+      const message = {
+        id: MessageId.make("msg-replay"),
+        role: "user" as const,
+        text: "Hello",
+        turnId: null,
+        streaming: false,
+        createdAt: "2026-04-01T06:00:00.000Z",
+        updatedAt: "2026-04-01T06:00:00.000Z",
+      };
+      const thread: OrchestrationThread = { ...baseThread, messages: [message] };
+
+      const result = applyThreadDetailEvent(thread, {
+        ...baseEventFields,
+        sequence: 8,
+        occurredAt: "2026-04-01T06:01:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.message-sent",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: message.id,
+          role: "user",
+          text: "Hello",
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-01T06:00:00.000Z",
+          updatedAt: "2026-04-01T06:00:00.000Z",
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.messages).toBe(thread.messages);
+        expect(result.thread.messages[0]).toBe(message);
+      }
+    });
+
+    it("keeps the messages array identity for an empty streaming chunk", () => {
+      const streamingMessage = {
+        id: MessageId.make("msg-empty-chunk"),
+        role: "assistant" as const,
+        text: "Hello",
+        turnId: TurnId.make("turn-1"),
+        streaming: true,
+        createdAt: "2026-04-01T06:00:00.000Z",
+        updatedAt: "2026-04-01T06:00:00.000Z",
+      };
+      const thread: OrchestrationThread = { ...baseThread, messages: [streamingMessage] };
+
+      const result = applyThreadDetailEvent(thread, {
+        ...baseEventFields,
+        sequence: 8,
+        occurredAt: "2026-04-01T06:01:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.message-sent",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: streamingMessage.id,
+          role: "assistant",
+          text: "",
+          turnId: TurnId.make("turn-1"),
+          streaming: true,
+          createdAt: "2026-04-01T06:00:00.000Z",
+          updatedAt: "2026-04-01T06:01:00.000Z",
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.messages).toBe(thread.messages);
+        expect(result.thread.messages[0]?.text).toBe("Hello");
+      }
+    });
   });
 
   describe("thread.session-set", () => {
@@ -925,6 +1001,157 @@ describe("applyThreadDetailEvent", () => {
         const ids = result.thread.activities.map((activity) => activity.id);
         expect(ids).toEqual(["activity-cw-resolvable", "activity-cw-broken"]);
       }
+    });
+
+    const activityAppendedEvent = (
+      id: string,
+      sequence: number,
+      createdAt: string,
+      summary?: string,
+    ) =>
+      ({
+        ...baseEventFields,
+        sequence,
+        occurredAt: createdAt,
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.activity-appended",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          activity: {
+            id: EventId.make(id),
+            tone: "tool",
+            kind: "command",
+            summary: summary ?? `Ran ${id}`,
+            payload: {},
+            turnId: TurnId.make("turn-1"),
+            sequence,
+            createdAt,
+          },
+        },
+      }) as const;
+
+    it("appends in-order activities at the tail and preserves row identity", () => {
+      const first = applyThreadDetailEvent(
+        baseThread,
+        activityAppendedEvent("activity-1", 1, "2026-04-01T11:00:00.000Z"),
+      );
+      expect(first.kind).toBe("updated");
+      if (first.kind !== "updated") return;
+
+      const second = applyThreadDetailEvent(
+        first.thread,
+        activityAppendedEvent("activity-2", 2, "2026-04-01T11:01:00.000Z"),
+      );
+      expect(second.kind).toBe("updated");
+      if (second.kind !== "updated") return;
+
+      expect(second.thread.activities.map((activity) => activity.id)).toEqual([
+        "activity-1",
+        "activity-2",
+      ]);
+      expect(second.thread.activities[0]).toBe(first.thread.activities[0]);
+    });
+
+    it("still sorts a genuine out-of-order insert after in-order appends", () => {
+      const first = applyThreadDetailEvent(
+        baseThread,
+        activityAppendedEvent("activity-1", 1, "2026-04-01T11:00:00.000Z"),
+      );
+      if (first.kind !== "updated") throw new Error("expected updated");
+      const second = applyThreadDetailEvent(
+        first.thread,
+        activityAppendedEvent("activity-3", 3, "2026-04-01T11:02:00.000Z"),
+      );
+      if (second.kind !== "updated") throw new Error("expected updated");
+
+      const third = applyThreadDetailEvent(
+        second.thread,
+        activityAppendedEvent("activity-2", 2, "2026-04-01T11:01:00.000Z"),
+      );
+      expect(third.kind).toBe("updated");
+      if (third.kind !== "updated") return;
+      expect(third.thread.activities.map((activity) => activity.id)).toEqual([
+        "activity-1",
+        "activity-2",
+        "activity-3",
+      ]);
+    });
+
+    it("re-sorts hydrated activity arrays that never went through the reducer", () => {
+      // Window-merge hydration concatenates pages without sorting; the append
+      // fast path must not trust such an array's tail.
+      const hydrated: OrchestrationThreadActivity[] = [
+        {
+          id: EventId.make("activity-2"),
+          tone: "tool",
+          kind: "command",
+          summary: "two",
+          payload: {},
+          turnId: TurnId.make("turn-1"),
+          sequence: 2,
+          createdAt: "2026-04-01T11:01:00.000Z",
+        },
+        {
+          id: EventId.make("activity-1"),
+          tone: "tool",
+          kind: "command",
+          summary: "one",
+          payload: {},
+          turnId: TurnId.make("turn-1"),
+          sequence: 1,
+          createdAt: "2026-04-01T11:00:00.000Z",
+        },
+      ];
+
+      const result = applyThreadDetailEvent(
+        { ...baseThread, activities: hydrated },
+        activityAppendedEvent("activity-3", 3, "2026-04-01T11:02:00.000Z"),
+      );
+      expect(result.kind).toBe("updated");
+      if (result.kind !== "updated") return;
+      expect(result.thread.activities.map((activity) => activity.id)).toEqual([
+        "activity-1",
+        "activity-2",
+        "activity-3",
+      ]);
+    });
+
+    it("replaces a same-id activity and re-sorts when its order keys move", () => {
+      const first = applyThreadDetailEvent(
+        baseThread,
+        activityAppendedEvent("activity-1", 1, "2026-04-01T11:00:00.000Z"),
+      );
+      if (first.kind !== "updated") throw new Error("expected updated");
+      const second = applyThreadDetailEvent(
+        first.thread,
+        activityAppendedEvent("activity-2", 2, "2026-04-01T11:01:00.000Z"),
+      );
+      if (second.kind !== "updated") throw new Error("expected updated");
+
+      const replaced = applyThreadDetailEvent(
+        second.thread,
+        activityAppendedEvent("activity-2", 0, "2026-04-01T10:59:00.000Z", "replacement"),
+      );
+      expect(replaced.kind).toBe("updated");
+      if (replaced.kind !== "updated") return;
+      expect(replaced.thread.activities.map((activity) => activity.id)).toEqual([
+        "activity-2",
+        "activity-1",
+      ]);
+      expect(replaced.thread.activities[0]?.summary).toBe("replacement");
+
+      const samePosition = applyThreadDetailEvent(
+        second.thread,
+        activityAppendedEvent("activity-2", 2, "2026-04-01T11:01:00.000Z", "edited"),
+      );
+      expect(samePosition.kind).toBe("updated");
+      if (samePosition.kind !== "updated") return;
+      expect(samePosition.thread.activities.map((activity) => activity.id)).toEqual([
+        "activity-1",
+        "activity-2",
+      ]);
+      expect(samePosition.thread.activities[1]?.summary).toBe("edited");
     });
   });
 

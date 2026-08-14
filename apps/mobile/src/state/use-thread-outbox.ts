@@ -5,7 +5,16 @@ import { Atom } from "effect/unstable/reactivity";
 
 import { appAtomRegistry } from "./atom-registry";
 import { environmentShell } from "./shell";
-import { threadOutboxManager } from "./thread-outbox";
+import { hasQueuedThreadOutboxMessages, threadOutboxManager } from "./thread-outbox";
+
+/**
+ * Cheap queue-empty flag for the drain worker's mount gate. Keeping this the
+ * only always-on subscription means no environment shell stream is held open
+ * while the outbox is empty.
+ */
+const threadOutboxHasQueuedMessagesAtom = Atom.make((get) =>
+  hasQueuedThreadOutboxMessages(get(threadOutboxManager.queuedMessagesByThreadKeyAtom)),
+).pipe(Atom.withLabel("mobile:thread-outbox:has-queued-messages"));
 
 const threadOutboxShellStatusesAtom = Atom.make(
   (get): ReadonlyMap<EnvironmentId, EnvironmentShellStatus> => {
@@ -47,6 +56,10 @@ export function releaseEditingQueuedMessage(messageId: MessageId): void {
   const next = { ...current };
   delete next[messageId];
   appAtomRegistry.set(editingQueuedMessageIdsAtom, next);
+}
+
+export function useThreadOutboxHasQueuedMessages(): boolean {
+  return useAtomValue(threadOutboxHasQueuedMessagesAtom);
 }
 
 export function useThreadOutboxMessages() {

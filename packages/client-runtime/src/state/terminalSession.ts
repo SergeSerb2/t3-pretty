@@ -19,6 +19,8 @@ export interface TerminalSessionState {
 
 export interface TerminalBufferState {
   readonly buffer: string;
+  /** UTF-8 byte length of `buffer`, tracked alongside it so output appends stay O(chunk). */
+  readonly bufferByteLength: number;
   readonly status: TerminalSessionSnapshot["status"] | "closed";
   readonly error: string | null;
   readonly updatedAt: string | null;
@@ -46,6 +48,7 @@ export function selectRunningSubprocessTerminalIds(
 
 export const EMPTY_TERMINAL_BUFFER_STATE = Object.freeze<TerminalBufferState>({
   buffer: "",
+  bufferByteLength: 0,
   status: "closed",
   error: null,
   updatedAt: null,
@@ -66,14 +69,20 @@ export const DEFAULT_MAX_TERMINAL_BUFFER_BYTES = 512 * 1024;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-function trimBufferToBytes(buffer: string, maxBufferBytes: number): string {
+interface TrimmedBuffer {
+  readonly buffer: string;
+  /** Exact UTF-8 byte length of `buffer`; the trim boundary is always code-point aligned. */
+  readonly byteLength: number;
+}
+
+function trimBufferToBytes(buffer: string, maxBufferBytes: number): TrimmedBuffer {
   if (maxBufferBytes <= 0) {
-    return "";
+    return { buffer: "", byteLength: 0 };
   }
 
   const encoded = textEncoder.encode(buffer);
   if (encoded.byteLength <= maxBufferBytes) {
-    return buffer;
+    return { buffer, byteLength: encoded.byteLength };
   }
 
   let start = encoded.byteLength - maxBufferBytes;
@@ -85,15 +94,18 @@ function trimBufferToBytes(buffer: string, maxBufferBytes: number): string {
     start += 1;
   }
 
-  return textDecoder.decode(encoded.subarray(start));
+  const trimmed = encoded.subarray(start);
+  return { buffer: textDecoder.decode(trimmed), byteLength: trimmed.length };
 }
 
 export function terminalBufferStateFromSnapshot(
   snapshot: TerminalSessionSnapshot,
   maxBufferBytes: number,
 ): TerminalBufferState {
+  const trimmed = trimBufferToBytes(snapshot.history, maxBufferBytes);
   return {
-    buffer: trimBufferToBytes(snapshot.history, maxBufferBytes),
+    buffer: trimmed.buffer,
+    bufferByteLength: trimmed.byteLength,
     status: snapshot.status,
     error: null,
     updatedAt: snapshot.updatedAt,
@@ -131,18 +143,33 @@ export function applyTerminalAttachStreamEvent(
     case "snapshot":
     case "restarted":
       return terminalBufferStateFromSnapshot(event.snapshot, maxBufferBytes);
-    case "output":
+    case "output": {
+      // UTF-8 encodes per code point, so the chunk's encoded length plus the
+      // tracked buffer length bounds the combined size (a surrogate pair split
+      // across the boundary can only overestimate, never skip a needed trim).
+      // Steady-state appends skip the whole-buffer encode entirely.
+      const chunkByteLength = textEncoder.encode(event.data).byteLength;
+      const next =
+        current.bufferByteLength + chunkByteLength <= maxBufferBytes
+          ? {
+              buffer: `${current.buffer}${event.data}`,
+              byteLength: current.bufferByteLength + chunkByteLength,
+            }
+          : trimBufferToBytes(`${current.buffer}${event.data}`, maxBufferBytes);
       return {
         ...current,
-        buffer: trimBufferToBytes(`${current.buffer}${event.data}`, maxBufferBytes),
+        buffer: next.buffer,
+        bufferByteLength: next.byteLength,
         status: current.status === "closed" ? "running" : current.status,
         error: null,
         version: current.version + 1,
       };
+    }
     case "cleared":
       return {
         ...current,
         buffer: "",
+        bufferByteLength: 0,
         error: null,
         version: current.version + 1,
       };

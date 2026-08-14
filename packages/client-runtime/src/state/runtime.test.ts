@@ -1,17 +1,23 @@
 import { describe, expect, it } from "@effect/vitest";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, type EnvironmentId as EnvironmentIdType } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Latch from "effect/Latch";
 import * as Layer from "effect/Layer";
+import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
+import { PrimaryConnectionTarget, type SupervisorConnectionState } from "../connection/model.ts";
+import { EnvironmentRegistry } from "../connection/registry.ts";
+import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import {
   environmentRpcKey,
   createAtomCommandScheduler,
+  createEnvironmentQueryAtomFamily,
   createRuntimeCommand,
   scheduleAtomCommandEffect,
   executeAtomCommand,
@@ -497,4 +503,122 @@ describe("runtime command runner", () => {
     expect(executed).toEqual([1, 3]);
     registry.dispose();
   });
+});
+
+describe("createEnvironmentQueryAtomFamily", () => {
+  const TARGET = new PrimaryConnectionTarget({
+    environmentId: EnvironmentId.make("environment-1"),
+    label: "Test environment",
+    httpBaseUrl: "https://environment.example.test",
+    wsBaseUrl: "wss://environment.example.test",
+  });
+
+  const connectedState = (generation: number): SupervisorConnectionState => ({
+    desired: true,
+    network: "online",
+    phase: "connected",
+    stage: null,
+    attempt: 1,
+    generation,
+    lastFailure: null,
+    retryAt: null,
+  });
+
+  const makeQueryHarness = Effect.fn("TestRuntime.makeQueryHarness")(function* (
+    staleTimeMs: number,
+  ) {
+    const executions = yield* Ref.make(0);
+    const state = yield* SubscriptionRef.make<SupervisorConnectionState>(connectedState(1));
+    const supervisor = {
+      target: TARGET,
+      state,
+    } as unknown as EnvironmentSupervisor["Service"];
+    const registryStub = {
+      run: <A, E, R>(_environmentId: EnvironmentIdType, effect: Effect.Effect<A, E, R>) => effect,
+      followStream: <A, E, R>(_environmentId: EnvironmentIdType, stream: Stream.Stream<A, E, R>) =>
+        Stream.provideService(stream, EnvironmentSupervisor, supervisor),
+    } as unknown as EnvironmentRegistry["Service"];
+    const runtime = Atom.runtime(Layer.succeed(EnvironmentRegistry, registryStub));
+    const queryAtom = createEnvironmentQueryAtomFamily(runtime, {
+      label: "test.query",
+      staleTimeMs,
+      execute: (_input: string) => Ref.updateAndGet(executions, (count) => count + 1),
+    });
+    return {
+      executions,
+      state,
+      atom: queryAtom({ environmentId: TARGET.environmentId, input: "key" }),
+    };
+  });
+
+  it.effect("does not refetch a fresh query when the connection generation bumps", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeQueryHarness(60_000);
+      const registry = AtomRegistry.make();
+      const unmount = registry.mount(harness.atom);
+
+      const first = yield* AtomRegistry.getResult(registry, harness.atom, {
+        suspendOnWaiting: true,
+      });
+      expect(first).toBeGreaterThanOrEqual(1);
+      // Let any mount-time re-evaluations settle before taking the baseline.
+      for (let iteration = 0; iteration < 100; iteration += 1) {
+        yield* Effect.yieldNow;
+      }
+      const baseline = yield* Ref.get(harness.executions);
+
+      yield* SubscriptionRef.set(harness.state, connectedState(2));
+      for (let iteration = 0; iteration < 100; iteration += 1) {
+        yield* Effect.yieldNow;
+      }
+
+      expect(yield* Ref.get(harness.executions)).toBe(baseline);
+      const current = registry.get(harness.atom);
+      expect(AsyncResult.isSuccess(current)).toBe(true);
+      if (AsyncResult.isSuccess(current)) {
+        expect(current.value).toBe(baseline);
+        expect(current.waiting).toBe(false);
+      }
+
+      unmount();
+      registry.dispose();
+    }),
+  );
+
+  it.effect("refetches a stale query when the connection generation bumps", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeQueryHarness(0);
+      const registry = AtomRegistry.make();
+      const unmount = registry.mount(harness.atom);
+
+      const first = yield* AtomRegistry.getResult(registry, harness.atom, {
+        suspendOnWaiting: true,
+      });
+      expect(first).toBeGreaterThanOrEqual(1);
+      // Mounting can evaluate the read more than once (the runtime context
+      // resolves on its own tick), so drain those evaluations before taking
+      // the baseline.
+      for (let iteration = 0; iteration < 100; iteration += 1) {
+        yield* Effect.yieldNow;
+      }
+      const baseline = yield* Ref.get(harness.executions);
+      expect(baseline).toBeGreaterThanOrEqual(1);
+
+      yield* SubscriptionRef.set(harness.state, connectedState(2));
+      for (let iteration = 0; iteration < 100; iteration += 1) {
+        if ((yield* Ref.get(harness.executions)) > baseline) {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+
+      expect(yield* Ref.get(harness.executions)).toBe(baseline + 1);
+      expect(
+        yield* AtomRegistry.getResult(registry, harness.atom, { suspendOnWaiting: true }),
+      ).toBe(baseline + 1);
+
+      unmount();
+      registry.dispose();
+    }),
+  );
 });

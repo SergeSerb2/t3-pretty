@@ -49,6 +49,16 @@ function statusWithoutLiveData(data: Option.Option<OrchestrationThread>): Enviro
 export const INITIAL_THREAD_USER_TURN_LIMIT = 10;
 export const OLDER_THREAD_PAGE_USER_TURN_LIMIT = 20;
 
+/**
+ * Streamed provider deltas arrive one WS event at a time; publishing each one
+ * re-renders every thread subscriber per event. Arrivals are buffered and
+ * folded through the reducer once per window — the same coalescing the server
+ * applies to shell events (apps/server/src/ws.ts). The timer arms on the
+ * first buffered item, so quiet periods cost nothing, and the window stays
+ * under the UI's 64ms streaming-text cadence.
+ */
+const THREAD_STREAM_COALESCE_WINDOW = "50 millis" as const;
+
 function pageStateFromSnapshot(
   page: OrchestrationThreadDetailPage | undefined,
 ): Option.Option<EnvironmentThreadPageState> {
@@ -313,62 +323,100 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     );
   });
 
-  // Body of applyItem, running under applyLock.
-  const applyItemLocked = Effect.fn("EnvironmentThreadState.applyItemLocked")(function* (
-    item: OrchestrationThreadStreamItem,
+  // Per-chunk fold state for streamed events. `working` mirrors the thread
+  // data events apply to (null when there is none, or after a deletion);
+  // `fresh` tracks whether `working` still matches the published state —
+  // control items invalidate it so the next event run re-reads.
+  interface EventFold {
+    working: OrchestrationThread | null;
+    fresh: boolean;
+    dirty: boolean;
+  }
+
+  // Body of applyChunk, running under applyLock. Consecutive events fold into
+  // the working copy and publish once per run; control items (snapshot,
+  // synchronized) flush the run and apply immediately, preserving the
+  // per-item ordering the stream delivered.
+  const applyChunkLocked = Effect.fn("EnvironmentThreadState.applyChunkLocked")(function* (
+    items: ReadonlyArray<OrchestrationThreadStreamItem>,
   ) {
-    if (item.kind === "synchronized") {
-      yield* Ref.set(awaitingCompletion, false);
-      yield* SubscriptionRef.update(state, (current) =>
-        Option.isSome(current.data) && current.status !== "deleted"
-          ? { ...current, status: "live" as const, error: Option.none() }
-          : current,
-      );
-      return;
-    }
+    const fold: EventFold = { working: null, fresh: false, dirty: false };
+    const flushEventRun = Effect.fn("EnvironmentThreadState.flushEventRun")(function* () {
+      if (fold.dirty && fold.working !== null) {
+        yield* setThread(fold.working, "keep");
+      }
+      fold.dirty = false;
+      // The run may have advanced the live state past a parked page's
+      // watermark; merge it as soon as that happens.
+      yield* tryMergePendingOlderPage();
+    });
 
-    if (item.kind === "snapshot") {
-      // A fresh snapshot replaces all loaded history, including older
-      // pages: a turn reverted while disconnected would otherwise survive
-      // in the preserved history with no event left to remove it. The
-      // epoch bump discards any older-page fetch racing this snapshot.
-      yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
-      yield* SubscriptionRef.set(lastSequence, item.snapshot.snapshotSequence);
-      yield* setThread(item.snapshot.thread, pageStateFromSnapshot(item.snapshot.page));
-      return;
-    }
+    for (const item of items) {
+      if (item.kind === "synchronized") {
+        yield* flushEventRun();
+        fold.fresh = false;
+        yield* Ref.set(awaitingCompletion, false);
+        yield* SubscriptionRef.update(state, (current) =>
+          Option.isSome(current.data) && current.status !== "deleted"
+            ? { ...current, status: "live" as const, error: Option.none() }
+            : current,
+        );
+        continue;
+      }
 
-    const sequence = yield* SubscriptionRef.get(lastSequence);
-    if (item.event.sequence <= sequence) {
-      return;
-    }
-    yield* SubscriptionRef.set(lastSequence, item.event.sequence);
+      if (item.kind === "snapshot") {
+        yield* flushEventRun();
+        fold.fresh = false;
+        // A fresh snapshot replaces all loaded history, including older
+        // pages: a turn reverted while disconnected would otherwise survive
+        // in the preserved history with no event left to remove it. The
+        // epoch bump discards any older-page fetch racing this snapshot.
+        yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
+        yield* SubscriptionRef.set(lastSequence, item.snapshot.snapshotSequence);
+        yield* setThread(item.snapshot.thread, pageStateFromSnapshot(item.snapshot.page));
+        continue;
+      }
 
-    const current = yield* SubscriptionRef.get(state);
-    if (Option.isNone(current.data)) {
-      if (item.event.type === "thread.deleted") {
+      if (!fold.fresh) {
+        const current = yield* SubscriptionRef.get(state);
+        fold.working = Option.getOrNull(current.data);
+        fold.fresh = true;
+        fold.dirty = false;
+      }
+
+      const sequence = yield* SubscriptionRef.get(lastSequence);
+      if (item.event.sequence <= sequence) {
+        continue;
+      }
+      yield* SubscriptionRef.set(lastSequence, item.event.sequence);
+
+      if (fold.working === null) {
+        if (item.event.type === "thread.deleted") {
+          yield* setDeleted();
+        }
+        continue;
+      }
+      if (item.event.type === "thread.reverted") {
+        // A revert rewrites loaded history (whole turns disappear), so an
+        // older-page fetch in flight may straddle the removed range; the epoch
+        // bump discards it. The stored page cursor stays valid: cursors are an
+        // (anchor, turnId) keyset derived from event content, which survives
+        // the revert projector's row rewrite, so no refresh is needed — the
+        // revert reducer's turn filtering fully handles loaded history.
+        yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
+      }
+      const result = applyThreadDetailEvent(fold.working, item.event);
+      if (result.kind === "updated") {
+        fold.working = result.thread;
+        fold.dirty = true;
+      } else if (result.kind === "deleted") {
+        fold.working = null;
+        fold.dirty = false;
         yield* setDeleted();
       }
-      return;
     }
-    if (item.event.type === "thread.reverted") {
-      // A revert rewrites loaded history (whole turns disappear), so an
-      // older-page fetch in flight may straddle the removed range; the epoch
-      // bump discards it. The stored page cursor stays valid: cursors are an
-      // (anchor, turnId) keyset derived from event content, which survives
-      // the revert projector's row rewrite, so no refresh is needed — the
-      // revert reducer's turn filtering fully handles loaded history.
-      yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
-    }
-    const result = applyThreadDetailEvent(current.data.value, item.event);
-    if (result.kind === "updated") {
-      yield* setThread(result.thread, "keep");
-    } else if (result.kind === "deleted") {
-      yield* setDeleted();
-    }
-    // The event may have advanced the live state past a parked page's
-    // watermark; merge it as soon as that happens.
-    yield* tryMergePendingOlderPage();
+
+    yield* flushEventRun();
   });
 
   // Merges a parked older page once the live state has caught up to the
@@ -399,11 +447,27 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     },
   );
 
-  const applyItem = Effect.fn("EnvironmentThreadState.applyItem")(function* (
-    item: OrchestrationThreadStreamItem,
+  const applyChunk = Effect.fn("EnvironmentThreadState.applyChunk")(function* (
+    items: ReadonlyArray<OrchestrationThreadStreamItem>,
   ) {
-    yield* applyLock.withPermits(1)(applyItemLocked(item));
+    yield* applyLock.withPermits(1)(applyChunkLocked(items));
   });
+
+  // Arrivals land on streamItems; a single flusher fiber folds everything
+  // that arrived within each window into one publication. Quiet periods cost
+  // nothing (the fiber parks on Queue.take), and a scope close drops the
+  // buffer, which the cursor resume replays on the next subscription.
+  const streamItems = yield* Queue.unbounded<OrchestrationThreadStreamItem>();
+  yield* Effect.forkScoped(
+    Effect.gen(function* () {
+      for (;;) {
+        const first = yield* Queue.take(streamItems);
+        yield* Effect.sleep(THREAD_STREAM_COALESCE_WINDOW);
+        const rest = yield* Queue.takeBetween(streamItems, 0, Number.POSITIVE_INFINITY);
+        yield* applyChunk([first, ...rest]);
+      }
+    }),
+  );
 
   // Merges an older disjoint page below the currently loaded window. All four
   // windowed collections prepend; identity dedupe guards the (server-bug or
@@ -611,7 +675,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             supportsPagination ? { turnLimit: INITIAL_THREAD_USER_TURN_LIMIT } : undefined,
           );
           if (Option.isSome(httpSnapshot)) {
-            yield* applyItem({ kind: "snapshot", snapshot: httpSnapshot.value });
+            yield* applyChunk([{ kind: "snapshot", snapshot: httpSnapshot.value }]);
             current = yield* SubscriptionRef.get(state);
           }
         }
@@ -641,7 +705,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         retryExpectedFailureAfter: "250 millis",
         resubscribe: foregroundResubscriptions,
       },
-    ).pipe(Stream.runForEach(applyItem)),
+    ).pipe(Stream.runForEach((item) => Queue.offer(streamItems, item))),
   );
 
   // Expose loadOlderTurns to UI actions through the request registry.

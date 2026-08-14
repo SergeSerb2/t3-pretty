@@ -10,6 +10,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -52,6 +53,13 @@ function session(client: WsRpcProtocolClient): RpcSession.RpcSession {
     closed: Effect.never,
   };
 }
+
+// A fixed 0.5 roll keeps the ±20% subscription retry jitter neutral, so tests
+// can advance the test clock by the exact escalated delays.
+const NEUTRAL_RANDOM = {
+  nextIntUnsafe: () => 0,
+  nextDoubleUnsafe: () => 0.5,
+};
 
 const makeHarness = Effect.fn("TestEnvironmentRpc.makeHarness")(function* () {
   const state = yield* SubscriptionRef.make<SupervisorConnectionState>(AVAILABLE_CONNECTION_STATE);
@@ -329,6 +337,7 @@ describe("environment RPC", () => {
       ).pipe(
         Stream.runDrain,
         Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.provideService(Random.Random, NEUTRAL_RANDOM),
         Effect.forkChild,
       );
       for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -353,6 +362,81 @@ describe("environment RPC", () => {
       expect(yield* Ref.get(subscriptionCount)).toBe(2);
       expect(yield* Ref.get(expectedFailureCount)).toBe(1);
     }),
+  );
+
+  it.effect(
+    "escalates handled subscription retries with doubling delays capped at 30 seconds",
+    () =>
+      Effect.gen(function* () {
+        const domainError = new Error("thread not found yet");
+        const subscriptionCount = yield* Ref.make(0);
+        const client = {
+          [WS_METHODS.subscribeTerminalEvents]: () =>
+            Stream.unwrap(
+              Ref.updateAndGet(subscriptionCount, (count) => count + 1).pipe(
+                Effect.map((count) =>
+                  count >= 7
+                    ? Stream.make("delivered").pipe(Stream.concat(Stream.fail(domainError)))
+                    : Stream.fail(domainError),
+                ),
+              ),
+            ),
+        } as unknown as WsRpcProtocolClient;
+        const { activeSession, supervisor } = yield* makeHarness();
+
+        yield* SubscriptionRef.set(activeSession, Option.some(session(client)));
+        const subscriptionFiber = yield* subscribe(
+          WS_METHODS.subscribeTerminalEvents,
+          {},
+          {
+            onExpectedFailure: () => Effect.void,
+            retryExpectedFailureAfter: "1 second",
+          },
+        ).pipe(
+          Stream.runDrain,
+          Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+          Effect.provideService(Random.Random, NEUTRAL_RANDOM),
+          Effect.forkChild,
+        );
+        // Advances the test clock in steps shorter than every retry rung until
+        // the subscription has been attempted `count` times.
+        const awaitSubscriptionCount = Effect.fn("TestEnvironmentRpc.awaitSubscriptionCount")(
+          function* (count: number) {
+            for (let attempt = 0; attempt < 1000; attempt += 1) {
+              if ((yield* Ref.get(subscriptionCount)) >= count) {
+                return;
+              }
+              yield* TestClock.adjust("100 millis");
+            }
+            return yield* Effect.die(new Error(`Expected ${count} subscription attempts.`));
+          },
+        );
+
+        yield* awaitSubscriptionCount(1);
+        // Rung 1 is 1s: advancing less than that must not retry.
+        yield* TestClock.adjust("800 millis");
+        expect(yield* Ref.get(subscriptionCount)).toBe(1);
+        yield* awaitSubscriptionCount(2);
+        // Rung 2 is 2s.
+        yield* TestClock.adjust("1800 millis");
+        expect(yield* Ref.get(subscriptionCount)).toBe(2);
+        // Rungs 3-5 are 4s, 8s, and 16s.
+        yield* awaitSubscriptionCount(3);
+        yield* awaitSubscriptionCount(4);
+        yield* awaitSubscriptionCount(5);
+        yield* awaitSubscriptionCount(6);
+        // Rung 6 would double to 32s and is capped at 30s.
+        yield* TestClock.adjust("29800 millis");
+        expect(yield* Ref.get(subscriptionCount)).toBe(6);
+        yield* awaitSubscriptionCount(7);
+        // Attempt 7 delivered a value before failing, so the escalation resets
+        // and the next retry waits the initial 1s again.
+        yield* TestClock.adjust("800 millis");
+        expect(yield* Ref.get(subscriptionCount)).toBe(7);
+        yield* awaitSubscriptionCount(8);
+
+        yield* Fiber.interrupt(subscriptionFiber);
+      }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("does not classify subscription defects as expected failures", () =>

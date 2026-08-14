@@ -81,6 +81,7 @@ import {
   resolveThreadProviderGroups,
 } from "../../lib/modelOptions";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
+import { useReduceTransparency } from "../scenery/useReduceTransparency";
 import type { RemoteClientConnectionState } from "../../lib/connection";
 import {
   insertRankedSearchResult,
@@ -216,8 +217,10 @@ export function ComposerSurface(props: {
     elevation: 10,
   };
   const layout = props.animateLayout === false ? undefined : COMPOSER_LAYOUT_TRANSITION;
+  // Reduce Transparency swaps the live-sampling glass for a solid plate.
+  const reduceTransparency = useReduceTransparency();
 
-  if (isLiquidGlassSupported) {
+  if (isLiquidGlassSupported && !reduceTransparency) {
     return (
       <Animated.View layout={layout} style={shadowStyle}>
         <LiquidGlassView
@@ -238,7 +241,13 @@ export function ComposerSurface(props: {
         style={[
           props.style,
           {
-            backgroundColor: props.isDarkMode ? "rgba(44,44,46,0.96)" : "rgba(255,255,255,0.96)",
+            backgroundColor: reduceTransparency
+              ? props.isDarkMode
+                ? "#2c2c2e"
+                : "#ffffff"
+              : props.isDarkMode
+                ? "rgba(44,44,46,0.96)"
+                : "rgba(255,255,255,0.96)",
             borderWidth: 1,
             borderColor: props.isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
           },

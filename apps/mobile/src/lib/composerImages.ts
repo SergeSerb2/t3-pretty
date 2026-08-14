@@ -25,6 +25,94 @@ export function toUploadChatImageAttachments(
 }
 
 const OWNED_PASTED_IMAGE_DIRECTORY = "t3-composer-paste";
+const COMPOSER_PREVIEW_DIRECTORY = "t3-composer-previews";
+
+/**
+ * Preview thumbnails live as app-owned files so the draft/preview atoms hold
+ * short file URIs instead of multi-MB data URLs. Returns null when the write
+ * fails; callers fall back to the data URL so previews keep working.
+ */
+async function writeComposerPreviewFile(input: {
+  readonly base64: string;
+  readonly extension: string;
+}): Promise<string | null> {
+  try {
+    const { Directory, File, Paths } = await import("expo-file-system");
+    const directory = new Directory(Paths.document, COMPOSER_PREVIEW_DIRECTORY);
+    directory.create({ idempotent: true, intermediates: true });
+    const file = new File(directory, `${uuidv4()}.${input.extension}`);
+    file.write(input.base64, { encoding: "base64" });
+    return file.uri;
+  } catch (error) {
+    console.warn("Failed to write composer image preview", error);
+    return null;
+  }
+}
+
+export function isOwnedComposerPreviewUri(uri: string): boolean {
+  try {
+    const url = new URL(uri);
+    if (url.protocol !== "file:") {
+      return false;
+    }
+    const segments = url.pathname.split("/").filter(Boolean);
+    return segments.at(-2) === COMPOSER_PREVIEW_DIRECTORY;
+  } catch {
+    return false;
+  }
+}
+
+/** Best-effort cleanup for evicted preview entries; only deletes files we created. */
+export async function deleteComposerPreviewFiles(uris: ReadonlyArray<string>): Promise<void> {
+  const ownedUris = uris.filter(isOwnedComposerPreviewUri);
+  if (ownedUris.length === 0) {
+    return;
+  }
+  try {
+    const { File } = await import("expo-file-system");
+    for (const uri of ownedUris) {
+      try {
+        const file = new File(uri);
+        if (file.exists) {
+          file.delete();
+        }
+      } catch (error) {
+        console.warn("Failed to remove composer image preview", uri, error);
+      }
+    }
+  } catch {
+    // expo-file-system is unavailable outside the native runtime (e.g. tests).
+  }
+}
+
+/**
+ * Rebuilds an attachment's wire payload after a persisted draft is loaded.
+ * Drafts persist without `dataUrl`; the bytes come back from the app-owned
+ * preview file (a `data:` preview URI already is the payload). Returns null
+ * when the bytes are gone, so the caller drops the broken attachment.
+ */
+export async function resolveComposerAttachmentDataUrl(
+  attachment: DraftComposerImageAttachment,
+): Promise<string | null> {
+  if (attachment.dataUrl.length > 0) {
+    return attachment.dataUrl;
+  }
+  if (attachment.previewUri.startsWith("data:")) {
+    return attachment.previewUri;
+  }
+  try {
+    const { File } = await import("expo-file-system");
+    const file = new File(attachment.previewUri);
+    if (!file.exists) {
+      return null;
+    }
+    const base64 = await file.base64();
+    return `data:${attachment.mimeType};base64,${base64}`;
+  } catch (error) {
+    console.warn("Failed to resolve composer attachment bytes", attachment.previewUri, error);
+    return null;
+  }
+}
 
 async function loadImagePicker() {
   try {
@@ -117,6 +205,13 @@ export async function pickComposerImages(input: {
         continue;
       }
 
+      // Picker asset URIs are not guaranteed to outlive the app session, and
+      // drafts persist without their dataUrl — keep an app-owned preview copy.
+      const previewFileUri = await writeComposerPreviewFile({
+        base64,
+        extension: mimeType.split("/")[1] ?? "png",
+      });
+
       nextImages.push({
         id: uuidv4(),
         type: "image",
@@ -124,7 +219,7 @@ export async function pickComposerImages(input: {
         mimeType,
         sizeBytes,
         dataUrl: `data:${mimeType};base64,${base64}`,
-        previewUri: asset.uri,
+        previewUri: previewFileUri ?? asset.uri,
       });
     } catch {
       error = `Failed to read '${asset.fileName ?? "image"}'.`;
@@ -182,6 +277,8 @@ export async function pasteComposerClipboard(input: { readonly existingCount: nu
       };
     }
 
+    const previewFileUri = await writeComposerPreviewFile({ base64, extension: "png" });
+
     return {
       images: [
         {
@@ -191,7 +288,7 @@ export async function pasteComposerClipboard(input: { readonly existingCount: nu
           mimeType: "image/png",
           sizeBytes,
           dataUrl: image.data,
-          previewUri: image.data,
+          previewUri: previewFileUri ?? image.data,
         },
       ],
       text: null,
@@ -270,6 +367,12 @@ export async function convertPastedImagesToAttachments(input: {
         continue;
       }
       const mimeType = mimeTypeFromUri(uri);
+      // Keep an app-owned copy for the preview: owned temp files are deleted
+      // below, and drafts persist without their dataUrl.
+      const previewFileUri = await writeComposerPreviewFile({
+        base64,
+        extension: mimeType.split("/")[1] ?? "png",
+      });
       results.push({
         id: uuidv4(),
         type: "image",
@@ -277,7 +380,8 @@ export async function convertPastedImagesToAttachments(input: {
         mimeType,
         sizeBytes,
         dataUrl: `data:${mimeType};base64,${base64}`,
-        previewUri: ownedTemporaryFile ? `data:${mimeType};base64,${base64}` : uri,
+        previewUri:
+          previewFileUri ?? (ownedTemporaryFile ? `data:${mimeType};base64,${base64}` : uri),
       });
     } catch (error) {
       console.warn("Failed to read pasted image", uri, error);

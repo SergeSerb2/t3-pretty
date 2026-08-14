@@ -5,12 +5,12 @@ const files = new Map<string, { base64: string; deleted: boolean }>();
 let base64Barrier: Promise<void> | null = null;
 const launchImageLibraryAsync = vi.fn();
 
-vi.mock("expo-file-system", () => ({
-  File: class {
+vi.mock("expo-file-system", () => {
+  class File {
     readonly uri: string;
 
-    constructor(uri: string) {
-      this.uri = uri;
+    constructor(...uris: ReadonlyArray<string | { readonly uri: string }>) {
+      this.uri = uris.map((uri) => (typeof uri === "string" ? uri : uri.uri)).join("/");
     }
 
     get exists(): boolean {
@@ -28,14 +28,34 @@ vi.mock("expo-file-system", () => ({
       return entry.base64;
     }
 
+    write(content: string, _options?: { encoding?: string }): void {
+      files.set(this.uri, { base64: content, deleted: false });
+    }
+
     delete(): void {
       const entry = files.get(this.uri);
       if (entry) {
         entry.deleted = true;
       }
     }
-  },
-}));
+  }
+
+  class Directory {
+    readonly uri: string;
+
+    constructor(...uris: ReadonlyArray<string | { readonly uri: string }>) {
+      this.uri = uris.map((uri) => (typeof uri === "string" ? uri : uri.uri)).join("/");
+    }
+
+    create(): void {}
+  }
+
+  return {
+    File,
+    Directory,
+    Paths: { document: "file:///documents", cache: "file:///cache" },
+  };
+});
 
 vi.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: (...args: unknown[]) => launchImageLibraryAsync(...args),
@@ -49,6 +69,7 @@ import {
   convertPastedImagesToAttachments,
   isOwnedPastedImageUri,
   pickComposerImages,
+  resolveComposerAttachmentDataUrl,
   toUploadChatImageAttachments,
 } from "./composerImages";
 
@@ -93,7 +114,7 @@ describe("native pasted image cleanup", () => {
     expect(isOwnedPastedImageUri("https://example.com/t3-composer-paste/id.png")).toBe(false);
   });
 
-  it("converts owned files to data-backed previews and deletes the source", async () => {
+  it("converts owned files to file-backed previews and deletes the source", async () => {
     const uri =
       "file:///private/var/mobile/Containers/Data/Application/app/tmp/t3-composer-paste/id.png";
     files.set(uri, { base64: "aGVsbG8=", deleted: false });
@@ -103,13 +124,15 @@ describe("native pasted image cleanup", () => {
       existingCount: 0,
     });
 
+    const previewUri = "file:///documents/t3-composer-previews/attachment-id.png";
     expect(attachments).toEqual([
       expect.objectContaining({
         dataUrl: "data:image/png;base64,aGVsbG8=",
-        previewUri: "data:image/png;base64,aGVsbG8=",
+        previewUri,
       }),
     ]);
     expect(files.get(uri)?.deleted).toBe(true);
+    expect(files.get(previewUri)?.base64).toBe("aGVsbG8=");
   });
 
   it("deletes rejected and overflow owned files without deleting user-owned files", async () => {
@@ -179,10 +202,55 @@ describe("pickComposerImages", () => {
           name: "photo.jpg",
           mimeType: "image/jpeg",
           dataUrl: "data:image/jpeg;base64,aGVsbG8=",
-          previewUri: uri,
+          previewUri: "file:///documents/t3-composer-previews/attachment-id.jpeg",
         }),
       ],
       error: null,
     });
+  });
+});
+
+describe("resolveComposerAttachmentDataUrl", () => {
+  beforeEach(() => {
+    files.clear();
+  });
+
+  const attachment = (overrides: { dataUrl: string; previewUri: string }) => ({
+    id: "a",
+    type: "image" as const,
+    name: "one.png",
+    mimeType: "image/png",
+    sizeBytes: 5,
+    ...overrides,
+  });
+
+  it("keeps populated payloads and data-backed previews untouched", async () => {
+    await expect(
+      resolveComposerAttachmentDataUrl(
+        attachment({ dataUrl: "data:image/png;base64,AA==", previewUri: "file:///tmp/one.png" }),
+      ),
+    ).resolves.toBe("data:image/png;base64,AA==");
+    await expect(
+      resolveComposerAttachmentDataUrl(
+        attachment({ dataUrl: "", previewUri: "data:image/png;base64,BB==" }),
+      ),
+    ).resolves.toBe("data:image/png;base64,BB==");
+  });
+
+  it("rehydrates stripped payloads from the preview file", async () => {
+    const previewUri = "file:///documents/t3-composer-previews/id.png";
+    files.set(previewUri, { base64: "aGVsbG8=", deleted: false });
+
+    await expect(
+      resolveComposerAttachmentDataUrl(attachment({ dataUrl: "", previewUri })),
+    ).resolves.toBe("data:image/png;base64,aGVsbG8=");
+  });
+
+  it("returns null when the preview bytes are gone", async () => {
+    await expect(
+      resolveComposerAttachmentDataUrl(
+        attachment({ dataUrl: "", previewUri: "file:///documents/t3-composer-previews/gone.png" }),
+      ),
+    ).resolves.toBeNull();
   });
 });

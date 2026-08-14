@@ -920,6 +920,355 @@ describe("buildThreadFeed", () => {
       expanded: true,
     });
   });
+
+  it("keeps the feed identical when only dropped activity kinds stream in", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-dropped-append"),
+      projectId: ProjectId.make("project-1"),
+      title: "Dropped append",
+      activities: [
+        makeActivity({
+          id: EventId.make("activity-visible"),
+          kind: "runtime.warning",
+          summary: "Visible",
+          createdAt: "2026-04-01T00:00:01.000Z",
+        }),
+      ],
+    });
+    const builder = createThreadFeedBuilder();
+    const firstFeed = builder(thread);
+    const secondFeed = builder({
+      ...thread,
+      activities: [
+        ...thread.activities,
+        makeActivity({
+          id: EventId.make("activity-progress"),
+          kind: "tool.progress",
+          summary: "Partial output",
+          createdAt: "2026-04-01T00:00:02.000Z",
+        }),
+      ],
+    });
+
+    expect(secondFeed).toBe(firstFeed);
+  });
+
+  it("keeps the feed identical when a context-window row is superseded", () => {
+    const warning = makeActivity({
+      id: EventId.make("activity-warning-cw"),
+      kind: "runtime.warning",
+      summary: "Visible",
+      createdAt: "2026-04-01T00:00:01.000Z",
+    });
+    const contextWindow = (id: string, createdAt: string, usedTokens: number) =>
+      makeActivity({
+        id: EventId.make(id),
+        kind: "context-window.updated",
+        summary: "Context window updated",
+        createdAt,
+        turnId: TurnId.make("turn-1"),
+        payload: { usedTokens },
+      });
+    const thread = makeThread({
+      id: ThreadId.make("thread-cw-supersede"),
+      projectId: ProjectId.make("project-1"),
+      title: "Context window supersede",
+      activities: [warning, contextWindow("activity-cw-1", "2026-04-01T00:00:02.000Z", 1_000)],
+    });
+    const builder = createThreadFeedBuilder();
+    const firstFeed = builder(thread);
+    // The reducer's supersede swaps the middle row out in place.
+    const secondFeed = builder({
+      ...thread,
+      activities: [warning, contextWindow("activity-cw-2", "2026-04-01T00:00:03.000Z", 2_000)],
+    });
+
+    expect(secondFeed).toBe(firstFeed);
+  });
+
+  it("extends the work log incrementally for in-order activity appends", () => {
+    const firstActivity = makeActivity({
+      id: EventId.make("activity-incremental-first"),
+      kind: "runtime.warning",
+      summary: "First",
+      createdAt: "2026-04-01T00:00:01.000Z",
+    });
+    const thread = makeThread({
+      id: ThreadId.make("thread-incremental-append"),
+      projectId: ProjectId.make("project-1"),
+      title: "Incremental append",
+      activities: [firstActivity],
+    });
+    const builder = createThreadFeedBuilder();
+    const firstFeed = builder(thread);
+    const nextThread = {
+      ...thread,
+      activities: [
+        ...thread.activities,
+        makeActivity({
+          id: EventId.make("activity-incremental-second"),
+          kind: "runtime.warning",
+          summary: "Second",
+          createdAt: "2026-04-01T00:00:02.000Z",
+        }),
+      ],
+    };
+    const secondFeed = builder(nextThread);
+
+    // toEqual trips on the lazy detail closures; compare the serializable feed.
+    expect(JSON.stringify(secondFeed)).toBe(JSON.stringify(buildThreadFeed(nextThread)));
+    const workRowsById = (feed: ThreadFeedEntry[]) =>
+      new Map(
+        feed
+          .flatMap((entry) => (entry.type === "activity-group" ? entry.activities : []))
+          .map((activity) => [activity.id, activity]),
+      );
+    const firstRows = workRowsById(firstFeed);
+    const secondRows = workRowsById(secondFeed);
+    expect([...secondRows.keys()]).toEqual([
+      "activity-incremental-first",
+      "activity-incremental-second",
+    ]);
+    // Untouched rows keep their derived object identity across the append.
+    expect(secondRows.get("activity-incremental-first")).toBe(
+      firstRows.get("activity-incremental-first"),
+    );
+  });
+
+  it("collapses a tool completion into its in-progress row across builder calls", () => {
+    const payload = {
+      title: "Run tests",
+      itemType: "command_execution",
+      detail: "bun run test",
+    };
+    const thread = makeThread({
+      id: ThreadId.make("thread-incremental-collapse"),
+      projectId: ProjectId.make("project-1"),
+      title: "Incremental collapse",
+      activities: [
+        makeActivity({
+          id: EventId.make("tool-updated-incremental"),
+          kind: "tool.updated",
+          tone: "tool",
+          summary: "Run tests",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          payload,
+        }),
+      ],
+    });
+    const builder = createThreadFeedBuilder();
+    builder(thread);
+    const nextThread = {
+      ...thread,
+      activities: [
+        ...thread.activities,
+        makeActivity({
+          id: EventId.make("tool-completed-incremental"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Run tests completed",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload,
+        }),
+      ],
+    };
+    const secondFeed = builder(nextThread);
+
+    expect(JSON.stringify(secondFeed)).toBe(JSON.stringify(buildThreadFeed(nextThread)));
+    const group = secondFeed[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+    expect(group.activities).toHaveLength(1);
+    expect(group.activities[0]?.id).toBe("tool-completed-incremental");
+  });
+
+  it("falls back to a full rebuild when an activity arrives out of order", () => {
+    // The array tail (warning) sorts before the fold's last kept row
+    // (tool-updated); an append that only clears the array tail must not
+    // extend the fold — the completion collapses differently in sort order.
+    const payload = {
+      title: "Run tests",
+      itemType: "command_execution",
+      detail: "bun run test",
+    };
+    const thread = makeThread({
+      id: ThreadId.make("thread-out-of-order-activity"),
+      projectId: ProjectId.make("project-1"),
+      title: "Out-of-order activity",
+      activities: [
+        makeActivity({
+          id: EventId.make("tool-updated-ooo"),
+          kind: "tool.updated",
+          tone: "tool",
+          summary: "Run tests",
+          createdAt: "2026-04-01T00:00:03.000Z",
+          payload,
+        }),
+        makeActivity({
+          id: EventId.make("warning-ooo"),
+          kind: "runtime.warning",
+          summary: "Early warning",
+          createdAt: "2026-04-01T00:00:01.000Z",
+        }),
+      ],
+    });
+    const builder = createThreadFeedBuilder();
+    builder(thread);
+    const nextThread = {
+      ...thread,
+      activities: [
+        ...thread.activities,
+        makeActivity({
+          id: EventId.make("tool-completed-ooo"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Run tests completed",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload,
+        }),
+      ],
+    };
+    const feed = builder(nextThread);
+
+    expect(JSON.stringify(feed)).toBe(JSON.stringify(buildThreadFeed(nextThread)));
+    const group = feed[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+    expect(group.activities.map((activity) => activity.id)).toEqual([
+      "warning-ooo",
+      "tool-completed-ooo",
+      "tool-updated-ooo",
+    ]);
+  });
+
+  it("preserves presented row identity across derivations with unchanged inputs", () => {
+    const activity = (id: string, createdAt: string): ThreadFeedActivity => ({
+      id,
+      createdAt,
+      turnId: null,
+      summary: `Tool ${id}`,
+      detail: null,
+      canExpand: false,
+      getFullDetail: () => null,
+      getCopyText: () => id,
+      icon: "command",
+      toolLike: true,
+      status: "success",
+    });
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "activity-group",
+        id: "work-group-identity",
+        createdAt: "2026-04-01T00:00:01.000Z",
+        turnId: null,
+        activities: [
+          activity("activity-1", "2026-04-01T00:00:01.000Z"),
+          activity("activity-2", "2026-04-01T00:00:02.000Z"),
+          activity("activity-3", "2026-04-01T00:00:03.000Z"),
+        ],
+      },
+    ];
+
+    const first = deriveThreadFeedPresentation(feed, null, new Set());
+    const second = deriveThreadFeedPresentation(feed, null, new Set());
+    expect(second).toEqual(first);
+    expect(second).toHaveLength(first.length);
+    first.forEach((entry, index) => expect(second[index]).toBe(entry));
+
+    // Expansion remints only the toggle; single-activity rows are shared.
+    const expanded = deriveThreadFeedPresentation(
+      feed,
+      null,
+      new Set(),
+      new Set(["work-group-identity"]),
+    );
+    expect(expanded.map((entry) => entry.id)).toEqual([
+      "activity-1",
+      "activity-2",
+      "activity-3",
+      "work-toggle:work-group-identity",
+    ]);
+    expect(expanded[2]).toBe(first[0]);
+    expect(expanded[3]).not.toBe(first[1]);
+    const expandedAgain = deriveThreadFeedPresentation(
+      feed,
+      null,
+      new Set(),
+      new Set(["work-group-identity"]),
+    );
+    expanded.forEach((entry, index) => expect(expandedAgain[index]).toBe(entry));
+  });
+
+  it("preserves turn-fold and working row identity across derivations", () => {
+    const turnId = TurnId.make("turn-fold-identity");
+    const thread = makeThread({
+      id: ThreadId.make("thread-fold-identity"),
+      projectId: ProjectId.make("project-1"),
+      title: "Fold identity",
+      latestTurn: {
+        turnId,
+        state: "completed",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt: "2026-04-01T00:00:01.000Z",
+        completedAt: "2026-04-01T00:00:05.000Z",
+        assistantMessageId: MessageId.make("assistant-fold-final"),
+      },
+      messages: [
+        {
+          id: MessageId.make("assistant-fold-note"),
+          role: "assistant",
+          text: "Checking.",
+          turnId,
+          streaming: false,
+          createdAt: "2026-04-01T00:00:02.000Z",
+          updatedAt: "2026-04-01T00:00:02.000Z",
+        },
+        {
+          id: MessageId.make("assistant-fold-final"),
+          role: "assistant",
+          text: "Done.",
+          turnId,
+          streaming: false,
+          createdAt: "2026-04-01T00:00:04.000Z",
+          updatedAt: "2026-04-01T00:00:05.000Z",
+        },
+      ],
+    });
+    const feed = buildThreadFeed(thread);
+
+    const first = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set());
+    expect(first[0]?.type).toBe("turn-fold");
+    const second = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set());
+    expect(second).toEqual(first);
+    first.forEach((entry, index) => expect(second[index]).toBe(entry));
+
+    // Toggling the fold reuses the matching expanded/collapsed variant.
+    const expanded = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set([turnId]));
+    expect(expanded[0]).toMatchObject({ type: "turn-fold", expanded: true });
+    expect(expanded[0]).not.toBe(first[0]);
+    const collapsedAgain = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set());
+    expect(collapsedAgain[0]).toBe(first[0]);
+
+    const withWorking = deriveThreadFeedPresentation(
+      feed,
+      thread.latestTurn,
+      new Set(),
+      new Set(),
+      "2026-04-01T00:00:20.000Z",
+    );
+    const withWorkingAgain = deriveThreadFeedPresentation(
+      feed,
+      thread.latestTurn,
+      new Set(),
+      new Set(),
+      "2026-04-01T00:00:20.000Z",
+    );
+    expect(withWorkingAgain.at(-1)).toBe(withWorking.at(-1));
+  });
 });
 
 describe("quiet timeline: nested agents", () => {

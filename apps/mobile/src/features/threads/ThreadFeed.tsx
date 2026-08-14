@@ -1011,13 +1011,6 @@ function renderFeedEntry(
           localPreviewUris: props.localPreviewUrisByMessageId[message.id],
         })
       : [];
-    const hasReviewCommentContext = message.text.includes("<review_comment");
-    // A bubble that sizes itself from its content cannot lay out a block whose
-    // intrinsic width overflows `maxWidth`: Android positions the bubble's
-    // children during the unclamped pass and never moves them once the width
-    // is clamped, so the paragraphs around the block end up drawn on top of
-    // each other. Pinning the width removes that pass.
-    const hasWideBlock = hasWideMarkdownBlock(message.text, WIDE_MARKDOWN_BLOCK_OPTIONS);
     const assistantTurnStillInProgress =
       message.role === "assistant" &&
       props.unsettledTurnId !== null &&
@@ -1029,6 +1022,15 @@ function renderFeedEntry(
       !message.streaming;
 
     if (isUser) {
+      const hasReviewCommentContext = message.text.includes("<review_comment");
+      // A bubble that sizes itself from its content cannot lay out a block
+      // whose intrinsic width overflows `maxWidth`: Android positions the
+      // bubble's children during the unclamped pass and never moves them once
+      // the width is clamped, so the paragraphs around the block end up drawn
+      // on top of each other. Pinning the width removes that pass. Only user
+      // rows are content-sized bubbles, so only they pay for the full-text
+      // scan.
+      const hasWideBlock = hasWideMarkdownBlock(message.text, WIDE_MARKDOWN_BLOCK_OPTIONS);
       const enterAnimated = isFreshTimestamp(message.createdAt);
       return (
         <Animated.View
@@ -1198,7 +1200,7 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow(props: {
   );
 });
 
-function UserMessageContent(props: {
+const UserMessageContent = memo(function UserMessageContent(props: {
   readonly text: string;
   readonly markdownStyles: MarkdownStyleSet;
   readonly reviewCommentColors: ReviewCommentColors;
@@ -1207,9 +1209,10 @@ function UserMessageContent(props: {
 }) {
   // Messages sent from clients with the auto-PR toggle on carry a canned
   // instruction block that those clients hide from the bubble; hide it here
-  // too so the same thread reads identically on mobile.
-  const displayText = stripCreatePullRequestSuffix(props.text);
-  const segments = parseReviewCommentMessageSegments(displayText);
+  // too so the same thread reads identically on mobile. Both scans are
+  // full-text regexes — key them on the text so list repaints skip them.
+  const displayText = useMemo(() => stripCreatePullRequestSuffix(props.text), [props.text]);
+  const segments = useMemo(() => parseReviewCommentMessageSegments(displayText), [displayText]);
   const hasReviewComment = segments.some((segment) => segment.kind === "review-comment");
   if (!hasReviewComment) {
     if (hasNativeSelectableMarkdownText()) {
@@ -1276,7 +1279,7 @@ function UserMessageContent(props: {
       })}
     </View>
   );
-}
+});
 
 const ReviewCommentCard = memo(function ReviewCommentCard(props: {
   readonly comment: ReviewInlineComment;

@@ -89,7 +89,9 @@ import type { ThreadContentPresentation } from "./threadContentPresentation";
 // jumps, iOS reloads the keyboard session, and typing dies until remount.
 const COMPOSER_STICKY_STYLE = { position: "absolute", bottom: 0, left: 0, right: 0 } as const;
 const COMPOSER_STICKY_OFFSET = { closed: 0, opened: 0 } as const;
-const STREAMING_HAPTIC_INTERVAL_MS = 1_000;
+// A long turn keeps an occasional "still working" tick without buzzing
+// through every second of the stream.
+const STREAMING_HAPTIC_INTERVAL_MS = 10_000;
 
 export interface ThreadDetailScreenProps {
   readonly selectedThread: OrchestrationThreadShell;

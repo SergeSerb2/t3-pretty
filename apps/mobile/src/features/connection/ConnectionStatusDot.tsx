@@ -3,6 +3,7 @@ import { View } from "react-native";
 import Animated, {
   cancelAnimation,
   Easing,
+  ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -52,11 +53,14 @@ function usePulseAnimation(pulse: boolean) {
         withTiming(1, {
           duration: 1100,
           easing: Easing.out(Easing.cubic),
+          reduceMotion: ReduceMotion.System,
         }),
         -1,
         false,
       );
-      return;
+      return () => {
+        cancelAnimation(pulseProgress);
+      };
     }
 
     cancelAnimation(pulseProgress);

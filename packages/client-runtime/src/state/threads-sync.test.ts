@@ -123,10 +123,24 @@ function awaitThreadState(
   observed: Queue.Queue<EnvironmentThreadState>,
   predicate: (state: EnvironmentThreadState) => boolean,
 ) {
-  return Queue.take(observed).pipe(
+  // Streamed items publish in 50ms coalescing windows. Poll instead of block:
+  // each step yields to let the stream machinery deliver and arm the window,
+  // advances the clock past it, then yields again for the flush to publish.
+  const step = Effect.gen(function* () {
+    for (let index = 0; index < 10; index += 1) {
+      yield* Effect.yieldNow;
+    }
+    yield* TestClock.adjust("60 millis");
+    for (let index = 0; index < 10; index += 1) {
+      yield* Effect.yieldNow;
+    }
+    return yield* Queue.poll(observed);
+  });
+  return step.pipe(
     Effect.repeat({
-      until: predicate,
+      until: (result) => Option.isSome(result) && predicate(result.value),
     }),
+    Effect.map((result) => Option.getOrThrow(result)),
   );
 }
 
@@ -631,6 +645,51 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it.effect("holds streamed events until the coalescing window fires", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ cached: BASE_THREAD });
+      for (let index = 0; index < 10; index += 1) {
+        yield* Effect.yieldNow;
+      }
+      const drainObserved = Effect.gen(function* () {
+        const drained: EnvironmentThreadState[] = [];
+        for (;;) {
+          const next = yield* Queue.poll(harness.observed);
+          if (Option.isNone(next)) {
+            return drained;
+          }
+          drained.push(next.value);
+        }
+      });
+      yield* drainObserved;
+
+      yield* Queue.offer(harness.inputs, titleUpdated("title-1", CACHED_SNAPSHOT_SEQUENCE + 1));
+      for (let index = 0; index < 10; index += 1) {
+        yield* Effect.yieldNow;
+      }
+      // Consumed by the pipeline, but not yet published inside the window.
+      expect(
+        (yield* drainObserved).some((state) => Option.getOrNull(state.data)?.title === "title-1"),
+      ).toBe(false);
+
+      yield* TestClock.adjust("60 millis");
+      for (let index = 0; index < 10; index += 1) {
+        yield* Effect.yieldNow;
+      }
+      const published = yield* drainObserved;
+      expect(
+        published.filter((state) => Option.getOrNull(state.data)?.title === "title-1"),
+      ).toHaveLength(1);
+
+      // No straggler publications trail the flushed window.
+      yield* TestClock.adjust("60 millis");
+      for (let index = 0; index < 10; index += 1) {
+        yield* Effect.yieldNow;
+      }
+      expect(yield* drainObserved).toHaveLength(0);
+    }),
+  );
+
   it.effect("resumes replacement sessions from the latest applied sequence", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ cached: BASE_THREAD, completionMarker: true });
@@ -706,10 +765,13 @@ describe("EnvironmentThreads", () => {
       expect(yield* Ref.get(harness.subscriptionCount)).toBe(3);
 
       yield* Queue.offer(harness.wakeups, "application-active-reconnect");
-      for (let attempt = 0; attempt < 10; attempt += 1) {
+      // A reconnect wakeup can now keep the session (probe-first), so it must
+      // trigger the resubscribe signal rather than relying on a session change.
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(harness.subscriptionCount)) >= 4) break;
         yield* Effect.yieldNow;
       }
-      expect(yield* Ref.get(harness.subscriptionCount)).toBe(3);
+      expect(yield* Ref.get(harness.subscriptionCount)).toBe(4);
     }),
   );
 });

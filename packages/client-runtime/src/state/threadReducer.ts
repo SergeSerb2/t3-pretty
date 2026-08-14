@@ -36,6 +36,14 @@ const activityOrder = O.combineAll<OrchestrationThreadActivity>([
 ]);
 
 /**
+ * Activity arrays the reducer itself emitted in `activityOrder`. Hydrated
+ * snapshot pages are concatenated by the caller without re-sorting, so only
+ * arrays provenanced here may use the append fast path in
+ * `thread.activity-appended`; anything else takes the full sort as before.
+ */
+const sortedActivityArrays = new WeakSet<ReadonlyArray<OrchestrationThreadActivity>>();
+
+/**
  * Matches the validity rule in `deriveLatestContextWindowSnapshot` (and the
  * server's snapshot-side `dropStaleContextWindowActivities`): rows without a
  * finite, non-negative `usedTokens` are skipped during the consumer's backward
@@ -323,14 +331,26 @@ export function applyThreadDetailEvent(
         }
 
         const entry = thread.messages[existingMessageIndex]!;
+        const nextText = message.streaming
+          ? `${entry.text}${message.text}`
+          : message.text.length > 0
+            ? message.text
+            : entry.text;
+        // A replayed delivery that merges to the stored row verbatim keeps the
+        // previous array identity, so downstream feed derivation stays cached.
+        if (
+          nextText === entry.text &&
+          message.streaming === entry.streaming &&
+          (message.turnId === undefined || message.turnId === entry.turnId) &&
+          (message.streaming || message.updatedAt === entry.updatedAt) &&
+          (message.attachments === undefined || message.attachments === entry.attachments)
+        ) {
+          return thread.messages;
+        }
         const nextMessages = [...thread.messages];
         nextMessages[existingMessageIndex] = {
           ...entry,
-          text: message.streaming
-            ? `${entry.text}${message.text}`
-            : message.text.length > 0
-              ? message.text
-              : entry.text,
+          text: nextText,
           streaming: message.streaming,
           ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
           ...(message.streaming ? {} : { updatedAt: message.updatedAt }),
@@ -593,20 +613,32 @@ export function applyThreadDetailEvent(
       // thread.reverted that discards turns can still resolve a value from
       // the turns that survive.
       const supersedesContextWindow = isResolvableContextWindowActivity(activity);
-      const activities = pipe(
-        thread.activities,
-        Arr.filter(
-          (entry) =>
-            entry.id !== activity.id &&
-            !(
-              supersedesContextWindow &&
-              entry.turnId === activity.turnId &&
-              isResolvableContextWindowActivity(entry)
-            ),
-        ),
-        Arr.append(activity),
-        Arr.sort(activityOrder),
-      );
+      const wouldDrop = (entry: OrchestrationThreadActivity) =>
+        entry.id === activity.id ||
+        (supersedesContextWindow &&
+          entry.turnId === activity.turnId &&
+          isResolvableContextWindowActivity(entry));
+      let needsFilter = false;
+      for (const entry of thread.activities) {
+        if (wouldDrop(entry)) {
+          needsFilter = true;
+          break;
+        }
+      }
+      const filtered = needsFilter
+        ? Arr.filter(thread.activities, (entry) => !wouldDrop(entry))
+        : thread.activities;
+      // Sequences/createdAt are monotonic in practice: when the row sorts at
+      // or past the tail of an array the reducer already ordered, appending IS
+      // the sorted result — skip the per-event full sort. The filter above
+      // preserves order, so `filtered` inherits the sorted marker.
+      const activities =
+        filtered.length === 0 ||
+        (sortedActivityArrays.has(thread.activities) &&
+          activityOrder(filtered[filtered.length - 1]!, activity) <= 0)
+          ? Arr.append(filtered, activity)
+          : Arr.sort(Arr.append(filtered, activity), activityOrder);
+      sortedActivityArrays.add(activities);
 
       return {
         kind: "updated",

@@ -28,6 +28,7 @@ import {
   __resetAgentAwarenessRemoteRegistrationForTest,
   applyLocalLiveActivityProps,
   getAgentAwarenessRegistrationStatus,
+  hasArmedLiveActivity,
   mergeAgentAwarenessRegistrationPreferences,
   refreshActiveLiveActivityRemoteRegistration,
   refreshAgentAwarenessRegistration,
@@ -37,6 +38,7 @@ import {
   releaseAgentAwarenessRelayTokenProvider,
   setAgentAwarenessRelayTokenProvider,
   shouldRegisterAgentAwarenessDeviceForProvider,
+  subscribeHasArmedLiveActivity,
   unregisterAgentAwarenessConnection,
 } from "./remoteRegistration";
 import * as Notifications from "expo-notifications";
@@ -931,5 +933,153 @@ describe("makeRelayDeviceRegistrationRequest", () => {
 
     expect(activity.update).toHaveBeenCalledTimes(1);
     expect(widgetMocks.start).not.toHaveBeenCalled();
+  });
+
+  it("skips the native instance lookup when the Live Activity content is unchanged", () => {
+    const activity = {
+      getPushToken: vi.fn(() => Promise.resolve("activity-token")),
+      addPushTokenListener: vi.fn(),
+      update: vi.fn(() => Promise.resolve()),
+      end: vi.fn(() => Promise.resolve()),
+    };
+    widgetMocks.getInstances.mockReturnValue([activity] as never);
+
+    const props = {
+      title: "T3 Pretty",
+      subtitle: "Agent work in progress",
+      activeCount: 1,
+      updatedAt: "2026-06-02T00:00:00.000Z",
+      activities: [
+        {
+          environmentId: "env-1",
+          threadId: "thread-1",
+          projectTitle: "t3-pretty",
+          threadTitle: "Fix Live Activities",
+          modelTitle: "gpt-5.4",
+          phase: "running" as const,
+          status: "Working",
+          updatedAt: "2026-06-02T00:00:00.000Z",
+          deepLink: "/threads/env-1/thread-1",
+        },
+      ],
+    };
+
+    applyLocalLiveActivityProps(props);
+    expect(widgetMocks.getInstances).toHaveBeenCalledTimes(1);
+    expect(activity.update).toHaveBeenCalledTimes(1);
+
+    // Same content on an armed card: short-circuit before the native call.
+    widgetMocks.getInstances.mockClear();
+    applyLocalLiveActivityProps(props);
+    expect(widgetMocks.getInstances).not.toHaveBeenCalled();
+    expect(activity.update).toHaveBeenCalledTimes(1);
+
+    // Changed content must still reach the native side.
+    applyLocalLiveActivityProps({ ...props, subtitle: "Agent work completed", activeCount: 0 });
+    expect(widgetMocks.getInstances).toHaveBeenCalledTimes(1);
+    expect(activity.update).toHaveBeenCalledTimes(2);
+  });
+
+  it("tracks armed Live Activity state for subscription gating", () => {
+    const activity = {
+      getPushToken: vi.fn(() => Promise.resolve("activity-token")),
+      addPushTokenListener: vi.fn(),
+      update: vi.fn(() => Promise.resolve()),
+      end: vi.fn(() => Promise.resolve()),
+    };
+    const listener = vi.fn();
+    const unsubscribe = subscribeHasArmedLiveActivity(listener);
+
+    expect(hasArmedLiveActivity()).toBe(false);
+
+    applyLocalLiveActivityProps({
+      title: "T3 Pretty",
+      subtitle: "Agent work in progress",
+      activeCount: 1,
+      updatedAt: "2026-06-02T00:00:00.000Z",
+      activities: [
+        {
+          environmentId: "env-1",
+          threadId: "thread-1",
+          projectTitle: "t3-pretty",
+          threadTitle: "Fix Live Activities",
+          modelTitle: "gpt-5.4",
+          phase: "running",
+          status: "Working",
+          updatedAt: "2026-06-02T00:00:00.000Z",
+          deepLink: "/threads/env-1/thread-1",
+        },
+      ],
+    });
+
+    expect(widgetMocks.start).toHaveBeenCalledTimes(1);
+    expect(hasArmedLiveActivity()).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // The armed card now exists natively; sign-out ends it and disarms.
+    widgetMocks.getInstances.mockReturnValue([activity] as never);
+    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+    expect(hasArmedLiveActivity()).toBe(true);
+
+    setAgentAwarenessRelayTokenProvider(null);
+    expect(activity.end).toHaveBeenCalledWith("immediate");
+    expect(hasArmedLiveActivity()).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(2);
+    unsubscribe();
+  });
+
+  it.effect("backs off repeated registration retries and stops until the next foreground", () => {
+    vi.useFakeTimers();
+    const activity = {
+      getPushToken: vi.fn(() => Promise.resolve("activity-token")),
+      addPushTokenListener: vi.fn(),
+    };
+    widgetMocks.getInstances.mockReturnValue([activity] as never);
+    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+
+    return Effect.gen(function* () {
+      // Sign-in refresh fails (no relay configured) → first retry armed at 15s.
+      yield* runBackgroundOperations();
+      expect(activity.getPushToken).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(15_000);
+      yield* runBackgroundOperations();
+      expect(activity.getPushToken).toHaveBeenCalledTimes(2);
+
+      // The backoff doubles: nothing at +15s, the next retry lands at +30s.
+      vi.advanceTimersByTime(15_000);
+      yield* runBackgroundOperations();
+      expect(activity.getPushToken).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(15_000);
+      yield* runBackgroundOperations();
+      expect(activity.getPushToken).toHaveBeenCalledTimes(3);
+
+      // Remaining steps (60s, 120s, 240s cap) run the attempt count to the
+      // stop limit, after which no timer is armed anymore.
+      vi.advanceTimersByTime(60_000);
+      yield* runBackgroundOperations();
+      expect(activity.getPushToken).toHaveBeenCalledTimes(4);
+      vi.advanceTimersByTime(120_000);
+      yield* runBackgroundOperations();
+      expect(activity.getPushToken).toHaveBeenCalledTimes(5);
+      vi.advanceTimersByTime(240_000);
+      yield* runBackgroundOperations();
+      expect(activity.getPushToken).toHaveBeenCalledTimes(6);
+
+      vi.advanceTimersByTime(10 * 60_000);
+      yield* runBackgroundOperations();
+      expect(activity.getPushToken).toHaveBeenCalledTimes(6);
+
+      // A foreground event resets the backoff: immediate refresh, and the next
+      // failure re-arms at the base 15s delay.
+      for (const listener of appStateMock.listeners) {
+        listener("active");
+      }
+      yield* runBackgroundOperations();
+      expect(activity.getPushToken).toHaveBeenCalledTimes(7);
+      vi.advanceTimersByTime(15_000);
+      yield* runBackgroundOperations();
+      expect(activity.getPushToken).toHaveBeenCalledTimes(8);
+    }).pipe(Effect.provide(relayTestLayer), Effect.ensuring(Effect.sync(() => vi.useRealTimers())));
   });
 });

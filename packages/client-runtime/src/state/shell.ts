@@ -276,6 +276,11 @@ export function shellStateChanges(environmentId: EnvironmentId) {
   );
 }
 
+// Retain an environment's shell stream across short subscriber gaps, matching
+// the RPC atom default; without a TTL the stream, snapshot, and cache writer
+// stayed live for the whole session once anything subscribed.
+export const SHELL_STATE_IDLE_TTL_MS = 5 * 60_000;
+
 export interface EnvironmentShellSummary {
   readonly hasSnapshot: boolean;
   readonly hasSynchronizingShell: boolean;
@@ -395,11 +400,15 @@ export function createEnvironmentShellAtoms<R, E>(
     EnvironmentRegistry | EnvironmentCacheStore | ShellSnapshotLoader | R,
     E
   >,
+  options?: { readonly idleTtlMs?: number },
 ) {
+  const idleTtlMs = options?.idleTtlMs ?? SHELL_STATE_IDLE_TTL_MS;
   const stateAtom = Atom.family((environmentId: EnvironmentId) =>
-    runtime.atom(shellStateChanges(environmentId), {
-      initialValue: EMPTY_SHELL_STATE,
-    }),
+    runtime
+      .atom(shellStateChanges(environmentId), {
+        initialValue: EMPTY_SHELL_STATE,
+      })
+      .pipe(Atom.setIdleTTL(idleTtlMs)),
   );
 
   const stateValueAtom = Atom.family((environmentId: EnvironmentId) =>

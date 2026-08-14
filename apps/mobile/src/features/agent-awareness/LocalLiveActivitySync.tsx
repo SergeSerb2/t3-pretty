@@ -1,19 +1,27 @@
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { Platform } from "react-native";
 
 import { useProjects, useThreadShells } from "../../state/entities";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { buildLocalLiveActivityProps } from "./localLiveActivity";
-import { applyLocalLiveActivityProps } from "./remoteRegistration";
+import {
+  applyLocalLiveActivityProps,
+  hasArmedLiveActivity,
+  subscribeHasArmedLiveActivity,
+} from "./remoteRegistration";
 
 /**
  * Keeps the iOS Live Activity in sync with threads this phone can already
  * see. Remote APNs updates still cover other environments and the suspended
  * app; this is the path that actually moves the card during local work.
+ *
+ * The shell/project subscriptions below pin every catalog environment's shell
+ * stream, so they only mount while a Live Activity card is actually armed;
+ * with no card armed there is nothing to paint.
  */
-export function LocalLiveActivitySync() {
+function ArmedLiveActivitySync() {
   const threads = useThreadShells();
   const projects = useProjects();
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
@@ -40,4 +48,12 @@ export function LocalLiveActivitySync() {
   }, [threads, projects, preferencesResult]);
 
   return null;
+}
+
+export function LocalLiveActivitySync() {
+  const armed = useSyncExternalStore(subscribeHasArmedLiveActivity, hasArmedLiveActivity);
+  if (!armed) {
+    return null;
+  }
+  return <ArmedLiveActivitySync />;
 }

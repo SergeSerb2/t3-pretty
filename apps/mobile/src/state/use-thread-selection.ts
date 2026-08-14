@@ -2,12 +2,10 @@ import { useRoute, type RouteProp } from "@react-navigation/native";
 import { useMemo, useRef } from "react";
 import {
   EnvironmentId,
-  type OrchestrationThread,
   ThreadId,
   type ScopedProjectRef,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import * as Option from "effect/Option";
 
 import { useProject, useThreadShell } from "../state/entities";
@@ -16,6 +14,10 @@ import {
   useRemoteEnvironmentRuntime,
   useSavedRemoteConnection,
 } from "./use-remote-environment-registry";
+import {
+  resolveSelectedThreadShell,
+  resolveSelectionDetailFallbackRef,
+} from "./use-thread-selection.logic";
 type ThreadSelectionRouteParams = {
   readonly environmentId?: string | string[];
   readonly threadId?: string | string[];
@@ -27,48 +29,6 @@ function firstRouteParam(value: string | string[] | undefined): string | null {
   }
 
   return value ?? null;
-}
-
-function latestUserMessageAt(thread: OrchestrationThread): OrchestrationThread["updatedAt"] | null {
-  for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
-    const message = thread.messages[index];
-    if (message?.role === "user") {
-      return message.createdAt;
-    }
-  }
-
-  return null;
-}
-
-function threadDetailToShell(
-  environmentId: EnvironmentId,
-  thread: OrchestrationThread,
-): EnvironmentThreadShell {
-  return {
-    environmentId,
-    id: thread.id,
-    projectId: thread.projectId,
-    title: thread.title,
-    modelSelection: thread.modelSelection,
-    runtimeMode: thread.runtimeMode,
-    interactionMode: thread.interactionMode,
-    enabledSkillIds: thread.enabledSkillIds,
-    branch: thread.branch,
-    worktreePath: thread.worktreePath,
-    latestTurn: thread.latestTurn,
-    createdAt: thread.createdAt,
-    updatedAt: thread.updatedAt,
-    archivedAt: thread.archivedAt,
-    settledOverride: thread.settledOverride,
-    settledAt: thread.settledAt,
-    snoozedUntil: thread.snoozedUntil ?? null,
-    snoozedAt: thread.snoozedAt ?? null,
-    session: thread.session,
-    latestUserMessageAt: latestUserMessageAt(thread),
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
-  };
 }
 
 function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefined) {
@@ -91,17 +51,20 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
   }
   const selectedThreadRef = routeThreadRef ?? lastRouteThreadRef.current;
   const selectedThreadShell = useThreadShell(selectedThreadRef);
+  // The shell snapshot is authoritative for selection metadata. Only fall back
+  // to the hot per-thread detail stream while the shell cannot identify the
+  // thread, so consumers do not re-render at stream rate during active turns.
+  const detailFallbackRef = resolveSelectionDetailFallbackRef(
+    selectedThreadRef,
+    selectedThreadShell,
+  );
   const selectedThreadDetailState = useEnvironmentThread(
-    selectedThreadRef?.environmentId ?? null,
-    selectedThreadRef?.threadId ?? null,
+    detailFallbackRef?.environmentId ?? null,
+    detailFallbackRef?.threadId ?? null,
   );
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
   const selectedThread = useMemo(
-    () =>
-      selectedThreadShell ??
-      (selectedThreadRef !== null && selectedThreadDetail !== null
-        ? threadDetailToShell(selectedThreadRef.environmentId, selectedThreadDetail)
-        : null),
+    () => resolveSelectedThreadShell(selectedThreadRef, selectedThreadShell, selectedThreadDetail),
     [selectedThreadDetail, selectedThreadRef, selectedThreadShell],
   );
   const selectedProjectRef = useMemo<ScopedProjectRef | null>(

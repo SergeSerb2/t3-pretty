@@ -21,6 +21,9 @@ const SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION = 1;
 // makes pre-pagination clients discard the record instead of decoding a
 // partial thread as complete (rollback safety).
 const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 3;
+// Windowed thread snapshots can exceed 100KB each, so the per-environment
+// thread cache is LRU-bounded: saving past this many rows evicts the oldest.
+export const THREAD_SNAPSHOT_CACHE_MAX_ENTRIES = 25;
 const SERVER_CONFIG_CACHE_SCHEMA_VERSION = 1;
 const VCS_REFS_CACHE_SCHEMA_VERSION = 1;
 
@@ -163,6 +166,17 @@ export const make = Effect.fn("MobileEnvironmentCacheStore.make")(function* () {
       yield* database
         .saveCache(environmentId, "thread", threadId, THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION, payload)
         .pipe(Effect.mapError(mapDatabaseError("save-thread")));
+      // Eviction is housekeeping: a prune failure must not fail the save that
+      // already landed, so log and continue.
+      yield* database.pruneThreadCache(environmentId, THREAD_SNAPSHOT_CACHE_MAX_ENTRIES).pipe(
+        Effect.mapError(mapDatabaseError("save-thread")),
+        Effect.catch((error) =>
+          Effect.logWarning("Could not prune the mobile thread cache.", {
+            environmentId,
+            cause: String(error),
+          }),
+        ),
+      );
     }),
     removeThread: Effect.fn("MobileEnvironmentCache.removeThread")((environmentId, threadId) =>
       database

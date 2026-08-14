@@ -142,6 +142,14 @@ export function flattenQueuedThreadMessages(
   return Object.values(queues).flat();
 }
 
+/** Drives the drain worker's mount gate: an empty queue map keeps the worker's
+    broad shell subscriptions unmounted. */
+export function hasQueuedThreadOutboxMessages(
+  queues: Record<string, ReadonlyArray<QueuedThreadMessage>>,
+): boolean {
+  return Object.values(queues).some((queue) => queue.length > 0);
+}
+
 export function threadOutboxRetryDelayMs(attempt: number): number {
   return Math.min(1_000 * 2 ** Math.max(0, attempt - 1), THREAD_OUTBOX_MAX_RETRY_DELAY_MS);
 }

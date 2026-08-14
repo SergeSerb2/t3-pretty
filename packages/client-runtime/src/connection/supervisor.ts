@@ -8,6 +8,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -104,6 +105,11 @@ export interface EnvironmentSupervisorOptions {
 function retryDelayMs(failureCount: number): number {
   return RETRY_DELAYS_MS[Math.min(failureCount, RETRY_DELAYS_MS.length - 1)] ?? 16_000;
 }
+
+// Applies ±20% jitter so environments recovering from a shared outage do not
+// retry in lockstep.
+const withRetryJitter = (delayMs: number): Effect.Effect<number> =>
+  Effect.map(Random.next, (factor) => Math.round(delayMs * (0.8 + factor * 0.4)));
 
 function annotateTarget(target: ConnectionTarget) {
   return Effect.annotateCurrentSpan({
@@ -412,19 +418,23 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
             yield* logManagedRelayAccountChange;
             return false;
           }
-          if (next.reason === "application-active-reconnect") {
+          if (
+            next.reason === "application-active" ||
+            next.reason === "application-active-probe" ||
+            next.reason === "application-active-reconnect"
+          ) {
             // Mobile operating systems commonly suspend sockets without
-            // delivering a close event. A long background resume deliberately
-            // replaces that lease and starts a fresh attempt without backoff.
-            return true;
-          }
-          if (next.reason === "application-active" || next.reason === "application-active-probe") {
+            // delivering a close event, so every foreground wakeup probes the
+            // live session first; only a failed or timed-out probe tears the
+            // lease down (reconnecting without backoff via wakeProbeFailed).
+            // "application-active-reconnect" follows a long background stint
+            // and gets the shorter mobile probe timeout.
             const probe = yield* lease.session.probe.pipe(
               Effect.timeoutOrElse({
                 duration:
-                  next.reason === "application-active-probe"
-                    ? MOBILE_CONNECTION_PROBE_TIMEOUT
-                    : CONNECTION_PROBE_TIMEOUT,
+                  next.reason === "application-active"
+                    ? CONNECTION_PROBE_TIMEOUT
+                    : MOBILE_CONNECTION_PROBE_TIMEOUT,
                 orElse: () =>
                   Effect.fail(
                     new ConnectionTransientError({
@@ -730,7 +740,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       }
 
       failureCount += 1;
-      const delayMs = retryDelayMs(failureCount - 1);
+      const delayMs = yield* withRetryJitter(retryDelayMs(failureCount - 1));
       pendingRetry = Option.map(attemptSpan, (previousAttempt) => ({
         previousAttempt,
         failureCount,
