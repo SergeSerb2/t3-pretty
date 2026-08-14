@@ -17,7 +17,11 @@ export function isApplicationActiveWakeup(reason: ConnectionWakeup): boolean {
 }
 
 export function shouldResubscribeAfterWakeup(reason: ConnectionWakeup): boolean {
-  return reason === "application-active" || reason === "application-active-probe";
+  // "application-active-reconnect" probes first and keeps a healthy session,
+  // so it no longer implies a subscription rebuild through a session change —
+  // resubscribe explicitly for every foreground wakeup; cursor-based resume
+  // keeps the re-handshake cheap.
+  return isApplicationActiveWakeup(reason);
 }
 
 export class ConnectionWakeups extends Context.Service<

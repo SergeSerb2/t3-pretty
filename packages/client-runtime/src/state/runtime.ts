@@ -477,6 +477,28 @@ export function followStreamInEnvironment<A, E, R>(
   );
 }
 
+// Mirrors the freshness check inside Atom.swr (timestamp of the latest
+// success, including a failure's previous success) so a bumped connection
+// generation only refetches queries whose data is older than their staleTime.
+const isFreshSettledResult = <A, E>(
+  result: AsyncResult.AsyncResult<A, E>,
+  staleTimeMs: number,
+): boolean => {
+  if (result.waiting) {
+    return false;
+  }
+  const timestamp =
+    result._tag === "Success"
+      ? result.timestamp
+      : result._tag === "Failure"
+        ? Option.getOrUndefined(Option.map(result.previousSuccess, (success) => success.timestamp))
+        : undefined;
+  // AsyncResult timestamps are wall-clock (Date.now), so freshness is too;
+  // this read runs synchronously inside an atom and cannot lift a Clock.
+  // @effect-diagnostics-next-line globalDate:off
+  return timestamp !== undefined && Date.now() - timestamp < staleTimeMs;
+};
+
 export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, ER>,
   options: EnvironmentQueryAtomOptions<Input, A, E, EnvironmentSupervisor | R>,
@@ -508,6 +530,7 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
   const family = Atom.family((key: string) => {
     const target = parseEnvironmentRpcKey<Input>(key);
     const idleTtlMs = options.idleTtlMs ?? 5 * 60_000;
+    const staleTimeMs = options.staleTimeMs ?? 30_000;
     const queryAtom = runtime
       .atom((get) => {
         const generation = Option.getOrNull(
@@ -516,11 +539,21 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         if (generation === null) {
           return Effect.never;
         }
-        return runInEnvironment(target.environmentId, options.execute(target.input));
+        const execute = runInEnvironment(target.environmentId, options.execute(target.input));
+        // A (re)connect bumps the generation and re-runs this read, but data
+        // still fresh within staleTime is returned untouched — value and
+        // timestamp included — instead of refetching. Atom.swr's staleTime
+        // gate only covers mount and focus revalidation, not
+        // generation-driven re-execution.
+        const previous = get.self<AsyncResult.AsyncResult<A, E | ER | Error>>();
+        if (Option.isSome(previous) && isFreshSettledResult(previous.value, staleTimeMs)) {
+          return previous.value as unknown as typeof execute;
+        }
+        return execute;
       })
       .pipe(
         Atom.swr({
-          staleTime: options.staleTimeMs ?? 30_000,
+          staleTime: staleTimeMs,
           revalidateOnMount: true,
         }),
         Atom.setIdleTTL(idleTtlMs),
