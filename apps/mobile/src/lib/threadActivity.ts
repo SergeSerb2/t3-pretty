@@ -314,22 +314,30 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
   return !(isTerminalTaskRow && payload.agentKind === "agent");
 }
 
+/** Per-activity work-log derivation; null for rows the work log drops. */
+function deriveWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry | null {
+  if (activity.kind === "tool.started") return null;
+  if (activity.kind === "task.started") return null;
+  // Terminal bypassed updates pass: Codex children's only terminal signal.
+  if (activity.kind === "task.updated" && !isTerminalBypassUpdate(activity)) return null;
+  if (activity.kind === "tool.progress") return null;
+  if (activity.kind === "context-window.updated") return null;
+  if (activity.summary === "Checkpoint captured") return null;
+  if (isPlanBoundaryToolActivity(activity)) return null;
+  if (isAgentInternalActivity(activity)) return null;
+  return toDerivedWorkLogEntry(activity);
+}
+
 function deriveWorkLogEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): DerivedWorkLogEntry[] {
   const ordered = Arr.sort(activities, activityOrder);
   const entries: DerivedWorkLogEntry[] = [];
   for (const activity of ordered) {
-    if (activity.kind === "tool.started") continue;
-    if (activity.kind === "task.started") continue;
-    // Terminal bypassed updates pass: Codex children's only terminal signal.
-    if (activity.kind === "task.updated" && !isTerminalBypassUpdate(activity)) continue;
-    if (activity.kind === "tool.progress") continue;
-    if (activity.kind === "context-window.updated") continue;
-    if (activity.summary === "Checkpoint captured") continue;
-    if (isPlanBoundaryToolActivity(activity)) continue;
-    if (isAgentInternalActivity(activity)) continue;
-    entries.push(toDerivedWorkLogEntry(activity));
+    const entry = deriveWorkLogEntry(activity);
+    if (entry !== null) {
+      entries.push(entry);
+    }
   }
   return collapseDerivedWorkLogEntries(entries);
 }
@@ -450,29 +458,38 @@ function collapseDerivedWorkLogEntries(
   // guarantee; mirrors web's session-logic).
   const taskRowIndex = new Map<string, number>();
   for (const entry of entries) {
-    const isTaskRow =
-      entry.taskId !== undefined &&
-      (entry.activityKind === "task.progress" ||
-        entry.activityKind === "task.completed" ||
-        entry.activityKind === "task.updated");
-    if (isTaskRow && entry.taskId !== undefined) {
-      const existingIndex = taskRowIndex.get(entry.taskId);
-      if (existingIndex !== undefined) {
-        collapsed[existingIndex] = mergeDerivedWorkLogEntries(collapsed[existingIndex]!, entry);
-        continue;
-      }
-      taskRowIndex.set(entry.taskId, collapsed.length);
-      collapsed.push(entry);
-      continue;
-    }
-    const previous = collapsed.at(-1);
-    if (previous && shouldCollapseToolLifecycleEntries(previous, entry)) {
-      collapsed[collapsed.length - 1] = mergeDerivedWorkLogEntries(previous, entry);
-      continue;
-    }
-    collapsed.push(entry);
+    appendCollapsedWorkLogEntry(collapsed, taskRowIndex, entry);
   }
   return collapsed;
+}
+
+/** One fold step of `collapseDerivedWorkLogEntries`, shared with the incremental feed cache. */
+function appendCollapsedWorkLogEntry(
+  collapsed: DerivedWorkLogEntry[],
+  taskRowIndex: Map<string, number>,
+  entry: DerivedWorkLogEntry,
+): void {
+  const isTaskRow =
+    entry.taskId !== undefined &&
+    (entry.activityKind === "task.progress" ||
+      entry.activityKind === "task.completed" ||
+      entry.activityKind === "task.updated");
+  if (isTaskRow && entry.taskId !== undefined) {
+    const existingIndex = taskRowIndex.get(entry.taskId);
+    if (existingIndex !== undefined) {
+      collapsed[existingIndex] = mergeDerivedWorkLogEntries(collapsed[existingIndex]!, entry);
+      return;
+    }
+    taskRowIndex.set(entry.taskId, collapsed.length);
+    collapsed.push(entry);
+    return;
+  }
+  const previous = collapsed.at(-1);
+  if (previous && shouldCollapseToolLifecycleEntries(previous, entry)) {
+    collapsed[collapsed.length - 1] = mergeDerivedWorkLogEntries(previous, entry);
+    return;
+  }
+  collapsed.push(entry);
 }
 
 function shouldCollapseToolLifecycleEntries(
@@ -1270,27 +1287,94 @@ export function deriveThreadFeedPresentation(
   for (const entry of sourceFeed) {
     const fold = foldsByAnchorId.get(entry.id);
     if (fold) {
-      result.push({
-        type: "turn-fold",
-        id: `turn-fold:${fold.turnId}`,
-        createdAt: fold.createdAt,
-        turnId: fold.turnId,
-        label: fold.label,
-        expanded: expandedTurnIds.has(fold.turnId),
-      });
+      result.push(presentedTurnFoldEntry(entry, fold, expandedTurnIds.has(fold.turnId)));
     }
     if (!collapsedEntryIds.has(entry.id)) {
       appendPresentedFeedEntry(result, entry, expandedWorkGroupIds);
     }
   }
   if (activeWorkStartedAt !== null) {
-    result.push({
-      type: "working",
-      id: "working-indicator-row",
-      createdAt: activeWorkStartedAt,
-    });
+    result.push(presentedWorkingEntry(activeWorkStartedAt));
   }
   return result;
+}
+
+// Presented rows are minted per call below, but LegendList re-runs row bodies
+// for rows whose object identity changed, so each shaped row is cached against
+// its source entry plus the inputs that shape it; unchanged inputs reuse the
+// previous object. Feed entries are immutable, so WeakMap-keyed caches stay
+// valid (and collect) with their source.
+
+type ActivityGroupFeedEntry = Extract<ThreadFeedEntry, { readonly type: "activity-group" }>;
+type WorkToggleFeedEntry = Extract<ThreadFeedEntry, { readonly type: "work-toggle" }>;
+type TurnFoldFeedEntry = Extract<ThreadFeedEntry, { readonly type: "turn-fold" }>;
+type WorkingFeedEntry = Extract<ThreadFeedEntry, { readonly type: "working" }>;
+
+interface PresentedActivityGroup {
+  readonly visibleActivities: ReadonlyArray<ThreadFeedActivity>;
+  readonly collapsed: ActivityGroupFeedEntry;
+  collapsedToggle?: WorkToggleFeedEntry;
+  expandedToggle?: WorkToggleFeedEntry;
+}
+
+const presentedActivityGroupCache = new WeakMap<ActivityGroupFeedEntry, PresentedActivityGroup>();
+const presentedSingleActivityGroupCache = new WeakMap<ThreadFeedActivity, ActivityGroupFeedEntry>();
+
+interface PresentedTurnFold {
+  readonly turnId: TurnId;
+  readonly createdAt: string;
+  readonly label: string;
+  collapsedEntry?: TurnFoldFeedEntry;
+  expandedEntry?: TurnFoldFeedEntry;
+}
+
+const presentedTurnFoldCache = new WeakMap<ThreadFeedEntry, PresentedTurnFold>();
+let presentedWorkingRow: { readonly startedAt: string; readonly entry: WorkingFeedEntry } | null =
+  null;
+
+function presentedTurnFoldEntry(
+  anchor: ThreadFeedEntry,
+  fold: ThreadFeedTurnFold,
+  expanded: boolean,
+): TurnFoldFeedEntry {
+  let cached = presentedTurnFoldCache.get(anchor);
+  if (
+    cached === undefined ||
+    cached.turnId !== fold.turnId ||
+    cached.createdAt !== fold.createdAt ||
+    cached.label !== fold.label
+  ) {
+    cached = { turnId: fold.turnId, createdAt: fold.createdAt, label: fold.label };
+    presentedTurnFoldCache.set(anchor, cached);
+  }
+  const cachedEntry = expanded ? cached.expandedEntry : cached.collapsedEntry;
+  if (cachedEntry !== undefined) {
+    return cachedEntry;
+  }
+  const entry: TurnFoldFeedEntry = {
+    type: "turn-fold",
+    id: `turn-fold:${fold.turnId}`,
+    createdAt: fold.createdAt,
+    turnId: fold.turnId,
+    label: fold.label,
+    expanded,
+  };
+  if (expanded) {
+    cached.expandedEntry = entry;
+  } else {
+    cached.collapsedEntry = entry;
+  }
+  return entry;
+}
+
+function presentedWorkingEntry(startedAt: string): WorkingFeedEntry {
+  if (presentedWorkingRow?.startedAt !== startedAt) {
+    presentedWorkingRow = {
+      startedAt,
+      entry: { type: "working", id: "working-indicator-row", createdAt: startedAt },
+    };
+  }
+  return presentedWorkingRow.entry;
 }
 
 function appendPresentedFeedEntry(
@@ -1303,44 +1387,66 @@ function appendPresentedFeedEntry(
     return;
   }
 
-  const activities = entry.activities.filter(
-    (activity) => !(activity.toolLike && activity.status === "neutral"),
-  );
+  let presented = presentedActivityGroupCache.get(entry);
+  if (presented === undefined) {
+    const visibleActivities = entry.activities.filter(
+      (activity) => !(activity.toolLike && activity.status === "neutral"),
+    );
+    presented = {
+      visibleActivities,
+      collapsed:
+        visibleActivities.length === entry.activities.length
+          ? entry
+          : { ...entry, activities: visibleActivities },
+    };
+    presentedActivityGroupCache.set(entry, presented);
+  }
+  const activities = presented.visibleActivities;
   if (activities.length === 0) {
     return;
   }
   if (activities.length <= MAX_VISIBLE_WORK_LOG_ENTRIES) {
-    result.push({
-      ...entry,
-      activities,
-    });
+    result.push(presented.collapsed);
     return;
   }
 
   const groupId = entry.id;
   const expanded = expandedWorkGroupIds.has(groupId);
-  const hiddenCount = activities.length - MAX_VISIBLE_WORK_LOG_ENTRIES;
   const visibleActivities = expanded ? activities : activities.slice(-MAX_VISIBLE_WORK_LOG_ENTRIES);
 
   for (const activity of visibleActivities) {
-    result.push({
-      type: "activity-group",
-      id: activity.id,
-      createdAt: activity.createdAt,
-      turnId: activity.turnId,
-      activities: [activity],
-    });
+    let single = presentedSingleActivityGroupCache.get(activity);
+    if (single === undefined) {
+      single = {
+        type: "activity-group",
+        id: activity.id,
+        createdAt: activity.createdAt,
+        turnId: activity.turnId,
+        activities: [activity],
+      };
+      presentedSingleActivityGroupCache.set(activity, single);
+    }
+    result.push(single);
   }
-  result.push({
-    type: "work-toggle",
-    id: `work-toggle:${groupId}`,
-    createdAt: entry.createdAt,
-    turnId: entry.turnId,
-    groupId,
-    hiddenCount,
-    expanded,
-    onlyToolActivities: activities.every((activity) => activity.toolLike),
-  });
+  let toggle = expanded ? presented.expandedToggle : presented.collapsedToggle;
+  if (toggle === undefined) {
+    toggle = {
+      type: "work-toggle",
+      id: `work-toggle:${groupId}`,
+      createdAt: entry.createdAt,
+      turnId: entry.turnId,
+      groupId,
+      hiddenCount: activities.length - MAX_VISIBLE_WORK_LOG_ENTRIES,
+      expanded,
+      onlyToolActivities: activities.every((activity) => activity.toolLike),
+    };
+    if (expanded) {
+      presented.expandedToggle = toggle;
+    } else {
+      presented.collapsedToggle = toggle;
+    }
+  }
+  result.push(toggle);
 }
 
 /**
@@ -1519,9 +1625,11 @@ type BuildThreadFeedOptions = {
   readonly loadedMessages?: ReadonlyArray<OrchestrationThread["messages"][number]>;
 };
 
-const rawThreadFeedEntryCreatedAtOrder = Order.mapInput(
-  Order.Date,
-  (entry: RawThreadFeedEntry) => new Date(entry.createdAt),
+// Date.parse matches the previous Order.Date/new Date comparison exactly
+// (getTime; invalid timestamps are NaN and order first) without allocating a
+// Date per comparison.
+const rawThreadFeedEntryCreatedAtOrder = Order.mapInput(Order.Number, (entry: RawThreadFeedEntry) =>
+  Date.parse(entry.createdAt),
 );
 
 function buildMessageFeedEntries(
@@ -1636,43 +1744,224 @@ function updateMessageFeedEntryCache(
   };
 }
 
+function toActivityFeedEntry(entry: DerivedWorkLogEntry): RawThreadFeedEntry {
+  const summary = workEntryHeading(entry);
+  const detail = workEntryPreview(entry);
+  const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry));
+  const getCopyText = memoizeValue(() =>
+    [summary, detail, getFullDetail()]
+      .filter((value, index, values): value is string => {
+        return Boolean(value) && values.indexOf(value) === index;
+      })
+      .join("\n"),
+  );
+  return {
+    type: "activity",
+    id: entry.id,
+    createdAt: entry.createdAt,
+    turnId: entry.turnId,
+    activity: {
+      id: entry.id,
+      createdAt: entry.createdAt,
+      turnId: entry.turnId,
+      summary,
+      detail,
+      canExpand: workEntryHasExpandedBody(entry),
+      getFullDetail,
+      getCopyText,
+      icon: workEntryIcon(entry),
+      toolLike: workLogEntryIsToolLike(entry),
+      status: workEntryStatus(entry),
+    },
+  };
+}
+
 function buildActivityFeedEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): ReadonlyArray<RawThreadFeedEntry> {
   return Arr.sort(
-    deriveWorkLogEntries(activities).map<RawThreadFeedEntry>((entry) => {
-      const summary = workEntryHeading(entry);
-      const detail = workEntryPreview(entry);
-      const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry));
-      const getCopyText = memoizeValue(() =>
-        [summary, detail, getFullDetail()]
-          .filter((value, index, values): value is string => {
-            return Boolean(value) && values.indexOf(value) === index;
-          })
-          .join("\n"),
-      );
-      return {
-        type: "activity",
-        id: entry.id,
-        createdAt: entry.createdAt,
-        turnId: entry.turnId,
-        activity: {
-          id: entry.id,
-          createdAt: entry.createdAt,
-          turnId: entry.turnId,
-          summary,
-          detail,
-          canExpand: workEntryHasExpandedBody(entry),
-          getFullDetail,
-          getCopyText,
-          icon: workEntryIcon(entry),
-          toolLike: workLogEntryIsToolLike(entry),
-          status: workEntryStatus(entry),
-        },
-      };
-    }),
+    deriveWorkLogEntries(activities).map(toActivityFeedEntry),
     rawThreadFeedEntryCreatedAtOrder,
   );
+}
+
+interface ActivityFeedSlot {
+  readonly derived: DerivedWorkLogEntry;
+  readonly feedEntry: RawThreadFeedEntry;
+  readonly createdAtMs: number;
+}
+
+interface ActivityFeedEntryCache {
+  readonly activities: ReadonlyArray<OrchestrationThreadActivity>;
+  // Activities are immutable, so an unchanged reference always reuses its
+  // derived entry. Weak keys let evicted thread state garbage-collect.
+  readonly derivedByActivity: WeakMap<OrchestrationThreadActivity, DerivedWorkLogEntry | null>;
+  // Collapse order (taskRowIndex points here); `entries` is the same rows in
+  // final createdAt order.
+  readonly slots: ReadonlyArray<ActivityFeedSlot>;
+  readonly taskRowIndex: ReadonlyMap<string, number>;
+  // Greatest kept row in fold order; the append boundary check compares
+  // against this, not the array tail.
+  readonly lastKeptActivity: OrchestrationThreadActivity | null;
+  readonly entries: ReadonlyArray<RawThreadFeedEntry>;
+}
+
+function makeActivityFeedSlot(derived: DerivedWorkLogEntry): ActivityFeedSlot {
+  return {
+    derived,
+    feedEntry: toActivityFeedEntry(derived),
+    createdAtMs: Date.parse(derived.createdAt),
+  };
+}
+
+const activityFeedSlotOrder = Order.mapInput(
+  Order.Number,
+  (slot: ActivityFeedSlot) => slot.createdAtMs,
+);
+
+// The createdAt re-sort is almost always a no-op on an incrementally extended
+// feed; scan (NaN-safe: NaN never satisfies `<=`, forcing the sort, which
+// orders it first — the same as the stateless builder) before paying for it.
+function sortActivityFeedSlots(
+  slots: ReadonlyArray<ActivityFeedSlot>,
+): ReadonlyArray<ActivityFeedSlot> {
+  for (let index = 1; index < slots.length; index += 1) {
+    if (!(slots[index - 1]!.createdAtMs <= slots[index]!.createdAtMs)) {
+      return Arr.sort(slots, activityFeedSlotOrder);
+    }
+  }
+  return slots;
+}
+
+function buildActivityFeedEntryCache(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+  derivedByActivity: WeakMap<
+    OrchestrationThreadActivity,
+    DerivedWorkLogEntry | null
+  > = new WeakMap(),
+): ActivityFeedEntryCache {
+  const ordered = Arr.sort(activities, activityOrder);
+  const collapsed: DerivedWorkLogEntry[] = [];
+  const taskRowIndex = new Map<string, number>();
+  let lastKeptActivity: OrchestrationThreadActivity | null = null;
+  for (const activity of ordered) {
+    let derived = derivedByActivity.get(activity);
+    if (derived === undefined) {
+      derived = deriveWorkLogEntry(activity);
+      derivedByActivity.set(activity, derived);
+    }
+    if (derived === null) {
+      continue;
+    }
+    lastKeptActivity = activity;
+    appendCollapsedWorkLogEntry(collapsed, taskRowIndex, derived);
+  }
+  const slots = collapsed.map(makeActivityFeedSlot);
+  return {
+    activities,
+    derivedByActivity,
+    slots,
+    taskRowIndex,
+    lastKeptActivity,
+    entries: sortActivityFeedSlots(slots).map((slot) => slot.feedEntry),
+  };
+}
+
+/**
+ * Incremental counterpart to `buildActivityFeedEntryCache`: replays the
+ * collapse fold over only the appended suffix, deriving each new activity
+ * once. Returns null on any topology change the fold cannot replay — a kept
+ * row removed, replaced, or arriving out of order — so the caller rebuilds in
+ * full. Rows the work log drops may legitimately vanish mid-array (the
+ * reducer supersedes context-window updates); they never shaped the output,
+ * so their removal is replay-safe.
+ */
+function updateActivityFeedEntryCache(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+  previousCache: ActivityFeedEntryCache,
+): ActivityFeedEntryCache | null {
+  const previousActivities = previousCache.activities;
+  let previousIndex = 0;
+  let newIndex = 0;
+  while (previousIndex < previousActivities.length) {
+    const previousActivity = previousActivities[previousIndex]!;
+    if (newIndex < activities.length && activities[newIndex] === previousActivity) {
+      previousIndex += 1;
+      newIndex += 1;
+      continue;
+    }
+    if (previousCache.derivedByActivity.get(previousActivity) === null) {
+      previousIndex += 1;
+      continue;
+    }
+    return null;
+  }
+
+  // Copy-on-write: a mid-suffix bail must leave the previous cache untouched.
+  let nextSlots: ActivityFeedSlot[] | null = null;
+  let nextTaskRowIndex: Map<string, number> | null = null;
+  let lastKeptActivity = previousCache.lastKeptActivity;
+  for (; newIndex < activities.length; newIndex += 1) {
+    const activity = activities[newIndex]!;
+    let derived = previousCache.derivedByActivity.get(activity);
+    if (derived === undefined) {
+      derived = deriveWorkLogEntry(activity);
+      previousCache.derivedByActivity.set(activity, derived);
+    }
+    if (derived === null) {
+      continue;
+    }
+    if (lastKeptActivity !== null && activityOrder(lastKeptActivity, activity) > 0) {
+      return null;
+    }
+    lastKeptActivity = activity;
+
+    // Mirrors appendCollapsedWorkLogEntry against the writable copies.
+    const currentSlots = nextSlots ?? previousCache.slots;
+    const isTaskRow =
+      derived.taskId !== undefined &&
+      (derived.activityKind === "task.progress" ||
+        derived.activityKind === "task.completed" ||
+        derived.activityKind === "task.updated");
+    if (isTaskRow && derived.taskId !== undefined) {
+      const existingIndex = (nextTaskRowIndex ?? previousCache.taskRowIndex).get(derived.taskId);
+      if (existingIndex !== undefined) {
+        nextSlots ??= previousCache.slots.slice();
+        nextSlots[existingIndex] = makeActivityFeedSlot(
+          mergeDerivedWorkLogEntries(currentSlots[existingIndex]!.derived, derived),
+        );
+        continue;
+      }
+      nextTaskRowIndex ??= new Map(previousCache.taskRowIndex);
+      nextTaskRowIndex.set(derived.taskId, currentSlots.length);
+      nextSlots ??= previousCache.slots.slice();
+      nextSlots.push(makeActivityFeedSlot(derived));
+      continue;
+    }
+    const previousSlot = currentSlots.at(-1);
+    if (previousSlot && shouldCollapseToolLifecycleEntries(previousSlot.derived, derived)) {
+      nextSlots ??= previousCache.slots.slice();
+      nextSlots[currentSlots.length - 1] = makeActivityFeedSlot(
+        mergeDerivedWorkLogEntries(previousSlot.derived, derived),
+      );
+      continue;
+    }
+    nextSlots ??= previousCache.slots.slice();
+    nextSlots.push(makeActivityFeedSlot(derived));
+  }
+
+  if (nextSlots === null) {
+    // Only dropped rows came and went; the derived output is unchanged.
+    return { ...previousCache, activities };
+  }
+  return {
+    activities,
+    derivedByActivity: previousCache.derivedByActivity,
+    slots: nextSlots,
+    taskRowIndex: nextTaskRowIndex ?? previousCache.taskRowIndex,
+    lastKeptActivity,
+    entries: sortActivityFeedSlots(nextSlots).map((slot) => slot.feedEntry),
+  };
 }
 
 function mergeThreadFeedEntries(
@@ -1763,7 +2052,9 @@ function replaceThreadFeedMessages(
 /**
  * Builds a feed while reusing the expensive derived half when only messages or
  * activities changed. Streaming message deltas normally preserve the activity
- * array identity, so they no longer re-sort and re-interpret the full work log.
+ * array identity, and activity churn that only touches dropped rows (e.g.
+ * context-window supersede) preserves the derived entries, so neither
+ * re-sorts and re-interprets the full work log.
  */
 export function createThreadFeedBuilder() {
   let previousMessages: ReadonlyArray<OrchestrationThread["messages"][number]> | null = null;
@@ -1772,6 +2063,7 @@ export function createThreadFeedBuilder() {
     sortedIndexById: new Map(),
   };
   let previousActivities: ReadonlyArray<OrchestrationThreadActivity> | null = null;
+  let previousActivityCache: ActivityFeedEntryCache | null = null;
   let previousActivityEntries: ReadonlyArray<RawThreadFeedEntry> = [];
   let previousOldestLoadedMessageCreatedAt: string | null = null;
   let previousUsedLoadedMessages = false;
@@ -1798,15 +2090,22 @@ export function createThreadFeedBuilder() {
       previousMessages = loadedMessages;
       previousMessageCache = nextMessageCache;
     }
+    let activityEntriesChanged = false;
     if (activitiesChanged) {
+      previousActivityCache =
+        (previousActivityCache === null
+          ? null
+          : updateActivityFeedEntryCache(thread.activities, previousActivityCache)) ??
+        buildActivityFeedEntryCache(thread.activities, previousActivityCache?.derivedByActivity);
       previousActivities = thread.activities;
-      previousActivityEntries = buildActivityFeedEntries(thread.activities);
+      activityEntriesChanged = previousActivityCache.entries !== previousActivityEntries;
+      previousActivityEntries = previousActivityCache.entries;
     }
 
     const canReplaceMessages =
       previousFeed !== null &&
       messagesChanged &&
-      !activitiesChanged &&
+      !activityEntriesChanged &&
       usedLoadedMessages === previousUsedLoadedMessages &&
       oldestLoadedMessageCreatedAt === previousOldestLoadedMessageCreatedAt &&
       incrementalMessageUpdate !== null &&
@@ -1814,7 +2113,7 @@ export function createThreadFeedBuilder() {
     const canReuseFeed =
       previousFeed !== null &&
       !messagesChanged &&
-      !activitiesChanged &&
+      !activityEntriesChanged &&
       usedLoadedMessages === previousUsedLoadedMessages &&
       oldestLoadedMessageCreatedAt === previousOldestLoadedMessageCreatedAt;
     const replacedFeed =

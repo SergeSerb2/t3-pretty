@@ -82,10 +82,13 @@ export function useSelectedThreadRequests() {
     null,
   );
 
-  // Sort once; both derivations expect the same lifecycle ordering.
+  // Sort once; both derivations expect the same lifecycle ordering. Key on the
+  // activities array itself: stream windows re-mint the thread object even
+  // when the reducer left its activities untouched.
+  const selectedThreadActivities = selectedThread?.activities;
   const sortedActivities = useMemo(
-    () => (selectedThread ? sortThreadActivities(selectedThread.activities) : []),
-    [selectedThread],
+    () => (selectedThreadActivities ? sortThreadActivities(selectedThreadActivities) : []),
+    [selectedThreadActivities],
   );
   const activePendingApprovals = useMemo(
     () => derivePendingApprovals(sortedActivities),

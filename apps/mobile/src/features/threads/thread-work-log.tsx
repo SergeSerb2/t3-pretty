@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { type AppSymbolName, SymbolView } from "../../components/AppSymbol";
 import { LayoutAnimation, Pressable, ScrollView, useColorScheme, View } from "react-native";
+import { memo, useMemo } from "react";
 
 import { AppText as Text } from "../../components/AppText";
 import { scaledTypographyLineHeight } from "../../lib/appearancePreferences";
@@ -119,7 +120,7 @@ export function collapsedWorkLogHeight(
   );
 }
 
-export function ThreadWorkLog(props: {
+export const ThreadWorkLog = memo(function ThreadWorkLog(props: {
   readonly activities: ReadonlyArray<ThreadFeedActivity>;
   readonly copiedRowId: string | null;
   readonly expandedRows: Readonly<Record<string, boolean>>;
@@ -129,10 +130,16 @@ export function ThreadWorkLog(props: {
 }) {
   const colorScheme = useColorScheme();
   const pressedBackground = colorScheme === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.035)";
-  const rows = visibleWorkLogActivities(props.activities).map((activity) => ({
-    ...activity,
-    detail: compactActivityDetail(activity.detail),
-  }));
+  // Row details run a normalize regex each; key on the activities array so
+  // copy-feedback and expansion repaints skip re-deriving unchanged rows.
+  const rows = useMemo(
+    () =>
+      visibleWorkLogActivities(props.activities).map((activity) => ({
+        ...activity,
+        detail: compactActivityDetail(activity.detail),
+      })),
+    [props.activities],
+  );
 
   if (rows.length === 0) {
     return null;
@@ -272,7 +279,7 @@ export function ThreadWorkLog(props: {
       </View>
     </View>
   );
-}
+});
 
 export function ThreadWorkGroupToggle(props: {
   readonly expanded: boolean;
