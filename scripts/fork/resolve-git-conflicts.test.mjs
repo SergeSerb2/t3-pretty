@@ -310,4 +310,29 @@ ${">".repeat(7)} theirs
     assert.include(report, "AI-splicing");
     assert.include(report, "fork-only dependency entries");
   });
+
+  it("retries transient resolver failures instead of aborting the whole sync", () => {
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+
+    // Network errors, 429, 5xx, and unparseable/incomplete responses retry;
+    // the last attempt drops to high effort so one long-think cannot 502.
+    assert.include(resolver, "const maxAttempts = 3");
+    assert.include(resolver, 'attempt < maxAttempts ? REASONING_EFFORT : "high"');
+    assert.include(resolver, "status !== 0 && status !== 429 && status < 500");
+    assert.include(resolver, "setTimeout(resolve, attempt * 15_000)");
+    assert.include(resolver, "did not produce a completed response");
+    // Non-transient HTTP failures (auth, bad request) still throw immediately.
+    assert.include(resolver, "CLIProxyAPI returned HTTP ${status}");
+  });
+
+  it("records the iOS production fingerprint without tripping the format hook", () => {
+    const mobileWorkflow = NodeFS.readFileSync(mobileWorkflowPath, "utf8");
+
+    // The staged fingerprint record is extensionless, so `vp fmt` in the
+    // pre-commit hook has no target file and fails the whole release.
+    assert.include(
+      mobileWorkflow,
+      'git commit --no-verify -m "chore(mobile): record iOS production fingerprint"',
+    );
+  });
 });

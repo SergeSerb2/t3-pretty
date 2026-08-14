@@ -464,6 +464,10 @@ jobs:
           fi
           git config user.name "t3-pretty-mobile[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore(mobile): record iOS production fingerprint"
+          # --no-verify: the pre-commit hook runs `vp fmt` on staged files, and
+          # an extensionless fingerprint record is not a formattable target,
+          # which fails the hook and the whole release after a successful
+          # build and submit.
+          git commit --no-verify -m "chore(mobile): record iOS production fingerprint"
           git push origin "HEAD:${GITHUB_REF_NAME}"
           echo "Recorded .t3-fork/ios-production-fingerprint=$FINGERPRINT"
