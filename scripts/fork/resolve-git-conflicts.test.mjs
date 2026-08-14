@@ -149,6 +149,38 @@ ${">".repeat(7)} theirs
     );
   });
 
+  it("never clips a neighboring conflict inside a conflict's local context", () => {
+    // Conflicts ~46 lines apart: the 100-line context windows reach two
+    // neighbors over, and without clamping they end mid-conflict. A clipped
+    // marker block reads as a truncated, unresolvable conflict to the model.
+    const unit = `${"<".repeat(7)} ours
+ours code
+${"|".repeat(7)} base
+base code
+${"=".repeat(7)}
+theirs code
+${">".repeat(7)} theirs
+${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
+`;
+    const conflictedSource = unit.repeat(12);
+
+    const { conflicts, totalConflicts } = prepareConflictPrompt({
+      path: "dense.ts",
+      conflictedSource,
+      forkHistory: "",
+      maxConflicts: 5,
+    });
+
+    assert.equal(totalConflicts, 12);
+    assert.lengthOf(conflicts, 5);
+    for (const conflict of conflicts) {
+      const count = (pattern) => conflict.context.match(pattern)?.length ?? 0;
+      assert.equal(count(/^<{7}/gmu), count(/^>{7}/gmu), `conflict ${conflict.index} context`);
+      assert.equal(count(/^\|{7}/gmu), count(/^={7}/gmu), `conflict ${conflict.index} context`);
+      assert.equal(count(/^<{7}/gmu), count(/^\|{7}/gmu), `conflict ${conflict.index} context`);
+    }
+  });
+
   it("presents a modify/delete conflict as one whole-file conflict with deletion guidance", () => {
     const prompt = buildConflictPrompt({
       path: "apps/mobile/src/features/threads/thread-settings-menu.ts",

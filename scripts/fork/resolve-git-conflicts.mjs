@@ -99,8 +99,15 @@ function utf8ByteLengthThrough(source, start, end, maxBytes) {
   return bytes;
 }
 
-function contextAround(source, start, end, maxBytes) {
-  const { contextStart, contextEnd } = contextBounds(source, start, end);
+function contextAround(source, start, end, maxBytes, conflictBounds = []) {
+  let { contextStart, contextEnd } = contextBounds(source, start, end);
+  // Never cut a context window through another conflict block. A clipped
+  // marker block reads as a truncated, unresolvable conflict to the model,
+  // which then declines the whole file as unsafe (seen on nightly 1093).
+  for (const bound of conflictBounds) {
+    if (contextStart > bound.start && contextStart < bound.end) contextStart = bound.end;
+    if (contextEnd > bound.start && contextEnd < bound.end) contextEnd = bound.start;
+  }
   let byteLength = 1;
   byteLength += utf8ByteLengthThrough(source, contextStart, start, maxBytes - byteLength);
   if (byteLength > maxBytes) return undefined;
@@ -241,15 +248,16 @@ export function prepareConflictPrompt({
     throw new Error(`${path} exceeds the ${MAX_PROMPT_BYTES}-byte conflict prompt limit`);
   }
 
-  let totalConflicts = 0;
-  for (const match of conflictedSource.matchAll(CONFLICT_PATTERN)) {
-    totalConflicts += 1;
+  const allConflicts = [...conflictedSource.matchAll(CONFLICT_PATTERN)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+  const totalConflicts = allConflicts.length;
+  for (const { start, end } of allConflicts) {
     // Conflicts past this request's count or byte budget are left for the
     // next batch; only a first conflict that cannot fit alone is fatal.
     if (conflicts.length >= maxConflicts) continue;
     const index = conflicts.length;
-    const start = match.index;
-    const end = start + match[0].length;
     const contextPrefix = `${index === 0 ? "" : "\n\n"}CONFLICT ${index} WITH LOCAL CONTEXT:\n`;
     const prefixBytes = Buffer.byteLength(contextPrefix);
     const context = contextAround(
@@ -257,6 +265,7 @@ export function prepareConflictPrompt({
       start,
       end,
       MAX_PROMPT_BYTES - promptBytes - prefixBytes,
+      allConflicts,
     );
     if (context === undefined) {
       if (conflicts.length === 0) {
