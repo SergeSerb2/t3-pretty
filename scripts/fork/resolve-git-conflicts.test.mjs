@@ -515,6 +515,37 @@ ${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
     assert.include(resolver, "requesting a fresh resolution");
   });
 
+  it("keeps every conflict context byte-exact against the working file", () => {
+    // An earlier version joined the before-context and the conflict block
+    // with an extra "\n"; old_text copied across that junction could never
+    // match the file and failed the run deterministically.
+    const unit = `${"<".repeat(7)} ours
+value a
+${"|".repeat(7)} base
+value b
+${"=".repeat(7)}
+value c
+${">".repeat(7)} theirs
+${Array.from({ length: 30 }, (_, index) => `filler ${index}`).join("\n")}
+`;
+    const conflictedSource = unit.repeat(6);
+
+    const { conflicts } = prepareConflictPrompt({
+      path: "exact.ts",
+      conflictedSource,
+      forkHistory: "",
+      maxConflicts: 3,
+    });
+
+    assert.lengthOf(conflicts, 3);
+    for (const conflict of conflicts) {
+      assert.isTrue(
+        conflictedSource.includes(conflict.context),
+        `conflict ${conflict.index} context is not a byte-exact slice of the file`,
+      );
+    }
+  });
+
   it("disambiguates a repeated old_text by conflict proximity", () => {
     const conflictBlock = `${"<".repeat(7)} ours
 shared token
