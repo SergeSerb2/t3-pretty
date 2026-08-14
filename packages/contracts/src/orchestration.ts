@@ -22,6 +22,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { SkillId } from "./skills.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -452,6 +453,10 @@ export const OrchestrationThread = Schema.Struct({
   // wins) so devices racing to assign converge. Optional so payloads from
   // pre-scenery servers still decode.
   scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
+  // Per-thread enabled skills; global settings-enabled skills union on top
+  // when a turn materializes the workspace. Defaults to empty so payloads
+  // from pre-skills servers still decode.
+  enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -512,6 +517,8 @@ export const OrchestrationThreadShell = Schema.Struct({
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   // Same write-once World Scenery binding as OrchestrationThread.scenery.
   scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
+  // Same per-thread skill set as OrchestrationThread.enabledSkillIds.
+  enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -720,6 +727,9 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Per-thread skill picks at creation; defaults to none so older clients
+  // stay valid. Global settings-enabled skills union on top at turn start.
+  enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   createdAt: IsoDateTime,
 });
 
@@ -824,6 +834,16 @@ const ThreadSceneryAssignCommand = Schema.Struct({
   scenery: ThreadSceneryPhoto,
 });
 
+const ThreadSkillsSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.skills.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  // Full replacement of the per-thread enabled skill set. Global
+  // settings-enabled skills union on top at materialization time.
+  enabledSkillIds: Schema.Array(SkillId),
+  createdAt: IsoDateTime,
+});
+
 const ThreadMetaUpdateCommand = Schema.Struct({
   type: Schema.Literal("thread.meta.update"),
   commandId: CommandId,
@@ -866,6 +886,8 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Per-thread skill picks chosen in the draft composer; defaults to none.
+  enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   createdAt: IsoDateTime,
 });
 
@@ -987,6 +1009,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadUnpinCommand,
   ThreadPinReorderCommand,
   ThreadSceneryAssignCommand,
+  ThreadSkillsSetCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -1016,6 +1039,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadUnpinCommand,
   ThreadPinReorderCommand,
   ThreadSceneryAssignCommand,
+  ThreadSkillsSetCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -1135,6 +1159,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.unpinned",
   "thread.pin-reordered",
   "thread.scenery-assigned",
+  "thread.skills-set",
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
@@ -1198,6 +1223,8 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Optional so persisted events from pre-skills servers still decode.
+  enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -1272,6 +1299,13 @@ export const ThreadSceneryAssignedPayload = Schema.Struct({
   // The winning assignment: the command's photo on first assign, the existing
   // binding on raced/duplicate assigns (write-once, like re-pinning).
   scenery: ThreadSceneryAssignment,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadSkillsSetPayload = Schema.Struct({
+  threadId: ThreadId,
+  // The new per-thread enabled skill set (full replacement).
+  enabledSkillIds: Schema.Array(SkillId),
   updatedAt: IsoDateTime,
 });
 
@@ -1488,6 +1522,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.scenery-assigned"),
     payload: ThreadSceneryAssignedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.skills-set"),
+    payload: ThreadSkillsSetPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
