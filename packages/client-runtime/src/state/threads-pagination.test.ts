@@ -19,6 +19,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
 
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
@@ -216,8 +217,25 @@ const makeHarness = Effect.fn("TestThreadPagination.makeHarness")(function* (opt
     Effect.forkScoped,
   );
 
-  const awaitState = (predicate: (state: EnvironmentThreadState) => boolean) =>
-    Queue.take(observed).pipe(Effect.repeat({ until: predicate }));
+  const awaitState = (predicate: (state: EnvironmentThreadState) => boolean) => {
+    // Streamed items publish in 50ms coalescing windows. Poll instead of
+    // block: each step yields to let the stream machinery deliver and arm the
+    // window, advances the clock past it, then yields for the flush publish.
+    const step = Effect.gen(function* () {
+      for (let index = 0; index < 10; index += 1) {
+        yield* Effect.yieldNow;
+      }
+      yield* TestClock.adjust("60 millis");
+      for (let index = 0; index < 10; index += 1) {
+        yield* Effect.yieldNow;
+      }
+      return yield* Queue.poll(observed);
+    });
+    return step.pipe(
+      Effect.repeat({ until: (result) => Option.isSome(result) && predicate(result.value) }),
+      Effect.map((result) => Option.getOrThrow(result)),
+    );
+  };
   const resolveNextPage = (response: LoaderResponse) =>
     Queue.take(pendingPageResponses).pipe(
       Effect.flatMap((deferred) => Deferred.succeed(deferred, response)),
