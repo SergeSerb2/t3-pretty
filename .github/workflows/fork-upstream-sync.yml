@@ -28,7 +28,6 @@ jobs:
       # Completed per-file resolutions are checkpointed to this branch so a
       # failed or timed-out run's model work survives into the next run.
       RESOLUTION_CACHE_BRANCH: automation/sync-resolution-cache
-      SYNC_RESOLUTION_CACHE_DIR: ${{ runner.temp }}/sync-resolution-cache
     steps:
       - name: Checkout fork main
         uses: actions/checkout@v6
@@ -135,6 +134,7 @@ jobs:
           # parent change intentionally omitted to protect T3 Pretty.
           # Restore checkpointed per-file resolutions first: a run that failed
           # or timed out mid-merge reruns only the files that never finished.
+          export SYNC_RESOLUTION_CACHE_DIR="$RUNNER_TEMP/sync-resolution-cache"
           mkdir -p "$SYNC_RESOLUTION_CACHE_DIR"
           if git fetch origin "refs/heads/$RESOLUTION_CACHE_BRANCH:refs/remotes/origin/$RESOLUTION_CACHE_BRANCH" 2>/dev/null; then
             git archive "origin/$RESOLUTION_CACHE_BRANCH" | tar -x -C "$SYNC_RESOLUTION_CACHE_DIR"
@@ -190,6 +190,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export SYNC_RESOLUTION_CACHE_DIR="$RUNNER_TEMP/sync-resolution-cache"
           shopt -s nullglob
           entries=("$SYNC_RESOLUTION_CACHE_DIR"/*.json)
           if (( ${#entries[@]} == 0 )); then
