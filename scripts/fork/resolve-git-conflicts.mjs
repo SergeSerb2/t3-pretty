@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
@@ -27,6 +28,51 @@ const CONFLICT_PATTERN = /^<<<<<<<[^\n]*\n[\s\S]*?^>>>>>>>[^\n]*(?:\n|$)/gmu;
 const LEFTOVER_MARKER_PATTERN = /^(?:<{7}|\|{7}|={7}|>{7})/mu;
 const GENERATED_LOCKFILE_PATTERN = /(?:^|\/)pnpm-lock\.yaml$/u;
 const REPORT_PATH = ".t3-fork/upstream-sync-report.md";
+// Completed per-file resolutions are checkpointed here (one JSON per file,
+// keyed by a hash of the conflicted input) and pushed to the
+// automation/sync-resolution-cache branch by the workflow even when a run
+// fails, so a rerun only pays for files that never finished. A new nightly
+// changes the conflicted content, so stale entries simply never match.
+const RESOLUTION_CACHE_DIR = process.env.SYNC_RESOLUTION_CACHE_DIR ?? ".git/sync-resolution-cache";
+
+export function resolutionCacheKey({ path, conflictedSource }) {
+  return NodeCrypto.createHash("sha256")
+    .update(path)
+    .update("\0")
+    .update(conflictedSource)
+    .digest("hex");
+}
+
+export function readCachedResolution({ key, cacheDir = RESOLUTION_CACHE_DIR }) {
+  try {
+    const entry = JSON.parse(NodeFS.readFileSync(NodePath.join(cacheDir, `${key}.json`), "utf8"));
+    if (
+      typeof entry !== "object" ||
+      entry === null ||
+      typeof entry.path !== "string" ||
+      (entry.deleted !== true && typeof entry.resolvedSource !== "string") ||
+      !Array.isArray(entry.forkChangesPreserved) ||
+      !Array.isArray(entry.upstreamChangesIntegrated) ||
+      !Array.isArray(entry.upstreamChangesOmitted)
+    ) {
+      return undefined;
+    }
+    return entry;
+  } catch {
+    return undefined;
+  }
+}
+
+export function writeCachedResolution({ key, entry, cacheDir = RESOLUTION_CACHE_DIR }) {
+  // Checkpointing is best-effort: never fail a completed resolution over a
+  // cache write problem.
+  try {
+    NodeFS.mkdirSync(cacheDir, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(cacheDir, `${key}.json`), `${JSON.stringify(entry)}\n`);
+  } catch {
+    process.stdout.write(`[fork-sync] could not checkpoint the resolution for ${entry.path}\n`);
+  }
+}
 
 export function isGeneratedLockfile(path) {
   return GENERATED_LOCKFILE_PATTERN.test(path);
@@ -609,6 +655,31 @@ function applyResolutionEdits({ path, source, conflicts, resolution }) {
 
 async function resolveConflict(path, token) {
   const { conflictedSource, deleteConflict } = conflictSourceForPath(path);
+
+  // Resume from the checkpoint cache when an earlier run already completed
+  // this exact conflicted input; only never-finished files reach the model.
+  const cacheKey = resolutionCacheKey({ path, conflictedSource });
+  const cached = readCachedResolution({ key: cacheKey });
+  if (cached) {
+    if (cached.deleted === true) {
+      git(["rm", "-q", "--", path]);
+    } else {
+      if (LEFTOVER_MARKER_PATTERN.test(cached.resolvedSource)) {
+        throw new Error(`checkpointed resolution for ${path} contains conflict markers`);
+      }
+      NodeFS.mkdirSync(NodePath.dirname(NodePath.resolve(path)), { recursive: true });
+      NodeFS.writeFileSync(path, cached.resolvedSource);
+      git(["add", "--", path]);
+    }
+    process.stdout.write(`[fork-sync] reused the checkpointed resolution for ${path}\n`);
+    return {
+      path,
+      forkChangesPreserved: cached.forkChangesPreserved,
+      upstreamChangesIntegrated: cached.upstreamChangesIntegrated,
+      upstreamChangesOmitted: cached.upstreamChangesOmitted,
+    };
+  }
+
   const previousUpstreamTag = process.env.PREVIOUS_UPSTREAM_TAG?.trim() ?? "";
   const forkHistory = forkHistoryForPath(path, previousUpstreamTag);
 
@@ -634,13 +705,43 @@ async function resolveConflict(path, token) {
       maxConflicts: MAX_CONFLICTS_PER_REQUEST,
       deleteConflict,
     });
-    const { resolution, usedEffort, effectiveTier } = await requestConflictResolution({
-      path,
-      prompt,
-      conflictCount: conflicts.length,
-      token,
-    });
-    source = applyResolutionEdits({ path, source, conflicts, resolution });
+    // An edit set that fails validation (non-unique old_text, overlaps, a
+    // missed conflict) is a sampling defect, not a hard failure: request one
+    // fresh resolution before giving up on the batch.
+    let resolution;
+    let usedEffort = REASONING_EFFORT;
+    let effectiveTier = "unknown";
+    let validationError;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const response = await requestConflictResolution({
+        path,
+        prompt,
+        conflictCount: conflicts.length,
+        token,
+      });
+      try {
+        const nextSource = applyResolutionEdits({
+          path,
+          source,
+          conflicts,
+          resolution: response.resolution,
+        });
+        resolution = response.resolution;
+        usedEffort = response.usedEffort;
+        effectiveTier = response.effectiveTier;
+        source = nextSource;
+        validationError = undefined;
+        break;
+      } catch (error) {
+        validationError = error;
+        if (attempt < 2) {
+          process.stdout.write(
+            `[fork-sync] batch ${batches} for ${path} returned an invalid edit set (${error instanceof Error ? error.message : String(error)}); requesting a fresh resolution\n`,
+          );
+        }
+      }
+    }
+    if (validationError) throw validationError;
     forkChangesPreserved.push(
       ...stringList(resolution.fork_changes_preserved, "fork_changes_preserved"),
     );
@@ -666,12 +767,32 @@ async function resolveConflict(path, token) {
         ? "followed the parent nightly's deletion of this file"
         : "kept the fork's deletion of this file over the parent copy",
     );
+    writeCachedResolution({
+      key: cacheKey,
+      entry: {
+        path,
+        deleted: true,
+        forkChangesPreserved,
+        upstreamChangesIntegrated,
+        upstreamChangesOmitted,
+      },
+    });
     return { path, forkChangesPreserved, upstreamChangesIntegrated, upstreamChangesOmitted };
   }
 
   NodeFS.mkdirSync(NodePath.dirname(NodePath.resolve(path)), { recursive: true });
   NodeFS.writeFileSync(path, source);
   git(["add", "--", path]);
+  writeCachedResolution({
+    key: cacheKey,
+    entry: {
+      path,
+      resolvedSource: source,
+      forkChangesPreserved,
+      upstreamChangesIntegrated,
+      upstreamChangesOmitted,
+    },
+  });
   return { path, forkChangesPreserved, upstreamChangesIntegrated, upstreamChangesOmitted };
 }
 
