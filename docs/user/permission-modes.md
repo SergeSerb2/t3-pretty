@@ -49,5 +49,5 @@ with prompting enabled and a restricted workspace while **Full access** disables
 labels above describe what you get; the exact per-provider translation is internal and may
 change.
 
-Mobile offers the same four modes (Supervised, Auto, and Yolo for Kimi threads). It labels the
-first one **Approve actions** rather than **Supervised**.
+Mobile offers the same modes with the same labels and descriptions: the four generic modes above,
+or **Supervised**, **Auto**, and **Yolo** for Kimi threads.

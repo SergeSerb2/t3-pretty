@@ -20,13 +20,16 @@ import {
   clearAgentAwarenessRegistrationRecord,
   loadAgentAwarenessRegistrationRecord,
   loadOrCreateAgentAwarenessDeviceId,
+  loadPreferences,
   saveAgentAwarenessRegistrationRecord,
 } from "../../persistence/imperative";
+import type { Preferences } from "../../persistence/mobile-preferences";
 import { makeRelayDeviceRegistrationRequest, resolveApsEnvironment } from "./registrationPayload";
 import {
   AgentAwarenessOperationError,
   __resetAgentAwarenessRemoteRegistrationForTest,
   applyLocalLiveActivityProps,
+  armAgentAwarenessLiveActivityForLocalWork,
   getAgentAwarenessRegistrationStatus,
   hasArmedLiveActivity,
   mergeAgentAwarenessRegistrationPreferences,
@@ -46,9 +49,15 @@ import * as Notifications from "expo-notifications";
 const secureStore = vi.hoisted(() => new Map<string, string>());
 const widgetMocks = vi.hoisted(() => ({
   getInstances: vi.fn(() => []),
-  start: vi.fn(),
+  start: vi.fn(() => ({})),
   update: vi.fn(() => Promise.resolve()),
   end: vi.fn(() => Promise.resolve()),
+}));
+const environmentConfigsMock = vi.hoisted(() => ({
+  configs: new Map<
+    string,
+    { environment: { capabilities: { agentActivityPublishing?: boolean } } }
+  >(),
 }));
 const backgroundRuntime = vi.hoisted(() => ({
   pending: [] as Array<{
@@ -85,6 +94,18 @@ vi.mock("../../widgets/AgentActivity", () => ({
     getInstances: widgetMocks.getInstances,
     start: widgetMocks.start,
   },
+}));
+
+// The state modules pull the whole connection stack (and native expo modules)
+// into the import graph; the arming gate only needs the configs map.
+vi.mock("../../state/atom-registry", () => ({
+  appAtomRegistry: {
+    get: () => environmentConfigsMock.configs,
+  },
+}));
+
+vi.mock("../../state/server", () => ({
+  environmentServerConfigsAtom: Symbol("environmentServerConfigsAtom"),
 }));
 
 vi.mock("expo-notifications", () => ({
@@ -235,8 +256,10 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     widgetMocks.getInstances.mockReset();
     widgetMocks.getInstances.mockReturnValue([]);
     widgetMocks.start.mockReset();
+    widgetMocks.start.mockReturnValue({});
     widgetMocks.update.mockReset();
     widgetMocks.end.mockReset();
+    environmentConfigsMock.configs.clear();
   });
 
   it("preserves disabled Live Activity preferences in relay registrations", () => {
@@ -866,7 +889,6 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       }).pipe(Effect.provide(relayTestLayer));
     },
   );
-
   it("starts a Live Activity from local thread state when none is armed", () => {
     const activity = {
       getPushToken: vi.fn(() => Promise.resolve("activity-token")),
@@ -1081,5 +1103,56 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       yield* runBackgroundOperations();
       expect(activity.getPushToken).toHaveBeenCalledTimes(8);
     }).pipe(Effect.provide(relayTestLayer), Effect.ensuring(Effect.sync(() => vi.useRealTimers())));
+  });
+
+  it("skips the Live Activity seed when the environment reports publishing disabled", async () => {
+    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+    vi.mocked(loadPreferences).mockResolvedValueOnce({
+      liveActivitiesEnabled: true,
+    } as Preferences);
+    environmentConfigsMock.configs.set("env-1", {
+      environment: { capabilities: { agentActivityPublishing: false } },
+    });
+
+    armAgentAwarenessLiveActivityForLocalWork({
+      environmentId: "env-1" as EnvironmentId,
+      threadTitle: "Fix the flaky test",
+      projectTitle: "t3code",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(widgetMocks.start).not.toHaveBeenCalled();
+  });
+
+  it("seeds the Live Activity for publishing and pre-capability environments", async () => {
+    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+    environmentConfigsMock.configs.set("env-publishing", {
+      environment: { capabilities: { agentActivityPublishing: true } },
+    });
+
+    vi.mocked(loadPreferences).mockResolvedValueOnce({
+      liveActivitiesEnabled: true,
+    } as Preferences);
+    armAgentAwarenessLiveActivityForLocalWork({
+      environmentId: "env-publishing" as EnvironmentId,
+      threadTitle: "Fix the flaky test",
+      projectTitle: "t3code",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(widgetMocks.start).toHaveBeenCalledTimes(1);
+
+    // An environment without the capability may run an older server that
+    // still publishes; only an explicit false skips the seed.
+    widgetMocks.start.mockClear();
+    vi.mocked(loadPreferences).mockResolvedValueOnce({
+      liveActivitiesEnabled: true,
+    } as Preferences);
+    armAgentAwarenessLiveActivityForLocalWork({
+      environmentId: "env-pre-capability" as EnvironmentId,
+      threadTitle: "Fix the flaky test",
+      projectTitle: "t3code",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(widgetMocks.start).toHaveBeenCalledTimes(1);
   });
 });

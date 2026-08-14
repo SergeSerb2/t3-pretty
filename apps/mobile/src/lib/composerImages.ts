@@ -4,6 +4,7 @@ import {
   type UploadChatImageAttachment,
 } from "@t3tools/contracts";
 import { estimateBase64ByteSize } from "./base64";
+import { beginForegroundHandoff } from "./foreground-handoff";
 import { uuidv4 } from "./uuid";
 
 export interface DraftComposerImageAttachment extends UploadChatImageAttachment {
@@ -162,15 +163,23 @@ export async function pickComposerImages(input: {
     };
   }
 
-  // Skip picker-side base64: it blocks the promise until every asset is
-  // encoded, which left the composer with a dead send button and no
-  // thumbnails. Previews come from the local URI; we read bytes ourselves.
-  const result = await imagePicker.launchImageLibraryAsync({
-    mediaTypes: ["images"],
-    allowsMultipleSelection: true,
-    selectionLimit: remainingSlots,
-    quality: 1,
-  });
+  // The picker covers the Android activity, which reports the app as
+  // backgrounded; the guard keeps background-triggered restarts away mid-pick.
+  const endHandoff = beginForegroundHandoff();
+  let result: Awaited<ReturnType<typeof imagePicker.launchImageLibraryAsync>>;
+  try {
+    // Skip picker-side base64: it blocks the promise until every asset is
+    // encoded, which left the composer with a dead send button and no
+    // thumbnails. Previews come from the local URI; we read bytes ourselves.
+    result = await imagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      selectionLimit: remainingSlots,
+      quality: 1,
+    });
+  } finally {
+    endHandoff();
+  }
 
   if (result.canceled) {
     return {
