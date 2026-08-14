@@ -45,6 +45,15 @@ import { AddProjectLocalRoute } from "./features/projects/AddProjectLocalRoute";
 import { AddProjectRepositoryRoute } from "./features/projects/AddProjectRepositoryRoute";
 import { AddProjectSourceRoute } from "./features/projects/AddProjectSourceRoute";
 import { NewTaskDraftRouteScreen } from "./features/threads/NewTaskDraftRouteScreen";
+import {
+  NewTaskBranchPickerRouteScreen,
+  NewTaskEnvironmentPickerRouteScreen,
+} from "./features/threads/NewTaskContextPickerScreens";
+import {
+  ExistingThreadSettingsRouteProvider,
+  ExistingThreadSettingsRouteScreen,
+  NewTaskThreadSettingsRouteScreen,
+} from "./features/threads/ThreadSettingsSheet";
 import { NewTaskFlowProvider } from "./features/threads/new-task-flow-provider";
 import { NewTaskRouteScreen } from "./features/threads/NewTaskRouteScreen";
 import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppearanceRouteScreen";
@@ -68,21 +77,38 @@ import {
 } from "./features/sharing/incoming-share-presentation";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
 import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
+import {
+  FORM_SHEET_PRESENTATION_OPTIONS as UPSTREAM_FORM_SHEET_PRESENTATION_OPTIONS,
+  NATIVE_SHEET_SURFACE_COLOR as UPSTREAM_NATIVE_SHEET_SURFACE_COLOR,
+  NATIVE_SHEET_SURFACE_CONTENT_STYLE as UPSTREAM_NATIVE_SHEET_SURFACE_CONTENT_STYLE,
+} from "./native/sheet-surface";
 import { ensureThreadOutboxLoaded } from "./state/thread-outbox";
 import { useThreadOutboxHasQueuedMessages } from "./state/use-thread-outbox";
 import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
-// Matches --color-sheet in global.css (World Scenery light/dark). DynamicColorIOS
-// lets the header background stay STATIC config while still adapting to appearance
-// changes. Native headers cannot read CSS variables, so these hexes must stay in
-// step with global.css / App.tsx SCENERY_NAV_* (same constraint as those files).
-const SHEET_BACKGROUND_COLOR =
+// The parent now centralizes native sheet presentation in sheet-surface. Preserve
+// that implementation while re-applying the World Scenery light/dark palette on
+// iOS, where native headers cannot resolve the CSS variables from global.css.
+const PRETTY_SHEET_SURFACE_COLOR =
   Platform.OS === "ios"
     ? DynamicColorIOS({ light: "rgba(244, 246, 244, 0.98)", dark: "rgba(14, 17, 16, 0.98)" })
     : undefined;
 
+const NATIVE_SHEET_SURFACE_COLOR =
+  PRETTY_SHEET_SURFACE_COLOR ?? UPSTREAM_NATIVE_SHEET_SURFACE_COLOR;
+const NATIVE_SHEET_SURFACE_CONTENT_STYLE =
+  PRETTY_SHEET_SURFACE_COLOR !== undefined
+    ? StyleSheet.flatten([
+        UPSTREAM_NATIVE_SHEET_SURFACE_CONTENT_STYLE,
+        { backgroundColor: PRETTY_SHEET_SURFACE_COLOR },
+      ])
+    : UPSTREAM_NATIVE_SHEET_SURFACE_CONTENT_STYLE;
+const FORM_SHEET_PRESENTATION_OPTIONS = {
+  ...UPSTREAM_FORM_SHEET_PRESENTATION_OPTIONS,
+  contentStyle: NATIVE_SHEET_SURFACE_CONTENT_STYLE,
+};
 type AppScreenOptions = NativeStackNavigationOptions & {
   readonly unstable_navigationItemStyle?: "editor";
 };
@@ -101,8 +127,8 @@ const GLASS_HEADER_OPTIONS: AppScreenOptions = {
   headerShown: true,
   headerStyle: NATIVE_LIQUID_GLASS_SUPPORTED
     ? { backgroundColor: "transparent" }
-    : SHEET_BACKGROUND_COLOR !== undefined
-      ? { backgroundColor: SHEET_BACKGROUND_COLOR as unknown as string }
+    : NATIVE_SHEET_SURFACE_COLOR !== undefined
+      ? { backgroundColor: NATIVE_SHEET_SURFACE_COLOR as unknown as string }
       : undefined,
   headerTitleStyle: { fontSize: 18, fontWeight: "800" },
   headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED,
@@ -119,10 +145,10 @@ const SOLID_HEADER_OPTIONS: AppScreenOptions = {
   headerShadowVisible: false,
   headerShown: true,
   headerStyle:
-    SHEET_BACKGROUND_COLOR !== undefined
+    NATIVE_SHEET_SURFACE_COLOR !== undefined
       ? // native-stack types this as `string`, but the native side accepts any
         // ColorValue including DynamicColorIOS.
-        { backgroundColor: SHEET_BACKGROUND_COLOR as unknown as string }
+        { backgroundColor: NATIVE_SHEET_SURFACE_COLOR as unknown as string }
       : undefined,
   headerTitleStyle: { fontSize: 18, fontWeight: "800" },
   headerTransparent: false,
@@ -132,6 +158,14 @@ const SOLID_HEADER_OPTIONS: AppScreenOptions = {
 // Solid header variant for screens inside sheets (centered title, no editor style).
 const SHEET_SOLID_HEADER_OPTIONS: AppScreenOptions = {
   ...SOLID_HEADER_OPTIONS,
+  unstable_navigationItemStyle: undefined,
+};
+
+// A native glass header for a sheet screen whose primary child is a scroll
+// view. The centered sheet title stays stable while UIKit supplies scroll-edge
+// fading from that child.
+const SHEET_GLASS_HEADER_OPTIONS: AppScreenOptions = {
+  ...GLASS_HEADER_OPTIONS,
   unstable_navigationItemStyle: undefined,
 };
 
@@ -250,10 +284,17 @@ const THREAD_LINKING_PREFIX = "threads/:environmentId/:threadId";
 const NewTaskSheetStack = createNativeStackNavigator({
   initialRouteName: "NewTask",
   screenOptions: {
-    ...GLASS_HEADER_OPTIONS,
+    ...SHEET_GLASS_HEADER_OPTIONS,
     freezeOnBlur: true,
-    // Sheets read better with the iOS-default centered title (no editor style).
-    unstable_navigationItemStyle: undefined,
+    // The form-sheet host owns the one opaque adaptive surface. Child screens
+    // and the navigation bar stay transparent over it, avoiding visible color
+    // slabs as view controllers move horizontally.
+    contentStyle: Platform.OS === "ios" ? { backgroundColor: "transparent" } : undefined,
+    // UIKit's default push adds a dimming shadow and independently transitions
+    // the navigation bar. Both read as mismatched sheet backgrounds here.
+    // simple_push retains native push/pop gestures without either artifact.
+    animation: Platform.OS === "ios" ? "simple_push" : undefined,
+    animationDuration: Platform.OS === "ios" ? 350 : undefined,
   },
   screens: {
     NewTask: createNativeStackScreen({
@@ -266,9 +307,39 @@ const NewTaskSheetStack = createNativeStackNavigator({
     NewTaskDraft: createNativeStackScreen({
       screen: NewTaskDraftRouteScreen,
       linking: "draft",
-      // The draft composer has no scroll view for glass to sample; a solid
-      // header also lays the content out below the bar (no manual inset).
-      options: SHEET_SOLID_HEADER_OPTIONS,
+      options: {
+        headerBackVisible: false,
+        title: "",
+      },
+    }),
+    NewTaskEnvironment: createNativeStackScreen({
+      screen: NewTaskEnvironmentPickerRouteScreen,
+      linking: "draft/environment",
+      options: {
+        title: "Environment",
+      },
+    }),
+    NewTaskBranch: createNativeStackScreen({
+      screen: NewTaskBranchPickerRouteScreen,
+      linking: "draft/branch",
+      options: {
+        title: "Branch",
+      },
+    }),
+    ThreadSettings: createNativeStackScreen({
+      screen: NewTaskThreadSettingsRouteScreen,
+      linking: "draft/settings",
+      options: {
+        gestureEnabled: true,
+        headerShown: false,
+        ...(Platform.OS === "android"
+          ? { presentation: "card" as const }
+          : {
+              ...FORM_SHEET_PRESENTATION_OPTIONS,
+              sheetAllowedDetents: [1],
+              sheetGrabberVisible: true,
+            }),
+      },
     }),
     AddProject: createNativeStackScreen({
       screen: AddProjectSourceRoute,
@@ -309,6 +380,7 @@ const WORKSPACE_OVERLAY_ROUTES = new Set([
   "SettingsLegal",
   "SettingsSheet",
   "ThreadReviewComment",
+  "ThreadSettingsSheet",
 ]);
 
 /**
@@ -389,9 +461,11 @@ function RootStackLayout(props: {
     <HardwareKeyboardCommandProvider pathname={pathname}>
       <ThreadOutboxDrainWorker />
       <ShowcaseCaptureCoordinator pathname={pathname} />
-      <AdaptiveWorkspaceLayout pathname={workspacePathname}>
-        {props.children}
-      </AdaptiveWorkspaceLayout>
+      <ExistingThreadSettingsRouteProvider>
+        <AdaptiveWorkspaceLayout pathname={workspacePathname}>
+          {props.children}
+        </AdaptiveWorkspaceLayout>
+      </ExistingThreadSettingsRouteProvider>
     </HardwareKeyboardCommandProvider>
   );
 }
@@ -513,7 +587,9 @@ export const RootStack = createNativeStackNavigator({
       options: {
         // Android cannot host the keyboard-driven comment composer inside a
         // formSheet; use a full-screen modal there instead.
-        presentation: Platform.OS === "android" ? "fullScreenModal" : "formSheet",
+        ...(Platform.OS === "android"
+          ? { presentation: "fullScreenModal" as const }
+          : FORM_SHEET_PRESENTATION_OPTIONS),
         sheetAllowedDetents: Platform.OS === "android" ? undefined : [0.55, 0.92],
         sheetGrabberVisible: Platform.OS !== "android",
       },
@@ -523,10 +599,7 @@ export const RootStack = createNativeStackNavigator({
       linking: `${THREAD_LINKING_PREFIX}/files`,
       options: {
         ...GLASS_HEADER_OPTIONS,
-        contentStyle:
-          SHEET_BACKGROUND_COLOR !== undefined
-            ? { backgroundColor: SHEET_BACKGROUND_COLOR }
-            : undefined,
+        contentStyle: NATIVE_SHEET_SURFACE_CONTENT_STYLE,
         title: "Files",
       },
     }),
@@ -535,11 +608,25 @@ export const RootStack = createNativeStackNavigator({
       linking: `${THREAD_LINKING_PREFIX}/files/:path*`,
       options: SOLID_HEADER_OPTIONS,
     }),
+    ThreadSettingsSheet: createNativeStackScreen({
+      screen: ExistingThreadSettingsRouteScreen,
+      options: {
+        gestureEnabled: true,
+        headerShown: false,
+        ...(Platform.OS === "android"
+          ? { presentation: "card" as const }
+          : {
+              ...FORM_SHEET_PRESENTATION_OPTIONS,
+              sheetAllowedDetents: [1],
+              sheetGrabberVisible: true,
+            }),
+      },
+    }),
     GitOverview: createNativeStackScreen({
       screen: GitOverviewSheet,
       linking: `${THREAD_LINKING_PREFIX}/git`,
       options: {
-        presentation: "formSheet",
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
         sheetAllowedDetents: [0.55, 0.92],
         sheetGrabberVisible: true,
       },
@@ -548,7 +635,7 @@ export const RootStack = createNativeStackNavigator({
       screen: GitCommitSheet,
       linking: `${THREAD_LINKING_PREFIX}/git/commit`,
       options: {
-        presentation: "formSheet",
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
         sheetAllowedDetents: [0.55, 0.92],
         sheetGrabberVisible: true,
       },
@@ -557,7 +644,7 @@ export const RootStack = createNativeStackNavigator({
       screen: GitBranchesSheet,
       linking: `${THREAD_LINKING_PREFIX}/git/branches`,
       options: {
-        presentation: "formSheet",
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
         sheetAllowedDetents: [0.55, 0.92],
         sheetGrabberVisible: true,
       },
@@ -566,7 +653,7 @@ export const RootStack = createNativeStackNavigator({
       screen: GitConfirmSheet,
       linking: `${THREAD_LINKING_PREFIX}/git-confirm`,
       options: {
-        presentation: "formSheet",
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
         sheetAllowedDetents: [0.45, 0.7],
         sheetGrabberVisible: true,
       },
@@ -582,7 +669,7 @@ export const RootStack = createNativeStackNavigator({
         ...(Platform.OS === "android"
           ? { presentation: "card" as const }
           : {
-              presentation: "formSheet" as const,
+              ...FORM_SHEET_PRESENTATION_OPTIONS,
               sheetAllowedDetents: [0.7, 0.92],
               sheetGrabberVisible: true,
             }),
@@ -605,7 +692,7 @@ export const RootStack = createNativeStackNavigator({
         ...(Platform.OS === "android" ? { headerShown: false } : SHEET_SOLID_HEADER_OPTIONS),
         title: `Set up ${SURGE_CONNECT_NAME}`,
         gestureEnabled: true,
-        presentation: "formSheet",
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
         sheetAllowedDetents: [0.6, 0.95],
         sheetGrabberVisible: true,
       },
@@ -620,7 +707,7 @@ export const RootStack = createNativeStackNavigator({
         ...(Platform.OS === "android"
           ? { presentation: "card" as const, headerShown: false }
           : {
-              presentation: "formSheet" as const,
+              ...FORM_SHEET_PRESENTATION_OPTIONS,
               sheetAllowedDetents: [0.55, 0.7],
               sheetGrabberVisible: true,
             }),
@@ -630,7 +717,7 @@ export const RootStack = createNativeStackNavigator({
       screen: ConnectionsNewRouteScreen,
       linking: "connections/new",
       options: {
-        presentation: "formSheet",
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
         sheetAllowedDetents: [0.55, 0.7],
         sheetGrabberVisible: true,
       },
@@ -650,7 +737,7 @@ export const RootStack = createNativeStackNavigator({
         ...(Platform.OS === "android"
           ? { presentation: "card" as const }
           : {
-              presentation: "formSheet" as const,
+              ...FORM_SHEET_PRESENTATION_OPTIONS,
               sheetAllowedDetents: [0.92],
               sheetGrabberVisible: true,
             }),

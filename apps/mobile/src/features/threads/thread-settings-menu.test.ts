@@ -307,3 +307,4 @@ describe("buildThreadSettingsMenu", () => {
     expect(eventTypes(menu)).toEqual(new Set(["select-model", "set-option", "set-runtime"]));
   });
 });
+

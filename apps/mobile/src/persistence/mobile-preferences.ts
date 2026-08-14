@@ -26,6 +26,7 @@ export interface Preferences {
   /** @deprecated Kept temporarily so older OTA bundles retain the selected mode. */
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
+  readonly autoSettleOnMerge?: boolean;
   /**
    * Device-local mirror of the web `legacySidebarEnabled` setting. Mobile has
    * no client-settings sync, so the legacy grouped thread list is opted into
@@ -48,6 +49,8 @@ export interface Preferences {
   readonly lastSeenChangelogVersion?: string;
   /** World Scenery state — see features/scenery. */
   readonly scenery?: MobileSceneryPreferences;
+  /** Device-local counterpart of desktop's `planModeEnabled` legacy flag. */
+  readonly planModeEnabled?: boolean;
 }
 
 /** One thread → photo binding in the World Scenery theme. */
@@ -118,6 +121,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     collapsedProjectGroups?: readonly string[];
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
+    autoSettleOnMerge?: boolean;
     legacyThreadListEnabled?: boolean;
     autoCreatePullRequestByEnvMode?: {
       local?: boolean;
@@ -125,6 +129,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     };
     lastSeenChangelogVersion?: string;
     scenery?: MobileSceneryPreferences;
+    planModeEnabled?: boolean;
   } = {};
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
@@ -160,6 +165,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     parsed.projectGroupingMode === "separate"
   ) {
     preferences.projectGroupingMode = parsed.projectGroupingMode;
+  }
+  if (typeof parsed.autoSettleOnMerge === "boolean") {
+    preferences.autoSettleOnMerge = parsed.autoSettleOnMerge;
   }
   if (typeof parsed.legacyThreadListEnabled === "boolean") {
     preferences.legacyThreadListEnabled = parsed.legacyThreadListEnabled;
@@ -218,6 +226,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
       scenery.assignments = assignments;
     }
     preferences.scenery = scenery;
+  }
+  if (typeof parsed.planModeEnabled === "boolean") {
+    preferences.planModeEnabled = parsed.planModeEnabled;
   }
   return preferences;
 }
