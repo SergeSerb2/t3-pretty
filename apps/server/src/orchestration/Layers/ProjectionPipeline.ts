@@ -653,6 +653,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             pinnedAt: null,
             pinOrderKey: null,
             scenery: null,
+            enabledSkillIds: event.payload.enabledSkillIds,
             titleRegenerationRequestId: null,
             titleRegenerationStartedAt: null,
             latestUserMessageAt: null,
@@ -818,6 +819,21 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             scenery: event.payload.scenery,
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "thread.skills-set": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            enabledSkillIds: event.payload.enabledSkillIds,
             updatedAt: event.payload.updatedAt,
           });
           return;

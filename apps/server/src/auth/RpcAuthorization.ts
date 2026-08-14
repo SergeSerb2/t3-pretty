@@ -84,6 +84,13 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.agentInstructionsList]: AuthOrchestrationReadScope,
   [WS_METHODS.agentInstructionsRead]: AuthOrchestrationReadScope,
   [WS_METHODS.agentInstructionsWrite]: AuthOrchestrationOperateScope,
+  [WS_METHODS.skillsGetState]: AuthOrchestrationReadScope,
+  [WS_METHODS.skillsListMarketplace]: AuthOrchestrationReadScope,
+  // Refreshing is part of reading, like pullRequestsInvalidate: a read-only
+  // client pressing refresh must not be told it may not look again.
+  [WS_METHODS.skillsRefreshMarketplace]: AuthOrchestrationReadScope,
+  [WS_METHODS.skillsInstall]: AuthOrchestrationOperateScope,
+  [WS_METHODS.skillsUninstall]: AuthOrchestrationOperateScope,
   [WS_METHODS.shellOpenInEditor]: AuthOrchestrationOperateScope,
   [WS_METHODS.filesystemBrowse]: AuthOrchestrationReadScope,
   [WS_METHODS.assetsCreateUrl]: AuthOrchestrationReadScope,

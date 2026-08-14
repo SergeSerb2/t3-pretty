@@ -55,6 +55,7 @@ function makeReadModel(input: {
         interactionMode: "default",
         branch: null,
         worktreePath: null,
+        enabledSkillIds: [],
         latestTurn: null,
         createdAt: NOW,
         updatedAt: NOW,

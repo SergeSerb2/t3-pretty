@@ -8,6 +8,7 @@ import {
   ProviderDriverKind,
   type ProjectId,
   type OrchestrationSession,
+  type SkillId,
   ThreadId,
   type ProviderSession,
   type RuntimeMode,
@@ -46,6 +47,7 @@ import {
 } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import { SkillMaterializer } from "../../skills/SkillMaterializer.ts";
 import {
   HANDOFF_TRANSCRIPT_MAX_CHARS,
   renderProviderHandoffPrelude,
@@ -325,6 +327,7 @@ const make = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  const skillMaterializer = yield* SkillMaterializer;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -481,6 +484,52 @@ const make = Effect.gen(function* () {
       method: "thread.turn.start",
       detail: `Thread '${input.threadId}' cannot switch models after the conversation has started. Start a new thread to use '${requestedModelSelection.model}'.`,
     });
+  });
+
+  // Skills materialize into the workspace at turn start so the provider
+  // session boots with the enabled skill set already on disk. The cwd is the
+  // exact one startSession receives; the enabled set is the union of the
+  // global settings picks and the thread's own picks. Skills must never
+  // block a turn: any failure is logged and the turn proceeds.
+  const materializeSkillsForTurnStart = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly threadEnabledSkillIds: ReadonlyArray<SkillId>;
+    readonly cwd: string | undefined;
+  }) {
+    if (input.cwd === undefined) {
+      return;
+    }
+    const settings = yield* serverSettingsService.getSettings.pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Effect.failCause(cause);
+        }
+        return Effect.logWarning(
+          "provider command reactor failed to read skills settings; using thread skills only",
+          {
+            threadId: input.threadId,
+            cause: Cause.pretty(cause),
+          },
+        ).pipe(Effect.as(undefined));
+      }),
+    );
+    const skillIds = [
+      ...new Set<SkillId>([
+        ...(settings?.skills.enabledSkillIds ?? []),
+        ...input.threadEnabledSkillIds,
+      ]),
+    ];
+    yield* skillMaterializer.materialize({ cwd: input.cwd, skillIds }).pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Effect.failCause(cause);
+        }
+        return Effect.logWarning("provider command reactor failed to materialize skills", {
+          threadId: input.threadId,
+          cause: Cause.pretty(cause),
+        });
+      }),
+    );
   });
 
   const ensureSessionForThread = Effect.fn("ensureSessionForThread")(function* (
@@ -675,6 +724,13 @@ const make = Effect.gen(function* () {
       thread,
       projects: project ? [project] : [],
     });
+    if (options?.pendingTurnStart === true) {
+      yield* materializeSkillsForTurnStart({
+        threadId,
+        threadEnabledSkillIds: thread.enabledSkillIds,
+        cwd: effectiveCwd,
+      });
+    }
 
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;

@@ -98,6 +98,7 @@ function makeReadModel(
       runtimeMode: "full-access" as const,
       branch: null,
       worktreePath: null,
+      enabledSkillIds: [],
       createdAt: now,
       updatedAt: now,
       archivedAt: null,

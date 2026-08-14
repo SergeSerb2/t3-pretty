@@ -80,6 +80,7 @@ export const seedTransferBudgetHistory = Effect.fn("TransferBudget.seedHistory")
     interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
     branch: "main",
     worktreePath: harness.workspaceDir,
+    enabledSkillIds: [],
     createdAt: turnTimestamp(0),
   });
 

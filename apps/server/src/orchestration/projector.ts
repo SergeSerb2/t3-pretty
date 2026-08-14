@@ -26,6 +26,7 @@ import {
   ThreadPinnedPayload,
   ThreadPinReorderedPayload,
   ThreadSceneryAssignedPayload,
+  ThreadSkillsSetPayload,
   ThreadSnoozedPayload,
   ThreadUnpinnedPayload,
   ThreadUnarchivedPayload,
@@ -299,6 +300,7 @@ export function projectEvent(
             branch: payload.branch,
             branchEventId: event.eventId,
             worktreePath: payload.worktreePath,
+            enabledSkillIds: payload.enabledSkillIds,
             latestTurn: null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -455,6 +457,17 @@ export function projectEvent(
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
             scenery: payload.scenery,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "thread.skills-set":
+      return decodeForEvent(ThreadSkillsSetPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            enabledSkillIds: payload.enabledSkillIds,
             updatedAt: payload.updatedAt,
           }),
         })),
