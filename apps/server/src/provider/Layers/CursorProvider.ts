@@ -325,7 +325,8 @@ export function enrichCursorAutoModelCapabilities(
   if (!isCursorAutoModel(slug, name)) {
     return capabilities;
   }
-  if (capabilities.optionDescriptors.some((descriptor) => descriptor.id === "optimizeFor")) {
+  const optionDescriptors = capabilities.optionDescriptors ?? [];
+  if (optionDescriptors.some((descriptor) => descriptor.id === "optimizeFor")) {
     return capabilities;
   }
   const optimizeFor = buildCursorOptimizeForDescriptor(undefined);
@@ -333,7 +334,7 @@ export function enrichCursorAutoModelCapabilities(
     return capabilities;
   }
   return createModelCapabilities({
-    optionDescriptors: [...capabilities.optionDescriptors, optimizeFor],
+    optionDescriptors: [...optionDescriptors, optimizeFor],
   });
 }
 

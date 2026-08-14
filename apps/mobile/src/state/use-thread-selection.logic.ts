@@ -28,6 +28,7 @@ export function threadDetailToShell(
     modelSelection: thread.modelSelection,
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,
+    enabledSkillIds: thread.enabledSkillIds,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
     latestTurn: thread.latestTurn,

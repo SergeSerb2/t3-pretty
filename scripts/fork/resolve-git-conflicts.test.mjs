@@ -99,25 +99,104 @@ ${">".repeat(7)} theirs
     );
   });
 
-  it("stops extracting repeated conflict contexts when they exhaust the prompt budget", () => {
-    const nearbyConflict = `${"<".repeat(7)} ours
-${"a".repeat(40_000)}
+  it("stops extracting conflict contexts when they exhaust the prompt budget, deferring the rest to the next batch", () => {
+    const smallConflict = (ours, theirs) => `${"<".repeat(7)} ours
+${ours}
+${"|".repeat(7)} base
+${"=".repeat(7)}
+${theirs}
+${">".repeat(7)} theirs
+`;
+    // 60 long lines of padding: the first conflict's 100-line context window
+    // fits the budget, but the second conflict's window on top of it does
+    // not, so it is deferred to the next batch instead of failing the file.
+    const padding = `${Array.from({ length: 60 }, () => "p".repeat(9_000)).join("\n")}\n`;
+    const conflictedSource = `${smallConflict("a", "b")}${padding}${smallConflict("c", "d")}`;
+
+    const { conflicts, prompt, totalConflicts } = prepareConflictPrompt({
+      path: "generated-lockfile.yaml",
+      conflictedSource,
+      forkHistory: "",
+    });
+
+    assert.equal(totalConflicts, 2);
+    assert.lengthOf(conflicts, 1);
+    assert.isBelow(Buffer.byteLength(prompt), 600_000);
+  });
+
+  it("caps how many conflicts a single model request must resolve", () => {
+    const oneConflict = `${"<".repeat(7)} ours
+value
 ${"|".repeat(7)} base
 ${"=".repeat(7)}
 theirs
 ${">".repeat(7)} theirs
 `;
-    const conflictedSource = nearbyConflict.repeat(20);
+    const conflictedSource = oneConflict.repeat(12);
 
-    assert.throws(
-      () =>
-        prepareConflictPrompt({
-          path: "generated-lockfile.yaml",
-          conflictedSource,
-          forkHistory: "",
-        }),
-      /exceeds the 600000-byte conflict prompt limit/u,
+    const { conflicts, totalConflicts } = prepareConflictPrompt({
+      path: "crowded.ts",
+      conflictedSource,
+      forkHistory: "",
+      maxConflicts: 5,
+    });
+
+    assert.equal(totalConflicts, 12);
+    assert.lengthOf(conflicts, 5);
+    assert.deepEqual(
+      conflicts.map((conflict) => conflict.index),
+      [0, 1, 2, 3, 4],
     );
+  });
+
+  it("never clips a neighboring conflict inside a conflict's local context", () => {
+    // Conflicts ~46 lines apart: the 100-line context windows reach two
+    // neighbors over, and without clamping they end mid-conflict. A clipped
+    // marker block reads as a truncated, unresolvable conflict to the model.
+    const unit = `${"<".repeat(7)} ours
+ours code
+${"|".repeat(7)} base
+base code
+${"=".repeat(7)}
+theirs code
+${">".repeat(7)} theirs
+${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
+`;
+    const conflictedSource = unit.repeat(12);
+
+    const { conflicts, totalConflicts } = prepareConflictPrompt({
+      path: "dense.ts",
+      conflictedSource,
+      forkHistory: "",
+      maxConflicts: 5,
+    });
+
+    assert.equal(totalConflicts, 12);
+    assert.lengthOf(conflicts, 5);
+    for (const conflict of conflicts) {
+      const count = (pattern) => conflict.context.match(pattern)?.length ?? 0;
+      assert.equal(count(/^<{7}/gmu), count(/^>{7}/gmu), `conflict ${conflict.index} context`);
+      assert.equal(count(/^\|{7}/gmu), count(/^={7}/gmu), `conflict ${conflict.index} context`);
+      assert.equal(count(/^<{7}/gmu), count(/^\|{7}/gmu), `conflict ${conflict.index} context`);
+    }
+  });
+
+  it("presents a modify/delete conflict as one whole-file conflict with deletion guidance", () => {
+    const prompt = buildConflictPrompt({
+      path: "apps/mobile/src/features/threads/thread-settings-menu.ts",
+      forkHistory: "",
+      conflicts: [],
+      deleteConflict: { deletedSide: "theirs" },
+    });
+
+    assert.include(prompt, "parent nightly deleted this file");
+    assert.include(prompt, "empty new_text");
+    assert.include(prompt, "parent first-party replacement");
+
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+    assert.include(resolver, "<<<<<<< OURS (T3 Pretty main");
+    assert.include(resolver, 'git(["rm", "-q", "--", path])');
+    assert.include(resolver, 'git(["ls-files", "-u", "--", path])');
   });
 
   it("still refuses files large enough to risk local conflict processing", () => {
@@ -181,12 +260,17 @@ ${">".repeat(7)} theirs
     assert.include(workflow, "Six checks per day");
   });
 
-  it("accepts a clustered nightly that exceeds a dozen conflicted files", () => {
+  it("accepts a clustered nightly with any number of conflicted files", () => {
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
 
-    assert.include(resolver, "const MAX_CONFLICTS = 24");
-    assert.include(workflow, "timeout-minutes: 45");
+    // No fixed conflict ceiling: a hard refusal strands the fork while the
+    // next nightly piles more conflicts onto the same unintegrated merge.
+    // Batched model requests plus a generous job timeout bound the run.
+    assert.notInclude(resolver, "Refusing to resolve");
+    assert.include(resolver, "const MAX_CONFLICTS_PER_REQUEST = 5");
+    assert.include(resolver, "const MAX_BATCHES_PER_FILE = 32");
+    assert.include(workflow, "timeout-minutes: 120");
   });
 
   it("does not reject untouched upstream patch payload whitespace", () => {
@@ -309,5 +393,45 @@ ${">".repeat(7)} theirs
     assert.notInclude(report, "`gpt-5.6-sol` with `xhigh` reasoning");
     assert.include(report, "AI-splicing");
     assert.include(report, "fork-only dependency entries");
+  });
+
+  it("retries transient resolver failures instead of aborting the whole sync", () => {
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+
+    // Network errors, 429, 5xx, and unparseable/incomplete responses retry;
+    // the last attempt drops to high effort so one long-think cannot 502.
+    assert.include(resolver, "const maxAttempts = 3");
+    assert.include(resolver, 'attempt < maxAttempts ? REASONING_EFFORT : "high"');
+    assert.include(resolver, "status !== 0 && status !== 429 && status < 500");
+    assert.include(resolver, "setTimeout(resolve, attempt * 15_000)");
+    assert.include(resolver, "did not produce a completed response");
+    // Non-transient HTTP failures (auth, bad request) still throw immediately.
+    assert.include(resolver, "CLIProxyAPI returned HTTP ${status}");
+  });
+
+  it("records the iOS production fingerprint without tripping the format hook", () => {
+    const mobileWorkflow = NodeFS.readFileSync(mobileWorkflowPath, "utf8");
+
+    // The staged fingerprint record is extensionless, so `vp fmt` in the
+    // pre-commit hook has no target file and fails the whole release.
+    assert.include(
+      mobileWorkflow,
+      'git commit --no-verify -m "chore(mobile): record iOS production fingerprint"',
+    );
+  });
+
+  it("lands the iOS fingerprint record through a pull request instead of pushing to main", () => {
+    const mobileWorkflow = NodeFS.readFileSync(mobileWorkflowPath, "utf8");
+
+    // main enforces "changes must be made through a pull request" (GH013), so
+    // the bot commit rides a short-lived automation branch merged via the API,
+    // the same pattern the upstream sync uses. `gh` is not guaranteed on the
+    // self-hosted runner, so the API calls run on node fetch.
+    assert.include(mobileWorkflow, "pull-requests: write");
+    assert.include(mobileWorkflow, "automation/ios-fingerprint-");
+    assert.include(mobileWorkflow, 'git push --force origin "HEAD:refs/heads/$branch"');
+    assert.include(mobileWorkflow, "`/pulls/${pr.number}/merge`");
+    assert.include(mobileWorkflow, "node --input-type=module");
+    assert.notInclude(mobileWorkflow, 'git push origin "HEAD:${GITHUB_REF_NAME}"');
   });
 });

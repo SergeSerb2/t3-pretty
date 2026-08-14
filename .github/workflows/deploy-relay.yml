@@ -22,7 +22,11 @@ jobs:
     # Owner check survives repo renames; FORK_RELAY_DEPLOY_ENABLED keeps
     # forks-of-the-fork from failing on missing credentials.
     if: github.repository_owner == 'SergeSerb2' && vars.FORK_RELAY_DEPLOY_ENABLED == 'true'
-    runs-on: ubuntu-latest
+    # Fork: deploy on the self-hosted Mac (same labels as the desktop/mobile
+    # releases) so pushes to main stop burning billed ubuntu-latest minutes.
+    # The job queues behind releases on the single runner rather than
+    # contending with them.
+    runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 15
     environment:
       name: production

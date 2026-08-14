@@ -98,6 +98,8 @@ import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as AgentInstructionFiles from "./instructions/AgentInstructionFiles.ts";
+import * as SkillMarketplace from "./skills/SkillMarketplace.ts";
+import * as SkillStore from "./skills/SkillStore.ts";
 import { readWorkflowScript } from "./orchestration/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
@@ -385,6 +387,8 @@ const makeWsRpcLayer = (
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
       const agentInstructionFiles = yield* AgentInstructionFiles.AgentInstructionFiles;
+      const skillStore = yield* SkillStore.SkillStore;
+      const skillMarketplace = yield* SkillMarketplace.SkillMarketplace;
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
@@ -913,6 +917,7 @@ const makeWsRpcLayer = (
                 interactionMode: bootstrap.createThread.interactionMode,
                 branch: bootstrap.createThread.branch,
                 worktreePath: bootstrap.createThread.worktreePath,
+                enabledSkillIds: bootstrap.createThread.enabledSkillIds,
                 createdAt: bootstrap.createThread.createdAt,
               });
               createdThread = true;
@@ -1924,6 +1929,26 @@ const makeWsRpcLayer = (
         [WS_METHODS.agentInstructionsWrite]: (input) =>
           observeRpcEffect(WS_METHODS.agentInstructionsWrite, agentInstructionFiles.write(input), {
             "rpc.aggregate": "workspace",
+          }),
+        [WS_METHODS.skillsGetState]: (_input) =>
+          observeRpcEffect(WS_METHODS.skillsGetState, skillStore.getState, {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.skillsInstall]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsInstall, skillMarketplace.install(input.skillId), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.skillsUninstall]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsUninstall, skillStore.uninstall(input.skillId), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.skillsListMarketplace]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsListMarketplace, skillMarketplace.list(input), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.skillsRefreshMarketplace]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsRefreshMarketplace, skillMarketplace.refresh(input), {
+            "rpc.aggregate": "server",
           }),
         [WS_METHODS.shellOpenInEditor]: (input) =>
           observeRpcEffect(WS_METHODS.shellOpenInEditor, externalLauncher.launchEditor(input), {

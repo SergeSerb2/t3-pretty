@@ -4,6 +4,7 @@ import type {
   PullRequestComment,
   PullRequestDetailView,
   PullRequestRef,
+  PullRequestReviewThread,
 } from "@t3tools/contracts";
 import {
   ArrowDownUpIcon,
@@ -139,11 +140,15 @@ function CollapsedComment({
   editing,
   label,
   reactionBar,
+  action,
 }: {
   comment: PullRequestComment;
   editing: CommentEditing;
   label: string;
   reactionBar: ReactNode;
+  /** An act on the finished work itself — reopening a resolved conversation — kept inside the
+      panel, since the header row is already the trigger and a button cannot hold a button. */
+  action?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -178,6 +183,7 @@ function CollapsedComment({
               ) : null}
               <CommentBody className="mt-2" comment={comment} editing={editing} />
               {reactionBar}
+              {action}
             </div>
           ) : null}
         </CollapsiblePanel>
@@ -399,6 +405,28 @@ export function PullRequestSummaryTab({
   const updateComment = useAtomCommand(pullRequestEnvironment.updateComment, {
     reportFailure: false,
   });
+  const setThreadResolution = useAtomCommand(pullRequestEnvironment.setThreadResolution, {
+    reportFailure: false,
+  });
+  const [resolutionPending, setResolutionPending] = useState(false);
+  // What is offered is the intersection of what this host can do at all and what this account
+  // may do on this repository: either one saying no means a control that only ends in refusal.
+  const canResolveThreads = detail.capabilities.review.resolve && detail.viewerPermissions.resolve;
+
+  const toggleThreadResolution = async (thread: PullRequestReviewThread) => {
+    if (resolutionPending) return;
+    setResolutionPending(true);
+    const result = await setThreadResolution({
+      environmentId,
+      input: { ...reference, threadId: thread.id, resolved: !thread.isResolved },
+    });
+    setResolutionPending(false);
+    if (result._tag === "Failure") {
+      toastManager.add({ type: "error", title: "The conversation could not be updated" });
+      return;
+    }
+    onRefresh();
+  };
   // Keyed by the pull request, like the comment window above it, so an editor left open never
   // reappears over the next pull request's description.
   const [bodyScope, setBodyScope] = useState<string | null>(null);
@@ -699,6 +727,20 @@ export function PullRequestSummaryTab({
                         comment={comment}
                         editing={commentEditing}
                         label={thread?.isResolved ? "Resolved" : "Approval dismissed"}
+                        action={
+                          thread?.isResolved && canResolveThreads ? (
+                            <div className="mt-2">
+                              <Button
+                                size="xs"
+                                variant="ghost"
+                                disabled={resolutionPending}
+                                onClick={() => void toggleThreadResolution(thread)}
+                              >
+                                Unresolve
+                              </Button>
+                            </div>
+                          ) : undefined
+                        }
                         reactionBar={
                           <PullRequestReactionBar
                             className="mt-2"
@@ -736,22 +778,35 @@ export function PullRequestSummaryTab({
                             <span>{reviewStateLabel(comment.reviewState)}</span>
                           ) : null}
                         </span>
-                        {/* Review remarks only. A plain conversation comment is talk, not a finding,
-                      and offering to fix one would promise more than it says. */}
-                        {onFixFinding && finding ? (
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            className="-mt-1 shrink-0"
-                            disabled={pendingFinding !== null && pendingFinding !== undefined}
-                            onClick={() => onFixFinding(finding)}
-                          >
-                            <HammerIcon className="size-3" />
-                            {pendingFinding === pullRequestFindingKey(finding)
-                              ? "Preparing..."
-                              : fixFindingLabel}
-                          </Button>
-                        ) : null}
+                        <span className="-mt-1 flex shrink-0 items-center gap-1">
+                          {/* Resolving acts on the conversation the remark belongs to — the same
+                              toggle the code tab's thread card carries. */}
+                          {canResolveThreads && thread ? (
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              disabled={resolutionPending}
+                              onClick={() => void toggleThreadResolution(thread)}
+                            >
+                              Resolve
+                            </Button>
+                          ) : null}
+                          {/* Review remarks only. A plain conversation comment is talk, not a finding,
+                        and offering to fix one would promise more than it says. */}
+                          {onFixFinding && finding ? (
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              disabled={pendingFinding !== null && pendingFinding !== undefined}
+                              onClick={() => onFixFinding(finding)}
+                            >
+                              <HammerIcon className="size-3" />
+                              {pendingFinding === pullRequestFindingKey(finding)
+                                ? "Preparing..."
+                                : fixFindingLabel}
+                            </Button>
+                          ) : null}
+                        </span>
                       </div>
                       {comment.path ? (
                         <p

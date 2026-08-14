@@ -15,12 +15,13 @@ import {
   RecordProjectionThreadBranchHeadInput,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection, ThreadSceneryAssignment } from "@t3tools/contracts";
+import { ModelSelection, SkillId, ThreadSceneryAssignment } from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
     scenery: Schema.NullOr(Schema.fromJsonString(ThreadSceneryAssignment)),
+    enabledSkillIds: Schema.fromJsonString(Schema.Array(SkillId)),
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
@@ -57,6 +58,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pinned_at,
           pin_order_key,
           scenery_json,
+          enabled_skill_ids,
           title_regeneration_request_id,
           title_regeneration_started_at,
           latest_user_message_at,
@@ -90,6 +92,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.pinnedAt},
           ${row.pinOrderKey ?? null},
           ${row.scenery == null ? null : JSON.stringify(row.scenery)},
+          ${JSON.stringify(row.enabledSkillIds)},
           ${row.titleRegenerationRequestId ?? null},
           ${row.titleRegenerationStartedAt ?? null},
           ${row.latestUserMessageAt},
@@ -139,6 +142,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pinned_at = excluded.pinned_at,
           pin_order_key = excluded.pin_order_key,
           scenery_json = excluded.scenery_json,
+          enabled_skill_ids = excluded.enabled_skill_ids,
           title_regeneration_request_id = excluded.title_regeneration_request_id,
           title_regeneration_started_at = excluded.title_regeneration_started_at,
           latest_user_message_at = excluded.latest_user_message_at,
@@ -179,6 +183,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pinned_at AS "pinnedAt",
           pin_order_key AS "pinOrderKey",
           scenery_json AS "scenery",
+          enabled_skill_ids AS "enabledSkillIds",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -221,6 +226,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pinned_at AS "pinnedAt",
           pin_order_key AS "pinOrderKey",
           scenery_json AS "scenery",
+          enabled_skill_ids AS "enabledSkillIds",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",

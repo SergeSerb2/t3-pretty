@@ -58,6 +58,7 @@ import Migration0042 from "./Migrations/042_ProjectionThreadBranchHeads.ts";
 import Migration0043 from "./Migrations/043_ProjectionThreadsScenery.ts";
 import Migration0044 from "./Migrations/044_ThreadCanvas.ts";
 import Migration0045 from "./Migrations/045_ProjectionThreadActivityCompactionMetadata.ts";
+import Migration0046 from "./Migrations/046_ProjectionThreadsEnabledSkillIds.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -115,8 +116,8 @@ export const migrationEntries = [
   [43, "ProjectionThreadsScenery", Migration0043],
   [44, "ThreadCanvas", Migration0044],
   [45, "ProjectionThreadActivityCompactionMetadata", Migration0045],
+  [46, "ProjectionThreadsEnabledSkillIds", Migration0046],
 ] as const;
-
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
 
 export const makeMigrationLoader = (throughId?: number) =>

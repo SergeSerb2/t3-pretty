@@ -94,6 +94,7 @@ export function applyThreadDetailEvent(
           interactionMode: event.payload.interactionMode,
           branch: event.payload.branch,
           worktreePath: event.payload.worktreePath,
+          enabledSkillIds: event.payload.enabledSkillIds,
           latestTurn: null,
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
@@ -215,6 +216,16 @@ export function applyThreadDetailEvent(
         thread: {
           ...thread,
           scenery: event.payload.scenery,
+          updatedAt: event.payload.updatedAt,
+        },
+      };
+
+    case "thread.skills-set":
+      return {
+        kind: "updated",
+        thread: {
+          ...thread,
+          enabledSkillIds: event.payload.enabledSkillIds,
           updatedAt: event.payload.updatedAt,
         },
       };

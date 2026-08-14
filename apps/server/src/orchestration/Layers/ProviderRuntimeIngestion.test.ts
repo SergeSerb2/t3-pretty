@@ -286,6 +286,7 @@ describe("ProviderRuntimeIngestion", () => {
       runtimeMode: "approval-required",
       branch: null,
       worktreePath: null,
+      enabledSkillIds: [],
       createdAt,
     });
     await dispatch({
@@ -1250,6 +1251,7 @@ describe("ProviderRuntimeIngestion", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        enabledSkillIds: [],
         createdAt,
       }),
     );
@@ -1285,6 +1287,7 @@ describe("ProviderRuntimeIngestion", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        enabledSkillIds: [],
         createdAt,
       }),
     );
@@ -1438,6 +1441,7 @@ describe("ProviderRuntimeIngestion", () => {
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
+          enabledSkillIds: [],
           createdAt,
         }),
         harness.engine.dispatch({
@@ -1676,6 +1680,7 @@ describe("ProviderRuntimeIngestion", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        enabledSkillIds: [],
         createdAt,
       }),
     );
@@ -1711,6 +1716,7 @@ describe("ProviderRuntimeIngestion", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        enabledSkillIds: [],
         createdAt,
       }),
     );

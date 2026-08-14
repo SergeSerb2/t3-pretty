@@ -15,6 +15,7 @@ import {
   type ServerProvider,
   type ScopedProjectRef,
   type ScopedThreadRef,
+  SkillId,
   ThreadId,
 } from "@t3tools/contracts";
 import {
@@ -150,6 +151,11 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   activeProvider: Schema.optionalKey(Schema.NullOr(ProviderInstanceId)),
   runtimeMode: Schema.optionalKey(RuntimeMode),
   interactionMode: Schema.optionalKey(ProviderInteractionMode),
+  // Per-thread skill picks made before the thread exists; they ride
+  // `bootstrap.createThread.enabledSkillIds` on the first turn. Optional so
+  // pre-skills drafts decode unchanged. Global settings-enabled skills are
+  // never stored here — only explicit per-thread picks.
+  enabledSkillIds: Schema.optionalKey(Schema.Array(SkillId)),
 });
 type PersistedComposerThreadDraftState = typeof PersistedComposerThreadDraftState.Type;
 
@@ -284,6 +290,12 @@ export interface ComposerThreadDraftState {
   activeProvider: ProviderInstanceId | null;
   runtimeMode: RuntimeMode | null;
   interactionMode: ProviderInteractionMode | null;
+  /**
+   * Per-thread skill picks for a draft session, sent as
+   * `bootstrap.createThread.enabledSkillIds` on the first turn. Absent means
+   * "no per-thread picks" — global settings-enabled skills never land here.
+   */
+  enabledSkillIds?: ReadonlyArray<SkillId> | undefined;
 }
 
 /**
@@ -477,6 +489,14 @@ interface ComposerDraftStoreState {
   setInteractionMode: (
     threadRef: ComposerThreadTarget,
     interactionMode: ProviderInteractionMode | null | undefined,
+  ) => void;
+  /**
+   * Replace a draft session's per-thread skill picks. `null`/`undefined`/an
+   * empty array all clear the slice back to "no per-thread picks".
+   */
+  setEnabledSkillIds: (
+    threadRef: ComposerThreadTarget,
+    enabledSkillIds: ReadonlyArray<SkillId> | null | undefined,
   ) => void;
   addImage: (threadRef: ComposerThreadTarget, image: ComposerImageAttachment) => void;
   addImages: (threadRef: ComposerThreadTarget, images: ComposerImageAttachment[]) => void;
@@ -750,7 +770,8 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
-    draft.interactionMode === null
+    draft.interactionMode === null &&
+    (draft.enabledSkillIds === undefined || draft.enabledSkillIds.length === 0)
   );
 }
 
@@ -1736,6 +1757,13 @@ function normalizePersistedDraftsByThreadId(
       draftCandidate.interactionMode === "plan" || draftCandidate.interactionMode === "default"
         ? draftCandidate.interactionMode
         : null;
+    // Defensive against hand-edited/corrupt storage: the schema type says
+    // SkillId[], but persisted bytes are unvalidated here.
+    const enabledSkillIds = Array.isArray(draftCandidate.enabledSkillIds)
+      ? draftCandidate.enabledSkillIds.filter(
+          (id): id is SkillId => typeof id === "string" && id.trim().length > 0,
+        )
+      : undefined;
     const prompt = ensureInlineTerminalContextPlaceholders(
       promptCandidate,
       terminalContexts.length,
@@ -1796,7 +1824,8 @@ function normalizePersistedDraftsByThreadId(
       reviewComments.length === 0 &&
       !hasModelData &&
       !runtimeMode &&
-      !interactionMode
+      !interactionMode &&
+      (!enabledSkillIds || enabledSkillIds.length === 0)
     ) {
       continue;
     }
@@ -1826,6 +1855,7 @@ function normalizePersistedDraftsByThreadId(
         : {}),
       ...(runtimeMode ? { runtimeMode } : {}),
       ...(interactionMode ? { interactionMode } : {}),
+      ...(enabledSkillIds && enabledSkillIds.length > 0 ? { enabledSkillIds } : {}),
     };
   }
 
@@ -1929,7 +1959,8 @@ function partializeComposerDraftStoreState(
       draft.reviewComments.length === 0 &&
       !hasModelData &&
       draft.runtimeMode === null &&
-      draft.interactionMode === null
+      draft.interactionMode === null &&
+      (draft.enabledSkillIds === undefined || draft.enabledSkillIds.length === 0)
     ) {
       continue;
     }
@@ -1996,6 +2027,9 @@ function partializeComposerDraftStoreState(
         : {}),
       ...(draft.runtimeMode ? { runtimeMode: draft.runtimeMode } : {}),
       ...(draft.interactionMode ? { interactionMode: draft.interactionMode } : {}),
+      ...(draft.enabledSkillIds && draft.enabledSkillIds.length > 0
+        ? { enabledSkillIds: [...draft.enabledSkillIds] }
+        : {}),
     };
     persistedDraftsByThreadKey[threadKey] = persistedDraft;
   }
@@ -2243,6 +2277,9 @@ function toHydratedThreadDraft(
     activeProvider,
     runtimeMode: persistedDraft.runtimeMode ?? null,
     interactionMode: persistedDraft.interactionMode ?? null,
+    ...(persistedDraft.enabledSkillIds && persistedDraft.enabledSkillIds.length > 0
+      ? { enabledSkillIds: [...persistedDraft.enabledSkillIds] }
+      : {}),
   };
 }
 
@@ -2974,6 +3011,42 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextDraft: ComposerThreadDraftState = {
               ...base,
               interactionMode: nextInteractionMode,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setEnabledSkillIds: (threadRef, enabledSkillIds) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return;
+          }
+          const nextEnabledSkillIds =
+            enabledSkillIds && enabledSkillIds.length > 0 ? [...enabledSkillIds] : undefined;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey];
+            if (!existing && nextEnabledSkillIds === undefined) {
+              return state;
+            }
+            const base = existing ?? createEmptyThreadDraft();
+            const currentEnabledSkillIds = base.enabledSkillIds;
+            const isUnchanged =
+              (currentEnabledSkillIds === undefined && nextEnabledSkillIds === undefined) ||
+              (currentEnabledSkillIds !== undefined &&
+                nextEnabledSkillIds !== undefined &&
+                currentEnabledSkillIds.length === nextEnabledSkillIds.length &&
+                currentEnabledSkillIds.every((id, index) => id === nextEnabledSkillIds[index]));
+            if (isUnchanged) {
+              return state;
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...base,
+              enabledSkillIds: nextEnabledSkillIds,
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {

@@ -5219,6 +5219,12 @@ function ChatViewContent(props: ChatViewProps) {
     const composerCanvasSelectionsSnapshot = [...composerCanvasSelections];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
     const attachedFilesSnapshot = takeAttachedFilesForThread(activeThreadKey);
+    // Per-thread skill picks staged on the draft ride thread creation below;
+    // the server unions the global set on top at materialization time.
+    const draftEnabledSkillIdsSnapshot = isLocalDraftThread
+      ? (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.enabledSkillIds ??
+        undefined)
+      : undefined;
     const messageTextWithContexts = appendElementContextsToPrompt(
       appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
       composerElementContextsSnapshot,
@@ -5398,6 +5404,11 @@ function ChatViewContent(props: ChatViewProps) {
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
                       createdAt: activeThread.createdAt,
+                      // Omit the key entirely when the draft has no picks so
+                      // pre-skills servers see the same payload as before.
+                      ...(draftEnabledSkillIdsSnapshot && draftEnabledSkillIdsSnapshot.length > 0
+                        ? { enabledSkillIds: draftEnabledSkillIdsSnapshot }
+                        : {}),
                     },
                   }
                 : {}),

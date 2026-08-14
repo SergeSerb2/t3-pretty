@@ -406,6 +406,7 @@ describe("CheckpointReactor", () => {
           runtimeMode: "approval-required",
           branch: options?.threadBranch ?? null,
           worktreePath: options?.threadWorktreePath ?? cwd,
+          enabledSkillIds: [],
           createdAt,
         })
         .pipe(
@@ -425,6 +426,7 @@ describe("CheckpointReactor", () => {
                   runtimeMode: "approval-required",
                   branch: null,
                   worktreePath: options?.threadWorktreePath ?? cwd,
+                  enabledSkillIds: [],
                   createdAt,
                 }),
               )

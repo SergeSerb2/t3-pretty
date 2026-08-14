@@ -46,6 +46,7 @@ function makeThread(
     runtimeMode: "full-access",
     interactionMode: "default",
     branch: null,
+    enabledSkillIds: [],
     worktreePath: null,
     latestTurn: null,
     createdAt: "2026-04-01T00:00:00.000Z",
@@ -72,6 +73,7 @@ function makeShell(
     runtimeMode: "full-access",
     interactionMode: "default",
     branch: null,
+    enabledSkillIds: [],
     worktreePath: null,
     latestTurn: null,
     createdAt: "2026-04-01T00:00:00.000Z",
@@ -204,6 +206,7 @@ describe("threadDetailToShell", () => {
 
     expect(threadDetailToShell(environmentId, detail)).toMatchObject({
       environmentId,
+      enabledSkillIds: [],
       latestUserMessageAt: null,
       hasPendingApprovals: false,
       hasPendingUserInput: false,
@@ -211,5 +214,17 @@ describe("threadDetailToShell", () => {
       snoozedUntil: null,
       snoozedAt: null,
     });
+  });
+
+  it("copies enabledSkillIds from the detail thread", () => {
+    const enabledSkillIds = ["acme/skills:skill-a"];
+    const detail = makeThread({
+      id: threadRef.threadId,
+      projectId: ProjectId.make("project-1"),
+      title: "Detail thread",
+      enabledSkillIds,
+    });
+
+    expect(threadDetailToShell(environmentId, detail).enabledSkillIds).toBe(enabledSkillIds);
   });
 });

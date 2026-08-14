@@ -579,6 +579,102 @@ describe("composerDraftStore terminal contexts", () => {
   });
 });
 
+describe("composerDraftStore enabled skill ids", () => {
+  const threadId = ThreadId.make("thread-enabled-skills");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("stores per-thread picks and round-trips them through the partializer", () => {
+    useComposerDraftStore
+      .getState()
+      .setEnabledSkillIds(threadRef, ["repo:skills/a", "repo:skills/b"]);
+
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.enabledSkillIds).toEqual(["repo:skills/a", "repo:skills/b"]);
+
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        partialize: (state: ReturnType<typeof useComposerDraftStore.getState>) => unknown;
+      };
+    };
+    const persisted = persistApi.getOptions().partialize(useComposerDraftStore.getState()) as {
+      draftsByThreadKey?: Record<string, { enabledSkillIds?: string[] }>;
+    };
+    expect(
+      persisted.draftsByThreadKey?.[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.enabledSkillIds,
+    ).toEqual(["repo:skills/a", "repo:skills/b"]);
+  });
+
+  it("keeps a picks-only draft alive and drops the entry when picks are cleared", () => {
+    useComposerDraftStore.getState().setEnabledSkillIds(threadRef, ["repo:skills/a"]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.enabledSkillIds).toEqual(["repo:skills/a"]);
+
+    useComposerDraftStore.getState().setEnabledSkillIds(threadRef, []);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+
+    // Clearing a draft with no picks is a no-op (no entry is created).
+    useComposerDraftStore.getState().setEnabledSkillIds(threadRef, undefined);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
+
+  it("keeps skill picks when composer content is cleared", () => {
+    useComposerDraftStore.getState().setPrompt(threadRef, "hello");
+    useComposerDraftStore.getState().setEnabledSkillIds(threadRef, ["repo:skills/a"]);
+
+    useComposerDraftStore.getState().clearComposerContent(threadRef);
+
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.prompt).toBe("");
+    expect(draft?.enabledSkillIds).toEqual(["repo:skills/a"]);
+  });
+
+  it("hydrates persisted picks during merge and drops malformed entries", () => {
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    const mergedState = persistApi.getOptions().merge(
+      {
+        draftsByThreadKey: {
+          [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
+            prompt: "",
+            attachments: [],
+            enabledSkillIds: ["repo:skills/a", "", 3],
+          },
+        },
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(
+      mergedState.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.enabledSkillIds,
+    ).toEqual(["repo:skills/a"]);
+
+    // A draft whose picks are entirely malformed has no content left to keep.
+    const droppedState = persistApi.getOptions().merge(
+      {
+        draftsByThreadKey: {
+          [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
+            prompt: "",
+            attachments: [],
+            enabledSkillIds: [3],
+          },
+        },
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(
+      droppedState.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)],
+    ).toBeUndefined();
+  });
+});
+
 describe("composerDraftStore element contexts", () => {
   const threadId = ThreadId.make("thread-element");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);

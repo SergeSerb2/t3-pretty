@@ -11,11 +11,20 @@ const API_URL = (
 const MODEL = process.env.CLI_PROXY_MODEL ?? "gpt-5.6-sol";
 const REASONING_EFFORT = process.env.CLI_PROXY_REASONING_EFFORT ?? "xhigh";
 const SERVICE_TIER = process.env.CLI_PROXY_SERVICE_TIER ?? "priority";
-const MAX_CONFLICTS = 24;
+// Each model request covers at most this many conflicts from one file. A
+// single request that must emit byte-exact edits for a dozen conflicts at
+// once reasons and generates for so long that the proxy 502s (seen on
+// 2026-08-14 nightlies 1089-1090); small batches keep every call short.
+// The job timeout, not a conflict ceiling, bounds a backlog run: refusing
+// above a fixed count only guaranteed the next nightly arrived with even
+// more conflicts piled onto the same unintegrated merge.
+const MAX_CONFLICTS_PER_REQUEST = 5;
+const MAX_BATCHES_PER_FILE = 32;
 const MAX_CONFLICT_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PROMPT_BYTES = 600_000;
 const MAX_EDIT_DISTANCE = 20_000;
 const CONFLICT_PATTERN = /^<<<<<<<[^\n]*\n[\s\S]*?^>>>>>>>[^\n]*(?:\n|$)/gmu;
+const LEFTOVER_MARKER_PATTERN = /^(?:<{7}|\|{7}|={7}|>{7})/mu;
 const GENERATED_LOCKFILE_PATTERN = /(?:^|\/)pnpm-lock\.yaml$/u;
 const REPORT_PATH = ".t3-fork/upstream-sync-report.md";
 
@@ -90,8 +99,15 @@ function utf8ByteLengthThrough(source, start, end, maxBytes) {
   return bytes;
 }
 
-function contextAround(source, start, end, maxBytes) {
-  const { contextStart, contextEnd } = contextBounds(source, start, end);
+function contextAround(source, start, end, maxBytes, conflictBounds = []) {
+  let { contextStart, contextEnd } = contextBounds(source, start, end);
+  // Never cut a context window through another conflict block. A clipped
+  // marker block reads as a truncated, unresolvable conflict to the model,
+  // which then declines the whole file as unsafe (seen on nightly 1093).
+  for (const bound of conflictBounds) {
+    if (contextStart > bound.start && contextStart < bound.end) contextStart = bound.end;
+    if (contextEnd > bound.start && contextEnd < bound.end) contextEnd = bound.start;
+  }
   let byteLength = 1;
   byteLength += utf8ByteLengthThrough(source, contextStart, start, maxBytes - byteLength);
   if (byteLength > maxBytes) return undefined;
@@ -158,9 +174,21 @@ function forkHistoryForPath(path, previousUpstreamTag) {
   }
 }
 
-export function buildConflictPrompt({ path, conflicts, forkHistory }) {
+export function buildConflictPrompt({ path, conflicts, forkHistory, deleteConflict }) {
+  const deleteGuidance = deleteConflict
+    ? `
+Delete-conflict context for this file:
+- The ${
+        deleteConflict.deletedSide === "theirs"
+          ? "parent nightly deleted this file while OURS (T3 Pretty) still carries a modified copy"
+          : "T3 Pretty deleted this file while the parent nightly still carries a modified copy"
+      }. The surviving side's complete content is wrapped in one whole-file conflict; the deleted side is empty.
+- To follow the deletion, return one edit that replaces the entire conflict with empty new_text; the resolver then removes the file. Follow a parent deletion when the file's behavior moved to another parent file or became first-party (rule 2). Follow a fork deletion only when the fork removed the feature outright; integrate compatible parent improvements into whatever replaced it instead of resurrecting the file.
+- To keep the file, return one edit that replaces the entire conflict with the exact final content to keep.
+`
+    : "";
   return `You are resolving one git merge conflict while integrating the newest parent T3 Code nightly into T3 Pretty, a long-lived custom fork.
-
+${deleteGuidance}
 Priority contract (follow in this order):
 1. OURS is T3 Pretty main. T3 Pretty and other fork-specific behavior is authoritative and must not be removed, weakened, renamed back, or silently regressed.
 2. Exception — parent first-party replacement: if THEIRS introduces a first-party implementation of a feature T3 Pretty previously added as fork-only (for example a native mobile pull-request manager under apps/mobile), prefer THEIRS. Replace the fork copy with the parent implementation. Re-apply only T3 Pretty branding, identity, theming, and other fork-specific presentation that does not change the parent's behavior. Report the replacement in upstream_changes_integrated and any branding re-applied in fork_changes_preserved.
@@ -200,7 +228,13 @@ ${conflicts
   .join("\n\n")}`;
 }
 
-export function prepareConflictPrompt({ path, conflictedSource, forkHistory }) {
+export function prepareConflictPrompt({
+  path,
+  conflictedSource,
+  forkHistory,
+  maxConflicts = Number.POSITIVE_INFINITY,
+  deleteConflict,
+}) {
   if (Buffer.byteLength(conflictedSource) > MAX_CONFLICT_FILE_BYTES) {
     throw new Error(`${path} exceeds the ${MAX_CONFLICT_FILE_BYTES}-byte local file limit`);
   }
@@ -208,16 +242,22 @@ export function prepareConflictPrompt({ path, conflictedSource, forkHistory }) {
     throw new Error(`${path} is binary and cannot be AI-resolved`);
   }
   const conflicts = [];
-  let prompt = buildConflictPrompt({ path, conflicts, forkHistory });
+  let prompt = buildConflictPrompt({ path, conflicts, forkHistory, deleteConflict });
   let promptBytes = Buffer.byteLength(prompt);
   if (promptBytes > MAX_PROMPT_BYTES) {
     throw new Error(`${path} exceeds the ${MAX_PROMPT_BYTES}-byte conflict prompt limit`);
   }
 
-  for (const match of conflictedSource.matchAll(CONFLICT_PATTERN)) {
+  const allConflicts = [...conflictedSource.matchAll(CONFLICT_PATTERN)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+  const totalConflicts = allConflicts.length;
+  for (const { start, end } of allConflicts) {
+    // Conflicts past this request's count or byte budget are left for the
+    // next batch; only a first conflict that cannot fit alone is fatal.
+    if (conflicts.length >= maxConflicts) continue;
     const index = conflicts.length;
-    const start = match.index;
-    const end = start + match[0].length;
     const contextPrefix = `${index === 0 ? "" : "\n\n"}CONFLICT ${index} WITH LOCAL CONTEXT:\n`;
     const prefixBytes = Buffer.byteLength(contextPrefix);
     const context = contextAround(
@@ -225,9 +265,13 @@ export function prepareConflictPrompt({ path, conflictedSource, forkHistory }) {
       start,
       end,
       MAX_PROMPT_BYTES - promptBytes - prefixBytes,
+      allConflicts,
     );
     if (context === undefined) {
-      throw new Error(`${path} exceeds the ${MAX_PROMPT_BYTES}-byte conflict prompt limit`);
+      if (conflicts.length === 0) {
+        throw new Error(`${path} exceeds the ${MAX_PROMPT_BYTES}-byte conflict prompt limit`);
+      }
+      continue;
     }
     conflicts.push({ index, start, end, context: context.context });
     prompt += contextPrefix + context.context;
@@ -236,7 +280,7 @@ export function prepareConflictPrompt({ path, conflictedSource, forkHistory }) {
   if (conflicts.length === 0) {
     throw new Error(`${path} did not contain diff3 conflict markers`);
   }
-  return { conflicts, prompt };
+  return { conflicts, prompt, totalConflicts };
 }
 
 function reportList(items, emptyMessage) {
@@ -341,103 +385,174 @@ function listProtectedWorkflowPaths(upstreamTag, previousUpstreamTag) {
     .filter(Boolean);
 }
 
-async function resolveConflict(path, token) {
-  try {
-    git(["checkout", "--conflict=diff3", "--", path]);
-  } catch {
-    throw new Error(`${path} cannot be represented as a regular text conflict`);
-  }
-  if (!NodeFS.existsSync(path)) {
-    throw new Error(`${path} is a delete conflict and requires manual resolution`);
+// A modify/delete conflict has no stage-2 or stage-3 entry, so `git checkout
+// --conflict=diff3` cannot rebuild it ("does not have all necessary
+// versions"). Represent it as one whole-file conflict — surviving side versus
+// an empty deleted side — so the same model contract decides keep-versus-delete
+// under the parent first-party replacement rule. An empty resolved file from
+// this shape means "follow the deletion".
+function conflictSourceForPath(path) {
+  const stages = new Set(
+    git(["ls-files", "-u", "--", path])
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => Number(line.split("\t")[0].split(" ")[2])),
+  );
+  const hasOurs = stages.has(2);
+  const hasTheirs = stages.has(3);
+  if (hasOurs && hasTheirs) {
+    try {
+      git(["checkout", "--conflict=diff3", "--", path]);
+    } catch {
+      throw new Error(`${path} cannot be represented as a regular text conflict`);
+    }
+    if (!NodeFS.existsSync(path)) {
+      throw new Error(`${path} is missing from the working tree and requires manual resolution`);
+    }
+    return { conflictedSource: NodeFS.readFileSync(path, "utf8"), deleteConflict: undefined };
   }
 
-  const conflictedSource = NodeFS.readFileSync(path, "utf8");
-  const previousUpstreamTag = process.env.PREVIOUS_UPSTREAM_TAG?.trim() ?? "";
-  const { conflicts, prompt } = prepareConflictPrompt({
-    path,
-    conflictedSource,
-    forkHistory: forkHistoryForPath(path, previousUpstreamTag),
-  });
+  const stageContent = (stage) => {
+    try {
+      return git(["show", `:${stage}:${path}`]);
+    } catch {
+      return "";
+    }
+  };
+  const trimTrailingNewline = (value) => value.replace(/\n$/u, "");
+  const conflictedSource = [
+    `<<<<<<< OURS (T3 Pretty main${hasOurs ? "" : "; this side deleted the file"})`,
+    trimTrailingNewline(stageContent(2)),
+    "||||||| BASE (last integrated parent nightly)",
+    trimTrailingNewline(stageContent(1)),
+    "=======",
+    trimTrailingNewline(stageContent(3)),
+    `>>>>>>> THEIRS (parent nightly${hasTheirs ? "" : "; this side deleted the file"})`,
+    "",
+  ].join("\n");
+  return { conflictedSource, deleteConflict: { deletedSide: hasTheirs ? "ours" : "theirs" } };
+}
 
-  const response = await fetch(`${API_URL}/responses`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      reasoning: { effort: REASONING_EFFORT },
-      service_tier: SERVICE_TIER,
-      input: prompt,
-      text: {
-        format: {
-          type: "json_schema",
-          name: "git_conflict_resolution",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            required: [
-              "safe",
-              "edits",
-              "fork_changes_preserved",
-              "upstream_changes_integrated",
-              "upstream_changes_omitted",
-              "summary",
-            ],
-            properties: {
-              safe: { type: "boolean" },
-              edits: {
-                type: "array",
-                minItems: conflicts.length,
-                maxItems: conflicts.length * 4,
-                items: {
-                  type: "object",
-                  additionalProperties: false,
-                  required: ["old_text", "new_text", "summary"],
-                  properties: {
-                    old_text: { type: "string" },
-                    new_text: { type: "string" },
-                    summary: { type: "string" },
+async function requestConflictResolution({ path, prompt, conflictCount, token }) {
+  // The proxy intermittently 502s when a single xhigh call reasons for very
+  // long, and one gateway blip otherwise aborts the whole sync (seen
+  // 2026-08-14 on nightly 1089). Retry transient failures — network errors,
+  // 429, 5xx, and incomplete responses — dropping to high effort on the last
+  // attempt so one pathological long-think cannot sink the run. Model
+  // declines (safe=false on a completed response) never retry.
+  const maxAttempts = 3;
+  let apiResponse;
+  let usedEffort = REASONING_EFFORT;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const effort = attempt < maxAttempts ? REASONING_EFFORT : "high";
+    let response;
+    let raw = "";
+    try {
+      response = await fetch(`${API_URL}/responses`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          reasoning: { effort },
+          service_tier: SERVICE_TIER,
+          input: prompt,
+          text: {
+            format: {
+              type: "json_schema",
+              name: "git_conflict_resolution",
+              strict: true,
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: [
+                  "safe",
+                  "edits",
+                  "fork_changes_preserved",
+                  "upstream_changes_integrated",
+                  "upstream_changes_omitted",
+                  "summary",
+                ],
+                properties: {
+                  safe: { type: "boolean" },
+                  edits: {
+                    type: "array",
+                    minItems: conflictCount,
+                    maxItems: conflictCount * 4,
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      required: ["old_text", "new_text", "summary"],
+                      properties: {
+                        old_text: { type: "string" },
+                        new_text: { type: "string" },
+                        summary: { type: "string" },
+                      },
+                    },
                   },
+                  fork_changes_preserved: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                  upstream_changes_integrated: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                  upstream_changes_omitted: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      required: ["change", "reason"],
+                      properties: {
+                        change: { type: "string" },
+                        reason: { type: "string" },
+                      },
+                    },
+                  },
+                  summary: { type: "string" },
                 },
               },
-              fork_changes_preserved: {
-                type: "array",
-                items: { type: "string" },
-              },
-              upstream_changes_integrated: {
-                type: "array",
-                items: { type: "string" },
-              },
-              upstream_changes_omitted: {
-                type: "array",
-                items: {
-                  type: "object",
-                  additionalProperties: false,
-                  required: ["change", "reason"],
-                  properties: {
-                    change: { type: "string" },
-                    reason: { type: "string" },
-                  },
-                },
-              },
-              summary: { type: "string" },
             },
           },
-        },
-      },
-    }),
-  });
-
-  const raw = await response.text();
-  if (!response.ok) {
-    throw new Error(`CLIProxyAPI returned HTTP ${response.status}: ${raw.slice(0, 500)}`);
+        }),
+      });
+      raw = await response.text();
+    } catch (error) {
+      raw = error instanceof Error ? error.message : String(error);
+    }
+    if (response?.ok) {
+      try {
+        apiResponse = JSON.parse(raw);
+      } catch {
+        apiResponse = undefined;
+      }
+      if (apiResponse?.status === "completed") {
+        usedEffort = effort;
+        break;
+      }
+      process.stdout.write(
+        `[fork-sync] attempt ${attempt}/${maxAttempts} for ${path} returned an unparseable or incomplete response; retrying\n`,
+      );
+    } else {
+      const status = response?.status ?? 0;
+      if (status !== 0 && status !== 429 && status < 500) {
+        throw new Error(`CLIProxyAPI returned HTTP ${status}: ${raw.slice(0, 500)}`);
+      }
+      process.stdout.write(
+        `[fork-sync] attempt ${attempt}/${maxAttempts} for ${path} hit a transient failure (HTTP ${status || "network error"}: ${raw.slice(0, 200)}); retrying\n`,
+      );
+    }
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 15_000));
+    }
   }
-  const apiResponse = JSON.parse(raw);
-  if (apiResponse.status !== "completed") {
-    throw new Error(`CLIProxyAPI response status was ${apiResponse.status ?? "missing"}`);
+  if (apiResponse?.status !== "completed") {
+    throw new Error(
+      `CLIProxyAPI did not produce a completed response for ${path} after ${maxAttempts} attempts`,
+    );
   }
   const resolution = JSON.parse(extractResponseText(apiResponse));
   if (resolution.safe !== true) {
@@ -446,7 +561,10 @@ async function resolveConflict(path, token) {
   if (!Array.isArray(resolution.edits)) {
     throw new Error(`${path} did not include an edits array`);
   }
+  return { resolution, usedEffort, effectiveTier: apiResponse.service_tier ?? "unknown" };
+}
 
+function applyResolutionEdits({ path, source, conflicts, resolution }) {
   const edits = resolution.edits.map((edit) => {
     if (
       typeof edit.old_text !== "string" ||
@@ -456,8 +574,11 @@ async function resolveConflict(path, token) {
     ) {
       throw new Error(`${path} returned an invalid no-op or empty edit`);
     }
-    const start = conflictedSource.indexOf(edit.old_text);
-    if (start === -1 || conflictedSource.indexOf(edit.old_text, start + 1) !== -1) {
+    if (LEFTOVER_MARKER_PATTERN.test(edit.new_text)) {
+      throw new Error(`${path} returned new_text that reintroduces conflict markers`);
+    }
+    const start = source.indexOf(edit.old_text);
+    if (start === -1 || source.indexOf(edit.old_text, start + 1) !== -1) {
       throw new Error(`${path} returned old_text that was missing or not unique`);
     }
     const end = start + edit.old_text.length;
@@ -478,30 +599,80 @@ async function resolveConflict(path, token) {
     }
   }
 
-  let resolvedSource = conflictedSource;
+  let resolvedSource = source;
   for (const edit of sortedEdits.toReversed()) {
     resolvedSource =
       resolvedSource.slice(0, edit.start) + edit.replacement + resolvedSource.slice(edit.end);
   }
-  if (/^(<{7}|\|{7}|={7}|>{7})/mu.test(resolvedSource)) {
-    throw new Error(`${path} still contains conflict markers`);
-  }
-  NodeFS.mkdirSync(NodePath.dirname(NodePath.resolve(path)), { recursive: true });
-  NodeFS.writeFileSync(path, resolvedSource);
-  git(["add", "--", path]);
+  return resolvedSource;
+}
 
-  process.stdout.write(
-    `[fork-sync] resolved ${path} with ${MODEL}/${REASONING_EFFORT} (requested tier=${SERVICE_TIER}, effective tier=${apiResponse.service_tier ?? "unknown"}): ${resolution.summary}\n`,
-  );
-  return {
-    path,
-    forkChangesPreserved: stringList(resolution.fork_changes_preserved, "fork_changes_preserved"),
-    upstreamChangesIntegrated: stringList(
-      resolution.upstream_changes_integrated,
-      "upstream_changes_integrated",
-    ),
-    upstreamChangesOmitted: omittedChangeList(resolution.upstream_changes_omitted),
-  };
+async function resolveConflict(path, token) {
+  const { conflictedSource, deleteConflict } = conflictSourceForPath(path);
+  const previousUpstreamTag = process.env.PREVIOUS_UPSTREAM_TAG?.trim() ?? "";
+  const forkHistory = forkHistoryForPath(path, previousUpstreamTag);
+
+  // Resolve in batches: each request covers at most MAX_CONFLICTS_PER_REQUEST
+  // conflicts, edits are applied, and the next batch is prepared against the
+  // updated file until no conflict markers remain.
+  let source = conflictedSource;
+  const forkChangesPreserved = [];
+  const upstreamChangesIntegrated = [];
+  const upstreamChangesOmitted = [];
+  let batches = 0;
+  while (LEFTOVER_MARKER_PATTERN.test(source)) {
+    batches += 1;
+    if (batches > MAX_BATCHES_PER_FILE) {
+      throw new Error(
+        `${path} still contains conflict markers after ${MAX_BATCHES_PER_FILE} resolution batches`,
+      );
+    }
+    const { conflicts, prompt, totalConflicts } = prepareConflictPrompt({
+      path,
+      conflictedSource: source,
+      forkHistory,
+      maxConflicts: MAX_CONFLICTS_PER_REQUEST,
+      deleteConflict,
+    });
+    const { resolution, usedEffort, effectiveTier } = await requestConflictResolution({
+      path,
+      prompt,
+      conflictCount: conflicts.length,
+      token,
+    });
+    source = applyResolutionEdits({ path, source, conflicts, resolution });
+    forkChangesPreserved.push(
+      ...stringList(resolution.fork_changes_preserved, "fork_changes_preserved"),
+    );
+    upstreamChangesIntegrated.push(
+      ...stringList(resolution.upstream_changes_integrated, "upstream_changes_integrated"),
+    );
+    upstreamChangesOmitted.push(...omittedChangeList(resolution.upstream_changes_omitted));
+    process.stdout.write(
+      `[fork-sync] resolved batch ${batches} for ${path} (${conflicts.length} of ${totalConflicts} remaining conflicts) with ${MODEL}/${usedEffort} (requested tier=${SERVICE_TIER}, effective tier=${effectiveTier}): ${resolution.summary}\n`,
+    );
+  }
+
+  if (source.trim() === "") {
+    if (!deleteConflict) {
+      throw new Error(`${path} resolved to an empty file, which is never a valid merge result`);
+    }
+    git(["rm", "-q", "--", path]);
+    process.stdout.write(
+      `[fork-sync] deleted ${path}, following the ${deleteConflict.deletedSide} side\n`,
+    );
+    upstreamChangesIntegrated.push(
+      deleteConflict.deletedSide === "theirs"
+        ? "followed the parent nightly's deletion of this file"
+        : "kept the fork's deletion of this file over the parent copy",
+    );
+    return { path, forkChangesPreserved, upstreamChangesIntegrated, upstreamChangesOmitted };
+  }
+
+  NodeFS.mkdirSync(NodePath.dirname(NodePath.resolve(path)), { recursive: true });
+  NodeFS.writeFileSync(path, source);
+  git(["add", "--", path]);
+  return { path, forkChangesPreserved, upstreamChangesIntegrated, upstreamChangesOmitted };
 }
 
 function resolveGeneratedLockfile(path) {
@@ -535,9 +706,6 @@ function resolveGeneratedLockfile(path) {
 
 async function main() {
   const paths = git(["diff", "--name-only", "--diff-filter=U"]).split("\n").filter(Boolean);
-  if (paths.length > MAX_CONFLICTS) {
-    throw new Error(`Refusing to resolve ${paths.length} conflicts; limit is ${MAX_CONFLICTS}`);
-  }
 
   const lockfilePaths = paths.filter(isGeneratedLockfile);
   const modelPaths = paths.filter((path) => !isGeneratedLockfile(path));

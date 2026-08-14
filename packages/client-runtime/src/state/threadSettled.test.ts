@@ -35,6 +35,7 @@ function makeShell(input: {
     interactionMode: "default",
     branch: null,
     worktreePath: null,
+    enabledSkillIds: [],
     latestTurn:
       input.activityAt === null
         ? null
