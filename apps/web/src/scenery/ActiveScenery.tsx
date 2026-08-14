@@ -176,10 +176,10 @@ export default function ActiveScenery() {
   const seed = threadKey ?? dailySeed();
 
   // Ink follows the photo that is actually on screen. Using the incoming
-  // assignment would flip chrome/wash while the previous wallpaper is still
-  // held (the load gap SceneryLayer already papers over). Until the first
-  // photo has displayed, the assignment is the right source so the opening
-  // gradient already has matching ink.
+  // assignment would flip chrome/wash while the outgoing wallpaper is still
+  // dissolving (SceneryLayer only commits the new photo once decoded). Until
+  // the first photo has displayed, the assignment is the right source so the
+  // opening gradient already has matching ink.
   const [displayedTone, setDisplayedTone] = useState<{
     readonly averageColorHex: string | null;
     readonly seed: string;
