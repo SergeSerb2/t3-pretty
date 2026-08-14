@@ -2,6 +2,8 @@ import {
   CommandId,
   ORCHESTRATION_WS_METHODS,
   type ClientOrchestrationCommand,
+  type SkillId,
+  type ThreadTurnStartBootstrap,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -31,7 +33,13 @@ type CommandInput<T extends CommandType> = Omit<
 export type CreateProjectInput = CommandInput<"project.create">;
 export type UpdateProjectInput = CommandInput<"project.meta.update">;
 export type DeleteProjectInput = CommandInput<"project.delete">;
-export type CreateThreadInput = CommandInput<"thread.create">;
+// Per-thread skill picks are optional on the creation payloads: when the
+// caller has none, the key stays out of the dispatched command entirely so
+// pre-skills servers see the same payload as before (the schema defaults it
+// to []).
+export type CreateThreadInput = Omit<CommandInput<"thread.create">, "enabledSkillIds"> & {
+  readonly enabledSkillIds?: ReadonlyArray<SkillId>;
+};
 export type DeleteThreadInput = CommandInput<"thread.delete">;
 export type ArchiveThreadInput = CommandInput<"thread.archive">;
 export type UnarchiveThreadInput = CommandInput<"thread.unarchive">;
@@ -43,10 +51,25 @@ export type PinThreadInput = CommandInput<"thread.pin">;
 export type UnpinThreadInput = CommandInput<"thread.unpin">;
 export type ReorderPinnedThreadInput = CommandInput<"thread.pin.reorder">;
 export type AssignThreadSceneryInput = CommandInput<"thread.scenery.assign">;
+export type SetThreadSkillsInput = CommandInput<"thread.skills.set">;
 export type UpdateThreadMetadataInput = CommandInput<"thread.meta.update">;
 export type SetThreadRuntimeModeInput = CommandInput<"thread.runtime-mode.set">;
 export type SetThreadInteractionModeInput = CommandInput<"thread.interaction-mode.set">;
-export type StartThreadTurnInput = CommandInput<"thread.turn.start">;
+type ThreadTurnStartBootstrapCreateThreadInput = Omit<
+  NonNullable<ThreadTurnStartBootstrap["createThread"]>,
+  "enabledSkillIds"
+> & {
+  readonly enabledSkillIds?: ReadonlyArray<SkillId>;
+};
+// Same optional skill passthrough as CreateThreadInput, one level down inside
+// the turn-start bootstrap.
+export type StartThreadTurnInput = Omit<CommandInput<"thread.turn.start">, "bootstrap"> & {
+  readonly bootstrap?:
+    | (Omit<ThreadTurnStartBootstrap, "createThread"> & {
+        readonly createThread?: ThreadTurnStartBootstrapCreateThreadInput | undefined;
+      })
+    | undefined;
+};
 export type InterruptThreadTurnInput = CommandInput<"thread.turn.interrupt">;
 export type RespondToThreadApprovalInput = CommandInput<"thread.approval.respond">;
 export type RespondToThreadUserInputInput = CommandInput<"thread.user-input.respond">;
@@ -128,7 +151,10 @@ export const createThread: (input: CreateThreadInput) => CommandEffect = Effect.
     type: "thread.create",
     commandId: metadata.commandId,
     createdAt: metadata.createdAt,
-  });
+    // Optional in the input but required on the command schema's Type side;
+    // the spread leaves the key out when unset and the server decodes the
+    // default ([]).
+  } as CommandOf<"thread.create">);
 });
 
 export const deleteThread: (input: DeleteThreadInput) => CommandEffect = Effect.fn(
@@ -241,6 +267,18 @@ export const assignThreadScenery: (input: AssignThreadSceneryInput) => CommandEf
   });
 });
 
+export const setThreadSkills: (input: SetThreadSkillsInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.setThreadSkills",
+)(function* (input) {
+  const metadata = yield* timestampedCommandMetadata(input);
+  return yield* dispatch({
+    ...input,
+    type: "thread.skills.set",
+    commandId: metadata.commandId,
+    createdAt: metadata.createdAt,
+  });
+});
+
 export const updateThreadMetadata: (input: UpdateThreadMetadataInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.updateThreadMetadata",
 )(function* (input) {
@@ -283,7 +321,9 @@ export const startThreadTurn: (input: StartThreadTurnInput) => CommandEffect = E
     type: "thread.turn.start",
     commandId: metadata.commandId,
     createdAt: metadata.createdAt,
-  });
+    // Same cast as createThread: bootstrap.createThread.enabledSkillIds is
+    // optional in the input, required on the command schema's Type side.
+  } as CommandOf<"thread.turn.start">);
 });
 
 export const interruptThreadTurn: (input: InterruptThreadTurnInput) => CommandEffect = Effect.fn(
