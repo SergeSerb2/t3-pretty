@@ -294,11 +294,15 @@ ${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
     assert.include(workflow, "timeout-minutes: 120");
   });
 
-  it("does not reject untouched upstream patch payload whitespace", () => {
+  it("does not gate the merge on model- or upstream-authored whitespace", () => {
     const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
 
+    // Only the workflow's own metadata file is whitespace-checked. Resolver
+    // output is model-composed content; a blank line at EOF must not fail an
+    // otherwise complete merge after all conflicts resolved.
     assert.include(workflow, "mapfile -d '' -t resolver_paths");
-    assert.include(workflow, 'git diff --check --cached -- \\\n            "${resolver_paths[@]}"');
+    assert.include(workflow, "git diff --check --cached -- .t3-fork/upstream-nightly");
+    assert.notInclude(workflow, '"${resolver_paths[@]}" \\');
     assert.notInclude(workflow, "          git diff --check --cached\n");
   });
 

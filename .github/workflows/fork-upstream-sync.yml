@@ -159,13 +159,12 @@ jobs:
           mkdir -p .t3-fork
           printf '%s\n' "$UPSTREAM_TAG" > .t3-fork/upstream-nightly
           git add .t3-fork/upstream-nightly
-          # Incoming patch payloads can intentionally encode trailing whitespace.
-          # Check only files authored by the resolver or this workflow, rather
-          # than rejecting untouched content from a trusted upstream release.
-          git diff --check --cached -- \
-            "${resolver_paths[@]}" \
-            .t3-fork/upstream-nightly \
-            .t3-fork/upstream-sync-report.md
+          # Whitespace-guard only the file this workflow writes itself.
+          # Resolver-composed content is model output; upstream content is a
+          # trusted release. `git diff --check` would reject a model-emitted
+          # blank line at EOF after the entire merge succeeded, so it must
+          # not gate either.
+          git diff --check --cached -- .t3-fork/upstream-nightly
 
           if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
             git commit -m "chore(sync): merge upstream $UPSTREAM_TAG"
