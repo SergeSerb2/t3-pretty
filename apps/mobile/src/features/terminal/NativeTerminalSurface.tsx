@@ -185,10 +185,9 @@ export const TerminalSurface = memo(function TerminalSurface(props: TerminalSurf
       native: hasNativeSurface,
       // null = installed binary predates native hardware-key handling (rebuild needed).
       hardwareKeyRevision: getNativeTerminalHardwareKeyRevision(),
-      bufferLen: props.buffer.length,
       isRunning: props.isRunning,
     });
-  }, [hasNativeSurface, props.buffer.length, props.isRunning, props.terminalKey]);
+  }, [hasNativeSurface, props.isRunning, props.terminalKey]);
   const handleNativeInput = useCallback(
     (event: NativeSyntheticEvent<TerminalInputEvent>) => {
       if (!props.isRunning) {
@@ -222,6 +221,11 @@ export const TerminalSurface = memo(function TerminalSurface(props: TerminalSurf
           foregroundColor={theme.foreground}
           mutedForegroundColor={theme.mutedForeground}
           terminalKey={props.terminalKey}
+          // initialBuffer is the live output path, not mount-only state: the
+          // native views diff each update against the buffer they already fed
+          // and ingest just the appended suffix (a trim or clear breaks the
+          // prefix and triggers a native surface reset). Freezing this prop at
+          // its mount-time value would stop output from rendering.
           initialBuffer={props.buffer}
           fontSize={fontSize}
           style={{ flex: 1 }}

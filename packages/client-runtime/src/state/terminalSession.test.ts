@@ -184,4 +184,57 @@ describe("terminal session reducers", () => {
 
     expect(state.buffer).toBe("🙂");
   });
+
+  it("keeps a long output stream byte-trimmed across chunk appends", () => {
+    let state = EMPTY_TERMINAL_BUFFER_STATE;
+    // 200 chunks x 6 bytes = 1200 bytes streamed through a 64-byte cap.
+    for (let index = 0; index < 200; index += 1) {
+      state = applyTerminalAttachStreamEvent(
+        state,
+        {
+          type: "output",
+          threadId: TARGET.threadId,
+          terminalId: TARGET.terminalId,
+          data: "abcdef",
+        },
+        64,
+      );
+    }
+
+    expect(state.buffer).toBe(`cdef${"abcdef".repeat(10)}`);
+    expect(state.bufferByteLength).toBe(64);
+    expect(state.version).toBe(200);
+  });
+
+  it("drops a multi-byte character straddling the trim boundary whole", () => {
+    const append = (state: typeof EMPTY_TERMINAL_BUFFER_STATE, data: string) =>
+      applyTerminalAttachStreamEvent(
+        state,
+        {
+          type: "output",
+          threadId: TARGET.threadId,
+          terminalId: TARGET.terminalId,
+          data,
+        },
+        8,
+      );
+
+    // Steady-state appends at or under the cap accumulate untouched.
+    let state = append(EMPTY_TERMINAL_BUFFER_STATE, "abcd");
+    state = append(state, "efgh");
+    expect(state.buffer).toBe("abcdefgh");
+    expect(state.bufferByteLength).toBe(8);
+
+    state = append(state, "🙂");
+    expect(state.buffer).toBe("efgh🙂");
+
+    state = append(state, "ij");
+    expect(state.buffer).toBe("gh🙂ij");
+
+    // The trim boundary lands inside the first emoji; it is dropped whole
+    // rather than decoded as a partial sequence.
+    state = append(state, "🙂");
+    expect(state.buffer).toBe("ij🙂");
+    expect(state.bufferByteLength).toBe(6);
+  });
 });
