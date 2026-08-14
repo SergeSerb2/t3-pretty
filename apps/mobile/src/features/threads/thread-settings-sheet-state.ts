@@ -1,10 +1,7 @@
 import type { ProviderOptionDescriptor } from "@t3tools/contracts";
 
 import type { ModelOption } from "../../lib/modelOptions";
-import { selectableChoices } from "./thread-settings-menu";
-
-/** Compact chip rows stay scannable; longer catalogs keep a disclosure. */
-export const INLINE_SELECT_CHOICE_LIMIT = 6;
+import { selectableChoices } from "./thread-settings-options";
 
 /** Match the terms a user can actually see or recognize in the model picker. */
 export function modelMatchesCatalogQuery(input: {
@@ -52,12 +49,6 @@ export function visibleSheetOptionDescriptors(
   });
 }
 
-export function usesInlineSelectChoices(
-  descriptor: Extract<ProviderOptionDescriptor, { type: "select" }>,
-): boolean {
-  return selectableChoices(descriptor).length <= INLINE_SELECT_CHOICE_LIMIT;
-}
-
 /**
  * Primary and selected providers start open; all other catalogs start closed.
  * A user's disclosure tap inverts that default until the picker is dismissed.
@@ -70,7 +61,5 @@ export function providerSectionIsCollapsed(input: {
   if (input.isNarrowed) {
     return false;
   }
-  return input.defaultExpanded
-    ? input.hasExpansionOverride
-    : !input.hasExpansionOverride;
+  return input.defaultExpanded ? input.hasExpansionOverride : !input.hasExpansionOverride;
 }

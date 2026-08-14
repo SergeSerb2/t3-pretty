@@ -15,6 +15,7 @@ import {
   type ComposerTrigger,
 } from "@t3tools/shared/composerTrigger";
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
+import * as Haptics from "expo-haptics";
 import type { ReactNode } from "react";
 import {
   memo,
@@ -71,7 +72,7 @@ import {
   ComposerToolbarRow,
   ComposerToolbarScroller,
 } from "../../components/ComposerToolbar";
-import { ControlPill } from "../../components/ControlPill";
+import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import {
@@ -88,12 +89,17 @@ import {
   normalizeSearchQuery,
   scoreQueryMatch,
 } from "@t3tools/shared/searchRanking";
-import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
+import {
+  applyProviderOptionSelection,
+  resolveProviderOptionDescriptors,
+} from "../../lib/providerOptions";
 import { useComposerPathSearch } from "../../state/use-composer-path-search";
 import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerCommandPopover";
+import { buildThreadSettingsMenu } from "./thread-settings-menu";
 import { ThreadModelIdentityCaption } from "./ThreadModelIdentityCaption";
 import {
   type ExistingThreadSettingsRouteSession,
+  threadSettingsSummaryLabel,
   useExistingThreadSettingsRoutePresentation,
 } from "./ThreadSettingsSheet";
 import { buildThreadModelIdentity } from "./threadModelIdentity";
@@ -493,9 +499,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.selectedThread.session?.status === "starting";
 
   const sendLabel =
-    props.connectionState !== "connected" || props.queueCount > 0 ? "Queue" : "Send";
+    props.connectionState !== "connected" || props.activeThreadBusy || props.queueCount > 0
+      ? "Queue"
+      : "Send";
   const currentModelSelection = props.selectedThread.modelSelection;
   const currentRuntimeMode = props.selectedThread.runtimeMode;
+  const currentInteractionMode = props.selectedThread.interactionMode ?? "default";
   const connectionStatus = composerConnectionStatus({
     connectionError: props.connectionError,
     connectionState: props.connectionState,
@@ -1168,16 +1177,33 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   onPress={() => void handlePickDraftImages()}
                   showChevron={false}
                 />
-                <ComposerInlineControl
-                  accessibilityLabel="Model and reasoning settings"
-                  emphasized
-                  iconNode={
-                    <ProviderIcon provider={currentModelOption?.providerDriver} size={16} />
-                  }
-                  label={currentModelOption?.label ?? currentModelSelection.model}
-                  maxWidth={152}
-                  onPress={openSettings}
-                />
+                {settingsMenu ? (
+                  <ControlPillMenu
+                    actions={settingsMenu.actions}
+                    onPressAction={({ nativeEvent }) => handleSettingsMenuAction(nativeEvent.event)}
+                  >
+                    <ComposerInlineControl
+                      accessibilityLabel="Model and reasoning settings"
+                      emphasized
+                      iconNode={
+                        <ProviderIcon provider={currentModelOption?.providerDriver} size={16} />
+                      }
+                      label={settingsSummaryLabel}
+                      maxWidth={320}
+                    />
+                  </ControlPillMenu>
+                ) : (
+                  <ComposerInlineControl
+                    accessibilityLabel="Model and reasoning settings"
+                    emphasized
+                    iconNode={
+                      <ProviderIcon provider={currentModelOption?.providerDriver} size={16} />
+                    }
+                    label={settingsSummaryLabel}
+                    maxWidth={320}
+                    onPress={openSettings}
+                  />
+                )}
                 {showStopAction ? (
                   <ComposerToolbarButton
                     accessibilityLabel="Stop"
@@ -1213,7 +1239,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           </Animated.View>
         ) : null}
       </Animated.View>
-
 
       <ImageViewing
         images={previewImageUri ? [{ uri: previewImageUri }] : []}

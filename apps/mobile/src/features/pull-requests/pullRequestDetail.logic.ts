@@ -595,16 +595,27 @@ export const ACTION_SUCCESS_LABELS = {
   draft: "Converted to draft",
   close: "Pull request closed",
   reopen: "Pull request reopened",
+  "update-branch": "Branch updated with the base branch",
+  // True whichever it did: a pull request that was already mergeable merges the moment this is
+  // armed, and the client has no way to tell that apart from one still waiting on something.
+  "enable-auto-merge":
+    "Auto-merge turned on — merges as soon as this is ready, sooner if it already is",
+  "disable-auto-merge": "Auto-merge turned off",
 } as const;
 
+/** Said as the thing that did not happen, rather than as the operation that returned an error. */
 export const ACTION_FAILURE_LABELS = {
   merge: "Could not merge this pull request",
   ready: "Could not mark this ready for review",
   draft: "Could not convert this to a draft",
   close: "Could not close this pull request",
   reopen: "Could not reopen this pull request",
+  "update-branch": "Could not update this branch",
+  "enable-auto-merge": "Could not turn on auto-merge",
+  "disable-auto-merge": "Could not turn off auto-merge",
 } as const;
 
+/** What to try, for the times the host says only that it refused. */
 export const ACTION_FAILURE_HINTS = {
   merge:
     "The host refused the merge. Check that you have write access, that the checks it requires have passed, and that the branch is not conflicting.",
@@ -613,6 +624,16 @@ export const ACTION_FAILURE_HINTS = {
   close: "The host refused it. Check that you have write access, or that you opened it.",
   reopen:
     "The host refused it. Check that you have write access, and that the branch still exists.",
+  // Said for the merge commit, which is what an update is unless a rebase was asked for. The
+  // rebase has its own reasons to fail and its own sentence below.
+  "update-branch":
+    "The host refused it. Check that you have write access to the branch — one from a fork also needs its author to allow edits from maintainers — and that it does not conflict with the base.",
+  // The one refusal that is usually a repository setting rather than anything about this branch:
+  // GitHub will not arm an auto-merge at all unless the repository has the feature switched on.
+  "enable-auto-merge":
+    "The host refused it. Check that this repository allows auto-merge, that you have write access, and that there is something left for it to wait on.",
+  "disable-auto-merge":
+    "The host refused it. Check that you have write access, and that the merge has not already happened.",
 } as const;
 
 export const OPEN_ON_HOST_LABELS: Partial<Record<string, string>> = {

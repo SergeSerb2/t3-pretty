@@ -10,7 +10,6 @@ import type { ModelOption } from "../../lib/modelOptions";
 import {
   modelMatchesCatalogQuery,
   pendingModelAfterPress,
-  usesInlineSelectChoices,
   visibleSheetOptionDescriptors,
 } from "./thread-settings-sheet-state";
 
@@ -107,17 +106,6 @@ const reasoning: ProviderOptionDescriptor = {
   promptInjectedValues: ["ultrathink"],
 };
 
-const contextWindow: ProviderOptionDescriptor = {
-  id: "contextWindow",
-  label: "Context Window",
-  type: "select",
-  options: [
-    { id: "200k", label: "200k", isDefault: true },
-    { id: "1m", label: "1M" },
-  ],
-  currentValue: "200k",
-};
-
 const fastMode: ProviderOptionDescriptor = {
   id: "fastMode",
   label: "Fast Mode",
@@ -140,21 +128,5 @@ describe("visible sheet option descriptors", () => {
         (descriptor) => descriptor.id,
       ),
     ).toEqual(["effort", "fastMode"]);
-  });
-
-  it("uses inline chips for short catalogs and a disclosure for long ones", () => {
-    expect(usesInlineSelectChoices(reasoning)).toBe(true);
-    expect(usesInlineSelectChoices(contextWindow)).toBe(true);
-
-    const longCatalog: Extract<ProviderOptionDescriptor, { type: "select" }> = {
-      id: "modelVariant",
-      label: "Variant",
-      type: "select",
-      options: Array.from({ length: 8 }, (_, index) => ({
-        id: `v${index}`,
-        label: `Variant ${index}`,
-      })),
-    };
-    expect(usesInlineSelectChoices(longCatalog)).toBe(false);
   });
 });

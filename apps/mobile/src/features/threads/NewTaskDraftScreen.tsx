@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { useFontFamily } from "../../lib/useFontFamily";
 
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { ThreadId } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -77,6 +77,10 @@ import {
 } from "./new-task-context-presentation";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
 
+// KeyboardStickyView memos its animated style against `style` identity.
+const DRAFT_COMPOSER_STICKY_STYLE = { position: "absolute", bottom: 0, left: 0, right: 0 } as const;
+const DRAFT_COMPOSER_STICKY_OFFSET = { closed: 0, opened: 0 } as const;
+
 function NewTaskWorkspaceIcon(props: {
   readonly workspaceMode: "local" | "worktree";
   readonly worktreePath: string | null;
@@ -126,6 +130,20 @@ export function NewTaskDraftScreen(props: {
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
   const controlsBottomPadding = Math.max(insets.bottom, 10);
   const keyboardOpenedOffset = Math.max(0, controlsBottomPadding - 8);
+  // Pad from the IME animation instead of KeyboardAvoidingView+automaticOffset.
+  // This screen is pushed inside the new-task formSheet; measureInWindow
+  // under-lifts by the sheet's top inset and leaves the model/device toolbar
+  // behind the keyboard.
+  const { height: draftKeyboardTranslateY } = useReanimatedKeyboardAnimation();
+  const draftKeyboardVisibleSV = useSharedValue(isKeyboardVisible);
+  draftKeyboardVisibleSV.value = isKeyboardVisible;
+  const draftKeyboardAvoidStyle = useAnimatedStyle(
+    () => ({
+      // Matches deriveKeyboardAvoidPadding; inlined so the worklet stays self-contained.
+      paddingBottom: draftKeyboardVisibleSV.value ? Math.max(0, -draftKeyboardTranslateY.value) : 0,
+    }),
+    [],
+  );
   const { projectScopes, selectedProject, selectedProjectKey, setProject } = flow;
   const { connectedEnvironments } = useRemoteConnectionStatus();
   const selectedEnvironmentServerConfig = useEnvironmentServerConfig(
@@ -600,7 +618,6 @@ export function NewTaskDraftScreen(props: {
     selectedProject,
     shareImportAttempt,
   ]);
-
 
   const selectedEnvironmentLabel =
     flow.environments.find(
@@ -1242,15 +1259,10 @@ export function NewTaskDraftScreen(props: {
           the padding so a dismiss that leaves height stale cannot strand it
           during send. */}
       <Animated.View
-        style={[
-          { position: "absolute", bottom: 0, left: 0, right: 0 },
-          draftKeyboardAvoidStyle,
-        ]}
+        style={[{ position: "absolute", bottom: 0, left: 0, right: 0 }, draftKeyboardAvoidStyle]}
       >
         {composerDock}
       </Animated.View>
-
-      {settingsSheet}
     </View>
   );
 }
