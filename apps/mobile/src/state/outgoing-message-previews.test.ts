@@ -51,4 +51,16 @@ describe("outgoing message previews", () => {
 
     expect(getOutgoingMessagePreviewUris()[messageId]).toEqual(["file:///tmp/one.png"]);
   });
+
+  it("evicts the oldest entries once the record grows past the cap", () => {
+    for (let index = 0; index < 40; index += 1) {
+      rememberOutgoingMessagePreviewUris(`cap-test-${index}`, [`file:///tmp/cap-${index}.png`]);
+    }
+
+    const previews = getOutgoingMessagePreviewUris();
+    const capTestKeys = Object.keys(previews).filter((key) => key.startsWith("cap-test-"));
+    expect(capTestKeys).toHaveLength(32);
+    expect(capTestKeys[0]).toBe("cap-test-8");
+    expect(previews["cap-test-39"]).toEqual(["file:///tmp/cap-39.png"]);
+  });
 });

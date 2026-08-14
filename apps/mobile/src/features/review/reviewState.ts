@@ -38,58 +38,66 @@ const EMPTY_REVIEW_SECTION_FILE_IDS_ATOM = Atom.make(EMPTY_REVIEW_SECTION_FILE_I
   Atom.withLabel("mobile:review:section-file-ids:null"),
 );
 
+/**
+ * Per-thread review payloads (raw diff strings, parsed diff graphs) are the
+ * heaviest review state; without an idle TTL they accumulated for every
+ * thread reviewed during a session. The review sheet refetches and
+ * repopulates on open, so entries only need to outlive an open sheet.
+ */
+const REVIEW_STATE_IDLE_TTL = 5 * 60_000;
+
 const reviewGitSectionsByThreadKeyAtom = Atom.family((threadKey: string) =>
   Atom.make(EMPTY_GIT_REVIEW_SECTIONS).pipe(
-    Atom.keepAlive,
+    Atom.setIdleTTL(REVIEW_STATE_IDLE_TTL),
     Atom.withLabel(`mobile:review:git-sections:${threadKey}`),
   ),
 );
 
 const reviewTurnDiffByThreadKeyAtom = Atom.family((threadKey: string) =>
   Atom.make(EMPTY_REVIEW_TURN_DIFFS).pipe(
-    Atom.keepAlive,
+    Atom.setIdleTTL(REVIEW_STATE_IDLE_TTL),
     Atom.withLabel(`mobile:review:turn-diffs:${threadKey}`),
   ),
 );
 
 const reviewSelectedSectionIdByThreadKeyAtom = Atom.family((threadKey: string) =>
   Atom.make<string | null>(null).pipe(
-    Atom.keepAlive,
+    Atom.setIdleTTL(REVIEW_STATE_IDLE_TTL),
     Atom.withLabel(`mobile:review:selected-section-id:${threadKey}`),
   ),
 );
 
 const reviewAsyncStateByThreadKeyAtom = Atom.family((threadKey: string) =>
   Atom.make(EMPTY_REVIEW_ASYNC_STATE).pipe(
-    Atom.keepAlive,
+    Atom.setIdleTTL(REVIEW_STATE_IDLE_TTL),
     Atom.withLabel(`mobile:review:async-state:${threadKey}`),
   ),
 );
 
 const reviewExpandedFileIdsByThreadKeyAtom = Atom.family((threadKey: string) =>
   Atom.make(EMPTY_REVIEW_SECTION_FILE_IDS).pipe(
-    Atom.keepAlive,
+    Atom.setIdleTTL(REVIEW_STATE_IDLE_TTL),
     Atom.withLabel(`mobile:review:expanded-file-ids:${threadKey}`),
   ),
 );
 
 const reviewRevealedLargeFileIdsByThreadKeyAtom = Atom.family((threadKey: string) =>
   Atom.make(EMPTY_REVIEW_SECTION_FILE_IDS).pipe(
-    Atom.keepAlive,
+    Atom.setIdleTTL(REVIEW_STATE_IDLE_TTL),
     Atom.withLabel(`mobile:review:revealed-large-file-ids:${threadKey}`),
   ),
 );
 
 const reviewViewedFileIdsByThreadKeyAtom = Atom.family((threadKey: string) =>
   Atom.make(EMPTY_REVIEW_SECTION_FILE_IDS).pipe(
-    Atom.keepAlive,
+    Atom.setIdleTTL(REVIEW_STATE_IDLE_TTL),
     Atom.withLabel(`mobile:review:viewed-file-ids:${threadKey}`),
   ),
 );
 
 const reviewParsedDiffBySectionCacheKeyAtom = Atom.family((cacheKey: string) =>
   Atom.make<{ readonly diff: string | null; readonly parsed: ReviewParsedDiff } | null>(null).pipe(
-    Atom.keepAlive,
+    Atom.setIdleTTL(REVIEW_STATE_IDLE_TTL),
     Atom.withLabel(`mobile:review:parsed-diffs:${cacheKey}`),
   ),
 );

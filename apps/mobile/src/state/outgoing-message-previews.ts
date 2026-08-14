@@ -9,6 +9,14 @@ const outgoingMessagePreviewUrisAtom = Atom.make<Readonly<Record<string, Readonl
   {},
 ).pipe(Atom.keepAlive, Atom.withLabel("mobile:outgoing-message-previews"));
 
+/**
+ * Previews are only useful for recently sent messages (until the server asset
+ * URL resolves), so the record is capped and oldest entries are evicted on
+ * write. Without a bound, pasted-image data URLs accumulated for the whole
+ * session and grew the JS heap without limit.
+ */
+const MAX_OUTGOING_MESSAGE_PREVIEW_ENTRIES = 32;
+
 export function previewUrisFromDraftAttachments(
   attachments: ReadonlyArray<DraftComposerImageAttachment>,
 ): ReadonlyArray<string> {
@@ -29,10 +37,28 @@ export function rememberOutgoingMessagePreviewUris(
     return;
   }
   const current = appAtomRegistry.get(outgoingMessagePreviewUrisAtom);
-  appAtomRegistry.set(outgoingMessagePreviewUrisAtom, {
+  const next: Record<string, ReadonlyArray<string>> = {
     ...current,
     [String(messageId)]: [...previewUris],
-  });
+  };
+  const keys = Object.keys(next);
+  const evictedUris: string[] = [];
+  while (keys.length > MAX_OUTGOING_MESSAGE_PREVIEW_ENTRIES) {
+    const oldestKey = keys.shift();
+    if (oldestKey === undefined) {
+      break;
+    }
+    evictedUris.push(...(next[oldestKey] ?? []));
+    delete next[oldestKey];
+  }
+  appAtomRegistry.set(outgoingMessagePreviewUrisAtom, next);
+  if (evictedUris.length > 0) {
+    // Lazy: composerImages pulls in expo modules, which must stay out of this
+    // module's import graph (state modules load in tests and headless contexts).
+    void import("../lib/composerImages").then(({ deleteComposerPreviewFiles }) =>
+      deleteComposerPreviewFiles(evictedUris),
+    );
+  }
 }
 
 export function rememberOutgoingMessageDraftAttachments(

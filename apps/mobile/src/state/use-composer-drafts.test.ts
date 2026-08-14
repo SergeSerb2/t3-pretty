@@ -7,6 +7,7 @@ import {
   composerDraftsAtom,
   decodePersistedComposerDrafts,
   type ComposerDraft,
+  encodePersistedComposerDrafts,
   getComposerDraftSnapshot,
   mergeComposerDraftContentState,
   removeComposerDraftsForEnvironment,
@@ -288,6 +289,41 @@ describe("mobile composer drafts", () => {
         attachments: [],
         lastHandoffPrompt: "Explain this pull request.",
       },
+    });
+  });
+
+  it("persists drafts without attachment payloads and marks them for rehydration", () => {
+    const draftKey = "environment-1:thread-1";
+    const draft: ComposerDraft = {
+      text: "look at this",
+      attachments: [
+        {
+          id: "a",
+          type: "image",
+          name: "one.png",
+          mimeType: "image/png",
+          sizeBytes: 5,
+          dataUrl: "data:image/png;base64,aGVsbG8=",
+          previewUri: "file:///documents/t3-composer-previews/a.png",
+        },
+      ],
+    };
+
+    const encoded = encodePersistedComposerDrafts({ [draftKey]: draft });
+    expect(encoded[draftKey]?.attachments).toEqual([
+      {
+        id: "a",
+        type: "image",
+        name: "one.png",
+        mimeType: "image/png",
+        sizeBytes: 5,
+        previewUri: "file:///documents/t3-composer-previews/a.png",
+      },
+    ]);
+
+    expect(decodePersistedComposerDrafts({ schemaVersion: 1, drafts: encoded })[draftKey]).toEqual({
+      ...draft,
+      attachments: [{ ...draft.attachments[0], dataUrl: "" }],
     });
   });
 });

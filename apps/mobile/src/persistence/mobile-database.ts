@@ -46,6 +46,7 @@ const MobileDatabaseOperation = Schema.Literals([
   "load-cache",
   "save-cache",
   "remove-cache",
+  "prune-thread-cache",
   "clear-cache-kind",
   "clear-environment-cache",
   "clear-all-caches",
@@ -204,6 +205,10 @@ export class MobileDatabase extends Context.Service<
       kind: ClientCacheKind,
       cacheKey: string,
     ) => Effect.Effect<void, MobileDatabaseError>;
+    readonly pruneThreadCache: (
+      environmentId: EnvironmentId,
+      keep: number,
+    ) => Effect.Effect<void, MobileDatabaseError>;
     readonly clearCacheKind: (
       environmentId: EnvironmentId,
       kind: ClientCacheKind,
@@ -327,6 +332,26 @@ const makeAvailable = Effect.gen(function* () {
         catch: databaseError("remove-cache"),
       }).pipe(Effect.asVoid),
     ),
+    pruneThreadCache: Effect.fn("MobileDatabase.pruneThreadCache")((environmentId, keep) =>
+      Effect.tryPromise({
+        // The client_cache_environment_updated index (environment_id, updated_at DESC)
+        // serves the keep-newest subquery.
+        try: () =>
+          database.runAsync(
+            `DELETE FROM client_cache
+                     WHERE environment_id = ? AND kind = 'thread' AND cache_key NOT IN (
+                       SELECT cache_key FROM client_cache
+                       WHERE environment_id = ? AND kind = 'thread'
+                       ORDER BY updated_at DESC, cache_key
+                       LIMIT ?
+                     )`,
+            environmentId,
+            environmentId,
+            keep,
+          ),
+        catch: databaseError("prune-thread-cache"),
+      }).pipe(Effect.asVoid),
+    ),
     clearCacheKind: Effect.fn("MobileDatabase.clearCacheKind")((environmentId, kind) =>
       Effect.tryPromise({
         try: () =>
@@ -408,6 +433,7 @@ function makeUnavailable(error: MobileDatabaseError): MobileDatabase["Service"] 
     loadCache: () => fail,
     saveCache: () => fail,
     removeCache: () => fail,
+    pruneThreadCache: () => fail,
     clearCacheKind: () => fail,
     clearEnvironmentCache: () => fail,
     clearAllCaches: fail,
