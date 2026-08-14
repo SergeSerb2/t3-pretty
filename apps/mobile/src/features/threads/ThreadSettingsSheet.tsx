@@ -1,5 +1,6 @@
 import type {
   ModelSelection,
+  ProviderInteractionMode,
   ProviderOptionDescriptor,
   ProviderOptionSelection,
   RuntimeMode,
@@ -60,18 +61,16 @@ import {
 } from "../layout/native-mail-search-toolbar";
 import {
   runtimeModeChoicesForProvider,
+  selectableChoices,
   selectedModelProviderDriver,
-} from "./thread-settings-menu";
-import { RUNTIME_MODE_CHOICES, selectableChoices } from "./thread-settings-options";
+} from "./thread-settings-options";
 import { buildThreadModelIdentity } from "./threadModelIdentity";
 import {
   modelMatchesCatalogQuery,
   pendingModelAfterPress,
   providerSectionIsCollapsed,
-  usesInlineSelectChoices,
   visibleSheetOptionDescriptors,
 } from "./thread-settings-sheet-state";
-import type { ThreadSettingsSheetCloseReason } from "./use-thread-settings-sheet-presentation";
 
 /**
  * Everyday harnesses start expanded; every other provider (OpenRouter catalogs
@@ -245,61 +244,6 @@ function DisclosureRow(props: {
       ) : null}
       <SymbolView name="chevron.right" size={12} tintColor={iconSubtle} type="monochrome" />
     </Pressable>
-  );
-}
-
-/** Inline mutually-exclusive choices for short catalogs (reasoning, runtime). */
-function ChoiceChipRow(props: {
-  readonly label: string;
-  readonly choices: ReadonlyArray<{
-    readonly id: string;
-    readonly label: string;
-    readonly accessibilityLabel?: string;
-  }>;
-  readonly selectedId: string | undefined;
-  readonly onSelect: (id: string) => void;
-}) {
-  const equalWidth = props.choices.length > 1 && props.choices.length <= 4;
-  return (
-    <View className="gap-2 px-5 py-2.5">
-      <Text className="text-sm font-t3-medium text-foreground">{props.label}</Text>
-      <View className={cn("flex-row gap-1.5", equalWidth ? undefined : "flex-wrap")}>
-        {props.choices.map((choice) => {
-          const selected = choice.id === props.selectedId;
-          return (
-            <Pressable
-              key={choice.id}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-              accessibilityLabel={choice.accessibilityLabel ?? `${props.label}, ${choice.label}`}
-              onPress={() => {
-                if (choice.id === props.selectedId) {
-                  return;
-                }
-                void Haptics.selectionAsync();
-                props.onSelect(choice.id);
-              }}
-              className={cn(
-                "rounded-full px-3 py-1.5 active:opacity-70",
-                selected ? "bg-primary" : "bg-subtle",
-                equalWidth && "min-w-0 flex-1 items-center",
-              )}
-            >
-              <Text
-                className={cn(
-                  "text-xs font-t3-medium",
-                  selected ? "text-primary-foreground" : "text-foreground",
-                  equalWidth && "text-center",
-                )}
-                numberOfLines={1}
-              >
-                {choice.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
   );
 }
 
@@ -812,7 +756,8 @@ function ThreadSettingsOptionsItem(props: {
             isLast
             label="Runtime"
             value={
-              RUNTIME_MODE_CHOICES.find((choice) => choice.mode === session.runtimeMode)?.label
+              session.runtimeModeChoices.find((choice) => choice.mode === session.runtimeMode)
+                ?.label
             }
             onPress={() => props.onOpenSubmenu({ kind: "runtime" })}
           />
@@ -965,12 +910,7 @@ function ThreadSettingsChoiceContent(props: {
           rows: session.runtimeModeChoices.map((choice) => ({
             id: choice.mode,
             label: choice.label,
-            description:
-              "description" in choice && typeof choice.description === "string"
-                ? choice.description
-                : RUNTIME_MODE_CHOICES.find(
-                    (defaultChoice) => defaultChoice.mode === choice.mode,
-                  )?.description,
+            description: choice.description,
             selected: choice.mode === session.runtimeMode,
             onPress: () => {
               void Haptics.selectionAsync();
