@@ -10,7 +10,10 @@ import {
   formatSyncReport,
   isGeneratedLockfile,
   prepareConflictPrompt,
+  readCachedResolution,
   readReusedSyncReport,
+  resolutionCacheKey,
+  writeCachedResolution,
 } from "./resolve-git-conflicts.mjs";
 
 const resolverPath = NodePath.resolve(
@@ -433,5 +436,64 @@ ${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
     assert.include(mobileWorkflow, "`/pulls/${pr.number}/merge`");
     assert.include(mobileWorkflow, "node --input-type=module");
     assert.notInclude(mobileWorkflow, 'git push origin "HEAD:${GITHUB_REF_NAME}"');
+  });
+
+  it("round-trips a checkpointed resolution through the cache", () => {
+    const temporaryDirectory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-pretty-sync-cache-"),
+    );
+    try {
+      const key = resolutionCacheKey({
+        path: "apps/web/src/App.tsx",
+        conflictedSource: `${"<".repeat(7)} ours\nx\n${">".repeat(7)} theirs\ny\n`,
+      });
+      assert.match(key, /^[0-9a-f]{64}$/u);
+      assert.equal(readCachedResolution({ key, cacheDir: temporaryDirectory }), undefined);
+
+      writeCachedResolution({
+        key,
+        cacheDir: temporaryDirectory,
+        entry: {
+          path: "apps/web/src/App.tsx",
+          resolvedSource: "x\n",
+          forkChangesPreserved: ["kept x"],
+          upstreamChangesIntegrated: ["took y"],
+          upstreamChangesOmitted: [],
+        },
+      });
+      const cached = readCachedResolution({ key, cacheDir: temporaryDirectory });
+      assert.equal(cached.resolvedSource, "x\n");
+      assert.deepEqual(cached.forkChangesPreserved, ["kept x"]);
+
+      NodeFS.writeFileSync(NodePath.join(temporaryDirectory, `${key}.json`), "not json");
+      assert.equal(readCachedResolution({ key, cacheDir: temporaryDirectory }), undefined);
+    } finally {
+      NodeFS.rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("checkpoints completed resolutions to a durable branch even when a sync fails", () => {
+    const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+
+    assert.include(workflow, "RESOLUTION_CACHE_BRANCH: automation/sync-resolution-cache");
+    assert.include(workflow, "if: always() && steps.discover.outputs.has_update == 'true'");
+    assert.include(
+      workflow,
+      'git archive "origin/$RESOLUTION_CACHE_BRANCH" | tar -x -C "$SYNC_RESOLUTION_CACHE_DIR"',
+    );
+    assert.include(workflow, "git commit-tree");
+
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+    assert.include(resolver, "reused the checkpointed resolution");
+    assert.include(resolver, "SYNC_RESOLUTION_CACHE_DIR");
+  });
+
+  it("requests a fresh resolution when a batch's edit set fails validation", () => {
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+
+    // A non-unique or missing old_text is a sampling defect, not a hard
+    // failure: one fresh request usually validates (seen on nightly 1093).
+    assert.include(resolver, "returned an invalid edit set");
+    assert.include(resolver, "requesting a fresh resolution");
   });
 });

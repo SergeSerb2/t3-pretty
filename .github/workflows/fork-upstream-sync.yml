@@ -24,6 +24,11 @@ jobs:
     # batches; 45 minutes hard-killed those runs mid-resolution, which
     # discarded the work and let the next nightly pile on more conflicts.
     timeout-minutes: 120
+    env:
+      # Completed per-file resolutions are checkpointed to this branch so a
+      # failed or timed-out run's model work survives into the next run.
+      RESOLUTION_CACHE_BRANCH: automation/sync-resolution-cache
+      SYNC_RESOLUTION_CACHE_DIR: ${{ runner.temp }}/sync-resolution-cache
     steps:
       - name: Checkout fork main
         uses: actions/checkout@v6
@@ -128,6 +133,12 @@ jobs:
           # Always write the durable integration report. Clean merges make no
           # model request; conflict merges use Sol/xhigh and record every
           # parent change intentionally omitted to protect T3 Pretty.
+          # Restore checkpointed per-file resolutions first: a run that failed
+          # or timed out mid-merge reruns only the files that never finished.
+          mkdir -p "$SYNC_RESOLUTION_CACHE_DIR"
+          if git fetch origin "refs/heads/$RESOLUTION_CACHE_BRANCH:refs/remotes/origin/$RESOLUTION_CACHE_BRANCH" 2>/dev/null; then
+            git archive "origin/$RESOLUTION_CACHE_BRANCH" | tar -x -C "$SYNC_RESOLUTION_CACHE_DIR"
+          fi
           node scripts/fork/resolve-git-conflicts.mjs
 
           # The resolver side-picks a conflicted generated lockfile instead of
@@ -170,6 +181,48 @@ jobs:
           else
             git push --force-with-lease origin "HEAD:refs/heads/$SYNC_BRANCH"
           fi
+
+      - name: Checkpoint completed conflict resolutions
+        # Runs even when the merge step failed mid-resolution: every file the
+        # model already finished is checkpointed to a branch, so the next run
+        # resumes instead of paying for the whole merge again.
+        if: always() && steps.discover.outputs.has_update == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          entries=("$SYNC_RESOLUTION_CACHE_DIR"/*.json)
+          if (( ${#entries[@]} == 0 )); then
+            echo "No completed resolutions to checkpoint."
+            exit 0
+          fi
+          git config user.name "t3-pretty-sync[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin "refs/heads/$RESOLUTION_CACHE_BRANCH:refs/remotes/origin/$RESOLUTION_CACHE_BRANCH" 2>/dev/null || true
+          # Commit the cache straight from plumbing: the merge step may have
+          # left an unresolved merge in the real index and worktree.
+          index_file="$RUNNER_TEMP/sync-resolution-cache-index"
+          rm -f "$index_file"
+          export GIT_INDEX_FILE="$index_file"
+          parent_args=()
+          if git rev-parse -q --verify "origin/$RESOLUTION_CACHE_BRANCH" >/dev/null 2>&1; then
+            git read-tree "origin/$RESOLUTION_CACHE_BRANCH"
+            parent_args=(-p "origin/$RESOLUTION_CACHE_BRANCH")
+          fi
+          for entry in "${entries[@]}"; do
+            blob="$(git hash-object -w "$entry")"
+            git update-index --add --cacheinfo 100644 "$blob" "$(basename "$entry")"
+          done
+          tree="$(git write-tree)"
+          unset GIT_INDEX_FILE
+          if (( ${#parent_args[@]} > 0 )) &&
+            [[ "$(git rev-parse "origin/$RESOLUTION_CACHE_BRANCH^{tree}")" == "$tree" ]]; then
+            echo "Resolution cache already holds these entries."
+            exit 0
+          fi
+          commit="$(git commit-tree "$tree" ${parent_args[@]+"${parent_args[@]}"} -m "chore(sync): checkpoint conflict resolutions")"
+          git push origin "$commit:refs/heads/$RESOLUTION_CACHE_BRANCH"
+          echo "Checkpointed ${#entries[@]} resolution(s) to $RESOLUTION_CACHE_BRANCH."
 
       - id: pull_request
         name: Validate and merge sync pull request
