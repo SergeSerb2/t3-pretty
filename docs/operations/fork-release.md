@@ -13,7 +13,12 @@ source code on installed machines.
    replace the trusted sync/release boundary or require a personal token with workflow scope.
 3. Clean changes remain untouched and do not make a model request. If Git reports text conflicts,
    the workflow asks the Railway CLIProxyAPI `gpt-5.6-sol` model to resolve each file with `xhigh`
-   reasoning. Its preservation contract treats T3 Pretty and other fork-specific behavior as
+   reasoning, in batches of at most five conflicts per request so a heavily conflicted file cannot
+   turn into one long-running call that the proxy times out. Modify/delete conflicts resolve
+   through the same contract, presented as one whole-file conflict against an empty deleted side;
+   an empty resolution follows the deletion (the usual outcome when the parent's refactor removes
+   a file the fork only tracked). Its preservation contract treats T3 Pretty and other
+   fork-specific behavior as
    authoritative, integrates compatible parent improvements around it, and keeps the smallest
    T3 Pretty side when both intents genuinely cannot coexist. One exception: if the parent later
    ships a first-party implementation of a feature T3 Pretty added as fork-only (for example a

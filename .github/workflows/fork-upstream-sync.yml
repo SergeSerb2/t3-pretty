@@ -20,7 +20,10 @@ jobs:
   sync:
     name: Sync newest upstream nightly
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # A backlog merge resolves dozens of conflicts in sequential model
+    # batches; 45 minutes hard-killed those runs mid-resolution, which
+    # discarded the work and let the next nightly pile on more conflicts.
+    timeout-minutes: 120
     steps:
       - name: Checkout fork main
         uses: actions/checkout@v6
