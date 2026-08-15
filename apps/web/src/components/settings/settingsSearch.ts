@@ -220,6 +220,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/skills",
   },
   {
+    id: "skills-on-environment",
+    title: "On this environment",
+    to: "/settings/skills",
+  },
+  {
     id: "skills-marketplace",
     title: "Skills marketplace",
     to: "/settings/skills",

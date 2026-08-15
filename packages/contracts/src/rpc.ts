@@ -13,6 +13,8 @@ import {
   AgentInstructionsWriteResult,
 } from "./agentInstructions.ts";
 import {
+  HostSkillId,
+  HostSkillsState,
   SkillId,
   SkillMarketplaceListing,
   SkillMarketplaceSource,
@@ -243,6 +245,8 @@ export const WS_METHODS = {
   skillsUninstall: "skills.uninstall",
   skillsListMarketplace: "skills.listMarketplace",
   skillsRefreshMarketplace: "skills.refreshMarketplace",
+  skillsListHost: "skills.listHost",
+  skillsUninstallHost: "skills.uninstallHost",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -746,6 +750,18 @@ export const WsSkillsRefreshMarketplaceRpc = Rpc.make(WS_METHODS.skillsRefreshMa
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 
+export const WsSkillsListHostRpc = Rpc.make(WS_METHODS.skillsListHost, {
+  payload: Schema.Struct({}),
+  success: HostSkillsState,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
+export const WsSkillsUninstallHostRpc = Rpc.make(WS_METHODS.skillsUninstallHost, {
+  payload: Schema.Struct({ skillId: HostSkillId }),
+  success: HostSkillsState,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
 export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   payload: LaunchEditorInput,
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
@@ -1163,6 +1179,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillsUninstallRpc,
   WsSkillsListMarketplaceRpc,
   WsSkillsRefreshMarketplaceRpc,
+  WsSkillsListHostRpc,
+  WsSkillsUninstallHostRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,

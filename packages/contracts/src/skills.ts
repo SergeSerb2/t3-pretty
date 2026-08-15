@@ -9,12 +9,18 @@
  * per-thread (orchestration read model); the two sets are unioned when a
  * turn starts.
  *
+ * Provider CLIs also keep their own user-scope skill folders (`~/.claude/skills`,
+ * `~/.codex/skills`, …). Those live on the environment host — the same machine
+ * whether the client is local or remote — and are listed/uninstalled by opaque
+ * server-minted ids, never by a client-supplied path.
+ *
  * @module skills
  */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { IsoDateTime, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 
 /**
  * Stable skill identifier: `"<owner>/<repo>:<skill dir relative to repo root>"`,
@@ -81,6 +87,39 @@ export const SkillsState = Schema.Struct({
 });
 export type SkillsState = typeof SkillsState.Type;
 
+/**
+ * Opaque id for a skill folder in a provider CLI home, minted by the server
+ * (`host:<origin>:<dir>` or `host:<origin>:<instanceId>:<dir>`). Clients send
+ * this back on uninstall; they never send a filesystem path.
+ */
+export const HostSkillId = TrimmedNonEmptyString;
+export type HostSkillId = typeof HostSkillId.Type;
+
+/**
+ * A skill the environment host already has in a provider CLI's user-scope
+ * `skills/` directory (or the shared `~/.agents/skills` folder). Distinct from
+ * `InstalledSkill`, which lives in T3's own store.
+ */
+export const HostSkill = Schema.Struct({
+  id: HostSkillId,
+  name: TrimmedNonEmptyString,
+  description: Schema.optional(TrimmedNonEmptyString),
+  /** Absolute path to `SKILL.md`, for display and snapshot dedupe. */
+  path: TrimmedNonEmptyString,
+  /** Home-abbreviated skill directory, e.g. `~/.claude/skills/grill-me`. */
+  displayPath: TrimmedNonEmptyString,
+  /** Provider or shared-root label, e.g. "Claude Code", "Codex", "Shared". */
+  origin: TrimmedNonEmptyString,
+  driver: Schema.optional(ProviderDriverKind),
+  instanceId: Schema.optional(ProviderInstanceId),
+});
+export type HostSkill = typeof HostSkill.Type;
+
+export const HostSkillsState = Schema.Struct({
+  skills: Schema.Array(HostSkill),
+});
+export type HostSkillsState = typeof HostSkillsState.Type;
+
 export const SkillsOperation = Schema.Literals([
   "read-store",
   "install",
@@ -88,6 +127,8 @@ export const SkillsOperation = Schema.Literals([
   "list-marketplace",
   "refresh-marketplace",
   "materialize",
+  "list-host",
+  "uninstall-host",
 ]);
 export type SkillsOperation = typeof SkillsOperation.Type;
 
