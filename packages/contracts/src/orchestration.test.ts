@@ -25,6 +25,7 @@ import {
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
   ClientOrchestrationCommand,
+  isProviderSendTurnSupportedImageMimeType,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
@@ -1005,4 +1006,10 @@ it("resolveRuntimeModeForProviderDriver maps yolo to full-access off Kimi", () =
     resolveRuntimeModeForProviderDriver("codex", "approval-required"),
     "approval-required",
   );
+});
+
+it("isProviderSendTurnSupportedImageMimeType accepts raster formats and rejects svg", () => {
+  assert.strictEqual(isProviderSendTurnSupportedImageMimeType("image/png"), true);
+  assert.strictEqual(isProviderSendTurnSupportedImageMimeType("IMAGE/JPEG"), true);
+  assert.strictEqual(isProviderSendTurnSupportedImageMimeType("image/svg+xml"), false);
 });

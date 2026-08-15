@@ -30,7 +30,6 @@ import {
 import {
   ActivityIndicator,
   Image,
-  Linking,
   Platform,
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -54,6 +53,7 @@ import { useFontFamily } from "../../lib/useFontFamily";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { showMarkdownLinkActionSheet } from "../../lib/showMarkdownLinkActions";
+import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { hasWideMarkdownBlock } from "../../lib/wideMarkdownBlocks";
 import {
   hasNativeSelectableMarkdownText,
@@ -1595,7 +1595,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           void Haptics.selectionAsync();
           return;
         }
-        void Linking.openURL(presentation.href);
+        void tryOpenExternalUrl(presentation.href, "markdown-link");
       }
     },
     [openChangeRequestLink, props.environmentId, props.threadId, props.workspaceRoot, navigation],
