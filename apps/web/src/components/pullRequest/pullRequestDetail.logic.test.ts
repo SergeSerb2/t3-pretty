@@ -23,6 +23,7 @@ import {
   isThreadOwnPullRequest,
   orderPullRequestComments,
   pullRequestActionNeedsHostRefresh,
+  pullRequestActionMenuHasGroup,
   pullRequestFindingKey,
   pullRequestHandoffLabels,
   readableFailure,
@@ -56,6 +57,12 @@ const TIMELINE_SOURCE: Pick<
   mergedAt: null,
   closedAt: null,
 };
+
+describe("pull request action menu", () => {
+  it("keeps the group divider when auto-merge is the only action", () => {
+    expect(pullRequestActionMenuHasGroup(false, true, false)).toBe(true);
+  });
+});
 
 describe("pull request state description", () => {
   it("keeps draft and conflicts orthogonal to the terminal states", () => {
