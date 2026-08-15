@@ -828,19 +828,25 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
+          $componentId = "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre"
           $programFilesX86 = ${env:ProgramFiles(x86)}
           $vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
           $setupExe = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\setup.exe"
           if (-not (Test-Path $vswhere) -or -not (Test-Path $setupExe)) {
-            throw "Visual Studio Installer is required. On the runner host run: powershell -ExecutionPolicy Bypass -File scripts/fork/ensure-windows-release-toolchain.ps1"
+            throw "Visual Studio Installer is required. On the runner host run: powershell -ExecutionPolicy Bypass -File C:\dev\ensure-windows-release-toolchain.ps1"
+          }
+          $existing = & $vswhere -products * -latest -requires $componentId -property installationPath
+          if (-not [string]::IsNullOrWhiteSpace($existing)) {
+            Write-Host "Spectre MSVC libs already installed."
+            exit 0
           }
           $installPath = & $vswhere -products * -latest -property installationPath
           if ([string]::IsNullOrWhiteSpace($installPath)) {
-            throw "No Visual Studio installation found. On the runner host run: powershell -ExecutionPolicy Bypass -File scripts/fork/ensure-windows-release-toolchain.ps1"
+            throw "No Visual Studio installation found. On the runner host run: powershell -ExecutionPolicy Bypass -File C:\dev\ensure-windows-release-toolchain.ps1"
           }
           $proc = Start-Process -FilePath $setupExe `
             -ArgumentList "modify", "--installPath", "`"$installPath`"", "--add", `
-            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64.Spectre", "--quiet", "--norestart" `
+            $componentId, "--quiet", "--norestart" `
             -Wait -PassThru -NoNewWindow
           if ($null -eq $proc -or $proc.ExitCode -ne 0) {
             $code = if ($null -ne $proc) { $proc.ExitCode } else { 1 }

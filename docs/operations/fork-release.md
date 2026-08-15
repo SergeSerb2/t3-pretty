@@ -110,8 +110,9 @@ The Windows runner lives at `C:\actions-runner-t3code-fork` and runs as the Wind
 `scripts/fork/setup-windows-runner.ps1` can recreate it using a fresh short-lived registration
 token at `C:\dev\t3-runner-token.json`; the script deletes that token before configuration. It
 also runs `scripts/fork/ensure-windows-release-toolchain.ps1`, which installs Git for Windows and
-Visual Studio 2022 Build Tools (MSVC x64 + Spectre) when they are missing. The release job calls
-that script with `-CheckOnly` so a missing toolchain fails before the packager starts.
+Visual Studio 2022 Build Tools (MSVC x64 + Spectre) when they are missing. A copy lives at
+`C:\dev\ensure-windows-release-toolchain.ps1` on the runner host. The release job calls that
+script with `-CheckOnly` so a missing toolchain fails before the packager starts.
 
 Do not expose either release runner to `pull_request` jobs. Disable a runner service first if a
 release workflow ever begins executing an untrusted ref.

@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Write-Missing($name, $path) {
-  $hint = "On the runner host, as Administrator, run: powershell -ExecutionPolicy Bypass -File scripts/fork/ensure-windows-release-toolchain.ps1"
+  $hint = "On the runner host, as Administrator, run: powershell -ExecutionPolicy Bypass -File C:\dev\ensure-windows-release-toolchain.ps1"
   throw "$name is required at $path. $hint"
 }
 
@@ -87,7 +87,7 @@ function Install-VsBuildTools {
         "--nocache",
         "--add", "Microsoft.VisualStudio.Workload.VCTools",
         "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-        "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64.Spectre",
+        "--add", "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre",
         "--includeRecommended"
       ) `
       -Wait `
@@ -102,6 +102,39 @@ function Install-VsBuildTools {
 
   if ($null -eq (Get-VsInstallPath)) {
     throw "Visual Studio Build Tools were installed but MSVC x64 tools were not found"
+  }
+}
+
+function Install-SpectreLibs {
+  $componentId = "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre"
+  $programFilesX86 = ${env:ProgramFiles(x86)}
+  $vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
+  $setupExe = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\setup.exe"
+  $installPath = Get-VsInstallPath
+  if ($null -eq $installPath) {
+    return
+  }
+  $existing = & $vswhere -products * -latest -requires $componentId -property installationPath
+  if (-not [string]::IsNullOrWhiteSpace($existing)) {
+    Write-Host "Spectre MSVC libs already installed."
+    return
+  }
+
+  Write-Host "Adding $componentId to $installPath"
+  $process = Start-Process $setupExe `
+    -ArgumentList @(
+      "modify",
+      "--installPath",
+      "`"$installPath`"",
+      "--add",
+      $componentId,
+      "--quiet",
+      "--norestart"
+    ) `
+    -Wait `
+    -PassThru
+  if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
+    throw "Spectre lib install failed with exit $($process.ExitCode)"
   }
 }
 
@@ -128,5 +161,7 @@ if ($null -eq (Get-VsInstallPath)) {
   Write-Host "Installing Visual Studio 2022 Build Tools with MSVC and Spectre libs."
   Install-VsBuildTools
 }
+
+Install-SpectreLibs
 
 Write-Host "Windows release toolchain is ready."
