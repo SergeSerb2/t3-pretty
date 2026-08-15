@@ -60,9 +60,15 @@ source code on installed machines.
    builds Windows x64. Only trusted `main` commits run on these self-hosted
    machines; pull requests use GitHub-hosted runners. iOS store binaries cannot
    compile on Windows.
-9. GitHub publishes a public prerelease with the installers, blockmaps, and `nightly` update
-   manifests. Packaged fork apps point `electron-updater` at
-   `SergeSerb2/t3-pretty`, so no per-machine GitHub token is required.
+9. GitHub publishes a public release marked as latest (not a prerelease — drafts and
+   prereleases cannot be latest), with the installers, blockmaps, and both `nightly` and
+   `latest` update manifests. Packaged fork apps use a generic `electron-updater` feed at
+   `https://github.com/SergeSerb2/t3-pretty/releases/latest/download/`, so no per-machine GitHub
+   token is required and the in-app checker does not depend on GitHub's `/releases/latest` API or
+   the Atom feed. Already-installed GitHub-provider builds need one manual install of a release
+   that contains this feed before later updates can be automatic. Windows ships even when Azure
+   Trusted Signing is not configured; unsigned NSIS installers still update from that feed, and
+   SmartScreen will warn until ATS secrets are added.
 
 Fork versions retain the newest integrated upstream nightly prefix and append a monotonic fork
 build number. This makes personal merges newer than the parent build without pretending that a
@@ -89,8 +95,10 @@ For unattended macOS installation, configure `CSC_LINK`, `CSC_KEY_PASSWORD`, `AP
 `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `MACOS_PROVISIONING_PROFILE`, `APPLE_TEAM_ID`, and the
 Clerk passkey variables used by the upstream build. Without them, the workflow deliberately marks
 the macOS artifact as unsigned; it can be downloaded manually, but macOS `electron-updater` cannot
-reliably install it. Windows signing is optional for updater mechanics but should use the existing
-Azure Trusted Signing secret names before broad distribution.
+reliably install it. Windows signing is optional for updater mechanics: missing Azure Trusted
+Signing secrets produce an unsigned NSIS installer and skip Authenticode verification. Add the
+existing Azure Trusted Signing secret names before broad distribution if SmartScreen prompts should
+go away.
 
 ## Runner recovery
 
@@ -100,7 +108,11 @@ The macOS runner lives at `/Users/m1-dev/actions-runner-t3code-fork` and runs as
 The Windows runner lives at `C:\actions-runner-t3code-fork` and runs as the Windows service
 `actions.runner.SergeSerb2-t3code-fork-theme.windows-5080-t3code-fork`. The checked-in
 `scripts/fork/setup-windows-runner.ps1` can recreate it using a fresh short-lived registration
-token at `C:\dev\t3-runner-token.json`; the script deletes that token before configuration.
+token at `C:\dev\t3-runner-token.json`; the script deletes that token before configuration. It
+also runs `scripts/fork/ensure-windows-release-toolchain.ps1`, which installs Git for Windows and
+Visual Studio 2022 Build Tools (MSVC x64 + Spectre) when they are missing. A copy lives at
+`C:\dev\ensure-windows-release-toolchain.ps1` on the runner host. The release job calls that
+script with `-CheckOnly` so a missing toolchain fails before the packager starts.
 
 Do not expose either release runner to `pull_request` jobs. Disable a runner service first if a
 release workflow ever begins executing an untrusted ref.
@@ -109,6 +121,7 @@ release workflow ever begins executing an untrusted ref.
 
 Disable the old launchd and Windows scheduled updater after a public fork release, its checksums,
 manifests, and packaged `app-update.yml` have been verified. Preserve the plist files, scripts, and
-scheduled-task definitions for rollback. An existing installation without `app-update.yml` needs a
-one-time manual install of the fork release; do not leave a legacy staged installer active while
-waiting for that bootstrap because it can replace the app with an older local build.
+scheduled-task definitions for rollback. An existing installation without `app-update.yml`, or an
+older GitHub-provider build, needs a one-time manual install of the fork release; do not leave a
+legacy staged installer active while waiting for that bootstrap because it can replace the app
+with an older local build.

@@ -30,6 +30,7 @@ jobs:
     outputs:
       should_release: ${{ steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true' }}
       windows_release: ${{ steps.signing.outputs.windows }}
+      windows_signed: ${{ steps.signing.outputs.windows_signed }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
       name: ${{ steps.release.outputs.name }}
@@ -198,8 +199,9 @@ jobs:
         run: |
           set -euo pipefail
           # macOS signing is the release floor. Windows signing is optional:
-          # when Azure Trusted Signing is not configured the release ships
-          # macOS-only instead of skipping entirely. MACOS_PROVISIONING_PROFILE
+          # unsigned NSIS installers still auto-update from the public GitHub
+          # feed. When Azure Trusted Signing is not configured the release still
+          # ships Windows. MACOS_PROVISIONING_PROFILE
           # is optional; without it the build sets
           # T3CODE_MACOS_SKIP_PASSKEY_PROFILE and passkey login degrades.
           mac_required=(
@@ -234,11 +236,12 @@ jobs:
             echo 'configured=true' >> "$GITHUB_OUTPUT"
           fi
           if (( ${#missing_win[@]} > 0 )); then
-            printf 'Windows signing is not configured; releasing macOS-only. Missing: %s\n' "${missing_win[*]}"
-            echo 'windows=false' >> "$GITHUB_OUTPUT"
+            printf 'Windows signing is not configured; shipping an unsigned Windows updater. Missing: %s\n' "${missing_win[*]}"
+            echo 'windows_signed=false' >> "$GITHUB_OUTPUT"
           else
-            echo 'windows=true' >> "$GITHUB_OUTPUT"
+            echo 'windows_signed=true' >> "$GITHUB_OUTPUT"
           fi
+          echo 'windows=true' >> "$GITHUB_OUTPUT"
 
       - id: release
         name: Create a monotonic fork version
@@ -558,6 +561,7 @@ jobs:
         shell: bash
         env:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+          T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
@@ -685,7 +689,7 @@ jobs:
     permissions:
       contents: read
     runs-on: [self-hosted, Windows, X64, t3code-fork, release-only]
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Ensure runner action externals
         # PowerShell, not bash: this runs before the PATH prep below, and the
@@ -789,17 +793,16 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      - name: Check Windows release toolchain
+        shell: powershell
+        run: |
+          & "$env:GITHUB_WORKSPACE\scripts\fork\ensure-windows-release-toolchain.ps1" -CheckOnly
+
       - name: Prepare Windows runner PATH
         shell: powershell
         run: |
           $pwshDir = Join-Path $env:ProgramFiles "PowerShell\7"
           $gitBashDir = Join-Path $env:ProgramFiles "Git\bin"
-          if (-not (Test-Path (Join-Path $pwshDir "pwsh.exe"))) {
-            throw "PowerShell 7 is required at $pwshDir"
-          }
-          if (-not (Test-Path (Join-Path $gitBashDir "bash.exe"))) {
-            throw "Git for Windows Bash is required at $gitBashDir"
-          }
           $pwshDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           # Composite actions request `shell: bash`. Put Git Bash ahead of the
           # Windows WSL launcher so they do not require a local WSL distro.
@@ -821,6 +824,75 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - name: Install Spectre-mitigated MSVC libs
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $componentId = "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre"
+          $programFilesX86 = ${env:ProgramFiles(x86)}
+          $vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
+          $setupExe = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\setup.exe"
+          if (-not (Test-Path $vswhere) -or -not (Test-Path $setupExe)) {
+            throw "Visual Studio Installer is required. On the runner host run: powershell -ExecutionPolicy Bypass -File C:\dev\ensure-windows-release-toolchain.ps1"
+          }
+          $existing = & $vswhere -products * -latest -requires $componentId -property installationPath
+          if (-not [string]::IsNullOrWhiteSpace($existing)) {
+            Write-Host "Spectre MSVC libs already installed."
+            exit 0
+          }
+          $installPath = & $vswhere -products * -latest -property installationPath
+          if ([string]::IsNullOrWhiteSpace($installPath)) {
+            throw "No Visual Studio installation found. On the runner host run: powershell -ExecutionPolicy Bypass -File C:\dev\ensure-windows-release-toolchain.ps1"
+          }
+          $proc = Start-Process -FilePath $setupExe `
+            -ArgumentList "modify", "--installPath", "`"$installPath`"", "--add", `
+            $componentId, "--quiet", "--norestart" `
+            -Wait -PassThru -NoNewWindow
+          if ($null -eq $proc -or $proc.ExitCode -ne 0) {
+            $code = if ($null -ne $proc) { $proc.ExitCode } else { 1 }
+            Write-Error "Visual Studio Installer failed with exit code $code"
+            exit $code
+          }
+
+      - name: Prepare Azure Trusted Signing
+        if: needs.preflight.outputs.windows_signed == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          try {
+            Install-PackageProvider `
+              -Name NuGet `
+              -MinimumVersion 2.8.5.201 `
+              -Force `
+              -Scope CurrentUser `
+              -ErrorAction Stop
+          } catch {
+            Write-Warning "Could not bootstrap NuGet package provider. Continuing because the runner may already have a usable provider. $($_.Exception.Message)"
+          }
+
+          Install-Module `
+            -Name TrustedSigning `
+            -MinimumVersion 0.5.0 `
+            -Force `
+            -AllowClobber `
+            -Repository PSGallery `
+            -Scope CurrentUser `
+            -ErrorAction Stop
+
+          Import-Module TrustedSigning -MinimumVersion 0.5.0 -Force
+          Get-Command Invoke-TrustedSigning -ErrorAction Stop
+
+          $moduleRoots = @(
+            [System.IO.Path]::Combine([Environment]::GetFolderPath("MyDocuments"), "PowerShell", "Modules"),
+            [System.IO.Path]::Combine([Environment]::GetFolderPath("MyDocuments"), "WindowsPowerShell", "Modules"),
+            [System.IO.Path]::Combine($env:ProgramFiles, "PowerShell", "Modules"),
+            [System.IO.Path]::Combine($env:ProgramFiles, "WindowsPowerShell", "Modules")
+          )
+          $modulePathEntries = @($moduleRoots + ($env:PSModulePath -split ";")) |
+            Where-Object { $_ -and (Test-Path $_) } |
+            Select-Object -Unique
+          "PSModulePath=$($modulePathEntries -join ';')" >> $env:GITHUB_ENV
+
       - name: Download WSL prebuild
         uses: actions/download-artifact@v8
         with:
@@ -834,6 +906,7 @@ jobs:
         shell: bash
         env:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+          T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -842,6 +915,7 @@ jobs:
           AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
           AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
           VITE_SCENERY_UNSPLASH_KEY: ${{ secrets.VITE_SCENERY_UNSPLASH_KEY }}
+          WINDOWS_SIGNED: ${{ needs.preflight.outputs.windows_signed }}
         run: |
           set -euo pipefail
           args=(
@@ -852,24 +926,31 @@ jobs:
             --wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
             --verbose
           )
-          required=(
-            "$AZURE_TENANT_ID"
-            "$AZURE_CLIENT_ID"
-            "$AZURE_CLIENT_SECRET"
-            "$AZURE_TRUSTED_SIGNING_ENDPOINT"
-            "$AZURE_TRUSTED_SIGNING_ACCOUNT_NAME"
-            "$AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME"
-            "$AZURE_TRUSTED_SIGNING_PUBLISHER_NAME"
-          )
-          if printf '%s\n' "${required[@]}" | grep -q '^$'; then
-            echo "Refusing to build an unsigned Windows updater artifact." >&2
-            exit 1
+          if [[ "$WINDOWS_SIGNED" == "true" ]]; then
+            required=(
+              "$AZURE_TENANT_ID"
+              "$AZURE_CLIENT_ID"
+              "$AZURE_CLIENT_SECRET"
+              "$AZURE_TRUSTED_SIGNING_ENDPOINT"
+              "$AZURE_TRUSTED_SIGNING_ACCOUNT_NAME"
+              "$AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME"
+              "$AZURE_TRUSTED_SIGNING_PUBLISHER_NAME"
+            )
+            if printf '%s\n' "${required[@]}" | grep -q '^$'; then
+              echo "Refusing to build a signed Windows updater with incomplete Azure Trusted Signing secrets." >&2
+              exit 1
+            fi
+            echo "Windows signing enabled (Azure Trusted Signing)."
+            args+=(--signed)
+          else
+            echo "Windows signing disabled; shipping an unsigned updater."
           fi
-          args+=(--signed)
           vp run dist:desktop:artifact "${args[@]}"
 
       - name: Verify Windows updater signature
         shell: powershell
+        env:
+          WINDOWS_SIGNED: ${{ needs.preflight.outputs.windows_signed }}
         run: |
           $installer = Get-ChildItem release -File -Filter '*-x64.exe' |
             Where-Object { $_.Name -notlike '*uninstaller*' } |
@@ -878,8 +959,12 @@ jobs:
             throw 'No Windows updater installer was produced.'
           }
           $signature = Get-AuthenticodeSignature -FilePath $installer.FullName
-          if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
-            throw "Windows updater signature is $($signature.Status): $($signature.StatusMessage)"
+          if ($env:WINDOWS_SIGNED -eq 'true') {
+            if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+              throw "Windows updater signature is $($signature.Status): $($signature.StatusMessage)"
+            }
+          } else {
+            Write-Host "Unsigned Windows updater $($installer.Name) ($($signature.Status))."
           }
 
       - name: Collect Windows release assets
@@ -904,8 +989,7 @@ jobs:
     if: >-
       !cancelled() &&
       needs.preflight.outputs.should_release == 'true' &&
-      needs.build_macos.result == 'success' &&
-      (needs.build_windows.result == 'success' || needs.build_windows.result == 'skipped')
+      needs.build_macos.result == 'success'
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 10
     permissions:
@@ -1034,6 +1118,8 @@ jobs:
           if [[ "$HAS_WINDOWS" == "true" ]]; then
             win_manifest="$(find release-assets -maxdepth 1 -name 'nightly.yml' -print -quit)"
             test -n "$win_manifest"
+          else
+            echo "::warning::Publishing without Windows updater artifacts."
           fi
           node --input-type=module - "$mac_manifest" "$win_manifest" "$RELEASE_VERSION" <<'NODE'
           import fs from "node:fs";
@@ -1063,10 +1149,14 @@ jobs:
           mac_zip="$(find release-assets -maxdepth 1 -name '*.zip' -print -quit)"
           test -n "$mac_zip"
           unzip -p "$mac_zip" '*/Contents/Resources/app-update.yml' > app-update.yml
-          grep -F 'owner: SergeSerb2' app-update.yml
-          grep -F 'repo: t3-pretty' app-update.yml
+          grep -F 'provider: generic' app-update.yml
+          grep -F 'https://github.com/SergeSerb2/t3-pretty/releases/latest/download/' app-update.yml
+          shopt -s nullglob
+          for nightly_manifest in release-assets/nightly*.yml; do
+            cp "$nightly_manifest" "${nightly_manifest/nightly/latest}"
+          done
 
-      - name: Publish public GitHub prerelease
+      - name: Publish public GitHub release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.FORK_RELEASE_TOKEN }}
@@ -1097,10 +1187,11 @@ jobs:
               printf '\nNo parent integration report is present for this revision.\n'
             fi
           } > "$release_notes_path"
+          # Full releases (not prereleases) so --latest can advance
+          # /releases/latest/download/ for the generic updater feed.
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$RELEASE_REF" \
             --title "$RELEASE_NAME" \
             --notes-file "$release_notes_path" \
-            --prerelease \
-            --latest=false
+            --latest=true

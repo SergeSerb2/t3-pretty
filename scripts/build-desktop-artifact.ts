@@ -1946,13 +1946,45 @@ export function resolveDesktopRuntimeDependencies(
   return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/desktop");
 }
 
+export function resolveGenericUpdateFeedUrl(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined;
+  } catch {
+    return undefined;
+  }
+
+  // electron-updater resolves channel files with `new URL(file, baseUrl)`. A
+  // base without a trailing slash replaces the last path segment, so
+  // `.../releases/latest/download` + `nightly.yml` would miss `/download/`.
+  return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
+}
+
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
   updateChannel: "latest" | "nightly",
 ) {
   const env = yield* Config.all({
+    updateFeedUrl: Config.string("T3CODE_DESKTOP_UPDATE_FEED_URL").pipe(Config.option),
     updateRepository: Config.string("T3CODE_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
     githubRepository: Config.string("GITHUB_REPOSITORY").pipe(Config.option),
   });
+  // Fork builds publish as full GitHub releases marked latest (prereleases
+  // cannot be latest). Prefer a generic latest/download URL so electron-updater
+  // fetches nightly.yml / nightly-mac.yml without the GitHub provider or Atom feed.
+  const genericFeedUrl = resolveGenericUpdateFeedUrl(
+    Option.getOrUndefined(env.updateFeedUrl) ?? "",
+  );
+  if (genericFeedUrl) {
+    return {
+      provider: "generic" as const,
+      url: genericFeedUrl,
+      ...(updateChannel === "nightly" ? { channel: "nightly" as const } : {}),
+    };
+  }
+
   const rawRepo = (
     Option.getOrUndefined(env.updateRepository)?.trim() ||
     Option.getOrUndefined(env.githubRepository)?.trim() ||
@@ -2143,6 +2175,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // of code signing. Disabling it for local unsigned builds leaves the
       // packaged executable with Electron's stock icon.
       signAndEditExecutable: true,
+      // Unsigned NSIS updates must not embed a publisher name, or
+      // electron-updater refuses the downloaded installer.
+      verifyUpdateCodeSignature: signed,
     };
     if (signed) {
       winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;
