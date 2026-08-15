@@ -394,7 +394,15 @@ export function prepareConflictPrompt({
   if (Buffer.byteLength(conflictedSource) > MAX_CONFLICT_FILE_BYTES) {
     throw new Error(`${path} exceeds the ${MAX_CONFLICT_FILE_BYTES}-byte local file limit`);
   }
-  if (conflictedSource.includes("\0")) {
+  // Text sources can legitimately carry a few NUL bytes (upstream's
+  // ChatComposer.tsx keys composer images with a "\0"-joined template
+  // literal; seen on nightly 1101). Binary payloads are NUL-dense, so only
+  // refuse once NULs stop looking incidental.
+  let nulCount = 0;
+  for (let index = 0; index < conflictedSource.length; index += 1) {
+    if (conflictedSource.charCodeAt(index) === 0) nulCount += 1;
+  }
+  if (nulCount > 4 && nulCount * 256 > conflictedSource.length) {
     throw new Error(`${path} is binary and cannot be AI-resolved`);
   }
   const conflicts = [];

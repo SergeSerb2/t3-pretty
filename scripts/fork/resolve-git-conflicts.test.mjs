@@ -232,6 +232,35 @@ ${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
     );
   });
 
+  it("treats a source file with incidental NUL bytes as text, and NUL-dense payloads as binary", () => {
+    // Upstream's ChatComposer.tsx keys composer images with a "\0"-joined
+    // template literal; a raw NUL in a string literal is legal TypeScript.
+    const textWithNul = `${"<".repeat(7)} ours
+const key = \`\${mimeType}\0\${sizeBytes}\0\${name}\`;
+${"=".repeat(7)}
+const key = \`\${mimeType}:\${sizeBytes}:\${name}\`;
+${">".repeat(7)} theirs
+`;
+
+    const { conflicts } = prepareConflictPrompt({
+      path: "apps/web/src/components/chat/ChatComposer.tsx",
+      conflictedSource: textWithNul,
+      forkHistory: "",
+    });
+    assert.lengthOf(conflicts, 1);
+
+    const binaryPayload = `${"<".repeat(7)} ours\n${"a\0".repeat(200)}\n${"=".repeat(7)}\nb\n${">".repeat(7)} theirs\n`;
+    assert.throws(
+      () =>
+        prepareConflictPrompt({
+          path: "payload.bin",
+          conflictedSource: binaryPayload,
+          forkHistory: "",
+        }),
+      /is binary and cannot be AI-resolved/u,
+    );
+  });
+
   it("releases synced mobile changes without releasing server-only integrations", () => {
     const syncWorkflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
     const mobileWorkflow = NodeFS.readFileSync(mobileWorkflowPath, "utf8");
