@@ -351,10 +351,23 @@ function siblingIndexOf(doc: CanvasDocument, node: CanvasNode): number {
  * An image whose payload the server has not resolved yet carries the empty
  * `attachmentId` sentinel, which the wire schema rejects. Such a node can
  * never be re-added by an inverse op, so inverses skip it (the capture itself
- * is still in flight and will land on its own).
+ * is still in flight and will land on its own). The same sentinel must not be
+ * passed to `assets.createUrls`: an empty attachment id is not a valid
+ * `AssetResource` and throws `InvalidAssetCollectionKeyError` during render.
  */
-const isPendingImageNode = (node: CanvasNode): boolean =>
+export const isPendingImageNode = (node: CanvasNode): boolean =>
   node.type === "image" && node.attachmentId === "";
+
+/** Signed-URL resources for images that already have a server attachment. */
+export function canvasImageAttachmentResources(
+  nodes: readonly CanvasImageNode[],
+): Array<{ readonly _tag: "attachment"; readonly attachmentId: string }> {
+  return nodes.flatMap((node) =>
+    isPendingImageNode(node)
+      ? []
+      : [{ _tag: "attachment" as const, attachmentId: node.attachmentId }],
+  );
+}
 
 function invertOne(doc: CanvasDocument, op: CanvasOp): CanvasOp[] {
   switch (op._tag) {

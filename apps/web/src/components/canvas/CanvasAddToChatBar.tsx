@@ -12,7 +12,12 @@ import { MessageSquarePlus } from "lucide-react";
 import { useState } from "react";
 
 import { useAssetUrls } from "~/assets/assetUrls";
-import { getNode, type CanvasMeasuredSizes } from "~/canvasDocSync";
+import {
+  canvasImageAttachmentResources,
+  getNode,
+  isPendingImageNode,
+  type CanvasMeasuredSizes,
+} from "~/canvasDocSync";
 import { selectThreadCanvasState, useCanvasStore } from "~/canvasStore";
 import {
   useComposerDraftStore,
@@ -67,12 +72,12 @@ export function CanvasAddToChatBar(props: {
   const draftImageCount = useComposerThreadDraft(threadRef).images.length;
 
   const imageNodes = cropImageNodes(doc, selectedIds, props.measuredSizes);
+  // Pending captures still carry the empty attachmentId sentinel; asking for
+  // a signed URL with that key crashes the canvas (InvalidAssetCollectionKeyError).
+  const attachmentResources = canvasImageAttachmentResources(imageNodes);
   // Signed asset URLs are resolved up-front through the same hook the image
   // nodes use, so the crop never has to reach into the DOM for a src.
-  const assetUrls = useAssetUrls(
-    threadRef.environmentId,
-    imageNodes.map((node) => ({ _tag: "attachment" as const, attachmentId: node.attachmentId })),
-  );
+  const assetUrls = useAssetUrls(threadRef.environmentId, attachmentResources);
 
   const submit = async (): Promise<void> => {
     if (busy || selectedIds.length === 0) return;
@@ -97,15 +102,21 @@ export function CanvasAddToChatBar(props: {
         useCanvasStore.getState().byThreadKey,
         threadRef,
       ).localImagePreviews;
+      const urlByAttachmentId = new Map(
+        attachmentResources.flatMap((resource, index) => {
+          const url = assetUrls[index];
+          return url ? [[resource.attachmentId, url] as const] : [];
+        }),
+      );
       const srcByNodeId = new Map<string, string>();
-      imageNodes.forEach((node, index) => {
+      for (const node of imageNodes) {
         // A local preview is only authoritative while the payload is still
         // unresolved; once the server has an attachment, that is the bitmap
         // on screen (a stale re-capture preview would crop the wrong image).
-        const preview = node.attachmentId === "" ? localPreviews[node.id] : undefined;
-        const resolved = preview ?? assetUrls[index] ?? null;
+        const preview = isPendingImageNode(node) ? localPreviews[node.id] : undefined;
+        const resolved = preview ?? urlByAttachmentId.get(node.attachmentId) ?? null;
         if (resolved !== null) srcByNodeId.set(node.id, resolved);
-      });
+      }
 
       let crop = null;
       try {
