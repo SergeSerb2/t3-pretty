@@ -4,9 +4,11 @@
  * T3's store is a separate library. Codex, Claude Code, Cursor, Grok, and
  * OpenCode also load skills from their own home `skills/` directories (and
  * from the shared `~/.agents/skills` folder). This service scans those
- * locations on the environment host and deletes a folder when the user
- * uninstalls it from Settings. Clients address rows by the opaque ids minted
- * here; a client-supplied path never crosses the wire inbound.
+ * locations on the environment host, hides a skill from those CLIs without
+ * deleting it (by renaming `SKILL.md` to `SKILL.md.t3-disabled`), and deletes
+ * a folder when the user uninstalls it from Settings. Clients address rows by
+ * the opaque ids minted here; a client-supplied path never crosses the wire
+ * inbound.
  *
  * @module skills/HostSkills
  */
@@ -35,6 +37,9 @@ import { SKILL_MANAGED_MARKER_FILE } from "./SkillMaterializer.ts";
 const HOST_SKILL_ID_PREFIX = "host:";
 const DEFAULT_INSTANCE_KEY = "default";
 const SHARED_ORIGIN_KEY = "agents";
+const SKILL_FILE = "SKILL.md";
+/** Providers only discover a file named exactly `SKILL.md`; this hides one. */
+export const HOST_SKILL_DISABLED_FILE = "SKILL.md.t3-disabled";
 
 type DriverOriginKey = "claudeAgent" | "codex" | "cursor" | "grok" | "opencode";
 type HostSkillOriginKey = DriverOriginKey | typeof SHARED_ORIGIN_KEY;
@@ -181,6 +186,10 @@ export class HostSkills extends Context.Service<
   {
     readonly list: Effect.Effect<HostSkillsState, SkillsError>;
     readonly uninstall: (skillId: HostSkillId) => Effect.Effect<HostSkillsState, SkillsError>;
+    readonly setEnabled: (input: {
+      readonly skillId: HostSkillId;
+      readonly enabled: boolean;
+    }) => Effect.Effect<HostSkillsState, SkillsError>;
   }
 >()("t3/skills/HostSkills") {}
 
@@ -283,11 +292,18 @@ export const make = Effect.gen(function* () {
       if (!info || info.type !== "Directory") {
         continue;
       }
-      const skillFilePath = path.join(skillDir, "SKILL.md");
-      const contents = yield* fileSystem
+      const skillFilePath = path.join(skillDir, SKILL_FILE);
+      const disabledFilePath = path.join(skillDir, HOST_SKILL_DISABLED_FILE);
+      const skillContents = yield* fileSystem
         .readFileString(skillFilePath)
         .pipe(Effect.orElseSucceed(() => undefined));
-      if (contents === undefined) {
+      const disabledContents =
+        skillContents === undefined
+          ? yield* fileSystem
+              .readFileString(disabledFilePath)
+              .pipe(Effect.orElseSucceed(() => undefined))
+          : undefined;
+      if (skillContents === undefined && disabledContents === undefined) {
         continue;
       }
       const isManagedCopy = yield* fileSystem
@@ -297,6 +313,8 @@ export const make = Effect.gen(function* () {
         continue;
       }
 
+      const enabled = skillContents !== undefined;
+      const contents = skillContents ?? disabledContents ?? "";
       const frontmatter = parseSkillFrontmatter(contents);
       const name = frontmatter.kind === "parsed" && frontmatter.name ? frontmatter.name : entry;
       const skill: HostSkill = {
@@ -306,9 +324,10 @@ export const make = Effect.gen(function* () {
           dirName: entry,
         }),
         name,
-        path: skillFilePath,
+        path: enabled ? skillFilePath : disabledFilePath,
         displayPath: abbreviateHome(skillDir),
         origin: root.origin,
+        enabled,
         ...(root.driver ? { driver: root.driver } : {}),
         ...(root.instanceId ? { instanceId: root.instanceId } : {}),
         ...(frontmatter.kind === "parsed" && frontmatter.description
@@ -369,22 +388,30 @@ export const make = Effect.gen(function* () {
     return { root, target, dirName: parsed.dirName } as const;
   });
 
-  const uninstall = Effect.fn("HostSkills.uninstall")(function* (skillId: HostSkillId) {
-    const { target } = yield* resolveTarget("uninstall-host", skillId);
+  const inspectTarget = Effect.fn("HostSkills.inspectTarget")(function* (
+    operation: SkillsError["operation"],
+    skillId: string,
+    target: string,
+  ) {
     const info = yield* fileSystem.stat(target).pipe(Effect.orElseSucceed(() => undefined));
     if (!info || info.type !== "Directory") {
       return yield* new SkillsError({
-        operation: "uninstall-host",
+        operation,
         skillId,
         message: `Host skill ${skillId} is not installed.`,
       });
     }
+    const skillFilePath = path.join(target, SKILL_FILE);
+    const disabledFilePath = path.join(target, HOST_SKILL_DISABLED_FILE);
     const hasSkillFile = yield* fileSystem
-      .exists(path.join(target, "SKILL.md"))
+      .exists(skillFilePath)
       .pipe(Effect.orElseSucceed(() => false));
-    if (!hasSkillFile) {
+    const hasDisabledFile = yield* fileSystem
+      .exists(disabledFilePath)
+      .pipe(Effect.orElseSucceed(() => false));
+    if (!hasSkillFile && !hasDisabledFile) {
       return yield* new SkillsError({
-        operation: "uninstall-host",
+        operation,
         skillId,
         message: `Host skill ${skillId} is not a skill directory.`,
       });
@@ -394,11 +421,17 @@ export const make = Effect.gen(function* () {
       .pipe(Effect.orElseSucceed(() => false));
     if (isManagedCopy) {
       return yield* new SkillsError({
-        operation: "uninstall-host",
+        operation,
         skillId,
         message: `Host skill ${skillId} is managed by T3 Code's skill library.`,
       });
     }
+    return { skillFilePath, disabledFilePath, hasSkillFile, hasDisabledFile } as const;
+  });
+
+  const uninstall = Effect.fn("HostSkills.uninstall")(function* (skillId: HostSkillId) {
+    const { target } = yield* resolveTarget("uninstall-host", skillId);
+    yield* inspectTarget("uninstall-host", skillId, target);
 
     const symlinkTarget = yield* fileSystem
       .readLink(target)
@@ -422,7 +455,48 @@ export const make = Effect.gen(function* () {
     return yield* list;
   });
 
-  return HostSkills.of({ list, uninstall });
+  const setEnabled = Effect.fn("HostSkills.setEnabled")(function* (input: {
+    readonly skillId: HostSkillId;
+    readonly enabled: boolean;
+  }) {
+    const { target } = yield* resolveTarget("set-host-enabled", input.skillId);
+    const documents = yield* inspectTarget("set-host-enabled", input.skillId, target);
+    const alreadyEnabled = documents.hasSkillFile;
+    if (input.enabled === alreadyEnabled) {
+      return yield* list;
+    }
+
+    const source = input.enabled ? documents.disabledFilePath : documents.skillFilePath;
+    const destination = input.enabled ? documents.skillFilePath : documents.disabledFilePath;
+    if (!input.enabled && documents.hasDisabledFile) {
+      yield* fileSystem.remove(documents.disabledFilePath).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SkillsError({
+              operation: "set-host-enabled",
+              skillId: input.skillId,
+              message: `Failed to update ${input.skillId}.`,
+              cause,
+            }),
+        ),
+      );
+    }
+    yield* fileSystem.rename(source, destination).pipe(
+      Effect.mapError(
+        (cause) =>
+          new SkillsError({
+            operation: "set-host-enabled",
+            skillId: input.skillId,
+            message: `Failed to update ${input.skillId}.`,
+            cause,
+          }),
+      ),
+    );
+
+    return yield* list;
+  });
+
+  return HostSkills.of({ list, uninstall, setEnabled });
 });
 
 export const layer = Layer.effect(HostSkills, make);

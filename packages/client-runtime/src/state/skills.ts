@@ -37,9 +37,10 @@ export function globallyEnabledSkills(
 
 /**
  * Atoms for the server-managed skill registry, marketplace, and host-scoped
- * provider CLI skills (see `skills.ts` in `@t3tools/contracts`). Enablement
- * lives in server settings and per-thread orchestration state — this module
- * mirrors the store, the listings, and the host-folder inventory.
+ * provider CLI skills (see `skills.ts` in `@t3tools/contracts`). T3-store
+ * enablement lives in server settings and per-thread orchestration state;
+ * host-folder enablement is mutated through `setHostSkillEnabled`. This
+ * module mirrors the store, the listings, and the host-folder inventory.
  */
 export function createSkillAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
@@ -122,6 +123,16 @@ export function createSkillAtoms<R, E>(
     uninstallHostSkill: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:skills:uninstall-host",
       tag: WS_METHODS.skillsUninstallHost,
+      scheduler: storeScheduler,
+      concurrency: storeConcurrency,
+      onSettled: ({ environmentId }, registry) =>
+        Effect.sync(() => {
+          registry.refresh(hostSkillsStateAtom(environmentId));
+        }),
+    }),
+    setHostSkillEnabled: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:set-host-enabled",
+      tag: WS_METHODS.skillsSetHostEnabled,
       scheduler: storeScheduler,
       concurrency: storeConcurrency,
       onSettled: ({ environmentId }, registry) =>

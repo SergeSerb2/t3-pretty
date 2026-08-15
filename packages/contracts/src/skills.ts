@@ -11,8 +11,8 @@
  *
  * Provider CLIs also keep their own user-scope skill folders (`~/.claude/skills`,
  * `~/.codex/skills`, …). Those live on the environment host — the same machine
- * whether the client is local or remote — and are listed/uninstalled by opaque
- * server-minted ids, never by a client-supplied path.
+ * whether the client is local or remote — and are listed, enabled, disabled, or
+ * uninstalled by opaque server-minted ids, never by a client-supplied path.
  *
  * @module skills
  */
@@ -104,12 +104,18 @@ export const HostSkill = Schema.Struct({
   id: HostSkillId,
   name: TrimmedNonEmptyString,
   description: Schema.optional(TrimmedNonEmptyString),
-  /** Absolute path to `SKILL.md`, for display and snapshot dedupe. */
+  /** Absolute path to the skill document, for display and snapshot dedupe. */
   path: TrimmedNonEmptyString,
   /** Home-abbreviated skill directory, e.g. `~/.claude/skills/grill-me`. */
   displayPath: TrimmedNonEmptyString,
   /** Provider or shared-root label, e.g. "Claude Code", "Codex", "Shared". */
   origin: TrimmedNonEmptyString,
+  /**
+   * False when the skill folder is still on disk but hidden from provider CLIs.
+   * Default on: these skills already live in a CLI home, unlike T3-store skills
+   * which opt into every thread.
+   */
+  enabled: Schema.Boolean,
   driver: Schema.optional(ProviderDriverKind),
   instanceId: Schema.optional(ProviderInstanceId),
 });
@@ -129,6 +135,7 @@ export const SkillsOperation = Schema.Literals([
   "materialize",
   "list-host",
   "uninstall-host",
+  "set-host-enabled",
 ]);
 export type SkillsOperation = typeof SkillsOperation.Type;
 

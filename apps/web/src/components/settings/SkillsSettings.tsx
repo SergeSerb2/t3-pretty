@@ -2,9 +2,11 @@
  * Settings › Skills — the server-managed skill registry: installed skills with
  * a global on/off per skill, marketplace listings browsed from configured
  * GitHub repository sources, host-folder skills the provider CLIs installed
- * themselves (uninstallable), and a read-only view of plugin/project/system
- * skills those CLIs still report. Install/uninstall/refresh go through the
- * skills RPC commands; enablement and sources are patched into server settings.
+ * themselves (enable/disable without deleting, or uninstall), and a read-only
+ * view of plugin/project/system skills those CLIs still report. Install,
+ * uninstall, host enablement, and marketplace refresh go through the
+ * skills RPC commands; T3-store enablement and sources are patched into
+ * server settings.
  */
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -648,12 +650,15 @@ function HostSkillsSection({
   const uninstallHostSkill = useAtomCommand(skillsEnvironment.uninstallHostSkill, {
     reportFailure: false,
   });
+  const setHostSkillEnabled = useAtomCommand(skillsEnvironment.setHostSkillEnabled, {
+    reportFailure: false,
+  });
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
-  const [uninstallingId, setUninstallingId] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
 
   const skills = query.data?.skills ?? EMPTY_HOST_SKILLS;
   const { rows, beginExit, finishExit } = useTombstonedSkillList(skills);
@@ -696,12 +701,12 @@ function HostSkillsSection({
       );
       if (!confirmed) return;
       setActionError(null);
-      setUninstallingId(skill.id);
+      setPendingId(skill.id);
       const result = await uninstallHostSkill({
         environmentId,
         input: { skillId: skill.id },
       });
-      setUninstallingId(null);
+      setPendingId(null);
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
@@ -713,6 +718,28 @@ function HostSkillsSection({
       void refreshProviders({ environmentId, input: {} });
     },
     [beginExit, environmentId, refreshProviders, uninstallHostSkill],
+  );
+
+  const handleToggle = useCallback(
+    async (skill: HostSkill, enabled: boolean) => {
+      if (environmentId === null || skill.enabled === enabled) return;
+      setActionError(null);
+      setPendingId(skill.id);
+      const result = await setHostSkillEnabled({
+        environmentId,
+        input: { skillId: skill.id, enabled },
+      });
+      setPendingId(null);
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          setActionError(error instanceof Error ? error.message : "Could not update the skill.");
+        }
+        return;
+      }
+      void refreshProviders({ environmentId, input: {} });
+    },
+    [environmentId, refreshProviders, setHostSkillEnabled],
   );
 
   return (
@@ -736,7 +763,8 @@ function HostSkillsSection({
     >
       <p className="px-3 pb-2 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
         Skills Claude, Codex, Cursor, and other provider CLIs installed in their home folders on
-        this environment — including over a remote connection. Removing one deletes that folder.
+        this environment — including over a remote connection. Turn a skill off to hide it from
+        those CLIs without deleting it. Removing one deletes that folder.
       </p>
       {environmentId === null ? (
         <SkillListHint>Connect an environment to manage provider skills.</SkillListHint>
@@ -775,12 +803,13 @@ function HostSkillsSection({
                     key={skill.id}
                     skillId={skill.id}
                     exiting={exiting}
-                    pending={uninstallingId === skill.id}
+                    pending={pendingId === skill.id}
                     onExited={finishExit}
                   >
                     <HostSkillRow
                       skill={skill}
-                      pending={uninstallingId === skill.id}
+                      pending={pendingId === skill.id}
+                      onToggle={(enabled) => void handleToggle(skill, enabled)}
                       onUninstall={() => void handleUninstall(skill)}
                     />
                   </SkillRowShell>
@@ -798,10 +827,12 @@ function HostSkillsSection({
 function HostSkillRow({
   skill,
   pending,
+  onToggle,
   onUninstall,
 }: {
   skill: HostSkill;
   pending: boolean;
+  onToggle: (enabled: boolean) => void;
   onUninstall: () => void;
 }) {
   return (
@@ -820,30 +851,45 @@ function HostSkillRow({
           {skill.displayPath}
         </p>
       </div>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={pending ? `Removing ${skill.name}` : `Remove ${skill.name}`}
-        disabled={pending}
-        onClick={onUninstall}
-        className="text-muted-foreground hover:text-destructive-foreground"
-      >
-        {pending ? (
-          <LoaderCircleIcon className="size-4 animate-spin" />
-        ) : (
-          <Trash2Icon className="size-4" />
-        )}
-      </Button>
+      <div className="flex shrink-0 items-center gap-2">
+        <Switch
+          checked={skill.enabled}
+          disabled={pending}
+          onCheckedChange={(checked) => onToggle(Boolean(checked))}
+          aria-label={`Enable ${skill.name} for its provider`}
+        />
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={pending ? `Removing ${skill.name}` : `Remove ${skill.name}`}
+          disabled={pending}
+          onClick={onUninstall}
+          className="text-muted-foreground hover:text-destructive-foreground"
+        >
+          {pending ? (
+            <LoaderCircleIcon className="size-4 animate-spin" />
+          ) : (
+            <Trash2Icon className="size-4" />
+          )}
+        </Button>
+      </div>
     </div>
   );
 }
 
 function DetectedSkillsSection({ hostSkills }: { hostSkills: ReadonlyArray<HostSkill> }) {
   const providers = useAtomValue(primaryServerProvidersAtom);
-  const hostSkillPaths = useMemo(
-    () => new Set(hostSkills.map((skill) => normalizeProviderSkillPath(skill.path))),
-    [hostSkills],
-  );
+  const hostSkillPaths = useMemo(() => {
+    const paths = new Set<string>();
+    for (const skill of hostSkills) {
+      const normalized = normalizeProviderSkillPath(skill.path);
+      paths.add(normalized);
+      if (normalized.endsWith(".t3-disabled")) {
+        paths.add(normalized.slice(0, -".t3-disabled".length));
+      }
+    }
+    return paths;
+  }, [hostSkills]);
   const detected = useMemo(
     () =>
       deriveProviderInstanceEntries(providers).flatMap((entry) =>

@@ -5,7 +5,12 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import { layerTest as serverSettingsLayerTest } from "../serverSettings.ts";
-import { formatHostSkillId, make, parseHostSkillId } from "./HostSkills.ts";
+import {
+  formatHostSkillId,
+  HOST_SKILL_DISABLED_FILE,
+  make,
+  parseHostSkillId,
+} from "./HostSkills.ts";
 import { SKILL_MANAGED_MARKER_FILE } from "./SkillMaterializer.ts";
 
 type TestProviderInstances = Record<
@@ -97,6 +102,7 @@ it.layer(NodeServices.layer)("HostSkills", (it) => {
       assert.isDefined(skill);
       assert.strictEqual(skill.origin, "Claude Code · Work");
       assert.strictEqual(skill.description, "Interview the implementer.");
+      assert.strictEqual(skill.enabled, true);
       assert.strictEqual(skill.displayPath, path.join(claudeHome, "skills", "grill-me"));
       assert.strictEqual(skill.path, path.join(claudeHome, "skills", "grill-me", "SKILL.md"));
 
@@ -165,6 +171,124 @@ it.layer(NodeServices.layer)("HostSkills", (it) => {
       const emptyDir = yield* service.uninstall("host:grok:grok_work:empty").pipe(Effect.result);
       assert.equal(emptyDir._tag, "Failure");
       assert.equal(yield* fs.exists(path.join(skillsDir, "keep-me", "SKILL.md")), true);
+    }),
+  );
+
+  it.effect("disables and re-enables a host skill without deleting the folder", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-host-skills-" });
+      const cursorHome = path.join(tempDir, "cursor-home");
+      const skillDir = yield* writeSkill(
+        path.join(cursorHome, "skills"),
+        "grill-me",
+        ["---", "name: grill-me", "description: Interview the implementer.", "---"].join("\n"),
+      );
+      yield* fs.writeFileString(path.join(skillDir, "notes.md"), "keep this while disabled");
+
+      const service = yield* makeService({
+        providerInstances: {
+          cursor_work: { driver: "cursor", config: { homePath: cursorHome } },
+        },
+      });
+      const skillId = formatHostSkillId({
+        originKey: "cursor",
+        instanceKey: "cursor_work",
+        dirName: "grill-me",
+      });
+
+      const disabled = yield* service.setEnabled({ skillId, enabled: false });
+      const disabledSkill = disabled.skills.find((entry) => entry.id === skillId);
+      assert.isDefined(disabledSkill);
+      assert.strictEqual(disabledSkill.enabled, false);
+      assert.strictEqual(disabledSkill.path, path.join(skillDir, HOST_SKILL_DISABLED_FILE));
+      assert.equal(yield* fs.exists(path.join(skillDir, "SKILL.md")), false);
+      assert.equal(yield* fs.exists(path.join(skillDir, HOST_SKILL_DISABLED_FILE)), true);
+      assert.equal(yield* fs.exists(path.join(skillDir, "notes.md")), true);
+
+      const stillDisabled = yield* service.setEnabled({ skillId, enabled: false });
+      assert.strictEqual(
+        stillDisabled.skills.find((entry) => entry.id === skillId)?.enabled,
+        false,
+      );
+
+      const enabled = yield* service.setEnabled({ skillId, enabled: true });
+      const enabledSkill = enabled.skills.find((entry) => entry.id === skillId);
+      assert.isDefined(enabledSkill);
+      assert.strictEqual(enabledSkill.enabled, true);
+      assert.strictEqual(enabledSkill.path, path.join(skillDir, "SKILL.md"));
+      assert.equal(yield* fs.exists(path.join(skillDir, "SKILL.md")), true);
+      assert.equal(yield* fs.exists(path.join(skillDir, HOST_SKILL_DISABLED_FILE)), false);
+    }),
+  );
+
+  it.effect("uninstalls a disabled host skill", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-host-skills-" });
+      const grokHome = path.join(tempDir, "grok-home");
+      const skillDir = yield* writeSkill(
+        path.join(grokHome, "skills"),
+        "keep-me",
+        ["---", "name: keep-me", "---"].join("\n"),
+      );
+
+      const service = yield* makeService({
+        providerInstances: {
+          grok_work: { driver: "grok", config: { homePath: grokHome } },
+        },
+      });
+      const skillId = formatHostSkillId({
+        originKey: "grok",
+        instanceKey: "grok_work",
+        dirName: "keep-me",
+      });
+
+      yield* service.setEnabled({ skillId, enabled: false });
+      const after = yield* service.uninstall(skillId);
+      assert.equal(
+        after.skills.some((entry) => entry.id === skillId),
+        false,
+      );
+      assert.equal(yield* fs.exists(skillDir), false);
+    }),
+  );
+
+  it.effect("refuses to disable a T3-managed copy", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-host-skills-" });
+      const cursorHome = path.join(tempDir, "cursor-home");
+      const managedDir = yield* writeSkill(
+        path.join(cursorHome, "skills"),
+        "t3-copy",
+        ["---", "name: t3-copy", "---"].join("\n"),
+      );
+      yield* fs.writeFileString(
+        path.join(managedDir, SKILL_MANAGED_MARKER_FILE),
+        "owner/repo:t3-copy",
+      );
+
+      const service = yield* makeService({
+        providerInstances: {
+          cursor_work: { driver: "cursor", config: { homePath: cursorHome } },
+        },
+      });
+      const result = yield* service
+        .setEnabled({
+          skillId: formatHostSkillId({
+            originKey: "cursor",
+            instanceKey: "cursor_work",
+            dirName: "t3-copy",
+          }),
+          enabled: false,
+        })
+        .pipe(Effect.result);
+      assert.equal(result._tag, "Failure");
+      assert.equal(yield* fs.exists(path.join(managedDir, "SKILL.md")), true);
     }),
   );
 
