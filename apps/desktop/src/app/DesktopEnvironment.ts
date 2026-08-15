@@ -82,7 +82,6 @@ export class DesktopEnvironment extends Context.Service<
     readonly runtimeInfo: DesktopRuntimeInfo;
     readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
     readonly resolveResourcePathCandidates: (fileName: string) => readonly string[];
-    readonly developmentDockIconPath: string;
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 

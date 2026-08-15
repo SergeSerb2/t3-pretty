@@ -184,6 +184,13 @@ export function getChangeRequestTerminologyForKind(
   };
 }
 
+const SCP_SSH_REMOTE_PATTERN = /^[a-zA-Z0-9._-]+@([^:/]+):/;
+
+export function isSshRemoteUrl(remoteUrl: string): boolean {
+  const trimmed = remoteUrl.trim();
+  return SCP_SSH_REMOTE_PATTERN.test(trimmed) || trimmed.toLowerCase().startsWith("ssh://");
+}
+
 function parseRemoteHost(remoteUrl: string): string | null {
   const trimmed = remoteUrl.trim();
   if (trimmed.length === 0) {
@@ -193,6 +200,11 @@ function parseRemoteHost(remoteUrl: string): string | null {
   // Windows drive paths (c:/repos, c:repos) are not remotes.
   if (/^[a-z]:/i.test(trimmed)) {
     return null;
+  }
+
+  const scpMatch = SCP_SSH_REMOTE_PATTERN.exec(trimmed);
+  if (scpMatch?.[1]) {
+    return scpMatch[1].toLowerCase();
   }
 
   // Git reserves <transport>::<address> for remote helpers (hg::https://…);

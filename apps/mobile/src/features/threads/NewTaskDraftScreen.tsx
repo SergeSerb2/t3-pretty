@@ -69,6 +69,7 @@ import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/re
 import { enqueueThreadOutboxMessage, removeThreadOutboxMessage } from "../../state/thread-outbox";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { useNewTaskFlow } from "./new-task-flow-provider";
+import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
 import { useCreateProjectThread } from "./use-project-actions";
 import { resolveDraftProjectSelection } from "./new-task-project-selection";
 import {
@@ -623,11 +624,17 @@ export function NewTaskDraftScreen(props: {
     flow.environments.find(
       (environment) => environment.environmentId === flow.selectedEnvironmentId,
     )?.environmentLabel ?? "Environment";
-  const currentBranchName =
+  const availableCurrentBranchName =
     flow.availableBranches.find((branch) => branch.current)?.name ??
     flow.availableBranches.find((branch) => branch.isDefault)?.name ??
     null;
-  const selectedBranchName = flow.selectedBranchName ?? currentBranchName;
+  const selectedBranchName = resolveProjectThreadCreationBranch({
+    workspaceMode: flow.workspaceMode,
+    selectedBranch:
+      flow.selectedBranchName ??
+      (flow.workspaceMode === "worktree" ? availableCurrentBranchName : null),
+    currentCheckoutBranch: flow.currentCheckoutBranchName,
+  });
   const selectedBranchLabel = resolveNewTaskBranchLabel({
     branchName: selectedBranchName,
     startFromOrigin: flow.startFromOrigin,
@@ -849,11 +856,19 @@ export function NewTaskDraftScreen(props: {
       stalePullRequestCheckout = !prepared.value.isOnPullRequestHead;
     }
 
+    const creationBranch = resolveProjectThreadCreationBranch({
+      workspaceMode,
+      selectedBranch: selectedBranchName,
+      currentCheckoutBranch:
+        pullRequestReference.length > 0
+          ? selectedBranchName
+          : flow.currentCheckoutBranchName,
+    });
     const result = await createProjectThread({
       project: selectedProject,
       modelSelection,
       envMode: workspaceMode,
-      branch: selectedBranchName,
+      branch: creationBranch,
       worktreePath: workspaceMode === "worktree" ? null : selectedWorktreePath,
       startFromOrigin,
       runtimeMode,

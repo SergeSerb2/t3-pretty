@@ -571,38 +571,32 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
       ).pipe(Effect.forkScoped),
     );
   }
-  const readinessProbe = (timeout: Duration.Duration) =>
+  // Probe readiness in a loop while the backend process is still alive
+  // instead of giving up after the first budget. A slow cold boot (the
+  // WSL bundle loading across /mnt/c, or a first launch right after an
+  // update) can exceed the initial readiness budget while the backend is
+  // about to come up moments later; a one-shot probe left the app stuck
+  // on "Connecting to WSL…" forever even though the backend kept running
+  // and became healthy. Each round gets a fresh budget, and the forked
+  // loop is torn down with the run scope once the child exits.
+  const probeReadiness = Effect.fn("desktop.backendProcess.probeReadiness")(() =>
     waitForHttpReady({
       executablePath: options.executablePath,
       entryPath: options.entryPath,
       cwd: options.cwd,
       httpBaseUrl: options.httpBaseUrl,
-      timeout,
-    });
-  yield* readinessProbe(options.readinessTimeout ?? DEFAULT_BACKEND_READINESS_TIMEOUT).pipe(
-    Effect.tap(() => options.onReady?.() ?? Effect.void),
-    Effect.catchTags({
-      BackendReadinessTimeoutError: Effect.fn("desktop.backendProcess.extendedReadinessWatch")(
-        function* (error) {
-          yield* options.onReadinessFailure?.(error) ?? Effect.void;
-          // The initial budget elapsed but the child is still running. Keep
-          // watching (see EXTENDED_BACKEND_READINESS_TIMEOUT) so the window
-          // still opens when a slow backend binds late.
-          yield* readinessProbe(EXTENDED_BACKEND_READINESS_TIMEOUT).pipe(
-            Effect.tap(() => options.onReady?.() ?? Effect.void),
-            Effect.catchTags({
-              BackendReadinessTimeoutError: (extendedError) =>
-                logBackendProcessWarning("desktop backend never became ready", {
-                  readinessUrl: extendedError.readinessUrl.href,
-                  timeoutMs: extendedError.timeoutMs,
-                }),
-            }),
-          );
-        },
-      ),
-    }),
-    Effect.forkScoped,
+      timeout: options.readinessTimeout ?? DEFAULT_BACKEND_READINESS_TIMEOUT,
+    }).pipe(
+      Effect.flatMap(() => options.onReady?.() ?? Effect.void),
+      Effect.as(true),
+      Effect.catchTags({
+        BackendReadinessTimeoutError: (error) =>
+          (options.onReadinessFailure?.(error) ?? Effect.void).pipe(Effect.as(false)),
+      }),
+    ),
   );
+
+  yield* probeReadiness().pipe(Effect.repeat({ while: (ready) => !ready }), Effect.forkScoped);
 
   const exit = yield* handle.exitCode.pipe(
     Effect.mapError(
