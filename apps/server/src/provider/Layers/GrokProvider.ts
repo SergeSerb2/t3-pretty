@@ -14,7 +14,6 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import {
@@ -29,7 +28,11 @@ import {
   enrichProviderSnapshotWithVersionAdvisory,
   type ProviderMaintenanceCapabilities,
 } from "../providerMaintenance.ts";
-import { makeGrokAcpRuntime, resolveGrokAcpBaseModelId } from "../acp/GrokAcpSupport.ts";
+import {
+  grokModelCapabilities,
+  makeGrokAcpRuntime,
+  resolveGrokAcpBaseModelId,
+} from "../acp/GrokAcpSupport.ts";
 
 const GROK_PRESENTATION = {
   displayName: "Grok",
@@ -37,9 +40,7 @@ const GROK_PRESENTATION = {
   showInteractionModeToggle: false,
   requiresNewThreadForModelChange: true,
 } as const;
-const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
-  optionDescriptors: [],
-});
+const FALLBACK_CAPABILITIES: ModelCapabilities = grokModelCapabilities({ slug: "grok-build" });
 
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
@@ -49,7 +50,7 @@ const GROK_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
     slug: "grok-build",
     name: "Grok Build",
     isCustom: false,
-    capabilities: EMPTY_CAPABILITIES,
+    capabilities: FALLBACK_CAPABILITIES,
   },
 ];
 
@@ -96,7 +97,15 @@ function grokModelsFromSettings(
   customModels: ReadonlyArray<string> | undefined,
   builtInModels: ReadonlyArray<ServerProviderModel> = GROK_BUILT_IN_MODELS,
 ): ReadonlyArray<ServerProviderModel> {
-  return providerModelsFromSettings(builtInModels, customModels ?? [], EMPTY_CAPABILITIES);
+  return providerModelsFromSettings(builtInModels, customModels ?? [], FALLBACK_CAPABILITIES).map(
+    (model) =>
+      model.isCustom
+        ? {
+            ...model,
+            capabilities: grokModelCapabilities({ slug: model.slug, name: model.name }),
+          }
+        : model,
+  );
 }
 
 function buildGrokDiscoveredModelsFromSessionModelState(
@@ -113,11 +122,16 @@ function buildGrokDiscoveredModelsFromSessionModelState(
         return undefined;
       }
       seen.add(slug);
+      const name = model.name.trim() || slug;
       return {
         slug,
-        name: model.name.trim() || slug,
+        name,
         isCustom: false,
-        capabilities: EMPTY_CAPABILITIES,
+        capabilities: grokModelCapabilities({
+          slug,
+          name,
+          meta: model._meta,
+        }),
       };
     })
     .filter((model): model is ServerProviderModel => model !== undefined);

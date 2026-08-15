@@ -2,9 +2,17 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as EffectAcpErrors from "effect-acp/errors";
 
+import { ProviderInstanceId } from "@t3tools/contracts";
+
 import {
   applyGrokAcpModelSelection,
   buildGrokAcpSpawnInput,
+  GROK_REASONING_EFFORT_OPTION_ID,
+  grokModelCapabilities,
+  grokModelSupportsXhighEffort,
+  grokReasoningEffortCapabilities,
+  parseGrokAcpModelMeta,
+  requestedGrokReasoningEffort,
   resolveGrokAcpBaseModelId,
 } from "./GrokAcpSupport.ts";
 
@@ -33,15 +41,107 @@ describe("buildGrokAcpSpawnInput", () => {
       },
     });
   });
+
+  it("puts --reasoning-effort before stdio", () => {
+    const spawn = buildGrokAcpSpawnInput({ binaryPath: "grok" }, "/tmp/project", undefined, "high");
+    expect(spawn.args).toEqual(["agent", "--reasoning-effort", "high", "stdio"]);
+  });
+
+  it("ignores spawn effort values the CLI rejects", () => {
+    const spawn = buildGrokAcpSpawnInput({ binaryPath: "grok" }, "/tmp/project", undefined, "max");
+    expect(spawn.args).toEqual(["agent", "stdio"]);
+  });
+});
+
+describe("grokModelSupportsXhighEffort", () => {
+  it("reserves xhigh for grok 4.6 and later", () => {
+    expect(grokModelSupportsXhighEffort("grok-4.5")).toBe(false);
+    expect(grokModelSupportsXhighEffort("grok-4-5")).toBe(false);
+    expect(grokModelSupportsXhighEffort("grok-4.6")).toBe(true);
+    expect(grokModelSupportsXhighEffort("grok-build")).toBe(true);
+    expect(grokModelSupportsXhighEffort("custom", "Grok 4.5")).toBe(false);
+  });
+});
+
+describe("parseGrokAcpModelMeta", () => {
+  it("reads the live Grok effort menu", () => {
+    const meta = parseGrokAcpModelMeta({
+      supportsReasoningEffort: true,
+      reasoningEffort: "high",
+      reasoningEfforts: [
+        { id: "xhigh", value: "xhigh", label: "Extra High Effort" },
+        { id: "high", value: "high", label: "High Effort", default: true },
+        { id: "medium", value: "medium", label: "Medium Effort" },
+      ],
+    });
+    expect(meta.supportsReasoningEffort).toBe(true);
+    expect(meta.reasoningEffort).toBe("high");
+    expect(meta.reasoningEfforts.map((choice) => choice.id)).toEqual(["xhigh", "high", "medium"]);
+    expect(grokReasoningEffortCapabilities(meta.reasoningEfforts).optionDescriptors?.[0]?.id).toBe(
+      GROK_REASONING_EFFORT_OPTION_ID,
+    );
+  });
+});
+
+describe("grokModelCapabilities", () => {
+  it("falls back to low/medium/high for grok 4.5", () => {
+    const descriptor = grokModelCapabilities({ slug: "grok-4.5" }).optionDescriptors?.[0];
+    expect(descriptor?.id).toBe(GROK_REASONING_EFFORT_OPTION_ID);
+    expect(
+      descriptor?.type === "select" ? descriptor.options.map((option) => option.id) : [],
+    ).toEqual(["low", "medium", "high"]);
+  });
+
+  it("falls back to extra high for grok 4.6", () => {
+    const descriptor = grokModelCapabilities({ slug: "grok-4.6" }).optionDescriptors?.[0];
+    expect(
+      descriptor?.type === "select" ? descriptor.options.map((option) => option.id) : [],
+    ).toEqual(["low", "medium", "high", "xhigh"]);
+  });
+});
+
+describe("requestedGrokReasoningEffort", () => {
+  it("drops effort values the current model does not advertise", () => {
+    expect(
+      requestedGrokReasoningEffort(
+        {
+          instanceId: ProviderInstanceId.make("grok"),
+          model: "grok-4.5",
+          options: [{ id: GROK_REASONING_EFFORT_OPTION_ID, value: "xhigh" }],
+        },
+        ["high", "medium", "low"],
+      ),
+    ).toBeUndefined();
+  });
+
+  it("rejects xhigh on grok 4.5 when no live menu is advertised", () => {
+    expect(
+      requestedGrokReasoningEffort(
+        {
+          instanceId: ProviderInstanceId.make("grok"),
+          model: "grok-4.5",
+          options: [{ id: GROK_REASONING_EFFORT_OPTION_ID, value: "xhigh" }],
+        },
+        [],
+      ),
+    ).toBeUndefined();
+  });
 });
 
 describe("applyGrokAcpModelSelection", () => {
   const makeRecordingRuntime = (failure?: EffectAcpErrors.AcpError) => {
-    const modelCalls: Array<string> = [];
+    const modelCalls: Array<{ modelId: string; effort?: string }> = [];
     const runtime = {
-      setSessionModel: (modelId: string) =>
+      setSessionModel: (
+        modelId: string,
+        options?: { readonly _meta?: { readonly [x: string]: unknown } },
+      ) =>
         Effect.gen(function* () {
-          modelCalls.push(modelId);
+          const effort = options?._meta?.reasoningEffort;
+          modelCalls.push({
+            modelId,
+            ...(typeof effort === "string" ? { effort } : {}),
+          });
           if (failure) return yield* failure;
           return {};
         }),
@@ -58,8 +158,8 @@ describe("applyGrokAcpModelSelection", () => {
         requestedModelId: "grok-mock-alt",
         mapError: (cause) => cause.message,
       });
-      expect(modelCalls).toEqual(["grok-mock-alt"]);
-      expect(result).toBe("grok-mock-alt");
+      expect(modelCalls).toEqual([{ modelId: "grok-mock-alt" }]);
+      expect(result).toEqual({ modelId: "grok-mock-alt", reasoningEffort: undefined });
     }),
   );
 
@@ -73,7 +173,23 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([]);
-      expect(result).toBe("grok-build");
+      expect(result).toEqual({ modelId: "grok-build", reasoningEffort: undefined });
+    }),
+  );
+
+  it.effect("calls session/set_model when only effort changes", () =>
+    Effect.gen(function* () {
+      const { runtime, modelCalls } = makeRecordingRuntime();
+      const result = yield* applyGrokAcpModelSelection({
+        runtime,
+        currentModelId: "grok-4.6",
+        requestedModelId: "grok-4.6",
+        currentReasoningEffort: "high",
+        requestedReasoningEffort: "xhigh",
+        mapError: (cause) => cause.message,
+      });
+      expect(modelCalls).toEqual([{ modelId: "grok-4.6", effort: "xhigh" }]);
+      expect(result).toEqual({ modelId: "grok-4.6", reasoningEffort: "xhigh" });
     }),
   );
 
@@ -87,7 +203,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([]);
-      expect(result).toBe("grok-build");
+      expect(result).toEqual({ modelId: "grok-build", reasoningEffort: undefined });
     }),
   );
 

@@ -54,9 +54,13 @@ import {
 import { parsePermissionRequest } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
 import {
+  advertisedGrokReasoningEffortsFromSessionSetup,
   applyGrokAcpModelSelection,
   currentGrokModelIdFromSessionSetup,
+  currentGrokReasoningEffortFromSessionSetup,
+  grokReasoningEffortMenusFromSessionSetup,
   makeGrokAcpRuntime,
+  requestedGrokReasoningEffort,
   resolveGrokAcpBaseModelId,
 } from "../acp/GrokAcpSupport.ts";
 import {
@@ -117,6 +121,8 @@ interface GrokSessionContext {
    * continues it, and only the last remaining prompt settles the turn. */
   promptsInFlight: number;
   currentModelId: string | undefined;
+  currentReasoningEffort: string | undefined;
+  reasoningEffortMenus: Map<string, ReadonlyArray<string>>;
   stopped: boolean;
 }
 
@@ -549,6 +555,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           const cwd = path.resolve(input.cwd.trim());
           const grokModelSelection =
             input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
+          const requestedStartModelId = grokModelSelection?.model
+            ? resolveGrokAcpBaseModelId(grokModelSelection.model)
+            : undefined;
+          const requestedStartEffort = requestedGrokReasoningEffort(grokModelSelection, []);
           const existing = sessions.get(input.threadId);
           if (existing && !existing.stopped) {
             yield* stopSessionInternal(existing);
@@ -573,6 +583,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           const acp = yield* makeGrokAcpRuntime({
             grokSettings,
             ...(options?.environment ? { environment: options.environment } : {}),
+            ...(requestedStartEffort ? { reasoningEffort: requestedStartEffort } : {}),
             childProcessSpawner,
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),
@@ -735,16 +746,26 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             ),
           );
 
-          const requestedStartModelId = grokModelSelection?.model
-            ? resolveGrokAcpBaseModelId(grokModelSelection.model)
-            : undefined;
-          const boundModelId = yield* applyGrokAcpModelSelection({
+          const startedModelId = currentGrokModelIdFromSessionSetup(started.sessionSetupResult);
+          const advertisedStartEfforts = advertisedGrokReasoningEffortsFromSessionSetup(
+            started.sessionSetupResult,
+            requestedStartModelId ?? startedModelId,
+          );
+          const boundSelection = yield* applyGrokAcpModelSelection({
             runtime: acp,
-            currentModelId: currentGrokModelIdFromSessionSetup(started.sessionSetupResult),
+            currentModelId: startedModelId,
             requestedModelId: requestedStartModelId,
+            currentReasoningEffort: currentGrokReasoningEffortFromSessionSetup(
+              started.sessionSetupResult,
+            ),
+            requestedReasoningEffort: requestedGrokReasoningEffort(
+              grokModelSelection,
+              advertisedStartEfforts,
+            ),
             mapError: (cause) =>
               mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", cause),
           });
+          const boundModelId = boundSelection.modelId;
 
           const now = yield* nowIso;
           const session: ProviderSession = {
@@ -778,6 +799,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             interruptedTurnIds: new Set(),
             promptsInFlight: 0,
             currentModelId: boundModelId,
+            currentReasoningEffort: boundSelection.reasoningEffort,
+            reasoningEffortMenus: grokReasoningEffortMenusFromSessionSetup(
+              started.sessionSetupResult,
+            ),
             stopped: false,
           };
 
@@ -949,13 +974,28 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               const requestedTurnModelId = turnModelSelection?.model
                 ? resolveGrokAcpBaseModelId(turnModelSelection.model)
                 : undefined;
-              const currentModelId = yield* applyGrokAcpModelSelection({
+              const advertisedTurnEfforts =
+                (requestedTurnModelId
+                  ? ctx.reasoningEffortMenus.get(requestedTurnModelId)
+                  : undefined) ??
+                (ctx.currentModelId
+                  ? ctx.reasoningEffortMenus.get(ctx.currentModelId)
+                  : undefined) ??
+                [];
+              const turnSelection = yield* applyGrokAcpModelSelection({
                 runtime: ctx.acp,
                 currentModelId: ctx.currentModelId,
                 requestedModelId: requestedTurnModelId,
+                currentReasoningEffort: ctx.currentReasoningEffort,
+                requestedReasoningEffort: requestedGrokReasoningEffort(
+                  turnModelSelection,
+                  advertisedTurnEfforts,
+                ),
                 mapError: (cause) =>
                   mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", cause),
               });
+              const currentModelId = turnSelection.modelId;
+              ctx.currentReasoningEffort = turnSelection.reasoningEffort;
 
               const text = input.input?.trim();
               const imagePromptParts = yield* Effect.forEach(
