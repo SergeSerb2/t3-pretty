@@ -746,6 +746,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetUsageSummary,
       staleTimeMs: 60_000,
     }),
+    storageInventory: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:storage-inventory",
+      tag: WS_METHODS.storageGetInventory,
+      staleTimeMs: 60_000,
+    }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:welcome",
@@ -798,6 +803,14 @@ export function createServerEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "singleFlight",
         key: ({ environmentId }) => environmentId,
+      },
+    }),
+    removeOrphan: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:remove-orphan",
+      tag: WS_METHODS.storageRemoveOrphan,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => `${environmentId}:${input.path}`,
       },
     }),
   };

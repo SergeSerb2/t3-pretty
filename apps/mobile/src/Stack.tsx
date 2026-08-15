@@ -58,6 +58,7 @@ import { NewTaskFlowProvider } from "./features/threads/new-task-flow-provider";
 import { NewTaskRouteScreen } from "./features/threads/NewTaskRouteScreen";
 import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppearanceRouteScreen";
 import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsClientStorageRouteScreen";
+import { SettingsEnvironmentStorageRouteScreen } from "./features/settings/SettingsEnvironmentStorageRouteScreen";
 import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteScreen";
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
@@ -233,6 +234,13 @@ const SettingsContentStack = createNativeStackNavigator({
       linking: "client-storage",
       options: {
         title: "Client Storage",
+      },
+    }),
+    SettingsEnvironmentStorage: createNativeStackScreen({
+      screen: SettingsEnvironmentStorageRouteScreen,
+      linking: "environment-storage",
+      options: {
+        title: "Environment Storage",
       },
     }),
     SettingsUsage: createNativeStackScreen({

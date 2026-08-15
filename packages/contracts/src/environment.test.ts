@@ -52,4 +52,17 @@ describe("ExecutionEnvironmentDescriptor", () => {
       }).capabilities.providerHandoff,
     ).toBe(true);
   });
+
+  it("treats a missing storage-inventory capability as unsupported under version skew", () => {
+    expect(decodeDescriptor(descriptor).capabilities.storageInventory).toBeUndefined();
+  });
+
+  it("preserves an advertised storage-inventory capability", () => {
+    expect(
+      decodeDescriptor({
+        ...descriptor,
+        capabilities: { ...descriptor.capabilities, storageInventory: true },
+      }).capabilities.storageInventory,
+    ).toBe(true);
+  });
 });

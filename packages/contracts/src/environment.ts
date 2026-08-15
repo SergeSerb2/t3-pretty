@@ -80,6 +80,9 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server can start a fresh provider session and replay bounded thread
       context when a started thread switches to an incompatible provider. */
   providerHandoff: Schema.optionalKey(Schema.Boolean),
+  /** Server exposes storage.getInventory / storage.removeOrphan for managed
+      worktrees. Absent on older servers, so clients must not probe them. */
+  storageInventory: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */

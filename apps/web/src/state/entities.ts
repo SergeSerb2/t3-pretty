@@ -268,6 +268,15 @@ export function readEnvironmentSupportsPinReorder(environmentId: EnvironmentId):
   );
 }
 
+/** Whether the environment's server exposes storage inventory for managed
+    worktrees. Absent on older servers, so clients must not probe them. */
+export function readEnvironmentSupportsStorageInventory(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .storageInventory === true
+  );
+}
+
 /** Whether the environment's server syncs per-thread World Scenery
     assignments (thread.scenery.assign). False on older servers, where
     assignments stay device-local. */

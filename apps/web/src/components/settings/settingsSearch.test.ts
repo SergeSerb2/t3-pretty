@@ -73,6 +73,10 @@ describe("searchSettings", () => {
   it("serves anchor props to panels from the catalog", () => {
     expect(searchableSetting("word-wrap")).toEqual({ id: "word-wrap", title: "Word wrap" });
     expect(searchableSetting("archive")).toEqual({ id: "archive", title: "Archived threads" });
+    expect(searchableSetting("storage-disk-use")).toEqual({
+      id: "storage-disk-use",
+      title: "Disk use",
+    });
   });
 
   it("routes appearance settings to their current section", () => {
@@ -95,6 +99,17 @@ describe("searchSettings", () => {
     expect(searchSettings("surge code account")[0]).toMatchObject({
       id: "surge-connect-account",
       to: "/settings/connections",
+    });
+  });
+
+  it("routes storage searches to Storage", () => {
+    expect(searchSettings("disk use")[0]).toMatchObject({
+      id: "storage-disk-use",
+      to: "/settings/storage",
+    });
+    expect(searchSettings("active worktrees")[0]).toMatchObject({
+      id: "storage-active-worktrees",
+      to: "/settings/storage",
     });
   });
 });

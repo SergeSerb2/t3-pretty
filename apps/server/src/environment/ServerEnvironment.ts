@@ -156,6 +156,7 @@ export const make = Effect.gen(function* () {
       threadTitleRegeneration: true,
       canvas: true,
       providerHandoff: true,
+      storageInventory: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" ? { serverSelfUpdateProgress: true } : {}),
     },
