@@ -45,6 +45,14 @@ jobs:
         run: |
           set -euo pipefail
           git remote add upstream https://github.com/pingdotgg/t3code.git
+          # The checkout is a blob:none partial clone, and some blobs the
+          # merge needs (e.g. .repos/ subtrees bumped by a nightly) exist
+          # only in the upstream repo; the fork promisor answers "not our
+          # ref" for those and the merge dies before it starts. Registering
+          # upstream as a second promisor remote lets git backfill missing
+          # objects from the remote that actually has them.
+          git config remote.upstream.promisor true
+          git config remote.upstream.partialclonefilter blob:none
           latest_tag="$({
             git ls-remote --tags --refs upstream 'refs/tags/v*-nightly.*' |
               awk '{sub("refs/tags/", "", $2); print $2}' |
