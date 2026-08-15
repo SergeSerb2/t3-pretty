@@ -74,6 +74,8 @@ export function buildProjectThreadStartTurnInput(spec: ProjectThreadStartTurnSpe
         interactionMode: spec.interactionMode,
         branch: spec.branch,
         worktreePath: isWorktree ? null : spec.worktreePath,
+        // RPC encode requires the key; mobile has no per-thread picker yet.
+        enabledSkillIds: [],
         createdAt: spec.createdAt,
       },
       ...(isWorktree

@@ -24,6 +24,7 @@ import {
   ThreadCreatedPayload,
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
+  ClientOrchestrationCommand,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
@@ -289,9 +290,52 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.bootstrap?.createThread?.projectId, "project-1");
+    assert.deepStrictEqual(parsed.bootstrap?.createThread?.enabledSkillIds, []);
     assert.strictEqual(parsed.bootstrap?.prepareWorktree?.baseBranch, "main");
     assert.strictEqual(parsed.bootstrap?.prepareWorktree?.startFromOrigin, true);
     assert.strictEqual(parsed.bootstrap?.runSetupScript, true);
+  }),
+);
+
+it.effect("encodes client thread.turn.start bootstrap.createThread enabledSkillIds", () =>
+  Effect.gen(function* () {
+    const encodeClientCommand = Schema.encodeUnknownEffect(ClientOrchestrationCommand);
+    const encoded = yield* encodeClientCommand({
+      type: "thread.turn.start",
+      commandId: "cmd-turn-bootstrap-encode",
+      threadId: "thread-1",
+      message: {
+        messageId: "msg-bootstrap-encode",
+        role: "user",
+        text: "hello",
+        attachments: [],
+      },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      bootstrap: {
+        createThread: {
+          projectId: "project-1",
+          title: "Bootstrap thread",
+          modelSelection: {
+            instanceId: "codex",
+            model: "gpt-5.4",
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          enabledSkillIds: [],
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.deepStrictEqual(
+      encoded.type === "thread.turn.start"
+        ? encoded.bootstrap?.createThread?.enabledSkillIds
+        : undefined,
+      [],
+    );
   }),
 );
 

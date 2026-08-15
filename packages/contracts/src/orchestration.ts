@@ -727,8 +727,10 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  // Per-thread skill picks at creation; defaults to none so older clients
-  // stay valid. Global settings-enabled skills union on top at turn start.
+  // Per-thread skill picks at creation; decode defaults to none so older
+  // clients stay valid. RPC encode requires the key — callers send `[]`
+  // when there are no picks. Global settings-enabled skills union on top
+  // at turn start.
   enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   createdAt: IsoDateTime,
 });
@@ -886,7 +888,9 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  // Per-thread skill picks chosen in the draft composer; defaults to none.
+  // Per-thread skill picks chosen in the draft composer. Decode defaults
+  // to none so older clients stay valid. RPC encode requires the key —
+  // callers send `[]` when there are no picks.
   enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   createdAt: IsoDateTime,
 });

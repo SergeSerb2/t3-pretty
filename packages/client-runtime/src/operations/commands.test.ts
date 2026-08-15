@@ -1,6 +1,7 @@
 import {
   CommandId,
   EnvironmentId,
+  MessageId,
   ORCHESTRATION_WS_METHODS,
   ProjectId,
   ProviderInstanceId,
@@ -28,6 +29,7 @@ import {
   createThread,
   setThreadSkills,
   settleThread,
+  startThreadTurn,
   stopThreadSession,
   unsettleThread,
 } from "./commands.ts";
@@ -198,7 +200,7 @@ describe("environment commands", () => {
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
   );
 
-  it.effect("omits enabledSkillIds from thread.create unless provided", () =>
+  it.effect("defaults omitted enabledSkillIds to [] on thread.create", () =>
     Effect.gen(function* () {
       const dispatched: ClientOrchestrationCommand[] = [];
       const supervisor = yield* makeSupervisor(dispatched);
@@ -236,6 +238,7 @@ describe("environment commands", () => {
           branch: null,
           worktreePath: null,
           createdAt: "2026-06-06T00:03:00.000Z",
+          enabledSkillIds: [],
         },
         {
           type: "thread.create",
@@ -248,11 +251,74 @@ describe("environment commands", () => {
           interactionMode: "default",
           branch: null,
           worktreePath: null,
-          enabledSkillIds: ["mattpocock/skills:skills/engineering/tdd"],
           createdAt: "2026-06-06T00:03:00.000Z",
+          enabledSkillIds: ["mattpocock/skills:skills/engineering/tdd"],
         },
       ]);
-      expect(Object.keys(dispatched[0] ?? {})).not.toContain("enabledSkillIds");
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect(
+    "defaults omitted bootstrap.createThread.enabledSkillIds to [] on thread.turn.start",
+    () =>
+      Effect.gen(function* () {
+        const dispatched: ClientOrchestrationCommand[] = [];
+        const supervisor = yield* makeSupervisor(dispatched);
+
+        const createThreadBootstrap = {
+          projectId: ProjectId.make("project-1"),
+          title: "Thread",
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+          runtimeMode: "full-access" as const,
+          interactionMode: "default" as const,
+          branch: null,
+          worktreePath: null,
+          createdAt: "2026-06-06T00:04:00.000Z",
+        };
+        yield* startThreadTurn({
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: MessageId.make("message-1"),
+            role: "user",
+            text: "hello",
+            attachments: [],
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          bootstrap: { createThread: createThreadBootstrap },
+          createdAt: "2026-06-06T00:04:00.000Z",
+        }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+        yield* startThreadTurn({
+          threadId: ThreadId.make("thread-2"),
+          message: {
+            messageId: MessageId.make("message-2"),
+            role: "user",
+            text: "hello",
+            attachments: [],
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          bootstrap: {
+            createThread: {
+              ...createThreadBootstrap,
+              enabledSkillIds: ["mattpocock/skills:skills/engineering/tdd"],
+            },
+          },
+          createdAt: "2026-06-06T00:04:00.000Z",
+        }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+        expect(dispatched[0]).toMatchObject({
+          type: "thread.turn.start",
+          bootstrap: { createThread: { enabledSkillIds: [] } },
+        });
+        expect(dispatched[1]).toMatchObject({
+          type: "thread.turn.start",
+          bootstrap: {
+            createThread: {
+              enabledSkillIds: ["mattpocock/skills:skills/engineering/tdd"],
+            },
+          },
+        });
+      }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
   );
 });

@@ -33,10 +33,10 @@ type CommandInput<T extends CommandType> = Omit<
 export type CreateProjectInput = CommandInput<"project.create">;
 export type UpdateProjectInput = CommandInput<"project.meta.update">;
 export type DeleteProjectInput = CommandInput<"project.delete">;
-// Per-thread skill picks are optional on the creation payloads: when the
-// caller has none, the key stays out of the dispatched command entirely so
-// pre-skills servers see the same payload as before (the schema defaults it
-// to []).
+// Per-thread skill picks are optional on the creation payloads: callers
+// may omit them, and dispatch fills `[]`. RPC encode requires the key
+// (`withDecodingDefault` only applies on decode), so we never leave it
+// off the wire.
 export type CreateThreadInput = Omit<CommandInput<"thread.create">, "enabledSkillIds"> & {
   readonly enabledSkillIds?: ReadonlyArray<SkillId>;
 };
@@ -61,8 +61,8 @@ type ThreadTurnStartBootstrapCreateThreadInput = Omit<
 > & {
   readonly enabledSkillIds?: ReadonlyArray<SkillId>;
 };
-// Same optional skill passthrough as CreateThreadInput, one level down inside
-// the turn-start bootstrap.
+// Same optional skill passthrough as CreateThreadInput, one level down
+// inside the turn-start bootstrap. Dispatch fills `[]` when omitted.
 export type StartThreadTurnInput = Omit<CommandInput<"thread.turn.start">, "bootstrap"> & {
   readonly bootstrap?:
     | (Omit<ThreadTurnStartBootstrap, "createThread"> & {
@@ -110,6 +110,30 @@ function dispatch(command: ClientOrchestrationCommand) {
   return request(ORCHESTRATION_WS_METHODS.dispatchCommand, command);
 }
 
+const EMPTY_ENABLED_SKILL_IDS: ReadonlyArray<SkillId> = [];
+
+function enabledSkillIdsOrEmpty(
+  enabledSkillIds: ReadonlyArray<SkillId> | undefined,
+): ReadonlyArray<SkillId> {
+  return enabledSkillIds ?? EMPTY_ENABLED_SKILL_IDS;
+}
+
+function withDefaultBootstrapCreateThreadSkillIds(
+  bootstrap: NonNullable<StartThreadTurnInput["bootstrap"]>,
+): ThreadTurnStartBootstrap {
+  const createThread = bootstrap.createThread;
+  if (createThread === undefined) {
+    return bootstrap as ThreadTurnStartBootstrap;
+  }
+  return {
+    ...bootstrap,
+    createThread: {
+      ...createThread,
+      enabledSkillIds: enabledSkillIdsOrEmpty(createThread.enabledSkillIds),
+    },
+  };
+}
+
 export const createProject: (input: CreateProjectInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.createProject",
 )(function* (input) {
@@ -151,10 +175,8 @@ export const createThread: (input: CreateThreadInput) => CommandEffect = Effect.
     type: "thread.create",
     commandId: metadata.commandId,
     createdAt: metadata.createdAt,
-    // Optional in the input but required on the command schema's Type side;
-    // the spread leaves the key out when unset and the server decodes the
-    // default ([]).
-  } as CommandOf<"thread.create">);
+    enabledSkillIds: enabledSkillIdsOrEmpty(input.enabledSkillIds),
+  });
 });
 
 export const deleteThread: (input: DeleteThreadInput) => CommandEffect = Effect.fn(
@@ -316,14 +338,16 @@ export const startThreadTurn: (input: StartThreadTurnInput) => CommandEffect = E
   "EnvironmentCommands.startThreadTurn",
 )(function* (input) {
   const metadata = yield* timestampedCommandMetadata(input);
+  const { bootstrap, ...rest } = input;
   return yield* dispatch({
-    ...input,
+    ...rest,
     type: "thread.turn.start",
     commandId: metadata.commandId,
     createdAt: metadata.createdAt,
-    // Same cast as createThread: bootstrap.createThread.enabledSkillIds is
-    // optional in the input, required on the command schema's Type side.
-  } as CommandOf<"thread.turn.start">);
+    ...(bootstrap === undefined
+      ? {}
+      : { bootstrap: withDefaultBootstrapCreateThreadSkillIds(bootstrap) }),
+  });
 });
 
 export const interruptThreadTurn: (input: InterruptThreadTurnInput) => CommandEffect = Effect.fn(
