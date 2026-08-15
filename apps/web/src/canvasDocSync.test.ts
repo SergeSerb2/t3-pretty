@@ -12,11 +12,13 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   applyOps,
   bringToFront,
+  canvasImageAttachmentResources,
   childrenOf,
   contentBounds,
   descendantIds,
   getNode,
   invertOps,
+  isPendingImageNode,
   pruneDescendantIds,
   sendToBack,
   worldRectOf,
@@ -149,6 +151,12 @@ describe("applyOps", () => {
       height: 30,
       attachmentId: "",
     });
+    expect(isPendingImageNode(after.nodes[0]!)).toBe(true);
+    expect(
+      canvasImageAttachmentResources(
+        after.nodes.filter((node): node is CanvasImageNode => node.type === "image"),
+      ),
+    ).toEqual([]);
     expect(
       applyOps(after, [
         {
@@ -430,5 +438,17 @@ describe("pruneDescendantIds", () => {
     const document = doc(note("a", 0, 0, "a"));
     expect(pruneDescendantIds(document, ["a", "a", "missing"])).toEqual(["a"]);
     expect(pruneDescendantIds(document, [])).toEqual([]);
+  });
+});
+
+describe("canvasImageAttachmentResources", () => {
+  it("omits pending captures whose attachmentId is still the empty sentinel", () => {
+    const pending: CanvasImageNode = { ...image("pending", 0, 0, 10, 10), attachmentId: "" };
+    const ready = image("ready", 0, 0, 10, 10);
+    expect(isPendingImageNode(pending)).toBe(true);
+    expect(isPendingImageNode(ready)).toBe(false);
+    expect(canvasImageAttachmentResources([pending, ready])).toEqual([
+      { _tag: "attachment", attachmentId: "att-1" },
+    ]);
   });
 });

@@ -49,26 +49,51 @@ export function useAssetUrl(environmentId: EnvironmentId, resource: AssetResourc
   return result.url;
 }
 
+/**
+ * Resources the collection atom can key. Empty attachment ids are the canvas
+ * pending-image sentinel and fail `AssetResource` decode, which throws
+ * `InvalidAssetCollectionKeyError` during render.
+ */
+export function isQueryableAssetResource(resource: AssetResource): boolean {
+  return resource._tag !== "attachment" || resource.attachmentId.trim().length > 0;
+}
+
+/**
+ * Re-aligns query results (from the filtered, queryable subset) back onto the
+ * original resource list. Unqueryable slots are `null`.
+ */
+export function alignQueryableAssetUrls<T>(
+  resources: ReadonlyArray<AssetResource>,
+  queryableResults: ReadonlyArray<T | null>,
+): Array<T | null> {
+  let index = 0;
+  return resources.map((resource) => {
+    if (!isQueryableAssetResource(resource)) return null;
+    return queryableResults[index++] ?? null;
+  });
+}
+
 export function useAssetUrls(
   environmentId: EnvironmentId,
   resources: ReadonlyArray<AssetResource>,
 ): ReadonlyArray<string | null> {
   const preparedConnection = usePreparedConnection(environmentId);
+  const queryableResources = resources.filter(isQueryableAssetResource);
   const results = useAtomValue(
     assetEnvironment.createUrls({
       environmentId,
-      resources,
+      resources: queryableResources,
     }),
   );
-  return useMemo(
-    () =>
-      preparedConnection._tag === "None"
-        ? resources.map(() => null)
-        : results.map((result) =>
-            AsyncResult.isSuccess(result)
-              ? resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl)
-              : null,
-          ),
-    [preparedConnection, resources, results],
-  );
+  return useMemo(() => {
+    if (preparedConnection._tag === "None") {
+      return resources.map(() => null);
+    }
+    const queryableUrls = results.map((result) =>
+      AsyncResult.isSuccess(result)
+        ? resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl)
+        : null,
+    );
+    return alignQueryableAssetUrls(resources, queryableUrls);
+  }, [preparedConnection, resources, results]);
 }
