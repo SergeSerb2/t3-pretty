@@ -9,6 +9,7 @@ import {
   applyResolutionEdits,
   buildConflictPrompt,
   formatSyncReport,
+  isBinaryAssetConflict,
   isGeneratedLockfile,
   prepareConflictPrompt,
   readCachedResolution,
@@ -587,6 +588,40 @@ ${Array.from({ length: 30 }, (_, index) => `filler ${index}`).join("\n")}
         `conflict ${conflict.index} context is not a byte-exact slice of the file`,
       );
     }
+  });
+
+  it("resolves binary asset conflicts deterministically instead of asking the model", () => {
+    const temporaryDirectory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-pretty-binary-"),
+    );
+    try {
+      const binaryPath = NodePath.join(temporaryDirectory, "icon.png");
+      const binaryContent = Buffer.alloc(2048);
+      binaryContent.write("PNG");
+      NodeFS.writeFileSync(binaryPath, binaryContent);
+      assert.isTrue(isBinaryAssetConflict(binaryPath));
+
+      const textPath = NodePath.join(temporaryDirectory, "component.tsx");
+      NodeFS.writeFileSync(textPath, "export const value = 'hello';\n");
+      assert.isFalse(isBinaryAssetConflict(textPath));
+
+      const textWithNulPath = NodePath.join(temporaryDirectory, "dedup.tsx");
+      NodeFS.writeFileSync(
+        textWithNulPath,
+        `const key = \`mime\0size\0name\`;\n${"// padding\n".repeat(400)}`,
+      );
+      assert.isFalse(isBinaryAssetConflict(textWithNulPath));
+
+      assert.isFalse(isBinaryAssetConflict(NodePath.join(temporaryDirectory, "missing.tsx")));
+    } finally {
+      NodeFS.rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+
+    // The fork's branded assets are authoritative: keep ours, record the
+    // omission in the sync report, never spend a model call.
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+    assert.include(resolver, 'git(["checkout", "--ours", "--", path])');
+    assert.include(resolver, "binary conflicts are never model input");
   });
 
   it("disambiguates a repeated old_text by conflict proximity", () => {

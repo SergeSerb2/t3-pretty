@@ -549,6 +549,76 @@ function listProtectedWorkflowPaths(upstreamTag, previousUpstreamTag) {
     .filter(Boolean);
 }
 
+function unmergedStages(path) {
+  return new Set(
+    git(["ls-files", "-u", "--", path])
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => Number(line.split("\t")[0].split(" ")[2])),
+  );
+}
+
+// Binary conflicts are never model input: there is no text to compose, and
+// the fork's branded assets (icons, images) are authoritative. A nightly that
+// deletes or rewrites them upstream must not strip T3 Pretty branding, so the
+// fork side wins deterministically and the report records the omission.
+export function isBinaryAssetConflict(path) {
+  let sample;
+  try {
+    const fd = NodeFS.openSync(path, "r");
+    try {
+      const buffer = Buffer.alloc(65_536);
+      const bytesRead = NodeFS.readSync(fd, buffer, 0, buffer.length, 0);
+      sample = buffer.subarray(0, bytesRead);
+    } finally {
+      NodeFS.closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+  if (sample.length === 0) return false;
+  let nulCount = 0;
+  for (const byte of sample) {
+    if (byte === 0) nulCount += 1;
+  }
+  return nulCount > 4 && nulCount * 256 > sample.length;
+}
+
+function resolveBinaryConflict(path) {
+  const stages = unmergedStages(path);
+  const hasOurs = stages.has(2);
+  const hasTheirs = stages.has(3);
+  if (hasOurs) {
+    git(["checkout", "--ours", "--", path]);
+    git(["add", "--", path]);
+  } else {
+    git(["rm", "-q", "--", path]);
+  }
+  process.stdout.write(
+    `[fork-sync] resolved binary conflict ${path} deterministically (${hasOurs ? "kept the fork copy" : "kept the fork deletion"})\n`,
+  );
+  return {
+    path,
+    deterministic: true,
+    forkChangesPreserved: [
+      hasOurs
+        ? "kept the fork-owned binary asset; binary conflicts are never model input"
+        : "kept the fork's deletion of this binary asset",
+    ],
+    upstreamChangesIntegrated: [],
+    upstreamChangesOmitted: [
+      {
+        change: hasTheirs
+          ? "the parent nightly's conflicting binary content"
+          : "the parent nightly's deletion of this binary asset",
+        reason: hasOurs
+          ? "binary content cannot be text-merged and the fork's branded assets are authoritative"
+          : "the fork removed this asset; the parent's modification cannot revive it without review",
+      },
+    ],
+  };
+}
+
 // A modify/delete conflict has no stage-2 or stage-3 entry, so `git checkout
 // --conflict=diff3` cannot rebuild it ("does not have all necessary
 // versions"). Represent it as one whole-file conflict — surviving side versus
@@ -556,12 +626,7 @@ function listProtectedWorkflowPaths(upstreamTag, previousUpstreamTag) {
 // under the parent first-party replacement rule. An empty resolved file from
 // this shape means "follow the deletion".
 function conflictSourceForPath(path) {
-  const stages = new Set(
-    git(["ls-files", "-u", "--", path])
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => Number(line.split("\t")[0].split(" ")[2])),
-  );
+  const stages = unmergedStages(path);
   const hasOurs = stages.has(2);
   const hasTheirs = stages.has(3);
   if (hasOurs && hasTheirs) {
@@ -796,6 +861,12 @@ export function applyResolutionEdits({ path, source, conflicts, resolution }) {
 }
 
 async function resolveConflict(path, token) {
+  // Binary assets (icons, images) cannot be text-merged and are never model
+  // input: the fork's branded copy is authoritative.
+  if (isBinaryAssetConflict(path)) {
+    return resolveBinaryConflict(path);
+  }
+
   const { conflictedSource, deleteConflict } = conflictSourceForPath(path);
   // A parent deletion is judged against where the behavior went upstream;
   // attach that evidence before the prompt is built.
