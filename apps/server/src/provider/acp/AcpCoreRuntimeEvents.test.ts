@@ -157,6 +157,31 @@ describe("AcpCoreRuntimeEvents", () => {
     });
 
     expect(
+      makeAcpToolCallEvent({
+        stamp,
+        provider: ProviderDriverKind.make("cursor"),
+        threadId: "thread-1" as never,
+        turnId,
+        toolCall: {
+          toolCallId: "tool-skill-1",
+          kind: "other",
+          status: "completed",
+          title: "Skill: grill-me",
+          detail: "Skill: grill-me",
+          data: { rawInput: { skill: "grill-me" } },
+        },
+        rawPayload: { sessionId: "session-1" },
+      }),
+    ).toMatchObject({
+      type: "item.completed",
+      payload: {
+        itemType: "skill_load",
+        status: "completed",
+        title: "Skill: grill-me",
+      },
+    });
+
+    expect(
       makeAcpContentDeltaEvent({
         stamp,
         provider: ProviderDriverKind.make("cursor"),

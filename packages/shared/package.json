@@ -234,6 +234,10 @@
     "./skillFrontmatter": {
       "types": "./src/skillFrontmatter.ts",
       "import": "./src/skillFrontmatter.ts"
+    },
+    "./skillTool": {
+      "types": "./src/skillTool.ts",
+      "import": "./src/skillTool.ts"
     }
   },
   "scripts": {

@@ -32,6 +32,10 @@ export function sanitizeSkillDirectoryName(name: string): string {
 export interface SkillMaterializeResult {
   readonly written: ReadonlyArray<string>;
   readonly removed: ReadonlyArray<string>;
+  readonly loaded: ReadonlyArray<{
+    readonly id: SkillId;
+    readonly name: string;
+  }>;
 }
 
 export class SkillMaterializer extends Context.Service<
@@ -66,6 +70,7 @@ const make = Effect.gen(function* () {
     // invalid ids are skipped so one bad entry cannot block the rest.
     const desired: Array<{
       readonly id: SkillId;
+      readonly name: string;
       readonly dirName: string;
       readonly storeDir: string;
     }> = [];
@@ -96,11 +101,12 @@ const make = Effect.gen(function* () {
         continue;
       }
       seenDirNames.add(dirName);
-      desired.push({ id: skillId, dirName, storeDir });
+      desired.push({ id: skillId, name: skill.name, dirName, storeDir });
     }
 
     const written: Array<string> = [];
     const removed: Array<string> = [];
+    const loadedNames = new Map<SkillId, string>();
     const roots = [
       path.join(input.cwd, ".claude", "skills"),
       path.join(input.cwd, ".agents", "skills"),
@@ -183,6 +189,7 @@ const make = Effect.gen(function* () {
               skill.id,
             );
             written.push(target);
+            loadedNames.set(skill.id, skill.name);
           }).pipe(
             Effect.catch((cause) =>
               Effect.logWarning("Failed to materialize a skill", {
@@ -196,7 +203,13 @@ const make = Effect.gen(function* () {
       });
     }
 
-    return { written, removed } satisfies SkillMaterializeResult;
+    return {
+      written,
+      removed,
+      loaded: desired
+        .filter((skill) => loadedNames.has(skill.id))
+        .map((skill) => ({ id: skill.id, name: skill.name })),
+    } satisfies SkillMaterializeResult;
   });
 
   return SkillMaterializer.of({ materialize });

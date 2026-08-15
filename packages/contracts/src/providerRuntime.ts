@@ -109,6 +109,7 @@ export const TOOL_LIFECYCLE_ITEM_TYPES = [
   "collab_agent_tool_call",
   "web_search",
   "image_view",
+  "skill_load",
 ] as const;
 
 export const ToolLifecycleItemType = Schema.Literals(TOOL_LIFECYCLE_ITEM_TYPES);

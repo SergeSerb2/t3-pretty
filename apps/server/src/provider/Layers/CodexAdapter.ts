@@ -231,6 +231,7 @@ function toCanonicalItemType(raw: string | undefined | null): CanonicalItemType 
   if (type.includes("collab")) return "collab_agent_tool_call";
   if (type.includes("web search")) return "web_search";
   if (type.includes("image")) return "image_view";
+  if (type.includes("skill")) return "skill_load";
   if (type.includes("review entered")) return "review_entered";
   if (type.includes("review exited")) return "review_exited";
   if (type.includes("compact")) return "context_compaction";
@@ -263,6 +264,8 @@ function itemTitle(itemType: CanonicalItemType, item?: CodexLifecycleItem): stri
       return "Web search";
     case "image_view":
       return "Image view";
+    case "skill_load":
+      return "Skill";
     case "error":
       return "Error";
     default:

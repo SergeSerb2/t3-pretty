@@ -618,6 +618,51 @@ describe("buildThreadFeed", () => {
     expect(group.activities[0]?.getFullDetail()).toContain("repository.search");
   });
 
+  it("renders skill-loaded activities as package tool rows", () => {
+    const turnId = TurnId.make("turn-skill");
+    const thread = makeThread({
+      id: ThreadId.make("thread-skill-loaded"),
+      projectId: ProjectId.make("project-1"),
+      title: "Skill loaded",
+      latestTurn: {
+        turnId,
+        state: "completed",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt: "2026-04-01T00:00:01.000Z",
+        completedAt: "2026-04-01T00:00:03.000Z",
+        assistantMessageId: null,
+      },
+      activities: [
+        makeActivity({
+          id: EventId.make("skill-loaded"),
+          kind: "skill.loaded",
+          tone: "tool",
+          summary: "Skill",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId,
+          payload: {
+            title: "Skill",
+            itemType: "skill_load",
+            detail: "grill-me",
+            status: "completed",
+            skillName: "grill-me",
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+
+    expect(group.activities[0]?.icon).toBe("package");
+    expect(group.activities[0]?.summary).toBe("Skill");
+    expect(group.activities[0]?.detail).toBe("grill-me");
+    expect(group.activities[0]?.status).toBe("success");
+  });
+
   it("defers large tool output expansion until a work row is opened or copied", () => {
     let serializedToolOutputs = 0;
     const activities = Array.from({ length: 5_000 }, (_, index) =>

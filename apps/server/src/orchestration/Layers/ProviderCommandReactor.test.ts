@@ -321,7 +321,14 @@ describe("ProviderCommandReactor", () => {
     const materializeSkills = vi.fn(
       (materializeInput: { readonly cwd: string; readonly skillIds: ReadonlyArray<SkillId> }) =>
         input?.materializeSkillsEffect?.(materializeInput) ??
-        Effect.succeed({ written: [], removed: [] } satisfies SkillMaterializeResult),
+        Effect.succeed({
+          written: [],
+          removed: [],
+          loaded: materializeInput.skillIds.map((id) => ({
+            id,
+            name: id.slice(Math.max(id.lastIndexOf(":") + 1, 0)) || id,
+          })),
+        } satisfies SkillMaterializeResult),
     );
     const providerSnapshots = [
       {
@@ -648,6 +655,130 @@ describe("ProviderCommandReactor", () => {
     expect(materializeOrder).toBeDefined();
     expect(startSessionOrder).toBeDefined();
     expect(materializeOrder!).toBeLessThan(startSessionOrder!);
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    const skillActivities = thread?.activities.filter(
+      (activity) => activity.kind === "skill.loaded",
+    );
+    expect(skillActivities).toHaveLength(2);
+    expect(skillActivities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tone: "tool",
+          kind: "skill.loaded",
+          summary: "Skill",
+          payload: {
+            itemType: "skill_load",
+            status: "completed",
+            title: "Skill",
+            detail: "global-skill",
+            skillId: "acme/skills:global-skill",
+            skillName: "global-skill",
+          },
+        }),
+        expect.objectContaining({
+          tone: "tool",
+          kind: "skill.loaded",
+          summary: "Skill",
+          payload: {
+            itemType: "skill_load",
+            status: "completed",
+            title: "Skill",
+            detail: "thread-skill",
+            skillId: "acme/skills:thread-skill",
+            skillName: "thread-skill",
+          },
+        }),
+      ]),
+    );
+  });
+
+  it("does not repeat skill-loaded log rows on later turns with the same skill set", async () => {
+    const harness = await createHarness({
+      globalEnabledSkillIds: ["acme/skills:global-skill"],
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-skills-first"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-skills-first"),
+          role: "user",
+          text: "hello skills",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-skills-second"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-skills-second"),
+          role: "user",
+          text: "still using skills",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:01:00.000Z",
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.activities.filter((activity) => activity.kind === "skill.loaded")).toHaveLength(
+      1,
+    );
+  });
+
+  it("records a skill-loaded log row when the user message mentions $skill", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-skill-mention"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-skill-mention"),
+          role: "user",
+          text: "$grill-me the current design",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.activities.filter((activity) => activity.kind === "skill.loaded")).toEqual([
+      expect.objectContaining({
+        summary: "Skill",
+        payload: {
+          itemType: "skill_load",
+          status: "completed",
+          title: "Skill",
+          detail: "grill-me",
+          skillName: "grill-me",
+        },
+      }),
+    ]);
   });
 
   it("starts the turn even when skill materialization fails", async () => {

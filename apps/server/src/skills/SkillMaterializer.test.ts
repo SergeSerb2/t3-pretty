@@ -90,6 +90,7 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
         );
       }
       assert.deepStrictEqual(result.removed, []);
+      assert.deepStrictEqual(result.loaded, [{ id: skillId, name: "TDD Skill" }]);
     }),
   );
 
@@ -179,6 +180,7 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
         "also user owned",
       );
       assert.include(result.written, path.join(cwd, ".agents", "skills", "tdd"));
+      assert.deepStrictEqual(result.loaded, [{ id: skillId, name: "tdd" }]);
     }),
   );
 
@@ -191,7 +193,7 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
 
       const result = yield* materializer.materialize({ cwd, skillIds: [] });
 
-      assert.deepStrictEqual(result, { written: [], removed: [] });
+      assert.deepStrictEqual(result, { written: [], removed: [], loaded: [] });
       assert.isFalse(yield* fileSystem.exists(path.join(cwd, ".claude")));
       assert.isFalse(yield* fileSystem.exists(path.join(cwd, ".agents")));
     }),
@@ -209,7 +211,7 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
         skillIds: ["octocat/materialize-missing:skills/nope"],
       });
 
-      assert.deepStrictEqual(result, { written: [], removed: [] });
+      assert.deepStrictEqual(result, { written: [], removed: [], loaded: [] });
       assert.isFalse(yield* fileSystem.exists(path.join(cwd, ".claude")));
     }),
   );

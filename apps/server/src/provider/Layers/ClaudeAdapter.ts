@@ -57,6 +57,7 @@ import {
   getProviderOptionDescriptors,
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
+import { classifySkillLoadItemType, resolveSkillToolName } from "@t3tools/shared/skillTool";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -693,6 +694,10 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
 }
 
 function classifyToolItemType(toolName: string): CanonicalItemType {
+  const skillItemType = classifySkillLoadItemType({ toolName });
+  if (skillItemType) {
+    return skillItemType;
+  }
   const normalized = toolName.toLowerCase();
   if (normalized.includes("agent")) {
     return "collab_agent_tool_call";
@@ -740,6 +745,7 @@ function isReadOnlyToolName(toolName: string): boolean {
   const normalized = toolName.toLowerCase();
   return (
     normalized === "read" ||
+    normalized === "skill" ||
     normalized.includes("read file") ||
     normalized.includes("view") ||
     normalized.includes("grep") ||
@@ -1151,10 +1157,15 @@ function summarizeToolRequest(toolName: string, input: Record<string, unknown>):
     return `${toolName}: ${command.trim().slice(0, 400)}`;
   }
 
+  const itemType = classifyToolItemType(toolName);
+  if (itemType === "skill_load") {
+    const skillName = resolveSkillToolName({ toolInput: input, title: toolName });
+    return skillName ?? toolName;
+  }
+
   // For agent/subagent tools, prefer the human-readable description or prompt
   // over raw JSON. The structured subagent_type is carried separately on the
   // task.* payloads (role) — the label is display-only.
-  const itemType = classifyToolItemType(toolName);
   if (itemType === "collab_agent_tool_call") {
     const description =
       typeof input.description === "string" ? input.description.trim() : undefined;
@@ -1186,6 +1197,8 @@ function titleForTool(itemType: CanonicalItemType): string {
       return "Web search";
     case "image_view":
       return "Image view";
+    case "skill_load":
+      return "Skill";
     case "dynamic_tool_call":
       return "Tool call";
     default:

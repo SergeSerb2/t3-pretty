@@ -5,6 +5,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { deriveToolActivityPresentation } from "@t3tools/shared/toolActivity";
+import { classifySkillLoadItemType } from "@t3tools/shared/skillTool";
 import type { RuntimeContentStreamKind, ToolLifecycleItemType } from "@t3tools/contracts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -291,6 +292,10 @@ function normalizeToolKind(kind: unknown): string | undefined {
 }
 
 function canonicalItemTypeFromAcpToolKind(kind: string | undefined): ToolLifecycleItemType {
+  const skillItemType = classifySkillLoadItemType({ kind });
+  if (skillItemType) {
+    return skillItemType;
+  }
   switch (kind) {
     case "execute":
       return "command_execution";
@@ -361,7 +366,8 @@ function makeToolCallState(
     textContent !== undefined;
   const presentation = hasPresentationSeed
     ? deriveToolActivityPresentation({
-        itemType: canonicalItemTypeFromAcpToolKind(kind),
+        itemType:
+          classifySkillLoadItemType({ kind, title }) ?? canonicalItemTypeFromAcpToolKind(kind),
         title,
         detail: fallbackDetail,
         data,
