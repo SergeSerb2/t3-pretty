@@ -1971,10 +1971,9 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
     updateRepository: Config.string("T3CODE_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
     githubRepository: Config.string("GITHUB_REPOSITORY").pipe(Config.option),
   });
-  // Fork nightlies are GitHub prereleases. electron-updater's GitHub provider
-  // 404s on /releases/latest unless that prerelease is also marked latest, and
-  // otherwise has to parse the Atom feed. A generic latest/download URL fetches
-  // nightly.yml / nightly-mac.yml directly.
+  // Fork builds publish as full GitHub releases marked latest (prereleases
+  // cannot be latest). Prefer a generic latest/download URL so electron-updater
+  // fetches nightly.yml / nightly-mac.yml without the GitHub provider or Atom feed.
   const genericFeedUrl = resolveGenericUpdateFeedUrl(
     Option.getOrUndefined(env.updateFeedUrl) ?? "",
   );

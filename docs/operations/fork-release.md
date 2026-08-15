@@ -60,9 +60,9 @@ source code on installed machines.
    builds Windows x64. Only trusted `main` commits run on these self-hosted
    machines; pull requests use GitHub-hosted runners. iOS store binaries cannot
    compile on Windows.
-9. GitHub publishes a public prerelease marked as latest, with the installers, blockmaps, and
-   both `nightly` and `latest` update manifests. Packaged fork apps use a generic
-   `electron-updater` feed at
+9. GitHub publishes a public release marked as latest (not a prerelease — drafts and
+   prereleases cannot be latest), with the installers, blockmaps, and both `nightly` and
+   `latest` update manifests. Packaged fork apps use a generic `electron-updater` feed at
    `https://github.com/SergeSerb2/t3-pretty/releases/latest/download/`, so no per-machine GitHub
    token is required and the in-app checker does not depend on GitHub's `/releases/latest` API or
    the Atom feed. Already-installed GitHub-provider builds need one manual install of a release

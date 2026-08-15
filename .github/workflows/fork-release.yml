@@ -1156,7 +1156,7 @@ jobs:
             cp "$nightly_manifest" "${nightly_manifest/nightly/latest}"
           done
 
-      - name: Publish public GitHub prerelease
+      - name: Publish public GitHub release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.FORK_RELEASE_TOKEN }}
@@ -1187,10 +1187,11 @@ jobs:
               printf '\nNo parent integration report is present for this revision.\n'
             fi
           } > "$release_notes_path"
+          # Full releases (not prereleases) so --latest can advance
+          # /releases/latest/download/ for the generic updater feed.
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$RELEASE_REF" \
             --title "$RELEASE_NAME" \
             --notes-file "$release_notes_path" \
-            --prerelease \
             --latest=true
