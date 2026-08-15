@@ -621,4 +621,37 @@ describe("createEnvironmentQueryAtomFamily", () => {
       registry.dispose();
     }),
   );
+
+  it.effect("refetches a fresh query when the atom is refreshed", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeQueryHarness(60_000);
+      const registry = AtomRegistry.make();
+      const unmount = registry.mount(harness.atom);
+
+      const first = yield* AtomRegistry.getResult(registry, harness.atom, {
+        suspendOnWaiting: true,
+      });
+      expect(first).toBeGreaterThanOrEqual(1);
+      for (let iteration = 0; iteration < 100; iteration += 1) {
+        yield* Effect.yieldNow;
+      }
+      const baseline = yield* Ref.get(harness.executions);
+
+      registry.refresh(harness.atom);
+      for (let iteration = 0; iteration < 100; iteration += 1) {
+        if ((yield* Ref.get(harness.executions)) > baseline) {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+
+      expect(yield* Ref.get(harness.executions)).toBe(baseline + 1);
+      expect(
+        yield* AtomRegistry.getResult(registry, harness.atom, { suspendOnWaiting: true }),
+      ).toBe(baseline + 1);
+
+      unmount();
+      registry.dispose();
+    }),
+  );
 });

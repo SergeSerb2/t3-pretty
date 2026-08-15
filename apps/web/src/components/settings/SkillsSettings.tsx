@@ -24,6 +24,7 @@ import type {
 } from "@t3tools/contracts";
 import {
   LaptopIcon,
+  LoaderCircleIcon,
   PackageIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -31,7 +32,7 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
@@ -54,8 +55,21 @@ import { Skeleton } from "../ui/skeleton";
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import {
+  displaySkillRows,
+  finishTombstoneExit,
+  nextSkillOrderIds,
+  pruneHiddenSkillIds,
+  retainedSkillIds,
+  SKILL_ROW_EXIT_MS,
+  type Identified,
+} from "./SkillsSettings.logic";
+import "./skillsSettings.css";
 
 const SKILL_REPO_PATTERN = /^[^\s/]+\/[^\s/]+$/;
+
+const EMPTY_INSTALLED_SKILLS: ReadonlyArray<InstalledSkill> = [];
+const EMPTY_HOST_SKILLS: ReadonlyArray<HostSkill> = [];
 
 export function SkillsSettingsPanel() {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -114,6 +128,106 @@ function SkillListSkeleton({ rows }: { rows: number }) {
   );
 }
 
+function useTombstonedSkillList<T extends Identified>(items: ReadonlyArray<T>) {
+  const [hiddenIds, setHiddenIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [exiting, setExiting] = useState<ReadonlyMap<string, T>>(() => new Map());
+  const orderIdsRef = useRef<ReadonlyArray<string>>([]);
+  const liveIds = useMemo(() => new Set(items.map((item) => item.id)), [items]);
+
+  useEffect(() => {
+    setHiddenIds((current) => pruneHiddenSkillIds(current, liveIds));
+  }, [liveIds]);
+
+  const retainedIds = useMemo(() => retainedSkillIds(items, exiting), [exiting, items]);
+  const serverIds = useMemo(() => items.map((item) => item.id), [items]);
+  const orderIds = nextSkillOrderIds(orderIdsRef.current, serverIds, retainedIds);
+  orderIdsRef.current = orderIds;
+  const rows = useMemo(
+    () => displaySkillRows(items, hiddenIds, exiting, orderIds),
+    [exiting, hiddenIds, items, orderIds],
+  );
+
+  const beginExit = useCallback((skill: T) => {
+    setHiddenIds((current) => {
+      const next = new Set(current);
+      next.add(skill.id);
+      return next;
+    });
+    setExiting((current) => {
+      const next = new Map(current);
+      next.set(skill.id, skill);
+      return next;
+    });
+  }, []);
+
+  const finishExit = useCallback((skillId: string) => {
+    setExiting((current) => finishTombstoneExit(current, skillId));
+  }, []);
+
+  return { rows, beginExit, finishExit };
+}
+
+function SkillRowShell({
+  exiting,
+  pending,
+  skillId,
+  onExited,
+  children,
+}: {
+  exiting: boolean;
+  pending: boolean;
+  skillId: string;
+  onExited: (skillId: string) => void;
+  children: ReactNode;
+}) {
+  const shellRef = useRef<HTMLDivElement>(null);
+  const exitedRef = useRef(false);
+
+  useEffect(() => {
+    exitedRef.current = false;
+  }, [skillId]);
+
+  useEffect(() => {
+    if (!exiting || exitedRef.current) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const finish = () => {
+      if (exitedRef.current) return;
+      exitedRef.current = true;
+      onExited(skillId);
+    };
+    if (reduceMotion) {
+      finish();
+      return;
+    }
+    const node = shellRef.current;
+    const timeout = window.setTimeout(finish, SKILL_ROW_EXIT_MS + 40);
+    const onEnd = (event: TransitionEvent) => {
+      if (event.target !== node) return;
+      if (event.propertyName !== "opacity" && event.propertyName !== "grid-template-rows") {
+        return;
+      }
+      window.clearTimeout(timeout);
+      finish();
+    };
+    node?.addEventListener("transitionend", onEnd);
+    return () => {
+      window.clearTimeout(timeout);
+      node?.removeEventListener("transitionend", onEnd);
+    };
+  }, [exiting, onExited, skillId]);
+
+  return (
+    <div
+      ref={shellRef}
+      className="t3-skill-row-shell"
+      data-exiting={exiting ? "true" : undefined}
+      data-pending={pending ? "true" : undefined}
+    >
+      <div className="t3-skill-row-shell-inner">{children}</div>
+    </div>
+  );
+}
+
 function InstalledSkillsSection({
   environmentId,
   query,
@@ -128,6 +242,8 @@ function InstalledSkillsSection({
   });
   const [actionError, setActionError] = useState<string | null>(null);
   const [uninstallingId, setUninstallingId] = useState<string | null>(null);
+  const installedSkills = query.data?.installedSkills ?? EMPTY_INSTALLED_SKILLS;
+  const { rows, beginExit, finishExit } = useTombstonedSkillList(installedSkills);
 
   const enabledSkillIds = settings.skills.enabledSkillIds;
   const setSkillEnabled = useCallback(
@@ -164,6 +280,7 @@ function InstalledSkillsSection({
         }
         return;
       }
+      beginExit(skill);
       // Drop the orphaned enablement so the id does not linger in settings.
       if (enabledSkillIds.includes(skill.id)) {
         updateSettings({
@@ -171,7 +288,7 @@ function InstalledSkillsSection({
         });
       }
     },
-    [enabledSkillIds, environmentId, uninstallSkill, updateSettings],
+    [beginExit, enabledSkillIds, environmentId, uninstallSkill, updateSettings],
   );
 
   return (
@@ -190,18 +307,25 @@ function InstalledSkillsSection({
         <SkillListHint tone="error">{query.error}</SkillListHint>
       ) : query.data === null ? (
         <SkillListSkeleton rows={3} />
-      ) : query.data.installedSkills.length === 0 ? (
+      ) : rows.length === 0 ? (
         <SkillListHint>No skills installed yet — find some in the marketplace below.</SkillListHint>
       ) : (
-        query.data.installedSkills.map((skill) => (
-          <InstalledSkillRow
+        rows.map(({ skill, exiting }) => (
+          <SkillRowShell
             key={skill.id}
-            skill={skill}
-            enabled={enabledSkillIds.includes(skill.id)}
+            skillId={skill.id}
+            exiting={exiting}
             pending={uninstallingId === skill.id}
-            onToggle={(enabled) => setSkillEnabled(skill.id, enabled)}
-            onUninstall={() => void handleUninstall(skill)}
-          />
+            onExited={finishExit}
+          >
+            <InstalledSkillRow
+              skill={skill}
+              enabled={enabledSkillIds.includes(skill.id)}
+              pending={uninstallingId === skill.id}
+              onToggle={(enabled) => setSkillEnabled(skill.id, enabled)}
+              onUninstall={() => void handleUninstall(skill)}
+            />
+          </SkillRowShell>
         ))
       )}
       {actionError !== null ? <SkillListHint tone="error">{actionError}</SkillListHint> : null}
@@ -223,8 +347,8 @@ function InstalledSkillRow({
   onUninstall: () => void;
 }) {
   return (
-    <div className="flex w-full items-center gap-3 rounded-xl px-3 py-3 sm:px-4">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background/60 text-foreground">
+    <div className="t3-skill-row group flex w-full items-center gap-3 rounded-xl px-3 py-3 sm:px-4 hover:bg-accent/50">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background/60 text-foreground transition-transform duration-150 group-hover:scale-105">
         <PackageIcon className="size-4.5" />
       </span>
       <div className="min-w-0 flex-1 space-y-0.5">
@@ -244,17 +368,22 @@ function InstalledSkillRow({
         <Switch
           checked={enabled}
           onCheckedChange={(checked) => onToggle(Boolean(checked))}
+          disabled={pending}
           aria-label={`Enable ${skill.name} for every thread`}
         />
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label={`Uninstall ${skill.name}`}
+          aria-label={pending ? `Uninstalling ${skill.name}` : `Uninstall ${skill.name}`}
           disabled={pending}
           onClick={onUninstall}
           className="text-muted-foreground hover:text-destructive-foreground"
         >
-          <Trash2Icon className="size-4" />
+          {pending ? (
+            <LoaderCircleIcon className="size-4 animate-spin" />
+          ) : (
+            <Trash2Icon className="size-4" />
+          )}
         </Button>
       </div>
     </div>
@@ -531,29 +660,34 @@ function HostSkillsSection({
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
 
-  const skills = query.data?.skills ?? [];
+  const skills = query.data?.skills ?? EMPTY_HOST_SKILLS;
+  const { rows, beginExit, finishExit } = useTombstonedSkillList(skills);
   const normalizedQuery = searchQuery.trim().toLowerCase();
-  const visibleSkills = useMemo(
+  const visibleRows = useMemo(
     () =>
-      skills.filter(
-        (skill) =>
-          normalizedQuery.length === 0 ||
+      rows.filter(({ skill, exiting }) => {
+        if (exiting || normalizedQuery.length === 0) return true;
+        return (
           skill.name.toLowerCase().includes(normalizedQuery) ||
           skill.origin.toLowerCase().includes(normalizedQuery) ||
           skill.displayPath.toLowerCase().includes(normalizedQuery) ||
-          (skill.description?.toLowerCase().includes(normalizedQuery) ?? false),
-      ),
-    [normalizedQuery, skills],
+          (skill.description?.toLowerCase().includes(normalizedQuery) ?? false)
+        );
+      }),
+    [normalizedQuery, rows],
   );
   const groups = useMemo(() => {
-    const byOrigin = new Map<string, Array<HostSkill>>();
-    for (const skill of visibleSkills) {
-      const group = byOrigin.get(skill.origin) ?? [];
-      group.push(skill);
-      byOrigin.set(skill.origin, group);
+    const byOrigin = new Map<string, Array<(typeof visibleRows)[number]>>();
+    for (const row of visibleRows) {
+      const group = byOrigin.get(row.skill.origin);
+      if (group === undefined) {
+        byOrigin.set(row.skill.origin, [row]);
+      } else {
+        group.push(row);
+      }
     }
     return [...byOrigin.entries()];
-  }, [visibleSkills]);
+  }, [visibleRows]);
 
   const handleUninstall = useCallback(
     async (skill: HostSkill) => {
@@ -580,9 +714,10 @@ function HostSkillsSection({
         }
         return;
       }
+      beginExit(skill);
       void refreshProviders({ environmentId, input: {} });
     },
-    [environmentId, refreshProviders, uninstallHostSkill],
+    [beginExit, environmentId, refreshProviders, uninstallHostSkill],
   );
 
   const handleToggle = useCallback(
@@ -639,7 +774,7 @@ function HostSkillsSection({
         <SkillListSkeleton rows={3} />
       ) : (
         <>
-          {skills.length > 0 ? (
+          {rows.length > 0 || skills.length > 0 ? (
             <div className="px-3 pb-2 sm:px-4">
               <Input
                 type="search"
@@ -650,27 +785,34 @@ function HostSkillsSection({
               />
             </div>
           ) : null}
-          {skills.length === 0 ? (
+          {rows.length === 0 ? (
             <SkillListHint>
               No provider CLI skills in their home folders. Marketplace installs land in T3&rsquo;s
               library above.
             </SkillListHint>
-          ) : visibleSkills.length === 0 ? (
+          ) : visibleRows.length === 0 ? (
             <SkillListHint>No skills match.</SkillListHint>
           ) : (
-            groups.map(([origin, originSkills]) => (
+            groups.map(([origin, originRows]) => (
               <div key={origin} className="space-y-1 pt-1">
                 <div className="px-3 py-1 sm:px-4">
                   <span className="truncate text-xs text-muted-foreground">{origin}</span>
                 </div>
-                {originSkills.map((skill) => (
-                  <HostSkillRow
+                {originRows.map(({ skill, exiting }) => (
+                  <SkillRowShell
                     key={skill.id}
-                    skill={skill}
+                    skillId={skill.id}
+                    exiting={exiting}
                     pending={pendingId === skill.id}
-                    onToggle={(enabled) => void handleToggle(skill, enabled)}
-                    onUninstall={() => void handleUninstall(skill)}
-                  />
+                    onExited={finishExit}
+                  >
+                    <HostSkillRow
+                      skill={skill}
+                      pending={pendingId === skill.id}
+                      onToggle={(enabled) => void handleToggle(skill, enabled)}
+                      onUninstall={() => void handleUninstall(skill)}
+                    />
+                  </SkillRowShell>
                 ))}
               </div>
             ))
@@ -694,8 +836,8 @@ function HostSkillRow({
   onUninstall: () => void;
 }) {
   return (
-    <div className="flex w-full items-center gap-3 rounded-xl px-3 py-3 sm:px-4">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background/60 text-foreground">
+    <div className="t3-skill-row group flex w-full items-center gap-3 rounded-xl px-3 py-3 sm:px-4 hover:bg-accent/50">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background/60 text-foreground transition-transform duration-150 group-hover:scale-105">
         <PackageIcon className="size-4.5" />
       </span>
       <div className="min-w-0 flex-1 space-y-0.5">
@@ -719,12 +861,16 @@ function HostSkillRow({
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label={`Remove ${skill.name}`}
+          aria-label={pending ? `Removing ${skill.name}` : `Remove ${skill.name}`}
           disabled={pending}
           onClick={onUninstall}
           className="text-muted-foreground hover:text-destructive-foreground"
         >
-          <Trash2Icon className="size-4" />
+          {pending ? (
+            <LoaderCircleIcon className="size-4 animate-spin" />
+          ) : (
+            <Trash2Icon className="size-4" />
+          )}
         </Button>
       </div>
     </div>

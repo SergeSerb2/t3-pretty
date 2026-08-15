@@ -531,6 +531,11 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
     const target = parseEnvironmentRpcKey<Input>(key);
     const idleTtlMs = options.idleTtlMs ?? 5 * 60_000;
     const staleTimeMs = options.staleTimeMs ?? 30_000;
+    // Atom.swr already skips automatic revalidation while data is fresh, but
+    // this inner read also short-circuits on reconnect (generation bump).
+    // Manual `registry.refresh` must still hit the server — otherwise a
+    // mutation's onSettled refresh is a no-op for 30s and the UI stays stale.
+    let skipStaleTime = false;
     const queryAtom = runtime
       .atom((get) => {
         const generation = Option.getOrNull(
@@ -540,13 +545,14 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
           return Effect.never;
         }
         const execute = runInEnvironment(target.environmentId, options.execute(target.input));
-        // A (re)connect bumps the generation and re-runs this read, but data
-        // still fresh within staleTime is returned untouched — value and
-        // timestamp included — instead of refetching. Atom.swr's staleTime
-        // gate only covers mount and focus revalidation, not
-        // generation-driven re-execution.
         const previous = get.self<AsyncResult.AsyncResult<A, E | ER | Error>>();
-        if (Option.isSome(previous) && isFreshSettledResult(previous.value, staleTimeMs)) {
+        const forceRefresh = skipStaleTime;
+        skipStaleTime = false;
+        if (
+          !forceRefresh &&
+          Option.isSome(previous) &&
+          isFreshSettledResult(previous.value, staleTimeMs)
+        ) {
           return previous.value as unknown as typeof execute;
         }
         return execute;
@@ -558,13 +564,30 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         }),
         Atom.setIdleTTL(idleTtlMs),
       );
-    return (
+    const labeled = (
       options.refreshIntervalMs === undefined
         ? queryAtom
         : queryAtom.pipe(Atom.withRefresh(options.refreshIntervalMs))
     ).pipe(Atom.setIdleTTL(idleTtlMs), Atom.withLabel(`${options.label}:${key}`));
+    return withForcedQueryRefresh(labeled, () => {
+      skipStaleTime = true;
+    });
   });
   return (target) => family(environmentRpcKey(target));
+}
+
+function withForcedQueryRefresh<A>(atom: Atom.Atom<A>, onRefresh: () => void): Atom.Atom<A> {
+  const previousRefresh = atom.refresh;
+  return Object.assign(atom, {
+    refresh: (refresh: <B>(next: Atom.Atom<B>) => void) => {
+      onRefresh();
+      if (previousRefresh !== undefined) {
+        previousRefresh(refresh);
+        return;
+      }
+      refresh(atom);
+    },
+  });
 }
 
 export function createEnvironmentSubscriptionAtomFamily<R, ER, Input, A, E>(
