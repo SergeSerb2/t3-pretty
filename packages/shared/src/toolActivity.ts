@@ -1,5 +1,7 @@
 import type { ToolLifecycleItemType } from "@t3tools/contracts";
 
+import { classifySkillLoadItemType, resolveSkillToolName } from "./skillTool.ts";
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -158,10 +160,19 @@ function classifyToolAction(input: {
   readonly itemType?: ToolLifecycleItemType | null | undefined;
   readonly title?: string | undefined;
   readonly data?: Record<string, unknown> | undefined;
-}): "command" | "read" | "file_change" | "search" | "other" {
+}): "command" | "read" | "file_change" | "search" | "skill" | "other" {
   const itemType = input.itemType ?? undefined;
   const kind = asTrimmedString(input.data?.kind)?.toLowerCase();
   const title = asTrimmedString(input.title)?.toLowerCase();
+  if (
+    itemType === "skill_load" ||
+    classifySkillLoadItemType({
+      ...(input.title ? { title: input.title } : {}),
+      ...(kind ? { kind } : {}),
+    }) === "skill_load"
+  ) {
+    return "skill";
+  }
   if (itemType === "command_execution" || kind === "execute" || title === "terminal") {
     return "command";
   }
@@ -245,6 +256,18 @@ export function deriveToolActivityPresentation(
     return {
       summary: "Searched files",
       ...(query ? { detail: query } : {}),
+    };
+  }
+
+  if (action === "skill") {
+    const skillName = resolveSkillToolName({
+      ...(title ? { title } : {}),
+      toolInput: data?.rawInput,
+      data,
+    });
+    return {
+      summary: "Skill",
+      ...(skillName ? { detail: skillName } : {}),
     };
   }
 

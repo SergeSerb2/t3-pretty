@@ -54,4 +54,21 @@ describe("toolActivity", () => {
       summary: "Read file",
     });
   });
+
+  it("normalizes skill loader tools to a Skill heading and skill name", () => {
+    expect(
+      deriveToolActivityPresentation({
+        itemType: "skill_load",
+        title: "Skill: grill-me",
+        detail: "Skill: grill-me",
+        data: {
+          rawInput: { skill: "grill-me" },
+        },
+        fallbackSummary: "Tool",
+      }),
+    ).toEqual({
+      summary: "Skill",
+      detail: "grill-me",
+    });
+  });
 });

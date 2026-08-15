@@ -175,6 +175,8 @@ function completedToolSummary(
       return "Viewed image";
     case "mcp_tool_call":
       return "Called integration";
+    case "skill_load":
+      return "Loaded skill";
     default:
       return activity.summary.replace(/\s+started$/i, "");
   }

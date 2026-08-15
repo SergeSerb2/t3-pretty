@@ -15,6 +15,7 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
+import { extractSkillMentions, skillLoadIdKey, skillLoadNameKey } from "@t3tools/shared/skillTool";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -47,7 +48,7 @@ import {
 } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
-import { SkillMaterializer } from "../../skills/SkillMaterializer.ts";
+import { SkillMaterializer, sanitizeSkillDirectoryName } from "../../skills/SkillMaterializer.ts";
 import {
   HANDOFF_TRANSCRIPT_MAX_CHARS,
   renderProviderHandoffPrelude,
@@ -72,6 +73,36 @@ type ProviderIntentEvent = Extract<
 function toNonEmptyProviderInput(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+function asActivityRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function collectedSkillLoadKeys(
+  activities: ReadonlyArray<{ readonly kind: string; readonly payload: unknown }>,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const activity of activities) {
+    const payload = asActivityRecord(activity.payload);
+    if (activity.kind !== "skill.loaded" && payload?.itemType !== "skill_load") {
+      continue;
+    }
+    if (typeof payload?.skillId === "string" && payload.skillId.trim().length > 0) {
+      keys.add(skillLoadIdKey(payload.skillId));
+    }
+    const nameCandidates = [payload?.detail, payload?.skillName];
+    for (const candidate of nameCandidates) {
+      if (typeof candidate !== "string" || candidate.trim().length === 0) {
+        continue;
+      }
+      keys.add(skillLoadNameKey(candidate));
+      keys.add(skillLoadNameKey(sanitizeSkillDirectoryName(candidate)));
+    }
+  }
+  return keys;
 }
 
 function mapProviderSessionStatusToOrchestrationStatus(
@@ -486,6 +517,85 @@ const make = Effect.gen(function* () {
     });
   });
 
+  const appendSkillLoadedActivities = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly createdAt: string;
+    readonly loaded: ReadonlyArray<{ readonly id: SkillId; readonly name: string }>;
+    readonly mentionedNames: ReadonlyArray<string>;
+  }) {
+    const pending: Array<{
+      readonly name: string;
+      readonly skillId?: SkillId;
+      readonly keys: ReadonlyArray<string>;
+    }> = [];
+    const seenKeys = new Set<string>();
+    const remember = (entry: {
+      readonly name: string;
+      readonly skillId?: SkillId;
+      readonly keys: ReadonlyArray<string>;
+    }) => {
+      if (entry.keys.some((key) => seenKeys.has(key))) {
+        return;
+      }
+      for (const key of entry.keys) {
+        seenKeys.add(key);
+      }
+      pending.push(entry);
+    };
+    for (const skill of input.loaded) {
+      remember({
+        name: skill.name,
+        skillId: skill.id,
+        keys: [
+          skillLoadIdKey(skill.id),
+          skillLoadNameKey(skill.name),
+          skillLoadNameKey(sanitizeSkillDirectoryName(skill.name)),
+        ],
+      });
+    }
+    for (const name of input.mentionedNames) {
+      remember({
+        name,
+        keys: [skillLoadNameKey(name), skillLoadNameKey(sanitizeSkillDirectoryName(name))],
+      });
+    }
+    if (pending.length === 0) {
+      return;
+    }
+    const thread = yield* resolveThread(input.threadId);
+    const alreadyShown = collectedSkillLoadKeys(thread?.activities ?? []);
+    for (const skill of pending) {
+      if (skill.keys.some((key) => alreadyShown.has(key))) {
+        continue;
+      }
+      for (const key of skill.keys) {
+        alreadyShown.add(key);
+      }
+      yield* orchestrationEngine.dispatch({
+        type: "thread.activity.append",
+        commandId: yield* serverCommandId("skill-loaded-activity"),
+        threadId: input.threadId,
+        activity: {
+          id: yield* serverEventId(),
+          tone: "tool",
+          kind: "skill.loaded",
+          summary: "Skill",
+          payload: {
+            itemType: "skill_load",
+            status: "completed",
+            title: "Skill",
+            detail: skill.name,
+            ...(skill.skillId !== undefined ? { skillId: skill.skillId } : {}),
+            skillName: skill.name,
+          },
+          turnId: null,
+          createdAt: input.createdAt,
+        },
+        createdAt: input.createdAt,
+      });
+    }
+  });
+
   // Skills materialize into the workspace at turn start so the provider
   // session boots with the enabled skill set already on disk. The cwd is the
   // exact one startSession receives; the enabled set is the union of the
@@ -495,41 +605,52 @@ const make = Effect.gen(function* () {
     readonly threadId: ThreadId;
     readonly threadEnabledSkillIds: ReadonlyArray<SkillId>;
     readonly cwd: string | undefined;
+    readonly createdAt: string;
+    readonly messageText?: string;
   }) {
-    if (input.cwd === undefined) {
-      return;
+    let loaded: ReadonlyArray<{ readonly id: SkillId; readonly name: string }> = [];
+    if (input.cwd !== undefined) {
+      const settings = yield* serverSettingsService.getSettings.pipe(
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) {
+            return Effect.failCause(cause);
+          }
+          return Effect.logWarning(
+            "provider command reactor failed to read skills settings; using thread skills only",
+            {
+              threadId: input.threadId,
+              cause: Cause.pretty(cause),
+            },
+          ).pipe(Effect.as(undefined));
+        }),
+      );
+      const skillIds = [
+        ...new Set<SkillId>([
+          ...(settings?.skills.enabledSkillIds ?? []),
+          ...input.threadEnabledSkillIds,
+        ]),
+      ];
+      const materializeResult = yield* skillMaterializer
+        .materialize({ cwd: input.cwd, skillIds })
+        .pipe(
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterruptsOnly(cause)) {
+              return Effect.failCause(cause);
+            }
+            return Effect.logWarning("provider command reactor failed to materialize skills", {
+              threadId: input.threadId,
+              cause: Cause.pretty(cause),
+            }).pipe(Effect.as(undefined));
+          }),
+        );
+      loaded = materializeResult?.loaded ?? [];
     }
-    const settings = yield* serverSettingsService.getSettings.pipe(
-      Effect.catchCause((cause) => {
-        if (Cause.hasInterruptsOnly(cause)) {
-          return Effect.failCause(cause);
-        }
-        return Effect.logWarning(
-          "provider command reactor failed to read skills settings; using thread skills only",
-          {
-            threadId: input.threadId,
-            cause: Cause.pretty(cause),
-          },
-        ).pipe(Effect.as(undefined));
-      }),
-    );
-    const skillIds = [
-      ...new Set<SkillId>([
-        ...(settings?.skills.enabledSkillIds ?? []),
-        ...input.threadEnabledSkillIds,
-      ]),
-    ];
-    yield* skillMaterializer.materialize({ cwd: input.cwd, skillIds }).pipe(
-      Effect.catchCause((cause) => {
-        if (Cause.hasInterruptsOnly(cause)) {
-          return Effect.failCause(cause);
-        }
-        return Effect.logWarning("provider command reactor failed to materialize skills", {
-          threadId: input.threadId,
-          cause: Cause.pretty(cause),
-        });
-      }),
-    );
+    yield* appendSkillLoadedActivities({
+      threadId: input.threadId,
+      createdAt: input.createdAt,
+      loaded,
+      mentionedNames: extractSkillMentions(input.messageText ?? ""),
+    });
   });
 
   const ensureSessionForThread = Effect.fn("ensureSessionForThread")(function* (
@@ -538,6 +659,7 @@ const make = Effect.gen(function* () {
     options?: {
       readonly modelSelection?: ModelSelection;
       readonly pendingTurnStart?: boolean;
+      readonly messageText?: string;
     },
   ) {
     const thread = yield* resolveThread(threadId);
@@ -729,6 +851,8 @@ const make = Effect.gen(function* () {
         threadId,
         threadEnabledSkillIds: thread.enabledSkillIds,
         cwd: effectiveCwd,
+        createdAt,
+        ...(options.messageText !== undefined ? { messageText: options.messageText } : {}),
       });
     }
 
@@ -888,6 +1012,7 @@ const make = Effect.gen(function* () {
     const ensuredSession = yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
       pendingTurnStart: true,
+      messageText: input.messageText,
     });
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);

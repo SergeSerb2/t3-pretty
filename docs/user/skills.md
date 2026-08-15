@@ -24,6 +24,8 @@ Skills a provider CLI installed on its own (for example in `~/.claude/skills`) s
   toggle skills for that thread. Global skills show a **Global** badge and stay on; thread picks
   stack on top of them. You can change a thread's picks any time — they apply from the next turn.
 
+When a turn starts with skills attached (from Settings, the thread picker, or a `$skill` mention in the prompt), the thread log shows a **Skill** row for each one, the same way it shows a tool call. If the agent later loads that skill itself, that shows up as another Skill row.
+
 ## What lands in your project
 
 When a turn starts, T3 Code copies the enabled skills into the thread's workspace under

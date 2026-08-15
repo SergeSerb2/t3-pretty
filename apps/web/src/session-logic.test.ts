@@ -1196,6 +1196,35 @@ describe("deriveWorkLogEntries", () => {
     expect(entry?.detail).toBeUndefined();
   });
 
+  it("renders skill.loaded activities as completed skill tool rows", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "skill-loaded",
+        kind: "skill.loaded",
+        summary: "Skill",
+        payload: {
+          itemType: "skill_load",
+          status: "completed",
+          title: "Skill",
+          detail: "grill-me",
+          skillId: "acme/skills:grill-me",
+          skillName: "grill-me",
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry).toMatchObject({
+      label: "Skill",
+      toolTitle: "Skill",
+      detail: "grill-me",
+      itemType: "skill_load",
+      tone: "tool",
+      toolLifecycleStatus: "completed",
+    });
+    expect(workEntryIndicatesToolSuccess(entry!)).toBe(true);
+  });
+
   it("uses grep raw output summaries instead of repeating the generic tool label", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

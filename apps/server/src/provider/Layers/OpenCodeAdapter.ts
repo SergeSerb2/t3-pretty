@@ -25,6 +25,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import type { OpencodeClient, Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { classifySkillLoadItemType, resolveSkillToolName } from "@t3tools/shared/skillTool";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -284,6 +285,10 @@ type EventBaseInput = {
 };
 
 function toToolLifecycleItemType(toolName: string): ToolLifecycleItemType {
+  const skillItemType = classifySkillLoadItemType({ toolName });
+  if (skillItemType) {
+    return skillItemType;
+  }
   const normalized = toolName.toLowerCase();
   if (normalized.includes("bash") || normalized.includes("command")) {
     return "command_execution";
@@ -899,9 +904,24 @@ export function makeOpenCodeAdapter(
 
           if (part.type === "tool") {
             const itemType = toToolLifecycleItemType(part.tool);
+            const skillName =
+              itemType === "skill_load"
+                ? resolveSkillToolName({
+                    title:
+                      part.state.status === "running" ? (part.state.title ?? part.tool) : part.tool,
+                    toolInput:
+                      "input" in part.state
+                        ? (part.state as { readonly input?: unknown }).input
+                        : undefined,
+                  })
+                : undefined;
             const title =
-              part.state.status === "running" ? (part.state.title ?? part.tool) : part.tool;
-            const detail = detailFromToolPart(part);
+              itemType === "skill_load"
+                ? "Skill"
+                : part.state.status === "running"
+                  ? (part.state.title ?? part.tool)
+                  : part.tool;
+            const detail = skillName ?? detailFromToolPart(part);
             const payload = {
               itemType,
               ...(part.state.status === "error"

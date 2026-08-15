@@ -59,6 +59,7 @@ import {
   HammerIcon,
   MessageCircleIcon,
   MousePointerClickIcon,
+  PackageIcon,
   PaintbrushIcon,
   MinusIcon,
   SquarePenIcon,
@@ -2043,6 +2044,7 @@ type WorkEntryIconName =
   | "globe"
   | "hammer"
   | "message-circle"
+  | "package"
   | "square-pen"
   | "terminal"
   | "wrench"
@@ -2065,6 +2067,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <HammerIcon className={className} aria-hidden />;
     case "message-circle":
       return <MessageCircleIcon className={className} aria-hidden />;
+    case "package":
+      return <PackageIcon className={className} aria-hidden />;
     case "square-pen":
       return <SquarePenIcon className={className} aria-hidden />;
     case "terminal":
@@ -2182,6 +2186,8 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   switch (workEntry.itemType) {
     case "mcp_tool_call":
       return "wrench";
+    case "skill_load":
+      return "package";
     case "dynamic_tool_call":
       return "hammer";
     case "collab_agent_tool_call":

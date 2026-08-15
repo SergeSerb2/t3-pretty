@@ -235,6 +235,10 @@ function describeTool(
       tag = "view";
       subject = fileList ?? title;
       break;
+    case "skill_load":
+      tag = "skill";
+      subject = title ?? command ?? fileList;
+      break;
     case "dynamic_tool_call":
     case "collab_agent_tool_call":
       tag = "tool";

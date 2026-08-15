@@ -49,6 +49,7 @@ export interface ThreadFeedActivity {
     | "globe"
     | "hammer"
     | "message"
+    | "package"
     | "warning"
     | "wrench"
     | "zap";
@@ -656,6 +657,7 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.itemType === "web_search") return "globe";
   if (entry.itemType === "image_view") return "eye";
   if (entry.itemType === "mcp_tool_call") return "wrench";
+  if (entry.itemType === "skill_load") return "package";
   if (entry.itemType === "dynamic_tool_call" || entry.itemType === "collab_agent_tool_call") {
     return "hammer";
   }

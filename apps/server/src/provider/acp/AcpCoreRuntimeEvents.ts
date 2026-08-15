@@ -12,6 +12,7 @@ import {
   type ToolLifecycleItemType,
   type TurnId,
 } from "@t3tools/contracts";
+import { classifySkillLoadItemType } from "@t3tools/shared/skillTool";
 
 import type { AcpPermissionRequest, AcpPlanUpdate, AcpToolCallState } from "./AcpRuntimeModel.ts";
 
@@ -46,6 +47,10 @@ function canonicalRequestTypeFromAcpKind(kind: string | "unknown"): AcpCanonical
 }
 
 function canonicalItemTypeFromAcpToolKind(kind: string | undefined): ToolLifecycleItemType {
+  const skillItemType = classifySkillLoadItemType({ kind });
+  if (skillItemType) {
+    return skillItemType;
+  }
   switch (kind) {
     case "execute":
       return "command_execution";
@@ -178,7 +183,11 @@ export function makeAcpToolCallEvent(input: {
     turnId: input.turnId,
     itemId: RuntimeItemId.make(input.toolCall.toolCallId),
     payload: {
-      itemType: canonicalItemTypeFromAcpToolKind(input.toolCall.kind),
+      itemType:
+        classifySkillLoadItemType({
+          kind: input.toolCall.kind,
+          title: input.toolCall.title,
+        }) ?? canonicalItemTypeFromAcpToolKind(input.toolCall.kind),
       ...(runtimeStatus ? { status: runtimeStatus } : {}),
       ...(input.toolCall.title ? { title: input.toolCall.title } : {}),
       ...(input.toolCall.detail ? { detail: input.toolCall.detail } : {}),
