@@ -11,6 +11,10 @@
  */
 @layer theme {
   :root {
+    @variant android {
+      --font-mono: "monospace";
+    }
+
     @variant light {
       /* Page backgrounds */
       --color-screen: #f4f6f4;
