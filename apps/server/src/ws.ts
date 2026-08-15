@@ -1962,6 +1962,14 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.skillsUninstallHost, hostSkills.uninstall(input.skillId), {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.skillsSetHostEnabled]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.skillsSetHostEnabled,
+            hostSkills.setEnabled({ skillId: input.skillId, enabled: input.enabled }),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
         [WS_METHODS.shellOpenInEditor]: (input) =>
           observeRpcEffect(WS_METHODS.shellOpenInEditor, externalLauncher.launchEditor(input), {
             "rpc.aggregate": "workspace",

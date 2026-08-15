@@ -247,6 +247,7 @@ export const WS_METHODS = {
   skillsRefreshMarketplace: "skills.refreshMarketplace",
   skillsListHost: "skills.listHost",
   skillsUninstallHost: "skills.uninstallHost",
+  skillsSetHostEnabled: "skills.setHostEnabled",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -762,6 +763,12 @@ export const WsSkillsUninstallHostRpc = Rpc.make(WS_METHODS.skillsUninstallHost,
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 
+export const WsSkillsSetHostEnabledRpc = Rpc.make(WS_METHODS.skillsSetHostEnabled, {
+  payload: Schema.Struct({ skillId: HostSkillId, enabled: Schema.Boolean }),
+  success: HostSkillsState,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
 export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   payload: LaunchEditorInput,
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
@@ -1181,6 +1188,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillsRefreshMarketplaceRpc,
   WsSkillsListHostRpc,
   WsSkillsUninstallHostRpc,
+  WsSkillsSetHostEnabledRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,
