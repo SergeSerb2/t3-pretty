@@ -13,8 +13,15 @@ source; **Add repository** accepts any GitHub `owner/repo` that contains skills.
 The **Installed** section lists everything in your library. **Uninstall** removes a skill from
 the library (and from every thread that had it on).
 
-Skills a provider CLI installed on its own (for example in `~/.claude/skills`) show up under
-**Detected on this machine**. Those stay managed by the provider — T3 Code leaves them alone.
+## Clean up provider CLI skills
+
+Claude Code, Codex, Cursor, Grok, and OpenCode also keep skills in their own home folders
+(for example `~/.claude/skills` or `~/.codex/skills`), plus a shared `~/.agents/skills`
+directory. Those show up under **On this environment**. **Remove** deletes that folder on the
+connected environment — the same list whether you are on this machine or a remote connection.
+
+Plugin, system, and project-local skills the CLIs report stay under **Also detected**. Those
+are owned by a plugin or a repo, so T3 Code leaves them alone.
 
 ## Turn skills on
 

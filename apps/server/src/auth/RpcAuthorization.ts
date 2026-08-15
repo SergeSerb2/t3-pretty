@@ -91,6 +91,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.skillsRefreshMarketplace]: AuthOrchestrationReadScope,
   [WS_METHODS.skillsInstall]: AuthOrchestrationOperateScope,
   [WS_METHODS.skillsUninstall]: AuthOrchestrationOperateScope,
+  [WS_METHODS.skillsListHost]: AuthOrchestrationReadScope,
+  [WS_METHODS.skillsUninstallHost]: AuthOrchestrationOperateScope,
   [WS_METHODS.shellOpenInEditor]: AuthOrchestrationOperateScope,
   [WS_METHODS.filesystemBrowse]: AuthOrchestrationReadScope,
   [WS_METHODS.assetsCreateUrl]: AuthOrchestrationReadScope,

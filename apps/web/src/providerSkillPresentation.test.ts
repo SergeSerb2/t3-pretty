@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   formatProviderSkillDisplayName,
   formatProviderSkillInstallSource,
+  normalizeProviderSkillPath,
 } from "./providerSkillPresentation";
 
 describe("formatProviderSkillDisplayName", () => {
@@ -53,5 +54,13 @@ describe("formatProviderSkillInstallSource", () => {
         scope: "project",
       }),
     ).toBe("Project");
+  });
+});
+
+describe("normalizeProviderSkillPath", () => {
+  it("normalizes Windows separators so host and snapshot paths can be compared", () => {
+    expect(
+      normalizeProviderSkillPath("C:\\Users\\julius\\.claude\\skills\\grill-me\\SKILL.md"),
+    ).toBe("C:/Users/julius/.claude/skills/grill-me/SKILL.md");
   });
 });

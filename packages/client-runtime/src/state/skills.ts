@@ -36,9 +36,10 @@ export function globallyEnabledSkills(
 }
 
 /**
- * Atoms for the server-managed skill registry and marketplace (see `skills.ts`
- * in `@t3tools/contracts`). Enablement lives in server settings and per-thread
- * orchestration state — this module only mirrors the store and the listings.
+ * Atoms for the server-managed skill registry, marketplace, and host-scoped
+ * provider CLI skills (see `skills.ts` in `@t3tools/contracts`). Enablement
+ * lives in server settings and per-thread orchestration state — this module
+ * mirrors the store, the listings, and the host-folder inventory.
  */
 export function createSkillAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
@@ -59,9 +60,15 @@ export function createSkillAtoms<R, E>(
     label: "environment-data:skills:marketplace-listings",
     tag: WS_METHODS.skillsListMarketplace,
   });
+  const hostSkills = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:skills:host",
+    tag: WS_METHODS.skillsListHost,
+  });
   const skillsStateAtom = (environmentId: EnvironmentId) => state({ environmentId, input: {} });
   const skillMarketplaceListingsAtom = (environmentId: EnvironmentId) =>
     marketplaceListings({ environmentId, input: {} });
+  const hostSkillsStateAtom = (environmentId: EnvironmentId) =>
+    hostSkills({ environmentId, input: {} });
   const globallyEnabledSkillsAtom = Atom.family((environmentId: EnvironmentId) =>
     Atom.make(
       (get): ReadonlyArray<InstalledSkill> =>
@@ -84,6 +91,7 @@ export function createSkillAtoms<R, E>(
   return {
     skillsStateAtom,
     skillMarketplaceListingsAtom,
+    hostSkillsStateAtom,
     globallyEnabledSkillsAtom,
     installSkill: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:skills:install",
@@ -109,6 +117,16 @@ export function createSkillAtoms<R, E>(
       onSettled: ({ environmentId }, registry) =>
         Effect.sync(() => {
           registry.refresh(skillMarketplaceListingsAtom(environmentId));
+        }),
+    }),
+    uninstallHostSkill: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:uninstall-host",
+      tag: WS_METHODS.skillsUninstallHost,
+      scheduler: storeScheduler,
+      concurrency: storeConcurrency,
+      onSettled: ({ environmentId }, registry) =>
+        Effect.sync(() => {
+          registry.refresh(hostSkillsStateAtom(environmentId));
         }),
     }),
   };
