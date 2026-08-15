@@ -122,6 +122,7 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as AgentInstructionFiles from "./instructions/AgentInstructionFiles.ts";
+import * as HostSkills from "./skills/HostSkills.ts";
 import * as SkillMarketplace from "./skills/SkillMarketplace.ts";
 import * as SkillStore from "./skills/SkillStore.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
@@ -398,6 +399,7 @@ const buildAppUnderTest = (options?: {
     agentInstructionFiles?: Partial<AgentInstructionFiles.AgentInstructionFiles["Service"]>;
     skillStore?: Partial<SkillStore.SkillStore["Service"]>;
     skillMarketplace?: Partial<SkillMarketplace.SkillMarketplace["Service"]>;
+    hostSkills?: Partial<HostSkills.HostSkills["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
     vcsDriverRegistry?: Partial<VcsDriverRegistry.VcsDriverRegistry["Service"]>;
@@ -684,6 +686,10 @@ const buildAppUnderTest = (options?: {
             list: () => Effect.succeed([]),
             refresh: () => Effect.succeed([]),
             ...options?.layers?.skillMarketplace,
+          }),
+          Layer.mock(HostSkills.HostSkills)({
+            list: Effect.succeed({ skills: [] }),
+            ...options?.layers?.hostSkills,
           }),
         ),
       ),

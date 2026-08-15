@@ -74,6 +74,7 @@ import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as AgentInstructionFiles from "./instructions/AgentInstructionFiles.ts";
+import * as HostSkills from "./skills/HostSkills.ts";
 import * as SkillMarketplace from "./skills/SkillMarketplace.ts";
 import * as SkillMaterializer from "./skills/SkillMaterializer.ts";
 import * as SkillStore from "./skills/SkillStore.ts";
@@ -181,6 +182,7 @@ const SkillsLayerLive = Layer.mergeAll(
     Layer.provide(SkillStore.layer),
     Layer.provide(ServerSettingsLayerLive),
   ),
+  HostSkills.layer.pipe(Layer.provide(ServerSettingsLayerLive)),
 );
 
 const ResourceDiagnosticsLayerLive = Layer.mergeAll(

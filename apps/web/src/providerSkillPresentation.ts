@@ -9,7 +9,7 @@ function titleCaseWords(value: string): string {
   return words.join(" ");
 }
 
-function normalizePathSeparators(pathValue: string): string {
+export function normalizeProviderSkillPath(pathValue: string): string {
   return pathValue.replaceAll("\\", "/");
 }
 
@@ -26,7 +26,7 @@ export function formatProviderSkillDisplayName(
 export function formatProviderSkillInstallSource(
   skill: Pick<ServerProviderSkill, "path" | "scope">,
 ): string | null {
-  const normalizedPath = normalizePathSeparators(skill.path);
+  const normalizedPath = normalizeProviderSkillPath(skill.path);
   if (normalizedPath.includes("/.codex/plugins/") || normalizedPath.includes("/.agents/plugins/")) {
     return "App";
   }

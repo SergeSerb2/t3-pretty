@@ -1,9 +1,10 @@
 /**
  * Settings › Skills — the server-managed skill registry: installed skills with
  * a global on/off per skill, marketplace listings browsed from configured
- * GitHub repository sources, and a read-only view of the skills provider CLIs
- * report on this machine. Install/uninstall/refresh go through the skills RPC
- * commands; enablement and sources are patched into server settings.
+ * GitHub repository sources, host-folder skills the provider CLIs installed
+ * themselves (uninstallable), and a read-only view of plugin/project/system
+ * skills those CLIs still report. Install/uninstall/refresh go through the
+ * skills RPC commands; enablement and sources are patched into server settings.
  */
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -12,6 +13,8 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
+  HostSkill,
+  HostSkillsState,
   InstalledSkill,
   MarketplaceSkill,
   SkillMarketplaceListing,
@@ -33,11 +36,15 @@ import { cn } from "~/lib/utils";
 import { ensureLocalApi } from "~/localApi";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery, type EnvironmentQueryView } from "~/state/query";
-import { primaryServerProvidersAtom } from "~/state/server";
+import { primaryServerProvidersAtom, serverEnvironment } from "~/state/server";
 import { skillsEnvironment } from "~/state/skills";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
-import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
+import {
+  formatProviderSkillDisplayName,
+  formatProviderSkillInstallSource,
+  normalizeProviderSkillPath,
+} from "../../providerSkillPresentation";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -58,12 +65,18 @@ export function SkillsSettingsPanel() {
       ? null
       : skillsEnvironment.skillMarketplaceListingsAtom(primaryEnvironmentId),
   );
+  const hostSkillsState = useEnvironmentQuery(
+    primaryEnvironmentId === null
+      ? null
+      : skillsEnvironment.hostSkillsStateAtom(primaryEnvironmentId),
+  );
 
   return (
     <SettingsPageContainer>
       <InstalledSkillsSection environmentId={primaryEnvironmentId} query={skillsState} />
+      <HostSkillsSection environmentId={primaryEnvironmentId} query={hostSkillsState} />
       <MarketplaceSkillsSection environmentId={primaryEnvironmentId} query={marketplaceListings} />
-      <DetectedSkillsSection />
+      <DetectedSkillsSection hostSkills={hostSkillsState.data?.skills ?? []} />
     </SettingsPageContainer>
   );
 }
@@ -496,49 +509,244 @@ function MarketplaceSkillRow({
   );
 }
 
-function DetectedSkillsSection() {
+function HostSkillsSection({
+  environmentId,
+  query,
+}: {
+  environmentId: EnvironmentId | null;
+  query: EnvironmentQueryView<HostSkillsState>;
+}) {
+  const uninstallHostSkill = useAtomCommand(skillsEnvironment.uninstallHostSkill, {
+    reportFailure: false,
+  });
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [uninstallingId, setUninstallingId] = useState<string | null>(null);
+
+  const skills = query.data?.skills ?? [];
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const visibleSkills = useMemo(
+    () =>
+      skills.filter(
+        (skill) =>
+          normalizedQuery.length === 0 ||
+          skill.name.toLowerCase().includes(normalizedQuery) ||
+          skill.origin.toLowerCase().includes(normalizedQuery) ||
+          skill.displayPath.toLowerCase().includes(normalizedQuery) ||
+          (skill.description?.toLowerCase().includes(normalizedQuery) ?? false),
+      ),
+    [normalizedQuery, skills],
+  );
+  const groups = useMemo(() => {
+    const byOrigin = new Map<string, Array<HostSkill>>();
+    for (const skill of visibleSkills) {
+      const group = byOrigin.get(skill.origin) ?? [];
+      group.push(skill);
+      byOrigin.set(skill.origin, group);
+    }
+    return [...byOrigin.entries()];
+  }, [visibleSkills]);
+
+  const handleUninstall = useCallback(
+    async (skill: HostSkill) => {
+      if (environmentId === null) return;
+      const confirmed = await ensureLocalApi().dialogs.confirm(
+        [
+          `Remove "${skill.name}" from ${skill.displayPath}?`,
+          "This deletes that folder on this environment. The provider CLI that installed it will stop seeing the skill.",
+        ].join("\n"),
+        { variant: "destructive" },
+      );
+      if (!confirmed) return;
+      setActionError(null);
+      setUninstallingId(skill.id);
+      const result = await uninstallHostSkill({
+        environmentId,
+        input: { skillId: skill.id },
+      });
+      setUninstallingId(null);
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          setActionError(error instanceof Error ? error.message : "Could not remove the skill.");
+        }
+        return;
+      }
+      void refreshProviders({ environmentId, input: {} });
+    },
+    [environmentId, refreshProviders, uninstallHostSkill],
+  );
+
+  return (
+    <SettingsSection
+      {...searchableSetting("skills-on-environment")}
+      title="On this environment"
+      icon={<LaptopIcon className="size-4.5 text-muted-foreground" />}
+      headerAction={
+        environmentId === null ? null : (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Refresh provider skills"
+            disabled={query.isPending}
+            onClick={() => query.refresh()}
+          >
+            <RefreshCwIcon className={cn("size-3.5", query.isPending && "animate-spin")} />
+          </Button>
+        )
+      }
+    >
+      <p className="px-3 pb-2 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
+        Skills Claude, Codex, Cursor, and other provider CLIs installed in their home folders on
+        this environment — including over a remote connection. Removing one deletes that folder.
+      </p>
+      {environmentId === null ? (
+        <SkillListHint>Connect an environment to manage provider skills.</SkillListHint>
+      ) : query.error !== null ? (
+        <SkillListHint tone="error">{query.error}</SkillListHint>
+      ) : query.data === null ? (
+        <SkillListSkeleton rows={3} />
+      ) : (
+        <>
+          {skills.length > 0 ? (
+            <div className="px-3 pb-2 sm:px-4">
+              <Input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                placeholder="Search provider skills…"
+                aria-label="Search provider skills"
+              />
+            </div>
+          ) : null}
+          {skills.length === 0 ? (
+            <SkillListHint>
+              No provider CLI skills in their home folders. Marketplace installs land in T3&rsquo;s
+              library above.
+            </SkillListHint>
+          ) : visibleSkills.length === 0 ? (
+            <SkillListHint>No skills match.</SkillListHint>
+          ) : (
+            groups.map(([origin, originSkills]) => (
+              <div key={origin} className="space-y-1 pt-1">
+                <div className="px-3 py-1 sm:px-4">
+                  <span className="truncate text-xs text-muted-foreground">{origin}</span>
+                </div>
+                {originSkills.map((skill) => (
+                  <HostSkillRow
+                    key={skill.id}
+                    skill={skill}
+                    pending={uninstallingId === skill.id}
+                    onUninstall={() => void handleUninstall(skill)}
+                  />
+                ))}
+              </div>
+            ))
+          )}
+        </>
+      )}
+      {actionError !== null ? <SkillListHint tone="error">{actionError}</SkillListHint> : null}
+    </SettingsSection>
+  );
+}
+
+function HostSkillRow({
+  skill,
+  pending,
+  onUninstall,
+}: {
+  skill: HostSkill;
+  pending: boolean;
+  onUninstall: () => void;
+}) {
+  return (
+    <div className="flex w-full items-center gap-3 rounded-xl px-3 py-3 sm:px-4">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background/60 text-foreground">
+        <PackageIcon className="size-4.5" />
+      </span>
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <span className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
+          {skill.name}
+        </span>
+        <p className="truncate text-[13px] leading-[1.45] text-muted-foreground/80">
+          {skill.description ?? "No description."}
+        </p>
+        <p className="truncate font-mono text-[11px] text-muted-foreground/60">
+          {skill.displayPath}
+        </p>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={`Remove ${skill.name}`}
+        disabled={pending}
+        onClick={onUninstall}
+        className="text-muted-foreground hover:text-destructive-foreground"
+      >
+        <Trash2Icon className="size-4" />
+      </Button>
+    </div>
+  );
+}
+
+function DetectedSkillsSection({ hostSkills }: { hostSkills: ReadonlyArray<HostSkill> }) {
   const providers = useAtomValue(primaryServerProvidersAtom);
+  const hostSkillPaths = useMemo(
+    () => new Set(hostSkills.map((skill) => normalizeProviderSkillPath(skill.path))),
+    [hostSkills],
+  );
   const detected = useMemo(
     () =>
       deriveProviderInstanceEntries(providers).flatMap((entry) =>
-        entry.snapshot.skills.map((skill) => ({ entry, skill })),
+        entry.snapshot.skills
+          .filter((skill) => !hostSkillPaths.has(normalizeProviderSkillPath(skill.path)))
+          .map((skill) => ({ entry, skill })),
       ),
-    [providers],
+    [hostSkillPaths, providers],
   );
 
   if (detected.length === 0) return null;
 
   return (
     <SettingsSection
-      title="Detected on this machine"
+      title="Also detected"
       icon={<LaptopIcon className="size-4.5 text-muted-foreground" />}
     >
       <p className="px-3 pb-2 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
-        Skills the provider CLIs already installed. Those tools manage them, not T3 Code.
+        Plugin, system, or project skills the provider CLIs reported. Those stay with the plugin or
+        repo — T3 Code does not delete them.
       </p>
-      {detected.map(({ entry, skill }) => (
-        <div
-          key={`${entry.instanceId}:${skill.path}`}
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 sm:px-4"
-        >
-          <div className="min-w-0 flex-1 space-y-0.5">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-medium text-muted-foreground">
-                {formatProviderSkillDisplayName(skill)}
-              </span>
-              <Badge variant="outline" size="sm" className="text-muted-foreground">
-                {entry.displayName}
-              </Badge>
-              {skill.scope ? (
+      {detected.map(({ entry, skill }) => {
+        const source = formatProviderSkillInstallSource(skill);
+        return (
+          <div
+            key={`${entry.instanceId}:${skill.path}`}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 sm:px-4"
+          >
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm font-medium text-muted-foreground">
+                  {formatProviderSkillDisplayName(skill)}
+                </span>
                 <Badge variant="outline" size="sm" className="text-muted-foreground">
-                  {skill.scope}
+                  {entry.displayName}
                 </Badge>
-              ) : null}
+                {(source ?? skill.scope) ? (
+                  <Badge variant="outline" size="sm" className="text-muted-foreground">
+                    {source ?? skill.scope}
+                  </Badge>
+                ) : null}
+              </div>
+              <p className="truncate font-mono text-[11px] text-muted-foreground/60">
+                {skill.path}
+              </p>
             </div>
-            <p className="truncate font-mono text-[11px] text-muted-foreground/60">{skill.path}</p>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </SettingsSection>
   );
 }
