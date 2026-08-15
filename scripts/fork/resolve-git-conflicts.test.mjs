@@ -302,6 +302,16 @@ ${">".repeat(7)} theirs
     assert.include(workflow, "PREVIOUS_UPSTREAM_TAG: ${{ steps.discover.outputs.previous_tag }}");
   });
 
+  it("backfills upstream-only objects from the upstream promisor, not the fork", () => {
+    const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+
+    // The sparse checkout is a blob:none partial clone; blobs a nightly adds
+    // under .repos/ exist only upstream, and the fork promisor answers
+    // "not our ref" for them, killing the merge before it starts.
+    assert.include(workflow, "git config remote.upstream.promisor true");
+    assert.include(workflow, "git config remote.upstream.partialclonefilter blob:none");
+  });
+
   it("checks upstream every four hours and supports an explicit retry", () => {
     const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
 
