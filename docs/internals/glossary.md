@@ -28,6 +28,10 @@ The root filesystem path for a project. In [the orchestration model][1], it is t
 
 A Git worktree used as an isolated workspace for a thread. If a thread has a `worktreePath` in [the contracts][1], it runs there instead of in the main working tree. Git operations live behind the VCS driver contract in `apps/server/src/vcs/VcsDriver.ts`, implemented by [GitVcsDriverCore.ts][3].
 
+#### Storage inventory
+
+A server-side scan of **managed worktrees** under the environment's worktrees folder (`storage.getInventory` / `storage.removeOrphan` in [the contracts][1]). Clients gate on the `storageInventory` capability and never probe older servers. Project checkouts outside that folder are never listed or deleted. Unique paths are counted once when several threads share a checkout. `isDirty === null` is unsafe, never clean.
+
 ### Thread timeline
 
 #### Thread

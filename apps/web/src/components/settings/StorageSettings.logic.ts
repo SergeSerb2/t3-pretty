@@ -1,0 +1,198 @@
+import type {
+  StorageInventory,
+  StorageOrphanEntry,
+  StorageWorktreeEntry,
+} from "@t3tools/contracts";
+
+export function formatStorageBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB"] as const;
+  let unitIndex = -1;
+  let next = value;
+  do {
+    next /= 1024;
+    unitIndex += 1;
+  } while (next >= 1024 && unitIndex < units.length - 1);
+  return `${next.toFixed(next >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+}
+
+export function pluralCount(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+export function uniqueWorktreeBytes(entries: ReadonlyArray<StorageWorktreeEntry>): number {
+  const seen = new Map<string, number>();
+  for (const entry of entries) {
+    if (!seen.has(entry.path)) {
+      seen.set(entry.path, entry.diskUsageBytes);
+    }
+  }
+  let total = 0;
+  for (const bytes of seen.values()) {
+    total += bytes;
+  }
+  return total;
+}
+
+export function cleanSettledWorktrees(
+  inventory: Pick<StorageInventory, "activeWorktrees" | "archivedWorktrees">,
+): ReadonlyArray<StorageWorktreeEntry> {
+  return [...inventory.activeWorktrees, ...inventory.archivedWorktrees].filter(
+    (entry) => entry.canRemoveWorktree && entry.isDirty === false,
+  );
+}
+
+export function settledWorktrees(
+  inventory: Pick<StorageInventory, "activeWorktrees" | "archivedWorktrees">,
+): ReadonlyArray<StorageWorktreeEntry> {
+  return [...inventory.activeWorktrees, ...inventory.archivedWorktrees].filter(
+    (entry) => entry.canRemoveWorktree,
+  );
+}
+
+/**
+ * Paths that should be deleted from disk after unlinking the given threads.
+ * A shared checkout stays if any remaining thread still owns it.
+ */
+export function diskPathsReleasedByRemoval(
+  inventory: Pick<StorageInventory, "activeWorktrees" | "archivedWorktrees">,
+  threadIds: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const remaining = new Map<string, number>();
+  for (const entry of [...inventory.activeWorktrees, ...inventory.archivedWorktrees]) {
+    if (threadIds.has(entry.threadId)) continue;
+    remaining.set(entry.path, (remaining.get(entry.path) ?? 0) + 1);
+  }
+  const released = new Set<string>();
+  for (const entry of [...inventory.activeWorktrees, ...inventory.archivedWorktrees]) {
+    if (!threadIds.has(entry.threadId)) continue;
+    if ((remaining.get(entry.path) ?? 0) === 0) {
+      released.add(entry.path);
+    }
+  }
+  return released;
+}
+
+export function worktreeShouldForceRemove(entry: StorageWorktreeEntry): boolean {
+  return entry.isDirty !== false;
+}
+
+export function cleanupDetail(entries: ReadonlyArray<StorageWorktreeEntry>, empty: string): string {
+  if (entries.length === 0) return empty;
+  const bytes = uniqueWorktreeBytes(entries);
+  const dirty = entries.filter((entry) => entry.isDirty !== false).length;
+  const dirtyNote =
+    dirty > 0 ? ` · ${pluralCount(dirty, "tree")} with uncommitted or unread changes` : "";
+  return `${pluralCount(entries.length, "worktree")} · ${formatStorageBytes(bytes)}${dirtyNote}`;
+}
+
+export function orphanDetail(orphans: ReadonlyArray<StorageOrphanEntry>, bytes: number): string {
+  if (orphans.length === 0) {
+    return "No unmanaged checkouts under the worktrees folder.";
+  }
+  return `${pluralCount(orphans.length, "path")} · ${formatStorageBytes(bytes)}`;
+}
+
+export function archivedDeleteDetail(inventory: StorageInventory): string {
+  const count = inventory.archivedWorktrees.length;
+  if (count === 0) {
+    return "No archived threads currently keep a worktree on disk.";
+  }
+  return `${pluralCount(count, "archived thread")} · ${formatStorageBytes(inventory.archivedWorktreeBytes)} in worktrees`;
+}
+
+export function summaryCaption(inventory: StorageInventory): string {
+  const worktreeCount = inventory.activeWorktrees.length + inventory.archivedWorktrees.length;
+  return `${pluralCount(worktreeCount, "worktree")} measured`;
+}
+
+export function worktreeRowDescription(entry: StorageWorktreeEntry): string {
+  const parts = [entry.projectName];
+  if (entry.branch !== null && entry.branch.length > 0) {
+    parts.push(entry.branch);
+  }
+  if (entry.setupStatus === "missing") {
+    parts.push("missing on disk");
+  } else if (entry.setupStatus === "repair-needed") {
+    parts.push("needs repair");
+  } else if (entry.isDirty === true) {
+    parts.push("uncommitted changes");
+  } else if (entry.isDirty === null) {
+    parts.push("status unread");
+  }
+  if (entry.ownerCount > 1) {
+    parts.push(
+      `shared with ${entry.ownerCount - 1} other ${entry.ownerCount === 2 ? "thread" : "threads"}`,
+    );
+  }
+  return parts.join(" · ");
+}
+
+export type StoragePendingAction =
+  | { readonly kind: "remove-clean-settled" }
+  | { readonly kind: "remove-all-settled" }
+  | { readonly kind: "delete-archived" }
+  | { readonly kind: "remove-orphans" }
+  | { readonly kind: "remove-worktree"; readonly entry: StorageWorktreeEntry }
+  | { readonly kind: "delete-thread"; readonly entry: StorageWorktreeEntry }
+  | { readonly kind: "remove-orphan"; readonly orphan: StorageOrphanEntry };
+
+export function pendingActionCopy(action: StoragePendingAction): {
+  readonly title: string;
+  readonly message: string;
+  readonly confirmLabel: string;
+} {
+  switch (action.kind) {
+    case "remove-clean-settled":
+      return {
+        title: "Remove clean settled worktrees?",
+        message:
+          "Only settled or archived worktrees with a clean working tree are removed. Threads stay available on the project checkout.",
+        confirmLabel: "Remove",
+      };
+    case "remove-all-settled":
+      return {
+        title: "Remove all settled worktrees?",
+        message:
+          "Every settled or archived worktree that can be removed is deleted, including those with uncommitted or unread changes. Dirty changes cannot be recovered.",
+        confirmLabel: "Remove",
+      };
+    case "delete-archived":
+      return {
+        title: "Delete archived threads with worktrees?",
+        message:
+          "Archived threads that keep a managed worktree are permanently deleted, along with those worktrees. This can't be undone.",
+        confirmLabel: "Delete",
+      };
+    case "remove-orphans":
+      return {
+        title: "Remove orphan checkouts?",
+        message:
+          "Deletes managed worktree folders that no thread owns. Only paths under this environment's worktrees folder are removed.",
+        confirmLabel: "Remove",
+      };
+    case "remove-worktree":
+      return {
+        title: `Remove worktree for “${action.entry.threadTitle}”?`,
+        message:
+          action.entry.isDirty === true
+            ? "This worktree has uncommitted changes. Removing it discards those changes. The thread stays available on the project checkout."
+            : action.entry.ownerCount > 1
+              ? "Other threads still use this checkout, so only this thread is unlinked. The folder stays on disk."
+              : "The thread stays available and returns to the project checkout.",
+        confirmLabel: "Remove",
+      };
+    case "delete-thread":
+      return {
+        title: `Delete “${action.entry.threadTitle}”?`,
+        message: `“${action.entry.threadTitle}” and its managed worktree will be permanently deleted.`,
+        confirmLabel: "Delete",
+      };
+    case "remove-orphan":
+      return {
+        title: `Remove orphan “${action.orphan.displayName}”?`,
+        message: `Deletes ${action.orphan.path}. Only managed worktree paths can be removed this way.`,
+        confirmLabel: "Remove",
+      };
+  }
+}

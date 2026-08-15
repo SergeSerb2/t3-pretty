@@ -73,6 +73,14 @@ import {
   VcsStatusStreamEvent,
 } from "./git.ts";
 import {
+  StorageGetInventoryInput,
+  StorageInventory,
+  StorageInventoryError,
+  StoragePathNotManagedError,
+  StorageRemoveOrphanInput,
+  StorageRemoveOrphanResult,
+} from "./storage.ts";
+import {
   ReviewDiffFileContentsInput,
   ReviewDiffFileContentsResult,
   ReviewDiffPreviewError,
@@ -264,6 +272,10 @@ export const WS_METHODS = {
   vcsCreateRef: "vcs.createRef",
   vcsSwitchRef: "vcs.switchRef",
   vcsInit: "vcs.init",
+
+  // Managed worktree storage
+  storageGetInventory: "storage.getInventory",
+  storageRemoveOrphan: "storage.removeOrphan",
 
   // Git workflow methods
   gitRunStackedAction: "git.runStackedAction",
@@ -851,6 +863,22 @@ export const WsVcsInitRpc = Rpc.make(WS_METHODS.vcsInit, {
   error: Schema.Union([VcsError, EnvironmentAuthorizationError]),
 });
 
+export const WsStorageGetInventoryRpc = Rpc.make(WS_METHODS.storageGetInventory, {
+  payload: StorageGetInventoryInput,
+  success: StorageInventory,
+  error: Schema.Union([StorageInventoryError, EnvironmentAuthorizationError]),
+});
+
+export const WsStorageRemoveOrphanRpc = Rpc.make(WS_METHODS.storageRemoveOrphan, {
+  payload: StorageRemoveOrphanInput,
+  success: StorageRemoveOrphanResult,
+  error: Schema.Union([
+    StorageInventoryError,
+    StoragePathNotManagedError,
+    EnvironmentAuthorizationError,
+  ]),
+});
+
 /**
  * Ephemeral live diff preview for compact/mobile surfaces.
  * Not the persisted T3 Review model. Future review sessions should use
@@ -1196,6 +1224,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsCreateRefRpc,
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,
+  WsStorageGetInventoryRpc,
+  WsStorageRemoveOrphanRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,
   WsTerminalOpenRpc,

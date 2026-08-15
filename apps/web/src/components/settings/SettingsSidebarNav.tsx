@@ -12,6 +12,7 @@ import {
   ArrowLeftIcon,
   BotIcon,
   GitBranchIcon,
+  HardDriveIcon,
   KeyboardIcon,
   Link2Icon,
   PaletteIcon,
@@ -54,6 +55,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/instructions": ScrollTextIcon,
   "/settings/skills": PuzzleIcon,
   "/settings/source-control": GitBranchIcon,
+  "/settings/storage": HardDriveIcon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
 };

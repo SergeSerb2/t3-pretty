@@ -8,6 +8,7 @@ export type SettingsPath =
   | "/settings/instructions"
   | "/settings/skills"
   | "/settings/source-control"
+  | "/settings/storage"
   | "/settings/connections"
   | "/settings/archived";
 
@@ -33,6 +34,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/instructions": "Instructions",
   "/settings/skills": "Skills",
   "/settings/source-control": "Source Control",
+  "/settings/storage": "Storage",
   "/settings/connections": "Connections",
   "/settings/archived": "Archive",
 };
@@ -233,6 +235,31 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "source-control",
     title: "Source control",
     to: "/settings/source-control",
+  },
+  {
+    id: "storage-disk-use",
+    title: "Disk use",
+    to: "/settings/storage",
+  },
+  {
+    id: "storage-cleanup",
+    title: "Cleanup",
+    to: "/settings/storage",
+  },
+  {
+    id: "storage-active-worktrees",
+    title: "Active worktrees",
+    to: "/settings/storage",
+  },
+  {
+    id: "storage-archived-worktrees",
+    title: "Archived worktrees",
+    to: "/settings/storage",
+  },
+  {
+    id: "storage-residual",
+    title: "Residual managed files",
+    to: "/settings/storage",
   },
   {
     id: "surge-connect-account",
