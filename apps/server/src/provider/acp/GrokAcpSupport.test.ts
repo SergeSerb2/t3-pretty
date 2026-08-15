@@ -77,7 +77,7 @@ describe("parseGrokAcpModelMeta", () => {
     expect(meta.supportsReasoningEffort).toBe(true);
     expect(meta.reasoningEffort).toBe("high");
     expect(meta.reasoningEfforts.map((choice) => choice.id)).toEqual(["xhigh", "high", "medium"]);
-    expect(grokReasoningEffortCapabilities(meta.reasoningEfforts).optionDescriptors[0]?.id).toBe(
+    expect(grokReasoningEffortCapabilities(meta.reasoningEfforts).optionDescriptors?.[0]?.id).toBe(
       GROK_REASONING_EFFORT_OPTION_ID,
     );
   });
@@ -85,7 +85,7 @@ describe("parseGrokAcpModelMeta", () => {
 
 describe("grokModelCapabilities", () => {
   it("falls back to low/medium/high for grok 4.5", () => {
-    const descriptor = grokModelCapabilities({ slug: "grok-4.5" }).optionDescriptors[0];
+    const descriptor = grokModelCapabilities({ slug: "grok-4.5" }).optionDescriptors?.[0];
     expect(descriptor?.id).toBe(GROK_REASONING_EFFORT_OPTION_ID);
     expect(
       descriptor?.type === "select" ? descriptor.options.map((option) => option.id) : [],
@@ -93,7 +93,7 @@ describe("grokModelCapabilities", () => {
   });
 
   it("falls back to extra high for grok 4.6", () => {
-    const descriptor = grokModelCapabilities({ slug: "grok-4.6" }).optionDescriptors[0];
+    const descriptor = grokModelCapabilities({ slug: "grok-4.6" }).optionDescriptors?.[0];
     expect(
       descriptor?.type === "select" ? descriptor.options.map((option) => option.id) : [],
     ).toEqual(["low", "medium", "high", "xhigh"]);
