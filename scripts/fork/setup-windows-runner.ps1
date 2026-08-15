@@ -49,6 +49,12 @@ $env:Path = "$pwshDir;$env:Path"
 
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
 
+$toolchain = Join-Path $PSScriptRoot "ensure-windows-release-toolchain.ps1"
+if (-not (Test-Path $toolchain)) {
+  throw "Missing $toolchain. Run setup-windows-runner.ps1 from a T3 Pretty checkout."
+}
+& $toolchain
+
 $tokenPath = "C:\dev\t3-runner-token.json"
 $token = (Get-Content $tokenPath -Raw | ConvertFrom-Json).token
 Remove-Item $tokenPath -Force
