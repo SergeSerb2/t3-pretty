@@ -1,4 +1,5 @@
 import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS } from "@t3tools/client-runtime/state/pull-requests";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
@@ -103,6 +104,7 @@ import {
   handoffPrompt,
   handoffReviewComments,
   pullRequestActionNeedsHostRefresh,
+  pullRequestDiffIdentity,
   pullRequestActionMenuHasGroup,
   pullRequestFindingKey,
   pullRequestHandoffLabels,
@@ -482,7 +484,7 @@ export function PullRequestDetailPanel({
   // no cursor) is started here too rather than waiting for the Code tab to mount. This is one
   // extra cached read per opened pull request even for readers who never open the tab, but it
   // turns the tab's first paint from a cold request into a cache hit.
-  const _diffWarmUpQuery = useEnvironmentQuery(
+  const diffWarmUpQuery = useEnvironmentQuery(
     pullRequestEnvironment.diff({ environmentId, input: { ...reference } }),
   );
   const coreDetail = detailQuery.data;
@@ -520,24 +522,74 @@ export function PullRequestDetailPanel({
       isDraft: detail.isDraft,
     });
   }, [detail, onStateChange]);
+  // The button, and the live interval below, go around the server's cache rather than through
+  // it: a pull request open beside a thread changes while it is being read, and a cached
+  // answer is the thing the reader can already see is behind. Invalidation goes first so the
+  // re-reads miss that cache; if it fails, the reads still run and at worst answer from it.
+  const invalidate = useAtomCommand(pullRequestEnvironment.invalidate, { reportFailure: false });
+  const [refreshToken, setRefreshToken] = useState(0);
+  const wantDiffReset = useRef(false);
+  const hostRefreshInFlight = useRef(false);
+  const refreshFromHost = useCallback(
+    async (resetDiff = true) => {
+      if (resetDiff) wantDiffReset.current = true;
+      // A host round-trip already in flight is the refresh; stacking another invalidate
+      // strands that request on an old epoch and pays for the same answer twice.
+      if (hostRefreshInFlight.current || detailQuery.isPending || activityQuery.isPending) return;
+      hostRefreshInFlight.current = true;
+      try {
+        await invalidate({ environmentId, input: { reference } });
+        refreshDetail();
+        diffWarmUpQuery.refresh();
+        if (wantDiffReset.current) {
+          wantDiffReset.current = false;
+          setRefreshToken((token) => token + 1);
+        }
+      } finally {
+        setTimeout(() => {
+          hostRefreshInFlight.current = false;
+        }, PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS);
+      }
+    },
+    [
+      activityQuery.isPending,
+      detailQuery.isPending,
+      diffWarmUpQuery.refresh,
+      environmentId,
+      invalidate,
+      reference,
+      refreshDetail,
+    ],
+  );
   // A pull request changes while it is open in front of somebody — a push lands, a check
   // finishes, a review arrives — so the panel reads it again on the way back to the window and
   // while a reader sits on it. Keyed by the pull request rather than by the panel, because this
-  // one panel shows a different pull request every time it is opened.
-  useLiveRefresh(refreshDetail, {
-    key: `pull-request:${reference.projectId}:${reference.repository}#${reference.number}`,
-  });
-  // The button, on the other hand, goes around the server's cache rather than through it: it is
-  // the answer for a reader who can see that what they are looking at is behind. The
-  // invalidation goes first so the re-reads miss that cache; if it fails, the reads still run
-  // and at worst answer from it.
-  const invalidate = useAtomCommand(pullRequestEnvironment.invalidate, { reportFailure: false });
-  const [refreshToken, setRefreshToken] = useState(0);
-  const refreshFromHost = useCallback(async () => {
-    await invalidate({ environmentId, input: { reference } });
-    refreshDetail();
+  // one panel shows a different pull request every time it is opened. The interval matches one
+  // host round-trip rather than a minute, and the live path does not rebuild the diff unless
+  // the patch itself moved.
+  useLiveRefresh(
+    () => {
+      void refreshFromHost(false);
+    },
+    {
+      key: `pull-request:${reference.projectId}:${reference.repository}#${reference.number}`,
+      intervalMs: PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS,
+      minIntervalMs: PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS,
+    },
+  );
+  const diffIdentity =
+    coreDetail === null ? null : `${pullRequestKey}:${pullRequestDiffIdentity(coreDetail)}`;
+  const seenDiffIdentity = useRef<string | null>(null);
+  useEffect(() => {
+    if (diffIdentity === null) return;
+    if (seenDiffIdentity.current === null) {
+      seenDiffIdentity.current = diffIdentity;
+      return;
+    }
+    if (seenDiffIdentity.current === diffIdentity) return;
+    seenDiffIdentity.current = diffIdentity;
     setRefreshToken((token) => token + 1);
-  }, [environmentId, invalidate, reference, refreshDetail]);
+  }, [diffIdentity]);
   // A refresh asked for by the page: the detail, and through the token below, the diff with it.
   const appliedForcedToken = useRef(forcedRefreshToken);
   useEffect(() => {
@@ -1185,7 +1237,7 @@ export function PullRequestDetailPanel({
                 <MenuPopup align="end" side="bottom" className="min-w-72">
                   <MenuItem disabled={detailQuery.isPending} onClick={() => void refreshFromHost()}>
                     <RefreshCwIcon className="size-3.5" />
-                    Refresh
+                    {detailQuery.isPending ? "Refreshing..." : "Refresh"}
                   </MenuItem>
                   <MenuItem disabled={handoff !== null} onClick={askAboutPullRequest}>
                     <MessageCircleQuestionIcon className="mt-0.5 size-3.5 shrink-0 self-start" />

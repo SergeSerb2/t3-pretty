@@ -4,6 +4,7 @@ import type {
   PullRequestReviewThread,
 } from "@t3tools/contracts";
 import { EnvironmentId } from "@t3tools/contracts";
+import { PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS } from "@t3tools/client-runtime/state/pull-requests";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -170,14 +171,33 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     },
     [environmentId, invalidate, reference],
   );
+  const refreshLive = useCallback(async () => {
+    if (reference === null) return;
+    await invalidate({ environmentId, input: { reference } });
+    detailQuery.refresh();
+    activityQuery.refresh();
+  }, [activityQuery, detailQuery, environmentId, invalidate, reference]);
+  const refreshLiveRef = useRef(refreshLive);
+  refreshLiveRef.current = refreshLive;
+  const hostRefreshInFlight = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
       if (skipFocusRefresh.current) {
         skipFocusRefresh.current = false;
-        return;
+      } else {
+        refetchRef.current();
       }
-      refetchRef.current();
+      const timer = setInterval(() => {
+        if (hostRefreshInFlight.current) return;
+        hostRefreshInFlight.current = true;
+        void refreshLiveRef.current().finally(() => {
+          setTimeout(() => {
+            hostRefreshInFlight.current = false;
+          }, PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS);
+        });
+      }, PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS);
+      return () => clearInterval(timer);
     }, []),
   );
 
