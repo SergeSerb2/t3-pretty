@@ -5415,11 +5415,8 @@ function ChatViewContent(props: ChatViewProps) {
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
                       createdAt: activeThread.createdAt,
-                      // Omit the key entirely when the draft has no picks so
-                      // pre-skills servers see the same payload as before.
-                      ...(draftEnabledSkillIdsSnapshot && draftEnabledSkillIdsSnapshot.length > 0
-                        ? { enabledSkillIds: draftEnabledSkillIdsSnapshot }
-                        : {}),
+                      // Always send the key so RPC encode succeeds; [] means no per-thread picks.
+                      enabledSkillIds: draftEnabledSkillIdsSnapshot ?? [],
                     },
                   }
                 : {}),
@@ -5942,6 +5939,7 @@ function ChatViewContent(props: ChatViewProps) {
         branch: activeThreadBranch,
         worktreePath: activeThread.worktreePath,
         createdAt,
+        enabledSkillIds: [],
       },
     });
     let failure: AtomCommandResult<unknown, unknown> | null =
