@@ -4,6 +4,7 @@ import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { SurgeConnectMeshSync } from "./cloud/SurgeConnectMeshSync";
 import { hasCloudPublicConfig } from "./cloud/publicConfig";
 import { PreviewAutomationHosts } from "./components/preview/PreviewAutomationHosts";
+import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
 import { isElectron } from "./env";
 import { AppAtomRegistryProvider } from "./rpc/atomRegistry";
 import type { AppRouter } from "./router";
@@ -20,6 +21,7 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
       <RouterProvider router={router} />
       <PreviewAutomationHosts />
       <ElectronBrowserHost />
+      <QuitHoldOverlay />
     </AppAtomRegistryProvider>
   );
 }
