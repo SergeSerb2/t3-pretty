@@ -39,8 +39,10 @@ export function shouldLiveRefresh(input: {
   readonly visible: boolean;
   readonly now: number;
   readonly lastRefreshedAt: number;
+  readonly minIntervalMs?: number;
 }): boolean {
-  return input.visible && input.now - input.lastRefreshedAt >= LIVE_REFRESH_MIN_INTERVAL_MS;
+  const minIntervalMs = input.minIntervalMs ?? LIVE_REFRESH_MIN_INTERVAL_MS;
+  return input.visible && input.now - input.lastRefreshedAt >= minIntervalMs;
 }
 
 /**
@@ -52,6 +54,7 @@ export function shouldRefreshOnArrival(input: {
   readonly visible: boolean;
   readonly now: number;
   readonly lastRefreshedAt: number | undefined;
+  readonly minIntervalMs?: number;
 }): boolean {
   return (
     input.lastRefreshedAt !== undefined &&
@@ -68,6 +71,7 @@ export function shouldRefreshOnInterval(input: {
   readonly now: number;
   readonly lastRefreshedAt: number;
   readonly lastInteractedAt: number;
+  readonly minIntervalMs?: number;
 }): boolean {
   return (
     input.now - input.lastInteractedAt < LIVE_REFRESH_IDLE_AFTER_MS && shouldLiveRefresh(input)
@@ -116,9 +120,21 @@ function watchInteraction(): () => void {
 
 export function useLiveRefresh(
   refresh: (() => void) | null,
-  options: { readonly enabled?: boolean; readonly key?: string } = {},
+  options: {
+    readonly enabled?: boolean;
+    readonly key?: string;
+    /** How often to re-read while the view stays open. Defaults to one minute. */
+    readonly intervalMs?: number;
+    /** Fastest two reads may follow each other, including on focus. Defaults to ten seconds. */
+    readonly minIntervalMs?: number;
+  } = {},
 ): void {
-  const { enabled = true, key } = options;
+  const {
+    enabled = true,
+    key,
+    intervalMs = LIVE_REFRESH_INTERVAL_MS,
+    minIntervalMs = LIVE_REFRESH_MIN_INTERVAL_MS,
+  } = options;
   // Held in a ref so a caller can pass a fresh closure every render without re-arming the
   // listeners, which would otherwise refresh on every render that changed anything at all.
   const latest = useRef(refresh);
@@ -144,12 +160,22 @@ export function useLiveRefresh(
         lastRefreshedAtByView.set(viewId, now);
         return;
       }
-      if (shouldRefreshOnArrival({ visible: visible(), now, lastRefreshedAt })) read(now);
+      if (shouldRefreshOnArrival({ visible: visible(), now, lastRefreshedAt, minIntervalMs })) {
+        read(now);
+      }
     };
     const onInterval = () => {
       const now = Date.now();
       const lastRefreshedAt = lastRefreshedAtByView.get(viewId) ?? now;
-      if (shouldRefreshOnInterval({ visible: visible(), now, lastRefreshedAt, lastInteractedAt })) {
+      if (
+        shouldRefreshOnInterval({
+          visible: visible(),
+          now,
+          lastRefreshedAt,
+          lastInteractedAt,
+          minIntervalMs,
+        })
+      ) {
         read(now);
       }
     };
@@ -160,7 +186,7 @@ export function useLiveRefresh(
     // way back. Nothing else moves the window between showing and hidden, so nothing else re-arms.
     const syncTimer = () => {
       clearInterval(timer);
-      timer = visible() ? setInterval(onInterval, LIVE_REFRESH_INTERVAL_MS) : undefined;
+      timer = visible() ? setInterval(onInterval, intervalMs) : undefined;
     };
     const onVisibilityChange = () => {
       onArrival();
@@ -178,5 +204,5 @@ export function useLiveRefresh(
       document.removeEventListener("visibilitychange", onVisibilityChange);
       stopWatchingInteraction();
     };
-  }, [enabled, viewId]);
+  }, [enabled, intervalMs, minIntervalMs, viewId]);
 }

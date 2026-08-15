@@ -21,6 +21,15 @@ describe("shouldLiveRefresh", () => {
     expect(at(3_000, 0)).toBe(false);
   });
 
+  it("honours a shorter minimum when the caller is watching one document", () => {
+    expect(
+      shouldLiveRefresh({ visible: true, now: 5_000, lastRefreshedAt: 0, minIntervalMs: 5_000 }),
+    ).toBe(true);
+    expect(
+      shouldLiveRefresh({ visible: true, now: 4_000, lastRefreshedAt: 0, minIntervalMs: 5_000 }),
+    ).toBe(false);
+  });
+
   it("reads again when the interval comes round on a view left open", () => {
     expect(at(LIVE_REFRESH_INTERVAL_MS, 0)).toBe(true);
   });
@@ -68,6 +77,17 @@ describe("shouldRefreshOnArrival", () => {
 
   it("keeps the minimum interval on a view returned to straight away", () => {
     expect(shouldRefreshOnArrival({ visible: true, now: 2_000, lastRefreshedAt: 0 })).toBe(false);
+  });
+
+  it("honours a shorter minimum on arrival when the caller is watching one document", () => {
+    expect(
+      shouldRefreshOnArrival({
+        visible: true,
+        now: 5_000,
+        lastRefreshedAt: 0,
+        minIntervalMs: 5_000,
+      }),
+    ).toBe(true);
   });
 });
 

@@ -89,11 +89,12 @@ const REPOSITORY_SEARCH_CHUNK = 100;
  * while and concurrent identical reads share one request. The windows sit near the clients'
  * own stale times: long enough that two people opening the same page cost one round trip,
  * short enough that "cached" and "fresh" never need telling apart on screen. Reads that
- * must not share — the refresh button, a client reloading after its own action — go through
- * `invalidate` rather than a flag on the read, so an ordinary read can never opt out.
+ * must not share — the refresh button, a client reloading after its own action, an open
+ * pull-request panel watching the host — go through `invalidate` rather than a flag on
+ * the read, so an ordinary read can never opt out.
  */
 const LIST_CACHE_TTL = Duration.seconds(30);
-const DETAIL_CACHE_TTL = Duration.seconds(15);
+const DETAIL_CACHE_TTL = Duration.seconds(5);
 const DIFF_CACHE_TTL = Duration.seconds(60);
 /** A commit is content-addressed, so its own diff cannot change under its key. */
 const COMMIT_DIFF_CACHE_TTL = Duration.minutes(10);
@@ -101,15 +102,13 @@ const COMMIT_DIFF_CACHE_TTL = Duration.minutes(10);
 const LIST_STATS_CACHE_TTL = Duration.seconds(60);
 /**
  * How long a cache's last success may still be served while a fresh read runs behind it.
- * Bounded by how the page actually revalidates: clients re-read on mount and once a minute
- * while open, and every one of those reads repopulates the cache in the background — so in
- * steady use a "stale" answer is at most a refresh cycle old, and the window only stretches
- * that far when nobody has looked at the page for minutes. An explicit refresh or a mutation
- * bumps the epochs and skips held answers entirely.
+ * Bounded by one host round-trip: longer than that, and a view that re-reads while open is
+ * handed yesterday's answer and never the background fetch that replaced it. An explicit
+ * refresh or a mutation bumps the epochs and skips held answers entirely.
  */
 const LIST_STALE_WINDOW = Duration.minutes(10);
-const DETAIL_STALE_WINDOW = Duration.minutes(5);
-const DIFF_STALE_WINDOW = Duration.minutes(10);
+const DETAIL_STALE_WINDOW = Duration.seconds(15);
+const DIFF_STALE_WINDOW = Duration.seconds(20);
 /** How long one host's signed-in login is believed without asking its CLI again. */
 const VIEWER_CACHE_TTL = Duration.minutes(10);
 const LIST_CACHE_CAPACITY = 64;

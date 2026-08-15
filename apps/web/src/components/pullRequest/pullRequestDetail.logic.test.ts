@@ -23,6 +23,7 @@ import {
   isThreadOwnPullRequest,
   orderPullRequestComments,
   pullRequestActionNeedsHostRefresh,
+  pullRequestDiffIdentity,
   pullRequestActionMenuHasGroup,
   pullRequestFindingKey,
   pullRequestHandoffLabels,
@@ -1227,5 +1228,19 @@ describe("which actions need the host read again after they run", () => {
     ] as const) {
       expect(pullRequestActionNeedsHostRefresh(action)).toBe(false);
     }
+  });
+});
+
+describe("whether a live re-read should rebuild the diff", () => {
+  it("stays put when only metadata moved", () => {
+    expect(pullRequestDiffIdentity({ additions: 4, deletions: 1, changedFiles: 2 })).toBe(
+      pullRequestDiffIdentity({ additions: 4, deletions: 1, changedFiles: 2 }),
+    );
+  });
+
+  it("changes when a push moves the patch", () => {
+    expect(pullRequestDiffIdentity({ additions: 4, deletions: 1, changedFiles: 2 })).not.toBe(
+      pullRequestDiffIdentity({ additions: 12, deletions: 1, changedFiles: 3 }),
+    );
   });
 });

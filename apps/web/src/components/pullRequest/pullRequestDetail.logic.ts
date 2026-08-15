@@ -964,3 +964,16 @@ const ACTION_NEEDS_HOST_REFRESH: Record<PullRequestAction, boolean> = {
 export function pullRequestActionNeedsHostRefresh(action: PullRequestAction): boolean {
   return ACTION_NEEDS_HOST_REFRESH[action];
 }
+
+/**
+ * Whether the patch itself moved. Comments, checks, and review state change `updatedAt` without
+ * touching the diff, so a live re-read must not rebuild the code tab for those. Line counts are
+ * what a push changes on the core detail, which is the half that arrives before activity.
+ */
+export function pullRequestDiffIdentity(detail: {
+  readonly additions: number;
+  readonly deletions: number;
+  readonly changedFiles: number;
+}): string {
+  return `${detail.additions}:${detail.deletions}:${detail.changedFiles}`;
+}
