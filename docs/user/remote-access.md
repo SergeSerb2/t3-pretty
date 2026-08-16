@@ -54,6 +54,9 @@ Connect. Once both desktops participate, each app automatically keeps the full a
 connection list, including machines added later. Threads from every linked desktop are therefore
 available in either app without repeating **Connect** on both sides.
 
+Settle and snooze still work when a linked machine is offline. The change is saved on this device
+and applied on that machine as soon as Surge Connect can reach it again.
+
 A headless server has no desktop connection list to synchronize, so it remains intentionally
 one-way: desktop apps can add it from the mesh, but it does not gain their threads. Browser-only
 clients also keep their explicitly saved connections.

@@ -32,6 +32,7 @@ import type {
   SupervisorConnectionState,
 } from "./model.ts";
 import * as Persistence from "../platform/persistence.ts";
+import { ThreadLifecycleOutbox } from "../state/threadLifecycleOutbox.ts";
 import * as EnvironmentSupervisor from "./supervisor.ts";
 import * as ConnectionDriver from "./driver.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
@@ -269,6 +270,10 @@ export const make = Effect.gen(function* () {
             Effect.onError(() => Scope.close(scope, Exit.void)),
           );
           yield* supervisor.connect;
+          const outbox = yield* Effect.serviceOption(ThreadLifecycleOutbox);
+          if (Option.isSome(outbox)) {
+            yield* outbox.value.watchAndDrain(supervisor).pipe(Effect.forkIn(scope));
+          }
           yield* SubscriptionRef.update(serviceScopes, (current) => {
             const next = new Map(current);
             next.set(environmentId, { entry, supervisor, scope });

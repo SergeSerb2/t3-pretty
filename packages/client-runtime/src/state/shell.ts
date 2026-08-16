@@ -428,3 +428,11 @@ export * from "./shellCommands.ts";
 export * from "./shellReducer.ts";
 export * from "./shellSnapshotHttp.ts";
 export * from "./snapshots.ts";
+export {
+  createThreadLifecyclePendingValueAtom,
+  decodeStoredPendingEntries,
+  encodePendingEntries,
+  ThreadLifecycleOutboxPersistenceError,
+  ThreadLifecycleOutboxStore,
+  threadLifecycleOutboxLayer,
+} from "./threadLifecycleOutbox.ts";

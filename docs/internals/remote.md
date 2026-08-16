@@ -149,6 +149,10 @@ relay Worker only brokers credentials and a managed endpoint; application traffi
 the provisioned Cloudflare tunnel hostname for the life of the connection, not through the relay
 Worker itself. See [t3-connect.md](./t3-connect.md).
 
+Settle and snooze can be issued against a cached thread while that environment has no session. The
+client parks the command, overlays the cached shell, and dispatches it when the supervisor has a
+session again — the same path used when a Surge Connect environment comes back online.
+
 ### Tailscale access
 
 A T3-managed `tailscale serve` mapping exposes the server on the tailnet over HTTPS, and the

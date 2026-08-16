@@ -8,14 +8,19 @@ import {
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
-import type { EnvironmentSupervisor } from "../connection/supervisor.ts";
+import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import {
   type EnvironmentRpcFailure,
   type EnvironmentRpcSuccess,
   type EnvironmentRpcUnavailableError,
   request,
 } from "../rpc/client.ts";
+import {
+  QUEUED_THREAD_LIFECYCLE_DISPATCH_RESULT,
+  ThreadLifecycleOutbox,
+} from "../state/threadLifecycleOutbox.ts";
 
 type CommandType = ClientOrchestrationCommand["type"];
 type CommandOf<T extends CommandType> = Extract<ClientOrchestrationCommand, { readonly type: T }>;
@@ -108,6 +113,26 @@ function timestampedCommandMetadata(input: {
 
 function dispatch(command: ClientOrchestrationCommand) {
   return request(ORCHESTRATION_WS_METHODS.dispatchCommand, command);
+}
+
+/** Settle/snooze while the environment has no session; reconnect drains the queue. */
+function dispatchOrEnqueue(command: ClientOrchestrationCommand) {
+  return dispatch(command).pipe(
+    Effect.catchTag("EnvironmentRpcUnavailableError", (error) =>
+      Effect.gen(function* () {
+        const supervisor = yield* EnvironmentSupervisor;
+        const outbox = yield* Effect.serviceOption(ThreadLifecycleOutbox);
+        if (Option.isNone(outbox)) {
+          return yield* error;
+        }
+        const queued = yield* outbox.value.enqueue(supervisor.target.environmentId, command);
+        if (!queued) {
+          return yield* error;
+        }
+        return QUEUED_THREAD_LIFECYCLE_DISPATCH_RESULT;
+      }),
+    ),
+  );
 }
 
 const EMPTY_ENABLED_SKILL_IDS: ReadonlyArray<SkillId> = [];
@@ -212,7 +237,7 @@ export const unarchiveThread: (input: UnarchiveThreadInput) => CommandEffect = E
 export const settleThread: (input: SettleThreadInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.settleThread",
 )(function* (input) {
-  return yield* dispatch({
+  return yield* dispatchOrEnqueue({
     ...input,
     type: "thread.settle",
     commandId: yield* commandId(input),
@@ -222,7 +247,7 @@ export const settleThread: (input: SettleThreadInput) => CommandEffect = Effect.
 export const unsettleThread: (input: UnsettleThreadInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.unsettleThread",
 )(function* (input) {
-  return yield* dispatch({
+  return yield* dispatchOrEnqueue({
     ...input,
     type: "thread.unsettle",
     commandId: yield* commandId(input),
@@ -232,7 +257,7 @@ export const unsettleThread: (input: UnsettleThreadInput) => CommandEffect = Eff
 export const snoozeThread: (input: SnoozeThreadInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.snoozeThread",
 )(function* (input) {
-  return yield* dispatch({
+  return yield* dispatchOrEnqueue({
     ...input,
     type: "thread.snooze",
     commandId: yield* commandId(input),
@@ -242,7 +267,7 @@ export const snoozeThread: (input: SnoozeThreadInput) => CommandEffect = Effect.
 export const unsnoozeThread: (input: UnsnoozeThreadInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.unsnoozeThread",
 )(function* (input) {
-  return yield* dispatch({
+  return yield* dispatchOrEnqueue({
     ...input,
     type: "thread.unsnooze",
     commandId: yield* commandId(input),
