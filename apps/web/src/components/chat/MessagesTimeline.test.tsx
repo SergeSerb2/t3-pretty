@@ -857,11 +857,13 @@ describe("MessagesTimeline", () => {
         />,
       );
 
+    // Repeat-only bodies stay closed until layout reports the preview is clipped.
     expect(render({ label: "Skill", detail: "grill-me" })).not.toContain("aria-expanded");
     expect(
       render({
         label: "Command run",
-        command: "cd apps/web/src && cat components/chat/ComposerCommandMenu.tsx",
+        command: "echo hi",
+        detail: "wrote apps/web/src/components/chat/ComposerCommandMenu.tsx",
       }),
     ).toContain('aria-expanded="false"');
   });

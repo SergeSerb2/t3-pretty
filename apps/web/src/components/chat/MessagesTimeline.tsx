@@ -24,6 +24,7 @@ import {
   use,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -2356,14 +2357,25 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : rawPreview;
   const displayText = preview ? `${heading} - ${preview}` : heading;
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
-  // ponytail: a short body that only repeats the header preview has nothing to
-  // reveal — skip the disclosure. 56 chars is "fits on one line at chat width".
+  const previewRef = useRef<HTMLSpanElement>(null);
+  const [previewClipped, setPreviewClipped] = useState(false);
+  // Skip disclosure when the body only repeats the preview *and* the preview
+  // is fully visible. Char-count heuristics fail on narrow panes / long headings.
   const bodyRepeatsPreview =
-    expandedBody !== null &&
-    preview !== null &&
-    expandedBody.trim() === preview.trim() &&
-    expandedBody.length <= 56;
-  const canExpand = expandedBody !== null && !bodyRepeatsPreview;
+    expandedBody !== null && preview !== null && expandedBody.trim() === preview.trim();
+  useLayoutEffect(() => {
+    const el = previewRef.current;
+    if (!el || !bodyRepeatsPreview) {
+      setPreviewClipped(false);
+      return;
+    }
+    const sync = () => setPreviewClipped(el.scrollWidth > el.clientWidth);
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [bodyRepeatsPreview, preview]);
+  const canExpand = expandedBody !== null && (!bodyRepeatsPreview || previewClipped);
   const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
   const showDestructiveRowStyle =
     showFailedIndicator &&
@@ -2421,7 +2433,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         <p className="flex min-w-0 flex-1 items-baseline gap-2 text-[12px] leading-5">
           <span className={cn("min-w-0 shrink truncate", headingClass)}>{heading}</span>
           {preview ? (
-            <span className="min-w-0 flex-1 truncate text-secondary-label">{preview}</span>
+            <span ref={previewRef} className="min-w-0 flex-1 truncate text-secondary-label">
+              {preview}
+            </span>
           ) : null}
         </p>
         <span className="flex shrink-0 items-center gap-1 text-icon-muted">
