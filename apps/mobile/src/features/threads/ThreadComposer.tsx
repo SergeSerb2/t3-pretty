@@ -1,3 +1,4 @@
+import { skillMentionToken } from "@t3tools/shared/skillTool";
 import type {
   EnvironmentId,
   MessageId,
@@ -817,7 +818,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       if (item.type === "path") {
         replacement = `${serializeComposerFileLink(item.path)} `;
       } else if (item.type === "skill") {
-        replacement = `$${item.skill.name} `;
+        replacement = `$${skillMentionToken(item.skill.name)} `;
       } else if (item.type === "slash-command") {
         replacement = `/${item.command} `;
       } else if (item.type === "provider-slash-command") {

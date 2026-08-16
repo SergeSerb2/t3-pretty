@@ -83,6 +83,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server exposes storage.getInventory / storage.removeOrphan for managed
       worktrees. Absent on older servers, so clients must not probe them. */
   storageInventory: Schema.optionalKey(Schema.Boolean),
+  /** Server streams storage.streamInventory snapshots while a scan is still
+      walking disk. Absent on older servers, so clients fall back to the
+      unary getInventory result. */
+  storageInventoryStream: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */

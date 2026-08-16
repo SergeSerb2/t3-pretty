@@ -3754,6 +3754,14 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               stripInlineTerminalContextPlaceholders(source.prompt),
               destination.terminalContexts.length,
             );
+            // Skill picks travel with the prompt: switching the draft's
+            // project must not silently drop what the user turned on.
+            const movedSkillIds = [
+              ...new Set([
+                ...(destination.enabledSkillIds ?? []),
+                ...(source.enabledSkillIds ?? []),
+              ]),
+            ];
             const nextDestination: ComposerThreadDraftState = {
               ...destination,
               prompt: movedPrompt,
@@ -3766,6 +3774,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 ...destination.persistedAttachments,
                 ...source.persistedAttachments,
               ],
+              ...(movedSkillIds.length > 0 ? { enabledSkillIds: movedSkillIds } : {}),
             };
             // Same clearing shape as clearComposerPromptAndImages, but the
             // preview URLs are NOT revoked: the images moved and their blobs
@@ -3776,6 +3785,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               images: [],
               nonPersistedImageIds: [],
               persistedAttachments: [],
+              enabledSkillIds: undefined,
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextSource)) {

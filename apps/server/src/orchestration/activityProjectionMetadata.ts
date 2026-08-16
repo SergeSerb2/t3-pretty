@@ -6,43 +6,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function asTrimmedString(value: unknown): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-/**
- * Stable identity shared by snapshot compaction and persistence metadata.
- * Persisting it keeps superseded tool payloads out of the snapshot read path:
- * SQLite can discard old updates before their potentially multi-megabyte JSON
- * bodies are copied into JavaScript and decoded.
- */
-export function activityProjectionGroupKey(
-  activity: Pick<OrchestrationThreadActivity, "payload" | "summary">,
-): string | null {
-  const payload = asRecord(activity.payload);
-  if (!payload) {
-    return null;
-  }
-
-  const toolCallId = asTrimmedString(asRecord(payload.data)?.toolCallId);
-  if (toolCallId) {
-    return `id:${toolCallId}`;
-  }
-
-  const itemType = asTrimmedString(payload.itemType) ?? "";
-  const label = (asTrimmedString(payload.title) ?? activity.summary)
-    .replace(/\s+(?:complete|completed)\s*$/iu, "")
-    .trim();
-  const detail = asTrimmedString(payload.detail) ?? "";
-  if (itemType.length === 0 && label.length === 0 && detail.length === 0) {
-    return null;
-  }
-  return [itemType, label, detail].join("\u001f");
-}
+export { activityProjectionGroupKey } from "@t3tools/shared/activityProjection";
 
 /** A null value deliberately marks malformed context-window rows as retainable. */
 export function activityContextUsedTokens(

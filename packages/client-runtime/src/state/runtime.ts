@@ -58,6 +58,13 @@ interface EnvironmentSubscriptionAtomOptions<Input, A, E, R> {
   readonly label: string;
   readonly subscribe: (input: Input) => Stream.Stream<A, E, R>;
   readonly idleTtlMs?: number;
+  /**
+   * Finite command streams do not resubscribe on their own. When true, a
+   * connection-generation bump tears down the previous stream and starts a
+   * fresh subscribe so a mid-scan disconnect cannot leave the last
+   * in-progress snapshot stuck.
+   */
+  readonly restartOnReconnect?: boolean;
 }
 
 export type SettledAsyncResult<A, E> = AsyncResult.Success<A, E> | AsyncResult.Failure<A, E>;
@@ -594,14 +601,51 @@ export function createEnvironmentSubscriptionAtomFamily<R, ER, Input, A, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, ER>,
   options: EnvironmentSubscriptionAtomOptions<Input, A, E, EnvironmentSupervisor | R>,
 ) {
+  const rpcGenerationAtom = options.restartOnReconnect
+    ? Atom.family((environmentId: EnvironmentIdType) =>
+        runtime.atom(
+          followStreamInEnvironment(
+            environmentId,
+            Stream.unwrap(
+              EnvironmentSupervisor.pipe(
+                Effect.map((supervisor) =>
+                  SubscriptionRef.changes(supervisor.state).pipe(
+                    Stream.filterMap((state) =>
+                      state.phase === "connected"
+                        ? Result.succeed(state.generation)
+                        : Result.failVoid,
+                    ),
+                    Stream.changes,
+                    Stream.map<number, number | null>((generation) => generation),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          { initialValue: null },
+        ),
+      )
+    : null;
   const family = Atom.family((key: string) => {
     const target = parseEnvironmentRpcKey<Input>(key);
-    return runtime
-      .atom(followStreamInEnvironment(target.environmentId, options.subscribe(target.input)))
-      .pipe(
-        Atom.setIdleTTL(options.idleTtlMs ?? 5 * 60_000),
-        Atom.withLabel(`${options.label}:${key}`),
-      );
+    const streamAtom =
+      rpcGenerationAtom === null
+        ? runtime.atom(
+            followStreamInEnvironment(target.environmentId, options.subscribe(target.input)),
+          )
+        : runtime.atom((get) => {
+            const generation = Option.getOrNull(
+              AsyncResult.value(get(rpcGenerationAtom(target.environmentId))),
+            );
+            if (generation === null) {
+              return Stream.never;
+            }
+            return followStreamInEnvironment(target.environmentId, options.subscribe(target.input));
+          });
+    return streamAtom.pipe(
+      Atom.setIdleTTL(options.idleTtlMs ?? 5 * 60_000),
+      Atom.withLabel(`${options.label}:${key}`),
+    );
   });
   return (target: { readonly environmentId: EnvironmentIdType; readonly input: Input }) =>
     family(environmentRpcKey(target));

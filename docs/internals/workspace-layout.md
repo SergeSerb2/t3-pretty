@@ -11,9 +11,26 @@ the task commands.
   drivers, checkpointing, VCS, terminals, filesystem access, auth, and the HTTP + WebSocket surface.
   Also serves the built web app.
 - `apps/web` (`@t3tools/web`): React + Vite UI. Consumes the shared client runtime and adds routing,
-  components, and web-specific platform layers.
+  components, and web-specific platform layers. Route components are code-split by the TanStack
+  router plugin (`autoCodeSplitting` in `vite.config.ts`); only the chat routes stay in the entry
+  chunk since one of them renders on every cold start. Settings, usage, pull requests, pairing, and
+  the Electron Clerk root (`src/electronClerkRoot.tsx`, which carries all of clerk-js) load as
+  `/assets/*` chunks on first use.
 - `apps/desktop` (`@t3tools/desktop`): Electron shell. Supervises a desktop-scoped `t3` backend,
   loads the web bundle over the `t3code://` protocol, and owns SSH-managed remote environments.
+  In packaged builds `t3code://app/*` is served straight from `apps/server/dist/client` on disk
+  (`ElectronProtocol.ts`: `net.fetch(file:)`, extension-less paths fall back to `index.html`,
+  hashed `/assets/*` get immutable caching for the V8 code cache); only `/api/`, `/oauth/` and
+  `/.well-known/` proxy to the backend, and in development everything still proxies to Vite. The
+  main window therefore opens as soon as the primary backend has a start config instead of
+  waiting for its HTTP readiness; the renderer retries its session bootstrap until the backend
+  listens and the main process pushes `desktop:backend-ready` (`DesktopBridge.onLocalBackendReady`)
+  so the connection layer re-reads the local topology at once. WSL-only mode keeps the
+  "Connecting to WSL" splash and opens the window on readiness, since its bootstrap is hidden
+  until preflight passes. `main.cjs` bundles `effect`, `@effect/platform-node` and
+  `electron-updater` (see `deps.alwaysBundle` in `apps/desktop/vite.config.ts` and
+  `DESKTOP_BUNDLED_DEPENDENCY_NAMES` in `scripts/build-desktop-artifact.ts`), so they are not
+  staged into the asar.
 - `apps/mobile` (`@t3tools/mobile`): Expo/React Native client. Same client runtime composition as
   web, different platform layer and UI.
 - `apps/marketing` (`@t3tools/marketing`): Astro marketing site.

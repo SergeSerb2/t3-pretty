@@ -328,6 +328,61 @@ stated. Numbers are INFERRED expectations to be verified with the protocol in §
 | P2.8 | Web streaming cadence 32–64 ms (mirror iOS) and identity-aware timeline derivation; replace `status-pulse` compositor animations with a JS-toggled class at ~1.5 Hz while a turn is active                                                                                                                                                                                                                                                                                                                                                       | ≤ 30 frames/s of raster + scroll + composer blur + swap instead of per delta; no 240 Hz BeginFrames from pulses  | none visible                                                                                                                                                |
 | P2.9 | Preview: attach CDP lazily/scoped (never `Accessibility.enable` outside snapshots), cap `diagnostics.requests`; recording via `Page.startScreencast` or bounded `capturePage(rect)`                                                                                                                                                                                                                                                                                                                                                              | no AX-tree upkeep on guest pages; recording off the main thread                                                  | console/network history starts at first open                                                                                                                |
 
+**P2.6 as shipped (2026-08-16).** The provider stays where it was (`ChatView`, PR code tab); the
+lib's mount-scoped singleton was replaced by one page-level `WorkerPoolManager` that is terminated
+right after construction and boots on the first render task, `poolSize` = `clamp(cores/2, 2, 3)`,
+AST LRUs 240 → 120 entries (`@pierre/diffs` has no byte cap), and a stat-driven idle terminator that
+drops workers + caches after 90 s with no mounted diff surface or task
+(`DiffWorkerPoolProvider.logic.ts`); the manager re-initializes itself on demand. A theme change
+while idle still boots the pool (`setRenderOptions` initializes) and it idles out again. Terminal:
+`MAX_HIDDEN_MOUNTED_TERMINAL_THREADS` 3, `MAX_SCROLLBACK_ROWS` 5,000 (equal to the server's
+`DEFAULT_HISTORY_LINE_LIMIT`, so the "512 KB replay" above is really "≤ 5,000 lines of history"),
+and `GhosttySurface.fit()` zeroes the canvas backing store whenever its mount is 0×0 (hidden
+drawers, collapsed panes) and repaints in the same ResizeObserver tick on re-show. Thread state idle
+TTL 5 min → 90 s (`threadRetention.ts`; mobile keeps its 15 s override). Main-thread Shiki grammars
+were left alone: `disposeHighlighter()` exists but the pool manager and markdown code blocks share
+that highlighter, so there is no safe dispose point.
+
+**P2.8 as shipped (2026-08-16).** Streaming cadence: the web already had it — every thread
+subscriber is fed through the 50 ms coalescer in `packages/client-runtime/src/state/threads.ts`
+(`THREAD_STREAM_COALESCE_WINDOW`, shared with mobile, whose 64 ms `streamingTextCadence` sits on
+top for its native Markdown bridge), so React sees at most 20 publications/s during a stream and the
+final delta lands within the same window; no second cadence was layered on `ChatMarkdown`.
+Derivations, measured per publication on a synthetic 10-turn / 1,500-activity window:
+`deriveWorkLogEntries` was 75 % of the chain (0.43 ms of 0.57 ms) — payload parsing, not the
+`toSorted` (0.009 ms) — and now caches the parsed entry per activity object in a `WeakMap`
+(activities are identity-stable across publications), 0.43 → 0.16 ms; the minimap preview
+collapsed whitespace over every full message text per publication (~0.8 ms per 200 KB of loaded
+text) and now reads a 1,000-char prefix. `deriveTimelineEntries` (0.03 ms) and `latestTurn` identity
+were left alone — the timeline re-derives anyway because the streaming message object changes.
+Pulses: `animate-status-pulse`/`animate-status-ping` infinite animations are gone; one ticker
+(`apps/web/src/hooks/useStatusPulse.tsx`) writes `html[data-status-pulse]` (phase 0–5, 667 ms) that
+`index.css` maps to opacity steps for `.status-pulse`, the three-dot `.status-pulse-wave` and the
+connecting `.status-ping`; it runs only while a subscriber (`useStatusPulse`/`StatusPulseDot`) is
+mounted, the document is visible, the Motion toggle is on and `prefers-reduced-motion` is off,
+otherwise the indicators are static. The agent-browser click ripple keeps its one-off CSS ping.
+`ultrathink-frame::before` / `.ultrathink-chroma` hold their static spectrum under
+`html:not([data-scenery-motion])` and reduced motion.
+
+**P2.9 as shipped (2026-08-16).** `registerWebview` no longer attaches the debugger; a guest gets
+a control session only when something needs one — an automation action, a non-`system`
+`prefers-color-scheme` override, or an active recording/PiP capture — and attaching enables no CDP
+domain (`Manager.ts` `ensureControlSession`). Domains: `Runtime`/`Log`/`Network` are armed by the
+first automation action on a guest (`armDiagnostics`) and stay on for that session, so console/
+network history starts at the agent's first touch and a tab the agent never drives pays for nothing;
+`Accessibility` is enabled → `getFullAXTree` → disabled inside each snapshot only; `Page` is enabled
+only for the screencast. The session is released when it goes idle (`releaseIdleControlSession`:
+scheme back to `system`, capture stopped, no diagnostics history). `diagnostics` is a plain in-place
+map: console/network buffers `push`/`shift` at 200, in-flight `requests` evict the oldest at 500;
+`onMessage` drops CDP events outside the eight it handles before forking anything. Recording/PiP:
+`Page.startScreencast` (jpeg q80, ≤1600 px) is started per capture and its frames — already encoded
+off the JS thread — feed the same delivery path; the 12 fps `capturePage` tick only runs while no
+screencast frame arrived in the last 250 ms (`SCREENCAST_GRACE_MS`), which covers DevTools holding
+the debugger, guests whose screencast starves while offscreen, and static pages, and it downscales to
+the same 1600 px bound before `toJPEG`. Recording frames are sent to `wc.hostWebContents` (the window
+hosting the guest, where the renderer-side recorder lives) instead of `sendAll`; the PiP window keeps
+its direct channel.
+
 ### Phase 3 — needs design or upstream coordination (L)
 
 - **P3.1** Gate the Electron `ClerkProvider` behind a persisted signed-in/cloud-enabled flag so

@@ -766,7 +766,7 @@ export function deriveWorkLogEntries(
     if (activity.summary === "Checkpoint captured") continue;
     if (isPlanBoundaryToolActivity(activity)) continue;
     if (isAgentInternalActivity(activity)) continue;
-    entries.push(toDerivedWorkLogEntry(activity));
+    entries.push(derivedWorkLogEntryFor(activity));
   }
   return collapseDerivedWorkLogEntries(entries).map((entry) => {
     const { activityKind, collapseKey: _collapseKey, ...rest } = entry;
@@ -803,6 +803,25 @@ function extractWorkLogToolLifecycleStatus(
     return s;
   }
   return undefined;
+}
+
+/**
+ * Activity rows are immutable and identity-stable across thread publications
+ * (the reducer appends or replaces, never mutates), while parsing a payload
+ * into an entry is the dominant per-publish derivation cost. Caching per
+ * activity object makes each publication pay only for rows it has not seen.
+ * Consumers treat the returned entry as read-only (collapse rebuilds by
+ * spreading, never in place).
+ */
+const derivedWorkLogEntryCache = new WeakMap<OrchestrationThreadActivity, DerivedWorkLogEntry>();
+
+function derivedWorkLogEntryFor(activity: OrchestrationThreadActivity): DerivedWorkLogEntry {
+  let entry = derivedWorkLogEntryCache.get(activity);
+  if (entry === undefined) {
+    entry = toDerivedWorkLogEntry(activity);
+    derivedWorkLogEntryCache.set(activity, entry);
+  }
+  return entry;
 }
 
 function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry {

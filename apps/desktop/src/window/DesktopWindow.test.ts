@@ -203,6 +203,7 @@ function makeTestLayer(input: {
   ) => Effect.Effect<void>;
   readonly openedExternalUrls?: unknown[];
   readonly previewZoomReapplies?: number[];
+  readonly broadcastChannels?: string[];
 }) {
   let desktopSettings = input.desktopSettings ?? DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS;
   const desktopAppSettingsLayer = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
@@ -252,7 +253,10 @@ function makeTestLayer(input: {
     setMain: (window) => Ref.set(input.mainWindow, Option.some(window)),
     clearMain: () => Ref.set(input.mainWindow, Option.none()),
     reveal: () => Effect.void,
-    sendAll: () => Effect.void,
+    sendAll: (channel) =>
+      Effect.sync(() => {
+        input.broadcastChannels?.push(channel);
+      }),
     destroyAll: Effect.void,
     syncAllAppearance: (sync) => sync(input.window),
   } satisfies ElectronWindow.ElectronWindow["Service"]);
@@ -436,11 +440,13 @@ describe("DesktopWindow", () => {
       const createCount = yield* Ref.make(0);
       const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
       const createdWindowOptions: Electron.BrowserWindowConstructorOptions[] = [];
+      const broadcastChannels: string[] = [];
       const layer = makeTestLayer({
         window: fakeWindow.window,
         createCount,
         mainWindow,
         createdWindowOptions,
+        broadcastChannels,
       });
 
       yield* Effect.gen(function* () {
@@ -450,6 +456,7 @@ describe("DesktopWindow", () => {
 
         yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
         assert.equal(yield* Ref.get(createCount), 1);
+        assert.deepEqual(broadcastChannels, ["desktop:backend-ready"]);
         assert.equal(createdWindowOptions[0]?.width, 1100);
         assert.equal(createdWindowOptions[0]?.height, 780);
         assert.isUndefined(createdWindowOptions[0]?.x);

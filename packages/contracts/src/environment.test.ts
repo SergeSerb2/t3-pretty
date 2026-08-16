@@ -65,4 +65,17 @@ describe("ExecutionEnvironmentDescriptor", () => {
       }).capabilities.storageInventory,
     ).toBe(true);
   });
+
+  it("treats a missing storage-inventory-stream capability as unsupported under version skew", () => {
+    expect(decodeDescriptor(descriptor).capabilities.storageInventoryStream).toBeUndefined();
+  });
+
+  it("preserves an advertised storage-inventory-stream capability", () => {
+    expect(
+      decodeDescriptor({
+        ...descriptor,
+        capabilities: { ...descriptor.capabilities, storageInventoryStream: true },
+      }).capabilities.storageInventoryStream,
+    ).toBe(true);
+  });
 });

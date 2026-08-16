@@ -101,7 +101,28 @@ export function archivedDeleteDetail(inventory: StorageInventory): string {
   return `${pluralCount(count, "archived thread")} · ${formatStorageBytes(inventory.archivedWorktreeBytes)} in worktrees`;
 }
 
+export function isStorageScanInProgress(
+  _inventory: StorageInventory | null,
+  isPending: boolean,
+): boolean {
+  // A leftover `scan.status === "scanning"` snapshot is not in-flight work.
+  // After a dropped stream the last frame can still say scanning; only the
+  // live query/subscription waiting flag means bytes are still arriving.
+  return isPending;
+}
+
+export function scanProgressCaption(inventory: StorageInventory): string | null {
+  const scan = inventory.scan;
+  if (scan === undefined || scan.status !== "scanning") return null;
+  if (scan.totalCount === 0) {
+    return "Looking for managed worktrees…";
+  }
+  return `Found ${formatStorageBytes(inventory.totalBytes)} so far · ${scan.measuredCount} of ${scan.totalCount} paths`;
+}
+
 export function summaryCaption(inventory: StorageInventory): string {
+  const progress = scanProgressCaption(inventory);
+  if (progress !== null) return progress;
   const worktreeCount = inventory.activeWorktrees.length + inventory.archivedWorktrees.length;
   return `${pluralCount(worktreeCount, "worktree")} measured`;
 }

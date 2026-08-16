@@ -27,6 +27,7 @@ import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
+  createEnvironmentSubscriptionAtomFamily,
   createRuntimeCommand,
   scheduleAtomCommandEffect,
 } from "./runtime.ts";
@@ -751,6 +752,12 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.storageGetInventory,
       staleTimeMs: 60_000,
     }),
+    storageInventoryStream: createEnvironmentSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:storage-inventory-stream",
+      idleTtlMs: 60_000,
+      restartOnReconnect: true,
+      subscribe: () => runStream(WS_METHODS.storageStreamInventory, {}),
+    }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:welcome",
@@ -763,8 +770,10 @@ export function createServerEnvironmentAtoms<R, E>(
     refreshProviders: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:refresh-providers",
       tag: WS_METHODS.serverRefreshProviders,
+      // A refresh requested mid-flight (e.g. several host skill toggles in a
+      // row) queues exactly one trailing pass so the last change is seen.
       concurrency: {
-        mode: "singleFlight",
+        mode: "latest",
         key: ({ environmentId }) => environmentId,
       },
     }),

@@ -30,7 +30,7 @@ A Git worktree used as an isolated workspace for a thread. If a thread has a `wo
 
 #### Storage inventory
 
-A server-side scan of **managed worktrees** under the environment's worktrees folder (`storage.getInventory` / `storage.removeOrphan` in [the contracts][1]). Clients gate on the `storageInventory` capability and never probe older servers. Project checkouts outside that folder are never listed or deleted. Unique paths are counted once when several threads share a checkout. `isDirty === null` is unsafe, never clean.
+A server-side scan of **managed worktrees** under the environment's worktrees folder (`storage.getInventory` / `storage.streamInventory` / `storage.removeOrphan` in [the contracts][1]). Clients gate on the `storageInventory` capability and never probe older servers. Servers that advertise `storageInventoryStream` push incremental inventories while the walk is still running; older servers only answer the unary query. Project checkouts outside that folder are never listed or deleted. Unique paths are counted once when several threads share a checkout. `isDirty === null` is unsafe, never clean.
 
 ### Thread timeline
 
@@ -79,6 +79,14 @@ The logic that applies domain events to the read model or projection tables. See
 #### Read model
 
 The current materialized view of orchestration state. In [the contracts][1], it holds projects, threads, messages, activities, checkpoints, and session state. See [ProjectionSnapshotQuery.ts][10] and [OrchestrationEngine.ts][7].
+
+#### Thread-touched
+
+The cheap shell stream delta (`{threadId, updatedAt, sequence}`) sent instead of a full `thread-upserted` when a thread event only appended a message or activity, so a streaming turn does not re-send the whole `OrchestrationThreadShell` per delta. Built once per server in [ShellStream.ts][25] and fanned out to every `subscribeShell` subscriber. See [the contracts][1].
+
+#### Ephemeral event
+
+A `thread.activity-appended` that is streamed to `subscribeThread` subscribers but never appended to the event store: it carries `sequence: 0` and the stream item is flagged `ephemeral: true`, so clients apply it in place without moving their resume cursor (older clients drop it at their cursor gate). Used for in-flight tool progress: [ToolProgress.ts][26] keeps the latest `tool.updated` per `(thread, item)` under the stable id `${itemId}:progress`, splices it into thread detail snapshots, and only a coalesced tick (at most every 3 s) plus a turn-end flush is persisted. See [the contracts][1] and [ProviderRuntimeIngestion.ts][5].
 
 #### Reactor
 
@@ -187,3 +195,5 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../../apps/server/src/checkpointing/Utils.ts
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
+[25]: ../../apps/server/src/orchestration/ShellStream.ts
+[26]: ../../apps/server/src/orchestration/ToolProgress.ts

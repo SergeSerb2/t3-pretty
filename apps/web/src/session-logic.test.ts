@@ -1599,6 +1599,38 @@ describe("deriveTimelineEntries", () => {
   });
 });
 
+describe("deriveWorkLogEntries per-activity cache", () => {
+  it("returns equal entries for repeated and re-wrapped activity arrays", () => {
+    const activities = [
+      makeActivity({
+        id: "tool-a-updated",
+        turnId: "turn-1",
+        kind: "tool.updated",
+        summary: "Ran command",
+        payload: { itemId: "a", data: { command: "ls" } },
+      }),
+      makeActivity({
+        id: "tool-a-completed",
+        turnId: "turn-1",
+        kind: "tool.completed",
+        summary: "Ran command",
+        payload: { itemId: "a", status: "completed", data: { output: "ok" } },
+      }),
+    ];
+    const first = deriveWorkLogEntries(activities);
+    const second = deriveWorkLogEntries([...activities]);
+    expect(second).toEqual(first);
+    // Same content under a fresh identity must not be served from the cache
+    // of a different row.
+    const swapped = deriveWorkLogEntries([
+      { ...activities[0]!, summary: "Ran other command" },
+      activities[1]!,
+    ]);
+    expect(swapped[0]?.label).toBe("Ran other command");
+    expect(deriveWorkLogEntries(activities)[0]?.label).toBe("Ran command");
+  });
+});
+
 describe("deriveWorkLogEntries context window handling", () => {
   it("excludes context window updates from the work log", () => {
     const entries = deriveWorkLogEntries([

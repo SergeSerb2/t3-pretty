@@ -55,6 +55,7 @@ import {
 import { ProjectionCheckpoint } from "../../persistence/Services/ProjectionCheckpoints.ts";
 import { ThreadBackgroundLivenessService } from "../ThreadBackgroundLiveness.ts";
 import { ThreadPlanProgressService } from "../ThreadPlanProgress.ts";
+import { ToolProgressService } from "../ToolProgress.ts";
 import { ProjectionProject } from "../../persistence/Services/ProjectionProjects.ts";
 import { ProjectionState } from "../../persistence/Services/ProjectionState.ts";
 import { ProjectionThreadActivity } from "../../persistence/Services/ProjectionThreadActivities.ts";
@@ -380,6 +381,7 @@ function toPersistenceSqlOrDecodeError(sqlOperation: string, decodeOperation: st
 const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const threadBackgroundLiveness = yield* ThreadBackgroundLivenessService;
   const threadPlanProgress = yield* ThreadPlanProgressService;
+  const toolProgress = yield* ToolProgressService;
   const sql = yield* SqlClient.SqlClient;
   const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const repositoryIdentityResolutionConcurrency = 4;
@@ -2786,6 +2788,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     readonly beforeAnchorAt: string;
     readonly beforeTurnKey: string;
   }
+  // Sentinels for unbounded keyset ends; "~" sorts after any ISO timestamp.
+  const ANCHOR_UNBOUNDED = "~";
 
   const getThreadDetailByIdBounded = (threadId: ThreadId, bounds: ThreadDetailBounds | undefined) =>
     Effect.gen(function* () {
@@ -2879,12 +2883,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         ...new Map(
           [...activityRows, ...pinnedActivityRows].map((row) => [row.activityId, row] as const),
         ).values(),
-      ].toSorted(
-        (left, right) =>
-          (left.sequence ?? -1) - (right.sequence ?? -1) ||
-          left.createdAt.localeCompare(right.createdAt) ||
-          left.activityId.localeCompare(right.activityId),
-      );
+      ];
+      // In-flight tool progress lives in memory (ToolProgressService), not in
+      // the projection: splice the latest tick per item in over any older
+      // persisted copy so a fresh subscriber sees what a live one does. Only
+      // the newest page can contain a running turn; older pages stay as read.
+      const liveProgress =
+        bounds === undefined || bounds.beforeAnchorAt === ANCHOR_UNBOUNDED
+          ? toolProgress.getThreadProgress(threadId)
+          : [];
+      const liveProgressIds = new Set(liveProgress.map((activity) => activity.id));
 
       const thread = {
         id: threadRow.value.threadId,
@@ -2928,21 +2936,26 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           return message;
         }),
         proposedPlans: proposedPlanRows.map(mapProposedPlanRow),
-        activities: selectedActivityRows.map((row) => {
-          const activity = {
-            id: row.activityId,
-            tone: row.tone,
-            kind: row.kind,
-            summary: row.summary,
-            payload: row.payload,
-            turnId: row.turnId,
-            createdAt: row.createdAt,
-          };
-          if (row.sequence !== null) {
-            return Object.assign(activity, { sequence: row.sequence });
-          }
-          return activity;
-        }),
+        activities: [
+          ...selectedActivityRows
+            .filter((row) => !liveProgressIds.has(row.activityId))
+            .map((row) => ({
+              id: row.activityId,
+              tone: row.tone,
+              kind: row.kind,
+              summary: row.summary,
+              payload: row.payload,
+              turnId: row.turnId,
+              createdAt: row.createdAt,
+              ...(row.sequence !== null ? { sequence: row.sequence } : {}),
+            })),
+          ...liveProgress,
+        ].toSorted(
+          (left, right) =>
+            (left.sequence ?? -1) - (right.sequence ?? -1) ||
+            left.createdAt.localeCompare(right.createdAt) ||
+            left.id.localeCompare(right.id),
+        ),
         checkpoints: checkpointRows.map((row) => ({
           turnId: row.turnId,
           checkpointTurnCount: row.checkpointTurnCount,
@@ -2972,8 +2985,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   // fan-out group across pages (the cursor continues the same group). Also
   // structurally bounds the window scan via the candidates CTE's LIMIT.
   const THREAD_DETAIL_MAX_RAW_TURNS_PER_PAGE = 150;
-  // Sentinels for unbounded keyset ends; "~" sorts after any ISO timestamp.
-  const ANCHOR_UNBOUNDED = "~";
 
   const getThreadDetailSnapshot: ProjectionSnapshotQueryShape["getThreadDetailSnapshot"] = (
     threadId,

@@ -89,6 +89,24 @@ export function resolveSkillToolName(input: {
 }
 
 const SKILL_MENTION_PATTERN = /(^|\s)\$([a-zA-Z][a-zA-Z0-9:_-]*)(?=\s|$)/g;
+const SKILL_MENTION_TOKEN_PATTERN = /^[a-zA-Z][a-zA-Z0-9:_-]*$/;
+
+/**
+ * The `$token` the composer inserts for a skill. Skill names outside the
+ * mention grammar (dots, spaces, uppercase-with-punctuation) are folded to
+ * their directory-safe form, which the server's name matching also accepts.
+ */
+export function skillMentionToken(name: string): string {
+  const trimmed = name.trim();
+  return SKILL_MENTION_TOKEN_PATTERN.test(trimmed)
+    ? trimmed
+    : trimmed.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+}
+
+/** True when a `$mention` refers to a skill with this name (exact or folded). */
+export function skillMentionMatchesName(mention: string, name: string): boolean {
+  return mention === name || mention === skillMentionToken(name);
+}
 
 /** `$skill-name` tokens in a user message, first-seen order, case-preserving. */
 export function extractSkillMentions(text: string): ReadonlyArray<string> {

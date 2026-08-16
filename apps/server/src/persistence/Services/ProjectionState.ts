@@ -38,6 +38,16 @@ export interface ProjectionStateRepositoryShape {
   readonly upsert: (row: ProjectionState) => Effect.Effect<void, ProjectionRepositoryError>;
 
   /**
+   * Insert or replace many projection cursor rows in one statement.
+   *
+   * The pipeline advances every projector cursor once per event; a single
+   * multi-row upsert keeps that to one statement instead of one per projector.
+   */
+  readonly upsertMany: (
+    rows: ReadonlyArray<ProjectionState>,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
+
+  /**
    * Read projection cursor state for a projector key.
    */
   readonly getByProjector: (

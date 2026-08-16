@@ -8,7 +8,7 @@
  *
  * @module Preview
  */
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 export const PREVIEW_URL_MAX_LENGTH = 2_048;

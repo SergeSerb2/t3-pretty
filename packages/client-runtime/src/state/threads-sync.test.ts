@@ -309,6 +309,35 @@ const titleUpdated = (title: string, sequence = 2): OrchestrationThreadStreamIte
   },
 });
 
+const ephemeralToolProgress = (detail: string): OrchestrationThreadStreamItem => ({
+  kind: "event",
+  ephemeral: true,
+  event: {
+    eventId: EventId.make("call-1:progress:live"),
+    sequence: 0,
+    occurredAt: "2026-04-01T01:00:00.000Z",
+    commandId: null,
+    causationEventId: null,
+    correlationId: null,
+    metadata: {},
+    aggregateKind: "thread",
+    aggregateId: THREAD_ID,
+    type: "thread.activity-appended",
+    payload: {
+      threadId: THREAD_ID,
+      activity: {
+        id: EventId.make("call-1:progress"),
+        tone: "tool",
+        kind: "tool.updated",
+        summary: "Run",
+        payload: { itemType: "command_execution", detail },
+        turnId: null,
+        createdAt: "2026-04-01T01:00:00.000Z",
+      },
+    },
+  },
+});
+
 const deleted = (): OrchestrationThreadStreamItem => ({
   kind: "event",
   event: {
@@ -687,6 +716,38 @@ describe("EnvironmentThreads", () => {
         yield* Effect.yieldNow;
       }
       expect(yield* drainObserved).toHaveLength(0);
+    }),
+  );
+
+  it.effect("applies ephemeral tool progress in place without moving the resume cursor", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ cached: BASE_THREAD, completionMarker: true });
+      yield* Queue.offer(
+        harness.inputs,
+        titleUpdated("Latest title", CACHED_SNAPSHOT_SEQUENCE + 1),
+      );
+      yield* Queue.offer(harness.inputs, ephemeralToolProgress("1/2"));
+      yield* Queue.offer(harness.inputs, ephemeralToolProgress("2/2"));
+      yield* Queue.offer(harness.inputs, synchronized());
+      const state = yield* awaitThreadState(
+        harness.observed,
+        (value) =>
+          value.status === "live" &&
+          Option.isSome(value.data) &&
+          value.data.value.activities.length > 0,
+      );
+      const activities = Option.getOrThrow(state.data).activities;
+      // Same stable id: the second tick replaced the first.
+      expect(activities.map((activity) => activity.id)).toEqual(["call-1:progress"]);
+      expect((activities[0]?.payload as { detail: string }).detail).toBe("2/2");
+
+      yield* harness.replaceSession;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(harness.subscriptionCount)) >= 2) break;
+        yield* Effect.yieldNow;
+      }
+      // Cursor still points at the last persisted event, not the ephemeral 0.
+      expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBe(CACHED_SNAPSHOT_SEQUENCE + 1);
     }),
   );
 

@@ -14,8 +14,9 @@ Choose the **World Scenery** theme in **Settings → Appearance**. While that th
   **Settings → Appearance**.
 - **Thread motion** governs the app's small entrance and press animations — arriving
   messages, approval and question panels, dialogs, attachments, status pills — and
-  turning it off also parks photo fades on thread switch. With the system reduce-motion
-  setting on, those animations keep only their fade.
+  turning it off also parks photo fades on thread switch, holds the working and
+  running-status dots still, and freezes the ultrathink composer spectrum. With the
+  system reduce-motion setting on, those animations keep only their fade.
 
 On phone, open **Settings → Appearance** and use **Scenery photos**. While it is on you can also
 adjust **Photo blur** and **Photo presence**.

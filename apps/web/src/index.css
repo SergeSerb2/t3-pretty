@@ -137,8 +137,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-zinc-25: oklch(99.2% 0 0);
   --animate-skeleton: skeleton 2s infinite linear;
   /* Duty-cycled indicator animations: long holds with stepped ramps, so the
-     compositor updates discrete frames instead of every vsync. */
-  --animate-status-pulse: status-pulse 2s infinite;
+     compositor updates discrete frames instead of every vsync. Status pulses
+     are not here: they are JS-stepped (see .status-pulse below). */
   --animate-ghost-pulse: ghost-pulse 2.4s infinite;
   --animate-status-ping: status-ping 2s infinite;
   --color-warning-foreground: var(--warning-foreground);
@@ -226,21 +226,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       opacity: 1;
     }
   }
-  @keyframes status-pulse {
-    0%,
-    40% {
-      opacity: 1;
-      animation-timing-function: steps(6);
-    }
-    50%,
-    90% {
-      opacity: 0.5;
-      animation-timing-function: steps(6);
-    }
-    100% {
-      opacity: 1;
-    }
-  }
   @keyframes status-ping {
     /* Burst first (immediate feedback for click ripples), then hold
        invisible for the rest of the cycle. Mirrors animate-ping's
@@ -256,6 +241,39 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       scale: 2;
     }
   }
+}
+
+/* Status pulses step through html[data-status-pulse] (phase 0-5 at ~1.5 Hz,
+   written by hooks/useStatusPulse.tsx while a subscriber is mounted, the
+   document is visible and motion is allowed) instead of running infinite
+   compositor animations, so an active turn does not keep BeginFrames ticking
+   at the display refresh rate. Without the attribute every indicator is
+   static: pulses at full opacity, the ping halo hidden. */
+html[data-status-pulse="1"] .status-pulse,
+html[data-status-pulse="3"] .status-pulse,
+html[data-status-pulse="5"] .status-pulse {
+  opacity: 0.5;
+}
+/* Three-dot working cluster: one dot dims per phase, a slow wave. */
+html[data-status-pulse="0"] .status-pulse-wave > :nth-child(1),
+html[data-status-pulse="3"] .status-pulse-wave > :nth-child(1),
+html[data-status-pulse="1"] .status-pulse-wave > :nth-child(2),
+html[data-status-pulse="4"] .status-pulse-wave > :nth-child(2),
+html[data-status-pulse="2"] .status-pulse-wave > :nth-child(3),
+html[data-status-pulse="5"] .status-pulse-wave > :nth-child(3) {
+  opacity: 0.5;
+}
+/* Connecting halo: a two-step ping once per cycle, hidden the rest of it. */
+.status-ping {
+  opacity: 0;
+}
+html[data-status-pulse="0"] .status-ping {
+  opacity: 0.9;
+  scale: 0.75;
+}
+html[data-status-pulse="1"] .status-ping {
+  opacity: 0.35;
+  scale: 1.6;
 }
 
 @utility surface-glass {
@@ -2094,4 +2112,17 @@ code {
 
 .ultrathink-chroma {
   animation: ultrathink-chroma-shift 10s linear infinite;
+}
+
+/* Both ultrathink animations repaint every frame while the composer is in
+   that mode; hold the static spectrum when motion is off (app toggle or OS). */
+html:not([data-scenery-motion]) .ultrathink-frame::before,
+html:not([data-scenery-motion]) .ultrathink-chroma {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ultrathink-frame::before,
+  .ultrathink-chroma {
+    animation: none;
+  }
 }

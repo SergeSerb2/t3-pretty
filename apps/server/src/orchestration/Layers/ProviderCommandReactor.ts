@@ -8,6 +8,7 @@ import {
   ProviderDriverKind,
   type ProjectId,
   type OrchestrationSession,
+  type ProviderInstanceId,
   type SkillId,
   ThreadId,
   renderSubagentPolicyInstructions,
@@ -52,7 +53,14 @@ import {
 } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
-import { SkillMaterializer, sanitizeSkillDirectoryName } from "../../skills/SkillMaterializer.ts";
+import {
+  SkillMaterializer,
+  sanitizeSkillDirectoryName,
+  skillNameMatches,
+  type SkillDocument,
+  type SkillMaterializeResult,
+} from "../../skills/SkillMaterializer.ts";
+import { renderSkillsPrelude } from "../../skills/SkillPrelude.ts";
 import {
   HANDOFF_TRANSCRIPT_MAX_CHARS,
   renderProviderHandoffPrelude,
@@ -109,17 +117,35 @@ function asActivityRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+/**
+ * Keys for every skill the thread log shows as loaded into the main agent's
+ * context: T3's own `skill.loaded` rows and the agent's successful Skill tool
+ * calls. A T3 row for a store skill counts by id only, so two installed
+ * skills that share a name never shadow each other; rows without an id
+ * (mentions, agent calls) count by name. Subagent calls load into the
+ * subagent's context, and failed or still-running calls loaded nothing, so
+ * neither counts.
+ */
 function collectedSkillLoadKeys(
   activities: ReadonlyArray<{ readonly kind: string; readonly payload: unknown }>,
 ): Set<string> {
   const keys = new Set<string>();
   for (const activity of activities) {
     const payload = asActivityRecord(activity.payload);
-    if (activity.kind !== "skill.loaded" && payload?.itemType !== "skill_load") {
+    const isOwnRow = activity.kind === "skill.loaded";
+    const isAgentRow =
+      activity.kind === "tool.completed" &&
+      payload?.itemType === "skill_load" &&
+      payload.status !== "failed" &&
+      payload.status !== "declined" &&
+      payload.agentId === undefined &&
+      payload.parentToolUseId === undefined;
+    if (!isOwnRow && !isAgentRow) {
       continue;
     }
     if (typeof payload?.skillId === "string" && payload.skillId.trim().length > 0) {
       keys.add(skillLoadIdKey(payload.skillId));
+      continue;
     }
     const nameCandidates = [payload?.detail, payload?.skillName];
     for (const candidate of nameCandidates) {
@@ -156,6 +182,8 @@ const turnStartKeyForEvent = (event: ProviderIntentEvent): string =>
 
 const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
+/** Room kept for the handoff prelude and message framing when sizing the skills prelude. */
+const SKILLS_PRELUDE_INPUT_RESERVE_CHARS = 1_000;
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 const MAX_REGENERATION_ATTACHMENTS = 4;
 const MAX_THREAD_TITLE_CONTEXT_CHARS = 8_000;
@@ -564,140 +592,199 @@ const make = Effect.gen(function* () {
     });
   });
 
-  const appendSkillLoadedActivities = Effect.fnUntraced(function* (input: {
-    readonly threadId: ThreadId;
-    readonly createdAt: string;
-    readonly loaded: ReadonlyArray<{ readonly id: SkillId; readonly name: string }>;
-    readonly mentionedNames: ReadonlyArray<string>;
-  }) {
-    const pending: Array<{
-      readonly name: string;
-      readonly skillId?: SkillId;
-      readonly keys: ReadonlyArray<string>;
-    }> = [];
-    const seenKeys = new Set<string>();
-    const remember = (entry: {
-      readonly name: string;
-      readonly skillId?: SkillId;
-      readonly keys: ReadonlyArray<string>;
-    }) => {
-      if (entry.keys.some((key) => seenKeys.has(key))) {
-        return;
-      }
-      for (const key of entry.keys) {
-        seenKeys.add(key);
-      }
-      pending.push(entry);
-    };
-    for (const skill of input.loaded) {
-      remember({
-        name: skill.name,
-        skillId: skill.id,
-        keys: [
-          skillLoadIdKey(skill.id),
-          skillLoadNameKey(skill.name),
-          skillLoadNameKey(sanitizeSkillDirectoryName(skill.name)),
-        ],
-      });
-    }
-    for (const name of input.mentionedNames) {
-      remember({
-        name,
-        keys: [skillLoadNameKey(name), skillLoadNameKey(sanitizeSkillDirectoryName(name))],
-      });
-    }
-    if (pending.length === 0) {
-      return;
-    }
-    const thread = yield* resolveThread(input.threadId);
-    const alreadyShown = collectedSkillLoadKeys(thread?.activities ?? []);
-    for (const skill of pending) {
-      if (skill.keys.some((key) => alreadyShown.has(key))) {
-        continue;
-      }
-      for (const key of skill.keys) {
-        alreadyShown.add(key);
-      }
-      yield* orchestrationEngine.dispatch({
-        type: "thread.activity.append",
-        commandId: yield* serverCommandId("skill-loaded-activity"),
-        threadId: input.threadId,
-        activity: {
-          id: yield* serverEventId(),
-          tone: "tool",
-          kind: "skill.loaded",
-          summary: "Skill",
-          payload: {
-            itemType: "skill_load",
-            status: "completed",
-            title: "Skill",
-            detail: skill.name,
-            ...(skill.skillId !== undefined ? { skillId: skill.skillId } : {}),
-            skillName: skill.name,
-          },
-          turnId: null,
-          createdAt: input.createdAt,
-        },
-        createdAt: input.createdAt,
-      });
-    }
-  });
-
-  // Skills materialize into the workspace at turn start so the provider
-  // session boots with the enabled skill set already on disk. The cwd is the
-  // exact one startSession receives; the enabled set is the union of the
-  // global settings picks and the thread's own picks. Skills must never
-  // block a turn: any failure is logged and the turn proceeds.
-  const materializeSkillsForTurnStart = Effect.fnUntraced(function* (input: {
+  /**
+   * Skills a turn should carry: the enabled set (global settings ∪ thread
+   * picks) materialized into the workspace plus `$skill` mentions in the
+   * message, minus anything the thread log already shows as loaded (by T3 or
+   * by the agent's own Skill tool). Their SKILL.md bodies travel with the
+   * turn input, so "Skill" rows are only recorded once the provider accepted
+   * the turn (`recordLoaded`); a failed send leaves nothing to dedupe against.
+   * A provider handoff starts a fresh context, so it reloads everything.
+   * Skills must never block a turn: any failure is logged and the turn
+   * proceeds without a prelude.
+   */
+  const prepareSkillsForTurnStart = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
     readonly threadEnabledSkillIds: ReadonlyArray<SkillId>;
     readonly cwd: string | undefined;
+    readonly providerInstanceId: ProviderInstanceId;
     readonly createdAt: string;
-    readonly messageText?: string;
+    readonly messageText: string | undefined;
+    readonly reloadAll: boolean;
   }) {
-    let loaded: ReadonlyArray<{ readonly id: SkillId; readonly name: string }> = [];
-    if (input.cwd !== undefined) {
-      const settings = yield* serverSettingsService.getSettings.pipe(
-        Effect.catchCause((cause) => {
-          if (Cause.hasInterruptsOnly(cause)) {
-            return Effect.failCause(cause);
-          }
-          return Effect.logWarning(
-            "provider command reactor failed to read skills settings; using thread skills only",
-            {
-              threadId: input.threadId,
-              cause: Cause.pretty(cause),
-            },
-          ).pipe(Effect.as(undefined));
-        }),
-      );
-      const skillIds = [
-        ...new Set<SkillId>([
-          ...(settings?.skills.enabledSkillIds ?? []),
-          ...input.threadEnabledSkillIds,
-        ]),
-      ];
-      const materializeResult = yield* skillMaterializer
-        .materialize({ cwd: input.cwd, skillIds })
-        .pipe(
-          Effect.catchCause((cause) => {
-            if (Cause.hasInterruptsOnly(cause)) {
-              return Effect.failCause(cause);
-            }
-            return Effect.logWarning("provider command reactor failed to materialize skills", {
-              threadId: input.threadId,
-              cause: Cause.pretty(cause),
-            }).pipe(Effect.as(undefined));
-          }),
+    // Interrupts propagate; every other failure degrades to "no result".
+    const orUndefinedOnFailure =
+      (message: string) =>
+      <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A | undefined, E, R> =>
+        self.pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.logWarning(message, {
+                  threadId: input.threadId,
+                  cause: Cause.pretty(cause),
+                }).pipe(Effect.as(undefined)),
+          ),
         );
-      loaded = materializeResult?.loaded ?? [];
+
+    let loaded: SkillMaterializeResult["loaded"] = [];
+    if (input.cwd !== undefined) {
+      const cwd = input.cwd;
+      const settings = yield* serverSettingsService.getSettings.pipe(
+        orUndefinedOnFailure(
+          "provider command reactor failed to read skills settings; using thread skills only",
+        ),
+      );
+      const ownSkillIds = new Set<SkillId>([
+        ...(settings?.skills.enabledSkillIds ?? []),
+        ...input.threadEnabledSkillIds,
+      ]);
+      // The workspace is shared by every live thread on the same cwd (local
+      // mode, or several threads on one worktree), so the folders on disk
+      // must cover all of their picks: reconciling to this thread's set alone
+      // would delete a sibling's skill out from under its running agent. Only
+      // this thread's own set is loaded into its context, though.
+      const shells = yield* projectionSnapshotQuery
+        .getShellSnapshot()
+        .pipe(
+          orUndefinedOnFailure(
+            "provider command reactor failed to read sibling threads for skill materialization",
+          ),
+        );
+      const siblingSkillIds =
+        shells?.threads.flatMap((shell) =>
+          shell.id !== input.threadId &&
+          shell.archivedAt === null &&
+          resolveThreadWorkspaceCwd({ thread: shell, projects: shells.projects }) === cwd
+            ? shell.enabledSkillIds
+            : [],
+        ) ?? [];
+      const materializeResult = yield* skillMaterializer
+        .materialize({ cwd, skillIds: [...new Set<SkillId>([...ownSkillIds, ...siblingSkillIds])] })
+        .pipe(orUndefinedOnFailure("provider command reactor failed to materialize skills"));
+      loaded = (materializeResult?.loaded ?? []).filter((skill) => ownSkillIds.has(skill.id));
     }
-    yield* appendSkillLoadedActivities({
-      threadId: input.threadId,
-      createdAt: input.createdAt,
-      loaded,
-      mentionedNames: extractSkillMentions(input.messageText ?? ""),
+
+    const mentionedNames = extractSkillMentions(input.messageText ?? "").filter(
+      (name) => !loaded.some((skill) => skillNameMatches(skill.name, name)),
+    );
+    let mentioned: ReadonlyArray<SkillDocument> = [];
+    if (mentionedNames.length > 0) {
+      const providers = yield* providerRegistry.getProviders.pipe(
+        orUndefinedOnFailure(
+          "provider command reactor failed to read provider skills for $skill mentions",
+        ),
+      );
+      const candidates =
+        providers?.find((provider) => provider.instanceId === input.providerInstanceId)?.skills ??
+        [];
+      mentioned =
+        (yield* skillMaterializer
+          .resolveMentions({ cwd: input.cwd, names: mentionedNames, candidates })
+          .pipe(
+            orUndefinedOnFailure("provider command reactor failed to resolve $skill mentions"),
+          )) ?? [];
+    }
+
+    // Store skills are distinct by id (two marketplaces can ship a "tdd");
+    // mentions are distinct by name, and mentions matching a loaded store
+    // skill were already dropped above.
+    const nameKeys = (name: string) => [
+      skillLoadNameKey(name),
+      skillLoadNameKey(sanitizeSkillDirectoryName(name)),
+    ];
+    const pending: Array<{
+      readonly document: SkillDocument;
+      readonly skillId?: SkillId;
+      readonly keys: ReadonlyArray<string>;
+    }> = [
+      ...loaded.map((skill) => ({
+        document: skill,
+        skillId: skill.id,
+        keys: [skillLoadIdKey(skill.id), ...nameKeys(skill.name)],
+      })),
+      ...mentioned.map((skill) => ({ document: skill, keys: nameKeys(skill.name) })),
+    ];
+    if (pending.length === 0) {
+      return { prelude: undefined, recordLoaded: Effect.void };
+    }
+
+    const thread = input.reloadAll
+      ? undefined
+      : yield* resolveThread(input.threadId).pipe(
+          orUndefinedOnFailure(
+            "provider command reactor failed to read the thread log for skill dedupe",
+          ),
+        );
+    const alreadyShown = collectedSkillLoadKeys(thread?.activities ?? []);
+    const toLoad = pending.filter((skill) => !skill.keys.some((key) => alreadyShown.has(key)));
+    if (toLoad.length === 0) {
+      return { prelude: undefined, recordLoaded: Effect.void };
+    }
+
+    const rendered = renderSkillsPrelude({
+      skills: toLoad.map((skill) => skill.document),
+      maxChars: Math.max(
+        0,
+        PROVIDER_SEND_TURN_MAX_INPUT_CHARS -
+          (input.messageText?.trim().length ?? 0) -
+          SKILLS_PRELUDE_INPUT_RESERVE_CHARS,
+      ),
     });
+    if (rendered === undefined) {
+      yield* Effect.logWarning("provider command reactor could not fit any skill into the turn", {
+        threadId: input.threadId,
+        skills: toLoad.map((skill) => skill.document.name),
+      });
+      return { prelude: undefined, recordLoaded: Effect.void };
+    }
+    if (rendered.omitted.length > 0) {
+      yield* Effect.logWarning(
+        "provider command reactor omitted skills that exceed the turn size",
+        {
+          threadId: input.threadId,
+          skills: rendered.omitted.map((skill) => skill.name),
+        },
+      );
+    }
+    const includedDocuments = new Set(rendered.included);
+    const included = toLoad.filter((skill) => includedDocuments.has(skill.document));
+
+    const recordLoaded = Effect.gen(function* () {
+      for (const skill of included) {
+        yield* orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId: yield* serverCommandId("skill-loaded-activity"),
+          threadId: input.threadId,
+          activity: {
+            id: yield* serverEventId(),
+            tone: "tool",
+            kind: "skill.loaded",
+            summary: "Skill",
+            payload: {
+              itemType: "skill_load",
+              status: "completed",
+              title: "Skill",
+              detail: skill.document.name,
+              ...(skill.skillId !== undefined ? { skillId: skill.skillId } : {}),
+              skillName: skill.document.name,
+              directory: skill.document.directory,
+            },
+            turnId: null,
+            createdAt: input.createdAt,
+          },
+          createdAt: input.createdAt,
+        });
+      }
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("provider command reactor failed to record loaded skills", {
+          threadId: input.threadId,
+          cause: Cause.pretty(cause),
+        }),
+      ),
+    );
+    return { prelude: rendered.text, recordLoaded };
   });
 
   const ensureSessionForThread = Effect.fn("ensureSessionForThread")(function* (
@@ -893,15 +980,20 @@ const make = Effect.gen(function* () {
       thread,
       projects: project ? [project] : [],
     });
-    if (options?.pendingTurnStart === true) {
-      yield* materializeSkillsForTurnStart({
-        threadId,
-        threadEnabledSkillIds: thread.enabledSkillIds,
-        cwd: effectiveCwd,
-        createdAt,
-        ...(options.messageText !== undefined ? { messageText: options.messageText } : {}),
-      });
-    }
+    // Skills materialize before the provider session boots so the CLI sees
+    // the enabled set on disk; the returned prelude travels with the turn.
+    const skills =
+      options?.pendingTurnStart === true
+        ? yield* prepareSkillsForTurnStart({
+            threadId,
+            threadEnabledSkillIds: thread.enabledSkillIds,
+            cwd: effectiveCwd,
+            providerInstanceId: desiredInstanceId,
+            createdAt,
+            messageText: options.messageText,
+            reloadAll: isProviderHandoff,
+          })
+        : { prelude: undefined, recordLoaded: Effect.void };
 
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
@@ -989,6 +1081,7 @@ const make = Effect.gen(function* () {
           threadId: existingSessionThreadId,
           handedOff: isProviderHandoff,
           finalizeHandoff,
+          skills,
         };
       }
 
@@ -1035,6 +1128,7 @@ const make = Effect.gen(function* () {
         threadId: restartedSession.threadId,
         handedOff: isProviderHandoff,
         finalizeHandoff,
+        skills,
       };
     }
 
@@ -1047,6 +1141,7 @@ const make = Effect.gen(function* () {
       threadId: startedSession.threadId,
       handedOff: isProviderHandoff,
       finalizeHandoff,
+      skills,
     };
   });
 
@@ -1083,6 +1178,7 @@ const make = Effect.gen(function* () {
       : undefined;
     const subagentPolicyChars =
       subagentPolicyInstructions === undefined ? 0 : subagentPolicyInstructions.length + 2;
+    const skillsPrelude = ensuredSession.skills.prelude;
     const handoffPrelude = ensuredSession.handedOff
       ? renderProviderHandoffPrelude({
           messages: thread.messages,
@@ -1092,16 +1188,19 @@ const make = Effect.gen(function* () {
             HANDOFF_TRANSCRIPT_MAX_CHARS,
             PROVIDER_SEND_TURN_MAX_INPUT_CHARS -
               (normalizedInput?.length ?? 0) -
+              (skillsPrelude?.length ?? 0) -
               subagentPolicyChars -
               1_000,
           ),
         })
       : undefined;
-    const inputWithHandoffPrelude = handoffPrelude
-      ? [handoffPrelude, normalizedInput].filter(Boolean).join("\n\n")
-      : normalizedInput;
+    // Skills first: they are standing instructions, the handoff is history.
+    const inputWithPreludes =
+      skillsPrelude || handoffPrelude
+        ? [skillsPrelude, handoffPrelude, normalizedInput].filter(Boolean).join("\n\n")
+        : normalizedInput;
     const inputWithSubagentPolicy = withSubagentPolicyInstructions(
-      inputWithHandoffPrelude,
+      inputWithPreludes,
       subagentPolicy,
     );
     const normalizedAttachments = input.attachments ?? [];
@@ -1141,7 +1240,17 @@ const make = Effect.gen(function* () {
         ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
         ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
       },
-      finalizeHandoff: ensuredSession.finalizeHandoff,
+      // Runs once the provider accepted the turn: persists the handoff and the
+      // Skill rows for the documents this turn carried.
+      afterSendTurn: ensuredSession.finalizeHandoff.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("provider command reactor failed to persist provider handoff", {
+            threadId: input.threadId,
+            cause: Cause.pretty(cause),
+          }),
+        ),
+        Effect.andThen(ensuredSession.skills.recordLoaded),
+      ),
     };
   });
 
@@ -1534,16 +1643,7 @@ const make = Effect.gen(function* () {
     }
 
     yield* providerService.sendTurn(sendTurnRequest.value.request).pipe(
-      Effect.tap(() =>
-        sendTurnRequest.value.finalizeHandoff.pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning("provider command reactor failed to persist provider handoff", {
-              threadId: event.payload.threadId,
-              cause: Cause.pretty(cause),
-            }),
-          ),
-        ),
-      ),
+      Effect.tap(() => sendTurnRequest.value.afterSendTurn),
       Effect.catchCause(recoverTurnStartFailure),
       Effect.forkScoped,
     );

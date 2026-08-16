@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./activityProjection": {
+      "types": "./src/activityProjection.ts",
+      "import": "./src/activityProjection.ts"
+    },
     "./themePalettes": {
       "types": "./src/themePalettes.ts",
       "import": "./src/themePalettes.ts"

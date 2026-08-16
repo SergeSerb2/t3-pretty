@@ -115,6 +115,12 @@ vi.mock("electron", () => ({
   },
 }));
 
+const testHostWebContents = {
+  id: 1,
+  isDestroyed: () => false,
+  send: vi.fn(),
+} as unknown as Electron.WebContents;
+
 const browserSessionLayer = Layer.succeed(
   BrowserSession.BrowserSession,
   BrowserSession.BrowserSession.of({
@@ -182,11 +188,14 @@ const makeTestPreviewWebContents = (
     get: vi.fn(() => true),
     set: vi.fn((_allowed: boolean) => undefined),
   },
+  overrides: Record<string, unknown> = {},
 ) =>
   ({
     id,
     isDestroyed: () => false,
     getType: () => "webview",
+    hostWebContents: testHostWebContents,
+    isDevToolsOpened: () => false,
     getURL: () => "https://example.com",
     getTitle: () => "Example",
     isLoading: () => false,
@@ -208,7 +217,21 @@ const makeTestPreviewWebContents = (
       off: vi.fn(),
     },
     capturePage,
+    ...overrides,
   }) as never;
+
+const captureDebuggerMessages = () => {
+  let listener:
+    | ((event: unknown, method: string, params: Record<string, unknown>) => void)
+    | undefined;
+  const on = vi.fn((event: string, next: typeof listener) => {
+    if (event === "message") listener = next;
+  });
+  return {
+    on,
+    emit: (method: string, params: Record<string, unknown>) => listener?.({}, method, params),
+  };
+};
 
 const TEST_FAVICON = "data:image/png;base64,cG5n";
 
@@ -252,6 +275,7 @@ const makeFaviconWebContents = (options?: {
     id: options?.id ?? 42,
     isDestroyed: () => destroyed,
     getType: () => "webview",
+    hostWebContents: testHostWebContents,
     getURL: () => currentUrl,
     getTitle: () => "Preview",
     isLoading: () => loading,
@@ -478,6 +502,8 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
+          isDevToolsOpened: () => false,
           getURL: () => "about:blank",
           getTitle: () => "",
           isLoading: () => false,
@@ -1018,6 +1044,8 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
+          isDevToolsOpened: () => false,
           getURL: () => url,
           getTitle: () => "Example",
           isLoading: () => false,
@@ -1085,6 +1113,8 @@ describe("PreviewManager", () => {
           id: 43,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
+          isDevToolsOpened: () => false,
           getURL: () => url,
           getTitle: () => "Example",
           isLoading: () => false,
@@ -1123,6 +1153,8 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
+          isDevToolsOpened: () => false,
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
@@ -1167,6 +1199,8 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
+          isDevToolsOpened: () => false,
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
@@ -1220,6 +1254,7 @@ describe("PreviewManager", () => {
               isDestroyed: () => false,
               isDevToolsOpened: () => false,
               getType: () => "webview",
+              hostWebContents: testHostWebContents,
               getURL: () => "https://example.com",
               getTitle: () => "Example",
               isLoading: () => false,
@@ -1365,6 +1400,8 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
+          isDevToolsOpened: () => false,
           getURL: () => url,
           getTitle: () => "localhost:5733",
           isLoading: () => loading,
@@ -1455,6 +1492,8 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
+          isDevToolsOpened: () => false,
           getURL: () => "https://example.com:8443/path?query=value",
           getTitle: () => "Example",
           isLoading: () => false,
@@ -1544,6 +1583,8 @@ describe("PreviewManager", () => {
             id,
             isDestroyed: () => false,
             getType: () => "webview",
+            hostWebContents: testHostWebContents,
+            isDevToolsOpened: () => false,
             getURL: () => `https://example.com/${id}`,
             getTitle: () => `Example ${id}`,
             isLoading: () => false,
@@ -1608,14 +1649,17 @@ describe("PreviewManager", () => {
             }),
           ]),
         );
-        expect(firstSendCommand).not.toHaveBeenCalledWith(
-          "Page.startScreencast",
-          expect.anything(),
-        );
-        expect(secondSendCommand).not.toHaveBeenCalledWith(
-          "Page.startScreencast",
-          expect.anything(),
-        );
+        // Screencast is armed per guest with bounded output; capturePage only
+        // fills in while the screencast is quiet.
+        for (const sendCommand of [firstSendCommand, secondSendCommand]) {
+          expect(sendCommand).toHaveBeenCalledWith("Page.startScreencast", {
+            format: "jpeg",
+            quality: 80,
+            maxWidth: 1600,
+            maxHeight: 1600,
+            everyNthFrame: 1,
+          });
+        }
 
         yield* Effect.all([manager.stopRecording("tab_1"), manager.stopRecording("tab_2")], {
           concurrency: 2,
@@ -1827,6 +1871,7 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
@@ -1898,6 +1943,179 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("routes screencast frames to the host window and pauses the fallback", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const capturePage = vi.fn(async () => ({
+          toJPEG: () => Buffer.from("fallback-frame"),
+          getSize: () => ({ width: 1280, height: 720 }),
+        }));
+        const host = { id: 7, isDestroyed: () => false, send: vi.fn() };
+        const sendCommand = vi.fn(async () => undefined);
+        let attached = false;
+        const detach = vi.fn(() => {
+          attached = false;
+        });
+        const messages = captureDebuggerMessages();
+        fromId.mockReturnValue(
+          makeTestPreviewWebContents(capturePage, 42, undefined, {
+            hostWebContents: host,
+            debugger: {
+              isAttached: () => attached,
+              attach: vi.fn(() => {
+                attached = true;
+              }),
+              sendCommand,
+              on: messages.on,
+              off: vi.fn(),
+              detach,
+            },
+          }),
+        );
+        const targets: Array<unknown> = [];
+        yield* manager.subscribeRecordingFrames((_frame, target) =>
+          Effect.sync(() => {
+            targets.push(target);
+          }),
+        );
+        yield* manager.createTab("tab_route");
+        yield* manager.registerWebview("tab_route", 42);
+        yield* manager.startRecording("tab_route");
+        // Initial fallback frame while the screencast has not spoken yet.
+        expect(capturePage).toHaveBeenCalledOnce();
+        expect(targets).toEqual([host]);
+
+        messages.emit("Page.screencastFrame", {
+          sessionId: 1,
+          data: Buffer.from("screencast-frame").toString("base64"),
+          metadata: { deviceWidth: 1280, deviceHeight: 720 },
+        });
+        yield* Effect.yieldNow;
+        expect(targets).toEqual([host, host]);
+        expect(sendCommand).toHaveBeenCalledWith("Page.screencastFrameAck", { sessionId: 1 });
+        // A healthy screencast silences the capturePage tick...
+        yield* TestClock.adjust(100);
+        expect(capturePage).toHaveBeenCalledOnce();
+        // ...until it goes quiet, then capturePage resumes.
+        yield* TestClock.adjust(300);
+        expect(capturePage.mock.calls.length).toBeGreaterThan(1);
+
+        yield* manager.stopRecording("tab_route");
+        expect(sendCommand).toHaveBeenCalledWith("Page.stopScreencast");
+        // Nothing needs the debugger once capture stops on an untouched tab.
+        expect(detach).toHaveBeenCalledOnce();
+      }),
+    ),
+  );
+
+  effectIt.effect("attaches no debugger and enables no CDP domain when a guest registers", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const attach = vi.fn();
+        const sendCommand = vi.fn(async () => undefined);
+        fromId.mockReturnValue(
+          makeTestPreviewWebContents(
+            async () => ({
+              toJPEG: () => Buffer.alloc(0),
+              getSize: () => ({ width: 1, height: 1 }),
+            }),
+            42,
+            undefined,
+            {
+              debugger: { isAttached: () => false, attach, sendCommand, on: vi.fn(), off: vi.fn() },
+            },
+          ),
+        );
+        yield* manager.createTab("tab_idle");
+        yield* manager.registerWebview("tab_idle", 42);
+        yield* Effect.yieldNow;
+        expect(attach).not.toHaveBeenCalled();
+        expect(sendCommand).not.toHaveBeenCalled();
+      }),
+    ),
+  );
+
+  effectIt.effect("scopes Accessibility to the snapshot and caps tracked requests", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const messages = captureDebuggerMessages();
+        const sendCommand = vi.fn(async (method: string) =>
+          method === "Runtime.evaluate"
+            ? {
+                result: {
+                  value: {
+                    url: "https://example.com",
+                    title: "Example",
+                    loading: false,
+                    visibleText: "",
+                    interactiveElements: [],
+                  },
+                },
+              }
+            : method === "Accessibility.getFullAXTree"
+              ? { nodes: [] }
+              : undefined,
+        );
+        fromId.mockReturnValue(
+          makeTestPreviewWebContents(
+            async () =>
+              ({
+                toPNG: () => Buffer.from("png"),
+                getSize: () => ({ width: 100, height: 50 }),
+              }) as never,
+            42,
+            undefined,
+            {
+              debugger: {
+                isAttached: () => false,
+                attach: vi.fn(),
+                sendCommand,
+                on: messages.on,
+                off: vi.fn(),
+              },
+            },
+          ),
+        );
+        yield* manager.createTab("tab_snapshot");
+        yield* manager.registerWebview("tab_snapshot", 42);
+        // First automation action arms console/network capture, never Accessibility.
+        yield* manager.automationEvaluate("tab_snapshot", { expression: "null" });
+        const methods = () => sendCommand.mock.calls.map(([method]) => method);
+        expect(methods()).toEqual(
+          expect.arrayContaining(["Runtime.enable", "Log.enable", "Network.enable"]),
+        );
+        expect(methods()).not.toContain("Accessibility.enable");
+
+        for (let index = 0; index < 501; index += 1) {
+          messages.emit("Network.requestWillBeSent", {
+            requestId: `req-${index}`,
+            request: { url: `https://example.com/${index}`, method: "GET" },
+          });
+        }
+        yield* Effect.yieldNow;
+        // req-0 was evicted by the cap, req-500 is still tracked.
+        for (const requestId of ["req-0", "req-500"]) {
+          messages.emit("Network.responseReceived", {
+            requestId,
+            response: { status: 500 },
+          });
+        }
+        yield* Effect.yieldNow;
+
+        const snapshot = yield* manager.automationSnapshot("tab_snapshot");
+        expect(snapshot.networkEntries.map((entry) => entry.url)).toEqual([
+          "https://example.com/500",
+        ]);
+        const accessibility = methods().filter((method) => method.startsWith("Accessibility."));
+        expect(accessibility).toEqual([
+          "Accessibility.enable",
+          "Accessibility.getFullAXTree",
+          "Accessibility.disable",
+        ]);
+      }),
+    ),
+  );
+
   effectIt.effect("shares background frame capture between recording and picture-in-picture", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -1911,6 +2129,8 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
+          isDevToolsOpened: () => false,
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
@@ -2305,6 +2525,8 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
+          isDevToolsOpened: () => false,
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
@@ -2357,6 +2579,8 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
+          isDevToolsOpened: () => false,
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
@@ -2488,6 +2712,7 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
@@ -2585,6 +2810,7 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
@@ -2739,6 +2965,7 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
@@ -2806,6 +3033,7 @@ describe("PreviewManager", () => {
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
+          hostWebContents: testHostWebContents,
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,

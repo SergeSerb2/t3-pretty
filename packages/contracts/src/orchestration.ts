@@ -596,6 +596,18 @@ export const OrchestrationShellStreamEvent = Schema.Union([
     sequence: NonNegativeInt,
     threadId: ThreadId,
   }),
+  /**
+   * A thread aggregate event that only appended a message or activity: the
+   * shell row is unchanged apart from `updatedAt`, so the server sends this
+   * ~120 B delta instead of the whole `OrchestrationThreadShell`. Clients
+   * bump `updatedAt` on the row they hold and ignore unknown threads.
+   */
+  Schema.Struct({
+    kind: Schema.Literal("thread-touched"),
+    sequence: NonNegativeInt,
+    threadId: ThreadId,
+    updatedAt: IsoDateTime,
+  }),
 ]);
 export type OrchestrationShellStreamEvent = typeof OrchestrationShellStreamEvent.Type;
 
@@ -626,6 +638,13 @@ export const OrchestrationSubscribeShellInput = Schema.Struct({
    * snapshot or catch-up replay and before it begins emitting live events.
    */
   requestCompletionMarker: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Opts in to `thread-touched` deltas for message/activity appends. Clients
+   * that omit it (builds predating the kind) receive a full `thread-upserted`
+   * for those events instead, so their stream decoder never sees an unknown
+   * kind.
+   */
+  acceptThreadTouched: Schema.optionalKey(Schema.Boolean),
 });
 export type OrchestrationSubscribeShellInput = typeof OrchestrationSubscribeShellInput.Type;
 
@@ -1667,6 +1686,12 @@ export const OrchestrationThreadStreamItem = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("event"),
     event: OrchestrationEvent,
+    /**
+     * Live-only event (in-flight tool progress): never persisted, carries
+     * `sequence: 0` and must not advance the client's resume cursor. Clients
+     * predating this flag strip it and drop the item at their cursor gate.
+     */
+    ephemeral: Schema.optional(Schema.Literal(true)),
   }),
 ]);
 export type OrchestrationThreadStreamItem = typeof OrchestrationThreadStreamItem.Type;

@@ -25,6 +25,7 @@ import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
+import * as ToolProgress from "../ToolProgress.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { encodeThreadDetailPageCursor } from "../threadDetailCursor.ts";
 
@@ -39,6 +40,8 @@ const projectionSnapshotLayer = it.layer(
   OrchestrationProjectionSnapshotQueryLive.pipe(
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
+    // Merged so tests can record live tool progress the query splices in.
+    Layer.provideMerge(ToolProgress.layer),
     Layer.provideMerge(RepositoryIdentityResolver.layer),
     Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(NodeServices.layer),
@@ -2178,6 +2181,7 @@ it.effect(
     const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
       Layer.provide(ThreadBackgroundLiveness.layer),
       Layer.provide(ThreadPlanProgress.layer),
+      Layer.provide(ToolProgress.layer),
       Layer.provideMerge(
         Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
           resolve: (cwd: string) =>
@@ -2397,6 +2401,70 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
         assert.equal(snapshot.value.thread.activities.length, 6);
         assert.equal(snapshot.value.snapshotSequence, 42);
       }
+    }),
+  );
+
+  it.effect("splices live tool progress into the newest page only, over any persisted copy", () =>
+    Effect.gen(function* () {
+      yield* seedFanOutThread();
+      const sql = yield* SqlClient.SqlClient;
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const toolProgress = yield* ToolProgress.ToolProgressService;
+      const progressId = ToolProgress.toolProgressActivityId("call-1");
+      // A coalesced tick persisted a while ago ...
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at
+        )
+        VALUES (${progressId}, 'thread-w', 'turn-5', 'tool', 'tool.updated', 'Run',
+          '{"detail":"1/3"}', '2026-03-01T00:04:01.000Z')
+      `;
+      // ... and the registry holds a newer one for the same item.
+      yield* toolProgress.record({
+        threadId: threadW,
+        itemId: "call-1",
+        nowMs: 0,
+        activity: {
+          id: progressId,
+          tone: "tool",
+          kind: "tool.updated",
+          summary: "Run",
+          payload: { detail: "3/3" },
+          turnId: TurnId.make("turn-5"),
+          createdAt: "2026-03-01T00:04:03.000Z",
+        },
+      });
+
+      const progressDetail = (snapshot: {
+        thread: { activities: ReadonlyArray<{ id: string; payload: unknown }> };
+      }) =>
+        snapshot.thread.activities
+          .filter((activity) => activity.id === progressId)
+          .map((activity) => (activity.payload as { detail: string }).detail);
+
+      const full = yield* snapshotQuery.getThreadDetailSnapshot(threadW);
+      assert.equal(full._tag, "Some");
+      if (full._tag === "Some") {
+        assert.deepEqual(progressDetail(full.value), ["3/3"]);
+        assert.equal(full.value.thread.activities.at(-1)?.id, progressId);
+      }
+
+      const firstPage = yield* snapshotQuery.getThreadDetailSnapshot(threadW, { turnLimit: 2 });
+      assert.equal(firstPage._tag, "Some");
+      if (firstPage._tag === "Some") {
+        assert.deepEqual(progressDetail(firstPage.value), ["3/3"]);
+        const beforeCursor = firstPage.value.page?.beforeCursor;
+        assert.ok(beforeCursor);
+        const olderPage = yield* snapshotQuery.getThreadDetailSnapshot(threadW, {
+          turnLimit: 2,
+          beforeCursor,
+        });
+        assert.equal(olderPage._tag, "Some");
+        if (olderPage._tag === "Some") {
+          assert.deepEqual(progressDetail(olderPage.value), []);
+        }
+      }
+      toolProgress.flush(threadW);
     }),
   );
 

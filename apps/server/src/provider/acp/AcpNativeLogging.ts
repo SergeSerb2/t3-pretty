@@ -111,7 +111,9 @@ export const makeAcpNativeLoggerFactory = Effect.fn("makeAcpNativeLoggerFactory"
           kind: "request",
           payload: formatRequestLogPayload(event),
         }),
-      ...(input.nativeEventLogger
+      // Raw/decoded protocol traces land once per JSON-RPC message (twice per
+      // token during streaming); only worth writing in verbose mode.
+      ...(input.nativeEventLogger?.verbose
         ? {
             protocolLogging: {
               logIncoming: true,
