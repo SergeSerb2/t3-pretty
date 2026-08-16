@@ -844,6 +844,29 @@ layer("GitHubPullRequestCli.layer", (it) => {
     }),
   );
 
+  it.effect("lists without search when the caller already searched the host", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValueOnce(Effect.succeed(output(pullRequests(2, 1))));
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      const batch = yield* cli.listPullRequests({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.com",
+        state: "open",
+        involvement: "all",
+        viewer: "bilal",
+        limit: 10,
+        search: false,
+      });
+
+      assert.strictEqual(batch.items.length, 2);
+      assert.isFalse(batch.continues);
+      assert.strictEqual(mockedExecute.mock.calls.length, 1);
+      expect(searchOfCall(0)).toBeUndefined();
+    }),
+  );
+
   it.effect("answers a search that found nothing with nothing, not with the whole repository", () =>
     Effect.gen(function* () {
       // The fallback is for a repository the index does not cover. Under a text search an empty

@@ -555,4 +555,37 @@ describe("GitHubCli.layer", () => {
       assert.notInclude(error.message, "user ID");
     }).pipe(Effect.provide(layer)),
   );
+
+  it.effect("does not ask GitHub again while a host is in a rate-limit cooldown", () =>
+    Effect.gen(function* () {
+      const cause = new VcsProcessExitError({
+        operation: "GitHubCli.execute",
+        command: "gh",
+        cwd: "/repo",
+        exitCode: 1,
+        failureKind: "rate-limited",
+        detail: "API rate limit exceeded.",
+      });
+      mockRun.mockReturnValue(Effect.fail(cause));
+
+      // Own layer so the cooldown cannot leak into the rest of this file: `make` holds the
+      // quota for the life of the service, and the shared layer above is reused.
+      const isolated = GitHubCli.layer.pipe(
+        Layer.provide(
+          Layer.mock(VcsProcess.VcsProcess)({
+            run: mockRun,
+          }),
+        ),
+      );
+      const gh = yield* GitHubCli.GitHubCli.pipe(Effect.provide(isolated));
+
+      const first = yield* gh.execute({ cwd: "/repo", args: ["api", "user"] }).pipe(Effect.flip);
+      const second = yield* gh.execute({ cwd: "/repo", args: ["api", "user"] }).pipe(Effect.flip);
+
+      assert.strictEqual(first._tag, "GitHubCliRateLimitError");
+      assert.strictEqual(second._tag, "GitHubCliRateLimitError");
+      assert.strictEqual(mockRun.mock.calls.length, 1);
+      assert.include(second.detail, "GitHub API rate limit exceeded");
+    }),
+  );
 });

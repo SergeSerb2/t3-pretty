@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -13,6 +14,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import { createGitHubApiQuota, gitHubApiHostFromArgs } from "./gitHubApiQuota.ts";
 import {
   decodeGitHubPullRequestJson,
   decodeGitHubPullRequestListJson,
@@ -356,19 +358,42 @@ function deriveRepositoryCloneUrlsFromCreateOutput(
 
 export const make = Effect.gen(function* () {
   const process = yield* VcsProcess.VcsProcess;
+  const quota = createGitHubApiQuota();
 
   const execute: GitHubCli["Service"]["execute"] = (input) =>
-    process
-      .run({
-        operation: "GitHubCli.execute",
-        command: "gh",
-        args: input.args,
-        cwd: input.cwd,
-        timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
-        ...(input.maxOutputBytes !== undefined ? { maxOutputBytes: input.maxOutputBytes } : {}),
-      })
-      .pipe(Effect.mapError((error) => fromVcsError({ command: "gh", cwd: input.cwd }, error)));
+    Effect.gen(function* () {
+      const host = gitHubApiHostFromArgs(input.args);
+      const now = yield* Clock.currentTimeMillis;
+      if (quota.blockedUntil(host, now) !== null) {
+        return yield* new GitHubCliRateLimitError({
+          command: "gh",
+          cwd: input.cwd,
+          cause: new Error("GitHub API rate limit cooldown; skipped a request."),
+        });
+      }
+
+      return yield* process
+        .run({
+          operation: "GitHubCli.execute",
+          command: "gh",
+          args: input.args,
+          cwd: input.cwd,
+          timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+          ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
+          ...(input.maxOutputBytes !== undefined ? { maxOutputBytes: input.maxOutputBytes } : {}),
+        })
+        .pipe(
+          Effect.mapError((error) => fromVcsError({ command: "gh", cwd: input.cwd }, error)),
+          Effect.tap(() => Effect.sync(() => quota.noteSuccess(host))),
+          Effect.tapError((error) =>
+            Effect.sync(() => {
+              if (error._tag === "GitHubCliRateLimitError") {
+                quota.noteRateLimit(host, now);
+              }
+            }),
+          ),
+        );
+    });
 
   return GitHubCli.of({
     execute,
