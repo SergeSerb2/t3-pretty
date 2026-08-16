@@ -201,18 +201,10 @@ export function SceneryArrival({
       );
       startReveal = window.setTimeout(beginReveal, hold);
     } else {
-      startReveal = window.setTimeout(() => {
-        if (photo !== null) {
-          beginReveal();
-          return;
-        }
-        if (cancelled) {
-          return;
-        }
-        revealedRef.current = true;
-        markSceneryArrivalPlayed(sequenceKey);
-        publishPhase("settled");
-      }, SCENERY_ARRIVAL.fogMaxWaitMs);
+      // Decode never came: lift over whatever is on screen. The bank still
+      // blows off instead of cutting; without a photo there is no name to
+      // hand over, so the travel simply finds nothing to move.
+      startReveal = window.setTimeout(beginReveal, SCENERY_ARRIVAL.fogMaxWaitMs);
     }
 
     return () => {
@@ -235,10 +227,15 @@ export function SceneryArrival({
 
   return (
     <div className="scenery-arrival" data-phase={phase} data-fog={fogInk}>
+      {/* Depth-sorted cloud bank, one compositor layer per band: the far
+          bank is wide, thin and barely drifts, the near bank is dense and
+          blows furthest. The grain sheet rides with the mid bank and breaks
+          the gradients' banding. */}
       <div className="scenery-fog" aria-hidden>
-        <div className="scenery-fog__sheet scenery-fog__sheet--a" />
-        <div className="scenery-fog__sheet scenery-fog__sheet--b" />
-        <div className="scenery-fog__sheet scenery-fog__sheet--c" />
+        <div className="scenery-fog__bank scenery-fog__bank--far" />
+        <div className="scenery-fog__bank scenery-fog__bank--mid" />
+        <div className="scenery-fog__bank scenery-fog__bank--grain" />
+        <div className="scenery-fog__bank scenery-fog__bank--near" />
       </div>
       {photo ? (
         <>

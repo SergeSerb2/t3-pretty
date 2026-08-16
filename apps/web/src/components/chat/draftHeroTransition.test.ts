@@ -1,13 +1,36 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  DRAFT_HERO_HANDOFF_MAX_AGE_MS,
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
+  recordDraftHeroHandoff,
   runMobileComposerTransition,
+  takeDraftHeroHandoff,
   waitForDraftHeroTransition,
 } from "./draftHeroTransition";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  recordDraftHeroHandoff(null, 0);
+});
+
+describe("draft hero handoff across a ChatView remount", () => {
+  it("hands the outgoing composer rect to the next mount exactly once", () => {
+    recordDraftHeroHandoff({ left: 12, top: 640 }, 1000);
+    expect(takeDraftHeroHandoff(1100)).toEqual({ left: 12, top: 640 });
+    expect(takeDraftHeroHandoff(1101)).toBeNull();
+  });
+
+  it("ignores a record older than the handoff window", () => {
+    recordDraftHeroHandoff({ left: 12, top: 640 }, 1000);
+    expect(takeDraftHeroHandoff(1000 + DRAFT_HERO_HANDOFF_MAX_AGE_MS + 1)).toBeNull();
+  });
+
+  it("clears the record when the outgoing view had no composer", () => {
+    recordDraftHeroHandoff({ left: 12, top: 640 }, 1000);
+    recordDraftHeroHandoff(null, 1050);
+    expect(takeDraftHeroHandoff(1060)).toBeNull();
+  });
 });
 
 describe("waitForDraftHeroTransition", () => {

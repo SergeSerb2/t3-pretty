@@ -57,7 +57,7 @@ describe("row arrival contract with the messages timeline", () => {
     expect(motionDriverSource).toContain("firstPaintForThread");
     expect(motionDriverSource).toContain("ENTER_CLEAR_MS");
     expect(motionStylesSource).toContain(
-      "animation: scenery-row-rise 220ms var(--sc-ease-out) both",
+      "animation: scenery-row-rise 340ms var(--sc-ease-out) both",
     );
   });
 
@@ -274,6 +274,11 @@ describe("hero and sidebar contract", () => {
     expect(sidebarSource).toContain("data-sidebar-working-label");
     expect(motionStylesSource).toContain("[data-sidebar-working-label]");
     expect(motionStylesSource).not.toContain("scenery-sidebar-working-breathe");
+  });
+
+  it("pops the done check the sidebar row renders when a turn ends", () => {
+    expect(sidebarSource).toContain("<CircleCheckIcon");
+    expect(motionStylesSource).toContain("[data-thread-item] svg.lucide-circle-check");
   });
 });
 
