@@ -1,15 +1,22 @@
 /**
  * New-thread arrival choreography for World Scenery. The sequence is a rare
- * first look at a place, not a per-keystroke animation: fog holds briefly,
- * the location name travels down into the composer, then the overlay unmounts
- * so nothing keeps painting.
+ * first look at a place, not a per-keystroke animation: fog covers the
+ * route change immediately, the wallpaper must be decoded under that veil,
+ * then the location name travels down into the composer and the overlay
+ * unmounts so nothing keeps painting.
  */
 
 export type SceneryArrivalPhase = "idle" | "fog" | "reveal" | "settled";
+export type SceneryComposerPlacement = "hero" | "docked";
+export type SceneryArrivalFogInk = "dark" | "light";
 
 export const SCENERY_ARRIVAL = {
-  /** Beat of full fog before the veil starts to lift. */
+  /** Intended veil when the wallpaper is already decoded at fog-on. */
   fogHoldMs: 420,
+  /** Shortest veil after decode so the lift is over a painted photo. */
+  fogHoldAfterReadyMs: 160,
+  /** Give up waiting for decode and lift over whatever is on screen. */
+  fogMaxWaitMs: 2400,
   /** Veil opacity/transform. */
   fogClearMs: 520,
   /** Location name travel from viewport center into the composer slot. */
@@ -40,10 +47,9 @@ export function resetPlayedSceneryArrivals(): void {
   playedArrivalKeys.clear();
 }
 
-export function shouldPlaySceneryArrival(input: {
-  readonly placement: "hero" | "docked" | null;
+export function shouldArmSceneryArrival(input: {
+  readonly placement: SceneryComposerPlacement | null;
   readonly threadKey: string | null;
-  readonly hasPhoto: boolean;
   readonly reducedMotion: boolean;
   readonly motionEnabled: boolean;
   readonly alreadyPlayed: boolean;
@@ -51,18 +57,35 @@ export function shouldPlaySceneryArrival(input: {
   return (
     input.placement === "hero" &&
     input.threadKey !== null &&
-    input.hasPhoto &&
     !input.reducedMotion &&
     input.motionEnabled &&
     !input.alreadyPlayed
   );
 }
 
-export function sceneryArrivalSettleAtMs(): number {
-  return (
-    SCENERY_ARRIVAL.fogHoldMs +
-    Math.max(SCENERY_ARRIVAL.locationTravelMs, SCENERY_ARRIVAL.fogClearMs)
-  );
+export function shouldPlaySceneryArrival(input: {
+  readonly placement: SceneryComposerPlacement | null;
+  readonly threadKey: string | null;
+  readonly hasPhoto: boolean;
+  readonly reducedMotion: boolean;
+  readonly motionEnabled: boolean;
+  readonly alreadyPlayed: boolean;
+}): boolean {
+  return shouldArmSceneryArrival(input) && input.hasPhoto;
+}
+
+/** Fog is covering the swap: the incoming photo should mount settled, no ink VT. */
+export function sceneryArrivalCoversSwap(phase: SceneryArrivalPhase | null): boolean {
+  return phase === "fog";
+}
+
+export function remainingFogHoldMs(fogStartedAt: number, now: number): number {
+  const elapsed = Math.max(0, now - fogStartedAt);
+  return Math.max(SCENERY_ARRIVAL.fogHoldAfterReadyMs, SCENERY_ARRIVAL.fogHoldMs - elapsed);
+}
+
+export function sceneryArrivalSettleAtMs(holdMs: number = SCENERY_ARRIVAL.fogHoldMs): number {
+  return holdMs + Math.max(SCENERY_ARRIVAL.locationTravelMs, SCENERY_ARRIVAL.fogClearMs);
 }
 
 export function writeSceneryArrivalPhase(phase: SceneryArrivalPhase | null): void {
@@ -75,6 +98,44 @@ export function writeSceneryArrivalPhase(phase: SceneryArrivalPhase | null): voi
     return;
   }
   root.dataset[SCENERY_ARRIVAL_ATTR] = phase;
+}
+
+export function readSceneryArrivalPhase(): SceneryArrivalPhase | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  const value = document.documentElement.dataset[SCENERY_ARRIVAL_ATTR];
+  return value === "fog" || value === "reveal" || value === "settled" ? value : null;
+}
+
+export function writeSceneryComposerPlacement(placement: SceneryComposerPlacement | null): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const root = document.documentElement;
+  if (placement === null) {
+    delete root.dataset[SCENERY_COMPOSER_ATTR];
+    return;
+  }
+  if (root.dataset[SCENERY_COMPOSER_ATTR] === placement) {
+    return;
+  }
+  root.dataset[SCENERY_COMPOSER_ATTR] = placement;
+}
+
+export function readSceneryComposerPlacement(): SceneryComposerPlacement | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  const value = document.documentElement.dataset[SCENERY_COMPOSER_ATTR];
+  return value === "hero" || value === "docked" ? value : null;
+}
+
+export function readSceneryArrivalFogInk(): SceneryArrivalFogInk {
+  if (typeof document === "undefined") {
+    return "dark";
+  }
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
 export function measureCenterDelta(

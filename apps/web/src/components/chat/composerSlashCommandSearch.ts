@@ -6,12 +6,13 @@ import {
 
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
 
-function scoreSlashCommandItem(
-  item: Extract<ComposerCommandItem, { type: "slash-command" | "provider-slash-command" }>,
-  query: string,
-): number | null {
-  const primaryValue =
-    item.type === "slash-command" ? item.command.toLowerCase() : item.command.name.toLowerCase();
+type SlashCommandItem = Extract<
+  ComposerCommandItem,
+  { type: "slash-command" | "provider-slash-command" | "runtime-mode" }
+>;
+
+function scoreSlashCommandItem(item: SlashCommandItem, query: string): number | null {
+  const primaryValue = item.label.replace(/^\//, "").toLowerCase();
   const description = item.description.toLowerCase();
 
   const scores = [
@@ -43,18 +44,16 @@ function scoreSlashCommandItem(
 }
 
 export function searchSlashCommandItems(
-  items: ReadonlyArray<
-    Extract<ComposerCommandItem, { type: "slash-command" | "provider-slash-command" }>
-  >,
+  items: ReadonlyArray<SlashCommandItem>,
   query: string,
-): Array<Extract<ComposerCommandItem, { type: "slash-command" | "provider-slash-command" }>> {
+): Array<SlashCommandItem> {
   const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: /^\/+/ });
   if (!normalizedQuery) {
     return [...items];
   }
 
   const ranked: Array<{
-    item: Extract<ComposerCommandItem, { type: "slash-command" | "provider-slash-command" }>;
+    item: SlashCommandItem;
     score: number;
     tieBreaker: string;
   }> = [];
@@ -71,9 +70,9 @@ export function searchSlashCommandItems(
         item,
         score,
         tieBreaker:
-          item.type === "slash-command"
-            ? `0\u0000${item.command}`
-            : `1\u0000${item.command.name}\u0000${item.provider}`,
+          item.type === "provider-slash-command"
+            ? `1\u0000${item.command.name}\u0000${item.provider}`
+            : `0\u0000${item.label}`,
       },
       Number.POSITIVE_INFINITY,
     );

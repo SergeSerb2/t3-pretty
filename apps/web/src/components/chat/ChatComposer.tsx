@@ -36,6 +36,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "@tanstack/react-router";
 import {
   clampCollapsedComposerCursor,
   type ComposerTrigger,
@@ -68,7 +69,7 @@ import {
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
 import { compressImageForStash, compressImageToByteLimit } from "../../lib/imageCompression";
-import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { isCommandPaletteOpen, openCommandPalette } from "../../commandPaletteBus";
 import { getTerminalFocusOwner } from "../../lib/terminalFocus";
 import { resolveShortcutCommand } from "../../keybindings";
 import {
@@ -948,6 +949,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
+  const [isComposerOverflowMenuOpen, setIsComposerOverflowMenuOpen] = useState(false);
+  const [isComposerSkillsPickerOpen, setIsComposerSkillsPickerOpen] = useState(false);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [composerSubmissionError, setComposerSubmissionError] = useState<string | null>(null);
   const [providerInputSubmissionError, setProviderInputSubmissionError] = useState<string | null>(
@@ -960,6 +963,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     active: false,
   });
   const isMobileViewport = useMediaQuery("max-sm");
+  const router = useRouter();
   const isComposerCollapsedMobile =
     isMobileViewport && !forceExpandedOnMobile && !isComposerFocused;
 
@@ -1036,17 +1040,47 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
-    if (composerTrigger.kind === "path") {
-      return workspaceEntries.entries.map((entry) => ({
-        id: `path:${entry.kind}:${entry.path}`,
-        type: "path",
-        path: entry.path,
-        pathKind: entry.kind,
-        label: basenameOfPath(entry.path),
-        description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
+    const skillItems = (query: string): ComposerCommandItem[] =>
+      searchProviderSkills(selectedProviderStatus?.skills ?? [], query).map((skill) => ({
+        id: `skill:${selectedProvider}:${skill.name}`,
+        type: "skill" as const,
+        provider: selectedProvider,
+        skill,
+        label: formatProviderSkillDisplayName(skill),
+        description:
+          skill.shortDescription ??
+          skill.description ??
+          (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
       }));
+    if (composerTrigger.kind === "path") {
+      // `@` links files and skills alike; `$` stays the skills-only shortcut.
+      const fileItems = workspaceEntries.entries.map(
+        (entry): ComposerCommandItem => ({
+          id: `path:${entry.kind}:${entry.path}`,
+          type: "path",
+          path: entry.path,
+          pathKind: entry.kind,
+          label: basenameOfPath(entry.path),
+          description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
+        }),
+      );
+      return [...fileItems, ...skillItems(composerTrigger.query)];
     }
     if (composerTrigger.kind === "slash-command") {
+      const runtimeModeItems = runtimeModeOptionsForProvider(selectedProvider).map(
+        (mode): Extract<ComposerCommandItem, { type: "runtime-mode" }> => {
+          const option = resolveRuntimeModeOption(selectedProvider, mode);
+          return {
+            id: `runtime-mode:${mode}`,
+            type: "runtime-mode",
+            mode,
+            icon: option.icon,
+            label: `/${option.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+            description:
+              mode === runtimeMode ? `${option.description} (current)` : option.description,
+          };
+        },
+      );
       const builtInSlashCommandItems = [
         {
           id: "slash:model",
@@ -1073,7 +1107,51 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               },
             ] as const)
           : []),
-      ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
+        ...runtimeModeItems,
+        {
+          id: "slash:skills",
+          type: "slash-command",
+          command: "skills",
+          label: "/skills",
+          description: "Choose which skills this thread can use",
+        },
+        ...(showAutoCreatePullRequestToggle
+          ? ([
+              {
+                id: "slash:auto-pr",
+                type: "slash-command",
+                command: "auto-pr",
+                label: "/auto-pr",
+                description: autoCreatePullRequest
+                  ? "Stop opening a pull request when this thread finishes"
+                  : "Open a pull request when this thread finishes",
+              },
+            ] as const)
+          : []),
+        {
+          id: "slash:new-thread",
+          type: "slash-command",
+          command: "new-thread",
+          label: "/new",
+          description: "Start a new thread",
+        },
+        {
+          id: "slash:commands",
+          type: "slash-command",
+          command: "commands",
+          label: "/commands",
+          description: "Open the command palette",
+        },
+        {
+          id: "slash:settings",
+          type: "slash-command",
+          command: "settings",
+          label: "/settings",
+          description: "Open settings",
+        },
+      ] satisfies ReadonlyArray<
+        Extract<ComposerCommandItem, { type: "slash-command" | "runtime-mode" }>
+      >;
       const providerSlashCommandItems = (selectedProviderStatus?.slashCommands ?? []).map(
         (command) => ({
           id: `provider-slash-command:${selectedProvider}:${command.name}`,
@@ -1092,26 +1170,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return searchSlashCommandItems(slashCommandItems, query);
     }
     if (composerTrigger.kind === "skill") {
-      return searchProviderSkills(selectedProviderStatus?.skills ?? [], composerTrigger.query).map(
-        (skill) => ({
-          id: `skill:${selectedProvider}:${skill.name}`,
-          type: "skill" as const,
-          provider: selectedProvider,
-          skill,
-          label: formatProviderSkillDisplayName(skill),
-          description:
-            skill.shortDescription ??
-            skill.description ??
-            (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
-        }),
-      );
+      return skillItems(composerTrigger.query);
     }
     return [];
   }, [
+    autoCreatePullRequest,
     composerTrigger,
     planModeUiEnabled,
+    runtimeMode,
     selectedProvider,
     selectedProviderStatus,
+    showAutoCreatePullRequestToggle,
     workspaceEntries.entries,
   ]);
 
@@ -1234,6 +1303,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // `thread.skills.set` on toggle.
   const skillsPickerProps = {
     environmentId,
+    selectedInstanceId,
+    open: isComposerSkillsPickerOpen,
+    onOpenChange: setIsComposerSkillsPickerOpen,
     ...(routeKind === "server" ? { threadRef: routeThreadRef, enabledSkillIds } : {}),
     ...(routeKind === "draft" && draftId ? { draftId } : {}),
   };
@@ -1733,26 +1805,51 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         return;
       }
-      if (item.type === "slash-command") {
-        if (item.command === "model") {
-          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
-            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
-            focusEditorAfterReplace: false,
-          });
-          if (applied) {
-            setComposerHighlightedItemId(null);
-            setIsComposerModelPickerOpen(true);
-          }
-          return;
-        }
-        void handleInteractionModeChange(item.command === "plan" ? "plan" : "default");
+      if (item.type === "slash-command" || item.type === "runtime-mode") {
+        // Built-ins never send text: the `/command` token is removed and the
+        // action runs. Commands that open another surface leave focus to it.
+        const opensSurface =
+          item.type === "slash-command" &&
+          (item.command === "model" ||
+            item.command === "skills" ||
+            item.command === "new-thread" ||
+            item.command === "commands" ||
+            item.command === "settings");
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
           expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+          focusEditorAfterReplace: !opensSurface,
         });
-        if (applied) {
-          setComposerHighlightedItemId(null);
+        if (!applied) return;
+        setComposerHighlightedItemId(null);
+        if (item.type === "runtime-mode") {
+          handleRuntimeModeChange(item.mode);
+          return;
         }
-        return;
+        switch (item.command) {
+          case "model":
+            setIsComposerModelPickerOpen(true);
+            return;
+          case "plan":
+          case "default":
+            void handleInteractionModeChange(item.command);
+            return;
+          case "skills":
+            setIsComposerOverflowMenuOpen(true);
+            setIsComposerSkillsPickerOpen(true);
+            return;
+          case "auto-pr":
+            onToggleAutoCreatePullRequest();
+            return;
+          case "new-thread":
+            openCommandPalette({ open: "new-thread-in" });
+            return;
+          case "commands":
+            openCommandPalette();
+            return;
+          case "settings":
+            router.history.push("/settings");
+            return;
+        }
       }
       if (item.type === "provider-slash-command") {
         const replacement = `/${item.command.name} `;
@@ -1791,7 +1888,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
     },
-    [applyPromptReplacement, handleInteractionModeChange, resolveActiveComposerTrigger],
+    [
+      applyPromptReplacement,
+      handleInteractionModeChange,
+      handleRuntimeModeChange,
+      onToggleAutoCreatePullRequest,
+      resolveActiveComposerTrigger,
+      router,
+    ],
   );
 
   const onComposerMenuItemHighlighted = useCallback(
@@ -3237,6 +3341,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     autoCreatePullRequest={autoCreatePullRequest}
                     showAutoCreatePullRequestToggle={showAutoCreatePullRequestToggle}
                     onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
+                    open={isComposerOverflowMenuOpen}
+                    onOpenChange={(open) => {
+                      setIsComposerOverflowMenuOpen(open);
+                      if (!open) {
+                        setIsComposerSkillsPickerOpen(false);
+                      }
+                    }}
                   >
                     {providerTraitsMenuContent ? (
                       <>
@@ -3274,6 +3385,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       autoCreatePullRequest={autoCreatePullRequest}
                       showAutoCreatePullRequestToggle={showAutoCreatePullRequestToggle}
                       onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
+                      open={isComposerOverflowMenuOpen}
+                      onOpenChange={(open) => {
+                        setIsComposerOverflowMenuOpen(open);
+                        if (!open) {
+                          setIsComposerSkillsPickerOpen(false);
+                        }
+                      }}
                     >
                       {threadOverflowMenuContent}
                     </ComposerOverflowMenu>

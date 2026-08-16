@@ -151,7 +151,35 @@ describe("world scenery contrast contract", () => {
           .toBeGreaterThanOrEqual(4.5);
       });
     }
+
+    it(`${appearance}: selected chrome chips stay readable`, () => {
+      // Plan / PR toggles paint with --accent, which maps to accentSurface.
+      expect(
+        contrastRatio(hexToRgb(colors.accentSurfaceForeground), hexToRgb(colors.accentSurface)),
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(
+        contrastRatio(hexToRgb(colors.messageActionForeground), hexToRgb(colors.messageAction)),
+      ).toBeGreaterThanOrEqual(4.5);
+    });
   }
+});
+
+describe("world scenery dark highlight lift", () => {
+  const colors = WORLD_SCENERY_THEME.colors;
+
+  it("selected surfaces clear the canvas instead of collapsing into it", () => {
+    // The previous #1c2620 chip was ~1.2:1 on #0e1110 — invisible on the
+    // composer glass. Light's mint plate is a hue shift; dark has to lift.
+    expect(contrastRatio(hexToRgb(colors.accentSurface), hexToRgb(colors.canvas))).toBeGreaterThan(
+      2,
+    );
+    expect(
+      contrastRatio(hexToRgb(colors.toolbarControlHover), hexToRgb(colors.canvas)),
+    ).toBeGreaterThan(2);
+    expect(
+      contrastRatio(hexToRgb(colors.sidebarRowActive), hexToRgb(colors.sidebar)),
+    ).toBeGreaterThan(1.6);
+  });
 });
 
 describe("glass layering invariant", () => {

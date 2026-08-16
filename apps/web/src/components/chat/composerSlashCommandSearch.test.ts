@@ -68,4 +68,29 @@ describe("searchSlashCommandItems", () => {
       "provider-slash-command:claudeAgent:gh-fix-ci",
     ]);
   });
+
+  it("matches runtime-mode items on their label, not the mode id", () => {
+    const items = [
+      {
+        id: "runtime-mode:approval-required",
+        type: "runtime-mode",
+        mode: "approval-required",
+        icon: (() => null) as unknown as never,
+        label: "/supervised",
+        description: "Ask before commands and file changes.",
+      },
+      {
+        id: "slash:settings",
+        type: "slash-command",
+        command: "settings",
+        label: "/settings",
+        description: "Open settings",
+      },
+    ] satisfies ComposerCommandItem[];
+
+    expect(searchSlashCommandItems(items, "/sup").map((item) => item.id)).toEqual([
+      "runtime-mode:approval-required",
+    ]);
+    expect(searchSlashCommandItems(items, "approval").map((item) => item.id)).toEqual([]);
+  });
 });

@@ -11,7 +11,8 @@
  * load gap (that hold read as a glitchy flash of the thread being left). The
  * incoming photo fades in over whatever remains: a direct crossfade when the
  * CDN cache is warm, a dissolve through the new thread's gradient when it is
- * not. Blur-only swaps (same photo, new CDN variant) keep the hold — the old
+ * not. New-thread arrival is the exception: fog covers the swap, so a
+ * pre-decoded photo mounts settled underneath and the veil is the reveal. Blur-only swaps (same photo, new CDN variant) keep the hold — the old
  * variant stays put until the decoded one crossfades in, or slider drags
  * would pulse the photo toward the gradient. Under reduced motion nothing
  * fades: swaps commit as hard cuts once the image is ready. When the new
@@ -20,13 +21,15 @@
  * CSS layers are parked (settled, no outgoing) so nothing re-animates when
  * the snapshot finishes.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import { useMotionStore } from "./motionStore";
 import { gradientCss } from "./palette";
+import { readSceneryArrivalPhase, sceneryArrivalCoversSwap } from "./sceneryArrivalLogic";
 import { runSceneryInkTransition } from "./sceneryInkTransition";
 import { planScenerySwap } from "./scenerySwap";
+import { isWallpaperReady, preloadWallpaper } from "./sceneryWallpaper";
 import { UNSPLASH_UTM, wallpaperURL, type SceneryPhoto } from "./unsplash";
 
 interface DisplayedPhoto {
@@ -93,7 +96,7 @@ export function SceneryLayer({
   }, [displayed]);
 
   const photoId = photo?.id ?? null;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const current = displayedRef.current;
     if (!photo || photoId === null || (current?.id === photoId && current.blur === blur)) {
       return;
@@ -110,64 +113,72 @@ export function SceneryLayer({
       // right now, so the transition runs concurrently with the download.
       setOutgoing(current);
       setDisplayed(null);
+      displayedRef.current = null;
     }
     let cancelled = false;
-    const image = new Image();
-    image.addEventListener(
-      "load",
-      () => {
-        if (cancelled) {
-          return;
-        }
-        const next: DisplayedPhoto = {
-          id: photo.id,
-          blur,
-          url,
-          name: photo.name,
-          photographerName: photo.photographerName,
-          photographerProfileURL: photo.photographerProfileURL,
-        };
-        // True only while the commit runs inside a live view transition.
-        // The fallbacks (no API, reduced motion, a skipped start) commit the
-        // same way a normal swap does, keeping the CSS dissolve.
-        let inkAnimating = false;
-        const commit = () => {
-          if (inkAnimating) {
-            // The snapshot is the crossfade: park the CSS layers so they do
-            // not re-animate when the view transition hands back the live DOM.
-            setOutgoing(null);
-            setSettledKey(displayedPhotoKey(next));
-          } else {
-            // Blur-only swaps held the old variant through the download;
-            // crossfade it out now. Thread swaps already demoted theirs.
-            const held = displayedRef.current;
-            if (held !== null && held.id === next.id && held.blur !== next.blur) {
-              setOutgoing(held);
-            }
-            // A normal commit always fades in; only ink-transition commits
-            // mount settled (set above, cleared here on the next swap).
-            setSettledKey(null);
+    const commitDecoded = () => {
+      if (cancelled) {
+        return;
+      }
+      const next: DisplayedPhoto = {
+        id: photo.id,
+        blur,
+        url,
+        name: photo.name,
+        photographerName: photo.photographerName,
+        photographerProfileURL: photo.photographerProfileURL,
+      };
+      // True only while the commit runs inside a live view transition.
+      // The fallbacks (no API, reduced motion, a skipped start) commit the
+      // same way a normal swap does, keeping the CSS dissolve.
+      let inkAnimating = false;
+      const covered = sceneryArrivalCoversSwap(readSceneryArrivalPhase());
+      const commit = () => {
+        if (inkAnimating) {
+          // The snapshot is the crossfade: park the CSS layers so they do
+          // not re-animate when the view transition hands back the live DOM.
+          setOutgoing(null);
+          setSettledKey(displayedPhotoKey(next));
+        } else if (covered) {
+          // Fog is the reveal. Mount the photo at full opacity underneath
+          // so a CSS fade does not fight the veil — and skip the ink view
+          // transition, which snapshots the fog and reads as a hitch.
+          setSettledKey(displayedPhotoKey(next));
+        } else {
+          // Blur-only swaps held the old variant through the download;
+          // crossfade it out now. Thread swaps already demoted theirs.
+          const held = displayedRef.current;
+          if (held !== null && held.id === next.id && held.blur !== next.blur) {
+            setOutgoing(held);
           }
-          setDisplayed(next);
-          onPhotoDisplayedRef.current?.(photo);
-        };
-        if (appearanceCrossfadeRef.current) {
-          // The view-transition callback must mutate the DOM before it
-          // returns, so React's photo + ink state have to flush together.
-          runSceneryInkTransition((animating) => {
-            inkAnimating = animating;
-            flushSync(commit);
-          });
-          return;
+          // A normal commit always fades in; only ink-transition commits
+          // mount settled (set above, cleared here on the next swap).
+          setSettledKey(null);
         }
-        commit();
-      },
-      { once: true },
-    );
-    image.src = url;
+        displayedRef.current = next;
+        setDisplayed(next);
+        onPhotoDisplayedRef.current?.(photo);
+      };
+      if (appearanceCrossfadeRef.current && !covered) {
+        // The view-transition callback must mutate the DOM before it
+        // returns, so React's photo + ink state have to flush together.
+        runSceneryInkTransition((animating) => {
+          inkAnimating = animating;
+          flushSync(commit);
+        });
+        return;
+      }
+      commit();
+    };
+    if (isWallpaperReady(url)) {
+      commitDecoded();
+      return;
+    }
+    void preloadWallpaper(url).then(() => {
+      commitDecoded();
+    });
     return () => {
       cancelled = true;
-      image.removeAttribute("src");
     };
     // Photo identity and blur are the triggers; the rest is read fresh.
   }, [photoId, blur]);

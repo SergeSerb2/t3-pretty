@@ -11,7 +11,7 @@ import {
   make,
   parseHostSkillId,
 } from "./HostSkills.ts";
-import { SKILL_MANAGED_MARKER_FILE } from "./SkillMaterializer.ts";
+import { SKILL_MANAGED_MARKER_FILE } from "./SkillStore.ts";
 
 type TestProviderInstances = Record<
   string,

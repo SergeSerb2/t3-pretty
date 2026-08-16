@@ -411,19 +411,19 @@ html:not(.dark) .scenery-attribution:hover {
   );
 }
 
-html:not(.dark) .scenery-fog__sheet--a {
+.scenery-arrival[data-fog="light"] .scenery-fog__sheet--a {
   background:
     radial-gradient(ellipse 78% 52% at 18% 38%, rgb(246 248 247 / 0.86), transparent 72%),
     radial-gradient(ellipse 64% 58% at 82% 62%, rgb(236 240 238 / 0.78), transparent 70%);
 }
 
-html:not(.dark) .scenery-fog__sheet--b {
+.scenery-arrival[data-fog="light"] .scenery-fog__sheet--b {
   background:
     radial-gradient(ellipse 90% 46% at 50% 18%, rgb(252 253 252 / 0.72), transparent 68%),
     radial-gradient(ellipse 80% 50% at 48% 88%, rgb(232 236 234 / 0.84), transparent 64%);
 }
 
-html:not(.dark) .scenery-fog__sheet--c {
+.scenery-arrival[data-fog="light"] .scenery-fog__sheet--c {
   background: linear-gradient(
     180deg,
     rgb(244 246 245 / 0.7) 0%,
@@ -494,6 +494,9 @@ html:not(.dark) .scenery-fog__sheet--c {
 
 html[data-scenery-arrival="fog"] .scenery-layer__group {
   transform: scale(1.04);
+  transition:
+    opacity var(--scenery-motion),
+    transform 0.64s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html[data-scenery-arrival="reveal"] .scenery-layer__group,
@@ -506,7 +509,6 @@ html[data-scenery-arrival="settled"] .scenery-layer__group {
 
 html[data-scenery-arrival="fog"] [data-scenery-hero-chrome] {
   opacity: 0;
-  filter: blur(4px);
   transform: translate3d(0, 12px, 0);
   pointer-events: none;
 }
@@ -514,12 +516,10 @@ html[data-scenery-arrival="fog"] [data-scenery-hero-chrome] {
 html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome],
 html[data-scenery-arrival="settled"] [data-scenery-hero-chrome] {
   opacity: 1;
-  filter: none;
   transform: none;
   transition:
     opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    filter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html[data-scenery-arrival="fog"] .scenery-place,

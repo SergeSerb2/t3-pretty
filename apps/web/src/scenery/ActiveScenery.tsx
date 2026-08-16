@@ -13,7 +13,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { connectionProjectionPhase } from "@t3tools/client-runtime/connection";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
 import { getMediaQueryEntry } from "../hooks/useMediaQuery";
@@ -36,6 +36,8 @@ import {
   photoToAssignmentPayload,
   useSceneryStore,
 } from "./sceneryStore";
+import { preloadWallpaper } from "./sceneryWallpaper";
+import { wallpaperURL } from "./unsplash";
 import { useActiveThreadKey } from "./useActiveThreadKey";
 import { useInkOverride } from "./useInkOverride";
 import "./scenery.css";
@@ -182,12 +184,24 @@ export default function ActiveScenery() {
 
   const seed = threadKey ?? dailySeed();
 
+  useEffect(() => {
+    if (!photo) {
+      return;
+    }
+    void preloadWallpaper(wallpaperURL(photo, blur));
+  }, [photo, blur]);
+
   // Ink follows the photo that is actually on screen. Using the incoming
   // assignment would flip chrome/wash while the outgoing wallpaper is still
   // dissolving (SceneryLayer only commits the new photo once decoded). Until
   // the first photo has displayed, the assignment is the right source so the
   // opening gradient already has matching ink.
   const [displayedTone, setDisplayedTone] = useState<{
+    readonly averageColorHex: string | null;
+    readonly seed: string;
+  } | null>(null);
+  const [displayedPhotoId, setDisplayedPhotoId] = useState<string | null>(null);
+  const pendingToneRef = useRef<{
     readonly averageColorHex: string | null;
     readonly seed: string;
   } | null>(null);
@@ -255,8 +269,25 @@ export default function ActiveScenery() {
     return null;
   }
 
+  const photoReady = photo !== null && displayedPhotoId === photo.id;
+
   return (
     <>
+      <SceneryArrival
+        photo={photo}
+        threadKey={threadKey}
+        photoReady={photoReady}
+        onPhaseChange={(phase) => {
+          if (phase !== "reveal" && phase !== "settled") {
+            return;
+          }
+          const pending = pendingToneRef.current;
+          if (pending) {
+            pendingToneRef.current = null;
+            setDisplayedTone(pending);
+          }
+        }}
+      />
       <SceneryLayer
         photo={photo}
         seed={seed}
@@ -264,14 +295,20 @@ export default function ActiveScenery() {
         appearanceCrossfade={appearanceCrossfade}
         onPhotoDisplayed={(displayed) => {
           registerDisplayed(displayed);
-          setDisplayedTone({
+          setDisplayedPhotoId(displayed.id);
+          const tone = {
             averageColorHex: displayed.averageColorHex,
             seed,
-          });
+          };
+          if (document.documentElement.dataset.sceneryArrival === "fog") {
+            pendingToneRef.current = tone;
+            return;
+          }
+          pendingToneRef.current = null;
+          setDisplayedTone(tone);
         }}
       />
       <SceneryPlaceCredit photo={photo} />
-      <SceneryArrival photo={photo} threadKey={threadKey} />
     </>
   );
 }

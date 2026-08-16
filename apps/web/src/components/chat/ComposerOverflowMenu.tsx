@@ -31,10 +31,12 @@ export const ComposerOverflowMenu = memo(function ComposerOverflowMenu(props: {
   autoCreatePullRequest: boolean;
   showAutoCreatePullRequestToggle: boolean;
   onToggleAutoCreatePullRequest: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const showAutoPrDot = props.showAutoCreatePullRequestToggle && props.autoCreatePullRequest;
   return (
-    <Menu>
+    <Menu open={props.open} onOpenChange={props.onOpenChange}>
       <MenuTrigger
         render={
           <ComposerControl className="relative shrink-0 px-2" aria-label="More composer controls" />
