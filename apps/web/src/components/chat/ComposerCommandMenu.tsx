@@ -1,10 +1,11 @@
 import {
   type ProjectEntry,
   type ProviderDriverKind,
+  type RuntimeMode,
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
-import { BotIcon } from "lucide-react";
+import { BotIcon, type LucideIcon } from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
@@ -33,6 +34,14 @@ export type ComposerCommandItem =
       id: string;
       type: "slash-command";
       command: ComposerSlashCommand;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "runtime-mode";
+      mode: RuntimeMode;
+      icon: LucideIcon;
       label: string;
       description: string;
     }
@@ -86,11 +95,26 @@ function groupCommandItems(
   if (triggerKind === "skill") {
     return items.length > 0 ? [{ id: "skills", label: "Skills", items }] : [];
   }
+  if (triggerKind === "path") {
+    const fileItems = items.filter((item) => item.type === "path");
+    const skillItems = items.filter((item) => item.type === "skill");
+    if (skillItems.length === 0) {
+      return [{ id: "default", label: null, items: fileItems }];
+    }
+    const groups: ComposerCommandGroup[] = [];
+    if (fileItems.length > 0) {
+      groups.push({ id: "files", label: "Files", items: fileItems });
+    }
+    groups.push({ id: "skills", label: "Skills", items: skillItems });
+    return groups;
+  }
   if (triggerKind !== "slash-command" || !groupSlashCommandSections) {
     return [{ id: "default", label: null, items }];
   }
 
-  const builtInItems = items.filter((item) => item.type === "slash-command");
+  const builtInItems = items.filter(
+    (item) => item.type === "slash-command" || item.type === "runtime-mode",
+  );
   const providerItems = items.filter((item) => item.type === "provider-slash-command");
 
   const groups: ComposerCommandGroup[] = [];
@@ -188,7 +212,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
                   ? "Searching workspace files..."
                   : (props.emptyStateText ??
                     (props.triggerKind === "path"
-                      ? "No matching files or folders."
+                      ? "No matching files, folders, or skills."
                       : "No matching command."))}
               </p>
             )}
@@ -236,6 +260,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       ) : null}
       {props.item.type === "slash-command" ? (
         <BotIcon className="size-4 shrink-0 text-icon-muted" />
+      ) : null}
+      {props.item.type === "runtime-mode" ? (
+        <props.item.icon className="size-4 shrink-0 text-icon-muted" />
       ) : null}
       {props.item.type === "provider-slash-command" ? (
         <span className="inline-flex size-4 shrink-0 items-center justify-center text-icon-muted">

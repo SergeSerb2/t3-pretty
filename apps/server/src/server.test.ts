@@ -691,6 +691,7 @@ const buildAppUnderTest = (options?: {
           }),
           Layer.mock(HostSkills.HostSkills)({
             list: Effect.succeed({ skills: [] }),
+            resolve: () => Effect.succeed([]),
             ...options?.layers?.hostSkills,
           }),
         ),

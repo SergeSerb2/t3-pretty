@@ -30,9 +30,13 @@ are owned by a plugin or a repo, so T3 Code leaves them alone.
   skills apply to every thread in the environment, on any provider. Provider CLI skills under
   **On this environment** have the same switch: on means the CLI can load them, off hides them
   without deleting the folder.
-- **Per thread:** in the composer, open **Skills** (next to the model options) and search or
-  toggle skills for that thread. Global skills show a **Global** badge and stay on; thread picks
-  stack on top of them. You can change a thread's picks any time — they apply from the next turn.
+- **Per thread:** in the composer, open **Skills** (next to the model options, or type
+  `/skills`) and search or toggle skills for that thread. The list covers your **Library** and
+  every provider CLI's home folder, grouped by where each skill lives. Rows with a **Global**
+  badge are already on — library skills enabled in settings, and skills the selected provider
+  loads from its own home — and can only be turned off there. Everything else toggles per
+  thread, including a skill from another provider's folder or one you turned off in settings.
+  Thread picks stack on top of the global set and apply from the next turn.
 
 When a turn starts with skills attached (from Settings, the thread picker, or a `$skill` mention
 in the prompt), T3 Code sends each skill's instructions along with your message, so the agent
@@ -51,6 +55,9 @@ When a turn starts, T3 Code copies the enabled skills into the thread's workspac
 created are touched — your own skill folders are never modified or removed. Each copy carries its
 own `.gitignore`, so it never shows up in `git status` or in the agent's commits. In worktree mode
 the copies stay inside the thread's worktree; in local mode they are refreshed at each turn start.
+
+Per-thread picks from a provider CLI's home folder are copied the same way, so a skill that
+lives in `~/.codex/skills` can be turned on for a Claude thread and vice versa.
 
 On mobile there is no skills picker yet; threads started from mobile get your globally enabled
 skills automatically.

@@ -31,6 +31,8 @@ import * as ServerConfig from "../config.ts";
 
 /** Install metadata kept inside each stored skill directory. */
 export const SKILL_METADATA_FILE = ".t3-skill.json";
+/** Marker inside a workspace copy of a skill; content is the skill id. */
+export const SKILL_MANAGED_MARKER_FILE = ".t3-managed";
 
 const SkillMetadata = Schema.Struct({ installedAt: Schema.String });
 const SkillMetadataJson = fromLenientJson(SkillMetadata);

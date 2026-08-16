@@ -2,7 +2,19 @@ import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default";
+/**
+ * Built-in composer slash commands. Everything here runs inside the client;
+ * provider commands (`/compact`, custom commands) travel to the CLI as text.
+ */
+export type ComposerSlashCommand =
+  | "model"
+  | "plan"
+  | "default"
+  | "skills"
+  | "new-thread"
+  | "settings"
+  | "commands"
+  | "auto-pr";
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -264,7 +276,7 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
 
 export function parseStandaloneComposerSlashCommand(
   text: string,
-): Exclude<ComposerSlashCommand, "model"> | null {
+): Extract<ComposerSlashCommand, "plan" | "default"> | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {
     return null;
