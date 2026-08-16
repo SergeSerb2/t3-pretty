@@ -304,8 +304,13 @@ import {
   DRAFT_HERO_TRANSITION_EASING,
   MOBILE_COMPOSER_VIEW_TRANSITION_NAME,
   MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
+  SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS,
+  SCENERY_DRAFT_HERO_TRANSITION_EASING,
   runMobileComposerTransition,
 } from "./chat/draftHeroTransition";
+import { useMotionStore } from "../scenery/motionStore";
+import { bindSceneryPlaceSlot } from "../scenery/sceneryPlaceSlot";
+import { useSceneryThemeActive } from "../scenery/useHtmlAttributes";
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   branchMismatchKey,
@@ -374,12 +379,14 @@ const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
-function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
+function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = false) {
   const transitionGroupRef = useRef<HTMLDivElement | null>(null);
   const composerAnchorRef = useRef<HTMLDivElement | null>(null);
   const previousStateRef = useRef(isDraftHeroState);
   const previousComposerRectRef = useRef<DOMRect | null>(null);
   const animationRef = useRef<Animation | null>(null);
+  const sceneryDockRef = useRef(sceneryDock);
+  sceneryDockRef.current = sceneryDock;
   const attachTransitionGroupRef = (element: HTMLDivElement | null) => {
     transitionGroupRef.current = element;
   };
@@ -417,14 +424,24 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
       const translateX = previousComposerRect.left - nextComposerRect.left;
       const translateY = previousComposerRect.top - nextComposerRect.top;
       if (Math.abs(translateX) >= 0.5 || Math.abs(translateY) >= 0.5) {
+        const sceneryDockMotion = sceneryDockRef.current;
         const animation = transitionGroup.animate(
-          [
-            { transform: `translate3d(${translateX}px, ${translateY}px, 0)` },
-            { transform: "translate3d(0, 0, 0)" },
-          ],
+          sceneryDockMotion
+            ? [
+                { transform: `translate3d(${translateX}px, ${translateY}px, 0) scale(1.02)` },
+                { transform: "translate3d(0, 0, 0) scale(1)" },
+              ]
+            : [
+                { transform: `translate3d(${translateX}px, ${translateY}px, 0)` },
+                { transform: "translate3d(0, 0, 0)" },
+              ],
           {
-            duration: DRAFT_HERO_TRANSITION_DURATION_MS,
-            easing: DRAFT_HERO_TRANSITION_EASING,
+            duration: sceneryDockMotion
+              ? SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS
+              : DRAFT_HERO_TRANSITION_DURATION_MS,
+            easing: sceneryDockMotion
+              ? SCENERY_DRAFT_HERO_TRANSITION_EASING
+              : DRAFT_HERO_TRANSITION_EASING,
           },
         );
         animation.id = DRAFT_HERO_TRANSITION_ANIMATION_ID;
@@ -2706,11 +2723,40 @@ function ChatViewContent(props: ChatViewProps) {
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
   const isDraftHeroState =
     isLocalDraftThread && timelineEntries.length === 0 && !isWorking && !draftHeroDockRequested;
+  const sceneryThemeActive = useSceneryThemeActive();
+  const sceneryMotionEnabled = useMotionStore((state) => state.enabled);
+  const sceneryDraftDock = sceneryThemeActive && sceneryMotionEnabled;
   const [
     attachDraftHeroTransitionGroupRef,
     attachDraftHeroComposerAnchorRef,
     captureDraftHeroComposerRect,
-  ] = useDraftHeroLayoutTransition(isDraftHeroState);
+  ] = useDraftHeroLayoutTransition(isDraftHeroState, sceneryDraftDock);
+  const draftHeroHeadlineRef = useRef<HTMLDivElement | null>(null);
+  const [draftHeroHeadlineGhost, setDraftHeroHeadlineGhost] = useState<{
+    readonly top: number;
+    readonly left: number;
+    readonly width: number;
+  } | null>(null);
+  useLayoutEffect(() => {
+    if (!sceneryThemeActive) {
+      return;
+    }
+    const root = document.documentElement;
+    root.dataset.sceneryComposer = isDraftHeroState ? "hero" : "docked";
+    return () => {
+      delete root.dataset.sceneryComposer;
+    };
+  }, [isDraftHeroState, sceneryThemeActive]);
+  useEffect(() => {
+    if (!draftHeroHeadlineGhost) {
+      return;
+    }
+    const timeout = window.setTimeout(
+      () => setDraftHeroHeadlineGhost(null),
+      SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [draftHeroHeadlineGhost]);
   const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } = useTurnDiffSummaries(
     activeThread?.checkpoints,
   );
@@ -5304,6 +5350,16 @@ function ChatViewContent(props: ChatViewProps) {
       });
       const dockTransition = runMobileComposerTransition(() => {
         flushSync(() => {
+          if (sceneryThemeActive) {
+            const headlineBox = draftHeroHeadlineRef.current?.getBoundingClientRect();
+            if (headlineBox) {
+              setDraftHeroHeadlineGhost({
+                top: headlineBox.top,
+                left: headlineBox.left,
+                width: headlineBox.width,
+              });
+            }
+          }
           captureDraftHeroComposerRect();
           setDockedDraftHeroThreadKey(activeThreadKey);
         });
@@ -6612,7 +6668,9 @@ function ChatViewContent(props: ChatViewProps) {
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
+                        ref={draftHeroHeadlineRef}
                         className="pb-8"
+                        data-scenery-hero-chrome="headline"
                         style={
                           forceExpandedMobileComposer
                             ? {
@@ -6634,8 +6692,12 @@ function ChatViewContent(props: ChatViewProps) {
                   {threadSyncPhase && !activeEnvironmentUnavailable ? (
                     <ThreadSyncStatusPill phase={threadSyncPhase} />
                   ) : null}
+                  {sceneryThemeActive ? (
+                    <div ref={bindSceneryPlaceSlot} data-scenery-place-slot="" />
+                  ) : null}
                   <div
                     className="relative"
+                    data-scenery-hero-chrome="composer"
                     style={
                       forceExpandedMobileComposer
                         ? { viewTransitionName: MOBILE_COMPOSER_VIEW_TRANSITION_NAME }
@@ -6780,6 +6842,23 @@ function ChatViewContent(props: ChatViewProps) {
                 </div>
               </div>
             </div>
+
+            {draftHeroHeadlineGhost && sceneryThemeActive ? (
+              <div
+                aria-hidden
+                className="scenery-hero-headline-ghost"
+                style={{
+                  top: draftHeroHeadlineGhost.top,
+                  left: draftHeroHeadlineGhost.left,
+                  width: draftHeroHeadlineGhost.width,
+                }}
+              >
+                <DraftHeroHeadline
+                  activeProjectRef={activeProjectRef}
+                  activeProjectTitle={activeProject?.title ?? null}
+                />
+              </div>
+            ) : null}
 
             {activeThreadRef && activePreviewMiniPlayer ? (
               <ThreadPreviewMiniPlayer

@@ -24,8 +24,9 @@ import { environmentThreadShells, threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { layerStack } from "./glass";
 import { pickInkVariant, type InkDecisionInput } from "./sceneryInk";
+import { SceneryArrival } from "./SceneryArrival";
 import { SceneryLayer } from "./SceneryLayer";
-import { SceneryQuickSettings } from "./SceneryQuickSettings";
+import { SceneryPlaceCredit } from "./SceneryPlaceCredit";
 import {
   dailyFeatured,
   dailySeed,
@@ -269,7 +270,8 @@ export default function ActiveScenery() {
           });
         }}
       />
-      <SceneryQuickSettings />
+      <SceneryPlaceCredit photo={photo} />
+      <SceneryArrival photo={photo} threadKey={threadKey} />
     </>
   );
 }

@@ -863,9 +863,7 @@ export function NewTaskDraftScreen(props: {
       workspaceMode,
       selectedBranch: selectedBranchName,
       currentCheckoutBranch:
-        pullRequestReference.length > 0
-          ? selectedBranchName
-          : flow.currentCheckoutBranchName,
+        pullRequestReference.length > 0 ? selectedBranchName : flow.currentCheckoutBranchName,
     });
     const result = await createProjectThread({
       project: selectedProject,

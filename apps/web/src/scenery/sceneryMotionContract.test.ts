@@ -237,8 +237,8 @@ describe("primitive and settings contract", () => {
     expect(chatIndexRouteSource).toContain('<EmptyHeader className="max-w-none">');
   });
 
-  it("the scenery quick panel enters from its trigger", () => {
-    expect(sceneryStylesSource).toContain("html[data-scenery-motion] .scenery-quick__panel");
+  it("reduced motion still zeroes the movement multiplier after the dock left", () => {
+    expect(sceneryStylesSource).not.toContain(".scenery-quick__panel");
     expect(motionStylesSource).toContain("--sc-m: 0;");
   });
 });

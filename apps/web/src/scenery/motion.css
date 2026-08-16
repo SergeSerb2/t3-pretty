@@ -61,7 +61,7 @@ html[data-scenery-motion] [data-chat-composer-overlay] h1 {
 }
 
 /* ------------------------------------------------- tool card disclosure -- */
-/* The expanded body (`mt-1 ms-7 …` wrapper) mounts on toggle; entry gets a
+/* The expanded body (`mb-1 ms-7 …` wrapper) mounts on toggle; entry gets a
    short reveal, collapse stays instant. Chevron keeps its upstream rotate. */
 
 html[data-scenery-motion] [data-timeline-row-kind="work"] div[class*="ms-7"] {

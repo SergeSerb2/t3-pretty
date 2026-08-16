@@ -216,12 +216,12 @@ html:not([data-scenery-motion]) .scenery-layer__photo--outgoing {
   animation: none;
 }
 
-/* Unsplash guideline: attribution wherever a photo shows prominently. The
-   credit and settings trigger share one 24px dock so they consume a single
-   low strip beside the composer instead of two vertically stacked regions. */
+/* Unsplash guideline: attribution wherever a photo shows prominently.
+   Thread views move the credit into the composer cluster; this pill is the
+   Home / no-composer fallback. Hidden while the composer slot is mounted. */
 .scenery-attribution {
   position: fixed;
-  right: calc(var(--scenery-dock-inline) + var(--scenery-dock-control-size) + 0.125rem);
+  right: var(--scenery-dock-inline);
   bottom: var(--scenery-dock-block);
   z-index: 30;
   display: flex;
@@ -230,7 +230,7 @@ html:not([data-scenery-motion]) .scenery-layer__photo--outgoing {
   max-width: min(42vw, 24rem);
   padding: 0 0.625rem;
   border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 999px 6px 6px 999px;
+  border-radius: 999px;
   background: rgb(0 0 0 / 58%);
   -webkit-backdrop-filter: blur(12px) saturate(1.2);
   backdrop-filter: blur(12px) saturate(1.2);
@@ -240,6 +240,11 @@ html:not([data-scenery-motion]) .scenery-layer__photo--outgoing {
   white-space: nowrap;
   transition: background-color 0.15s ease;
   pointer-events: none;
+}
+
+html:has([data-scenery-place-slot]) .scenery-attribution,
+html:has([data-scenery-composer]) .scenery-attribution {
+  display: none;
 }
 
 .scenery-attribution:hover {
@@ -291,57 +296,13 @@ html:not([data-scenery-motion]) .scenery-layer__photo--outgoing {
   text-overflow: ellipsis;
 }
 
-/* ------------------------------------------------------- quick settings -- */
-
-.scenery-quick__trigger {
-  position: fixed;
-  right: var(--scenery-dock-inline);
-  bottom: var(--scenery-dock-block);
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--scenery-dock-control-size);
-  height: var(--scenery-dock-control-size);
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 6px 999px 999px 6px;
-  background: rgb(0 0 0 / 58%);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
-  backdrop-filter: blur(12px) saturate(1.2);
-  color: rgb(255 255 255 / 96%);
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    scale 140ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-html[data-scenery-motion] .scenery-quick__trigger:active {
-  scale: 0.94;
-}
-
-.scenery-quick__trigger:hover,
-.scenery-quick__trigger[aria-expanded="true"] {
-  background: rgb(0 0 0 / 72%);
-}
-
-/* The settings trigger shares the bottom-right corner with right-panel
-   actions (PR Comment, etc.). Hide the trigger while the panel is open;
-   SceneryQuickSettings also dismisses its dialog so the panel/backdrop do
-   not stay mounted behind display:none and resurrect when the panel closes.
-   Keep the Unsplash attribution: relocate it to the bottom-left so the
-   credit stays visible wherever the photo remains prominent behind chat. */
-html:has([data-right-panel-open="true"]) .scenery-quick__trigger {
-  display: none;
-}
-
 html:has([data-right-panel-open="true"]) .scenery-attribution {
   right: auto;
   left: max(0.5rem, env(safe-area-inset-left));
-  border-radius: 999px;
 }
 
 /* Maximized inline panel covers the chat column; the photo is no longer
-   prominent, so the credit can hide with the rest of the dock. */
+   prominent, so the fallback credit can hide. */
 html:has([data-preview-panel-maximized="true"][data-right-panel-open="true"]) .scenery-attribution {
   display: none;
 }
@@ -350,128 +311,20 @@ html:has([data-preview-panel-maximized="true"][data-right-panel-open="true"]) .s
    near-white behind 10px white text. Flip the dock to a light plate with
    near-black ink: dark text over a >=62% white fill stays past 4.5:1 even
    when the photo behind it is dark. */
-html:not(.dark) .scenery-attribution,
-html:not(.dark) .scenery-quick__trigger {
+html:not(.dark) .scenery-attribution {
   border-color: rgb(0 0 0 / 12%);
   background: rgb(255 255 255 / 62%);
   color: rgb(0 0 0 / 88%);
 }
 
-html:not(.dark) .scenery-attribution:hover,
-html:not(.dark) .scenery-quick__trigger:hover,
-html:not(.dark) .scenery-quick__trigger[aria-expanded="true"] {
+html:not(.dark) .scenery-attribution:hover {
   background: rgb(255 255 255 / 80%);
 }
 
-.scenery-quick__trigger:focus-visible,
 .scenery-attribution a:focus-visible,
-.scenery-quick__segments button:focus-visible {
+.scenery-place a:focus-visible {
   outline: 2px solid var(--app-theme-focus, white);
   outline-offset: 2px;
-}
-
-.scenery-quick__backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 39;
-}
-
-.scenery-quick__panel {
-  position: fixed;
-  right: var(--scenery-dock-inline);
-  bottom: calc(var(--scenery-dock-block) + var(--scenery-dock-control-size) + 0.375rem);
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  width: 13.5rem;
-  max-width: calc(100vw - 1rem - env(safe-area-inset-left) - env(safe-area-inset-right));
-  max-height: calc(100dvh - 3rem - env(safe-area-inset-top));
-  padding: 0.625rem;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 1px solid var(--app-theme-border);
-  border-radius: 10px;
-  background: var(--app-theme-surface-overlay);
-  color: var(--app-theme-text);
-  font-size: 12px;
-  box-shadow: 0 4px 8px -4px rgb(0 0 0 / 40%);
-}
-
-/* The panel grows out of its bottom-right trigger like every other popover
-   in the app; exit stays the instant unmount. Gated on the Motion toggle
-   like motion.css (--sc-m is 0 under reduced motion). */
-html[data-scenery-motion] .scenery-quick__panel {
-  transform-origin: 100% 100%;
-  transition:
-    opacity 160ms var(--sc-ease-out),
-    scale 160ms var(--sc-ease-out),
-    translate 160ms var(--sc-ease-out);
-  @starting-style {
-    opacity: 0;
-    scale: calc(1 - 0.04 * var(--sc-m));
-    translate: 0 calc(4px * var(--sc-m));
-  }
-}
-
-.scenery-quick__row {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1875rem;
-}
-
-.scenery-quick__row--range {
-  display: grid;
-  grid-template-columns: 3.75rem minmax(0, 1fr) 2rem;
-  gap: 0.375rem;
-  align-items: center;
-  min-height: 1.5rem;
-}
-
-.scenery-quick__row input[type="range"] {
-  min-width: 0;
-  width: 100%;
-  height: 1rem;
-  margin: 0;
-  accent-color: var(--app-theme-accent);
-}
-
-.scenery-quick__label {
-  color: var(--app-theme-text-muted);
-  font-weight: 500;
-}
-
-.scenery-quick__value {
-  justify-self: end;
-  color: var(--app-theme-muted-foreground);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.scenery-quick__segments {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
-  background: var(--app-theme-muted);
-}
-
-.scenery-quick__segments button {
-  flex: 1;
-  min-height: 1.5rem;
-  padding: 0.1875rem 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--app-theme-muted-foreground);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.scenery-quick__segments button[aria-pressed="true"] {
-  background: var(--app-theme-surface-overlay);
-  color: var(--app-theme-text);
-  font-weight: 600;
 }
 
 /* The required photographer credit is the last content to collapse. Once the
@@ -498,34 +351,290 @@ html[data-scenery-motion] .scenery-quick__panel {
   }
 }
 
-@media (pointer: coarse) {
-  html[data-theme-id="world-scenery"] {
-    --scenery-dock-control-size: 2.75rem;
-  }
-
-  .scenery-quick__segments button {
-    min-height: 2.25rem;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .scenery-attribution,
-  .scenery-quick__trigger {
+  .scenery-attribution {
     transition: none;
-  }
-
-  html[data-scenery-motion] .scenery-quick__trigger:active {
-    scale: none;
   }
 }
 
 @media (forced-colors: active) {
-  .scenery-attribution,
-  .scenery-quick__trigger,
-  .scenery-quick__panel {
+  .scenery-attribution {
     border: 1px solid CanvasText;
     background: Canvas;
     color: CanvasText;
+  }
+}
+
+/* ------------------------------------------------ new-thread arrival -- */
+
+.scenery-arrival {
+  position: fixed;
+  inset: 0;
+  z-index: 24;
+  pointer-events: none;
+  contain: strict;
+}
+
+.scenery-fog,
+.scenery-fog__sheet {
+  position: absolute;
+  inset: 0;
+}
+
+.scenery-fog {
+  overflow: hidden;
+}
+
+.scenery-fog__sheet {
+  inset: -12%;
+  opacity: 1;
+}
+
+.scenery-fog__sheet--a {
+  background:
+    radial-gradient(ellipse 78% 52% at 18% 38%, rgb(16 20 22 / 0.78), transparent 72%),
+    radial-gradient(ellipse 64% 58% at 82% 62%, rgb(22 26 28 / 0.7), transparent 70%);
+}
+
+.scenery-fog__sheet--b {
+  background:
+    radial-gradient(ellipse 90% 46% at 50% 18%, rgb(28 32 34 / 0.62), transparent 68%),
+    radial-gradient(ellipse 80% 50% at 48% 88%, rgb(12 14 16 / 0.8), transparent 64%);
+}
+
+.scenery-fog__sheet--c {
+  background: linear-gradient(
+    180deg,
+    rgb(10 12 14 / 0.55) 0%,
+    rgb(18 22 24 / 0.28) 42%,
+    rgb(14 16 18 / 0.72) 100%
+  );
+}
+
+html:not(.dark) .scenery-fog__sheet--a {
+  background:
+    radial-gradient(ellipse 78% 52% at 18% 38%, rgb(246 248 247 / 0.86), transparent 72%),
+    radial-gradient(ellipse 64% 58% at 82% 62%, rgb(236 240 238 / 0.78), transparent 70%);
+}
+
+html:not(.dark) .scenery-fog__sheet--b {
+  background:
+    radial-gradient(ellipse 90% 46% at 50% 18%, rgb(252 253 252 / 0.72), transparent 68%),
+    radial-gradient(ellipse 80% 50% at 48% 88%, rgb(232 236 234 / 0.84), transparent 64%);
+}
+
+html:not(.dark) .scenery-fog__sheet--c {
+  background: linear-gradient(
+    180deg,
+    rgb(244 246 245 / 0.7) 0%,
+    rgb(250 251 250 / 0.38) 42%,
+    rgb(236 239 237 / 0.8) 100%
+  );
+}
+
+.scenery-arrival[data-phase="reveal"] .scenery-fog__sheet {
+  opacity: 0;
+  transition:
+    opacity 0.52s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.52s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.scenery-arrival[data-phase="reveal"] .scenery-fog__sheet--a {
+  transform: translate3d(-4%, -6%, 0);
+}
+
+.scenery-arrival[data-phase="reveal"] .scenery-fog__sheet--b {
+  transform: translate3d(5%, 4%, 0);
+  transition-delay: 40ms;
+}
+
+.scenery-arrival[data-phase="reveal"] .scenery-fog__sheet--c {
+  transform: translate3d(0, -5%, 0);
+  transition-delay: 80ms;
+}
+
+.scenery-arrival__copy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 1.5rem 1.5rem 22vh;
+  text-align: center;
+}
+
+.scenery-arrival__kicker {
+  margin: 0;
+  color: var(--app-theme-text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  opacity: 0.72;
+}
+
+.scenery-arrival__place {
+  margin: 0;
+  color: var(--app-theme-text);
+  font-size: 1.625rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.scenery-arrival[data-phase="reveal"] .scenery-arrival__kicker {
+  opacity: 0;
+  transform: translate3d(0, -6px, 0);
+  transition:
+    opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-scenery-arrival="fog"] .scenery-layer__group {
+  transform: scale(1.04);
+}
+
+html[data-scenery-arrival="reveal"] .scenery-layer__group,
+html[data-scenery-arrival="settled"] .scenery-layer__group {
+  transform: scale(1);
+  transition:
+    opacity var(--scenery-motion),
+    transform 0.64s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-scenery-arrival="fog"] [data-scenery-hero-chrome] {
+  opacity: 0;
+  filter: blur(4px);
+  transform: translate3d(0, 12px, 0);
+  pointer-events: none;
+}
+
+html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome],
+html[data-scenery-arrival="settled"] [data-scenery-hero-chrome] {
+  opacity: 1;
+  filter: none;
+  transform: none;
+  transition:
+    opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-scenery-arrival="fog"] .scenery-place,
+html[data-scenery-arrival="reveal"] .scenery-place {
+  visibility: hidden;
+}
+
+.scenery-place {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0 auto 1.15rem;
+  max-width: 36rem;
+  text-align: center;
+  transition:
+    margin 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    gap 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.scenery-place__name {
+  margin: 0;
+  font-size: 1.625rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  text-wrap: balance;
+  transition:
+    font-size 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    font-weight 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.scenery-place__credit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--app-theme-text-muted, var(--app-theme-muted-foreground));
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.scenery-place__prefix {
+  white-space: pre;
+}
+
+.scenery-place a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.scenery-place__photographer {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-composer-placement="docked"] .scenery-place {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+[data-composer-placement="docked"] .scenery-place__name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+[data-composer-placement="docked"] .scenery-place__credit {
+  font-size: 0.6875rem;
+}
+
+[data-composer-placement="docked"] .scenery-place__name::after {
+  content: " · ";
+  font-weight: 500;
+}
+
+.scenery-hero-headline-ghost {
+  position: fixed;
+  z-index: 21;
+  pointer-events: none;
+  animation: scenery-hero-headline-exit 0.36s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes scenery-hero-headline-exit {
+  to {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translate3d(0, -8px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scenery-fog__sheet,
+  .scenery-arrival__kicker,
+  html[data-scenery-arrival="reveal"] .scenery-layer__group,
+  html[data-scenery-arrival="settled"] .scenery-layer__group,
+  html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome],
+  html[data-scenery-arrival="settled"] [data-scenery-hero-chrome] {
+    transition: none;
+  }
+
+  .scenery-hero-headline-ghost {
+    animation: none;
+    opacity: 0;
+  }
+
+  .scenery-place,
+  .scenery-place__name {
+    transition: none;
   }
 }
 
@@ -591,6 +700,13 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   padding-bottom: var(--scenery-dock-clearance);
 }
 
+/* Thread views carry the credit in the composer, so the overlay does not
+   need the Home-dock strip. */
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]:has([data-scenery-place-slot])
+  [data-chat-composer-overlay][data-composer-placement="docked"] {
+  padding-bottom: 0;
+}
+
 /* The draft hero overlay is full-height and centers the composer; padding
    only the bottom would drag the centered group upward by half the
    clearance. Padding both ends keeps the centering while the bottom still
@@ -598,6 +714,11 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   [data-chat-composer-overlay][data-composer-placement="hero"] {
   padding-block: var(--scenery-dock-clearance);
+}
+
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]:has([data-scenery-place-slot])
+  [data-chat-composer-overlay][data-composer-placement="hero"] {
+  padding-block: 0;
 }
 
 /* Sidebar: the fixed container goes clear; the inner panel carries one
@@ -653,15 +774,13 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]:not(.dark) {
     --toolbar-control-hover: var(--app-theme-toolbar-control-hover);
   }
 
-  /* No blur behind the dock either: a heavier plain fill keeps the credit
+  /* No blur behind the Home credit either: a heavier plain fill keeps it
      readable over an arbitrary photo. */
-  .scenery-attribution,
-  .scenery-quick__trigger {
+  .scenery-attribution {
     background: rgb(0 0 0 / 72%);
   }
 
-  html:not(.dark) .scenery-attribution,
-  html:not(.dark) .scenery-quick__trigger {
+  html:not(.dark) .scenery-attribution {
     background: rgb(255 255 255 / 92%);
   }
 }

@@ -78,9 +78,7 @@ import {
 } from "./features/sharing/incoming-share-presentation";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
 import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
-import {
-  FORM_SHEET_PRESENTATION_OPTIONS as UPSTREAM_FORM_SHEET_PRESENTATION_OPTIONS,
-} from "./native/sheet-surface";
+import { FORM_SHEET_PRESENTATION_OPTIONS as UPSTREAM_FORM_SHEET_PRESENTATION_OPTIONS } from "./native/sheet-surface";
 import { ensureThreadOutboxLoaded } from "./state/thread-outbox";
 import { useThreadOutboxHasQueuedMessages } from "./state/use-thread-outbox";
 import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";

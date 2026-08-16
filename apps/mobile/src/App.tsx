@@ -91,8 +91,7 @@ function AppContent() {
   const { themeAppearance } = useAppearancePreferences();
   const statusBarBg = useThemeColor("--color-status-bar");
   const baseNavigationTheme = useMobileNavigationTheme(themeAppearance);
-  const sceneryNavigationTheme =
-    themeAppearance === "dark" ? SCENERY_NAV_DARK : SCENERY_NAV_LIGHT;
+  const sceneryNavigationTheme = themeAppearance === "dark" ? SCENERY_NAV_DARK : SCENERY_NAV_LIGHT;
   const navigationTheme = useMemo(
     () => ({
       ...baseNavigationTheme,
