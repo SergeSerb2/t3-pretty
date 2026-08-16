@@ -22,6 +22,7 @@ import {
   RuntimeMode,
 } from "./orchestration.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
+import { ResolvedSubagentPolicy } from "./subagentPolicy.ts";
 
 const ProviderSessionStatus = Schema.Literals([
   "connecting",
@@ -62,6 +63,9 @@ export const ProviderSessionStartInput = Schema.Struct({
   approvalPolicy: Schema.optional(ProviderApprovalPolicy),
   sandboxMode: Schema.optional(ProviderSandboxMode),
   runtimeMode: RuntimeMode,
+  // Resolved at turn start. Claude applies the child model via session env
+  // on new sessions; other adapters ignore this and use the turn hint.
+  subagentPolicy: Schema.optional(ResolvedSubagentPolicy),
 });
 export type ProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
 

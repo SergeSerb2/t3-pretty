@@ -15,13 +15,19 @@ import {
   RecordProjectionThreadBranchHeadInput,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection, SkillId, ThreadSceneryAssignment } from "@t3tools/contracts";
+import {
+  ModelSelection,
+  SkillId,
+  ThreadSceneryAssignment,
+  ThreadSubagentPolicy,
+} from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
     scenery: Schema.NullOr(Schema.fromJsonString(ThreadSceneryAssignment)),
     enabledSkillIds: Schema.fromJsonString(Schema.Array(SkillId)),
+    subagentPolicy: Schema.NullOr(Schema.fromJsonString(ThreadSubagentPolicy)),
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
@@ -59,6 +65,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pin_order_key,
           scenery_json,
           enabled_skill_ids,
+          subagent_policy_json,
           title_regeneration_request_id,
           title_regeneration_started_at,
           latest_user_message_at,
@@ -93,6 +100,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.pinOrderKey ?? null},
           ${row.scenery == null ? null : JSON.stringify(row.scenery)},
           ${JSON.stringify(row.enabledSkillIds)},
+          ${row.subagentPolicy == null ? null : JSON.stringify(row.subagentPolicy)},
           ${row.titleRegenerationRequestId ?? null},
           ${row.titleRegenerationStartedAt ?? null},
           ${row.latestUserMessageAt},
@@ -143,6 +151,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pin_order_key = excluded.pin_order_key,
           scenery_json = excluded.scenery_json,
           enabled_skill_ids = excluded.enabled_skill_ids,
+          subagent_policy_json = excluded.subagent_policy_json,
           title_regeneration_request_id = excluded.title_regeneration_request_id,
           title_regeneration_started_at = excluded.title_regeneration_started_at,
           latest_user_message_at = excluded.latest_user_message_at,
@@ -184,6 +193,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pin_order_key AS "pinOrderKey",
           scenery_json AS "scenery",
           enabled_skill_ids AS "enabledSkillIds",
+          subagent_policy_json AS "subagentPolicy",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -227,6 +237,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pin_order_key AS "pinOrderKey",
           scenery_json AS "scenery",
           enabled_skill_ids AS "enabledSkillIds",
+          subagent_policy_json AS "subagentPolicy",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",

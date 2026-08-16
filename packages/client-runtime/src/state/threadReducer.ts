@@ -110,6 +110,9 @@ export function applyThreadDetailEvent(
           branch: event.payload.branch,
           worktreePath: event.payload.worktreePath,
           enabledSkillIds: event.payload.enabledSkillIds,
+          ...(event.payload.subagentPolicy !== undefined
+            ? { subagentPolicy: event.payload.subagentPolicy }
+            : {}),
           latestTurn: null,
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
@@ -241,6 +244,16 @@ export function applyThreadDetailEvent(
         thread: {
           ...thread,
           enabledSkillIds: event.payload.enabledSkillIds,
+          updatedAt: event.payload.updatedAt,
+        },
+      };
+
+    case "thread.subagent-policy-set":
+      return {
+        kind: "updated",
+        thread: {
+          ...thread,
+          subagentPolicy: event.payload.policy,
           updatedAt: event.payload.updatedAt,
         },
       };

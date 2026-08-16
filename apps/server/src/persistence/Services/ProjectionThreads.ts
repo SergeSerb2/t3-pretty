@@ -17,6 +17,7 @@ import {
   RuntimeMode,
   SkillId,
   ThreadId,
+  ThreadSubagentPolicy,
   ThreadSceneryAssignment,
   TurnId,
 } from "@t3tools/contracts";
@@ -53,6 +54,7 @@ export const ProjectionThread = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(Schema.String)),
   scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
   enabledSkillIds: Schema.Array(SkillId),
+  subagentPolicy: Schema.optional(Schema.NullOr(ThreadSubagentPolicy)),
   titleRegenerationRequestId: Schema.optional(Schema.NullOr(CommandId)),
   titleRegenerationStartedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),

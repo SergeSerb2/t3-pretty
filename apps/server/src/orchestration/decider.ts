@@ -378,6 +378,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           branch: command.branch,
           worktreePath: command.worktreePath,
           enabledSkillIds: command.enabledSkillIds,
+          ...(command.subagentPolicy !== undefined
+            ? { subagentPolicy: command.subagentPolicy }
+            : {}),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -889,6 +892,29 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           enabledSkillIds: command.enabledSkillIds,
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "thread.subagent-policy.set": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.subagent-policy-set" as const,
+        payload: {
+          threadId: command.threadId,
+          policy: command.policy,
           updatedAt: occurredAt,
         },
       };

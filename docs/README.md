@@ -7,6 +7,7 @@
 - [Keyboard shortcuts](./user/keybindings.md)
 - [Organizing threads](./user/thread-sidebar.md)
 - [Skills](./user/skills.md)
+- [Subagents](./user/subagents.md)
 - [World Scenery](./user/world-scenery.md)
 - [Review usage](./user/usage.md)
 - [Storage](./user/storage.md)

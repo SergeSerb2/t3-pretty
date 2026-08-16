@@ -16,6 +16,30 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 
+describe("ServerSettings subagent policy", () => {
+  it("defaults to spawning on with no instance pins", () => {
+    expect(decodeServerSettings({}).subagentPolicy).toEqual({
+      enabled: true,
+      children: {},
+    });
+  });
+
+  it("accepts a global off switch and an instance child pin", () => {
+    const decoded = decodeServerSettingsPatch({
+      subagentPolicy: {
+        enabled: false,
+        children: {
+          grok: { model: "grok-build", options: [{ id: "reasoningEffort", value: "low" }] },
+        },
+      },
+    });
+    expect(decoded.subagentPolicy?.enabled).toBe(false);
+    expect(decoded.subagentPolicy?.children?.[ProviderInstanceId.make("grok")]?.model).toBe(
+      "grok-build",
+    );
+  });
+});
+
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
     expect(decodeClientSettings({}).wordWrap).toBe(true);

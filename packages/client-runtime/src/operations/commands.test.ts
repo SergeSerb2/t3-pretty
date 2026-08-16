@@ -28,6 +28,7 @@ import {
   createProject,
   createThread,
   setThreadSkills,
+  setThreadSubagentPolicy,
   settleThread,
   snoozeThread,
   startThreadTurn,
@@ -241,6 +242,29 @@ describe("environment commands", () => {
           threadId: "thread-1",
           enabledSkillIds: ["mattpocock/skills:skills/engineering/tdd"],
           createdAt: "2026-06-06T00:02:00.000Z",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("dispatches thread.subagent-policy.set with minted metadata", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched);
+
+      yield* setThreadSubagentPolicy({
+        threadId: ThreadId.make("thread-1"),
+        policy: { mode: "off" },
+        createdAt: "2026-06-06T00:03:00.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(dispatched).toEqual([
+        {
+          type: "thread.subagent-policy.set",
+          commandId: "00000000-0000-4000-8000-000000000000",
+          threadId: "thread-1",
+          policy: { mode: "off" },
+          createdAt: "2026-06-06T00:03:00.000Z",
         },
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),

@@ -702,10 +702,10 @@ describe("ProviderCommandReactor", () => {
     expect(startSessionOrder).toBeDefined();
     expect(materializeOrder!).toBeLessThan(startSessionOrder!);
 
-    // The skill bodies ride ahead of the user's message so the agent has the
-    // instructions without having to load anything itself.
+    // Policy is prepended; skill bodies still ride ahead of the user's
+    // message so the agent has the instructions without loading them itself.
     const sentInput = harness.sendTurn.mock.calls[0]?.[0]?.input ?? "";
-    expect(sentInput.startsWith("[Skills]")).toBe(true);
+    expect(sentInput).toContain("[Skills]");
     expect(sentInput).toContain(
       '<skill name="global-skill" directory="/tmp/provider-project/.claude/skills/global-skill">\nInstructions for global-skill.\n</skill>',
     );
@@ -806,7 +806,10 @@ describe("ProviderCommandReactor", () => {
 
     // Loaded once, in context for the rest of the session: no second prelude.
     expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toContain("[Skills]");
-    expect(harness.sendTurn.mock.calls[1]?.[0]?.input).toBe("still using skills");
+    expect(harness.sendTurn.mock.calls[1]?.[0]?.input).not.toContain("[Skills]");
+    expect(harness.sendTurn.mock.calls[1]?.[0]?.input).toEqual(
+      expect.stringMatching(/still using skills$/),
+    );
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.activities.filter((activity) => activity.kind === "skill.loaded")).toHaveLength(
@@ -1111,7 +1114,9 @@ describe("ProviderCommandReactor", () => {
     );
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
 
-    expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toBe("keep going");
+    expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toEqual(
+      expect.stringMatching(/keep going$/),
+    );
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.activities.filter((activity) => activity.kind === "skill.loaded")).toHaveLength(
@@ -3324,7 +3329,10 @@ describe("ProviderCommandReactor", () => {
       providerInstanceId: "claudeAgent",
     });
     expect(harness.startSession.mock.calls[0]?.[1]).not.toHaveProperty("resumeCursor");
-    expect(harness.sendTurn.mock.calls[0]?.[0]).toHaveProperty("input", "continue with claude");
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toHaveProperty(
+      "input",
+      expect.stringMatching(/continue with claude$/),
+    );
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.session?.providerName).toBe("claudeAgent");
