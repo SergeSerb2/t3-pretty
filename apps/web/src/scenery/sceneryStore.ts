@@ -14,7 +14,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import type { ThreadSceneryAssignment, ThreadSceneryPhoto } from "@t3tools/contracts";
 
-import { resolveStorage } from "../lib/storage";
+import { createDebouncedStorage } from "../lib/storage";
 import { WORLD_SCENERY_CATALOG } from "./catalog";
 import { clampTranslucency, DEFAULT_TRANSLUCENCY } from "./glass";
 import { stableIndex } from "./palette";
@@ -323,7 +323,10 @@ export const useSceneryStore = create<SceneryStoreState>()(
       name: SCENERY_STORAGE_KEY,
       version: SCENERY_STORAGE_VERSION,
       storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
+        createDebouncedStorage(
+          typeof window !== "undefined" ? window.localStorage : undefined,
+          5_000,
+        ),
       ),
       partialize: (state) => ({
         assignments: state.assignments,

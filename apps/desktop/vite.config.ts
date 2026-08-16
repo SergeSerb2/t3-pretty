@@ -44,12 +44,16 @@ export default defineConfig({
       format: "cjs",
       outDir: "dist-electron",
       sourcemap: true,
+      minify: true,
       outExtensions: () => ({ js: ".cjs" }),
       define: publicConfigDefine,
       entry: ["src/main.ts"],
       clean: true,
       deps: {
-        alwaysBundle: (id) => id.startsWith("@t3tools/"),
+        alwaysBundle: (id) =>
+          id.startsWith("@t3tools/") ||
+          id === "@clerk/electron" ||
+          id.startsWith("@clerk/electron/"),
       },
       ...(shouldLaunchElectronAfterPack ? { onSuccess: "node scripts/dev-electron.mjs" } : {}),
     },
@@ -57,6 +61,7 @@ export default defineConfig({
       format: "cjs",
       outDir: "dist-electron",
       sourcemap: true,
+      minify: true,
       outExtensions: () => ({ js: ".cjs" }),
       define: publicConfigDefine,
       entry: ["src/preload.ts"],
@@ -71,6 +76,7 @@ export default defineConfig({
       format: "cjs",
       outDir: "dist-electron",
       sourcemap: true,
+      minify: true,
       outExtensions: () => ({ js: ".cjs" }),
       entry: ["src/preview-pick-preload.ts"],
       deps: {
@@ -81,6 +87,7 @@ export default defineConfig({
       format: "cjs",
       outDir: "dist-electron",
       sourcemap: true,
+      minify: true,
       outExtensions: () => ({ js: ".cjs" }),
       entry: ["src/preview-pip-preload.ts"],
     },

@@ -18,6 +18,8 @@ import {
   staticAndDevRouteLayer,
   browserApiCorsLayer,
   httpCompressionLayer,
+  shouldEnablePermessageDeflate,
+  stripPermessageDeflateExtensionOffer,
 } from "./http.ts";
 import { guardHttpResponseWriteErrors } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
@@ -232,18 +234,48 @@ const HttpServerLive = Layer.unwrap(
         Effect.promise(() => import("@effect/platform-node/NodeHttpServer")),
         Effect.promise(() => import("node:http")),
       ]);
-      return NodeHttpServer.layer(() => guardHttpResponseWriteErrors(NodeHttp.createServer()), {
-        host: config.host ?? "127.0.0.1",
-        port: config.port,
-        gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
-        // Negotiate permessage-deflate with clients that offer it; clients
-        // that don't still get uncompressed frames on their connection.
-        // Context takeover stays enabled (ws default) so the compression
-        // window is shared across frames — that also makes small frames cheap
-        // to compress, so no size threshold is set (ws only honors
-        // `threshold` when context takeover is disabled).
-        websocket: { perMessageDeflate: true },
-      });
+      return NodeHttpServer.layer(
+        () => {
+          const server = guardHttpResponseWriteErrors(NodeHttp.createServer());
+          // Runs before Effect's upgrade handler so loopback / desktop-renderer
+          // peers never negotiate permessage-deflate (pure CPU on both ends).
+          server.on("upgrade", (request) => {
+            const origin =
+              typeof request.headers.origin === "string" ? request.headers.origin : null;
+            if (
+              shouldEnablePermessageDeflate({
+                remoteAddress: request.socket.remoteAddress,
+                origin,
+              })
+            ) {
+              return;
+            }
+            const next = stripPermessageDeflateExtensionOffer(
+              typeof request.headers["sec-websocket-extensions"] === "string"
+                ? request.headers["sec-websocket-extensions"]
+                : undefined,
+            );
+            if (next) {
+              request.headers["sec-websocket-extensions"] = next;
+            } else {
+              delete request.headers["sec-websocket-extensions"];
+            }
+          });
+          return server;
+        },
+        {
+          host: config.host ?? "127.0.0.1",
+          port: config.port,
+          gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
+          // Negotiate permessage-deflate with clients that offer it; clients
+          // that don't still get uncompressed frames on their connection.
+          // Context takeover stays enabled (ws default) so the compression
+          // window is shared across frames — that also makes small frames cheap
+          // to compress, so no size threshold is set (ws only honors
+          // `threshold` when context takeover is disabled).
+          websocket: { perMessageDeflate: true },
+        },
+      );
     }
   }),
 );

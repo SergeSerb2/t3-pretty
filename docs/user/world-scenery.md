@@ -10,6 +10,7 @@ On phone, open **Settings → Appearance** and use **Scenery photos**. While it 
 adjust **Photo blur** and **Photo presence**.
 
 On desktop, use the scenery controls in the bottom-right dock next to the photo credit.
+Turning **Motion** off also parks photo fades on thread switch.
 
 ## How the phone thread list looks
 

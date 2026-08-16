@@ -855,6 +855,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           AND threads.branch IS NOT NULL
           AND TRIM(threads.branch) <> ''
           AND threads.settled_override IS NULL
+          AND threads.settled_at IS NULL
           AND threads.pinned_at IS NULL
           AND threads.pending_approval_count = 0
           AND threads.pending_user_input_count = 0

@@ -9,6 +9,7 @@ import type {
   RuntimeMode,
   ScopedThreadRef,
   ServerProvider,
+  SkillId,
   ThreadId,
 } from "@t3tools/contracts";
 import {
@@ -528,7 +529,8 @@ export interface ChatComposerProps {
   // Thread context
   activeThreadId: ThreadId | null;
   activeThreadEnvironmentId: EnvironmentId | undefined;
-  activeThread: Thread | undefined;
+  sessionProviderInstanceId: ProviderInstanceId | undefined;
+  enabledSkillIds: ReadonlyArray<SkillId> | undefined;
   isServerThread: boolean;
   isLocalDraftThread: boolean;
   forceExpandedOnMobile: boolean;
@@ -642,7 +644,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     draftId,
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
-    activeThread,
+    sessionProviderInstanceId,
+    enabledSkillIds,
     isServerThread: _isServerThread,
     isLocalDraftThread: _isLocalDraftThread,
     forceExpandedOnMobile,
@@ -772,7 +775,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const selectedProviderByThreadId = composerDraft.activeProvider ?? null;
   const threadProvider =
-    activeThread?.session?.providerInstanceId ??
+    sessionProviderInstanceId ??
     activeThreadModelSelection?.instanceId ??
     activeProjectDefaultModelSelection?.instanceId ??
     null;
@@ -788,16 +791,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ProviderDriverKind.make("unconfigured");
   const requestedDriverKind: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
   const lockedContinuationGroupKey = useMemo((): string | null => {
-    if (!lockedProvider || !activeThread) return null;
-    const lockedInstanceId =
-      activeThread.session?.providerInstanceId ?? activeThreadModelSelection?.instanceId;
+    if (!lockedProvider || !activeThreadId) return null;
+    const lockedInstanceId = sessionProviderInstanceId ?? activeThreadModelSelection?.instanceId;
     if (!lockedInstanceId) return null;
     return (
       providerInstanceEntries.find((entry) => entry.instanceId === lockedInstanceId)
         ?.continuationGroupKey ?? null
     );
   }, [
-    activeThread,
+    activeThreadId,
+    sessionProviderInstanceId,
     activeThreadModelSelection?.instanceId,
     lockedProvider,
     providerInstanceEntries,
@@ -816,7 +819,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedInstanceId = useMemo<ProviderInstanceId>(() => {
     const candidates: Array<string | null | undefined> = [
       composerDraft.activeProvider,
-      activeThread?.session?.providerInstanceId,
+      sessionProviderInstanceId,
       activeThreadModelSelection?.instanceId,
       activeProjectDefaultModelSelection?.instanceId,
     ];
@@ -853,7 +856,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   }, [
     activeProjectDefaultModelSelection?.instanceId,
-    activeThread?.session?.providerInstanceId,
+    sessionProviderInstanceId,
     activeThreadModelSelection?.instanceId,
     composerDraft.activeProvider,
     lockedContinuationGroupKey,
@@ -1270,9 +1273,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // `thread.skills.set` on toggle.
   const skillsPickerProps = {
     environmentId,
-    ...(routeKind === "server"
-      ? { threadRef: routeThreadRef, enabledSkillIds: activeThread?.enabledSkillIds }
-      : {}),
+    ...(routeKind === "server" ? { threadRef: routeThreadRef, enabledSkillIds } : {}),
     ...(routeKind === "draft" && draftId ? { draftId } : {}),
   };
   const skillsPicker = <SkillsPicker {...skillsPickerProps} />;
@@ -2635,7 +2636,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         );
       },
       addTerminalContext: (selection: TerminalContextSelection) => {
-        if (!activeThread) return;
+        if (!activeThreadId) return;
         const snapshot = composerEditorRef.current?.readSnapshot() ?? {
           value: promptRef.current,
           cursor: composerCursor,
@@ -2655,7 +2656,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           insertion.prompt,
           {
             id: randomUUID(),
-            threadId: activeThread.id,
+            threadId: activeThreadId,
             createdAt: new Date().toISOString(),
             ...selection,
           },
@@ -2697,7 +2698,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
     }),
     [
-      activeThread,
+      activeThreadId,
       addComposerImages,
       composerDraftTarget,
       composerCursor,

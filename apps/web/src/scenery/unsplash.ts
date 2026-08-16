@@ -165,17 +165,23 @@ export function sizedImageURL(
   return parsed.toString();
 }
 
+const WALLPAPER_SHARP_CAP = 3840;
+const WALLPAPER_BLURRED_CAP = 1280;
+
 /**
- * Render width for the full-window wallpaper: the screen's device-pixel
- * width, rounded up to a 256px step so the CDN cache stays warm across
- * near-identical window sizes, capped at 3840 (the mac hero cap).
+ * Render width for the wallpaper: the window's device-pixel width, rounded
+ * up to a 256px step so the CDN cache stays warm. Pre-blurred photos
+ * (`blur >= 20`) cap at 1280; sharp mode keeps the 3840 hero cap.
  */
-export function wallpaperPixelWidth(): number {
+export function wallpaperPixelWidth(blur = 50): number {
   if (typeof window === "undefined") {
-    return 2048;
+    return blur >= 20 ? WALLPAPER_BLURRED_CAP : 2048;
   }
-  const raw = Math.ceil((window.screen?.width ?? 1728) * (window.devicePixelRatio || 1));
-  return Math.min(3840, Math.ceil(raw / 256) * 256);
+  const raw = Math.ceil(
+    (window.innerWidth || window.screen?.width || 1728) * (window.devicePixelRatio || 1),
+  );
+  const cap = blur >= 20 ? WALLPAPER_BLURRED_CAP : WALLPAPER_SHARP_CAP;
+  return Math.min(cap, Math.ceil(raw / 256) * 256);
 }
 
 /**
@@ -186,5 +192,5 @@ export function wallpaperPixelWidth(): number {
  */
 export function wallpaperURL(photo: SceneryPhoto, blur = 50): string {
   const base = photo.rawURL ?? photo.heroURL;
-  return sizedImageURL(base, { width: wallpaperPixelWidth(), blur, saturation: 5 });
+  return sizedImageURL(base, { width: wallpaperPixelWidth(blur), blur, saturation: 5 });
 }

@@ -46,7 +46,11 @@ export const loadServerConfig = Effect.gen(function* () {
     ),
     observability: {
       logsDirectoryPath: config.logsDir,
-      localTracingEnabled: true,
+      localTracingEnabled:
+        config.traceMinLevel === "All" ||
+        config.traceMinLevel === "Trace" ||
+        config.traceMinLevel === "Debug" ||
+        config.traceMinLevel === "Info",
       ...(config.otlpTracesUrl !== undefined ? { otlpTracesUrl: config.otlpTracesUrl } : {}),
       otlpTracesEnabled: config.otlpTracesUrl !== undefined,
       ...(config.otlpMetricsUrl !== undefined ? { otlpMetricsUrl: config.otlpMetricsUrl } : {}),

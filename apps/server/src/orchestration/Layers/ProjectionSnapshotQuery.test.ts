@@ -550,6 +550,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           ('eligible-stopped', 'project-active', 'Eligible Stopped', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/stopped', NULL, '2026-08-10T00:00:04.000Z', '2026-08-10T00:00:04.000Z', NULL, NULL, NULL, 0, 0, NULL),
           ('excluded-no-branch', 'project-active', 'No Branch', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', NULL, NULL, '2026-08-10T00:00:05.000Z', '2026-08-10T00:00:05.000Z', NULL, NULL, NULL, 0, 0, NULL),
           ('excluded-settled', 'project-active', 'Settled', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/settled', NULL, '2026-08-10T00:00:06.000Z', '2026-08-10T00:00:06.000Z', NULL, 'settled', NULL, 0, 0, NULL),
+          ('excluded-auto-settled', 'project-active', 'Auto Settled', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/auto-settled', NULL, '2026-08-10T00:00:06.500Z', '2026-08-10T00:00:06.500Z', NULL, NULL, NULL, 0, 0, NULL),
           ('excluded-pinned', 'project-active', 'Pinned', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/pinned', NULL, '2026-08-10T00:00:07.000Z', '2026-08-10T00:00:07.000Z', NULL, NULL, '2026-08-10T00:00:07.000Z', 0, 0, NULL),
           ('excluded-approval', 'project-active', 'Approval', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/approval', NULL, '2026-08-10T00:00:08.000Z', '2026-08-10T00:00:08.000Z', NULL, NULL, NULL, 1, 0, NULL),
           ('excluded-input', 'project-active', 'Input', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/input', NULL, '2026-08-10T00:00:09.000Z', '2026-08-10T00:00:09.000Z', NULL, NULL, NULL, 0, 1, NULL),
@@ -578,7 +579,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           ('event-eligible-root-title', 'thread', 'eligible-root', 1, 'thread.meta-updated', '2026-08-10T00:00:02.900Z', 'server', '{"title":"Renamed"}', '{}', '2026-08-10T00:00:02.900Z'),
           ('event-eligible-worktree-created', 'thread', 'eligible-worktree', 0, 'thread.created', '2026-08-10T00:00:03.100Z', 'client', '{"branch":"feature/old"}', '{}', '2026-08-10T00:00:03.100Z'),
           ('event-eligible-worktree-branch', 'thread', 'eligible-worktree', 1, 'thread.meta-updated', '2026-08-10T00:00:03.800Z', 'server', '{"branch":"feature/worktree"}', '{}', '2026-08-10T00:00:03.800Z'),
-          ('event-eligible-stopped-created', 'thread', 'eligible-stopped', 0, 'thread.created', '2026-08-10T00:00:04.500Z', 'client', '{"branch":"feature/stopped"}', '{}', '2026-08-10T00:00:04.500Z')
+          ('event-eligible-stopped-created', 'thread', 'eligible-stopped', 0, 'thread.created', '2026-08-10T00:00:04.500Z', 'client', '{"branch":"feature/stopped"}', '{}', '2026-08-10T00:00:04.500Z'),
+          ('event-excluded-auto-settled-created', 'thread', 'excluded-auto-settled', 0, 'thread.created', '2026-08-10T00:00:06.500Z', 'client', '{"branch":"feature/auto-settled"}', '{}', '2026-08-10T00:00:06.500Z')
       `;
 
       yield* sql`
@@ -608,6 +610,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           WHEN 'eligible-stopped' THEN 'event-eligible-stopped-created'
         END
         WHERE thread_id IN ('eligible-root', 'eligible-worktree', 'eligible-stopped')
+      `;
+
+      yield* sql`
+        UPDATE projection_threads
+        SET
+          settled_at = '2026-08-10T00:00:20.000Z',
+          branch_event_id = 'event-excluded-auto-settled-created'
+        WHERE thread_id = 'excluded-auto-settled'
       `;
 
       const candidates = yield* snapshotQuery.listMergedPullRequestCandidates();

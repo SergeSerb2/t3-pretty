@@ -15,6 +15,7 @@ import type {
 } from "../git/GitManager.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
+import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import { forkParked } from "../serverActivation.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import {
@@ -22,7 +23,7 @@ import {
   type ProjectionMergedPullRequestCandidate,
 } from "./Services/ProjectionSnapshotQuery.ts";
 
-const RECONCILE_INTERVAL = Duration.minutes(1);
+const RECONCILE_INTERVAL = Duration.minutes(5);
 
 export class ThreadMergedPullRequestReactor extends Context.Service<
   ThreadMergedPullRequestReactor,
@@ -93,6 +94,7 @@ export const make = Effect.gen(function* () {
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const projectionThreadRepository = yield* ProjectionThreadRepository;
   const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
+  const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
 
   const settleThread = Effect.fn("ThreadMergedPullRequestReactor.settleThread")(function* (
     thread: ProjectionMergedPullRequestCandidate,
@@ -226,7 +228,14 @@ export const make = Effect.gen(function* () {
   );
 
   const start: ThreadMergedPullRequestReactor["Service"]["start"] = () =>
-    forkParked(sweepOnce.pipe(Effect.repeat(Schedule.spaced(RECONCILE_INTERVAL)), Effect.asVoid));
+    forkParked(
+      Effect.gen(function* () {
+        if (!(yield* backgroundPolicy.shouldRunOpportunisticWork)) {
+          return;
+        }
+        yield* sweepOnce;
+      }).pipe(Effect.repeat(Schedule.spaced(RECONCILE_INTERVAL)), Effect.asVoid),
+    );
 
   return ThreadMergedPullRequestReactor.of({ start, sweepOnce });
 });

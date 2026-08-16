@@ -568,6 +568,9 @@ const platformConnectionSourceLayer = Layer.effect(
 
     return PlatformConnectionSource.of({
       registrations: Stream.tick(PLATFORM_POLL_INTERVAL).pipe(
+        Stream.filter(
+          () => typeof document === "undefined" || document.visibilityState === "visible",
+        ),
         Stream.mapEffect(() => buildPlatformRegistrations),
       ),
     });
