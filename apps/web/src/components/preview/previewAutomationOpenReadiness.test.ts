@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   DEFAULT_PREVIEW_AUTOMATION_VIEWPORT,
+  previewAutomationDesktopStatusReady,
   previewAutomationDefaultViewport,
   previewAutomationOpenNeedsOverlay,
   shouldOpenPreviewMiniPlayer,
@@ -59,6 +60,15 @@ describe("preview automation open readiness", () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it("keeps waiting when a stale overlay points at an evicted desktop tab", async () => {
+    expect(
+      await previewAutomationDesktopStatusReady(async () => {
+        throw new Error("PreviewTabNotFoundError");
+      }),
+    ).toBe(false);
+    expect(await previewAutomationDesktopStatusReady(async () => ({ available: true }))).toBe(true);
   });
 
   it("gives newly-created automation tabs a stable desktop viewport", () => {

@@ -2,7 +2,7 @@ import { RouterProvider } from "@tanstack/react-router";
 
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { SurgeConnectMeshSync } from "./cloud/SurgeConnectMeshSync";
-import { hasCloudPublicConfig } from "./cloud/publicConfig";
+import { useCloudUiEnabled } from "./cloud/clerkGate";
 import { PreviewAutomationHosts } from "./components/preview/PreviewAutomationHosts";
 import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
 import { isElectron } from "./env";
@@ -15,9 +15,11 @@ import type { AppRouter } from "./router";
  * share the same atom registry as routed UI.
  */
 export function AppRoot({ router }: { readonly router: AppRouter }) {
+  const cloudUiEnabled = useCloudUiEnabled();
+
   return (
     <AppAtomRegistryProvider>
-      {isElectron && hasCloudPublicConfig() ? <SurgeConnectMeshSync /> : null}
+      {isElectron && cloudUiEnabled ? <SurgeConnectMeshSync /> : null}
       <RouterProvider router={router} />
       <PreviewAutomationHosts />
       <ElectronBrowserHost />

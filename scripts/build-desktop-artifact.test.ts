@@ -319,7 +319,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           electron: "41.5.0",
           "electron-store": "^8.2.0",
           "electron-updater": "^6.6.2",
-          "playwright-core": "1.60.0",
           "react-grab": "^0.1.32",
         },
         {
@@ -332,7 +331,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       {
         "@clerk/electron-passkeys": "0.0.3",
         "electron-store": "^8.2.0",
-        "playwright-core": "1.60.0",
       },
     );
   });
@@ -499,8 +497,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "!**/*.d.cts",
       "!**/node_modules/**/{README,README.*,CHANGELOG,CHANGELOG.*,readme,readme.*}",
       "!**/node_modules/playwright-core/**",
-      "**/node_modules/playwright-core/package.json",
-      "**/node_modules/playwright-core/lib/coreBundle.js",
       "!**/node_modules/effect/**/httpApiScalar.js",
       "!**/node_modules/effect/**/HttpApiScalar.js",
       "!**/node_modules/effect/**/httpApiSwagger.js",
@@ -509,14 +505,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "!apps/desktop/prod-resources/dmg/**/*",
     ]);
     // electron-builder 26 only prepends `**/*` when every `files` pattern is an
-    // exclusion. The Playwright re-includes above are positive globs, so the
-    // catch-all has to stay or the packaged asar loses the Electron main entry.
+    // exclusion, so the catch-all has to stay: adding one positive glob here
+    // would otherwise drop the Electron main entry from the packaged asar.
     assert.equal(DESKTOP_FILE_EXCLUSIONS[0], "**/*");
-    assert.ok(
-      DESKTOP_FILE_EXCLUSIONS.some((pattern) =>
-        pattern.startsWith("**/node_modules/playwright-core/"),
-      ),
-    );
+    assert.ok(DESKTOP_FILE_EXCLUSIONS.every((pattern) => !pattern.includes("playwright-core/lib")));
     assert.equal(WINDOWS_SERVER_RESOURCE_SOURCE_DIR, "apps/desktop/prod-resources/windows-server");
     assert.deepStrictEqual(WINDOWS_SERVER_EXTRA_RESOURCES, [
       {

@@ -1,6 +1,8 @@
 import { useAuth, useClerk, useUser } from "@clerk/react";
+import type { ReactNode } from "react";
 import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 
+import { openClerkGate, useClerkGateOpen } from "~/cloud/clerkGate";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 import { Button } from "../ui/button";
@@ -42,6 +44,8 @@ export function resolveSurgeConnectAccountPresentation(input: {
 }
 
 export function SurgeConnectAccountSection() {
+  const clerkGateOpen = useClerkGateOpen();
+
   if (!hasCloudPublicConfig()) {
     return (
       <SettingsSection title={SURGE_CONNECT_NAME}>
@@ -59,7 +63,53 @@ export function SurgeConnectAccountSection() {
     );
   }
 
+  // Clerk has not been loaded on this install yet, so the account is signed
+  // out by construction; the button loads it and opens the dialog.
+  if (!clerkGateOpen) {
+    return (
+      <AccountSection
+        presentation={resolveSurgeConnectAccountPresentation({
+          accountLabel: null,
+          isLoaded: true,
+          isSignedIn: false,
+        })}
+        onAction={() => openClerkGate({ promptSignIn: true })}
+      />
+    );
+  }
+
   return <ConfiguredSurgeConnectAccountSection />;
+}
+
+function AccountSection({
+  presentation,
+  onAction,
+  children,
+}: {
+  readonly presentation: SurgeConnectAccountPresentation;
+  readonly onAction: (() => void) | undefined;
+  readonly children?: ReactNode;
+}) {
+  return (
+    <SettingsSection title={SURGE_CONNECT_NAME}>
+      <SettingsRow
+        {...searchableSetting("surge-connect-account")}
+        title={`${SURGE_CODE_ACCOUNT_NAME} account`}
+        description={presentation.description}
+        control={
+          <Button
+            size="sm"
+            variant={presentation.action === "sign-in" ? "default" : "outline"}
+            disabled={presentation.action === "loading"}
+            onClick={onAction}
+          >
+            {presentation.actionLabel}
+          </Button>
+        }
+      />
+      {children}
+    </SettingsSection>
+  );
 }
 
 function ConfiguredSurgeConnectAccountSection() {
@@ -78,29 +128,17 @@ function ConfiguredSurgeConnectAccountSection() {
   });
 
   return (
-    <SettingsSection title={SURGE_CONNECT_NAME}>
-      <SettingsRow
-        {...searchableSetting("surge-connect-account")}
-        title={`${SURGE_CODE_ACCOUNT_NAME} account`}
-        description={presentation.description}
-        control={
-          <Button
-            size="sm"
-            variant={presentation.action === "sign-in" ? "default" : "outline"}
-            disabled={presentation.action === "loading"}
-            onClick={
-              presentation.action === "sign-in"
-                ? openAuthPrompt
-                : presentation.action === "manage"
-                  ? () => clerk.openUserProfile()
-                  : undefined
-            }
-          >
-            {presentation.actionLabel}
-          </Button>
-        }
-      />
+    <AccountSection
+      presentation={presentation}
+      onAction={
+        presentation.action === "sign-in"
+          ? openAuthPrompt
+          : presentation.action === "manage"
+            ? () => clerk.openUserProfile()
+            : undefined
+      }
+    >
       {authPrompt}
-    </SettingsSection>
+    </AccountSection>
   );
 }

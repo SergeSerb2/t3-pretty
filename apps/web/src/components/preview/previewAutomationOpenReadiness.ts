@@ -22,6 +22,19 @@ export function previewAutomationOpenNeedsOverlay(
   return input.url !== undefined || snapshot.navStatus._tag !== "Idle";
 }
 
+export async function previewAutomationDesktopStatusReady(
+  readStatus: () => Promise<{ readonly available: boolean }>,
+): Promise<boolean> {
+  try {
+    return (await readStatus()).available;
+  } catch {
+    // A dormant guest can leave a stale renderer overlay until its deferred
+    // close lands. Treat the missing desktop tab as not ready while React
+    // mounts its replacement instead of failing the automation request.
+    return false;
+  }
+}
+
 export function previewAutomationDefaultViewport(
   reusedExistingTab: boolean,
   snapshot: PreviewSessionSnapshot,

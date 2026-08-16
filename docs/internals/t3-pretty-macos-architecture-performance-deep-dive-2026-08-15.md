@@ -398,6 +398,79 @@ its direct channel.
   resources, shared images, atlases; plus a 30 s A/B of GPU-helper CPU with World Scenery vs a
   stock theme on the same turn.
 
+**P3.1 as shipped (2026-08-16).** `apps/web/src/cloud/clerkGate.ts` holds a persisted, install-level
+flag (`t3code:desktop-clerk-enabled:v1`); on Electron the lazy `ElectronClerkRoot` is only mounted
+when it is open, so a signed-out desktop renders the app unwrapped and the clerk-js chunk is never
+fetched or parsed. An unwritten flag counts as open: an install that was already signed in when this
+landed must not silently drop its relay session, so the first launch still loads Clerk and the
+observed session settles the flag for every launch after it. Browsers are untouched (there the provider pulls clerk-js from Clerk's CDN,
+not from our bundle), so `useClerkGateOpen()` is constant `true` off Electron. The gate opens from
+the two sign-in surfaces — the Settings sidebar footer and Connections → Surge Connect account row,
+both of which now render a dormant sign-in button that loads Clerk — and `PendingSignInPrompt`
+inside the provider replays that click as `openSignIn` once clerk-js is up, so it stays one click.
+`ManagedRelayAuthProvider` writes the flag from the observed session: any launch that reports no
+session clears it (for the _next_ launch only; remounting the provider mid-session would remount the
+tree for nothing), a live session sets it. Every Clerk-reading surface now guards on
+`useCloudUiEnabled()` (build config _and_ provider mounted): `SurgeConnectMeshSync`,
+`ConnectOnboardingDialog`, the cloud link row, the cloud environment rows, and the sidebar avatar.
+The `/connect` CLI-auth routes read Clerk unguarded but are hosted-app-only (`isHostedStaticApp()`
+is false under the `t3code://` origin), so they cannot render without a provider. Tradeoff: opening
+the gate mid-session mounts a provider above the app and remounts the tree once — accepted, because
+the alternative is paying the parse on every boot for a transition that happens once per install.
+
+**P3.2 as shipped (2026-08-16).** Residency is decided per thread, not per tab, so a thread's guests
+are never half-mounted: `apps/web/src/browser/previewGuestResidency.ts` pins any thread that has a
+visible surface, a mini player, picture in picture, a running recording, or an in-flight automation
+request, and `ElectronBrowserHost` mounts pinned threads plus the most recently pinned others up to
+`MAX_RESIDENT_PREVIEW_THREADS` (3). Automation wakes its target for the whole request:
+`handleRequest` takes a ref-counted `acquirePreviewGuestThread(threadKey)` before it resolves a tab
+and releases it in a `finally`, so a dormant tab is a delay (the existing `waitForDesktopOverlay`
+poll covers the remount and re-registration) rather than a `PreviewTabNotFoundError`. Eviction is
+just unmounting `HostedBrowserWebview`; the existing lease in `desktopTabLifetime` then closes the
+main-process tab, and waking recreates it from the tab's last URL. The cost is real and is why the
+pins are conservative: a woken guest reloads, so page state (scroll, form input, in-page JS) is
+lost. The recording check reads module state rather than a store, which is enough to _keep_ a
+recording tab resident (residency is re-evaluated on every host render) but would not wake one.
+
+**P3.3 as shipped (2026-08-16).** The audit's premise is now only half true in this fork, so the
+URI-backed attachment store was not built. `syncPersistedAttachments` — the only path that writes
+image bytes into a draft document — has no caller outside its own test, so composer drafts never
+carry a base64 `dataUrl` into the persisted payload or the per-keystroke stringify; attaching
+produces a `File` plus a blob preview URL, and dispatch encodes base64 from that `File` at send
+(`readFileAsDataUrl` in `ChatView`), which is exactly "encode at dispatch only". The one remaining
+base64 retention was `hydrateImagesFromPersisted`, which handed the stored data URL back as
+`previewUrl` and pinned a copy in draft state for the life of the draft; it now decodes to a `File`
+and hands out an object URL (falling back to the data URL where `URL` is unavailable — the existing
+`revokeObjectPreviewUrl` ignores non-blob URLs, so removal is unchanged). Left deliberately alone:
+the prompt stash still stores capped base64 in localStorage (`MAX_STASH_ENTRY_ATTACHMENT_CHARS`),
+which is a durability feature with explicit dropped/unreadable/pending semantics, not a hot path.
+Ceiling: if image drafts are ever persisted again, they should go to an IndexedDB blob store keyed
+by attachment id, with the async hydration and send-gating that implies.
+
+**P3.4 as shipped (2026-08-16).** `apps/desktop/scripts/build-playwright-injected.mjs` slices the
+`source3` literal out of `playwright-core/lib/coreBundle.js`, evaluates it once, validates it
+(length plus `InjectedScript`), and writes `PlaywrightInjectedSource.generated.ts` next to the
+other generated preview asset; the desktop `build`/`dev` tasks run it before `vp pack`.
+`PlaywrightInjectedRuntime.ts` is now a module-level install-expression string — no `require.resolve`,
+no `readFile`, no `node:vm`, and no Effect error channel, so `Manager` dropped its cached-effect and
+`mapError` wrapper. `playwright-core` moved to `devDependencies` (the staged `--prod` install no
+longer carries it) and the packaging re-includes for `package.json` + `coreBundle.js` are gone.
+Net: −3.2 MB of staged package against +0.31 MB in `main.cjs` (1.43 MB minified), and the first
+automation action no longer resolves, reads and evaluates a 3.2 MB file.
+
+**P3.5 — already available (verified 2026-08-16).** Fixed ink shipped with the scenery quick
+settings: Settings → Appearance → _Scenery text color_ offers White, Black and App alongside Auto,
+and `pickInkVariant` returns a constant for all three. `ActiveScenery` only sets
+`appearanceCrossfade` when the incoming and displayed variants differ, and `SceneryLayer` only calls
+`runSceneryInkTransition` under that flag, so a fixed mode already avoids the view-transition
+snapshot and the full-layer re-raster on thread switches. Default stays Auto. No change was needed;
+the remaining thread-switch cost is the photo crossfade itself (P1.10 sized it down).
+
+**P3.6 — not run.** This is a measurement, not a change: it needs a live app to attach
+`contentTracing` to and a real turn to A/B, which means driving the installed desktop app (the one
+the maintainer works in) or standing up a dev Electron build and spending provider quota. Left for
+an explicit go-ahead; the recipe in §6 step 5 is unchanged.
+
 ### Not worth doing
 
 - **msgpack/binary framing**: snapshots are already gzipped over HTTP and WS payloads are short
