@@ -4,7 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseDuKilobytes, walkDirectoryOnDiskBytes } from "./directorySize.ts";
+import { isAbortError, parseDuKilobytes, walkDirectoryOnDiskBytes } from "./directorySize.ts";
 
 describe("directory size", () => {
   it("parses du -sk stdout as allocated bytes", () => {
@@ -21,6 +21,20 @@ describe("directory size", () => {
       await NodeFSP.writeFile(NodePath.join(root, "nested", "b.txt"), "world\n");
       const bytes = await walkDirectoryOnDiskBytes(root);
       expect(bytes).toBeGreaterThan(0);
+    } finally {
+      await NodeFSP.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects the portable walk when the abort signal fires", async () => {
+    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-directory-size-abort-"));
+    try {
+      await NodeFSP.writeFile(NodePath.join(root, "a.txt"), "hello\n");
+      const controller = new AbortController();
+      controller.abort();
+      await expect(walkDirectoryOnDiskBytes(root, controller.signal)).rejects.toSatisfy(
+        isAbortError,
+      );
     } finally {
       await NodeFSP.rm(root, { recursive: true, force: true });
     }

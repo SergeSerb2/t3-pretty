@@ -99,7 +99,7 @@ export const make = Effect.gen(function* () {
 
   const directoryAllocatedSize = Effect.fn("StorageInventoryService.directoryAllocatedSize")(
     function* (target: string) {
-      return yield* Effect.promise(() => directoryOnDiskBytes(target, platform));
+      return yield* Effect.promise((signal) => directoryOnDiskBytes(target, platform, signal));
     },
   );
 
@@ -266,6 +266,8 @@ export const make = Effect.gen(function* () {
     ];
     const measurements = new Map<string, StorageMeasuredWorktree>();
     const orphans: StorageOrphanEntry[] = [];
+    const orphanCandidates = yield* listOrphanCandidates(new Set(managedPaths));
+    const totalCount = managedPaths.length + orphanCandidates.length;
 
     const snapshot = (scan: StorageInventoryScan): StorageInventory =>
       assembleStorageInventory({
@@ -287,10 +289,7 @@ export const make = Effect.gen(function* () {
         yield* onProgress(inventory);
       });
 
-    yield* publish(
-      snapshot({ status: "scanning", measuredCount: 0, totalCount: managedPaths.length }),
-      true,
-    );
+    yield* publish(snapshot({ status: "scanning", measuredCount: 0, totalCount }), true);
 
     yield* Effect.forEach(
       managedPaths,
@@ -302,22 +301,11 @@ export const make = Effect.gen(function* () {
             snapshot({
               status: "scanning",
               measuredCount: measurements.size,
-              totalCount: managedPaths.length,
+              totalCount,
             }),
           );
         }),
       { concurrency: MEASURE_CONCURRENCY },
-    );
-
-    const orphanCandidates = yield* listOrphanCandidates(new Set(managedPaths));
-    const totalCount = managedPaths.length + orphanCandidates.length;
-    yield* publish(
-      snapshot({
-        status: "scanning",
-        measuredCount: measurements.size,
-        totalCount,
-      }),
-      true,
     );
 
     let measuredOrphans = 0;

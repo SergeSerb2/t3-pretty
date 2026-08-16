@@ -26,12 +26,30 @@ function onDiskBytes(stat: { readonly size: number; readonly blocks?: number }):
   return stat.size;
 }
 
-export async function walkDirectoryOnDiskBytes(root: string): Promise<number> {
+export function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    const reason = signal.reason;
+    if (reason instanceof Error) throw reason;
+    const error = new Error("The directory size operation was aborted.");
+    error.name = "AbortError";
+    throw error;
+  }
+}
+
+export async function walkDirectoryOnDiskBytes(
+  root: string,
+  signal?: AbortSignal,
+): Promise<number> {
   const visited = new Set<string>();
   const stack = [root];
   let total = 0;
 
   while (stack.length > 0) {
+    throwIfAborted(signal);
     const current = stack.pop();
     if (current === undefined) break;
     const resolved = NodePath.resolve(current);
@@ -40,8 +58,12 @@ export async function walkDirectoryOnDiskBytes(root: string): Promise<number> {
 
     let entries;
     try {
-      entries = await NodeFSP.readdir(current, { withFileTypes: true });
-    } catch {
+      entries = await NodeFSP.readdir(current, {
+        withFileTypes: true,
+        ...(signal === undefined ? {} : { signal }),
+      });
+    } catch (error) {
+      if (isAbortError(error)) throw error;
       continue;
     }
 
@@ -58,12 +80,16 @@ export async function walkDirectoryOnDiskBytes(root: string): Promise<number> {
     }
 
     for (let i = 0; i < files.length; i += STAT_CONCURRENCY) {
+      throwIfAborted(signal);
       const chunk = files.slice(i, i + STAT_CONCURRENCY);
       const sizes = await Promise.all(
         chunk.map(async (file) => {
           try {
-            return onDiskBytes(await NodeFSP.stat(file));
-          } catch {
+            return onDiskBytes(
+              await NodeFSP.stat(file, signal === undefined ? undefined : { signal }),
+            );
+          } catch (error) {
+            if (isAbortError(error)) throw error;
             return 0;
           }
         }),
@@ -80,22 +106,27 @@ export async function walkDirectoryOnDiskBytes(root: string): Promise<number> {
 export async function directoryOnDiskBytes(
   root: string,
   platform: NodeJS.Platform,
+  signal?: AbortSignal,
 ): Promise<number> {
+  throwIfAborted(signal);
   try {
     if (platform !== "win32") {
       try {
         const { stdout } = await execFile("du", ["-sk", root], {
           timeout: 120_000,
           maxBuffer: 1024 * 1024,
+          ...(signal === undefined ? {} : { signal }),
         });
         const bytes = parseDuKilobytes(stdout);
         if (bytes !== null) return bytes;
-      } catch {
+      } catch (error) {
+        if (isAbortError(error)) throw error;
         // Fall through to the portable walk when `du` is missing or refused.
       }
     }
-    return await walkDirectoryOnDiskBytes(root);
-  } catch {
+    return await walkDirectoryOnDiskBytes(root, signal);
+  } catch (error) {
+    if (isAbortError(error)) throw error;
     return 0;
   }
 }
