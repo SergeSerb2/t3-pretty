@@ -6,10 +6,15 @@ the day.
 
 ## Turn it on or off
 
+Choose the **World Scenery** theme in **Settings → Appearance**. While that theme is on:
+
+- A new thread opens in fog over the assigned place, then clears with the location name
+  settling above the chat box along with the photo credit.
+- **Photo blur**, **Photo presence**, **Thread motion**, and **Scenery text color** live in
+  **Settings → Appearance**.
+
 On phone, open **Settings → Appearance** and use **Scenery photos**. While it is on you can also
 adjust **Photo blur** and **Photo presence**.
-
-On desktop, use the scenery controls in the bottom-right dock next to the photo credit.
 
 ## How the phone thread list looks
 

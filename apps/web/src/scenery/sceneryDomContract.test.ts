@@ -18,7 +18,9 @@ import rootRouteSource from "../routes/__root.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
 import sceneryLayerSource from "./SceneryLayer.tsx?raw";
-import sceneryQuickSettingsSource from "./SceneryQuickSettings.tsx?raw";
+import sceneryPlaceCreditSource from "./SceneryPlaceCredit.tsx?raw";
+import sceneryArrivalSource from "./SceneryArrival.tsx?raw";
+import sceneryAppearanceSettingsSource from "./SceneryAppearanceSettings.tsx?raw";
 import activeScenerySource from "./ActiveScenery.tsx?raw";
 import useInkOverrideSource from "./useInkOverride.ts?raw";
 import sceneryInkTransitionSource from "./sceneryInkTransition.ts?raw";
@@ -83,8 +85,8 @@ describe("composer attach contract with upstream markup", () => {
   });
 
   it("the composer still ingests OS-style Files drops on its drag wrapper", () => {
-    expect(chatComposerSource).toContain("onDrop={onComposerDrop}");
-    expect(chatComposerSource).toContain('event.dataTransfer.types.includes("Files")');
+    expect(chatViewSource).toContain("onDrop={workspaceFileDropHandlers.onDrop}");
+    expect(chatComposerSource).toContain("addDroppedFiles: (files: File[]) => {");
     expect(chatComposerSource).toContain("void addComposerImages(files)");
   });
 
@@ -123,7 +125,7 @@ describe("glass contract with upstream chrome", () => {
 });
 
 describe("scenery attribution contract", () => {
-  it("keeps long photographer credits shrinkable inside the compact dock", () => {
+  it("keeps long photographer credits shrinkable inside the compact Home pill", () => {
     expect(sceneryCssSource).toMatch(
       /\.scenery-attribution__credit\s*\{[^}]*min-width: 0;[^}]*flex-shrink: 1;/s,
     );
@@ -141,30 +143,40 @@ describe("scenery attribution contract", () => {
     );
     expect(sceneryLayerSource).toContain(">Photo by </span>");
     expect(sceneryLayerSource).toContain("> on </span>");
+    expect(sceneryPlaceCreditSource).toContain(">Photo by </span>");
+    expect(sceneryPlaceCreditSource).toContain("> on </span>");
   });
 
-  it("keeps Unsplash attribution while clearing right-panel actions", () => {
-    expect(sceneryCssSource).toContain(
-      'html:has([data-right-panel-open="true"]) .scenery-quick__trigger',
-    );
-    // Dialog/backdrop dismiss in SceneryQuickSettings when the panel opens;
-    // do not rely on CSS display:none for those nodes alone.
-    expect(sceneryCssSource).not.toContain(
-      'html:has([data-right-panel-open="true"]) .scenery-quick__panel',
-    );
-    expect(sceneryCssSource).not.toContain(
-      'html:has([data-right-panel-open="true"]) .scenery-quick__backdrop',
-    );
-    expect(sceneryQuickSettingsSource).toContain("rightPanelOpen");
-    expect(sceneryQuickSettingsSource).toContain("dialogOpen");
-    expect(sceneryQuickSettingsSource).toContain("setOpen(false)");
+  it("moves thread credits into the composer and hides the Home pill while the slot is mounted", () => {
+    expect(chatViewSource).toContain("data-scenery-place-slot");
+    expect(chatViewSource).toContain("bindSceneryPlaceSlot");
+    expect(activeScenerySource).toContain("SceneryPlaceCredit");
+    expect(sceneryCssSource).toContain("html:has([data-scenery-place-slot]) .scenery-attribution");
+    expect(sceneryCssSource).toContain("html:has([data-scenery-composer]) .scenery-attribution");
     expect(sceneryCssSource).toMatch(
       /html:has\(\[data-right-panel-open="true"\]\) \.scenery-attribution\s*\{[^}]*left:/s,
     );
-    // Ordinary open panels must not blanket-hide the required credit pill.
-    expect(sceneryCssSource).not.toMatch(
-      /html:has\(\[data-right-panel-open="true"\]\) \.scenery-attribution,\s*\n\s*html:has\(\[data-right-panel-open="true"\]\) \.scenery-quick__trigger/s,
-    );
+  });
+
+  it("does not keep a bottom-right scenery settings dock", () => {
+    expect(activeScenerySource).not.toContain("SceneryQuickSettings");
+    expect(sceneryCssSource).not.toContain(".scenery-quick__trigger");
+    expect(sceneryAppearanceSettingsSource).toContain("Photo blur");
+  });
+});
+
+describe("scenery new-thread arrival contract", () => {
+  it("plays the fog sequence only from the scenery layer", () => {
+    expect(activeScenerySource).toContain("SceneryArrival");
+    expect(sceneryArrivalSource).toContain("Entering...");
+    expect(sceneryCssSource).toContain(".scenery-fog");
+    expect(chatViewSource).toContain('data-scenery-hero-chrome="headline"');
+    expect(chatViewSource).toContain('data-scenery-hero-chrome="composer"');
+  });
+
+  it("docks the World Scenery composer with the longer scenery curve", () => {
+    expect(chatViewSource).toContain("SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS");
+    expect(chatViewSource).toContain("scenery-hero-headline-ghost");
   });
 });
 
