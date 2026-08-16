@@ -37,7 +37,6 @@ import {
   deriveTimelineEntries,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
-  workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
 } from "../../session-logic";
 import { type TurnDiffSummary } from "../../types";
@@ -2382,11 +2381,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     : showDestructiveRowStyle
       ? "font-medium text-destructive"
       : "font-medium text-foreground/90";
-  const turnSettled = !activity.activeTurnInProgress;
-  const showNeutralIndicator = !turnSettled && workEntryIndicatesToolNeutralStatus(workEntry);
-  const showSuccessIndicator =
-    workEntryIndicatesToolSuccess(workEntry) ||
-    (turnSettled && workEntryIndicatesToolNeutralStatus(workEntry));
+  // Success is the default and gets no glyph; only failures and still-open
+  // (neutral, mid-turn) rows carry a marker so the exception stands out.
+  const showNeutralIndicator =
+    activity.activeTurnInProgress && workEntryIndicatesToolNeutralStatus(workEntry);
   const headerToggleProps = canExpand
     ? {
         role: "button" as const,
@@ -2440,17 +2438,6 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                 <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
               </TooltipTrigger>
               <TooltipPopup>Failed</TooltipPopup>
-            </Tooltip>
-          ) : showSuccessIndicator ? (
-            <Tooltip>
-              <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
-                <CheckIcon
-                  className="block size-3 shrink-0 stroke-current stroke-[2.25]"
-                  stroke="currentColor"
-                  aria-hidden
-                />
-              </TooltipTrigger>
-              <TooltipPopup>Completed</TooltipPopup>
             </Tooltip>
           ) : showNeutralIndicator ? (
             <Tooltip>
