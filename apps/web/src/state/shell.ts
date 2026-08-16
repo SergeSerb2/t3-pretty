@@ -7,6 +7,7 @@ import {
   createEnvironmentShellSummaryAtom,
   createEnvironmentSnapshotAtom,
   createShellEnvironmentAtoms,
+  createThreadLifecyclePendingValueAtom,
 } from "@t3tools/client-runtime/state/shell";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
@@ -16,7 +17,12 @@ import { connectionAtomRuntime } from "../connection/runtime";
 
 export const shellEnvironment = createShellEnvironmentAtoms(connectionAtomRuntime);
 export const environmentShell = createEnvironmentShellAtoms(connectionAtomRuntime);
-export const environmentSnapshotAtom = createEnvironmentSnapshotAtom(environmentShell.stateAtom);
+export const threadLifecyclePendingAtom =
+  createThreadLifecyclePendingValueAtom(connectionAtomRuntime);
+export const environmentSnapshotAtom = createEnvironmentSnapshotAtom(
+  environmentShell.stateAtom,
+  threadLifecyclePendingAtom,
+);
 export const environmentShellSummaryAtom = createEnvironmentShellSummaryAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   shellStateValueAtom: environmentShell.stateValueAtom,

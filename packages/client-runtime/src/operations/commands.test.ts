@@ -29,10 +29,15 @@ import {
   createThread,
   setThreadSkills,
   settleThread,
+  snoozeThread,
   startThreadTurn,
   stopThreadSession,
   unsettleThread,
 } from "./commands.ts";
+import {
+  makeThreadLifecycleOutbox,
+  ThreadLifecycleOutbox,
+} from "../state/threadLifecycleOutbox.ts";
 
 const TEST_CRYPTO_LAYER = Layer.succeed(
   Crypto.Crypto,
@@ -142,6 +147,47 @@ describe("environment commands", () => {
           commandId: "archive-command",
           threadId: "thread-1",
         },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("queues settle and snooze when the environment is offline", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+        target: TARGET,
+        state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
+        session: yield* SubscriptionRef.make(Option.none<RpcSession.RpcSession>()),
+        prepared: yield* SubscriptionRef.make(Option.none<PreparedConnection>()),
+        connect: Effect.void,
+        disconnect: Effect.void,
+        retryNow: Effect.void,
+      } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+      const outbox = yield* makeThreadLifecycleOutbox();
+
+      const settle = yield* settleThread({
+        commandId: CommandId.make("settle-offline"),
+        threadId: ThreadId.make("thread-1"),
+      }).pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.provideService(ThreadLifecycleOutbox, outbox),
+      );
+      const snooze = yield* snoozeThread({
+        commandId: CommandId.make("snooze-offline"),
+        threadId: ThreadId.make("thread-1"),
+        snoozedUntil: "2026-08-16T12:00:00.000Z",
+      }).pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.provideService(ThreadLifecycleOutbox, outbox),
+      );
+
+      expect(settle).toEqual({ sequence: 0 });
+      expect(snooze).toEqual({ sequence: 0 });
+      expect(dispatched).toEqual([]);
+      const pending = (yield* SubscriptionRef.get(outbox.pending)).get(TARGET.environmentId) ?? [];
+      expect(pending.map((entry) => entry.command.type)).toEqual([
+        "thread.settle",
+        "thread.snooze",
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
   );

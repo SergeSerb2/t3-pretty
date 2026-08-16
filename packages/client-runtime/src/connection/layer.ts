@@ -10,6 +10,7 @@ import * as PlatformConnectionSource from "../platform/source.ts";
 import * as RelayEnvironmentDiscovery from "../relay/discovery.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as RpcSession from "../rpc/session.ts";
+import { threadLifecycleOutboxLayer } from "../state/threadLifecycleOutbox.ts";
 
 const resolverLayer = ConnectionResolver.layer.pipe(
   Layer.provide(RemoteEnvironmentAuthorization.layer),
@@ -41,4 +42,7 @@ const connectionStartupLayer = Layer.effectDiscard(
   }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
 );
 
-export const layer = connectionStartupLayer.pipe(Layer.provideMerge(connectionServicesLayer));
+export const layer = connectionStartupLayer.pipe(
+  Layer.provideMerge(connectionServicesLayer),
+  Layer.provideMerge(threadLifecycleOutboxLayer),
+);

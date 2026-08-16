@@ -18,6 +18,12 @@ import {
   ProfileStore,
 } from "@t3tools/client-runtime/connection";
 import {
+  decodeStoredPendingEntries,
+  encodePendingEntries,
+  ThreadLifecycleOutboxPersistenceError,
+  ThreadLifecycleOutboxStore,
+} from "@t3tools/client-runtime/state/shell";
+import {
   EnvironmentId,
   OrchestrationShellSnapshot,
   OrchestrationThreadDetailSnapshot,
@@ -34,12 +40,13 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
 const DATABASE_NAME = "t3code:connection-runtime";
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 const CATALOG_STORE_NAME = "catalog";
 const SHELL_STORE_NAME = "shell";
 const THREAD_STORE_NAME = "thread";
 const SERVER_CONFIG_STORE_NAME = "server-config";
 const VCS_REFS_STORE_NAME = "vcs-refs";
+const THREAD_LIFECYCLE_OUTBOX_STORE_NAME = "thread-lifecycle-outbox";
 const CATALOG_KEY = "document";
 const SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION = 1;
 
@@ -143,6 +150,9 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
       }
       if (!request.result.objectStoreNames.contains(VCS_REFS_STORE_NAME)) {
         request.result.createObjectStore(VCS_REFS_STORE_NAME);
+      }
+      if (!request.result.objectStoreNames.contains(THREAD_LIFECYCLE_OUTBOX_STORE_NAME)) {
+        request.result.createObjectStore(THREAD_LIFECYCLE_OUTBOX_STORE_NAME);
       }
     });
     request.addEventListener("error", () => {
@@ -465,6 +475,67 @@ export const connectionStorageLayer = Layer.effectContext(
           ),
         })),
     });
+    const lifecycleOutboxStore = ThreadLifecycleOutboxStore.of({
+      load: (environmentId) =>
+        readDatabaseValue(database, THREAD_LIFECYCLE_OUTBOX_STORE_NAME, environmentId).pipe(
+          Effect.flatMap((raw) => {
+            if (typeof raw !== "string") {
+              return Effect.succeed([]);
+            }
+            return decodeStoredPendingEntries(raw).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new ThreadLifecycleOutboxPersistenceError({
+                    operation: "load",
+                    message: `Could not load queued thread lifecycle commands: ${String(cause)}`,
+                  }),
+              ),
+              Effect.map((entries) =>
+                entries.filter((entry) => entry.environmentId === environmentId),
+              ),
+            );
+          }),
+          Effect.mapError((cause) =>
+            cause._tag === "ThreadLifecycleOutboxPersistenceError"
+              ? cause
+              : new ThreadLifecycleOutboxPersistenceError({
+                  operation: "load",
+                  message: `Could not load queued thread lifecycle commands: ${String(cause)}`,
+                }),
+          ),
+        ),
+      save: (environmentId, entries) =>
+        Effect.gen(function* () {
+          if (entries.length === 0) {
+            yield* removeDatabaseValue(database, THREAD_LIFECYCLE_OUTBOX_STORE_NAME, environmentId);
+            return;
+          }
+          const encoded = yield* encodePendingEntries(entries).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ThreadLifecycleOutboxPersistenceError({
+                  operation: "save",
+                  message: `Could not save queued thread lifecycle commands: ${String(cause)}`,
+                }),
+            ),
+          );
+          yield* writeDatabaseValue(
+            database,
+            THREAD_LIFECYCLE_OUTBOX_STORE_NAME,
+            environmentId,
+            encoded,
+          );
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause._tag === "ThreadLifecycleOutboxPersistenceError"
+              ? cause
+              : new ThreadLifecycleOutboxPersistenceError({
+                  operation: "save",
+                  message: `Could not save queued thread lifecycle commands: ${String(cause)}`,
+                }),
+          ),
+        ),
+    });
     const cacheStore = EnvironmentCacheStore.of({
       loadShell: (environmentId) =>
         readDatabaseValue(database, SHELL_STORE_NAME, environmentId).pipe(
@@ -657,6 +728,7 @@ export const connectionStorageLayer = Layer.effectContext(
               VCS_REFS_STORE_NAME,
               IDBKeyRange.bound(`${environmentId}:`, `${environmentId}:\uffff`),
             ),
+            removeDatabaseValue(database, THREAD_LIFECYCLE_OUTBOX_STORE_NAME, environmentId),
           ],
           { concurrency: "unbounded", discard: true },
         ).pipe(Effect.mapError((cause) => persistenceError("clear-environment", cause))),
@@ -668,6 +740,7 @@ export const connectionStorageLayer = Layer.effectContext(
       Context.add(CredentialStore.ConnectionCredentialStore, credentialStore),
       Context.add(TokenStore.RemoteDpopAccessTokenStore, remoteTokenStore),
       Context.add(EnvironmentCacheStore, cacheStore),
+      Context.add(ThreadLifecycleOutboxStore, lifecycleOutboxStore),
     );
   }),
 );

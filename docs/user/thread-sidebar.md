@@ -24,3 +24,7 @@ pill** fallback because their colors are not controlled by T3 Code.
 To generate a fresh title from the conversation, open a thread's context menu and choose
 **Regenerate title**. While T3 Code is generating it, the action reads **Regenerating…** and cannot
 be selected again. The option is hidden when the connected environment needs a server update.
+
+You can settle, un-settle, snooze, or wake a thread even when its machine is offline. The list
+updates immediately on this device. When that environment is reachable again — including through
+Surge Connect — T3 Code applies the same change there.
