@@ -24,6 +24,7 @@ import {
   use,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -37,7 +38,6 @@ import {
   deriveTimelineEntries,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
-  workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
 } from "../../session-logic";
 import { type TurnDiffSummary } from "../../types";
@@ -1136,12 +1136,12 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
         aria-expanded={row.expanded}
         data-scroll-anchor-ignore
         onClick={() => ctx.onToggleTurnFold(row.turnId)}
-        className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-xs text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className="-mx-1 flex h-6 cursor-pointer select-none items-center gap-1 rounded-md px-2 text-xs text-muted-foreground tabular-nums transition-colors duration-150 ease-out hover:bg-accent/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       >
         <span>{row.label}</span>
         <ChevronDownIcon
           className={cn(
-            "size-3.5 transition-transform duration-200",
+            "size-3.5 opacity-70 transition-transform duration-180 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
             !row.expanded && "-rotate-90",
           )}
         />
@@ -1252,13 +1252,13 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
     <div className="min-w-0 px-1 py-0.5">
       <button
         type="button"
-        className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-0.5 py-0.5 text-left text-[12px] leading-5 transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className="flex h-6 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-1 text-left text-[12px] leading-5 transition-colors duration-150 ease-out hover:bg-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       >
         <ChevronDownIcon
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground/65 transition-transform duration-200",
+            "size-3.5 shrink-0 text-muted-foreground/65 transition-transform duration-180 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
             !expanded && "-rotate-90",
           )}
         />
@@ -1295,7 +1295,7 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
       </button>
       <AnimatedHeight>
         {expanded ? (
-          <div className="mt-0.5 space-y-px pl-6">
+          <div className="mt-0.5 space-y-px pl-6.5 transition-opacity duration-200 ease-out starting:opacity-0 motion-reduce:transition-none">
             {steps.map((step) => (
               <div key={step.step} className="flex items-baseline gap-2 text-[12px] leading-5">
                 <span
@@ -1447,27 +1447,23 @@ function WorkGroupToggleTimelineRow({
   return (
     <button
       type="button"
-      className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-[12px] leading-5 transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+      className="group/toggle flex h-6 w-full cursor-pointer items-center gap-2 rounded-md px-1 text-left text-[12px] leading-5 text-secondary-label transition-colors duration-150 ease-out hover:bg-accent/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
-      <span className="flex size-5 shrink-0 items-center justify-center text-icon-muted">
+      <span className="flex size-4 shrink-0 items-center justify-center text-icon-muted">
         <ChevronDownIcon
           className={cn(
-            "size-3.5 shrink-0 opacity-70 transition-transform duration-200",
+            "size-3.5 shrink-0 opacity-70 transition-transform duration-180 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover/toggle:opacity-100 motion-reduce:transition-none",
             row.expanded && "rotate-180",
           )}
         />
       </span>
-      {row.expanded ? (
-        <span className="font-medium text-foreground">
-          Show fewer {row.onlyToolEntries ? "tool calls" : "log entries"}
-        </span>
-      ) : (
-        <span className="font-medium text-foreground">
-          +{row.hiddenCount} previous {labelNoun}
-        </span>
-      )}
+      <span className="font-medium">
+        {row.expanded
+          ? `Show fewer ${row.onlyToolEntries ? "tool calls" : "log entries"}`
+          : `+${row.hiddenCount} previous ${labelNoun}`}
+      </span>
     </button>
   );
 }
@@ -1712,32 +1708,34 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
   const canCollapse = hasVisibleBody && shouldCollapseUserMessage(props.text);
   const isCollapsed = canCollapse && !expanded;
 
+  const body = hasVisibleBody ? (
+    <div
+      className={cn("relative", isCollapsed && "max-h-44 overflow-hidden")}
+      data-user-message-body="true"
+      data-user-message-collapsed={isCollapsed ? "true" : "false"}
+      data-user-message-collapsible={canCollapse ? "true" : "false"}
+      data-user-message-fade={isCollapsed ? "true" : "false"}
+      style={
+        isCollapsed
+          ? {
+              WebkitMaskImage: COLLAPSED_USER_MESSAGE_FADE_MASK,
+              maskImage: COLLAPSED_USER_MESSAGE_FADE_MASK,
+            }
+          : undefined
+      }
+    >
+      <UserMessageBody
+        text={props.text}
+        terminalContexts={props.terminalContexts}
+        skills={props.skills}
+        markdownCwd={props.markdownCwd}
+      />
+    </div>
+  ) : null;
+
   return (
     <div>
-      {hasVisibleBody ? (
-        <div
-          className={cn("relative", isCollapsed && "max-h-44 overflow-hidden")}
-          data-user-message-body="true"
-          data-user-message-collapsed={isCollapsed ? "true" : "false"}
-          data-user-message-collapsible={canCollapse ? "true" : "false"}
-          data-user-message-fade={isCollapsed ? "true" : "false"}
-          style={
-            isCollapsed
-              ? {
-                  WebkitMaskImage: COLLAPSED_USER_MESSAGE_FADE_MASK,
-                  maskImage: COLLAPSED_USER_MESSAGE_FADE_MASK,
-                }
-              : undefined
-          }
-        >
-          <UserMessageBody
-            text={props.text}
-            terminalContexts={props.terminalContexts}
-            skills={props.skills}
-            markdownCwd={props.markdownCwd}
-          />
-        </div>
-      ) : null}
+      {canCollapse ? <AnimatedHeight>{body}</AnimatedHeight> : body}
       {canCollapse || props.footer ? (
         <div
           className={cn(
@@ -1754,9 +1752,16 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
               aria-expanded={expanded}
               data-scroll-anchor-ignore
               onClick={() => setExpanded((value) => !value)}
-              className="-ml-1 h-6 rounded-md px-1.5 text-secondary-label text-xs hover:bg-muted/55 hover:text-message-foreground"
+              className="-ml-1 h-6 gap-1 rounded-md px-1.5 text-secondary-label text-xs hover:bg-muted/55 hover:text-message-foreground"
             >
               {expanded ? "Show less" : "Show full message"}
+              <ChevronDownIcon
+                className={cn(
+                  "size-3.5 opacity-70 transition-transform duration-180 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
+                  expanded && "rotate-180",
+                )}
+                aria-hidden
+              />
             </Button>
           ) : null}
           {props.footer ? (
@@ -2226,8 +2231,6 @@ function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
   return capitalizePhrase(normalizeCompactToolLabel(workEntry.toolTitle));
 }
 
-const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation();
-
 /**
  * A1 spawn CTA: one anchored row per workflow run (or per-turn direct-spawn
  * batch). Live status is derived from the shared agent panel model at render
@@ -2354,35 +2357,53 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : rawPreview;
   const displayText = preview ? `${heading} - ${preview}` : heading;
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
-  const canExpand = expandedBody !== null;
+  const previewRef = useRef<HTMLSpanElement>(null);
+  const [previewClipped, setPreviewClipped] = useState(false);
+  // Skip disclosure when the body only repeats the preview *and* the preview
+  // is fully visible. Keep expand when <pre> would preserve newlines/space runs
+  // that truncate (nowrap) collapses — equality after trim alone is not enough.
+  const collapsedPreview = preview === null ? null : preview.trim().replace(/\s+/g, " ");
+  const bodyRepeatsPreview =
+    expandedBody !== null && collapsedPreview !== null && expandedBody.trim() === collapsedPreview;
+  useLayoutEffect(() => {
+    const el = previewRef.current;
+    if (!el || !bodyRepeatsPreview) {
+      setPreviewClipped(false);
+      return;
+    }
+    const sync = () => setPreviewClipped(el.scrollWidth > el.clientWidth);
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [bodyRepeatsPreview, preview]);
+  const canExpand = expandedBody !== null && (!bodyRepeatsPreview || previewClipped);
   const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntry.sourceActivityKind === "runtime.error" || !workLogEntryIsToolLike(workEntry));
   const iconWrapperClass = cn(
-    "flex size-5 shrink-0 items-center justify-center",
-    showWarningIndicator
+    "flex size-4 shrink-0 items-center justify-center",
+    showWarningIndicator || showDestructiveRowStyle
       ? "text-destructive"
-      : showDestructiveRowStyle
-        ? "text-destructive"
-        : workEntry.tone === "tool" || showFailedIndicator
-          ? "text-icon-muted"
-          : iconConfig.className,
+      : workEntry.tone === "tool" || showFailedIndicator
+        ? "text-icon-muted"
+        : iconConfig.className,
   );
   const headingClass = showWarningIndicator
     ? "font-medium text-warning"
     : showDestructiveRowStyle
       ? "font-medium text-destructive"
-      : "font-medium text-foreground";
-  const turnSettled = !activity.activeTurnInProgress;
-  const showNeutralIndicator = !turnSettled && workEntryIndicatesToolNeutralStatus(workEntry);
-  const showSuccessIndicator =
-    workEntryIndicatesToolSuccess(workEntry) ||
-    (turnSettled && workEntryIndicatesToolNeutralStatus(workEntry));
-  const rowToggleProps = canExpand
+      : "font-medium text-foreground/90";
+  // Success is the default and gets no glyph; only failures and still-open
+  // (neutral, mid-turn) rows carry a marker so the exception stands out.
+  const showNeutralIndicator =
+    activity.activeTurnInProgress && workEntryIndicatesToolNeutralStatus(workEntry);
+  const headerToggleProps = canExpand
     ? {
         role: "button" as const,
         tabIndex: 0 as const,
+        "aria-expanded": expanded,
         "aria-label": displayText,
         onClick: () => setExpanded((v) => !v),
         onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
@@ -2395,97 +2416,68 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     : {};
 
   return (
-    <div
-      className={cn(
-        "flex flex-col rounded-md px-0.5 py-0.5 transition-colors",
-        canExpand &&
-          "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
-      )}
-      {...rowToggleProps}
-    >
-      <div className="flex select-none items-center gap-1.5 transition-[opacity,translate] duration-200">
+    <div className="group/tool flex flex-col">
+      <div
+        className={cn(
+          "flex h-6 select-none items-center gap-2 rounded-md px-1 transition-colors duration-150 ease-out",
+          canExpand &&
+            "cursor-pointer hover:bg-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70 data-[state=open]:bg-accent/15",
+        )}
+        data-state={expanded ? "open" : "closed"}
+        {...headerToggleProps}
+      >
         <span className={iconWrapperClass}>
           <WorkEntryIconSvg
             name={entryIconName}
-            className="block size-3.5 shrink-0 stroke-[1.8] opacity-80"
+            className="block size-3.5 shrink-0 stroke-[1.75]"
           />
         </span>
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-[12px] leading-5">
-              <span className={cn("min-w-0 shrink truncate", headingClass)}>{heading}</span>
-              {preview && (
-                <span className="min-w-0 flex-1 truncate text-secondary-label">{preview}</span>
+        <p className="flex min-w-0 flex-1 items-baseline gap-2 text-[12px] leading-5">
+          <span className={cn("min-w-0 shrink truncate", headingClass)}>{heading}</span>
+          {preview ? (
+            <span ref={previewRef} className="min-w-0 flex-1 truncate text-secondary-label">
+              {preview}
+            </span>
+          ) : null}
+        </p>
+        <span className="flex shrink-0 items-center gap-1 text-icon-muted">
+          {showFailedIndicator ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    className="flex size-4 items-center justify-center"
+                    aria-label="Tool call failed"
+                  />
+                }
+              >
+                <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
+              </TooltipTrigger>
+              <TooltipPopup>Failed</TooltipPopup>
+            </Tooltip>
+          ) : showNeutralIndicator ? (
+            <Tooltip>
+              <TooltipTrigger render={<span className="flex size-4 items-center justify-center" />}>
+                <MinusIcon className="block size-3 shrink-0 opacity-70" aria-hidden />
+              </TooltipTrigger>
+              <TooltipPopup>Empty</TooltipPopup>
+            </Tooltip>
+          ) : null}
+          {canExpand ? (
+            <ChevronDownIcon
+              className={cn(
+                "size-3.5 shrink-0 opacity-45 transition-[transform,opacity] duration-180 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover/tool:opacity-90 motion-reduce:transition-none",
+                expanded && "rotate-180 opacity-90",
               )}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-px text-icon-muted">
-            <span
-              className="flex size-4 shrink-0 items-center justify-center"
-              aria-hidden={!canExpand}
-            >
-              {canExpand ? (
-                <ChevronDownIcon
-                  className={cn(
-                    "size-3 shrink-0 opacity-70 transition-transform duration-200",
-                    expanded && "rotate-180",
-                  )}
-                  aria-hidden
-                />
-              ) : null}
-            </span>
-            <span className="flex size-4 shrink-0 items-center justify-center">
-              {showFailedIndicator ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span
-                        className="flex size-4 items-center justify-center"
-                        aria-label="Tool call failed"
-                      />
-                    }
-                  >
-                    <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
-                  </TooltipTrigger>
-                  <TooltipPopup>Failed</TooltipPopup>
-                </Tooltip>
-              ) : showSuccessIndicator ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={<span className="flex size-4 items-center justify-center" />}
-                  >
-                    <span className="inline-flex size-4 items-center justify-center">
-                      <CheckIcon
-                        className="block size-3 shrink-0 stroke-current"
-                        stroke="currentColor"
-                        aria-hidden
-                      />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipPopup>Completed</TooltipPopup>
-                </Tooltip>
-              ) : showNeutralIndicator ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={<span className="flex size-4 items-center justify-center" />}
-                  >
-                    <MinusIcon className="block size-3 shrink-0 opacity-70" aria-hidden />
-                  </TooltipTrigger>
-                  <TooltipPopup>Empty</TooltipPopup>
-                </Tooltip>
-              ) : null}
-            </span>
-          </div>
-        </div>
+              aria-hidden
+            />
+          ) : null}
+        </span>
       </div>
       {canExpand && expandedBody ? (
         <AnimatedHeight>
           {expanded ? (
-            <div
-              className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5"
-              onClick={stopRowToggle}
-              onPointerDown={stopRowToggle}
-            >
+            <div className="mb-1 ms-7 mt-0.5 rounded-md border border-border/50 bg-foreground/[0.03] px-2.5 py-2 transition-opacity duration-200 ease-out starting:opacity-0 motion-reduce:transition-none">
               <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
             </div>
           ) : null}
