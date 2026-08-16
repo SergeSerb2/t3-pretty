@@ -44,7 +44,7 @@ export class PullRequestProviderError extends Schema.TaggedErrorClass<PullReques
   {
     provider: SourceControlProviderKindSchema,
     operation: Schema.String,
-    reason: Schema.Literals(["missing-tool", "unauthenticated", "failed"]),
+    reason: Schema.Literals(["missing-tool", "unauthenticated", "rate-limited", "failed"]),
     detail: Schema.String,
     cause: Schema.optional(Schema.Defect()),
   },
@@ -243,6 +243,12 @@ export interface PullRequestProviderApi {
        * what it gets for the fields a row carries.
        */
       readonly filters?: PullRequestListFilters | undefined;
+      /**
+       * False skips the host's search index and lists the repository the long way. Used when a
+       * search across the host already said nothing about this repository: asking search again
+       * spends the scarcest GitHub budget on an answer we already have.
+       */
+      readonly search?: boolean | undefined;
     },
   ) => Effect.Effect<ProviderChangeRequestPage, PullRequestProviderError>;
 

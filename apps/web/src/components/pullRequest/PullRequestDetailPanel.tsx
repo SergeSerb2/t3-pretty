@@ -575,10 +575,9 @@ export function PullRequestDetailPanel({
       isDraft: detail.isDraft,
     });
   }, [detail, onStateChange]);
-  // The button, and the live interval below, go around the server's cache rather than through
-  // it: a pull request open beside a thread changes while it is being read, and a cached
-  // answer is the thing the reader can already see is behind. Invalidation goes first so the
-  // re-reads miss that cache; if it fails, the reads still run and at worst answer from it.
+  // The button goes around the server's cache: a pull request the reader asked to refresh
+  // must not come back as the answer they can already see. The live interval below does not —
+  // busting the cache every tick spent GitHub's budget on one open panel.
   const invalidate = useAtomCommand(pullRequestEnvironment.invalidate, { reportFailure: false });
   const [refreshToken, setRefreshToken] = useState(0);
   const wantDiffReset = useRef(false);
@@ -617,12 +616,11 @@ export function PullRequestDetailPanel({
   // A pull request changes while it is open in front of somebody — a push lands, a check
   // finishes, a review arrives — so the panel reads it again on the way back to the window and
   // while a reader sits on it. Keyed by the pull request rather than by the panel, because this
-  // one panel shows a different pull request every time it is opened. The interval matches one
-  // host round-trip rather than a minute, and the live path does not rebuild the diff unless
-  // the patch itself moved.
+  // one panel shows a different pull request every time it is opened. Those reads go through
+  // the server's cache: only the refresh button punches through it.
   useLiveRefresh(
     () => {
-      void refreshFromHost(false);
+      refreshDetail();
     },
     {
       key: `pull-request:${reference.projectId}:${reference.repository}#${reference.number}`,

@@ -2383,6 +2383,7 @@ it.effect("reads a host's repositories in one search, and files the rows back un
 );
 it.effect("carries every repository of a slice on from the oldest row in it", () =>
   Effect.gen(function* () {
+    const separately: string[] = [];
     const service = yield* makeService({
       projects: [
         project({ id: "p1", title: "t3code", workspaceRoot: "/a", repository: "pingdotgg/t3code" }),
@@ -2391,6 +2392,10 @@ it.effect("carries every repository of a slice on from the oldest row in it", ()
       ],
       providers: [
         fakeProvider("github", {
+          listChangeRequests: ({ repository }) => {
+            separately.push(repository);
+            return Effect.succeed({ items: [], truncated: false, continues: true });
+          },
           listChangeRequestsAcross: () =>
             Effect.succeed({
               items: [
@@ -2408,12 +2413,15 @@ it.effect("carries every repository of a slice on from the oldest row in it", ()
 
     // The boundary is the oldest row of the whole slice, not of each repository: `acme/web` has
     // been read past its newest row, so only the rows sent at the boundary are named for it.
-    // `acme/docs`, which the slice holds nothing of, is not believed on silence alone — it is
-    // read on its own, and that read is what says whether it has anything at all.
+    // `acme/docs` contributed nothing because its rows are older, not because GitHub will not
+    // search it — a full page is enough to know that, and reading it on its own would spend
+    // the search budget on every quiet repository in a busy workspace.
+    assert.deepStrictEqual(separately, []);
     assert.isTrue(result.truncated);
     assert.deepStrictEqual(result.nextCursors, {
       "github.com pingdotgg/t3code": "2026-07-02T00:00:00Z|1|2",
       "github.com acme/web": "2026-07-02T00:00:00Z|2|3",
+      "github.com acme/docs": "2026-07-02T00:00:00Z|0|",
     });
   }),
 );
@@ -2490,7 +2498,7 @@ it.effect("reads a workspace larger than one search in chunks, and merges them",
 );
 it.effect("asks on its own for a repository a search answered nothing for", () =>
   Effect.gen(function* () {
-    const separately: string[] = [];
+    const separately: Array<{ readonly repository: string; readonly search?: boolean }> = [];
     const service = yield* makeService({
       projects: [
         project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
@@ -2498,8 +2506,8 @@ it.effect("asks on its own for a repository a search answered nothing for", () =
       ],
       providers: [
         fakeProvider("github", {
-          listChangeRequests: ({ repository }) => {
-            separately.push(repository);
+          listChangeRequests: ({ repository, search }) => {
+            separately.push({ repository, search: search !== false });
             return repository === "acme/docs"
               ? Effect.fail(requestFailed)
               : Effect.succeed({ items: [], truncated: false, continues: true });
@@ -2516,9 +2524,9 @@ it.effect("asks on its own for a repository a search answered nothing for", () =
     const result = yield* service.list({ state: "open" });
 
     // The slice had room and still held nothing of `acme/docs`, which is what a repository GitHub
-    // will not search looks like — so it is read the old way, and its failure is still reported
-    // against its own project.
-    assert.deepStrictEqual(separately, ["acme/docs"]);
+    // will not search looks like — so it is read the old way, without search, and its failure is
+    // still reported against its own project.
+    assert.deepStrictEqual(separately, [{ repository: "acme/docs", search: false }]);
     assert.deepStrictEqual(result.errors, [
       {
         projectId: "p2" as ProjectId,
@@ -2530,6 +2538,48 @@ it.effect("asks on its own for a repository a search answered nothing for", () =
       result.entries.map((entry) => entry.number),
       [1],
     );
+  }),
+);
+it.effect("does not ask each repository when the host search is rate-limited", () =>
+  Effect.gen(function* () {
+    const separately: string[] = [];
+    const service = yield* makeService({
+      projects: [
+        project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
+        project({ id: "p2", title: "docs", workspaceRoot: "/b", repository: "acme/docs" }),
+      ],
+      providers: [
+        fakeProvider("github", {
+          listChangeRequests: ({ repository }) => {
+            separately.push(repository);
+            return Effect.succeed({
+              items: [changeRequest(1, "2026-07-02T00:00:00Z")],
+              truncated: false,
+              continues: true,
+            });
+          },
+          listChangeRequestsAcross: () =>
+            Effect.fail(
+              new PullRequestProviderError({
+                provider: "github",
+                operation: "listChangeRequestsAcross",
+                reason: "rate-limited",
+                detail: "GitHub API rate limit exceeded.",
+              }),
+            ),
+        }),
+      ],
+    });
+
+    const error = yield* Effect.flip(service.list({ state: "open" }));
+
+    // One 429 must not become one request per repository. The listing fails instead of
+    // spending the rest of the minute on the same refusal.
+    assert.deepStrictEqual(separately, []);
+    assert.strictEqual(error._tag, "PullRequestOperationError");
+    if (error._tag === "PullRequestOperationError") {
+      assert.include(error.detail, "rate limit");
+    }
   }),
 );
 it.effect("reads the repositories one at a time when the search itself fails", () =>

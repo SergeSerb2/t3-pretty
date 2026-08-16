@@ -19,11 +19,12 @@ export { PullRequestDiffLoader, pullRequestDiffLoaderLayer } from "./pullRequest
 
 /**
  * How often an open pull-request view re-reads the host. One change request, not a
- * workspace listing: a push, a check, or a comment can land while the panel is open,
- * and a minute-old answer is already wrong. Bounded by the host round-trip — a second
- * read is skipped while the last one is still in flight.
+ * workspace listing: a push, a check, or a comment can land while the panel is open.
+ * Half a minute is enough for a reader to see that; five seconds, with a cache bust
+ * each time, spent GitHub's hourly budget on one open panel and took the rest of
+ * GitHub in the app down with it.
  */
-export const PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS = 5_000;
+export const PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS = 30_000;
 
 export class EnvironmentHttpConnectionNotReadyError extends Data.TaggedError(
   "EnvironmentHttpConnectionNotReadyError",
@@ -62,12 +63,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     detail: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:detail",
       tag: WS_METHODS.pullRequestsDetail,
-      staleTimeMs: 5_000,
+      staleTimeMs: 20_000,
     }),
     activity: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:activity",
       tag: WS_METHODS.pullRequestsActivity,
-      staleTimeMs: 5_000,
+      staleTimeMs: 20_000,
     }),
     diff: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:diff",
