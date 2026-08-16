@@ -1,19 +1,20 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import { SkillsError, type HostSkill } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-
-import type { HostSkill } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as HostSkills from "./HostSkills.ts";
 import * as SkillMaterializer from "./SkillMaterializer.ts";
 import * as SkillStore from "./SkillStore.ts";
 
-/** Host-folder skills the mocked `HostSkills.list` reports; tests push into it. */
+/** Host-folder skills the mocked `HostSkills.resolve` reports; tests push into it. */
 const hostSkillsFixture: Array<HostSkill> = [];
+/** When set, the mock resolve fails so materialization must preserve managed host copies. */
+let hostResolveShouldFail = false;
 
 const TestLayer = Layer.empty.pipe(
   Layer.provideMerge(SkillStore.layer),
@@ -22,7 +23,23 @@ const TestLayer = Layer.empty.pipe(
       Layer.provide(SkillStore.layer),
       Layer.provide(
         Layer.mock(HostSkills.HostSkills)({
-          list: Effect.sync(() => ({ skills: [...hostSkillsFixture] })),
+          resolve: (skillIds) =>
+            hostResolveShouldFail
+              ? Effect.fail(
+                  new SkillsError({
+                    operation: "materialize",
+                    message: "settings unavailable",
+                  }),
+                )
+              : Effect.sync(() =>
+                  hostSkillsFixture
+                    .filter((skill) => skillIds.includes(skill.id))
+                    .map((skill) => ({
+                      id: skill.id,
+                      name: skill.name,
+                      dir: skill.path.replace(/[/\\][^/\\]+$/, ""),
+                    })),
+                ),
         }),
       ),
     ),
@@ -280,6 +297,64 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
         yield* fileSystem.exists(path.join(hostDir, HostSkills.HOST_SKILL_DISABLED_FILE)),
       );
       assert.deepStrictEqual(result.loaded, [{ id: hostSkillId, name: "grill-me" }]);
+    }),
+  );
+
+  it.effect("keeps managed host skills when host discovery fails", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const materializer = yield* SkillMaterializer.SkillMaterializer;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-cwd-" });
+      const hostSkillId = "host:codex:grill-me";
+      const keepId = yield* installSkill({
+        sourceRepo: "octocat/materialize-preserve",
+        sourcePath: "skills/keep",
+        skillMd: "---\nname: keep\n---\n",
+      });
+
+      // Seed managed dirs as if a prior turn materialized both skills.
+      for (const root of [".claude/skills", ".agents/skills"]) {
+        for (const [dirName, marker] of [
+          ["grill-me", hostSkillId],
+          ["keep", keepId],
+        ] as const) {
+          const skillDir = path.join(cwd, root, dirName);
+          yield* fileSystem.makeDirectory(skillDir, { recursive: true });
+          yield* fileSystem.writeFileString(path.join(skillDir, "SKILL.md"), "prior copy");
+          yield* fileSystem.writeFileString(
+            path.join(skillDir, SkillMaterializer.SKILL_MANAGED_MARKER_FILE),
+            marker,
+          );
+        }
+      }
+
+      hostResolveShouldFail = true;
+      const result = yield* materializer
+        .materialize({
+          cwd,
+          skillIds: [hostSkillId, keepId],
+        })
+        .pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              hostResolveShouldFail = false;
+            }),
+          ),
+        );
+
+      for (const root of [".claude/skills", ".agents/skills"]) {
+        assert.isTrue(yield* fileSystem.exists(path.join(cwd, root, "grill-me", "SKILL.md")));
+        assert.strictEqual(
+          yield* fileSystem.readFileString(
+            path.join(cwd, root, "grill-me", SkillMaterializer.SKILL_MANAGED_MARKER_FILE),
+          ),
+          hostSkillId,
+        );
+        assert.isTrue(yield* fileSystem.exists(path.join(cwd, root, "keep", "SKILL.md")));
+      }
+      assert.deepStrictEqual(result.removed, []);
+      assert.deepStrictEqual(result.loaded, [{ id: keepId, name: "keep" }]);
     }),
   );
 });

@@ -185,6 +185,17 @@ export class HostSkills extends Context.Service<
   HostSkills,
   {
     readonly list: Effect.Effect<HostSkillsState, SkillsError>;
+    /**
+     * Resolve specific host skill ids to their on-disk directories without
+     * scanning every configured provider home. Used by materialization so a
+     * thread that picks one host skill does not pay for a full inventory.
+     */
+    readonly resolve: (
+      skillIds: ReadonlyArray<string>,
+    ) => Effect.Effect<
+      ReadonlyArray<{ readonly id: string; readonly name: string; readonly dir: string }>,
+      SkillsError
+    >;
     readonly uninstall: (skillId: HostSkillId) => Effect.Effect<HostSkillsState, SkillsError>;
     readonly setEnabled: (input: {
       readonly skillId: HostSkillId;
@@ -360,6 +371,59 @@ export const make = Effect.gen(function* () {
     return { skills } satisfies HostSkillsState;
   });
 
+  const resolve = Effect.fn("HostSkills.resolve")(function* (skillIds: ReadonlyArray<string>) {
+    const roots = yield* collectRoots("materialize");
+    const resolved: Array<{ id: string; name: string; dir: string }> = [];
+    for (const skillId of skillIds) {
+      const parsed = parseHostSkillId(skillId);
+      if (!parsed) {
+        continue;
+      }
+      const root = roots.find(
+        (candidate) =>
+          candidate.originKey === parsed.originKey && candidate.instanceKey === parsed.instanceKey,
+      );
+      if (!root) {
+        continue;
+      }
+      const target = path.resolve(root.directory, parsed.dirName);
+      if (path.relative(root.directory, target) !== parsed.dirName) {
+        continue;
+      }
+      const info = yield* fileSystem.stat(target).pipe(Effect.orElseSucceed(() => undefined));
+      if (!info || info.type !== "Directory") {
+        continue;
+      }
+      const skillFilePath = path.join(target, SKILL_FILE);
+      const disabledFilePath = path.join(target, HOST_SKILL_DISABLED_FILE);
+      const skillContents = yield* fileSystem
+        .readFileString(skillFilePath)
+        .pipe(Effect.orElseSucceed(() => undefined));
+      const disabledContents =
+        skillContents === undefined
+          ? yield* fileSystem
+              .readFileString(disabledFilePath)
+              .pipe(Effect.orElseSucceed(() => undefined))
+          : undefined;
+      if (skillContents === undefined && disabledContents === undefined) {
+        continue;
+      }
+      const isManagedCopy = yield* fileSystem
+        .exists(path.join(target, SKILL_MANAGED_MARKER_FILE))
+        .pipe(Effect.orElseSucceed(() => false));
+      if (isManagedCopy) {
+        continue;
+      }
+      const frontmatter = parseSkillFrontmatter(skillContents ?? disabledContents ?? "");
+      resolved.push({
+        id: skillId,
+        name: frontmatter.kind === "parsed" && frontmatter.name ? frontmatter.name : parsed.dirName,
+        dir: target,
+      });
+    }
+    return resolved;
+  });
+
   const resolveTarget = Effect.fn("HostSkills.resolveTarget")(function* (
     operation: SkillsError["operation"],
     skillId: string,
@@ -496,7 +560,7 @@ export const make = Effect.gen(function* () {
     return yield* list;
   });
 
-  return HostSkills.of({ list, uninstall, setEnabled });
+  return HostSkills.of({ list, resolve, uninstall, setEnabled });
 });
 
 export const layer = Layer.effect(HostSkills, make);

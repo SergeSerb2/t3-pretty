@@ -70,18 +70,27 @@ const make = Effect.gen(function* () {
     const installed = new Map(
       (yield* skillStore.getState).installedSkills.map((skill) => [skill.id, skill] as const),
     );
-    // Host folders are only scanned when a host id is actually requested.
+    // Resolve only the requested host ids — a full HostSkills.list would walk
+    // every configured provider home on every turn.
+    const requestedHostIds = input.skillIds.filter((skillId) => parseHostSkillId(skillId) !== null);
     const hostById = new Map<string, { readonly name: string; readonly dir: string }>();
-    if (input.skillIds.some((skillId) => parseHostSkillId(skillId) !== null)) {
-      const hostState = yield* hostSkills.list.pipe(
+    let hostDiscoveryFailed = false;
+    if (requestedHostIds.length > 0) {
+      const resolved = yield* hostSkills.resolve(requestedHostIds).pipe(
         Effect.catch((error) =>
-          Effect.logWarning("Skipping host skills that failed to list", {
+          Effect.logWarning("Skipping host skills that failed to resolve", {
             detail: error.message,
           }).pipe(Effect.as(undefined)),
         ),
       );
-      for (const skill of hostState?.skills ?? []) {
-        hostById.set(skill.id, { name: skill.name, dir: path.dirname(skill.path) });
+      if (resolved === undefined) {
+        // Inventory failed: keep existing managed copies of still-requested
+        // host skills instead of treating them as stale and deleting them.
+        hostDiscoveryFailed = true;
+      } else {
+        for (const skill of resolved) {
+          hostById.set(skill.id, { name: skill.name, dir: skill.dir });
+        }
       }
     }
 
@@ -97,7 +106,9 @@ const make = Effect.gen(function* () {
     for (const skillId of input.skillIds) {
       const skill = installed.get(skillId) ?? hostById.get(skillId);
       if (!skill) {
-        yield* Effect.logWarning("Skipping skill that is not installed", { skillId });
+        if (!(hostDiscoveryFailed && parseHostSkillId(skillId) !== null)) {
+          yield* Effect.logWarning("Skipping skill that is not installed", { skillId });
+        }
         continue;
       }
       const storeDir =
@@ -133,6 +144,7 @@ const make = Effect.gen(function* () {
       path.join(input.cwd, ".claude", "skills"),
       path.join(input.cwd, ".agents", "skills"),
     ];
+    const requestedHostIdSet = new Set(requestedHostIds);
 
     for (const root of roots) {
       yield* Effect.gen(function* () {
@@ -170,6 +182,14 @@ const make = Effect.gen(function* () {
             continue;
           }
           const target = path.join(root, dirName);
+          if (hostDiscoveryFailed) {
+            const markerId = yield* fileSystem
+              .readFileString(path.join(target, SKILL_MANAGED_MARKER_FILE))
+              .pipe(Effect.orElseSucceed(() => undefined));
+            if (markerId !== undefined && requestedHostIdSet.has(markerId)) {
+              continue;
+            }
+          }
           const outcome = yield* fileSystem
             .remove(target, { recursive: true, force: true })
             .pipe(Effect.result);
