@@ -13,6 +13,7 @@ import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
 import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import sidebarSource from "../components/ui/sidebar.tsx?raw";
+import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
@@ -177,6 +178,29 @@ describe("scenery new-thread arrival contract", () => {
   it("docks the World Scenery composer with the longer scenery curve", () => {
     expect(chatViewSource).toContain("SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS");
     expect(chatViewSource).toContain("scenery-hero-headline-ghost");
+  });
+
+  it("holds fog until the wallpaper is decoded and primes it before navigation", () => {
+    expect(sceneryArrivalSource).toContain("photoReady");
+    expect(sceneryArrivalSource).toContain("remainingFogHoldMs");
+    expect(sceneryLayerSource).toContain("preloadWallpaper");
+    expect(sceneryLayerSource).toContain("sceneryArrivalCoversSwap");
+    expect(useHandleNewThreadSource).toContain("primeWorldSceneryForNewThread");
+    expect(chatViewSource).toContain("writeSceneryComposerPlacement");
+  });
+
+  it("does not blur hero chrome during the fog sequence", () => {
+    const fogChrome =
+      /html\[data-scenery-arrival="fog"\] \[data-scenery-hero-chrome\]\s*\{[^}]+\}/.exec(
+        sceneryCssSource,
+      )?.[0];
+    expect(fogChrome, "missing fog chrome rule").toBeTruthy();
+    expect(fogChrome).not.toContain("filter:");
+  });
+
+  it("locks fog sheet colors to the arrival overlay so an ink flip cannot snap them", () => {
+    expect(sceneryCssSource).toContain('.scenery-arrival[data-fog="light"] .scenery-fog__sheet--a');
+    expect(sceneryCssSource).not.toContain("html:not(.dark) .scenery-fog__sheet--a");
   });
 });
 

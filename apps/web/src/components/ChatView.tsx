@@ -310,6 +310,7 @@ import {
   runMobileComposerTransition,
 } from "./chat/draftHeroTransition";
 import { useMotionStore } from "../scenery/motionStore";
+import { writeSceneryComposerPlacement } from "../scenery/sceneryArrivalLogic";
 import { bindSceneryPlaceSlot } from "../scenery/sceneryPlaceSlot";
 import { useSceneryThemeActive } from "../scenery/useHtmlAttributes";
 import {
@@ -2720,6 +2721,10 @@ function ChatViewContent(props: ChatViewProps) {
   const isDraftHeroState =
     isLocalDraftThread && timelineEntries.length === 0 && !isWorking && !draftHeroDockRequested;
   const sceneryThemeActive = useSceneryThemeActive();
+  // Written during render so a sibling scenery layout effect in the same
+  // commit can read hero/docked before first paint. The layout cleanup still
+  // owns unmount.
+  writeSceneryComposerPlacement(sceneryThemeActive ? (isDraftHeroState ? "hero" : "docked") : null);
   const sceneryMotionEnabled = useMotionStore((state) => state.enabled);
   const sceneryDraftDock = sceneryThemeActive && sceneryMotionEnabled;
   const [
@@ -2734,13 +2739,11 @@ function ChatViewContent(props: ChatViewProps) {
     readonly width: number;
   } | null>(null);
   useLayoutEffect(() => {
-    if (!sceneryThemeActive) {
-      return;
-    }
-    const root = document.documentElement;
-    root.dataset.sceneryComposer = isDraftHeroState ? "hero" : "docked";
+    writeSceneryComposerPlacement(
+      sceneryThemeActive ? (isDraftHeroState ? "hero" : "docked") : null,
+    );
     return () => {
-      delete root.dataset.sceneryComposer;
+      writeSceneryComposerPlacement(null);
     };
   }, [isDraftHeroState, sceneryThemeActive]);
   useEffect(() => {

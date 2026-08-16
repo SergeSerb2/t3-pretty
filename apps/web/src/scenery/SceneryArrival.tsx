@@ -3,18 +3,21 @@
  * overlay unmounts once the location name has handed off to the composer
  * slot; nothing here loops or keeps a filter live.
  */
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { useMotionStore } from "./motionStore";
 import {
   hasPlayedSceneryArrival,
   markSceneryArrivalPlayed,
   measureCenterDelta,
-  sceneryArrivalSettleAtMs,
-  shouldPlaySceneryArrival,
+  readSceneryArrivalFogInk,
+  readSceneryComposerPlacement,
+  remainingFogHoldMs,
+  shouldArmSceneryArrival,
   writeSceneryArrivalPhase,
   SCENERY_ARRIVAL,
   SCENERY_COMPOSER_ATTR,
+  type SceneryArrivalFogInk,
   type SceneryArrivalPhase,
 } from "./sceneryArrivalLogic";
 import type { SceneryPhoto } from "./unsplash";
@@ -47,68 +50,100 @@ function useComposerPlacement(): "hero" | "docked" | null {
 export function SceneryArrival({
   photo,
   threadKey,
+  photoReady,
+  onPhaseChange,
 }: {
   readonly photo: SceneryPhoto | null;
   readonly threadKey: string | null;
+  /** Wallpaper is decoded and on screen — the veil can lift over it. */
+  readonly photoReady: boolean;
+  readonly onPhaseChange?: (phase: SceneryArrivalPhase) => void;
 }) {
   const placement = useComposerPlacement();
   const motionEnabled = useMotionStore((state) => state.enabled);
   const reducedMotion = useReducedMotion();
   const [phase, setPhase] = useState<SceneryArrivalPhase>("idle");
+  const [fogInk, setFogInk] = useState<SceneryArrivalFogInk>("dark");
+  const [sequenceKey, setSequenceKey] = useState<string | null>(null);
   const locationRef = useRef<HTMLParagraphElement | null>(null);
   const travelRef = useRef<Animation | null>(null);
+  const fogStartedAtRef = useRef<number | null>(null);
+  const armedThreadRef = useRef<string | null>(null);
+  const revealedRef = useRef(false);
+  const onPhaseChangeRef = useRef(onPhaseChange);
+  onPhaseChangeRef.current = onPhaseChange;
 
-  useEffect(() => {
+  const publishPhase = (next: SceneryArrivalPhase) => {
+    setPhase(next);
+    writeSceneryArrivalPhase(next === "idle" ? null : next);
+    onPhaseChangeRef.current?.(next);
+  };
+
+  useLayoutEffect(() => {
+    return () => {
+      writeSceneryArrivalPhase(null);
+    };
+  }, []);
+
+  // Layout so fog is on the document before SceneryLayer commits a preloaded
+  // photo in the same frame. Placement is re-read from the DOM: ChatView
+  // writes hero during its render, which is after this component's render
+  // but before this layout effect.
+  useLayoutEffect(() => {
     const alreadyPlayed = threadKey !== null && hasPlayedSceneryArrival(threadKey);
-    const waitingForPhoto =
-      placement === "hero" &&
-      photo === null &&
-      threadKey !== null &&
-      !alreadyPlayed &&
-      motionEnabled &&
-      !reducedMotion;
-    const play = shouldPlaySceneryArrival({
-      placement,
+    const livePlacement = readSceneryComposerPlacement() ?? placement;
+    const arm = shouldArmSceneryArrival({
+      placement: livePlacement,
       threadKey,
-      hasPhoto: photo !== null,
       reducedMotion,
       motionEnabled,
       alreadyPlayed,
     });
 
-    travelRef.current?.cancel();
-    travelRef.current = null;
-
-    if (waitingForPhoto) {
-      setPhase("idle");
-      writeSceneryArrivalPhase(null);
-      return () => {
-        writeSceneryArrivalPhase(null);
-      };
+    if (arm && threadKey !== null) {
+      if (armedThreadRef.current === threadKey) {
+        return;
+      }
+      armedThreadRef.current = threadKey;
+      revealedRef.current = false;
+      fogStartedAtRef.current = performance.now();
+      setFogInk(readSceneryArrivalFogInk());
+      setSequenceKey(threadKey);
+      publishPhase("fog");
+      return;
     }
 
-    if (!play || !photo || !threadKey) {
-      if (placement === "hero" && threadKey !== null) {
-        markSceneryArrivalPlayed(threadKey);
-      }
-      const nextPhase = placement === "hero" || placement === "docked" ? "settled" : "idle";
-      setPhase(nextPhase);
-      writeSceneryArrivalPhase(nextPhase === "idle" ? null : nextPhase);
-      return () => {
-        writeSceneryArrivalPhase(null);
-      };
+    if (armedThreadRef.current !== null) {
+      travelRef.current?.cancel();
+      travelRef.current = null;
+    }
+    armedThreadRef.current = null;
+    revealedRef.current = false;
+    fogStartedAtRef.current = null;
+    setSequenceKey(null);
+    if (livePlacement === "hero" && threadKey !== null) {
+      markSceneryArrivalPlayed(threadKey);
+    }
+    const nextPhase = livePlacement === "hero" || livePlacement === "docked" ? "settled" : "idle";
+    publishPhase(nextPhase);
+  }, [motionEnabled, placement, reducedMotion, threadKey]);
+
+  const photoId = photo?.id ?? null;
+  useEffect(() => {
+    if (sequenceKey === null || revealedRef.current) {
+      return;
     }
 
     let cancelled = false;
-    setPhase("fog");
-    writeSceneryArrivalPhase("fog");
+    let startReveal = 0;
+    let settle = 0;
 
-    const startReveal = window.setTimeout(() => {
+    const beginReveal = () => {
       if (cancelled) {
         return;
       }
-      setPhase("reveal");
-      writeSceneryArrivalPhase("reveal");
+      revealedRef.current = true;
+      publishPhase("reveal");
       requestAnimationFrame(() => {
         if (cancelled) {
           return;
@@ -147,47 +182,77 @@ export function SceneryArrival({
             }
           });
       });
-    }, SCENERY_ARRIVAL.fogHoldMs);
+      settle = window.setTimeout(
+        () => {
+          if (cancelled) {
+            return;
+          }
+          markSceneryArrivalPlayed(sequenceKey);
+          publishPhase("settled");
+        },
+        Math.max(SCENERY_ARRIVAL.locationTravelMs, SCENERY_ARRIVAL.fogClearMs),
+      );
+    };
 
-    const settle = window.setTimeout(() => {
-      if (cancelled) {
-        return;
-      }
-      markSceneryArrivalPlayed(threadKey);
-      setPhase("settled");
-      writeSceneryArrivalPhase("settled");
-    }, sceneryArrivalSettleAtMs());
+    if (photoReady && photo !== null) {
+      const hold = remainingFogHoldMs(
+        fogStartedAtRef.current ?? performance.now(),
+        performance.now(),
+      );
+      startReveal = window.setTimeout(beginReveal, hold);
+    } else {
+      startReveal = window.setTimeout(() => {
+        if (photo !== null) {
+          beginReveal();
+          return;
+        }
+        if (cancelled) {
+          return;
+        }
+        revealedRef.current = true;
+        markSceneryArrivalPlayed(sequenceKey);
+        publishPhase("settled");
+      }, SCENERY_ARRIVAL.fogMaxWaitMs);
+    }
 
     return () => {
+      if (revealedRef.current) {
+        return;
+      }
       cancelled = true;
       window.clearTimeout(startReveal);
       window.clearTimeout(settle);
       travelRef.current?.cancel();
       travelRef.current = null;
-      writeSceneryArrivalPhase(null);
     };
-  }, [motionEnabled, photo?.id, placement, reducedMotion, threadKey]);
+    // photo is read from this render when photoId changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sequenceKey, photoId, photoReady]);
 
-  if (phase === "idle" || phase === "settled" || photo === null) {
+  if (phase === "idle" || phase === "settled") {
     return null;
   }
 
   return (
-    <div className="scenery-arrival" data-phase={phase}>
+    <div className="scenery-arrival" data-phase={phase} data-fog={fogInk}>
       <div className="scenery-fog" aria-hidden>
         <div className="scenery-fog__sheet scenery-fog__sheet--a" />
         <div className="scenery-fog__sheet scenery-fog__sheet--b" />
         <div className="scenery-fog__sheet scenery-fog__sheet--c" />
       </div>
-      <div className="scenery-arrival__copy">
-        <p className="scenery-arrival__kicker">Entering...</p>
-        <p ref={locationRef} className="scenery-arrival__place">
-          {photo.name}
-        </p>
-      </div>
-      <div className="sr-only" aria-live="polite">
-        Entering {photo.name}
-      </div>
+      {photo ? (
+        <>
+          <div className="scenery-arrival__copy">
+            <p className="scenery-arrival__kicker">Entering...</p>
+            <p ref={locationRef} className="scenery-arrival__place">
+              {photo.name}
+            </p>
+          </div>
+          <div className="sr-only" aria-live="polite">
+            Entering {photo.name}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

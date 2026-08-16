@@ -4,8 +4,11 @@ import {
   hasPlayedSceneryArrival,
   markSceneryArrivalPlayed,
   measureCenterDelta,
+  remainingFogHoldMs,
   resetPlayedSceneryArrivals,
+  sceneryArrivalCoversSwap,
   sceneryArrivalSettleAtMs,
+  shouldArmSceneryArrival,
   shouldPlaySceneryArrival,
   SCENERY_ARRIVAL,
 } from "./sceneryArrivalLogic";
@@ -39,6 +42,52 @@ describe("shouldPlaySceneryArrival", () => {
   it("skips when the user asked for less motion", () => {
     expect(shouldPlaySceneryArrival({ ...ready, reducedMotion: true })).toBe(false);
     expect(shouldPlaySceneryArrival({ ...ready, motionEnabled: false })).toBe(false);
+  });
+});
+
+describe("shouldArmSceneryArrival", () => {
+  const ready = {
+    placement: "hero" as const,
+    threadKey: "env:thread",
+    reducedMotion: false,
+    motionEnabled: true,
+    alreadyPlayed: false,
+  };
+
+  it("arms fog on a fresh hero thread before the photo has decoded", () => {
+    expect(shouldArmSceneryArrival(ready)).toBe(true);
+  });
+
+  it("does not arm docked, already-played, or reduced-motion threads", () => {
+    expect(shouldArmSceneryArrival({ ...ready, placement: "docked" })).toBe(false);
+    expect(shouldArmSceneryArrival({ ...ready, alreadyPlayed: true })).toBe(false);
+    expect(shouldArmSceneryArrival({ ...ready, reducedMotion: true })).toBe(false);
+    expect(shouldArmSceneryArrival({ ...ready, threadKey: null })).toBe(false);
+  });
+});
+
+describe("arrival swap cover", () => {
+  it("covers the incoming photo only while fog is up", () => {
+    expect(sceneryArrivalCoversSwap("fog")).toBe(true);
+    expect(sceneryArrivalCoversSwap("reveal")).toBe(false);
+    expect(sceneryArrivalCoversSwap("settled")).toBe(false);
+    expect(sceneryArrivalCoversSwap(null)).toBe(false);
+  });
+});
+
+describe("remaining fog hold", () => {
+  it("keeps the full hold when the photo was ready at fog-on", () => {
+    expect(remainingFogHoldMs(1000, 1000)).toBe(SCENERY_ARRIVAL.fogHoldMs);
+  });
+
+  it("does not drop below the after-ready beat when decode was slow", () => {
+    expect(remainingFogHoldMs(0, SCENERY_ARRIVAL.fogHoldMs + 800)).toBe(
+      SCENERY_ARRIVAL.fogHoldAfterReadyMs,
+    );
+  });
+
+  it("shortens the remaining hold by time already spent in fog", () => {
+    expect(remainingFogHoldMs(0, 200)).toBe(SCENERY_ARRIVAL.fogHoldMs - 200);
   });
 });
 
