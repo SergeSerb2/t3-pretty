@@ -10,13 +10,13 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  Switch,
   type NativeSyntheticEvent,
   type TextLayoutEventData,
   View,
 } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
+import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useThemeColor } from "../../lib/useThemeColor";
@@ -278,8 +278,6 @@ function CloudEnvironmentRowShell(props: {
   readonly statusText?: string;
   readonly value: boolean;
 }) {
-  const activeTrack = String(useThemeColor("--color-switch-active"));
-  const track = String(useThemeColor("--color-secondary-border"));
   const chevron = useThemeColor("--color-chevron");
   const isRetrying =
     props.connectionState === "connecting" || props.connectionState === "reconnecting";
@@ -392,11 +390,9 @@ function CloudEnvironmentRowShell(props: {
           ) : null}
         </StatusContainer>
       </View>
-      <Switch
+      <ThemedSwitch
         disabled={props.disabled}
-        ios_backgroundColor={track}
         onValueChange={props.onValueChange}
-        trackColor={{ false: track, true: activeTrack }}
         value={props.value}
       />
     </View>

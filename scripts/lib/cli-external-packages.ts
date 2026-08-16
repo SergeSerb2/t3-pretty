@@ -107,7 +107,7 @@ export function selectCliRuntimeExternalDependencies(
 }
 
 /**
- * Scan an emitted bundle chunk for runtime-external packages that were inlined.
+ * Scan the modules a bundle chunk inlined for runtime-external packages.
  *
  * Configuring the bundler is not the same as checking what it produced. The
  * `alwaysBundle` predicate only forces packages IN; returning false from it
@@ -116,32 +116,31 @@ export function selectCliRuntimeExternalDependencies(
  * inlined that way while every list-based test passed, which is why this reads
  * the artifact instead.
  *
- * `regionCount` is reported so the caller can tell "nothing was inlined" apart
- * from "the marker format changed and this scan no longer sees anything".
+ * `moduleIds` is the chunk's source-map `sources` list: one entry per inlined
+ * module. Rolldown also writes `//#region <path>` comments, but the minifier
+ * strips those, while the map survives `minify: true`.
  *
- * `inlinedPackages` is every package seen in a region, which lets the caller
- * check the opposite direction too. Verifying only that externals are absent
- * would still pass if the bundler reverted to leaving everything external: the
- * scan would see source-file regions, report nothing inlined, and the packaged
- * backends would then fail with ERR_MODULE_NOT_FOUND because those packages
- * are not in the selected sidecar closure either.
+ * `moduleCount` is reported so the caller can tell "nothing was inlined" apart
+ * from "the map format changed and this scan no longer sees anything".
+ *
+ * `inlinedPackages` is every package seen, which lets the caller check the
+ * opposite direction too. Verifying only that externals are absent would still
+ * pass if the bundler reverted to leaving everything external: the scan would
+ * see source-file modules, report nothing inlined, and the packaged backends
+ * would then fail with ERR_MODULE_NOT_FOUND because those packages are not in
+ * the selected sidecar closure either.
  */
-export function findInlinedExternalPackages(source: string): {
-  readonly regionCount: number;
+export function findInlinedExternalPackages(moduleIds: ReadonlyArray<string>): {
+  readonly moduleCount: number;
   readonly inlined: ReadonlyArray<string>;
   readonly inlinedPackages: ReadonlyArray<string>;
 } {
-  // Rolldown marks each inlined module with a `//#region <path>` comment.
-  const regionPattern = /\/\/#region\s+(\S+)/g;
   const packagePattern = /node_modules\/((?:@[^/\s]+\/)?[^/\s]+)\//g;
 
-  let regionCount = 0;
   const inlined = new Set<string>();
   const inlinedPackages = new Set<string>();
-  for (const region of source.matchAll(regionPattern)) {
-    regionCount += 1;
-    const regionPath = region[1] ?? "";
-    for (const candidate of regionPath.matchAll(packagePattern)) {
+  for (const moduleId of moduleIds) {
+    for (const candidate of moduleId.matchAll(packagePattern)) {
       const name = candidate[1];
       if (name === undefined || name === ".pnpm") continue;
       inlinedPackages.add(name);
@@ -150,7 +149,7 @@ export function findInlinedExternalPackages(source: string): {
   }
 
   return {
-    regionCount,
+    moduleCount: moduleIds.length,
     inlined: [...inlined].sort(),
     inlinedPackages: [...inlinedPackages].sort(),
   };

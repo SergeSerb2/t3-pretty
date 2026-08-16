@@ -8,6 +8,7 @@ import { CodeAppearanceSection } from "./appearance/sections/CodeAppearanceSecti
 import { SceneryAppearanceSection } from "./appearance/sections/SceneryAppearanceSection";
 import { TerminalAppearanceSection } from "./appearance/sections/TerminalAppearanceSection";
 import { TextAppearanceSection } from "./appearance/sections/TextAppearanceSection";
+import { ThemeAppearanceSection } from "./appearance/sections/ThemeAppearanceSection";
 
 export function SettingsAppearanceRouteScreen() {
   const navigation = useNavigation();
@@ -30,6 +31,7 @@ export function SettingsAppearanceRouteScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
       >
+        <ThemeAppearanceSection />
         <TextAppearanceSection />
         <SceneryAppearanceSection />
         <TerminalAppearanceSection />
