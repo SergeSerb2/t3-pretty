@@ -171,7 +171,7 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "none -> abc123");
   });
 
-  it("forces a rebuild for explicit build or release mode even when fingerprints match", () => {
+  it("forces a rebuild for explicit build mode even when fingerprints match", () => {
     const output = run([
       "--fingerprint-json",
       JSON.stringify({ hash: "abc123" }),
@@ -185,9 +185,12 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "Forcing a native iOS build");
   });
 
-  it("production release workflow forces a TestFlight IPA", () => {
+  it("automatic release skips Xcode when the fingerprint is unchanged", () => {
     const source = NodeFS.readFileSync(workflowPath, "utf8");
-    assert.include(source, '"$MODE" == "build" || "$MODE" == "release"');
+    assert.include(source, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
+    assert.notInclude(source, '"$MODE" == "build" || "$MODE" == "release"');
+    assert.include(source, "runs-on: ubuntu-latest");
+    assert.include(source, "force_ios:");
   });
 
   it("treats a malformed EAS build list as no previous binary", () => {
