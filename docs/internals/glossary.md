@@ -30,7 +30,7 @@ A Git worktree used as an isolated workspace for a thread. If a thread has a `wo
 
 #### Storage inventory
 
-A server-side scan of **managed worktrees** under the environment's worktrees folder (`storage.getInventory` / `storage.removeOrphan` in [the contracts][1]). Clients gate on the `storageInventory` capability and never probe older servers. Project checkouts outside that folder are never listed or deleted. Unique paths are counted once when several threads share a checkout. `isDirty === null` is unsafe, never clean.
+A server-side scan of **managed worktrees** under the environment's worktrees folder (`storage.getInventory` / `storage.streamInventory` / `storage.removeOrphan` in [the contracts][1]). Clients gate on the `storageInventory` capability and never probe older servers. Servers that advertise `storageInventoryStream` push incremental inventories while the walk is still running; older servers only answer the unary query. Project checkouts outside that folder are never listed or deleted. Unique paths are counted once when several threads share a checkout. `isDirty === null` is unsafe, never clean.
 
 ### Thread timeline
 

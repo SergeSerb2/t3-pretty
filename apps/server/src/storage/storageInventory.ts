@@ -2,7 +2,11 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodePath from "node:path";
 
-import type { StorageOrphanEntry, StorageWorktreeEntry } from "@t3tools/contracts";
+import type {
+  StorageInventoryScan,
+  StorageOrphanEntry,
+  StorageWorktreeEntry,
+} from "@t3tools/contracts";
 
 export interface StorageInventoryAssembly {
   readonly activeWorktrees: ReadonlyArray<StorageWorktreeEntry>;
@@ -15,6 +19,7 @@ export interface StorageInventoryAssembly {
   readonly orphanWorktreeBytes: number;
   readonly totalBytes: number;
   readonly managedWorktreesRoot: string;
+  readonly scan?: StorageInventoryScan;
 }
 
 export interface StorageThreadSnapshot {
@@ -132,6 +137,7 @@ export function assembleStorageInventory(input: {
   readonly measurements: ReadonlyMap<string, StorageMeasuredWorktree>;
   readonly orphanWorktrees: ReadonlyArray<StorageOrphanEntry>;
   readonly managedWorktreesRoot: string;
+  readonly scan?: StorageInventoryScan;
 }): StorageInventoryAssembly {
   const ownerCounts = ownerCountByPath(input.snapshots);
   const active: StorageWorktreeEntry[] = [];
@@ -193,6 +199,7 @@ export function assembleStorageInventory(input: {
     orphanWorktreeBytes,
     totalBytes: activeWorktreeBytes + archivedWorktreeBytes + orphanWorktreeBytes,
     managedWorktreesRoot: input.managedWorktreesRoot,
+    ...(input.scan === undefined ? {} : { scan: input.scan }),
   };
 }
 

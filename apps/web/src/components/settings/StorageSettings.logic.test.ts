@@ -12,9 +12,12 @@ import {
   cleanupDetail,
   diskPathsReleasedByRemoval,
   formatStorageBytes,
+  isStorageScanInProgress,
   pendingActionCopy,
   pluralCount,
+  scanProgressCaption,
   settledWorktrees,
+  summaryCaption,
   uniqueWorktreeBytes,
   worktreeRowDescription,
   worktreeShouldForceRemove,
@@ -84,6 +87,25 @@ describe("storage settings helpers", () => {
     expect(formatStorageBytes(512)).toBe("512 B");
     expect(formatStorageBytes(2048)).toBe("2.00 KB");
     expect(formatStorageBytes(10 * 1024)).toBe("10.0 KB");
+  });
+
+  it("reports scan progress instead of a finished caption while bytes are still landing", () => {
+    const scanning: StorageInventory = {
+      ...inventory,
+      totalBytes: 2048,
+      scan: { status: "scanning", measuredCount: 3, totalCount: 12 },
+    };
+    expect(isStorageScanInProgress(null, true)).toBe(true);
+    expect(isStorageScanInProgress(scanning, false)).toBe(true);
+    expect(
+      isStorageScanInProgress(
+        { ...scanning, scan: { status: "complete", measuredCount: 12, totalCount: 12 } },
+        false,
+      ),
+    ).toBe(false);
+    expect(scanProgressCaption(scanning)).toBe("Found 2.00 KB so far · 3 of 12 paths");
+    expect(summaryCaption(scanning)).toBe("Found 2.00 KB so far · 3 of 12 paths");
+    expect(summaryCaption(inventory)).toBe("4 worktrees measured");
   });
 
   it("treats unread git status as unsafe, never clean", () => {

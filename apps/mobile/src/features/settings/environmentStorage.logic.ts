@@ -16,6 +16,23 @@ export function formatStorageBytes(value: number): string {
   return `${next.toFixed(next >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
+export function isStorageScanInProgress(
+  inventory: StorageInventory | null,
+  isPending: boolean,
+): boolean {
+  if (inventory?.scan?.status === "scanning") return true;
+  return isPending && inventory?.scan?.status !== "complete";
+}
+
+export function scanProgressCaption(inventory: StorageInventory): string | null {
+  const scan = inventory.scan;
+  if (scan === undefined || scan.status !== "scanning") return null;
+  if (scan.totalCount === 0) {
+    return "Looking for managed worktrees…";
+  }
+  return `Found ${formatStorageBytes(inventory.totalBytes)} so far · ${scan.measuredCount} of ${scan.totalCount} paths`;
+}
+
 export function uniqueWorktreeBytes(entries: ReadonlyArray<StorageWorktreeEntry>): number {
   const seen = new Map<string, number>();
   for (const entry of entries) {

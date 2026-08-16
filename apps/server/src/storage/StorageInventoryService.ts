@@ -1,11 +1,15 @@
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 
 import {
   type StorageInventory,
+  type StorageInventoryScan,
   type StorageOrphanEntry,
   StorageInventoryError,
   StoragePathNotManagedError,
@@ -17,6 +21,7 @@ import * as ServerConfig from "../config.ts";
 import { ProjectionProjectRepository } from "../persistence/Services/ProjectionProjects.ts";
 import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import { directoryOnDiskBytes } from "./directorySize.ts";
 import {
   assembleStorageInventory,
   canRemoveStorageThread,
@@ -29,7 +34,13 @@ import {
 } from "./storageInventory.ts";
 
 const ORPHAN_SCAN_MAX_DEPTH = 3;
-const MEASURE_CONCURRENCY = 4;
+const MEASURE_CONCURRENCY = 8;
+
+interface OrphanCandidate {
+  readonly path: string;
+  readonly displayName: string;
+  readonly looksLikeCheckout: boolean;
+}
 
 const EMPTY_INVENTORY = (managedWorktreesRoot: string): StorageInventory => ({
   activeWorktrees: [],
@@ -42,12 +53,14 @@ const EMPTY_INVENTORY = (managedWorktreesRoot: string): StorageInventory => ({
   orphanWorktreeBytes: 0,
   totalBytes: 0,
   managedWorktreesRoot,
+  scan: { status: "complete", measuredCount: 0, totalCount: 0 },
 });
 
 export class StorageInventoryService extends Context.Service<
   StorageInventoryService,
   {
     readonly getInventory: () => Effect.Effect<StorageInventory, StorageInventoryError>;
+    readonly streamInventory: () => Stream.Stream<StorageInventory, StorageInventoryError>;
     readonly removeOrphan: (input: {
       readonly path: string;
     }) => Effect.Effect<
@@ -61,6 +74,7 @@ export const layerTest = Layer.succeed(
   StorageInventoryService,
   StorageInventoryService.of({
     getInventory: () => Effect.succeed(EMPTY_INVENTORY("/")),
+    streamInventory: () => Stream.make(EMPTY_INVENTORY("/")),
     removeOrphan: () => Effect.succeed({ removed: false }),
   }),
 );
@@ -72,39 +86,18 @@ export const make = Effect.gen(function* () {
   const projects = yield* ProjectionProjectRepository;
   const threads = yield* ProjectionThreadRepository;
   const vcsProcess = yield* VcsProcess.VcsProcess;
+  const platform = yield* HostProcessPlatform;
 
   const managedRoot = canonicalizeStoragePath(config.worktreesDir);
 
   const pathExists = (target: string) =>
     fileSystem.exists(target).pipe(Effect.orElseSucceed(() => false));
 
-  const directoryAllocatedSize: (target: string, visited: Set<string>) => Effect.Effect<number> =
-    Effect.fn("StorageInventoryService.directoryAllocatedSize")(function* (target, visited) {
-      const canonical = canonicalizeStoragePath(target);
-      if (visited.has(canonical)) {
-        return 0;
-      }
-      visited.add(canonical);
-      const info = yield* fileSystem.stat(target).pipe(Effect.orElseSucceed(() => null));
-      if (info === null || info.type === "SymbolicLink") {
-        return 0;
-      }
-      if (info.type === "File") {
-        return Number(info.size);
-      }
-      if (info.type !== "Directory") {
-        return 0;
-      }
-      const names = yield* fileSystem
-        .readDirectory(target)
-        .pipe(Effect.orElseSucceed((): string[] => []));
-      let total = 0;
-      for (const name of names) {
-        if (name === "." || name === "..") continue;
-        total += yield* directoryAllocatedSize(path.join(target, name), visited);
-      }
-      return total;
-    });
+  const directoryAllocatedSize = Effect.fn("StorageInventoryService.directoryAllocatedSize")(
+    function* (target: string) {
+      return yield* Effect.promise(() => directoryOnDiskBytes(target, platform));
+    },
+  );
 
   const listDirectories: (root: string, maxDepth: number) => Effect.Effect<ReadonlyArray<string>> =
     Effect.fn("StorageInventoryService.listDirectories")(function* (root, maxDepth) {
@@ -145,7 +138,7 @@ export const make = Effect.gen(function* () {
       const gitMarker = path.join(worktreePath, ".git");
       const looksLikeCheckout = yield* pathExists(gitMarker);
       const setupStatus: StorageWorktreeSetupStatus = looksLikeCheckout ? "ready" : "repair-needed";
-      const diskUsageBytes = yield* directoryAllocatedSize(worktreePath, new Set());
+      const diskUsageBytes = yield* directoryAllocatedSize(worktreePath);
       if (!looksLikeCheckout) {
         return { path: worktreePath, diskUsageBytes, isDirty: null, setupStatus };
       }
@@ -163,17 +156,17 @@ export const make = Effect.gen(function* () {
       return { path: worktreePath, diskUsageBytes, isDirty, setupStatus };
     });
 
-  const scanOrphans: (
+  const listOrphanCandidates: (
     ownedPaths: ReadonlySet<string>,
-  ) => Effect.Effect<ReadonlyArray<StorageOrphanEntry>> = Effect.fn(
-    "StorageInventoryService.scanOrphans",
+  ) => Effect.Effect<ReadonlyArray<OrphanCandidate>> = Effect.fn(
+    "StorageInventoryService.listOrphanCandidates",
   )(function* (ownedPaths) {
     const rootExists = yield* pathExists(managedRoot);
     if (!rootExists) {
-      return [] as StorageOrphanEntry[];
+      return [] as OrphanCandidate[];
     }
     const candidates = yield* listDirectories(managedRoot, ORPHAN_SCAN_MAX_DEPTH);
-    const orphans: StorageOrphanEntry[] = [];
+    const orphans: OrphanCandidate[] = [];
     for (const candidate of candidates) {
       if (ownedPaths.has(candidate)) continue;
       if (hasOwnedDescendant(candidate, ownedPaths)) continue;
@@ -191,12 +184,10 @@ export const make = Effect.gen(function* () {
           ),
       );
       if (!looksLikeCheckout && childDirs.some(Boolean)) continue;
-      const bytes = yield* directoryAllocatedSize(candidate, new Set());
-      if (bytes === 0 && !looksLikeCheckout) continue;
       orphans.push({
         path: candidate,
         displayName: displayNameForPath(candidate),
-        diskUsageBytes: bytes,
+        looksLikeCheckout,
       });
     }
     return orphans;
@@ -258,9 +249,9 @@ export const make = Effect.gen(function* () {
     return snapshots;
   });
 
-  const getInventory: StorageInventoryService["Service"]["getInventory"] = Effect.fn(
-    "StorageInventoryService.getInventory",
-  )(function* () {
+  const scanInventory = Effect.fn("StorageInventoryService.scanInventory")(function* (
+    onProgress: (inventory: StorageInventory) => Effect.Effect<void>,
+  ) {
     const snapshots = yield* loadSnapshots();
     const managedPaths = [
       ...new Set(
@@ -269,18 +260,97 @@ export const make = Effect.gen(function* () {
         ),
       ),
     ];
-    const measured = yield* Effect.forEach(managedPaths, measureWorktree, {
-      concurrency: MEASURE_CONCURRENCY,
+    const measurements = new Map<string, StorageMeasuredWorktree>();
+    const orphans: StorageOrphanEntry[] = [];
+
+    const snapshot = (scan: StorageInventoryScan): StorageInventory =>
+      assembleStorageInventory({
+        snapshots,
+        measurements: new Map(measurements),
+        orphanWorktrees: [...orphans],
+        managedWorktreesRoot: managedRoot,
+        scan,
+      });
+
+    yield* onProgress(
+      snapshot({ status: "scanning", measuredCount: 0, totalCount: managedPaths.length }),
+    );
+
+    yield* Effect.forEach(
+      managedPaths,
+      (worktreePath) =>
+        Effect.gen(function* () {
+          const measured = yield* measureWorktree(worktreePath);
+          measurements.set(worktreePath, measured);
+          yield* onProgress(
+            snapshot({
+              status: "scanning",
+              measuredCount: measurements.size,
+              totalCount: managedPaths.length,
+            }),
+          );
+        }),
+      { concurrency: MEASURE_CONCURRENCY },
+    );
+
+    const orphanCandidates = yield* listOrphanCandidates(new Set(managedPaths));
+    const totalCount = managedPaths.length + orphanCandidates.length;
+    yield* onProgress(
+      snapshot({
+        status: "scanning",
+        measuredCount: measurements.size,
+        totalCount,
+      }),
+    );
+
+    let measuredOrphans = 0;
+    yield* Effect.forEach(
+      orphanCandidates,
+      (candidate) =>
+        Effect.gen(function* () {
+          const bytes = yield* directoryAllocatedSize(candidate.path);
+          if (bytes > 0 || candidate.looksLikeCheckout) {
+            orphans.push({
+              path: candidate.path,
+              displayName: candidate.displayName,
+              diskUsageBytes: bytes,
+            });
+          }
+          measuredOrphans += 1;
+          yield* onProgress(
+            snapshot({
+              status: "scanning",
+              measuredCount: measurements.size + measuredOrphans,
+              totalCount,
+            }),
+          );
+        }),
+      { concurrency: MEASURE_CONCURRENCY },
+    );
+
+    const complete = snapshot({
+      status: "complete",
+      measuredCount: totalCount,
+      totalCount,
     });
-    const measurements = new Map(measured.map((entry) => [entry.path, entry] as const));
-    const orphans = yield* scanOrphans(new Set(managedPaths));
-    return assembleStorageInventory({
-      snapshots,
-      measurements,
-      orphanWorktrees: orphans,
-      managedWorktreesRoot: managedRoot,
-    });
+    yield* onProgress(complete);
+    return complete;
   });
+
+  const getInventory: StorageInventoryService["Service"]["getInventory"] = Effect.fn(
+    "StorageInventoryService.getInventory",
+  )(function* () {
+    return yield* scanInventory(() => Effect.void);
+  });
+
+  const streamInventory: StorageInventoryService["Service"]["streamInventory"] = () =>
+    Stream.callback<StorageInventory, StorageInventoryError>((queue) =>
+      scanInventory((inventory) => Queue.offer(queue, inventory).pipe(Effect.asVoid)).pipe(
+        Effect.catchTag("StorageInventoryError", (error) => Queue.fail(queue, error)),
+        Effect.andThen(Queue.end(queue)),
+        Effect.forkScoped,
+      ),
+    );
 
   const removeOrphan: StorageInventoryService["Service"]["removeOrphan"] = Effect.fn(
     "StorageInventoryService.removeOrphan",
@@ -309,7 +379,7 @@ export const make = Effect.gen(function* () {
     return { removed: true };
   });
 
-  return { getInventory, removeOrphan } as const;
+  return { getInventory, streamInventory, removeOrphan } as const;
 });
 
 export const layer = Layer.effect(StorageInventoryService, make);

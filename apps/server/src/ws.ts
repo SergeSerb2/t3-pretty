@@ -1599,6 +1599,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.storageGetInventory, storageInventory.getInventory(), {
             "rpc.aggregate": "storage",
           }),
+        [WS_METHODS.storageStreamInventory]: (_input) =>
+          observeRpcStream(WS_METHODS.storageStreamInventory, storageInventory.streamInventory(), {
+            "rpc.aggregate": "storage",
+          }),
         [WS_METHODS.storageRemoveOrphan]: (input) =>
           observeRpcEffect(WS_METHODS.storageRemoveOrphan, storageInventory.removeOrphan(input), {
             "rpc.aggregate": "storage",

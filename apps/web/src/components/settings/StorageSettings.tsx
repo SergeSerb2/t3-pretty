@@ -49,6 +49,7 @@ import {
   cleanupDetail,
   diskPathsReleasedByRemoval,
   formatStorageBytes,
+  isStorageScanInProgress,
   orphanDetail,
   pendingActionCopy,
   settledWorktrees,
@@ -166,7 +167,7 @@ function DirtyIcon({ isDirty }: { readonly isDirty: boolean | null }) {
 }
 
 export function StorageSettingsPanel() {
-  const { environments, isPending, refresh } = useStorageInventories();
+  const { environments, refresh } = useStorageInventories();
   const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
@@ -354,10 +355,6 @@ export function StorageSettingsPanel() {
         ))
       )}
 
-      {isPending && environments.every((environment) => environment.inventory === null) ? (
-        <p className="px-3 text-[13px] text-muted-foreground sm:px-4">Measuring storage…</p>
-      ) : null}
-
       <AlertDialog
         open={pending !== null}
         onOpenChange={(open) => {
@@ -410,6 +407,8 @@ function EnvironmentStorage({
   readonly onPending: (action: StoragePendingAction, inventory: StorageInventory) => void;
 }) {
   const inventory = environment.inventory;
+  const scanning = isStorageScanInProgress(inventory, environment.isPending);
+  const actionsDisabled = isOperating || scanning;
   const cleanSettled = inventory ? cleanSettledWorktrees(inventory) : [];
   const allSettled = inventory ? settledWorktrees(inventory) : [];
 
@@ -447,15 +446,17 @@ function EnvironmentStorage({
           <StorageRefreshButton isPending={environment.isPending} onRefresh={onRefresh} />
         }
       >
-        <SettingsRow
-          title={
-            <span className="inline-flex items-center gap-2">
+        <div className="rounded-xl px-3 py-3 sm:px-4">
+          <div className="flex items-baseline gap-3">
+            <p className="inline-flex items-center gap-2 font-medium text-foreground">
               <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
               Measuring storage
-            </span>
-          }
-          description="Allocated bytes for this environment's managed worktrees."
-        />
+            </p>
+            <p className="text-[13px] text-muted-foreground">
+              Byte totals appear here as each managed worktree is counted.
+            </p>
+          </div>
+        </div>
       </SettingsSection>
     );
   }
@@ -477,7 +478,10 @@ function EnvironmentStorage({
       >
         <div className="rounded-xl px-3 py-3 sm:px-4">
           <div className="flex items-baseline gap-3">
-            <p className="font-mono text-lg font-semibold tabular-nums text-foreground">
+            <p className="inline-flex items-center gap-2 font-mono text-lg font-semibold tabular-nums text-foreground">
+              {scanning ? (
+                <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
+              ) : null}
               {formatStorageBytes(inventory.totalBytes)}
             </p>
             <p className="text-[13px] text-muted-foreground">{summaryCaption(inventory)}</p>
@@ -526,7 +530,7 @@ function EnvironmentStorage({
             <Button
               size="xs"
               variant="outline"
-              disabled={isOperating || cleanSettled.length === 0}
+              disabled={actionsDisabled || cleanSettled.length === 0}
               onClick={() => onPending({ kind: "remove-clean-settled" }, inventory)}
             >
               Run
@@ -540,7 +544,7 @@ function EnvironmentStorage({
             <Button
               size="xs"
               variant="outline"
-              disabled={isOperating || allSettled.length === 0}
+              disabled={actionsDisabled || allSettled.length === 0}
               onClick={() => onPending({ kind: "remove-all-settled" }, inventory)}
             >
               Run
@@ -554,7 +558,7 @@ function EnvironmentStorage({
             <Button
               size="xs"
               variant="destructive-outline"
-              disabled={isOperating || inventory.archivedWorktrees.length === 0}
+              disabled={actionsDisabled || inventory.archivedWorktrees.length === 0}
               onClick={() => onPending({ kind: "delete-archived" }, inventory)}
             >
               Run
@@ -568,7 +572,7 @@ function EnvironmentStorage({
             <Button
               size="xs"
               variant="outline"
-              disabled={isOperating || inventory.orphanWorktrees.length === 0}
+              disabled={actionsDisabled || inventory.orphanWorktrees.length === 0}
               onClick={() => onPending({ kind: "remove-orphans" }, inventory)}
             >
               Run
@@ -587,7 +591,7 @@ function EnvironmentStorage({
         entries={inventory.activeWorktrees}
         emptyLabel="No active threads own a worktree right now."
         emptyWithoutWorktree={inventory.activeThreadsWithoutWorktree}
-        isOperating={isOperating}
+        isOperating={actionsDisabled}
         onRemove={(entry) => onPending({ kind: "remove-worktree", entry }, inventory)}
       />
 
@@ -597,7 +601,7 @@ function EnvironmentStorage({
         entries={inventory.archivedWorktrees}
         emptyLabel="No archived threads currently keep a worktree on disk."
         emptyWithoutWorktree={inventory.archivedThreadsWithoutWorktree}
-        isOperating={isOperating}
+        isOperating={actionsDisabled}
         deleteLabel
         onRemove={(entry) => onPending({ kind: "delete-thread", entry }, inventory)}
       />
@@ -622,7 +626,7 @@ function EnvironmentStorage({
                   <Button
                     size="xs"
                     variant="destructive-outline"
-                    disabled={isOperating}
+                    disabled={actionsDisabled}
                     onClick={() => onPending({ kind: "remove-orphan", orphan }, inventory)}
                   >
                     Remove
