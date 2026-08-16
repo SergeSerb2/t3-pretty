@@ -92,10 +92,11 @@ The native lint task runs SwiftLint for Swift plus ktlint and detekt for Kotlin.
 
 CI compiles iOS on the self-hosted Mac runner with `eas build --local` and
 submits the IPA to TestFlight. That does not consume Expo cloud iOS credits.
-OTA JavaScript updates still publish through the fork-owned EAS project.
+OTA JavaScript updates still publish through the fork-owned EAS project, and
+every production `release` also submits a new TestFlight IPA.
 
-JS-only production changes ship as an OTA from CI. Use `vp run ios:release`
-only when you want a self-contained local Release app that does not need Metro.
+Use `vp run ios:release` only when you want a self-contained local Release
+app that does not need Metro.
 `vp run eas:ios:*` still starts a **cloud** build and counts against the Expo
 monthly iOS quota — do not use those unless you intend to.
 

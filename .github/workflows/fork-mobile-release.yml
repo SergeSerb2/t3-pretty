@@ -6,11 +6,11 @@ name: T3 Pretty Mobile Release
 # upload still use the fork-owned EAS project; those are not iOS cloud builds.
 #
 # Fingerprint is computed on this Mac so `eas update` and `eas build --local`
-# share one runtime version. A new IPA is submitted only when that fingerprint
-# differs from both the latest hosted EAS production binary and the last
-# locally submitted fingerprint (`.t3-fork/ios-production-fingerprint`).
-# Local builds never appear in `eas build:list`, so that file is what keeps
-# JS-only releases from recompiling after the first local IPA.
+# share one runtime version. Production `release` and explicit `build` always
+# compile and submit a new TestFlight IPA. The recorded fingerprint
+# (`.t3-fork/ios-production-fingerprint`) is the durable record of the last
+# local submit — local builds never appear in `eas build:list` — and is
+# still used if a future mode needs to skip a matching native binary.
 #
 # See docs/operations/fork-mobile-release.md.
 on:
@@ -82,8 +82,8 @@ jobs:
       T3CODE_APPLE_TEAM_ID: ${{ vars.T3CODE_APPLE_TEAM_ID }}
       T3CODE_IOS_SHARE_EXTENSION: ${{ vars.T3CODE_IOS_SHARE_EXTENSION }}
       # A mobile-relevant push is a complete release: fast OTA delivery for
-      # compatible runtimes plus a new iOS binary when the native fingerprint
-      # changed.
+      # already-installed runtimes, then a new TestFlight IPA so testers see
+      # the build in TestFlight the way they did before the fingerprint skip.
       MODE: ${{ github.event_name == 'push' && 'release' || inputs.mode }}
       PLATFORM: ${{ github.event_name == 'push' && 'all' || inputs.platform }}
     steps:
@@ -355,7 +355,15 @@ jobs:
             --fingerprint-file "$fingerprint_file" \
             --builds-file "$builds_file" \
             --submitted-fingerprint "$submitted_fingerprint" \
-            --force "$([[ "$MODE" == "build" ]] && echo true || echo false)"
+            --force "$([[ "$MODE" == "build" || "$MODE" == "release" ]] && echo true || echo false)"
+          fingerprint="$(grep '^fingerprint=' "$GITHUB_OUTPUT" | tail -n1 | cut -d= -f2- || true)"
+          should_build="$(grep '^should_build=' "$GITHUB_OUTPUT" | tail -n1 | cut -d= -f2- || true)"
+          {
+            echo "### iOS native binary"
+            echo
+            echo "- fingerprint: \`${fingerprint:-unknown}\`"
+            echo "- should_build: \`${should_build:-unknown}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prepare iOS toolchain
         if: steps.expo-token.outputs.present == 'true' && steps.native.outputs.should_build == 'true'

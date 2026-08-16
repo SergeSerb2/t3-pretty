@@ -110,8 +110,9 @@ const forceBuild = args.get("force") === "true" || args.get("force") === "1";
 const builds = readBuildList(args);
 // Local `eas build --local` binaries never appear in `eas build:list`. The
 // workflow therefore also persists the last successfully submitted fingerprint
-// (`.t3-fork/ios-production-fingerprint`) so JavaScript-only releases do not
-// rebuild forever after the first local IPA.
+// (`.t3-fork/ios-production-fingerprint`). Production `release` passes
+// `--force` so TestFlight still gets a new IPA; without `--force`, a matching
+// fingerprint skips Xcode.
 const submittedFingerprint = (args.get("submitted-fingerprint") ?? "").trim();
 const activeBuilds = builds.filter(isActiveProductionBuild);
 const easRuntimeVersions = activeBuilds

@@ -10,6 +10,10 @@ const scriptPath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "resolve-ios-native-build.mjs",
 );
+const workflowPath = NodePath.resolve(
+  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+  "../../.github/workflows/fork-mobile-release.yml",
+);
 
 function run(args, env = {}) {
   return NodeChildProcess.execFileSync(process.execPath, [scriptPath, ...args], {
@@ -167,7 +171,7 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "none -> abc123");
   });
 
-  it("forces a rebuild for explicit build mode even when fingerprints match", () => {
+  it("forces a rebuild for explicit build or release mode even when fingerprints match", () => {
     const output = run([
       "--fingerprint-json",
       JSON.stringify({ hash: "abc123" }),
@@ -179,6 +183,11 @@ describe("T3 Pretty iOS native-build gate", () => {
 
     assert.include(output, "should_build=true");
     assert.include(output, "Forcing a native iOS build");
+  });
+
+  it("production release workflow forces a TestFlight IPA", () => {
+    const source = NodeFS.readFileSync(workflowPath, "utf8");
+    assert.include(source, '"$MODE" == "build" || "$MODE" == "release"');
   });
 
   it("treats a malformed EAS build list as no previous binary", () => {

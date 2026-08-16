@@ -18,24 +18,24 @@ no separate mobile sync.
 that touches mobile-relevant paths. A release publishes an OTA update on the
 production channel for both platforms, then compiles a production iOS IPA on
 the self-hosted Mac runner (`m1-dev-t3code-fork`, same labels as desktop) and
-submits it to TestFlight when the native runtime fingerprint changed.
+submits it to TestFlight.
 
-JavaScript-only changes therefore ship as an OTA without occupying Xcode or
-touching Expo's cloud iOS quota. Native runtime changes still receive a new
-binary instead of publishing an OTA that no installed app can consume.
+OTA still reaches already-installed binaries whose native fingerprint matches.
+A new TestFlight IPA is submitted on every production `release` (and on an
+explicit `build`) so testers see a new build in TestFlight, not only an
+in-app update.
 
 Local `eas build --local` IPAs do not create hosted EAS Build records, so
-`eas build:list` alone cannot gate later releases. After a successful
-TestFlight submit the workflow commits the fingerprint to
+`eas build:list` alone cannot describe the last submitted binary. After a
+successful TestFlight submit the workflow commits the fingerprint to
 `.t3-fork/ios-production-fingerprint` (a durable store `GITHUB_TOKEN` can
-update; repository Variables are not writable via workflow `permissions`),
-and the next release treats that value as a known production binary alongside
-any hosted EAS result. Because `main` requires pull requests, the bot commit
-lands through a short-lived `automation/ios-fingerprint-*` pull request that
-the workflow merges via the API — a direct push is rejected (GH013). The
-merged file is outside every release workflow's path filters and
-token-authored merges do not retrigger push workflows, so the record itself
-schedules no further release.
+update; repository Variables are not writable via workflow `permissions`).
+Because `main` requires pull requests, the bot commit lands through a
+short-lived `automation/ios-fingerprint-*` pull request that the workflow
+merges via the API — a direct push is rejected (GH013). The merged file is
+outside every release workflow's path filters and token-authored merges do
+not retrigger push workflows, so the record itself schedules no further
+release.
 
 iOS store binaries cannot be compiled on the Windows runner. Registering a
 second Mac (for example the M5) with the same `self-hosted`, `macOS`,
