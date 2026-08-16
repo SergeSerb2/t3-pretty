@@ -4,14 +4,33 @@ on:
   push:
     branches:
       - main
+    # Skip desktop packaging when the commit cannot change the shipped app.
+    # workflow_dispatch (including the upstream-sync dispatch) always runs.
+    paths:
+      - "apps/desktop/**"
+      - "apps/web/**"
+      - "apps/server/**"
+      - "packages/**"
+      - "patches/**"
+      - "scripts/**"
+      - "native/**"
+      - "assets/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "vite.config.ts"
+      - "tsconfig.base.json"
+      - "t3.json"
+      - ".github/workflows/fork-release.yml"
   workflow_dispatch:
 
 permissions:
   contents: write
 
-# A single self-hosted runner serves every job below, so overlapping merges
-# would otherwise contend for it. Queue instead of cancelling: each commit
-# still gets its own release, just one at a time.
+# Versions stay monotonic, so desktop releases still queue one at a time.
+# Preflight, the WSL node-pty compile, and publish run on GitHub-hosted
+# ubuntu-latest (free for this public repo) and do not occupy m1-dev.
+# The Mac only signs the arm64 DMG; Windows stays on serge-pc.
 concurrency:
   group: fork-release
   cancel-in-progress: false
@@ -23,7 +42,7 @@ jobs:
     # notes commit. The GITHUB_TOKEN push does not retrigger this workflow.
     permissions:
       contents: write
-    runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
+    runs-on: ubuntu-latest
     # Headroom above the changelog generator's 10-minute model budget so a
     # stalled CLIProxy request can never get the preflight hard-killed.
     timeout-minutes: 15
@@ -37,91 +56,6 @@ jobs:
       upstream_tag: ${{ steps.release.outputs.upstream_tag }}
       ref: ${{ steps.changelog.outputs.ref || github.sha }}
     steps:
-      - name: Ensure runner action externals
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Every `uses:` step runs under the runner's own bundled Node. When
-          # that tree goes missing - an interrupted runner self-update, macOS
-          # quarantining the binary, or a disk sweep that reaps `externals/` -
-          # `run:` steps keep working while every action dies with a bare
-          # ENOENT naming the node binary. Without this guard the first
-          # casualty is whichever action follows the build, so a signed
-          # release burns several minutes before failing. Check it up front
-          # and restore the runtime from nodejs.org, so a broken runner costs
-          # one download instead of parking every release until someone
-          # re-extracts the runner package by hand.
-          runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
-          externals="${runner_root}/externals"
-          case "$(uname -m)" in
-            arm64|aarch64) node_arch=arm64 ;;
-            x86_64) node_arch=x64 ;;
-            *) node_arch="" ;;
-          esac
-
-          node_ok() {
-            [[ -x "$1/bin/node" ]] && "$1/bin/node" --version >/dev/null 2>&1
-          }
-
-          # Deliberately no `set -e` reliance: this is called from an `if`,
-          # which suppresses errexit for the whole call, so every fallible
-          # command has to be checked by hand.
-          restore_node() {
-            local major="$1" dest="$2" base tmp line sha name src
-            [[ -n "$node_arch" ]] || { echo "Unsupported machine $(uname -m)."; return 1; }
-            base="https://nodejs.org/download/release/latest-v${major}.x"
-            tmp="$(mktemp -d)" || return 1
-            echo "Restoring ${dest} from ${base} (darwin-${node_arch})."
-            line="$(curl -fsSL --retry 3 "${base}/SHASUMS256.txt" \
-              | grep -E "node-v${major}\.[0-9.]+-darwin-${node_arch}\.tar\.gz$" | head -n1)"
-            if [[ -z "$line" ]]; then
-              echo "No darwin-${node_arch} build listed for node ${major}.x."
-              rm -rf "$tmp"; return 1
-            fi
-            sha="${line%% *}"
-            name="${line##* }"
-            src="${tmp}/${name%.tar.gz}"
-            if ! curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"; then
-              rm -rf "$tmp"; return 1
-            fi
-            if ! (cd "$tmp" && printf '%s  %s\n' "$sha" "$name" | shasum -a 256 -c - >/dev/null); then
-              echo "Checksum mismatch for ${name}."
-              rm -rf "$tmp"; return 1
-            fi
-            if ! tar -xzf "${tmp}/${name}" -C "$tmp"; then rm -rf "$tmp"; return 1; fi
-            rm -rf "${dest}.repair" "${dest}.broken"
-            if ! mv "$src" "${dest}.repair"; then rm -rf "$tmp"; return 1; fi
-            # A quarantined download is exactly the failure being repaired.
-            xattr -rc "${dest}.repair" >/dev/null 2>&1 || true
-            if [[ -e "$dest" ]] && ! mv "$dest" "${dest}.broken"; then
-              rm -rf "$tmp" "${dest}.repair"; return 1
-            fi
-            if ! mv "${dest}.repair" "$dest"; then rm -rf "$tmp"; return 1; fi
-            rm -rf "${dest}.broken" "$tmp"
-            node_ok "$dest"
-          }
-
-          for runtime in node24 node20; do
-            dest="${externals}/${runtime}"
-            # node20 only matters while some action still declares it. Do not
-            # conjure it onto runners that have already dropped the runtime.
-            if [[ "$runtime" != node24 && ! -d "$dest" ]]; then continue; fi
-            if node_ok "$dest"; then
-              echo "${runtime} OK (node $("${dest}/bin/node" --version))."
-              continue
-            fi
-            echo "::warning::${dest}/bin/node is missing or unusable; restoring it."
-            ls -la "$dest" 2>/dev/null || echo "${dest} does not exist."
-            if ! restore_node "${runtime#node}" "$dest"; then
-              echo "::error::Runner cannot execute actions: ${dest}/bin/node is missing and could not be restored."
-              echo "Repair on the runner host: stop the runner service, re-extract the"
-              echo "actions-runner release package over ${runner_root} to restore externals/,"
-              echo "then start the service again."
-              exit 1
-            fi
-            echo "Restored ${runtime} (node $("${dest}/bin/node" --version))."
-          done
-
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
         with:
@@ -286,94 +220,9 @@ jobs:
     if: needs.preflight.outputs.should_release == 'true' && needs.preflight.outputs.windows_release == 'true'
     permissions:
       contents: read
-    runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Ensure runner action externals
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Every `uses:` step runs under the runner's own bundled Node. When
-          # that tree goes missing - an interrupted runner self-update, macOS
-          # quarantining the binary, or a disk sweep that reaps `externals/` -
-          # `run:` steps keep working while every action dies with a bare
-          # ENOENT naming the node binary. Without this guard the first
-          # casualty is whichever action follows the build, so a signed
-          # release burns several minutes before failing. Check it up front
-          # and restore the runtime from nodejs.org, so a broken runner costs
-          # one download instead of parking every release until someone
-          # re-extracts the runner package by hand.
-          runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
-          externals="${runner_root}/externals"
-          case "$(uname -m)" in
-            arm64|aarch64) node_arch=arm64 ;;
-            x86_64) node_arch=x64 ;;
-            *) node_arch="" ;;
-          esac
-
-          node_ok() {
-            [[ -x "$1/bin/node" ]] && "$1/bin/node" --version >/dev/null 2>&1
-          }
-
-          # Deliberately no `set -e` reliance: this is called from an `if`,
-          # which suppresses errexit for the whole call, so every fallible
-          # command has to be checked by hand.
-          restore_node() {
-            local major="$1" dest="$2" base tmp line sha name src
-            [[ -n "$node_arch" ]] || { echo "Unsupported machine $(uname -m)."; return 1; }
-            base="https://nodejs.org/download/release/latest-v${major}.x"
-            tmp="$(mktemp -d)" || return 1
-            echo "Restoring ${dest} from ${base} (darwin-${node_arch})."
-            line="$(curl -fsSL --retry 3 "${base}/SHASUMS256.txt" \
-              | grep -E "node-v${major}\.[0-9.]+-darwin-${node_arch}\.tar\.gz$" | head -n1)"
-            if [[ -z "$line" ]]; then
-              echo "No darwin-${node_arch} build listed for node ${major}.x."
-              rm -rf "$tmp"; return 1
-            fi
-            sha="${line%% *}"
-            name="${line##* }"
-            src="${tmp}/${name%.tar.gz}"
-            if ! curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"; then
-              rm -rf "$tmp"; return 1
-            fi
-            if ! (cd "$tmp" && printf '%s  %s\n' "$sha" "$name" | shasum -a 256 -c - >/dev/null); then
-              echo "Checksum mismatch for ${name}."
-              rm -rf "$tmp"; return 1
-            fi
-            if ! tar -xzf "${tmp}/${name}" -C "$tmp"; then rm -rf "$tmp"; return 1; fi
-            rm -rf "${dest}.repair" "${dest}.broken"
-            if ! mv "$src" "${dest}.repair"; then rm -rf "$tmp"; return 1; fi
-            # A quarantined download is exactly the failure being repaired.
-            xattr -rc "${dest}.repair" >/dev/null 2>&1 || true
-            if [[ -e "$dest" ]] && ! mv "$dest" "${dest}.broken"; then
-              rm -rf "$tmp" "${dest}.repair"; return 1
-            fi
-            if ! mv "${dest}.repair" "$dest"; then rm -rf "$tmp"; return 1; fi
-            rm -rf "${dest}.broken" "$tmp"
-            node_ok "$dest"
-          }
-
-          for runtime in node24 node20; do
-            dest="${externals}/${runtime}"
-            # node20 only matters while some action still declares it. Do not
-            # conjure it onto runners that have already dropped the runtime.
-            if [[ "$runtime" != node24 && ! -d "$dest" ]]; then continue; fi
-            if node_ok "$dest"; then
-              echo "${runtime} OK (node $("${dest}/bin/node" --version))."
-              continue
-            fi
-            echo "::warning::${dest}/bin/node is missing or unusable; restoring it."
-            ls -la "$dest" 2>/dev/null || echo "${dest} does not exist."
-            if ! restore_node "${runtime#node}" "$dest"; then
-              echo "::error::Runner cannot execute actions: ${dest}/bin/node is missing and could not be restored."
-              echo "Repair on the runner host: stop the runner service, re-extract the"
-              echo "actions-runner release package over ${runner_root} to restore externals/,"
-              echo "then start the service again."
-              exit 1
-            fi
-            echo "Restored ${runtime} (node $("${dest}/bin/node" --version))."
-          done
-
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
         with:
@@ -383,33 +232,30 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
-      - name: Build node-pty Linux prebuild in an x64 container
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+
+      - name: Build node-pty Linux prebuild
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="/opt/homebrew/bin:$HOME/.vite-plus/bin:$PATH"
-          docker version
-
+          # Native linux/amd64: the previous Mac job compiled this inside
+          # qemu/rosetta Docker and serialized with the DMG on m1-dev.
+          sudo apt-get update
+          sudo apt-get install -y python3 make g++
           node_pty_version="$(
             node -e "console.log(require('./apps/server/package.json').dependencies['node-pty'].replace(/^[^0-9]*/, ''))"
           )"
-          mkdir -p wsl-prebuild
-          docker run --rm \
-            --platform linux/amd64 \
-            --env "NODE_PTY_VERSION=$node_pty_version" \
-            --volume "$GITHUB_WORKSPACE/wsl-prebuild:/out" \
-            node:24.19.0-bookworm@sha256:f6d02cf1353049cf3658e6ce9ec03c6877a6479495f122062d195e2279d01055 \
-            bash -lc '
-              set -euo pipefail
-              mkdir -p /build
-              cd /build
-              npm init --yes >/dev/null
-              npm install --ignore-scripts "node-pty@$NODE_PTY_VERSION"
-              pty_dir=/build/node_modules/node-pty
-              ( cd "$pty_dir" && npx --yes node-gyp rebuild )
-              install -m 0644 "$pty_dir/build/Release/pty.node" /out/pty.node
-            '
-          file wsl-prebuild/pty.node | tee /dev/stderr | grep -Eq 'x86[-_]64'
+          mkdir -p wsl-prebuild "$RUNNER_TEMP/node-pty-build"
+          cd "$RUNNER_TEMP/node-pty-build"
+          npm init --yes >/dev/null
+          npm install --ignore-scripts "node-pty@$node_pty_version"
+          ( cd node_modules/node-pty && npx --yes node-gyp rebuild )
+          install -m 0644 node_modules/node-pty/build/Release/pty.node \
+            "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
+          file "$GITHUB_WORKSPACE/wsl-prebuild/pty.node" | tee /dev/stderr | grep -Eq 'x86[-_]64|ELF 64-bit'
 
       - name: Upload WSL prebuild
         uses: actions/upload-artifact@v7
@@ -537,12 +383,20 @@ jobs:
           done
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           "$HOME/.cargo/bin/rustc" +stable --version
+          # Survive `clean: true` checkouts so the resource-monitor crate
+          # does not rebuild from scratch on every DMG.
+          mkdir -p "$HOME/.cache/t3-pretty-release/cargo" \
+            "$HOME/.cache/t3-pretty-release/target-macos-arm64"
+          echo "CARGO_HOME=$HOME/.cache/t3-pretty-release/cargo" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_DIR=$HOME/.cache/t3-pretty-release/target-macos-arm64" >> "$GITHUB_ENV"
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
-          cache: true
+          # Self-hosted disks keep the pnpm store. Uploading it to GitHub
+          # cache after every job added minutes on the critical path.
+          cache: false
           run-install: |
             args:
               - --filter=@t3tools/desktop...
@@ -812,7 +666,9 @@ jobs:
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
-          cache: true
+          # Self-hosted disks keep the pnpm store. Uploading it to GitHub
+          # cache after every job added minutes on the critical path.
+          cache: false
           run-install: |
             args:
               - --filter=@t3tools/desktop...
@@ -990,96 +846,11 @@ jobs:
       !cancelled() &&
       needs.preflight.outputs.should_release == 'true' &&
       needs.build_macos.result == 'success'
-    runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
-      - name: Ensure runner action externals
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Every `uses:` step runs under the runner's own bundled Node. When
-          # that tree goes missing - an interrupted runner self-update, macOS
-          # quarantining the binary, or a disk sweep that reaps `externals/` -
-          # `run:` steps keep working while every action dies with a bare
-          # ENOENT naming the node binary. Without this guard the first
-          # casualty is whichever action follows the build, so a signed
-          # release burns several minutes before failing. Check it up front
-          # and restore the runtime from nodejs.org, so a broken runner costs
-          # one download instead of parking every release until someone
-          # re-extracts the runner package by hand.
-          runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
-          externals="${runner_root}/externals"
-          case "$(uname -m)" in
-            arm64|aarch64) node_arch=arm64 ;;
-            x86_64) node_arch=x64 ;;
-            *) node_arch="" ;;
-          esac
-
-          node_ok() {
-            [[ -x "$1/bin/node" ]] && "$1/bin/node" --version >/dev/null 2>&1
-          }
-
-          # Deliberately no `set -e` reliance: this is called from an `if`,
-          # which suppresses errexit for the whole call, so every fallible
-          # command has to be checked by hand.
-          restore_node() {
-            local major="$1" dest="$2" base tmp line sha name src
-            [[ -n "$node_arch" ]] || { echo "Unsupported machine $(uname -m)."; return 1; }
-            base="https://nodejs.org/download/release/latest-v${major}.x"
-            tmp="$(mktemp -d)" || return 1
-            echo "Restoring ${dest} from ${base} (darwin-${node_arch})."
-            line="$(curl -fsSL --retry 3 "${base}/SHASUMS256.txt" \
-              | grep -E "node-v${major}\.[0-9.]+-darwin-${node_arch}\.tar\.gz$" | head -n1)"
-            if [[ -z "$line" ]]; then
-              echo "No darwin-${node_arch} build listed for node ${major}.x."
-              rm -rf "$tmp"; return 1
-            fi
-            sha="${line%% *}"
-            name="${line##* }"
-            src="${tmp}/${name%.tar.gz}"
-            if ! curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"; then
-              rm -rf "$tmp"; return 1
-            fi
-            if ! (cd "$tmp" && printf '%s  %s\n' "$sha" "$name" | shasum -a 256 -c - >/dev/null); then
-              echo "Checksum mismatch for ${name}."
-              rm -rf "$tmp"; return 1
-            fi
-            if ! tar -xzf "${tmp}/${name}" -C "$tmp"; then rm -rf "$tmp"; return 1; fi
-            rm -rf "${dest}.repair" "${dest}.broken"
-            if ! mv "$src" "${dest}.repair"; then rm -rf "$tmp"; return 1; fi
-            # A quarantined download is exactly the failure being repaired.
-            xattr -rc "${dest}.repair" >/dev/null 2>&1 || true
-            if [[ -e "$dest" ]] && ! mv "$dest" "${dest}.broken"; then
-              rm -rf "$tmp" "${dest}.repair"; return 1
-            fi
-            if ! mv "${dest}.repair" "$dest"; then rm -rf "$tmp"; return 1; fi
-            rm -rf "${dest}.broken" "$tmp"
-            node_ok "$dest"
-          }
-
-          for runtime in node24 node20; do
-            dest="${externals}/${runtime}"
-            # node20 only matters while some action still declares it. Do not
-            # conjure it onto runners that have already dropped the runtime.
-            if [[ "$runtime" != node24 && ! -d "$dest" ]]; then continue; fi
-            if node_ok "$dest"; then
-              echo "${runtime} OK (node $("${dest}/bin/node" --version))."
-              continue
-            fi
-            echo "::warning::${dest}/bin/node is missing or unusable; restoring it."
-            ls -la "$dest" 2>/dev/null || echo "${dest} does not exist."
-            if ! restore_node "${runtime#node}" "$dest"; then
-              echo "::error::Runner cannot execute actions: ${dest}/bin/node is missing and could not be restored."
-              echo "Repair on the runner host: stop the runner service, re-extract the"
-              echo "actions-runner release package over ${runner_root} to restore externals/,"
-              echo "then start the service again."
-              exit 1
-            fi
-            echo "Restored ${runtime} (node $("${dest}/bin/node" --version))."
-          done
-
       - name: Checkout trusted main commit
         uses: actions/checkout@v6
         with:
@@ -1089,14 +860,10 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
-      - name: Setup manifest tooling
-        uses: voidzero-dev/setup-vp@v1
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@t3tools/scripts...
 
       - name: Download desktop artifacts
         uses: actions/download-artifact@v8
@@ -1121,7 +888,7 @@ jobs:
           else
             echo "::warning::Publishing without Windows updater artifacts."
           fi
-          node --input-type=module - "$mac_manifest" "$win_manifest" "$RELEASE_VERSION" <<'NODE'
+          node --experimental-strip-types --input-type=module - "$mac_manifest" "$win_manifest" "$RELEASE_VERSION" <<'NODE'
           import fs from "node:fs";
           import { parseUpdateManifest } from "./scripts/lib/update-manifest.ts";
 

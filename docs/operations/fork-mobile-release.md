@@ -16,14 +16,16 @@ no separate mobile sync.
 
 `.github/workflows/fork-mobile-release.yml` triggers on every push to `main`
 that touches mobile-relevant paths. A release publishes an OTA update on the
-production channel for both platforms, then compiles a production iOS IPA on
-the self-hosted Mac runner (`m1-dev-t3code-fork`, same labels as desktop) and
-submits it to TestFlight.
+production channel for both platforms from GitHub-hosted `ubuntu-latest`,
+then compiles a production iOS IPA on the self-hosted Mac runner
+(`m1-dev-t3code-fork`, same labels as desktop) only when the native
+fingerprint changed. Explicit `workflow_dispatch` `build`, or the `force_ios`
+checkbox, still compiles and submits even when the fingerprint matches.
 
 OTA still reaches already-installed binaries whose native fingerprint matches.
-A new TestFlight IPA is submitted on every production `release` (and on an
-explicit `build`) so testers see a new build in TestFlight, not only an
-in-app update.
+JS-only changes therefore show up as an in-app update in a few minutes and
+never wait for m1-dev. Testers who need a brand-new TestFlight binary (new
+devices, or a native module change) get one when the fingerprint changes.
 
 Local `eas build --local` IPAs do not create hosted EAS Build records, so
 `eas build:list` alone cannot describe the last submitted binary. After a
@@ -38,9 +40,13 @@ not retrigger push workflows, so the record itself schedules no further
 release.
 
 iOS store binaries cannot be compiled on the Windows runner. Registering a
-second Mac (for example the M5) with the same `self-hosted`, `macOS`,
+second Mac (for example m5-dev) with the same `self-hosted`, `macOS`,
 `ARM64`, `t3code-fork`, `release-only` labels lets GitHub run a desktop
-release and an iOS compile in parallel.
+DMG and an iOS compile in parallel. Use `scripts/fork/setup-macos-runner.sh`
+and install a full Xcode.app first — Command Line Tools cannot produce an
+IPA. An M5 Pro (18-core, 48 GB) should compile the current IPA in roughly
+7–10 minutes versus ~13 minutes on m1-dev; the larger win is that the two
+Macs stop taking turns.
 
 The four-hour upstream workflow uses the same whole-repository merge and
 gpt-5.6-sol/xhigh conflict resolver as desktop. Because GitHub-token-authored
