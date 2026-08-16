@@ -412,7 +412,11 @@ const desktopBuildInputArtifactNames = {
 const BUNDLE_SELF_CONTAINED_SENTINEL = "effect";
 
 const BUNDLE_SELF_CHECK_TIMEOUT = Duration.seconds(120);
-const WINDOWS_PRIMARY_NATIVE_PROBE_TIMEOUT = Duration.seconds(30);
+// Freshly signed Electron + newly unpacked native DLLs (sharp, fff) can sit
+// behind Windows Defender on first launch. 30s was enough until sharp landed
+// in the sidecar; the probe then timed out, left the exe locked, and stage
+// cleanup reported EPERM instead of the timeout.
+const WINDOWS_PRIMARY_NATIVE_PROBE_TIMEOUT = Duration.seconds(90);
 
 const WINDOWS_PRIMARY_FFF_PROBE_SOURCE = `
 const { join } = await import("node:path");
@@ -1347,6 +1351,38 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdateServerPort,
     wslPrebuild,
   } satisfies ResolvedBuildOptions;
+});
+
+/**
+ * Delete a temp tree without failing the build. Windows will EPERM a signed
+ * Electron exe for a few seconds after the native probe (or Defender) has
+ * touched it; that must not mask a successful package or a more useful error.
+ */
+export const removeDirectoryBestEffort = Effect.fn("removeDirectoryBestEffort")(function* (
+  directory: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  yield* fs.remove(directory, { recursive: true, force: true }).pipe(
+    Effect.tapError((error) =>
+      Effect.logWarning("Could not remove temporary directory.", {
+        directory,
+        error: String(error),
+      }),
+    ),
+    Effect.ignore,
+  );
+});
+
+const allocateStageRoot = Effect.fn("allocateStageRoot")(function* (input: {
+  readonly prefix: string;
+  readonly keepStage: boolean;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const stageRoot = yield* fs.makeTempDirectory({ prefix: input.prefix });
+  if (!input.keepStage) {
+    yield* Effect.addFinalizer(() => removeDirectoryBestEffort(stageRoot));
+  }
+  return stageRoot;
 });
 
 const runCommand = Effect.fn("runCommand")(function* (
@@ -2460,6 +2496,7 @@ export const verifyWindowsPrimaryFffNativeLoad = Effect.fn(
   }
   if (hostPlatform !== "win32" || hostArchitecture !== input.targetArch) return;
 
+  yield* Effect.log("[desktop-artifact] Probing fff through the packaged Windows primary...");
   const probeRoot = yield* fs.makeTempDirectoryScoped({
     prefix: "t3code-windows-primary-native-probe-",
   });
@@ -2718,9 +2755,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const appVersion = options.version ?? serverPackageJson.version;
   const iconAssets = resolveDesktopBuildIconAssets(appVersion);
   const commitHash = yield* resolveGitCommitHash(repoRoot);
-  const mkdir = options.keepStage ? fs.makeTempDirectory : fs.makeTempDirectoryScoped;
-  const stageRoot = yield* mkdir({
+  const stageRoot = yield* allocateStageRoot({
     prefix: `t3code-desktop-${options.platform}-stage-`,
+    keepStage: options.keepStage,
   });
 
   const stageAppDir = path.join(stageRoot, "app");
