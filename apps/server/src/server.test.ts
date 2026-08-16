@@ -1374,7 +1374,7 @@ const assertBrowserApiCorsResponseHeaders = (
     readonly credentials?: boolean;
   },
 ) => {
-  assert.equal(headers["access-control-allow-origin"], options?.origin ?? "*");
+  assert.equal(headers["access-control-allow-origin"], options?.origin ?? crossOriginClientOrigin);
   assert.equal(
     headers["access-control-allow-credentials"],
     options?.credentials ? "true" : undefined,
@@ -1564,6 +1564,54 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(response.status, 200);
       assertBrowserApiCorsResponseHeaders(response.headers);
       assert.deepEqual(body, testEnvironmentDescriptor);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("echoes the packaged desktop renderer origin on public descriptor responses", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const url = yield* getHttpServerUrl("/.well-known/t3/environment");
+      const response = yield* fetchEffect(url, {
+        headers: {
+          origin: "t3code://app",
+        },
+      });
+      const body = yield* responseJsonEffect<typeof testEnvironmentDescriptor>(response);
+
+      assert.equal(response.status, 200);
+      assertBrowserApiCorsResponseHeaders(response.headers, { origin: "t3code://app" });
+      assert.deepEqual(body, testEnvironmentDescriptor);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("keeps CORS headers on gzip-compressed public descriptor responses", () =>
+    Effect.gen(function* () {
+      const descriptor = {
+        ...testEnvironmentDescriptor,
+        label: "Test environment".repeat(100),
+      };
+      yield* buildAppUnderTest({
+        layers: {
+          serverEnvironment: {
+            getDescriptor: Effect.succeed(descriptor),
+          },
+        },
+      });
+
+      const url = yield* getHttpServerUrl("/.well-known/t3/environment");
+      const response = yield* fetchEffect(url, {
+        headers: {
+          origin: "t3code://app",
+          "accept-encoding": "gzip",
+        },
+      });
+      const body = yield* responseJsonEffect<typeof descriptor>(response);
+
+      assert.equal(response.status, 200);
+      assert.equal(response.headers["content-encoding"], "gzip");
+      assertBrowserApiCorsResponseHeaders(response.headers, { origin: "t3code://app" });
+      assert.deepEqual(body, descriptor);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -4258,7 +4306,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       });
 
       assert.equal(response.status, 204);
-      assert.equal(response.headers["access-control-allow-origin"], "*");
+      assert.equal(response.headers["access-control-allow-origin"], "http://localhost:5733");
       assert.deepEqual(localTraceRecords, [
         {
           type: "otlp-span",
@@ -4319,7 +4367,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       });
 
       assert.equal(response.status, 204);
-      assert.equal(response.headers["access-control-allow-origin"], "*");
+      assert.equal(response.headers["access-control-allow-origin"], "http://localhost:5733");
       assert.deepEqual(splitHeaderTokens(response.headers["access-control-allow-methods"]), [
         "GET",
         "OPTIONS",

@@ -18,10 +18,14 @@ import {
   makeCloudflaredRelayClient,
 } from "./relayClient.ts";
 
-const hostRuntimeLayer = (env: Record<string, string> = {}) =>
+const hostRuntimeLayer = (
+  env: Record<string, string> = {},
+  platform: NodeJS.Platform = "linux",
+  arch: NodeJS.Architecture = "x64",
+) =>
   Layer.mergeAll(
-    Layer.succeed(HostProcessPlatform, "linux"),
-    Layer.succeed(HostProcessArchitecture, "x64"),
+    Layer.succeed(HostProcessPlatform, platform),
+    Layer.succeed(HostProcessArchitecture, arch),
     ConfigProvider.layer(ConfigProvider.fromEnv({ env })),
   );
 
@@ -226,6 +230,33 @@ describe("RelayClient", () => {
       ),
     );
   });
+
+  it.effect("treats Windows on Arm as supported via the amd64 cloudflared build", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-cloudflared-test-",
+      });
+      const manager = yield* makeCloudflaredRelayClient({
+        baseDir,
+      });
+
+      expect(yield* manager.resolve).toEqual({
+        status: "missing",
+        version: CLOUDFLARED_VERSION,
+      });
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          makeHttpClientLayer(new Uint8Array()),
+          makeSpawnerLayer([]),
+          hostRuntimeLayer({}, "win32", "arm64"),
+        ),
+      ),
+    ),
+  );
 
   it.effect("observes PATH changes after the manager has been constructed", () => {
     const env = { PATH: "" };

@@ -2,18 +2,37 @@ import {
   computeDpopAccessTokenHash,
   computeDpopJwkThumbprint,
   DpopPublicJwk,
+  normalizeDpopPublicJwk,
+  padP256Coordinate,
 } from "@t3tools/shared/dpop";
 import * as Crypto from "effect/Crypto";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { importJWK, SignJWT, type JWK } from "jose";
+
+const StoredDpopPrivateJwk = Schema.Struct({
+  ...DpopPublicJwk.fields,
+  d: Schema.String.check(Schema.isNonEmpty()),
+});
+type StoredDpopPrivateJwk = typeof StoredDpopPrivateJwk.Type;
+const StoredDpopKeyV2 = Schema.Struct({
+  version: Schema.Literal(2),
+  privateJwk: StoredDpopPrivateJwk,
+  publicJwk: DpopPublicJwk,
+});
+const decodeStoredDpopKeyV2 = Schema.decodeUnknownOption(StoredDpopKeyV2);
+const decodeDpopPublicJwk = Schema.decodeUnknownEffect(DpopPublicJwk);
 
 export interface BrowserDpopKey {
   readonly privateKey: CryptoKey;
   readonly publicJwk: DpopPublicJwk;
   readonly thumbprint: string;
+  readonly privateJwk: StoredDpopPrivateJwk;
 }
 
 export class BrowserDpopError extends Data.TaggedError("BrowserDpopError")<{
@@ -25,7 +44,17 @@ const DPOP_DATABASE_NAME = "t3code:cloud-auth";
 const DPOP_DATABASE_VERSION = 1;
 const DPOP_KEY_STORE_NAME = "keys";
 const DPOP_KEY_ID = "relay-dpop-proof-key";
-const decodeDpopPublicJwk = Schema.decodeUnknownEffect(DpopPublicJwk);
+
+function normalizeDpopPrivateJwk(
+  jwk: typeof StoredDpopPrivateJwk.Type,
+  publicJwk: DpopPublicJwk,
+): typeof StoredDpopPrivateJwk.Type {
+  const d = Result.getOrThrow(Encoding.decodeBase64Url(jwk.d));
+  return {
+    ...publicJwk,
+    d: Encoding.encodeBase64Url(padP256Coordinate(d)),
+  };
+}
 
 export const browserCryptoLayer = Layer.succeed(
   Crypto.Crypto,
@@ -77,7 +106,7 @@ export function readStoredBrowserDpopKey(): Effect.Effect<BrowserDpopKey | null,
           resume(Effect.fail(dpopError("Could not read DPoP key.", request.error ?? undefined))),
         );
         request.addEventListener("success", () =>
-          resume(Effect.succeed((request.result as BrowserDpopKey | undefined) ?? null)),
+          resume(hydrateStoredBrowserDpopKey(request.result)),
         );
       }),
     (database) => Effect.sync(() => database.close()),
@@ -101,10 +130,54 @@ export function writeStoredBrowserDpopKey(
           ),
         );
         transaction.addEventListener("complete", () => resume(Effect.void));
-        transaction.objectStore(DPOP_KEY_STORE_NAME).put(key, DPOP_KEY_ID);
+        transaction.objectStore(DPOP_KEY_STORE_NAME).put(
+          {
+            version: 2,
+            privateJwk: key.privateJwk,
+            publicJwk: key.publicJwk,
+          } satisfies typeof StoredDpopKeyV2.Type,
+          DPOP_KEY_ID,
+        );
       }),
     (database) => Effect.sync(() => database.close()),
   );
+}
+
+function hydrateStoredBrowserDpopKey(
+  value: unknown,
+): Effect.Effect<BrowserDpopKey | null, BrowserDpopError> {
+  const stored = decodeStoredDpopKeyV2(value);
+  if (Option.isNone(stored)) {
+    return Effect.succeed(null);
+  }
+  return importBrowserDpopKey(stored.value.privateJwk, stored.value.publicJwk);
+}
+
+function importBrowserDpopKey(
+  rawPrivateJwk: StoredDpopPrivateJwk,
+  rawPublicJwk: DpopPublicJwk,
+): Effect.Effect<BrowserDpopKey, BrowserDpopError> {
+  return Effect.gen(function* () {
+    const publicJwk = yield* Effect.try({
+      try: () => normalizeDpopPublicJwk(rawPublicJwk),
+      catch: (cause) => dpopError("Stored DPoP public key is invalid.", cause),
+    });
+    const privateJwk = yield* Effect.try({
+      try: () => normalizeDpopPrivateJwk(rawPrivateJwk, publicJwk),
+      catch: (cause) => dpopError("Stored DPoP private key is invalid.", cause),
+    });
+    const privateKey = yield* Effect.tryPromise({
+      try: () =>
+        importJWK(privateJwk as JWK, "ES256", { extractable: false }) as Promise<CryptoKey>,
+      catch: (cause) => dpopError("Could not import DPoP private key.", cause),
+    });
+    return {
+      privateKey,
+      publicJwk,
+      privateJwk,
+      thumbprint: computeDpopJwkThumbprint(publicJwk),
+    };
+  });
 }
 
 export const generateBrowserDpopKey = Effect.gen(function* () {
@@ -131,15 +204,10 @@ export const generateBrowserDpopKey = Effect.gen(function* () {
         : dpopError("Generated DPoP public key is invalid.", cause),
     ),
   );
-  const privateKey = yield* Effect.tryPromise({
-    try: () => importJWK(privateJwk as JWK, "ES256", { extractable: false }) as Promise<CryptoKey>,
-    catch: (cause) => dpopError("Could not import DPoP private key.", cause),
-  });
-  return {
-    privateKey,
-    publicJwk,
-    thumbprint: computeDpopJwkThumbprint(publicJwk),
-  };
+  if (typeof privateJwk.d !== "string" || privateJwk.d.length === 0) {
+    return yield* Effect.fail(dpopError("Generated DPoP private key is missing material."));
+  }
+  return yield* importBrowserDpopKey({ ...publicJwk, d: privateJwk.d }, publicJwk);
 });
 
 export function createBrowserDpopProof(input: {

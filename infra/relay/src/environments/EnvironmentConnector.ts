@@ -625,6 +625,13 @@ const make = Effect.gen(function* () {
         .t3MintCredential({ payload: { proof } })
         .pipe(
           withoutRedirects,
+          Effect.tapError((cause) =>
+            Effect.logWarning("Managed endpoint mint request failed", {
+              environmentId: input.environmentId,
+              endpoint: endpoint.httpBaseUrl,
+              failureReason: environmentHealthRequestFailureReason(cause),
+            }),
+          ),
           Effect.mapError(
             (cause) =>
               new EnvironmentMintRequestFailed({

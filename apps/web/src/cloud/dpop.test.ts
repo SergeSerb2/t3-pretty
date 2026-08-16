@@ -30,6 +30,8 @@ describe("browser DPoP proofs", () => {
           nowEpochSeconds: issuedAt!,
         }),
       ).toMatchObject({ ok: true });
+      expect(proofKey.privateJwk.d.length).toBeGreaterThan(0);
+      expect(proofKey.publicJwk.x.length).toBeGreaterThan(0);
     }),
   );
 });

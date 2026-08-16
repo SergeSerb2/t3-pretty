@@ -58,6 +58,34 @@ function base64UrlToBytes(value: string): Uint8Array {
   return Result.getOrThrow(Encoding.decodeBase64Url(value));
 }
 
+const P256_COORDINATE_LENGTH = 32;
+
+/** Windows CNG sometimes omits leading zero bytes from P-256 JWK coordinates. */
+export function padP256Coordinate(bytes: Uint8Array): Uint8Array {
+  if (bytes.length === P256_COORDINATE_LENGTH) {
+    return bytes;
+  }
+  if (bytes.length > P256_COORDINATE_LENGTH) {
+    const extra = bytes.subarray(0, bytes.length - P256_COORDINATE_LENGTH);
+    if (extra.every((byte) => byte === 0)) {
+      return bytes.subarray(bytes.length - P256_COORDINATE_LENGTH);
+    }
+    throw new Error("Invalid P-256 public key coordinate length.");
+  }
+  const padded = new Uint8Array(P256_COORDINATE_LENGTH);
+  padded.set(bytes, P256_COORDINATE_LENGTH - bytes.length);
+  return padded;
+}
+
+export function normalizeDpopPublicJwk(jwk: DpopPublicJwkType): DpopPublicJwkType {
+  return {
+    kty: "EC",
+    crv: "P-256",
+    x: Encoding.encodeBase64Url(padP256Coordinate(base64UrlToBytes(jwk.x))),
+    y: Encoding.encodeBase64Url(padP256Coordinate(base64UrlToBytes(jwk.y))),
+  };
+}
+
 function decodeBase64UrlDpopJwtHeader(value: string) {
   return decodeDpopJwtHeaderJson(Result.getOrThrow(Encoding.decodeBase64UrlString(value)));
 }
@@ -84,11 +112,8 @@ export function computeDpopAccessTokenHash(accessToken: string): string {
 }
 
 function publicKeyBytesFromJwk(jwk: DpopPublicJwkType): Uint8Array {
-  const x = base64UrlToBytes(jwk.x);
-  const y = base64UrlToBytes(jwk.y);
-  if (x.length !== 32 || y.length !== 32) {
-    throw new Error("Invalid P-256 public key coordinate length.");
-  }
+  const x = padP256Coordinate(base64UrlToBytes(jwk.x));
+  const y = padP256Coordinate(base64UrlToBytes(jwk.y));
   const publicKey = new Uint8Array(65);
   publicKey[0] = 0x04;
   publicKey.set(x, 1);

@@ -143,7 +143,14 @@ function resolveReleaseAsset(
   platform: NodeJS.Platform,
   arch: string,
 ): CloudflaredReleaseAsset | null {
-  return CLOUDFLARED_RELEASE_ASSETS[`${platform}-${arch}`] ?? null;
+  return (
+    CLOUDFLARED_RELEASE_ASSETS[`${platform}-${arch}`] ??
+    // Windows on Arm runs the amd64 build under emulation. Cloudflare does not
+    // ship a native arm64 Windows cloudflared for this pin.
+    (platform === "win32" && arch === "arm64"
+      ? (CLOUDFLARED_RELEASE_ASSETS["win32-x64"] ?? null)
+      : null)
+  );
 }
 
 function isAlreadyExists(error: PlatformError.PlatformError): boolean {
@@ -436,6 +443,12 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
           wrapInstallFailure("write_failed", "Could not activate the relay client."),
           Effect.ensuring(fileSystem.remove(stagedPath, { force: true }).pipe(Effect.ignore)),
         );
+      if (platform === "win32") {
+        // A Mark-of-the-Web ADS can block the just-downloaded exe on Windows.
+        yield* fileSystem
+          .remove(`${managedPath}:Zone.Identifier`, { force: true })
+          .pipe(Effect.ignore);
+      }
       return {
         status: "available",
         executablePath: managedPath,
