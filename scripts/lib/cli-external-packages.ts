@@ -38,6 +38,11 @@ export const CLI_RUNTIME_EXTERNAL_PREFIXES = [
   // Required by node-gyp-build-optional-packages. Not native, but in the
   // closure: without it, WSL gets MODULE_NOT_FOUND while Windows is fine.
   "detect-libc",
+  // Attachment feed previews load sharp, which dlopens @img/sharp-<platform>
+  // optional bindings. Inlined, that loader searches from the bundle and the
+  // Windows sidecar self-check dies with "Could not load the sharp module".
+  "sharp",
+  "@img/",
   // ws's optional accelerators. Nothing in this repo declares them, so they are
   // not in the staged production install and the packaged app does not ship
   // them either way -- ws wraps the require in try/catch and falls back to its
