@@ -98,6 +98,15 @@ const WSL_SERVER_SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bi
 const backendChildEnvPatch = (): Record<string, string | undefined> =>
   Object.fromEntries(DESKTOP_BACKEND_ENV_NAMES.map((name) => [name, undefined]));
 
+const packagedServerTraceMinLevelEnv = (
+  environment: DesktopEnvironment.DesktopEnvironment["Service"],
+): Record<string, string> => {
+  if (!environment.isPackaged || process.env.T3CODE_TRACE_MIN_LEVEL !== undefined) {
+    return {};
+  }
+  return { T3CODE_TRACE_MIN_LEVEL: "Warning" };
+};
+
 const getWslEnvEntryName = (entry: string): string => {
   const slashIndex = entry.indexOf("/");
   return slashIndex === -1 ? entry : entry.slice(0, slashIndex);
@@ -402,6 +411,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       cwd: environment.backendCwd,
       env: {
         ...backendChildEnvPatch(),
+        ...packagedServerTraceMinLevelEnv(environment),
         ELECTRON_RUN_AS_NODE: "1",
       },
       // Primary wants process.env (PATH, dev-runner's T3CODE_HOME, etc.).
@@ -542,6 +552,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     env: {
       ...parentEnvWithoutT3Home,
       ...backendChildEnvPatch(),
+      ...packagedServerTraceMinLevelEnv(environment),
       ...forwardedEnv,
       ...(wslEnv !== undefined ? { WSLENV: wslEnv } : {}),
     },

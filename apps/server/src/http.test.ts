@@ -1,7 +1,16 @@
 import { expect, it } from "@effect/vitest";
 import { describe } from "vite-plus/test";
 
-import { assetResponseHeaders, isLoopbackHostname, resolveDevRedirectUrl } from "./http.ts";
+import {
+  acceptsBrotliEncoding,
+  assetResponseHeaders,
+  isHashedClientAssetPath,
+  isLoopbackHostname,
+  resolveDevRedirectUrl,
+  shouldEnablePermessageDeflate,
+  staticClientAssetCacheControl,
+  stripPermessageDeflateExtensionOffer,
+} from "./http.ts";
 
 describe("http dev routing", () => {
   it("treats localhost and loopback addresses as local", () => {
@@ -66,5 +75,68 @@ describe("assetResponseHeaders", () => {
       "Cache-Control": "private, max-age=3600",
       "X-Content-Type-Options": "nosniff",
     });
+  });
+});
+
+describe("static client asset cache", () => {
+  it("treats hashed Vite assets as immutable", () => {
+    expect(isHashedClientAssetPath("assets/index-C2xY3z4A.js")).toBe(true);
+    expect(staticClientAssetCacheControl("assets/index-C2xY3z4A.js")).toBe(
+      "public, max-age=31536000, immutable",
+    );
+  });
+
+  it("does not cache HTML or unhashed files as immutable", () => {
+    expect(isHashedClientAssetPath("index.html")).toBe(false);
+    expect(staticClientAssetCacheControl("index.html")).toBe("no-cache");
+    expect(isHashedClientAssetPath("assets/README.md")).toBe(false);
+  });
+
+  it("detects brotli in Accept-Encoding", () => {
+    expect(acceptsBrotliEncoding("gzip, deflate, br")).toBe(true);
+    expect(acceptsBrotliEncoding("br;q=1.0, gzip;q=0.8")).toBe(true);
+    expect(acceptsBrotliEncoding("gzip, deflate")).toBe(false);
+    expect(acceptsBrotliEncoding(undefined)).toBe(false);
+  });
+});
+
+describe("permessage-deflate negotiation", () => {
+  it("disables compression for the desktop renderer and loopback peers", () => {
+    expect(
+      shouldEnablePermessageDeflate({
+        remoteAddress: "127.0.0.1",
+        origin: "t3code://app",
+      }),
+    ).toBe(false);
+    expect(
+      shouldEnablePermessageDeflate({
+        remoteAddress: "127.0.0.1",
+        origin: "http://127.0.0.1:3773",
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps compression for LAN and tunneled browser origins", () => {
+    expect(
+      shouldEnablePermessageDeflate({
+        remoteAddress: "192.168.1.20",
+        origin: "http://192.168.1.4:3773",
+      }),
+    ).toBe(true);
+    expect(
+      shouldEnablePermessageDeflate({
+        remoteAddress: "127.0.0.1",
+        origin: "https://example.trycloudflare.com",
+      }),
+    ).toBe(true);
+  });
+
+  it("strips only the permessage-deflate offer from the extensions header", () => {
+    expect(
+      stripPermessageDeflateExtensionOffer(
+        "permessage-deflate; client_max_window_bits, x-webkit-deflate-frame",
+      ),
+    ).toBe("x-webkit-deflate-frame");
+    expect(stripPermessageDeflateExtensionOffer("permessage-deflate")).toBeUndefined();
   });
 });

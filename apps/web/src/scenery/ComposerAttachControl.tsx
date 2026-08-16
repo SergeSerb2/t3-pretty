@@ -30,6 +30,7 @@ import {
   type AttachedFileRef,
 } from "./attachFiles";
 import { addAttachedFiles, removeAttachedFile, useAttachedFiles } from "./attachedFileStore";
+import { mutationsRequireComposerAttachSync } from "./composerAttachMutations";
 import { useActiveThreadKey } from "./useActiveThreadKey";
 import "./composerAttach.css";
 
@@ -230,7 +231,10 @@ export function ComposerAttachControl() {
       }
     };
 
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver((mutations) => {
+      if (!mutationsRequireComposerAttachSync(mutations)) {
+        return;
+      }
       if (!queued) {
         queued = true;
         requestAnimationFrame(sync);

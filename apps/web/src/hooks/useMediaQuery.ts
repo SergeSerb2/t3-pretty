@@ -54,6 +54,30 @@ function getServerSnapshot(): boolean {
   return false;
 }
 
+const mediaQueryListeners = new Map<
+  string,
+  { readonly media: MediaQueryList; readonly listeners: Set<() => void>; matches: boolean }
+>();
+
+export function getMediaQueryEntry(mediaQuery: string) {
+  const existing = mediaQueryListeners.get(mediaQuery);
+  if (existing) return existing;
+  const media = window.matchMedia(mediaQuery);
+  const entry = {
+    media,
+    listeners: new Set<() => void>(),
+    matches: media.matches,
+  };
+  media.addEventListener("change", () => {
+    entry.matches = media.matches;
+    for (const listener of entry.listeners) {
+      listener();
+    }
+  });
+  mediaQueryListeners.set(mediaQuery, entry);
+  return entry;
+}
+
 export type MediaQueryInput = {
   min?: Breakpoint | number;
   max?: Breakpoint | number;
@@ -67,16 +91,18 @@ export function useMediaQuery(query: BreakpointQuery | MediaQueryInput | (string
   const subscribe = useCallback(
     (callback: () => void) => {
       if (typeof window === "undefined") return () => {};
-      const mql = window.matchMedia(mediaQuery);
-      mql.addEventListener("change", callback);
-      return () => mql.removeEventListener("change", callback);
+      const entry = getMediaQueryEntry(mediaQuery);
+      entry.listeners.add(callback);
+      return () => {
+        entry.listeners.delete(callback);
+      };
     },
     [mediaQuery],
   );
 
   const getSnapshot = useCallback(() => {
     if (typeof window === "undefined") return false;
-    return window.matchMedia(mediaQuery).matches;
+    return getMediaQueryEntry(mediaQuery).matches;
   }, [mediaQuery]);
 
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);

@@ -1,13 +1,13 @@
-import {
-  type DirItem,
-  type DirSearchResult,
-  type FileItem,
+import type {
+  DirItem,
+  DirSearchResult,
+  FileItem,
   FileFinder,
-  type GrepCursor,
-  type MixedItem,
-  type MixedSearchResult,
-  type Result,
-  type SearchResult,
+  GrepCursor,
+  MixedItem,
+  MixedSearchResult,
+  Result,
+  SearchResult,
 } from "@ff-labs/fff-node";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -297,10 +297,21 @@ function withDirectoryAncestors(entries: ReadonlyArray<ProjectEntry>): ProjectEn
   return [...entryByPath.values()];
 }
 
+const loadFffNode = () => import("@ff-labs/fff-node");
+
 const createFinder = Effect.fn("WorkspaceSearchIndex.createFinder")(function* (
   cwd: string,
   variant: WorkspaceSearchIndexVariant,
 ) {
+  const { FileFinder } = yield* Effect.tryPromise({
+    try: () => loadFffNode(),
+    catch: (cause) =>
+      new WorkspaceSearchIndexCreateFailed({
+        cwd,
+        reason: "FileFinder.create threw unexpectedly.",
+        cause,
+      }),
+  });
   const result = yield* Effect.try({
     try: () =>
       FileFinder.create({

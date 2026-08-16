@@ -117,6 +117,7 @@ export function registerDesktopSchemePrivilegesSync(): void {
         secure: true,
         supportFetchAPI: true,
         corsEnabled: true,
+        codeCache: true,
       },
     },
     {
@@ -126,6 +127,7 @@ export function registerDesktopSchemePrivilegesSync(): void {
         secure: true,
         supportFetchAPI: true,
         corsEnabled: true,
+        codeCache: true,
       },
     },
   ]);

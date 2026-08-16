@@ -23,6 +23,7 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
+import { useMotionStore } from "./motionStore";
 import { gradientCss } from "./palette";
 import { runSceneryInkTransition } from "./sceneryInkTransition";
 import { planScenerySwap } from "./scenerySwap";
@@ -45,10 +46,13 @@ function displayedPhotoKey(photo: DisplayedPhoto): string {
 }
 
 function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false)
-  );
+  if (typeof window === "undefined") {
+    return false;
+  }
+  if (!useMotionStore.getState().enabled) {
+    return true;
+  }
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
 export function SceneryLayer({
@@ -163,6 +167,7 @@ export function SceneryLayer({
     image.src = url;
     return () => {
       cancelled = true;
+      image.removeAttribute("src");
     };
     // Photo identity and blur are the triggers; the rest is read fresh.
   }, [photoId, blur]);

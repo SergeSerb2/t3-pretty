@@ -20,6 +20,7 @@ import {
   ProjectionSnapshotQuery,
   type ProjectionMergedPullRequestCandidate,
 } from "./Services/ProjectionSnapshotQuery.ts";
+import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import { layer, ThreadMergedPullRequestReactor } from "./ThreadMergedPullRequestReactor.ts";
 
 const WORKSPACE_ROOT = "/workspace/project-1";
@@ -114,6 +115,11 @@ function runSweepResult(input: {
           Effect.sync(() => {
             recordedBranchHeads.push(record);
           }),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(BackgroundPolicy.BackgroundPolicy)({
+        shouldRunOpportunisticWork: Effect.succeed(true),
       }),
     ),
     Layer.provide(

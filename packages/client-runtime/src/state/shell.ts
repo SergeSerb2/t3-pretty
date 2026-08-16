@@ -92,7 +92,8 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   });
 
   yield* Stream.fromQueue(persistence).pipe(
-    Stream.debounce("500 millis"),
+    Stream.debounce("8 seconds"),
+    Stream.filter(() => typeof document === "undefined" || document.visibilityState === "visible"),
     Stream.runForEach(persist),
     Effect.forkScoped,
   );
@@ -198,12 +199,18 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         yield* setSynchronizing;
 
         // Foreground resubscriptions on the same live session can resume from
-        // the in-memory cursor. A new session reloads the authoritative HTTP
-        // snapshot so a valid cursor cannot preserve incomplete cached data.
+        // the in-memory cursor. A new session with a cached cursor also
+        // resumes; the server snapshots if the gap is outside the resume window.
         const hasAuthoritativeSnapshot = (yield* Ref.get(lastAuthoritativeSession)) === session;
         let canResume = hasAuthoritativeSnapshot;
         let current = yield* SubscriptionRef.get(state);
-        if (!hasAuthoritativeSnapshot || Option.isNone(current.snapshot)) {
+        if (
+          !hasAuthoritativeSnapshot &&
+          Option.isSome(current.snapshot) &&
+          current.snapshot.value.snapshotSequence >= 0
+        ) {
+          canResume = true;
+        } else if (!hasAuthoritativeSnapshot || Option.isNone(current.snapshot)) {
           const prepared = yield* SubscriptionRef.get(supervisor.prepared).pipe(
             Effect.flatMap(
               Option.match({

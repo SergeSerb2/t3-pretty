@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeZlib from "node:zlib";
+
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -136,6 +139,37 @@ const applyDevelopmentIconOverrides = Effect.fn("applyDevelopmentIconOverrides")
   yield* Effect.log("[cli] Applied development icon overrides to dist/client");
 });
 
+const PRECOMPRESS_EXTENSIONS = new Set([".js", ".css", ".mjs", ".svg", ".html", ".json", ".woff2"]);
+
+const writePrecompressedClientAssets = Effect.fn("writePrecompressedClientAssets")(function* (
+  clientTarget: string,
+) {
+  const path = yield* Path.Path;
+  const fs = yield* FileSystem.FileSystem;
+  const entries = yield* fs
+    .readDirectory(clientTarget, { recursive: true })
+    .pipe(Effect.orElseSucceed(() => [] as Array<string>));
+  let written = 0;
+  for (const entry of entries) {
+    const ext = path.extname(entry);
+    if (!PRECOMPRESS_EXTENSIONS.has(ext) || entry.endsWith(".br")) continue;
+    const filePath = path.isAbsolute(entry) ? entry : path.join(clientTarget, entry);
+    const data = yield* fs.readFile(filePath).pipe(Effect.orElseSucceed(() => null));
+    if (!data || data.byteLength === 0) continue;
+    const compressed = NodeZlib.brotliCompressSync(data, {
+      params: {
+        [NodeZlib.constants.BROTLI_PARAM_QUALITY]: 11,
+        [NodeZlib.constants.BROTLI_PARAM_SIZE_HINT]: data.byteLength,
+      },
+    });
+    yield* fs.writeFile(`${filePath}.br`, compressed);
+    written += 1;
+  }
+  if (written > 0) {
+    yield* Effect.log(`[cli] Wrote ${written} precompressed .br client assets`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // build subcommand
 // ---------------------------------------------------------------------------
@@ -168,6 +202,7 @@ const buildCmd = Command.make(
       if (yield* fs.exists(webDist)) {
         yield* fs.copy(webDist, clientTarget);
         yield* applyDevelopmentIconOverrides(repoRoot, serverDir);
+        yield* writePrecompressedClientAssets(clientTarget);
         yield* Effect.log("[cli] Bundled web app into dist/client");
       } else {
         yield* Effect.logWarning("[cli] Web dist not found — skipping client bundle.");

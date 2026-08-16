@@ -225,7 +225,7 @@ export function compactTraceAttributes(
 ): TraceAttributes {
   const entries: Array<[string, unknown]> = [];
   for (const [key, value] of Object.entries(attributes)) {
-    if (value !== undefined) {
+    if (value !== undefined && !LOCAL_TRACE_OMITTED_ATTRIBUTES.has(key)) {
       entries.push([key, normalizeJsonValue(value)]);
     }
   }
@@ -251,7 +251,15 @@ function formatTraceExit(exit: Exit.Exit<unknown, unknown>): EffectTraceRecord["
 const TRACE_ATTRIBUTE_MAX_LENGTH = 500;
 const TRACE_ATTRIBUTE_TRUNCATED_LENGTH = 200;
 const TRACE_ATTRIBUTE_TRUNCATION_SUFFIX = "…[truncated]";
-const ALWAYS_TRUNCATED_TRACE_ATTRIBUTES: ReadonlySet<string> = new Set(["db.query.text"]);
+const LOCAL_TRACE_OMITTED_ATTRIBUTES: ReadonlySet<string> = new Set(["db.query.text"]);
+const VERBOSE_LOCAL_SPAN_NAMES: ReadonlySet<string> = new Set([
+  "runProjectorForEvent",
+  "runAttachmentSideEffects",
+]);
+
+export function isVerboseLocalSpan(name: string): boolean {
+  return name.startsWith("sql.") || VERBOSE_LOCAL_SPAN_NAMES.has(name);
+}
 
 // Clamps strings nested inside already-normalized attribute values (arrays and
 // plain objects from normalizeJsonValue, e.g. an Error's `stack`). Returns the
@@ -288,11 +296,9 @@ function truncateNestedValue(value: unknown): unknown {
 export function truncateTraceAttributes(attributes: TraceAttributes): TraceAttributes {
   let truncated: Record<string, unknown> | undefined;
   for (const [key, value] of Object.entries(attributes)) {
-    if (typeof value === "string" && ALWAYS_TRUNCATED_TRACE_ATTRIBUTES.has(key)) {
-      if (value.length <= TRACE_ATTRIBUTE_TRUNCATED_LENGTH) continue;
+    if (LOCAL_TRACE_OMITTED_ATTRIBUTES.has(key)) {
       truncated ??= { ...attributes };
-      truncated[key] =
-        `${value.slice(0, TRACE_ATTRIBUTE_TRUNCATED_LENGTH)}${TRACE_ATTRIBUTE_TRUNCATION_SUFFIX}`;
+      delete truncated[key];
       continue;
     }
     const next = truncateNestedValue(value);
@@ -479,7 +485,7 @@ class LocalFileSpan implements Tracer.Span {
     };
     this.delegate.end(endTime, exit);
 
-    if (this.sampled) {
+    if (this.sampled && !isVerboseLocalSpan(this.name)) {
       this.push(spanToTraceRecord(this));
     }
   }

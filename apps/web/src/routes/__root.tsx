@@ -40,7 +40,7 @@ import {
 } from "../logicalProject";
 import { useUiStateStore } from "../uiStateStore";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
-import { configureClientTracing } from "../observability/clientTracing";
+
 import { resolveInitialServerAuthGateState } from "../environments/primary";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { shellEnvironment } from "../state/shell";
@@ -134,7 +134,7 @@ function RootRouteView() {
         <DocumentTitleSync />
         <GlassAppearanceSync />
         <FontAppearanceSync />
-        {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
+
         <RelayClientInstallDialog />
         <ConnectOnboardingDialog />
         <SshPasswordPromptDialog />
@@ -312,14 +312,6 @@ function errorDetails(error: unknown): string {
   } catch {
     return "No additional error details are available.";
   }
-}
-
-function AuthenticatedTracingBootstrap() {
-  useEffect(() => {
-    void configureClientTracing();
-  }, []);
-
-  return null;
 }
 
 function EventRouter() {

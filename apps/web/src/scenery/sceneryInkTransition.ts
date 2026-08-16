@@ -13,6 +13,8 @@
  * snapshot, which is the opposite of what this transition is for.
  */
 
+import { useMotionStore } from "./motionStore";
+
 export const SCENERY_INK_TRANSITION_MS = 300;
 export const SCENERY_INK_TRANSITION_EASING = "cubic-bezier(0.77, 0, 0.175, 1)";
 
@@ -32,6 +34,9 @@ export function canAnimateSceneryInkTransition(): boolean {
   }
   const transitionDocument = document as InkViewTransitionDocument;
   if (typeof transitionDocument.startViewTransition !== "function") {
+    return false;
+  }
+  if (!useMotionStore.getState().enabled) {
     return false;
   }
   return !(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
