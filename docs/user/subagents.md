@@ -22,7 +22,7 @@ including the one you are in now. It does not restart the provider session.
 
 ## This thread
 
-In the composer, open **Agents** next to Skills.
+In the composer, open the `⋯` menu next to the model options and choose **Agents**.
 
 - **Inherit** follows Settings → Agents.
 - **Off** blocks new spawns on this thread.

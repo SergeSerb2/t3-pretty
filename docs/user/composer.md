@@ -11,16 +11,16 @@ Type `/` at the start of a line to open the command menu. Keep typing to filter;
 
 **Built-in** commands run inside T3 Code and never send text to the agent:
 
-| Command | What it does |
-| --- | --- |
-| `/model` | Open the model picker for this thread. |
-| `/plan`, `/default` | Switch between plan mode and build mode (when plan mode is on). |
+| Command                                                      | What it does                                                                                        |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `/model`                                                     | Open the model picker for this thread.                                                              |
+| `/plan`, `/default`                                          | Switch between plan mode and build mode (when plan mode is on).                                     |
 | `/supervised`, `/auto`, `/full-access`, `/auto-accept-edits` | Change the permission mode. The provider's own names appear where they differ (Kimi shows `/yolo`). |
-| `/skills` | Open the skills picker for this thread. |
-| `/auto-pr` | Toggle opening a pull request when the thread finishes (where available). |
-| `/new` | Start a new thread. |
-| `/commands` | Open the command palette. |
-| `/settings` | Open settings. |
+| `/skills`                                                    | Open the skills list in the composer `⋯` menu.                                                      |
+| `/auto-pr`                                                   | Toggle opening a pull request when the thread finishes (where available).                           |
+| `/new`                                                       | Start a new thread.                                                                                 |
+| `/commands`                                                  | Open the command palette.                                                                           |
+| `/settings`                                                  | Open settings.                                                                                      |
 
 **Provider** commands are the ones the selected agent reports — custom commands, plugin
 commands, and the like. Picking one inserts it into the message and the agent runs it when

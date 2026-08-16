@@ -116,6 +116,13 @@ describe("chat view contract", () => {
     expect(chatViewSource).toContain('aria-label="Scroll to end"');
   });
 
+  it("the docked place credit still hides on the scroll-to-end live-edge flag", () => {
+    expect(chatViewSource).toContain(
+      'data-scenery-place-hidden={showScrollToBottom ? "" : undefined}',
+    );
+    expect(motionStylesSource).toContain("[data-scenery-place-slot][data-scenery-place-hidden]");
+  });
+
   it("the composer overlay (hero headline host) still carries its attribute", () => {
     expect(chatViewSource).toContain('data-chat-composer-overlay="true"');
   });

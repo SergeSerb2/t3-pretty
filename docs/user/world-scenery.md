@@ -11,7 +11,8 @@ Choose the **World Scenery** theme in **Settings → Appearance**. While that th
 - A new thread opens in fog: a cloud bank gathers over the assigned place, the location
   name rises out of it, then the fog blows off to the side while the chat box comes up
   through it, the name settles near the bottom of the photo, and the photo credit fades in
-  next to it.
+  next to it. Scrolling up through a thread hides that credit; returning to the latest
+  messages brings it back.
 - **Photo blur**, **Photo presence**, **Thread motion**, and **Scenery text color** live in
   **Settings → Appearance**.
 - **Thread motion** governs the app's small entrance and press animations — arriving
