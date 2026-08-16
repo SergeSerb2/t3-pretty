@@ -3,6 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   classifySkillLoadItemType,
   extractSkillMentions,
+  skillMentionMatchesName,
+  skillMentionToken,
   isSkillToolName,
   isSkillToolTitle,
   resolveSkillToolName,
@@ -55,5 +57,18 @@ describe("skillTool", () => {
     ]);
     expect(extractSkillMentions("$solo-skill")).toEqual(["solo-skill"]);
     expect(extractSkillMentions("price is $5 and email@host")).toEqual([]);
+  });
+
+  it("folds skill names outside the mention grammar into a mentionable token", () => {
+    expect(skillMentionToken("grill-me")).toBe("grill-me");
+    expect(skillMentionToken("plugin:review")).toBe("plugin:review");
+    expect(skillMentionToken("next.js-upgrade")).toBe("next-js-upgrade");
+    expect(skillMentionToken("PDF Processing")).toBe("pdf-processing");
+    expect(extractSkillMentions(`$${skillMentionToken("next.js-upgrade")} please`)).toEqual([
+      "next-js-upgrade",
+    ]);
+    expect(skillMentionMatchesName("next-js-upgrade", "next.js-upgrade")).toBe(true);
+    expect(skillMentionMatchesName("next.js-upgrade", "next.js-upgrade")).toBe(true);
+    expect(skillMentionMatchesName("next-js", "next.js-upgrade")).toBe(false);
   });
 });

@@ -111,9 +111,10 @@ export function createSkillAtoms<R, E>(
     refreshSkillMarketplace: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:skills:refresh-marketplace",
       tag: WS_METHODS.skillsRefreshMarketplace,
+      // Per repo: refreshing one source must not swallow a refresh of another.
       concurrency: {
         mode: "singleFlight",
-        key: ({ environmentId }) => environmentId,
+        key: ({ environmentId, input }) => `${environmentId}:${input.repo ?? ""}`,
       },
       onSettled: ({ environmentId }, registry) =>
         Effect.sync(() => {

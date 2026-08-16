@@ -763,8 +763,10 @@ export function createServerEnvironmentAtoms<R, E>(
     refreshProviders: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:refresh-providers",
       tag: WS_METHODS.serverRefreshProviders,
+      // A refresh requested mid-flight (e.g. several host skill toggles in a
+      // row) queues exactly one trailing pass so the last change is seen.
       concurrency: {
-        mode: "singleFlight",
+        mode: "latest",
         key: ({ environmentId }) => environmentId,
       },
     }),

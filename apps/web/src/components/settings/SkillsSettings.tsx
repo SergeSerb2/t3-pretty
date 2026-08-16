@@ -19,6 +19,7 @@ import type {
   HostSkillsState,
   InstalledSkill,
   MarketplaceSkill,
+  SkillId,
   SkillMarketplaceListing,
   SkillsState,
 } from "@t3tools/contracts";
@@ -34,6 +35,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { useOptimisticIdList } from "~/hooks/useOptimisticIdList";
 import { usePrimarySettings, useUpdatePrimarySettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { ensureLocalApi } from "~/localApi";
@@ -69,6 +71,13 @@ import "./skillsSettings.css";
 const SKILL_REPO_PATTERN = /^[^\s/]+\/[^\s/]+$/;
 
 const EMPTY_INSTALLED_SKILLS: ReadonlyArray<InstalledSkill> = [];
+const EMPTY_ID_SET: ReadonlySet<string> = new Set();
+
+function withoutId(ids: ReadonlySet<string>, id: string): ReadonlySet<string> {
+  const next = new Set(ids);
+  next.delete(id);
+  return next;
+}
 const EMPTY_HOST_SKILLS: ReadonlyArray<HostSkill> = [];
 
 export function SkillsSettingsPanel() {
@@ -236,26 +245,50 @@ function InstalledSkillsSection({
   query: EnvironmentQueryView<SkillsState>;
 }) {
   const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
+  const persistSettings = useAtomCommand(
+    serverEnvironment.updateSettings,
+    "server settings update",
+  );
   const uninstallSkill = useAtomCommand(skillsEnvironment.uninstallSkill, {
     reportFailure: false,
   });
   const [actionError, setActionError] = useState<string | null>(null);
-  const [uninstallingId, setUninstallingId] = useState<string | null>(null);
+  const [uninstallingIds, setUninstallingIds] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
   const installedSkills = query.data?.installedSkills ?? EMPTY_INSTALLED_SKILLS;
   const { rows, beginExit, finishExit } = useTombstonedSkillList(installedSkills);
 
-  const enabledSkillIds = settings.skills.enabledSkillIds;
+  // The enabled list is replaced wholesale on every write, so edits chain off
+  // the last list sent, not the server value that lags a round trip behind.
+  const {
+    ids: enabledSkillIds,
+    setIds: setEnabledSkillIds,
+    reset: resetEnabledSkillIds,
+  } = useOptimisticIdList(settings.skills.enabledSkillIds);
+  const writeEnabledSkillIds = useCallback(
+    (next: ReadonlyArray<SkillId>) => {
+      if (environmentId === null) return;
+      setEnabledSkillIds(next);
+      void persistSettings({
+        environmentId,
+        input: { patch: { skills: { enabledSkillIds: next } } },
+      }).then((result) => {
+        if (result._tag === "Failure") {
+          resetEnabledSkillIds();
+        }
+      });
+    },
+    [environmentId, persistSettings, resetEnabledSkillIds, setEnabledSkillIds],
+  );
   const setSkillEnabled = useCallback(
-    (skillId: string, enabled: boolean) => {
+    (skillId: SkillId, enabled: boolean) => {
       const next = enabled
         ? enabledSkillIds.includes(skillId)
           ? enabledSkillIds
           : [...enabledSkillIds, skillId]
         : enabledSkillIds.filter((id) => id !== skillId);
-      updateSettings({ skills: { enabledSkillIds: next } });
+      writeEnabledSkillIds(next);
     },
-    [enabledSkillIds, updateSettings],
+    [enabledSkillIds, writeEnabledSkillIds],
   );
 
   const handleUninstall = useCallback(
@@ -270,9 +303,9 @@ function InstalledSkillsSection({
       );
       if (!confirmed) return;
       setActionError(null);
-      setUninstallingId(skill.id);
+      setUninstallingIds((ids) => new Set(ids).add(skill.id));
       const result = await uninstallSkill({ environmentId, input: { skillId: skill.id } });
-      setUninstallingId(null);
+      setUninstallingIds((ids) => withoutId(ids, skill.id));
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
@@ -283,12 +316,10 @@ function InstalledSkillsSection({
       beginExit(skill);
       // Drop the orphaned enablement so the id does not linger in settings.
       if (enabledSkillIds.includes(skill.id)) {
-        updateSettings({
-          skills: { enabledSkillIds: enabledSkillIds.filter((id) => id !== skill.id) },
-        });
+        writeEnabledSkillIds(enabledSkillIds.filter((id) => id !== skill.id));
       }
     },
-    [beginExit, enabledSkillIds, environmentId, uninstallSkill, updateSettings],
+    [beginExit, enabledSkillIds, environmentId, uninstallSkill, writeEnabledSkillIds],
   );
 
   return (
@@ -315,13 +346,13 @@ function InstalledSkillsSection({
             key={skill.id}
             skillId={skill.id}
             exiting={exiting}
-            pending={uninstallingId === skill.id}
+            pending={uninstallingIds.has(skill.id)}
             onExited={finishExit}
           >
             <InstalledSkillRow
               skill={skill}
               enabled={enabledSkillIds.includes(skill.id)}
-              pending={uninstallingId === skill.id}
+              pending={uninstallingIds.has(skill.id)}
               onToggle={(enabled) => setSkillEnabled(skill.id, enabled)}
               onUninstall={() => void handleUninstall(skill)}
             />
@@ -407,8 +438,8 @@ function MarketplaceSkillsSection({
   const [newRepo, setNewRepo] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [installingId, setInstallingId] = useState<string | null>(null);
-  const [refreshingRepo, setRefreshingRepo] = useState<string | null>(null);
+  const [installingIds, setInstallingIds] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
+  const [refreshingRepos, setRefreshingRepos] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
 
   const sources = settings.skills.marketplaceSources;
   const listings = query.data;
@@ -425,9 +456,9 @@ function MarketplaceSkillsSection({
     async (skill: MarketplaceSkill) => {
       if (environmentId === null) return;
       setActionError(null);
-      setInstallingId(skill.id);
+      setInstallingIds((ids) => new Set(ids).add(skill.id));
       const result = await installSkill({ environmentId, input: { skillId: skill.id } });
-      setInstallingId(null);
+      setInstallingIds((ids) => withoutId(ids, skill.id));
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         setActionError(error instanceof Error ? error.message : "Could not install the skill.");
@@ -440,9 +471,9 @@ function MarketplaceSkillsSection({
     async (repo: string) => {
       if (environmentId === null) return;
       setActionError(null);
-      setRefreshingRepo(repo);
+      setRefreshingRepos((repos) => new Set(repos).add(repo));
       const result = await refreshMarketplace({ environmentId, input: { repo } });
-      setRefreshingRepo(null);
+      setRefreshingRepos((repos) => withoutId(repos, repo));
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         setActionError(
@@ -502,15 +533,16 @@ function MarketplaceSkillsSection({
               aria-label="Search marketplace skills"
             />
           </div>
-          {query.error !== null ? (
-            <SkillListHint tone="error">{query.error}</SkillListHint>
-          ) : listings === null ? (
+          {query.error !== null ? <SkillListHint tone="error">{query.error}</SkillListHint> : null}
+          {listings === null && query.error === null ? (
             <SkillListSkeleton rows={3} />
           ) : sources.length === 0 ? (
             <SkillListHint>No repositories configured — add one below.</SkillListHint>
           ) : (
+            // Every configured source keeps its row (and its Remove button)
+            // even when the listing failed: a mistyped repo must stay removable.
             sources.map((source) => {
-              const listing = listings.find((entry) => entry.repo === source.repo);
+              const listing = listings?.find((entry) => entry.repo === source.repo);
               const visibleSkills = (listing?.skills ?? []).filter(matchesQuery);
               return (
                 <div key={source.repo} className="space-y-1 pt-1">
@@ -523,13 +555,13 @@ function MarketplaceSkillsSection({
                         variant="ghost"
                         size="icon-xs"
                         aria-label={`Refresh ${source.repo}`}
-                        disabled={refreshingRepo === source.repo}
+                        disabled={refreshingRepos.has(source.repo)}
                         onClick={() => void handleRefresh(source.repo)}
                       >
                         <RefreshCwIcon
                           className={cn(
                             "size-3.5",
-                            refreshingRepo === source.repo && "animate-spin",
+                            refreshingRepos.has(source.repo) && "animate-spin",
                           )}
                         />
                       </Button>
@@ -556,7 +588,7 @@ function MarketplaceSkillsSection({
                       <MarketplaceSkillRow
                         key={skill.id}
                         skill={skill}
-                        installing={installingId === skill.id}
+                        installing={installingIds.has(skill.id)}
                         onInstall={() => void handleInstall(skill)}
                       />
                     ))
@@ -658,7 +690,7 @@ function HostSkillsSection({
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
 
   const skills = query.data?.skills ?? EMPTY_HOST_SKILLS;
   const { rows, beginExit, finishExit } = useTombstonedSkillList(skills);
@@ -701,12 +733,12 @@ function HostSkillsSection({
       );
       if (!confirmed) return;
       setActionError(null);
-      setPendingId(skill.id);
+      setPendingIds((ids) => new Set(ids).add(skill.id));
       const result = await uninstallHostSkill({
         environmentId,
         input: { skillId: skill.id },
       });
-      setPendingId(null);
+      setPendingIds((ids) => withoutId(ids, skill.id));
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
@@ -724,12 +756,12 @@ function HostSkillsSection({
     async (skill: HostSkill, enabled: boolean) => {
       if (environmentId === null || skill.enabled === enabled) return;
       setActionError(null);
-      setPendingId(skill.id);
+      setPendingIds((ids) => new Set(ids).add(skill.id));
       const result = await setHostSkillEnabled({
         environmentId,
         input: { skillId: skill.id, enabled },
       });
-      setPendingId(null);
+      setPendingIds((ids) => withoutId(ids, skill.id));
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
@@ -803,12 +835,12 @@ function HostSkillsSection({
                     key={skill.id}
                     skillId={skill.id}
                     exiting={exiting}
-                    pending={pendingId === skill.id}
+                    pending={pendingIds.has(skill.id)}
                     onExited={finishExit}
                   >
                     <HostSkillRow
                       skill={skill}
-                      pending={pendingId === skill.id}
+                      pending={pendingIds.has(skill.id)}
                       onToggle={(enabled) => void handleToggle(skill, enabled)}
                       onUninstall={() => void handleUninstall(skill)}
                     />

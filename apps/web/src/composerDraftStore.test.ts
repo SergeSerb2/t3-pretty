@@ -343,6 +343,22 @@ describe("composerDraftStore moveComposerPromptAndImages", () => {
 
     expect(draftByKey(sourceDraftId)?.prompt).toBe("keep me");
   });
+
+  it("carries per-thread skill picks along with the prompt", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(sourceDraftId, "use the skills");
+    store.setEnabledSkillIds(sourceDraftId, ["acme/skills:tdd", "acme/skills:review"]);
+    store.setEnabledSkillIds(destinationDraftId, ["acme/skills:review", "acme/skills:prd"]);
+
+    store.moveComposerPromptAndImages(sourceDraftId, destinationDraftId);
+
+    expect(draftByKey(sourceDraftId)).toBeUndefined();
+    expect(draftByKey(destinationDraftId)?.enabledSkillIds).toEqual([
+      "acme/skills:review",
+      "acme/skills:prd",
+      "acme/skills:tdd",
+    ]);
+  });
 });
 
 describe("composerDraftStore syncPersistedAttachments", () => {
