@@ -11,18 +11,22 @@ export type SceneryComposerPlacement = "hero" | "docked";
 export type SceneryArrivalFogInk = "dark" | "light";
 
 export const SCENERY_ARRIVAL = {
-  /** Intended veil when the wallpaper is already decoded at fog-on. */
-  fogHoldMs: 420,
+  /**
+   * Intended veil when the wallpaper is already decoded at fog-on. The bank
+   * gathers over this whole beat (scenery-fog-gather runs its full length)
+   * and sits at full cover the moment the reveal starts.
+   */
+  fogHoldMs: 460,
   /** Shortest veil after decode so the lift is over a painted photo. */
   fogHoldAfterReadyMs: 160,
   /** Give up waiting for decode and lift over whatever is on screen. */
   fogMaxWaitMs: 2400,
-  /** Veil opacity/transform. */
-  fogClearMs: 520,
+  /** Longest fog band's dissipation; the near band ends here (see CSS delays). */
+  fogClearMs: 880,
   /** Location name travel from viewport center into the composer slot. */
   locationTravelMs: 480,
   /** Headline + composer fade/slide after the veil starts lifting. */
-  chromeInMs: 300,
+  chromeInMs: 420,
   /** Compact dock of the composer after the first send. */
   dockMs: 420,
   easeOutExpo: "cubic-bezier(0.16, 1, 0.3, 1)",

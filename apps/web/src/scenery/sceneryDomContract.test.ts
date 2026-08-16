@@ -218,9 +218,9 @@ describe("scenery new-thread arrival contract", () => {
     expect(fogChrome).not.toContain("filter:");
   });
 
-  it("locks fog sheet colors to the arrival overlay so an ink flip cannot snap them", () => {
-    expect(sceneryCssSource).toContain('.scenery-arrival[data-fog="light"] .scenery-fog__sheet--a');
-    expect(sceneryCssSource).not.toContain("html:not(.dark) .scenery-fog__sheet--a");
+  it("locks fog ink to the arrival overlay so an ink flip cannot snap it", () => {
+    expect(sceneryCssSource).toContain('.scenery-arrival[data-fog="light"] .scenery-fog');
+    expect(sceneryCssSource).not.toContain("html:not(.dark) .scenery-fog");
   });
 });
 

@@ -8,9 +8,11 @@ the day.
 
 Choose the **World Scenery** theme in **Settings → Appearance**. While that theme is on:
 
-- A new thread opens in fog over the assigned place, then clears with the location name
-  settling near the bottom of the photo along with the photo credit. Scrolling up through
-  a thread hides that credit; returning to the latest messages brings it back.
+- A new thread opens in fog: a cloud bank gathers over the assigned place, the location
+  name rises out of it, then the fog blows off to the side while the chat box comes up
+  through it, the name settles near the bottom of the photo, and the photo credit fades in
+  next to it. Scrolling up through a thread hides that credit; returning to the latest
+  messages brings it back.
 - **Photo blur**, **Photo presence**, **Thread motion**, and **Scenery text color** live in
   **Settings → Appearance**.
 - **Thread motion** governs the app's small entrance and press animations — arriving
