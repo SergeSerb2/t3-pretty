@@ -41,6 +41,12 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [T3 Connect](./internals/t3-connect.md)
 - [CI gates](./internals/ci.md)
 
+### Performance audits
+
+- [macOS architecture and performance deep dive (2026-08-15)](./internals/t3-pretty-macos-architecture-performance-deep-dive-2026-08-15.md)
+- [macOS and iOS performance audit (2026-08-12)](./internals/t3-pretty-macos-ios-performance-audit-2026-08-12.md)
+- [CPU performance audit (2026-08-11)](./internals/t3-pretty-performance-audit.md)
+
 ### Runbooks
 
 - [Release](./operations/release.md)
