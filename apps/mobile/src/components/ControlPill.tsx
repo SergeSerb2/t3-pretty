@@ -12,7 +12,7 @@ import { Platform, Pressable, useColorScheme } from "react-native";
 import { useThemeColor } from "../lib/useThemeColor";
 
 import { cn } from "../lib/cn";
-import { AnchoredMenu } from "./AnchoredMenu";
+import { AnchoredMenu } from "./AndroidAnchoredMenu";
 import { SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
 import { ComposerSendIconSlot } from "./ComposerSendIndicator";

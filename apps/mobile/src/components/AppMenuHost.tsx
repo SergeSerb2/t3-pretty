@@ -2,7 +2,7 @@ import type { MenuAction, MenuComponentProps } from "@react-native-menu/menu";
 import * as Haptics from "expo-haptics";
 import { useEffect, useState } from "react";
 
-import { AnchoredMenu, type MenuEdgePlacement } from "./AnchoredMenu";
+import { AnchoredMenu, type MenuEdgePlacement } from "./AndroidAnchoredMenu";
 
 export type { MenuEdgePlacement };
 
