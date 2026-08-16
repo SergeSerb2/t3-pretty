@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import type { LogLevel } from "effect/LogLevel";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
@@ -94,6 +95,7 @@ const DESKTOP_BACKEND_ENV_NAMES = [
 const WSL_FORWARDED_ENV_NAMES = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"] as const;
 
 const WSL_SERVER_SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+const PACKAGED_SERVER_TRACE_MIN_LEVEL = "Warn" satisfies LogLevel;
 
 const backendChildEnvPatch = (): Record<string, string | undefined> =>
   Object.fromEntries(DESKTOP_BACKEND_ENV_NAMES.map((name) => [name, undefined]));
@@ -104,7 +106,7 @@ const packagedServerTraceMinLevelEnv = (
   if (!environment.isPackaged || process.env.T3CODE_TRACE_MIN_LEVEL !== undefined) {
     return {};
   }
-  return { T3CODE_TRACE_MIN_LEVEL: "Warning" };
+  return { T3CODE_TRACE_MIN_LEVEL: PACKAGED_SERVER_TRACE_MIN_LEVEL };
 };
 
 const getWslEnvEntryName = (entry: string): string => {

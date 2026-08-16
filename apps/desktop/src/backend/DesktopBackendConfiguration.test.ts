@@ -139,7 +139,7 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(first.captureOutput, true);
         assert.equal(first.env.ELECTRON_RUN_AS_NODE, "1");
         if (process.env.T3CODE_TRACE_MIN_LEVEL === undefined) {
-          assert.equal(first.env.T3CODE_TRACE_MIN_LEVEL, "Warning");
+          assert.equal(first.env.T3CODE_TRACE_MIN_LEVEL, "Warn");
         }
         assert.isUndefined(first.env.T3CODE_PORT);
         assert.isUndefined(first.env.T3CODE_MODE);

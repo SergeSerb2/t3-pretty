@@ -6,7 +6,7 @@ import { StatusBar } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { createStaticNavigation } from "@react-navigation/native";
+import { createStaticNavigation, DarkTheme, DefaultTheme } from "@react-navigation/native";
 
 // World Scenery nav palette — keep in step with global.css (native headers
 // cannot read CSS variables, so the scenery screen/accent hexes repeat here).
