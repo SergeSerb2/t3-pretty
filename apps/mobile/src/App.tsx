@@ -12,7 +12,7 @@ import { createStaticNavigation, DarkTheme, DefaultTheme } from "@react-navigati
 // cannot read CSS variables, so the scenery screen/accent hexes repeat here).
 const SCENERY_NAV_DARK = {
   ...DarkTheme,
-  colors: { ...DarkTheme.colors, background: "#0e1110", card: "#0e1110", primary: "#91c9a3" },
+  colors: { ...DarkTheme.colors, background: "#0e1110", card: "#0e1110", primary: "#98d2ac" },
 };
 const SCENERY_NAV_LIGHT = {
   ...DefaultTheme,
