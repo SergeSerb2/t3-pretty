@@ -532,9 +532,11 @@ html[data-scenery-arrival="reveal"] .scenery-place {
   flex-direction: column;
   align-items: center;
   gap: 0.3rem;
-  margin: 1.15rem auto 0;
+  margin: 0 auto;
   max-width: 36rem;
   text-align: center;
+  /* The composer overlay is pointer-events: none; the credit has to opt back in. */
+  pointer-events: auto;
   transition:
     margin 0.42s cubic-bezier(0.16, 1, 0.3, 1),
     gap 0.42s cubic-bezier(0.16, 1, 0.3, 1);

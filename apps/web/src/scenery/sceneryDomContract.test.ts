@@ -158,16 +158,11 @@ describe("scenery attribution contract", () => {
     );
   });
 
-  it("keeps the place credit below the composer glass, not above it", () => {
-    const glass = chatViewSource.indexOf("chat-composer-glass-shell");
-    const slot = chatViewSource.indexOf('data-scenery-place-slot=""');
-    const spacer = chatViewSource.indexOf(
-      "h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]",
-    );
-    expect(glass).toBeGreaterThan(-1);
-    expect(slot).toBeGreaterThan(glass);
-    expect(spacer).toBeGreaterThan(slot);
-    expect(sceneryCssSource).toMatch(/\.scenery-place\s*\{[^}]*margin: 1\.15rem auto 0;/s);
+  it("pins the hero place credit to the bottom band, not the centered composer", () => {
+    expect(chatViewSource).toContain("absolute inset-0 z-20 flex flex-col");
+    expect(chatViewSource).toContain("min-h-0 flex-1 flex-col justify-end");
+    expect(chatViewSource).toContain('data-scenery-place-slot=""');
+    expect(sceneryCssSource).toMatch(/\.scenery-place\s*\{[^}]*margin: 0 auto;/s);
     expect(sceneryCssSource).toMatch(
       /\[data-composer-placement="docked"\] \.scenery-place\s*\{[^}]*margin-top: 0\.45rem;/s,
     );

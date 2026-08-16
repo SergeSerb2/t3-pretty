@@ -6648,20 +6648,27 @@ function ChatViewContent(props: ChatViewProps) {
               )}
             </div>
 
-            {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise */}
+            {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise.
+                World Scenery new threads use a column so the place credit can sit in the lower
+                band instead of stacking on the composer. */}
             <div
               ref={setComposerOverlayElement}
               data-chat-composer-overlay="true"
               data-composer-placement={isDraftHeroState ? "hero" : "docked"}
               className={
-                isDraftHeroState
-                  ? "pointer-events-none absolute inset-0 z-20 flex items-center"
-                  : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
+                isDraftHeroState && sceneryThemeActive
+                  ? "pointer-events-none absolute inset-0 z-20 flex flex-col"
+                  : isDraftHeroState
+                    ? "pointer-events-none absolute inset-0 z-20 flex items-center"
+                    : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
             >
+              {isDraftHeroState && sceneryThemeActive ? (
+                <div aria-hidden className="min-h-0 flex-1" />
+              ) : null}
               <div
                 ref={attachDraftHeroTransitionGroupRef}
-                className="w-full ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
+                className="w-full shrink-0 ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
               >
                 <div className="pointer-events-auto relative z-10">
                   {isDraftHeroState ? (
@@ -6833,16 +6840,29 @@ function ChatViewContent(props: ChatViewProps) {
                         </div>
                       </div>
                     </div>
-                    {sceneryThemeActive ? (
-                      <div ref={bindSceneryPlaceSlot} data-scenery-place-slot="" />
+                    {!(isDraftHeroState && sceneryThemeActive) ? (
+                      <>
+                        {sceneryThemeActive ? (
+                          <div ref={bindSceneryPlaceSlot} data-scenery-place-slot="" />
+                        ) : null}
+                        <div
+                          aria-hidden
+                          className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
+                        />
+                      </>
                     ) : null}
-                    <div
-                      aria-hidden
-                      className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
-                    />
                   </div>
                 </div>
               </div>
+              {isDraftHeroState && sceneryThemeActive ? (
+                <div className="flex min-h-0 flex-1 flex-col justify-end ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] pt-10 sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]">
+                  <div ref={bindSceneryPlaceSlot} data-scenery-place-slot="" />
+                  <div
+                    aria-hidden
+                    className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
+                  />
+                </div>
+              ) : null}
             </div>
 
             {draftHeroHeadlineGhost && sceneryThemeActive ? (

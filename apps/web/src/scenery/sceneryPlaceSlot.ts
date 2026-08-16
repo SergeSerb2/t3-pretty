@@ -1,7 +1,8 @@
 /**
- * The composer cluster owns a slot below the chat box for the place name
- * and Unsplash credit. Arrival and credit render from the scenery chunk
- * and bind here so ChatView does not import the photo engine.
+ * ChatView owns a slot for the place name and Unsplash credit — the
+ * bottom band on a new-thread hero, compact under the composer once
+ * docked. Arrival and credit render from the scenery chunk and bind
+ * here so ChatView does not import the photo engine.
  */
 
 const listeners = new Set<() => void>();
