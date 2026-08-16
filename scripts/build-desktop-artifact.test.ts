@@ -482,6 +482,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   it("limits Electron locales and excludes the unused Claude SDK executable", () => {
     assert.deepStrictEqual(DESKTOP_ELECTRON_LANGUAGES, ["en-US"]);
     assert.deepStrictEqual(DESKTOP_FILE_EXCLUSIONS, [
+      "**/*",
       "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
       "!apps/desktop/prod-resources/windows-server",
       "!apps/desktop/prod-resources/windows-server/**/*",
@@ -501,6 +502,15 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "!apps/desktop/prod-resources/dmg",
       "!apps/desktop/prod-resources/dmg/**/*",
     ]);
+    // electron-builder 26 only prepends `**/*` when every `files` pattern is an
+    // exclusion. The Playwright re-includes above are positive globs, so the
+    // catch-all has to stay or the packaged asar loses the Electron main entry.
+    assert.equal(DESKTOP_FILE_EXCLUSIONS[0], "**/*");
+    assert.ok(
+      DESKTOP_FILE_EXCLUSIONS.some((pattern) =>
+        pattern.startsWith("**/node_modules/playwright-core/"),
+      ),
+    );
     assert.equal(WINDOWS_SERVER_RESOURCE_SOURCE_DIR, "apps/desktop/prod-resources/windows-server");
     assert.deepStrictEqual(WINDOWS_SERVER_EXTRA_RESOURCES, [
       {

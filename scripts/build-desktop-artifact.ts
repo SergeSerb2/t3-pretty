@@ -794,6 +794,11 @@ interface StagePackageJson {
 export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
 export const DESKTOP_FILE_EXCLUSIONS = [
+  // electron-builder only injects this catch-all when every `files` pattern is
+  // an exclusion (`containsOnlyIgnore()`). The Playwright re-includes below are
+  // positive globs, so without an explicit `**/*` the staged app tree — including
+  // `apps/desktop/dist-electron/main.cjs` — never enters app.asar.
+  "**/*",
   // T3 Pretty always passes the user's installed Claude executable to the SDK,
   // so the SDK's optional platform packages (each a ~200MB bundled executable)
   // are dead weight. The trailing dash keeps the SDK's own JS package.
