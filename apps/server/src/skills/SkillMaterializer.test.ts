@@ -5,13 +5,28 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
+import type { HostSkill } from "@t3tools/contracts";
+
 import * as ServerConfig from "../config.ts";
+import * as HostSkills from "./HostSkills.ts";
 import * as SkillMaterializer from "./SkillMaterializer.ts";
 import * as SkillStore from "./SkillStore.ts";
 
+/** Host-folder skills the mocked `HostSkills.list` reports; tests push into it. */
+const hostSkillsFixture: Array<HostSkill> = [];
+
 const TestLayer = Layer.empty.pipe(
   Layer.provideMerge(SkillStore.layer),
-  Layer.provideMerge(SkillMaterializer.layer.pipe(Layer.provide(SkillStore.layer))),
+  Layer.provideMerge(
+    SkillMaterializer.layer.pipe(
+      Layer.provide(SkillStore.layer),
+      Layer.provide(
+        Layer.mock(HostSkills.HostSkills)({
+          list: Effect.sync(() => ({ skills: [...hostSkillsFixture] })),
+        }),
+      ),
+    ),
+  ),
   Layer.provideMerge(
     ServerConfig.layerTest(process.cwd(), { prefix: "t3-skill-materializer-test-" }),
   ),
@@ -213,6 +228,58 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
 
       assert.deepStrictEqual(result, { written: [], removed: [], loaded: [] });
       assert.isFalse(yield* fileSystem.exists(path.join(cwd, ".claude")));
+    }),
+  );
+
+  it.effect("materializes host-folder skills, reviving a disabled SKILL.md in the copy", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const materializer = yield* SkillMaterializer.SkillMaterializer;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-cwd-" });
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-host-" });
+      const hostDir = path.join(home, "skills", "grill-me");
+      yield* fileSystem.makeDirectory(hostDir, { recursive: true });
+      yield* fileSystem.writeFileString(
+        path.join(hostDir, HostSkills.HOST_SKILL_DISABLED_FILE),
+        "---\nname: grill-me\n---\n",
+      );
+      const hostSkillId = "host:codex:grill-me";
+      hostSkillsFixture.push({
+        id: hostSkillId,
+        name: "grill-me",
+        path: path.join(hostDir, HostSkills.HOST_SKILL_DISABLED_FILE),
+        displayPath: "~/.codex/skills/grill-me",
+        origin: "Codex",
+        enabled: false,
+      });
+
+      const result = yield* materializer
+        .materialize({ cwd, skillIds: [hostSkillId] })
+        .pipe(Effect.ensuring(Effect.sync(() => hostSkillsFixture.splice(0))));
+
+      for (const root of [".claude/skills", ".agents/skills"]) {
+        const skillDir = path.join(cwd, root, "grill-me");
+        assert.include(result.written, skillDir);
+        assert.strictEqual(
+          yield* fileSystem.readFileString(path.join(skillDir, "SKILL.md")),
+          "---\nname: grill-me\n---\n",
+        );
+        assert.isFalse(
+          yield* fileSystem.exists(path.join(skillDir, HostSkills.HOST_SKILL_DISABLED_FILE)),
+        );
+        assert.strictEqual(
+          yield* fileSystem.readFileString(
+            path.join(skillDir, SkillMaterializer.SKILL_MANAGED_MARKER_FILE),
+          ),
+          hostSkillId,
+        );
+      }
+      // The host folder itself is untouched: still disabled where it lives.
+      assert.isTrue(
+        yield* fileSystem.exists(path.join(hostDir, HostSkills.HOST_SKILL_DISABLED_FILE)),
+      );
+      assert.deepStrictEqual(result.loaded, [{ id: hostSkillId, name: "grill-me" }]);
     }),
   );
 });

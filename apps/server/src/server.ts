@@ -178,14 +178,16 @@ const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
 
 const UsageLayerLive = UsageService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
 
+const HostSkillsLayerLive = HostSkills.layer.pipe(Layer.provide(ServerSettingsLayerLive));
+
 const SkillsLayerLive = Layer.mergeAll(
   SkillStore.layer,
-  SkillMaterializer.layer.pipe(Layer.provide(SkillStore.layer)),
+  SkillMaterializer.layer.pipe(Layer.provide(SkillStore.layer), Layer.provide(HostSkillsLayerLive)),
   SkillMarketplace.layer.pipe(
     Layer.provide(SkillStore.layer),
     Layer.provide(ServerSettingsLayerLive),
   ),
-  HostSkills.layer.pipe(Layer.provide(ServerSettingsLayerLive)),
+  HostSkillsLayerLive,
 );
 
 const ResourceDiagnosticsLayerLive = Layer.mergeAll(

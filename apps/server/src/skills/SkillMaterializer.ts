@@ -3,11 +3,14 @@
  *
  * At turn start the orchestration reactor calls `materialize` with the
  * thread's cwd and the union of globally and per-thread enabled skill ids.
- * Each skill is copied from the central store into `<cwd>/.claude/skills` and
- * `<cwd>/.agents/skills` under a sanitized directory name and marked with a
- * `.t3-managed` file containing the skill id. Only marked directories are
- * ever removed or overwritten — skills the user placed there themselves win
- * every collision, and no root is created while there is nothing to write.
+ * Store ids resolve against the central store; `host:` ids resolve against
+ * the provider CLI home folders (see `HostSkills`), which is how a skill that
+ * lives in one CLI's home gets picked up by a thread on another provider.
+ * Each skill is copied into `<cwd>/.claude/skills` and `<cwd>/.agents/skills`
+ * under a sanitized directory name and marked with a `.t3-managed` file
+ * containing the skill id. Only marked directories are ever removed or
+ * overwritten — skills the user placed there themselves win every collision,
+ * and no root is created while there is nothing to write.
  *
  * @module skills/SkillMaterializer
  */
@@ -19,10 +22,11 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 
+import { HOST_SKILL_DISABLED_FILE, HostSkills, parseHostSkillId } from "./HostSkills.ts";
 import * as SkillStore from "./SkillStore.ts";
+import { SKILL_MANAGED_MARKER_FILE } from "./SkillStore.ts";
 
-/** Marker inside a materialized skill directory; content is the skill id. */
-export const SKILL_MANAGED_MARKER_FILE = ".t3-managed";
+export { SKILL_MANAGED_MARKER_FILE } from "./SkillStore.ts";
 
 /** Directory names a skill can materialize under, lowercase filesystem-safe. */
 export function sanitizeSkillDirectoryName(name: string): string {
@@ -57,6 +61,7 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const skillStore = yield* SkillStore.SkillStore;
+  const hostSkills = yield* HostSkills;
 
   const materialize = Effect.fn("SkillMaterializer.materialize")(function* (input: {
     readonly cwd: string;
@@ -65,6 +70,20 @@ const make = Effect.gen(function* () {
     const installed = new Map(
       (yield* skillStore.getState).installedSkills.map((skill) => [skill.id, skill] as const),
     );
+    // Host folders are only scanned when a host id is actually requested.
+    const hostById = new Map<string, { readonly name: string; readonly dir: string }>();
+    if (input.skillIds.some((skillId) => parseHostSkillId(skillId) !== null)) {
+      const hostState = yield* hostSkills.list.pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("Skipping host skills that failed to list", {
+            detail: error.message,
+          }).pipe(Effect.as(undefined)),
+        ),
+      );
+      for (const skill of hostState?.skills ?? []) {
+        hostById.set(skill.id, { name: skill.name, dir: path.dirname(skill.path) });
+      }
+    }
 
     // Resolve every desired skill against the store up front; uninstalled or
     // invalid ids are skipped so one bad entry cannot block the rest.
@@ -76,19 +95,22 @@ const make = Effect.gen(function* () {
     }> = [];
     const seenDirNames = new Set<string>();
     for (const skillId of input.skillIds) {
-      const skill = installed.get(skillId);
+      const skill = installed.get(skillId) ?? hostById.get(skillId);
       if (!skill) {
         yield* Effect.logWarning("Skipping skill that is not installed", { skillId });
         continue;
       }
-      const storeDir = yield* skillStore.resolveSkillDirectory(skillId).pipe(
-        Effect.catch((error) =>
-          Effect.logWarning("Skipping skill that failed to resolve", {
-            skillId,
-            detail: error.message,
-          }).pipe(Effect.as(undefined)),
-        ),
-      );
+      const storeDir =
+        "dir" in skill
+          ? skill.dir
+          : yield* skillStore.resolveSkillDirectory(skillId).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("Skipping skill that failed to resolve", {
+                  skillId,
+                  detail: error.message,
+                }).pipe(Effect.as(undefined)),
+              ),
+            );
       if (storeDir === undefined) {
         continue;
       }
@@ -184,6 +206,12 @@ const make = Effect.gen(function* () {
             yield* fileSystem
               .remove(path.join(target, SkillStore.SKILL_METADATA_FILE), { force: true })
               .pipe(Effect.orElseSucceed(() => undefined));
+            // A host skill hidden in its own home (`SKILL.md.t3-disabled`) is
+            // still a per-thread pick here, so the copy gets a live SKILL.md.
+            const disabledCopy = path.join(target, HOST_SKILL_DISABLED_FILE);
+            if (yield* fileSystem.exists(disabledCopy).pipe(Effect.orElseSucceed(() => false))) {
+              yield* fileSystem.rename(disabledCopy, path.join(target, "SKILL.md"));
+            }
             yield* fileSystem.writeFileString(
               path.join(target, SKILL_MANAGED_MARKER_FILE),
               skill.id,

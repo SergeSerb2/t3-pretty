@@ -32,7 +32,7 @@ import * as Path from "effect/Path";
 
 import { expandHomePath } from "../pathExpansion.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
-import { SKILL_MANAGED_MARKER_FILE } from "./SkillMaterializer.ts";
+import { SKILL_MANAGED_MARKER_FILE } from "./SkillStore.ts";
 
 const HOST_SKILL_ID_PREFIX = "host:";
 const DEFAULT_INSTANCE_KEY = "default";
