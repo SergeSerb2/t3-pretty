@@ -77,11 +77,11 @@ describe("composer attach mutation contract", () => {
 
 describe("tool card disclosure contract", () => {
   it("the expanded body still mounts under the ms-7 indent wrapper", () => {
-    expect(messagesTimelineSource).toContain("mt-1 ms-7 cursor-default border-s");
+    expect(messagesTimelineSource).toContain("mb-1 ms-7 mt-0.5");
   });
 
-  it("status verdict icons still live in the gap-px indicator cluster", () => {
-    expect(messagesTimelineSource).toContain("gap-px text-icon-muted");
+  it("status verdict icons still live in the gap-1 indicator cluster", () => {
+    expect(messagesTimelineSource).toContain("gap-1 text-icon-muted");
   });
 });
 

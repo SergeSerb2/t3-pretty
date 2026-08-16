@@ -56,7 +56,7 @@ html[data-scenery-motion] [data-chat-composer-overlay] h1 {
 }
 
 /* ------------------------------------------------- tool card disclosure -- */
-/* The expanded body (`mt-1 ms-7 …` wrapper) mounts on toggle; entry gets a
+/* The expanded body (`mb-1 ms-7 …` wrapper) mounts on toggle; entry gets a
    short reveal, collapse stays instant. Chevron keeps its upstream rotate. */
 
 html[data-scenery-motion] [data-timeline-row-kind="work"] div[class*="ms-7"] {
@@ -72,7 +72,10 @@ html[data-scenery-motion] [data-timeline-row-kind="work"] div[class*="ms-7"] {
 /* Status verdicts (check / x / minus) pop in at the end of a tool call.
    `rotate` stays in the list so the sibling chevron keeps its transition
    after this shorthand overrides Tailwind's transition-transform. */
-html[data-scenery-motion] [data-timeline-row-kind="work"] [class*="gap-px"] svg {
+html[data-scenery-motion]
+  [data-timeline-row-kind="work"]
+  [class*="gap-1"][class*="text-icon-muted"]
+  svg {
   transition:
     scale 150ms var(--sc-ease-out),
     opacity 150ms var(--sc-ease-out),
@@ -184,7 +187,10 @@ html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"]:act
 
   html[data-scenery-motion] [data-chat-composer-overlay] h1,
   html[data-scenery-motion] [data-timeline-row-kind="work"] div[class*="ms-7"],
-  html[data-scenery-motion] [data-timeline-row-kind="work"] [class*="gap-px"] svg,
+  html[data-scenery-motion]
+    [data-timeline-row-kind="work"]
+    [class*="gap-1"][class*="text-icon-muted"]
+    svg,
   html[data-scenery-motion] main[data-slot="sidebar-inset"] [data-slot="alert"],
   html[data-scenery-motion] main[data-slot="sidebar-inset"] [role="alert"],
   html[data-scenery-motion] [data-chat-composer-form] [data-approval-detail],
