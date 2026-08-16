@@ -140,6 +140,7 @@ function findTopLevelChainBreaks(source: string): number[] {
   let braceDepth = 0;
   let doubleBracketDepth = 0;
   let inBackticks = false;
+  let caseState: "none" | "after-case" | "in-pattern" | "in-body" = "none";
 
   const isDepthZero = () =>
     quote === null &&
@@ -249,23 +250,56 @@ function findTopLevelChainBreaks(source: string): number[] {
     }
 
     if (isDepthZero()) {
+      if (isKeywordAt(source, index, "case")) {
+        caseState = "after-case";
+      } else if (caseState === "after-case" && isKeywordAt(source, index, "in")) {
+        caseState = "in-pattern";
+      } else if (isKeywordAt(source, index, "esac")) {
+        caseState = "none";
+      }
+
+      if (caseState === "in-pattern" && character === ")") {
+        caseState = "in-body";
+        index += 1;
+        continue;
+      }
+
+      if ((caseState === "in-body" || caseState === "in-pattern") && character === ";") {
+        if (source[index + 1] === ";" && source[index + 2] === "&") {
+          caseState = "in-pattern";
+          index += 3;
+          continue;
+        }
+        if (source[index + 1] === ";" || source[index + 1] === "&") {
+          caseState = "in-pattern";
+          index += 2;
+          continue;
+        }
+      }
+
       if (character === "&" && source[index + 1] === "&") {
         breaks.push(index + 2);
         index += 2;
         continue;
       }
       if (character === "|" && source[index + 1] === "|") {
-        breaks.push(index + 2);
+        if (caseState !== "in-pattern") {
+          breaks.push(index + 2);
+        }
         index += 2;
         continue;
       }
       if (character === "|" && source[index + 1] === "&") {
-        breaks.push(index + 2);
+        if (caseState !== "in-pattern") {
+          breaks.push(index + 2);
+        }
         index += 2;
         continue;
       }
       if (character === "|") {
-        breaks.push(index + 1);
+        if (caseState !== "in-pattern") {
+          breaks.push(index + 1);
+        }
         index += 1;
         continue;
       }
@@ -291,6 +325,21 @@ function skipHorizontalWhitespace(source: string, start: number): number {
 
 function isHorizontalWhitespace(character: string): boolean {
   return character === " " || character === "\t";
+}
+
+function isWordChar(character: string): boolean {
+  return /[A-Za-z0-9_]/u.test(character);
+}
+
+function isKeywordAt(source: string, index: number, keyword: string): boolean {
+  if (index > 0 && isWordChar(source[index - 1]!)) {
+    return false;
+  }
+  if (source.slice(index, index + keyword.length) !== keyword) {
+    return false;
+  }
+  const after = index + keyword.length;
+  return after >= source.length || !isWordChar(source[after]!);
 }
 
 // Bash starts a comment when `#` is a new word: start of input, or after a

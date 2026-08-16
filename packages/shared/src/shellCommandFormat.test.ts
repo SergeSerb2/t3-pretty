@@ -72,6 +72,15 @@ describe("formatShellCommandForDisplay", () => {
     );
   });
 
+  it("does not break case-pattern alternation pipes", () => {
+    expect(formatShellCommandForDisplay("case b in a|b) echo yes;; esac")).toBe(
+      "case b in a|b) echo yes;; esac",
+    );
+    expect(formatShellCommandForDisplay("case b in a|b) echo yes && echo no;; esac")).toBe(
+      "case b in a|b) echo yes &&\n  echo no;; esac",
+    );
+  });
+
   it("does not break pipes inside ${} parameter expansions", () => {
     expect(formatShellCommandForDisplay("printf '<%s>\\n' ${x:-a|b}")).toBe(
       "printf '<%s>\\n' ${x:-a|b}",
