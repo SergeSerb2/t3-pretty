@@ -6,7 +6,7 @@
  * folder (Settings → Skills → On this environment). Enablement is a union of
  * global picks and per-thread picks. Rows that are already on regardless of
  * this thread render checked and disabled — library skills enabled globally,
- * and host skills the selected provider loads from its own home anyway; both
+ * and host skills the selected instance loads from its own home anyway; both
  * are only turned off from settings. Everything else toggles per thread:
  *   - draft sessions write the composer draft store and ride
  *     `bootstrap.createThread.enabledSkillIds` on the first turn;
@@ -17,13 +17,14 @@
  */
 import { useAtomValue } from "@effect/atom-react";
 import { useRouter } from "@tanstack/react-router";
-import type {
-  EnvironmentId,
-  HostSkill,
-  InstalledSkill,
-  ProviderDriverKind,
-  ScopedThreadRef,
-  SkillId,
+import {
+  defaultInstanceIdForDriver,
+  type EnvironmentId,
+  type HostSkill,
+  type InstalledSkill,
+  type ProviderInstanceId,
+  type ScopedThreadRef,
+  type SkillId,
 } from "@t3tools/contracts";
 import { PackageIcon, SearchIcon } from "lucide-react";
 import { memo, useId, useMemo, useState } from "react";
@@ -46,8 +47,8 @@ const EMPTY_SKILL_IDS: ReadonlyArray<SkillId> = [];
 
 export interface SkillsPickerProps {
   environmentId: EnvironmentId;
-  /** Provider of the thread; its own host skills are already loaded and lock on. */
-  selectedProvider: ProviderDriverKind;
+  /** Instance of the thread; its own home-folder host skills are already loaded and lock on. */
+  selectedInstanceId: ProviderInstanceId;
   /** Server-thread target — toggles dispatch `thread.skills.set`. */
   threadRef?: ScopedThreadRef | undefined;
   /**
@@ -75,11 +76,24 @@ interface PickerSkill {
 
 const LIBRARY_GROUP = "Library";
 
+/** True when this host skill lives in the selected instance's own CLI home. */
+function hostSkillBelongsToInstance(
+  skill: HostSkill,
+  selectedInstanceId: ProviderInstanceId,
+): boolean {
+  if (skill.driver === undefined) {
+    return false;
+  }
+  // Default home roots omit instanceId; treat them as the driver's default instance.
+  const skillInstanceId = skill.instanceId ?? defaultInstanceIdForDriver(skill.driver);
+  return skillInstanceId === selectedInstanceId;
+}
+
 export function toPickerSkills(
   installedSkills: ReadonlyArray<InstalledSkill>,
   hostSkills: ReadonlyArray<HostSkill>,
   globallyEnabledIds: ReadonlySet<SkillId>,
-  selectedProvider: ProviderDriverKind,
+  selectedInstanceId: ProviderInstanceId,
 ): PickerSkill[] {
   const library = installedSkills.map((skill) => ({
     id: skill.id,
@@ -88,17 +102,18 @@ export function toPickerSkills(
     group: LIBRARY_GROUP,
     locked: globallyEnabledIds.has(skill.id),
   }));
-  // A host skill that is on in the selected provider's own home is loaded by
+  // A host skill that is on in the selected instance's own home is loaded by
   // that CLI no matter what this thread picks. Shared `~/.agents/skills` has
   // no driver, so it stays toggleable — copying it into the workspace is the
   // only lever we hold, and a duplicate is harmless where the CLI already
-  // reads it.
+  // reads it. Sibling instances of the same driver (different homes) stay
+  // toggleable too — their folders are not on this CLI's search path.
   const host = hostSkills.map((skill) => ({
     id: skill.id,
     name: skill.name,
     description: skill.description ?? skill.displayPath,
     group: skill.origin,
-    locked: skill.enabled && skill.driver === selectedProvider,
+    locked: skill.enabled && hostSkillBelongsToInstance(skill, selectedInstanceId),
   }));
   return [...library, ...host];
 }
@@ -133,9 +148,9 @@ function useSkillsPickerState(props: SkillsPickerProps) {
         installedSkills ?? [],
         hostSkills ?? [],
         globallyEnabledIds,
-        props.selectedProvider,
+        props.selectedInstanceId,
       ),
-    [globallyEnabledIds, hostSkills, installedSkills, props.selectedProvider],
+    [globallyEnabledIds, hostSkills, installedSkills, props.selectedInstanceId],
   );
   const lockedIds = useMemo(
     () => new Set(skills.filter((skill) => skill.locked).map((skill) => skill.id)),

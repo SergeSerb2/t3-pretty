@@ -1338,7 +1338,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // `thread.skills.set` on toggle.
   const skillsPickerProps = {
     environmentId,
-    selectedProvider,
+    selectedInstanceId,
     open: isComposerSkillsPickerOpen,
     onOpenChange: setIsComposerSkillsPickerOpen,
     ...(routeKind === "server"
