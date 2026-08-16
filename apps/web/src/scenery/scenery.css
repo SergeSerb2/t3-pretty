@@ -532,7 +532,7 @@ html[data-scenery-arrival="reveal"] .scenery-place {
   flex-direction: column;
   align-items: center;
   gap: 0.3rem;
-  margin: 0 auto 1.15rem;
+  margin: 1.15rem auto 0;
   max-width: 36rem;
   text-align: center;
   transition:
@@ -584,7 +584,7 @@ html[data-scenery-arrival="reveal"] .scenery-place {
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.35rem 0.45rem;
-  margin-bottom: 0.45rem;
+  margin-top: 0.45rem;
 }
 
 [data-composer-placement="docked"] .scenery-place__name {

@@ -6691,9 +6691,6 @@ function ChatViewContent(props: ChatViewProps) {
                   {threadSyncPhase && !activeEnvironmentUnavailable ? (
                     <ThreadSyncStatusPill phase={threadSyncPhase} />
                   ) : null}
-                  {sceneryThemeActive ? (
-                    <div ref={bindSceneryPlaceSlot} data-scenery-place-slot="" />
-                  ) : null}
                   <div
                     className="relative"
                     data-scenery-hero-chrome="composer"
@@ -6836,6 +6833,9 @@ function ChatViewContent(props: ChatViewProps) {
                         </div>
                       </div>
                     </div>
+                    {sceneryThemeActive ? (
+                      <div ref={bindSceneryPlaceSlot} data-scenery-place-slot="" />
+                    ) : null}
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
