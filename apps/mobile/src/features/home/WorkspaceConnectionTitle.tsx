@@ -52,7 +52,11 @@ function useDelayedConnectionStatus(): WorkspaceConnectionStatusPresentation | n
  * native-driver animated nodes blank the re-hosted view entirely. The JS driver
  * updates opacity through the ordinary style path, which those subviews handle.
  */
-function StatusFadeIn(props: { readonly children: ReactNode; readonly grow?: boolean }) {
+function StatusFadeIn(props: {
+  readonly children: ReactNode;
+  readonly grow?: boolean;
+  readonly offset?: number;
+}) {
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -67,10 +71,18 @@ function StatusFadeIn(props: { readonly children: ReactNode; readonly grow?: boo
 
   return (
     <Animated.View
-      style={[
-        { alignItems: "center", flexDirection: "row", opacity },
-        props.grow ? { flex: 1, minWidth: 0 } : null,
-      ]}
+      collapsable={false}
+      pointerEvents="box-none"
+      style={{
+        alignItems: "center",
+        bottom: 0,
+        flexDirection: "row",
+        left: props.offset ?? 0,
+        opacity,
+        position: "absolute",
+        right: props.grow === true ? 0 : undefined,
+        top: 0,
+      }}
     >
       {props.children}
     </Animated.View>
@@ -78,13 +90,14 @@ function StatusFadeIn(props: { readonly children: ReactNode; readonly grow?: boo
 }
 
 /**
- * Renders the brand/title slot of a thread-list surface, swapping the brand
- * for the workspace connection status while an environment is unavailable.
+ * Renders the brand/title slot of a thread-list surface, overlaying the
+ * workspace connection status while an environment is unavailable.
  *
  * Both states occupy the same slot, so connection changes never shift the
- * layout below. While connected the brand renders untouched — no wrapper —
- * keeping the native header item on the exact element tree that predates the
- * status swap. Replaces the old WorkspaceConnectionStatus pill, which inserted
+ * layout below. The brand stays mounted (hidden with opacity) for the life of
+ * the slot: swapping it out of a native header item remounts CompactBrandTitle
+ * inside RNSScreenStackHeaderSubview, and that hosted view stays blank after
+ * reconnect. Replaces the old WorkspaceConnectionStatus pill, which inserted
  * a row above the thread list.
  */
 export function WorkspaceConnectionTitle(props: {
@@ -101,52 +114,64 @@ export function WorkspaceConnectionTitle(props: {
   const iconColor = String(useThemeColor("--color-icon-muted"));
   const status = useDelayedConnectionStatus();
   const size = props.size ?? "navbar";
-
-  if (status === null) {
-    return props.grow ? (
-      <View style={{ alignItems: "center", flex: 1, flexDirection: "row", minWidth: 0 }}>
-        {props.brand}
-      </View>
-    ) : (
-      <>{props.brand}</>
-    );
-  }
+  const showingStatus = status !== null;
 
   return (
-    <StatusFadeIn grow={props.grow}>
-      <Pressable
-        accessibilityHint="Opens environment settings"
-        accessibilityLabel={status.label}
-        accessibilityRole="button"
-        disabled={props.onPress === undefined}
-        hitSlop={8}
-        onPress={props.onPress}
-        className="flex-row items-center gap-2"
-        style={{ marginLeft: props.statusOffset ?? 0 }}
+    <View
+      collapsable={false}
+      style={[
+        { alignItems: "center", flexDirection: "row" },
+        props.grow ? { flex: 1, minWidth: 0 } : null,
+      ]}
+    >
+      <View
+        accessibilityElementsHidden={showingStatus}
+        collapsable={false}
+        importantForAccessibility={showingStatus ? "no-hide-descendants" : "auto"}
+        pointerEvents={showingStatus ? "none" : "auto"}
+        style={[
+          props.grow ? { flex: 1, minWidth: 0 } : null,
+          showingStatus ? { opacity: 0 } : null,
+        ]}
       >
-        {status.showsProgress ? (
-          <ActivityIndicator color={iconColor} size="small" />
-        ) : (
-          <SymbolView
-            name="wifi.slash"
-            size={size === "pageTitle" ? 17 : 15}
-            tintColor={iconColor}
-            type="monochrome"
-          />
-        )}
-        <Text
-          className={
-            size === "pageTitle"
-              ? "text-[20px] font-t3-bold text-foreground-muted"
-              : "text-[16px] font-t3-bold text-foreground-muted"
-          }
-          numberOfLines={1}
-          style={{ flexShrink: 1 }}
-        >
-          {status.label}
-        </Text>
-      </Pressable>
-    </StatusFadeIn>
+        {props.brand}
+      </View>
+      {status !== null ? (
+        <StatusFadeIn grow={props.grow} offset={props.statusOffset}>
+          <Pressable
+            accessibilityHint="Opens environment settings"
+            accessibilityLabel={status.label}
+            accessibilityRole="button"
+            disabled={props.onPress === undefined}
+            hitSlop={8}
+            onPress={props.onPress}
+            className="flex-row items-center gap-2"
+          >
+            {status.showsProgress ? (
+              <ActivityIndicator color={iconColor} size="small" />
+            ) : (
+              <SymbolView
+                name="wifi.slash"
+                size={size === "pageTitle" ? 17 : 15}
+                tintColor={iconColor}
+                type="monochrome"
+              />
+            )}
+            <Text
+              className={
+                size === "pageTitle"
+                  ? "text-[20px] font-t3-bold text-foreground-muted"
+                  : "text-[16px] font-t3-bold text-foreground-muted"
+              }
+              numberOfLines={1}
+              style={{ flexShrink: 1 }}
+            >
+              {status.label}
+            </Text>
+          </Pressable>
+        </StatusFadeIn>
+      ) : null}
+    </View>
   );
 }
 
