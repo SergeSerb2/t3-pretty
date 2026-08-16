@@ -2360,9 +2360,11 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const previewRef = useRef<HTMLSpanElement>(null);
   const [previewClipped, setPreviewClipped] = useState(false);
   // Skip disclosure when the body only repeats the preview *and* the preview
-  // is fully visible. Char-count heuristics fail on narrow panes / long headings.
+  // is fully visible. Keep expand when <pre> would preserve newlines/space runs
+  // that truncate (nowrap) collapses — equality after trim alone is not enough.
+  const collapsedPreview = preview === null ? null : preview.trim().replace(/\s+/g, " ");
   const bodyRepeatsPreview =
-    expandedBody !== null && preview !== null && expandedBody.trim() === preview.trim();
+    expandedBody !== null && collapsedPreview !== null && expandedBody.trim() === collapsedPreview;
   useLayoutEffect(() => {
     const el = previewRef.current;
     if (!el || !bodyRepeatsPreview) {

@@ -859,6 +859,13 @@ describe("MessagesTimeline", () => {
 
     // Repeat-only bodies stay closed until layout reports the preview is clipped.
     expect(render({ label: "Skill", detail: "grill-me" })).not.toContain("aria-expanded");
+    // Multiline/space-run bodies still disclose: nowrap collapses what <pre> keeps.
+    expect(
+      render({
+        label: "Command run",
+        command: "echo one\necho two",
+      }),
+    ).toContain('aria-expanded="false"');
     expect(
       render({
         label: "Command run",
