@@ -1246,13 +1246,20 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
 const TERMINAL_DRAWER_EXIT_FALLBACK_MS = 250;
 const RIGHT_PANEL_EXIT_FALLBACK_MS = 250;
 
-/** Keep the heavy panel mounted only until its CSS exit finishes. */
+/**
+ * Keep the heavy panel mounted only until its CSS exit finishes, and mount it
+ * closed so the enter slide starts one frame after the mount work instead of
+ * being eaten by it: heavy surfaces (diff, terminal, browser) block the main
+ * thread through most of the 200ms slide, which reads as the panel snapping
+ * open. Closing never had this problem because nothing mounts on the way out.
+ */
 function InlineRightPanelPresence<Snapshot>(props: {
   open: boolean;
   snapshot: Snapshot;
-  children: (snapshot: Snapshot, onExitComplete: () => void) => ReactNode;
+  children: (snapshot: Snapshot, open: boolean, onExitComplete: () => void) => ReactNode;
 }) {
   const [present, setPresent] = useState(props.open);
+  const [entered, setEntered] = useState(false);
   const lastOpenSnapshotRef = useRef(props.snapshot);
 
   useLayoutEffect(() => {
@@ -1273,12 +1280,30 @@ function InlineRightPanelPresence<Snapshot>(props: {
     return () => window.clearTimeout(timeoutId);
   }, [present, props.open]);
 
+  useEffect(() => {
+    if (!present) {
+      setEntered(false);
+      return;
+    }
+    if (!props.open || entered) return;
+    // Two frames: the first paints the closed panel after React's mount work,
+    // the second gives follow-up effect renders their own frame before motion.
+    let innerFrame = 0;
+    const outerFrame = window.requestAnimationFrame(() => {
+      innerFrame = window.requestAnimationFrame(() => setEntered(true));
+    });
+    return () => {
+      window.cancelAnimationFrame(outerFrame);
+      window.cancelAnimationFrame(innerFrame);
+    };
+  }, [entered, present, props.open]);
+
   const handleExitComplete = useCallback(() => {
     if (!props.open) setPresent(false);
   }, [props.open]);
 
   const snapshot = props.open ? props.snapshot : lastOpenSnapshotRef.current;
-  return present ? props.children(snapshot, handleExitComplete) : null;
+  return present ? props.children(snapshot, props.open && entered, handleExitComplete) : null;
 }
 
 // Errors surface through two maps (draft-keyed and thread-keyed) whose entries
@@ -6651,20 +6676,27 @@ function ChatViewContent(props: ChatViewProps) {
               )}
             </div>
 
-            {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise */}
+            {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise.
+                World Scenery new threads use a column so the place credit can sit in the lower
+                band instead of stacking on the composer. */}
             <div
               ref={setComposerOverlayElement}
               data-chat-composer-overlay="true"
               data-composer-placement={isDraftHeroState ? "hero" : "docked"}
               className={
-                isDraftHeroState
-                  ? "pointer-events-none absolute inset-0 z-20 flex items-center"
-                  : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
+                isDraftHeroState && sceneryThemeActive
+                  ? "pointer-events-none absolute inset-0 z-20 flex flex-col"
+                  : isDraftHeroState
+                    ? "pointer-events-none absolute inset-0 z-20 flex items-center"
+                    : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
             >
+              {isDraftHeroState && sceneryThemeActive ? (
+                <div aria-hidden className="min-h-0 flex-1" />
+              ) : null}
               <div
                 ref={attachDraftHeroTransitionGroupRef}
-                className="w-full ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
+                className="w-full shrink-0 ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
               >
                 <div className="pointer-events-auto relative z-10">
                   {isDraftHeroState ? (
@@ -6693,13 +6725,6 @@ function ChatViewContent(props: ChatViewProps) {
                   )}
                   {threadSyncPhase && !activeEnvironmentUnavailable ? (
                     <ThreadSyncStatusPill phase={threadSyncPhase} />
-                  ) : null}
-                  {sceneryThemeActive ? (
-                    <div
-                      ref={bindSceneryPlaceSlot}
-                      data-scenery-place-slot=""
-                      data-scenery-place-hidden={showScrollToBottom ? "" : undefined}
-                    />
                   ) : null}
                   <div
                     className="relative"
@@ -6843,13 +6868,33 @@ function ChatViewContent(props: ChatViewProps) {
                         </div>
                       </div>
                     </div>
-                    <div
-                      aria-hidden
-                      className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
-                    />
+                    {!(isDraftHeroState && sceneryThemeActive) ? (
+                      <>
+                        {sceneryThemeActive ? (
+                          <div
+                            ref={bindSceneryPlaceSlot}
+                            data-scenery-place-slot=""
+                            data-scenery-place-hidden={showScrollToBottom ? "" : undefined}
+                          />
+                        ) : null}
+                        <div
+                          aria-hidden
+                          className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
+                        />
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </div>
+              {isDraftHeroState && sceneryThemeActive ? (
+                <div className="flex min-h-0 flex-1 flex-col justify-end ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] pt-10 sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]">
+                  <div ref={bindSceneryPlaceSlot} data-scenery-place-slot="" />
+                  <div
+                    aria-hidden
+                    className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
+                  />
+                </div>
+              ) : null}
             </div>
 
             {draftHeroHeadlineGhost && sceneryThemeActive ? (
@@ -6961,11 +7006,11 @@ function ChatViewContent(props: ChatViewProps) {
             maximized: rightPanelMaximized,
           }}
         >
-          {(snapshot, onExitComplete) => (
+          {(snapshot, open, onExitComplete) => (
             <RightPanelTabs
               mode="inline"
               maximized={snapshot.maximized}
-              open={rightPanelOpen}
+              open={open}
               onExitComplete={onExitComplete}
               surfaces={snapshot.surfaces}
               activeSurfaceId={snapshot.activeSurfaceId}

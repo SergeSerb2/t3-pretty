@@ -532,17 +532,19 @@ html[data-scenery-arrival="reveal"] .scenery-place {
   flex-direction: column;
   align-items: center;
   gap: 0.3rem;
-  margin: 0 auto 1.15rem;
+  margin: 0 auto;
   max-width: 36rem;
   text-align: center;
+  /* The composer overlay is pointer-events: none; the credit has to opt back in. */
+  pointer-events: auto;
   transition:
     margin 0.42s cubic-bezier(0.16, 1, 0.3, 1),
     gap 0.42s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Same live-edge flag as the scroll-to-end pill: hide while the timeline is
-   scrolled up so the unplated credit cannot sit on message text. Motion.css
-   adds the fade; without Thread motion this is a hard cut. */
+   scrolled up. Motion.css adds the fade; without Thread motion this is a
+   hard cut. */
 [data-composer-placement="docked"]
   [data-scenery-place-slot][data-scenery-place-hidden]
   .scenery-place {
@@ -595,7 +597,7 @@ html[data-scenery-arrival="reveal"] .scenery-place {
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.35rem 0.45rem;
-  margin-bottom: 0.45rem;
+  margin-top: 0.45rem;
 }
 
 [data-composer-placement="docked"] .scenery-place__name {
