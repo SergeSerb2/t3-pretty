@@ -1,5 +1,5 @@
 /**
- * Composer footer control for per-thread subagent policy.
+ * Composer `⋯` menu section for per-thread subagent policy.
  *
  * Inherit follows Settings → Agents. Off and On pin the thread. On may also
  * pin a child model; otherwise the global or cheaper sibling is used.
@@ -16,7 +16,6 @@ import type {
 } from "@t3tools/contracts";
 import {
   DEFAULT_SUBAGENT_POLICY_SETTINGS,
-  DEFAULT_THREAD_SUBAGENT_POLICY,
   resolveSubagentPolicy,
   subagentPolicyBindCaption,
   threadSubagentPolicyOrInherit,
@@ -31,8 +30,7 @@ import { primaryServerProvidersAtom } from "~/state/server";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "../ui/button";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { ComposerControl, ComposerControlChevron, ComposerControlIcon } from "./ComposerControl";
+import { MenuSub, MenuSubPopup, MenuSubTrigger } from "../ui/menu";
 import { cn } from "~/lib/utils";
 
 export interface SubagentPolicyPickerProps {
@@ -55,40 +53,42 @@ function policyLabel(policy: ThreadSubagentPolicy): string {
   return "Inherit";
 }
 
-export function SubagentPolicyPicker(props: SubagentPolicyPickerProps) {
-  return (
-    <Popover>
-      <PopoverTrigger
-        render={<ComposerControl variant="ghost" className="shrink-0 whitespace-nowrap" />}
-      >
-        <ComposerControlIcon icon={BotIcon} />
-        <span>Agents</span>
-        <ComposerControlChevron />
-      </PopoverTrigger>
-      <PopoverPopup
-        align="start"
-        className="w-80 max-w-full"
-        viewportClassName="py-1.5 [--viewport-inline-padding:--spacing(1.5)]"
-      >
-        <SubagentPolicyMenuContent {...props} />
-      </PopoverPopup>
-    </Popover>
-  );
-}
-
-export function SubagentPolicyMenuContent(props: SubagentPolicyPickerProps) {
-  const router = useRouter();
-  const settings = usePrimarySettings();
-  const serverProviders = useAtomValue(primaryServerProvidersAtom);
+function useCurrentSubagentPolicy(props: SubagentPolicyPickerProps): ThreadSubagentPolicy {
   const draftPolicy = useComposerDraftStore((store) =>
     props.draftId ? store.getComposerDraft(props.draftId)?.subagentPolicy : undefined,
   );
+  return threadSubagentPolicyOrInherit(props.draftId ? draftPolicy : props.threadPolicy);
+}
+
+/** `Agents ▸` row of the composer's `⋯` menu; the trigger echoes the current policy. */
+export function SubagentPolicySubmenu(props: SubagentPolicyPickerProps) {
+  const current = useCurrentSubagentPolicy(props);
+  return (
+    <MenuSub>
+      <MenuSubTrigger>
+        <BotIcon aria-hidden="true" />
+        <span>Agents</span>
+        <span className="ms-auto min-w-0 truncate ps-3 text-muted-foreground text-xs">
+          {policyLabel(current)}
+        </span>
+      </MenuSubTrigger>
+      <MenuSubPopup className="w-80 max-w-full">
+        <SubagentPolicyMenuContent {...props} />
+      </MenuSubPopup>
+    </MenuSub>
+  );
+}
+
+function SubagentPolicyMenuContent(props: SubagentPolicyPickerProps) {
+  const router = useRouter();
+  const settings = usePrimarySettings();
+  const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const setDraftPolicy = useComposerDraftStore((store) => store.setSubagentPolicy);
   const setThreadPolicy = useAtomCommand(threadEnvironment.setThreadSubagentPolicy, {
     reportFailure: false,
   });
 
-  const current = threadSubagentPolicyOrInherit(props.draftId ? draftPolicy : props.threadPolicy);
+  const current = useCurrentSubagentPolicy(props);
   const driver =
     props.parentDriver ??
     getProviderInstanceEntry(serverProviders, props.parentInstanceId)?.driverKind;
@@ -169,8 +169,4 @@ export function SubagentPolicyMenuContent(props: SubagentPolicyPickerProps) {
       </Button>
     </div>
   );
-}
-
-export function formatSubagentPolicyControlLabel(policy: ThreadSubagentPolicy | undefined): string {
-  return policyLabel(threadSubagentPolicyOrInherit(policy ?? DEFAULT_THREAD_SUBAGENT_POLICY));
 }
