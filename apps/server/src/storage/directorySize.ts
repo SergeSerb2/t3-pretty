@@ -8,6 +8,9 @@ import * as NodeUtil from "node:util";
 
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 
+/** Cap in-flight `stat` calls per directory so a flat tree cannot enqueue one promise per file. */
+const STAT_CONCURRENCY = 64;
+
 export function parseDuKilobytes(stdout: string): number | null {
   const match = /^(\d+)\s/u.exec(stdout);
   if (match === null) return null;
@@ -54,18 +57,20 @@ export async function walkDirectoryOnDiskBytes(root: string): Promise<number> {
       }
     }
 
-    if (files.length === 0) continue;
-    const sizes = await Promise.all(
-      files.map(async (file) => {
-        try {
-          return onDiskBytes(await NodeFSP.stat(file));
-        } catch {
-          return 0;
-        }
-      }),
-    );
-    for (const size of sizes) {
-      total += size;
+    for (let i = 0; i < files.length; i += STAT_CONCURRENCY) {
+      const chunk = files.slice(i, i + STAT_CONCURRENCY);
+      const sizes = await Promise.all(
+        chunk.map(async (file) => {
+          try {
+            return onDiskBytes(await NodeFSP.stat(file));
+          } catch {
+            return 0;
+          }
+        }),
+      );
+      for (const size of sizes) {
+        total += size;
+      }
     }
   }
 

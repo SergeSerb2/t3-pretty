@@ -25,4 +25,17 @@ describe("directory size", () => {
       await NodeFSP.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("walks a flat directory with more files than the stat chunk size", async () => {
+    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-directory-size-flat-"));
+    try {
+      for (let i = 0; i < 80; i += 1) {
+        await NodeFSP.writeFile(NodePath.join(root, `f-${i}.txt`), "x");
+      }
+      const bytes = await walkDirectoryOnDiskBytes(root);
+      expect(bytes).toBeGreaterThan(0);
+    } finally {
+      await NodeFSP.rm(root, { recursive: true, force: true });
+    }
+  });
 });
