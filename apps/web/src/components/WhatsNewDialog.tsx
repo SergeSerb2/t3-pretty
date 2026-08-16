@@ -1,4 +1,5 @@
 import { SparklesIcon, WrenchIcon, ZapIcon, type LucideIcon } from "lucide-react";
+import type { CSSProperties } from "react";
 
 import { APP_BASE_NAME } from "../branding";
 import type { ChangelogItemKind, ChangelogRelease } from "../changelog/changelogData";
@@ -107,10 +108,16 @@ export function WhatsNewDialog({
                 <p className="text-foreground/90 text-sm leading-relaxed">{release.headline}</p>
               )}
               <ul className="flex flex-col gap-3.5">
-                {release.items.map((item) => {
+                {release.items.map((item, index) => {
                   const kind = KIND_PRESENTATION[item.kind];
                   return (
-                    <li key={item.title} className="flex gap-3">
+                    <li
+                      key={item.title}
+                      className="flex gap-3"
+                      // Stagger slot for scenery/motion.css; capped so rows
+                      // below the fold never wait on the ones above.
+                      style={{ "--sc-i": Math.min(index, 5) } as CSSProperties}
+                    >
                       <span
                         className={cn(
                           "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg",

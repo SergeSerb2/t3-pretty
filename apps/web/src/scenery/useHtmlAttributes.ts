@@ -1,7 +1,7 @@
 /**
- * One shared MutationObserver over <html>'s `data-theme-id`, exposed as an
- * external store so every scenery hook rides the same subscription instead
- * of installing its own observer.
+ * One shared MutationObserver over scenery-related <html> attributes, exposed
+ * as an external store so every scenery hook rides the same subscription
+ * instead of installing its own observer.
  */
 import { useSyncExternalStore } from "react";
 
@@ -20,7 +20,7 @@ function subscribe(listener: () => void): () => void {
     });
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-theme-id"],
+      attributeFilter: ["data-theme-id", "data-scenery-composer", "data-scenery-arrival"],
     });
   }
   return () => {
@@ -32,10 +32,14 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
-export function useSceneryThemeActive(): boolean {
+export function useHtmlAttributeStore<T>(read: (root: HTMLElement) => T, serverSnapshot: T): T {
   return useSyncExternalStore(
     subscribe,
-    () => document.documentElement.dataset.themeId === WORLD_SCENERY_THEME_ID,
-    () => false,
+    () => read(document.documentElement),
+    () => serverSnapshot,
   );
+}
+
+export function useSceneryThemeActive(): boolean {
+  return useHtmlAttributeStore((root) => root.dataset.themeId === WORLD_SCENERY_THEME_ID, false);
 }
