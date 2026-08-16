@@ -14,7 +14,7 @@
  *
  * @module usageScanCache
  */
-import type { UsageProviderKind } from "@t3tools/contracts";
+import { isUsageProviderKind, type UsageProviderKind } from "@t3tools/contracts";
 
 import type { UsageRecord } from "./usageTranscripts.ts";
 
@@ -134,7 +134,7 @@ export function decodeScanCache(document: unknown): ScanCache {
     if (typeof raw !== "object" || raw === null) continue;
     const entry = raw as Partial<SerializedFile>;
     if (typeof entry.s !== "number" || typeof entry.m !== "number") continue;
-    if (entry.p !== "claude" && entry.p !== "codex") continue;
+    if (!isUsageProviderKind(entry.p)) continue;
     if (!isRecordArray(entry.r)) continue;
 
     const provider: UsageProviderKind = entry.p;

@@ -19,9 +19,12 @@ import type { UsageProviderKind } from "@t3tools/contracts";
 
 import {
   initialCodexScanState,
+  kimiSessionIdFromPath,
   mightCarryUsage,
   parseClaudeLine,
   parseCodexLine,
+  parseGrokLine,
+  parseKimiLine,
   type UsageRecord,
 } from "./usageTranscripts.ts";
 
@@ -41,6 +44,7 @@ export interface TranscriptFile {
 export async function listTranscriptFiles(
   root: string,
   sinceMs: number,
+  fileName?: string,
 ): Promise<readonly TranscriptFile[]> {
   const found: TranscriptFile[] = [];
 
@@ -57,7 +61,9 @@ export async function listTranscriptFiles(
         await walk(child);
         continue;
       }
-      if (!entry.name.endsWith(".jsonl")) continue;
+      if (fileName !== undefined ? entry.name !== fileName : !entry.name.endsWith(".jsonl")) {
+        continue;
+      }
       try {
         const stats = await NodeFSP.stat(child);
         if (stats.mtimeMs >= sinceMs) {
@@ -115,6 +121,8 @@ export async function readTranscriptRecords(
       crlfDelay: Infinity,
     });
 
+    const kimiSessionId = provider === "kimi" ? kimiSessionIdFromPath(filePath) : "";
+
     for await (const line of lines) {
       if (provider === "codex") {
         if (
@@ -130,7 +138,13 @@ export async function readTranscriptRecords(
       }
 
       if (!mightCarryUsage(line, provider)) continue;
-      const record = parseClaudeLine(line);
+
+      const record =
+        provider === "grok"
+          ? parseGrokLine(line)
+          : provider === "kimi"
+            ? parseKimiLine(line, kimiSessionId)
+            : parseClaudeLine(line);
       if (record !== null) records.push(record);
     }
   } catch {

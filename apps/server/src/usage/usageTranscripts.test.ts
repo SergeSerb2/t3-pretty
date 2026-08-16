@@ -2,8 +2,12 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   initialCodexScanState,
+  kimiSessionIdFromPath,
+  mightCarryUsage,
   parseClaudeLine,
   parseCodexLine,
+  parseGrokLine,
+  parseKimiLine,
   totalTokens,
 } from "./usageTranscripts.ts";
 
@@ -233,6 +237,177 @@ describe("parseCodexLine", () => {
       );
       expect(record).not.toBeNull();
     });
+  });
+});
+
+describe("parseGrokLine", () => {
+  const turnCompleted = (overrides?: {
+    sessionId?: string;
+    promptId?: string;
+    timestamp?: number;
+    agentTimestampMs?: number;
+    inputTokens?: number;
+    cachedReadTokens?: number;
+    cacheCreationTokens?: number;
+    outputTokens?: number;
+    reasoningTokens?: number;
+    costUsdTicks?: number;
+    model?: string;
+  }) =>
+    JSON.stringify({
+      timestamp: overrides?.timestamp ?? 1785022386,
+      method: "session/update",
+      params: {
+        sessionId: overrides?.sessionId ?? "session-g",
+        update: {
+          sessionUpdate: "turn_completed",
+          prompt_id: overrides?.promptId ?? "t3-xai-prompt-1",
+          stop_reason: "end_turn",
+          usage: {
+            inputTokens: overrides?.inputTokens ?? 20960,
+            outputTokens: overrides?.outputTokens ?? 673,
+            totalTokens: (overrides?.inputTokens ?? 20960) + (overrides?.outputTokens ?? 673),
+            cachedReadTokens: overrides?.cachedReadTokens ?? 11392,
+            cacheCreationTokens: overrides?.cacheCreationTokens ?? 0,
+            reasoningTokens: overrides?.reasoningTokens ?? 453,
+            costUsdTicks: overrides?.costUsdTicks ?? 265916000,
+            modelUsage: {
+              [overrides?.model ?? "grok-4.5-build"]: {
+                inputTokens: overrides?.inputTokens ?? 20960,
+                outputTokens: overrides?.outputTokens ?? 673,
+                totalTokens: (overrides?.inputTokens ?? 20960) + (overrides?.outputTokens ?? 673),
+              },
+            },
+          },
+        },
+        _meta: { agentTimestampMs: overrides?.agentTimestampMs ?? 1785022386429 },
+      },
+    });
+
+  it("extracts inclusive input, reasoning subset, and tick cost", () => {
+    const record = parseGrokLine(turnCompleted());
+
+    expect(record).not.toBeNull();
+    expect(record?.provider).toBe("grok");
+    expect(record?.model).toBe("grok-4.5-build");
+    expect(record?.sessionId).toBe("session-g");
+    expect(record?.timestampMs).toBe(1785022386429);
+    expect(record?.totals).toEqual({
+      uncachedInputTokens: 20960 - 11392,
+      cachedInputTokens: 11392,
+      cacheCreationTokens: 0,
+      outputTokens: 673,
+      reasoningTokens: 453,
+    });
+    expect(record?.reportedCostUsd).toBeCloseTo(0.265916, 6);
+  });
+
+  it("falls back to the unix-seconds timestamp when the millisecond field is missing", () => {
+    const line = JSON.stringify({
+      timestamp: 1785022386,
+      params: {
+        sessionId: "session-g",
+        update: {
+          sessionUpdate: "turn_completed",
+          prompt_id: "p1",
+          usage: {
+            inputTokens: 10,
+            outputTokens: 2,
+            cachedReadTokens: 0,
+            modelUsage: { "grok-4.6": { totalTokens: 12 } },
+          },
+        },
+      },
+    });
+
+    expect(parseGrokLine(line)?.timestampMs).toBe(1785022386000);
+  });
+
+  it("ignores stream updates that are not a completed turn", () => {
+    expect(
+      parseGrokLine(
+        JSON.stringify({
+          params: { update: { sessionUpdate: "agent_message_chunk", usage: { inputTokens: 1 } } },
+        }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("parseKimiLine", () => {
+  const usageRecord = (overrides?: {
+    model?: string;
+    time?: number;
+    inputOther?: number;
+    inputCacheRead?: number;
+    inputCacheCreation?: number;
+    output?: number;
+  }) =>
+    JSON.stringify({
+      type: "usage.record",
+      model: overrides?.model ?? "kimi-code/k3",
+      usage: {
+        inputOther: overrides?.inputOther ?? 5564,
+        output: overrides?.output ?? 287,
+        inputCacheRead: overrides?.inputCacheRead ?? 19200,
+        inputCacheCreation: overrides?.inputCacheCreation ?? 0,
+      },
+      usageScope: "turn",
+      time: overrides?.time ?? 1784871468283,
+    });
+
+  it("extracts turn usage and keeps the session id from the caller", () => {
+    const record = parseKimiLine(usageRecord(), "session_c408be6c-ce98-410b-8533-894db7b0867a");
+
+    expect(record).not.toBeNull();
+    expect(record?.provider).toBe("kimi");
+    expect(record?.model).toBe("kimi-code/k3");
+    expect(record?.sessionId).toBe("session_c408be6c-ce98-410b-8533-894db7b0867a");
+    expect(record?.timestampMs).toBe(1784871468283);
+    expect(record?.totals).toEqual({
+      uncachedInputTokens: 5564,
+      cachedInputTokens: 19200,
+      cacheCreationTokens: 0,
+      outputTokens: 287,
+      reasoningTokens: 0,
+    });
+    expect(record?.reportedCostUsd).toBeNull();
+  });
+
+  it("ignores the duplicated step.end usage payload", () => {
+    expect(
+      parseKimiLine(
+        JSON.stringify({
+          type: "context.append_loop_event",
+          event: {
+            type: "step.end",
+            usage: { inputOther: 5564, output: 287, inputCacheRead: 19200, inputCacheCreation: 0 },
+          },
+          time: 1784871468283,
+        }),
+        "session_1",
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("kimiSessionIdFromPath", () => {
+  it("reads the session folder out of a wire transcript path", () => {
+    expect(
+      kimiSessionIdFromPath(
+        "/Users/serge/.kimi-code/sessions/wd_dev/session_c408be6c-ce98-410b-8533-894db7b0867a/agents/main/wire.jsonl",
+      ),
+    ).toBe("session_c408be6c-ce98-410b-8533-894db7b0867a");
+  });
+});
+
+describe("mightCarryUsage", () => {
+  it("gates each provider on the substring that actually carries tokens", () => {
+    expect(mightCarryUsage('{"usage":{}}', "claude")).toBe(true);
+    expect(mightCarryUsage('{"token_count":{}}', "codex")).toBe(true);
+    expect(mightCarryUsage('{"sessionUpdate":"turn_completed"}', "grok")).toBe(true);
+    expect(mightCarryUsage('{"type":"usage.record"}', "kimi")).toBe(true);
+    expect(mightCarryUsage('{"usage":{}}', "cursor")).toBe(false);
   });
 });
 

@@ -5,11 +5,20 @@ import { useColorScheme } from "react-native";
  * Series and table order. The chart stacks providers from the bottom in this
  * order, so it also fixes which band sits on top of the bars.
  */
-export const PROVIDER_ORDER: readonly UsageProviderKind[] = ["codex", "claude"];
+export const PROVIDER_ORDER: readonly UsageProviderKind[] = [
+  "codex",
+  "claude",
+  "cursor",
+  "grok",
+  "kimi",
+];
 
 export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   claude: "Claude Code",
   codex: "Codex",
+  cursor: "Cursor",
+  grok: "Grok",
+  kimi: "Kimi",
 };
 
 /**
@@ -21,5 +30,8 @@ export function useProviderColors(): Record<UsageProviderKind, string> {
   return {
     claude: "#d97757",
     codex: scheme === "dark" ? "#e6e6e6" : "#3c3c43",
+    cursor: "#64748b",
+    grok: scheme === "dark" ? "#d4d4d8" : "#52525b",
+    kimi: "#56A8FF",
   };
 }

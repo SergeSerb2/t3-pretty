@@ -2,10 +2,13 @@
  * Usage reporting contract.
  *
  * Each environment scans the provider CLIs' own on-disk session transcripts
- * (`~/.claude/projects/**\/*.jsonl`, `~/.codex/sessions/**\/*.jsonl`) rather than
- * relying on T3 Code's own orchestration projections, so usage stays complete
- * even for turns that were never driven through T3 Code. This mirrors the
- * approach `ccusage` takes.
+ * (`~/.claude/projects/**\/*.jsonl`, `~/.codex/sessions/**\/*.jsonl`,
+ * `~/.grok/sessions/**\/updates.jsonl`, `~/.kimi-code/sessions/**\/wire.jsonl`,
+ * `~/.cursor/acp-sessions`) rather than relying on T3 Code's own orchestration
+ * projections, so usage stays complete even for turns that were never driven
+ * through T3 Code. This mirrors the approach `ccusage` takes. Cursor's local
+ * session store does not currently persist token usage, so that source is
+ * reported empty until it does.
  *
  * Environments return pre-aggregated `(day, hourStart?, provider, model)`
  * buckets. Raw transcript records never cross the wire.
@@ -21,10 +24,22 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
  * client renders partial coverage when an environment reports an older version
  * rather than failing the whole page.
  */
-export const USAGE_CONTRACT_VERSION = 4 as const;
+export const USAGE_CONTRACT_VERSION = 5 as const;
 
-export const UsageProviderKind = Schema.Literals(["claude", "codex"]);
+export const USAGE_PROVIDER_KINDS = ["claude", "codex", "cursor", "grok", "kimi"] as const;
+
+export const UsageProviderKind = Schema.Literals(USAGE_PROVIDER_KINDS);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
+
+export function isUsageProviderKind(value: unknown): value is UsageProviderKind {
+  return (
+    value === "claude" ||
+    value === "codex" ||
+    value === "cursor" ||
+    value === "grok" ||
+    value === "kimi"
+  );
+}
 
 /**
  * A calendar day in the reporting time zone, formatted `YYYY-MM-DD`.
