@@ -705,10 +705,9 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
      panel enters or exits; its fixed-width surface slides independently so
      expensive browser, terminal, and diff contents do not reflow each frame.
 
-     Closed is the cascade default (width 0 / translated away). Open must not
-     be the base rule with @starting-style undoing it — that first-paints the
-     full gap, snaps back to 0, then animates open, which looks like the panel
-     blasting in. */
+     Closed is the cascade default (width 0 / translated away): the panel
+     mounts closed and flips open a frame later (InlineRightPanelPresence), so
+     no @starting-style is involved. */
   .right-panel-inline-gap {
     width: 0;
     transition: width 200ms linear;
@@ -729,16 +728,6 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
 
   .right-panel-inline-frame[data-right-panel-open="true"] .right-panel-inline-surface {
     translate: 0;
-  }
-
-  @starting-style {
-    .right-panel-inline-gap[data-right-panel-open="true"] {
-      width: 0;
-    }
-
-    .right-panel-inline-frame[data-right-panel-open="true"] .right-panel-inline-surface {
-      translate: 100%;
-    }
   }
 
   @media (prefers-reduced-motion: reduce) {
