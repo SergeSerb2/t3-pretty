@@ -28,6 +28,7 @@ import {
   SkillId,
   ThreadId,
   ThreadSceneryAssignment,
+  ThreadSubagentPolicy,
 } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -100,6 +101,7 @@ const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
     modelSelection: Schema.fromJsonString(ModelSelection),
     scenery: Schema.NullOr(Schema.fromJsonString(ThreadSceneryAssignment)),
     enabledSkillIds: Schema.fromJsonString(Schema.Array(SkillId)),
+    subagentPolicy: Schema.NullOr(Schema.fromJsonString(ThreadSubagentPolicy)),
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -461,6 +463,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pin_order_key AS "pinOrderKey",
           scenery_json AS "scenery",
           enabled_skill_ids AS "enabledSkillIds",
+          subagent_policy_json AS "subagentPolicy",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -499,6 +502,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pin_order_key AS "pinOrderKey",
           scenery_json AS "scenery",
           enabled_skill_ids AS "enabledSkillIds",
+          subagent_policy_json AS "subagentPolicy",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -539,6 +543,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pin_order_key AS "pinOrderKey",
           scenery_json AS "scenery",
           enabled_skill_ids AS "enabledSkillIds",
+          subagent_policy_json AS "subagentPolicy",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -1114,6 +1119,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pin_order_key AS "pinOrderKey",
           scenery_json AS "scenery",
           enabled_skill_ids AS "enabledSkillIds",
+          subagent_policy_json AS "subagentPolicy",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -1952,6 +1958,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 pinOrderKey: row.pinOrderKey ?? null,
                 scenery: row.scenery ?? null,
                 enabledSkillIds: row.enabledSkillIds,
+                ...(row.subagentPolicy != null ? { subagentPolicy: row.subagentPolicy } : {}),
                 titleRegeneration: mapTitleRegeneration(row),
                 deletedAt: row.deletedAt,
                 messages: messagesByThread.get(row.threadId) ?? [],
@@ -2162,6 +2169,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   pinOrderKey: row.pinOrderKey ?? null,
                   scenery: row.scenery ?? null,
                   enabledSkillIds: row.enabledSkillIds,
+                  ...(row.subagentPolicy != null ? { subagentPolicy: row.subagentPolicy } : {}),
                   titleRegeneration: mapTitleRegeneration(row),
                   deletedAt: row.deletedAt,
                   messages: [],
@@ -2300,6 +2308,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       pinOrderKey: row.pinOrderKey ?? null,
                       scenery: row.scenery ?? null,
                       enabledSkillIds: row.enabledSkillIds,
+                      ...(row.subagentPolicy != null ? { subagentPolicy: row.subagentPolicy } : {}),
                       titleRegeneration: mapTitleRegeneration(row),
                       session: sessionByThread.get(row.threadId) ?? null,
                       latestUserMessageAt: row.latestUserMessageAt,
@@ -2447,6 +2456,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   pinOrderKey: row.pinOrderKey ?? null,
                   scenery: row.scenery ?? null,
                   enabledSkillIds: row.enabledSkillIds,
+                  ...(row.subagentPolicy != null ? { subagentPolicy: row.subagentPolicy } : {}),
                   titleRegeneration: mapTitleRegeneration(row),
                   session: sessionByThread.get(row.threadId) ?? null,
                   latestUserMessageAt: row.latestUserMessageAt,
@@ -2751,6 +2761,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         pinOrderKey: threadRow.value.pinOrderKey ?? null,
         scenery: threadRow.value.scenery ?? null,
         enabledSkillIds: threadRow.value.enabledSkillIds,
+        ...(threadRow.value.subagentPolicy != null
+          ? { subagentPolicy: threadRow.value.subagentPolicy }
+          : {}),
         titleRegeneration: mapTitleRegeneration(threadRow.value),
         session: Option.isSome(sessionRow) ? mapSessionRow(sessionRow.value) : null,
         latestUserMessageAt: threadRow.value.latestUserMessageAt,
@@ -2894,6 +2907,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         pinOrderKey: threadRow.value.pinOrderKey ?? null,
         scenery: threadRow.value.scenery ?? null,
         enabledSkillIds: threadRow.value.enabledSkillIds,
+        ...(threadRow.value.subagentPolicy != null
+          ? { subagentPolicy: threadRow.value.subagentPolicy }
+          : {}),
         titleRegeneration: mapTitleRegeneration(threadRow.value),
         deletedAt: null,
         messages: messageRows.map((row) => {

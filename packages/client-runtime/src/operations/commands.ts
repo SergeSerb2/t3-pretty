@@ -57,6 +57,7 @@ export type UnpinThreadInput = CommandInput<"thread.unpin">;
 export type ReorderPinnedThreadInput = CommandInput<"thread.pin.reorder">;
 export type AssignThreadSceneryInput = CommandInput<"thread.scenery.assign">;
 export type SetThreadSkillsInput = CommandInput<"thread.skills.set">;
+export type SetThreadSubagentPolicyInput = CommandInput<"thread.subagent-policy.set">;
 export type UpdateThreadMetadataInput = CommandInput<"thread.meta.update">;
 export type SetThreadRuntimeModeInput = CommandInput<"thread.runtime-mode.set">;
 export type SetThreadInteractionModeInput = CommandInput<"thread.interaction-mode.set">;
@@ -325,6 +326,17 @@ export const setThreadSkills: (input: SetThreadSkillsInput) => CommandEffect = E
     createdAt: metadata.createdAt,
   });
 });
+
+export const setThreadSubagentPolicy: (input: SetThreadSubagentPolicyInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.setThreadSubagentPolicy")(function* (input) {
+    const metadata = yield* timestampedCommandMetadata(input);
+    return yield* dispatch({
+      ...input,
+      type: "thread.subagent-policy.set",
+      commandId: metadata.commandId,
+      createdAt: metadata.createdAt,
+    });
+  });
 
 export const updateThreadMetadata: (input: UpdateThreadMetadataInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.updateThreadMetadata",

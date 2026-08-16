@@ -49,6 +49,8 @@ import {
   ThreadId,
   TurnId,
   type UserInputQuestion,
+  CLAUDE_SUBAGENT_MODEL_ENV,
+  type ResolvedSubagentPolicy,
 } from "@t3tools/contracts";
 import {
   applyClaudePromptEffortPrefix,
@@ -801,6 +803,23 @@ function extractPlanStepsFromTodoInput(input: Record<string, unknown>): PlanStep
 
 function isClaudeTaskTool(toolName: string): boolean {
   return toolName === "TaskCreate" || toolName === "TaskUpdate" || toolName === "TaskList";
+}
+
+function mergeClaudeSubagentPolicyEnv(
+  environment: NodeJS.ProcessEnv,
+  policy: ResolvedSubagentPolicy | undefined,
+): NodeJS.ProcessEnv {
+  const existing = environment[CLAUDE_SUBAGENT_MODEL_ENV];
+  if (typeof existing === "string" && existing.trim().length > 0) {
+    return environment;
+  }
+  if (!policy?.enabled || policy.child == null || policy.child.model.length === 0) {
+    return environment;
+  }
+  return {
+    ...environment,
+    [CLAUDE_SUBAGENT_MODEL_ENV]: policy.child.model,
+  };
 }
 
 function normalizeClaudeTaskStatus(value: unknown): PlanStep["status"] {
@@ -4186,7 +4205,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
-        env: claudeEnvironment,
+        env: mergeClaudeSubagentPolicyEnv(claudeEnvironment, input.subagentPolicy),
         additionalDirectories,
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession

@@ -5304,6 +5304,10 @@ function ChatViewContent(props: ChatViewProps) {
       ? (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.enabledSkillIds ??
         undefined)
       : undefined;
+    const draftSubagentPolicySnapshot = isLocalDraftThread
+      ? (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.subagentPolicy ??
+        undefined)
+      : undefined;
     const messageTextWithContexts = appendElementContextsToPrompt(
       appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
       composerElementContextsSnapshot,
@@ -5517,6 +5521,9 @@ function ChatViewContent(props: ChatViewProps) {
                       createdAt: activeThread.createdAt,
                       // Always send the key so RPC encode succeeds; [] means no per-thread picks.
                       enabledSkillIds: draftEnabledSkillIdsSnapshot ?? [],
+                      ...(draftSubagentPolicySnapshot !== undefined
+                        ? { subagentPolicy: draftSubagentPolicySnapshot }
+                        : {}),
                     },
                   }
                 : {}),
@@ -6727,6 +6734,9 @@ function ChatViewContent(props: ChatViewProps) {
                             }
                             enabledSkillIds={
                               activeThreadShell?.enabledSkillIds ?? activeThread?.enabledSkillIds
+                            }
+                            subagentPolicy={
+                              activeThreadShell?.subagentPolicy ?? activeThread?.subagentPolicy
                             }
                             isServerThread={isServerThread}
                             isLocalDraftThread={isLocalDraftThread}

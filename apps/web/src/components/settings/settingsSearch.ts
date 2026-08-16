@@ -6,6 +6,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/providers"
   | "/settings/instructions"
+  | "/settings/agents"
   | "/settings/skills"
   | "/settings/source-control"
   | "/settings/storage"
@@ -32,6 +33,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/providers": "Providers",
   "/settings/instructions": "Instructions",
+  "/settings/agents": "Agents",
   "/settings/skills": "Skills",
   "/settings/source-control": "Source Control",
   "/settings/storage": "Storage",
@@ -235,6 +237,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "agent-instructions-project",
     title: "Project agent instructions",
     to: "/settings/instructions",
+  },
+  {
+    id: "subagents-enabled",
+    title: "Use subagents",
+    to: "/settings/agents",
+  },
+  {
+    id: "subagents-default-child",
+    title: "Default child model",
+    to: "/settings/agents",
   },
   {
     id: "skills-installed",

@@ -924,6 +924,9 @@ const makeWsRpcLayer = (
                 branch: bootstrap.createThread.branch,
                 worktreePath: bootstrap.createThread.worktreePath,
                 enabledSkillIds: bootstrap.createThread.enabledSkillIds,
+                ...(bootstrap.createThread.subagentPolicy !== undefined
+                  ? { subagentPolicy: bootstrap.createThread.subagentPolicy }
+                  : {}),
                 createdAt: bootstrap.createThread.createdAt,
               });
               createdThread = true;

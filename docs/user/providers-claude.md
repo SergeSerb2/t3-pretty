@@ -154,7 +154,7 @@ ANTHROPIC_DEFAULT_HAIKU_MODEL   anthropic/claude-haiku-4.5
 CLAUDE_CODE_SUBAGENT_MODEL      anthropic/claude-sonnet-4.6
 ```
 
-Add those to the same provider's Environment variables section if you want stable model choices.
+Add those to the same provider's Environment variables section if you want stable model choices. **Settings → Agents** is the usual way to pick a child model; T3 Code sets `CLAUDE_CODE_SUBAGENT_MODEL` on the next new Claude session unless this environment variable is already set.
 
 ### Verify OpenRouter Is Being Used
 

@@ -10,6 +10,9 @@ import {
   type OrchestrationSession,
   type SkillId,
   ThreadId,
+  renderSubagentPolicyInstructions,
+  resolveSubagentPolicy,
+  type ResolvedSubagentPolicy,
   type ProviderSession,
   type RuntimeMode,
   type TurnId,
@@ -74,6 +77,30 @@ type ProviderIntentEvent = Extract<
 function toNonEmptyProviderInput(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+function withSubagentPolicyInstructions(
+  input: string | undefined,
+  policy: ResolvedSubagentPolicy | undefined,
+): string | undefined {
+  const instructions = policy ? renderSubagentPolicyInstructions(policy) : undefined;
+  if (instructions === undefined) {
+    return input;
+  }
+  if (input === undefined) {
+    return instructions.length <= PROVIDER_SEND_TURN_MAX_INPUT_CHARS
+      ? instructions
+      : instructions.slice(0, PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
+  }
+  const combined = `${instructions}\n\n${input}`;
+  if (combined.length <= PROVIDER_SEND_TURN_MAX_INPUT_CHARS) {
+    return combined;
+  }
+  const budget = PROVIDER_SEND_TURN_MAX_INPUT_CHARS - instructions.length - 2;
+  if (budget <= 0) {
+    return instructions.slice(0, PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
+  }
+  return `${instructions}\n\n${input.slice(0, budget)}`;
 }
 
 function asActivityRecord(value: unknown): Record<string, unknown> | null {
@@ -458,6 +485,38 @@ const make = Effect.gen(function* () {
         updatedAt: input.createdAt,
       },
       createdAt: input.createdAt,
+    });
+  });
+
+  const resolveThreadSubagentPolicy = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly modelSelection?: ModelSelection;
+  }) {
+    const thread = yield* resolveThread(input.threadId);
+    if (!thread) {
+      return undefined;
+    }
+    const modelSelection = input.modelSelection ?? thread.modelSelection;
+    const instanceInfo = Option.getOrUndefined(
+      yield* providerService.getInstanceInfo(modelSelection.instanceId).pipe(Effect.option),
+    );
+    if (instanceInfo === undefined) {
+      return undefined;
+    }
+    const settings = yield* serverSettingsService.getSettings.pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Effect.failCause(cause);
+        }
+        return Effect.succeed(undefined);
+      }),
+    );
+    return resolveSubagentPolicy({
+      global: settings?.subagentPolicy ?? null,
+      thread: thread.subagentPolicy ?? null,
+      parentModel: modelSelection.model,
+      parentInstanceId: modelSelection.instanceId,
+      driver: instanceInfo.driverKind,
     });
   });
 
@@ -848,16 +907,24 @@ const make = Effect.gen(function* () {
       readonly resumeCursor?: unknown;
       readonly provider?: ProviderDriverKind;
     }) =>
-      providerService.startSession(threadId, {
+      resolveThreadSubagentPolicy({
         threadId,
-        ...(preferredProvider ? { provider: preferredProvider } : {}),
-        providerInstanceId: desiredInstanceId,
-        ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-        ...(thread.title ? { title: thread.title } : {}),
         modelSelection: desiredModelSelection,
-        ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
-        runtimeMode: desiredRuntimeMode,
-      });
+      }).pipe(
+        Effect.flatMap((subagentPolicy) =>
+          providerService.startSession(threadId, {
+            threadId,
+            ...(preferredProvider ? { provider: preferredProvider } : {}),
+            providerInstanceId: desiredInstanceId,
+            ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+            ...(thread.title ? { title: thread.title } : {}),
+            modelSelection: desiredModelSelection,
+            ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
+            runtimeMode: desiredRuntimeMode,
+            ...(subagentPolicy !== undefined ? { subagentPolicy } : {}),
+          }),
+        ),
+      );
 
     const bindSessionToThread = (session: ProviderSession) =>
       Effect.gen(function* () {
@@ -1007,6 +1074,15 @@ const make = Effect.gen(function* () {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
     const normalizedInput = toNonEmptyProviderInput(input.messageText);
+    const subagentPolicy = yield* resolveThreadSubagentPolicy({
+      threadId: input.threadId,
+      ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
+    });
+    const subagentPolicyInstructions = subagentPolicy
+      ? renderSubagentPolicyInstructions(subagentPolicy)
+      : undefined;
+    const subagentPolicyChars =
+      subagentPolicyInstructions === undefined ? 0 : subagentPolicyInstructions.length + 2;
     const handoffPrelude = ensuredSession.handedOff
       ? renderProviderHandoffPrelude({
           messages: thread.messages,
@@ -1014,13 +1090,20 @@ const make = Effect.gen(function* () {
           ...(input.messageId !== undefined ? { excludeMessageId: input.messageId } : {}),
           maxChars: Math.min(
             HANDOFF_TRANSCRIPT_MAX_CHARS,
-            PROVIDER_SEND_TURN_MAX_INPUT_CHARS - (normalizedInput?.length ?? 0) - 1_000,
+            PROVIDER_SEND_TURN_MAX_INPUT_CHARS -
+              (normalizedInput?.length ?? 0) -
+              subagentPolicyChars -
+              1_000,
           ),
         })
       : undefined;
     const inputWithHandoffPrelude = handoffPrelude
       ? [handoffPrelude, normalizedInput].filter(Boolean).join("\n\n")
       : normalizedInput;
+    const inputWithSubagentPolicy = withSubagentPolicyInstructions(
+      inputWithHandoffPrelude,
+      subagentPolicy,
+    );
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()
@@ -1053,7 +1136,7 @@ const make = Effect.gen(function* () {
     return {
       request: {
         threadId: input.threadId,
-        ...(inputWithHandoffPrelude ? { input: inputWithHandoffPrelude } : {}),
+        ...(inputWithSubagentPolicy ? { input: inputWithSubagentPolicy } : {}),
         ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
         ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
         ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
