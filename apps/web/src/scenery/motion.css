@@ -243,6 +243,31 @@ html[data-scenery-motion] button[aria-label="Scroll to end"] {
   }
 }
 
+/* Inverse of the scroll-to-end pill: the place credit fades and drops on
+   the same 160ms beat. Visibility waits for the fade so the Unsplash links
+   leave the tab order after it. */
+html[data-scenery-motion] .scenery-place {
+  transition:
+    margin 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    gap 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms var(--sc-ease-out),
+    translate 160ms var(--sc-ease-out),
+    visibility 0s;
+}
+
+html[data-scenery-motion]
+  [data-composer-placement="docked"]
+  [data-scenery-place-slot][data-scenery-place-hidden]
+  .scenery-place {
+  translate: 0 calc(4px * var(--sc-m));
+  transition:
+    margin 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    gap 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms var(--sc-ease-out),
+    translate 160ms var(--sc-ease-out),
+    visibility 0s 160ms;
+}
+
 /* ------------------------------------------------------ press feedback -- */
 /* Send/stop already transition `scale` via their transition-all utility;
    these only add the missing pressed state. */
@@ -581,7 +606,8 @@ html[data-scenery-motion] [data-slot="empty-header"].max-w-none {
     svg,
   html[data-scenery-motion] main[data-slot="sidebar-inset"] [data-slot="alert"],
   html[data-scenery-motion] main[data-slot="sidebar-inset"] [role="alert"],
-  html[data-scenery-motion] button[aria-label="Scroll to end"] {
+  html[data-scenery-motion] button[aria-label="Scroll to end"],
+  html[data-scenery-motion] .scenery-place {
     transition-property: opacity;
     @starting-style {
       translate: none;

@@ -6695,7 +6695,11 @@ function ChatViewContent(props: ChatViewProps) {
                     <ThreadSyncStatusPill phase={threadSyncPhase} />
                   ) : null}
                   {sceneryThemeActive ? (
-                    <div ref={bindSceneryPlaceSlot} data-scenery-place-slot="" />
+                    <div
+                      ref={bindSceneryPlaceSlot}
+                      data-scenery-place-slot=""
+                      data-scenery-place-hidden={showScrollToBottom ? "" : undefined}
+                    />
                   ) : null}
                   <div
                     className="relative"
