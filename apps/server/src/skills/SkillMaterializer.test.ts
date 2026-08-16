@@ -232,7 +232,7 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
     }),
   );
 
-  it.effect("resolves $mentions from provider candidates, then workspace roots", () =>
+  it.effect("resolves $mentions from workspace roots, then provider candidates", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -252,16 +252,56 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
       yield* fileSystem.makeDirectory(projectSkillDir, { recursive: true });
       yield* fileSystem.writeFileString(path.join(projectSkillDir, "SKILL.md"), "project body");
 
+      // A same-named skill in another project's roots, as the provider
+      // snapshot (discovered from the server cwd) may list it.
+      const otherProjectSkillDir = path.join(home, "other", ".claude", "skills", "project-skill");
+      yield* fileSystem.makeDirectory(otherProjectSkillDir, { recursive: true });
+      yield* fileSystem.writeFileString(path.join(otherProjectSkillDir, "SKILL.md"), "other body");
+
       const resolved = yield* materializer.resolveMentions({
         cwd,
-        names: ["host-skill", "project-skill", "missing-skill"],
-        candidates: [{ name: "Host Skill", path: path.join(hostSkillDir, "SKILL.md") }],
+        names: ["host-skill", "project-skill", "Project_Skill", "missing-skill"],
+        candidates: [
+          { name: "Host Skill", path: path.join(hostSkillDir, "SKILL.md") },
+          { name: "project-skill", path: path.join(otherProjectSkillDir, "SKILL.md") },
+        ],
       });
 
+      // The thread's own workspace copy wins over the snapshot path, and two
+      // spellings of one name resolve once.
       assert.deepStrictEqual(resolved, [
         { name: "Host Skill", directory: hostSkillDir, body: "host body" },
         { name: "project-skill", directory: projectSkillDir, body: "project body" },
       ]);
+    }),
+  );
+
+  it.effect("materializes two enabled skills that share a name under distinct folders", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const materializer = yield* SkillMaterializer.SkillMaterializer;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-cwd-" });
+      const firstId = yield* installSkill({
+        sourceRepo: "octocat/skills-a",
+        sourcePath: "skills/tdd",
+        skillMd: "---\nname: tdd\n---\nfirst body\n",
+      });
+      const secondId = yield* installSkill({
+        sourceRepo: "octocat/skills-b",
+        sourcePath: "skills/tdd",
+        skillMd: "---\nname: tdd\n---\nsecond body\n",
+      });
+
+      const result = yield* materializer.materialize({ cwd, skillIds: [firstId, secondId] });
+
+      assert.deepStrictEqual(
+        result.loaded.map((skill) => [skill.id, path.basename(skill.directory), skill.body]),
+        [
+          [firstId, "tdd", "first body"],
+          [secondId, "tdd--octocat-skills-b", "second body"],
+        ],
+      );
     }),
   );
 

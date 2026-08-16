@@ -89,10 +89,10 @@ export class SkillMaterializer extends Context.Service<
     }) => Effect.Effect<SkillMaterializeResult, SkillsError>;
 
     /**
-     * Resolve `$skill` mentions to documents. `candidates` are the provider
-     * snapshot's skills (name + `SKILL.md` path); names not found there are
-     * looked up in the workspace roots under `cwd`. Unresolvable names are
-     * dropped. Best-effort: never fails.
+     * Resolve `$skill` mentions to documents: the workspace roots under
+     * `cwd` first, then `candidates` (the provider snapshot's skills, name +
+     * `SKILL.md` path). Unresolvable names are dropped. Best-effort: never
+     * fails.
      */
     readonly resolveMentions: (input: {
       readonly cwd: string | undefined;
@@ -163,13 +163,15 @@ const make = Effect.gen(function* () {
       if (storeDir === undefined) {
         continue;
       }
-      const dirName = sanitizeSkillDirectoryName(skill.name);
+      // Two marketplaces can ship a skill with the same name; the second
+      // gets its source repo folded into the folder name so both land.
+      const baseDirName = sanitizeSkillDirectoryName(skill.name);
+      let dirName = baseDirName;
       if (seenDirNames.has(dirName)) {
-        yield* Effect.logWarning("Skipping skill with a colliding directory name", {
-          skillId,
-          dirName,
-        });
-        continue;
+        dirName = `${baseDirName}--${sanitizeSkillDirectoryName(skill.sourceRepo)}`;
+        for (let suffix = 2; seenDirNames.has(dirName); suffix += 1) {
+          dirName = `${baseDirName}--${sanitizeSkillDirectoryName(skill.sourceRepo)}-${suffix}`;
+        }
       }
       seenDirNames.add(dirName);
       desired.push({ id: skillId, name: skill.name, dirName, storeDir });
@@ -308,15 +310,22 @@ const make = Effect.gen(function* () {
     const resolved: Array<SkillDocument> = [];
     const cwd = input.cwd;
     for (const name of input.names) {
+      if (resolved.some((document) => skillNameMatches(document.name, name))) {
+        continue;
+      }
+      // Project roots beat the provider's own list, matching how the CLIs
+      // resolve a name (project scope over user scope): the snapshot is
+      // discovered from the server cwd and can point at another project's
+      // copy of a same-named skill.
       const candidate = input.candidates.find((skill) => skillNameMatches(skill.name, name));
       const locations = [
-        ...(candidate ? [{ name: candidate.name, location: candidate.path }] : []),
         ...(cwd === undefined
           ? []
           : WORKSPACE_SKILL_ROOTS.flatMap((segments) => [
               { name, location: path.join(cwd, ...segments, name) },
               { name, location: path.join(cwd, ...segments, sanitizeSkillDirectoryName(name)) },
             ])),
+        ...(candidate ? [{ name: candidate.name, location: candidate.path }] : []),
       ];
       for (const entry of locations) {
         const document = yield* readSkillDocument(entry.name, entry.location);

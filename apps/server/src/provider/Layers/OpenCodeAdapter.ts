@@ -921,16 +921,30 @@ export function makeOpenCodeAdapter(
 
           if (part.type === "tool") {
             const itemType = toToolLifecycleItemType(part.tool);
+            // OpenCode's skill tool takes `{ name }`; the state title reads
+            // "Loaded skill: <name>" once completed. Never fall back to the
+            // tool output, which is the whole SKILL.md.
+            const skillToolInput =
+              "input" in part.state
+                ? (part.state as { readonly input?: unknown }).input
+                : undefined;
+            const skillToolInputName =
+              typeof skillToolInput === "object" &&
+              skillToolInput !== null &&
+              typeof (skillToolInput as { readonly name?: unknown }).name === "string"
+                ? (skillToolInput as { readonly name: string }).name.trim() || undefined
+                : undefined;
             const skillName =
               itemType === "skill_load"
-                ? resolveSkillToolName({
+                ? (skillToolInputName ??
+                  resolveSkillToolName({
+                    toolInput: skillToolInput,
                     title:
-                      part.state.status === "running" ? (part.state.title ?? part.tool) : part.tool,
-                    toolInput:
-                      "input" in part.state
-                        ? (part.state as { readonly input?: unknown }).input
-                        : undefined,
-                  })
+                      "title" in part.state && typeof part.state.title === "string"
+                        ? part.state.title
+                        : part.tool,
+                  }) ??
+                  part.tool)
                 : undefined;
             const title =
               itemType === "skill_load"

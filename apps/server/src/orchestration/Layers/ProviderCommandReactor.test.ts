@@ -931,6 +931,140 @@ describe("ProviderCommandReactor", () => {
     ]);
   });
 
+  it("keeps sibling threads' skills on disk for a shared cwd but loads only its own", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    // A second live thread on the same project dir (local mode) with its own
+    // pick: reconciling the shared folder to thread-1's set alone would rip
+    // that skill out from under thread-2's agent.
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-thread-create-sibling"),
+        threadId: ThreadId.make("thread-sibling"),
+        projectId: asProjectId("project-1"),
+        title: "Sibling",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        enabledSkillIds: ["acme/skills:sibling-skill"],
+        createdAt: now,
+      }),
+    );
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.skills.set",
+        commandId: CommandId.make("cmd-thread-skills-set-own"),
+        threadId: ThreadId.make("thread-1"),
+        enabledSkillIds: ["acme/skills:own-skill"],
+        createdAt: now,
+      }),
+    );
+    await waitFor(async () => {
+      const model = await harness.readModel();
+      return (
+        model.threads.some((entry) => entry.id === ThreadId.make("thread-sibling")) &&
+        (model.threads
+          .find((entry) => entry.id === ThreadId.make("thread-1"))
+          ?.enabledSkillIds.includes("acme/skills:own-skill") ??
+          false)
+      );
+    });
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-sibling-union"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-sibling-union"),
+          role: "user",
+          text: "hello",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    expect(harness.materializeSkills.mock.calls[0]?.[0]).toEqual({
+      cwd: "/tmp/provider-project",
+      skillIds: ["acme/skills:own-skill", "acme/skills:sibling-skill"],
+    });
+    const sentInput = harness.sendTurn.mock.calls[0]?.[0]?.input ?? "";
+    expect(sentInput).toContain('<skill name="own-skill"');
+    expect(sentInput).not.toContain("sibling-skill");
+  });
+
+  it("ignores subagent and failed Skill tool calls when deciding what is already loaded", async () => {
+    const harness = await createHarness({
+      globalEnabledSkillIds: ["acme/skills:global-skill"],
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    for (const [id, payload] of [
+      // A subagent loaded it into its own context, not the main agent's.
+      [
+        "activity-subagent-skill-load",
+        {
+          itemType: "skill_load",
+          status: "completed",
+          detail: "global-skill",
+          agentId: "agent-1",
+          parentToolUseId: "tool-1",
+        },
+      ],
+      // The main agent tried before the skill existed and the call failed.
+      [
+        "activity-failed-skill-load",
+        { itemType: "skill_load", status: "failed", detail: "global-skill" },
+      ],
+    ] as const) {
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.activity.append",
+          commandId: CommandId.make(`cmd-${id}`),
+          threadId: ThreadId.make("thread-1"),
+          activity: {
+            id: EventId.make(id),
+            tone: "tool",
+            kind: "tool.completed",
+            summary: "Skill",
+            payload,
+            turnId: null,
+            createdAt: now,
+          },
+          createdAt: now,
+        }),
+      );
+    }
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-not-really-loaded"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-not-really-loaded"),
+          role: "user",
+          text: "keep going",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:01:00.000Z",
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toContain('<skill name="global-skill"');
+  });
+
   it("does not reload a skill the agent already loaded with its own Skill tool", async () => {
     const harness = await createHarness({
       globalEnabledSkillIds: ["acme/skills:global-skill"],

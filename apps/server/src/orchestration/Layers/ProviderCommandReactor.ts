@@ -90,17 +90,35 @@ function asActivityRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+/**
+ * Keys for every skill the thread log shows as loaded into the main agent's
+ * context: T3's own `skill.loaded` rows and the agent's successful Skill tool
+ * calls. A T3 row for a store skill counts by id only, so two installed
+ * skills that share a name never shadow each other; rows without an id
+ * (mentions, agent calls) count by name. Subagent calls load into the
+ * subagent's context, and failed or still-running calls loaded nothing, so
+ * neither counts.
+ */
 function collectedSkillLoadKeys(
   activities: ReadonlyArray<{ readonly kind: string; readonly payload: unknown }>,
 ): Set<string> {
   const keys = new Set<string>();
   for (const activity of activities) {
     const payload = asActivityRecord(activity.payload);
-    if (activity.kind !== "skill.loaded" && payload?.itemType !== "skill_load") {
+    const isOwnRow = activity.kind === "skill.loaded";
+    const isAgentRow =
+      activity.kind === "tool.completed" &&
+      payload?.itemType === "skill_load" &&
+      payload.status !== "failed" &&
+      payload.status !== "declined" &&
+      payload.agentId === undefined &&
+      payload.parentToolUseId === undefined;
+    if (!isOwnRow && !isAgentRow) {
       continue;
     }
     if (typeof payload?.skillId === "string" && payload.skillId.trim().length > 0) {
       keys.add(skillLoadIdKey(payload.skillId));
+      continue;
     }
     const nameCandidates = [payload?.detail, payload?.skillName];
     for (const candidate of nameCandidates) {
@@ -552,21 +570,40 @@ const make = Effect.gen(function* () {
 
     let loaded: SkillMaterializeResult["loaded"] = [];
     if (input.cwd !== undefined) {
+      const cwd = input.cwd;
       const settings = yield* serverSettingsService.getSettings.pipe(
         orUndefinedOnFailure(
           "provider command reactor failed to read skills settings; using thread skills only",
         ),
       );
-      const skillIds = [
-        ...new Set<SkillId>([
-          ...(settings?.skills.enabledSkillIds ?? []),
-          ...input.threadEnabledSkillIds,
-        ]),
-      ];
+      const ownSkillIds = new Set<SkillId>([
+        ...(settings?.skills.enabledSkillIds ?? []),
+        ...input.threadEnabledSkillIds,
+      ]);
+      // The workspace is shared by every live thread on the same cwd (local
+      // mode, or several threads on one worktree), so the folders on disk
+      // must cover all of their picks: reconciling to this thread's set alone
+      // would delete a sibling's skill out from under its running agent. Only
+      // this thread's own set is loaded into its context, though.
+      const shells = yield* projectionSnapshotQuery
+        .getShellSnapshot()
+        .pipe(
+          orUndefinedOnFailure(
+            "provider command reactor failed to read sibling threads for skill materialization",
+          ),
+        );
+      const siblingSkillIds =
+        shells?.threads.flatMap((shell) =>
+          shell.id !== input.threadId &&
+          shell.archivedAt === null &&
+          resolveThreadWorkspaceCwd({ thread: shell, projects: shells.projects }) === cwd
+            ? shell.enabledSkillIds
+            : [],
+        ) ?? [];
       const materializeResult = yield* skillMaterializer
-        .materialize({ cwd: input.cwd, skillIds })
+        .materialize({ cwd, skillIds: [...new Set<SkillId>([...ownSkillIds, ...siblingSkillIds])] })
         .pipe(orUndefinedOnFailure("provider command reactor failed to materialize skills"));
-      loaded = materializeResult?.loaded ?? [];
+      loaded = (materializeResult?.loaded ?? []).filter((skill) => ownSkillIds.has(skill.id));
     }
 
     const mentionedNames = extractSkillMentions(input.messageText ?? "").filter(
@@ -590,41 +627,25 @@ const make = Effect.gen(function* () {
           )) ?? [];
     }
 
+    // Store skills are distinct by id (two marketplaces can ship a "tdd");
+    // mentions are distinct by name, and mentions matching a loaded store
+    // skill were already dropped above.
+    const nameKeys = (name: string) => [
+      skillLoadNameKey(name),
+      skillLoadNameKey(sanitizeSkillDirectoryName(name)),
+    ];
     const pending: Array<{
       readonly document: SkillDocument;
       readonly skillId?: SkillId;
       readonly keys: ReadonlyArray<string>;
-    }> = [];
-    const seenKeys = new Set<string>();
-    const remember = (entry: (typeof pending)[number]) => {
-      if (entry.keys.some((key) => seenKeys.has(key))) {
-        return;
-      }
-      for (const key of entry.keys) {
-        seenKeys.add(key);
-      }
-      pending.push(entry);
-    };
-    for (const skill of loaded) {
-      remember({
+    }> = [
+      ...loaded.map((skill) => ({
         document: skill,
         skillId: skill.id,
-        keys: [
-          skillLoadIdKey(skill.id),
-          skillLoadNameKey(skill.name),
-          skillLoadNameKey(sanitizeSkillDirectoryName(skill.name)),
-        ],
-      });
-    }
-    for (const skill of mentioned) {
-      remember({
-        document: skill,
-        keys: [
-          skillLoadNameKey(skill.name),
-          skillLoadNameKey(sanitizeSkillDirectoryName(skill.name)),
-        ],
-      });
-    }
+        keys: [skillLoadIdKey(skill.id), ...nameKeys(skill.name)],
+      })),
+      ...mentioned.map((skill) => ({ document: skill, keys: nameKeys(skill.name) })),
+    ];
     if (pending.length === 0) {
       return { prelude: undefined, recordLoaded: Effect.void };
     }
