@@ -1,6 +1,8 @@
 /**
- * Location name + required Unsplash credit, portaled into the composer
- * cluster. Replaces the bottom-right dock pill while a thread view is open.
+ * Location name + required Unsplash credit. On a new-thread hero this
+ * sits in the bottom band of the photo; after the composer docks it
+ * sits compactly under the chat box. Replaces the bottom-right dock
+ * pill while a thread view is open.
  */
 import { useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
