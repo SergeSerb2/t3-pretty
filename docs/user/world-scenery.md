@@ -10,7 +10,10 @@ On phone, open **Settings → Appearance** and use **Scenery photos**. While it 
 adjust **Photo blur** and **Photo presence**.
 
 On desktop, use the scenery controls in the bottom-right dock next to the photo credit.
-Turning **Motion** off also parks photo fades on thread switch.
+**Motion** governs the app's small entrance and press animations — arriving messages,
+approval and question panels, dialogs, attachments, status pills — and turning it off also
+parks photo fades on thread switch. With the system reduce-motion setting on, those
+animations keep only their fade.
 
 ## How the phone thread list looks
 
