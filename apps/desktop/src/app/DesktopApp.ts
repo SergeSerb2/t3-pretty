@@ -1,5 +1,6 @@
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -232,7 +233,7 @@ const startup = Effect.gen(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
 
-  yield* shellEnvironment.installIntoProcess;
+  const installShellEnvironment = yield* Effect.forkChild(shellEnvironment.installIntoProcess);
   const hasCommandLinePasswordStore =
     preReadyElectronOptions.linuxPasswordStoreCommandLine !== null;
   const linuxElectronOptions =
@@ -283,10 +284,10 @@ const startup = Effect.gen(function* () {
       backend: Option.getOrElse(selectedBackend, () => "unknown"),
     });
   }
-  yield* appIdentity.configure;
   yield* applicationMenu.configure;
   yield* updates.configure;
   yield* linuxUrlHandler.register;
+  yield* Fiber.join(installShellEnvironment);
   yield* bootstrap.pipe(Effect.catchCause((cause) => fatalStartupCause("bootstrap", cause)));
 }).pipe(Effect.withSpan("desktop.startup"));
 

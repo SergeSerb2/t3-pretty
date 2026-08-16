@@ -156,8 +156,9 @@ export const recordStartupHeartbeat = Effect.gen(function* () {
 });
 
 export const launchStartupHeartbeat = recordStartupHeartbeat.pipe(
-  Effect.annotateSpans({ "startup.phase": "heartbeat.record" }),
-  Effect.withSpan("server.startup.heartbeat.record"),
+  Effect.withSpan("server.startup.heartbeat.record", {
+    attributes: { "startup.phase": "heartbeat.record" },
+  }),
   Effect.ignoreCause({ log: true }),
   Effect.forkScoped,
   Effect.asVoid,
@@ -287,8 +288,9 @@ const maybeOpenBrowser = (target: string) =>
 
 const runStartupPhase = <A, E, R>(phase: string, effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
-    Effect.annotateSpans({ "startup.phase": phase }),
-    Effect.withSpan(`server.startup.${phase}`),
+    Effect.withSpan(`server.startup.${phase}`, {
+      attributes: { "startup.phase": phase },
+    }),
   );
 
 interface StartupOptions {
@@ -402,8 +404,9 @@ export const make = (options?: StartupOptions) =>
         Effect.gen(function* () {
           yield* Effect.logDebug("startup phase: recording startup heartbeat");
           yield* recordStartupHeartbeat.pipe(
-            Effect.annotateSpans({ "startup.phase": "heartbeat.record" }),
-            Effect.withSpan("server.startup.heartbeat.record"),
+            Effect.withSpan("server.startup.heartbeat.record", {
+              attributes: { "startup.phase": "heartbeat.record" },
+            }),
             Effect.ignoreCause({ log: true }),
           );
           if (serverConfig.startupPresentation === "headless") {

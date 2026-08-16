@@ -171,15 +171,12 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     },
     [environmentId, invalidate, reference],
   );
-  const refreshLive = useCallback(async () => {
-    if (reference === null) return;
-    await invalidate({ environmentId, input: { reference } });
+  const refreshLive = useCallback(() => {
     detailQuery.refresh();
     activityQuery.refresh();
-  }, [activityQuery, detailQuery, environmentId, invalidate, reference]);
+  }, [activityQuery, detailQuery]);
   const refreshLiveRef = useRef(refreshLive);
   refreshLiveRef.current = refreshLive;
-  const hostRefreshInFlight = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -189,13 +186,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
         refetchRef.current();
       }
       const timer = setInterval(() => {
-        if (hostRefreshInFlight.current) return;
-        hostRefreshInFlight.current = true;
-        void refreshLiveRef.current().finally(() => {
-          setTimeout(() => {
-            hostRefreshInFlight.current = false;
-          }, PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS);
-        });
+        refreshLiveRef.current();
       }, PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS);
       return () => clearInterval(timer);
     }, []),

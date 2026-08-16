@@ -205,6 +205,17 @@ html[data-scenery-ink-transition]::view-transition-new(root) {
   }
 }
 
+html:not([data-scenery-motion]) .scenery-layer__group,
+html:not([data-scenery-motion]) .scenery-layer__wash,
+html:not([data-scenery-motion]) .scenery-layer__edges {
+  transition: none;
+}
+
+html:not([data-scenery-motion]) .scenery-layer__photo--current,
+html:not([data-scenery-motion]) .scenery-layer__photo--outgoing {
+  animation: none;
+}
+
 /* Unsplash guideline: attribution wherever a photo shows prominently.
    Thread views move the credit into the composer cluster; this pill is the
    Home / no-composer fallback. Hidden while the composer slot is mounted. */
@@ -675,8 +686,8 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-h
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   main[data-slot="sidebar-inset"] {
   --glass-opacity: 52%;
-  --glass-blur: 24px;
-  --glass-saturation: 1.35;
+  --glass-blur: 16px;
+  --glass-saturation: 1;
 }
 
 /* The docked composer overlay is anchored to the viewport bottom; without

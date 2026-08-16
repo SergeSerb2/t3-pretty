@@ -16,6 +16,7 @@ import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
+import { getMediaQueryEntry } from "../hooks/useMediaQuery";
 import { environmentCatalog } from "../connection/catalog";
 import { readEnvironmentSupportsScenery } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
@@ -39,23 +40,28 @@ import { useActiveThreadKey } from "./useActiveThreadKey";
 import { useInkOverride } from "./useInkOverride";
 import "./scenery.css";
 
-function subscribeToMediaQuery(query: string) {
+const CONTRAST_QUERY = "(prefers-contrast: more)";
+const TRANSPARENCY_QUERY = "(prefers-reduced-transparency: reduce)";
+
+function subscribeToCachedMediaQuery(query: string) {
   return (onChange: () => void): (() => void) => {
-    const media = window.matchMedia(query);
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
+    const entry = getMediaQueryEntry(query);
+    entry.listeners.add(onChange);
+    return () => {
+      entry.listeners.delete(onChange);
+    };
   };
 }
 
-const subscribeContrast = subscribeToMediaQuery("(prefers-contrast: more)");
-const subscribeTransparency = subscribeToMediaQuery("(prefers-reduced-transparency: reduce)");
+const subscribeContrast = subscribeToCachedMediaQuery(CONTRAST_QUERY);
+const subscribeTransparency = subscribeToCachedMediaQuery(TRANSPARENCY_QUERY);
 
 const NULL_THREAD_SHELL_ATOM = Atom.make(null).pipe(Atom.withLabel("scenery:no-thread-shell"));
 
 function useIncreasedContrast(): boolean {
   return useSyncExternalStore(
     subscribeContrast,
-    () => window.matchMedia("(prefers-contrast: more)").matches,
+    () => getMediaQueryEntry(CONTRAST_QUERY).matches,
     () => false,
   );
 }
@@ -63,7 +69,7 @@ function useIncreasedContrast(): boolean {
 function useReducedTransparency(): boolean {
   return useSyncExternalStore(
     subscribeTransparency,
-    () => window.matchMedia("(prefers-reduced-transparency: reduce)").matches,
+    () => getMediaQueryEntry(TRANSPARENCY_QUERY).matches,
     () => false,
   );
 }

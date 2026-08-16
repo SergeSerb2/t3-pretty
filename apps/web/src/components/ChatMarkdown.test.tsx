@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { orderedListGutterStyle } from "./ChatMarkdown";
+import chatMarkdownSource from "./ChatMarkdown.tsx?raw";
 
 describe("orderedListGutterStyle", () => {
   it("leaves the default gutter alone for single-digit lists", () => {
@@ -32,5 +33,20 @@ describe("orderedListGutterStyle", () => {
 
   it("treats a missing/zero item count as a single item", () => {
     expect(orderedListGutterStyle(0, undefined)).toBeUndefined();
+  });
+});
+
+describe("streaming markdown stability", () => {
+  it("reads per-delta text and link maps through refs", () => {
+    expect(chatMarkdownSource).toContain("renderedTextRef.current");
+    expect(chatMarkdownSource).toContain("markdownFileLinkMetaByHrefRef.current");
+    expect(chatMarkdownSource).toContain("inlineCodeFileLinkMetaByTextRef.current");
+    expect(chatMarkdownSource).toContain("fileLinkParentSuffixByPathRef.current");
+  });
+
+  it("renders fenced code as plain text while streaming", () => {
+    expect(chatMarkdownSource).toContain("isStreaming ?");
+    expect(chatMarkdownSource).toContain("<code className={codeBlock.className}");
+    expect(chatMarkdownSource).not.toContain("isStreaming={isStreaming}");
   });
 });

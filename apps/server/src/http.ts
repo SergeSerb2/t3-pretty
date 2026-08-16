@@ -32,10 +32,8 @@ import {
   resolveAsset,
   type ResolvedAssetSource,
 } from "./assets/AssetAccess.ts";
-import {
-  ATTACHMENT_FEED_PREVIEW_VARIANT,
-  resolveAttachmentFeedPreview,
-} from "./assets/AttachmentPreview.ts";
+import { ATTACHMENT_FEED_PREVIEW_VARIANT } from "./assets/attachmentFeedPreviewPath.ts";
+import { resolveAttachmentFeedPreview } from "./assets/AttachmentPreview.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { traceRelayRequest } from "./cloud/traceRelayRequest.ts";
@@ -116,6 +114,56 @@ export function isLoopbackHostname(hostname: string): boolean {
     .toLowerCase()
     .replace(/^\[(.*)\]$/, "$1");
   return LOOPBACK_HOSTNAMES.has(normalizedHostname);
+}
+
+const HASHED_CLIENT_ASSET_PATH = /^assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/;
+
+export function isHashedClientAssetPath(relativePath: string): boolean {
+  return HASHED_CLIENT_ASSET_PATH.test(relativePath.replaceAll("\\", "/"));
+}
+
+export function staticClientAssetCacheControl(relativePath: string): string {
+  return isHashedClientAssetPath(relativePath) ? "public, max-age=31536000, immutable" : "no-cache";
+}
+
+export function acceptsBrotliEncoding(acceptEncoding: string | undefined): boolean {
+  if (!acceptEncoding) return false;
+  return acceptEncoding.split(",").some((part) => {
+    const token = part.trim().split(";")[0]?.trim().toLowerCase();
+    return token === "br";
+  });
+}
+
+export function shouldEnablePermessageDeflate(input: {
+  readonly remoteAddress?: string | null | undefined;
+  readonly origin?: string | null | undefined;
+}): boolean {
+  const origin = input.origin?.trim() ?? "";
+  if (origin.startsWith("t3code://") || origin.startsWith("t3code-dev://")) {
+    return false;
+  }
+  if (origin.startsWith("http://") || origin.startsWith("https://")) {
+    try {
+      const host = new URL(origin).hostname;
+      if (!isLoopbackHostname(host)) return true;
+    } catch {
+      // Fall through to the socket address.
+    }
+  }
+  const address = (input.remoteAddress ?? "").replace(/^::ffff:/, "").replace(/^\[|\]$/g, "");
+  return address.length > 0 && !isLoopbackHostname(address);
+}
+
+export function stripPermessageDeflateExtensionOffer(
+  extensionsHeader: string | undefined,
+): string | undefined {
+  if (!extensionsHeader) return undefined;
+  const next = extensionsHeader
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0 && !part.toLowerCase().startsWith("permessage-deflate"))
+    .join(", ");
+  return next.length > 0 ? next : undefined;
 }
 
 export function resolveDevRedirectUrl(devUrl: URL, requestUrl: URL): string {
@@ -362,10 +410,34 @@ export const staticAndDevRouteLayer = HttpRouter.add(
       return HttpServerResponse.uint8Array(indexData, {
         status: 200,
         contentType: "text/html; charset=utf-8",
+        headers: { "Cache-Control": "no-cache" },
       });
     }
 
     const contentType = Mime.getType(filePath) ?? "application/octet-stream";
+    const acceptEncodingHeader = request.headers["accept-encoding"];
+    const acceptEncoding = Array.isArray(acceptEncodingHeader)
+      ? acceptEncodingHeader.join(",")
+      : acceptEncodingHeader;
+    const cacheControl = staticClientAssetCacheControl(staticRelativePath);
+    if (acceptsBrotliEncoding(acceptEncoding)) {
+      const brotliPath = `${filePath}.br`;
+      const brotliData = yield* fileSystem
+        .readFile(brotliPath)
+        .pipe(Effect.orElseSucceed(() => null));
+      if (brotliData) {
+        return HttpServerResponse.uint8Array(brotliData, {
+          status: 200,
+          contentType,
+          headers: {
+            "Cache-Control": cacheControl,
+            "Content-Encoding": "br",
+            Vary: "Accept-Encoding",
+          },
+        });
+      }
+    }
+
     const data = yield* fileSystem.readFile(filePath).pipe(Effect.orElseSucceed(() => null));
     if (!data) {
       return HttpServerResponse.text("Internal Server Error", { status: 500 });
@@ -374,6 +446,7 @@ export const staticAndDevRouteLayer = HttpRouter.add(
     return HttpServerResponse.uint8Array(data, {
       status: 200,
       contentType,
+      headers: { "Cache-Control": cacheControl },
     });
   }),
 );

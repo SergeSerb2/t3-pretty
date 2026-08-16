@@ -89,12 +89,13 @@ const REPOSITORY_SEARCH_CHUNK = 100;
  * while and concurrent identical reads share one request. The windows sit near the clients'
  * own stale times: long enough that two people opening the same page cost one round trip,
  * short enough that "cached" and "fresh" never need telling apart on screen. Reads that
- * must not share — the refresh button, a client reloading after its own action, an open
- * pull-request panel watching the host — go through `invalidate` rather than a flag on
- * the read, so an ordinary read can never opt out.
+ * must not share — the refresh button, a client reloading after its own action — go
+ * through `invalidate` rather than a flag on the read, so an ordinary read can never
+ * opt out. An open pull-request panel re-reads through this cache: invalidating on
+ * every tick spent GitHub's budget on an answer the reader already had.
  */
 const LIST_CACHE_TTL = Duration.seconds(30);
-const DETAIL_CACHE_TTL = Duration.seconds(5);
+const DETAIL_CACHE_TTL = Duration.seconds(20);
 const DIFF_CACHE_TTL = Duration.seconds(60);
 /** A commit is content-addressed, so its own diff cannot change under its key. */
 const COMMIT_DIFF_CACHE_TTL = Duration.minutes(10);
@@ -107,7 +108,7 @@ const LIST_STATS_CACHE_TTL = Duration.seconds(60);
  * refresh or a mutation bumps the epochs and skips held answers entirely.
  */
 const LIST_STALE_WINDOW = Duration.minutes(10);
-const DETAIL_STALE_WINDOW = Duration.seconds(15);
+const DETAIL_STALE_WINDOW = Duration.seconds(60);
 const DIFF_STALE_WINDOW = Duration.seconds(20);
 /** How long one host's signed-in login is believed without asking its CLI again. */
 const VIEWER_CACHE_TTL = Duration.minutes(10);
@@ -811,7 +812,10 @@ export const make = Effect.gen(function* () {
        * One repository asked on its own. What every host without a search across repositories
        * does, and what a batched read falls back to for a repository it could not answer for.
        */
-      const readRepository = (project: SupportedProject): Effect.Effect<RepositoryBatch> => {
+      const readRepository = (
+        project: SupportedProject,
+        options?: { readonly search?: boolean },
+      ): Effect.Effect<RepositoryBatch> => {
         {
           const viewer = viewers[project.host]!;
           const key = listCursorKey(project.host, project.repository);
@@ -829,6 +833,7 @@ export const make = Effect.gen(function* () {
               // answers unnarrowed rather than failing.
               query: input.query,
               filters: input.filters,
+              ...(options?.search === false ? { search: false } : {}),
               // Only the two fields a host can act on: which rows have already been sent at the
               // boundary instant is this service's business, not a provider's.
               ...(cursor === undefined
@@ -895,11 +900,13 @@ export const make = Effect.gen(function* () {
        */
       const readTogether = (
         chunk: ReadonlyArray<SupportedProject>,
-      ): Effect.Effect<ReadonlyArray<RepositoryBatch>> => {
+      ): Effect.Effect<ReadonlyArray<RepositoryBatch>, PullRequestError> => {
         const first = chunk[0]!;
         const readAcross = first.api.listChangeRequestsAcross;
-        const separately = () =>
-          Effect.forEach(chunk, readRepository, { concurrency: REPOSITORY_CONCURRENCY });
+        const separately = (options?: { readonly search?: boolean }) =>
+          Effect.forEach(chunk, (project) => readRepository(project, options), {
+            concurrency: REPOSITORY_CONCURRENCY,
+          });
         if (readAcross === undefined) return separately();
         const viewer = viewers[first.host]!;
         const cursor = cursorOf(first);
@@ -937,15 +944,21 @@ export const make = Effect.gen(function* () {
               (project): Effect.Effect<RepositoryBatch> => {
                 const fetched = rows.get(project.repository.trim().toLowerCase()) ?? [];
                 // GitHub does not index every repository for search — a renamed one answers for
-                // its old name with silence rather than with an error — so a repository the
-                // search said nothing at all about is read on its own, once, before it is
-                // believed. Only on its first slice: after that it has a boundary to carry on
-                // from, and silence past one means the rows are older rather than absent. That
-                // keeps a search-invisible repository from disappearing on a busy host, at the
-                // price of one request per repository with nothing in the first slice — which
-                // run together, and only there.
-                if (fetched.length === 0 && cursorOf(project) === undefined) {
-                  return readRepository(project);
+                // its old name with silence rather than with an error. A first slice that still
+                // had room and said nothing about a repository is therefore read on its own,
+                // without search: the host-wide search already spent that budget. A full slice
+                // is different — missing repositories almost always just have older rows, and
+                // asking each of them individually is what blew the 30-request search minute
+                // on a workspace with more projects than fit on one page. Those carry on from
+                // the slice boundary like everyone else.
+                const hasQuery = (input.query?.trim().length ?? 0) > 0;
+                if (
+                  fetched.length === 0 &&
+                  cursorOf(project) === undefined &&
+                  !page.truncated &&
+                  !hasQuery
+                ) {
+                  return readRepository(project, { search: false });
                 }
                 const cursorHere = cursorOf(project);
                 const items =
@@ -972,7 +985,15 @@ export const make = Effect.gen(function* () {
               { concurrency: REPOSITORY_CONCURRENCY },
             );
           }),
-          Effect.catch(separately),
+          Effect.catch((error) =>
+            // A refused search must not become one request per repository: that is how a
+            // single 429 turned into a minute of 429s and took the rest of GitHub with it.
+            // Any other failure still falls back the long way, without search — the host
+            // search already failed, so spending that budget again would fail the same way.
+            error.reason === "rate-limited"
+              ? Effect.fail(toPullRequestError("list")(error))
+              : separately({ search: (input.query?.trim().length ?? 0) > 0 }),
+          ),
         );
       };
 
@@ -991,9 +1012,8 @@ export const make = Effect.gen(function* () {
         if (group === undefined) together.set(key, [project]);
         else group.push(project);
       }
-      const reads: Array<Effect.Effect<ReadonlyArray<RepositoryBatch>>> = separate.map((project) =>
-        readRepository(project).pipe(Effect.map((batch) => [batch])),
-      );
+      const reads: Array<Effect.Effect<ReadonlyArray<RepositoryBatch>, PullRequestError>> =
+        separate.map((project) => readRepository(project).pipe(Effect.map((batch) => [batch])));
       for (const group of together.values()) {
         for (let start = 0; start < group.length; start += REPOSITORY_SEARCH_CHUNK) {
           reads.push(readTogether(group.slice(start, start + REPOSITORY_SEARCH_CHUNK)));

@@ -374,9 +374,19 @@ export function isBranchMismatchDismissedForSession(key: string | null): boolean
   return key !== null && sessionDismissedBranchMismatchKeys.has(key);
 }
 
-export function threadHasStarted(thread: Thread | null | undefined): boolean {
+export function threadHasStarted(
+  thread:
+    | {
+        readonly latestTurn: unknown;
+        readonly session: unknown;
+        readonly messages?: { readonly length: number };
+      }
+    | null
+    | undefined,
+): boolean {
   return Boolean(
-    thread && (thread.latestTurn !== null || thread.messages.length > 0 || thread.session !== null),
+    thread &&
+    (thread.latestTurn !== null || (thread.messages?.length ?? 0) > 0 || thread.session !== null),
   );
 }
 

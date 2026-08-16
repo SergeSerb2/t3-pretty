@@ -75,12 +75,31 @@ export interface PrimaryEnvironmentTarget {
 
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 
+let cachedPrimaryDesktopBootstrap: DesktopEnvironmentBootstrap | null = null;
+let primaryDesktopBootstrapInflight: Promise<void> | null = null;
+
 function getDesktopLocalEnvironmentBootstrap(): DesktopEnvironmentBootstrap | null {
   // The primary (Windows-native) backend keeps the "primary" id. The
   // plural list may include a second WSL entry; the primary-target
   // resolver only cares about the primary, so just find it.
-  const bootstraps = window.desktopBridge?.getLocalEnvironmentBootstraps() ?? [];
-  return bootstraps.find((entry) => entry.id === PRIMARY_LOCAL_ENVIRONMENT_ID) ?? null;
+  const result = window.desktopBridge?.getLocalEnvironmentBootstraps() ?? [];
+  if (Array.isArray(result)) {
+    cachedPrimaryDesktopBootstrap =
+      result.find((entry) => entry.id === PRIMARY_LOCAL_ENVIRONMENT_ID) ?? null;
+    return cachedPrimaryDesktopBootstrap;
+  }
+  if (primaryDesktopBootstrapInflight === null) {
+    primaryDesktopBootstrapInflight = Promise.resolve(result)
+      .then((bootstraps) => {
+        cachedPrimaryDesktopBootstrap =
+          bootstraps.find((entry) => entry.id === PRIMARY_LOCAL_ENVIRONMENT_ID) ?? null;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        primaryDesktopBootstrapInflight = null;
+      });
+  }
+  return cachedPrimaryDesktopBootstrap;
 }
 
 function parseTargetUrl(input: {

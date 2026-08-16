@@ -175,11 +175,12 @@ export function takePairingTokenFromUrl(): string | null {
   return token;
 }
 
-function getDesktopBootstrapCredential(): string | null {
+async function getDesktopBootstrapCredential(): Promise<string | null> {
   // Both backends share the same bootstrap token (DesktopBackendConfiguration
   // mints one tokenRef and feeds it to both resolvers), so picking the
   // primary entry is fine even when the WSL backend is also registered.
-  const bootstraps = window.desktopBridge?.getLocalEnvironmentBootstraps() ?? [];
+  const result = window.desktopBridge?.getLocalEnvironmentBootstraps() ?? [];
+  const bootstraps = Array.isArray(result) ? result : await result;
   const primary = bootstraps.find((entry) => entry.id === PRIMARY_LOCAL_ENVIRONMENT_ID);
   return typeof primary?.bootstrapToken === "string" && primary.bootstrapToken.length > 0
     ? primary.bootstrapToken
@@ -318,7 +319,7 @@ function isTransientBootstrapError(error: unknown): boolean {
 }
 
 async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
-  const bootstrapCredential = getDesktopBootstrapCredential();
+  const bootstrapCredential = await getDesktopBootstrapCredential();
   const currentSession = await fetchSessionState();
   if (currentSession.authenticated) {
     return { status: "authenticated" };

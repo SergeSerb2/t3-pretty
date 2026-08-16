@@ -18,6 +18,7 @@ import messagesTimelineSource from "../components/chat/MessagesTimeline.tsx?raw"
 import providerBannerSource from "../components/chat/ProviderStatusBanner.tsx?raw";
 import sidebarSource from "../components/Sidebar.tsx?raw";
 import alertSource from "../components/ui/alert.tsx?raw";
+import composerAttachSource from "./ComposerAttachControl.tsx?raw";
 import motionDriverSource from "./SceneryMotion.tsx?raw";
 
 const motionStylesSource = NodeFS.readFileSync(new URL("./motion.css", import.meta.url), "utf8");
@@ -65,6 +66,12 @@ describe("working-row thinking indicator contract", () => {
 
   it("filters body mutations before scheduling a full motion sync", () => {
     expect(motionDriverSource).toContain("mutationsRequireSceneryMotionSync(mutations)");
+  });
+});
+
+describe("composer attach mutation contract", () => {
+  it("filters body mutations before scheduling a composer attach sync", () => {
+    expect(composerAttachSource).toContain("mutationsRequireComposerAttachSync(mutations)");
   });
 });
 

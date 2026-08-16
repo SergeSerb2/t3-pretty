@@ -2238,11 +2238,13 @@ function OpenCommandPaletteDialog(props: {
       desktopWslState ??= (await window.desktopBridge?.getWslState().catch(() => null)) ?? null;
       let primaryRunningDistro: string | null = null;
       try {
+        const bootstrapsResult = window.desktopBridge?.getLocalEnvironmentBootstraps() ?? [];
+        const bootstraps = Array.isArray(bootstrapsResult)
+          ? bootstrapsResult
+          : await bootstrapsResult;
         primaryRunningDistro =
-          window.desktopBridge
-            ?.getLocalEnvironmentBootstraps()
-            .find((bootstrap) => bootstrap.id === PRIMARY_LOCAL_ENVIRONMENT_ID)?.runningDistro ??
-          null;
+          bootstraps.find((bootstrap) => bootstrap.id === PRIMARY_LOCAL_ENVIRONMENT_ID)
+            ?.runningDistro ?? null;
       } catch {
         // Keep UNC routing strict when the live primary identity cannot be read.
       }

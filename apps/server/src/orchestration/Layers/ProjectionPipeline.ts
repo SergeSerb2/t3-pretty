@@ -54,7 +54,7 @@ import {
   parseThreadSegmentFromAttachmentId,
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
-import { attachmentFeedPreviewPath } from "../../assets/AttachmentPreview.ts";
+import { attachmentFeedPreviewPath } from "../../assets/attachmentFeedPreviewPath.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
