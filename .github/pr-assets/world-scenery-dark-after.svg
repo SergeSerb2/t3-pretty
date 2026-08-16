@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="360" viewBox="0 0 720 360" role="img" aria-label="World Scenery dark theme after: selected PR chip is a readable moss plate">
+  <rect width="720" height="360" fill="#0e1110"/>
+  <text x="28" y="36" fill="#c5cfc8" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">After — dark World Scenery</text>
+  <rect x="28" y="58" width="664" height="260" rx="22" fill="#1a221e"/>
+  <rect x="28" y="58" width="664" height="260" rx="22" fill="none" stroke="#2e3b34"/>
+  <text x="52" y="98" fill="#c5cfc8" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Ask anything…</text>
+  <g transform="translate(52 250)">
+    <rect width="72" height="32" rx="10" fill="transparent"/>
+    <text x="36" y="21" text-anchor="middle" fill="#c5cfc8" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Plan</text>
+    <rect x="84" y="0" width="64" height="32" rx="10" fill="#3c5d4b"/>
+    <text x="116" y="21" text-anchor="middle" fill="#eaf7ee" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">PR</text>
+    <circle cx="580" cy="16" r="16" fill="#98d2ac"/>
+    <path d="M580 24 V8 M580 8 l-5 5 M580 8 l5 5" fill="none" stroke="#07140c" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <text x="28" y="344" fill="#a8b3ab" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Selected PR chip #3c5d4b on #1a221e — 2.6:1 against the canvas</text>
+</svg>
