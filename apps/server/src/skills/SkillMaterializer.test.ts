@@ -88,9 +88,23 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
           yield* readOptional(path.join(skillDir, SkillStore.SKILL_METADATA_FILE)),
           undefined,
         );
+        // The copy hides itself from git so agent commits never sweep it up.
+        assert.strictEqual(
+          yield* fileSystem.readFileString(path.join(skillDir, ".gitignore")),
+          "*\n",
+        );
       }
       assert.deepStrictEqual(result.removed, []);
-      assert.deepStrictEqual(result.loaded, [{ id: skillId, name: "TDD Skill" }]);
+      // The loaded document points at the first workspace copy and carries
+      // the SKILL.md body without its frontmatter.
+      assert.deepStrictEqual(result.loaded, [
+        {
+          id: skillId,
+          name: "TDD Skill",
+          directory: path.join(cwd, ".claude", "skills", "tdd-skill"),
+          body: "",
+        },
+      ]);
     }),
   );
 
@@ -180,7 +194,74 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
         "also user owned",
       );
       assert.include(result.written, path.join(cwd, ".agents", "skills", "tdd"));
-      assert.deepStrictEqual(result.loaded, [{ id: skillId, name: "tdd" }]);
+      // The user's colliding copy is what loads: their folder wins the name,
+      // and enabling the skill still takes effect.
+      assert.deepStrictEqual(result.loaded, [
+        { id: skillId, name: "tdd", directory: userSkillDir, body: "user owned" },
+      ]);
+    }),
+  );
+
+  it.effect("returns the SKILL.md body without frontmatter for loaded skills", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const materializer = yield* SkillMaterializer.SkillMaterializer;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-cwd-" });
+      const skillId = yield* installSkill({
+        sourceRepo: "octocat/materialize-body",
+        sourcePath: "skills/grill",
+        skillMd: [
+          "---",
+          "name: grill-me",
+          "description: Interview relentlessly.",
+          "---",
+          "",
+          "Ask one question at a time.",
+          "See references/questions.md.",
+          "",
+        ].join("\n"),
+      });
+
+      const result = yield* materializer.materialize({ cwd, skillIds: [skillId] });
+
+      assert.strictEqual(result.loaded.length, 1);
+      assert.strictEqual(
+        result.loaded[0]?.body,
+        "Ask one question at a time.\nSee references/questions.md.",
+      );
+    }),
+  );
+
+  it.effect("resolves $mentions from provider candidates, then workspace roots", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const materializer = yield* SkillMaterializer.SkillMaterializer;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-cwd-" });
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-home-" });
+
+      // A provider CLI skill (user scope) addressed by SKILL.md path.
+      const hostSkillDir = path.join(home, ".claude", "skills", "Host Skill");
+      yield* fileSystem.makeDirectory(hostSkillDir, { recursive: true });
+      yield* fileSystem.writeFileString(
+        path.join(hostSkillDir, "SKILL.md"),
+        "---\nname: Host Skill\n---\nhost body\n",
+      );
+      // A project skill only present in the workspace, addressed by dir name.
+      const projectSkillDir = path.join(cwd, ".agents", "skills", "project-skill");
+      yield* fileSystem.makeDirectory(projectSkillDir, { recursive: true });
+      yield* fileSystem.writeFileString(path.join(projectSkillDir, "SKILL.md"), "project body");
+
+      const resolved = yield* materializer.resolveMentions({
+        cwd,
+        names: ["host-skill", "project-skill", "missing-skill"],
+        candidates: [{ name: "Host Skill", path: path.join(hostSkillDir, "SKILL.md") }],
+      });
+
+      assert.deepStrictEqual(resolved, [
+        { name: "Host Skill", directory: hostSkillDir, body: "host body" },
+        { name: "project-skill", directory: projectSkillDir, body: "project body" },
+      ]);
     }),
   );
 
