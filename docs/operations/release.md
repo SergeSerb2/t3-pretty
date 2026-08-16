@@ -54,10 +54,8 @@ release channels.
 release workflow reads the relay URL and Clerk client configuration from the existing `production`
 GitHub Actions environment before building desktop, CLI, or hosted web artifacts.
 
-The deploy job runs on the self-hosted macOS runner (`self-hosted`, `macOS`, `ARM64`,
-`t3code-fork`, `release-only` — the same labels as the desktop and mobile releases) so relay
-deploys do not consume billed GitHub-hosted minutes. Deploys queue behind release jobs on the
-single runner.
+The deploy job runs on GitHub-hosted `ubuntu-latest`. This repository is public, so those
+minutes are free, and the job no longer queues behind desktop or iOS releases on m1-dev.
 
 Required repository variables shared by relay deployments:
 
