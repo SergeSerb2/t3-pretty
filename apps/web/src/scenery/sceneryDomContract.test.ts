@@ -169,6 +169,16 @@ describe("scenery attribution contract", () => {
     );
   });
 
+  it("hides the docked place credit with the scroll-to-end pill", () => {
+    expect(chatViewSource).toContain(
+      'data-scenery-place-hidden={showScrollToBottom ? "" : undefined}',
+    );
+    expect(sceneryCssSource).toContain("[data-scenery-place-slot][data-scenery-place-hidden]");
+    expect(sceneryCssSource).toMatch(
+      /\[data-scenery-place-slot\]\[data-scenery-place-hidden\]\s+\.scenery-place\s*\{[^}]*opacity: 0;[^}]*visibility: hidden;/s,
+    );
+  });
+
   it("does not keep a bottom-right scenery settings dock", () => {
     expect(activeScenerySource).not.toContain("SceneryQuickSettings");
     expect(sceneryCssSource).not.toContain(".scenery-quick__trigger");

@@ -542,6 +542,17 @@ html[data-scenery-arrival="reveal"] .scenery-place {
     gap 0.42s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Same live-edge flag as the scroll-to-end pill: hide while the timeline is
+   scrolled up. Motion.css adds the fade; without Thread motion this is a
+   hard cut. */
+[data-composer-placement="docked"]
+  [data-scenery-place-slot][data-scenery-place-hidden]
+  .scenery-place {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .scenery-place__name {
   margin: 0;
   font-size: 1.625rem;
