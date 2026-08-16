@@ -6042,7 +6042,8 @@ function ChatViewContent(props: ChatViewProps) {
         branch: activeThreadBranch,
         worktreePath: activeThread.worktreePath,
         createdAt,
-        enabledSkillIds: [],
+        // The implementation thread inherits the plan thread's skill picks.
+        enabledSkillIds: activeThread.enabledSkillIds,
       },
     });
     let failure: AtomCommandResult<unknown, unknown> | null =

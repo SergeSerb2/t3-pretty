@@ -33,8 +33,19 @@ const MARKETPLACE_TARBALL = tarGzArchive(
   tarFile("skills-aaa111/.claude-plugin/skills/hidden/SKILL.md", "---\nname: hidden\n---\n"),
   // Deeper than the marketplace scan goes.
   tarFile("skills-aaa111/a/b/c/d/e/f/SKILL.md", "---\nname: too-deep\n---\n"),
-  // A SKILL.md at the repository root is not an addressable skill.
-  tarFile("skills-aaa111/SKILL.md", "---\nname: root\n---\n"),
+  // Nested inside a skill: part of tdd, not a skill of its own.
+  tarFile("skills-aaa111/skills/engineering/tdd/examples/SKILL.md", "---\nname: nested\n---\n"),
+  // Entry names are attacker-controlled; this one must never land on disk.
+  tarFile("skills-aaa111/skills/engineering/tdd/..\\..\\escaped.md", "escaped\n"),
+);
+
+// A repository that is itself one skill.
+const SINGLE_SKILL_TARBALL = tarGzArchive(
+  tarFile(
+    "asd-ste100-skill-bbb222/SKILL.md",
+    "---\nname: asd-ste100\ndescription: Simplified Technical English.\n---\n",
+  ),
+  tarFile("asd-ste100-skill-bbb222/references/rules.md", "rules\n"),
 );
 
 function makeLayer(input: {
@@ -201,6 +212,9 @@ it.effect("installs a marketplace skill into the store, then lists from cache", 
       yield* fileSystem.readFileString(path.join(storedDir, "cheatsheet.md")),
       "red green refactor\n",
     );
+    // The traversal entry was dropped, not written anywhere.
+    assert.isFalse(yield* fileSystem.exists(path.join(storedDir, "..\\..\\escaped.md")));
+    assert.isFalse(yield* fileSystem.exists(path.join(config.skillsDir, "escaped.md")));
     assert.strictEqual(execute.mock.calls.length, 1);
 
     // The install populated the cache, so listing adds no fetches and flags
@@ -246,7 +260,7 @@ it.effect("omits a failed source when others succeed, and fails when all fail", 
   }).pipe(Effect.provide(layer));
 });
 
-it.effect("serves the stale cache when a refresh fails", () => {
+it.effect("reports a failed explicit refresh while list keeps serving the stale cache", () => {
   let fail = false;
   const { layer } = makeLayer({
     response: () => (fail ? new Response("nope", { status: 500 }) : tarballResponse()),
@@ -256,8 +270,53 @@ it.effect("serves the stale cache when a refresh fails", () => {
 
     const first = yield* marketplace.list({});
     fail = true;
-    const refreshed = yield* marketplace.refresh({});
+    const error = yield* Effect.flip(marketplace.refresh({}));
+    assert.strictEqual(error.operation, "refresh-marketplace");
+    assert.match(error.message, /HTTP 500/);
 
-    assert.deepStrictEqual(refreshed, first);
+    const listed = yield* marketplace.list({});
+    assert.deepStrictEqual(listed, first);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("lists and installs a repository that is itself one skill", () => {
+  const { layer } = makeLayer({
+    sources: ["danyuchn/asd-ste100-skill"],
+    response: () => new Response(NodeBuffer.Buffer.from(SINGLE_SKILL_TARBALL), { status: 200 }),
+  });
+  return Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const config = yield* ServerConfig.ServerConfig;
+    const marketplace = yield* SkillMarketplace.SkillMarketplace;
+
+    const listings = yield* marketplace.list({});
+    assert.deepStrictEqual(listings[0]?.skills, [
+      {
+        id: "danyuchn/asd-ste100-skill:@root",
+        name: "asd-ste100",
+        description: "Simplified Technical English.",
+        sourcePath: "@root",
+        installed: false,
+      },
+    ]);
+
+    const state = yield* marketplace.install("danyuchn/asd-ste100-skill:@root");
+    assert.deepStrictEqual(
+      state.installedSkills.map((skill) => [skill.id, skill.name]),
+      [["danyuchn/asd-ste100-skill:@root", "asd-ste100"]],
+    );
+    assert.strictEqual(
+      yield* fileSystem.readFileString(
+        path.join(
+          config.skillsDir,
+          "danyuchn--asd-ste100-skill",
+          "@root",
+          "references",
+          "rules.md",
+        ),
+      ),
+      "rules\n",
+    );
   }).pipe(Effect.provide(layer));
 });

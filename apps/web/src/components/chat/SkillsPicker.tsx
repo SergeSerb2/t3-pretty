@@ -16,6 +16,7 @@ import { PackageIcon, SearchIcon } from "lucide-react";
 import { memo, useId, useMemo, useState } from "react";
 
 import { useComposerDraftStore, type DraftId } from "../../composerDraftStore";
+import { useOptimisticIdList } from "~/hooks/useOptimisticIdList";
 import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
 import { skillsEnvironment } from "~/state/skills";
@@ -56,9 +57,18 @@ function useSkillsPickerState(props: SkillsPickerProps) {
       : EMPTY_SKILL_IDS,
   );
   const setDraftEnabledSkillIds = useComposerDraftStore((store) => store.setEnabledSkillIds);
-  const setThreadSkills = useAtomCommand(threadEnvironment.setThreadSkills, {
-    reportFailure: false,
-  });
+  const setThreadSkills = useAtomCommand(threadEnvironment.setThreadSkills, "thread skills update");
+  // Server-thread picks are replaced wholesale, and the read model echoes a
+  // write back a round trip later: chain toggles off the last list sent so a
+  // second flip does not clobber the first, and move the switch right away.
+  const {
+    ids: threadSkillIds,
+    setIds: setThreadSkillIds,
+    reset: resetThreadSkillIds,
+  } = useOptimisticIdList(
+    props.enabledSkillIds ?? EMPTY_SKILL_IDS,
+    `${props.environmentId}:${props.threadRef?.threadId ?? ""}`,
+  );
 
   const installedSkills = useMemo(
     () => skillsQuery.data?.installedSkills ?? [],
@@ -68,9 +78,7 @@ function useSkillsPickerState(props: SkillsPickerProps) {
     () => new Set(globallyEnabledSkills.map((skill) => skill.id)),
     [globallyEnabledSkills],
   );
-  const perThreadSkillIds = props.draftId
-    ? draftEnabledSkillIds
-    : (props.enabledSkillIds ?? EMPTY_SKILL_IDS);
+  const perThreadSkillIds = props.draftId ? draftEnabledSkillIds : threadSkillIds;
   const perThreadIds = useMemo(() => new Set(perThreadSkillIds), [perThreadSkillIds]);
   // Count only installed skills so an uninstalled pick can't inflate the badge.
   const enabledCount = useMemo(
@@ -96,9 +104,14 @@ function useSkillsPickerState(props: SkillsPickerProps) {
       return;
     }
     if (props.threadRef) {
+      setThreadSkillIds(next);
       void setThreadSkills({
         environmentId: props.environmentId,
         input: { threadId: props.threadRef.threadId, enabledSkillIds: next },
+      }).then((result) => {
+        if (result._tag === "Failure") {
+          resetThreadSkillIds();
+        }
       });
     }
   };

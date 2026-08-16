@@ -9,6 +9,7 @@ import {
   ProviderSession,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ProviderSendTurnInput,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
@@ -68,7 +69,11 @@ import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
-import { SkillMaterializer, type SkillMaterializeResult } from "../../skills/SkillMaterializer.ts";
+import {
+  SkillMaterializer,
+  type SkillDocument,
+  type SkillMaterializeResult,
+} from "../../skills/SkillMaterializer.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
@@ -165,6 +170,12 @@ describe("ProviderCommandReactor", () => {
       readonly cwd: string;
       readonly skillIds: ReadonlyArray<SkillId>;
     }) => Effect.Effect<SkillMaterializeResult, SkillsError>;
+    /** `$name` mentions the mock materializer can resolve to a document. */
+    readonly resolvableMentions?: Readonly<Record<string, SkillDocument>>;
+    readonly sendTurnEffect?: () => Effect.Effect<
+      { readonly threadId: ThreadId; readonly turnId: TurnId },
+      ProviderAdapterRequestError
+    >;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -249,11 +260,18 @@ describe("ProviderCommandReactor", () => {
         ),
       );
     });
-    const sendTurn = vi.fn((_: unknown) =>
-      Effect.succeed({
-        threadId: ThreadId.make("thread-1"),
-        turnId: asTurnId("turn-1"),
-      }),
+    const sendTurn = vi.fn(
+      (
+        _: ProviderSendTurnInput,
+      ): Effect.Effect<
+        { readonly threadId: ThreadId; readonly turnId: TurnId },
+        ProviderAdapterRequestError
+      > =>
+        input?.sendTurnEffect?.() ??
+        Effect.succeed({
+          threadId: ThreadId.make("thread-1"),
+          turnId: asTurnId("turn-1"),
+        }),
     );
     const interruptTurn = vi.fn((_: unknown) => Effect.void);
     const respondToRequest = vi.fn<ProviderServiceShape["respondToRequest"]>(() => Effect.void);
@@ -319,16 +337,39 @@ describe("ProviderCommandReactor", () => {
       ),
     );
     const materializeSkills = vi.fn(
-      (materializeInput: { readonly cwd: string; readonly skillIds: ReadonlyArray<SkillId> }) =>
+      (materializeInput: {
+        readonly cwd: string;
+        readonly skillIds: ReadonlyArray<SkillId>;
+      }): Effect.Effect<SkillMaterializeResult, SkillsError> =>
         input?.materializeSkillsEffect?.(materializeInput) ??
         Effect.succeed({
           written: [],
           removed: [],
-          loaded: materializeInput.skillIds.map((id) => ({
-            id,
-            name: id.slice(Math.max(id.lastIndexOf(":") + 1, 0)) || id,
-          })),
+          loaded: materializeInput.skillIds.map((id) => {
+            const name = id.slice(Math.max(id.lastIndexOf(":") + 1, 0)) || id;
+            return {
+              id,
+              name,
+              directory: `${materializeInput.cwd}/.claude/skills/${name}`,
+              body: `Instructions for ${name}.`,
+            };
+          }),
         } satisfies SkillMaterializeResult),
+    );
+    const resolveSkillMentions = vi.fn(
+      (mentionInput: {
+        readonly cwd: string | undefined;
+        readonly names: ReadonlyArray<string>;
+        readonly candidates: ReadonlyArray<{ readonly name: string; readonly path: string }>;
+      }): Effect.Effect<ReadonlyArray<SkillDocument>> =>
+        Effect.succeed(
+          input?.resolvableMentions === undefined
+            ? []
+            : mentionInput.names.flatMap((name) => {
+                const document = input.resolvableMentions?.[name];
+                return document ? [document] : [];
+              }),
+        ),
     );
     const providerSnapshots = [
       {
@@ -456,6 +497,7 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(
         Layer.succeed(SkillMaterializer, {
           materialize: materializeSkills,
+          resolveMentions: resolveSkillMentions,
         } satisfies SkillMaterializer["Service"]),
       ),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
@@ -550,6 +592,7 @@ describe("ProviderCommandReactor", () => {
       generateBranchName,
       generateThreadTitle,
       materializeSkills,
+      resolveSkillMentions,
       runtimeSessions,
       stateDir,
       drain,
@@ -656,12 +699,32 @@ describe("ProviderCommandReactor", () => {
     expect(startSessionOrder).toBeDefined();
     expect(materializeOrder!).toBeLessThan(startSessionOrder!);
 
+    // The skill bodies ride ahead of the user's message so the agent has the
+    // instructions without having to load anything itself.
+    const sentInput = harness.sendTurn.mock.calls[0]?.[0]?.input ?? "";
+    expect(sentInput.startsWith("[Skills]")).toBe(true);
+    expect(sentInput).toContain(
+      '<skill name="global-skill" directory="/tmp/provider-project/.claude/skills/global-skill">\nInstructions for global-skill.\n</skill>',
+    );
+    expect(sentInput).toContain(
+      '<skill name="thread-skill" directory="/tmp/provider-project/.claude/skills/thread-skill">\nInstructions for thread-skill.\n</skill>',
+    );
+    expect(sentInput.endsWith("[End skills]\n\nhello skills")).toBe(true);
+    expect(sentInput.indexOf("global-skill")).toBeLessThan(sentInput.indexOf("thread-skill"));
+
+    await waitFor(async () => {
+      const model = await harness.readModel();
+      return (
+        (model.threads
+          .find((entry) => entry.id === ThreadId.make("thread-1"))
+          ?.activities.filter((activity) => activity.kind === "skill.loaded").length ?? 0) === 2
+      );
+    });
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     const skillActivities = thread?.activities.filter(
       (activity) => activity.kind === "skill.loaded",
     );
-    expect(skillActivities).toHaveLength(2);
     expect(skillActivities).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -675,6 +738,7 @@ describe("ProviderCommandReactor", () => {
             detail: "global-skill",
             skillId: "acme/skills:global-skill",
             skillName: "global-skill",
+            directory: "/tmp/provider-project/.claude/skills/global-skill",
           },
         }),
         expect.objectContaining({
@@ -688,6 +752,7 @@ describe("ProviderCommandReactor", () => {
             detail: "thread-skill",
             skillId: "acme/skills:thread-skill",
             skillName: "thread-skill",
+            directory: "/tmp/provider-project/.claude/skills/thread-skill",
           },
         }),
       ]),
@@ -736,6 +801,9 @@ describe("ProviderCommandReactor", () => {
     );
     await waitFor(() => harness.sendTurn.mock.calls.length === 2);
 
+    // Loaded once, in context for the rest of the session: no second prelude.
+    expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toContain("[Skills]");
+    expect(harness.sendTurn.mock.calls[1]?.[0]?.input).toBe("still using skills");
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.activities.filter((activity) => activity.kind === "skill.loaded")).toHaveLength(
@@ -743,8 +811,65 @@ describe("ProviderCommandReactor", () => {
     );
   });
 
-  it("records a skill-loaded log row when the user message mentions $skill", async () => {
-    const harness = await createHarness();
+  it("does not record a skill row when the provider rejects the turn", async () => {
+    const harness = await createHarness({
+      globalEnabledSkillIds: ["acme/skills:global-skill"],
+      sendTurnEffect: () =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: "codex",
+            method: "turn/start",
+            detail: "rejected in test",
+          }),
+        ),
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-skills-rejected"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-skills-rejected"),
+          role: "user",
+          text: "hello skills",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(async () => {
+      const model = await harness.readModel();
+      return (
+        model.threads
+          .find((entry) => entry.id === ThreadId.make("thread-1"))
+          ?.activities.some((activity) => activity.kind === "provider.turn.start.failed") ?? false
+      );
+    });
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    // The prelude was sent, but nothing landed in the agent's context, so the
+    // next attempt must load the skill again instead of deduping against a row.
+    expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toContain("[Skills]");
+    expect(thread?.activities.filter((activity) => activity.kind === "skill.loaded")).toHaveLength(
+      0,
+    );
+  });
+
+  it("loads a $skill mention into the turn and records it once resolved", async () => {
+    const harness = await createHarness({
+      resolvableMentions: {
+        "grill-me": {
+          name: "grill-me",
+          directory: "/home/user/.claude/skills/grill-me",
+          body: "Interview the user relentlessly.",
+        },
+      },
+    });
     const now = "2026-01-01T00:00:00.000Z";
 
     await harness.runEffect(
@@ -755,7 +880,7 @@ describe("ProviderCommandReactor", () => {
         message: {
           messageId: asMessageId("user-message-skill-mention"),
           role: "user",
-          text: "$grill-me the current design",
+          text: "$grill-me the current design $unknown-skill",
           attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -765,8 +890,32 @@ describe("ProviderCommandReactor", () => {
     );
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
 
+    // Mentions resolve against the provider's own skill list plus the
+    // workspace roots; the thread had no store skills so nothing was
+    // filtered before resolution.
+    expect(harness.resolveSkillMentions).toHaveBeenCalledTimes(1);
+    expect(harness.resolveSkillMentions.mock.calls[0]?.[0]).toEqual({
+      cwd: "/tmp/provider-project",
+      names: ["grill-me", "unknown-skill"],
+      candidates: [],
+    });
+    const sentInput = harness.sendTurn.mock.calls[0]?.[0]?.input ?? "";
+    expect(sentInput).toContain(
+      '<skill name="grill-me" directory="/home/user/.claude/skills/grill-me">\nInterview the user relentlessly.\n</skill>',
+    );
+    expect(sentInput.endsWith("$grill-me the current design $unknown-skill")).toBe(true);
+
+    await waitFor(async () => {
+      const model = await harness.readModel();
+      return (
+        model.threads
+          .find((entry) => entry.id === ThreadId.make("thread-1"))
+          ?.activities.some((activity) => activity.kind === "skill.loaded") ?? false
+      );
+    });
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    // Only the resolved mention gets a row: an unresolvable name was never loaded.
     expect(thread?.activities.filter((activity) => activity.kind === "skill.loaded")).toEqual([
       expect.objectContaining({
         summary: "Skill",
@@ -776,9 +925,195 @@ describe("ProviderCommandReactor", () => {
           title: "Skill",
           detail: "grill-me",
           skillName: "grill-me",
+          directory: "/home/user/.claude/skills/grill-me",
         },
       }),
     ]);
+  });
+
+  it("keeps sibling threads' skills on disk for a shared cwd but loads only its own", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    // A second live thread on the same project dir (local mode) with its own
+    // pick: reconciling the shared folder to thread-1's set alone would rip
+    // that skill out from under thread-2's agent.
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-thread-create-sibling"),
+        threadId: ThreadId.make("thread-sibling"),
+        projectId: asProjectId("project-1"),
+        title: "Sibling",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        enabledSkillIds: ["acme/skills:sibling-skill"],
+        createdAt: now,
+      }),
+    );
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.skills.set",
+        commandId: CommandId.make("cmd-thread-skills-set-own"),
+        threadId: ThreadId.make("thread-1"),
+        enabledSkillIds: ["acme/skills:own-skill"],
+        createdAt: now,
+      }),
+    );
+    await waitFor(async () => {
+      const model = await harness.readModel();
+      return (
+        model.threads.some((entry) => entry.id === ThreadId.make("thread-sibling")) &&
+        (model.threads
+          .find((entry) => entry.id === ThreadId.make("thread-1"))
+          ?.enabledSkillIds.includes("acme/skills:own-skill") ??
+          false)
+      );
+    });
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-sibling-union"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-sibling-union"),
+          role: "user",
+          text: "hello",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    expect(harness.materializeSkills.mock.calls[0]?.[0]).toEqual({
+      cwd: "/tmp/provider-project",
+      skillIds: ["acme/skills:own-skill", "acme/skills:sibling-skill"],
+    });
+    const sentInput = harness.sendTurn.mock.calls[0]?.[0]?.input ?? "";
+    expect(sentInput).toContain('<skill name="own-skill"');
+    expect(sentInput).not.toContain("sibling-skill");
+  });
+
+  it("ignores subagent and failed Skill tool calls when deciding what is already loaded", async () => {
+    const harness = await createHarness({
+      globalEnabledSkillIds: ["acme/skills:global-skill"],
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    for (const [id, payload] of [
+      // A subagent loaded it into its own context, not the main agent's.
+      [
+        "activity-subagent-skill-load",
+        {
+          itemType: "skill_load",
+          status: "completed",
+          detail: "global-skill",
+          agentId: "agent-1",
+          parentToolUseId: "tool-1",
+        },
+      ],
+      // The main agent tried before the skill existed and the call failed.
+      [
+        "activity-failed-skill-load",
+        { itemType: "skill_load", status: "failed", detail: "global-skill" },
+      ],
+    ] as const) {
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.activity.append",
+          commandId: CommandId.make(`cmd-${id}`),
+          threadId: ThreadId.make("thread-1"),
+          activity: {
+            id: EventId.make(id),
+            tone: "tool",
+            kind: "tool.completed",
+            summary: "Skill",
+            payload,
+            turnId: null,
+            createdAt: now,
+          },
+          createdAt: now,
+        }),
+      );
+    }
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-not-really-loaded"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-not-really-loaded"),
+          role: "user",
+          text: "keep going",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:01:00.000Z",
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toContain('<skill name="global-skill"');
+  });
+
+  it("does not reload a skill the agent already loaded with its own Skill tool", async () => {
+    const harness = await createHarness({
+      globalEnabledSkillIds: ["acme/skills:global-skill"],
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    // The agent's own Skill tool call, as ingested from the provider runtime.
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make("cmd-agent-skill-load"),
+        threadId: ThreadId.make("thread-1"),
+        activity: {
+          id: EventId.make("activity-agent-skill-load"),
+          tone: "tool",
+          kind: "tool.completed",
+          summary: "Skill",
+          payload: { itemType: "skill_load", detail: "global-skill" },
+          turnId: null,
+          createdAt: now,
+        },
+        createdAt: now,
+      }),
+    );
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-agent-loaded"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-agent-loaded"),
+          role: "user",
+          text: "keep going",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:01:00.000Z",
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toBe("keep going");
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.activities.filter((activity) => activity.kind === "skill.loaded")).toHaveLength(
+      0,
+    );
   });
 
   it("starts the turn even when skill materialization fails", async () => {

@@ -1,3 +1,4 @@
+import { skillMentionMatchesName } from "@t3tools/shared/skillTool";
 import { Children, cloneElement, isValidElement, type ReactNode } from "react";
 import type { ServerProviderSkill } from "@t3tools/contracts";
 
@@ -23,7 +24,7 @@ export function SkillInlineText(props: { text: string; skills: ReadonlyArray<Inl
     const name = match[2] ?? "";
     const start = (match.index ?? 0) + prefix.length;
     const rawText = `$${name}`;
-    const skill = props.skills.find((candidate) => candidate.name === name);
+    const skill = props.skills.find((candidate) => skillMentionMatchesName(name, candidate.name));
     if (!skill) {
       continue;
     }

@@ -45,7 +45,7 @@ it.layer(NodeServices.layer)("HostSkills", (it) => {
     Effect.sync(() => {
       assert.deepEqual(parseHostSkillId("host:claudeAgent:grill-me"), {
         originKey: "claudeAgent",
-        instanceKey: "default",
+        instanceKey: "",
         dirName: "grill-me",
       });
       assert.deepEqual(parseHostSkillId("host:codex:codex_work:tdd"), {
@@ -53,7 +53,14 @@ it.layer(NodeServices.layer)("HostSkills", (it) => {
         instanceKey: "codex_work",
         dirName: "tdd",
       });
-      assert.equal(parseHostSkillId("host:codex:default:tdd"), null);
+      // An instance may be named "default"; its ids stay distinct from the
+      // built-in root's two-part form.
+      assert.deepEqual(parseHostSkillId("host:codex:default:tdd"), {
+        originKey: "codex",
+        instanceKey: "default",
+        dirName: "tdd",
+      });
+      assert.equal(parseHostSkillId("host:codex::tdd"), null);
       assert.equal(parseHostSkillId("host:codex:../tdd"), null);
       assert.equal(parseHostSkillId("mattpocock/skills:skills/tdd"), null);
     }),

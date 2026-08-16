@@ -341,6 +341,7 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(
         Layer.succeed(SkillMaterializer, {
           materialize: () => Effect.succeed({ written: [], removed: [], loaded: [] }),
+          resolveMentions: () => Effect.succeed([]),
         }),
       ),
     );

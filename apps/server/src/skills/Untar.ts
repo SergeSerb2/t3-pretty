@@ -131,7 +131,10 @@ export function* iterateTarEntries(bytes: Uint8Array): Generator<TarEntry> {
   }
 }
 
+/** Decompressed archives beyond this are refused outright (gzip bombs, monorepos). */
+const MAX_TAR_BYTES = 256 * 1024 * 1024;
+
 /** Decompress a `.tar.gz` buffer and return every entry. */
 export function listTarGzEntries(gzipped: Uint8Array): Array<TarEntry> {
-  return [...iterateTarEntries(NodeZlib.gunzipSync(gzipped))];
+  return [...iterateTarEntries(NodeZlib.gunzipSync(gzipped, { maxOutputLength: MAX_TAR_BYTES }))];
 }
