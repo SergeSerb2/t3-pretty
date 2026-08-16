@@ -1146,7 +1146,9 @@ export function PullRequestCodeTab({
           inside an overflowing element tracks the content's bottom edge, which would carry
           the trigger away with the first scroll. */}
       <div className="relative min-h-0 flex-1">
-        <div className="h-full overflow-auto">{body}</div>
+        <div className="h-full overflow-auto" data-pull-request-tab-scroll="code">
+          {body}
+        </div>
         {reviewOverlay}
       </div>
     </div>
@@ -1322,6 +1324,7 @@ export function PullRequestCodeTab({
             // interaction, but its native host outline clips and competes with the focus
             // indicators on its actual controls.
             className="h-full overflow-auto [scrollbar-gutter:stable]"
+            data-pull-request-tab-scroll="code"
             items={items}
             selectedLines={selectedLines}
             onSelectedLinesChange={setSelectedLines}
