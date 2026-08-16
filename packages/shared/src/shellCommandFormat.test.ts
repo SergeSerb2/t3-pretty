@@ -58,6 +58,30 @@ describe("formatShellCommandForDisplay", () => {
     expect(formatShellCommandForDisplay("echo hi # note && not a command")).toBe(
       "echo hi # note && not a command",
     );
+    expect(formatShellCommandForDisplay("echo hi;# ignore && echo DANGEROUS")).toBe(
+      "echo hi;# ignore && echo DANGEROUS",
+    );
+    expect(formatShellCommandForDisplay("echo hi&&# ignore && echo DANGEROUS")).toBe(
+      "echo hi&&# ignore && echo DANGEROUS",
+    );
+    expect(formatShellCommandForDisplay("echo one && echo two # keep this break")).toBe(
+      "echo one &&\n  echo two # keep this break",
+    );
+    expect(formatShellCommandForDisplay("echo foo#not-a-comment && echo bar")).toBe(
+      "echo foo#not-a-comment &&\n  echo bar",
+    );
+  });
+
+  it("does not break pipes inside ${} parameter expansions", () => {
+    expect(formatShellCommandForDisplay("printf '<%s>\\n' ${x:-a|b}")).toBe(
+      "printf '<%s>\\n' ${x:-a|b}",
+    );
+    expect(formatShellCommandForDisplay("echo ${x:-a|b} && echo done")).toBe(
+      "echo ${x:-a|b} &&\n  echo done",
+    );
+    expect(formatShellCommandForDisplay("echo ${#name} && echo done")).toBe(
+      "echo ${#name} &&\n  echo done",
+    );
   });
 
   it("formats the long one-liner from agent bash cards", () => {

@@ -33,7 +33,10 @@ export function formatShellCommandForDisplay(command: string): string {
   let wroteBreak = false;
   for (const breakAt of breaks) {
     const nextStart = skipHorizontalWhitespace(trimmed, breakAt);
-    if (nextStart >= trimmed.length) {
+    // A following comment is still on this line in the original command. Putting
+    // it on the next line would make `cmd && # note` a syntax error, and would
+    // un-comment anything after a later operator in that comment.
+    if (nextStart >= trimmed.length || isShellCommentStart(trimmed, nextStart)) {
       continue;
     }
     formatted += `${trimmed.slice(cursor, breakAt).trimEnd()}\n${CONTINUATION_INDENT}`;
@@ -134,11 +137,16 @@ function findTopLevelChainBreaks(source: string): number[] {
   let quote: "'" | '"' | null = null;
   let escaped = false;
   let parenDepth = 0;
+  let braceDepth = 0;
   let doubleBracketDepth = 0;
   let inBackticks = false;
 
   const isDepthZero = () =>
-    quote === null && parenDepth === 0 && doubleBracketDepth === 0 && !inBackticks;
+    quote === null &&
+    parenDepth === 0 &&
+    braceDepth === 0 &&
+    doubleBracketDepth === 0 &&
+    !inBackticks;
 
   while (index < source.length) {
     const character = source[index]!;
@@ -188,6 +196,18 @@ function findTopLevelChainBreaks(source: string): number[] {
       continue;
     }
 
+    if (character === "$" && source[index + 1] === "{") {
+      braceDepth += 1;
+      index += 2;
+      continue;
+    }
+
+    if (character === "}" && braceDepth > 0) {
+      braceDepth -= 1;
+      index += 1;
+      continue;
+    }
+
     if (character === "$" && source[index + 1] === "(") {
       parenDepth += 1;
       index += 2;
@@ -224,11 +244,7 @@ function findTopLevelChainBreaks(source: string): number[] {
       return [];
     }
 
-    if (
-      isDepthZero() &&
-      character === "#" &&
-      (index === 0 || isHorizontalWhitespace(source[index - 1]!))
-    ) {
+    if (isDepthZero() && isShellCommentStart(source, index)) {
       break;
     }
 
@@ -275,4 +291,16 @@ function skipHorizontalWhitespace(source: string, start: number): number {
 
 function isHorizontalWhitespace(character: string): boolean {
   return character === " " || character === "\t";
+}
+
+// Bash starts a comment when `#` is a new word: start of input, or after a
+// POSIX metacharacter. `echo hi;# x && y` comments out `x && y`; `foo#bar` does not.
+function isShellCommentStart(source: string, index: number): boolean {
+  if (source[index] !== "#") {
+    return false;
+  }
+  if (index === 0) {
+    return true;
+  }
+  return /[\s;&|()<>]/u.test(source[index - 1]!);
 }

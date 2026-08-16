@@ -47,7 +47,7 @@ function ToolCallSectionBlock(props: {
           <MessageCopyButton
             className="mt-px shrink-0"
             size="icon-xs"
-            text={props.section.display}
+            text={props.section.original}
             variant="ghost"
           />
         </div>
