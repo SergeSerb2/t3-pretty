@@ -1,9 +1,10 @@
 # Review usage
 
-The Usage page combines Codex and Claude Code activity from your connected environments. It reads
-the providers' local session history and shows API-equivalent token cost, processed tokens, cache
-savings, provider shares, and model breakdowns. Subscription billing is separate from the raw token
-cost shown here.
+The Usage page combines activity from your connected environments across Codex, Claude Code, Cursor,
+Grok, and Kimi. It reads each provider's local session history and shows API-equivalent token cost,
+processed tokens, cache savings, provider shares, and model breakdowns. Subscription billing is
+separate from the raw token cost shown here. Cursor does not currently persist token usage in its
+local session files, so its share stays at zero until that changes.
 
 Disconnected or offline environments are left alone: opening Usage does not reconnect them, and
 their totals are omitted until they are connected again.

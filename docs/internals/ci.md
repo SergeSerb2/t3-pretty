@@ -23,4 +23,11 @@ signing only when platform credentials are present. macOS passkey builds additio
 `APPLE_TEAM_ID` and the `MACOS_PROVISIONING_PROFILE` secret; Windows uses Azure Trusted Signing.
 Without the core signing credentials, it still releases unsigned artifacts.
 
+T3 Pretty desktop and mobile releases are documented in
+[fork-release.md](../operations/fork-release.md) and
+[fork-mobile-release.md](../operations/fork-mobile-release.md). Preflight,
+WSL `node-pty`, OTA publish, GitHub release publication, and relay deploy run
+on `ubuntu-latest`. Only the signed macOS DMG and local iOS IPA use the
+self-hosted Mac.
+
 See [Release Checklist](../operations/release.md) for the full release/signing setup checklist.

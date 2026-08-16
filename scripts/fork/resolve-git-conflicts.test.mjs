@@ -287,7 +287,9 @@ ${">".repeat(7)} theirs
     assert.include(mobileWorkflow, "eas submit");
     assert.include(mobileWorkflow, "eas build:list");
     assert.notInclude(mobileWorkflow, "--status finished");
-    assert.notInclude(mobileWorkflow, "ubuntu-latest");
+    assert.include(mobileWorkflow, "ubuntu-latest");
+    assert.include(mobileWorkflow, "name: Publish OTA");
+    assert.include(mobileWorkflow, "name: Build and submit iOS");
     assert.notInclude(mobileWorkflow, "--no-wait");
     assert.isBelow(
       mobileWorkflow.indexOf("- name: Publish OTA update"),

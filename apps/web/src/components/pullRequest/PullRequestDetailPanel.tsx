@@ -114,6 +114,19 @@ import {
   resolveBaseFreshness,
   type PullRequestFinding,
 } from "./pullRequestDetail.logic";
+import {
+  findPullRequestTabScroller,
+  PULL_REQUEST_PANEL_TABS,
+  pullRequestPanelSessionKey,
+  pullRequestPanelViewKey,
+  type PullRequestPanelTab,
+} from "./pullRequestPanelView.logic";
+import {
+  readPullRequestPanelView,
+  usePullRequestPanelScrollRestore,
+  writePullRequestPanelScroll,
+  writePullRequestPanelView,
+} from "./pullRequestPanelViewStore";
 import { canEditPullRequestChangeRequest } from "./pullRequestEditing.logic";
 import {
   resolvePickableEnvironments,
@@ -129,7 +142,7 @@ import {
   summarizePullRequestChecks,
 } from "./pullRequestPresentation";
 
-type DetailTab = "summary" | "timeline" | "code";
+type DetailTab = PullRequestPanelTab;
 
 const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
   merge: "Pull request merged",
@@ -399,16 +412,34 @@ export function PullRequestDetailPanel({
   composerDraftTarget?: ScopedThreadRef | DraftId;
 }) {
   const pullRequestKey = `${reference.projectId}:${reference.repository}#${reference.number}`;
-  const [tab, setTab] = useState<DetailTab>("summary");
-  const [timelineOrder, setTimelineOrder] = useState<"newest" | "oldest">("newest");
+  const viewKey = pullRequestPanelViewKey(
+    pullRequestPanelSessionKey(composerDraftTarget, environmentId),
+    reference,
+  );
+  // Read once on this mount: the store is the memory that survives the remount when the
+  // reader leaves for another thread and comes back with this panel still open.
+  const savedView = useRef(readPullRequestPanelView(viewKey)).current;
+  const [tab, setTabState] = useState<DetailTab>(savedView?.tab ?? "summary");
+  const setTab = (next: DetailTab) => {
+    setTabState(next);
+    writePullRequestPanelView(viewKey, { tab: next });
+  };
+  const [timelineOrder, setTimelineOrderState] = useState<"newest" | "oldest">(
+    savedView?.timelineOrder ?? "newest",
+  );
+  const setTimelineOrder = (next: "newest" | "oldest") => {
+    setTimelineOrderState(next);
+    writePullRequestPanelView(viewKey, { timelineOrder: next });
+  };
   const [codeCommitScope, setCodeCommitScope] = useState<{
     readonly pullRequestKey: string;
     readonly oid: string | null;
-  }>(() => ({ pullRequestKey, oid: null }));
+  }>(() => ({ pullRequestKey, oid: savedView?.selectedCodeCommitOid ?? null }));
   const selectedCodeCommitOid =
     codeCommitScope.pullRequestKey === pullRequestKey ? codeCommitScope.oid : null;
   const selectCodeCommit = (oid: string | null) => {
     setCodeCommitScope({ pullRequestKey, oid });
+    writePullRequestPanelView(viewKey, { selectedCodeCommitOid: oid });
   };
   const openCommit = (oid: string) => {
     selectCodeCommit(oid);
@@ -419,24 +450,33 @@ export function PullRequestDetailPanel({
   // summary needs it too — a large description re-parses its whole markdown on every return
   // to the tab. `visibility` keeps boxes, sizes and scroll offsets, and takes hidden content
   // out of the tab order and the accessibility tree.
-  const [mountedTabs, setMountedTabs] = useState<ReadonlySet<DetailTab>>(
-    () => new Set<DetailTab>(["summary"]),
-  );
+  const [mountedTabs, setMountedTabs] = useState<ReadonlySet<DetailTab>>(() => {
+    const next = new Set<DetailTab>([savedView?.tab ?? "summary"]);
+    for (const item of PULL_REQUEST_PANEL_TABS) {
+      if (savedView?.scrollTopByTab?.[item] !== undefined) next.add(item);
+    }
+    return next;
+  });
   useEffect(() => {
     setMountedTabs((previous) =>
       previous.has(tab) ? previous : new Set<DetailTab>(previous).add(tab),
     );
   }, [tab]);
-  const [chromeCondensed, setChromeCondensed] = useState(false);
+  const [chromeCondensed, setChromeCondensed] = useState(
+    savedView?.chromeCondensedByTab?.[savedView.tab ?? "summary"] ?? false,
+  );
   // Each tab remembers whether its chrome was condensed. Only the active tab can emit scroll
   // events, so the capture handler always writes the active tab's entry — and a tab switch
   // reads the destination's memory instead of inheriting the tab being left. A tab too short
   // to scroll remembers "expanded", which is what keeps it from being stranded under a chrome
   // it has no scrollbar to reopen.
-  const chromeStateByTab = useRef<Partial<Record<DetailTab, boolean>>>({});
+  const chromeStateByTab = useRef<Partial<Record<DetailTab, boolean>>>(
+    savedView?.chromeCondensedByTab ?? {},
+  );
   useEffect(() => {
     setChromeCondensed(chromeStateByTab.current[tab] ?? false);
   }, [tab]);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const condensed = chromeVariant === "collapse" && chromeCondensed;
   // Collapsing removes the fold's height from the chrome, which would otherwise hand that
   // height to the scrollport and leap the content up by it mid-scroll. The cure is exact
@@ -509,6 +549,18 @@ export function PullRequestDetailPanel({
   );
   const activityPending = activityQuery.isPending && activity === null;
   const activityError = activity === null ? activityQuery.error : null;
+  usePullRequestPanelScrollRestore({
+    viewKey,
+    tab,
+    canRestore: detail !== null && mountedTabs.has(tab),
+    viewportRef,
+  });
+  useEffect(() => {
+    return () => {
+      const scroller = scrollerRef.current;
+      if (scroller !== null) writePullRequestPanelScroll(viewKey, tab, scroller.scrollTop);
+    };
+  }, [tab, viewKey]);
   const refreshDetail = useCallback(() => {
     detailQuery.refresh();
     activityQuery.refresh();
@@ -1826,7 +1878,7 @@ export function PullRequestDetailPanel({
                           : "Show newest activity first"
                       }
                       onClick={() =>
-                        setTimelineOrder((value) => (value === "newest" ? "oldest" : "newest"))
+                        setTimelineOrder(timelineOrder === "newest" ? "oldest" : "newest")
                       }
                     >
                       <ArrowDownUpIcon aria-hidden className="size-3" />
@@ -1841,14 +1893,25 @@ export function PullRequestDetailPanel({
       </div>
 
       <div
+        ref={viewportRef}
         className="relative min-h-0 flex-1 overflow-hidden"
         // Scroll does not bubble, but it captures: one listener hears every tab's own scroll
         // container. Collapse past two line-heights, expand only back at the very top, so the
         // boundary row cannot flap the chrome open and shut.
         onScrollCapture={(event) => {
-          if (chromeVariant !== "collapse") return;
           const scroller = event.target as HTMLElement;
-          scrollerRef.current = scroller;
+          const tabScroller =
+            viewportRef.current === null
+              ? null
+              : findPullRequestTabScroller(viewportRef.current, tab);
+          if (tabScroller === null || scroller === tabScroller) {
+            scrollerRef.current = scroller;
+          }
+          if (scroller === tabScroller) {
+            writePullRequestPanelScroll(viewKey, tab, scroller.scrollTop);
+          }
+          if (chromeVariant !== "collapse") return;
+          if (tabScroller !== null && scroller !== tabScroller) return;
           const top = scroller.scrollTop;
           setChromeCondensed((previous) => {
             let next = previous;
@@ -1869,6 +1932,11 @@ export function PullRequestDetailPanel({
               next = true;
             }
             chromeStateByTab.current[tab] = next;
+            if (next !== previous) {
+              writePullRequestPanelView(viewKey, {
+                chromeCondensedByTab: { [tab]: next },
+              });
+            }
             return next;
           });
         }}
@@ -1900,6 +1968,8 @@ export function PullRequestDetailPanel({
                   fixCheckLabel={handoffLabels.fixCheck}
                   onFixFinding={startFixFinding}
                   onRefresh={refreshDetail}
+                  {...(savedView === undefined ? {} : { restoredView: savedView })}
+                  onViewChange={(patch) => writePullRequestPanelView(viewKey, patch)}
                 />
               </div>
             ) : null}

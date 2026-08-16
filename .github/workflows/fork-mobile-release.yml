@@ -1,16 +1,15 @@
 name: T3 Pretty Mobile Release
 
-# Production iOS binaries compile on the fork's self-hosted Macs (the same
-# machines that already ship desktop). That avoids Expo's cloud iOS quota
-# ($2/build on paid plans, 15/month on free). OTA updates and TestFlight
-# upload still use the fork-owned EAS project; those are not iOS cloud builds.
+# Production iOS binaries compile on the fork's self-hosted Macs. That avoids
+# Expo's cloud iOS quota ($2/build on paid plans, 15/month on free). OTA
+# updates and TestFlight upload still use the fork-owned EAS project; those
+# are not iOS cloud builds.
 #
-# Fingerprint is computed on this Mac so `eas update` and `eas build --local`
-# share one runtime version. Production `release` and explicit `build` always
-# compile and submit a new TestFlight IPA. The recorded fingerprint
-# (`.t3-fork/ios-production-fingerprint`) is the durable record of the last
-# local submit — local builds never appear in `eas build:list` — and is
-# still used if a future mode needs to skip a matching native binary.
+# OTA publishing and the native-fingerprint decision run on GitHub-hosted
+# ubuntu-latest (free for this public repo) so they never wait for m1-dev.
+# Xcode runs only when the fingerprint changed, or when a maintainer
+# dispatches `build` / force_ios. JS-only releases therefore never occupy
+# the Mac.
 #
 # See docs/operations/fork-mobile-release.md.
 on:
@@ -27,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "release (OTA + iOS TestFlight), build, or update (OTA only)"
+        description: "release (OTA + iOS TestFlight if native changed), build, or update (OTA only)"
         required: true
         type: choice
         default: release
@@ -48,14 +47,187 @@ on:
         description: "OTA update message (release or update mode)"
         required: false
         type: string
+      force_ios:
+        description: "Compile and submit a TestFlight IPA even when the native fingerprint is unchanged"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: fork-mobile-release
   cancel-in-progress: false
 
 jobs:
-  production:
-    name: Mobile ${{ github.event_name == 'push' && 'release' || inputs.mode }}
+  ota:
+    name: Publish OTA (${{ github.event_name == 'push' && 'release' || inputs.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      should_build: ${{ steps.native.outputs.should_build }}
+      fingerprint: ${{ steps.native.outputs.fingerprint }}
+    env:
+      APP_VARIANT: production
+      NODE_OPTIONS: --max-old-space-size=8192
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+      T3CODE_MOBILE_UPDATE_URL: ${{ vars.T3CODE_MOBILE_UPDATE_URL }}
+      T3CODE_MOBILE_EAS_PROJECT_ID: ${{ vars.T3CODE_MOBILE_EAS_PROJECT_ID }}
+      T3CODE_MOBILE_EXPO_OWNER: ${{ vars.T3CODE_MOBILE_EXPO_OWNER }}
+      T3CODE_MOBILE_EXPO_SLUG: ${{ vars.T3CODE_MOBILE_EXPO_SLUG }}
+      T3CODE_APPLE_TEAM_ID: ${{ vars.T3CODE_APPLE_TEAM_ID }}
+      T3CODE_IOS_SHARE_EXTENSION: ${{ vars.T3CODE_IOS_SHARE_EXTENSION }}
+      MODE: ${{ github.event_name == 'push' && 'release' || inputs.mode }}
+      PLATFORM: ${{ github.event_name == 'push' && 'all' || inputs.platform }}
+      FORCE_IOS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_ios || false }}
+    steps:
+      - id: expo-token
+        name: Check for EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -n "$EXPO_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "EXPO_TOKEN is required for OTA publishing and managed iOS credentials." >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        if: steps.expo-token.outputs.present == 'true'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          clean: true
+          # No sparse-checkout here: it makes actions/checkout fetch with
+          # --filter=blob:none, and eas-cli archives the project via
+          # `git clone --depth 1 file://<workspace>`, which fails (exit 128)
+          # when the partial clone can't serve the unfetched blobs.
+
+      - name: Setup Vite+
+        if: steps.expo-token.outputs.present == 'true'
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+              - --filter=@t3tools/scripts...
+
+      - name: Expose pnpm
+        if: steps.expo-token.outputs.present == 'true'
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+          "$vp_pnpm_bin/pnpm" --version
+
+      - name: Setup EAS
+        if: steps.expo-token.outputs.present == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          # npm, not pnpm: this only installs eas-cli into the action's own
+          # tool dir, and pnpm 11 hard-fails that install on dtrace-provider's
+          # ignored build script (no allowBuilds config outside the repo).
+          packager: npm
+
+      - name: Pull production environment variables
+        if: steps.expo-token.outputs.present == 'true'
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        # app.config.ts reads the repository-root env files, not apps/mobile/.env.local.
+        # Local EAS builds pack a gitignore-filtered copy, so also export the
+        # pulled values into the job environment for child processes.
+        run: |
+          set -euo pipefail
+          eas env:pull production --path ../../.env.local --non-interactive
+          if [[ -f ../../.env.local ]]; then
+            grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> "$GITHUB_ENV"
+          fi
+
+      - name: Publish OTA update
+        if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'update' || env.MODE == 'release')
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          update_platform="$PLATFORM"
+          if [[ "$MODE" == "release" ]]; then
+            update_platform=all
+          fi
+          eas update \
+            --channel production \
+            --environment production \
+            --platform "$update_platform" \
+            --message "${{ inputs.message || format('Production OTA ({0})', github.sha) }}" \
+            --non-interactive
+
+      - id: native
+        name: Decide whether a new iOS binary is required
+        if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'build' || env.MODE == 'release')
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ "$MODE" == "build" && "$PLATFORM" == "android" ]]; then
+            echo "Native Android cloud builds are retired. iOS compiles locally on the Mac runner; Android store binaries are not wired yet." >&2
+            exit 1
+          fi
+
+          fingerprint_file="$RUNNER_TEMP/ios-fingerprint.json"
+          builds_file="$RUNNER_TEMP/ios-builds.json"
+          if ! eas fingerprint:generate \
+            --platform ios \
+            --build-profile production \
+            --json \
+            --non-interactive > "$fingerprint_file"; then
+            echo "Could not generate the iOS fingerprint; building a native binary to be safe."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Do not filter to finished builds alone. A follow-up push can
+          # otherwise miss an identical production build that is still new,
+          # queued, or in progress and start another paid compile. Local builds
+          # hold the workflow concurrency lock, but hosted builds (manual or
+          # historical) do not, so the gate must see in-flight records too.
+          if ! eas build:list \
+            --platform ios \
+            --build-profile production \
+            --distribution store \
+            --limit 20 \
+            --json \
+            --non-interactive > "$builds_file"; then
+            echo "[]" > "$builds_file"
+          fi
+
+          submitted_fingerprint=""
+          if [[ -f ../../.t3-fork/ios-production-fingerprint ]]; then
+            submitted_fingerprint="$(tr -d '[:space:]' < ../../.t3-fork/ios-production-fingerprint)"
+          fi
+          node ../../scripts/fork/resolve-ios-native-build.mjs \
+            --fingerprint-file "$fingerprint_file" \
+            --builds-file "$builds_file" \
+            --submitted-fingerprint "$submitted_fingerprint" \
+            --force "$([[ "$MODE" == "build" || "$FORCE_IOS" == "true" ]] && echo true || echo false)"
+          fingerprint="$(grep '^fingerprint=' "$GITHUB_OUTPUT" | tail -n1 | cut -d= -f2- || true)"
+          should_build="$(grep '^should_build=' "$GITHUB_OUTPUT" | tail -n1 | cut -d= -f2- || true)"
+          {
+            echo "### iOS native binary"
+            echo
+            echo "- fingerprint: \`${fingerprint:-unknown}\`"
+            echo "- should_build: \`${should_build:-unknown}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  ios:
+    name: Build and submit iOS
+    needs: ota
+    if: needs.ota.outputs.should_build == 'true'
     runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
     timeout-minutes: 90
     permissions:
@@ -63,9 +235,6 @@ jobs:
       # `.t3-fork/ios-production-fingerprint` after a local TestFlight
       # submit; pull-requests:write lands that record on main through a
       # pull request because the ruleset rejects direct pushes (GH013).
-      # GITHUB_TOKEN cannot write repository Variables (`variables` is not a
-      # valid permissions key), so the durable store is a committed
-      # fork-state file instead.
       contents: write
       pull-requests: write
     env:
@@ -73,19 +242,15 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=8192
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
-      # Public fork-owned EAS identity. These must be available before
-      # `eas env:pull` so app.config.ts can resolve the project being pulled.
       T3CODE_MOBILE_UPDATE_URL: ${{ vars.T3CODE_MOBILE_UPDATE_URL }}
       T3CODE_MOBILE_EAS_PROJECT_ID: ${{ vars.T3CODE_MOBILE_EAS_PROJECT_ID }}
       T3CODE_MOBILE_EXPO_OWNER: ${{ vars.T3CODE_MOBILE_EXPO_OWNER }}
       T3CODE_MOBILE_EXPO_SLUG: ${{ vars.T3CODE_MOBILE_EXPO_SLUG }}
       T3CODE_APPLE_TEAM_ID: ${{ vars.T3CODE_APPLE_TEAM_ID }}
       T3CODE_IOS_SHARE_EXTENSION: ${{ vars.T3CODE_IOS_SHARE_EXTENSION }}
-      # A mobile-relevant push is a complete release: fast OTA delivery for
-      # already-installed runtimes, then a new TestFlight IPA so testers see
-      # the build in TestFlight the way they did before the fingerprint skip.
       MODE: ${{ github.event_name == 'push' && 'release' || inputs.mode }}
       PLATFORM: ${{ github.event_name == 'push' && 'all' || inputs.platform }}
+      FORCE_IOS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_ios || false }}
     steps:
       - name: Ensure runner action externals
         shell: bash
@@ -172,20 +337,7 @@ jobs:
             echo "Restored ${runtime} (node $("${dest}/bin/node" --version))."
           done
 
-      - id: expo-token
-        name: Check for EXPO_TOKEN
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          if [ -n "$EXPO_TOKEN" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "EXPO_TOKEN is required for OTA publishing and managed iOS credentials." >&2
-            exit 1
-          fi
-
       - name: Checkout
-        if: steps.expo-token.outputs.present == 'true'
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -196,7 +348,6 @@ jobs:
           # when the partial clone can't serve the unfetched blobs.
 
       - name: Prepare macOS runner PATH
-        if: steps.expo-token.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -204,18 +355,16 @@ jobs:
           echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
 
       - name: Setup Vite+
-        if: steps.expo-token.outputs.present == 'true'
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
-          cache: true
+          cache: false
           run-install: |
             args:
               - --filter=@t3tools/mobile...
               - --filter=@t3tools/scripts...
 
       - name: Expose pnpm
-        if: steps.expo-token.outputs.present == 'true'
         run: |
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
           vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
@@ -223,7 +372,6 @@ jobs:
           "$vp_pnpm_bin/pnpm" --version
 
       - name: Setup EAS
-        if: steps.expo-token.outputs.present == 'true'
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
@@ -234,7 +382,6 @@ jobs:
           packager: npm
 
       - name: Pull production environment variables
-        if: steps.expo-token.outputs.present == 'true'
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -249,7 +396,6 @@ jobs:
           fi
 
       - name: Prepare Apple CI credentials
-        if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'build' || env.MODE == 'release')
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
@@ -291,82 +437,7 @@ jobs:
           fs.writeFileSync(easJsonPath, `${JSON.stringify(eas, null, 2)}\n`);
           NODE
 
-      - name: Publish OTA update
-        if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'update' || env.MODE == 'release')
-        working-directory: apps/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          update_platform="$PLATFORM"
-          if [[ "$MODE" == "release" ]]; then
-            update_platform=all
-          fi
-          eas update \
-            --channel production \
-            --environment production \
-            --platform "$update_platform" \
-            --message "${{ inputs.message || format('Production OTA ({0})', github.sha) }}" \
-            --non-interactive
-
-      - id: native
-        name: Decide whether a new iOS binary is required
-        if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'build' || env.MODE == 'release')
-        working-directory: apps/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ "$MODE" == "build" && "$PLATFORM" == "android" ]]; then
-            echo "Native Android cloud builds are retired. iOS compiles locally on the Mac runner; Android store binaries are not wired yet." >&2
-            exit 1
-          fi
-
-          fingerprint_file="$RUNNER_TEMP/ios-fingerprint.json"
-          builds_file="$RUNNER_TEMP/ios-builds.json"
-          if ! eas fingerprint:generate \
-            --platform ios \
-            --build-profile production \
-            --json \
-            --non-interactive > "$fingerprint_file"; then
-            echo "Could not generate the iOS fingerprint; building a native binary to be safe."
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Do not filter to finished builds alone. A follow-up push can
-          # otherwise miss an identical production build that is still new,
-          # queued, or in progress and start another paid compile. Local builds
-          # hold the workflow concurrency lock, but hosted builds (manual or
-          # historical) do not, so the gate must see in-flight records too.
-          if ! eas build:list \
-            --platform ios \
-            --build-profile production \
-            --distribution store \
-            --limit 20 \
-            --json \
-            --non-interactive > "$builds_file"; then
-            echo "[]" > "$builds_file"
-          fi
-
-          submitted_fingerprint=""
-          if [[ -f ../../.t3-fork/ios-production-fingerprint ]]; then
-            submitted_fingerprint="$(tr -d '[:space:]' < ../../.t3-fork/ios-production-fingerprint)"
-          fi
-          node ../../scripts/fork/resolve-ios-native-build.mjs \
-            --fingerprint-file "$fingerprint_file" \
-            --builds-file "$builds_file" \
-            --submitted-fingerprint "$submitted_fingerprint" \
-            --force "$([[ "$MODE" == "build" || "$MODE" == "release" ]] && echo true || echo false)"
-          fingerprint="$(grep '^fingerprint=' "$GITHUB_OUTPUT" | tail -n1 | cut -d= -f2- || true)"
-          should_build="$(grep '^should_build=' "$GITHUB_OUTPUT" | tail -n1 | cut -d= -f2- || true)"
-          {
-            echo "### iOS native binary"
-            echo
-            echo "- fingerprint: \`${fingerprint:-unknown}\`"
-            echo "- should_build: \`${should_build:-unknown}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
       - name: Prepare iOS toolchain
-        if: steps.expo-token.outputs.present == 'true' && steps.native.outputs.should_build == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -408,6 +479,9 @@ jobs:
             fi
           fi
           xcodebuild -version
+          mkdir -p "$HOME/.cache/t3-pretty-release/cocoapods"
+          echo "CP_HOME_DIR=$HOME/.cache/t3-pretty-release/cocoapods" >> "$GITHUB_ENV"
+          export CP_HOME_DIR="$HOME/.cache/t3-pretty-release/cocoapods"
           if ! command -v pod >/dev/null; then
             brew install cocoapods
           fi
@@ -418,7 +492,6 @@ jobs:
           fastlane --version
 
       - name: Build and submit
-        if: steps.expo-token.outputs.present == 'true' && steps.native.outputs.should_build == 'true'
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -454,12 +527,9 @@ jobs:
             --non-interactive
 
       - name: Record submitted iOS fingerprint
-        if: >-
-          steps.expo-token.outputs.present == 'true' &&
-          steps.native.outputs.should_build == 'true' &&
-          steps.native.outputs.fingerprint != ''
+        if: needs.ota.outputs.fingerprint != ''
         env:
-          FINGERPRINT: ${{ steps.native.outputs.fingerprint }}
+          FINGERPRINT: ${{ needs.ota.outputs.fingerprint }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail

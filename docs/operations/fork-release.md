@@ -55,11 +55,16 @@ source code on installed machines.
    recognizes the tagged changelog child of the triggering commit, so re-running a completed
    Actions run stays a no-op. Generation failures downgrade to warnings: the release ships
    without new entries and the next run regenerates everything missing.
-8. `m1-dev-t3code-fork` builds macOS arm64 desktop and, through
-   `fork-mobile-release.yml`, local iOS TestFlight IPAs. `windows-5080-t3code-fork`
-   builds Windows x64. Only trusted `main` commits run on these self-hosted
-   machines; pull requests use GitHub-hosted runners. iOS store binaries cannot
-   compile on Windows.
+8. GitHub-hosted `ubuntu-latest` (free on this public repo) resolves the
+   version, writes What's New notes, compiles the WSL `node-pty` binary, and
+   publishes the GitHub release. `m1-dev-t3code-fork` only signs the macOS
+   arm64 DMG. `windows-5080-t3code-fork` builds Windows x64. iOS TestFlight
+   IPAs still compile on a self-hosted Mac through `fork-mobile-release.yml`.
+   Only trusted `main` commits run on the self-hosted machines; pull requests
+   do not. iOS store binaries cannot compile on Windows. Desktop packaging is
+   skipped when the push cannot change the shipped desktop app (mobile-only,
+   docs-only, marketing, or relay-only commits). `workflow_dispatch` and the
+   upstream-sync dispatch still always run.
 9. GitHub publishes a public release marked as latest (not a prerelease — drafts and
    prereleases cannot be latest), with the installers, blockmaps, and both `nightly` and
    `latest` update manifests. Packaged fork apps use a generic `electron-updater` feed at
@@ -99,6 +104,27 @@ reliably install it. Windows signing is optional for updater mechanics: missing 
 Signing secrets produce an unsigned NSIS installer and skip Authenticode verification. Add the
 existing Azure Trusted Signing secret names before broad distribution if SmartScreen prompts should
 go away.
+
+## Machines and expected times
+
+Measured from recent successful runs on the current two runners (2026-08-16):
+
+| Job                         | Where it used to run                  | Typical time                                | Where it runs now                             |
+| --------------------------- | ------------------------------------- | ------------------------------------------- | --------------------------------------------- |
+| Changelog + version + smoke | m1-dev                                | 10 min (6.5 min model + 3 min install)      | `ubuntu-latest`                               |
+| WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                |
+| macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m1-dev (or a second Mac with the same labels) |
+| Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload            |
+| Publish GitHub release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `ubuntu-latest`                               |
+| Relay production deploy     | m1-dev                                | queued behind releases                      | `ubuntu-latest`                               |
+
+A desktop release that used to sit 25–40 minutes in the m1-dev queue and then take ~30 minutes of Mac occupancy should now occupy the Mac for only the ~8 minute signed DMG. Changelog, WSL, and publish no longer wait for — or block — iOS.
+
+### Adding m5-dev
+
+This machine is an M5 Pro (18 cores, 48 GB). m1-dev is the existing dedicated Mac runner. Xcode on M1 recently spent 13 minutes compiling and submitting an IPA; the same compile on an M5 Pro should land around 7–10 minutes. Vite + electron-builder is less parallel, so the DMG itself only drops a minute or two. The real win is overlap: one Mac can sign the DMG while the other compiles iOS.
+
+`scripts/fork/setup-macos-runner.sh` registers a LaunchAgent runner with the same labels as m1-dev. It refuses to register if Xcode.app is missing (Command Line Tools cannot build an IPA). Do not register a daily driver until you are willing to share CPU with release jobs, and never give the runner `pull_request` labels.
 
 ## Runner recovery
 
