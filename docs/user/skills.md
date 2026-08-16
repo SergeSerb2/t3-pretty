@@ -30,8 +30,8 @@ are owned by a plugin or a repo, so T3 Code leaves them alone.
   skills apply to every thread in the environment, on any provider. Provider CLI skills under
   **On this environment** have the same switch: on means the CLI can load them, off hides them
   without deleting the folder.
-- **Per thread:** in the composer, open **Skills** (next to the model options) and search or
-  toggle skills for that thread. Global skills show a **Global** badge and stay on; thread picks
+- **Per thread:** in the composer, open the `⋯` menu next to the model options and choose
+  **Skills**, then toggle skills for that thread. Global skills show a **Global** badge and stay on; thread picks
   stack on top of them. You can change a thread's picks any time — they apply from the next turn.
 
 When a turn starts with skills attached (from Settings, the thread picker, or a `$skill` mention

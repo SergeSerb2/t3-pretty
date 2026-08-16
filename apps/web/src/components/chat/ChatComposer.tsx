@@ -93,7 +93,7 @@ import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../Compos
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
-import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import { ComposerOverflowMenu } from "./ComposerOverflowMenu";
 import { resolveRuntimeModeOption, runtimeModeOptionsForProvider } from "./runtimeModeOptions";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
@@ -111,8 +111,8 @@ import {
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { resolveContextWindowModelDisplayName } from "./ContextWindowMeter.logic";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
-import { SkillsMenuContent, SkillsPicker } from "./SkillsPicker";
-import { SubagentPolicyMenuContent, SubagentPolicyPicker } from "./SubagentPolicyPicker";
+import { SkillsSubmenu } from "./SkillsPicker";
+import { SubagentPolicySubmenu } from "./SubagentPolicyPicker";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
@@ -208,13 +208,7 @@ import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
-import {
-  BotIcon,
-  CircleAlertIcon,
-  GitPullRequestArrowIcon,
-  PencilRulerIcon,
-  XIcon,
-} from "lucide-react";
+import { BotIcon, CircleAlertIcon, PencilRulerIcon, XIcon } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
 import { getProviderInteractionModeToggle } from "../../providerModels";
 import {
@@ -285,9 +279,6 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
-  autoCreatePullRequest: boolean;
-  showAutoCreatePullRequestToggle: boolean;
-  onToggleAutoCreatePullRequest: () => void;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
@@ -328,41 +319,6 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
           </span>
         </TooltipTrigger>
         <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
-      </Tooltip>
-    </>
-  ) : null;
-
-  const autoPrTooltip = props.autoCreatePullRequest
-    ? "Create a PR when done — the first message asks the agent to open a pull request after finishing"
-    : "Create a PR when done — off";
-
-  const autoPrToggle = props.showAutoCreatePullRequestToggle ? (
-    <>
-      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <ComposerControl
-              className={cn(
-                "shrink-0 whitespace-nowrap",
-                props.autoCreatePullRequest
-                  ? "bg-accent text-accent-foreground hover:bg-accent/80"
-                  : "text-secondary-label hover:text-foreground",
-              )}
-              type="button"
-              aria-pressed={props.autoCreatePullRequest}
-              onClick={props.onToggleAutoCreatePullRequest}
-              aria-label={autoPrTooltip}
-            />
-          }
-        >
-          <ComposerControlIcon
-            icon={GitPullRequestArrowIcon}
-            className={cn(props.autoCreatePullRequest && "text-current opacity-100")}
-          />
-          <span className="sr-only sm:not-sr-only">PR</span>
-        </TooltipTrigger>
-        <TooltipPopup side="top">{autoPrTooltip}</TooltipPopup>
       </Tooltip>
     </>
   ) : null;
@@ -408,7 +364,6 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
       </Tooltip>
 
       {interactionModeToggle}
-      {autoPrToggle}
     </>
   );
 });
@@ -1282,8 +1237,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ...(routeKind === "server" ? { threadRef: routeThreadRef, enabledSkillIds } : {}),
     ...(routeKind === "draft" && draftId ? { draftId } : {}),
   };
-  const skillsPicker = <SkillsPicker {...skillsPickerProps} />;
-  const skillsMenuContent = <SkillsMenuContent {...skillsPickerProps} />;
   const subagentPolicyPickerProps = {
     environmentId,
     parentModel: selectedModel,
@@ -1292,8 +1245,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ...(routeKind === "server" ? { threadRef: routeThreadRef, threadPolicy: subagentPolicy } : {}),
     ...(routeKind === "draft" && draftId ? { draftId } : {}),
   };
-  const subagentPolicyPicker = <SubagentPolicyPicker {...subagentPolicyPickerProps} />;
-  const subagentPolicyMenuContent = <SubagentPolicyMenuContent {...subagentPolicyPickerProps} />;
+  // Skills and agents live in the footer's `⋯` menu at every width; the
+  // provider traits join them only when the footer is compact.
+  const threadOverflowMenuContent = (
+    <>
+      <SkillsSubmenu {...skillsPickerProps} />
+      <SubagentPolicySubmenu {...subagentPolicyPickerProps} />
+    </>
+  );
   const pendingPrimaryAction = useMemo(
     () =>
       activePendingProgress
@@ -3267,34 +3226,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 )}
 
                 {isComposerFooterCompact ? (
-                  <CompactComposerControlsMenu
+                  <ComposerOverflowMenu
                     provider={selectedProvider}
                     interactionMode={interactionMode}
-                    runtimeMode={runtimeMode}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
+                    onToggleInteractionMode={toggleInteractionMode}
+                    runtimeMode={runtimeMode}
+                    showRuntimeModeSelect
+                    onRuntimeModeChange={handleRuntimeModeChange}
                     autoCreatePullRequest={autoCreatePullRequest}
                     showAutoCreatePullRequestToggle={showAutoCreatePullRequestToggle}
                     onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
-                    traitsMenuContent={
-                      providerTraitsMenuContent ? (
-                        <>
-                          {providerTraitsMenuContent}
-                          <MenuDivider />
-                          {skillsMenuContent}
-                          <MenuDivider />
-                          {subagentPolicyMenuContent}
-                        </>
-                      ) : (
-                        <>
-                          {skillsMenuContent}
-                          <MenuDivider />
-                          {subagentPolicyMenuContent}
-                        </>
-                      )
-                    }
-                    onToggleInteractionMode={toggleInteractionMode}
-                    onRuntimeModeChange={handleRuntimeModeChange}
-                  />
+                  >
+                    {providerTraitsMenuContent ? (
+                      <>
+                        {providerTraitsMenuContent}
+                        <MenuDivider />
+                      </>
+                    ) : null}
+                    {threadOverflowMenuContent}
+                  </ComposerOverflowMenu>
                 ) : (
                   <>
                     {providerTraitsPicker ? (
@@ -3303,20 +3254,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         {providerTraitsPicker}
                       </>
                     ) : null}
-                    <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-                    {skillsPicker}
-                    {subagentPolicyPicker}
                     <ComposerFooterModeControls
                       provider={selectedProvider}
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
-                      autoCreatePullRequest={autoCreatePullRequest}
-                      showAutoCreatePullRequestToggle={showAutoCreatePullRequestToggle}
-                      onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
                       onToggleInteractionMode={toggleInteractionMode}
                       onRuntimeModeChange={handleRuntimeModeChange}
                     />
+                    <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                    <ComposerOverflowMenu
+                      provider={selectedProvider}
+                      interactionMode={interactionMode}
+                      showInteractionModeToggle={false}
+                      onToggleInteractionMode={toggleInteractionMode}
+                      runtimeMode={runtimeMode}
+                      showRuntimeModeSelect={false}
+                      onRuntimeModeChange={handleRuntimeModeChange}
+                      autoCreatePullRequest={autoCreatePullRequest}
+                      showAutoCreatePullRequestToggle={showAutoCreatePullRequestToggle}
+                      onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
+                    >
+                      {threadOverflowMenuContent}
+                    </ComposerOverflowMenu>
                   </>
                 )}
               </div>

@@ -4,9 +4,9 @@ T3 Code can ask the agent to open a pull request when it finishes a task. Turn i
 
 ## The PR Toggle
 
-When you start a new task in a Git repository, the composer shows a **PR** toggle:
+When you start a new task in a Git repository, the composer offers a **Create PR when done** toggle:
 
-- **Web and desktop** – next to the mode controls in the composer footer (in narrow windows it moves into the `⋯` overflow menu as **Create PR when done**)
+- **Web and desktop** – **Create PR when done** in the composer footer's `⋯` menu; the `⋯` button shows a dot while it is on
 - **Mobile** – a **PR** pill in the new-task composer toolbar
 
 While the toggle is on, the first message of the task carries an instruction asking the agent to create a pull request after finishing the work. The instruction itself stays hidden from your chat transcript — you see only what you typed.
