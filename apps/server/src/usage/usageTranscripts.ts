@@ -68,7 +68,19 @@ export function totalTokens(totals: UsageTokenTotals): number {
  * an order of magnitude.
  */
 export function mightCarryUsage(line: string, provider: UsageProviderKind): boolean {
-  return provider === "claude" ? line.includes('"usage"') : line.includes('"token_count"');
+  switch (provider) {
+    case "claude":
+      return line.includes('"usage"');
+    case "codex":
+      return line.includes('"token_count"');
+    case "grok":
+      return line.includes('"turn_completed"');
+    case "kimi":
+      return line.includes('"usage.record"');
+    case "cursor":
+      // Cursor's ACP session store does not persist token usage today.
+      return false;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -295,6 +307,179 @@ export function parseCodexLine(line: string, state: CodexScanState): UsageRecord
     // rollout, so they need no global dedup.
     dedupeKey: null,
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Grok                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Grok reports cost in integer ticks. Observed values line up with dollars
+ * at 1e-9 USD per tick (a ~20k-token turn lands around $0.27).
+ */
+const GROK_COST_TICKS_PER_USD = 1_000_000_000;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * Grok's top-level `timestamp` is unix seconds; `_meta.agentTimestampMs` is
+ * already milliseconds. Prefer the millisecond field when present.
+ */
+function grokTimestampMs(
+  record: Record<string, unknown>,
+  params: Record<string, unknown>,
+): number | null {
+  const meta = asRecord(params["_meta"]);
+  const agentMs = meta?.["agentTimestampMs"];
+  if (typeof agentMs === "number" && Number.isFinite(agentMs) && agentMs > 0) {
+    return Math.trunc(agentMs);
+  }
+  const timestamp = record["timestamp"];
+  if (typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0) {
+    return timestamp < 1e12 ? Math.trunc(timestamp * 1000) : Math.trunc(timestamp);
+  }
+  return parseTimestampMs(timestamp);
+}
+
+function grokModelFromUsage(usage: Record<string, unknown>): string {
+  const modelUsage = asRecord(usage["modelUsage"]);
+  if (modelUsage === null) return "";
+  let best = "";
+  let bestTokens = -1;
+  for (const [name, raw] of Object.entries(modelUsage)) {
+    if (name.length === 0) continue;
+    const entry = asRecord(raw);
+    const tokens = entry === null ? 0 : int(entry["totalTokens"]);
+    if (tokens > bestTokens) {
+      best = name;
+      bestTokens = tokens;
+    }
+  }
+  return best;
+}
+
+function grokTotals(usage: Record<string, unknown>): UsageTokenTotals {
+  const inputTokens = int(usage["inputTokens"]);
+  const cachedInputTokens = int(usage["cachedReadTokens"]);
+  const cacheCreationTokens = int(usage["cacheCreationTokens"] ?? usage["cachedWriteTokens"]);
+  const outputTokens = int(usage["outputTokens"]);
+  return {
+    // Like Codex: inputTokens is inclusive of cache reads and writes.
+    uncachedInputTokens: Math.max(0, inputTokens - cachedInputTokens - cacheCreationTokens),
+    cachedInputTokens,
+    cacheCreationTokens,
+    outputTokens,
+    reasoningTokens: Math.min(
+      outputTokens,
+      int(usage["reasoningTokens"] ?? usage["thoughtTokens"]),
+    ),
+  };
+}
+
+/**
+ * Parses one line of a Grok `updates.jsonl`. Only `turn_completed` updates
+ * carry a closed-out usage object; intermediate stream lines do not.
+ */
+export function parseGrokLine(line: string): UsageRecord | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  const record = asRecord(parsed);
+  if (record === null) return null;
+  const params = asRecord(record["params"]);
+  if (params === null) return null;
+  const update = asRecord(params["update"]);
+  if (update === null || update["sessionUpdate"] !== "turn_completed") return null;
+
+  const usage = asRecord(update["usage"]);
+  if (usage === null) return null;
+
+  const model = grokModelFromUsage(usage);
+  if (model.length === 0) return null;
+
+  const timestampMs = grokTimestampMs(record, params);
+  if (timestampMs === null) return null;
+
+  const totals = grokTotals(usage);
+  if (totalTokens(totals) === 0) return null;
+
+  const sessionId = typeof params["sessionId"] === "string" ? params["sessionId"] : "";
+  const promptId = typeof update["prompt_id"] === "string" ? update["prompt_id"] : "";
+  const ticks = usage["costUsdTicks"];
+  const reportedCostUsd =
+    typeof ticks === "number" && Number.isFinite(ticks) && ticks > 0
+      ? ticks / GROK_COST_TICKS_PER_USD
+      : null;
+
+  return {
+    provider: "grok",
+    timestampMs,
+    model,
+    sessionId,
+    totals,
+    reportedCostUsd,
+    // prompt_id repeats across turns in a session; pair it with the instant.
+    dedupeKey: `${sessionId}:${promptId}:${timestampMs}`,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Kimi                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Parses one line of a Kimi `wire.jsonl`. Only `usage.record` events are
+ * counted: the matching `step.end` loop event repeats the same totals.
+ */
+export function parseKimiLine(line: string, sessionId: string): UsageRecord | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  const record = asRecord(parsed);
+  if (record === null || record["type"] !== "usage.record") return null;
+
+  const model = typeof record["model"] === "string" ? record["model"] : "";
+  if (model.length === 0) return null;
+
+  const usage = asRecord(record["usage"]);
+  if (usage === null) return null;
+
+  const time = record["time"];
+  if (typeof time !== "number" || !Number.isFinite(time) || time <= 0) return null;
+  const timestampMs = time < 1e12 ? Math.trunc(time * 1000) : Math.trunc(time);
+
+  const totals: UsageTokenTotals = {
+    uncachedInputTokens: int(usage["inputOther"]),
+    cachedInputTokens: int(usage["inputCacheRead"]),
+    cacheCreationTokens: int(usage["inputCacheCreation"]),
+    outputTokens: int(usage["output"]),
+    reasoningTokens: 0,
+  };
+  if (totalTokens(totals) === 0) return null;
+
+  return {
+    provider: "kimi",
+    timestampMs,
+    model,
+    sessionId,
+    totals,
+    reportedCostUsd: null,
+    dedupeKey: `${sessionId}:${timestampMs}:${model}`,
+  };
+}
+
+/** Session folder name (`session_<uuid>`) from a Kimi `wire.jsonl` path. */
+export function kimiSessionIdFromPath(filePath: string): string {
+  const match = filePath.match(/session_[0-9a-fA-F-]{36}/);
+  return match?.[0] ?? "";
 }
 
 export { EMPTY_TOTALS };
