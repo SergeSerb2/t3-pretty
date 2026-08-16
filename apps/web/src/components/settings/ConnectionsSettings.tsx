@@ -105,6 +105,7 @@ import {
   resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
 } from "~/versionSkew";
+import { useCloudUiEnabled } from "~/cloud/clerkGate";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { authEnvironment } from "~/state/auth";
@@ -1690,7 +1691,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
 }
 
 function CloudLinkRow({ canManageRelay }: { readonly canManageRelay: boolean }) {
-  return hasCloudPublicConfig() ? <ConfiguredCloudLinkRow canManageRelay={canManageRelay} /> : null;
+  return useCloudUiEnabled() ? <ConfiguredCloudLinkRow canManageRelay={canManageRelay} /> : null;
 }
 
 function EmptyRemoteEnvironments({ cloudEnabled = true }: { readonly cloudEnabled?: boolean }) {
@@ -1718,14 +1719,14 @@ function CloudRemoteEnvironmentRows({
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly savedEnvironments: ReadonlyArray<EnvironmentPresentation>;
 }) {
-  return hasCloudPublicConfig() ? (
+  return useCloudUiEnabled() ? (
     <CloudEnvironmentConnectRows
       primaryEnvironmentId={primaryEnvironmentId}
       savedEnvironments={savedEnvironments}
       empty={<EmptyRemoteEnvironments />}
     />
   ) : savedEnvironments.length === 0 ? (
-    <EmptyRemoteEnvironments cloudEnabled={false} />
+    <EmptyRemoteEnvironments cloudEnabled={hasCloudPublicConfig()} />
   ) : null;
 }
 

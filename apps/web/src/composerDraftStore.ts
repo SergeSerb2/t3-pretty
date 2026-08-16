@@ -2226,6 +2226,24 @@ function hydratePersistedComposerImageAttachment(
   }
 }
 
+/**
+ * Object URL for a hydrated attachment, so the decoded bytes are referenced by
+ * URI instead of pinning the base64 copy in draft state for the life of the
+ * draft. Falls back to the data URL where `URL` is unavailable (tests, SSR);
+ * `revokeObjectPreviewUrl` ignores anything that is not a blob URL, so both
+ * shapes follow the same removal path.
+ */
+function previewUrlForHydratedFile(file: File, dataUrl: string): string {
+  if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
+    return dataUrl;
+  }
+  try {
+    return URL.createObjectURL(file);
+  } catch {
+    return dataUrl;
+  }
+}
+
 export function hydrateImagesFromPersisted(
   attachments: ReadonlyArray<PersistedComposerImageAttachment>,
 ): ComposerImageAttachment[] {
@@ -2240,7 +2258,7 @@ export function hydrateImagesFromPersisted(
         name: attachment.name,
         mimeType: attachment.mimeType,
         sizeBytes: attachment.sizeBytes,
-        previewUrl: attachment.dataUrl,
+        previewUrl: previewUrlForHydratedFile(file, attachment.dataUrl),
         file,
       } satisfies ComposerImageAttachment,
     ];

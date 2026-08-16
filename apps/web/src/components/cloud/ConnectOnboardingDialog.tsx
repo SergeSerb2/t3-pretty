@@ -9,7 +9,7 @@ import {
   ConnectOnboardingOptOutSchema,
   EMPTY_CONNECT_ONBOARDING_OPT_OUT_STATE,
 } from "~/cloud/connectOnboarding";
-import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { useCloudUiEnabled } from "~/cloud/clerkGate";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { usePrimarySessionState } from "~/environments/primary";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
@@ -40,7 +40,7 @@ import { toastManager } from "../ui/toast";
  * away. A cold load with a restored session does not count as a sign-in.
  */
 export function ConnectOnboardingDialog() {
-  if (!hasCloudPublicConfig()) return null;
+  if (!useCloudUiEnabled()) return null;
 
   return <ConfiguredConnectOnboardingDialog />;
 }

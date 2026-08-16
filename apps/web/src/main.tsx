@@ -7,6 +7,7 @@ import "./index.css";
 
 import { isElectron } from "./env";
 import { ManagedRelayAuthProvider } from "./cloud/managedAuth";
+import { useClerkGateOpen } from "./cloud/clerkGate";
 import { hasCloudPublicConfig } from "./cloud/publicConfig";
 import { getRouter } from "./router";
 import {
@@ -36,15 +37,26 @@ const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
 
 const app = <AppRoot router={router} />;
 
+// Desktop installs without a cloud session render the app unwrapped so the
+// clerk-js chunk never loads; the gate opens from a sign-in surface (and stays
+// open across launches), which mounts the provider and remounts the tree once.
+function ElectronRoot({ publishableKey }: { publishableKey: string }) {
+  if (!useClerkGateOpen()) return app;
+
+  return (
+    <React.Suspense fallback={null}>
+      <ElectronClerkRoot publishableKey={publishableKey}>
+        <ManagedRelayAuthProvider>{app}</ManagedRelayAuthProvider>
+      </ElectronClerkRoot>
+    </React.Suspense>
+  );
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     {clerkPublishableKey && hasCloudPublicConfig() ? (
       isElectron ? (
-        <React.Suspense fallback={null}>
-          <ElectronClerkRoot publishableKey={clerkPublishableKey}>
-            <ManagedRelayAuthProvider>{app}</ManagedRelayAuthProvider>
-          </ElectronClerkRoot>
-        </React.Suspense>
+        <ElectronRoot publishableKey={clerkPublishableKey} />
       ) : (
         <ClerkProvider appearance={clerkAppearance} publishableKey={clerkPublishableKey}>
           <ManagedRelayAuthProvider>{app}</ManagedRelayAuthProvider>

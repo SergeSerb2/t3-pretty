@@ -1,6 +1,7 @@
 "use client";
 
 import { RegistryContext, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   FILL_PREVIEW_VIEWPORT,
@@ -39,6 +40,7 @@ import {
 import { resolveBrowserRecordingStopTarget } from "~/browser/browserRecordingScope";
 import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
 import { runBrowserViewportMutation } from "~/browser/browserViewportActions";
+import { acquirePreviewGuestThread } from "~/browser/previewGuestResidency";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import { isElectron } from "~/env";
 import { useEnvironments } from "~/state/environments";
@@ -306,6 +308,9 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
         threadId: request.threadId,
       };
       let tabId = request.tabId ?? null;
+      // Wake this thread's guests for the whole request and keep them resident
+      // while it runs, so a dormant tab is a delay and not a failure.
+      const releasePreviewGuests = acquirePreviewGuestThread(scopedThreadKey(threadRef));
       try {
         let state = readThreadPreviewState(threadRef);
         const needsSessionSync = needsPreviewAutomationSessionSync(state, request.tabId);
@@ -671,6 +676,8 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           tabId,
           cause,
         });
+      } finally {
+        releasePreviewGuests();
       }
     },
     [environmentId, listPreviews, open, registry, resize],

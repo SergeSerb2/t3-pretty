@@ -520,10 +520,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
   const resolvedArtifactDirectory = path.resolve(artifactDirectory);
-  const playwrightInstallExpression = yield* Effect.cached(
-    playwrightInjectedRuntimeInstallExpression(),
-  );
-
   const annotationThemeRef = yield* Ref.make(DEFAULT_ANNOTATION_THEME);
   const mainWindowRef = yield* Ref.make<Option.Option<BrowserWindow>>(Option.none());
   const tabsRef = yield* SynchronizedRef.make<ReadonlyMap<string, PreviewTabState>>(new Map());
@@ -1309,17 +1305,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       true,
     );
     if (installed) return;
-    const expression = yield* playwrightInstallExpression.pipe(
-      Effect.mapError(
-        (cause) =>
-          new PreviewOperationError({
-            operation: "ensurePlaywrightInjected",
-            tabId,
-            cause,
-          }),
-      ),
-    );
-    yield* evaluateWithDebugger(tabId, send, expression, true);
+    yield* evaluateWithDebugger(tabId, send, playwrightInjectedRuntimeInstallExpression, true);
   });
 
   const cancelPickElement = Effect.fn("PreviewManager.cancelPickElement")(function* (

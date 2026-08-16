@@ -795,9 +795,9 @@ export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
 export const DESKTOP_FILE_EXCLUSIONS = [
   // electron-builder only injects this catch-all when every `files` pattern is
-  // an exclusion (`containsOnlyIgnore()`). The Playwright re-includes below are
-  // positive globs, so without an explicit `**/*` the staged app tree — including
-  // `apps/desktop/dist-electron/main.cjs` — never enters app.asar.
+  // an exclusion (`containsOnlyIgnore()`), so any positive glob added below
+  // would otherwise leave the staged app tree — including
+  // `apps/desktop/dist-electron/main.cjs` — out of app.asar.
   "**/*",
   // T3 Pretty always passes the user's installed Claude executable to the SDK,
   // so the SDK's optional platform packages (each a ~200MB bundled executable)
@@ -817,10 +817,10 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   "!**/*.d.mts",
   "!**/*.d.cts",
   "!**/node_modules/**/{README,README.*,CHANGELOG,CHANGELOG.*,readme,readme.*}",
-  // Playwright is only used for the injected-script text file.
+  // Playwright's injected script is lifted into the desktop bundle at build
+  // time (apps/desktop/scripts/build-playwright-injected.mjs); the package is a
+  // devDependency, so this only guards a stray hoisted copy.
   "!**/node_modules/playwright-core/**",
-  "**/node_modules/playwright-core/package.json",
-  "**/node_modules/playwright-core/lib/coreBundle.js",
   // Effect ships unused OpenAPI UIs that are never imported.
   "!**/node_modules/effect/**/httpApiScalar.js",
   "!**/node_modules/effect/**/HttpApiScalar.js",
