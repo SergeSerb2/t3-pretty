@@ -80,7 +80,9 @@ type ProjectorName =
  * changed. Tool activities stream in constantly during a turn, which makes
  * an unguarded refresh the hottest query path in the pipeline.
  */
-const SHELL_SUMMARY_COUNT_ACTIVITY_KINDS: ReadonlySet<string> = new Set([
+// Exported so the shell stream (ShellStream.ts) refetches the shell row for
+// exactly these appends and sends a `thread-touched` delta for the rest.
+export const SHELL_SUMMARY_COUNT_ACTIVITY_KINDS: ReadonlySet<string> = new Set([
   "approval.requested",
   "approval.resolved",
   "provider.approval.respond.failed",
@@ -654,6 +656,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             pinOrderKey: null,
             scenery: null,
             enabledSkillIds: event.payload.enabledSkillIds,
+            subagentPolicy: event.payload.subagentPolicy ?? null,
             titleRegenerationRequestId: null,
             titleRegenerationStartedAt: null,
             latestUserMessageAt: null,
@@ -834,6 +837,21 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             enabledSkillIds: event.payload.enabledSkillIds,
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "thread.subagent-policy-set": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            subagentPolicy: event.payload.policy,
             updatedAt: event.payload.updatedAt,
           });
           return;
@@ -1769,6 +1787,26 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       },
     ];
 
+    // Attachment cleanup only happens for a handful of event types; skip the
+    // filesystem walk (and its span) when no projector queued any work.
+    const applyAttachmentSideEffects = (
+      attachmentSideEffects: AttachmentSideEffects,
+      event: OrchestrationEvent,
+    ) =>
+      attachmentSideEffects.deletedThreadIds.size === 0 &&
+      attachmentSideEffects.prunedThreadRelativePaths.size === 0
+        ? Effect.void
+        : runAttachmentSideEffects(attachmentSideEffects).pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("failed to apply projected attachment side-effects", {
+                sequence: event.sequence,
+                eventType: event.type,
+                cause,
+              }),
+            ),
+          );
+
+    // Bootstrap catch-up: one projector replaying on its own cursor.
     const runProjectorForEvent = Effect.fn("runProjectorForEvent")(function* (
       projector: ProjectorDefinition,
       event: OrchestrationEvent,
@@ -1790,16 +1828,38 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         ),
       );
 
-      yield* runAttachmentSideEffects(attachmentSideEffects).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("failed to apply projected attachment side-effects", {
-            projector: projector.name,
-            sequence: event.sequence,
-            eventType: event.type,
-            cause,
-          }),
-        ),
+      yield* applyAttachmentSideEffects(attachmentSideEffects, event);
+    });
+
+    // Live path: every projector applies the event inside one transaction (a
+    // single savepoint when the engine's command transaction is already open),
+    // then all cursors advance in one multi-row upsert. A failing projector
+    // fails the whole event; the caller's transaction rolls back and no
+    // projector observes a partially applied event.
+    const runProjectorsForEvent = Effect.fn("runProjectorsForEvent")(function* (
+      event: OrchestrationEvent,
+    ) {
+      const attachmentSideEffects: AttachmentSideEffects = {
+        deletedThreadIds: new Set<string>(),
+        prunedThreadRelativePaths: new Map<string, Set<string>>(),
+      };
+
+      yield* sql.withTransaction(
+        Effect.gen(function* () {
+          for (const projector of projectors) {
+            yield* projector.apply(event, attachmentSideEffects);
+          }
+          yield* projectionStateRepository.upsertMany(
+            projectors.map((projector) => ({
+              projector: projector.name,
+              lastAppliedSequence: event.sequence,
+              updatedAt: event.occurredAt,
+            })),
+          );
+        }),
       );
+
+      yield* applyAttachmentSideEffects(attachmentSideEffects, event);
     });
 
     const bootstrapProjector = (projector: ProjectorDefinition) =>
@@ -1819,9 +1879,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         );
 
     const projectEvent: OrchestrationProjectionPipelineShape["projectEvent"] = (event) =>
-      Effect.forEach(projectors, (projector) => runProjectorForEvent(projector, event), {
-        concurrency: 1,
-      }).pipe(
+      runProjectorsForEvent(event).pipe(
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
         Effect.provideService(ServerConfig, serverConfig),

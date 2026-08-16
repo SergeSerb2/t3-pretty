@@ -35,7 +35,8 @@ import { ServerSettingsService } from "../serverSettings.ts";
 import { SKILL_MANAGED_MARKER_FILE } from "./SkillStore.ts";
 
 const HOST_SKILL_ID_PREFIX = "host:";
-const DEFAULT_INSTANCE_KEY = "default";
+/** Built-in root marker; empty so no configured ProviderInstanceId can collide with it. */
+const DEFAULT_INSTANCE_KEY = "";
 const SHARED_ORIGIN_KEY = "agents";
 const SKILL_FILE = "SKILL.md";
 /** Providers only discover a file named exactly `SKILL.md`; this hides one. */
@@ -157,7 +158,6 @@ export function parseHostSkillId(skillId: string): ParsedHostSkillId | null {
       instanceKey &&
       dirName &&
       DRIVER_ORIGIN_KEYS.has(originKey) &&
-      instanceKey !== DEFAULT_INSTANCE_KEY &&
       isSafeSegment(instanceKey) &&
       isSafeSegment(dirName)
     ) {
@@ -244,7 +244,9 @@ export const make = Effect.gen(function* () {
     };
 
     for (const convention of DRIVER_CONVENTIONS) {
-      const defaultHome = path.resolve(expandHomePath(convention.defaultDirectory(process.env)));
+      // No tilde expansion: an env-provided config dir reaches the CLI
+      // verbatim, so this must scan the same directory the CLI would.
+      const defaultHome = path.resolve(convention.defaultDirectory(process.env));
       const driver = ProviderDriverKind.make(convention.originKey);
       addRoot({
         originKey: convention.originKey,

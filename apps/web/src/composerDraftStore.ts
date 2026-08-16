@@ -17,6 +17,7 @@ import {
   type ScopedThreadRef,
   SkillId,
   ThreadId,
+  ThreadSubagentPolicy,
 } from "@t3tools/contracts";
 import {
   parseScopedProjectKey,
@@ -156,6 +157,7 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   // pre-skills drafts decode unchanged. Global settings-enabled skills are
   // never stored here — only explicit per-thread picks.
   enabledSkillIds: Schema.optionalKey(Schema.Array(SkillId)),
+  subagentPolicy: Schema.optionalKey(ThreadSubagentPolicy),
 });
 type PersistedComposerThreadDraftState = typeof PersistedComposerThreadDraftState.Type;
 
@@ -296,6 +298,7 @@ export interface ComposerThreadDraftState {
    * "no per-thread picks" — global settings-enabled skills never land here.
    */
   enabledSkillIds?: ReadonlyArray<SkillId> | undefined;
+  subagentPolicy?: ThreadSubagentPolicy | undefined;
 }
 
 /**
@@ -497,6 +500,10 @@ interface ComposerDraftStoreState {
   setEnabledSkillIds: (
     threadRef: ComposerThreadTarget,
     enabledSkillIds: ReadonlyArray<SkillId> | null | undefined,
+  ) => void;
+  setSubagentPolicy: (
+    threadRef: ComposerThreadTarget,
+    policy: ThreadSubagentPolicy | null | undefined,
   ) => void;
   addImage: (threadRef: ComposerThreadTarget, image: ComposerImageAttachment) => void;
   addImages: (threadRef: ComposerThreadTarget, images: ComposerImageAttachment[]) => void;
@@ -757,6 +764,29 @@ function normalizeTerminalContextsForThread(
   return normalizedContexts;
 }
 
+function persistThreadSubagentPolicy(
+  policy: ThreadSubagentPolicy,
+): DeepMutable<NonNullable<PersistedComposerThreadDraftState["subagentPolicy"]>> {
+  return {
+    mode: policy.mode,
+    ...(policy.child != null
+      ? {
+          child: {
+            model: policy.child.model,
+            ...(policy.child.options !== undefined
+              ? {
+                  options: policy.child.options.map((option) => ({
+                    id: option.id,
+                    value: option.value,
+                  })),
+                }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
   return (
     draft.prompt.length === 0 &&
@@ -771,7 +801,8 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
     draft.interactionMode === null &&
-    (draft.enabledSkillIds === undefined || draft.enabledSkillIds.length === 0)
+    (draft.enabledSkillIds === undefined || draft.enabledSkillIds.length === 0) &&
+    (draft.subagentPolicy === undefined || draft.subagentPolicy.mode === "inherit")
   );
 }
 
@@ -1764,6 +1795,14 @@ function normalizePersistedDraftsByThreadId(
           (id): id is SkillId => typeof id === "string" && id.trim().length > 0,
         )
       : undefined;
+    const subagentPolicy =
+      draftCandidate.subagentPolicy != null &&
+      typeof draftCandidate.subagentPolicy === "object" &&
+      (draftCandidate.subagentPolicy.mode === "inherit" ||
+        draftCandidate.subagentPolicy.mode === "off" ||
+        draftCandidate.subagentPolicy.mode === "on")
+        ? draftCandidate.subagentPolicy
+        : undefined;
     const prompt = ensureInlineTerminalContextPlaceholders(
       promptCandidate,
       terminalContexts.length,
@@ -1825,7 +1864,8 @@ function normalizePersistedDraftsByThreadId(
       !hasModelData &&
       !runtimeMode &&
       !interactionMode &&
-      (!enabledSkillIds || enabledSkillIds.length === 0)
+      (!enabledSkillIds || enabledSkillIds.length === 0) &&
+      (subagentPolicy === undefined || subagentPolicy.mode === "inherit")
     ) {
       continue;
     }
@@ -1856,6 +1896,9 @@ function normalizePersistedDraftsByThreadId(
       ...(runtimeMode ? { runtimeMode } : {}),
       ...(interactionMode ? { interactionMode } : {}),
       ...(enabledSkillIds && enabledSkillIds.length > 0 ? { enabledSkillIds } : {}),
+      ...(subagentPolicy !== undefined && subagentPolicy.mode !== "inherit"
+        ? { subagentPolicy: persistThreadSubagentPolicy(subagentPolicy) }
+        : {}),
     };
   }
 
@@ -1960,7 +2003,8 @@ function partializeComposerDraftStoreState(
       !hasModelData &&
       draft.runtimeMode === null &&
       draft.interactionMode === null &&
-      (draft.enabledSkillIds === undefined || draft.enabledSkillIds.length === 0)
+      (draft.enabledSkillIds === undefined || draft.enabledSkillIds.length === 0) &&
+      (draft.subagentPolicy === undefined || draft.subagentPolicy.mode === "inherit")
     ) {
       continue;
     }
@@ -2029,6 +2073,9 @@ function partializeComposerDraftStoreState(
       ...(draft.interactionMode ? { interactionMode: draft.interactionMode } : {}),
       ...(draft.enabledSkillIds && draft.enabledSkillIds.length > 0
         ? { enabledSkillIds: [...draft.enabledSkillIds] }
+        : {}),
+      ...(draft.subagentPolicy !== undefined && draft.subagentPolicy.mode !== "inherit"
+        ? { subagentPolicy: persistThreadSubagentPolicy(draft.subagentPolicy) }
         : {}),
     };
     persistedDraftsByThreadKey[threadKey] = persistedDraft;
@@ -2226,6 +2273,24 @@ function hydratePersistedComposerImageAttachment(
   }
 }
 
+/**
+ * Object URL for a hydrated attachment, so the decoded bytes are referenced by
+ * URI instead of pinning the base64 copy in draft state for the life of the
+ * draft. Falls back to the data URL where `URL` is unavailable (tests, SSR);
+ * `revokeObjectPreviewUrl` ignores anything that is not a blob URL, so both
+ * shapes follow the same removal path.
+ */
+function previewUrlForHydratedFile(file: File, dataUrl: string): string {
+  if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
+    return dataUrl;
+  }
+  try {
+    return URL.createObjectURL(file);
+  } catch {
+    return dataUrl;
+  }
+}
+
 export function hydrateImagesFromPersisted(
   attachments: ReadonlyArray<PersistedComposerImageAttachment>,
 ): ComposerImageAttachment[] {
@@ -2240,7 +2305,7 @@ export function hydrateImagesFromPersisted(
         name: attachment.name,
         mimeType: attachment.mimeType,
         sizeBytes: attachment.sizeBytes,
-        previewUrl: attachment.dataUrl,
+        previewUrl: previewUrlForHydratedFile(file, attachment.dataUrl),
         file,
       } satisfies ComposerImageAttachment,
     ];
@@ -2279,6 +2344,10 @@ function toHydratedThreadDraft(
     interactionMode: persistedDraft.interactionMode ?? null,
     ...(persistedDraft.enabledSkillIds && persistedDraft.enabledSkillIds.length > 0
       ? { enabledSkillIds: [...persistedDraft.enabledSkillIds] }
+      : {}),
+    ...(persistedDraft.subagentPolicy !== undefined &&
+    persistedDraft.subagentPolicy.mode !== "inherit"
+      ? { subagentPolicy: persistedDraft.subagentPolicy }
       : {}),
   };
 }
@@ -3057,6 +3126,42 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },
+        setSubagentPolicy: (threadRef, policy) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return;
+          }
+          const nextPolicy = policy == null || policy.mode === "inherit" ? undefined : policy;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey];
+            if (!existing && nextPolicy === undefined) {
+              return state;
+            }
+            const base = existing ?? createEmptyThreadDraft();
+            const currentPolicy = base.subagentPolicy;
+            const isUnchanged =
+              (currentPolicy === undefined && nextPolicy === undefined) ||
+              (currentPolicy !== undefined &&
+                nextPolicy !== undefined &&
+                currentPolicy.mode === nextPolicy.mode &&
+                JSON.stringify(currentPolicy.child ?? null) ===
+                  JSON.stringify(nextPolicy.child ?? null));
+            if (isUnchanged) {
+              return state;
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...base,
+              subagentPolicy: nextPolicy,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
         addImage: (threadRef, image) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef);
           const threadId = resolveComposerThreadId(get(), threadRef);
@@ -3667,6 +3772,14 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               stripInlineTerminalContextPlaceholders(source.prompt),
               destination.terminalContexts.length,
             );
+            // Skill picks travel with the prompt: switching the draft's
+            // project must not silently drop what the user turned on.
+            const movedSkillIds = [
+              ...new Set([
+                ...(destination.enabledSkillIds ?? []),
+                ...(source.enabledSkillIds ?? []),
+              ]),
+            ];
             const nextDestination: ComposerThreadDraftState = {
               ...destination,
               prompt: movedPrompt,
@@ -3679,6 +3792,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 ...destination.persistedAttachments,
                 ...source.persistedAttachments,
               ],
+              ...(movedSkillIds.length > 0 ? { enabledSkillIds: movedSkillIds } : {}),
             };
             // Same clearing shape as clearComposerPromptAndImages, but the
             // preview URLs are NOT revoked: the images moved and their blobs
@@ -3689,6 +3803,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               images: [],
               nonPersistedImageIds: [],
               persistedAttachments: [],
+              enabledSkillIds: undefined,
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextSource)) {

@@ -384,11 +384,15 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         fold.dirty = false;
       }
 
-      const sequence = yield* SubscriptionRef.get(lastSequence);
-      if (item.event.sequence <= sequence) {
-        continue;
+      // Ephemeral items (live-only tool progress) have no sequence position:
+      // apply them to the working copy without touching the resume cursor.
+      if (item.ephemeral !== true) {
+        const sequence = yield* SubscriptionRef.get(lastSequence);
+        if (item.event.sequence <= sequence) {
+          continue;
+        }
+        yield* SubscriptionRef.set(lastSequence, item.event.sequence);
       }
-      yield* SubscriptionRef.set(lastSequence, item.event.sequence);
 
       if (fold.working === null) {
         if (item.event.type === "thread.deleted") {
@@ -463,7 +467,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       for (;;) {
         const first = yield* Queue.take(streamItems);
         yield* Effect.sleep(THREAD_STREAM_COALESCE_WINDOW);
-        const rest = yield* Queue.takeBetween(streamItems, 0, Number.POSITIVE_INFINITY);
+        // Queue.takeBetween(q, 0, n) short-circuits to [] on min <= 0; clear
+        // drains everything that landed during the window.
+        const rest = yield* Queue.clear(streamItems);
         yield* applyChunk([first, ...rest]);
       }
     }),

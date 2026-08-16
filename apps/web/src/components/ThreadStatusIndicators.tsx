@@ -22,6 +22,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { useProject } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
+import { StatusPulseDot, useStatusPulse } from "../hooks/useStatusPulse";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { vcsEnvironment } from "../state/vcs";
 import { useUiStateStore } from "../uiStateStore";
@@ -440,11 +441,7 @@ export function ThreadStatusLabel({
             />
           }
         >
-          <span
-            className={`size-[9px] rounded-full ${status.dotClass} ${
-              status.pulse ? "animate-status-pulse" : ""
-            }`}
-          />
+          <StatusPulseDot active={status.pulse} className={`size-[9px] ${status.dotClass}`} />
         </TooltipTrigger>
         <TooltipPopup side="top">{status.label}</TooltipPopup>
       </Tooltip>
@@ -461,11 +458,7 @@ export function ThreadStatusLabel({
           />
         }
       >
-        <span
-          className={`h-1.5 w-1.5 rounded-full ${status.dotClass} ${
-            status.pulse ? "animate-status-pulse" : ""
-          }`}
-        />
+        <StatusPulseDot active={status.pulse} className={`h-1.5 w-1.5 ${status.dotClass}`} />
         <span className="hidden md:inline">{status.label}</span>
       </TooltipTrigger>
       <TooltipPopup side="top">{status.label}</TooltipPopup>
@@ -556,6 +549,7 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
   const remoteEnvLabel = environment?.label ?? null;
   const threadEnvironmentLabel = isRemoteThread ? (remoteEnvLabel ?? "Remote") : null;
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
+  useStatusPulse(terminalStatus?.pulse === true);
 
   if (!terminalStatus && !isRemoteThread) {
     return null;
@@ -574,9 +568,7 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
               />
             }
           >
-            <TerminalIcon
-              className={`size-3 ${terminalStatus.pulse ? "animate-status-pulse" : ""}`}
-            />
+            <TerminalIcon className={`size-3 ${terminalStatus.pulse ? "status-pulse" : ""}`} />
           </TooltipTrigger>
           <TooltipPopup side="top">{terminalStatus.label}</TooltipPopup>
         </Tooltip>

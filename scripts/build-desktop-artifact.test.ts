@@ -39,6 +39,7 @@ import {
   resolveDesktopProductName,
   resolveDesktopUpdateChannel,
   resolveDesktopWebAssetBrand,
+  resolveCargoTargetDir,
   resolveResourceMonitorRustTargets,
   resourceMonitorExecutableName,
   resolveGenericUpdateFeedUrl,
@@ -308,6 +309,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       resolveDesktopRuntimeDependencies(
         {
           "@clerk/electron": "catalog:",
+          "@clerk/electron-passkeys": "catalog:",
           "@effect/platform-node": "catalog:",
           "@t3tools/contracts": "workspace:*",
           "@t3tools/shared": "workspace:*",
@@ -315,17 +317,20 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           "@t3tools/tailscale": "workspace:*",
           effect: "catalog:",
           electron: "41.5.0",
+          "electron-store": "^8.2.0",
+          "electron-updater": "^6.6.2",
           "react-grab": "^0.1.32",
         },
         {
           "@clerk/electron": "0.1.0",
+          "@clerk/electron-passkeys": "0.0.3",
           "@effect/platform-node": "4.0.0-beta.59",
           effect: "4.0.0-beta.59",
         },
       ),
       {
-        "@effect/platform-node": "4.0.0-beta.59",
-        effect: "4.0.0-beta.59",
+        "@clerk/electron-passkeys": "0.0.3",
+        "electron-store": "^8.2.0",
       },
     );
   });
@@ -481,6 +486,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   it("limits Electron locales and excludes the unused Claude SDK executable", () => {
     assert.deepStrictEqual(DESKTOP_ELECTRON_LANGUAGES, ["en-US"]);
     assert.deepStrictEqual(DESKTOP_FILE_EXCLUSIONS, [
+      "**/*",
       "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
       "!apps/desktop/prod-resources/windows-server",
       "!apps/desktop/prod-resources/windows-server/**/*",
@@ -491,8 +497,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "!**/*.d.cts",
       "!**/node_modules/**/{README,README.*,CHANGELOG,CHANGELOG.*,readme,readme.*}",
       "!**/node_modules/playwright-core/**",
-      "**/node_modules/playwright-core/package.json",
-      "**/node_modules/playwright-core/lib/coreBundle.js",
       "!**/node_modules/effect/**/httpApiScalar.js",
       "!**/node_modules/effect/**/HttpApiScalar.js",
       "!**/node_modules/effect/**/httpApiSwagger.js",
@@ -500,6 +504,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "!apps/desktop/prod-resources/dmg",
       "!apps/desktop/prod-resources/dmg/**/*",
     ]);
+    // electron-builder 26 only prepends `**/*` when every `files` pattern is an
+    // exclusion, so the catch-all has to stay: adding one positive glob here
+    // would otherwise drop the Electron main entry from the packaged asar.
+    assert.equal(DESKTOP_FILE_EXCLUSIONS[0], "**/*");
+    assert.ok(DESKTOP_FILE_EXCLUSIONS.every((pattern) => !pattern.includes("playwright-core/lib")));
     assert.equal(WINDOWS_SERVER_RESOURCE_SOURCE_DIR, "apps/desktop/prod-resources/windows-server");
     assert.deepStrictEqual(WINDOWS_SERVER_EXTRA_RESOURCES, [
       {
@@ -1177,6 +1186,26 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resourceMonitorExecutableName("mac"), "t3-resource-monitor");
     assert.equal(resourceMonitorExecutableName("win"), "t3-resource-monitor.exe");
   });
+  // The release workflow redirects cargo output with CARGO_TARGET_DIR so the
+  // crate survives clean checkouts; the staging step has to look there too.
+  it.effect("locates the resource monitor under CARGO_TARGET_DIR when set", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      assert.equal(
+        resolveCargoTargetDir(path, "/repo", undefined),
+        path.join("/repo", "native/resource-monitor/target"),
+      );
+      assert.equal(
+        resolveCargoTargetDir(path, "/repo", "  "),
+        path.join("/repo", "native/resource-monitor/target"),
+      );
+      assert.equal(resolveCargoTargetDir(path, "/repo", "/cache/target"), "/cache/target");
+      assert.equal(
+        resolveCargoTargetDir(path, "/repo", "build/target"),
+        path.resolve("/repo", "build/target"),
+      );
+    }),
+  );
   it("promotes target fff binaries to direct staged dependencies", () => {
     assert.deepStrictEqual(resolveFffNativeDependencies("mac", "arm64", "0.9.4"), {
       "@ff-labs/fff-bin-darwin-arm64": "0.9.4",

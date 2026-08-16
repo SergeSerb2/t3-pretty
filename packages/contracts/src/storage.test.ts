@@ -46,5 +46,24 @@ describe("StorageInventory", () => {
     expect(inventory.activeWorktrees).toHaveLength(1);
     expect(inventory.orphanWorktrees[0]?.displayName).toBe("orphan");
     expect(inventory.totalBytes).toBe(1536);
+    expect(inventory.scan).toBeUndefined();
+  });
+
+  it("decodes incremental scan progress when a server streams a partial inventory", () => {
+    const inventory = decodeInventory({
+      activeWorktrees: [],
+      archivedWorktrees: [],
+      activeThreadsWithoutWorktree: 0,
+      archivedThreadsWithoutWorktree: 0,
+      orphanWorktrees: [],
+      activeWorktreeBytes: 0,
+      archivedWorktreeBytes: 0,
+      orphanWorktreeBytes: 0,
+      totalBytes: 0,
+      managedWorktreesRoot: "/tmp/worktrees",
+      scan: { status: "scanning", measuredCount: 2, totalCount: 8 },
+    });
+
+    expect(inventory.scan).toEqual({ status: "scanning", measuredCount: 2, totalCount: 8 });
   });
 });

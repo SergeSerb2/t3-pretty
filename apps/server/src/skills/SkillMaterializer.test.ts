@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { SkillsError, type HostSkill } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -82,6 +82,63 @@ const readOptional = (filePath: string) =>
     return yield* fileSystem.readFileString(filePath).pipe(Effect.orElseSucceed(() => undefined));
   });
 
+describe("assignSkillDirectoryNames", () => {
+  it("keeps a unique skill name as the directory", () => {
+    const names = SkillMaterializer.assignSkillDirectoryNames([
+      {
+        id: "acme/skills:skills/tdd",
+        name: "tdd",
+        sourceRepo: "acme/skills",
+        sourcePath: "skills/tdd",
+      },
+    ]);
+    assert.strictEqual(names.get("acme/skills:skills/tdd"), "tdd");
+  });
+
+  it("suffixes every colliding name from identity, not input order", () => {
+    const first = {
+      id: "octocat/skills-a:skills/tdd",
+      name: "tdd",
+      sourceRepo: "octocat/skills-a",
+      sourcePath: "skills/tdd",
+    };
+    const second = {
+      id: "octocat/skills-b:skills/tdd",
+      name: "tdd",
+      sourceRepo: "octocat/skills-b",
+      sourcePath: "skills/tdd",
+    };
+    const forward = SkillMaterializer.assignSkillDirectoryNames([first, second]);
+    const reverse = SkillMaterializer.assignSkillDirectoryNames([second, first]);
+    assert.strictEqual(forward.get(first.id), "tdd--octocat-skills-a");
+    assert.strictEqual(forward.get(second.id), "tdd--octocat-skills-b");
+    assert.strictEqual(reverse.get(first.id), "tdd--octocat-skills-a");
+    assert.strictEqual(reverse.get(second.id), "tdd--octocat-skills-b");
+  });
+
+  it("folds source path in when two same-name skills share a repo", () => {
+    const names = SkillMaterializer.assignSkillDirectoryNames([
+      {
+        id: "octocat/skills:skills/tdd",
+        name: "tdd",
+        sourceRepo: "octocat/skills",
+        sourcePath: "skills/tdd",
+      },
+      {
+        id: "octocat/skills:examples/tdd",
+        name: "tdd",
+        sourceRepo: "octocat/skills",
+        sourcePath: "examples/tdd",
+      },
+    ]);
+    assert.strictEqual(names.get("octocat/skills:skills/tdd"), "tdd--octocat-skills--skills-tdd");
+    assert.strictEqual(
+      names.get("octocat/skills:examples/tdd"),
+      "tdd--octocat-skills--examples-tdd",
+    );
+  });
+});
+
 it.layer(TestLayer)("SkillMaterializer", (it) => {
   it.effect("writes each enabled skill into both roots with a managed marker", () =>
     Effect.gen(function* () {
@@ -120,9 +177,23 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
           yield* readOptional(path.join(skillDir, SkillStore.SKILL_METADATA_FILE)),
           undefined,
         );
+        // The copy hides itself from git so agent commits never sweep it up.
+        assert.strictEqual(
+          yield* fileSystem.readFileString(path.join(skillDir, ".gitignore")),
+          "*\n",
+        );
       }
       assert.deepStrictEqual(result.removed, []);
-      assert.deepStrictEqual(result.loaded, [{ id: skillId, name: "TDD Skill" }]);
+      // The loaded document points at the first workspace copy and carries
+      // the SKILL.md body without its frontmatter.
+      assert.deepStrictEqual(result.loaded, [
+        {
+          id: skillId,
+          name: "TDD Skill",
+          directory: path.join(cwd, ".claude", "skills", "tdd-skill"),
+          body: "",
+        },
+      ]);
     }),
   );
 
@@ -212,7 +283,171 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
         "also user owned",
       );
       assert.include(result.written, path.join(cwd, ".agents", "skills", "tdd"));
-      assert.deepStrictEqual(result.loaded, [{ id: skillId, name: "tdd" }]);
+      // The user's colliding copy is what loads: their folder wins the name,
+      // and enabling the skill still takes effect.
+      assert.deepStrictEqual(result.loaded, [
+        { id: skillId, name: "tdd", directory: userSkillDir, body: "user owned" },
+      ]);
+    }),
+  );
+
+  it.effect("returns the SKILL.md body without frontmatter for loaded skills", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const materializer = yield* SkillMaterializer.SkillMaterializer;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-cwd-" });
+      const skillId = yield* installSkill({
+        sourceRepo: "octocat/materialize-body",
+        sourcePath: "skills/grill",
+        skillMd: [
+          "---",
+          "name: grill-me",
+          "description: Interview relentlessly.",
+          "---",
+          "",
+          "Ask one question at a time.",
+          "See references/questions.md.",
+          "",
+        ].join("\n"),
+      });
+
+      const result = yield* materializer.materialize({ cwd, skillIds: [skillId] });
+
+      assert.strictEqual(result.loaded.length, 1);
+      assert.strictEqual(
+        result.loaded[0]?.body,
+        "Ask one question at a time.\nSee references/questions.md.",
+      );
+    }),
+  );
+
+  it.effect("resolves $mentions from workspace roots, then provider candidates", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const materializer = yield* SkillMaterializer.SkillMaterializer;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-cwd-" });
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-home-" });
+
+      // A provider CLI skill (user scope) addressed by SKILL.md path.
+      const hostSkillDir = path.join(home, ".claude", "skills", "Host Skill");
+      yield* fileSystem.makeDirectory(hostSkillDir, { recursive: true });
+      yield* fileSystem.writeFileString(
+        path.join(hostSkillDir, "SKILL.md"),
+        "---\nname: Host Skill\n---\nhost body\n",
+      );
+      // A project skill only present in the workspace, addressed by dir name.
+      const projectSkillDir = path.join(cwd, ".agents", "skills", "project-skill");
+      yield* fileSystem.makeDirectory(projectSkillDir, { recursive: true });
+      yield* fileSystem.writeFileString(path.join(projectSkillDir, "SKILL.md"), "project body");
+
+      // A same-named skill in another project's roots, as the provider
+      // snapshot (discovered from the server cwd) may list it.
+      const otherProjectSkillDir = path.join(home, "other", ".claude", "skills", "project-skill");
+      yield* fileSystem.makeDirectory(otherProjectSkillDir, { recursive: true });
+      yield* fileSystem.writeFileString(path.join(otherProjectSkillDir, "SKILL.md"), "other body");
+
+      const resolved = yield* materializer.resolveMentions({
+        cwd,
+        names: ["host-skill", "project-skill", "Project_Skill", "missing-skill"],
+        candidates: [
+          { name: "Host Skill", path: path.join(hostSkillDir, "SKILL.md") },
+          { name: "project-skill", path: path.join(otherProjectSkillDir, "SKILL.md") },
+        ],
+      });
+
+      // The thread's own workspace copy wins over the snapshot path, and two
+      // spellings of one name resolve once.
+      assert.deepStrictEqual(resolved, [
+        { name: "Host Skill", directory: hostSkillDir, body: "host body" },
+        { name: "project-skill", directory: projectSkillDir, body: "project body" },
+      ]);
+    }),
+  );
+
+  it.effect("materializes two enabled skills that share a name under distinct folders", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const materializer = yield* SkillMaterializer.SkillMaterializer;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-cwd-" });
+      const firstId = yield* installSkill({
+        sourceRepo: "octocat/skills-a",
+        sourcePath: "skills/tdd",
+        skillMd: "---\nname: tdd\n---\nfirst body\n",
+      });
+      const secondId = yield* installSkill({
+        sourceRepo: "octocat/skills-b",
+        sourcePath: "skills/tdd",
+        skillMd: "---\nname: tdd\n---\nsecond body\n",
+      });
+
+      const result = yield* materializer.materialize({ cwd, skillIds: [firstId, secondId] });
+
+      assert.deepStrictEqual(
+        result.loaded.map((skill) => [skill.id, path.basename(skill.directory), skill.body]),
+        [
+          [firstId, "tdd--octocat-skills-a", "first body"],
+          [secondId, "tdd--octocat-skills-b", "second body"],
+        ],
+      );
+
+      const reversed = yield* materializer.materialize({ cwd, skillIds: [secondId, firstId] });
+      assert.deepStrictEqual(
+        reversed.loaded.map((skill) => [skill.id, path.basename(skill.directory), skill.body]),
+        [
+          [secondId, "tdd--octocat-skills-b", "second body"],
+          [firstId, "tdd--octocat-skills-a", "first body"],
+        ],
+      );
+    }),
+  );
+
+  it.effect("does not claim a user-owned collision that is not a skill document", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const materializer = yield* SkillMaterializer.SkillMaterializer;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-cwd-" });
+      const skillId = yield* installSkill({
+        sourceRepo: "octocat/materialize-invalid-collision",
+        sourcePath: "skills/tdd",
+        skillMd: "---\nname: tdd\n---\nstore body\n",
+      });
+
+      yield* fileSystem.makeDirectory(path.join(cwd, ".claude", "skills"), { recursive: true });
+      yield* fileSystem.writeFileString(path.join(cwd, ".claude", "skills", "tdd"), "not a skill");
+      const emptyUserDir = path.join(cwd, ".claude", "skills", "also-empty");
+      yield* fileSystem.makeDirectory(emptyUserDir, { recursive: true });
+
+      const fileCollisionId = skillId;
+      const emptyDirId = yield* installSkill({
+        sourceRepo: "octocat/materialize-empty-collision",
+        sourcePath: "skills/also-empty",
+        skillMd: "---\nname: also-empty\n---\nempty-dir fallback\n",
+      });
+
+      const result = yield* materializer.materialize({
+        cwd,
+        skillIds: [fileCollisionId, emptyDirId],
+      });
+
+      assert.strictEqual(
+        yield* fileSystem.readFileString(path.join(cwd, ".claude", "skills", "tdd")),
+        "not a skill",
+      );
+      assert.isFalse(
+        yield* fileSystem.exists(
+          path.join(emptyUserDir, SkillMaterializer.SKILL_MANAGED_MARKER_FILE),
+        ),
+      );
+      assert.deepStrictEqual(
+        result.loaded.map((skill) => [skill.id, skill.directory, skill.body]),
+        [
+          [fileCollisionId, path.join(cwd, ".agents", "skills", "tdd"), "store body"],
+          [emptyDirId, path.join(cwd, ".agents", "skills", "also-empty"), "empty-dir fallback"],
+        ],
+      );
     }),
   );
 
@@ -296,7 +531,14 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
       assert.isTrue(
         yield* fileSystem.exists(path.join(hostDir, HostSkills.HOST_SKILL_DISABLED_FILE)),
       );
-      assert.deepStrictEqual(result.loaded, [{ id: hostSkillId, name: "grill-me" }]);
+      assert.deepStrictEqual(result.loaded, [
+        {
+          id: hostSkillId,
+          name: "grill-me",
+          directory: path.join(cwd, ".claude", "skills", "grill-me"),
+          body: "",
+        },
+      ]);
     }),
   );
 
@@ -354,7 +596,14 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
         assert.isTrue(yield* fileSystem.exists(path.join(cwd, root, "keep", "SKILL.md")));
       }
       assert.deepStrictEqual(result.removed, []);
-      assert.deepStrictEqual(result.loaded, [{ id: keepId, name: "keep" }]);
+      assert.deepStrictEqual(result.loaded, [
+        {
+          id: keepId,
+          name: "keep",
+          directory: path.join(cwd, ".claude", "skills", "keep"),
+          body: "",
+        },
+      ]);
     }),
   );
 });

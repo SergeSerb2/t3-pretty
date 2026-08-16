@@ -22,6 +22,7 @@ nodeServicesIt("ACP native logging", (it) => {
         filePath: "/tmp/provider-native.ndjson",
         write: (event) => Effect.sync(() => void records.push(event)),
         close: () => Effect.void,
+        verbose: true,
       };
       const makeLogger = yield* makeAcpNativeLoggerFactory();
       const logger = makeLogger({

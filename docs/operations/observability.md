@@ -525,6 +525,12 @@ OTLP export:
 
 If the OTLP URLs are unset, local tracing still works and metrics stay in-process only.
 
+Provider event logs (`logs/provider/events.<thread>.log` under userdata):
+
+- `T3CODE_LOG_PROVIDER_EVENTS_VERBOSE`: keep per-token deltas, cumulative tool-call updates, and
+  raw ACP protocol traces in the native stream, default `false`. Lifecycle records (session start,
+  turn/tool start and completion, errors) are always written.
+
 ### What Is Instrumented Today
 
 Current high-value span and metric boundaries include:

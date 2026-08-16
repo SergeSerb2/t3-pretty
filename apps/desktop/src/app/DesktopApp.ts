@@ -184,6 +184,7 @@ const bootstrap = Effect.gen(function* () {
     targetOrigin: rendererTarget,
     backendOrigin: backendConfig.httpBaseUrl,
     clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
+    clientDistDir: environment.isDevelopment ? undefined : environment.clientDistPath,
   });
   yield* logBootstrapInfo("bootstrap resolved backend endpoint", {
     baseUrl: backendConfig.httpBaseUrl.href,
@@ -202,15 +203,28 @@ const bootstrap = Effect.gen(function* () {
   yield* logBootstrapInfo("bootstrap ipc handlers registered");
 
   if (!(yield* Ref.get(state.quitting))) {
-    // In wsl-only mode the renderer is served by the WSL backend, which can be
-    // slow to cold-boot — show a "Connecting to WSL" splash immediately so the
-    // app feels responsive instead of presenting no window until WSL is ready.
-    // (Dual mode opens fast off the Windows primary, so no splash there.)
-    if (settings.wslOnly === true && settings.wslBackendEnabled === true) {
+    // In wsl-only mode the primary can be slow to cold-boot and its bootstrap
+    // stays hidden from the renderer until preflight passes — show a
+    // "Connecting to WSL" splash and let the pool open the main window on
+    // readiness. Everywhere else the renderer is served from disk, so the
+    // window opens as soon as the primary's start config (port, bootstrap
+    // token) exists; the renderer retries its session bootstrap until the
+    // backend listens and BACKEND_READY_CHANNEL nudges its topology read.
+    const wslOnly = settings.wslOnly === true && settings.wslBackendEnabled === true;
+    if (wslOnly) {
       yield* desktopWindow.showConnectingSplash;
     }
     yield* primaryBackend.start;
     yield* logBootstrapInfo("bootstrap backend start requested");
+    if (!wslOnly) {
+      yield* desktopWindow.ensureMain.pipe(
+        Effect.catch((error) =>
+          logBootstrapWarning("failed to open main window before backend readiness", {
+            error: error.message,
+          }),
+        ),
+      );
+    }
     // Bring up the WSL backend if the user previously enabled it. The
     // primary is already starting; reconcile fires off the WSL register
     // in parallel rather than blocking primary readiness on a possibly

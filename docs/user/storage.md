@@ -8,6 +8,9 @@ Disconnected or offline environments are left alone. Opening Storage does not re
 older servers that do not advertise storage inventory are not probed — update that server, then
 reopen the page.
 
+While a scan is still walking disk, the headline at the top of Storage shows how many bytes it has
+found so far and how many paths remain. Cleanup stays disabled until that pass finishes.
+
 ## What the totals include
 
 The headline is allocated on-disk bytes for:

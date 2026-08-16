@@ -105,6 +105,7 @@ import {
   resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
 } from "~/versionSkew";
+import { useCloudUiEnabled } from "~/cloud/clerkGate";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { authEnvironment } from "~/state/auth";
@@ -799,6 +800,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
       {isQrPanelOpen && qrPairingUrl !== null ? (
         <div
           id={qrPanelId}
+          data-pairing-qr-panel=""
           className="mt-3 flex flex-col gap-4 border-t border-border/50 pt-3 sm:flex-row sm:items-start sm:justify-between"
         >
           <div className="min-w-0 flex-1 space-y-3">
@@ -1689,7 +1691,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
 }
 
 function CloudLinkRow({ canManageRelay }: { readonly canManageRelay: boolean }) {
-  return hasCloudPublicConfig() ? <ConfiguredCloudLinkRow canManageRelay={canManageRelay} /> : null;
+  return useCloudUiEnabled() ? <ConfiguredCloudLinkRow canManageRelay={canManageRelay} /> : null;
 }
 
 function EmptyRemoteEnvironments({ cloudEnabled = true }: { readonly cloudEnabled?: boolean }) {
@@ -1717,14 +1719,14 @@ function CloudRemoteEnvironmentRows({
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly savedEnvironments: ReadonlyArray<EnvironmentPresentation>;
 }) {
-  return hasCloudPublicConfig() ? (
+  return useCloudUiEnabled() ? (
     <CloudEnvironmentConnectRows
       primaryEnvironmentId={primaryEnvironmentId}
       savedEnvironments={savedEnvironments}
       empty={<EmptyRemoteEnvironments />}
     />
   ) : savedEnvironments.length === 0 ? (
-    <EmptyRemoteEnvironments cloudEnabled={false} />
+    <EmptyRemoteEnvironments cloudEnabled={hasCloudPublicConfig()} />
   ) : null;
 }
 

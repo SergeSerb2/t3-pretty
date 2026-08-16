@@ -328,6 +328,61 @@ stated. Numbers are INFERRED expectations to be verified with the protocol in §
 | P2.8 | Web streaming cadence 32–64 ms (mirror iOS) and identity-aware timeline derivation; replace `status-pulse` compositor animations with a JS-toggled class at ~1.5 Hz while a turn is active                                                                                                                                                                                                                                                                                                                                                       | ≤ 30 frames/s of raster + scroll + composer blur + swap instead of per delta; no 240 Hz BeginFrames from pulses  | none visible                                                                                                                                                |
 | P2.9 | Preview: attach CDP lazily/scoped (never `Accessibility.enable` outside snapshots), cap `diagnostics.requests`; recording via `Page.startScreencast` or bounded `capturePage(rect)`                                                                                                                                                                                                                                                                                                                                                              | no AX-tree upkeep on guest pages; recording off the main thread                                                  | console/network history starts at first open                                                                                                                |
 
+**P2.6 as shipped (2026-08-16).** The provider stays where it was (`ChatView`, PR code tab); the
+lib's mount-scoped singleton was replaced by one page-level `WorkerPoolManager` that is terminated
+right after construction and boots on the first render task, `poolSize` = `clamp(cores/2, 2, 3)`,
+AST LRUs 240 → 120 entries (`@pierre/diffs` has no byte cap), and a stat-driven idle terminator that
+drops workers + caches after 90 s with no mounted diff surface or task
+(`DiffWorkerPoolProvider.logic.ts`); the manager re-initializes itself on demand. A theme change
+while idle still boots the pool (`setRenderOptions` initializes) and it idles out again. Terminal:
+`MAX_HIDDEN_MOUNTED_TERMINAL_THREADS` 3, `MAX_SCROLLBACK_ROWS` 5,000 (equal to the server's
+`DEFAULT_HISTORY_LINE_LIMIT`, so the "512 KB replay" above is really "≤ 5,000 lines of history"),
+and `GhosttySurface.fit()` zeroes the canvas backing store whenever its mount is 0×0 (hidden
+drawers, collapsed panes) and repaints in the same ResizeObserver tick on re-show. Thread state idle
+TTL 5 min → 90 s (`threadRetention.ts`; mobile keeps its 15 s override). Main-thread Shiki grammars
+were left alone: `disposeHighlighter()` exists but the pool manager and markdown code blocks share
+that highlighter, so there is no safe dispose point.
+
+**P2.8 as shipped (2026-08-16).** Streaming cadence: the web already had it — every thread
+subscriber is fed through the 50 ms coalescer in `packages/client-runtime/src/state/threads.ts`
+(`THREAD_STREAM_COALESCE_WINDOW`, shared with mobile, whose 64 ms `streamingTextCadence` sits on
+top for its native Markdown bridge), so React sees at most 20 publications/s during a stream and the
+final delta lands within the same window; no second cadence was layered on `ChatMarkdown`.
+Derivations, measured per publication on a synthetic 10-turn / 1,500-activity window:
+`deriveWorkLogEntries` was 75 % of the chain (0.43 ms of 0.57 ms) — payload parsing, not the
+`toSorted` (0.009 ms) — and now caches the parsed entry per activity object in a `WeakMap`
+(activities are identity-stable across publications), 0.43 → 0.16 ms; the minimap preview
+collapsed whitespace over every full message text per publication (~0.8 ms per 200 KB of loaded
+text) and now reads a 1,000-char prefix. `deriveTimelineEntries` (0.03 ms) and `latestTurn` identity
+were left alone — the timeline re-derives anyway because the streaming message object changes.
+Pulses: `animate-status-pulse`/`animate-status-ping` infinite animations are gone; one ticker
+(`apps/web/src/hooks/useStatusPulse.tsx`) writes `html[data-status-pulse]` (phase 0–5, 667 ms) that
+`index.css` maps to opacity steps for `.status-pulse`, the three-dot `.status-pulse-wave` and the
+connecting `.status-ping`; it runs only while a subscriber (`useStatusPulse`/`StatusPulseDot`) is
+mounted, the document is visible, the Motion toggle is on and `prefers-reduced-motion` is off,
+otherwise the indicators are static. The agent-browser click ripple keeps its one-off CSS ping.
+`ultrathink-frame::before` / `.ultrathink-chroma` hold their static spectrum under
+`html:not([data-scenery-motion])` and reduced motion.
+
+**P2.9 as shipped (2026-08-16).** `registerWebview` no longer attaches the debugger; a guest gets
+a control session only when something needs one — an automation action, a non-`system`
+`prefers-color-scheme` override, or an active recording/PiP capture — and attaching enables no CDP
+domain (`Manager.ts` `ensureControlSession`). Domains: `Runtime`/`Log`/`Network` are armed by the
+first automation action on a guest (`armDiagnostics`) and stay on for that session, so console/
+network history starts at the agent's first touch and a tab the agent never drives pays for nothing;
+`Accessibility` is enabled → `getFullAXTree` → disabled inside each snapshot only; `Page` is enabled
+only for the screencast. The session is released when it goes idle (`releaseIdleControlSession`:
+scheme back to `system`, capture stopped, no diagnostics history). `diagnostics` is a plain in-place
+map: console/network buffers `push`/`shift` at 200, in-flight `requests` evict the oldest at 500;
+`onMessage` drops CDP events outside the eight it handles before forking anything. Recording/PiP:
+`Page.startScreencast` (jpeg q80, ≤1600 px) is started per capture and its frames — already encoded
+off the JS thread — feed the same delivery path; the 12 fps `capturePage` tick only runs while no
+screencast frame arrived in the last 250 ms (`SCREENCAST_GRACE_MS`), which covers DevTools holding
+the debugger, guests whose screencast starves while offscreen, and static pages, and it downscales to
+the same 1600 px bound before `toJPEG`. Recording frames are sent to `wc.hostWebContents` (the window
+hosting the guest, where the renderer-side recorder lives) instead of `sendAll`; the PiP window keeps
+its direct channel.
+
 ### Phase 3 — needs design or upstream coordination (L)
 
 - **P3.1** Gate the Electron `ClerkProvider` behind a persisted signed-in/cloud-enabled flag so
@@ -342,6 +397,79 @@ stated. Numbers are INFERRED expectations to be verified with the protocol in §
   (`contentTracing` with `disabled-by-default-memory-infra`) split into transfer cache, Skia GPU
   resources, shared images, atlases; plus a 30 s A/B of GPU-helper CPU with World Scenery vs a
   stock theme on the same turn.
+
+**P3.1 as shipped (2026-08-16).** `apps/web/src/cloud/clerkGate.ts` holds a persisted, install-level
+flag (`t3code:desktop-clerk-enabled:v1`); on Electron the lazy `ElectronClerkRoot` is only mounted
+when it is open, so a signed-out desktop renders the app unwrapped and the clerk-js chunk is never
+fetched or parsed. An unwritten flag counts as open: an install that was already signed in when this
+landed must not silently drop its relay session, so the first launch still loads Clerk and the
+observed session settles the flag for every launch after it. Browsers are untouched (there the provider pulls clerk-js from Clerk's CDN,
+not from our bundle), so `useClerkGateOpen()` is constant `true` off Electron. The gate opens from
+the two sign-in surfaces — the Settings sidebar footer and Connections → Surge Connect account row,
+both of which now render a dormant sign-in button that loads Clerk — and `PendingSignInPrompt`
+inside the provider replays that click as `openSignIn` once clerk-js is up, so it stays one click.
+`ManagedRelayAuthProvider` writes the flag from the observed session: any launch that reports no
+session clears it (for the _next_ launch only; remounting the provider mid-session would remount the
+tree for nothing), a live session sets it. Every Clerk-reading surface now guards on
+`useCloudUiEnabled()` (build config _and_ provider mounted): `SurgeConnectMeshSync`,
+`ConnectOnboardingDialog`, the cloud link row, the cloud environment rows, and the sidebar avatar.
+The `/connect` CLI-auth routes read Clerk unguarded but are hosted-app-only (`isHostedStaticApp()`
+is false under the `t3code://` origin), so they cannot render without a provider. Tradeoff: opening
+the gate mid-session mounts a provider above the app and remounts the tree once — accepted, because
+the alternative is paying the parse on every boot for a transition that happens once per install.
+
+**P3.2 as shipped (2026-08-16).** Residency is decided per thread, not per tab, so a thread's guests
+are never half-mounted: `apps/web/src/browser/previewGuestResidency.ts` pins any thread that has a
+visible surface, a mini player, picture in picture, a running recording, or an in-flight automation
+request, and `ElectronBrowserHost` mounts pinned threads plus the most recently pinned others up to
+`MAX_RESIDENT_PREVIEW_THREADS` (3). Automation wakes its target for the whole request:
+`handleRequest` takes a ref-counted `acquirePreviewGuestThread(threadKey)` before it resolves a tab
+and releases it in a `finally`, so a dormant tab is a delay (the existing `waitForDesktopOverlay`
+poll covers the remount and re-registration) rather than a `PreviewTabNotFoundError`. Eviction is
+just unmounting `HostedBrowserWebview`; the existing lease in `desktopTabLifetime` then closes the
+main-process tab, and waking recreates it from the tab's last URL. The cost is real and is why the
+pins are conservative: a woken guest reloads, so page state (scroll, form input, in-page JS) is
+lost. The recording check reads module state rather than a store, which is enough to _keep_ a
+recording tab resident (residency is re-evaluated on every host render) but would not wake one.
+
+**P3.3 as shipped (2026-08-16).** The audit's premise is now only half true in this fork, so the
+URI-backed attachment store was not built. `syncPersistedAttachments` — the only path that writes
+image bytes into a draft document — has no caller outside its own test, so composer drafts never
+carry a base64 `dataUrl` into the persisted payload or the per-keystroke stringify; attaching
+produces a `File` plus a blob preview URL, and dispatch encodes base64 from that `File` at send
+(`readFileAsDataUrl` in `ChatView`), which is exactly "encode at dispatch only". The one remaining
+base64 retention was `hydrateImagesFromPersisted`, which handed the stored data URL back as
+`previewUrl` and pinned a copy in draft state for the life of the draft; it now decodes to a `File`
+and hands out an object URL (falling back to the data URL where `URL` is unavailable — the existing
+`revokeObjectPreviewUrl` ignores non-blob URLs, so removal is unchanged). Left deliberately alone:
+the prompt stash still stores capped base64 in localStorage (`MAX_STASH_ENTRY_ATTACHMENT_CHARS`),
+which is a durability feature with explicit dropped/unreadable/pending semantics, not a hot path.
+Ceiling: if image drafts are ever persisted again, they should go to an IndexedDB blob store keyed
+by attachment id, with the async hydration and send-gating that implies.
+
+**P3.4 as shipped (2026-08-16).** `apps/desktop/scripts/build-playwright-injected.mjs` slices the
+`source3` literal out of `playwright-core/lib/coreBundle.js`, evaluates it once, validates it
+(length plus `InjectedScript`), and writes `PlaywrightInjectedSource.generated.ts` next to the
+other generated preview asset; the desktop `build`/`dev` tasks run it before `vp pack`.
+`PlaywrightInjectedRuntime.ts` is now a module-level install-expression string — no `require.resolve`,
+no `readFile`, no `node:vm`, and no Effect error channel, so `Manager` dropped its cached-effect and
+`mapError` wrapper. `playwright-core` moved to `devDependencies` (the staged `--prod` install no
+longer carries it) and the packaging re-includes for `package.json` + `coreBundle.js` are gone.
+Net: −3.2 MB of staged package against +0.31 MB in `main.cjs` (1.43 MB minified), and the first
+automation action no longer resolves, reads and evaluates a 3.2 MB file.
+
+**P3.5 — already available (verified 2026-08-16).** Fixed ink shipped with the scenery quick
+settings: Settings → Appearance → _Scenery text color_ offers White, Black and App alongside Auto,
+and `pickInkVariant` returns a constant for all three. `ActiveScenery` only sets
+`appearanceCrossfade` when the incoming and displayed variants differ, and `SceneryLayer` only calls
+`runSceneryInkTransition` under that flag, so a fixed mode already avoids the view-transition
+snapshot and the full-layer re-raster on thread switches. Default stays Auto. No change was needed;
+the remaining thread-switch cost is the photo crossfade itself (P1.10 sized it down).
+
+**P3.6 — not run.** This is a measurement, not a change: it needs a live app to attach
+`contentTracing` to and a real turn to A/B, which means driving the installed desktop app (the one
+the maintainer works in) or standing up a dev Electron build and spending provider quota. Left for
+an explicit go-ahead; the recipe in §6 step 5 is unchanged.
 
 ### Not worth doing
 

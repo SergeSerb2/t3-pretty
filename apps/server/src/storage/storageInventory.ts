@@ -2,7 +2,11 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodePath from "node:path";
 
-import type { StorageOrphanEntry, StorageWorktreeEntry } from "@t3tools/contracts";
+import type {
+  StorageInventoryScan,
+  StorageOrphanEntry,
+  StorageWorktreeEntry,
+} from "@t3tools/contracts";
 
 export interface StorageInventoryAssembly {
   readonly activeWorktrees: ReadonlyArray<StorageWorktreeEntry>;
@@ -15,6 +19,7 @@ export interface StorageInventoryAssembly {
   readonly orphanWorktreeBytes: number;
   readonly totalBytes: number;
   readonly managedWorktreesRoot: string;
+  readonly scan?: StorageInventoryScan;
 }
 
 export interface StorageThreadSnapshot {
@@ -64,6 +69,16 @@ export function isWithinManagedRoot(candidate: string, root: string): boolean {
 export function isStrictDescendant(candidate: string, root: string): boolean {
   const relative = NodePath.relative(root, candidate);
   return relative !== "" && !relative.startsWith("..") && !NodePath.isAbsolute(relative);
+}
+
+/** Whether a full-inventory progress frame should go on the wire. */
+export function shouldPublishStorageProgress(
+  lastPublishedAt: number,
+  now: number,
+  force: boolean,
+  minIntervalMs: number,
+): boolean {
+  return force || now - lastPublishedAt >= minIntervalMs;
 }
 
 export function displayNameForPath(path: string): string {
@@ -132,18 +147,17 @@ export function assembleStorageInventory(input: {
   readonly measurements: ReadonlyMap<string, StorageMeasuredWorktree>;
   readonly orphanWorktrees: ReadonlyArray<StorageOrphanEntry>;
   readonly managedWorktreesRoot: string;
+  readonly scan?: StorageInventoryScan;
 }): StorageInventoryAssembly {
   const ownerCounts = ownerCountByPath(input.snapshots);
   const active: StorageWorktreeEntry[] = [];
   const archived: StorageWorktreeEntry[] = [];
-  const ownedIds = new Set<string>();
 
   for (const snapshot of input.snapshots) {
     const path = snapshot.worktreePath;
     if (path === null) continue;
     const measurement = input.measurements.get(path);
     if (measurement === undefined) continue;
-    ownedIds.add(snapshot.threadId);
     const entry: StorageWorktreeEntry = {
       threadId: snapshot.threadId,
       threadTitle: snapshot.threadTitle,
@@ -175,11 +189,13 @@ export function assembleStorageInventory(input: {
     archived.filter((entry) => !active.some((activeEntry) => activeEntry.path === entry.path)),
   );
   const orphanWorktreeBytes = uniquePathBytes(orphans);
+  // Absence is "no managed path", not "not measured yet". A partial scan
+  // must not report known owners as threads without a worktree.
   const activeWithout = input.snapshots.filter(
-    (snapshot) => !snapshot.isArchived && !ownedIds.has(snapshot.threadId),
+    (snapshot) => !snapshot.isArchived && snapshot.worktreePath === null,
   ).length;
   const archivedWithout = input.snapshots.filter(
-    (snapshot) => snapshot.isArchived && !ownedIds.has(snapshot.threadId),
+    (snapshot) => snapshot.isArchived && snapshot.worktreePath === null,
   ).length;
 
   return {
@@ -193,6 +209,7 @@ export function assembleStorageInventory(input: {
     orphanWorktreeBytes,
     totalBytes: activeWorktreeBytes + archivedWorktreeBytes + orphanWorktreeBytes,
     managedWorktreesRoot: input.managedWorktreesRoot,
+    ...(input.scan === undefined ? {} : { scan: input.scan }),
   };
 }
 

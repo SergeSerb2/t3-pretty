@@ -11,6 +11,7 @@ import type {
   ServerProvider,
   SkillId,
   ThreadId,
+  ThreadSubagentPolicy,
 } from "@t3tools/contracts";
 import {
   isProviderSendTurnSupportedImageMimeType,
@@ -112,6 +113,7 @@ import { ContextWindowMeter } from "./ContextWindowMeter";
 import { resolveContextWindowModelDisplayName } from "./ContextWindowMeter.logic";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { SkillsMenuContent, SkillsPicker } from "./SkillsPicker";
+import { SubagentPolicyMenuContent, SubagentPolicyPicker } from "./SubagentPolicyPicker";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
@@ -231,6 +233,8 @@ import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
+import { skillMentionToken } from "@t3tools/shared/skillTool";
+
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
@@ -532,6 +536,7 @@ export interface ChatComposerProps {
   activeThreadEnvironmentId: EnvironmentId | undefined;
   sessionProviderInstanceId: ProviderInstanceId | undefined;
   enabledSkillIds: ReadonlyArray<SkillId> | undefined;
+  subagentPolicy: ThreadSubagentPolicy | undefined;
   isServerThread: boolean;
   isLocalDraftThread: boolean;
   forceExpandedOnMobile: boolean;
@@ -647,6 +652,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     sessionProviderInstanceId,
     enabledSkillIds,
+    subagentPolicy,
     isServerThread: _isServerThread,
     isLocalDraftThread: _isLocalDraftThread,
     forceExpandedOnMobile,
@@ -1349,6 +1355,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const skillsPicker = <SkillsPicker {...skillsPickerProps} />;
   const skillsMenuContent = <SkillsMenuContent {...skillsPickerProps} />;
+  const subagentPolicyPickerProps = {
+    environmentId,
+    parentModel: selectedModel,
+    parentInstanceId: selectedInstanceId,
+    parentDriver: selectedProvider,
+    ...(routeKind === "server" ? { threadRef: routeThreadRef, threadPolicy: subagentPolicy } : {}),
+    ...(routeKind === "draft" && draftId ? { draftId } : {}),
+  };
+  const subagentPolicyPicker = <SubagentPolicyPicker {...subagentPolicyPickerProps} />;
+  const subagentPolicyMenuContent = <SubagentPolicyMenuContent {...subagentPolicyPickerProps} />;
   const pendingPrimaryAction = useMemo(
     () =>
       activePendingProgress
@@ -1899,7 +1915,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
       if (item.type === "skill") {
-        const replacement = `$${item.skill.name} `;
+        const replacement = `$${skillMentionToken(item.skill.name)} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,
           trigger.rangeEnd,
@@ -3374,9 +3390,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           {providerTraitsMenuContent}
                           <MenuDivider />
                           {skillsMenuContent}
+                          <MenuDivider />
+                          {subagentPolicyMenuContent}
                         </>
                       ) : (
-                        skillsMenuContent
+                        <>
+                          {skillsMenuContent}
+                          <MenuDivider />
+                          {subagentPolicyMenuContent}
+                        </>
                       )
                     }
                     onToggleInteractionMode={toggleInteractionMode}
@@ -3392,6 +3414,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     ) : null}
                     <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
                     {skillsPicker}
+                    {subagentPolicyPicker}
                     <ComposerFooterModeControls
                       provider={selectedProvider}
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}

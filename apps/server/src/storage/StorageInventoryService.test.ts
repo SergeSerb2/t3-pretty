@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as ServerConfig from "../config.ts";
@@ -136,6 +137,113 @@ it.layer(TestLayer, { excludeTestServices: true })("StorageInventoryService", (i
           false,
         );
         expect(inventory.totalBytes).toBeGreaterThan(0);
+        expect(inventory.scan?.status).toBe("complete");
+      }),
+    );
+
+    it.effect("streams climbing byte totals before the scan finishes", () =>
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const path = yield* Path.Path;
+        const projects = yield* ProjectionProjectRepository;
+        const threads = yield* ProjectionThreadRepository;
+        const storage = yield* StorageInventoryService.StorageInventoryService;
+
+        const featurePath = path.join(config.worktreesDir, "app", "feature");
+        const secondPath = path.join(config.worktreesDir, "app", "second");
+        const orphanPath = path.join(config.worktreesDir, "app", "stale");
+        const projectCheckout = path.join(config.baseDir, "projects", "app");
+        yield* writeCheckout(featurePath, "owned\n");
+        yield* writeCheckout(secondPath, "also-owned\n");
+        yield* writeCheckout(orphanPath, "leftover\n");
+        yield* writeCheckout(projectCheckout, "project\n");
+
+        yield* projects.upsert({
+          projectId: ProjectId.make("project-1"),
+          title: "App",
+          workspaceRoot: projectCheckout,
+          defaultModelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.4",
+          },
+          defaultThreadEnvMode: null,
+          scripts: [],
+          createdAt: "2026-03-24T00:00:00.000Z",
+          updatedAt: "2026-03-24T00:00:00.000Z",
+          deletedAt: null,
+        });
+        yield* threads.upsert({
+          threadId: ThreadId.make("thread-1"),
+          projectId: ProjectId.make("project-1"),
+          title: "Feature",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.4",
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: "feature",
+          worktreePath: featurePath,
+          enabledSkillIds: [],
+          latestTurnId: null,
+          createdAt: "2026-03-24T00:00:00.000Z",
+          updatedAt: "2026-03-24T00:00:00.000Z",
+          archivedAt: null,
+          settledOverride: "settled",
+          settledAt: "2026-03-24T00:00:00.000Z",
+          snoozedUntil: null,
+          snoozedAt: null,
+          pinnedAt: null,
+          latestUserMessageAt: null,
+          pendingApprovalCount: 0,
+          pendingUserInputCount: 0,
+          hasActionableProposedPlan: 0,
+          deletedAt: null,
+        });
+        yield* threads.upsert({
+          threadId: ThreadId.make("thread-2"),
+          projectId: ProjectId.make("project-1"),
+          title: "Second",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.4",
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: "second",
+          worktreePath: secondPath,
+          enabledSkillIds: [],
+          latestTurnId: null,
+          createdAt: "2026-03-24T00:00:00.000Z",
+          updatedAt: "2026-03-24T00:00:00.000Z",
+          archivedAt: null,
+          settledOverride: "settled",
+          settledAt: "2026-03-24T00:00:00.000Z",
+          snoozedUntil: null,
+          snoozedAt: null,
+          pinnedAt: null,
+          latestUserMessageAt: null,
+          pendingApprovalCount: 0,
+          pendingUserInputCount: 0,
+          hasActionableProposedPlan: 0,
+          deletedAt: null,
+        });
+
+        const snapshots = yield* Stream.runCollect(storage.streamInventory());
+        expect(snapshots.length).toBeGreaterThan(1);
+        expect(snapshots[0]?.scan?.status).toBe("scanning");
+        expect(snapshots[0]?.scan?.measuredCount).toBe(0);
+        const totals = snapshots.flatMap((entry) =>
+          entry.scan === undefined ? [] : [entry.scan.totalCount],
+        );
+        expect(new Set(totals).size).toBe(1);
+        expect(snapshots[snapshots.length - 1]?.scan?.status).toBe("complete");
+        expect(snapshots[snapshots.length - 1]?.totalBytes).toBeGreaterThan(0);
+        const measuredCounts = snapshots.flatMap((entry) =>
+          entry.scan === undefined ? [] : [entry.scan.measuredCount],
+        );
+        expect(measuredCounts[0]).toBe(0);
+        expect(measuredCounts[measuredCounts.length - 1]).toBeGreaterThan(0);
       }),
     );
   });

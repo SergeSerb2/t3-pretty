@@ -19,6 +19,7 @@
       /* Page backgrounds */
       --color-screen: #f4f6f4;
       --color-sheet: rgba(244, 246, 244, 0.98);
+      --color-sheet-solid: #f4f6f4;
 
       /* Card / surface */
       --color-card: #ffffff;
@@ -46,13 +47,16 @@
       /* Primary action */
       --color-primary: #27633f;
       --color-primary-foreground: #ffffff;
-      --color-primary-shadow: rgba(28, 70, 48, 0.22);
+      --color-primary-shadow: #1c4630;
 
       /* Secondary action */
       --color-secondary: #ffffff;
       --color-secondary-foreground: #232823;
       --color-secondary-border: rgba(22, 38, 26, 0.1);
-      --color-switch-active: #2e7d4f;
+      --color-switch-active-track: #2e7d4f;
+      --color-switch-active-thumb: #ffffff;
+      --color-switch-inactive-track: rgba(22, 38, 26, 0.1);
+      --color-switch-inactive-thumb: #7c837d;
 
       /* Danger */
       --color-danger: #fef2f2;
@@ -100,6 +104,7 @@
       --color-user-bubble: #27633f;
       --color-user-bubble-foreground: #ffffff;
       --color-user-bubble-foreground-muted: rgba(255, 255, 255, 0.78);
+      --color-user-bubble-skill-foreground: #f0abfc;
 
       /* Drawer / modal backdrop */
       --color-backdrop: rgba(10, 20, 13, 0.22);
@@ -116,96 +121,101 @@
       /* Page backgrounds */
       --color-screen: #0e1110;
       --color-sheet: rgba(14, 17, 16, 0.98);
+      --color-sheet-solid: #0e1110;
 
       /* Card / surface */
-      --color-card: #131715;
-      --color-card-alt: #161b18;
-      --color-card-translucent: rgba(19, 23, 21, 0.8);
+      --color-card: #141a17;
+      --color-card-alt: #1a221e;
+      --color-card-translucent: rgba(20, 26, 23, 0.8);
 
       /* Text */
-      --color-foreground: #f0f2ef;
-      --color-foreground-secondary: #b6bcb7;
-      --color-foreground-muted: #98a29a;
-      --color-foreground-tertiary: #6e7770;
+      --color-foreground: #f3f6f3;
+      --color-foreground-secondary: #c5cfc8;
+      --color-foreground-muted: #a8b3ab;
+      --color-foreground-tertiary: #7e8981;
 
       /* Borders & separators */
-      --color-border: rgba(222, 236, 226, 0.08);
-      --color-border-subtle: rgba(222, 236, 226, 0.05);
-      --color-separator: rgba(222, 236, 226, 0.04);
+      --color-border: rgba(234, 247, 238, 0.12);
+      --color-border-subtle: rgba(234, 247, 238, 0.08);
+      --color-separator: rgba(234, 247, 238, 0.06);
 
       /* Subtle backgrounds (badges, pills, overlays) */
-      --color-subtle: rgba(145, 201, 163, 0.07);
-      --color-subtle-strong: rgba(145, 201, 163, 0.13);
+      --color-subtle: rgba(152, 210, 172, 0.1);
+      --color-subtle-strong: rgba(152, 210, 172, 0.32);
       --color-inline-skill-background: rgba(217, 70, 239, 0.12);
       --color-inline-skill-border: rgba(217, 70, 239, 0.25);
       --color-inline-skill-foreground: #f0abfc;
 
       /* Primary action */
-      --color-primary: #91c9a3;
-      --color-primary-foreground: #0c1710;
-      --color-primary-shadow: rgba(0, 0, 0, 0.22);
+      --color-primary: #98d2ac;
+      --color-primary-foreground: #07140c;
+      --color-primary-shadow: #000000;
 
       /* Secondary action */
-      --color-secondary: rgba(145, 201, 163, 0.07);
-      --color-secondary-foreground: #e6eae6;
-      --color-secondary-border: rgba(222, 236, 226, 0.08);
-      --color-switch-active: #7fbc93;
+      --color-secondary: rgba(152, 210, 172, 0.1);
+      --color-secondary-foreground: #e8eee9;
+      --color-secondary-border: rgba(234, 247, 238, 0.12);
+      --color-switch-active-track: #84c49b;
+      --color-switch-active-thumb: #ffffff;
+      --color-switch-inactive-track: rgba(234, 247, 238, 0.1);
+      --color-switch-inactive-thumb: #8b968e;
 
       /* Danger */
-      --color-danger: rgba(251, 106, 118, 0.14);
-      --color-danger-border: rgba(251, 106, 118, 0.18);
-      --color-danger-foreground: #ffd2d7;
+      --color-danger: rgba(255, 122, 132, 0.14);
+      --color-danger-border: rgba(255, 122, 132, 0.18);
+      --color-danger-foreground: #ffd6da;
 
       /* Inputs */
-      --color-input: #1a201c;
-      --color-input-border: rgba(222, 236, 226, 0.1);
+      --color-input: #1e2822;
+      --color-input-border: rgba(234, 247, 238, 0.12);
       --color-sidebar-search: rgba(118, 128, 120, 0.24);
-      --color-placeholder: #b3bcb5;
+      --color-placeholder: #c0cac3;
 
       /* Icons */
-      --color-icon: #e8ece9;
-      --color-icon-muted: #b0b9b2;
-      --color-icon-subtle: #8e948f;
+      --color-icon: #eef2ef;
+      --color-icon-muted: #c5cfc8;
+      --color-icon-subtle: #8b968e;
 
       /* Header / glass chrome */
       --color-header: rgba(14, 17, 16, 0.97);
-      --color-header-border: rgba(222, 236, 226, 0.08);
-      --color-glass-surface: rgba(19, 23, 21, 0.78);
-      --color-glass-tint: rgba(27, 33, 29, 0.24);
-      --color-chrome-glass: rgba(19, 23, 21, 0.52);
-      --color-chrome-glass-border: rgba(222, 236, 226, 0.1);
+      --color-header-border: rgba(234, 247, 238, 0.1);
+      --color-glass-surface: rgba(20, 26, 23, 0.78);
+      --color-glass-tint: rgba(32, 42, 37, 0.24);
+      --color-chrome-glass: rgba(20, 26, 23, 0.52);
+      --color-chrome-glass-border: rgba(234, 247, 238, 0.12);
 
       /* StatusBar */
       --color-status-bar: #0e1110;
 
       /* Markdown */
-      --color-md-body: #e4e7e4;
-      --color-md-strong: #f0f2ef;
-      --color-md-link: #6cb8e8;
-      --color-md-blockquote-border: rgba(222, 236, 226, 0.12);
-      --color-md-blockquote-bg: rgba(145, 201, 163, 0.05);
-      --color-md-code-bg: rgba(222, 236, 226, 0.07);
-      --color-md-code-text: #e4e7e4;
+      --color-md-body: #e8ece8;
+      --color-md-strong: #f3f6f3;
+      --color-md-link: #7ec3ee;
+      --color-md-blockquote-border: rgba(234, 247, 238, 0.14);
+      --color-md-blockquote-bg: rgba(152, 210, 172, 0.06);
+      --color-md-code-bg: rgba(234, 247, 238, 0.08);
+      --color-md-code-text: #e8ece8;
       --color-md-user-code-bg: rgba(255, 255, 255, 0.18);
       --color-md-user-code-text: #ffffff;
       --color-md-user-fence-bg: rgba(0, 0, 0, 0.28);
       --color-md-user-fence-text: #ffffff;
-      --color-md-hr: rgba(222, 236, 226, 0.1);
+      --color-md-hr: rgba(234, 247, 238, 0.12);
 
       /* iMessage-style user bubble */
-      --color-user-bubble: #24422f;
-      --color-user-bubble-foreground: #f2f4f1;
-      --color-user-bubble-foreground-muted: rgba(242, 244, 241, 0.78);
+      --color-user-bubble: #2a4a36;
+      --color-user-bubble-foreground: #f3f6f3;
+      --color-user-bubble-foreground-muted: rgba(243, 246, 243, 0.78);
+      --color-user-bubble-skill-foreground: #f0abfc;
 
       /* Drawer / modal backdrop */
       --color-backdrop: rgba(0, 0, 0, 0.48);
-      --color-drawer: rgba(12, 15, 13, 0.99);
+      --color-drawer: rgba(12, 16, 14, 0.99);
       --color-drawer-shadow: rgba(0, 0, 0, 0.32);
 
       /* Misc */
-      --color-dot-separator: rgba(222, 236, 226, 0.2);
-      --color-wordmark: #e8ece9;
-      --color-chevron: rgba(222, 236, 226, 0.2);
+      --color-dot-separator: rgba(234, 247, 238, 0.22);
+      --color-wordmark: #eef2ef;
+      --color-chevron: rgba(234, 247, 238, 0.22);
     }
   }
 }

@@ -68,6 +68,7 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.developmentDockIconPath, "/repo/assets/pretty/t3-pretty-1024.png");
       assert.equal(environment.serverRoot, "/repo");
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
+      assert.equal(environment.clientDistPath, "/repo/apps/server/dist/client");
       assert.equal(environment.backendCwd, "/repo");
       assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev");
       assert.equal(environment.linuxWmClass, "t3code-dev");
@@ -114,6 +115,10 @@ describe("DesktopEnvironment", () => {
       assert.equal(
         environment.backendEntryPath,
         "/install/resources/server.asar/apps/server/dist/bin.mjs",
+      );
+      assert.equal(
+        environment.clientDistPath,
+        "/install/resources/server.asar/apps/server/dist/client",
       );
     }),
   );

@@ -27,6 +27,7 @@ import {
   ThreadPinReorderedPayload,
   ThreadSceneryAssignedPayload,
   ThreadSkillsSetPayload,
+  ThreadSubagentPolicySetPayload,
   ThreadSnoozedPayload,
   ThreadUnpinnedPayload,
   ThreadUnarchivedPayload,
@@ -301,6 +302,9 @@ export function projectEvent(
             branchEventId: event.eventId,
             worktreePath: payload.worktreePath,
             enabledSkillIds: payload.enabledSkillIds,
+            ...(payload.subagentPolicy !== undefined
+              ? { subagentPolicy: payload.subagentPolicy }
+              : {}),
             latestTurn: null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -468,6 +472,22 @@ export function projectEvent(
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
             enabledSkillIds: payload.enabledSkillIds,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "thread.subagent-policy-set":
+      return decodeForEvent(
+        ThreadSubagentPolicySetPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            subagentPolicy: payload.policy,
             updatedAt: payload.updatedAt,
           }),
         })),

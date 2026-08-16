@@ -38,14 +38,23 @@ are owned by a plugin or a repo, so T3 Code leaves them alone.
   thread, including a skill from another provider's folder or one you turned off in settings.
   Thread picks stack on top of the global set and apply from the next turn.
 
-When a turn starts with skills attached (from Settings, the thread picker, or a `$skill` mention in the prompt), the thread log shows a **Skill** row for each one, the same way it shows a tool call. If the agent later loads that skill itself, that shows up as another Skill row.
+When a turn starts with skills attached (from Settings, the thread picker, or a `$skill` mention
+in the prompt), T3 Code sends each skill's instructions along with your message, so the agent
+has them without having to look them up. The thread log shows a **Skill** row for each one, the
+same way it shows a tool call. A skill is sent once per thread — later turns reuse what is already
+in the conversation — and sent again if you switch the thread to a different provider. If the
+agent loads a skill on its own, that shows up as another Skill row.
+
+`$skill` mentions work for the provider's own skills (the ones the `$` picker lists) and for
+skills already in the workspace. A mention that matches nothing is left as plain text.
 
 ## What lands in your project
 
 When a turn starts, T3 Code copies the enabled skills into the thread's workspace under
 `.claude/skills/` and `.agents/skills/`, the locations provider CLIs scan. Only folders T3 Code
-created are touched — your own skill folders are never modified or removed. In worktree mode the
-copies stay inside the thread's worktree; in local mode they are refreshed at each turn start.
+created are touched — your own skill folders are never modified or removed. Each copy carries its
+own `.gitignore`, so it never shows up in `git status` or in the agent's commits. In worktree mode
+the copies stay inside the thread's worktree; in local mode they are refreshed at each turn start.
 
 Per-thread picks from a provider CLI's home folder are copied the same way, so a skill that
 lives in `~/.codex/skills` can be turned on for a Claude thread and vice versa.

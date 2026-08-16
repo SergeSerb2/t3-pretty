@@ -24,6 +24,7 @@
  *
  * @module provider/Layers/ProviderEventLoggers
  */
+import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -62,11 +63,19 @@ export const NoOpProviderEventLoggers: ProviderEventLoggers["Service"] = {
  * Builds both stream views over one shared store. Setup failures are logged
  * and downgraded to the no-op service so diagnostics never block startup.
  */
+// Native logs drop per-token deltas and cumulative tool updates by default;
+// this keeps them for protocol debugging at the cost of much larger files.
+const verboseConfig = Config.boolean("T3CODE_LOG_PROVIDER_EVENTS_VERBOSE").pipe(
+  Config.withDefault(false),
+);
+
 export const make = Effect.gen(function* () {
   const { providerEventLogPath } = yield* ServerConfig;
   const attribution = yield* ResourceAttribution.ResourceAttribution;
+  const verbose = yield* verboseConfig;
   const store = yield* EventNdjsonLogger.makeEventNdjsonLogStore(providerEventLogPath, {
     attribution,
+    verbose,
   }).pipe(
     Effect.catch((error) =>
       Effect.logWarning(error.message, { error }).pipe(

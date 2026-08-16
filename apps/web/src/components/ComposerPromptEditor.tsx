@@ -1,3 +1,4 @@
+import { skillMentionToken } from "@t3tools/shared/skillTool";
 import { LexicalComposer, type InitialConfigType } from "@lexical/react/LexicalComposer";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -233,15 +234,18 @@ type ComposerSkillMetadata = {
 function skillMetadataByName(
   skills: ReadonlyArray<ServerProviderSkill>,
 ): ReadonlyMap<string, ComposerSkillMetadata> {
-  return new Map(
-    skills.map((skill) => [
-      skill.name,
-      {
-        label: formatProviderSkillDisplayName(skill),
-        description: resolveSkillDescription(skill),
-      },
-    ]),
-  );
+  const metadata = new Map<string, ComposerSkillMetadata>();
+  for (const skill of skills) {
+    const entry = {
+      label: formatProviderSkillDisplayName(skill),
+      description: resolveSkillDescription(skill),
+    };
+    // The composer inserts the folded token for names outside the mention
+    // grammar; both spellings must decorate.
+    metadata.set(skill.name, entry);
+    metadata.set(skillMentionToken(skill.name), entry);
+  }
+  return metadata;
 }
 
 function ComposerSkillDecorator(props: { skillLabel: string; skillDescription: string | null }) {

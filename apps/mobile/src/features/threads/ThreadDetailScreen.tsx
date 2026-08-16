@@ -1,3 +1,4 @@
+import { skillMentionToken } from "@t3tools/shared/skillTool";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import type { EnvironmentThreadStatus } from "@t3tools/client-runtime/state/threads";
 import { useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
@@ -33,7 +34,6 @@ import {
   AppState,
   Keyboard,
   Platform,
-  useColorScheme,
   useWindowDimensions,
   View,
   type GestureResponderEvent,
@@ -56,6 +56,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ControlPill } from "../../components/ControlPill";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
 import type { StatusTone } from "../../components/StatusPill";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
@@ -504,12 +505,19 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const contentMaxWidth = isSplitLayout ? CHAT_CONTENT_MAX_WIDTH : undefined;
   const selectedInstanceId = props.selectedThread.modelSelection.instanceId;
   useStreamingHaptics(props.selectedThread.id, props.selectedThreadFeed, isFocused);
-  const selectedProviderSkills = useMemo(
-    () =>
+  const selectedProviderSkills = useMemo(() => {
+    const skills =
       props.serverConfig?.providers.find((provider) => provider.instanceId === selectedInstanceId)
-        ?.skills ?? [],
-    [props.serverConfig, selectedInstanceId],
-  );
+        ?.skills ?? [];
+    // Mentions of names outside the token grammar are inserted folded; the
+    // chip must recognise that spelling too.
+    return skills.flatMap((skill) => {
+      const token = skillMentionToken(skill.name);
+      return token === skill.name
+        ? [skill]
+        : [skill, { name: token, displayName: skill.displayName ?? skill.name }];
+    });
+  }, [props.serverConfig, selectedInstanceId]);
 
   useLayoutEffect(() => {
     selectedThreadKeyRef.current = selectedThreadKey;
@@ -598,7 +606,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   }, [freeze, scrollMessageToEnd]);
 
   const showScrollToEndButton = contentPresentationKind === "ready" && !endFollowEnabled;
-  const isDarkMode = useColorScheme() === "dark";
+  const { themeAppearance } = useAppearancePreferences();
+  const isDarkMode = themeAppearance === "dark";
 
   const handleFeedTouchStart = useCallback((event: GestureResponderEvent) => {
     feedTouchStartRef.current = {

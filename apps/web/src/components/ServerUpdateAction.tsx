@@ -6,6 +6,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { StatusPulseDot } from "~/hooks/useStatusPulse";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand } from "~/versionSkew";
@@ -53,10 +54,7 @@ export function ServerUpdateProgress({
   }
   return (
     <div className="mt-1 flex items-center gap-2 text-xs font-medium text-foreground">
-      <span
-        className="size-1.5 shrink-0 animate-status-pulse rounded-full bg-foreground"
-        aria-hidden="true"
-      />
+      <StatusPulseDot className="size-1.5 shrink-0 bg-foreground" />
       <span>{serverUpdateStageLabel(state.stage)}</span>
     </div>
   );

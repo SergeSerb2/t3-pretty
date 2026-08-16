@@ -23,6 +23,7 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import { SkillId } from "./skills.ts";
+import { ThreadSubagentPolicy } from "./subagentPolicy.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -471,6 +472,9 @@ export const OrchestrationThread = Schema.Struct({
   // when a turn materializes the workspace. Defaults to empty so payloads
   // from pre-skills servers still decode.
   enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  // Per-thread inherit/off/on. Absent means inherit. Optional so payloads
+  // from pre-policy servers still decode.
+  subagentPolicy: Schema.optional(ThreadSubagentPolicy),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -533,6 +537,8 @@ export const OrchestrationThreadShell = Schema.Struct({
   scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
   // Same per-thread skill set as OrchestrationThread.enabledSkillIds.
   enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  // Same per-thread policy as OrchestrationThread.subagentPolicy.
+  subagentPolicy: Schema.optional(ThreadSubagentPolicy),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -590,6 +596,18 @@ export const OrchestrationShellStreamEvent = Schema.Union([
     sequence: NonNegativeInt,
     threadId: ThreadId,
   }),
+  /**
+   * A thread aggregate event that only appended a message or activity: the
+   * shell row is unchanged apart from `updatedAt`, so the server sends this
+   * ~120 B delta instead of the whole `OrchestrationThreadShell`. Clients
+   * bump `updatedAt` on the row they hold and ignore unknown threads.
+   */
+  Schema.Struct({
+    kind: Schema.Literal("thread-touched"),
+    sequence: NonNegativeInt,
+    threadId: ThreadId,
+    updatedAt: IsoDateTime,
+  }),
 ]);
 export type OrchestrationShellStreamEvent = typeof OrchestrationShellStreamEvent.Type;
 
@@ -620,6 +638,13 @@ export const OrchestrationSubscribeShellInput = Schema.Struct({
    * snapshot or catch-up replay and before it begins emitting live events.
    */
   requestCompletionMarker: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Opts in to `thread-touched` deltas for message/activity appends. Clients
+   * that omit it (builds predating the kind) receive a full `thread-upserted`
+   * for those events instead, so their stream decoder never sees an unknown
+   * kind.
+   */
+  acceptThreadTouched: Schema.optionalKey(Schema.Boolean),
 });
 export type OrchestrationSubscribeShellInput = typeof OrchestrationSubscribeShellInput.Type;
 
@@ -746,6 +771,7 @@ const ThreadCreateCommand = Schema.Struct({
   // when there are no picks. Global settings-enabled skills union on top
   // at turn start.
   enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  subagentPolicy: Schema.optional(ThreadSubagentPolicy),
   createdAt: IsoDateTime,
 });
 
@@ -860,6 +886,15 @@ const ThreadSkillsSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadSubagentPolicySetCommand = Schema.Struct({
+  type: Schema.Literal("thread.subagent-policy.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  // Full replacement of the per-thread policy. `inherit` clears a pin.
+  policy: ThreadSubagentPolicy,
+  createdAt: IsoDateTime,
+});
+
 const ThreadMetaUpdateCommand = Schema.Struct({
   type: Schema.Literal("thread.meta.update"),
   commandId: CommandId,
@@ -906,6 +941,7 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   // to none so older clients stay valid. RPC encode requires the key —
   // callers send `[]` when there are no picks.
   enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  subagentPolicy: Schema.optional(ThreadSubagentPolicy),
   createdAt: IsoDateTime,
 });
 
@@ -1028,6 +1064,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadPinReorderCommand,
   ThreadSceneryAssignCommand,
   ThreadSkillsSetCommand,
+  ThreadSubagentPolicySetCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -1058,6 +1095,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadPinReorderCommand,
   ThreadSceneryAssignCommand,
   ThreadSkillsSetCommand,
+  ThreadSubagentPolicySetCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -1178,6 +1216,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.pin-reordered",
   "thread.scenery-assigned",
   "thread.skills-set",
+  "thread.subagent-policy-set",
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
@@ -1243,6 +1282,7 @@ export const ThreadCreatedPayload = Schema.Struct({
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   // Optional so persisted events from pre-skills servers still decode.
   enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  subagentPolicy: Schema.optional(ThreadSubagentPolicy),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -1324,6 +1364,12 @@ export const ThreadSkillsSetPayload = Schema.Struct({
   threadId: ThreadId,
   // The new per-thread enabled skill set (full replacement).
   enabledSkillIds: Schema.Array(SkillId),
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadSubagentPolicySetPayload = Schema.Struct({
+  threadId: ThreadId,
+  policy: ThreadSubagentPolicy,
   updatedAt: IsoDateTime,
 });
 
@@ -1548,6 +1594,11 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
+    type: Schema.Literal("thread.subagent-policy-set"),
+    payload: ThreadSubagentPolicySetPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
     type: Schema.Literal("thread.meta-updated"),
     payload: ThreadMetaUpdatedPayload,
   }),
@@ -1635,6 +1686,12 @@ export const OrchestrationThreadStreamItem = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("event"),
     event: OrchestrationEvent,
+    /**
+     * Live-only event (in-flight tool progress): never persisted, carries
+     * `sequence: 0` and must not advance the client's resume cursor. Clients
+     * predating this flag strip it and drop the item at their cursor gate.
+     */
+    ephemeral: Schema.optional(Schema.Literal(true)),
   }),
 ]);
 export type OrchestrationThreadStreamItem = typeof OrchestrationThreadStreamItem.Type;

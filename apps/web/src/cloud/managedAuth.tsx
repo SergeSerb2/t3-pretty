@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import { useEffect, useRef, type ReactNode } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
+import { closeClerkGateForNextLaunch, openClerkGate } from "./clerkGate";
 import { runtime } from "../lib/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -56,6 +57,13 @@ export function ManagedRelayAuthProvider({ children }: { readonly children: Reac
     const previousAccount = observedAccountRef.current;
     const nextAccount = isSignedIn && userId ? userId : null;
     observedAccountRef.current = nextAccount;
+    // Persist whether this install has a session, so the next desktop launch
+    // knows whether clerk-js belongs on the boot path (see clerkGate).
+    if (nextAccount === null) {
+      closeClerkGateForNextLaunch();
+    } else {
+      openClerkGate();
+    }
 
     const queueAccountCleanup = () => {
       const previousTransition = accountTransitionRef.current ?? Promise.resolve();

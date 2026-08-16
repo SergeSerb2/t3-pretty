@@ -322,6 +322,78 @@ describe("EventNdjsonLogger", () => {
     }),
   );
 
+  it.effect("drops per-token and cumulative native records unless verbose", () =>
+    Effect.gen(function* () {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const basePath = NodePath.join(tempDir, "events.log");
+      const threadId = ThreadId.make("thread-native-filter");
+      const transient = [
+        {
+          observedAt: "t",
+          event: { method: "claude/stream_event/content_block_delta/text_delta" },
+        },
+        { method: "item/agentMessage/delta", threadId },
+        { observedAt: "t", event: { type: "message.part.delta" } },
+        {
+          observedAt: "t",
+          event: {
+            method: "session/update",
+            payload: { update: { sessionUpdate: "agent_thought_chunk" } },
+          },
+        },
+        {
+          observedAt: "t",
+          event: {
+            method: "session/update",
+            payload: { update: { sessionUpdate: "tool_call_update", status: "completed" } },
+          },
+        },
+      ];
+      const lifecycle = [
+        { observedAt: "t", event: { method: "claude/result/success" } },
+        { method: "item/completed", threadId },
+        { observedAt: "t", event: { type: "session.status" } },
+        {
+          observedAt: "t",
+          event: {
+            method: "session/update",
+            payload: { update: { sessionUpdate: "tool_call" } },
+          },
+        },
+      ];
+
+      const readLines = () =>
+        NodeFS.readFileSync(ownedLogPath(basePath, "thread-native-filter"), "utf8")
+          .trim()
+          .split("\n")
+          .filter((line) => line.length > 0);
+
+      try {
+        const quiet = yield* makeEventNdjsonLogStore(basePath, { batchWindowMs: 0 });
+        const native = quiet.logger("native");
+        assert.equal(native.verbose, false);
+        for (const event of [...transient, ...lifecycle]) {
+          yield* native.write(event, threadId);
+        }
+        yield* quiet.close();
+        assert.equal(readLines().length, lifecycle.length);
+
+        const verbose = yield* makeEventNdjsonLogStore(basePath, {
+          batchWindowMs: 0,
+          verbose: true,
+        });
+        assert.equal(verbose.logger("native").verbose, true);
+        for (const event of transient) {
+          yield* verbose.logger("native").write(event, threadId);
+        }
+        yield* verbose.close();
+        assert.equal(readLines().length, lifecycle.length + transient.length);
+      } finally {
+        NodeFS.rmSync(tempDir, { recursive: true, force: true });
+      }
+    }),
+  );
+
   it.effect("contains hostile event accessors inside guarded serialization", () =>
     Effect.gen(function* () {
       const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));

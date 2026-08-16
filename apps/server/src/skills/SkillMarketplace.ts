@@ -6,8 +6,10 @@
  * (`https://codeload.github.com/<owner>/<repo>/tar.gz/HEAD`) and cached under
  * `skillMarketplaceCacheDir` as `<owner>--<repo>.tar.gz` plus a derived
  * `<owner>--<repo>.listing.json`. Listings serve from cache while fresh
- * (6h) and fall back to a stale cache when a re-download fails; a source only
- * surfaces as a `SkillsError` when every requested source failed.
+ * (6h) and fall back to a stale cache when a background re-download fails;
+ * an explicit refresh reports the failure instead. A source only surfaces as
+ * a `SkillsError` when every requested source failed. A repository whose
+ * `SKILL.md` sits at its root lists as one skill under `ROOT_SKILL_SOURCE_PATH`.
  *
  * @module skills/SkillMarketplace
  */
@@ -39,6 +41,10 @@ const LISTING_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 30_000;
 /** Marketplace skill directories sit at most this deep below the repo root. */
 const MARKETPLACE_MAX_DEPTH = 5;
+/** A repository whose SKILL.md sits at its root is one skill, addressed by this source path. */
+export const ROOT_SKILL_SOURCE_PATH = "@root";
+/** Larger tarballs are refused rather than buffered; skill repos are small. */
+const MAX_TARBALL_BYTES = 64 * 1024 * 1024;
 
 /** Cached listing on disk; the `installed` flag is derived fresh on every read. */
 const CachedMarketplaceListing = Schema.Struct({
@@ -142,6 +148,14 @@ const make = Effect.gen(function* () {
         message: `GitHub returned HTTP ${response.status} for ${sourceRepo}.`,
       });
     }
+    const contentLength = Number(response.headers["content-length"] ?? "0");
+    if (Number.isFinite(contentLength) && contentLength > MAX_TARBALL_BYTES) {
+      return yield* new SkillsError({
+        operation,
+        sourceRepo,
+        message: `${sourceRepo} is too large to use as a skill marketplace source.`,
+      });
+    }
     const buffer = yield* response.arrayBuffer.pipe(
       Effect.mapError(
         (cause) =>
@@ -153,6 +167,13 @@ const make = Effect.gen(function* () {
           }),
       ),
     );
+    if (buffer.byteLength > MAX_TARBALL_BYTES) {
+      return yield* new SkillsError({
+        operation,
+        sourceRepo,
+        message: `${sourceRepo} is too large to use as a skill marketplace source.`,
+      });
+    }
     return new Uint8Array(buffer);
   });
 
@@ -176,10 +197,20 @@ const make = Effect.gen(function* () {
         continue;
       }
       const relativePath = relativeEntryPath(entry);
-      if (!relativePath || !relativePath.endsWith("/SKILL.md")) {
+      if (!relativePath) {
         continue;
       }
-      const sourcePath = relativePath.slice(0, -"/SKILL.md".length);
+      // A repo that is itself one skill (SKILL.md at the root) lists under a
+      // fixed source path so it round-trips through the store like any other.
+      const sourcePath =
+        relativePath === "SKILL.md"
+          ? ROOT_SKILL_SOURCE_PATH
+          : relativePath.endsWith("/SKILL.md")
+            ? relativePath.slice(0, -"/SKILL.md".length)
+            : undefined;
+      if (sourcePath === undefined) {
+        continue;
+      }
       const segments = sourcePath.split("/");
       if (
         segments.length > MARKETPLACE_MAX_DEPTH ||
@@ -194,14 +225,32 @@ const make = Effect.gen(function* () {
         name:
           frontmatter.kind === "parsed" && frontmatter.name
             ? frontmatter.name
-            : segments[segments.length - 1]!,
+            : sourcePath === ROOT_SKILL_SOURCE_PATH
+              ? sourceRepo.slice(sourceRepo.indexOf("/") + 1)
+              : segments[segments.length - 1]!,
         ...(frontmatter.kind === "parsed" && frontmatter.description
           ? { description: frontmatter.description }
           : {}),
       });
     }
-    skills.sort((left, right) => left.sourcePath.localeCompare(right.sourcePath));
-    return { repo: sourceRepo, fetchedAt, skills };
+    // A skill directory is a leaf, matching the store: SKILL.md files nested
+    // inside a skill (examples, fixtures) are part of it, not separate skills.
+    const sourcePaths = new Set(skills.map((skill) => skill.sourcePath));
+    const hasSkillAncestor = (sourcePath: string) => {
+      for (
+        let end = sourcePath.lastIndexOf("/");
+        end > 0;
+        end = sourcePath.lastIndexOf("/", end - 1)
+      ) {
+        if (sourcePaths.has(sourcePath.slice(0, end))) {
+          return true;
+        }
+      }
+      return false;
+    };
+    const leaves = skills.filter((skill) => !hasSkillAncestor(skill.sourcePath));
+    leaves.sort((left, right) => left.sourcePath.localeCompare(right.sourcePath));
+    return { repo: sourceRepo, fetchedAt, skills: leaves };
   };
 
   /** Best-effort cache persistence; a failed write never fails the listing. */
@@ -264,8 +313,10 @@ const make = Effect.gen(function* () {
 
     const fetched = yield* fetchRepoTarball(operation, sourceRepo).pipe(Effect.result);
     if (fetched._tag === "Failure") {
-      if (cached) {
-        yield* Effect.logWarning("Skill marketplace refresh failed; serving stale cache", {
+      // A background re-fetch (list past the TTL) degrades to the stale cache;
+      // an explicit refresh must report that nothing new was fetched.
+      if (cached && !options.forceRefresh) {
+        yield* Effect.logWarning("Skill marketplace refetch failed; serving stale cache", {
           sourceRepo,
         });
         return cached;
@@ -392,7 +443,7 @@ const make = Effect.gen(function* () {
       }));
     const entries = yield* parseEntries("install", parsed.sourceRepo, tarball);
 
-    const skillPrefix = `${parsed.sourcePath}/`;
+    const skillPrefix = parsed.sourcePath === ROOT_SKILL_SOURCE_PATH ? "" : `${parsed.sourcePath}/`;
     const files: Array<{ readonly segments: ReadonlyArray<string>; readonly data: Uint8Array }> =
       [];
     for (const entry of entries) {
@@ -405,7 +456,18 @@ const make = Effect.gen(function* () {
       }
       const innerPath = relativePath.slice(skillPrefix.length);
       const segments = innerPath.split("/");
-      if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) {
+      // Entry names are attacker-controlled: nothing may step outside the
+      // skill directory, on any platform's separator.
+      if (
+        segments.some(
+          (segment) =>
+            segment.length === 0 ||
+            segment === "." ||
+            segment === ".." ||
+            segment.includes("\\") ||
+            segment.includes("\0"),
+        )
+      ) {
         continue;
       }
       files.push({ segments, data: entry.data });

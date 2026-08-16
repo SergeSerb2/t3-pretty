@@ -2,8 +2,10 @@
  * Model rate lookup and cost arithmetic.
  *
  * Rates come from LiteLLM's `model_prices_and_context_window.json`, the same
- * table `ccusage` prices against. Everything here is pure: fetching and caching
- * the table lives in `UsageService`.
+ * table `ccusage` prices against. Kimi Code transcripts use CLI ids that
+ * LiteLLM does not list (`k3`, `kimi-code/k3`, `kimi-for-coding`), so those
+ * fall back to first-party Kimi API rates. Everything here is pure: fetching
+ * and caching the table lives in `UsageService`.
  *
  * @module usagePricing
  */
@@ -98,10 +100,66 @@ const UNPRICEABLE_MODELS = new Set([
   "fable",
 ]);
 
+/**
+ * Official Kimi Open Platform rates, USD per token.
+ *
+ * Cache hits are discounted; cache writes are billed at the cache-miss input
+ * rate. Sources: https://platform.kimi.ai/docs/pricing/chat-k3,
+ * https://platform.kimi.ai/docs/pricing/chat-k27-code,
+ * https://platform.kimi.ai/docs/pricing/chat-k26,
+ * https://platform.kimi.ai/docs/pricing/chat-k25.
+ */
+function kimiRate(
+  inputCostPerToken: number,
+  cacheReadCostPerToken: number,
+  outputCostPerToken: number,
+): ModelRate {
+  return {
+    inputCostPerToken,
+    outputCostPerToken,
+    cacheReadCostPerToken,
+    cacheCreationCostPerToken: inputCostPerToken,
+  };
+}
+
+const KIMI_API_RATES: Readonly<Record<string, ModelRate>> = {
+  "kimi-k3": kimiRate(3e-6, 3e-7, 1.5e-5),
+  "kimi-k2.7-code": kimiRate(9.5e-7, 1.9e-7, 4e-6),
+  "kimi-k2.7-code-highspeed": kimiRate(1.9e-6, 3.8e-7, 8e-6),
+  "kimi-k2.6": kimiRate(9.5e-7, 1.6e-7, 4e-6),
+  "kimi-k2.5": kimiRate(6e-7, 1e-7, 3e-6),
+};
+
+/**
+ * Kimi Code CLI / transcript names → the API model id they bill as.
+ *
+ * `k3-256k` is the same K3 model with a smaller context cap, not a different
+ * API price.
+ */
+const KIMI_MODEL_ALIASES: Readonly<Record<string, string>> = {
+  k3: "kimi-k3",
+  "k3-256k": "kimi-k3",
+  "kimi-k3-256k": "kimi-k3",
+  "kimi-for-coding": "kimi-k2.7-code",
+  "k2.7": "kimi-k2.7-code",
+  "k2.7-code": "kimi-k2.7-code",
+  "kimi-for-coding-highspeed": "kimi-k2.7-code-highspeed",
+  "k2.7-highspeed": "kimi-k2.7-code-highspeed",
+  "k2.6": "kimi-k2.6",
+  "k2.5": "kimi-k2.5",
+};
+
 export function lookupRate(table: RateTable, model: string): ModelRate | null {
   const normalized = normalizeModelName(model);
   if (normalized.length === 0 || UNPRICEABLE_MODELS.has(normalized)) return null;
-  return table.get(normalized) ?? null;
+  const canonical = KIMI_MODEL_ALIASES[normalized] ?? normalized;
+  return (
+    table.get(normalized) ??
+    table.get(canonical) ??
+    KIMI_API_RATES[canonical] ??
+    KIMI_API_RATES[normalized] ??
+    null
+  );
 }
 
 export interface PricedUsage {

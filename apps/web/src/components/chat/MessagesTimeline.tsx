@@ -113,6 +113,7 @@ import {
   extractTrailingCanvasSelection,
   type ParsedCanvasSelection,
 } from "~/lib/canvasSelection";
+import { useStatusPulse } from "~/hooks/useStatusPulse";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
@@ -706,8 +707,16 @@ function resolveFinalAssistantTextForTurn(
   return finalAssistantText;
 }
 
+/**
+ * The minimap tooltip shows one line of user text and three of assistant
+ * text, so only a prefix can ever be visible. Bounding the input keeps the
+ * per-publication whitespace collapse from re-scanning every full response
+ * in the loaded window (~1 ms per 200 KB of text) while a message streams.
+ */
+const MINIMAP_PREVIEW_SOURCE_LIMIT = 1_000;
+
 function compactMinimapPreview(text: string | null | undefined) {
-  const compact = text?.replace(/\s+/g, " ").trim() ?? "";
+  const compact = text?.slice(0, MINIMAP_PREVIEW_SOURCE_LIMIT).replace(/\s+/g, " ").trim() ?? "";
   return compact.length > 0 ? compact : null;
 }
 
@@ -1334,13 +1343,14 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
 
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
   const { workingStepLabel } = use(TimelineRowActivityCtx);
+  useStatusPulse();
   return (
     <div className="py-0.5 pl-1.5">
       <div className="flex min-w-0 items-center gap-2 pt-1 text-secondary-label text-[11px] tabular-nums">
-        <span className="inline-flex items-center gap-[3px]">
-          <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse" />
-          <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse [animation-delay:200ms]" />
-          <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse [animation-delay:400ms]" />
+        <span className="status-pulse-wave inline-flex items-center gap-[3px]">
+          <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+          <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+          <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
         </span>
         <span className="shrink-0">
           {row.createdAt ? (
@@ -2174,7 +2184,7 @@ function buildToolCallExpandedBody(
   return blocks.length > 0 ? blocks.join("\n\n") : null;
 }
 
-export const toolCallExpandedBodyClassName =
+const toolCallExpandedBodyClassName =
   "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-[length:var(--font-size-code,0.6875rem)] leading-relaxed select-text";
 
 function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {

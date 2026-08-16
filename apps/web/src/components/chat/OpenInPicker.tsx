@@ -4,7 +4,7 @@ import {
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import { memo, useCallback, useEffect, useMemo } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo } from "react";
 import { isOpenFavoriteEditorShortcut, shortcutLabelForCommand } from "../../keybindings";
 import { usePreferredEditor } from "../../editorPreferences";
 import {
@@ -29,23 +29,35 @@ import {
   VSCodium,
   Zed,
 } from "../Icons";
-import {
-  AquaIcon,
-  CLionIcon,
-  DataGripIcon,
-  DataSpellIcon,
-  GoLandIcon,
-  IntelliJIdeaIcon,
-  PhpStormIcon,
-  PyCharmIcon,
-  RiderIcon,
-  RubyMineIcon,
-  RustRoverIcon,
-  WebStormIcon,
-} from "../JetBrainsIcons";
 import { cn, isMacPlatform, isWindowsPlatform } from "~/lib/utils";
 import { shellEnvironment } from "~/state/shell";
 import { useAtomCommand } from "~/state/use-atom-command";
+
+// The JetBrains logos are gradient-heavy SVGs most users never see, so the
+// module loads on first render of one of them. The fallback is an empty svg
+// with the same props so menu/button sizing rules apply and nothing shifts.
+const jetBrainsIcon = (name: keyof typeof import("../JetBrainsIcons")): Icon => {
+  const LazyIcon = lazy(() =>
+    import("../JetBrainsIcons").then((module) => ({ default: module[name] })),
+  );
+  return (props) => (
+    <Suspense fallback={<svg {...props} />}>
+      <LazyIcon {...props} />
+    </Suspense>
+  );
+};
+const AquaIcon = jetBrainsIcon("AquaIcon");
+const CLionIcon = jetBrainsIcon("CLionIcon");
+const DataGripIcon = jetBrainsIcon("DataGripIcon");
+const DataSpellIcon = jetBrainsIcon("DataSpellIcon");
+const GoLandIcon = jetBrainsIcon("GoLandIcon");
+const IntelliJIdeaIcon = jetBrainsIcon("IntelliJIdeaIcon");
+const PhpStormIcon = jetBrainsIcon("PhpStormIcon");
+const PyCharmIcon = jetBrainsIcon("PyCharmIcon");
+const RiderIcon = jetBrainsIcon("RiderIcon");
+const RubyMineIcon = jetBrainsIcon("RubyMineIcon");
+const RustRoverIcon = jetBrainsIcon("RustRoverIcon");
+const WebStormIcon = jetBrainsIcon("WebStormIcon");
 
 type OpenInOption = {
   label: string;

@@ -25,6 +25,9 @@ The web runtime is singleton-scoped per browser tab so split terminals share one
 and memory. Each visible terminal owns and frees its own terminal, render state, row iterator, cell
 iterator, key and mouse encoder, and input event handles. Restoring captured scrollback temporarily
 detaches the PTY callback so historical device queries cannot emit replies into the current shell.
+Web scrollback is capped at 5,000 rows, the same line cap the server keeps for persisted history, so
+a re-attached terminal restores exactly what a live one could scroll through. Surfaces whose mount
+is hidden or collapsed to 0×0 release their canvas backing store and repaint on the next fit.
 
 ## Updating Ghostty
 

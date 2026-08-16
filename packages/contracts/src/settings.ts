@@ -12,6 +12,7 @@ import {
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
 import { SkillId, SkillMarketplaceSource, SkillsSettings } from "./skills.ts";
+import { SubagentChildSelection, SubagentPolicySettings } from "./subagentPolicy.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -653,6 +654,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   skills: SkillsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  subagentPolicy: SubagentPolicySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
@@ -787,6 +789,14 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       enabledSkillIds: Schema.optionalKey(Schema.Array(SkillId)),
       marketplaceSources: Schema.optionalKey(Schema.Array(SkillMarketplaceSource)),
+    }),
+  ),
+  // Deep-merged into ServerSettings.subagentPolicy. `children` is a wholesale
+  // map replace when present — same rule as skills lists.
+  subagentPolicy: Schema.optionalKey(
+    Schema.Struct({
+      enabled: Schema.optionalKey(Schema.Boolean),
+      children: Schema.optionalKey(Schema.Record(ProviderInstanceId, SubagentChildSelection)),
     }),
   ),
   observability: Schema.optionalKey(

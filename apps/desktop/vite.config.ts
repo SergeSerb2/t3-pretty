@@ -18,18 +18,20 @@ export default defineConfig({
   run: {
     tasks: {
       build: {
-        command: "node scripts/build-preview-annotation-css.mjs && vp pack",
+        command:
+          "node scripts/build-preview-annotation-css.mjs && node scripts/build-playwright-injected.mjs && vp pack",
         dependsOn: ["t3#build"],
         cache: false,
       },
       dev: {
         command:
-          "node scripts/build-preview-annotation-css.mjs && cross-env T3CODE_DESKTOP_DEV=1 vp pack --watch",
+          "node scripts/build-preview-annotation-css.mjs && node scripts/build-playwright-injected.mjs && cross-env T3CODE_DESKTOP_DEV=1 vp pack --watch",
         dependsOn: ["t3#build"],
         cache: false,
       },
       "dev:bundle": {
-        command: "node scripts/build-preview-annotation-css.mjs && vp pack --watch",
+        command:
+          "node scripts/build-preview-annotation-css.mjs && node scripts/build-playwright-injected.mjs && vp pack --watch",
         cache: false,
       },
       "dev:electron": {
@@ -50,10 +52,18 @@ export default defineConfig({
       entry: ["src/main.ts"],
       clean: true,
       deps: {
+        // Inline the pure-JS runtime so main boot reads one file instead of
+        // walking ~700 files out of the asar. Natives (@clerk/electron-passkeys,
+        // node-pty) and electron itself stay external. Keep in sync with
+        // DESKTOP_BUNDLED_DEPENDENCY_NAMES in scripts/build-desktop-artifact.ts.
         alwaysBundle: (id) =>
           id.startsWith("@t3tools/") ||
           id === "@clerk/electron" ||
-          id.startsWith("@clerk/electron/"),
+          id.startsWith("@clerk/electron/") ||
+          id === "effect" ||
+          id.startsWith("effect/") ||
+          id.startsWith("@effect/") ||
+          id === "electron-updater",
       },
       ...(shouldLaunchElectronAfterPack ? { onSuccess: "node scripts/dev-electron.mjs" } : {}),
     },

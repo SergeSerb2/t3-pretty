@@ -12,6 +12,7 @@ import {
   NonNegativeInt,
   OrchestrationAggregateKind,
   OrchestrationCommandReceiptStatus,
+  PositiveInt,
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -38,6 +39,12 @@ export const GetByCommandIdInput = Schema.Struct({
 });
 export type GetByCommandIdInput = typeof GetByCommandIdInput.Type;
 
+export const PruneReceiptsInput = Schema.Struct({
+  acceptedBefore: IsoDateTime,
+  limit: PositiveInt,
+});
+export type PruneReceiptsInput = typeof PruneReceiptsInput.Type;
+
 /**
  * OrchestrationCommandReceiptRepositoryShape - Service API for command receipts.
  */
@@ -50,6 +57,17 @@ export interface OrchestrationCommandReceiptRepositoryShape {
   readonly upsert: (
     receipt: OrchestrationCommandReceipt,
   ) => Effect.Effect<void, OrchestrationCommandReceiptRepositoryError>;
+
+  /**
+   * Delete up to `limit` receipts accepted before `acceptedBefore`.
+   *
+   * Receipts only serve idempotent command retries; callers loop until fewer
+   * than `limit` rows come back so a large backlog never blocks the writer.
+   * Returns the number of rows deleted.
+   */
+  readonly pruneAcceptedBefore: (
+    input: PruneReceiptsInput,
+  ) => Effect.Effect<number, OrchestrationCommandReceiptRepositoryError>;
 
   /**
    * Read a command receipt by command id.

@@ -76,29 +76,50 @@ export interface PrimaryEnvironmentTarget {
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 
 let cachedPrimaryDesktopBootstrap: DesktopEnvironmentBootstrap | null = null;
-let primaryDesktopBootstrapInflight: Promise<void> | null = null;
+let primaryDesktopBootstrapInflight: Promise<DesktopEnvironmentBootstrap | null> | null = null;
 
-function getDesktopLocalEnvironmentBootstrap(): DesktopEnvironmentBootstrap | null {
-  // The primary (Windows-native) backend keeps the "primary" id. The
-  // plural list may include a second WSL entry; the primary-target
-  // resolver only cares about the primary, so just find it.
+// The primary (Windows-native) backend keeps the "primary" id. The plural list
+// may include a second WSL entry; the primary-target resolver only cares about
+// the primary, so just find it.
+function selectPrimaryDesktopBootstrap(
+  bootstraps: ReadonlyArray<DesktopEnvironmentBootstrap>,
+): DesktopEnvironmentBootstrap | null {
+  return bootstraps.find((entry) => entry.id === PRIMARY_LOCAL_ENVIRONMENT_ID) ?? null;
+}
+
+/**
+ * Read the primary desktop bootstrap through the bridge and refresh the cache
+ * that the synchronous target readers consult. Await this before the first
+ * primary HTTP call so a fresh renderer does not fall back to window-origin.
+ */
+export function loadDesktopPrimaryEnvironmentBootstrap(): Promise<DesktopEnvironmentBootstrap | null> {
+  if (primaryDesktopBootstrapInflight !== null) {
+    return primaryDesktopBootstrapInflight;
+  }
   const result = window.desktopBridge?.getLocalEnvironmentBootstraps() ?? [];
   if (Array.isArray(result)) {
-    cachedPrimaryDesktopBootstrap =
-      result.find((entry) => entry.id === PRIMARY_LOCAL_ENVIRONMENT_ID) ?? null;
-    return cachedPrimaryDesktopBootstrap;
+    cachedPrimaryDesktopBootstrap = selectPrimaryDesktopBootstrap(result);
+    return Promise.resolve(cachedPrimaryDesktopBootstrap);
   }
-  if (primaryDesktopBootstrapInflight === null) {
-    primaryDesktopBootstrapInflight = Promise.resolve(result)
-      .then((bootstraps) => {
-        cachedPrimaryDesktopBootstrap =
-          bootstraps.find((entry) => entry.id === PRIMARY_LOCAL_ENVIRONMENT_ID) ?? null;
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        primaryDesktopBootstrapInflight = null;
-      });
+  primaryDesktopBootstrapInflight = Promise.resolve(result)
+    .then((bootstraps) => {
+      cachedPrimaryDesktopBootstrap = selectPrimaryDesktopBootstrap(bootstraps);
+      return cachedPrimaryDesktopBootstrap;
+    })
+    .catch(() => cachedPrimaryDesktopBootstrap)
+    .finally(() => {
+      primaryDesktopBootstrapInflight = null;
+    });
+  return primaryDesktopBootstrapInflight;
+}
+
+// Sync callers get the last snapshot while an async bridge read refreshes it.
+function getDesktopLocalEnvironmentBootstrap(): DesktopEnvironmentBootstrap | null {
+  if (window.desktopBridge === undefined) {
+    cachedPrimaryDesktopBootstrap = null;
+    return null;
   }
+  void loadDesktopPrimaryEnvironmentBootstrap();
   return cachedPrimaryDesktopBootstrap;
 }
 

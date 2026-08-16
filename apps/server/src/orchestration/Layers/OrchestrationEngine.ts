@@ -18,6 +18,7 @@ import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -51,6 +52,13 @@ const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
 );
 const isOrchestrationCommandIdConflictError = Schema.is(OrchestrationCommandIdConflictError);
 const isOrchestrationCommandInvariantError = Schema.is(OrchestrationCommandInvariantError);
+
+// Receipts only serve idempotent command retries; nobody retries a command
+// days later. Deleted in small batches so a first prune over a large backlog
+// interleaves with the command writer instead of stalling it.
+const RECEIPT_RETENTION = Duration.hours(72);
+const RECEIPT_PRUNE_INTERVAL = Duration.hours(1);
+const RECEIPT_PRUNE_BATCH = 2_000;
 
 interface CommandEnvelope {
   command: OrchestrationCommand;
@@ -319,6 +327,31 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
   yield* projectionPipeline.bootstrap;
   commandReadModel = yield* projectionSnapshotQuery.getCommandReadModel();
+
+  const pruneReceipts = Effect.gen(function* () {
+    const acceptedBefore = DateTime.formatIso(
+      DateTime.subtractDuration(yield* DateTime.now, RECEIPT_RETENTION),
+    );
+    let deleted = 0;
+    let batch = RECEIPT_PRUNE_BATCH;
+    while (batch === RECEIPT_PRUNE_BATCH) {
+      batch = yield* commandReceiptRepository.pruneAcceptedBefore({
+        acceptedBefore,
+        limit: RECEIPT_PRUNE_BATCH,
+      });
+      deleted += batch;
+    }
+    if (deleted > 0) {
+      yield* Effect.logDebug("pruned orchestration command receipts", { deleted, acceptedBefore });
+    }
+  }).pipe(
+    Effect.catch((cause) =>
+      Effect.logWarning("failed to prune orchestration command receipts", { cause }),
+    ),
+  );
+  yield* Effect.forkScoped(
+    pruneReceipts.pipe(Effect.repeat(Schedule.spaced(RECEIPT_PRUNE_INTERVAL))),
+  );
 
   const worker = Effect.forever(Queue.take(commandQueue).pipe(Effect.flatMap(processEnvelope)));
   yield* Effect.forkScoped(worker);
