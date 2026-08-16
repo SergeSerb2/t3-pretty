@@ -104,8 +104,8 @@ describe("PreviewPanelShell", () => {
   });
 
   it("defaults the inline gap closed so opening does not flash full width", () => {
-    // Open-as-base + @starting-style undoing it first-paints the full gap,
-    // snaps to 0, then animates open — the panel blasts in.
+    // The panel mounts closed and flips open a frame later, so closed must be
+    // the base rule (open-as-base first-paints the full gap and snaps back).
     const css = rightPanelCssBlock();
     const gapRule = css.match(/\.right-panel-inline-gap \{[^}]+\}/)?.[0] ?? "";
     const openGapRule =
@@ -122,6 +122,7 @@ describe("PreviewPanelShell", () => {
     expect(surfaceRule).toContain("translate: 100%");
     expect(openSurfaceRule).toContain("translate: 0");
     expect(css).not.toContain('[data-right-panel-open="false"]');
+    expect(css).not.toContain("@starting-style {");
   });
 
   it("reserves the sibling column minimum when the flex row is known", () => {

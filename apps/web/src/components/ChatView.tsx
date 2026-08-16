@@ -1246,13 +1246,20 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
 const TERMINAL_DRAWER_EXIT_FALLBACK_MS = 250;
 const RIGHT_PANEL_EXIT_FALLBACK_MS = 250;
 
-/** Keep the heavy panel mounted only until its CSS exit finishes. */
+/**
+ * Keep the heavy panel mounted only until its CSS exit finishes, and mount it
+ * closed so the enter slide starts one frame after the mount work instead of
+ * being eaten by it: heavy surfaces (diff, terminal, browser) block the main
+ * thread through most of the 200ms slide, which reads as the panel snapping
+ * open. Closing never had this problem because nothing mounts on the way out.
+ */
 function InlineRightPanelPresence<Snapshot>(props: {
   open: boolean;
   snapshot: Snapshot;
-  children: (snapshot: Snapshot, onExitComplete: () => void) => ReactNode;
+  children: (snapshot: Snapshot, open: boolean, onExitComplete: () => void) => ReactNode;
 }) {
   const [present, setPresent] = useState(props.open);
+  const [entered, setEntered] = useState(false);
   const lastOpenSnapshotRef = useRef(props.snapshot);
 
   useLayoutEffect(() => {
@@ -1273,12 +1280,30 @@ function InlineRightPanelPresence<Snapshot>(props: {
     return () => window.clearTimeout(timeoutId);
   }, [present, props.open]);
 
+  useEffect(() => {
+    if (!present) {
+      setEntered(false);
+      return;
+    }
+    if (!props.open || entered) return;
+    // Two frames: the first paints the closed panel after React's mount work,
+    // the second gives follow-up effect renders their own frame before motion.
+    let innerFrame = 0;
+    const outerFrame = window.requestAnimationFrame(() => {
+      innerFrame = window.requestAnimationFrame(() => setEntered(true));
+    });
+    return () => {
+      window.cancelAnimationFrame(outerFrame);
+      window.cancelAnimationFrame(innerFrame);
+    };
+  }, [entered, present, props.open]);
+
   const handleExitComplete = useCallback(() => {
     if (!props.open) setPresent(false);
   }, [props.open]);
 
   const snapshot = props.open ? props.snapshot : lastOpenSnapshotRef.current;
-  return present ? props.children(snapshot, handleExitComplete) : null;
+  return present ? props.children(snapshot, props.open && entered, handleExitComplete) : null;
 }
 
 // Errors surface through two maps (draft-keyed and thread-keyed) whose entries
@@ -6957,11 +6982,11 @@ function ChatViewContent(props: ChatViewProps) {
             maximized: rightPanelMaximized,
           }}
         >
-          {(snapshot, onExitComplete) => (
+          {(snapshot, open, onExitComplete) => (
             <RightPanelTabs
               mode="inline"
               maximized={snapshot.maximized}
-              open={rightPanelOpen}
+              open={open}
               onExitComplete={onExitComplete}
               surfaces={snapshot.surfaces}
               activeSurfaceId={snapshot.activeSurfaceId}
