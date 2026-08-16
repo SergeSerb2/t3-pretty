@@ -276,6 +276,7 @@ export const WS_METHODS = {
 
   // Managed worktree storage
   storageGetInventory: "storage.getInventory",
+  storageStreamInventory: "storage.streamInventory",
   storageRemoveOrphan: "storage.removeOrphan",
 
   // Git workflow methods
@@ -876,6 +877,13 @@ export const WsStorageGetInventoryRpc = Rpc.make(WS_METHODS.storageGetInventory,
   error: Schema.Union([StorageInventoryError, EnvironmentAuthorizationError]),
 });
 
+export const WsStorageStreamInventoryRpc = Rpc.make(WS_METHODS.storageStreamInventory, {
+  payload: StorageGetInventoryInput,
+  success: StorageInventory,
+  error: Schema.Union([StorageInventoryError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
 export const WsStorageRemoveOrphanRpc = Rpc.make(WS_METHODS.storageRemoveOrphan, {
   payload: StorageRemoveOrphanInput,
   success: StorageRemoveOrphanResult,
@@ -1233,6 +1241,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,
   WsStorageGetInventoryRpc,
+  WsStorageStreamInventoryRpc,
   WsStorageRemoveOrphanRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,

@@ -2,7 +2,9 @@
  * Multi-environment storage inventory.
  *
  * Connected environments that advertise `storageInventory` answer the same
- * typed query. Offline environments and older servers are not probed.
+ * typed query. Servers that also advertise `storageInventoryStream` push
+ * incremental inventories while the walk is still running. Offline
+ * environments and older servers are not probed.
  *
  * @module state/storageInventory
  */
@@ -70,14 +72,18 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
       });
       continue;
     }
-    const result = get(serverEnvironment.storageInventory({ environmentId, input: {} }));
+    const result =
+      config.environment.capabilities.storageInventoryStream === true
+        ? get(serverEnvironment.storageInventoryStream({ environmentId, input: {} }))
+        : get(serverEnvironment.storageInventory({ environmentId, input: {} }));
+    const inventory = Option.getOrNull(AsyncResult.value(result));
     statuses.push({
       environmentId,
       label: presentation.entry.target.label,
       isPending: result.waiting,
       unsupported: false,
       error: result._tag === "Failure" ? "This environment could not report storage." : null,
-      inventory: Option.getOrNull(AsyncResult.value(result)),
+      inventory,
     });
   }
   return statuses;
@@ -101,18 +107,21 @@ export function useStorageInventories(): StorageInventoryView {
           input: {},
         }),
       );
+      appAtomRegistry.refresh(
+        serverEnvironment.storageInventoryStream({
+          environmentId: environment.environmentId,
+          input: {},
+        }),
+      );
     }
   }, [environments]);
 
-  const stillReporting = environments.filter(
-    (environment) =>
-      !environment.unsupported && environment.inventory === null && environment.error === null,
-  ).length;
-
   return {
     environments,
-    isPending:
-      stillReporting > 0 && environments.every((environment) => environment.inventory === null),
+    isPending: environments.some(
+      (environment) =>
+        !environment.unsupported && environment.isPending && environment.error === null,
+    ),
     refresh,
   };
 }
@@ -120,6 +129,12 @@ export function useStorageInventories(): StorageInventoryView {
 export function refreshStorageInventory(environmentId: EnvironmentId): void {
   appAtomRegistry.refresh(
     serverEnvironment.storageInventory({
+      environmentId,
+      input: {},
+    }),
+  );
+  appAtomRegistry.refresh(
+    serverEnvironment.storageInventoryStream({
       environmentId,
       input: {},
     }),

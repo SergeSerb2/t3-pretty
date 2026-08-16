@@ -157,6 +157,7 @@ export const make = Effect.gen(function* () {
       canvas: true,
       providerHandoff: true,
       storageInventory: true,
+      storageInventoryStream: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" ? { serverSelfUpdateProgress: true } : {}),
     },

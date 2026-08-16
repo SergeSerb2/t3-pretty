@@ -48,6 +48,14 @@ export const StorageOrphanEntry = Schema.Struct({
 });
 export type StorageOrphanEntry = typeof StorageOrphanEntry.Type;
 
+/** Incremental scan progress. Absent on older servers, which only send a finished inventory. */
+export const StorageInventoryScan = Schema.Struct({
+  status: Schema.Literals(["scanning", "complete"]),
+  measuredCount: NonNegativeInt,
+  totalCount: NonNegativeInt,
+});
+export type StorageInventoryScan = typeof StorageInventoryScan.Type;
+
 /**
  * Disk use attributable to managed worktrees on one environment. Unique paths
  * are counted once even when several threads share a checkout.
@@ -63,6 +71,7 @@ export const StorageInventory = Schema.Struct({
   orphanWorktreeBytes: NonNegativeInt,
   totalBytes: NonNegativeInt,
   managedWorktreesRoot: TrimmedNonEmptyStringSchema,
+  scan: Schema.optionalKey(StorageInventoryScan),
 });
 export type StorageInventory = typeof StorageInventory.Type;
 

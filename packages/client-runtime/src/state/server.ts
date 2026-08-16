@@ -27,6 +27,7 @@ import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
+  createEnvironmentSubscriptionAtomFamily,
   createRuntimeCommand,
   scheduleAtomCommandEffect,
 } from "./runtime.ts";
@@ -750,6 +751,12 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:storage-inventory",
       tag: WS_METHODS.storageGetInventory,
       staleTimeMs: 60_000,
+    }),
+    storageInventoryStream: createEnvironmentSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:storage-inventory-stream",
+      idleTtlMs: 60_000,
+      restartOnReconnect: true,
+      subscribe: () => runStream(WS_METHODS.storageStreamInventory, {}),
     }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {

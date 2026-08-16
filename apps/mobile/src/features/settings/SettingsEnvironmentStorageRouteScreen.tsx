@@ -30,7 +30,9 @@ import {
   cleanSettledWorktrees,
   diskPathsReleasedByRemoval,
   formatStorageBytes,
+  isStorageScanInProgress,
   pendingActionCopy,
+  scanProgressCaption,
   settledWorktrees,
   type StoragePendingAction,
   worktreeShouldForceRemove,
@@ -38,7 +40,7 @@ import {
 
 export function SettingsEnvironmentStorageRouteScreen() {
   const insets = useSafeAreaInsets();
-  const { environments, isPending, refresh } = useStorageInventories();
+  const { environments, refresh } = useStorageInventories();
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
@@ -204,12 +206,6 @@ export function SettingsEnvironmentStorageRouteScreen() {
             />
           ))
         )}
-        {isPending ? (
-          <View className="items-center gap-2 py-4">
-            <ActivityIndicator />
-            <Text className="text-sm text-foreground-muted">Measuring storage…</Text>
-          </View>
-        ) : null}
       </ScrollView>
     </View>
   );
@@ -227,6 +223,9 @@ function EnvironmentStorageCard(props: {
 }) {
   const { environment, showLabel, disabled, onAction } = props;
   const inventory = environment.inventory;
+  const scanning = isStorageScanInProgress(inventory, environment.isPending);
+  const actionsDisabled = disabled || scanning;
+  const progressCaption = inventory === null ? null : scanProgressCaption(inventory);
 
   if (environment.unsupported) {
     return (
@@ -256,9 +255,14 @@ function EnvironmentStorageCard(props: {
   if (inventory === null) {
     return (
       <SettingsSection title={showLabel ? environment.label : "Disk use"}>
-        <View className="items-center gap-2 px-4 py-6">
-          <ActivityIndicator />
-          <Text className="text-sm text-foreground-muted">Measuring storage…</Text>
+        <View className="gap-2 px-4 py-5">
+          <View className="flex-row items-center gap-2">
+            <ActivityIndicator />
+            <Text className="text-base text-foreground">Measuring storage</Text>
+          </View>
+          <Text className="text-sm text-foreground-muted">
+            Byte totals appear here as each managed worktree is counted.
+          </Text>
         </View>
       </SettingsSection>
     );
@@ -277,9 +281,15 @@ function EnvironmentStorageCard(props: {
 
       <SettingsSection title="Disk use">
         <View className="gap-3 p-4">
-          <Text className="text-2xl tabular-nums text-foreground">
-            {formatStorageBytes(inventory.totalBytes)}
-          </Text>
+          <View className="flex-row items-center gap-2">
+            {scanning ? <ActivityIndicator /> : null}
+            <Text className="text-2xl tabular-nums text-foreground">
+              {formatStorageBytes(inventory.totalBytes)}
+            </Text>
+          </View>
+          {progressCaption !== null ? (
+            <Text className="text-sm text-foreground-muted">{progressCaption}</Text>
+          ) : null}
           <StorageUsageBar inventory={inventory} />
           <LegendRow
             colorClass="bg-primary"
@@ -309,14 +319,14 @@ function EnvironmentStorageCard(props: {
       <SettingsSection title="Cleanup">
         <ActionRow
           title="Remove clean settled worktrees"
-          disabled={disabled || cleanSettled.length === 0}
+          disabled={actionsDisabled || cleanSettled.length === 0}
           onPress={() =>
             onAction(environment.environmentId, inventory, { kind: "remove-clean-settled" })
           }
         />
         <ActionRow
           title="Remove all settled worktrees"
-          disabled={disabled || allSettled.length === 0}
+          disabled={actionsDisabled || allSettled.length === 0}
           onPress={() =>
             onAction(environment.environmentId, inventory, { kind: "remove-all-settled" })
           }
@@ -324,14 +334,14 @@ function EnvironmentStorageCard(props: {
         <ActionRow
           title="Delete archived threads with worktrees"
           destructive
-          disabled={disabled || inventory.archivedWorktrees.length === 0}
+          disabled={actionsDisabled || inventory.archivedWorktrees.length === 0}
           onPress={() =>
             onAction(environment.environmentId, inventory, { kind: "delete-archived" })
           }
         />
         <ActionRow
           title="Remove orphan checkouts"
-          disabled={disabled || inventory.orphanWorktrees.length === 0}
+          disabled={actionsDisabled || inventory.orphanWorktrees.length === 0}
           onPress={() => onAction(environment.environmentId, inventory, { kind: "remove-orphans" })}
         />
       </SettingsSection>
@@ -345,7 +355,7 @@ function EnvironmentStorageCard(props: {
               key={entry.threadId}
               entry={entry}
               first={index === 0}
-              disabled={disabled || !entry.canRemoveWorktree}
+              disabled={actionsDisabled || !entry.canRemoveWorktree}
               actionLabel="Remove"
               onPress={() =>
                 onAction(environment.environmentId, inventory, { kind: "remove-worktree", entry })
@@ -364,7 +374,7 @@ function EnvironmentStorageCard(props: {
               key={entry.threadId}
               entry={entry}
               first={index === 0}
-              disabled={disabled}
+              disabled={actionsDisabled}
               actionLabel="Delete"
               destructive
               onPress={() =>
@@ -399,7 +409,7 @@ function EnvironmentStorageCard(props: {
                 </View>
                 <Pressable
                   accessibilityRole="button"
-                  disabled={disabled}
+                  disabled={actionsDisabled}
                   onPress={() =>
                     onAction(environment.environmentId, inventory, {
                       kind: "remove-orphan",
