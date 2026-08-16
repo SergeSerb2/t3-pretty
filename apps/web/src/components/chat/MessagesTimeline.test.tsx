@@ -834,4 +834,35 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("lucide-x");
     expect(markup).toContain('aria-label="Tool call failed"');
   });
+
+  it("only offers a disclosure when the body reveals more than the header preview", () => {
+    const render = (entry: { label: string; detail?: string; command?: string }) =>
+      renderToStaticMarkup(
+        <MessagesTimeline
+          {...buildProps()}
+          timelineEntries={[
+            {
+              id: "entry-1",
+              kind: "work",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              entry: {
+                id: "work-1",
+                createdAt: "2026-03-17T19:12:28.000Z",
+                tone: "tool",
+                toolLifecycleStatus: "completed",
+                ...entry,
+              },
+            },
+          ]}
+        />,
+      );
+
+    expect(render({ label: "Skill", detail: "grill-me" })).not.toContain("aria-expanded");
+    expect(
+      render({
+        label: "Command run",
+        command: "cd apps/web/src && cat components/chat/ComposerCommandMenu.tsx",
+      }),
+    ).toContain('aria-expanded="false"');
+  });
 });
