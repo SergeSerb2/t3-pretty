@@ -39,6 +39,7 @@ import {
   resolveDesktopProductName,
   resolveDesktopUpdateChannel,
   resolveDesktopWebAssetBrand,
+  resolveCargoTargetDir,
   resolveResourceMonitorRustTargets,
   resourceMonitorExecutableName,
   resolveGenericUpdateFeedUrl,
@@ -1177,6 +1178,26 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resourceMonitorExecutableName("mac"), "t3-resource-monitor");
     assert.equal(resourceMonitorExecutableName("win"), "t3-resource-monitor.exe");
   });
+  // The release workflow redirects cargo output with CARGO_TARGET_DIR so the
+  // crate survives clean checkouts; the staging step has to look there too.
+  it.effect("locates the resource monitor under CARGO_TARGET_DIR when set", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      assert.equal(
+        resolveCargoTargetDir(path, "/repo", undefined),
+        path.join("/repo", "native/resource-monitor/target"),
+      );
+      assert.equal(
+        resolveCargoTargetDir(path, "/repo", "  "),
+        path.join("/repo", "native/resource-monitor/target"),
+      );
+      assert.equal(resolveCargoTargetDir(path, "/repo", "/cache/target"), "/cache/target");
+      assert.equal(
+        resolveCargoTargetDir(path, "/repo", "build/target"),
+        path.resolve("/repo", "build/target"),
+      );
+    }),
+  );
   it("promotes target fff binaries to direct staged dependencies", () => {
     assert.deepStrictEqual(resolveFffNativeDependencies("mac", "arm64", "0.9.4"), {
       "@ff-labs/fff-bin-darwin-arm64": "0.9.4",
