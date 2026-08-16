@@ -51,6 +51,10 @@ import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
+import type {
+  PullRequestPanelViewSnapshot,
+  PullRequestSummarySection,
+} from "./pullRequestPanelView.logic";
 import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic";
 
 /** A host colour only when it is one, so a malformed value falls back to the neutral dot. */
@@ -217,6 +221,7 @@ function Section({
   count,
   defaultOpen = true,
   actions,
+  onOpenChange,
   children,
 }: {
   title: string;
@@ -225,6 +230,7 @@ function Section({
   /** Controls riding on the heading row itself. A sibling of the trigger, not a child of it —
       a button cannot hold a button — and only while open, since they act on what is shown. */
   actions?: ReactNode;
+  onOpenChange?: (open: boolean) => void;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -247,6 +253,7 @@ function Section({
       }
     }
     setOpen(nextOpen);
+    onOpenChange?.(nextOpen);
   };
   return (
     <Collapsible
@@ -364,6 +371,8 @@ export function PullRequestSummaryTab({
   fixCheckLabel = "Fix",
   onFixFinding,
   onRefresh,
+  restoredView,
+  onViewChange,
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
@@ -376,16 +385,30 @@ export function PullRequestSummaryTab({
   fixCheckLabel?: string;
   onFixFinding?: (finding: PullRequestFinding) => void;
   onRefresh: () => void;
+  restoredView?: PullRequestPanelViewSnapshot;
+  onViewChange?: (patch: PullRequestPanelViewSnapshot) => void;
 }) {
   // Keyed by the pull request, so opening another one starts at the end of its conversation
   // rather than wherever the last one had been read back to.
-  const [shown, setShown] = useState({ url: detail.url, count: COMMENT_PAGE });
+  const [shown, setShown] = useState({
+    url: detail.url,
+    count: restoredView?.shownCommentCount ?? COMMENT_PAGE,
+  });
   const shownComments = shown.url === detail.url ? shown.count : COMMENT_PAGE;
   // Windowed by recency regardless of display order: expanding always reaches further back in
   // time, whether the newest comment currently reads first or last.
   const recentComments = detail.comments.slice(Math.max(0, detail.comments.length - shownComments));
   const hiddenCommentCount = detail.comments.length - recentComments.length;
-  const [commentOrder, setCommentOrder] = useState<"newest" | "oldest">("newest");
+  const [commentOrder, setCommentOrderState] = useState<"newest" | "oldest">(
+    restoredView?.commentOrder ?? "newest",
+  );
+  const setCommentOrder = (next: "newest" | "oldest") => {
+    setCommentOrderState(next);
+    onViewChange?.({ commentOrder: next });
+  };
+  const rememberSection = (section: PullRequestSummarySection, open: boolean) => {
+    onViewChange?.({ sectionOpen: { [section]: open } });
+  };
   const visibleComments = orderPullRequestComments(recentComments, commentOrder);
 
   // A comment that already lives on a review thread is that thread: the thread carries the line
@@ -482,7 +505,11 @@ export function PullRequestSummaryTab({
   };
 
   return (
-    <div className="h-full overflow-y-auto" data-pull-request-summary-scroll>
+    <div
+      className="h-full overflow-y-auto"
+      data-pull-request-summary-scroll
+      data-pull-request-tab-scroll="summary"
+    >
       <section className="px-4 py-3">
         <div>
           <MetaRow icon={<UsersIcon className="size-3.5" />} label="Reviewers">
@@ -565,7 +592,11 @@ export function PullRequestSummaryTab({
         </div>
       </section>
 
-      <Section title="Description">
+      <Section
+        title="Description"
+        defaultOpen={restoredView?.sectionOpen?.description ?? true}
+        onOpenChange={(open) => rememberSection("description", open)}
+      >
         <div className="group">
           {bodyScope === detail.url ? (
             <PullRequestMarkdownEditor
@@ -610,7 +641,12 @@ export function PullRequestSummaryTab({
         </div>
       </Section>
 
-      <Section title="Checks" count={detail.checks.length}>
+      <Section
+        title="Checks"
+        count={detail.checks.length}
+        defaultOpen={restoredView?.sectionOpen?.checks ?? true}
+        onOpenChange={(open) => rememberSection("checks", open)}
+      >
         {detail.checks.length === 0 ? (
           <p className="text-xs text-muted-foreground">No checks reported.</p>
         ) : (
@@ -666,6 +702,8 @@ export function PullRequestSummaryTab({
       <Section
         title="Comments"
         {...(activityPending || activityError ? {} : { count: detail.commentCount })}
+        defaultOpen={restoredView?.sectionOpen?.comments ?? true}
+        onOpenChange={(open) => rememberSection("comments", open)}
         actions={
           !activityPending && !activityError && detail.comments.length > 0 ? (
             <Button
@@ -677,7 +715,7 @@ export function PullRequestSummaryTab({
                   ? "Show oldest comments first"
                   : "Show newest comments first"
               }
-              onClick={() => setCommentOrder((value) => (value === "newest" ? "oldest" : "newest"))}
+              onClick={() => setCommentOrder(commentOrder === "newest" ? "oldest" : "newest")}
             >
               <ArrowDownUpIcon aria-hidden className="size-3" />
               {commentOrder === "newest" ? "Newest first" : "Oldest first"}
@@ -709,9 +747,11 @@ export function PullRequestSummaryTab({
                     size="sm"
                     variant="outline"
                     className="w-full"
-                    onClick={() =>
-                      setShown({ url: detail.url, count: shownComments + COMMENT_PAGE })
-                    }
+                    onClick={() => {
+                      const count = shownComments + COMMENT_PAGE;
+                      setShown({ url: detail.url, count });
+                      onViewChange?.({ shownCommentCount: count });
+                    }}
                   >
                     Show {Math.min(hiddenCommentCount, COMMENT_PAGE)} earlier{" "}
                     {hiddenCommentCount === 1 ? "comment" : "comments"}

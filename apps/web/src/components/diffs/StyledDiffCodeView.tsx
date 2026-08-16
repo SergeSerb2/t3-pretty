@@ -274,6 +274,8 @@ type StyledDiffCodeViewProps<LAnnotation> = (
    * to restyle chrome the viewer owns — such as replacing its per-file line counts.
    */
   readonly unsafeCSSExtra?: string;
+  /** Marks the viewer host as the pull-request Code tab's scroller so a remount can restore it. */
+  readonly "data-pull-request-tab-scroll"?: string;
 };
 
 /** The shared web CodeView surface: app styling and virtualized geometry stay paired here. */
@@ -282,11 +284,13 @@ export function StyledDiffCodeView<LAnnotation = undefined>({
   viewerRef,
   className,
   unsafeCSSExtra,
+  "data-pull-request-tab-scroll": tabScroll,
   ...props
 }: StyledDiffCodeViewProps<LAnnotation>) {
   return (
     <CodeView<LAnnotation>
       {...props}
+      {...(tabScroll === undefined ? {} : { "data-pull-request-tab-scroll": tabScroll })}
       {...(viewerRef ? { ref: viewerRef } : {})}
       // The custom element itself is focusable for keyboard scrolling. Its native outline sits
       // outside the panel clipping boundary; actual controls inside retain their own indicators.
