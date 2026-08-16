@@ -39,6 +39,7 @@ export default mergeConfig(
       entry: ["src/bin.ts"],
       outDir: "dist",
       sourcemap: true,
+      minify: true,
       clean: true,
       deps: {
         // Both halves are required. `alwaysBundle` forces the JS dependencies in

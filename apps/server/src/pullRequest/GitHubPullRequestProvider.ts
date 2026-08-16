@@ -87,6 +87,7 @@ function reasonFor(
 ): PullRequestProviderError["reason"] {
   if (error._tag === "GitHubCliUnavailableError") return "missing-tool";
   if (error._tag === "GitHubCliAuthenticationError") return "unauthenticated";
+  if (error._tag === "GitHubCliRateLimitError") return "rate-limited";
   return "failed";
 }
 
@@ -153,6 +154,7 @@ export const make = Effect.gen(function* () {
           query: input.query,
           cursor: input.cursor,
           filters: input.filters,
+          ...(input.search === false ? { search: false } : {}),
         })
         .pipe(
           Effect.mapError(fail("listChangeRequests")),

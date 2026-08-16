@@ -834,4 +834,44 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("lucide-x");
     expect(markup).toContain('aria-label="Tool call failed"');
   });
+
+  it("only offers a disclosure when the body reveals more than the header preview", () => {
+    const render = (entry: { label: string; detail?: string; command?: string }) =>
+      renderToStaticMarkup(
+        <MessagesTimeline
+          {...buildProps()}
+          timelineEntries={[
+            {
+              id: "entry-1",
+              kind: "work",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              entry: {
+                id: "work-1",
+                createdAt: "2026-03-17T19:12:28.000Z",
+                tone: "tool",
+                toolLifecycleStatus: "completed",
+                ...entry,
+              },
+            },
+          ]}
+        />,
+      );
+
+    // Repeat-only bodies stay closed until layout reports the preview is clipped.
+    expect(render({ label: "Skill", detail: "grill-me" })).not.toContain("aria-expanded");
+    // Multiline/space-run bodies still disclose: nowrap collapses what <pre> keeps.
+    expect(
+      render({
+        label: "Command run",
+        command: "echo one\necho two",
+      }),
+    ).toContain('aria-expanded="false"');
+    expect(
+      render({
+        label: "Command run",
+        command: "echo hi",
+        detail: "wrote apps/web/src/components/chat/ComposerCommandMenu.tsx",
+      }),
+    ).toContain('aria-expanded="false"');
+  });
 });

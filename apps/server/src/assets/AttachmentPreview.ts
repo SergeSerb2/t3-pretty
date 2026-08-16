@@ -5,35 +5,22 @@ import * as NodeCrypto from "node:crypto";
 
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
-import sharp from "sharp";
 
-import { normalizeAttachmentRelativePath } from "../attachmentPaths.ts";
+import {
+  ATTACHMENT_FEED_PREVIEW_VARIANT,
+  attachmentFeedPreviewPath,
+} from "./attachmentFeedPreviewPath.ts";
 
-export const ATTACHMENT_FEED_PREVIEW_VARIANT = "feed-preview";
+export { ATTACHMENT_FEED_PREVIEW_VARIANT, attachmentFeedPreviewPath };
+
 export const ATTACHMENT_FEED_PREVIEW_WIDTH = 1024;
 export const ATTACHMENT_FEED_PREVIEW_HEIGHT = 788;
-const ATTACHMENT_FEED_PREVIEW_VERSION = 1;
 
 const previewJobs = new Map<string, Promise<string>>();
 
 class AttachmentPreviewGenerationError extends Data.TaggedError(
   "AttachmentPreviewGenerationError",
 )<{ readonly cause: unknown }> {}
-
-export function attachmentFeedPreviewPath(input: {
-  readonly attachmentsDir: string;
-  readonly attachmentId: string;
-}): string | null {
-  const attachmentId = normalizeAttachmentRelativePath(input.attachmentId);
-  if (!attachmentId || attachmentId.includes("/") || attachmentId.includes(".")) {
-    return null;
-  }
-  return NodePath.join(
-    input.attachmentsDir,
-    ".previews",
-    `${attachmentId}-feed-v${ATTACHMENT_FEED_PREVIEW_VERSION}.webp`,
-  );
-}
 
 async function createAttachmentFeedPreview(input: {
   readonly sourcePath: string;
@@ -49,6 +36,8 @@ async function createAttachmentFeedPreview(input: {
   await NodeFSP.mkdir(NodePath.dirname(input.previewPath), { recursive: true });
   const temporaryPath = `${input.previewPath}.${process.pid}.${NodeCrypto.randomUUID()}.tmp`;
   try {
+    const sharpModule = await import("sharp");
+    const sharp = sharpModule.default ?? sharpModule;
     await sharp(input.sourcePath)
       .rotate()
       .resize({

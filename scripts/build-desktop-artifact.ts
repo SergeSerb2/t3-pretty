@@ -799,6 +799,28 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   // staging inputs out of app.asar; they are emitted once at resources/.
   "!apps/desktop/prod-resources/windows-server",
   "!apps/desktop/prod-resources/windows-server/**/*",
+  // Source maps have no runtime consumer in the packaged app (no
+  // source-map-support, --enable-source-maps, or Sentry).
+  "!**/*.map",
+  // TypeScript sources and declaration files shipped next to compiled JS.
+  "!**/node_modules/effect/src/**",
+  "!**/*.d.ts",
+  "!**/*.d.mts",
+  "!**/*.d.cts",
+  "!**/node_modules/**/{README,README.*,CHANGELOG,CHANGELOG.*,readme,readme.*}",
+  // Playwright is only used for the injected-script text file.
+  "!**/node_modules/playwright-core/**",
+  "**/node_modules/playwright-core/package.json",
+  "**/node_modules/playwright-core/lib/coreBundle.js",
+  // Effect ships unused OpenAPI UIs that are never imported.
+  "!**/node_modules/effect/**/httpApiScalar.js",
+  "!**/node_modules/effect/**/HttpApiScalar.js",
+  "!**/node_modules/effect/**/httpApiSwagger.js",
+  "!**/node_modules/effect/**/HttpApiSwagger.js",
+  // DMG art is installer-only; the runtime resource-monitor copy stays in
+  // extraResources and the Linux AppImage asar fallback.
+  "!apps/desktop/prod-resources/dmg",
+  "!apps/desktop/prod-resources/dmg/**/*",
 ] as const;
 // Windows ships the server tree (bundle + node_modules) as a separate
 // resources/server.asar sidecar instead of loose files: the NSIS installer
@@ -822,6 +844,22 @@ export const WINDOWS_SERVER_ASAR_IGNORE_GLOBS = [
   "**/node_modules/@anthropic-ai/claude-agent-sdk-*/**",
   "**/node_modules/.bin",
   "**/node_modules/.bin/**",
+  "**/*.map",
+  "**/node_modules/effect/src",
+  "**/node_modules/effect/src/**",
+  "**/*.d.ts",
+  "**/*.d.mts",
+  "**/*.d.cts",
+  "**/node_modules/**/README",
+  "**/node_modules/**/README.*",
+  "**/node_modules/**/CHANGELOG",
+  "**/node_modules/**/CHANGELOG.*",
+  "**/node_modules/**/readme",
+  "**/node_modules/**/readme.*",
+  "**/node_modules/effect/**/httpApiScalar.js",
+  "**/node_modules/effect/**/HttpApiScalar.js",
+  "**/node_modules/effect/**/httpApiSwagger.js",
+  "**/node_modules/effect/**/HttpApiSwagger.js",
 ] as const;
 export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 80;
 export const WINDOWS_SERVER_RESOURCE_SOURCE_DIR = "apps/desktop/prod-resources/windows-server";
@@ -1964,6 +2002,10 @@ function validateBundledClientAssets(clientDir: string) {
   });
 }
 
+// Bundled into main.cjs / preload.cjs, so they must not be staged as
+// production node_modules (Clerk would otherwise drag clerk-js).
+const DESKTOP_BUNDLED_DEPENDENCY_NAMES = new Set(["@clerk/electron", "react-grab"]);
+
 export function resolveDesktopRuntimeDependencies(
   dependencies: Record<string, string> | undefined,
   catalog: Record<string, string>,
@@ -1975,7 +2017,9 @@ export function resolveDesktopRuntimeDependencies(
   const runtimeDependencies = Object.fromEntries(
     Object.entries(dependencies).filter(
       ([dependencyName, dependencySpec]) =>
-        dependencyName !== "electron" && !dependencySpec.startsWith("workspace:"),
+        dependencyName !== "electron" &&
+        !DESKTOP_BUNDLED_DEPENDENCY_NAMES.has(dependencyName) &&
+        !dependencySpec.startsWith("workspace:"),
     ),
   );
 
@@ -2955,13 +2999,13 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   // Windows splits dependencies per process: app.asar carries only the
   // desktop main-process runtime deps, while the server bundle's deps live in
   // the server.asar sidecar (see stageWindowsServerSidecar). macOS and Linux
-  // keep the single merged tree — their primary resolves everything from
-  // app.asar and there is no second consumer.
+  // keep a single tree, but only the server runtime-externals (natives the
+  // bundled bin.mjs still loads from disk) plus desktop runtime deps.
   const stageDependencies =
     options.platform === "win"
       ? { ...resolvedDesktopRuntimeDependencies }
       : {
-          ...resolvedServerDependencies,
+          ...resolvedServerRuntimeExternalDependencies,
           ...resolvedDesktopRuntimeDependencies,
           ...resolveFffNativeDependencies(
             options.platform,

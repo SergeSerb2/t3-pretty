@@ -321,12 +321,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 @utility dialog-backdrop {
   background: color-mix(in srgb, var(--background) 60%, transparent);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
 
   @variant dark {
     background: color-mix(in srgb, var(--background) 64%, transparent);
   }
+}
+
+html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 @utility dropdown-glass {
@@ -682,10 +685,19 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   /* Match the thread sidebar's 200ms motion. The gap changes only while the
      panel enters or exits; its fixed-width surface slides independently so
-     expensive browser, terminal, and diff contents do not reflow each frame. */
+     expensive browser, terminal, and diff contents do not reflow each frame.
+
+     Closed is the cascade default (width 0 / translated away). Open must not
+     be the base rule with @starting-style undoing it — that first-paints the
+     full gap, snaps back to 0, then animates open, which looks like the panel
+     blasting in. */
   .right-panel-inline-gap {
-    width: var(--right-panel-width);
+    width: 0;
     transition: width 200ms linear;
+  }
+
+  .right-panel-inline-gap[data-right-panel-open="true"] {
+    width: var(--right-panel-width);
   }
 
   .right-panel-inline-gap[data-right-panel-resizing="true"] {
@@ -693,20 +705,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 
   .right-panel-inline-surface {
-    translate: 0;
+    translate: 100%;
     transition: translate 200ms linear;
   }
 
-  .right-panel-inline-gap[data-right-panel-open="false"] {
-    width: 0;
-  }
-
-  .right-panel-inline-gap[data-right-panel-open="false"] .right-panel-inline-surface {
-    translate: 100%;
-  }
-
-  .right-panel-inline-maximized-exit[data-right-panel-open="false"] .right-panel-inline-surface {
-    translate: 100%;
+  .right-panel-inline-frame[data-right-panel-open="true"] .right-panel-inline-surface {
+    translate: 0;
   }
 
   @starting-style {
@@ -714,7 +718,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       width: 0;
     }
 
-    .right-panel-inline-gap[data-right-panel-open="true"] .right-panel-inline-surface {
+    .right-panel-inline-frame[data-right-panel-open="true"] .right-panel-inline-surface {
       translate: 100%;
     }
   }

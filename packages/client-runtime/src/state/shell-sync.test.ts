@@ -150,7 +150,7 @@ describe("environment shell synchronization", () => {
     }),
   );
 
-  it.effect("requests a full socket snapshot when the HTTP refresh fails", () =>
+  it.effect("resumes a new session from the cached shell cursor", () =>
     Effect.gen(function* () {
       const cachedSnapshot: OrchestrationShellSnapshot = {
         snapshotSequence: 5,
@@ -221,9 +221,9 @@ describe("environment shell synchronization", () => {
       );
 
       const subscribeInput = yield* Queue.take(subscribeInputs);
-      expect(subscribeInput.afterSequence).toBeUndefined();
+      expect(subscribeInput.afterSequence).toBe(5);
       expect(subscribeInput.requestCompletionMarker).toBe(true);
-      expect(yield* Ref.get(loaderCalls)).toBe(1);
+      expect(yield* Ref.get(loaderCalls)).toBe(0);
       const synchronizing = yield* SubscriptionRef.get(shellState);
       expect(synchronizing.status).toBe("synchronizing");
       expect(Option.getOrThrow(synchronizing.snapshot)).toEqual(cachedSnapshot);
@@ -237,13 +237,13 @@ describe("environment shell synchronization", () => {
 
       const live = yield* SubscriptionRef.get(shellState);
       expect(Option.getOrThrow(live.snapshot)).toEqual(resetSnapshot);
-      expect(yield* Ref.get(loaderCalls)).toBe(1);
+      expect(yield* Ref.get(loaderCalls)).toBe(0);
 
       yield* Queue.offer(wakeups, "application-active");
       const resumedInput = yield* Queue.take(subscribeInputs);
       expect(resumedInput.afterSequence).toBe(resetSnapshot.snapshotSequence);
       expect(resumedInput.requestCompletionMarker).toBe(true);
-      expect(yield* Ref.get(loaderCalls)).toBe(1);
+      expect(yield* Ref.get(loaderCalls)).toBe(0);
     }),
   );
 
@@ -305,12 +305,12 @@ describe("environment shell synchronization", () => {
         ),
       );
 
-      // A new session starts from an authoritative HTTP snapshot.
+      // A new session resumes from the cached cursor when one exists.
       for (let attempt = 0; attempt < 100; attempt += 1) {
         if ((yield* Ref.get(capturedAfterSequences)).length >= 1) break;
         yield* Effect.yieldNow;
       }
-      expect(yield* Ref.get(capturedAfterSequences)).toEqual([10]);
+      expect(yield* Ref.get(capturedAfterSequences)).toEqual([1]);
       yield* Queue.offer(events, { kind: "synchronized" });
       yield* SubscriptionRef.changes(shellState).pipe(
         Stream.filter((value) => value.status === "live"),
@@ -334,7 +334,7 @@ describe("environment shell synchronization", () => {
         if ((yield* Ref.get(capturedAfterSequences)).length >= 2) break;
         yield* Effect.yieldNow;
       }
-      expect(yield* Ref.get(capturedAfterSequences)).toEqual([10, 40]);
+      expect(yield* Ref.get(capturedAfterSequences)).toEqual([1, 40]);
       yield* Queue.offer(events, { kind: "synchronized" });
 
       yield* Queue.offer(wakeups, "application-active-probe");
@@ -342,7 +342,7 @@ describe("environment shell synchronization", () => {
         if ((yield* Ref.get(capturedAfterSequences)).length >= 3) break;
         yield* Effect.yieldNow;
       }
-      expect(yield* Ref.get(capturedAfterSequences)).toEqual([10, 40, 40]);
+      expect(yield* Ref.get(capturedAfterSequences)).toEqual([1, 40, 40]);
 
       yield* Queue.offer(wakeups, "application-active-reconnect");
       // Reconnect wakeups probe first and can keep the session now, so the
@@ -352,17 +352,17 @@ describe("environment shell synchronization", () => {
         if ((yield* Ref.get(capturedAfterSequences)).length >= 4) break;
         yield* Effect.yieldNow;
       }
-      expect(yield* Ref.get(capturedAfterSequences)).toEqual([10, 40, 40, 40]);
-      expect(yield* Ref.get(loaderCalls)).toBe(1);
+      expect(yield* Ref.get(capturedAfterSequences)).toEqual([1, 40, 40, 40]);
+      expect(yield* Ref.get(loaderCalls)).toBe(0);
 
-      // Replacing the session performs another authoritative refresh.
+      // Replacing the session resumes from the cached cursor instead of HTTP.
       yield* SubscriptionRef.set(activeSession, Option.some(session(client)));
       for (let attempt = 0; attempt < 100; attempt += 1) {
         if ((yield* Ref.get(capturedAfterSequences)).length >= 5) break;
         yield* Effect.yieldNow;
       }
-      expect(yield* Ref.get(capturedAfterSequences)).toEqual([10, 40, 40, 40, 20]);
-      expect(yield* Ref.get(loaderCalls)).toBe(2);
+      expect(yield* Ref.get(capturedAfterSequences)).toEqual([1, 40, 40, 40, 40]);
+      expect(yield* Ref.get(loaderCalls)).toBe(0);
     }),
   );
 });

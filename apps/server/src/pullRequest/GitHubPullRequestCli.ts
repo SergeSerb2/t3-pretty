@@ -335,6 +335,11 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly cursor?: ProviderListCursor | undefined;
       /** Further narrowings, as qualifiers on the search and as a local pass on the fallback. */
       readonly filters?: PullRequestListFilters | undefined;
+      /**
+       * False lists without `--search`. A search across the host that already said nothing
+       * about this repository must not spend another search request to hear the same silence.
+       */
+      readonly search?: boolean | undefined;
     }) => Effect.Effect<GitHubPullRequestListBatch, GitHubPullRequestCliError>;
 
     /**
@@ -1227,6 +1232,11 @@ export const make = Effect.gen(function* () {
       // the same read rather than a wider one. Free text is the one thing the fallback cannot
       // judge locally — it lists rows, it does not search their text — so a query still rules
       // the fallback out: an empty answer under one is already the answer.
+      // A caller that already searched the host must not search this repository again: that is
+      // the same scarce budget, spent on an answer the first search already gave.
+      if (input.search === false) {
+        return read(false);
+      }
       const hasQuery = (input.query?.trim().length ?? 0) > 0;
       return read(true).pipe(
         Effect.flatMap((batch) =>

@@ -71,9 +71,16 @@ export function createDesktopSecondaryBootstrapsReader(
       return { _tag: "Success", bootstraps: snapshot };
     }
     try {
-      snapshot = bridge
-        .getLocalEnvironmentBootstraps()
-        .filter((entry) => entry.id !== PRIMARY_LOCAL_ENVIRONMENT_ID);
+      const result = bridge.getLocalEnvironmentBootstraps();
+      if (Array.isArray(result)) {
+        snapshot = result.filter((entry) => entry.id !== PRIMARY_LOCAL_ENVIRONMENT_ID);
+        return { _tag: "Success", bootstraps: snapshot };
+      }
+      void Promise.resolve(result)
+        .then((bootstraps) => {
+          snapshot = bootstraps.filter((entry) => entry.id !== PRIMARY_LOCAL_ENVIRONMENT_ID);
+        })
+        .catch(() => undefined);
       return { _tag: "Success", bootstraps: snapshot };
     } catch (cause) {
       return { _tag: "Failure", cause };

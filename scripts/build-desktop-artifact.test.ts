@@ -307,6 +307,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.deepStrictEqual(
       resolveDesktopRuntimeDependencies(
         {
+          "@clerk/electron": "catalog:",
           "@effect/platform-node": "catalog:",
           "@t3tools/contracts": "workspace:*",
           "@t3tools/shared": "workspace:*",
@@ -314,8 +315,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           "@t3tools/tailscale": "workspace:*",
           effect: "catalog:",
           electron: "41.5.0",
+          "react-grab": "^0.1.32",
         },
         {
+          "@clerk/electron": "0.1.0",
           "@effect/platform-node": "4.0.0-beta.59",
           effect: "4.0.0-beta.59",
         },
@@ -481,6 +484,21 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
       "!apps/desktop/prod-resources/windows-server",
       "!apps/desktop/prod-resources/windows-server/**/*",
+      "!**/*.map",
+      "!**/node_modules/effect/src/**",
+      "!**/*.d.ts",
+      "!**/*.d.mts",
+      "!**/*.d.cts",
+      "!**/node_modules/**/{README,README.*,CHANGELOG,CHANGELOG.*,readme,readme.*}",
+      "!**/node_modules/playwright-core/**",
+      "**/node_modules/playwright-core/package.json",
+      "**/node_modules/playwright-core/lib/coreBundle.js",
+      "!**/node_modules/effect/**/httpApiScalar.js",
+      "!**/node_modules/effect/**/HttpApiScalar.js",
+      "!**/node_modules/effect/**/httpApiSwagger.js",
+      "!**/node_modules/effect/**/HttpApiSwagger.js",
+      "!apps/desktop/prod-resources/dmg",
+      "!apps/desktop/prod-resources/dmg/**/*",
     ]);
     assert.equal(WINDOWS_SERVER_RESOURCE_SOURCE_DIR, "apps/desktop/prod-resources/windows-server");
     assert.deepStrictEqual(WINDOWS_SERVER_EXTRA_RESOURCES, [
@@ -548,9 +566,25 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "**/node_modules/@anthropic-ai/claude-agent-sdk-*/**",
         "**/node_modules/.bin",
         "**/node_modules/.bin/**",
+        "**/*.map",
+        "**/node_modules/effect/src",
+        "**/node_modules/effect/src/**",
+        "**/*.d.ts",
+        "**/*.d.mts",
+        "**/*.d.cts",
+        "**/node_modules/**/README",
+        "**/node_modules/**/README.*",
+        "**/node_modules/**/CHANGELOG",
+        "**/node_modules/**/CHANGELOG.*",
+        "**/node_modules/**/readme",
+        "**/node_modules/**/readme.*",
+        "**/node_modules/effect/**/httpApiScalar.js",
+        "**/node_modules/effect/**/HttpApiScalar.js",
+        "**/node_modules/effect/**/httpApiSwagger.js",
+        "**/node_modules/effect/**/HttpApiSwagger.js",
       ]);
       assert.deepStrictEqual(mac.dmg, {
-        title: "T3 Code (Alpha) 1.2.3 Installer",
+        title: "T3 Pretty (Alpha) 1.2.3 Installer",
         background: "dmg/dmg-background-latest.png",
         window: { width: 540, height: 412 },
         contents: [

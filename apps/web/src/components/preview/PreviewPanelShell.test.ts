@@ -1,8 +1,22 @@
+// @effect-diagnostics nodeBuiltinImport:off - Module-scope raw CSS fixture loading has no Effect test scope.
+import * as NodeFS from "node:fs";
 import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import { getPreviewPanelMaxWidth, PreviewPanelShell } from "./PreviewPanelShell";
+
+// ?raw on a .css module yields "" under the test pipeline (the CSS transform
+// wins), so the stylesheet contract reads the file straight from disk.
+const indexCssSource = NodeFS.readFileSync(new URL("../../index.css", import.meta.url), "utf8");
+
+function rightPanelCssBlock(): string {
+  const start = indexCssSource.indexOf(".right-panel-inline-gap {");
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = indexCssSource.indexOf(".terminal-drawer-inline-gap {", start);
+  expect(end).toBeGreaterThan(start);
+  return indexCssSource.slice(start, end);
+}
 
 function renderPreviewPanelShell(
   mode: ComponentProps<typeof PreviewPanelShell>["mode"],
@@ -87,6 +101,27 @@ describe("PreviewPanelShell", () => {
     expect(html).not.toContain("right-panel-inline-gap");
     expect(html).not.toContain("right-panel-inline-surface");
     expect(html).toContain('data-right-panel-open="true"');
+  });
+
+  it("defaults the inline gap closed so opening does not flash full width", () => {
+    // Open-as-base + @starting-style undoing it first-paints the full gap,
+    // snaps to 0, then animates open — the panel blasts in.
+    const css = rightPanelCssBlock();
+    const gapRule = css.match(/\.right-panel-inline-gap \{[^}]+\}/)?.[0] ?? "";
+    const openGapRule =
+      css.match(/\.right-panel-inline-gap\[data-right-panel-open="true"\] \{[^}]+\}/)?.[0] ?? "";
+    const surfaceRule = css.match(/\.right-panel-inline-surface \{[^}]+\}/)?.[0] ?? "";
+    const openSurfaceRule =
+      css.match(
+        /\.right-panel-inline-frame\[data-right-panel-open="true"\] \.right-panel-inline-surface \{[^}]+\}/,
+      )?.[0] ?? "";
+
+    expect(gapRule).toContain("width: 0");
+    expect(gapRule).not.toContain("var(--right-panel-width)");
+    expect(openGapRule).toContain("width: var(--right-panel-width)");
+    expect(surfaceRule).toContain("translate: 100%");
+    expect(openSurfaceRule).toContain("translate: 0");
+    expect(css).not.toContain('[data-right-panel-open="false"]');
   });
 
   it("reserves the sibling column minimum when the flex row is known", () => {

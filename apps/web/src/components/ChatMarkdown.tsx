@@ -731,18 +731,12 @@ interface SuspenseShikiCodeBlockProps {
   className: string | undefined;
   code: string;
   themeName: DiffThemeName;
-  isStreaming: boolean;
 }
 
-function SuspenseShikiCodeBlock({
-  className,
-  code,
-  themeName,
-  isStreaming,
-}: SuspenseShikiCodeBlockProps) {
+function SuspenseShikiCodeBlock({ className, code, themeName }: SuspenseShikiCodeBlockProps) {
   const language = extractFenceLanguage(className);
   const cacheKey = createHighlightCacheKey(code, language, themeName);
-  const cachedHighlightedHtml = !isStreaming ? highlightedCodeCache.get(cacheKey) : null;
+  const cachedHighlightedHtml = highlightedCodeCache.get(cacheKey);
 
   if (cachedHighlightedHtml != null) {
     return (
@@ -759,7 +753,6 @@ function SuspenseShikiCodeBlock({
       language={language}
       themeName={themeName}
       cacheKey={cacheKey}
-      isStreaming={isStreaming}
     />
   );
 }
@@ -769,7 +762,6 @@ interface UncachedShikiCodeBlockProps {
   language: string;
   themeName: DiffThemeName;
   cacheKey: string;
-  isStreaming: boolean;
 }
 
 function UncachedShikiCodeBlock({
@@ -777,7 +769,6 @@ function UncachedShikiCodeBlock({
   language,
   themeName,
   cacheKey,
-  isStreaming,
 }: UncachedShikiCodeBlockProps) {
   const highlighter = use(getSyntaxHighlighterPromise(language));
   const highlightedHtml = useMemo(() => {
@@ -795,14 +786,12 @@ function UncachedShikiCodeBlock({
   }, [code, highlighter, language, themeName]);
 
   useEffect(() => {
-    if (!isStreaming) {
-      highlightedCodeCache.set(
-        cacheKey,
-        highlightedHtml,
-        estimateHighlightedSize(highlightedHtml, code),
-      );
-    }
-  }, [cacheKey, code, highlightedHtml, isStreaming]);
+    highlightedCodeCache.set(
+      cacheKey,
+      highlightedHtml,
+      estimateHighlightedSize(highlightedHtml, code),
+    );
+  }, [cacheKey, code, highlightedHtml]);
 
   return (
     <div className="chat-markdown-shiki" dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
@@ -1423,6 +1412,14 @@ function ChatMarkdown({
     ];
     return buildFileLinkParentSuffixByPath(filePaths);
   }, [inlineCodeFileLinkMetaByText, markdownFileLinkMetaByHref]);
+  const renderedTextRef = useRef(renderedText);
+  renderedTextRef.current = renderedText;
+  const markdownFileLinkMetaByHrefRef = useRef(markdownFileLinkMetaByHref);
+  markdownFileLinkMetaByHrefRef.current = markdownFileLinkMetaByHref;
+  const inlineCodeFileLinkMetaByTextRef = useRef(inlineCodeFileLinkMetaByText);
+  inlineCodeFileLinkMetaByTextRef.current = inlineCodeFileLinkMetaByText;
+  const fileLinkParentSuffixByPathRef = useRef(fileLinkParentSuffixByPath);
+  fileLinkParentSuffixByPathRef.current = fileLinkParentSuffixByPath;
   const markdownUrlTransform = useCallback((href: string) => {
     return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
   }, []);
@@ -1516,15 +1513,15 @@ function ChatMarkdown({
     [cwd, searchProjectEntries, threadRef],
   );
   /* eslint-disable react/no-unstable-nested-components -- ReactMarkdown requires component
-   * renderers that close over this message's metadata. useMemo keeps them stable until that
-   * metadata changes. */
+   * renderers that close over this message's metadata. Per-delta text and link maps are
+   * read through refs so component identities stay stable across streamed deltas. */
   const markdownComponents = useMemo<Components>(() => {
     const fileLinkChip = (
       fileLinkMeta: MarkdownFileLinkMeta,
       copyMarkdown: string,
       className?: string,
     ) => {
-      const parentSuffix = fileLinkParentSuffixByPath.get(fileLinkMeta.filePath);
+      const parentSuffix = fileLinkParentSuffixByPathRef.current.get(fileLinkMeta.filePath);
       const labelParts = [fileLinkMeta.basename];
       if (typeof parentSuffix === "string" && parentSuffix.length > 0) {
         labelParts.push(parentSuffix);
@@ -1598,7 +1595,7 @@ function ChatMarkdown({
         const listItemStart = node?.position?.start.offset;
         const markerOffset =
           typeof listItemStart === "number"
-            ? findTaskListMarkerOffset(renderedText, listItemStart)
+            ? findTaskListMarkerOffset(renderedTextRef.current, listItemStart)
             : null;
         return (
           <li {...props} data-task-marker-offset={markerOffset ?? undefined}>
@@ -1637,7 +1634,9 @@ function ChatMarkdown({
       },
       a({ node, href, children, title: _title, ...props }) {
         const normalizedHref = href ? normalizeMarkdownLinkHrefKey(href) : "";
-        const fileLinkMeta = normalizedHref ? markdownFileLinkMetaByHref.get(normalizedHref) : null;
+        const fileLinkMeta = normalizedHref
+          ? markdownFileLinkMetaByHrefRef.current.get(normalizedHref)
+          : null;
         if (!fileLinkMeta) {
           const faviconHost = resolveExternalWebLinkHost(href);
           const isSameDocumentLink = href?.startsWith("#") ?? false;
@@ -1727,7 +1726,7 @@ function ChatMarkdown({
         if (node?.properties?.dataInlineCode != null) {
           const codeText = nodeToPlainText(children);
           const fileLinkMeta =
-            inlineCodeFileLinkMetaByText.get(codeText.trim()) ??
+            inlineCodeFileLinkMetaByTextRef.current.get(codeText.trim()) ??
             resolveInlineCodeFileLinkMeta(codeText, cwd);
           if (fileLinkMeta) {
             return fileLinkChip(fileLinkMeta, `\`${codeText}\``);
@@ -1760,16 +1759,21 @@ function ChatMarkdown({
             fenceTitle={fenceTitle}
             theme={resolvedTheme}
           >
-            <RenderErrorBoundary fallback={<pre {...props}>{children}</pre>}>
-              <Suspense fallback={<pre {...props}>{children}</pre>}>
-                <SuspenseShikiCodeBlock
-                  className={codeBlock.className}
-                  code={codeBlock.code}
-                  themeName={diffThemeName}
-                  isStreaming={isStreaming}
-                />
-              </Suspense>
-            </RenderErrorBoundary>
+            {isStreaming ? (
+              <pre {...props}>
+                <code className={codeBlock.className}>{codeBlock.code}</code>
+              </pre>
+            ) : (
+              <RenderErrorBoundary fallback={<pre {...props}>{children}</pre>}>
+                <Suspense fallback={<pre {...props}>{children}</pre>}>
+                  <SuspenseShikiCodeBlock
+                    className={codeBlock.className}
+                    code={codeBlock.code}
+                    themeName={diffThemeName}
+                  />
+                </Suspense>
+              </RenderErrorBoundary>
+            )}
           </MarkdownCodeBlock>
         );
       },
@@ -1777,10 +1781,7 @@ function ChatMarkdown({
   }, [
     cwd,
     diffThemeName,
-    fileLinkParentSuffixByPath,
-    inlineCodeFileLinkMetaByText,
     isStreaming,
-    markdownFileLinkMetaByHref,
     onTaskListChange,
     openFileInPanel,
     openInPreferredEditor,
@@ -1788,7 +1789,6 @@ function ChatMarkdown({
     openMarkdownFileInPreview,
     resolvedTheme,
     skills,
-    renderedText,
     threadRef,
   ]);
   /* eslint-enable react/no-unstable-nested-components */

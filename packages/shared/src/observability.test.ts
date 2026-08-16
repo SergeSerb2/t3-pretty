@@ -17,6 +17,7 @@ import {
   causeErrorTag,
   compactTraceAttributes,
   errorTag,
+  isVerboseLocalSpan,
   makeLocalFileTracer,
   makeTraceSink,
   type TraceRecord,
@@ -112,6 +113,15 @@ const makeTestLayer = (tracePath: string) =>
 
 const nodeServicesIt = it.layer(NodeServices.layer);
 
+describe("verbose local spans", () => {
+  it("treats projector and sql spans as debug-only local records", () => {
+    assert.equal(isVerboseLocalSpan("runProjectorForEvent"), true);
+    assert.equal(isVerboseLocalSpan("runAttachmentSideEffects"), true);
+    assert.equal(isVerboseLocalSpan("sql.execute"), true);
+    assert.equal(isVerboseLocalSpan("desktop.startup"), false);
+  });
+});
+
 describe("truncateTraceAttributes", () => {
   it("clamps oversized strings at any depth without mutating the input", () => {
     const stack = "s".repeat(2_000);
@@ -122,7 +132,7 @@ describe("truncateTraceAttributes", () => {
     };
     const truncated = truncateTraceAttributes(attributes);
 
-    assert.equal((truncated["db.query.text"] as string).length, 200 + "…[truncated]".length);
+    assert.isUndefined(truncated["db.query.text"]);
     assert.equal(truncated["short"], "ok");
     const error = truncated["error"] as { stack: string; nested: Array<string> };
     assert.equal(error.stack.length, 500 + "…[truncated]".length);
