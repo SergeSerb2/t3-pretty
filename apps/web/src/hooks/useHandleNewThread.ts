@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   scopedProjectKey,
+  scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
@@ -31,6 +32,7 @@ import { primaryServerSettingsAtom } from "../state/server";
 import { useEnvironments } from "../state/environments";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
+import { primeWorldSceneryForNewThread } from "../scenery/primeWorldScenery";
 import { useClientSettings } from "./useSettings";
 
 interface NewThreadWorkspaceOptions {
@@ -230,6 +232,11 @@ export function useNewThreadHandler() {
           : getDraftSession(currentRouteTarget.draftId)
         : null;
       if (emptyStoredDraftThread) {
+        primeWorldSceneryForNewThread(
+          scopedThreadKey(
+            scopeThreadRef(emptyStoredDraftThread.environmentId, emptyStoredDraftThread.threadId),
+          ),
+        );
         return (async () => {
           const isDraftAlreadyOpen =
             currentRouteTarget?.kind === "draft" &&
@@ -372,6 +379,9 @@ export function useNewThreadHandler() {
       const draftId = newDraftId();
       const threadId = newThreadId();
       const createdAt = new Date().toISOString();
+      primeWorldSceneryForNewThread(
+        scopedThreadKey(scopeThreadRef(projectRef.environmentId, threadId)),
+      );
       return (async () => {
         const initialEnvMode = options?.envMode ?? (await resolveDefaultEnvMode());
         // The await yields, so a concurrent invocation may have registered a
@@ -403,6 +413,9 @@ export function useNewThreadHandler() {
             interactionMode: racedDraft.interactionMode,
             ...pickExplicitWorkspaceOptions(options),
           });
+          primeWorldSceneryForNewThread(
+            scopedThreadKey(scopeThreadRef(racedDraft.environmentId, racedDraft.threadId)),
+          );
           carryComposerContentTo(racedDraft.draftId);
           await router.navigate({
             to: "/draft/$draftId",
