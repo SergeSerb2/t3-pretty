@@ -1,6 +1,7 @@
 import { pipe } from "effect/Function";
 import * as Arr from "effect/Array";
 import * as O from "effect/Order";
+import { activityProjectionGroupKey } from "@t3tools/shared/activityProjection";
 import type {
   MessageId,
   OrchestrationCheckpointSummary,
@@ -36,9 +37,10 @@ const activityOrder = O.combineAll<OrchestrationThreadActivity>([
 ]);
 
 /**
- * Activity arrays the reducer itself emitted in `activityOrder`. Hydrated
- * snapshot pages are concatenated by the caller without re-sorting, so only
- * arrays provenanced here may use the append fast path in
+ * Activity arrays the reducer itself emitted with a tail in `activityOrder`
+ * (a compacted `tool.updated` slot may sit out of order; consumers sort).
+ * Hydrated snapshot pages are concatenated by the caller without re-sorting,
+ * so only arrays provenanced here may use the append fast path in
  * `thread.activity-appended`; anything else takes the full sort as before.
  */
 const sortedActivityArrays = new WeakSet<ReadonlyArray<OrchestrationThreadActivity>>();
@@ -59,6 +61,19 @@ function isResolvableContextWindowActivity(activity: OrchestrationThreadActivity
       : null;
   const usedTokens = payload?.usedTokens;
   return typeof usedTokens === "number" && Number.isFinite(usedTokens) && usedTokens >= 0;
+}
+
+/**
+ * Per-turn tool-call identity a `tool.updated` row is compacted under; mirrors
+ * the server's snapshot compaction (`dropSupersededToolUpdatedActivities`).
+ * Null for rows without a lifecycle identity — those are never compacted.
+ */
+function toolLifecycleKey(activity: OrchestrationThreadActivity): string | null {
+  if (activity.kind !== "tool.updated" && activity.kind !== "tool.completed") {
+    return null;
+  }
+  const identity = activityProjectionGroupKey(activity);
+  return identity === null ? null : `${activity.turnId ?? ""} ${identity}`;
 }
 
 /**
@@ -613,11 +628,40 @@ export function applyThreadDetailEvent(
       // thread.reverted that discards turns can still resolve a value from
       // the turns that survive.
       const supersedesContextWindow = isResolvableContextWindowActivity(activity);
+      // Streaming tool progress arrives as one `tool.updated` per chunk (each
+      // carrying the full state so far), so a newer update for the same call
+      // overwrites the pending one in its slot instead of growing the window,
+      // and the call's `tool.completed` drops it. Same identity the server's
+      // snapshot compaction uses, so live and hydrated windows converge. The
+      // slot keeps its position (consumers sort by createdAt/sequence anyway)
+      // and untouched rows keep their identity. Works for per-chunk ids and
+      // for a stable per-call id alike, since matching is by call, not id.
+      const lifecycleKey = toolLifecycleKey(activity);
+      if (lifecycleKey !== null && activity.kind === "tool.updated") {
+        for (let index = thread.activities.length - 1; index >= 0; index -= 1) {
+          const entry = thread.activities[index]!;
+          if (entry.kind === "tool.updated" && toolLifecycleKey(entry) === lifecycleKey) {
+            const activities = [...thread.activities];
+            activities[index] = activity;
+            if (sortedActivityArrays.has(thread.activities)) {
+              sortedActivityArrays.add(activities);
+            }
+            return {
+              kind: "updated",
+              thread: { ...thread, activities, updatedAt: event.occurredAt },
+            };
+          }
+        }
+      }
+      const dropsPendingToolUpdate = lifecycleKey !== null && activity.kind === "tool.completed";
       const wouldDrop = (entry: OrchestrationThreadActivity) =>
         entry.id === activity.id ||
         (supersedesContextWindow &&
           entry.turnId === activity.turnId &&
-          isResolvableContextWindowActivity(entry));
+          isResolvableContextWindowActivity(entry)) ||
+        (dropsPendingToolUpdate &&
+          entry.kind === "tool.updated" &&
+          toolLifecycleKey(entry) === lifecycleKey);
       let needsFilter = false;
       for (const entry of thread.activities) {
         if (wouldDrop(entry)) {

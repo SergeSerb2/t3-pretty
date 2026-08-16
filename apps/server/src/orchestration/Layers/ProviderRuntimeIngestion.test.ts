@@ -28,6 +28,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -47,6 +48,7 @@ import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
+import * as ToolProgress from "../ToolProgress.ts";
 import { ProviderRuntimeIngestionLive } from "./ProviderRuntimeIngestion.ts";
 import { DEFAULT_THREAD_TITLE } from "../threadTitles.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -248,6 +250,7 @@ describe("ProviderRuntimeIngestion", () => {
       // engine, and the snapshot query (reader).
       Layer.provideMerge(ThreadBackgroundLiveness.layer),
       Layer.provideMerge(ThreadPlanProgress.layer),
+      Layer.provideMerge(ToolProgress.layer),
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(makeTestServerSettingsLayer(options?.serverSettings)),
@@ -321,6 +324,8 @@ describe("ProviderRuntimeIngestion", () => {
       engine,
       dispatch,
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
+      threadDetail: () =>
+        Effect.runPromise(snapshotQuery.getThreadDetailSnapshot(asThreadId("thread-1"))),
       emit: provider.emit,
       setProviderSession: provider.setSession,
       drain,
@@ -2930,9 +2935,6 @@ describe("ProviderRuntimeIngestion", () => {
           (activity: ProviderRuntimeTestActivity) => activity.kind === "turn.plan.updated",
         ) &&
         entry.activities.some(
-          (activity: ProviderRuntimeTestActivity) => activity.kind === "tool.updated",
-        ) &&
-        entry.activities.some(
           (activity: ProviderRuntimeTestActivity) => activity.kind === "runtime.warning",
         ) &&
         entry.checkpoints.some(
@@ -2952,8 +2954,15 @@ describe("ProviderRuntimeIngestion", () => {
     expect(planActivity?.kind).toBe("turn.plan.updated");
     expect(Array.isArray(planPayload?.plan)).toBe(true);
 
-    const toolUpdate = thread.activities.find(
-      (activity: ProviderRuntimeTestActivity) => activity.id === "evt-item-updated",
+    // Tool progress is live-only: absent from persisted rows, present in the
+    // detail snapshot under its stable per-item id.
+    expect(
+      thread.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.kind === "tool.updated",
+      ),
+    ).toBe(false);
+    const toolUpdate = Option.getOrThrow(await harness.threadDetail()).thread.activities.find(
+      (activity: ProviderRuntimeTestActivity) => activity.id === "item-p1-tool:progress",
     );
     const toolUpdatePayload =
       toolUpdate?.payload && typeof toolUpdate.payload === "object"
@@ -3613,5 +3622,90 @@ describe("ProviderRuntimeIngestion", () => {
     );
     expect(thread.session?.status).toBe("error");
     expect(thread.session?.lastError).toBe("runtime still processed");
+  });
+
+  it("keeps tool progress ticks live-only under a stable id and flushes still-running items at turn end", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const tick = (eventId: string, itemId: string, detail: string, createdAt: string) =>
+      harness.emit({
+        type: "item.updated",
+        eventId: asEventId(eventId),
+        provider: ProviderDriverKind.make("cursor"),
+        createdAt,
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-tool"),
+        itemId: asItemId(itemId),
+        payload: {
+          itemType: "command_execution",
+          status: "inProgress",
+          title: "Run tests",
+          detail,
+          data: { toolCallId: itemId },
+        },
+      });
+
+    tick("evt-tick-1", "call-running", "1/3", "2026-01-01T00:00:01.000Z");
+    tick("evt-tick-2", "call-finishing", "1/1", "2026-01-01T00:00:02.000Z");
+    tick("evt-tick-3", "call-running", "2/3", "2026-01-01T00:00:03.000Z");
+    await harness.drain();
+
+    // Nothing persisted: ticks live in the registry only ...
+    const persisted = await harness.readModel();
+    expect(
+      persisted.threads
+        .find((thread) => thread.id === "thread-1")
+        ?.activities.filter((activity) => activity.kind === "tool.updated"),
+    ).toEqual([]);
+    // ... but a fresh detail snapshot splices in the latest tick per item.
+    const detail = Option.getOrThrow(await harness.threadDetail());
+    expect(
+      detail.thread.activities
+        .filter((activity) => activity.kind === "tool.updated")
+        .map((activity) => [activity.id, (activity.payload as { detail?: string }).detail]),
+    ).toEqual([
+      ["call-finishing:progress", "1/1"],
+      ["call-running:progress", "2/3"],
+    ]);
+
+    // A completed item leaves the registry; its completion row is what persists.
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-finishing-completed"),
+      provider: ProviderDriverKind.make("cursor"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-tool"),
+      itemId: asItemId("call-finishing"),
+      payload: { itemType: "command_execution", status: "completed", title: "Run tests" },
+    });
+    // Turn end flushes the still-running item's last tick under its stable id.
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-turn-tool-completed"),
+      provider: ProviderDriverKind.make("cursor"),
+      threadId: asThreadId("thread-1"),
+      createdAt: now,
+      turnId: asTurnId("turn-tool"),
+      payload: { state: "interrupted" },
+    });
+    await harness.drain();
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some((activity) => activity.id === "call-running:progress"),
+    );
+    expect(
+      thread.activities
+        .filter((activity) => activity.kind.startsWith("tool."))
+        .map((activity) => [activity.id, activity.kind]),
+    ).toEqual([
+      ["evt-finishing-completed", "tool.completed"],
+      ["call-running:progress", "tool.updated"],
+    ]);
+    // Registry is empty after the flush: the detail snapshot equals the persisted rows.
+    const afterDetail = Option.getOrThrow(await harness.threadDetail());
+    expect(
+      afterDetail.thread.activities.filter((activity) => activity.kind === "tool.updated").length,
+    ).toBe(1);
   });
 });

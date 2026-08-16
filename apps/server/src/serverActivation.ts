@@ -8,14 +8,19 @@ export class ServerActivation extends Context.Reference<Effect.Effect<void> | un
   { defaultValue: () => undefined },
 ) {}
 
-/** Forks a long-running root before commit and proves it is parked at the activation boundary. */
+/**
+ * Forks a long-running root before commit and proves it is parked at the
+ * activation boundary. The fiber starts immediately so a root that subscribes
+ * to a hot stream (the domain-event PubSub) is subscribed by the time this
+ * returns; otherwise an event dispatched right after start can be missed.
+ */
 export const forkParked = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<void, never, Scope.Scope | R> =>
   Effect.gen(function* () {
     const activation = yield* ServerActivation;
     if (activation === undefined) {
-      yield* Effect.forkScoped(effect);
+      yield* Effect.forkScoped(effect, { startImmediately: true });
       return;
     }
     const parked = yield* Deferred.make<void>();

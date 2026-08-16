@@ -48,7 +48,7 @@ describe("working-row thinking indicator contract", () => {
   it("the working row still renders the original pulse-dot cluster", () => {
     expect(messagesTimelineSource).toContain('"working"');
     expect(messagesTimelineSource).toContain("inline-flex items-center gap-[3px]");
-    expect(messagesTimelineSource).toContain("animate-status-pulse");
+    expect(messagesTimelineSource).toContain("status-pulse-wave");
   });
 
   it("does not overlay thinking orbs on the working row, scroll pill, or hero", () => {

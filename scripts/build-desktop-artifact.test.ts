@@ -308,6 +308,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       resolveDesktopRuntimeDependencies(
         {
           "@clerk/electron": "catalog:",
+          "@clerk/electron-passkeys": "catalog:",
           "@effect/platform-node": "catalog:",
           "@t3tools/contracts": "workspace:*",
           "@t3tools/shared": "workspace:*",
@@ -315,17 +316,22 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           "@t3tools/tailscale": "workspace:*",
           effect: "catalog:",
           electron: "41.5.0",
+          "electron-store": "^8.2.0",
+          "electron-updater": "^6.6.2",
+          "playwright-core": "1.60.0",
           "react-grab": "^0.1.32",
         },
         {
           "@clerk/electron": "0.1.0",
+          "@clerk/electron-passkeys": "0.0.3",
           "@effect/platform-node": "4.0.0-beta.59",
           effect: "4.0.0-beta.59",
         },
       ),
       {
-        "@effect/platform-node": "4.0.0-beta.59",
-        effect: "4.0.0-beta.59",
+        "@clerk/electron-passkeys": "0.0.3",
+        "electron-store": "^8.2.0",
+        "playwright-core": "1.60.0",
       },
     );
   });

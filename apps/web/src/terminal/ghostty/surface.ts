@@ -752,7 +752,16 @@ export class GhosttyTerminalSurface {
     if (this.disposed) return false;
     const width = this.mount.clientWidth;
     const height = this.mount.clientHeight;
-    if (width <= 0 || height <= 0) return false;
+    if (width <= 0 || height <= 0) {
+      // Hidden (display:none) or collapsed: drop the backing store so parked
+      // terminals hold no raster memory. The next visible fit sees the size
+      // mismatch, reconfigures, and repaints before the browser paints.
+      if (this.canvas.width !== 0 || this.canvas.height !== 0) {
+        this.canvas.width = 0;
+        this.canvas.height = 0;
+      }
+      return false;
+    }
     const ratio = window.devicePixelRatio || 1;
     const pixelWidth = Math.max(1, Math.round(width * ratio));
     const pixelHeight = Math.max(1, Math.round(height * ratio));

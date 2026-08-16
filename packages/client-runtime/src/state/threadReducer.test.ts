@@ -1153,6 +1153,104 @@ describe("applyThreadDetailEvent", () => {
       ]);
       expect(samePosition.thread.activities[1]?.summary).toBe("edited");
     });
+
+    const toolEvent = (
+      id: string,
+      sequence: number,
+      kind: "tool.started" | "tool.updated" | "tool.completed",
+      toolCallId: string,
+      turnId = "turn-1",
+    ) =>
+      ({
+        ...baseEventFields,
+        sequence,
+        occurredAt: `2026-04-01T11:${String(sequence).padStart(2, "0")}:00.000Z`,
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.activity-appended",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          activity: {
+            id: EventId.make(id),
+            tone: "tool",
+            kind,
+            summary: "Read file",
+            payload: { itemType: "tool_call", data: { toolCallId } },
+            turnId: TurnId.make(turnId),
+            sequence,
+            createdAt: `2026-04-01T11:${String(sequence).padStart(2, "0")}:00.000Z`,
+          },
+        },
+      }) as const;
+
+    const fold = (events: ReadonlyArray<ReturnType<typeof toolEvent>>) =>
+      events.reduce<OrchestrationThread>((thread, event) => {
+        const result = applyThreadDetailEvent(thread, event);
+        if (result.kind !== "updated") throw new Error("expected updated");
+        return result.thread;
+      }, baseThread);
+
+    it("replaces a pending tool.updated for the same call in place", () => {
+      const thread = fold([
+        toolEvent("a-start", 1, "tool.started", "call-a"),
+        toolEvent("a-upd-1", 2, "tool.updated", "call-a"),
+        toolEvent("b-start", 3, "tool.started", "call-b"),
+      ]);
+      const untouchedStart = thread.activities[0];
+      const untouchedB = thread.activities[2];
+
+      const result = applyThreadDetailEvent(
+        thread,
+        toolEvent("a-upd-2", 4, "tool.updated", "call-a"),
+      );
+      if (result.kind !== "updated") throw new Error("expected updated");
+      expect(result.thread.activities.map((a) => a.id)).toEqual(["a-start", "a-upd-2", "b-start"]);
+      expect(result.thread.activities[0]).toBe(untouchedStart);
+      expect(result.thread.activities[2]).toBe(untouchedB);
+
+      // A stable per-call id (same id every tick) compacts the same way.
+      const stable = applyThreadDetailEvent(
+        result.thread,
+        toolEvent("a-upd-2", 5, "tool.updated", "call-a"),
+      );
+      if (stable.kind !== "updated") throw new Error("expected updated");
+      expect(stable.thread.activities.map((a) => a.id)).toEqual(["a-start", "a-upd-2", "b-start"]);
+      expect(stable.thread.activities[1]?.sequence).toBe(5);
+    });
+
+    it("keeps updates for different calls and turns apart", () => {
+      const thread = fold([
+        toolEvent("a-upd", 1, "tool.updated", "call-a"),
+        toolEvent("b-upd", 2, "tool.updated", "call-b"),
+        toolEvent("a-upd-t2", 3, "tool.updated", "call-a", "turn-2"),
+      ]);
+      expect(thread.activities.map((a) => a.id)).toEqual(["a-upd", "b-upd", "a-upd-t2"]);
+    });
+
+    it("tool.completed drops the pending tool.updated for its call", () => {
+      const thread = fold([
+        toolEvent("a-upd", 1, "tool.updated", "call-a"),
+        toolEvent("b-upd", 2, "tool.updated", "call-b"),
+      ]);
+      const untouchedB = thread.activities[1];
+      const result = applyThreadDetailEvent(
+        thread,
+        toolEvent("a-done", 3, "tool.completed", "call-a"),
+      );
+      if (result.kind !== "updated") throw new Error("expected updated");
+      expect(result.thread.activities.map((a) => a.id)).toEqual(["b-upd", "a-done"]);
+      expect(result.thread.activities[0]).toBe(untouchedB);
+    });
+
+    it("still appends after an in-place compaction", () => {
+      const thread = fold([
+        toolEvent("a-upd-1", 1, "tool.updated", "call-a"),
+        toolEvent("b-start", 2, "tool.started", "call-b"),
+        toolEvent("a-upd-2", 3, "tool.updated", "call-a"),
+        toolEvent("c-start", 4, "tool.started", "call-c"),
+      ]);
+      expect(thread.activities.map((a) => a.id)).toEqual(["a-upd-2", "b-start", "c-start"]);
+    });
   });
 
   describe("thread.turn-diff-completed", () => {

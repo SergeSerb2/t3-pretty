@@ -62,4 +62,29 @@ describe.sequential("primary environment HTTP layer", () => {
       expect(request.headers.get("authorization")).toBe("Bearer desktop-bearer-token");
     }).pipe(Effect.provide(makePrimaryEnvironmentHttpLayer()));
   });
+
+  it.effect("fails with a transport error when the desktop bearer is not available yet", () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        location: { origin: "t3code://app" },
+        desktopBridge: {
+          getLocalEnvironmentBearerToken: vi
+            .fn()
+            .mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:3773")),
+        } as unknown as DesktopBridge,
+      },
+    });
+
+    return Effect.gen(function* () {
+      const error = yield* HttpClient.get("http://127.0.0.1:3773/api/auth/session").pipe(
+        Effect.flip,
+      );
+
+      expect(error.reason._tag).toBe("TransportError");
+      expect(fetchMock).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(makePrimaryEnvironmentHttpLayer()));
+  });
 });

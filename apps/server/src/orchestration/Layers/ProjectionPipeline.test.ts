@@ -33,6 +33,7 @@ import {
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
+import * as ToolProgress from "../ToolProgress.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
 import { ServerConfig } from "../../config.ts";
@@ -776,6 +777,16 @@ it.layer(
         WHERE message_id = 'message-rollback'
       `;
       assert.equal(rows[0]?.count ?? 0, 0);
+
+      // One projector failing fails the event for every projector: no cursor
+      // moves past the last fully projected event.
+      const cursorRows = yield* sql<{
+        readonly maxSequence: number | null;
+      }>`
+        SELECT MAX(last_applied_sequence) AS "maxSequence"
+        FROM projection_state
+      `;
+      assert.equal(cursorRows[0]?.maxSequence, 2);
 
       const { attachmentsDir } = yield* ServerConfig;
       const attachmentPath = path.join(attachmentsDir, "thread-rollback-att-1.png");
@@ -3011,6 +3022,7 @@ const engineLayer = it.layer(
     Layer.provide(OrchestrationProjectionSnapshotQueryLive),
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
+    Layer.provide(ToolProgress.layer),
     Layer.provide(OrchestrationProjectionPipelineLive),
     Layer.provide(OrchestrationEventStoreLive),
     Layer.provide(OrchestrationCommandReceiptRepositoryLive),

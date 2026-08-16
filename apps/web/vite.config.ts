@@ -151,12 +151,28 @@ const configuredAllowedHosts = (process.env.T3CODE_DEV_ALLOWED_HOSTS ?? "")
   .filter((entry) => entry.length > 0);
 const allowedHosts = [".ts.net", ...configuredAllowedHosts];
 
+const EAGER_ROUTE_IDS = new Set([
+  "/_chat",
+  "/_chat/",
+  "/_chat/$environmentId/$threadId",
+  "/_chat/draft/$draftId",
+]);
+
 export default defineConfig(() => {
   return {
     assetsInclude: ["**/*.wasm"],
     plugins: [
       devCompressionPlugin(),
-      tanstackRouter(),
+      tanstackRouter({
+        // Route components load on demand so Settings/Usage/PR/pairing code
+        // stays out of the entry chunk. The chat routes render on every cold
+        // start, so they stay eager (empty groupings = no split): splitting
+        // them would only add a sequential chunk fetch before first paint.
+        autoCodeSplitting: true,
+        codeSplittingOptions: {
+          splitBehavior: ({ routeId }) => (EAGER_ROUTE_IDS.has(routeId) ? [] : undefined),
+        },
+      }),
       react(),
       babel({
         // We need to be explicit about the parser options after moving to @vitejs/plugin-react v6.0.0

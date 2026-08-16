@@ -2003,8 +2003,16 @@ function validateBundledClientAssets(clientDir: string) {
 }
 
 // Bundled into main.cjs / preload.cjs, so they must not be staged as
-// production node_modules (Clerk would otherwise drag clerk-js).
-const DESKTOP_BUNDLED_DEPENDENCY_NAMES = new Set(["@clerk/electron", "react-grab"]);
+// production node_modules (Clerk would otherwise drag clerk-js; effect and
+// electron-updater would otherwise ship ~700 files the main process never
+// opens). Keep in sync with deps.alwaysBundle in apps/desktop/vite.config.ts.
+const DESKTOP_BUNDLED_DEPENDENCY_NAMES = new Set([
+  "@clerk/electron",
+  "@effect/platform-node",
+  "effect",
+  "electron-updater",
+  "react-grab",
+]);
 
 export function resolveDesktopRuntimeDependencies(
   dependencies: Record<string, string> | undefined,

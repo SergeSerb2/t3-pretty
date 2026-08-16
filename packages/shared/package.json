@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./activityProjection": {
+      "types": "./src/activityProjection.ts",
+      "import": "./src/activityProjection.ts"
+    },
     "./projectFavicon": {
       "types": "./src/projectFavicon.ts",
       "import": "./src/projectFavicon.ts"

@@ -178,6 +178,40 @@ describe("applyShellStreamEvent", () => {
     });
   });
 
+  describe("thread-touched", () => {
+    it("bumps updatedAt on the known row and keeps sibling identities", () => {
+      const other = { ...stubThread, id: ThreadId.make("thread-2") };
+      const snapshotWithThreads: OrchestrationShellSnapshot = {
+        ...baseSnapshot,
+        threads: [stubThread, other],
+      };
+
+      const next = applyShellStreamEvent(snapshotWithThreads, {
+        kind: "thread-touched",
+        sequence: 7,
+        threadId: ThreadId.make("thread-1"),
+        updatedAt: "2026-04-02T00:00:00.000Z",
+      });
+
+      expect(next.threads[0]?.updatedAt).toBe("2026-04-02T00:00:00.000Z");
+      expect(next.threads[0]?.title).toBe("Test Thread");
+      expect(next.threads[1]).toBe(other);
+      expect(next.snapshotSequence).toBe(7);
+    });
+
+    it("advances the cursor without adding an unknown thread", () => {
+      const next = applyShellStreamEvent(baseSnapshot, {
+        kind: "thread-touched",
+        sequence: 8,
+        threadId: ThreadId.make("thread-missing"),
+        updatedAt: "2026-04-02T00:00:00.000Z",
+      });
+
+      expect(next.threads).toHaveLength(0);
+      expect(next.snapshotSequence).toBe(8);
+    });
+  });
+
   it("returns original snapshot for unrecognized event kinds", () => {
     const unknownEvent = { kind: "unknown-future-event", sequence: 99 } as any;
     const next = applyShellStreamEvent(baseSnapshot, unknownEvent);
