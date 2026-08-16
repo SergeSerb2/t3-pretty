@@ -32,7 +32,13 @@ const decodeManifest = Schema.decodeUnknownSync(Schema.fromJsonString(PackageMan
 
 describe("shouldBundleCliDependency", () => {
   it("bundles ordinary runtime dependencies", () => {
-    for (const id of ["effect", "@effect/platform", "hono", "@t3tools/shared/hostProcess"]) {
+    for (const id of [
+      "effect",
+      "@effect/platform",
+      "hono",
+      "@t3tools/shared/hostProcess",
+      "semver",
+    ]) {
       assert.strictEqual(shouldBundleCliDependency(id), true, id);
     }
   });
@@ -50,6 +56,9 @@ describe("shouldBundleCliDependency", () => {
       "@clerk/electron-passkeys",
       "msgpackr-extract",
       "@msgpackr-extract/msgpackr-extract-win32-x64",
+      "sharp",
+      "@img/sharp-win32-x64",
+      "@img/colour",
     ]) {
       assert.strictEqual(shouldBundleCliDependency(id), false, id);
     }
@@ -87,7 +96,7 @@ describe("selectCliRuntimeExternalDependencies", () => {
   it("selects every external root declared by the server", () => {
     assert.deepStrictEqual(
       Object.keys(selectCliRuntimeExternalDependencies(serverPackageJson.dependencies)).sort(),
-      ["@ff-labs/fff-node", "msgpackr-extract", "node-pty"],
+      ["@ff-labs/fff-node", "msgpackr-extract", "node-pty", "sharp"],
     );
   });
 });
@@ -153,6 +162,13 @@ it.layer(NodeServices.layer)("external package dependency closure", (it) => {
   const isRuntimeExternal = (name: string) =>
     CLI_RUNTIME_EXTERNAL_PREFIXES.some((prefix) => name.startsWith(prefix));
 
+  // sharp requires semver, but many inlined packages import it too. Listing
+  // semver in CLI_RUNTIME_EXTERNAL_PREFIXES would leak a bare require into the
+  // bundle that pnpm isolation cannot resolve from apps/server/dist on
+  // macOS/Linux. The sidecar/stage install still places semver next to sharp.
+  const isBundledJsDepOfExternalNative = (name: string, dependency: string) =>
+    name === "sharp" && dependency === "semver";
+
   it.effect("finds the runtime-external packages on disk", () =>
     Effect.gen(function* () {
       const installed = yield* readInstalledPackages;
@@ -194,7 +210,7 @@ it.layer(NodeServices.layer)("external package dependency closure", (it) => {
           ...(manifest.peerDependencies ?? {}),
         };
         for (const dependency of Object.keys(declared)) {
-          if (!isRuntimeExternal(dependency)) {
+          if (!isRuntimeExternal(dependency) && !isBundledJsDepOfExternalNative(name, dependency)) {
             violations.push(`${name} -> ${dependency}`);
           }
           if (!seen.has(dependency)) queue.push(dependency);

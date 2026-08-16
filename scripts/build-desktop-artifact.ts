@@ -1485,7 +1485,7 @@ const hasNativeLoaderMarkers = Effect.fn("hasNativeLoaderMarkers")(function* (pa
   );
   if (manifest === null) return false;
   return Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies }).some(
-    (dependency) => dependency.startsWith("node-gyp-build"),
+    (dependency) => dependency.startsWith("node-gyp-build") || dependency.startsWith("@img/sharp-"),
   );
 });
 
