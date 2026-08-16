@@ -57,6 +57,7 @@ import {
   PreviewAutomationViewportTimeoutError,
 } from "./previewAutomationErrors";
 import {
+  previewAutomationDesktopStatusReady,
   previewAutomationDefaultViewport,
   previewAutomationOpenNeedsOverlay,
   shouldOpenPreviewMiniPlayer,
@@ -100,8 +101,10 @@ const waitForDesktopOverlay = async (
       requestId,
     });
     if (state.desktopByTabId[tabId] && previewBridge) {
-      const status = await previewBridge.automation.status(runtimeTabId);
-      if (status.available) return;
+      const ready = await previewAutomationDesktopStatusReady(() =>
+        previewBridge.automation.status(runtimeTabId),
+      );
+      if (ready) return;
     }
     await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
   }
