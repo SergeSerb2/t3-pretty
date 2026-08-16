@@ -21,6 +21,7 @@ import {
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -36,6 +37,7 @@ import { isGitRepository } from "../../git/Utils.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ThreadBackgroundLivenessService } from "../ThreadBackgroundLiveness.ts";
 import { ThreadPlanProgressService } from "../ThreadPlanProgress.ts";
+import { ToolProgressService, toolProgressActivityId } from "../ToolProgress.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   ProviderRuntimeIngestionService,
@@ -794,9 +796,13 @@ export function runtimeEventToActivities(
       // needs it: ws.ts and http.ts apply `projectActivityPayload` before any
       // payload reaches a client. Persist the projected form for non-terminal
       // updates; `item.completed` below still persists the full payload.
+      //
+      // The id is stable per tool call so every tick upserts the same activity
+      // (one projection row per call, replaced in place on clients); see
+      // ToolProgressService for how ticks are streamed and coalesced.
       return [
         projectActivityPayload({
-          id: event.eventId,
+          id: event.itemId ? toolProgressActivityId(event.itemId) : event.eventId,
           createdAt: event.createdAt,
           tone: "tool",
           kind: "tool.updated",
@@ -879,6 +885,7 @@ export function runtimeEventToActivities(
 const make = Effect.gen(function* () {
   const threadBackgroundLiveness = yield* ThreadBackgroundLivenessService;
   const threadPlanProgress = yield* ThreadPlanProgressService;
+  const toolProgress = yield* ToolProgressService;
   const crypto = yield* Crypto.Crypto;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
@@ -2017,7 +2024,46 @@ const make = Effect.gen(function* () {
       }
 
       const activities = runtimeEventToActivities(event, taskTitle);
-      yield* Effect.forEach(activities, (activity) =>
+      // In-flight tool progress is live-only: every tick goes to the
+      // ToolProgressService registry (streamed to subscribers, spliced into
+      // snapshots) and is persisted only when its coalescing interval is due.
+      // Completed items leave the registry (their completion row supersedes
+      // any progress); a settling turn or dying session flushes still-running
+      // items so a restart still shows their last known state.
+      const [tick] = activities;
+      if (
+        event.type === "item.updated" &&
+        event.itemId !== undefined &&
+        tick?.kind === "tool.updated"
+      ) {
+        const due = yield* toolProgress.record({
+          threadId: thread.id,
+          itemId: event.itemId,
+          activity: tick,
+          nowMs: yield* Clock.currentTimeMillis,
+        });
+        if (!due) {
+          return;
+        }
+      } else if (event.type === "item.completed" && event.itemId !== undefined) {
+        toolProgress.complete(thread.id, event.itemId);
+      }
+      // Flushed progress keeps the tick's own createdAt on the row, but the
+      // append itself happens now: stamping the event with the old tick time
+      // would move the thread's updatedAt backwards behind the turn end.
+      const flushedProgress =
+        event.type === "turn.completed" ||
+        event.type === "turn.aborted" ||
+        event.type === "session.exited"
+          ? toolProgress
+              .flush(thread.id)
+              .map((activity) => ({ activity, createdAt: event.createdAt }))
+          : [];
+      const appends = [
+        ...flushedProgress,
+        ...activities.map((activity) => ({ activity, createdAt: activity.createdAt })),
+      ];
+      yield* Effect.forEach(appends, ({ activity, createdAt }) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>
             orchestrationEngine.dispatch({
@@ -2025,7 +2071,7 @@ const make = Effect.gen(function* () {
               commandId,
               threadId: thread.id,
               activity,
-              createdAt: activity.createdAt,
+              createdAt,
             }),
           ),
         ),

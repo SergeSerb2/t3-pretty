@@ -1,0 +1,95 @@
+import type { WorkerStats } from "@pierre/diffs/worker";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import {
+  DIFF_WORKER_POOL_IDLE_MS,
+  createDiffWorkerPoolIdleTerminator,
+  isDiffWorkerPoolIdle,
+} from "./DiffWorkerPoolProvider.logic";
+
+function stats(overrides: Partial<WorkerStats> = {}): WorkerStats {
+  return {
+    managerState: "initialized",
+    workersFailed: false,
+    totalWorkers: 3,
+    busyWorkers: 0,
+    queuedTasks: 0,
+    activeTasks: 0,
+    themeSubscribers: 0,
+    fileCacheSize: 0,
+    diffCacheSize: 0,
+    ...overrides,
+  };
+}
+
+describe("isDiffWorkerPoolIdle", () => {
+  it("is idle only when initialized with no instances or tasks", () => {
+    expect(isDiffWorkerPoolIdle(stats())).toBe(true);
+    expect(isDiffWorkerPoolIdle(stats({ managerState: "waiting" }))).toBe(false);
+    expect(isDiffWorkerPoolIdle(stats({ managerState: "initializing" }))).toBe(false);
+    expect(isDiffWorkerPoolIdle(stats({ themeSubscribers: 1 }))).toBe(false);
+    expect(isDiffWorkerPoolIdle(stats({ activeTasks: 1 }))).toBe(false);
+    expect(isDiffWorkerPoolIdle(stats({ queuedTasks: 1 }))).toBe(false);
+  });
+});
+
+describe("createDiffWorkerPoolIdleTerminator", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function pool(current: WorkerStats) {
+    const state = { current };
+    return {
+      state,
+      terminate: vi.fn(() => {
+        state.current = stats({ managerState: "waiting", totalWorkers: 0 });
+      }),
+      getStats: () => state.current,
+    };
+  }
+
+  it("terminates after the idle window when nothing is mounted", () => {
+    const p = pool(stats());
+    const onStats = createDiffWorkerPoolIdleTerminator(p);
+    onStats(p.state.current);
+    vi.advanceTimersByTime(DIFF_WORKER_POOL_IDLE_MS - 1);
+    expect(p.terminate).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(p.terminate).toHaveBeenCalledTimes(1);
+    // Terminated pool sits in "waiting"; no re-arm until it boots again.
+    onStats(p.state.current);
+    vi.advanceTimersByTime(DIFF_WORKER_POOL_IDLE_MS);
+    expect(p.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels the pending teardown when a diff surface mounts", () => {
+    const p = pool(stats());
+    const onStats = createDiffWorkerPoolIdleTerminator(p);
+    onStats(p.state.current);
+    vi.advanceTimersByTime(DIFF_WORKER_POOL_IDLE_MS / 2);
+    p.state.current = stats({ themeSubscribers: 1 });
+    onStats(p.state.current);
+    vi.advanceTimersByTime(DIFF_WORKER_POOL_IDLE_MS);
+    expect(p.terminate).not.toHaveBeenCalled();
+    // Unmount restarts a full window rather than resuming the old one.
+    p.state.current = stats();
+    onStats(p.state.current);
+    vi.advanceTimersByTime(DIFF_WORKER_POOL_IDLE_MS - 1);
+    expect(p.terminate).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(p.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-checks live stats before terminating", () => {
+    const p = pool(stats());
+    const onStats = createDiffWorkerPoolIdleTerminator(p);
+    onStats(p.state.current);
+    // A task started but its stat broadcast has not been delivered yet.
+    p.state.current = stats({ activeTasks: 1 });
+    vi.advanceTimersByTime(DIFF_WORKER_POOL_IDLE_MS);
+    expect(p.terminate).not.toHaveBeenCalled();
+  });
+});

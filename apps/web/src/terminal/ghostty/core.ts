@@ -8,7 +8,9 @@ import { GhosttyRuntime, loadGhosttyRuntime } from "./runtime";
 
 const GHOSTTY_SUCCESS = 0;
 const GHOSTTY_OUT_OF_SPACE = -3;
-const MAX_SCROLLBACK_ROWS = 10_000;
+// Matches the server history cap (DEFAULT_HISTORY_LINE_LIMIT), so a re-attach
+// replays exactly what a live terminal could have scrolled back through.
+const MAX_SCROLLBACK_ROWS = 5_000;
 // wasm32 C ABI layout for GhosttyTerminalSelectionFormatOptions at the
 // libghostty-vt revision pinned alongside this module.
 const SELECTION_FORMAT_OPTIONS_SIZE = 16;

@@ -46,12 +46,33 @@ const transientCanonicalEventTypes = new Set([
   "turn.proposed.delta",
 ]);
 
+// Native records that arrive per token or repeat a cumulative payload on every
+// update. Dropped unless the store is verbose; lifecycle records (start,
+// complete, error, tool_call) always persist and the canonical stream keeps
+// item.completed with the final content.
+const transientCodexNativeMethods = new Set([
+  "item/agentMessage/delta",
+  "item/reasoning/textDelta",
+  "item/reasoning/summaryTextDelta",
+  "item/commandExecution/outputDelta",
+  "item/fileChange/outputDelta",
+  "item/plan/delta",
+]);
+const transientOpenCodeNativeTypes = new Set(["message.part.delta", "message.part.updated"]);
+const transientAcpSessionUpdates = new Set([
+  "agent_message_chunk",
+  "agent_thought_chunk",
+  "tool_call_update",
+]);
+
 export type EventNdjsonStream = "native" | "canonical" | "orchestration";
 
 export interface EventNdjsonLogger {
   readonly filePath: string;
   readonly write: (event: unknown, threadId: ThreadId | null) => Effect.Effect<void>;
   readonly close: () => Effect.Effect<void>;
+  /** True when per-token / cumulative native records are kept (T3CODE_LOG_PROVIDER_EVENTS_VERBOSE). */
+  readonly verbose?: boolean;
 }
 
 export interface EventNdjsonLogStore {
@@ -70,6 +91,8 @@ export interface EventNdjsonLogStoreOptions {
   readonly maxBufferedBytes?: number;
   readonly maxBufferedRecords?: number;
   readonly attribution?: ResourceAttribution["Service"];
+  /** Keep per-token deltas and cumulative tool updates in the native stream. Default false. */
+  readonly verbose?: boolean;
 }
 
 export interface EventNdjsonLoggerOptions extends EventNdjsonLogStoreOptions {
@@ -116,6 +139,7 @@ interface ResolvedOptions {
   readonly maxBufferedBytes: number;
   readonly maxBufferedRecords: number;
   readonly attribution: ResourceAttribution["Service"] | undefined;
+  readonly verbose: boolean;
 }
 
 export interface PendingRecord {
@@ -177,8 +201,41 @@ function providerLogPath(directory: string, prefix: string, threadSegment: strin
   return NodePath.join(directory, `${prefix}${threadSegment}.log`);
 }
 
-function shouldPersist(stream: EventNdjsonStream, event: unknown): boolean {
-  if (stream !== "canonical" || typeof event !== "object" || event === null) {
+/**
+ * Recognizes the high-volume native record shapes each adapter writes:
+ * `{ observedAt, event: { method | type, payload } }` (Claude, ACP adapters,
+ * OpenCode) or a bare `ProviderEvent` with `method` (Codex).
+ */
+export function isTransientNativeEvent(event: unknown): boolean {
+  if (typeof event !== "object" || event === null) return false;
+  try {
+    const inner: unknown = Reflect.get(event, "event") ?? event;
+    if (typeof inner !== "object" || inner === null) return false;
+    const method: unknown = Reflect.get(inner, "method") ?? Reflect.get(inner, "type");
+    if (typeof method !== "string") return false;
+    if (method.startsWith("claude/stream_event")) return true;
+    if (transientCodexNativeMethods.has(method)) return true;
+    if (transientOpenCodeNativeTypes.has(method)) return true;
+    if (method !== "session/update") return false;
+    const payload: unknown = Reflect.get(inner, "payload");
+    if (typeof payload !== "object" || payload === null) return false;
+    const update: unknown = Reflect.get(payload, "update");
+    if (typeof update !== "object" || update === null) return false;
+    const kind: unknown = Reflect.get(update, "sessionUpdate");
+    return typeof kind === "string" && transientAcpSessionUpdates.has(kind);
+  } catch {
+    return false;
+  }
+}
+
+function shouldPersist(stream: EventNdjsonStream, event: unknown, verbose: boolean): boolean {
+  if (typeof event !== "object" || event === null) {
+    return true;
+  }
+  if (stream === "native") {
+    return verbose || !isTransientNativeEvent(event);
+  }
+  if (stream !== "canonical") {
     return true;
   }
   try {
@@ -317,6 +374,7 @@ function resolveOptions(
     maxBufferedBytes: options.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES,
     maxBufferedRecords: options.maxBufferedRecords ?? DEFAULT_MAX_BUFFERED_RECORDS,
     attribution: options.attribution,
+    verbose: options.verbose ?? false,
   } satisfies ResolvedOptions;
 
   const validations = [
@@ -555,7 +613,7 @@ export const makeEventNdjsonLogStore = Effect.fnUntraced(function* (
     if (existing) return existing;
 
     const write = Effect.fnUntraced(function* (event: unknown, threadId: ThreadId | null) {
-      if (!shouldPersist(stream, event)) return;
+      if (!shouldPersist(stream, event, resolved.verbose)) return;
       const payload = yield* serializeEvent(event);
       if (payload === undefined) return;
 
@@ -592,7 +650,12 @@ export const makeEventNdjsonLogStore = Effect.fnUntraced(function* (
       }
     });
 
-    const view = { filePath, write, close: () => Effect.void } satisfies EventNdjsonLogger;
+    const view = {
+      filePath,
+      write,
+      close: () => Effect.void,
+      verbose: resolved.verbose,
+    } satisfies EventNdjsonLogger;
     loggerViews.set(stream, view);
     return view;
   };

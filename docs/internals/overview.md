@@ -43,6 +43,20 @@ through `EnvironmentAuth.authenticateWebSocketUpgrade`, then hands the socket to
 to a scope, and `authorizeEffect`/`authorizeStream` enforce it. Holding a valid socket is not
 authorization to call everything on it. See [environment-auth.md](./environment-auth.md).
 
+`orchestration.subscribeShell` is served from one projector per server, not one per socket.
+[`ShellStream.ts`][shellstream] consumes the engine's domain event stream once, coalesces a 50 ms
+window per aggregate, builds the shell items once, and fans the same batch out to every subscribed
+socket; a socket only forwards its subscription (the RPC layer still JSON-encodes per client). Thread
+events that only append a message or activity become a `thread-touched` delta
+(`{threadId, updatedAt, sequence}`) with no DB read; events that reshape the shell row (turn,
+session, plan, pin, title, approval/user-input activities, completed user messages) refetch and send
+the full `thread-upserted`. Resume replays (`afterSequence`) run the same projector over the event
+log, so live and replayed streams agree. Clients opt in with `acceptThreadTouched: true` on
+`subscribeShell` (as they do for the completion marker); a client that does not (a build predating
+the kind) gets the touched thread refetched as a `thread-upserted` instead, so its decoder never
+sees an unknown kind. Clients apply `thread-touched` in
+`packages/client-runtime/src/state/shellReducer.ts` and ignore it for unknown threads.
+
 On the client, [`session.ts`][session] opens the socket and builds the typed client.
 `RpcSessionFactory` is the service; a session exposes `client`, `initialConfig`, `ready`, `probe`,
 and `closed`. It performs one attempt and does not retry. Retry, backoff, and offline policy belong
@@ -78,6 +92,34 @@ processing is totally ordered. For each envelope `processEnvelope`:
 Because persistence and projection share a transaction, the read model cannot durably disagree with
 the event log. On dispatch failure the engine rereads persisted events past the starting sequence and
 reconciles.
+
+[`ProjectionPipeline.ts`][pipeline] runs every table projector for an event inside that transaction
+(one savepoint per event, not per projector), then advances all `projection_state` cursors in one
+multi-row upsert; a failing projector fails the whole event. Per-projector cursor rows survive only
+for bootstrap catch-up, where each projector replays independently from its own cursor. Attachment
+cleanup runs after the savepoint and only when a projector queued work.
+
+Command receipts live in `orchestration_command_receipts` and serve only step 1 above. The engine
+prunes receipts older than 72 hours at boot and hourly, in bounded batches, so retries are
+idempotent within that window and the table stays small.
+
+Not every runtime signal becomes a domain event. In-flight tool progress (`tool.updated`, one tick
+per provider `tool_call_update` / input delta, dozens per call) is live-only:
+[`ProviderRuntimeIngestion`][ingest] records the latest tick per `(thread, item)` in
+[`ToolProgress.ts`][toolprogress] under the stable activity id `${itemId}:progress`, and the registry
+publishes it as an ephemeral `thread.activity-appended` (`sequence: 0`, flagged `ephemeral: true` on
+the `subscribeThread` item) that [`ws.ts`][ws] merges into the live tail; clients apply it in place
+without moving their resume cursor, and the thread detail snapshot splices the same activities in
+so a fresh subscriber matches a live one. Only `tool.started`, `tool.completed`, and coalesced
+progress are persisted: a tick is written under that same stable id at most every
+`TOOL_PROGRESS_PERSIST_INTERVAL_MS` (3 s) per item, plus a final flush of still-running items when
+the turn settles or the session exits, so projection growth tracks tool calls, not ticks. Progress of
+a tool mid-flight at a crash is lost (its started row survives). Migration 047 is a marker: right
+after it lands, the Sqlite layer deletes the historical per-tick rows a `tool.completed` in the same
+`(thread, turn, group)` supersedes, together with their events and receipts (the same rule the
+detail query applies at read time), best-effort in batched transactions so a disk-full mid-delete
+cannot block boot, then runs one `VACUUM` (about 30 s once for a 3 GB database, which shrank to
+1.1 GB); the detail query keeps that read-side compaction for whatever remains.
 
 Command and event names live in [`orchestration.ts`][contracts]. Some commands are client
 dispatchable (`thread.create`, `thread.turn.start`, `thread.approval.respond`); others are internal
@@ -139,6 +181,8 @@ already dispatch.
 [rpc]: ../../packages/contracts/src/rpc.ts
 [contracts]: ../../packages/contracts/src/orchestration.ts
 [ws]: ../../apps/server/src/ws.ts
+[toolprogress]: ../../apps/server/src/orchestration/ToolProgress.ts
+[shellstream]: ../../apps/server/src/orchestration/ShellStream.ts
 [session]: ../../packages/client-runtime/src/rpc/session.ts
 [startup]: ../../apps/server/src/serverRuntimeStartup.ts
 [engine]: ../../apps/server/src/orchestration/Layers/OrchestrationEngine.ts
@@ -149,4 +193,5 @@ already dispatch.
 [cmd]: ../../apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
 [checkpoint]: ../../apps/server/src/orchestration/Layers/CheckpointReactor.ts
 [receipts]: ../../apps/server/src/orchestration/Layers/RuntimeReceiptBus.ts
+[pipeline]: ../../apps/server/src/orchestration/Layers/ProjectionPipeline.ts
 [drivers]: ../../apps/server/src/provider/builtInDrivers.ts

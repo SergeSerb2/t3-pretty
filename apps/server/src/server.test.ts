@@ -111,6 +111,7 @@ import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
+import * as ToolProgress from "./orchestration/ToolProgress.ts";
 import { OrchestrationListenerCallbackError } from "./orchestration/Errors.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
@@ -803,6 +804,7 @@ const buildAppUnderTest = (options?: {
           Layer.mock(CanvasStore.CanvasStore)({
             ...options?.layers?.canvasStore,
           }),
+          ToolProgress.layer,
         ),
       ),
       Layer.provide(
@@ -6597,6 +6599,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           client[ORCHESTRATION_WS_METHODS.subscribeShell]({
             afterSequence: 0,
             requestCompletionMarker: true,
+            acceptThreadTouched: true,
           }).pipe(Stream.take(3), Stream.runCollect),
         ),
       );
@@ -6605,13 +6608,41 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const upsertedIds = collected.flatMap((item) =>
         item.kind === "thread-upserted" ? [item.thread.id] : [],
       );
-      // Both threads surface, and the busy thread's 20-event burst collapses to
-      // a single shell refetch (not 20). The new thread is not stuck behind it.
-      assert.include(upsertedIds, busyThreadId);
+      const touchedIds = collected.flatMap((item) =>
+        item.kind === "thread-touched" ? [item.threadId] : [],
+      );
+      // Both threads surface: the busy thread's 20-message burst collapses to
+      // a single `thread-touched` with no shell refetch at all, and the new
+      // thread's `thread.created` is not stuck behind it.
+      assert.deepEqual(touchedIds, [busyThreadId]);
       assert.include(upsertedIds, newThreadId);
       assert.equal(collected[2]?.kind, "synchronized");
-      assert.equal(shellFetches.filter((id) => id === busyThreadId).length, 1);
+      assert.equal(shellFetches.filter((id) => id === busyThreadId).length, 0);
       assert.equal(replayLimit, 50);
+
+      // A client that did not opt in (a build predating `thread-touched`)
+      // gets the busy thread as one refetched `thread-upserted` instead.
+      shellFetches.length = 0;
+      const legacyItems = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeShell]({
+            afterSequence: 0,
+            requestCompletionMarker: true,
+          }).pipe(Stream.take(3), Stream.runCollect),
+        ),
+      );
+      const legacyCollected = Array.from(legacyItems);
+      assert.deepEqual(
+        legacyCollected.flatMap((item) =>
+          item.kind === "thread-upserted" ? [item.thread.id] : [],
+        ),
+        [busyThreadId, newThreadId],
+      );
+      assert.equal(
+        legacyCollected.some((item) => item.kind === "thread-touched"),
+        false,
+      );
+      assert.equal(shellFetches.filter((id) => id === busyThreadId).length, 1);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -6675,6 +6706,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           const itemsFiber = yield* withWsRpcClient(wsUrl, (client) =>
             client[ORCHESTRATION_WS_METHODS.subscribeShell]({
               requestCompletionMarker: true,
+              acceptThreadTouched: true,
             }).pipe(
               Stream.tap((item) =>
                 item.kind === "synchronized"
@@ -6684,6 +6716,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               Stream.takeUntil((item) => {
                 if (item.kind === "thread-upserted") {
                   observedLiveThreadIds.add(item.thread.id);
+                } else if (item.kind === "thread-touched") {
+                  observedLiveThreadIds.add(item.threadId);
                 }
                 return (
                   observedLiveThreadIds.has(busyThreadId) && observedLiveThreadIds.has(newThreadId)
@@ -6707,12 +6741,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.equal(items[0]?.kind, "snapshot");
       assert.equal(items[1]?.kind, "synchronized");
-      const liveUpsertedIds = Array.from(items)
-        .slice(2)
-        .flatMap((item) => (item.kind === "thread-upserted" ? [item.thread.id] : []));
-      assert.include(liveUpsertedIds, busyThreadId);
+      const liveItems = Array.from(items).slice(2);
+      const liveUpsertedIds = liveItems.flatMap((item) =>
+        item.kind === "thread-upserted" ? [item.thread.id] : [],
+      );
+      const liveTouchedIds = liveItems.flatMap((item) =>
+        item.kind === "thread-touched" ? [item.threadId] : [],
+      );
+      assert.include(liveTouchedIds, busyThreadId);
       assert.include(liveUpsertedIds, newThreadId);
-      assert.isBelow(shellFetches.filter((id) => id === busyThreadId).length, 20);
+      assert.equal(shellFetches.filter((id) => id === busyThreadId).length, 0);
     }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
   );
 
@@ -6792,7 +6830,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         correlationId: null,
         metadata: {},
         type: "thread.message-sent",
-        payload: {} as never,
+        // A completed user message advances latestUserMessageAt, so it refetches
+        // the shell row instead of collapsing to a `thread-touched`.
+        payload: { role: "user", streaming: false } as never,
       };
 
       yield* buildAppUnderTest({

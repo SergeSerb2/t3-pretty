@@ -1,6 +1,14 @@
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
@@ -9,7 +17,6 @@ import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings"
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
-import LegacyThreadSidebar from "./LegacySidebar";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
@@ -123,6 +130,9 @@ function ProjectProjectionRetention() {
   return null;
 }
 
+// Only users who opted into the legacy sidebar pay for its chunk.
+const LegacyThreadSidebar = lazy(() => import("./LegacySidebar"));
+
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
@@ -222,7 +232,9 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             <SettingsSidebarNav pathname={pathname} />
           </>
         ) : legacySidebarEnabled ? (
-          <LegacyThreadSidebar />
+          <Suspense fallback={null}>
+            <LegacyThreadSidebar />
+          </Suspense>
         ) : (
           <ThreadSidebar />
         )}

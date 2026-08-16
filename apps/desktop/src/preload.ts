@@ -41,6 +41,13 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   getLocalEnvironmentBootstraps: () =>
     ipcRenderer.invoke(IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL),
+  onLocalBackendReady: (listener) => {
+    const wrappedListener = () => listener();
+    ipcRenderer.on(IpcChannels.BACKEND_READY_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.BACKEND_READY_CHANNEL, wrappedListener);
+    };
+  },
   getLocalEnvironmentBearerToken: () =>
     ipcRenderer.invoke(IpcChannels.GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL),
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),

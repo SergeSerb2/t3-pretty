@@ -566,11 +566,27 @@ const platformConnectionSourceLayer = Layer.effect(
       return registrations as ReadonlyArray<PlatformConnectionRegistration>;
     }).pipe(Effect.provide(FetchHttpClient.layer));
 
+    // The desktop opens its window before the local backend listens; the main
+    // process pushes onLocalBackendReady when it does (and on every restart),
+    // so re-read the topology right away instead of waiting for the next tick.
+    const localBackendReady = Stream.callback<void>((queue) =>
+      Effect.acquireRelease(
+        Effect.sync(
+          () =>
+            window.desktopBridge?.onLocalBackendReady?.(() =>
+              Queue.offerUnsafe(queue, undefined),
+            ) ?? (() => undefined),
+        ),
+        (unsubscribe) => Effect.sync(unsubscribe),
+      ).pipe(Effect.asVoid),
+    );
+
     return PlatformConnectionSource.of({
       registrations: Stream.tick(PLATFORM_POLL_INTERVAL).pipe(
         Stream.filter(
           () => typeof document === "undefined" || document.visibilityState === "visible",
         ),
+        Stream.merge(localBackendReady),
         Stream.mapEffect(() => buildPlatformRegistrations),
       ),
     });

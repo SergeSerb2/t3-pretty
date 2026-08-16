@@ -39,6 +39,7 @@ describe("ElectronProtocol", () => {
             targetOrigin: new URL("http://127.0.0.1:3773/"),
             backendOrigin: new URL("http://127.0.0.1:3774/"),
             clerkFrontendApiHostname: "clerk.t3.codes",
+            clientDistDir: undefined,
           });
           assert.isDefined(handler);
 
@@ -103,6 +104,7 @@ describe("ElectronProtocol", () => {
             targetOrigin: new URL("http://127.0.0.1:3773/"),
             backendOrigin: new URL("http://127.0.0.1:3773/"),
             clerkFrontendApiHostname: undefined,
+            clientDistDir: undefined,
           });
           return yield* Effect.promise(() => handler!(new Request("t3code://other/")));
         }),
@@ -131,6 +133,7 @@ describe("ElectronProtocol", () => {
             targetOrigin: new URL("http://127.0.0.1:5733/"),
             backendOrigin: new URL("http://127.0.0.1:3773/"),
             clerkFrontendApiHostname: undefined,
+            clientDistDir: undefined,
           });
           return yield* Effect.promise(() => handler!(new Request("t3code-dev://app/")));
         }),
@@ -155,6 +158,7 @@ describe("ElectronProtocol", () => {
           targetOrigin: new URL("http://127.0.0.1:3773/"),
           backendOrigin: new URL("http://127.0.0.1:3774/"),
           clerkFrontendApiHostname: undefined,
+          clientDistDir: undefined,
         }),
       ).pipe(Effect.flip);
 
@@ -180,6 +184,7 @@ describe("ElectronProtocol", () => {
             targetOrigin: new URL("http://127.0.0.1:3773/"),
             backendOrigin: new URL("http://127.0.0.1:3773/"),
             clerkFrontendApiHostname: undefined,
+            clientDistDir: undefined,
           }),
         ),
       );
@@ -195,12 +200,132 @@ describe("ElectronProtocol", () => {
     }).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
+  it.effect("serves the renderer from disk and proxies only API paths", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+      netFetchMock.mockImplementation((url: string) =>
+        Promise.resolve(
+          url.startsWith("file:")
+            ? new Response(url.endsWith("/index.html") ? "<html>" : "asset", {
+                headers: {
+                  "content-type": url.endsWith("/index.html") ? "text/html" : "text/javascript",
+                },
+              })
+            : new Response("api"),
+        ),
+      );
+
+      const responses = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const protocol = yield* ElectronProtocol.ElectronProtocol;
+          yield* protocol.registerDesktopProtocol({
+            scheme: "t3code",
+            targetOrigin: new URL("http://127.0.0.1:3773/"),
+            backendOrigin: new URL("http://127.0.0.1:3773/"),
+            clerkFrontendApiHostname: undefined,
+            clientDistDir: "/app/apps/server/dist/client",
+          });
+          const get = (url: string) => Effect.promise(() => handler!(new Request(url)));
+          return {
+            root: yield* get("t3code://app/"),
+            deepLink: yield* get("t3code://app/threads/env-1/thread-2?tab=diff"),
+            asset: yield* get("t3code://app/assets/index-B1c2D3e4.js"),
+            api: yield* get("t3code://app/api/health"),
+            traversal: yield* get("t3code://app/assets/..%2F..%2Fpackage.json"),
+          };
+        }),
+      );
+
+      const fetched = netFetchMock.mock.calls.map((call) => call[0]);
+      assert.deepEqual(fetched, [
+        "file:///app/apps/server/dist/client/index.html",
+        "file:///app/apps/server/dist/client/index.html",
+        "file:///app/apps/server/dist/client/assets/index-B1c2D3e4.js",
+        "http://127.0.0.1:3773/api/health",
+      ]);
+      assert.equal(yield* Effect.promise(() => responses.root.text()), "<html>");
+      assert.equal(responses.root.headers.get("cache-control"), "no-cache");
+      assert.include(
+        responses.root.headers.get("content-security-policy") ?? "",
+        "default-src 'self'",
+      );
+      assert.equal(yield* Effect.promise(() => responses.deepLink.text()), "<html>");
+      assert.equal(
+        responses.asset.headers.get("cache-control"),
+        "public, max-age=31536000, immutable",
+      );
+      assert.equal(responses.asset.headers.get("content-type"), "text/javascript");
+      assert.equal(yield* Effect.promise(() => responses.api.text()), "api");
+      assert.equal(responses.traversal.status, 404);
+    }).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
+  it.effect("falls back to the SPA shell for unknown files on disk", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+      netFetchMock
+        .mockRejectedValueOnce(new Error("net::ERR_FILE_NOT_FOUND"))
+        .mockResolvedValueOnce(new Response("<html>"));
+
+      const response = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const protocol = yield* ElectronProtocol.ElectronProtocol;
+          yield* protocol.registerDesktopProtocol({
+            scheme: "t3code",
+            targetOrigin: new URL("http://127.0.0.1:3773/"),
+            backendOrigin: new URL("http://127.0.0.1:3773/"),
+            clerkFrontendApiHostname: undefined,
+            clientDistDir: "/app/client",
+          });
+          return yield* Effect.promise(() => handler!(new Request("t3code://app/projects/a.b")));
+        }),
+      );
+
+      assert.equal(yield* Effect.promise(() => response.text()), "<html>");
+      assert.deepEqual(
+        netFetchMock.mock.calls.map((call) => call[0]),
+        ["file:///app/client/projects/a.b", "file:///app/client/index.html"],
+      );
+    }).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
+  it("maps renderer paths onto the client dist", () => {
+    const dir = "/app/client";
+    assert.equal(ElectronProtocol.resolveClientDistFile(dir, "/"), "/app/client/index.html");
+    assert.equal(
+      ElectronProtocol.resolveClientDistFile(dir, "/settings/general"),
+      "/app/client/index.html",
+    );
+    assert.equal(
+      ElectronProtocol.resolveClientDistFile(dir, "/assets/x-abcdefgh.css"),
+      "/app/client/assets/x-abcdefgh.css",
+    );
+    assert.isNull(ElectronProtocol.resolveClientDistFile(dir, "/../secret.txt"));
+    assert.isNull(ElectronProtocol.resolveClientDistFile(dir, "/%2e%2e/secret.txt"));
+    assert.isNull(ElectronProtocol.resolveClientDistFile(dir, "/%E0%A4%A"));
+    assert.isTrue(ElectronProtocol.isProxiedRendererPath("/api/auth/session"));
+    assert.isTrue(ElectronProtocol.isProxiedRendererPath("/.well-known/t3/environment"));
+    assert.isFalse(ElectronProtocol.isProxiedRendererPath("/apiary"));
+    assert.equal(
+      ElectronProtocol.clientAssetCacheControl("assets/index-B1c2D3e4.js"),
+      "public, max-age=31536000, immutable",
+    );
+    assert.equal(ElectronProtocol.clientAssetCacheControl("index.html"), "no-cache");
+  });
+
   it("keeps executable sources host-restricted while allowing runtime network resources", () => {
     const policy = ElectronProtocol.makeDesktopContentSecurityPolicy({
       scheme: "t3code",
       targetOrigin: new URL("http://127.0.0.1:3773/"),
       backendOrigin: new URL("http://127.0.0.1:3773/"),
       clerkFrontendApiHostname: "clerk.t3.codes",
+      clientDistDir: undefined,
     });
     const directives = Object.fromEntries(
       policy.split("; ").map((directive) => {

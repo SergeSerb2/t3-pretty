@@ -40,8 +40,9 @@ export const installPreviewEventForwarding = Effect.fn(
   yield* manager.subscribeStateChanges((tabId, state) =>
     electronWindow.sendAll(IpcChannels.PREVIEW_STATE_CHANGE_CHANNEL, tabId, state),
   );
-  yield* manager.subscribeRecordingFrames((frame) =>
-    electronWindow.sendAll(IpcChannels.PREVIEW_RECORDING_FRAME_CHANNEL, frame),
+  // Frames go only to the window hosting the recorded guest, not every window.
+  yield* manager.subscribeRecordingFrames((frame, host) =>
+    Effect.sync(() => host.send(IpcChannels.PREVIEW_RECORDING_FRAME_CHANNEL, frame)),
   );
   yield* manager.subscribePointerEvents((event) =>
     electronWindow.sendAll(IpcChannels.PREVIEW_POINTER_EVENT_CHANNEL, event),

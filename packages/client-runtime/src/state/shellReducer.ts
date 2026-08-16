@@ -40,6 +40,15 @@ export function applyShellStreamEvent(
         threads: Arr.filter(snapshot.threads, (t) => t.id !== event.threadId),
         snapshotSequence: event.sequence,
       };
+    case "thread-touched": {
+      // Unknown thread: a later thread-upserted or snapshot fills it in. Only
+      // the touched row changes identity so sidebar rows keep memoized props.
+      const index = snapshot.threads.findIndex((t) => t.id === event.threadId);
+      if (index === -1) return { ...snapshot, snapshotSequence: event.sequence };
+      const threads = [...snapshot.threads];
+      threads[index] = { ...threads[index]!, updatedAt: event.updatedAt };
+      return { ...snapshot, threads, snapshotSequence: event.sequence };
+    }
     default:
       return snapshot;
   }

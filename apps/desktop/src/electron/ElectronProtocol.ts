@@ -1,7 +1,10 @@
+// @effect-diagnostics nodeBuiltinImport:off - protocol handlers run as plain async callbacks outside the Effect runtime, so file paths are resolved with node:path directly.
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as NodePath from "node:path";
 import * as NodeTimersPromises from "node:timers/promises";
+import * as NodeURL from "node:url";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -53,6 +56,11 @@ export interface DesktopProtocolRegistrationInput {
   readonly targetOrigin: URL;
   readonly backendOrigin: URL;
   readonly clerkFrontendApiHostname: string | undefined;
+  // Built renderer on disk (apps/server/dist/client). When set, documents and
+  // assets are read straight from disk so the window can load before the
+  // backend listens; only API paths are proxied to targetOrigin. Undefined in
+  // development, where the Vite dev server serves everything.
+  readonly clientDistDir: string | undefined;
 }
 
 export class ElectronProtocol extends Context.Service<
@@ -95,14 +103,116 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
   ].join("; ");
 }
 
-function withContentSecurityPolicy(response: Response, policy: string): Response {
+function withContentSecurityPolicy(
+  response: Response,
+  policy: string,
+  extraHeaders?: Record<string, string>,
+): Response {
   const headers = new Headers(response.headers);
   headers.set("Content-Security-Policy", policy);
+  for (const [name, value] of Object.entries(extraHeaders ?? {})) {
+    headers.set(name, value);
+  }
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+}
+
+// Same-origin paths the renderer may still address relatively; everything else
+// under t3code://app is the SPA and comes from disk.
+const PROXIED_PATH_PREFIXES = ["/api/", "/oauth/", "/.well-known/"] as const;
+
+export function isProxiedRendererPath(pathname: string): boolean {
+  return PROXIED_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+// Mirrors the server's hashed-asset rule (apps/server/src/http.ts) so the V8
+// code cache and HTTP cache treat disk-served assets the same way.
+const HASHED_CLIENT_ASSET_PATH = /^assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/;
+
+export function clientAssetCacheControl(relativePath: string): string {
+  return HASHED_CLIENT_ASSET_PATH.test(relativePath.replaceAll("\\", "/"))
+    ? "public, max-age=31536000, immutable"
+    : "no-cache";
+}
+
+/**
+ * Map a t3code://app pathname to a file below the client dist. Extension-less
+ * paths are SPA routes and resolve to index.html; anything escaping the root
+ * resolves to null.
+ */
+export function resolveClientDistFile(clientDistDir: string, pathname: string): string | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+  const relativePath = decoded.replace(/^\/+/, "");
+  const candidate =
+    relativePath.length === 0 || NodePath.extname(relativePath) === ""
+      ? "index.html"
+      : relativePath;
+  const root = NodePath.resolve(clientDistDir);
+  const resolved = NodePath.resolve(root, candidate);
+  if (resolved !== root && !resolved.startsWith(root + NodePath.sep)) {
+    return null;
+  }
+  return resolved;
+}
+
+async function serveClientDistFile(
+  clientDistDir: string,
+  pathname: string,
+  contentSecurityPolicy: string,
+): Promise<Response> {
+  const filePath = resolveClientDistFile(clientDistDir, pathname);
+  if (filePath === null) {
+    return new Response(null, { status: 404 });
+  }
+  const indexPath = NodePath.join(clientDistDir, "index.html");
+  const fetchFile = async (target: string) => {
+    try {
+      const response = await Electron.net.fetch(NodeURL.pathToFileURL(target).toString());
+      return response.ok ? response : null;
+    } catch {
+      return null;
+    }
+  };
+  // Like the server: an unknown file falls back to the SPA shell (a route
+  // segment with a dot, e.g. an ssh host). Hashed asset misses must not be
+  // cached as immutable HTML, so the header follows the file actually served.
+  let servedPath = filePath;
+  let served = await fetchFile(filePath);
+  if (served === null && filePath !== indexPath) {
+    servedPath = indexPath;
+    served = await fetchFile(indexPath);
+  }
+  if (served === null) {
+    return new Response(null, { status: 404 });
+  }
+  const relativePath = NodePath.relative(clientDistDir, servedPath);
+  return withContentSecurityPolicy(served, contentSecurityPolicy, {
+    "Cache-Control": clientAssetCacheControl(relativePath),
+  });
+}
+
+async function handleRendererRequest(
+  request: Request,
+  input: DesktopProtocolRegistrationInput,
+  contentSecurityPolicy: string,
+): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  if (requestUrl.host !== DESKTOP_HOST) {
+    return new Response(null, { status: 404 });
+  }
+  const isRead = request.method === "GET" || request.method === "HEAD";
+  if (input.clientDistDir === undefined || !isRead || isProxiedRendererPath(requestUrl.pathname)) {
+    return proxyRequest(request, input.targetOrigin, contentSecurityPolicy);
+  }
+  return serveClientDistFile(input.clientDistDir, requestUrl.pathname, contentSecurityPolicy);
 }
 
 /**
@@ -145,10 +255,6 @@ async function proxyRequest(
   contentSecurityPolicy: string,
 ): Promise<Response> {
   const requestUrl = new URL(request.url);
-  if (requestUrl.host !== DESKTOP_HOST) {
-    return new Response(null, { status: 404 });
-  }
-
   const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, targetOrigin);
   const headers = new Headers(request.headers);
   const headersToRemove: string[] = [];
@@ -217,7 +323,7 @@ export const make = Effect.gen(function* () {
         Effect.try({
           try: () => {
             Electron.protocol.handle(input.scheme, (request) =>
-              proxyRequest(request, input.targetOrigin, contentSecurityPolicy),
+              handleRendererRequest(request, input, contentSecurityPolicy),
             );
           },
           catch: (cause) => new ElectronProtocolRegistrationError({ scheme: input.scheme, cause }),

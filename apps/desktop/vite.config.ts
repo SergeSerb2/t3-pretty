@@ -50,10 +50,19 @@ export default defineConfig({
       entry: ["src/main.ts"],
       clean: true,
       deps: {
+        // Inline the pure-JS runtime so main boot reads one file instead of
+        // walking ~700 files out of the asar. Natives (@clerk/electron-passkeys,
+        // node-pty), electron itself, and playwright-core (read from disk by
+        // path) stay external. Keep in sync with DESKTOP_BUNDLED_DEPENDENCY_NAMES
+        // in scripts/build-desktop-artifact.ts.
         alwaysBundle: (id) =>
           id.startsWith("@t3tools/") ||
           id === "@clerk/electron" ||
-          id.startsWith("@clerk/electron/"),
+          id.startsWith("@clerk/electron/") ||
+          id === "effect" ||
+          id.startsWith("effect/") ||
+          id.startsWith("@effect/") ||
+          id === "electron-updater",
       },
       ...(shouldLaunchElectronAfterPack ? { onSuccess: "node scripts/dev-electron.mjs" } : {}),
     },

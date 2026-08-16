@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
 
 import { isElectron } from "../../env";
+import { useStatusPulse } from "../../hooks/useStatusPulse";
 import { cn } from "../../lib/utils";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import {
@@ -530,6 +531,7 @@ function UsageDeviceStrip({
   const scanning = environments.filter(
     (environment) => environment.summary === null && environment.error === null,
   );
+  useStatusPulse(scanning.length > 0);
   return (
     <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border border-border px-3 py-2 text-xs">
       {environments.map((environment) => {
@@ -556,10 +558,7 @@ function UsageDeviceStrip({
           );
         }
         return (
-          <span
-            key={environment.environmentId}
-            className="animate-status-pulse text-muted-foreground"
-          >
+          <span key={environment.environmentId} className="status-pulse text-muted-foreground">
             {environment.label}…
           </span>
         );

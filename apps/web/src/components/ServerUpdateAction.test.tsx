@@ -120,7 +120,7 @@ describe("ServerUpdateProgress", () => {
     expect(markup).not.toContain("Resum");
     expect(markup).not.toContain("text-success");
     expect(markup).not.toContain("text-primary");
-    expect(markup).toContain("animate-status-pulse");
+    expect(markup).toContain("status-pulse");
     expect(markup).not.toContain("animate-spin");
   });
 
@@ -155,6 +155,6 @@ describe("ServerUpdateProgress", () => {
 
     expect(markup).toContain('role="alert"');
     expect(markup).toContain("The package could not be verified.");
-    expect(markup).not.toContain("animate-status-pulse");
+    expect(markup).not.toContain("status-pulse");
   });
 });

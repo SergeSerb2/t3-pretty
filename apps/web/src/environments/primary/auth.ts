@@ -7,7 +7,7 @@ import type {
   AuthSessionId,
   AuthSessionState,
 } from "@t3tools/contracts";
-import { EnvironmentHttpCommonError, PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
+import { EnvironmentHttpCommonError } from "@t3tools/contracts";
 import type { EnvironmentHttpCommonError as EnvironmentHttpCommonErrorType } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -20,6 +20,7 @@ import {
 } from "../../pairingUrl";
 
 import { PrimaryEnvironmentHttpClient } from "./httpClient";
+import { loadDesktopPrimaryEnvironmentBootstrap } from "./target";
 import { runPrimaryHttp } from "../../lib/runtime";
 
 const PrimaryEnvironmentRequestOperation = Schema.Literals([
@@ -179,10 +180,19 @@ async function getDesktopBootstrapCredential(): Promise<string | null> {
   // Both backends share the same bootstrap token (DesktopBackendConfiguration
   // mints one tokenRef and feeds it to both resolvers), so picking the
   // primary entry is fine even when the WSL backend is also registered.
-  const result = window.desktopBridge?.getLocalEnvironmentBootstraps() ?? [];
-  const bootstraps = Array.isArray(result) ? result : await result;
-  const primary = bootstraps.find((entry) => entry.id === PRIMARY_LOCAL_ENVIRONMENT_ID);
-  return typeof primary?.bootstrapToken === "string" && primary.bootstrapToken.length > 0
+  if (window.desktopBridge === undefined) {
+    return null;
+  }
+  // The desktop opens its window before the local backend has a start
+  // config. Until the primary entry carries an httpBaseUrl the HTTP client
+  // would resolve to the window origin (t3code:) and memoize that failure
+  // for the renderer's lifetime, so wait for the entry first.
+  let primary = await loadDesktopPrimaryEnvironmentBootstrap();
+  while (primary?.httpBaseUrl == null) {
+    await waitForBootstrapRetry(BOOTSTRAP_RETRY_STEP_MS);
+    primary = await loadDesktopPrimaryEnvironmentBootstrap();
+  }
+  return typeof primary.bootstrapToken === "string" && primary.bootstrapToken.length > 0
     ? primary.bootstrapToken
     : null;
 }
@@ -279,10 +289,18 @@ async function waitForAuthenticatedSessionAfterBootstrap(): Promise<AuthSessionS
 
 const TRANSIENT_BOOTSTRAP_STATUS_CODES = new Set([502, 503, 504]);
 const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
+// The desktop renderer loads before its local backend listens (cold boot,
+// large-DB migration, restart) and the desktop keeps that backend alive, so
+// there is no point giving up: keep retrying until it answers.
+const DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS = Number.POSITIVE_INFINITY;
 const BOOTSTRAP_RETRY_STEP_MS = 500;
 
 export async function retryTransientBootstrap<T>(operation: () => Promise<T>): Promise<T> {
   const startedAt = Date.now();
+  const timeoutMs =
+    window.desktopBridge === undefined
+      ? BOOTSTRAP_RETRY_TIMEOUT_MS
+      : DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS;
   while (true) {
     try {
       return await operation();
@@ -291,7 +309,7 @@ export async function retryTransientBootstrap<T>(operation: () => Promise<T>): P
         throw error;
       }
 
-      if (Date.now() - startedAt >= BOOTSTRAP_RETRY_TIMEOUT_MS) {
+      if (Date.now() - startedAt >= timeoutMs) {
         throw error;
       }
 
@@ -308,7 +326,13 @@ function waitForBootstrapRetry(delayMs: number): Promise<void> {
 
 function isTransientBootstrapError(error: unknown): boolean {
   if (isPrimaryEnvironmentRequestError(error)) {
-    return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status);
+    // No response at all (connection refused, desktop bearer IPC failing):
+    // the desktop opens its window before its local backend listens.
+    return (
+      TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status) ||
+      (HttpClientError.isHttpClientError(error.cause) &&
+        error.cause.reason._tag === "TransportError")
+    );
   }
 
   if (error instanceof TypeError) {

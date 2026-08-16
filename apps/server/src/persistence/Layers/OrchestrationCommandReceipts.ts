@@ -2,6 +2,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 
 import { toPersistenceSqlError } from "../Errors.ts";
 
@@ -10,6 +11,7 @@ import {
   OrchestrationCommandReceipt,
   OrchestrationCommandReceiptRepository,
   type OrchestrationCommandReceiptRepositoryShape,
+  PruneReceiptsInput,
 } from "../Services/OrchestrationCommandReceipts.ts";
 
 const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
@@ -66,6 +68,22 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
       `,
   });
 
+  const deleteReceiptsAcceptedBefore = SqlSchema.findAll({
+    Request: PruneReceiptsInput,
+    Result: Schema.Struct({ commandId: Schema.String }),
+    execute: ({ acceptedBefore, limit }) =>
+      sql`
+        DELETE FROM orchestration_command_receipts
+        WHERE rowid IN (
+          SELECT rowid
+          FROM orchestration_command_receipts
+          WHERE accepted_at < ${acceptedBefore}
+          LIMIT ${limit}
+        )
+        RETURNING command_id AS "commandId"
+      `,
+  });
+
   const upsert: OrchestrationCommandReceiptRepositoryShape["upsert"] = (receipt) =>
     upsertReceiptRow(receipt).pipe(
       Effect.mapError(toPersistenceSqlError("OrchestrationCommandReceiptRepository.upsert:query")),
@@ -78,9 +96,20 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
       ),
     );
 
+  const pruneAcceptedBefore: OrchestrationCommandReceiptRepositoryShape["pruneAcceptedBefore"] = (
+    input,
+  ) =>
+    deleteReceiptsAcceptedBefore(input).pipe(
+      Effect.map((rows) => rows.length),
+      Effect.mapError(
+        toPersistenceSqlError("OrchestrationCommandReceiptRepository.pruneAcceptedBefore:query"),
+      ),
+    );
+
   return {
     upsert,
     getByCommandId,
+    pruneAcceptedBefore,
   } satisfies OrchestrationCommandReceiptRepositoryShape;
 });
 
