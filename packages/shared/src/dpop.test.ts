@@ -71,6 +71,39 @@ describe("verifyDpopProof", () => {
     assert.equal(result.jti, "proof-1");
   });
 
+  it("verifies proofs whose P-256 JWK coordinates omit leading zero bytes", () => {
+    const stripLeadingZeros = (value: string) => {
+      const bytes = Buffer.from(value, "base64url");
+      let offset = 0;
+      while (offset < bytes.length - 1 && bytes[offset] === 0) {
+        offset += 1;
+      }
+      return bytes.subarray(offset).toString("base64url");
+    };
+    const unpaddedJwk = {
+      ...publicJwk,
+      x: stripLeadingZeros(publicJwk.x),
+      y: stripLeadingZeros(publicJwk.y),
+    };
+    const unpaddedProof = signDpopProof({
+      method: "POST",
+      url: "https://example.com/oauth/token",
+      iat: 100,
+      privateKey,
+      publicJwk: unpaddedJwk,
+    });
+    const result = verifyDpopProof({
+      proof: unpaddedProof,
+      method: "POST",
+      url: "https://example.com/oauth/token",
+      nowEpochSeconds: 101,
+      expectedThumbprint: computeDpopJwkThumbprint(unpaddedJwk),
+    });
+    if (!result.ok) {
+      assert.fail(result.reason);
+    }
+  });
+
   it("rejects malformed DPoP header and payload JSON", () => {
     const [header, payload, signature] = proof.split(".");
     if (!header || !payload || !signature) {

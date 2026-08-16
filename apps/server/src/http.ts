@@ -86,7 +86,9 @@ export const browserApiCorsLayer = Layer.unwrap(
     const config = yield* ServerConfig.ServerConfig;
     const devOrigin = config.devUrl?.origin;
     // Dev uses credentialed requests from Vite or the Electron custom origin, so both must be
-    // explicit. Packaged desktop omits credentials and uses Effect's default wildcard origin.
+    // explicit. Packaged servers echo the request Origin instead of `*`: Windows Chromium
+    // treats `t3code://app` as a non-wildcard origin and drops cross-origin Surge Connect
+    // responses that only advertise `*`.
     //
     // T3CODE_DEV_ALLOWED_ORIGINS covers dev servers reached from a second
     // origin — a tailnet name, a LAN IP, a phone. Browser dev normally proxies
@@ -98,7 +100,9 @@ export const browserApiCorsLayer = Layer.unwrap(
             allowedOrigins: [devOrigin, ...DESKTOP_RENDERER_ORIGINS, ...config.devAllowedOrigins],
             credentials: true,
           }
-        : {}),
+        : {
+            allowedOrigins: (origin) => typeof origin === "string" && origin.length > 0,
+          }),
       allowedMethods: browserApiCorsAllowedMethods,
       allowedHeaders: browserApiCorsAllowedHeaders,
       maxAge: 600,
