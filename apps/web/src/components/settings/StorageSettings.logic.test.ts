@@ -96,13 +96,13 @@ describe("storage settings helpers", () => {
       scan: { status: "scanning", measuredCount: 3, totalCount: 12 },
     };
     expect(isStorageScanInProgress(null, true)).toBe(true);
-    expect(isStorageScanInProgress(scanning, false)).toBe(true);
+    expect(isStorageScanInProgress(scanning, false)).toBe(false);
     expect(
       isStorageScanInProgress(
         { ...scanning, scan: { status: "complete", measuredCount: 12, totalCount: 12 } },
-        false,
+        true,
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(scanProgressCaption(scanning)).toBe("Found 2.00 KB so far · 3 of 12 paths");
     expect(summaryCaption(scanning)).toBe("Found 2.00 KB so far · 3 of 12 paths");
     expect(summaryCaption(inventory)).toBe("4 worktrees measured");

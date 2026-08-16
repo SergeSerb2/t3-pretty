@@ -17,11 +17,10 @@ export function formatStorageBytes(value: number): string {
 }
 
 export function isStorageScanInProgress(
-  inventory: StorageInventory | null,
+  _inventory: StorageInventory | null,
   isPending: boolean,
 ): boolean {
-  if (inventory?.scan?.status === "scanning") return true;
-  return isPending && inventory?.scan?.status !== "complete";
+  return isPending;
 }
 
 export function scanProgressCaption(inventory: StorageInventory): string | null {

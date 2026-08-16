@@ -9,6 +9,7 @@ import {
   isStrictDescendant,
   isWithinManagedRoot,
   removableSettledWorktrees,
+  shouldPublishStorageProgress,
   type StorageMeasuredWorktree,
   type StorageThreadSnapshot,
 } from "./storageInventory.ts";
@@ -41,6 +42,14 @@ function measurement(
     ...extra,
   };
 }
+
+describe("storage progress publishing", () => {
+  it("forces the first and last frames and coalesces the ones in between", () => {
+    expect(shouldPublishStorageProgress(0, 10, true, 250)).toBe(true);
+    expect(shouldPublishStorageProgress(0, 10, false, 250)).toBe(false);
+    expect(shouldPublishStorageProgress(0, 250, false, 250)).toBe(true);
+  });
+});
 
 describe("storage inventory assembly", () => {
   it("splits active and archived worktrees and counts threads without managed checkouts", () => {
@@ -79,6 +88,29 @@ describe("storage inventory assembly", () => {
     expect(inventory.archivedWorktreeBytes).toBe(2048);
     expect(inventory.orphanWorktreeBytes).toBe(512);
     expect(inventory.totalBytes).toBe(1024 + 2048 + 512);
+  });
+
+  it("does not treat unmeasured owners as threads without a worktree", () => {
+    const pending = "/tmp/worktrees/app/pending";
+    const inventory = assembleStorageInventory({
+      snapshots: [
+        snapshot({ threadId: ThreadId.make("pending"), worktreePath: pending }),
+        snapshot({ threadId: ThreadId.make("local"), worktreePath: null }),
+        snapshot({
+          threadId: ThreadId.make("archived-empty"),
+          worktreePath: null,
+          isArchived: true,
+        }),
+      ],
+      measurements: new Map(),
+      orphanWorktrees: [],
+      managedWorktreesRoot: "/tmp/worktrees",
+      scan: { status: "scanning", measuredCount: 0, totalCount: 1 },
+    });
+
+    expect(inventory.activeWorktrees).toEqual([]);
+    expect(inventory.activeThreadsWithoutWorktree).toBe(1);
+    expect(inventory.archivedThreadsWithoutWorktree).toBe(1);
   });
 
   it("counts a shared checkout once in byte totals", () => {

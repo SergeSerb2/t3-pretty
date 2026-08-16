@@ -1,4 +1,5 @@
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -29,12 +30,15 @@ import {
   displayNameForPath,
   hasOwnedDescendant,
   isStrictDescendant,
+  shouldPublishStorageProgress,
   type StorageMeasuredWorktree,
   type StorageThreadSnapshot,
 } from "./storageInventory.ts";
 
 const ORPHAN_SCAN_MAX_DEPTH = 3;
 const MEASURE_CONCURRENCY = 8;
+/** Cap full-inventory progress frames so large scans do not serialize O(N²) entry payloads. */
+const PROGRESS_MIN_INTERVAL_MS = 250;
 
 interface OrphanCandidate {
   readonly path: string;
@@ -272,8 +276,20 @@ export const make = Effect.gen(function* () {
         scan,
       });
 
-    yield* onProgress(
+    let lastProgressAt = Number.NEGATIVE_INFINITY;
+    const publish = (inventory: StorageInventory, force = false) =>
+      Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis;
+        if (!shouldPublishStorageProgress(lastProgressAt, now, force, PROGRESS_MIN_INTERVAL_MS)) {
+          return;
+        }
+        lastProgressAt = now;
+        yield* onProgress(inventory);
+      });
+
+    yield* publish(
       snapshot({ status: "scanning", measuredCount: 0, totalCount: managedPaths.length }),
+      true,
     );
 
     yield* Effect.forEach(
@@ -282,7 +298,7 @@ export const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const measured = yield* measureWorktree(worktreePath);
           measurements.set(worktreePath, measured);
-          yield* onProgress(
+          yield* publish(
             snapshot({
               status: "scanning",
               measuredCount: measurements.size,
@@ -295,12 +311,13 @@ export const make = Effect.gen(function* () {
 
     const orphanCandidates = yield* listOrphanCandidates(new Set(managedPaths));
     const totalCount = managedPaths.length + orphanCandidates.length;
-    yield* onProgress(
+    yield* publish(
       snapshot({
         status: "scanning",
         measuredCount: measurements.size,
         totalCount,
       }),
+      true,
     );
 
     let measuredOrphans = 0;
@@ -317,7 +334,7 @@ export const make = Effect.gen(function* () {
             });
           }
           measuredOrphans += 1;
-          yield* onProgress(
+          yield* publish(
             snapshot({
               status: "scanning",
               measuredCount: measurements.size + measuredOrphans,
@@ -333,7 +350,7 @@ export const make = Effect.gen(function* () {
       measuredCount: totalCount,
       totalCount,
     });
-    yield* onProgress(complete);
+    yield* publish(complete, true);
     return complete;
   });
 

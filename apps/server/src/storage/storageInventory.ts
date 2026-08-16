@@ -71,6 +71,16 @@ export function isStrictDescendant(candidate: string, root: string): boolean {
   return relative !== "" && !relative.startsWith("..") && !NodePath.isAbsolute(relative);
 }
 
+/** Whether a full-inventory progress frame should go on the wire. */
+export function shouldPublishStorageProgress(
+  lastPublishedAt: number,
+  now: number,
+  force: boolean,
+  minIntervalMs: number,
+): boolean {
+  return force || now - lastPublishedAt >= minIntervalMs;
+}
+
 export function displayNameForPath(path: string): string {
   const name = NodePath.basename(path).trim();
   return name.length > 0 ? name : path;
@@ -142,14 +152,12 @@ export function assembleStorageInventory(input: {
   const ownerCounts = ownerCountByPath(input.snapshots);
   const active: StorageWorktreeEntry[] = [];
   const archived: StorageWorktreeEntry[] = [];
-  const ownedIds = new Set<string>();
 
   for (const snapshot of input.snapshots) {
     const path = snapshot.worktreePath;
     if (path === null) continue;
     const measurement = input.measurements.get(path);
     if (measurement === undefined) continue;
-    ownedIds.add(snapshot.threadId);
     const entry: StorageWorktreeEntry = {
       threadId: snapshot.threadId,
       threadTitle: snapshot.threadTitle,
@@ -181,11 +189,13 @@ export function assembleStorageInventory(input: {
     archived.filter((entry) => !active.some((activeEntry) => activeEntry.path === entry.path)),
   );
   const orphanWorktreeBytes = uniquePathBytes(orphans);
+  // Absence is "no managed path", not "not measured yet". A partial scan
+  // must not report known owners as threads without a worktree.
   const activeWithout = input.snapshots.filter(
-    (snapshot) => !snapshot.isArchived && !ownedIds.has(snapshot.threadId),
+    (snapshot) => !snapshot.isArchived && snapshot.worktreePath === null,
   ).length;
   const archivedWithout = input.snapshots.filter(
-    (snapshot) => snapshot.isArchived && !ownedIds.has(snapshot.threadId),
+    (snapshot) => snapshot.isArchived && snapshot.worktreePath === null,
   ).length;
 
   return {

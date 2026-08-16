@@ -78,7 +78,7 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
     statuses.push({
       environmentId,
       label: presentation.entry.target.label,
-      isPending: result.waiting || inventory?.scan?.status === "scanning",
+      isPending: result.waiting,
       unsupported: false,
       error: result._tag === "Failure" ? "This environment could not report storage." : null,
       inventory,

@@ -755,6 +755,7 @@ export function createServerEnvironmentAtoms<R, E>(
     storageInventoryStream: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:storage-inventory-stream",
       idleTtlMs: 60_000,
+      restartOnReconnect: true,
       subscribe: () => runStream(WS_METHODS.storageStreamInventory, {}),
     }),
     configProjection,

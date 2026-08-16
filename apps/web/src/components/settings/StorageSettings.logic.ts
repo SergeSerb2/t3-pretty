@@ -102,11 +102,13 @@ export function archivedDeleteDetail(inventory: StorageInventory): string {
 }
 
 export function isStorageScanInProgress(
-  inventory: StorageInventory | null,
+  _inventory: StorageInventory | null,
   isPending: boolean,
 ): boolean {
-  if (inventory?.scan?.status === "scanning") return true;
-  return isPending && inventory?.scan?.status !== "complete";
+  // A leftover `scan.status === "scanning"` snapshot is not in-flight work.
+  // After a dropped stream the last frame can still say scanning; only the
+  // live query/subscription waiting flag means bytes are still arriving.
+  return isPending;
 }
 
 export function scanProgressCaption(inventory: StorageInventory): string | null {
