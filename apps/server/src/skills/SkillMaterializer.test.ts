@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -49,6 +49,63 @@ const readOptional = (filePath: string) =>
     const fileSystem = yield* FileSystem.FileSystem;
     return yield* fileSystem.readFileString(filePath).pipe(Effect.orElseSucceed(() => undefined));
   });
+
+describe("assignSkillDirectoryNames", () => {
+  it("keeps a unique skill name as the directory", () => {
+    const names = SkillMaterializer.assignSkillDirectoryNames([
+      {
+        id: "acme/skills:skills/tdd",
+        name: "tdd",
+        sourceRepo: "acme/skills",
+        sourcePath: "skills/tdd",
+      },
+    ]);
+    assert.strictEqual(names.get("acme/skills:skills/tdd"), "tdd");
+  });
+
+  it("suffixes every colliding name from identity, not input order", () => {
+    const first = {
+      id: "octocat/skills-a:skills/tdd",
+      name: "tdd",
+      sourceRepo: "octocat/skills-a",
+      sourcePath: "skills/tdd",
+    };
+    const second = {
+      id: "octocat/skills-b:skills/tdd",
+      name: "tdd",
+      sourceRepo: "octocat/skills-b",
+      sourcePath: "skills/tdd",
+    };
+    const forward = SkillMaterializer.assignSkillDirectoryNames([first, second]);
+    const reverse = SkillMaterializer.assignSkillDirectoryNames([second, first]);
+    assert.strictEqual(forward.get(first.id), "tdd--octocat-skills-a");
+    assert.strictEqual(forward.get(second.id), "tdd--octocat-skills-b");
+    assert.strictEqual(reverse.get(first.id), "tdd--octocat-skills-a");
+    assert.strictEqual(reverse.get(second.id), "tdd--octocat-skills-b");
+  });
+
+  it("folds source path in when two same-name skills share a repo", () => {
+    const names = SkillMaterializer.assignSkillDirectoryNames([
+      {
+        id: "octocat/skills:skills/tdd",
+        name: "tdd",
+        sourceRepo: "octocat/skills",
+        sourcePath: "skills/tdd",
+      },
+      {
+        id: "octocat/skills:examples/tdd",
+        name: "tdd",
+        sourceRepo: "octocat/skills",
+        sourcePath: "examples/tdd",
+      },
+    ]);
+    assert.strictEqual(names.get("octocat/skills:skills/tdd"), "tdd--octocat-skills--skills-tdd");
+    assert.strictEqual(
+      names.get("octocat/skills:examples/tdd"),
+      "tdd--octocat-skills--examples-tdd",
+    );
+  });
+});
 
 it.layer(TestLayer)("SkillMaterializer", (it) => {
   it.effect("writes each enabled skill into both roots with a managed marker", () =>
@@ -298,8 +355,65 @@ it.layer(TestLayer)("SkillMaterializer", (it) => {
       assert.deepStrictEqual(
         result.loaded.map((skill) => [skill.id, path.basename(skill.directory), skill.body]),
         [
-          [firstId, "tdd", "first body"],
+          [firstId, "tdd--octocat-skills-a", "first body"],
           [secondId, "tdd--octocat-skills-b", "second body"],
+        ],
+      );
+
+      const reversed = yield* materializer.materialize({ cwd, skillIds: [secondId, firstId] });
+      assert.deepStrictEqual(
+        reversed.loaded.map((skill) => [skill.id, path.basename(skill.directory), skill.body]),
+        [
+          [secondId, "tdd--octocat-skills-b", "second body"],
+          [firstId, "tdd--octocat-skills-a", "first body"],
+        ],
+      );
+    }),
+  );
+
+  it.effect("does not claim a user-owned collision that is not a skill document", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const materializer = yield* SkillMaterializer.SkillMaterializer;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-cwd-" });
+      const skillId = yield* installSkill({
+        sourceRepo: "octocat/materialize-invalid-collision",
+        sourcePath: "skills/tdd",
+        skillMd: "---\nname: tdd\n---\nstore body\n",
+      });
+
+      yield* fileSystem.makeDirectory(path.join(cwd, ".claude", "skills"), { recursive: true });
+      yield* fileSystem.writeFileString(path.join(cwd, ".claude", "skills", "tdd"), "not a skill");
+      const emptyUserDir = path.join(cwd, ".claude", "skills", "also-empty");
+      yield* fileSystem.makeDirectory(emptyUserDir, { recursive: true });
+
+      const fileCollisionId = skillId;
+      const emptyDirId = yield* installSkill({
+        sourceRepo: "octocat/materialize-empty-collision",
+        sourcePath: "skills/also-empty",
+        skillMd: "---\nname: also-empty\n---\nempty-dir fallback\n",
+      });
+
+      const result = yield* materializer.materialize({
+        cwd,
+        skillIds: [fileCollisionId, emptyDirId],
+      });
+
+      assert.strictEqual(
+        yield* fileSystem.readFileString(path.join(cwd, ".claude", "skills", "tdd")),
+        "not a skill",
+      );
+      assert.isFalse(
+        yield* fileSystem.exists(
+          path.join(emptyUserDir, SkillMaterializer.SKILL_MANAGED_MARKER_FILE),
+        ),
+      );
+      assert.deepStrictEqual(
+        result.loaded.map((skill) => [skill.id, skill.directory, skill.body]),
+        [
+          [fileCollisionId, path.join(cwd, ".agents", "skills", "tdd"), "store body"],
+          [emptyDirId, path.join(cwd, ".agents", "skills", "also-empty"), "empty-dir fallback"],
         ],
       );
     }),

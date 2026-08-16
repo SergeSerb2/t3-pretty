@@ -7,8 +7,9 @@
  * Each skill is copied from the central store into `<cwd>/.claude/skills` and
  * `<cwd>/.agents/skills` under a sanitized directory name and marked with a
  * `.t3-managed` file containing the skill id. Only marked directories are
- * ever removed or overwritten — skills the user placed there themselves win
- * every collision, and no root is created while there is nothing to write.
+ * ever removed or overwritten — a user-owned folder that already contains a
+ * readable `SKILL.md` wins the name, and no root is created while there is
+ * nothing to write.
  * Every managed directory also carries a `.gitignore` that hides it from git,
  * so agent commits and `git status` never pick up the copies.
  *
@@ -45,6 +46,93 @@ const WORKSPACE_SKILL_ROOTS = [
 /** Directory names a skill can materialize under, lowercase filesystem-safe. */
 export function sanitizeSkillDirectoryName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+}
+
+/**
+ * Map each skill to a workspace folder. Unique names keep the unsuffixed
+ * form; a name shared by more than one skill folds in source identity so
+ * the mapping is the same regardless of input order.
+ */
+export function assignSkillDirectoryNames(
+  skills: ReadonlyArray<{
+    readonly id: SkillId;
+    readonly name: string;
+    readonly sourceRepo: string;
+    readonly sourcePath: string;
+  }>,
+): ReadonlyMap<SkillId, string> {
+  const groups = new Map<string, Array<(typeof skills)[number]>>();
+  for (const skill of skills) {
+    const baseName = sanitizeSkillDirectoryName(skill.name);
+    const group = groups.get(baseName);
+    if (group) {
+      group.push(skill);
+    } else {
+      groups.set(baseName, [skill]);
+    }
+  }
+
+  const assigned = new Map<SkillId, string>();
+  for (const [baseName, group] of groups) {
+    if (group.length === 1) {
+      assigned.set(group[0]!.id, baseName);
+      continue;
+    }
+    assignCollidingSkillDirectories(baseName, group, assigned);
+  }
+  return assigned;
+}
+
+function assignCollidingSkillDirectories(
+  baseName: string,
+  group: ReadonlyArray<{
+    readonly id: SkillId;
+    readonly name: string;
+    readonly sourceRepo: string;
+    readonly sourcePath: string;
+  }>,
+  assigned: Map<SkillId, string>,
+): void {
+  const byRepo = new Map<string, Array<(typeof group)[number]>>();
+  for (const skill of group) {
+    const dirName = `${baseName}--${sanitizeSkillDirectoryName(skill.sourceRepo)}`;
+    const members = byRepo.get(dirName);
+    if (members) {
+      members.push(skill);
+    } else {
+      byRepo.set(dirName, [skill]);
+    }
+  }
+
+  for (const [repoDirName, repoGroup] of byRepo) {
+    if (repoGroup.length === 1) {
+      assigned.set(repoGroup[0]!.id, repoDirName);
+      continue;
+    }
+
+    const byPath = new Map<string, Array<(typeof repoGroup)[number]>>();
+    for (const skill of repoGroup) {
+      const dirName = `${repoDirName}--${sanitizeSkillDirectoryName(skill.sourcePath)}`;
+      const members = byPath.get(dirName);
+      if (members) {
+        members.push(skill);
+      } else {
+        byPath.set(dirName, [skill]);
+      }
+    }
+
+    for (const [pathDirName, pathGroup] of byPath) {
+      if (pathGroup.length === 1) {
+        assigned.set(pathGroup[0]!.id, pathDirName);
+        continue;
+      }
+      // Distinct ids can still sanitize to the same string; suffix in id order.
+      const sorted = [...pathGroup].sort((left, right) => (left.id < right.id ? -1 : 1));
+      sorted.forEach((skill, index) => {
+        assigned.set(skill.id, index === 0 ? pathDirName : `${pathDirName}-${index + 1}`);
+      });
+    }
+  }
 }
 
 /** Case-insensitive match on a skill's name or its directory-safe form. */
@@ -139,13 +227,13 @@ const make = Effect.gen(function* () {
 
     // Resolve every desired skill against the store up front; uninstalled or
     // invalid ids are skipped so one bad entry cannot block the rest.
-    const desired: Array<{
+    const resolved: Array<{
       readonly id: SkillId;
       readonly name: string;
-      readonly dirName: string;
+      readonly sourceRepo: string;
+      readonly sourcePath: string;
       readonly storeDir: string;
     }> = [];
-    const seenDirNames = new Set<string>();
     for (const skillId of input.skillIds) {
       const skill = installed.get(skillId);
       if (!skill) {
@@ -163,19 +251,21 @@ const make = Effect.gen(function* () {
       if (storeDir === undefined) {
         continue;
       }
-      // Two marketplaces can ship a skill with the same name; the second
-      // gets its source repo folded into the folder name so both land.
-      const baseDirName = sanitizeSkillDirectoryName(skill.name);
-      let dirName = baseDirName;
-      if (seenDirNames.has(dirName)) {
-        dirName = `${baseDirName}--${sanitizeSkillDirectoryName(skill.sourceRepo)}`;
-        for (let suffix = 2; seenDirNames.has(dirName); suffix += 1) {
-          dirName = `${baseDirName}--${sanitizeSkillDirectoryName(skill.sourceRepo)}-${suffix}`;
-        }
-      }
-      seenDirNames.add(dirName);
-      desired.push({ id: skillId, name: skill.name, dirName, storeDir });
+      resolved.push({
+        id: skillId,
+        name: skill.name,
+        sourceRepo: skill.sourceRepo,
+        sourcePath: skill.sourcePath,
+        storeDir,
+      });
     }
+    const directoryNames = assignSkillDirectoryNames(resolved);
+    const desired = resolved.map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      dirName: directoryNames.get(skill.id) ?? sanitizeSkillDirectoryName(skill.name),
+      storeDir: skill.storeDir,
+    }));
 
     const written: Array<string> = [];
     const removed: Array<string> = [];
@@ -243,14 +333,18 @@ const make = Effect.gen(function* () {
                 .stat(target)
                 .pipe(Effect.orElseSucceed(() => undefined));
               if (existing !== undefined) {
-                // The user's own copy wins the name, and it is the copy the
-                // agent should load: the enable still takes effect.
-                yield* Effect.logWarning(
-                  "Skipping skill materialization over a user-owned directory",
-                  { skillId: skill.id, path: target },
-                );
-                if (!loadedDirs.has(skill.id)) {
-                  loadedDirs.set(skill.id, target);
+                // Do not overwrite a user-owned path. Only claim it as the
+                // loaded copy when it is a directory with a readable SKILL.md;
+                // otherwise a later workspace root can still materialize.
+                yield* Effect.logWarning("Skipping skill materialization over a user-owned path", {
+                  skillId: skill.id,
+                  path: target,
+                });
+                if (existing.type === "Directory" && !loadedDirs.has(skill.id)) {
+                  const document = yield* readSkillDocument(skill.name, target);
+                  if (document !== undefined) {
+                    loadedDirs.set(skill.id, target);
+                  }
                 }
                 return;
               }

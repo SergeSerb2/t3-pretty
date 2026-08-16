@@ -263,7 +263,7 @@ function InstalledSkillsSection({
     ids: enabledSkillIds,
     setIds: setEnabledSkillIds,
     reset: resetEnabledSkillIds,
-  } = useOptimisticIdList(settings.skills.enabledSkillIds);
+  } = useOptimisticIdList(settings.skills.enabledSkillIds, environmentId ?? "");
   const writeEnabledSkillIds = useCallback(
     (next: ReadonlyArray<SkillId>) => {
       if (environmentId === null) return;

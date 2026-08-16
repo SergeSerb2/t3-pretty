@@ -65,7 +65,10 @@ function useSkillsPickerState(props: SkillsPickerProps) {
     ids: threadSkillIds,
     setIds: setThreadSkillIds,
     reset: resetThreadSkillIds,
-  } = useOptimisticIdList(props.enabledSkillIds ?? EMPTY_SKILL_IDS);
+  } = useOptimisticIdList(
+    props.enabledSkillIds ?? EMPTY_SKILL_IDS,
+    `${props.environmentId}:${props.threadRef?.threadId ?? ""}`,
+  );
 
   const installedSkills = useMemo(
     () => skillsQuery.data?.installedSkills ?? [],
