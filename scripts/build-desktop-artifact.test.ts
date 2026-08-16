@@ -51,6 +51,7 @@ import {
   STAGE_INSTALL_ARGS,
   ancestorNodeModulesPaths,
   copyDirectoryPreservingSymlinks,
+  removeDirectoryBestEffort,
   validateWindowsPackagedPayload,
   WindowsPrimaryNativeProbeError,
   WindowsPackagedPayloadValidationError,
@@ -1367,6 +1368,30 @@ it("keeps the prefix of a UNC path instead of going relative", () => {
   }
   assert.deepStrictEqual(paths[0], "\\\\server\\share\\tmp\\node_modules");
 });
+
+it.effect("ignores a missing tree when best-effort cleanup runs", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-best-effort-rm-" });
+    const missing = path.join(root, "already-gone");
+    yield* removeDirectoryBestEffort(missing);
+    assert.isFalse(yield* fs.exists(missing));
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("removes a staged directory when best-effort cleanup can", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-best-effort-rm-" });
+    const staged = path.join(root, "stage");
+    yield* fs.makeDirectory(staged);
+    yield* fs.writeFileString(path.join(staged, "keep.txt"), "ok\n");
+    yield* removeDirectoryBestEffort(staged);
+    assert.isFalse(yield* fs.exists(staged));
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
 
 it.effect("rebases packaged links into the isolated tree", () =>
   Effect.gen(function* () {
