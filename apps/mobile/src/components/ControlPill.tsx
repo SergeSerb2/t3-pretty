@@ -8,11 +8,12 @@ import {
   type ReactNode,
   useRef,
 } from "react";
-import { Platform, Pressable, useColorScheme } from "react-native";
+import { Platform, Pressable } from "react-native";
 import { useThemeColor } from "../lib/useThemeColor";
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 
 import { cn } from "../lib/cn";
-import { AnchoredMenu } from "./AnchoredMenu";
+import { AnchoredMenu } from "./AndroidAnchoredMenu";
 import { SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
 import { ComposerSendIconSlot } from "./ComposerSendIndicator";
@@ -128,7 +129,8 @@ export function ControlPillMenu(
     readonly disabled?: boolean;
   },
 ) {
-  const isDarkMode = useColorScheme() === "dark";
+  const { themeAppearance } = useAppearancePreferences();
+  const isDarkMode = themeAppearance === "dark";
   // Android's wrapper owns the press (`pointerEvents="none"` on children),
   // and iOS MenuView intercepts taps on the host view, so a disabled child
   // pill is not enough — skip the menu host entirely while locked.

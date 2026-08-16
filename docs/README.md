@@ -11,6 +11,7 @@
 - [Review usage](./user/usage.md)
 - [Storage](./user/storage.md)
 - [Customize a project icon](./user/project-settings.md)
+- [Mobile appearance](./user/mobile-appearance.md)
 - [Remote access](./user/remote-access.md)
 - [Surge Connect mesh](./user/remote-access.md#surge-connect)
 - [Keeping app and server in sync](./user/updating.md)

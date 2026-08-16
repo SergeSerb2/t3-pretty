@@ -410,6 +410,10 @@ const desktopBuildInputArtifactNames = {
  * dependencies, which the sidecar's selected runtime closure does not cover.
  */
 const BUNDLE_SELF_CONTAINED_SENTINEL = "effect";
+// Only the field the inlined-package scan reads; the rest of the map is ignored.
+const decodeBundleSourceMap = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Struct({ sources: Schema.Array(Schema.String) })),
+);
 
 const BUNDLE_SELF_CHECK_TIMEOUT = Duration.seconds(120);
 // Freshly signed Electron + newly unpacked native DLLs (sharp, fff) can sit
@@ -1717,6 +1721,17 @@ const verifyPackagedBundleIsSelfContained = Effect.fn("verifyPackagedBundleIsSel
   },
 );
 
+/** Where `cargo build --manifest-path native/resource-monitor/Cargo.toml` writes its artifacts. */
+export function resolveCargoTargetDir(
+  path: Path.Path,
+  repoRoot: string,
+  cargoTargetDirEnv: string | undefined,
+): string {
+  const configured = cargoTargetDirEnv?.trim();
+  if (configured) return path.resolve(repoRoot, configured);
+  return path.join(repoRoot, "native/resource-monitor/target");
+}
+
 const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input: {
   readonly repoRoot: string;
   readonly stageResourcesDir: string;
@@ -1730,6 +1745,10 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
   const executableName = resourceMonitorExecutableName(input.platform);
   const rustTargets = resolveResourceMonitorRustTargets(input.platform, input.arch);
   const builtBinaries: string[] = [];
+  // Cargo honours CARGO_TARGET_DIR (the release workflow points it at a
+  // per-runner cache that survives clean checkouts), so look for the binary
+  // where cargo actually put it instead of assuming the in-tree default.
+  const cargoTargetDir = resolveCargoTargetDir(path, input.repoRoot, process.env.CARGO_TARGET_DIR);
 
   for (const rustTarget of rustTargets) {
     const spawnCommand = yield* resolveSpawnCommand("cargo", [
@@ -1752,13 +1771,7 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
       },
     );
 
-    const binaryPath = path.join(
-      input.repoRoot,
-      "native/resource-monitor/target",
-      rustTarget,
-      "release",
-      executableName,
-    );
+    const binaryPath = path.join(cargoTargetDir, rustTarget, "release", executableName);
     if (!(yield* fs.exists(binaryPath))) {
       return yield* new ResourceMonitorBuildOutputMissingError({
         binaryPath,
@@ -2854,17 +2867,23 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   // still passed. An inlined native loader resolves its prebuilds relative to
   // the bundle and quietly falls back to a slower pure-JS path, so this fails
   // the build rather than shipping a silent regression.
+  //
+  // The scan reads each chunk's source map (`sources` lists every inlined
+  // module) rather than the chunk itself: `minify: true` strips the
+  // `//#region` markers the bundle used to carry.
   {
-    const chunkNames = (yield* fs.readDirectory(distDirs.serverDist)).filter((entry) =>
-      entry.endsWith(".mjs"),
+    const mapNames = (yield* fs.readDirectory(distDirs.serverDist)).filter((entry) =>
+      entry.endsWith(".mjs.map"),
     );
-    let totalRegions = 0;
+    let totalModules = 0;
     const inlined = new Set<string>();
     const inlinedPackages = new Set<string>();
-    for (const chunkName of chunkNames) {
-      const source = yield* fs.readFileString(path.join(distDirs.serverDist, chunkName));
-      const scan = findInlinedExternalPackages(source);
-      totalRegions += scan.regionCount;
+    for (const mapName of mapNames) {
+      const map = yield* decodeBundleSourceMap(
+        yield* fs.readFileString(path.join(distDirs.serverDist, mapName)),
+      );
+      const scan = findInlinedExternalPackages(map.sources);
+      totalModules += scan.moduleCount;
       for (const name of scan.inlined) inlined.add(name);
       for (const name of scan.inlinedPackages) inlinedPackages.add(name);
     }
@@ -2873,11 +2892,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         packages: [...inlined].sort(),
       });
     }
-    // No regions at all means the scan went blind (marker format changed), not
-    // that the bundle is clean.
-    if (totalRegions === 0) {
+    // No modules at all means the scan went blind (no source maps emitted, or
+    // their format changed), not that the bundle is clean.
+    if (totalModules === 0) {
       return yield* new InlinedExternalPackageError({
-        packages: ["<no module regions found; the bundle scan needs updating>"],
+        packages: ["<no bundle source maps found; the bundle scan needs updating>"],
       });
     }
     // The check above is one-directional: it only proves nothing external got

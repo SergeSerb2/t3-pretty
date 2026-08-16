@@ -68,6 +68,26 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
   },
   {
+    id: "setting-photo-blur",
+    title: "Photo blur",
+    to: "/settings/appearance",
+  },
+  {
+    id: "setting-photo-presence",
+    title: "Photo presence",
+    to: "/settings/appearance",
+  },
+  {
+    id: "setting-scenery-motion",
+    title: "Thread motion",
+    to: "/settings/appearance",
+  },
+  {
+    id: "setting-scenery-text-color",
+    title: "Scenery text color",
+    to: "/settings/appearance",
+  },
+  {
     id: "environment-identification",
     title: "Environment identification",
     to: "/settings/appearance",

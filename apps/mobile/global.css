@@ -19,6 +19,7 @@
       /* Page backgrounds */
       --color-screen: #f4f6f4;
       --color-sheet: rgba(244, 246, 244, 0.98);
+      --color-sheet-solid: #f4f6f4;
 
       /* Card / surface */
       --color-card: #ffffff;
@@ -46,13 +47,16 @@
       /* Primary action */
       --color-primary: #27633f;
       --color-primary-foreground: #ffffff;
-      --color-primary-shadow: rgba(28, 70, 48, 0.22);
+      --color-primary-shadow: #1c4630;
 
       /* Secondary action */
       --color-secondary: #ffffff;
       --color-secondary-foreground: #232823;
       --color-secondary-border: rgba(22, 38, 26, 0.1);
-      --color-switch-active: #2e7d4f;
+      --color-switch-active-track: #2e7d4f;
+      --color-switch-active-thumb: #ffffff;
+      --color-switch-inactive-track: rgba(22, 38, 26, 0.1);
+      --color-switch-inactive-thumb: #7c837d;
 
       /* Danger */
       --color-danger: #fef2f2;
@@ -100,6 +104,7 @@
       --color-user-bubble: #27633f;
       --color-user-bubble-foreground: #ffffff;
       --color-user-bubble-foreground-muted: rgba(255, 255, 255, 0.78);
+      --color-user-bubble-skill-foreground: #f0abfc;
 
       /* Drawer / modal backdrop */
       --color-backdrop: rgba(10, 20, 13, 0.22);
@@ -116,6 +121,7 @@
       /* Page backgrounds */
       --color-screen: #0e1110;
       --color-sheet: rgba(14, 17, 16, 0.98);
+      --color-sheet-solid: #0e1110;
 
       /* Card / surface */
       --color-card: #131715;
@@ -143,13 +149,16 @@
       /* Primary action */
       --color-primary: #91c9a3;
       --color-primary-foreground: #0c1710;
-      --color-primary-shadow: rgba(0, 0, 0, 0.22);
+      --color-primary-shadow: #000000;
 
       /* Secondary action */
       --color-secondary: rgba(145, 201, 163, 0.07);
       --color-secondary-foreground: #e6eae6;
       --color-secondary-border: rgba(222, 236, 226, 0.08);
-      --color-switch-active: #7fbc93;
+      --color-switch-active-track: #7fbc93;
+      --color-switch-active-thumb: #ffffff;
+      --color-switch-inactive-track: rgba(222, 236, 226, 0.08);
+      --color-switch-inactive-thumb: #8e948f;
 
       /* Danger */
       --color-danger: rgba(251, 106, 118, 0.14);
@@ -196,6 +205,7 @@
       --color-user-bubble: #24422f;
       --color-user-bubble-foreground: #f2f4f1;
       --color-user-bubble-foreground-muted: rgba(242, 244, 241, 0.78);
+      --color-user-bubble-skill-foreground: #f0abfc;
 
       /* Drawer / modal backdrop */
       --color-backdrop: rgba(0, 0, 0, 0.48);

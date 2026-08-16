@@ -19,6 +19,11 @@
 
 html[data-scenery-motion] {
   --sc-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Movement multiplier for the newer rules below: @starting-style offsets
+     are written as calc(Npx * var(--sc-m)) / calc(1 - N * var(--sc-m)), so
+     the reduced-motion block zeroes every translate/scale in one line while
+     the opacity fade (which aids comprehension) stays. */
+  --sc-m: 1;
 }
 
 /* ------------------------------------------------------- row arrivals -- */
@@ -56,7 +61,7 @@ html[data-scenery-motion] [data-chat-composer-overlay] h1 {
 }
 
 /* ------------------------------------------------- tool card disclosure -- */
-/* The expanded body (`mt-1 ms-7 …` wrapper) mounts on toggle; entry gets a
+/* The expanded body (`mb-1 ms-7 …` wrapper) mounts on toggle; entry gets a
    short reveal, collapse stays instant. Chevron keeps its upstream rotate. */
 
 html[data-scenery-motion] [data-timeline-row-kind="work"] div[class*="ms-7"] {
@@ -69,14 +74,17 @@ html[data-scenery-motion] [data-timeline-row-kind="work"] div[class*="ms-7"] {
   }
 }
 
-/* Status verdicts (check / x / minus) pop in at the end of a tool call.
-   `rotate` stays in the list so the sibling chevron keeps its transition
-   after this shorthand overrides Tailwind's transition-transform. */
-html[data-scenery-motion] [data-timeline-row-kind="work"] [class*="gap-px"] svg {
+/* Status verdicts (x / minus) pop in at the end of a tool call. Only the
+   span-wrapped verdict glyphs match — the chevron is a direct child svg of
+   the cluster and keeps its own upstream transition. */
+html[data-scenery-motion]
+  [data-timeline-row-kind="work"]
+  [class*="gap-1 text-icon-muted"]
+  > span
+  svg {
   transition:
     scale 150ms var(--sc-ease-out),
-    opacity 150ms var(--sc-ease-out),
-    rotate 200ms var(--sc-ease-out);
+    opacity 150ms var(--sc-ease-out);
   @starting-style {
     scale: 0.6;
     opacity: 0;
@@ -119,14 +127,100 @@ html[data-scenery-motion] main[data-slot="sidebar-inset"] [role="alert"] {
   }
 }
 
-/* Approval / pending-input details slide up out of the composer. */
-html[data-scenery-motion] [data-chat-composer-form] [data-approval-detail] {
+/* Approval, agent-question and Plan Ready panels rise out of the editor as
+   one block (the `rounded-t-[19px]` wrapper is unique to these five hosts,
+   pinned by the contract test). Animating the wrapper — not the inner
+   `[data-approval-detail]` pre — keeps the header line, question card and
+   badge on the same beat instead of only the detail rising. */
+html[data-scenery-motion] [data-chat-composer-form] [class*="rounded-t-[19px]"] {
   transition:
     opacity 220ms var(--sc-ease-out),
     translate 220ms var(--sc-ease-out);
   @starting-style {
     opacity: 0;
-    translate: 0 8px;
+    translate: 0 calc(8px * var(--sc-m));
+  }
+}
+
+/* Their footer companions — the four approval buttons (the `justify-end`
+   action row, pinned by the contract test) and the Implement split button —
+   arrive on a shorter beat so the composer reads bottom-up as one gesture. */
+html[data-scenery-motion]
+  [data-chat-composer-form]
+  [class*="flex-wrap items-center justify-end gap-2 px-3 pb-3"],
+html[data-scenery-motion] [data-chat-composer-form] [data-chat-composer-implement-actions] {
+  transition:
+    opacity 180ms var(--sc-ease-out),
+    translate 180ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(4px * var(--sc-m));
+  }
+}
+
+/* Selecting an option in the agent-question card: the check glyph replaces
+   the shortcut kbd; same 150ms pop as the tool-call verdicts. Stays under
+   the 200ms single-select auto-advance. */
+html[data-scenery-motion]
+  [data-chat-composer-form]
+  [data-slot="collapsible-panel"]
+  button
+  > svg.lucide-check {
+  transition:
+    scale 150ms var(--sc-ease-out),
+    opacity 150ms var(--sc-ease-out);
+  @starting-style {
+    scale: calc(1 - 0.4 * var(--sc-m));
+    opacity: 0;
+  }
+}
+
+/* Anything attached to the draft — image tiles, preview annotation and
+   canvas selection cards, review-comment / element-context chips, the
+   fork's file chips — is the element that owns a "Remove …" button. Removal
+   stays instant (unmount); the flex row's height change is layout and is
+   deliberately not animated. */
+html[data-scenery-motion]
+  [data-chat-composer-editor-chrome="true"]
+  :is(div, section, span):has(> button[aria-label^="Remove "]) {
+  transition:
+    opacity 160ms var(--sc-ease-out),
+    scale 160ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    scale: calc(1 - 0.04 * var(--sc-m));
+  }
+}
+
+/* Thread sync pill ("Loading… / Syncing…") sits in the composer overlay's
+   pill grammar next to scroll-to-end, so it gets the same 160ms rise. Only
+   role=status inside the overlay. */
+html[data-scenery-motion] [data-chat-composer-overlay] [role="status"] {
+  transition:
+    opacity 160ms var(--sc-ease-out),
+    translate 160ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(4px * var(--sc-m));
+  }
+}
+
+/* Workspace file drag: the dashed drop frame fades, its "Drop files to
+   attach" pill pops. Fork-owned element. */
+html[data-scenery-motion] [data-chat-workspace-drop-overlay] {
+  transition: opacity 150ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+html[data-scenery-motion] [data-chat-workspace-drop-overlay] [role="status"] {
+  transition:
+    opacity 180ms var(--sc-ease-out),
+    scale 180ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    scale: calc(1 - 0.04 * var(--sc-m));
   }
 }
 
@@ -162,7 +256,9 @@ html[data-scenery-motion] button[aria-label="Scroll to end"]:active {
   scale: 0.97;
 }
 
-html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"] {
+/* New thread, New project, Settings, Pull Requests, Usage: the whole
+   icon-size sidebar button family presses the same way. */
+html[data-scenery-motion] [data-app-sidebar] [data-slot="sidebar-menu-button"][data-size="icon"] {
   transition:
     width 150ms cubic-bezier(0.4, 0, 0.2, 1),
     height 150ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -170,24 +266,321 @@ html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"] {
     scale 140ms var(--sc-ease-out);
 }
 
-html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"]:active {
+html[data-scenery-motion]
+  [data-app-sidebar]
+  [data-slot="sidebar-menu-button"][data-size="icon"]:not(:disabled):active {
   scale: 0.94;
+}
+
+/* ------------------------------------------------------------ timeline -- */
+/* Changed-files card body (tree or compact preview) fades in under its
+   header on expand, matching the tool-card disclosure beat. Collapse stays
+   instant; the row's height change is upstream's mount, untouched. */
+html[data-scenery-motion] [data-changed-files-state] > [data-changed-files-header] + div {
+  transition:
+    opacity 160ms var(--sc-ease-out),
+    translate 160ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(-3px * var(--sc-m));
+  }
+}
+
+/* Minimap hover preview: `translate` only — the element's inline style owns
+   `transform` for its vertical anchoring. Hover-gated by construction. */
+html[data-scenery-motion] [data-minimap-preview] {
+  transition:
+    opacity 120ms var(--sc-ease-out),
+    translate 120ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: calc(-3px * var(--sc-m)) 0;
+  }
+}
+
+/* Expanded image lightbox: hand-rolled (not the Dialog primitive), so it
+   gets the primitive's grammar — backdrop fades, the image block scales
+   from 0.96. Arrow-key navigation swaps src on the same img, so it stays
+   instant. Exit is upstream's synchronous unmount. */
+html[data-scenery-motion] [role="dialog"][aria-label="Expanded image preview"] {
+  transition: opacity 200ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+html[data-scenery-motion] [role="dialog"][aria-label="Expanded image preview"] > div {
+  transition:
+    opacity 200ms var(--sc-ease-out),
+    scale 200ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    scale: calc(1 - 0.04 * var(--sc-m));
+  }
+}
+
+/* ------------------------------------------------------------- sidebar -- */
+/* Upstream only puts transition-opacity on a row while it is in flight, so
+   the row snaps from 0.7 back to 1 the moment the turn completes — the one
+   direction that matters. Opacity only; title colour stays a snap. */
+html[data-scenery-motion] [data-app-sidebar] [data-thread-item] > [role="button"] {
+  transition: opacity 200ms var(--sc-ease-out);
+}
+
+/* A snoozed thread waking is the sidebar's one attention-grabbing event;
+   its amber pill pops in instead of materializing. */
+html[data-scenery-motion] [data-thread-item] button[aria-label="Dismiss Woke notification"] {
+  transition:
+    opacity 180ms var(--sc-ease-out),
+    scale 180ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    scale: calc(1 - 0.1 * var(--sc-m));
+  }
+}
+
+/* Provider update pill exits by sliding down 6px and fading; give its first
+   mount the mirror image. Reuses upstream's own transition-all 180ms —
+   only the start state is added. */
+html[data-scenery-motion]
+  [data-app-sidebar]
+  [data-slot="sidebar-footer"]
+  > div:has(> button.provider-update-main) {
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(6px * var(--sc-m));
+  }
+}
+
+/* --------------------------------------------------------- right panel -- */
+/* Agents surface: a row's activity detail unfolds like a tool card, and the
+   completion check pops like a tool-call verdict. Both entry-only. */
+html[data-scenery-motion]
+  [data-right-panel-surface-content]
+  button[aria-label^="Collapse activity for"]
+  + div {
+  transition:
+    opacity 180ms var(--sc-ease-out),
+    translate 180ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(-4px * var(--sc-m));
+  }
+}
+
+html[data-scenery-motion]
+  [data-right-panel-surface-content]
+  button[aria-expanded]
+  svg.text-success {
+  transition:
+    scale 150ms var(--sc-ease-out),
+    opacity 150ms var(--sc-ease-out);
+  @starting-style {
+    scale: calc(1 - 0.4 * var(--sc-m));
+    opacity: 0;
+  }
+}
+
+/* Surface launcher ("Open a surface" grid) replaces a closed surface in one
+   frame; one fade+rise on the block, no per-card stagger — the panel slide
+   and the B/T/F/D keys must stay instant. Animate the child, not the
+   focus/scroll container. */
+html[data-scenery-motion] [data-surface-launcher-keys] > div {
+  transition:
+    opacity 200ms var(--sc-ease-out),
+    translate 200ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(6px * var(--sc-m));
+  }
+}
+
+/* ------------------------------------------------------------- dialogs -- */
+/* Wizard steps (publish repository, add provider instance, add environment)
+   toggle `hidden` inside AnimatedHeight: the box glides 200ms while the
+   incoming step used to cut in at full opacity. display:none → shown counts
+   as first render, so @starting-style fires per step. Scoped to dialog
+   popups: AnimatedHeight also lives in the virtualized timeline. */
+html[data-scenery-motion] [data-slot="dialog-popup"] [data-slot="animated-height"] > div > * {
+  transition:
+    opacity 180ms var(--sc-ease-out),
+    translate 180ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(4px * var(--sc-m));
+  }
+}
+
+/* "Repository published" — once-per-project moment; the green check earns a
+   longer beat while the text stays readable from frame one. */
+html[data-scenery-motion]
+  [data-slot="dialog-popup"]
+  [data-slot="animated-height"]
+  span[class*="bg-success/15"] {
+  transition:
+    scale 320ms var(--sc-ease-out),
+    opacity 320ms var(--sc-ease-out);
+  @starting-style {
+    scale: calc(1 - 0.5 * var(--sc-m));
+    opacity: 0;
+  }
+}
+
+/* What's New (fork-owned dialog): the one recurring "you got new stuff"
+   moment. Sparkle tile pops, changelog items rise on a 35ms stagger keyed
+   by the --sc-i index the dialog sets inline (capped at 5 so below-the-fold
+   rows never wait). Never blocks — "Got it" is clickable from frame 0. */
+html[data-scenery-motion] [data-slot="dialog-popup"][aria-label="What's new"] svg.lucide-sparkles {
+  transition:
+    scale 280ms var(--sc-ease-out) 40ms,
+    opacity 280ms var(--sc-ease-out) 40ms;
+  @starting-style {
+    scale: calc(1 - 0.4 * var(--sc-m));
+    opacity: 0;
+  }
+}
+
+html[data-scenery-motion]
+  [data-slot="dialog-popup"][aria-label="What's new"]
+  [data-slot="dialog-panel"]
+  li {
+  transition:
+    opacity 240ms var(--sc-ease-out) calc(60ms + 35ms * var(--sc-i, 0)),
+    translate 240ms var(--sc-ease-out) calc(60ms + 35ms * var(--sc-i, 0));
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(6px * var(--sc-m));
+  }
+}
+
+/* Theme editor: a hand-rolled fixed panel in the bottom-right, so it enters
+   like a popover from its corner. translate/scale, never transform — drag
+   and resize write left/top/width inline. `.dialog-glass` is required: the
+   attribute is also stamped on the panel's own popover (also role=dialog,
+   but dropdown-glass) and tooltip for z-index. */
+html[data-scenery-motion] .dialog-glass[data-theme-editor-panel][role="dialog"] {
+  transform-origin: 100% 100%;
+  transition:
+    opacity 220ms var(--sc-ease-out),
+    translate 220ms var(--sc-ease-out),
+    scale 220ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(8px * var(--sc-m));
+    scale: calc(1 - 0.02 * var(--sc-m));
+  }
+}
+
+/* Chrome-style "Hold ⌘Q to Quit" hint pops in instead of appearing. */
+html[data-scenery-motion] [role="status"].fixed.z-100 > div {
+  transition:
+    opacity 160ms var(--sc-ease-out),
+    scale 160ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    scale: calc(1 - 0.04 * var(--sc-m));
+  }
+}
+
+/* ---------------------------------------------------------- primitives -- */
+/* Checkbox / radio: Base UI unmounts the Indicator when unchecked and stamps
+   data-starting-style on the frame it mounts, so only the glyph pops — the
+   fill stays instant so the box state reads immediately. Uncheck instant. */
+html[data-scenery-motion] [data-slot="checkbox-indicator"] svg,
+html[data-scenery-motion] [data-slot="radio-indicator"]::before {
+  transition:
+    scale 140ms var(--sc-ease-out),
+    opacity 140ms var(--sc-ease-out);
+}
+
+html[data-scenery-motion] [data-slot="checkbox-indicator"][data-starting-style] svg,
+html[data-scenery-motion] [data-slot="radio-indicator"][data-starting-style]::before {
+  scale: calc(1 - 0.5 * var(--sc-m));
+  opacity: 0;
+}
+
+/* Toast outcome icons: a loading toast that resolves swaps its spinner for
+   the check/alert in one frame (git actions do this constantly). Same 'done'
+   pop as the tool-call verdicts; loading/info/warning untouched. */
+html[data-scenery-motion]
+  [data-slot^="toast-viewport"]
+  :is([data-type="success"], [data-type="error"])
+  [data-slot="toast-icon"]
+  > svg {
+  transition:
+    scale 200ms var(--sc-ease-out),
+    opacity 200ms var(--sc-ease-out);
+  @starting-style {
+    scale: calc(1 - 0.4 * var(--sc-m));
+    opacity: 0;
+  }
+}
+
+/* ------------------------------------------------------------ settings -- */
+/* The per-row "Reset … to default" undo icon blinks into its reserved slot
+   when a value diverges; a 150ms pop makes it feel caused rather than
+   glitched. Colour stays in the list because this replaces the Button's
+   transition-colors. */
+html[data-scenery-motion]
+  [data-settings-page-scroll]
+  button[aria-label^="Reset "][aria-label$=" to default"] {
+  transition:
+    scale 150ms var(--sc-ease-out),
+    opacity 150ms var(--sc-ease-out),
+    color 150ms ease,
+    background-color 150ms ease;
+  @starting-style {
+    scale: calc(1 - 0.4 * var(--sc-m));
+    opacity: 0;
+  }
+}
+
+/* Pairing link QR / URL panel unfolds under its row on Share. */
+html[data-scenery-motion] [data-pairing-qr-panel] {
+  transition:
+    opacity 200ms var(--sc-ease-out),
+    translate 200ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(-4px * var(--sc-m));
+  }
+}
+
+/* -------------------------------------------------------- empty states -- */
+/* First-run heroes and "Pick a thread to continue" (the max-w-none
+   EmptyHeaders, pinned by the contract test) rise like the draft hero. The
+   transient "Starting a new thread…" states use max-w-md and stay static. */
+html[data-scenery-motion] [data-slot="empty-header"].max-w-none {
+  transition:
+    opacity 320ms var(--sc-ease-out),
+    translate 320ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 calc(8px * var(--sc-m));
+  }
 }
 
 /* ------------------------------------------------------ reduced motion -- */
 /* Gentler, not zero: comprehension-aiding opacity stays, movement goes. */
 
 @media (prefers-reduced-motion: reduce) {
+  html[data-scenery-motion] {
+    --sc-m: 0;
+  }
+
   html[data-scenery-motion] [data-timeline-root].scenery-row-enter {
     animation: scenery-row-fade 150ms ease-out both;
   }
 
   html[data-scenery-motion] [data-chat-composer-overlay] h1,
   html[data-scenery-motion] [data-timeline-row-kind="work"] div[class*="ms-7"],
-  html[data-scenery-motion] [data-timeline-row-kind="work"] [class*="gap-px"] svg,
+  html[data-scenery-motion]
+    [data-timeline-row-kind="work"]
+    [class*="gap-1 text-icon-muted"]
+    > span
+    svg,
   html[data-scenery-motion] main[data-slot="sidebar-inset"] [data-slot="alert"],
   html[data-scenery-motion] main[data-slot="sidebar-inset"] [role="alert"],
-  html[data-scenery-motion] [data-chat-composer-form] [data-approval-detail],
   html[data-scenery-motion] button[aria-label="Scroll to end"] {
     transition-property: opacity;
     @starting-style {
@@ -199,7 +592,9 @@ html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"]:act
   html[data-scenery-motion] button[aria-label="Send message"]:not(:disabled):active,
   html[data-scenery-motion] button[aria-label="Stop generation"]:active,
   html[data-scenery-motion] button[aria-label="Scroll to end"]:active,
-  html[data-scenery-motion] [data-app-sidebar] button[aria-label="New thread"]:active {
+  html[data-scenery-motion]
+    [data-app-sidebar]
+    [data-slot="sidebar-menu-button"][data-size="icon"]:not(:disabled):active {
     scale: none;
   }
 
