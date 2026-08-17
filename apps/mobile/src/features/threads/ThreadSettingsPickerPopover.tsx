@@ -93,7 +93,7 @@ export function ThreadSettingsPickerPopover(props: {
 
   const popoverWidth = Math.min(POPOVER_MAX_WIDTH, windowWidth - SCREEN_MARGIN * 2);
   const maxHeight =
-    anchor === null ? 0 : Math.max(160, anchor.y - insets.top - ANCHOR_GAP - SCREEN_MARGIN);
+    anchor === null ? 0 : Math.max(0, anchor.y - insets.top - ANCHOR_GAP - SCREEN_MARGIN);
   const left =
     anchor === null
       ? SCREEN_MARGIN
