@@ -195,6 +195,30 @@ function parseAppUpdateYml(raw: string): Effect.Effect<Option.Option<AppUpdateYm
   );
 }
 
+export function resolveGitHubGenericUpdaterFeed(
+  config: AppUpdateYmlConfig,
+): ElectronUpdater.ElectronUpdaterFeedUrl | undefined {
+  if (config.provider !== "generic") return undefined;
+  const trimmed = config.url?.trim() ?? "";
+  if (!trimmed) return undefined;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined;
+    if (parsed.hostname !== "github.com" && parsed.hostname !== "www.github.com") return undefined;
+  } catch {
+    return undefined;
+  }
+
+  // GitHub's latest/download feed 302s to Azure blobs that reject multi-range
+  // requests. electron-updater's generic provider enables those by default.
+  return {
+    provider: "generic",
+    url: trimmed.endsWith("/") ? trimmed : `${trimmed}/`,
+    useMultipleRangeRequest: false,
+  };
+}
+
 function createBaseUpdateState(
   channel: DesktopUpdateChannel,
   enabled: boolean,
@@ -416,7 +440,11 @@ export const make = Effect.gen(function* () {
     return yield* Effect.gen(function* () {
       yield* setState(reduceDesktopUpdateStateOnDownloadStart(state));
       yield* electronUpdater.setDisableDifferentialDownload(
-        isArm64HostRunningIntelBuild(environment.runtimeInfo),
+        isArm64HostRunningIntelBuild(environment.runtimeInfo) ||
+          Option.exists(
+            yield* Ref.get(appUpdateYmlConfigRef),
+            (ymlConfig) => resolveGitHubGenericUpdaterFeed(ymlConfig) !== undefined,
+          ),
       );
       yield* logUpdaterInfo("downloading update");
       yield* electronUpdater.downloadUpdate;
@@ -764,11 +792,18 @@ export const make = Effect.gen(function* () {
       const appUpdateYmlConfig = yield* readAppUpdateYml;
       yield* Ref.set(appUpdateYmlConfigRef, appUpdateYmlConfig);
 
+      const githubFeed = Option.getOrUndefined(
+        Option.flatMap(appUpdateYmlConfig, (ymlConfig) =>
+          Option.fromNullishOr(resolveGitHubGenericUpdaterFeed(ymlConfig)),
+        ),
+      );
       if (config.mockUpdates) {
         yield* electronUpdater.setFeedURL({
           provider: "generic",
           url: `http://localhost:${config.mockUpdateServerPort}`,
         } as ElectronUpdater.ElectronUpdaterFeedUrl);
+      } else if (githubFeed !== undefined) {
+        yield* electronUpdater.setFeedURL(githubFeed);
       }
 
       const settings = yield* desktopSettings.get;
@@ -783,7 +818,7 @@ export const make = Effect.gen(function* () {
       yield* electronUpdater.setAutoInstallOnAppQuit(false);
       yield* applyAutoUpdaterChannel(settings.updateChannel);
       yield* electronUpdater.setDisableDifferentialDownload(
-        isArm64HostRunningIntelBuild(environment.runtimeInfo),
+        isArm64HostRunningIntelBuild(environment.runtimeInfo) || githubFeed !== undefined,
       );
 
       if (isArm64HostRunningIntelBuild(environment.runtimeInfo)) {

@@ -268,6 +268,44 @@ describe("DesktopUpdates", () => {
     );
   });
 
+  it("rewrites GitHub generic feeds to disable multi-range downloads", () => {
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed({
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+      }),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed({
+        provider: "generic",
+        url: "https://www.github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+      }),
+      {
+        provider: "generic",
+        url: "https://www.github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    assert.isUndefined(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed({
+        provider: "generic",
+        url: "http://localhost:4141",
+      }),
+    );
+    assert.isUndefined(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed({
+        provider: "github",
+        owner: "SergeSerb2",
+        repo: "t3-pretty",
+      }),
+    );
+  });
+
   it.effect("configures the updater and runs startup checks on the test clock", () => {
     const harness = makeHarness();
 
