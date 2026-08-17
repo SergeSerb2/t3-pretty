@@ -464,21 +464,44 @@ export function uploadReleaseAsset(filePath, objectKey) {
     );
   }
   const destination = `s3://${bucket}/${objectKey}`;
-  const args = ["s3", "cp", filePath, destination];
-  const endpoint = process.env.T3CODE_RELEASE_S3_ENDPOINT;
-  if (endpoint) args.push("--endpoint-url", endpoint);
-  const env = { ...process.env };
-  if (process.env.T3CODE_RELEASE_S3_ACCESS_KEY_ID) {
+  if (
+    process.env.T3CODE_RELEASE_S3_ACCESS_KEY_ID &&
+    process.env.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY
+  ) {
+    const args = ["s3", "cp", filePath, destination];
+    const endpoint = process.env.T3CODE_RELEASE_S3_ENDPOINT;
+    if (endpoint) args.push("--endpoint-url", endpoint);
+    const env = { ...process.env };
     env.AWS_ACCESS_KEY_ID = process.env.T3CODE_RELEASE_S3_ACCESS_KEY_ID;
-  }
-  if (process.env.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY) {
     env.AWS_SECRET_ACCESS_KEY = process.env.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY;
+    if (process.env.T3CODE_RELEASE_S3_REGION) {
+      env.AWS_DEFAULT_REGION = process.env.T3CODE_RELEASE_S3_REGION;
+      args.push("--region", process.env.T3CODE_RELEASE_S3_REGION);
+    }
+    runCommand("aws", args, { env });
+    return;
   }
-  if (process.env.T3CODE_RELEASE_S3_REGION) {
-    env.AWS_DEFAULT_REGION = process.env.T3CODE_RELEASE_S3_REGION;
-    args.push("--region", process.env.T3CODE_RELEASE_S3_REGION);
+  if (commandExists("npx") || commandExists("wrangler")) {
+    const wrangler = commandExists("wrangler") ? "wrangler" : "npx";
+    const args = commandExists("wrangler")
+      ? ["r2", "object", "put", `${bucket}/${objectKey}`, "--file", filePath, "--remote"]
+      : [
+          "--yes",
+          "wrangler",
+          "r2",
+          "object",
+          "put",
+          `${bucket}/${objectKey}`,
+          "--file",
+          filePath,
+          "--remote",
+        ];
+    runCommand(wrangler, args);
+    return;
   }
-  runCommand("aws", args, { env });
+  throw new Error(
+    "Set T3CODE_RELEASE_S3_ACCESS_KEY_ID/SECRET or install wrangler to upload Origin updater assets.",
+  );
 }
 
 function writeTempBody(body) {

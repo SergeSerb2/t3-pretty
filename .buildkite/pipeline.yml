@@ -15,6 +15,12 @@ steps:
     key: origin-workflows
     agents:
       queue: linux
+    secrets:
+      - CURSOR_API_KEY
+      - T3CODE_DESKTOP_UPDATE_FEED_URL
+      - T3CODE_RELEASE_S3_BUCKET
+      - T3CODE_RELEASE_S3_ENDPOINT
+      - T3CODE_RELEASE_S3_REGION
     plugins:
       - github-actions#v0.13.11:
           workflows:

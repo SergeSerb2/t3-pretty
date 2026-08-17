@@ -27,12 +27,6 @@ if [[ ! -f "$TOKEN_PATH" ]]; then
   echo "Missing Buildkite token file at $TOKEN_PATH" >&2
   exit 1
 fi
-token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["token"])' "$TOKEN_PATH")"
-rm -f "$TOKEN_PATH"
-if [[ -z "$token" ]]; then
-  echo "Agent token was empty." >&2
-  exit 1
-fi
 
 if ! command -v brew >/dev/null; then
   echo "Homebrew is required to install buildkite-agent." >&2
@@ -40,7 +34,17 @@ if ! command -v brew >/dev/null; then
 fi
 
 if ! command -v buildkite-agent >/dev/null; then
+  export HOMEBREW_NO_AUTO_UPDATE=1
+  brew tap buildkite/buildkite >/dev/null
+  brew trust buildkite/buildkite >/dev/null || true
   brew install buildkite/buildkite/buildkite-agent
+fi
+
+token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["token"])' "$TOKEN_PATH")"
+rm -f "$TOKEN_PATH"
+if [[ -z "$token" ]]; then
+  echo "Agent token was empty." >&2
+  exit 1
 fi
 
 cfg="$(brew --prefix)/etc/buildkite-agent/buildkite-agent.cfg"

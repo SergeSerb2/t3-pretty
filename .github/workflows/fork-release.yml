@@ -132,9 +132,9 @@ jobs:
       - name: Verify Origin release publisher credentials
         if: steps.existing.outputs.should_release == 'true'
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL }}
-          T3CODE_RELEASE_S3_BUCKET: ${{ secrets.T3CODE_RELEASE_S3_BUCKET }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
+          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL || env.T3CODE_DESKTOP_UPDATE_FEED_URL }}
+          T3CODE_RELEASE_S3_BUCKET: ${{ secrets.T3CODE_RELEASE_S3_BUCKET || env.T3CODE_RELEASE_S3_BUCKET }}
         run: |
           set -euo pipefail
           test -n "$CURSOR_API_KEY"
@@ -450,7 +450,7 @@ jobs:
       - name: Build macOS updater artifact
         shell: bash
         env:
-          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL }}
+          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL || env.T3CODE_DESKTOP_UPDATE_FEED_URL }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
@@ -796,7 +796,7 @@ jobs:
       - name: Build Windows updater artifact
         shell: bash
         env:
-          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL }}
+          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL || env.T3CODE_DESKTOP_UPDATE_FEED_URL }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -911,7 +911,7 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
           HAS_WINDOWS: ${{ needs.build_windows.result == 'success' }}
-          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL }}
+          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL || env.T3CODE_DESKTOP_UPDATE_FEED_URL }}
         run: |
           set -euo pipefail
           mac_manifest="$(find release-assets -maxdepth 1 -name '*-mac.yml' -print -quit)"
@@ -962,13 +962,13 @@ jobs:
       - name: Publish public Origin release
         shell: bash
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL }}
-          T3CODE_RELEASE_S3_BUCKET: ${{ secrets.T3CODE_RELEASE_S3_BUCKET }}
-          T3CODE_RELEASE_S3_ENDPOINT: ${{ secrets.T3CODE_RELEASE_S3_ENDPOINT }}
-          T3CODE_RELEASE_S3_ACCESS_KEY_ID: ${{ secrets.T3CODE_RELEASE_S3_ACCESS_KEY_ID }}
-          T3CODE_RELEASE_S3_SECRET_ACCESS_KEY: ${{ secrets.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY }}
-          T3CODE_RELEASE_S3_REGION: ${{ secrets.T3CODE_RELEASE_S3_REGION }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
+          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL || env.T3CODE_DESKTOP_UPDATE_FEED_URL }}
+          T3CODE_RELEASE_S3_BUCKET: ${{ secrets.T3CODE_RELEASE_S3_BUCKET || env.T3CODE_RELEASE_S3_BUCKET }}
+          T3CODE_RELEASE_S3_ENDPOINT: ${{ secrets.T3CODE_RELEASE_S3_ENDPOINT || env.T3CODE_RELEASE_S3_ENDPOINT }}
+          T3CODE_RELEASE_S3_ACCESS_KEY_ID: ${{ secrets.T3CODE_RELEASE_S3_ACCESS_KEY_ID || env.T3CODE_RELEASE_S3_ACCESS_KEY_ID }}
+          T3CODE_RELEASE_S3_SECRET_ACCESS_KEY: ${{ secrets.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY || env.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY }}
+          T3CODE_RELEASE_S3_REGION: ${{ secrets.T3CODE_RELEASE_S3_REGION || env.T3CODE_RELEASE_S3_REGION }}
           RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
           RELEASE_REF: ${{ needs.preflight.outputs.ref }}
           RELEASE_NAME: ${{ needs.preflight.outputs.name }}

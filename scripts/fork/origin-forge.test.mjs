@@ -110,6 +110,16 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "fork-release.yml");
     assert.include(pipeline, "fork-mobile-release.yml");
     assert.include(pipeline, "queue: macos-release");
+    assert.include(pipeline, "CURSOR_API_KEY");
+  });
+
+  it("uploads updater assets with aws when keys exist and wrangler otherwise", () => {
+    const source = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
+    assert.include(
+      source,
+      "T3CODE_RELEASE_S3_ACCESS_KEY_ID && process.env.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY",
+    );
+    assert.include(source, 'r2", "object", "put"');
   });
 
   it("reads the baked updater feed from T3CODE_DESKTOP_UPDATE_FEED_URL", () => {
