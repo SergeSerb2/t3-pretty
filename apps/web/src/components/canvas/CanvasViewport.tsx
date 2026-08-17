@@ -65,15 +65,15 @@ import {
   type CanvasViewportTransform,
 } from "~/canvasViewport";
 import { randomUUID } from "~/lib/utils";
+import { readLocalApi } from "~/localApi";
 import { canvasEnvironment } from "~/state/canvas";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { CanvasJumpPillView } from "./CanvasJumpPill";
 import { CanvasMeasuredSizesContext, createCanvasMeasuredSizesStore } from "./canvasMeasuredSizes";
 import {
-  CanvasNodeContextMenu,
+  canvasNodeContextMenuItems,
   CanvasRenamePopover,
-  type CanvasContextMenuRequest,
   type CanvasRenameRequest,
 } from "./CanvasNodeContextMenu";
 import { resizeGesturePreviewRect } from "./canvasResizePreview";
@@ -242,7 +242,6 @@ export function CanvasViewport(props: {
 
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<CanvasContextMenuRequest | null>(null);
   const [renameRequest, setRenameRequest] = useState<CanvasRenameRequest | null>(null);
 
   const viewport = useCanvasStore(
@@ -865,7 +864,46 @@ export function CanvasViewport(props: {
     const hit = hitTestPoint(doc, world, hitOptionsFor(transform.scale));
     if (hit === null) return;
     if (!threadState().selectedNodeIds.includes(hit.id)) applySelection([hit.id]);
-    setContextMenu({ nodeId: hit.id, nodeType: hit.type, x: event.clientX, y: event.clientY });
+
+    const api = readLocalApi();
+    if (api === undefined) return;
+    const position = { x: event.clientX, y: event.clientY };
+    const canRecapture =
+      props.onRecaptureNode !== undefined && (props.canRecaptureNode?.(hit.id) ?? false);
+    void api.contextMenu
+      .show(canvasNodeContextMenuItems({ nodeType: hit.type, canRecapture }), position)
+      .then((action) => {
+        if (action === "bring-to-front") {
+          commitOps(bringToFront(doc, [hit.id]));
+          return;
+        }
+        if (action === "send-to-back") {
+          commitOps(sendToBack(doc, [hit.id]));
+          return;
+        }
+        if (action === "recapture") {
+          props.onRecaptureNode?.(hit.id);
+          return;
+        }
+        if (action === "rename") {
+          const node = getNode(doc, hit.id);
+          setRenameRequest({
+            nodeId: hit.id,
+            initialName: node?.name ?? "",
+            x: position.x,
+            y: position.y,
+          });
+          return;
+        }
+        if (action === "delete") {
+          const removed = new Set([hit.id, ...descendantIds(doc, hit.id)]);
+          commitOps([{ _tag: "remove", id: hit.id }]);
+          applySelection(threadState().selectedNodeIds.filter((id) => !removed.has(id)));
+        }
+      })
+      .catch(() => {
+        // Same as other right-click menus: a failed show already ate the gesture.
+      });
   };
 
   // ---- keyboard -------------------------------------------------------------
@@ -981,14 +1019,6 @@ export function CanvasViewport(props: {
     containerRef.current?.focus({ preventScroll: true });
   };
 
-  // ---- context menu actions -------------------------------------------------
-
-  const handleDeleteNode = (nodeId: string): void => {
-    const removed = new Set([nodeId, ...descendantIds(doc, nodeId)]);
-    commitOps([{ _tag: "remove", id: nodeId }]);
-    applySelection(threadState().selectedNodeIds.filter((id) => !removed.has(id)));
-  };
-
   const handleRenameSubmit = (nodeId: string, name: string): void => {
     const node = getNode(doc, nodeId);
     if (node === null) return;
@@ -1010,6 +1040,12 @@ export function CanvasViewport(props: {
   };
 
   // ---- effects --------------------------------------------------------------
+
+  useEffect(() => {
+    return () => {
+      void readLocalApi()?.contextMenu.close();
+    };
+  }, [environmentId, threadId]);
 
   // Expire remote-add highlights shortly after the oldest one ages out.
   useEffect(() => {
@@ -1140,25 +1176,6 @@ export function CanvasViewport(props: {
       {jumpPill !== null ? (
         <CanvasJumpPillView pill={jumpPill} onJump={handleJump} onDismiss={handleDismissJumpPill} />
       ) : null}
-      <CanvasNodeContextMenu
-        request={contextMenu}
-        onClose={() => setContextMenu(null)}
-        onBringToFront={(nodeId) => commitOps(bringToFront(doc, [nodeId]))}
-        onSendToBack={(nodeId) => commitOps(sendToBack(doc, [nodeId]))}
-        onRename={(request) => {
-          const node = getNode(doc, request.nodeId);
-          setRenameRequest({
-            nodeId: request.nodeId,
-            initialName: node?.name ?? "",
-            x: request.x,
-            y: request.y,
-          });
-          setContextMenu(null);
-        }}
-        onDelete={handleDeleteNode}
-        canRecapture={props.canRecaptureNode}
-        onRecapture={props.onRecaptureNode}
-      />
       <CanvasRenamePopover
         request={renameRequest}
         onClose={() => setRenameRequest(null)}

@@ -1,24 +1,22 @@
 "use client";
 
 /**
- * Right-click menu for a canvas node plus the small rename popover it can
- * open. Both are controlled and anchored to the pointer position through a
- * virtual anchor, so they work identically in the browser and in Electron.
+ * Canvas node right-click actions and the rename popover they can open.
+ * The menu itself goes through `localApi.contextMenu` so it uses the same
+ * Electron/browser path as every other right-click in the app.
  */
-import type { CanvasNode } from "@t3tools/contracts";
-import { ArrowDownToLine, ArrowUpToLine, Camera, PenLine, Trash2 } from "lucide-react";
+import type { CanvasNode, ContextMenuItem } from "@t3tools/contracts";
 import { useMemo, useRef } from "react";
 
 import { Input } from "~/components/ui/input";
-import { Menu, MenuItem, MenuPopup, MenuSeparator } from "~/components/ui/menu";
 import { Popover, PopoverPopup } from "~/components/ui/popover";
 
-export interface CanvasContextMenuRequest {
-  nodeId: string;
-  nodeType: CanvasNode["type"];
-  x: number;
-  y: number;
-}
+export type CanvasNodeContextMenuAction =
+  | "bring-to-front"
+  | "send-to-back"
+  | "recapture"
+  | "rename"
+  | "delete";
 
 export interface CanvasRenameRequest {
   nodeId: string;
@@ -33,84 +31,22 @@ const pointAnchor = (x: number, y: number) => ({
   getBoundingClientRect: () => DOMRect.fromRect({ x, y, width: 0, height: 0 }),
 });
 
-export function CanvasNodeContextMenu(props: {
-  request: CanvasContextMenuRequest | null;
-  onClose: () => void;
-  onBringToFront: (nodeId: string) => void;
-  onSendToBack: (nodeId: string) => void;
-  onRename: (request: CanvasContextMenuRequest) => void;
-  onDelete: (nodeId: string) => void;
-  /** True when the node records a capture origin this build can refresh. */
-  canRecapture?: ((nodeId: string) => boolean) | undefined;
-  onRecapture?: ((nodeId: string) => void) | undefined;
-}) {
-  const { request, onClose } = props;
-  const anchor = useMemo(
-    () => (request === null ? null : pointAnchor(request.x, request.y)),
-    [request],
-  );
-  return (
-    <Menu
-      open={request !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      modal={false}
-    >
-      <MenuPopup
-        anchor={anchor ?? undefined}
-        side="bottom"
-        align="start"
-        sideOffset={2}
-        className="w-44"
-      >
-        <MenuItem
-          onClick={() => {
-            if (request !== null) props.onBringToFront(request.nodeId);
-          }}
-        >
-          <ArrowUpToLine />
-          Bring to front
-        </MenuItem>
-        <MenuItem
-          onClick={() => {
-            if (request !== null) props.onSendToBack(request.nodeId);
-          }}
-        >
-          <ArrowDownToLine />
-          Send to back
-        </MenuItem>
-        {request !== null &&
-        props.onRecapture !== undefined &&
-        (props.canRecapture?.(request.nodeId) ?? false) ? (
-          <MenuItem
-            onClick={() => {
-              if (request !== null) props.onRecapture?.(request.nodeId);
-            }}
-          >
-            <Camera />
-            Re-capture
-          </MenuItem>
-        ) : null}
-        {request !== null && RENAMEABLE_TYPES.has(request.nodeType) ? (
-          <MenuItem onClick={() => props.onRename(request)}>
-            <PenLine />
-            Rename…
-          </MenuItem>
-        ) : null}
-        <MenuSeparator />
-        <MenuItem
-          variant="destructive"
-          onClick={() => {
-            if (request !== null) props.onDelete(request.nodeId);
-          }}
-        >
-          <Trash2 />
-          Delete
-        </MenuItem>
-      </MenuPopup>
-    </Menu>
-  );
+export function canvasNodeContextMenuItems(input: {
+  nodeType: CanvasNode["type"];
+  canRecapture: boolean;
+}): ContextMenuItem<CanvasNodeContextMenuAction>[] {
+  const items: ContextMenuItem<CanvasNodeContextMenuAction>[] = [
+    { id: "bring-to-front", label: "Bring to front" },
+    { id: "send-to-back", label: "Send to back" },
+  ];
+  if (input.canRecapture) {
+    items.push({ id: "recapture", label: "Re-capture" });
+  }
+  if (RENAMEABLE_TYPES.has(input.nodeType)) {
+    items.push({ id: "rename", label: "Rename…", icon: "pencil" });
+  }
+  items.push({ id: "delete", label: "Delete", destructive: true, icon: "trash" });
+  return items;
 }
 
 export function CanvasRenamePopover(props: {
