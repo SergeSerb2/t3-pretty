@@ -72,6 +72,9 @@ export class ElectronApp extends Context.Service<
     ) => Effect.Effect<boolean>;
     readonly setDesktopName: (desktopName: string) => Effect.Effect<void>;
     readonly setDockIcon: (iconPath: string) => Effect.Effect<void>;
+    readonly startLocalCrashReporter: (
+      globalExtra: Readonly<Record<string, string>>,
+    ) => Effect.Effect<void>;
     readonly appendCommandLineSwitch: (switchName: string, value?: string) => Effect.Effect<void>;
     readonly onBeforeQuitForUpdate: (
       listener: () => void,
@@ -184,6 +187,13 @@ export const make = ElectronApp.of({
   setDockIcon: (iconPath) =>
     Effect.sync(() => {
       Electron.app.dock?.setIcon(iconPath);
+    }),
+  startLocalCrashReporter: (globalExtra) =>
+    Effect.sync(() => {
+      Electron.crashReporter.start({
+        uploadToServer: false,
+        globalExtra: { ...globalExtra },
+      });
     }),
   appendCommandLineSwitch: (switchName, value) =>
     Effect.sync(() => {

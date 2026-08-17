@@ -270,7 +270,19 @@ const startup = Effect.gen(function* () {
   }
   const userDataPath = yield* appIdentity.resolveUserDataPath;
   yield* electronApp.setPath("userData", userDataPath);
-  yield* logStartupInfo("runtime logging configured", { logDir: environment.logDir });
+  const commitHash = yield* appIdentity.commitHash;
+  yield* electronApp.startLocalCrashReporter({
+    t3codeCommitHash: Option.getOrElse(commitHash, () => "unknown"),
+  });
+  yield* logStartupInfo("runtime diagnostics configured", {
+    logDir: environment.logDir,
+    crashDumpsDir: environment.path.join(userDataPath, "Crashpad"),
+    appVersion: environment.appVersion,
+    commitHash: Option.getOrNull(commitHash),
+    electronVersion: process.versions.electron ?? null,
+    executablePath: process.execPath,
+    isPackaged: environment.isPackaged,
+  });
   yield* desktopSettings.load;
 
   if (linuxElectronOptions !== null) {
