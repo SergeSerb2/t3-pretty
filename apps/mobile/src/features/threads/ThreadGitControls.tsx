@@ -1,10 +1,10 @@
 import {
   EnvironmentId,
   type GitRunStackedActionResult,
-  type ProjectScript,
   ThreadId,
   type VcsStatusResult,
 } from "@t3tools/contracts";
+import { resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
 import {
   type GitActionRequestInput,
   requiresDefaultBranchConfirmation,
@@ -12,17 +12,18 @@ import {
 } from "@t3tools/client-runtime/state/vcs";
 import { resolveAutomatedReviewPresentation } from "@t3tools/shared/sourceControl";
 import { useNavigation } from "@react-navigation/native";
+import { Alert } from "react-native";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { presentActionListMenu } from "../../components/AppMenuHost";
 import { useCallback, useMemo } from "react";
 import { useOpenNativePullRequest } from "../pull-requests/useOpenNativePullRequest";
 import {
-  basename,
-  getTerminalStatusLabel,
-  projectScriptMenuIcon,
-  projectScriptMenuLabel,
-  type TerminalMenuSession,
-} from "../terminal/terminalMenu";
+  resolveThreadHeaderPrPresentation,
+  resolveThreadHeaderSettlePresentation,
+  resolveThreadHeaderSnoozePresentation,
+  type ThreadHeaderPrPresentation,
+} from "./thread-header-actions";
+import { resolveThreadListV2SnoozeMenuSelection } from "./threadListV2";
 
 function truncateMiddle(value: string, maxLength: number): string {
   if (value.length <= maxLength) {
@@ -71,10 +72,10 @@ function compactMenuStatus(gitStatus: VcsStatusResult | null): string {
 
 type HeaderItem = Record<string, unknown>;
 type HeaderItems = HeaderItem[];
-type ThreadGitHeaderActionItems = {
-  readonly terminal: HeaderItem;
-  readonly files: HeaderItem;
-  readonly git: HeaderItem;
+type ThreadDetailHeaderActionItems = {
+  readonly settle: HeaderItem;
+  readonly snooze: HeaderItem;
+  readonly pr: HeaderItem;
 };
 type QuickActionIcon =
   | "arrow.down.circle"
@@ -100,16 +101,78 @@ type ThreadGitControlsProps = ThreadGitMenuProps & {
     readonly accessibilityLabel: string;
     readonly onPress: () => void;
   };
-  readonly canOpenTerminal: boolean;
-  readonly canOpenFiles: boolean;
-  readonly projectScripts: ReadonlyArray<ProjectScript>;
-  readonly terminalSessions: ReadonlyArray<TerminalMenuSession>;
   readonly showActionControls?: boolean;
-  readonly showDirectFileControl?: boolean;
-  readonly onOpenTerminal: (terminalId?: string | null) => void;
-  readonly onOpenNewTerminal: () => void;
-  readonly onRunProjectScript: (script: ProjectScript) => Promise<void>;
+  readonly canOpenFiles: boolean;
+  readonly settlementSupported: boolean;
+  readonly snoozeSupported: boolean;
+  readonly settled: boolean;
+  readonly snoozed: boolean;
+  readonly canSettleThread: boolean;
+  readonly canSnoozeThread: boolean;
+  readonly onSettle: () => void;
+  readonly onUnsettle: () => void;
+  readonly onSnooze: (snoozedUntil: string) => void;
+  readonly onUnsnooze: () => void;
 };
+
+function presentSnoozePresetMenu(onSnooze: (snoozedUntil: string) => void): void {
+  const displayedPresets = resolveSnoozePresets(new Date());
+  presentActionListMenu({
+    placement: "top-end",
+    title: "Snooze",
+    items: displayedPresets.map((preset) => ({
+      description: preset.whenLabel,
+      iconName: "clock",
+      label: preset.label,
+      onPress: () => {
+        const selection = resolveThreadListV2SnoozeMenuSelection({
+          event: `snooze:${preset.id}`,
+          displayedPresets,
+          now: new Date(),
+        });
+        if (selection._tag === "selected") {
+          onSnooze(selection.preset.snoozedUntil);
+          return;
+        }
+        if (selection._tag === "expired") {
+          Alert.alert(
+            "Could not snooze thread",
+            "That snooze time has passed. Choose another time.",
+          );
+        }
+      },
+    })),
+  });
+}
+
+function presentPullRequestMenu(
+  presentation: ThreadHeaderPrPresentation,
+  handlers: {
+    readonly onView: () => void;
+    readonly onCreate: () => void;
+    readonly onReview: () => void;
+    readonly onFiles: () => void;
+    readonly onMore: () => void;
+  },
+): void {
+  presentActionListMenu({
+    placement: "top-end",
+    title: "Pull request",
+    items: presentation.items.map((item) => ({
+      description: item.description,
+      disabled: item.disabled,
+      iconName: item.iconName,
+      label: item.label,
+      onPress: () => {
+        if (item.id === "view") handlers.onView();
+        if (item.id === "create") handlers.onCreate();
+        if (item.id === "review") handlers.onReview();
+        if (item.id === "files") handlers.onFiles();
+        if (item.id === "more") handlers.onMore();
+      },
+    })),
+  });
+}
 
 function useThreadGitControlModel(props: ThreadGitMenuProps) {
   const navigation = useNavigation();
@@ -240,6 +303,7 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   return {
     currentBranchLabel,
     isRepo,
+    openExistingPr,
     openFiles,
     openGitInspector,
     openReview,
@@ -250,114 +314,69 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   };
 }
 
-function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGitHeaderActionItems {
+export function useThreadDetailHeaderActionItems(
+  props: ThreadGitControlsProps,
+): ThreadDetailHeaderActionItems {
   const model = useThreadGitControlModel(props);
+  const settle = resolveThreadHeaderSettlePresentation({
+    supported: props.settlementSupported,
+    settled: props.settled,
+    canSettle: props.canSettleThread,
+  });
+  const snooze = resolveThreadHeaderSnoozePresentation({
+    supported: props.snoozeSupported,
+    snoozed: props.snoozed,
+    canSnooze: props.canSnoozeThread,
+  });
+  const openPr = props.gitStatus?.pr?.state === "open" ? props.gitStatus.pr : null;
+  const pr = resolveThreadHeaderPrPresentation({
+    hasOpenPr: openPr !== null,
+    prNumber: openPr?.number ?? null,
+    isRepo: model.isRepo,
+    canOpenFiles: props.canOpenFiles,
+    quickAction: model.quickAction,
+  });
 
   return useMemo(
     () => ({
-      terminal: {
-        accessibilityLabel: "Open terminal",
-        disabled: !props.canOpenTerminal,
-        icon: { name: "terminal", type: "sfSymbol" },
-        identifier: "thread-right-terminal",
-        label: "Terminal",
-        onPress: () =>
-          presentActionListMenu({
-            placement: "top-end",
-            title: "Terminal",
-            items: [
-              ...props.projectScripts.map((script) => ({
-                description: script.command,
-                iconName: projectScriptMenuIcon(script.icon),
-                label: projectScriptMenuLabel(script),
-                onPress: () => void props.onRunProjectScript(script),
-              })),
-              ...(props.projectScripts.length === 0
-                ? [
-                    {
-                      description: "This project has no saved scripts yet",
-                      disabled: true,
-                      iconName: "play",
-                      label: "No project scripts",
-                      onPress: () => {},
-                    },
-                  ]
-                : []),
-              ...props.terminalSessions.map((session) => ({
-                description: [
-                  getTerminalStatusLabel({
-                    status: session.status,
-                    hasRunningSubprocess: session.hasRunningSubprocess,
-                  }),
-                  basename(session.cwd),
-                ]
-                  .filter(Boolean)
-                  .join(" · "),
-                iconName: "terminal",
-                label: session.displayLabel,
-                onPress: () => props.onOpenTerminal(session.terminalId),
-              })),
-              {
-                description: "Start another shell for this thread",
-                iconName: "plus",
-                label: "Open new terminal",
-                onPress: props.onOpenNewTerminal,
-              },
-            ],
-          }),
+      settle: {
+        accessibilityLabel: settle.accessibilityLabel,
+        disabled: settle.disabled,
+        icon: { name: settle.icon, type: "sfSymbol" },
+        identifier: "thread-right-settle",
+        label: settle.label,
+        onPress: settle.action === "unsettle" ? props.onUnsettle : props.onSettle,
         sharesBackground: true,
         type: "button",
         variant: "plain",
       },
-      files: {
-        accessibilityLabel: "Open files",
-        disabled: !props.canOpenFiles,
-        icon: { name: "folder", type: "sfSymbol" },
-        identifier: "thread-right-files",
-        label: "Files",
-        onPress: model.openFiles,
+      snooze: {
+        accessibilityLabel: snooze.accessibilityLabel,
+        disabled: snooze.disabled,
+        icon: { name: snooze.icon, type: "sfSymbol" },
+        identifier: "thread-right-snooze",
+        label: snooze.label,
+        onPress:
+          snooze.action === "wake"
+            ? props.onUnsnooze
+            : () => presentSnoozePresetMenu(props.onSnooze),
         sharesBackground: true,
         type: "button",
         variant: "plain",
       },
-      git: {
-        accessibilityLabel: "Git actions",
-        icon: { name: "point.topleft.down.curvedto.point.bottomright.up", type: "sfSymbol" },
-        identifier: "thread-right-git",
-        label: "Git",
+      pr: {
+        accessibilityLabel: pr.accessibilityLabel,
+        disabled: pr.disabled,
+        icon: { name: "arrow.triangle.pull", type: "sfSymbol" },
+        identifier: "thread-right-pr",
+        label: pr.label,
         onPress: () =>
-          presentActionListMenu({
-            placement: "top-end",
-            title: "Git",
-            items: [
-              {
-                description: compactMenuStatus(props.gitStatus),
-                disabled: true,
-                iconName: "point.topleft.down.curvedto.point.bottomright.up",
-                label: compactMenuBranchLabel(model.currentBranchLabel),
-                onPress: (): void => {},
-              },
-              {
-                description: model.quickActionHint ?? undefined,
-                disabled: model.quickAction.disabled,
-                iconName: model.quickActionIcon,
-                label: model.quickAction.label,
-                onPress: (): void => void model.runQuickAction(),
-              },
-              {
-                description: "Turn diffs and worktree changes",
-                disabled: !model.isRepo,
-                iconName: "text.bubble",
-                label: "Review changes",
-                onPress: model.openReview,
-              },
-              {
-                description: "Commit, files, branches",
-                iconName: "ellipsis",
-                label: "More",
-                onPress: model.openGitInspector,
-              },
-            ],
+          presentPullRequestMenu(pr, {
+            onView: () => void model.openExistingPr(),
+            onCreate: () => void model.runQuickAction(),
+            onReview: model.openReview,
+            onFiles: model.openFiles,
+            onMore: model.openGitInspector,
           }),
         sharesBackground: true,
         type: "button",
@@ -365,47 +384,67 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
       },
     }),
     [
-      model.currentBranchLabel,
       model.isRepo,
+      model.openExistingPr,
       model.openFiles,
       model.openGitInspector,
       model.openReview,
-      model.quickAction.disabled,
-      model.quickAction.label,
-      model.quickActionHint,
-      model.quickActionIcon,
+      model.quickAction,
       model.runQuickAction,
+      openPr,
+      pr,
       props.canOpenFiles,
-      props.canOpenTerminal,
-      props.gitStatus,
-      props.onOpenNewTerminal,
-      props.onOpenTerminal,
-      props.onRunProjectScript,
-      props.projectScripts,
-      props.terminalSessions,
+      props.canSettleThread,
+      props.canSnoozeThread,
+      props.onSettle,
+      props.onSnooze,
+      props.onUnsnooze,
+      props.onUnsettle,
+      props.settled,
+      props.settlementSupported,
+      props.snoozeSupported,
+      props.snoozed,
+      settle,
+      snooze,
     ],
   );
 }
 
 export function useThreadGitRightHeaderItems(props: ThreadGitControlsProps): HeaderItems {
-  const actionItems = useThreadGitHeaderActionItems(props);
+  const actionItems = useThreadDetailHeaderActionItems(props);
   return useMemo(
-    () => [actionItems.git, actionItems.files, actionItems.terminal] as HeaderItems,
+    // headerRightItems lay out first-item-trailing, so this reads Settle, Snooze, PR.
+    () => [actionItems.pr, actionItems.snooze, actionItems.settle] as HeaderItems,
     [actionItems],
   );
 }
 
 export function useThreadGitCenterHeaderItems(props: ThreadGitControlsProps): HeaderItems {
-  const actionItems = useThreadGitHeaderActionItems(props);
-  return useMemo(
-    () => [actionItems.files, actionItems.git, actionItems.terminal] as HeaderItems,
-    [actionItems],
-  );
+  return useThreadGitRightHeaderItems(props);
 }
 
 export function ThreadGitControls(props: ThreadGitControlsProps) {
   const model = useThreadGitControlModel(props);
   const showActionControls = props.showActionControls ?? true;
+  const settle = resolveThreadHeaderSettlePresentation({
+    supported: props.settlementSupported,
+    settled: props.settled,
+    canSettle: props.canSettleThread,
+  });
+  const snooze = resolveThreadHeaderSnoozePresentation({
+    supported: props.snoozeSupported,
+    snoozed: props.snoozed,
+    canSnooze: props.canSnoozeThread,
+  });
+  const openPr = props.gitStatus?.pr?.state === "open" ? props.gitStatus.pr : null;
+  const pr = resolveThreadHeaderPrPresentation({
+    hasOpenPr: openPr !== null,
+    prNumber: openPr?.number ?? null,
+    isRepo: model.isRepo,
+    canOpenFiles: props.canOpenFiles,
+    quickAction: model.quickAction,
+  });
+  const snoozePresets = resolveSnoozePresets(new Date());
 
   if (!showActionControls) {
     return null;
@@ -413,7 +452,7 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
 
   return (
     <NativeHeaderToolbar placement="right">
-      {showActionControls && props.auxiliaryPaneControl ? (
+      {props.auxiliaryPaneControl ? (
         <NativeHeaderToolbar.Button
           accessibilityLabel={props.auxiliaryPaneControl.accessibilityLabel}
           icon="sidebar.right"
@@ -421,72 +460,75 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
           separateBackground
         />
       ) : null}
-      {showActionControls ? (
+      <NativeHeaderToolbar.Menu
+        accessibilityLabel={pr.accessibilityLabel}
+        icon="arrow.triangle.pull"
+      >
+        {pr.items.map((item) => (
+          <NativeHeaderToolbar.MenuAction
+            key={item.id}
+            disabled={item.disabled}
+            icon={item.iconName}
+            onPress={() => {
+              if (item.id === "view") void model.openExistingPr();
+              if (item.id === "create") void model.runQuickAction();
+              if (item.id === "review") model.openReview();
+              if (item.id === "files") model.openFiles();
+              if (item.id === "more") model.openGitInspector();
+            }}
+            subtitle={item.description}
+          >
+            <NativeHeaderToolbar.Label>{item.label}</NativeHeaderToolbar.Label>
+          </NativeHeaderToolbar.MenuAction>
+        ))}
+      </NativeHeaderToolbar.Menu>
+      {snooze.action === "wake" ? (
+        <NativeHeaderToolbar.Button
+          accessibilityLabel={snooze.accessibilityLabel}
+          disabled={snooze.disabled}
+          icon={snooze.icon}
+          onPress={props.onUnsnooze}
+        />
+      ) : (
         <NativeHeaderToolbar.Menu
-          icon="terminal"
-          disabled={!props.canOpenTerminal}
-          separateBackground
+          accessibilityLabel={snooze.accessibilityLabel}
+          disabled={snooze.disabled}
+          icon={snooze.icon}
         >
-          {props.projectScripts.length > 0 ? (
-            props.projectScripts.map((script) => (
-              <NativeHeaderToolbar.MenuAction
-                key={script.id}
-                icon={projectScriptMenuIcon(script.icon)}
-                onPress={() => void props.onRunProjectScript(script)}
-                subtitle={script.command}
-              >
-                <NativeHeaderToolbar.Label>
-                  {projectScriptMenuLabel(script)}
-                </NativeHeaderToolbar.Label>
-              </NativeHeaderToolbar.MenuAction>
-            ))
-          ) : (
+          {snoozePresets.map((preset) => (
             <NativeHeaderToolbar.MenuAction
-              icon="play"
-              disabled
-              onPress={() => {}}
-              subtitle="This project has no saved scripts yet"
+              key={preset.id}
+              icon="clock"
+              onPress={() => {
+                const selection = resolveThreadListV2SnoozeMenuSelection({
+                  event: `snooze:${preset.id}`,
+                  displayedPresets: snoozePresets,
+                  now: new Date(),
+                });
+                if (selection._tag === "selected") {
+                  props.onSnooze(selection.preset.snoozedUntil);
+                  return;
+                }
+                if (selection._tag === "expired") {
+                  Alert.alert(
+                    "Could not snooze thread",
+                    "That snooze time has passed. Choose another time.",
+                  );
+                }
+              }}
+              subtitle={preset.whenLabel}
             >
-              <NativeHeaderToolbar.Label>No project scripts</NativeHeaderToolbar.Label>
-            </NativeHeaderToolbar.MenuAction>
-          )}
-          {props.terminalSessions.map((session) => (
-            <NativeHeaderToolbar.MenuAction
-              key={session.terminalId}
-              icon="terminal"
-              onPress={() => props.onOpenTerminal(session.terminalId)}
-              subtitle={[
-                getTerminalStatusLabel({
-                  status: session.status,
-                  hasRunningSubprocess: session.hasRunningSubprocess,
-                }),
-                basename(session.cwd),
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            >
-              <NativeHeaderToolbar.Label>{session.displayLabel}</NativeHeaderToolbar.Label>
+              <NativeHeaderToolbar.Label>{preset.label}</NativeHeaderToolbar.Label>
             </NativeHeaderToolbar.MenuAction>
           ))}
-          <NativeHeaderToolbar.MenuAction
-            icon="plus"
-            onPress={props.onOpenNewTerminal}
-            subtitle="Start another shell for this thread"
-          >
-            <NativeHeaderToolbar.Label>Open new terminal</NativeHeaderToolbar.Label>
-          </NativeHeaderToolbar.MenuAction>
         </NativeHeaderToolbar.Menu>
-      ) : null}
-      {showActionControls && props.showDirectFileControl ? (
-        <NativeHeaderToolbar.Button
-          accessibilityLabel="Open files"
-          disabled={!props.canOpenFiles}
-          icon="folder"
-          onPress={model.openFiles}
-          separateBackground
-        />
-      ) : null}
-      {showActionControls ? <ThreadGitMenu {...props} /> : null}
+      )}
+      <NativeHeaderToolbar.Button
+        accessibilityLabel={settle.accessibilityLabel}
+        disabled={settle.disabled}
+        icon={settle.icon}
+        onPress={settle.action === "unsettle" ? props.onUnsettle : props.onSettle}
+      />
     </NativeHeaderToolbar>
   );
 }
