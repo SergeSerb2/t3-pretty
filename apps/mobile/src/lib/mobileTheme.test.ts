@@ -62,6 +62,23 @@ describe("mobile themes", () => {
     );
   });
 
+  it("keeps the static stylesheet in lockstep with the default palette", () => {
+    const stylesheet = NodeFS.readFileSync(new URL("../../global.css", import.meta.url), "utf8");
+    for (const appearance of ["light", "dark"] as const) {
+      const block = stylesheet.match(
+        new RegExp(`@variant ${appearance} \\{([\\s\\S]*?)\\n    \\}`),
+      );
+      expect(block).not.toBeNull();
+      const stylesheetValues = Object.fromEntries(
+        Array.from(block![1]!.matchAll(/(--color-[a-z0-9-]+):\s*([^;]+);/g), (match) => [
+          match[1],
+          match[2]!.trim(),
+        ]),
+      );
+      expect(stylesheetValues).toEqual(DEFAULT_MOBILE_THEME_VARIABLES[appearance]);
+    }
+  });
+
   it("shares all built-in desktop palettes", () => {
     expect(BUILT_IN_THEMES.map((theme) => theme.id)).toEqual(BUILT_IN_THEME_IDS);
     for (const themeId of BUILT_IN_THEME_IDS) {
@@ -70,18 +87,30 @@ describe("mobile themes", () => {
     }
   });
 
-  it("preserves the existing mobile palette as the default", () => {
+  it("uses the World Scenery palette as the default", () => {
     expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "light")["--color-screen"]).toBe(
-      "#f2f2f7",
+      "#f4f6f4",
     );
     expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "dark")["--color-screen"]).toBe(
-      "#0a0a0a",
+      "#0e1110",
+    );
+    expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "light")["--color-primary"]).toBe(
+      "#27633f",
+    );
+    expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "dark")["--color-primary"]).toBe(
+      "#98d2ac",
+    );
+    expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "light")["--color-user-bubble"]).toBe(
+      "#dfefe3",
+    );
+    expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "dark")["--color-user-bubble"]).toBe(
+      "#2a4a36",
     );
     expect(
       getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "light")[
         "--color-user-bubble-skill-foreground"
       ],
-    ).toBe("#f0abfc");
+    ).toBe("#27633f");
   });
 
   it("applies palette overrides on top of the selected built-in theme", () => {
@@ -93,11 +122,16 @@ describe("mobile themes", () => {
     expect(variables["--color-screen"]).toMatch(/^#/);
   });
 
-  it("uses the same preview roles and standard artwork as desktop", () => {
+  it("uses World Scenery preview colors for the default theme", () => {
     expect(getMobileThemePreviewColors(DEFAULT_MOBILE_THEME_ID, "light")).toEqual({
-      canvas: "#fcfcfc",
-      accent: "#f4f4f5",
-      messageAction: "#4f46e5",
+      canvas: "#f4f6f4",
+      accent: "#27633f",
+      messageAction: "#27633f",
+    });
+    expect(getMobileThemePreviewColors(DEFAULT_MOBILE_THEME_ID, "dark")).toEqual({
+      canvas: "#0e1110",
+      accent: "#98d2ac",
+      messageAction: "#98d2ac",
     });
     const desktopOcean = BUILT_IN_THEMES.find((theme) => theme.id === "ocean")!;
     expect(getMobileThemePreviewColors("ocean", "light")).toEqual({
@@ -199,7 +233,7 @@ describe("mobile themes", () => {
       }
     }
 
-    for (const themeId of BUILT_IN_THEME_IDS) {
+    for (const themeId of MOBILE_THEME_IDS) {
       for (const appearance of ["light", "dark"] as const) {
         const variables = getMobileThemeVariables(themeId, appearance);
         expect(

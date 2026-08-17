@@ -7,10 +7,7 @@ import {
   type ThemeAppearance,
   type ThemeColors,
 } from "@t3tools/shared/themePalettes";
-import {
-  STANDARD_THEME_PREVIEW_COLORS,
-  type ThemePreviewColors,
-} from "@t3tools/shared/themePreview";
+import { type ThemePreviewColors } from "@t3tools/shared/themePreview";
 import { DEFAULT_MOBILE_THEME_VARIABLES } from "./mobileDefaultTheme";
 
 export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;
@@ -24,7 +21,7 @@ export const MOBILE_THEME_OPTIONS: ReadonlyArray<{
   readonly id: MobileThemeId;
   readonly label: string;
 }> = [
-  { id: DEFAULT_MOBILE_THEME_ID, label: "T3 Code" },
+  { id: DEFAULT_MOBILE_THEME_ID, label: "World Scenery" },
   ...BUILT_IN_THEMES.map((theme) => ({ id: theme.id as MobileThemeId, label: theme.label })),
 ];
 
@@ -254,7 +251,7 @@ export function createMobileThemeVariables(
     "--color-glass-surface": withAlpha(c.surfaceOverlay, 0.74),
     "--color-glass-tint": withAlpha(c.surfaceOverlay, 0.22),
     "--color-chrome-glass": withAlpha(c.surfaceOverlay, 0.52),
-    "--color-chrome-glass-border": c.border,
+    "--color-chrome-glass-border": withAlpha(c.border, 0.85),
     "--color-status-bar": c.canvas,
     "--color-md-body": c.text,
     "--color-md-strong": c.toolbarForeground,
@@ -305,7 +302,14 @@ export function getMobileThemePreviewColors(
   themeId: MobileThemeId,
   appearance: MobileThemeAppearance,
 ): ThemePreviewColors {
-  if (themeId === DEFAULT_MOBILE_THEME_ID) return STANDARD_THEME_PREVIEW_COLORS[appearance];
+  if (themeId === DEFAULT_MOBILE_THEME_ID) {
+    const colors = DEFAULT_MOBILE_THEME_VARIABLES[appearance];
+    return {
+      canvas: colors["--color-screen"],
+      accent: colors["--color-primary"],
+      messageAction: colors["--color-primary"],
+    };
+  }
   const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? BUILT_IN_THEMES[0];
   const colors = getThemeColorsForAppearance(theme, appearance) ?? theme.colors;
   return {

@@ -121,6 +121,7 @@ export function ComposerEditor({
   const skillBorder = useThemeColor("--color-inline-skill-border");
   const skillText = useThemeColor("--color-inline-skill-foreground");
   const fileTint = useThemeColor("--color-icon-muted");
+  const caret = useThemeColor("--color-primary");
   const fontFamily = useFontFamily("regular");
 
   useImperativeHandle(
@@ -248,6 +249,7 @@ export function ComposerEditor({
     skillBorder: String(skillBorder),
     skillText: String(skillText),
     fileTint: String(fileTint),
+    caret: String(caret),
   });
   const resolvedTextStyle = StyleSheet.flatten(textStyle) ?? {};
   return (

@@ -122,6 +122,7 @@ export function ComposerEditor({
   const skillBorder = useThemeColor("--color-inline-skill-border");
   const skillText = useThemeColor("--color-inline-skill-foreground");
   const fileTint = useThemeColor("--color-icon-muted");
+  const caret = useThemeColor("--color-primary");
   const handlePaste = useNativePaste((uris) => onPasteImages?.(uris));
 
   useImperativeHandle(
@@ -188,7 +189,6 @@ export function ComposerEditor({
     isNativeEcho,
   });
   useEffect(() => {
-
     if (!acknowledgesLatestNativeEvent) return;
     nativeEventSnapshotsRef.current = pruneAcknowledgedComposerNativeEvents(
       nativeEventSnapshotsRef.current,
@@ -236,6 +236,7 @@ export function ComposerEditor({
     skillBorder: String(skillBorder),
     skillText: String(skillText),
     fileTint: String(fileTint),
+    caret: String(caret),
   });
   const resolvedTextStyle = StyleSheet.flatten(textStyle) ?? {};
   const regularFontFamily = useFontFamily("regular");
