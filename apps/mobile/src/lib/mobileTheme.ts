@@ -253,6 +253,8 @@ export function createMobileThemeVariables(
     "--color-header-border": c.toolbarBorder,
     "--color-glass-surface": withAlpha(c.surfaceOverlay, 0.74),
     "--color-glass-tint": withAlpha(c.surfaceOverlay, 0.22),
+    "--color-chrome-glass": withAlpha(c.surfaceOverlay, 0.52),
+    "--color-chrome-glass-border": c.border,
     "--color-status-bar": c.canvas,
     "--color-md-body": c.text,
     "--color-md-strong": c.toolbarForeground,

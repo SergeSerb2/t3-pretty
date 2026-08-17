@@ -22,7 +22,9 @@ Choose the **World Scenery** theme in **Settings → Appearance**. While that th
   system reduce-motion setting on, those animations keep only their fade.
 
 On phone, open **Settings → Appearance** and use **Scenery photos**. While it is on you can also
-adjust **Photo blur** and **Photo presence**.
+adjust **Photo blur** and **Photo presence**. Starting a new task uses the same photo of the
+day as Home, so the compose sheet sits on the landscape instead of a blank plate. The place
+name and photo credit sit above the chat box.
 
 ## How the phone thread list looks
 

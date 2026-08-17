@@ -6,8 +6,9 @@ import {
   useNavigation,
   usePreventRemove,
 } from "@react-navigation/native";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import * as Linking from "expo-linking";
 import {
   KeyboardController,
   KeyboardStickyView,
@@ -45,7 +46,11 @@ import { composerDispatchStatusLabel } from "../../lib/composerDispatchStatus";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
+import { GlassSurface } from "../../components/GlassSurface";
 import { ComposerSurface } from "./ThreadComposer";
+import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
+import { useDailySceneryPhoto, useSceneryChromeActive } from "../scenery/SceneryProvider";
+import { UNSPLASH_UTM, type SceneryPhoto } from "../scenery/sceneryLogic";
 import {
   useThreadSettingsSheetPresentation,
   type NavigationWithFinishTransitioning,
@@ -103,6 +108,89 @@ function NewTaskWorkspaceIcon(props: {
     </View>
   );
 }
+
+function NewTaskDraftFrame(props: {
+  readonly children: ReactNode;
+  readonly sceneryChrome: boolean;
+}) {
+  return (
+    <View
+      className={props.sceneryChrome ? "flex-1 bg-screen" : "flex-1 bg-sheet"}
+      collapsable={false}
+    >
+      {/* No thread exists yet, so this uses Home's photo of the day. */}
+      {props.sceneryChrome ? <SceneryBackdrop threadKey={null} /> : null}
+      {props.children}
+    </View>
+  );
+}
+
+function NewTaskGlassChip(props: { readonly active: boolean; readonly children: ReactNode }) {
+  const chromeFill = useThemeColor("--color-chrome-glass");
+  const chromeBorder = useThemeColor("--color-chrome-glass-border");
+  if (!props.active) {
+    return props.children;
+  }
+
+  return (
+    <GlassSurface
+      chrome="none"
+      fallbackStyle={{
+        backgroundColor: chromeFill,
+        borderColor: chromeBorder,
+        borderWidth: StyleSheet.hairlineWidth,
+      }}
+      style={NEW_TASK_GLASS_CHIP_STYLE}
+    >
+      {props.children}
+    </GlassSurface>
+  );
+}
+
+function openAttributionUrl(url: string) {
+  void Linking.openURL(url).catch(() => undefined);
+}
+
+function NewTaskSceneryPlace(props: { readonly photo: SceneryPhoto }) {
+  const photographerURL =
+    props.photo.photographerProfileURL !== null
+      ? `${props.photo.photographerProfileURL}${UNSPLASH_UTM}`
+      : `https://unsplash.com/${UNSPLASH_UTM}`;
+
+  return (
+    <View className="mt-auto w-full items-center gap-1 px-6 pb-3" testID="new-task-scenery-place">
+      <Text className="text-center text-xl font-t3-medium tracking-tight text-foreground">
+        {props.photo.name}
+      </Text>
+      <View className="flex-row flex-wrap items-center justify-center">
+        <Text className="text-xs text-foreground-secondary">Photo by </Text>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel={`${props.photo.photographerName} on Unsplash`}
+          onPress={() => openAttributionUrl(photographerURL)}
+        >
+          <Text className="text-xs text-foreground-secondary underline">
+            {props.photo.photographerName}
+          </Text>
+        </Pressable>
+        <Text className="text-xs text-foreground-secondary"> on </Text>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="Unsplash"
+          onPress={() => openAttributionUrl(`https://unsplash.com/${UNSPLASH_UTM}`)}
+        >
+          <Text className="text-xs text-foreground-secondary underline">Unsplash</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const NEW_TASK_GLASS_CHIP_STYLE = {
+  borderCurve: "continuous" as const,
+  borderRadius: 16,
+  overflow: "hidden" as const,
+};
 
 export function NewTaskDraftScreen(props: {
   readonly initialProjectRef?: {
@@ -331,13 +419,15 @@ export function NewTaskDraftScreen(props: {
   }, [props.pendingTaskId, cancelEditingPendingTask]);
 
   const foregroundColor = useThemeColor("--color-foreground");
-  const sheetColor = String(useThemeColor("--color-sheet"));
   const projectUnderlineColor = useThemeColor("--color-foreground-muted");
   const regularFontFamily = useFontFamily("regular");
   const bodyText = useScaledTextRole("body");
-  // Match --color-sheet (World Scenery) so toolbar fades blend into the draft surface.
-  const sheetFadeOpaque = sheetColor;
-  const sheetFadeTransparent = themeColorWithAlpha(sheetColor, 0);
+  const sceneryChrome = useSceneryChromeActive();
+  const dailyPhoto = useDailySceneryPhoto();
+  // Fade into the composer card, not the sheet: the toolbar lives inside the glass surface.
+  const toolbarSurface = String(useThemeColor("--color-card"));
+  const toolbarFadeOpaque = themeColorWithAlpha(toolbarSurface, 0.95);
+  const toolbarFadeTransparent = themeColorWithAlpha(toolbarSurface, 0);
 
   // A new navigation to this mounted screen delivers a fresh initialProjectRef
   // reference — treat it as a new request and let it apply again.
@@ -930,7 +1020,7 @@ export function NewTaskDraftScreen(props: {
 
   if (!selectedProject) {
     return (
-      <View className="flex-1 bg-sheet" collapsable={false}>
+      <NewTaskDraftFrame sceneryChrome={sceneryChrome}>
         {Platform.OS === "android" ? (
           <>
             <NativeStackScreenOptions options={{ headerShown: false }} />
@@ -939,7 +1029,7 @@ export function NewTaskDraftScreen(props: {
         ) : (
           <NativeStackScreenOptions options={{ title: "Loading task" }} />
         )}
-      </View>
+      </NewTaskDraftFrame>
     );
   }
 
@@ -1060,19 +1150,21 @@ export function NewTaskDraftScreen(props: {
         </View>
       </View>
 
-      <ComposerInlineControl
-        accessibilityLabel={`Environment: ${selectedEnvironmentLabel}`}
-        chevronDirection="right"
-        disabled={composerSelectorsLocked}
-        icon="desktopcomputer"
-        label={`on ${selectedEnvironmentLabel}`}
-        maxWidth={260}
-        onPress={
-          flow.environments.length > 1 ? () => openContextPicker("NewTaskEnvironment") : undefined
-        }
-        showChevron={flow.environments.length > 1}
-        static={flow.environments.length <= 1}
-      />
+      <NewTaskGlassChip active={sceneryChrome}>
+        <ComposerInlineControl
+          accessibilityLabel={`Environment: ${selectedEnvironmentLabel}`}
+          chevronDirection="right"
+          disabled={composerSelectorsLocked}
+          icon="desktopcomputer"
+          label={`on ${selectedEnvironmentLabel}`}
+          maxWidth={260}
+          onPress={
+            flow.environments.length > 1 ? () => openContextPicker("NewTaskEnvironment") : undefined
+          }
+          showChevron={flow.environments.length > 1}
+          static={flow.environments.length <= 1}
+        />
+      </NewTaskGlassChip>
     </View>
   );
   const heroViewport = (
@@ -1089,6 +1181,9 @@ export function NewTaskDraftScreen(props: {
         testID="new-task-hero-scroll"
       >
         {hero}
+        {sceneryChrome && dailyPhoto !== null && !isKeyboardVisible ? (
+          <NewTaskSceneryPlace photo={dailyPhoto} />
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -1124,8 +1219,13 @@ export function NewTaskDraftScreen(props: {
   );
 
   const composerDock = (
-    <View className="bg-sheet px-4 pt-1" style={{ paddingBottom: controlsBottomPadding }}>
-      <View className="pb-1">{workspaceControls}</View>
+    <View
+      className={sceneryChrome ? "px-4 pt-1" : "bg-sheet px-4 pt-1"}
+      style={{ paddingBottom: controlsBottomPadding }}
+    >
+      <View className="pb-1">
+        <NewTaskGlassChip active={sceneryChrome}>{workspaceControls}</NewTaskGlassChip>
+      </View>
 
       <ComposerSurface
         animateLayout={false}
@@ -1158,8 +1258,8 @@ export function NewTaskDraftScreen(props: {
 
         <ComposerToolbarRow paddingBottom={0} paddingHorizontal={0} paddingTop={4}>
           <ComposerToolbarScroller
-            fadeOpaque={sheetFadeOpaque}
-            fadeTransparent={sheetFadeTransparent}
+            fadeOpaque={toolbarFadeOpaque}
+            fadeTransparent={toolbarFadeTransparent}
             contentPaddingRight={8}
           >
             <ComposerToolbarButton
@@ -1235,7 +1335,7 @@ export function NewTaskDraftScreen(props: {
 
   if (isAndroid) {
     return (
-      <View className="flex-1 bg-sheet" collapsable={false}>
+      <NewTaskDraftFrame sceneryChrome={sceneryChrome}>
         <NativeStackScreenOptions options={{ headerShown: false }} />
         <AndroidScreenHeader title="New task" onBack={closeNewTask} />
         {heroViewport}
@@ -1247,12 +1347,12 @@ export function NewTaskDraftScreen(props: {
         >
           {composerDock}
         </KeyboardStickyView>
-      </View>
+      </NewTaskDraftFrame>
     );
   }
 
   return (
-    <View className="flex-1 bg-sheet" collapsable={false}>
+    <NewTaskDraftFrame sceneryChrome={sceneryChrome}>
       <NativeStackScreenOptions
         options={{
           headerBackVisible: false,
@@ -1279,6 +1379,6 @@ export function NewTaskDraftScreen(props: {
       >
         {composerDock}
       </Animated.View>
-    </View>
+    </NewTaskDraftFrame>
   );
 }
