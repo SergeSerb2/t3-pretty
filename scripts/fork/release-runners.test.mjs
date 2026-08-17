@@ -46,10 +46,11 @@ describe("T3 Pretty release runner placement", () => {
   });
 
   it("does not rebuild desktop for mobile-only or docs-only commits", () => {
-    assert.include(desktopWorkflow, "paths:");
-    assert.include(desktopWorkflow, '"apps/desktop/**"');
-    assert.include(desktopWorkflow, '"apps/web/**"');
-    assert.notInclude(desktopWorkflow, '"apps/mobile/**"');
+    // Buildkite rejects on.push.paths, so the skip lives in the preflight job.
+    assert.include(desktopWorkflow, "Skip desktop-irrelevant pushes");
+    assert.include(desktopWorkflow, "apps/desktop");
+    assert.include(desktopWorkflow, "apps/web");
+    assert.notInclude(desktopWorkflow, "apps/mobile");
     assert.notInclude(desktopWorkflow, '"docs/**"');
     assert.include(desktopWorkflow, "workflow_dispatch:");
   });

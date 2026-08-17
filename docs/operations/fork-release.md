@@ -83,9 +83,14 @@ newer upstream tag was integrated before its sync pull request merged.
 - Detach `serbinenko/t3-pretty` from GitHub under Origin **Settings → General**. Depot and
   Buildkite only run on Origin-hosted repositories, not inbound GitHub mirrors. After detach,
   Origin is the source of truth and pushes no longer flow to GitHub.
-- Connect Buildkite from the Origin repository **Apps** tab so the self-hosted Mac and Windows
-  machines can keep taking `t3code-fork` / `release-only` jobs. Depot CI can run the Linux jobs
-  but has no macOS or Windows sandboxes, so Buildkite is required for signed desktop and iOS.
+- Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
+  the fork workflows. Create three agent queues: `linux` (hosted or any Linux agent),
+  `macos-release` (m1-dev), and `windows-release` (serge-pc). Register the machines with
+  `scripts/fork/setup-buildkite-macos-agent.sh` and
+  `scripts/fork/setup-buildkite-windows-agent.ps1`. Schedule the pipeline at `0 */4 * * *`
+  so upstream sync still runs. The GitHub Actions importer cannot run Windows jobs; Mac-only
+  desktop publishes are already allowed. Depot can take Linux jobs but has no macOS/Windows
+  sandboxes.
 - Secret `CURSOR_API_KEY`: Cursor API key for the Origin CLI (`origin auth login --api-key`).
   Used to open, merge, and tag on Origin.
 - Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used by the trusted scheduled
@@ -93,11 +98,13 @@ newer upstream tag was integrated before its sync pull request merged.
   generation. `CLI_PROXY_CHANGELOG_EFFORT` optionally overrides the changelog reasoning effort
   (default `high`).
 - Variable `T3CODE_DESKTOP_UPDATE_FEED_URL`: public HTTPS directory that serves `nightly.yml`,
-  `latest.yml`, and the installers. Must not be a GitHub Releases URL.
+  `latest.yml`, and the installers. Must not be a GitHub Releases URL. Uploads use that URL's
+  path as the S3 key prefix (so `…/t3-pretty/latest/` stores objects under `t3-pretty/latest/`).
 - Secrets `T3CODE_RELEASE_S3_BUCKET`, `T3CODE_RELEASE_S3_ACCESS_KEY_ID`,
   `T3CODE_RELEASE_S3_SECRET_ACCESS_KEY`, and optionally `T3CODE_RELEASE_S3_ENDPOINT` plus
   `T3CODE_RELEASE_S3_REGION`: S3-compatible upload target for that feed (R2 uses the account
-  endpoint `https://<accountid>.r2.cloudflarestorage.com`).
+  endpoint `https://<accountid>.r2.cloudflarestorage.com`). Optional
+  `T3CODE_RELEASE_S3_PREFIX` overrides the key prefix derived from the feed URL.
 - Optional secret `DEPOT_TOKEN`: lets the sync job dispatch follow-up workflows when the Origin
   merge push does not start them. Leave unset if Buildkite already triggers on push to `main`.
 - Parent CI (`Check`, `Test`, `Mobile Native Static Analysis`, `Release Smoke`) is disabled on
@@ -139,8 +146,8 @@ This machine is an M5 Pro (18 cores, 48 GB). m1-dev is the existing dedicated Ma
 ## Runner recovery
 
 The macOS runner lives at `/Users/m1-dev/actions-runner-t3code-fork`. After the Origin cutover
-it should be a Buildkite agent attached to the Origin app, not a GitHub Actions runner. Keep the
-same `t3code-fork` and `release-only` labels.
+it should be a Buildkite agent on the `macos-release` queue, registered with
+`scripts/fork/setup-buildkite-macos-agent.sh`. Do not give it pull-request queues.
 
 The Windows runner lives at `C:\actions-runner-t3code-fork`. The checked-in
 `scripts/fork/setup-windows-runner.ps1` can still recreate a GitHub Actions runner for rollback.

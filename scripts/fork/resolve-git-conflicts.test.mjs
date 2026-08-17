@@ -271,8 +271,8 @@ ${">".repeat(7)} theirs
     assert.include(syncWorkflow, "origin-forge.mjs dispatch");
     assert.include(syncWorkflow, "--workflow fork-mobile-release.yml");
     assert.include(syncWorkflow, "--input mode=release");
-    assert.include(mobileWorkflow, "paths:");
-    assert.include(mobileWorkflow, "- apps/mobile/**");
+    assert.include(mobileWorkflow, "Skip mobile-irrelevant pushes");
+    assert.include(mobileWorkflow, "apps/mobile");
     assert.include(mobileWorkflow, "env.MODE == 'build' || env.MODE == 'release'");
     assert.include(mobileWorkflow, "env.MODE == 'update' || env.MODE == 'release'");
     assert.include(mobileWorkflow, "EXPO_ASC_API_KEY_PATH");
