@@ -19,6 +19,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
 import { useThemeColor } from "../../lib/useThemeColor";
+import { PullRequestActorAvatar } from "./PullRequestActorAvatar";
 import { useEnvironmentQuery } from "../../state/query";
 import { pullRequestEnvironment } from "../../state/pullRequests";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -98,10 +99,15 @@ export function PullRequestReviewersSheet(props: PullRequestReviewersSheetProps)
               detail="The host did not return anyone for this search."
             />
           ) : (
-            <View className="overflow-hidden rounded-[20px] bg-card">
+            <View className="overflow-hidden rounded-2xl bg-card">
               {candidates.map((candidate, index) => (
                 <Pressable
                   key={candidate.id}
+                  accessibilityRole="button"
+                  accessibilityState={{
+                    busy: pendingId === candidate.id,
+                    disabled: pendingId !== null || reference === null,
+                  }}
                   disabled={pendingId !== null || reference === null}
                   onPress={() => {
                     if (reference === null) return;
@@ -133,12 +139,15 @@ export function PullRequestReviewersSheet(props: PullRequestReviewersSheetProps)
                       }
                     })();
                   }}
-                  className="flex-row items-center justify-between px-4 py-3"
-                  style={{
+                  className="flex-row items-center gap-3 px-4 py-3"
+                  style={({ pressed }) => ({
+                    opacity:
+                      pendingId !== null && pendingId !== candidate.id ? 0.45 : pressed ? 0.72 : 1,
                     borderBottomWidth: index === candidates.length - 1 ? 0 : 1,
                     borderBottomColor: "rgba(127,127,127,0.18)",
-                  }}
+                  })}
                 >
+                  <PullRequestActorAvatar actor={candidate} size={32} />
                   <View className="min-w-0 flex-1">
                     <Text className="text-base font-t3-bold text-foreground" numberOfLines={1}>
                       {candidate.name ?? candidate.login}
@@ -147,14 +156,18 @@ export function PullRequestReviewersSheet(props: PullRequestReviewersSheetProps)
                       <Text className="text-xs text-foreground-muted">{candidate.login}</Text>
                     ) : null}
                   </View>
-                  <Text
-                    className={cn(
-                      "text-xs font-t3-bold",
-                      candidate.isRequested ? "text-primary" : "text-foreground-muted",
-                    )}
-                  >
-                    {pendingId === candidate.id ? "…" : candidate.isRequested ? "Requested" : "Ask"}
-                  </Text>
+                  {pendingId === candidate.id ? (
+                    <ActivityIndicator color={String(iconColor)} size="small" />
+                  ) : (
+                    <Text
+                      className={cn(
+                        "text-xs font-t3-bold",
+                        candidate.isRequested ? "text-primary" : "text-foreground-muted",
+                      )}
+                    >
+                      {candidate.isRequested ? "Requested" : "Ask"}
+                    </Text>
+                  )}
                 </Pressable>
               ))}
             </View>

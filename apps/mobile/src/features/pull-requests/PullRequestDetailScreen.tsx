@@ -1,8 +1,4 @@
-import type {
-  PullRequestAction,
-  PullRequestMergeMethod,
-  PullRequestReviewThread,
-} from "@t3tools/contracts";
+import type { PullRequestAction, PullRequestMergeMethod } from "@t3tools/contracts";
 import { EnvironmentId } from "@t3tools/contracts";
 import { PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS } from "@t3tools/client-runtime/state/pull-requests";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -17,6 +13,7 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  StyleSheet,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -52,8 +49,6 @@ import {
   buildResolveConflictsPrompt,
   canRequestPullRequestReviewers,
   composePullRequestDetailView,
-  countUnresolvedReviewThreads,
-  describePullRequestConversationSummary,
   groupPullRequestConversation,
   pullRequestUrlHost,
   readableFailure,
@@ -62,11 +57,18 @@ import type { ParsedDiffFile } from "./pullRequestDiffParse";
 import {
   formatDiffStat,
   pullRequestCheckStatusLabel,
+  pullRequestCheckStatusTextClass,
+  pullRequestCheckStatusTint,
   pullRequestCheckSymbol,
+  pullRequestLabelColor,
   resolvePullRequestState,
   summarizePullRequestChecks,
 } from "./pullRequestPresentation";
 import { parseRoutePositiveInt, type PullRequestDetailRouteParams } from "./pullRequestNavigation";
+import { PullRequestActionChip, PullRequestPrimaryButton } from "./PullRequestActionChip";
+import { PullRequestActorAvatar } from "./PullRequestActorAvatar";
+import { PullRequestConversation } from "./PullRequestConversation";
+import { hasVisiblePullRequestBody } from "./pullRequestMarkdown.logic";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestStateBadge } from "./PullRequestStateBadge";
 import { usePullRequestDiffSlices } from "./usePullRequestDiffSlices";
@@ -543,7 +545,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                   baseBranch={detail.baseBranch}
                 />
                 <Text className="min-w-0 flex-1 text-xs text-foreground-muted" numberOfLines={1}>
-                  {detail.repository}
+                  #{detail.number} · {detail.repository}
                 </Text>
               </View>
               <Text
@@ -552,17 +554,39 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
               >
                 {detail.title}
               </Text>
-              <View className="mt-4 flex-row rounded-full bg-subtle p-1">
+              <View className="mt-3 flex-row items-center gap-2">
+                <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
+                  <View className="min-w-0 max-w-[46%] rounded-full bg-subtle px-2.5 py-1">
+                    <Text className="font-mono text-2xs text-foreground" numberOfLines={1}>
+                      {detail.headBranch}
+                    </Text>
+                  </View>
+                  <Text className="text-2xs text-foreground-tertiary">→</Text>
+                  <View className="min-w-0 max-w-[46%] rounded-full bg-subtle px-2.5 py-1">
+                    <Text className="font-mono text-2xs text-foreground" numberOfLines={1}>
+                      {detail.baseBranch}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              <View className="mt-3.5 flex-row rounded-full bg-subtle p-1">
                 {visibleTabs.map((item) => {
                   const selected = tab === item.value;
+                  const count =
+                    item.value === "conversation"
+                      ? detail.commentCount
+                      : item.value === "files"
+                        ? detail.changedFiles
+                        : null;
                   return (
                     <Pressable
                       key={item.value}
                       accessibilityRole="button"
                       accessibilityState={{ selected }}
                       onPress={() => setTab(item.value)}
+                      style={({ pressed }) => ({ opacity: pressed && !selected ? 0.7 : 1 })}
                       className={cn(
-                        "flex-1 items-center rounded-full py-2",
+                        "min-h-9 flex-1 flex-row items-center justify-center gap-1 rounded-full",
                         selected ? "bg-card" : undefined,
                       )}
                     >
@@ -574,6 +598,16 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                       >
                         {item.label}
                       </Text>
+                      {count !== null && count > 0 ? (
+                        <Text
+                          className={cn(
+                            "text-2xs tabular-nums",
+                            selected ? "text-foreground-muted" : "text-foreground-tertiary",
+                          )}
+                        >
+                          {count}
+                        </Text>
+                      ) : null}
                     </Pressable>
                   );
                 })}
@@ -618,7 +652,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                     onAction={() => activityQuery.refresh()}
                   />
                 ) : (
-                  <ConversationTab
+                  <PullRequestConversation
                     busy={busy}
                     canReview={reviewVerdicts.length > 0}
                     conversation={conversation}
@@ -673,10 +707,11 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                             "The host refused to change this conversation.",
                           ),
                         );
-                        return;
+                        return false;
                       }
                       await invalidate({ environmentId, input: { reference } });
                       activityQuery.refresh();
+                      return true;
                     }}
                   />
                 )
@@ -709,9 +744,9 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                 style={{ paddingBottom: Math.max(insets.bottom, 12) }}
               >
                 {conflicting ? (
-                  <Pressable
-                    accessibilityRole="button"
+                  <PullRequestPrimaryButton
                     disabled={busy}
+                    label="Resolve conflicts in a thread"
                     onPress={() =>
                       handoff(
                         buildResolveConflictsPrompt({
@@ -722,12 +757,8 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                         }),
                       )
                     }
-                    className="h-12 items-center justify-center rounded-full bg-danger active:opacity-80"
-                  >
-                    <Text className="text-base font-t3-bold text-danger-foreground">
-                      Resolve conflicts in a thread
-                    </Text>
-                  </Pressable>
+                    tone="danger"
+                  />
                 ) : canMerge ? (
                   Platform.OS === "android" && androidMergeActions.length > 1 ? (
                     <ControlPillMenu
@@ -737,38 +768,22 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                         void perform("merge", nativeEvent.event as PullRequestMergeMethod);
                       }}
                     >
-                      <Pressable
-                        accessibilityRole="button"
+                      <PullRequestPrimaryButton
                         disabled={busy}
-                        className="h-12 items-center justify-center rounded-full bg-primary active:opacity-80"
-                      >
-                        <Text className="text-base font-t3-bold text-primary-foreground">
-                          {actionPending ? "Merging…" : "Merge pull request"}
-                        </Text>
-                      </Pressable>
+                        label={actionPending ? "Merging…" : "Merge pull request"}
+                        loading={actionPending}
+                      />
                     </ControlPillMenu>
                   ) : (
-                    <Pressable
-                      accessibilityRole="button"
+                    <PullRequestPrimaryButton
                       disabled={busy}
+                      label={actionPending ? "Merging…" : "Merge pull request"}
+                      loading={actionPending}
                       onPress={confirmMerge}
-                      className="h-12 items-center justify-center rounded-full bg-primary active:opacity-80"
-                    >
-                      <Text className="text-base font-t3-bold text-primary-foreground">
-                        {actionPending ? "Merging…" : "Merge pull request"}
-                      </Text>
-                    </Pressable>
+                    />
                   )
                 ) : reviewVerdicts.length > 0 ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={openReview}
-                    className="h-12 items-center justify-center rounded-full bg-primary active:opacity-80"
-                  >
-                    <Text className="text-base font-t3-bold text-primary-foreground">
-                      Submit a review
-                    </Text>
-                  </Pressable>
+                  <PullRequestPrimaryButton label="Submit a review" onPress={openReview} />
                 ) : null}
               </View>
             ) : null}
@@ -787,18 +802,19 @@ function OverviewTab(props: {
   const muted = String(useThemeColor("--color-icon-subtle"));
   const diff = formatDiffStat(detail.additions, detail.deletions);
   return (
-    <View className="gap-4 pt-2">
-      <View className="rounded-[20px] bg-card px-4 py-3">
-        <MetaLine
-          icon="arrow.triangle.branch"
-          tint={muted}
-          label={`${detail.headBranch} → ${detail.baseBranch}`}
-        />
-        <MetaLine
-          icon="person.crop.circle"
-          tint={muted}
-          label={`${detail.author?.login ?? "ghost"} opened ${relativeTime(detail.createdAt)}`}
-        />
+    <View className="gap-3.5 pt-1">
+      <View className="rounded-2xl bg-card px-4 py-3.5">
+        <View className="flex-row items-center gap-2.5">
+          <PullRequestActorAvatar actor={detail.author} size={28} />
+          <View className="min-w-0 flex-1">
+            <Text className="text-sm font-t3-bold text-foreground" numberOfLines={1}>
+              {detail.author?.login ?? "ghost"}
+            </Text>
+            <Text className="text-xs text-foreground-muted">
+              opened {relativeTime(detail.createdAt)}
+            </Text>
+          </View>
+        </View>
         {diff ? (
           <MetaLine icon="doc.text" tint={muted} label={`${diff} · ${detail.changedFiles} files`} />
         ) : null}
@@ -807,48 +823,74 @@ function OverviewTab(props: {
           tint={muted}
           label={summarizePullRequestChecks(detail.checks)}
         />
+        {detail.labels.length > 0 ? (
+          <View className="mt-2 flex-row flex-wrap gap-1.5">
+            {detail.labels.map((label) => {
+              const color = pullRequestLabelColor(label.color);
+              return (
+                <View
+                  key={label.name}
+                  className="rounded-full bg-subtle px-2 py-0.5"
+                  style={color ? { backgroundColor: `${color}22` } : undefined}
+                >
+                  <Text
+                    className="text-2xs text-foreground-muted"
+                    style={color ? { color } : undefined}
+                  >
+                    {label.name}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
       </View>
 
       {detail.reviewers.length > 0 || canRequestPullRequestReviewers(detail) ? (
-        <View className="rounded-[20px] bg-card px-4 py-3">
+        <View className="rounded-2xl bg-card px-4 py-3.5">
           <View className="flex-row items-center justify-between">
             <Text className="text-sm font-t3-bold text-foreground">Reviewers</Text>
             {canRequestPullRequestReviewers(detail) ? (
-              <Pressable onPress={props.onRequestReviewers} hitSlop={8}>
-                <Text className="text-sm font-t3-bold text-primary">Edit</Text>
-              </Pressable>
+              <PullRequestActionChip
+                label="Edit"
+                onPress={props.onRequestReviewers}
+                variant="quiet"
+              />
             ) : null}
           </View>
           {detail.reviewers.length === 0 ? (
             <Text className="mt-2 text-sm text-foreground-muted">No reviewers requested</Text>
           ) : (
             detail.reviewers.map((reviewer) => (
-              <Text key={reviewer.login} className="mt-1.5 text-sm text-foreground">
-                {reviewer.name ?? reviewer.login}
-              </Text>
+              <View key={reviewer.login} className="mt-2.5 flex-row items-center gap-2.5">
+                <PullRequestActorAvatar actor={reviewer} size={24} />
+                <Text className="min-w-0 flex-1 text-sm text-foreground" numberOfLines={1}>
+                  {reviewer.name ?? reviewer.login}
+                </Text>
+              </View>
             ))
           )}
         </View>
       ) : null}
 
       {detail.checks.length > 0 ? (
-        <View className="rounded-[20px] bg-card px-4 py-3">
+        <View className="rounded-2xl bg-card px-4 py-3.5">
           <Text className="text-sm font-t3-bold text-foreground">Checks</Text>
           {detail.checks.map((check) => (
             <View
               key={`${check.name}:${check.url ?? ""}`}
-              className="mt-2 flex-row items-center gap-2"
+              className="mt-2.5 flex-row items-center gap-2"
             >
               <SymbolView
                 name={pullRequestCheckSymbol(check.status)}
                 size={14}
-                tintColor={muted}
+                tintColor={pullRequestCheckStatusTint(check.status)}
                 type="monochrome"
               />
               <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
                 {check.name}
               </Text>
-              <Text className="text-xs text-foreground-muted">
+              <Text className={cn("text-xs", pullRequestCheckStatusTextClass(check.status))}>
                 {pullRequestCheckStatusLabel(check.status)}
               </Text>
             </View>
@@ -856,9 +898,9 @@ function OverviewTab(props: {
         </View>
       ) : null}
 
-      {detail.body.trim().length > 0 ? (
-        <View className="rounded-[20px] bg-card px-4 py-3">
-          <Text className="mb-2 text-sm font-t3-bold text-foreground">Description</Text>
+      {hasVisiblePullRequestBody(detail.body) ? (
+        <View className="rounded-2xl bg-card px-4 py-3.5">
+          <Text className="mb-2.5 text-sm font-t3-bold text-foreground">Description</Text>
           <PullRequestMarkdown markdown={detail.body} />
         </View>
       ) : null}
@@ -877,145 +919,6 @@ function MetaLine(props: {
       <Text className="flex-1 text-sm text-foreground" numberOfLines={2}>
         {props.label}
       </Text>
-    </View>
-  );
-}
-
-function ConversationTab(props: {
-  readonly detail: NonNullable<ReturnType<typeof composePullRequestDetailView>>;
-  readonly conversation: ReturnType<typeof groupPullRequestConversation>;
-  readonly timeline: ReturnType<typeof buildPullRequestTimeline>;
-  readonly busy: boolean;
-  readonly onComment: () => void;
-  readonly onReview: () => void;
-  readonly canReview: boolean;
-  readonly onReply: (threadId: string) => void;
-  readonly onFixThread: (thread: PullRequestReviewThread) => void;
-  readonly onToggleResolved: (thread: PullRequestReviewThread, resolved: boolean) => Promise<void>;
-}) {
-  const muted = String(useThemeColor("--color-icon-subtle"));
-  const unresolved = countUnresolvedReviewThreads(props.detail.reviewThreads);
-  const summary = describePullRequestConversationSummary({
-    commentCount: props.detail.commentCount,
-    unresolvedThreadCount: unresolved,
-    resolvedThreadCount: props.detail.reviewThreads.length - unresolved,
-  });
-  return (
-    <View className="gap-3 pt-2">
-      <View className="flex-row items-center justify-between">
-        <Text className="text-sm text-foreground-muted">{summary}</Text>
-        <View className="flex-row gap-2">
-          {props.detail.viewerPermissions.comment ? (
-            <Pressable onPress={props.onComment} className="rounded-full bg-subtle px-3 py-1.5">
-              <Text className="text-xs font-t3-bold text-foreground">Comment</Text>
-            </Pressable>
-          ) : null}
-          {props.canReview ? (
-            <Pressable onPress={props.onReview} className="rounded-full bg-subtle px-3 py-1.5">
-              <Text className="text-xs font-t3-bold text-foreground">Review</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
-      {props.conversation.length === 0 ? (
-        <EmptyState
-          variant="plain"
-          title="No conversation yet"
-          detail="Comments and review threads will appear here."
-        />
-      ) : (
-        props.conversation.map((item) => {
-          if (item.kind === "comment") {
-            return (
-              <View key={item.comment.id} className="rounded-[20px] bg-card px-4 py-3">
-                <Text className="text-xs text-foreground-muted">
-                  {item.comment.author?.login ?? "ghost"} · {relativeTime(item.comment.createdAt)}
-                  {item.comment.reviewState ? ` · ${item.comment.reviewState}` : ""}
-                </Text>
-                {item.comment.body.trim().length > 0 ? (
-                  <View className="mt-2">
-                    <PullRequestMarkdown markdown={item.comment.body} />
-                  </View>
-                ) : null}
-              </View>
-            );
-          }
-          const thread = item.thread;
-          return (
-            <View key={thread.id} className="rounded-[20px] bg-card px-4 py-3">
-              <View className="flex-row items-center gap-2">
-                <SymbolView name="text.bubble" size={13} tintColor={muted} type="monochrome" />
-                <Text
-                  className="flex-1 text-xs font-t3-medium text-foreground-muted"
-                  numberOfLines={1}
-                >
-                  {thread.path}
-                  {thread.line === null ? "" : `:${thread.line}`}
-                  {thread.isResolved ? " · Resolved" : ""}
-                </Text>
-              </View>
-              {thread.comments.map((comment) => (
-                <View key={comment.id} className="mt-2">
-                  <Text className="text-xs text-foreground-muted">
-                    {comment.author?.login ?? "ghost"} · {relativeTime(comment.createdAt)}
-                  </Text>
-                  {comment.body.trim().length > 0 ? (
-                    <View className="mt-1">
-                      <PullRequestMarkdown markdown={comment.body} />
-                    </View>
-                  ) : null}
-                </View>
-              ))}
-              <View className="mt-3 flex-row flex-wrap gap-2">
-                {props.detail.capabilities.review.reply &&
-                props.detail.viewerPermissions.comment ? (
-                  <Pressable
-                    onPress={() => props.onReply(thread.id)}
-                    className="rounded-full bg-subtle px-3 py-1.5"
-                  >
-                    <Text className="text-xs font-t3-bold text-foreground">Reply</Text>
-                  </Pressable>
-                ) : null}
-                {props.detail.capabilities.review.resolve &&
-                props.detail.viewerPermissions.resolve ? (
-                  <Pressable
-                    disabled={props.busy}
-                    onPress={() => void props.onToggleResolved(thread, !thread.isResolved)}
-                    className="rounded-full bg-subtle px-3 py-1.5"
-                  >
-                    <Text className="text-xs font-t3-bold text-foreground">
-                      {thread.isResolved ? "Unresolve" : "Resolve"}
-                    </Text>
-                  </Pressable>
-                ) : null}
-                {!thread.isResolved ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => props.onFixThread(thread)}
-                    className="rounded-full bg-subtle px-3 py-1.5 active:opacity-80"
-                  >
-                    <Text className="text-xs font-t3-bold text-foreground">Fix in a thread</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            </View>
-          );
-        })
-      )}
-      {props.timeline.length > 0 ? (
-        <Text className="pt-2 text-xs font-t3-medium uppercase tracking-[0.5px] text-foreground-muted">
-          Timeline
-        </Text>
-      ) : null}
-      {props.timeline.slice(0, 12).map((event) => (
-        <View key={event.id} className="flex-row items-start gap-2 py-1">
-          <Text className="text-xs text-foreground-muted">{relativeTime(event.at)}</Text>
-          <Text className="flex-1 text-sm text-foreground">
-            {event.actor?.login ?? ""} {event.title}
-            {event.body ? ` — ${event.body}` : ""}
-          </Text>
-        </View>
-      ))}
     </View>
   );
 }
@@ -1051,24 +954,25 @@ function FilesTab(props: {
     );
   }
   return (
-    <View className="gap-2 pt-2">
+    <View className="gap-2.5 pt-1">
       {props.truncated ? (
         <Text className="text-xs text-foreground-muted">
           This slice of the diff is truncated. Open a file to read it.
         </Text>
       ) : null}
-      <View className="overflow-hidden rounded-[20px] bg-card">
+      <View className="overflow-hidden rounded-2xl bg-card">
         {props.files.map((file, index) => {
           const diff = formatDiffStat(file.additions, file.deletions);
           return (
             <Pressable
               key={file.key}
               onPress={() => props.onOpenFile(file.displayPath)}
-              className="flex-row items-center gap-3 px-4 py-3 active:opacity-80"
-              style={{
-                borderBottomWidth: index === props.files.length - 1 ? 0 : 1,
+              style={({ pressed }) => ({
+                opacity: pressed ? 0.72 : 1,
+                borderBottomWidth: index === props.files.length - 1 ? 0 : StyleSheet.hairlineWidth,
                 borderBottomColor: "rgba(127,127,127,0.18)",
-              }}
+              })}
+              className="flex-row items-center gap-3 px-4 py-3.5"
             >
               <SymbolView name="doc.text" size={15} tintColor={muted} type="monochrome" />
               <Text className="flex-1 font-mono text-sm text-foreground" numberOfLines={1}>
@@ -1086,16 +990,13 @@ function FilesTab(props: {
         })}
       </View>
       {props.nextCursor !== null ? (
-        <Pressable
-          accessibilityRole="button"
+        <PullRequestActionChip
           disabled={props.loadingMore}
+          label="Load more files"
+          loading={props.loadingMore}
+          loadingLabel="Loading more files…"
           onPress={props.onLoadMore}
-          className="items-center rounded-full bg-subtle px-4 py-3"
-        >
-          <Text className="text-sm font-t3-bold text-foreground">
-            {props.loadingMore ? "Loading more files…" : "Load more files"}
-          </Text>
-        </Pressable>
+        />
       ) : null}
       {props.error ? <Text className="text-xs text-foreground-muted">{props.error}</Text> : null}
     </View>

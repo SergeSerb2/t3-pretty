@@ -1,7 +1,9 @@
 import type {
   PullRequestCheck,
   PullRequestCheckStatus,
+  PullRequestChecksState,
   PullRequestMergeability,
+  PullRequestReviewDecision,
   PullRequestState,
 } from "@t3tools/contracts";
 
@@ -119,6 +121,83 @@ export function pullRequestCheckSymbol(
     case "neutral":
       return "minus.circle";
   }
+}
+
+const CHECK_STATUS_TINT: Record<PullRequestCheckStatus, string> = {
+  pending: "#d97706",
+  success: "#059669",
+  failure: "#dc2626",
+  cancelled: "#dc2626",
+  skipped: "#71717a",
+  neutral: "#71717a",
+};
+
+export function pullRequestCheckStatusTint(status: PullRequestCheckStatus): string {
+  return CHECK_STATUS_TINT[status];
+}
+
+export function pullRequestCheckStatusTextClass(status: PullRequestCheckStatus): string {
+  switch (status) {
+    case "pending":
+      return "text-amber-600 dark:text-amber-400";
+    case "success":
+      return "text-emerald-600 dark:text-emerald-400";
+    case "failure":
+    case "cancelled":
+      return "text-red-600 dark:text-red-400";
+    case "skipped":
+    case "neutral":
+      return "text-foreground-muted";
+  }
+}
+
+/** "CHANGES_REQUESTED" reads as "Changes requested": one capital, the host's underscores gone. */
+export function formatReviewState(state: string): string {
+  const words = state.toLowerCase().replace(/[_-]+/gu, " ").trim();
+  if (words.length === 0) return state;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Only a verdict somebody has actually given. "Review required" is the absence of one, and
+ * saying so on every unreviewed row would say nothing.
+ */
+export function describeReviewDecision(
+  decision: PullRequestReviewDecision | undefined,
+): string | null {
+  if (decision === "approved") return "Approved";
+  if (decision === "changes-requested") return "Changes requested";
+  return null;
+}
+
+export function describeChecksState(state: PullRequestChecksState | undefined): string | null {
+  if (state === "passing") return "Checks passed";
+  if (state === "failing") return "Checks failing";
+  if (state === "pending") return "Checks running";
+  return null;
+}
+
+export function reviewDecisionTextClass(decision: PullRequestReviewDecision): string {
+  return decision === "approved"
+    ? "text-emerald-600 dark:text-emerald-400"
+    : "text-amber-600 dark:text-amber-400";
+}
+
+export function checksStateTextClass(state: PullRequestChecksState): string {
+  switch (state) {
+    case "passing":
+      return "text-emerald-600 dark:text-emerald-400";
+    case "failing":
+      return "text-red-600 dark:text-red-400";
+    case "pending":
+      return "text-amber-600 dark:text-amber-400";
+  }
+}
+
+/** A host colour only when it is one, so a malformed value falls back to the neutral pill. */
+export function pullRequestLabelColor(color: string | null): string | null {
+  const hex = color?.trim().replace(/^#/u, "") ?? "";
+  return /^[0-9a-fA-F]{6}$/u.test(hex) ? `#${hex}` : null;
 }
 
 export function formatDiffStat(additions: number, deletions: number): string | null {
