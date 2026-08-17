@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="280" viewBox="0 0 780 280">
+  <rect width="780" height="280" fill="#f4f4f5"/>
+  <rect x="40" y="36" width="700" height="208" rx="36" fill="#1c1c1e"/>
+  <text x="68" y="72" fill="#f5f5f7" font-family="SF Pro Rounded, system-ui, sans-serif" font-size="15" font-weight="600">T3</text>
+  <text x="108" y="72" fill="#f5f5f7" font-family="SF Pro Rounded, system-ui, sans-serif" font-size="15" font-weight="600">3 active agents</text>
+  <text x="248" y="72" fill="#a1a1aa" font-family="SF Pro Rounded, system-ui, sans-serif" font-size="15">·</text>
+  <text x="264" y="72" fill="#fcd34d" font-family="SF Pro Rounded, system-ui, sans-serif" font-size="15" font-weight="600">1 needs attention</text>
+  <text x="668" y="72" fill="#a1a1aa" font-family="SF Pro Rounded, system-ui, sans-serif" font-size="13" font-weight="600" text-anchor="end">2m ago</text>
+  <circle cx="76" cy="112" r="6" fill="#fcd34d"/>
+  <text x="96" y="117" fill="#f5f5f7" font-family="SF Pro Rounded, system-ui, sans-serif" font-size="14" font-weight="600">Fix the login redirect after…</text>
+  <text x="392" y="117" fill="#a1a1aa" font-family="SF Pro Text, system-ui, sans-serif" font-size="13">t3-pretty</text>
+  <text x="668" y="117" fill="#fcd34d" font-family="SF Pro Rounded, system-ui, sans-serif" font-size="13" font-weight="600" text-anchor="end">Approval</text>
+  <circle cx="76" cy="154" r="6" fill="#7dd3fc"/>
+  <text x="96" y="159" fill="#f5f5f7" font-family="SF Pro Rounded, system-ui, sans-serif" font-size="14" font-weight="600">Sidebar performance pass</text>
+  <text x="372" y="159" fill="#a1a1aa" font-family="SF Pro Text, system-ui, sans-serif" font-size="13">desktop</text>
+  <text x="668" y="159" fill="#7dd3fc" font-family="SF Pro Rounded, system-ui, sans-serif" font-size="13" font-weight="600" text-anchor="end">Editing AgentActivi…</text>
+  <circle cx="76" cy="196" r="6" fill="#7dd3fc"/>
+  <text x="96" y="201" fill="#f5f5f7" font-family="SF Pro Rounded, system-ui, sans-serif" font-size="14" font-weight="600">Docs for remote pairing</text>
+  <text x="348" y="201" fill="#a1a1aa" font-family="SF Pro Text, system-ui, sans-serif" font-size="13">mobile</text>
+  <text x="668" y="201" fill="#7dd3fc" font-family="SF Pro Rounded, system-ui, sans-serif" font-size="13" font-weight="600" text-anchor="end">Working</text>
+</svg>
