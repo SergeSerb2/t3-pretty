@@ -94,6 +94,13 @@ import {
   type TimelineLatestTurn,
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
+import { ToolCallExpandedBody } from "./ToolCallExpandedBody";
+import {
+  buildWorkEntryDisplaySections,
+  resolveToolCallCommand,
+  workEntryDisplayAddsStructure,
+  workEntryDisplayBody,
+} from "./toolCallPresentation";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   deriveDisplayedUserMessageState,
@@ -2146,46 +2153,21 @@ function workEntryPreview(
     : `${displayPath} +${workEntry.changedFiles!.length - 1} more`;
 }
 
-function workEntryRawCommand(
-  workEntry: Pick<TimelineWorkEntry, "command" | "rawCommand">,
-): string | null {
-  const rawCommand = workEntry.rawCommand?.trim();
-  if (!rawCommand || !workEntry.command) {
-    return null;
-  }
-  return rawCommand === workEntry.command.trim() ? null : rawCommand;
-}
-
-function buildToolCallExpandedBody(
-  workEntry: TimelineWorkEntry,
-  workspaceRoot: string | undefined,
-): string | null {
-  const blocks: string[] = [];
-  if (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) {
-    blocks.push(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
-  }
-  const raw = workEntryRawCommand(workEntry);
-  if (raw?.trim()) {
-    blocks.push(raw.trim());
-  } else if (workEntry.command?.trim()) {
-    blocks.push(workEntry.command.trim());
-  }
-  if (workEntry.detail?.trim()) {
-    blocks.push(workEntry.detail.trim());
-  }
+function workEntryDisplaySections(workEntry: TimelineWorkEntry, workspaceRoot: string | undefined) {
   const changedFiles = workEntry.changedFiles ?? [];
-  if (changedFiles.length > 0) {
-    blocks.push(
-      changedFiles
-        .map((filePath) => formatWorkspaceRelativePath(filePath, workspaceRoot))
-        .join("\n"),
-    );
-  }
-  return blocks.length > 0 ? blocks.join("\n\n") : null;
+  return buildWorkEntryDisplaySections({
+    itemType: workEntry.itemType,
+    toolData: workEntry.toolData,
+    command: resolveToolCallCommand(workEntry),
+    output: workEntry.detail,
+    changedFilesText:
+      changedFiles.length > 0
+        ? changedFiles
+            .map((filePath) => formatWorkspaceRelativePath(filePath, workspaceRoot))
+            .join("\n")
+        : null,
+  });
 }
-
-const toolCallExpandedBodyClassName =
-  "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-[length:var(--font-size-code,0.6875rem)] leading-relaxed select-text";
 
 function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   if (
@@ -2366,12 +2348,14 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       ? null
       : rawPreview;
   const displayText = preview ? `${heading} - ${preview}` : heading;
-  const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
+  const displaySections = workEntryDisplaySections(workEntry, workspaceRoot);
+  const expandedBody = workEntryDisplayBody(displaySections);
   const previewRef = useRef<HTMLSpanElement>(null);
   const [previewClipped, setPreviewClipped] = useState(false);
   // Skip disclosure when the body only repeats the preview *and* the preview
   // is fully visible. Keep expand when <pre> would preserve newlines/space runs
   // that truncate (nowrap) collapses — equality after trim alone is not enough.
+  // Pretty-broken shell also needs a disclosure even when the one-liner fits.
   const collapsedPreview = preview === null ? null : preview.trim().replace(/\s+/g, " ");
   const bodyRepeatsPreview =
     expandedBody !== null && collapsedPreview !== null && expandedBody.trim() === collapsedPreview;
@@ -2387,7 +2371,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     ro.observe(el);
     return () => ro.disconnect();
   }, [bodyRepeatsPreview, preview]);
-  const canExpand = expandedBody !== null && (!bodyRepeatsPreview || previewClipped);
+  const canExpand =
+    displaySections.length > 0 &&
+    (!bodyRepeatsPreview || previewClipped || workEntryDisplayAddsStructure(displaySections));
   const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
   const showDestructiveRowStyle =
     showFailedIndicator &&
@@ -2484,13 +2470,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           ) : null}
         </span>
       </div>
-      {canExpand && expandedBody ? (
+      {canExpand && displaySections.length > 0 ? (
         <AnimatedHeight>
-          {expanded ? (
-            <div className="mb-1 ms-7 mt-0.5 rounded-md border border-border/50 bg-foreground/[0.03] px-2.5 py-2 transition-opacity duration-200 ease-out starting:opacity-0 motion-reduce:transition-none">
-              <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
-            </div>
-          ) : null}
+          {expanded ? <ToolCallExpandedBody sections={displaySections} /> : null}
         </AnimatedHeight>
       ) : null}
     </div>

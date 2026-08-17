@@ -8,6 +8,10 @@ import type {
   UserInputQuestion,
 } from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import {
+  buildToolCallDisplaySections,
+  serializeToolCallDisplaySections,
+} from "@t3tools/shared/shellCommandFormat";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
@@ -668,24 +672,18 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
 }
 
 function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
-  const blocks: string[] = [];
-  const appendUniqueBlock = (value: string | null | undefined) => {
-    const trimmed = value?.trim();
-    if (trimmed && !blocks.includes(trimmed)) {
-      blocks.push(trimmed);
-    }
-  };
-
-  if (entry.itemType === "mcp_tool_call" && entry.toolData !== undefined) {
-    appendUniqueBlock(`MCP call\n${JSON.stringify(entry.toolData, null, 2)}`);
-  }
-  appendUniqueBlock(entry.rawCommand ?? entry.command);
-  appendUniqueBlock(entry.detail);
-  if ((entry.changedFiles?.length ?? 0) > 0) {
-    appendUniqueBlock(entry.changedFiles!.join("\n"));
-  }
-
-  return blocks.length > 0 ? blocks.join("\n\n") : null;
+  const mcpText =
+    entry.itemType === "mcp_tool_call" && entry.toolData !== undefined
+      ? `MCP call\n${JSON.stringify(entry.toolData, null, 2)}`
+      : null;
+  return serializeToolCallDisplaySections(
+    buildToolCallDisplaySections({
+      leadingText: mcpText,
+      command: entry.rawCommand ?? entry.command,
+      output: entry.detail,
+      trailingText: (entry.changedFiles?.length ?? 0) > 0 ? entry.changedFiles!.join("\n") : null,
+    }),
+  );
 }
 
 function workEntryHasExpandedBody(entry: WorkLogEntry): boolean {

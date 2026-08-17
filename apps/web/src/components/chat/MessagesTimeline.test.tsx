@@ -867,5 +867,12 @@ describe("MessagesTimeline", () => {
         detail: "wrote apps/web/src/components/chat/ComposerCommandMenu.tsx",
       }),
     ).toContain('aria-expanded="false"');
+    // Chained one-liners disclose so the pretty-broken command is reachable.
+    expect(
+      render({
+        label: "Command run",
+        command: `echo "===== ISSUE 198 =====" && gh issue view 198 --repo SergeSerb2/t3-pretty`,
+      }),
+    ).toContain('aria-expanded="false"');
   });
 });

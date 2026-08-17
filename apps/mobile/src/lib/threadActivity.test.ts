@@ -568,6 +568,47 @@ describe("buildThreadFeed", () => {
     );
   });
 
+  it("pretty-breaks chained bash in the expanded work row", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-pretty-bash"),
+      projectId: ProjectId.make("project-1"),
+      title: "Pretty bash",
+      latestTurn: {
+        turnId: TurnId.make("turn-1"),
+        state: "completed",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt: "2026-04-01T00:00:01.000Z",
+        completedAt: "2026-04-01T00:00:03.000Z",
+        assistantMessageId: null,
+      },
+      activities: [
+        makeActivity({
+          id: EventId.make("tool-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Ran command",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId: TurnId.make("turn-1"),
+          payload: {
+            title: "Ran command",
+            itemType: "command_execution",
+            detail: `echo "===== ISSUE 198 =====" && gh issue view 198 --repo SergeSerb2/t3-pretty`,
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+
+    expect(group.activities[0]?.getFullDetail()).toBe(
+      `echo "===== ISSUE 198 =====" &&\n  gh issue view 198 --repo SergeSerb2/t3-pretty`,
+    );
+  });
+
   it("keeps MCP inputs available to expanded mobile work rows", () => {
     const turnId = TurnId.make("turn-mcp");
     const thread = makeThread({
