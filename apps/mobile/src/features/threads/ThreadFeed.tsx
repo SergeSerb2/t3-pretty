@@ -104,6 +104,7 @@ import {
   resolveThreadFeedLiveFollow,
   type ThreadFeedLiveFollowEvent,
 } from "./thread-feed-live-follow";
+import { deriveThreadFeedListFooterInset } from "./thread-feed-end-scroll";
 import {
   collapsedWorkLogHeight,
   ThreadWorkGroupToggle,
@@ -171,6 +172,7 @@ export interface ThreadFeedProps {
   readonly usesAutomaticContentInsets?: boolean;
   readonly onHeaderMaterialVisibilityChange?: (visible: boolean) => void;
   readonly onEndFollowEnabledChange?: (enabled: boolean) => void;
+  readonly onListReady?: () => void;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   /** Non-null when older turns exist beyond the loaded window. */
   readonly loadEarlier?: {
@@ -1525,9 +1527,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   // Footer clears the floating composer. With automatic insets UIKit already
   // adds the safe-area bottom, so only reserve the overlap above that strip —
   // same net amount the old animated contentInset path reported.
-  const listFooterInset = usesNativeAutomaticInsets
-    ? Math.max(0, bottomContentInset - insets.bottom)
-    : bottomContentInset;
+  const listFooterInset = deriveThreadFeedListFooterInset({
+    usesNativeAutomaticInsets,
+    composerOverlayHeight: bottomContentInset,
+    safeAreaBottom: insets.bottom,
+  });
   // With automatic insets the header inset lives in UIKit's adjustedContentInset,
   // which LegendList's JS anchoring math cannot see — it measures the anchored
   // end space from the scroll view's frame top. Fold the header height back into
@@ -1750,10 +1754,15 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const listReadyForKeyRef = useRef<string | null>(null);
   const [listReady, setListReady] = useState(false);
   const listReadyForCurrentMount = listReadyForKeyRef.current === listMountKey && listReady;
+  const onListReady = props.onListReady;
   const markListReady = useCallback(() => {
+    const alreadyReadyForMount = listReadyForKeyRef.current === listMountKey;
     listReadyForKeyRef.current = listMountKey;
     setListReady(true);
-  }, [listMountKey]);
+    if (!alreadyReadyForMount) {
+      onListReady?.();
+    }
+  }, [listMountKey, onListReady]);
   useLayoutEffect(() => {
     if (listReadyForKeyRef.current !== listMountKey) {
       setListReady(false);
@@ -2167,9 +2176,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             // Real footer spacer — not animated contentInset — so full-scroll
             // end always clears the floating composer even when LegendList's
             // inset math and UIKit's adjusted inset disagree mid-stream.
-            ListFooterComponent={
-              listFooterInset > 0 ? <View style={{ height: listFooterInset }} /> : null
-            }
+            ListFooterComponent={<View style={{ height: listFooterInset }} />}
             contentContainerStyle={{
               paddingTop: 12,
               paddingHorizontal: contentHorizontalPadding,
