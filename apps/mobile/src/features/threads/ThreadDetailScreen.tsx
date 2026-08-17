@@ -83,6 +83,7 @@ import {
   ThreadComposer,
 } from "./ThreadComposer";
 import { ThreadFeed } from "./ThreadFeed";
+import { resolveThreadFeedEndOffset } from "./thread-feed-end-scroll";
 import type { ThreadContentPresentation } from "./threadContentPresentation";
 
 // KeyboardStickyView memos its animated style against `style` identity.
@@ -530,6 +531,54 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     freeze.set(false);
   }, [freeze, selectedThreadKey]);
 
+  // Open-thread safety net: initialScrollAtEnd can finish on the native
+  // top-rest while alignItemsAtEnd / the composer footer are still measuring.
+  // Re-pin once the list is ready so short threads land above the composer.
+  const pinFollowedFeedToEnd = useCallback(() => {
+    if (!endFollowEnabledRef.current) {
+      return;
+    }
+    const list = listRef.current;
+    const state = list?.getState();
+    const usesAutomaticInsets = props.usesAutomaticContentInsets === true && Platform.OS === "ios";
+    const offset =
+      list && state && state.scrollLength > 0
+        ? resolveThreadFeedEndOffset({
+            contentSize: state.contentLength,
+            scrollLength: state.scrollLength,
+            insetStartAdjustment: usesAutomaticInsets ? navigationHeaderHeight : 0,
+            // contentLength already includes LegendList's end inset.
+            insetEnd: 0,
+          })
+        : null;
+    if (list && offset !== null) {
+      freeze.set(true);
+      void Promise.resolve(list.scrollToOffset({ offset, animated: false }))
+        .catch(() => undefined)
+        .finally(() => {
+          freeze.set(false);
+        });
+      return;
+    }
+    void scrollMessageToEnd({ animated: false, closeKeyboard: false }).catch(() => {
+      freeze.set(false);
+    });
+  }, [freeze, navigationHeaderHeight, props.usesAutomaticContentInsets, scrollMessageToEnd]);
+  const hasFeedItems = props.selectedThreadFeed.length > 0;
+  useEffect(() => {
+    if (contentPresentationKind !== "ready" || !hasFeedItems) {
+      return;
+    }
+    const timer = setTimeout(pinFollowedFeedToEnd, 64);
+    return () => clearTimeout(timer);
+  }, [
+    composerOverlayHeight,
+    contentPresentationKind,
+    hasFeedItems,
+    pinFollowedFeedToEnd,
+    selectedThreadKey,
+  ]);
+
   useEffect(() => {
     if (
       anchorMessageId === null ||
@@ -670,6 +719,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             usesAutomaticContentInsets={props.usesAutomaticContentInsets}
             onHeaderMaterialVisibilityChange={props.onHeaderMaterialVisibilityChange}
             onEndFollowEnabledChange={setEndFollowEnabled}
+            onListReady={pinFollowedFeedToEnd}
             skills={selectedProviderSkills}
             loadEarlier={props.loadEarlier ?? null}
           />
