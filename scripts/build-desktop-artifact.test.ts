@@ -270,11 +270,13 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(nightlyConfig, {
         provider: "generic",
         url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
         channel: "nightly",
       });
       assert.deepStrictEqual(latestConfig, {
         provider: "generic",
         url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
       });
     }),
   );

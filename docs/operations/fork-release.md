@@ -66,14 +66,16 @@ source code on installed machines.
    docs-only, marketing, or relay-only commits). `workflow_dispatch` and the
    upstream-sync dispatch still always run.
 9. GitHub publishes a public release marked as latest (not a prerelease — drafts and
-   prereleases cannot be latest), with the installers, blockmaps, and both `nightly` and
-   `latest` update manifests. Packaged fork apps use a generic `electron-updater` feed at
-   `https://github.com/SergeSerb2/t3-pretty/releases/latest/download/`, so no per-machine GitHub
-   token is required and the in-app checker does not depend on GitHub's `/releases/latest` API or
-   the Atom feed. Already-installed GitHub-provider builds need one manual install of a release
-   that contains this feed before later updates can be automatic. Windows ships even when Azure
-   Trusted Signing is not configured; unsigned NSIS installers still update from that feed, and
-   SmartScreen will warn until ATS secrets are added.
+   prereleases cannot be latest), with the installers and both `nightly` and `latest` update
+   manifests. Packaged fork apps use a generic `electron-updater` feed at
+   `https://github.com/SergeSerb2/t3-pretty/releases/latest/download/` with multi-range requests
+   disabled, so no per-machine GitHub token is required and the in-app checker does not depend on
+   GitHub's `/releases/latest` API or the Atom feed. Blockmaps are not published: that feed only
+   has the current release's files, and GitHub's Azure CDN rejects the multi-range requests
+   `electron-updater` uses for differential downloads. Already-installed GitHub-provider builds
+   need one manual install of a release that contains this feed before later updates can be
+   automatic. Windows ships even when Azure Trusted Signing is not configured; unsigned NSIS
+   installers still update from that feed, and SmartScreen will warn until ATS secrets are added.
 
 Fork versions retain the newest integrated upstream nightly prefix and append a monotonic fork
 build number. This makes personal merges newer than the parent build without pretending that a

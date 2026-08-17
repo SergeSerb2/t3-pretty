@@ -2087,6 +2087,10 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
     return {
       provider: "generic" as const,
       url: genericFeedUrl,
+      // GitHub's latest/download feed redirects to Azure blobs that 501
+      // multi-range requests. The GitHub provider hardcodes this off; the
+      // generic provider does not.
+      useMultipleRangeRequest: false,
       ...(updateChannel === "nightly" ? { channel: "nightly" as const } : {}),
     };
   }

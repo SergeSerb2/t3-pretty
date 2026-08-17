@@ -938,7 +938,6 @@ jobs:
             release-assets/*.dmg
             release-assets/*.zip
             release-assets/*.exe
-            release-assets/*.blockmap
             release-assets/*.yml
           )
           (( ${#assets[@]} > 0 ))
