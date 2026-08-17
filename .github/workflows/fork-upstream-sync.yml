@@ -1,5 +1,10 @@
 name: T3 Pretty Upstream Sync
 
+# Origin is the fork's forge. Parent T3 Code nightlies still live on GitHub
+# (pingdotgg/t3code); this workflow fetches those tags, then opens and merges
+# the integration pull request on Cursor Origin.
+# See docs/operations/fork-release.md.
+
 on:
   workflow_dispatch:
   schedule:
@@ -45,6 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           git remote add upstream https://github.com/pingdotgg/t3code.git
+          # Parent history stays on GitHub. The fork remote is Origin.
           # The checkout is a blob:none partial clone, and some blobs the
           # merge needs (e.g. .repos/ subtrees bumped by a nightly) exist
           # only in the upstream repo; the fork promisor answers "not our
@@ -104,7 +110,7 @@ jobs:
         run: |
           set -euo pipefail
           git config user.name "t3-pretty-sync[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "t3-pretty-bot@users.noreply.cursor.com"
 
           export REUSED_SYNC_RESOLUTION=false
           if git fetch origin "refs/heads/$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH" 2>/dev/null &&
@@ -205,7 +211,7 @@ jobs:
             exit 0
           fi
           git config user.name "t3-pretty-sync[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "t3-pretty-bot@users.noreply.cursor.com"
           git fetch origin "refs/heads/$RESOLUTION_CACHE_BRANCH:refs/remotes/origin/$RESOLUTION_CACHE_BRANCH" 2>/dev/null || true
           # Commit the cache straight from plumbing: the merge step may have
           # left an unresolved merge in the real index and worktree.
@@ -237,11 +243,14 @@ jobs:
         if: steps.discover.outputs.has_update == 'true'
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+          ORIGIN_REPO: serbinenko/t3-pretty
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
           SYNC_BRANCH: ${{ steps.discover.outputs.branch }}
         run: |
           set -euo pipefail
+          node scripts/fork/origin-forge.mjs setup-ci
           pr_body_path="$RUNNER_TEMP/t3-pretty-upstream-sync.md"
           {
             printf '%s\n\n' \
@@ -249,24 +258,12 @@ jobs:
               'Clean merges are retained directly. Text conflicts are resolved through CLIProxyAPI with gpt-5.6-sol at xhigh reasoning under the T3 Pretty preservation contract.'
             cat .t3-fork/upstream-sync-report.md
           } > "$pr_body_path"
-          pr_number="$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
-            -f state=open \
-            -f base=main \
-            -f head="$GITHUB_REPOSITORY_OWNER:$SYNC_BRANCH" \
-            --jq '.[0].number // empty')"
-          if [[ -z "$pr_number" ]]; then
-            pr_number="$(gh api --method POST "repos/$GITHUB_REPOSITORY/pulls" \
-              -f base=main \
-              -f head="$SYNC_BRANCH" \
-              -f title="chore(sync): merge upstream $UPSTREAM_TAG" \
-              -F "body=@$pr_body_path" \
-              --jq '.number')"
-          else
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/pulls/$pr_number" \
-              -F "body=@$pr_body_path" >/dev/null
-          fi
-          pr_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr_number"
-          echo "url=$pr_url" >> "$GITHUB_OUTPUT"
+          node scripts/fork/origin-forge.mjs ensure-pr \
+            --base main \
+            --head "$SYNC_BRANCH" \
+            --title "chore(sync): merge upstream $UPSTREAM_TAG" \
+            --body-file "$pr_body_path"
+          echo "url=https://cursor.com/codebase/serbinenko/t3-pretty" >> "$GITHUB_OUTPUT"
 
           mobile_release_needed=false
           if ! git diff --quiet origin/main...HEAD -- \
@@ -278,36 +275,20 @@ jobs:
           fi
 
           head_sha="$(git rev-parse HEAD)"
-          merge_state=""
-          for _ in {1..12}; do
-            merge_state="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" --jq '.mergeable_state')"
-            if [[ "$merge_state" == "clean" || "$merge_state" == "unstable" ]]; then
-              break
-            fi
-            sleep 5
-          done
-          [[ "$merge_state" == "clean" || "$merge_state" == "unstable" ]] || {
-            echo "Pull request remained $merge_state and could not be merged." >&2
-            exit 1
-          }
+          node scripts/fork/origin-forge.mjs merge-pr --head "$SYNC_BRANCH" --sha "$head_sha"
+          node scripts/fork/origin-forge.mjs delete-branch --head "$SYNC_BRANCH"
 
-          gh api --method PUT "repos/$GITHUB_REPOSITORY/pulls/$pr_number/merge" \
-            -f merge_method=merge \
-            -f sha="$head_sha" \
-            --jq 'if .merged then .message else error(.message) end'
-          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$SYNC_BRANCH" || true
-
-          # GITHUB_TOKEN-authored merges do not reliably emit recursive push
-          # workflows, so dispatch the release explicitly. The release workflow
-          # is commit-idempotent if a normal push event also arrives.
-          gh workflow run fork-release.yml -R "$GITHUB_REPOSITORY" --ref main
+          # Origin-connected CI should see the merge push. Dispatch is a
+          # fallback when Depot is configured; the release workflow is
+          # commit-idempotent if the push event also arrives.
+          node scripts/fork/origin-forge.mjs dispatch --workflow fork-release.yml --ref main
           if [[ "$mobile_release_needed" == "true" ]]; then
-            gh workflow run fork-mobile-release.yml \
-              -R "$GITHUB_REPOSITORY" \
+            node scripts/fork/origin-forge.mjs dispatch \
+              --workflow fork-mobile-release.yml \
               --ref main \
-              -f mode=release \
-              -f platform=ios \
-              -f message="Upstream sync $UPSTREAM_TAG"
+              --input mode=release \
+              --input platform=ios \
+              --input message="Upstream sync $UPSTREAM_TAG"
           else
             echo "The upstream integration changed no mobile-relevant paths; skipping mobile release."
           fi
@@ -316,17 +297,14 @@ jobs:
         if: failure() && steps.discover.outputs.has_update == 'true'
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          ORIGIN_REPO: serbinenko/t3-pretty
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
         run: |
-          title="Upstream sync blocked: $UPSTREAM_TAG"
-          existing="$(gh api --method GET "repos/$GITHUB_REPOSITORY/issues" \
-            -f state=open \
-            -f per_page=100 \
-            --jq ".[] | select(.pull_request == null and .title == \"$title\") | .number" | head -n 1)"
-          body="The guarded four-hour T3 Pretty sync could not safely merge $UPSTREAM_TAG. Inspect the failed run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          if [[ -n "$existing" ]]; then
-            gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$existing/comments" -f body="$body" >/dev/null
-          else
-            gh api --method POST "repos/$GITHUB_REPOSITORY/issues" -f title="$title" -f body="$body" >/dev/null
-          fi
+          set -euo pipefail
+          node scripts/fork/origin-forge.mjs setup-ci
+          body="The guarded four-hour T3 Pretty sync could not safely merge $UPSTREAM_TAG. Inspect the failed Origin-connected CI run for this commit."
+          node scripts/fork/origin-forge.mjs report-blocked \
+            --upstream-tag "$UPSTREAM_TAG" \
+            --title "Upstream sync blocked: $UPSTREAM_TAG" \
+            --body "$body"

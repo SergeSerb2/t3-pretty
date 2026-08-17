@@ -9,18 +9,19 @@ local build delivery.
 `.github/workflows/fork-upstream-sync.yml` runs every four hours at 00:00,
 04:00, 08:00, 12:00, 16:00, and 20:00 UTC, merges the newest upstream nightly
 tag (AI-resolving conflicts via `scripts/fork/resolve-git-conflicts.mjs`), and
-lands it on `main` through an auto-merged PR. Mobile code rides along — there is
-no separate mobile sync.
+lands it on Origin `main` through an auto-merged pull request. Mobile code rides
+along — there is no separate mobile sync.
 
 ## Merge-driven releases
 
-`.github/workflows/fork-mobile-release.yml` triggers on every push to `main`
-that touches mobile-relevant paths. A release publishes an OTA update on the
-production channel for both platforms from GitHub-hosted `ubuntu-latest`,
-then compiles a production iOS IPA on the self-hosted Mac runner
-(`m1-dev-t3code-fork`, same labels as desktop) only when the native
-fingerprint changed. Explicit `workflow_dispatch` `build`, or the `force_ios`
-checkbox, still compiles and submits even when the fingerprint matches.
+`.github/workflows/fork-mobile-release.yml` triggers on every push to Origin
+`main` that touches mobile-relevant paths. A release publishes an OTA update on
+the production channel for both platforms from Origin-connected Linux CI
+(`ubuntu-latest` in the workflow YAML), then compiles a production iOS IPA on
+the self-hosted Mac runner (`m1-dev-t3code-fork`, same labels as desktop) only
+when the native fingerprint changed. Explicit `workflow_dispatch` `build`, or
+the `force_ios` checkbox, still compiles and submits even when the fingerprint
+matches.
 
 OTA still reaches already-installed binaries whose native fingerprint matches.
 JS-only changes therefore show up as an in-app update in a few minutes and
@@ -30,14 +31,11 @@ devices, or a native module change) get one when the fingerprint changes.
 Local `eas build --local` IPAs do not create hosted EAS Build records, so
 `eas build:list` alone cannot describe the last submitted binary. After a
 successful TestFlight submit the workflow commits the fingerprint to
-`.t3-fork/ios-production-fingerprint` (a durable store `GITHUB_TOKEN` can
-update; repository Variables are not writable via workflow `permissions`).
-Because `main` requires pull requests, the bot commit lands through a
-short-lived `automation/ios-fingerprint-*` pull request that the workflow
-merges via the API — a direct push is rejected (GH013). The merged file is
-outside every release workflow's path filters and token-authored merges do
-not retrigger push workflows, so the record itself schedules no further
-release.
+`.t3-fork/ios-production-fingerprint`. Because `main` requires pull requests,
+the bot commit lands through a short-lived `automation/ios-fingerprint-*`
+Origin pull request that `scripts/fork/origin-forge.mjs` merges. The merged
+file is outside every release workflow's path filters, so the record itself
+schedules no further release.
 
 iOS store binaries cannot be compiled on the Windows runner. Registering a
 second Mac (for example m5-dev) with the same `self-hosted`, `macOS`,
@@ -49,11 +47,10 @@ IPA. An M5 Pro (18-core, 48 GB) should compile the current IPA in roughly
 Macs stop taking turns.
 
 The four-hour upstream workflow uses the same whole-repository merge and
-gpt-5.6-sol/xhigh conflict resolver as desktop. Because GitHub-token-authored
-merges do not recursively trigger push workflows, it explicitly dispatches the
-mobile release after an upstream integration only when that integration changed
-`apps/mobile`, shared packages, patches, or the lockfile. Server/web-only parent
-changes do not start a mobile release.
+gpt-5.6-sol/xhigh conflict resolver as desktop. After the Origin merge it
+dispatches the mobile release only when that integration changed `apps/mobile`,
+shared packages, patches, or the lockfile. Server/web-only parent changes do
+not start a mobile release.
 
 The workflow fails early when required release credentials are missing instead
 of reporting a green release that shipped nothing. To activate:
@@ -111,7 +108,8 @@ DMG. It now also calls `scenery-ios-build.sh`, which:
   unchanged.
 
 That path is Development-signed device installs, not TestFlight. Store
-binaries come from `fork-mobile-release.yml` on the GitHub runner.
+binaries come from `fork-mobile-release.yml` on the Origin-connected Mac
+release runner.
 
 Configuration lives in `~/.t3-scenery-updater/ios.env` (Xcode path, team id,
 device opt-in). Every assignment in that file must be `export`ed — the app

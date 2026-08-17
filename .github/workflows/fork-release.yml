@@ -1,5 +1,10 @@
 name: T3 Pretty Desktop Release
 
+# Origin is the fork's forge and updater host. GitHub Releases are not used.
+# Signed Mac/Windows jobs stay on the dedicated self-hosted machines; Linux
+# jobs run on Origin-connected CI (Depot or Buildkite).
+# See docs/operations/fork-release.md.
+
 on:
   push:
     branches:
@@ -105,11 +110,23 @@ jobs:
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Verify release publisher credential
+      - name: Verify Origin release publisher credentials
         if: steps.existing.outputs.should_release == 'true'
         env:
-          FORK_RELEASE_TOKEN: ${{ secrets.FORK_RELEASE_TOKEN }}
-        run: test -n "$FORK_RELEASE_TOKEN"
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL }}
+          T3CODE_RELEASE_S3_BUCKET: ${{ secrets.T3CODE_RELEASE_S3_BUCKET }}
+        run: |
+          set -euo pipefail
+          test -n "$CURSOR_API_KEY"
+          test -n "$T3CODE_DESKTOP_UPDATE_FEED_URL"
+          test -n "$T3CODE_RELEASE_S3_BUCKET"
+          case "$T3CODE_DESKTOP_UPDATE_FEED_URL" in
+            *github.com*)
+              echo "T3CODE_DESKTOP_UPDATE_FEED_URL still points at GitHub." >&2
+              exit 1
+              ;;
+          esac
 
       - id: signing
         name: Check updater signing credentials
@@ -133,7 +150,7 @@ jobs:
         run: |
           set -euo pipefail
           # macOS signing is the release floor. Windows signing is optional:
-          # unsigned NSIS installers still auto-update from the public GitHub
+          # unsigned NSIS installers still auto-update from the public Origin
           # feed. When Azure Trusted Signing is not configured the release still
           # ships Windows. MACOS_PROVISIONING_PROFILE
           # is optional; without it the build sets
@@ -414,8 +431,7 @@ jobs:
       - name: Build macOS updater artifact
         shell: bash
         env:
-          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
-          T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/
+          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
@@ -761,8 +777,7 @@ jobs:
       - name: Build Windows updater artifact
         shell: bash
         env:
-          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
-          T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/
+          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -877,6 +892,7 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
           HAS_WINDOWS: ${{ needs.build_windows.result == 'success' }}
+          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL }}
         run: |
           set -euo pipefail
           mac_manifest="$(find release-assets -maxdepth 1 -name '*-mac.yml' -print -quit)"
@@ -917,16 +933,23 @@ jobs:
           test -n "$mac_zip"
           unzip -p "$mac_zip" '*/Contents/Resources/app-update.yml' > app-update.yml
           grep -F 'provider: generic' app-update.yml
-          grep -F 'https://github.com/SergeSerb2/t3-pretty/releases/latest/download/' app-update.yml
+          feed_url="${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/"
+          grep -F "$feed_url" app-update.yml
           shopt -s nullglob
           for nightly_manifest in release-assets/nightly*.yml; do
             cp "$nightly_manifest" "${nightly_manifest/nightly/latest}"
           done
 
-      - name: Publish public GitHub release
+      - name: Publish public Origin release
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.FORK_RELEASE_TOKEN }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL }}
+          T3CODE_RELEASE_S3_BUCKET: ${{ secrets.T3CODE_RELEASE_S3_BUCKET }}
+          T3CODE_RELEASE_S3_ENDPOINT: ${{ secrets.T3CODE_RELEASE_S3_ENDPOINT }}
+          T3CODE_RELEASE_S3_ACCESS_KEY_ID: ${{ secrets.T3CODE_RELEASE_S3_ACCESS_KEY_ID }}
+          T3CODE_RELEASE_S3_SECRET_ACCESS_KEY: ${{ secrets.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY }}
+          T3CODE_RELEASE_S3_REGION: ${{ secrets.T3CODE_RELEASE_S3_REGION }}
           RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
           RELEASE_REF: ${{ needs.preflight.outputs.ref }}
           RELEASE_NAME: ${{ needs.preflight.outputs.name }}
@@ -953,11 +976,19 @@ jobs:
               printf '\nNo parent integration report is present for this revision.\n'
             fi
           } > "$release_notes_path"
-          # Full releases (not prereleases) so --latest can advance
-          # /releases/latest/download/ for the generic updater feed.
-          gh release create "$RELEASE_TAG" "${assets[@]}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$RELEASE_REF" \
-            --title "$RELEASE_NAME" \
-            --notes-file "$release_notes_path" \
-            --latest=true
+          if ! command -v aws >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y awscli
+          fi
+          node scripts/fork/origin-forge.mjs setup-ci
+          publish_args=(
+            publish-release
+            --tag "$RELEASE_TAG"
+            --target "$RELEASE_REF"
+            --title "$RELEASE_NAME"
+            --notes-file "$release_notes_path"
+          )
+          for asset in "${assets[@]}"; do
+            publish_args+=(--asset "$asset")
+          done
+          node scripts/fork/origin-forge.mjs "${publish_args[@]}"

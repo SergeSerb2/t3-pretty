@@ -11,6 +11,8 @@ name: T3 Pretty Mobile Release
 # dispatches `build` / force_ios. JS-only releases therefore never occupy
 # the Mac.
 #
+# Origin is the fork's forge. OTA still publishes through Expo; the
+# fingerprint record lands through an Origin pull request.
 # See docs/operations/fork-mobile-release.md.
 on:
   push:
@@ -530,7 +532,8 @@ jobs:
         if: needs.ota.outputs.fingerprint != ''
         env:
           FINGERPRINT: ${{ needs.ota.outputs.fingerprint }}
-          GH_TOKEN: ${{ github.token }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          ORIGIN_REPO: serbinenko/t3-pretty
         run: |
           set -euo pipefail
           # Local builds never show up in `eas build:list`. Persist the hash
@@ -544,7 +547,7 @@ jobs:
             exit 0
           fi
           git config user.name "t3-pretty-mobile[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "t3-pretty-bot@users.noreply.cursor.com"
           # --no-verify: the pre-commit hook runs `vp fmt` on staged files, and
           # an extensionless fingerprint record is not a formattable target,
           # which fails the hook and the whole release after a successful
@@ -552,75 +555,21 @@ jobs:
           git commit --no-verify -m "chore(mobile): record iOS production fingerprint"
 
           # main requires pull requests, so the bot commit cannot be pushed
-          # directly (GH013). Land it through a short-lived automation PR, the
-          # same path the upstream sync uses. `.t3-fork/` is outside every
-          # release workflow's path filters and token-authored merges do not
-          # retrigger push workflows, so the merge schedules nothing. Uses the
-          # API via node fetch: `gh` is not guaranteed on the self-hosted
-          # runner.
+          # directly. Land it through a short-lived Origin PR, the same path
+          # the upstream sync uses. `.t3-fork/` is outside every release
+          # workflow's path filters, so the merge schedules nothing.
           branch="automation/ios-fingerprint-${FINGERPRINT:0:12}"
           git push --force origin "HEAD:refs/heads/$branch"
-          BRANCH="$branch" HEAD_SHA="$(git rev-parse HEAD)" node --input-type=module - <<'NODE'
-          const token = process.env.GH_TOKEN;
-          const repo = process.env.GITHUB_REPOSITORY;
-          const owner = process.env.GITHUB_REPOSITORY_OWNER;
-          const branch = process.env.BRANCH;
-          const headSha = process.env.HEAD_SHA;
-          const api = `${process.env.GITHUB_API_URL ?? "https://api.github.com"}/repos/${repo}`;
-          const headers = {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "Content-Type": "application/json",
-          };
-          const request = async (method, path, body) => {
-            const response = await fetch(`${api}${path}`, {
-              method,
-              headers,
-              body: body === undefined ? undefined : JSON.stringify(body),
-            });
-            const text = await response.text();
-            if (!response.ok) {
-              throw new Error(`${method} ${path} -> HTTP ${response.status}: ${text.slice(0, 300)}`);
-            }
-            try {
-              return JSON.parse(text);
-            } catch {
-              return undefined;
-            }
-          };
-
-          let [pr] = await request(
-            "GET",
-            `/pulls?state=open&base=main&head=${encodeURIComponent(`${owner}:${branch}`)}`,
-          );
-          if (!pr) {
-            pr = await request("POST", "/pulls", {
-              base: "main",
-              head: branch,
-              title: "chore(mobile): record iOS production fingerprint",
-              body: `Records the submitted iOS runtime fingerprint from ${process.env.GITHUB_SERVER_URL}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID} so later JS-only releases can skip a native rebuild.`,
-            });
-          }
-
-          let mergeState = "";
-          for (let attempt = 0; attempt < 12; attempt += 1) {
-            const current = await request("GET", `/pulls/${pr.number}`);
-            mergeState = current.mergeable_state;
-            if (mergeState === "clean" || mergeState === "unstable") break;
-            await new Promise((resolve) => setTimeout(resolve, 5000));
-          }
-          if (mergeState !== "clean" && mergeState !== "unstable") {
-            throw new Error(`Fingerprint pull request remained ${mergeState} and could not be merged.`);
-          }
-          const merged = await request("PUT", `/pulls/${pr.number}/merge`, {
-            merge_method: "merge",
-            sha: headSha,
-          });
-          if (!merged?.merged) {
-            throw new Error(`Fingerprint merge was refused: ${merged?.message ?? "unknown"}`);
-          }
-          await request("DELETE", `/git/refs/heads/${branch}`).catch(() => {});
-          console.log(`Merged fingerprint PR #${pr.number} from ${branch}.`);
-          NODE
+          node scripts/fork/origin-forge.mjs setup-ci
+          body_path="$RUNNER_TEMP/t3-pretty-ios-fingerprint.md"
+          printf '%s\n' \
+            "Records the submitted iOS runtime fingerprint so later JS-only releases can skip a native rebuild." \
+            > "$body_path"
+          node scripts/fork/origin-forge.mjs ensure-pr \
+            --base main \
+            --head "$branch" \
+            --title "chore(mobile): record iOS production fingerprint" \
+            --body-file "$body_path"
+          node scripts/fork/origin-forge.mjs merge-pr --head "$branch" --sha "$(git rev-parse HEAD)"
+          node scripts/fork/origin-forge.mjs delete-branch --head "$branch"
           echo "Recorded .t3-fork/ios-production-fingerprint=$FINGERPRINT"
