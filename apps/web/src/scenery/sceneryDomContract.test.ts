@@ -23,6 +23,7 @@ import sceneryPlaceCreditSource from "./SceneryPlaceCredit.tsx?raw";
 import sceneryArrivalSource from "./SceneryArrival.tsx?raw";
 import sceneryAppearanceSettingsSource from "./SceneryAppearanceSettings.tsx?raw";
 import activeScenerySource from "./ActiveScenery.tsx?raw";
+import primeWorldScenerySource from "./primeWorldScenery.ts?raw";
 import useInkOverrideSource from "./useInkOverride.ts?raw";
 import sceneryInkTransitionSource from "./sceneryInkTransition.ts?raw";
 
@@ -206,7 +207,15 @@ describe("scenery new-thread arrival contract", () => {
     expect(sceneryLayerSource).toContain("preloadWallpaper");
     expect(sceneryLayerSource).toContain("sceneryArrivalCoversSwap");
     expect(useHandleNewThreadSource).toContain("primeWorldSceneryForNewThread");
+    expect(primeWorldScenerySource).toContain("requestSceneryArrival");
     expect(chatViewSource).toContain("writeSceneryComposerPlacement");
+  });
+
+  it("covers the swap with a transition so fog does not restart at reveal", () => {
+    expect(sceneryCssSource).toContain("@starting-style");
+    expect(sceneryCssSource).toContain("calc(var(--fog-alpha, 1) * 0.78)");
+    expect(sceneryCssSource).not.toContain("scenery-fog-gather");
+    expect(sceneryCssSource).not.toContain("scenery-fog-dissipate");
   });
 
   it("does not blur hero chrome during the fog sequence", () => {
