@@ -1,11 +1,13 @@
 import { useMemo } from "react";
 
 import { deriveThreadTitleFromPrompt } from "../lib/projectThreadStartTurn";
+import { optimisticStartingThreadKey } from "../lib/optimisticThreadSend";
 import {
   flattenQueuedThreadMessages,
   type QueuedThreadCreation,
   type QueuedThreadMessage,
 } from "./thread-outbox-model";
+import { useOptimisticStartingThreads } from "./optimistic-thread-send";
 import { useThreadOutboxMessages } from "./use-thread-outbox";
 
 /** A queued new-task creation, shaped for thread-list presentation. */
@@ -17,10 +19,17 @@ export interface PendingNewTask {
 
 export function usePendingNewTasks(): ReadonlyArray<PendingNewTask> {
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
+  const startingThreads = useOptimisticStartingThreads();
   return useMemo(() => {
+    const startingThreadKeys = new Set(
+      startingThreads.map((thread) => optimisticStartingThreadKey(thread)),
+    );
     const tasks: PendingNewTask[] = [];
     for (const message of flattenQueuedThreadMessages(queuedMessagesByThreadKey)) {
       if (!message.creation) {
+        continue;
+      }
+      if (startingThreadKeys.has(optimisticStartingThreadKey(message))) {
         continue;
       }
       tasks.push({
@@ -31,5 +40,5 @@ export function usePendingNewTasks(): ReadonlyArray<PendingNewTask> {
     }
     tasks.sort((left, right) => right.message.createdAt.localeCompare(left.message.createdAt));
     return tasks;
-  }, [queuedMessagesByThreadKey]);
+  }, [queuedMessagesByThreadKey, startingThreads]);
 }

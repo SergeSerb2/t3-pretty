@@ -14,6 +14,7 @@ import {
   useRemoteEnvironmentRuntime,
   useSavedRemoteConnection,
 } from "./use-remote-environment-registry";
+import { useOptimisticStartingThreadShell } from "./optimistic-thread-send";
 import {
   resolveSelectedThreadShell,
   resolveSelectionDetailFallbackRef,
@@ -51,12 +52,19 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
   }
   const selectedThreadRef = routeThreadRef ?? lastRouteThreadRef.current;
   const selectedThreadShell = useThreadShell(selectedThreadRef);
+  const localStartingShell = useOptimisticStartingThreadShell({
+    environmentId: selectedThreadRef?.environmentId ?? null,
+    threadId: selectedThreadRef?.threadId ?? null,
+  });
   // The shell snapshot is authoritative for selection metadata. Only fall back
   // to the hot per-thread detail stream while the shell cannot identify the
   // thread, so consumers do not re-render at stream rate during active turns.
+  // A local starting overlay is enough to render the thread chrome, so skip
+  // the missing-thread subscribe until the server lists it.
   const detailFallbackRef = resolveSelectionDetailFallbackRef(
     selectedThreadRef,
     selectedThreadShell,
+    localStartingShell !== null,
   );
   const selectedThreadDetailState = useEnvironmentThread(
     detailFallbackRef?.environmentId ?? null,
@@ -64,8 +72,14 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
   );
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
   const selectedThread = useMemo(
-    () => resolveSelectedThreadShell(selectedThreadRef, selectedThreadShell, selectedThreadDetail),
-    [selectedThreadDetail, selectedThreadRef, selectedThreadShell],
+    () =>
+      resolveSelectedThreadShell(
+        selectedThreadRef,
+        selectedThreadShell,
+        selectedThreadDetail,
+        localStartingShell,
+      ),
+    [localStartingShell, selectedThreadDetail, selectedThreadRef, selectedThreadShell],
   );
   const selectedProjectRef = useMemo<ScopedProjectRef | null>(
     () =>

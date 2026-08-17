@@ -513,6 +513,10 @@ function ThreadRouteContent(
     ) {
       return;
     }
+    if (selectedThreadDetail === null && selectedThread.latestTurn === null) {
+      // Local starting overlay: the server thread is not interruptible yet.
+      return;
+    }
     return interruptThreadTurn({
       environmentId: selectedThread.environmentId,
       input: {
@@ -522,7 +526,7 @@ function ThreadRouteContent(
           : {}),
       },
     });
-  }, [interruptThreadTurn, selectedThread]);
+  }, [interruptThreadTurn, selectedThread, selectedThreadDetail]);
 
   const settlementSupported = serverConfig?.environment.capabilities.threadSettlement === true;
   const snoozeSupported = serverConfig?.environment.capabilities.threadSnooze === true;
@@ -761,6 +765,7 @@ function ThreadRouteContent(
     detailError: Option.getOrNull(selectedThreadDetailState.error),
     detailDeleted: selectedThreadDetailState.status === "deleted",
     connectionState: routeConnectionState,
+    hasOptimisticContent: selectedThreadDetail === null && composer.selectedThreadFeed.length > 0,
   });
   const renderThreadRouteBody = (showActionControls: boolean) => (
     <>

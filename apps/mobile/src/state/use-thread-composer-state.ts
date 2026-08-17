@@ -6,6 +6,7 @@ import {
   MessageId,
   type EnvironmentId,
   type ModelSelection,
+  type OrchestrationThreadActivity,
   type ProviderInteractionMode,
   type RuntimeMode,
   type ThreadId,
@@ -20,6 +21,10 @@ import {
   pickComposerImages,
 } from "../lib/composerImages";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
+import {
+  mergeOptimisticThreadMessages,
+  resolveOptimisticSendStartedAt,
+} from "../lib/optimisticThreadSend";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { createThreadFeedBuilder } from "../lib/threadActivity";
 import { recordThreadFeedBuildPerformanceSpan } from "../features/observability/threadPerformance";
@@ -37,9 +42,16 @@ import {
   updateComposerDraftSettings,
   useComposerDraft,
 } from "./use-composer-drafts";
-import { setPendingConnectionError } from "../state/use-remote-environment-registry";
+import {
+  setPendingConnectionError,
+  useRemoteEnvironmentRuntime,
+} from "../state/use-remote-environment-registry";
 import { useSelectedThreadDetail } from "../state/use-thread-detail";
 import { useThreadSelection } from "../state/use-thread-selection";
+import {
+  clearOptimisticStartingThread,
+  useOptimisticStartingThread,
+} from "./optimistic-thread-send";
 import { enqueueThreadOutboxMessage } from "./thread-outbox";
 import {
   dispatchingQueuedMessageIdAtom,
@@ -61,6 +73,8 @@ export function appendReviewCommentToDraft(input: {
     appendComposerDraftAttachments(threadKey, input.attachments);
   }
 }
+
+const EMPTY_THREAD_FEED_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = [];
 
 export function useThreadDraftForThread(input: {
   readonly environmentId?: EnvironmentId;
@@ -98,20 +112,50 @@ export function useThreadComposerState() {
     () => (selectedThreadKey ? (queuedMessagesByThreadKey[selectedThreadKey] ?? []) : []),
     [queuedMessagesByThreadKey, selectedThreadKey],
   );
+  const optimisticStarting = useOptimisticStartingThread({
+    environmentId: selectedThreadShell?.environmentId ?? null,
+    threadId: selectedThreadShell?.id ?? null,
+  });
+  const selectedEnvironmentRuntime = useRemoteEnvironmentRuntime(
+    selectedThreadShell?.environmentId ?? null,
+  );
   const selectedThreadMessages = selectedThreadDetail?.messages ?? null;
   const selectedThreadActivities = selectedThreadDetail?.activities ?? null;
+  const selectedThreadFeedMessages = useMemo(
+    () =>
+      mergeOptimisticThreadMessages(
+        selectedThreadMessages,
+        selectedThreadQueuedMessages,
+        optimisticStarting,
+      ),
+    [optimisticStarting, selectedThreadMessages, selectedThreadQueuedMessages],
+  );
   const selectedThreadFeedBuild = useMemo(() => {
-    if (selectedThreadMessages === null || selectedThreadActivities === null) {
+    if (
+      selectedThreadMessages === null &&
+      selectedThreadActivities === null &&
+      selectedThreadFeedMessages.length === 0
+    ) {
       return { feed: [], durationMs: 0 };
     }
     const startedAt = performance.now();
     const feed = feedBuilder({
-      messages: selectedThreadMessages,
-      activities: selectedThreadActivities,
+      messages: selectedThreadFeedMessages,
+      activities: selectedThreadActivities ?? EMPTY_THREAD_FEED_ACTIVITIES,
     });
     return { feed, durationMs: performance.now() - startedAt };
-  }, [feedBuilder, selectedThreadActivities, selectedThreadMessages]);
+  }, [feedBuilder, selectedThreadActivities, selectedThreadFeedMessages, selectedThreadMessages]);
   const selectedThreadFeed = selectedThreadFeedBuild.feed;
+  useEffect(() => {
+    if (optimisticStarting === null || selectedThreadMessages === null) {
+      return;
+    }
+    if (
+      selectedThreadMessages.some((message) => message.id === optimisticStarting.message.messageId)
+    ) {
+      clearOptimisticStartingThread(optimisticStarting.environmentId, optimisticStarting.threadId);
+    }
+  }, [optimisticStarting, selectedThreadMessages]);
   useEffect(() => {
     if (!selectedThreadDetail || !selectedThreadShell) return;
     recordThreadFeedBuildPerformanceSpan(
@@ -163,16 +207,38 @@ export function useThreadComposerState() {
       return null;
     }
 
+    const sendStartedAt = resolveOptimisticSendStartedAt({
+      latestTurnStartedAt: selectedThread.latestTurn?.startedAt ?? null,
+      latestTurnCompletedAt: selectedThread.latestTurn?.completedAt ?? null,
+      sessionStatus: selectedThread.session?.status ?? null,
+      sessionUpdatedAt: selectedThread.session?.updatedAt ?? null,
+      optimisticSendStartedAt: optimisticStarting?.sendStartedAt ?? null,
+      queuedHeadCreatedAt: selectedThreadQueuedMessages[0]?.createdAt ?? null,
+      isDeliveringQueuedMessage,
+      environmentConnected: selectedEnvironmentRuntime?.connectionState === "connected",
+    });
+
     return deriveActiveWorkStartedAt(
       selectedThread.latestTurn,
       selectedThreadSessionActivity,
-      null,
+      sendStartedAt,
     );
-  }, [selectedThreadDetail, selectedThreadSessionActivity, selectedThreadShell]);
+  }, [
+    isDeliveringQueuedMessage,
+    optimisticStarting?.sendStartedAt,
+    selectedEnvironmentRuntime?.connectionState,
+    selectedThreadDetail,
+    selectedThreadQueuedMessages,
+    selectedThreadSessionActivity,
+    selectedThreadShell,
+  ]);
 
   const activeThreadBusy =
     !!selectedThread &&
-    (selectedThread.session?.status === "running" || selectedThread.session?.status === "starting");
+    (selectedThread.session?.status === "running" ||
+      selectedThread.session?.status === "starting" ||
+      optimisticStarting !== null ||
+      isDeliveringQueuedMessage);
 
   const onSendMessage = useCallback(async () => {
     if (!selectedThreadShell) {

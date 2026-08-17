@@ -14,8 +14,10 @@ export function projectThreadContentPresentation(input: {
   readonly detailError: string | null;
   readonly detailDeleted: boolean;
   readonly connectionState: EnvironmentConnectionPhase;
+  /** Local starting / queued rows that can paint before the server thread exists. */
+  readonly hasOptimisticContent?: boolean;
 }): ThreadContentPresentation {
-  if (input.hasDetail) {
+  if (input.hasDetail || input.hasOptimisticContent === true) {
     return { kind: "ready" };
   }
   if (input.detailDeleted) {

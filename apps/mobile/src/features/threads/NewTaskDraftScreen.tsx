@@ -20,7 +20,7 @@ import { useThemeColor } from "../../lib/useThemeColor";
 import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { useFontFamily } from "../../lib/useFontFamily";
 
-import { ThreadId } from "@t3tools/contracts";
+import { MessageId, ThreadId } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -67,7 +67,13 @@ import { gitEnvironment } from "../../state/git";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { resolveSelectableModelSelection } from "../../lib/modelOptions";
 import { deriveThreadTitleFromPrompt } from "../../lib/projectThreadStartTurn";
+import { markThreadOpenStarted } from "../observability/threadPerformance";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
+import {
+  clearOptimisticStartingThread,
+  registerOptimisticStartingThread,
+} from "../../state/optimistic-thread-send";
+import { rememberOutgoingMessageDraftAttachments } from "../../state/outgoing-message-previews";
 import { enqueueThreadOutboxMessage, removeThreadOutboxMessage } from "../../state/thread-outbox";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { useNewTaskFlow } from "./new-task-flow-provider";
@@ -798,7 +804,6 @@ export function NewTaskDraftScreen(props: {
       return;
     }
 
-    const startedAt = Date.now();
     flow.setSubmitting(true);
     // Arm the lock-screen card before the async thread creation: backgrounding
     // the app right after tapping submit would otherwise reject the foreground
@@ -865,6 +870,58 @@ export function NewTaskDraftScreen(props: {
       currentCheckoutBranch:
         pullRequestReference.length > 0 ? selectedBranchName : flow.currentCheckoutBranchName,
     });
+    const initialMessageTextForSend = applyCreatePullRequestSuffix({
+      text: initialMessageText,
+      autoCreatePullRequest,
+      threadHasStarted: false,
+      model: modelSelection.model,
+    });
+    const threadId = ThreadId.make(turnMetadata.threadId);
+    const messageId = MessageId.make(turnMetadata.messageId);
+    const fallbackQueuedMessage = flow.buildPendingTaskMessage(turnMetadata);
+
+    // Open the thread immediately and show thinking while startTurn talks to
+    // the remote machine. The create RPC keeps running after this screen
+    // unmounts.
+    registerOptimisticStartingThread({
+      environmentId: selectedProject.environmentId,
+      threadId,
+      projectId: selectedProject.id,
+      title: deriveThreadTitleFromPrompt(initialMessageText),
+      modelSelection,
+      runtimeMode,
+      interactionMode,
+      branch: creationBranch,
+      worktreePath: workspaceMode === "worktree" ? null : selectedWorktreePath,
+      createdAt: turnMetadata.createdAt,
+      sendStartedAt: new Date().toISOString(),
+      message: {
+        messageId,
+        text: initialMessageTextForSend,
+        createdAt: turnMetadata.createdAt,
+      },
+    });
+    rememberOutgoingMessageDraftAttachments(messageId, draft.attachments);
+
+    if (editingPendingTask) {
+      try {
+        await removeThreadOutboxMessage(editingPendingTask);
+      } catch (error) {
+        console.warn("[new-task] failed to remove delivered pending task", error);
+      }
+      flow.finishEditingPendingTask();
+    } else {
+      clearComposerDraftContent(draftKey, { clearWorkspaceSelection: true });
+    }
+
+    markThreadOpenStarted(String(selectedProject.environmentId), String(threadId));
+    navigation.dispatch(
+      StackActions.replace("Thread", {
+        environmentId: String(selectedProject.environmentId),
+        threadId: String(threadId),
+      }),
+    );
+
     const result = await createProjectThread({
       project: selectedProject,
       modelSelection,
@@ -874,19 +931,20 @@ export function NewTaskDraftScreen(props: {
       startFromOrigin,
       runtimeMode,
       interactionMode,
-      initialMessageText: applyCreatePullRequestSuffix({
-        text: initialMessageText,
-        autoCreatePullRequest,
-        threadHasStarted: false,
-        model: modelSelection.model,
-      }),
+      initialMessageText: initialMessageTextForSend,
       initialAttachments: draft.attachments,
       turnMetadata,
     });
-    await waitForComposerSendIndicatorMin(startedAt);
-    flow.setSubmitting(false);
 
     if (result._tag === "Failure") {
+      clearOptimisticStartingThread(selectedProject.environmentId, threadId);
+      if (fallbackQueuedMessage) {
+        try {
+          await enqueueThreadOutboxMessage(fallbackQueuedMessage);
+        } catch (error) {
+          console.warn("[new-task] failed to requeue a rejected starting task", error);
+        }
+      }
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         Alert.alert(
@@ -909,23 +967,6 @@ export function NewTaskDraftScreen(props: {
         "The checkout could not be moved onto the pull request's latest commits, so the code there is older than the pull request. Uncommitted work or local commits keep it where it is.",
       );
     }
-
-    if (editingPendingTask) {
-      try {
-        await removeThreadOutboxMessage(editingPendingTask);
-      } catch (error) {
-        console.warn("[new-task] failed to remove delivered pending task", error);
-      }
-      flow.finishEditingPendingTask();
-    } else {
-      clearComposerDraftContent(draftKey, { clearWorkspaceSelection: true });
-    }
-    navigation.dispatch(
-      StackActions.replace("Thread", {
-        environmentId: String(result.value.environmentId),
-        threadId: String(result.value.threadId),
-      }),
-    );
   }
 
   if (!selectedProject) {
