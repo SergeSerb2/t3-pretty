@@ -31,12 +31,14 @@ are owned by a plugin or a repo, so T3 Code leaves them alone.
   **On this environment** have the same switch: on means the CLI can load them, off hides them
   without deleting the folder.
 - **Per thread:** in the composer, open the `⋯` menu next to the model options and choose
-  **Skills**, or type `/skills`. The list covers your **Library** and every provider CLI's
-  home folder, grouped by where each skill lives. Rows with a **Global** badge are already
-  on — library skills enabled in settings, and skills the selected provider loads from its
-  own home — and can only be turned off there. Everything else toggles per thread, including
-  a skill from another provider's folder or one you turned off in settings. Thread picks
-  stack on top of the global set and apply from the next turn.
+  **Skills**, or type `/skills`. Search the list, and star skills you use often to pin them
+  at the top. The rest stay grouped by where each skill lives (**Library** and every provider
+  CLI's home folder). Long names stay on one line instead of stretching the menu sideways.
+  Rows with a **Global** badge are already on — library skills enabled in settings, and
+  skills the selected provider loads from its own home — and can only be turned off there.
+  Everything else toggles per thread, including a skill from another provider's folder or
+  one you turned off in settings. Thread picks stack on top of the global set and apply
+  from the next turn.
 
 When a turn starts with skills attached (from Settings, the thread picker, or a `$skill` mention
 in the prompt), T3 Code sends each skill's instructions along with your message, so the agent

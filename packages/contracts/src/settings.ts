@@ -199,6 +199,10 @@ export const ClientSettingsSchema = Schema.Struct({
       model: TrimmedNonEmptyString,
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  // Composer Skills picker pins. Client-only, like model favorites: the
+  // starred ids float to the top of the ⋯ → Skills submenu and do not
+  // change which skills a thread actually loads.
+  favoriteSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   providerModelPreferences: Schema.Record(
     ProviderInstanceId,
     Schema.Struct({
@@ -886,6 +890,7 @@ export const ClientSettingsPatch = Schema.Struct({
       }),
     ),
   ),
+  favoriteSkillIds: Schema.optionalKey(Schema.Array(SkillId)),
   providerModelPreferences: Schema.optionalKey(
     Schema.Record(
       ProviderInstanceId,

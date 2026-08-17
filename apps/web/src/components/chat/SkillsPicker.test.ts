@@ -6,7 +6,7 @@ import {
   type InstalledSkill,
 } from "@t3tools/contracts";
 
-import { toPickerSkills } from "./SkillsPicker";
+import { toPickerSkills, organizePickerSkills, skillMatchesQuery } from "./SkillsPicker";
 
 describe("toPickerSkills", () => {
   const claude = ProviderDriverKind.make("claudeAgent");
@@ -114,5 +114,53 @@ describe("toPickerSkills", () => {
   it("falls back to the host path when a skill has no description", () => {
     const skills = toPickerSkills([], host, new Set(), claudeDefault);
     expect(skills[0]?.description).toBe("~/.claude/skills/grill-me");
+  });
+
+  it("pins favorites above origin groups and keeps them out of those groups", () => {
+    const skills = toPickerSkills(installed, host, new Set(), claudeDefault);
+    const groups = organizePickerSkills(skills, new Set(["host:agents:shared", "octo/skills:tdd"]));
+
+    expect(groups.map(([group, rows]) => [group, rows.map((skill) => skill.id)])).toEqual([
+      ["Favorites", ["octo/skills:tdd", "host:agents:shared"]],
+      ["Claude Code", ["host:claudeAgent:grill-me"]],
+      ["Codex", ["host:codex:review"]],
+      ["Codex · Personal", ["host:codex:codex_personal:personal-only"]],
+      ["Codex · Work", ["host:codex:codex_work:work-only"]],
+    ]);
+  });
+
+  it("filters by query and still keeps matching favorites first", () => {
+    const skills = toPickerSkills(installed, host, new Set(), claudeDefault);
+    const groups = organizePickerSkills(skills, new Set(["host:codex:review"]), "codex");
+
+    expect(groups.map(([group, rows]) => [group, rows.map((skill) => skill.name)])).toEqual([
+      ["Favorites", ["review"]],
+      ["Codex · Personal", ["personal-only"]],
+      ["Codex · Work", ["work-only"]],
+    ]);
+  });
+
+  it("returns no groups when the query matches nothing", () => {
+    const skills = toPickerSkills(installed, host, new Set(), claudeDefault);
+    expect(organizePickerSkills(skills, new Set(["octo/skills:tdd"]), "zzzz")).toEqual([]);
+  });
+});
+
+describe("skillMatchesQuery", () => {
+  const skill = {
+    name: "computer-workflow-organization-and-performance",
+    group: "Shared",
+    description: "Organize the desktop",
+  };
+
+  it("matches name, group, and description without caring about case", () => {
+    expect(skillMatchesQuery(skill, "WORKFLOW")).toBe(true);
+    expect(skillMatchesQuery(skill, "shared")).toBe(true);
+    expect(skillMatchesQuery(skill, "desktop")).toBe(true);
+    expect(skillMatchesQuery(skill, "missing")).toBe(false);
+  });
+
+  it("treats blank queries as a match", () => {
+    expect(skillMatchesQuery(skill, "  ")).toBe(true);
   });
 });

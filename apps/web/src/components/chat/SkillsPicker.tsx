@@ -13,7 +13,8 @@
  *   - server threads dispatch `thread.skills.set` (full replacement) and the
  *     change materializes from the next turn.
  * Host ids (`host:…`) ride the same `enabledSkillIds` list; the server copies
- * the folder into the workspace like a library skill.
+ * the folder into the workspace like a library skill. The picker search filters
+ * by name/origin, and starred skills pin to a Favorites group (client setting).
  */
 import { useAtomValue } from "@effect/atom-react";
 import { useRouter } from "@tanstack/react-router";
@@ -26,16 +27,20 @@ import {
   type ScopedThreadRef,
   type SkillId,
 } from "@t3tools/contracts";
-import { PackageIcon } from "lucide-react";
-import { memo, useMemo } from "react";
+import { PackageIcon, StarIcon } from "lucide-react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore, type DraftId } from "../../composerDraftStore";
 import { useOptimisticIdList } from "~/hooks/useOptimisticIdList";
+import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
+import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
 import { skillsEnvironment } from "~/state/skills";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import {
   MenuCheckboxItem,
   MenuGroup,
@@ -234,6 +239,41 @@ function groupSkills(skills: ReadonlyArray<PickerSkill>): Array<[string, PickerS
   return groups;
 }
 
+export const FAVORITES_GROUP = "Favorites";
+
+export function skillMatchesQuery(
+  skill: Pick<PickerSkill, "name" | "description" | "group">,
+  query: string,
+): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return true;
+  }
+  return [skill.name, skill.group, skill.description ?? ""].some((value) =>
+    value.toLowerCase().includes(normalized),
+  );
+}
+
+/** Favorites first (still in list order), then origin groups. Search filters both. */
+export function organizePickerSkills(
+  skills: ReadonlyArray<PickerSkill>,
+  favoriteIds: ReadonlySet<string>,
+  query = "",
+): Array<[string, PickerSkill[]]> {
+  const visible = skills.filter((skill) => skillMatchesQuery(skill, query));
+  const favorites: PickerSkill[] = [];
+  const rest: PickerSkill[] = [];
+  for (const skill of visible) {
+    if (favoriteIds.has(skill.id)) {
+      favorites.push(skill);
+    } else {
+      rest.push(skill);
+    }
+  }
+  const groups = groupSkills(rest);
+  return favorites.length > 0 ? [[FAVORITES_GROUP, favorites], ...groups] : groups;
+}
+
 /**
  * `Skills ▸` row of the composer's `⋯` menu: the trigger carries the enabled
  * count, the submenu lists library and host skills as switches.
@@ -241,10 +281,43 @@ function groupSkills(skills: ReadonlyArray<PickerSkill>): Array<[string, PickerS
 export const SkillsSubmenu = memo(function SkillsSubmenu(props: SkillsPickerProps) {
   const router = useRouter();
   const state = useSkillsPickerState(props);
-  const groups = groupSkills(state.skills);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const favoriteSkillIds = useClientSettings((settings) => settings.favoriteSkillIds);
+  const updateClientSettings = useUpdateClientSettings();
+  const favoriteIds = useMemo(() => new Set(favoriteSkillIds), [favoriteSkillIds]);
+  const groups = useMemo(
+    () => organizePickerSkills(state.skills, favoriteIds, searchQuery),
+    [favoriteIds, searchQuery, state.skills],
+  );
+  const hasQuery = searchQuery.trim().length > 0;
+
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
+      setSearchQuery("");
+    }
+    props.onOpenChange?.(open);
+  };
+
+  const toggleFavorite = (skillId: SkillId) => {
+    const next = favoriteIds.has(skillId)
+      ? favoriteSkillIds.filter((id) => id !== skillId)
+      : [...favoriteSkillIds, skillId];
+    updateClientSettings({ favoriteSkillIds: next });
+  };
+
+  useLayoutEffect(() => {
+    if (props.open !== true) {
+      return;
+    }
+    const focusSearch = () => searchInputRef.current?.focus({ preventScroll: true });
+    focusSearch();
+    const frame = window.requestAnimationFrame(focusSearch);
+    return () => window.cancelAnimationFrame(frame);
+  }, [props.open]);
 
   return (
-    <MenuSub open={props.open} onOpenChange={props.onOpenChange}>
+    <MenuSub open={props.open} onOpenChange={handleOpenChange}>
       <MenuSubTrigger>
         <PackageIcon aria-hidden="true" />
         <span>Skills</span>
@@ -254,7 +327,7 @@ export const SkillsSubmenu = memo(function SkillsSubmenu(props: SkillsPickerProp
           </Badge>
         ) : null}
       </MenuSubTrigger>
-      <MenuSubPopup className="w-72 max-w-full">
+      <MenuSubPopup className="min-w-0 w-72 max-w-full">
         {state.isLoading ? (
           <MenuItem disabled>Loading skills…</MenuItem>
         ) : state.skills.length === 0 ? (
@@ -272,31 +345,81 @@ export const SkillsSubmenu = memo(function SkillsSubmenu(props: SkillsPickerProp
             </MenuItem>
           </>
         ) : (
-          groups.map(([group, groupSkills]) => (
-            <MenuGroup key={group}>
-              <MenuGroupLabel>{group}</MenuGroupLabel>
-              {groupSkills.map((skill) => {
-                const isEnabled = skill.locked || state.perThreadIds.has(skill.id);
-                return (
-                  <MenuCheckboxItem
-                    key={skill.id}
-                    variant="switch"
-                    checked={isEnabled}
-                    disabled={skill.locked || !state.togglesEnabled}
-                    closeOnClick={false}
-                    onCheckedChange={() => state.toggleSkill(skill.id)}
-                  >
-                    <span className="min-w-0 truncate">
-                      {skill.name}
-                      {skill.locked ? (
-                        <span className="text-muted-foreground/80"> · Global</span>
-                      ) : null}
-                    </span>
-                  </MenuCheckboxItem>
-                );
-              })}
-            </MenuGroup>
-          ))
+          <>
+            <div className="sticky -top-1 z-10 -mx-1 mb-0.5 border-b border-border/50 bg-popover px-1.5 pt-1 pb-1">
+              <Input
+                ref={searchInputRef}
+                aria-label="Search skills"
+                nativeInput
+                onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") {
+                    event.stopPropagation();
+                  }
+                }}
+                placeholder="Search skills…"
+                size="compact"
+                type="search"
+                value={searchQuery}
+              />
+            </div>
+            {groups.length === 0 ? (
+              <MenuItem disabled>
+                {hasQuery ? "No matching skills" : "No skills installed"}
+              </MenuItem>
+            ) : (
+              groups.map(([group, groupSkills]) => (
+                <MenuGroup key={group}>
+                  <MenuGroupLabel className="py-1">{group}</MenuGroupLabel>
+                  {groupSkills.map((skill) => {
+                    const isEnabled = skill.locked || state.perThreadIds.has(skill.id);
+                    const isFavorite = favoriteIds.has(skill.id);
+                    return (
+                      <MenuCheckboxItem
+                        key={skill.id}
+                        checked={isEnabled}
+                        className="min-h-6 gap-2 py-0.5 sm:min-h-6"
+                        closeOnClick={false}
+                        disabled={skill.locked || !state.togglesEnabled}
+                        onCheckedChange={() => state.toggleSkill(skill.id)}
+                        variant="switch"
+                      >
+                        <span className="flex min-w-0 items-center gap-1">
+                          <Button
+                            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                            className={cn(
+                              "text-muted-foreground/70 opacity-70 hover:text-foreground hover:opacity-100",
+                              isFavorite && "text-foreground opacity-100",
+                            )}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              toggleFavorite(skill.id);
+                            }}
+                            onPointerDown={(event) => {
+                              event.stopPropagation();
+                            }}
+                            size="icon-micro"
+                            variant="ghost"
+                          >
+                            <StarIcon
+                              className={cn(isFavorite && "fill-current text-yellow-500")}
+                            />
+                          </Button>
+                          <span className="min-w-0 truncate">{skill.name}</span>
+                          {skill.locked ? (
+                            <span className="shrink-0 text-[10px] text-muted-foreground/80">
+                              Global
+                            </span>
+                          ) : null}
+                        </span>
+                      </MenuCheckboxItem>
+                    );
+                  })}
+                </MenuGroup>
+              ))
+            )}
+          </>
         )}
       </MenuSubPopup>
     </MenuSub>
