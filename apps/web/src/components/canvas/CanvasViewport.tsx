@@ -46,6 +46,7 @@ import {
   type CanvasMeasuredSizes,
 } from "~/canvasDocSync";
 import {
+  selectRenderedDoc,
   selectThreadCanvasState,
   useCanvasStore,
   type CanvasGesture,
@@ -873,12 +874,13 @@ export function CanvasViewport(props: {
     void api.contextMenu
       .show(canvasNodeContextMenuItems({ nodeType: hit.type, canRecapture }), position)
       .then((action) => {
+        const currentDoc = selectRenderedDoc(threadState());
         if (action === "bring-to-front") {
-          commitOps(bringToFront(doc, [hit.id]));
+          commitOps(bringToFront(currentDoc, [hit.id]));
           return;
         }
         if (action === "send-to-back") {
-          commitOps(sendToBack(doc, [hit.id]));
+          commitOps(sendToBack(currentDoc, [hit.id]));
           return;
         }
         if (action === "recapture") {
@@ -886,7 +888,7 @@ export function CanvasViewport(props: {
           return;
         }
         if (action === "rename") {
-          const node = getNode(doc, hit.id);
+          const node = getNode(currentDoc, hit.id);
           setRenameRequest({
             nodeId: hit.id,
             initialName: node?.name ?? "",
@@ -896,7 +898,7 @@ export function CanvasViewport(props: {
           return;
         }
         if (action === "delete") {
-          const removed = new Set([hit.id, ...descendantIds(doc, hit.id)]);
+          const removed = new Set([hit.id, ...descendantIds(currentDoc, hit.id)]);
           commitOps([{ _tag: "remove", id: hit.id }]);
           applySelection(threadState().selectedNodeIds.filter((id) => !removed.has(id)));
         }
