@@ -247,6 +247,10 @@ for each release target must exercise the primary native-load probe.
 NSIS differential packaging remains enabled. A sidecar layout transition can
 produce a larger one-time download; subsequent small releases retain their
 blockmaps, with a 60 MB maximum for a representative sidecar-to-sidecar update.
+Interactive NSIS installs leave the app stopped when Setup finishes so an old
+process cannot overlap the newly replaced executable. The in-app updater still
+relaunches because it explicitly forces that step after the desktop lifecycle
+has stopped every backend and destroyed every window.
 
 ## 0) npm OIDC trusted publishing setup (CLI)
 

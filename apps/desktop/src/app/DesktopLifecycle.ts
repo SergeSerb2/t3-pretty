@@ -35,6 +35,18 @@ export type DesktopLifecycleRuntimeServices =
   | ElectronApp.ElectronApp
   | ElectronTheme.ElectronTheme;
 
+export function getChildProcessGoneLogAnnotations(
+  details: Electron.Details,
+): Record<string, unknown> {
+  return {
+    processType: details.type,
+    reason: details.reason,
+    exitCode: details.exitCode,
+    ...(details.serviceName === undefined ? {} : { serviceName: details.serviceName }),
+    ...(details.name === undefined ? {} : { name: details.name }),
+  };
+}
+
 /**
  * @effect-expect-leaking DesktopEnvironment | DesktopShutdown | DesktopState | DesktopWindow | ElectronApp | ElectronTheme
  */
@@ -48,8 +60,11 @@ export class DesktopLifecycle extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopLifecycle") {}
 
-const { logInfo: logLifecycleInfo, logError: logLifecycleError } =
-  makeComponentLogger("desktop-lifecycle");
+const {
+  logInfo: logLifecycleInfo,
+  logWarning: logLifecycleWarning,
+  logError: logLifecycleError,
+} = makeComponentLogger("desktop-lifecycle");
 
 function addScopedListener<Args extends ReadonlyArray<unknown>>(
   target: unknown,
@@ -193,6 +208,17 @@ export const make = DesktopLifecycle.of({
         ),
       );
     });
+    yield* electronApp.on(
+      "child-process-gone",
+      (_event: Electron.Event, details: Electron.Details) => {
+        void runEffect(
+          logLifecycleWarning(
+            "electron child process gone",
+            getChildProcessGoneLogAnnotations(details),
+          ).pipe(Effect.withSpan("desktop.lifecycle.childProcessGone")),
+        );
+      },
+    );
     yield* electronApp.on("before-quit", (event: Electron.Event) => {
       handleBeforeQuit(
         event,

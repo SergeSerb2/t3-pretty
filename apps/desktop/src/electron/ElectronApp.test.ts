@@ -6,6 +6,7 @@ const {
   appendSwitchMock,
   autoUpdaterOnMock,
   autoUpdaterRemoveListenerMock,
+  crashReporterStartMock,
   exitMock,
   getAppPathMock,
   getSystemLocaleMock,
@@ -28,6 +29,7 @@ const {
   appendSwitchMock: vi.fn(),
   autoUpdaterOnMock: vi.fn(),
   autoUpdaterRemoveListenerMock: vi.fn(),
+  crashReporterStartMock: vi.fn(),
   exitMock: vi.fn(),
   getAppPathMock: vi.fn(() => "/app"),
   getSystemLocaleMock: vi.fn(() => "en-GB"),
@@ -52,6 +54,9 @@ vi.mock("electron", () => ({
   autoUpdater: {
     on: autoUpdaterOnMock,
     removeListener: autoUpdaterRemoveListenerMock,
+  },
+  crashReporter: {
+    start: crashReporterStartMock,
   },
   app: {
     commandLine: {
@@ -90,6 +95,7 @@ describe("ElectronApp", () => {
     appendSwitchMock.mockClear();
     autoUpdaterOnMock.mockClear();
     autoUpdaterRemoveListenerMock.mockClear();
+    crashReporterStartMock.mockClear();
     exitMock.mockClear();
     onMock.mockClear();
     quitMock.mockClear();
@@ -119,6 +125,22 @@ describe("ElectronApp", () => {
       const electronApp = yield* ElectronApp.ElectronApp;
 
       assert.strictEqual(yield* electronApp.systemLocale, "en-GB");
+    }).pipe(Effect.provide(ElectronApp.layer)),
+  );
+
+  it.effect("starts local crash collection without uploading reports", () =>
+    Effect.gen(function* () {
+      const electronApp = yield* ElectronApp.ElectronApp;
+      yield* electronApp.startLocalCrashReporter({ t3codeCommitHash: "abcdef123456" });
+
+      assert.deepEqual(crashReporterStartMock.mock.calls, [
+        [
+          {
+            uploadToServer: false,
+            globalExtra: { t3codeCommitHash: "abcdef123456" },
+          },
+        ],
+      ]);
     }).pipe(Effect.provide(ElectronApp.layer)),
   );
 

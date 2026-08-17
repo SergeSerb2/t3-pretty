@@ -63,6 +63,7 @@ const makeElectronAppLayer = (calls: ElectronAppCalls) =>
       Effect.sync(() => {
         calls.setDockIcon.push(iconPath);
       }),
+    startLocalCrashReporter: () => Effect.void,
     appendCommandLineSwitch: () => Effect.void,
     onBeforeQuitForUpdate: () => Effect.void,
     removeCommandLineSwitch: () => Effect.void,
@@ -193,6 +194,7 @@ describe("DesktopAppIdentity", () => {
     return withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        assert.equal(Option.getOrNull(yield* identity.commitHash), "0123456789ab");
         yield* identity.configure;
 
         assert.deepEqual(calls.setName, ["T3 Pretty (Alpha)"]);

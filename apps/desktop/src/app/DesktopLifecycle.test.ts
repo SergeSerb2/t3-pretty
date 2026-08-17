@@ -14,6 +14,25 @@ import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 
 describe("DesktopLifecycle", () => {
+  it("maps Electron child-process exits into stable log fields", () => {
+    assert.deepEqual(
+      DesktopLifecycle.getChildProcessGoneLogAnnotations({
+        type: "GPU",
+        reason: "crashed",
+        exitCode: -1,
+        serviceName: "gpu-process",
+        name: "GPU Process",
+      }),
+      {
+        processType: "GPU",
+        reason: "crashed",
+        exitCode: -1,
+        serviceName: "gpu-process",
+        name: "GPU Process",
+      },
+    );
+  });
+
   for (const platform of ["darwin", "win32", "linux"] satisfies ReadonlyArray<NodeJS.Platform>) {
     it.effect(`lets the updater's quit event proceed on ${platform}`, () => {
       const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
@@ -35,6 +54,7 @@ describe("DesktopLifecycle", () => {
         setAsDefaultProtocolClient: () => Effect.succeed(true),
         setDesktopName: () => Effect.void,
         setDockIcon: () => Effect.void,
+        startLocalCrashReporter: () => Effect.void,
         appendCommandLineSwitch: () => Effect.void,
         removeCommandLineSwitch: () => Effect.void,
         onBeforeQuitForUpdate: (listener) =>
@@ -101,6 +121,8 @@ describe("DesktopLifecycle", () => {
         Effect.gen(function* () {
           const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
           yield* lifecycle.register;
+
+          assert.isFunction(appListeners.get("child-process-gone"));
 
           appListeners.get("before-quit-for-update")?.();
 

@@ -29,6 +29,9 @@ Windows:
 winget install T3Tools.T3Code
 ```
 
+The Windows installer does not launch T3 Code automatically after replacing an existing
+installation. Start it from the Start menu after Setup has closed.
+
 macOS:
 
 ```bash

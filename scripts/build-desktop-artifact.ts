@@ -2273,7 +2273,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     // Keep blockmap-based differential downloads enabled while changing the
     // installed file topology. The optimization is in the payload shape, not
     // in trading update bandwidth for install speed.
-    buildConfig.nsis = { differentialPackage: true };
+    // A manually launched installer can replace files while the old app is
+    // still exiting. Do not let NSIS immediately start a second generation
+    // of the executable in that ambiguous window. In-app updates explicitly
+    // force a relaunch only after DesktopUpdates has stopped every backend and
+    // destroyed every window.
+    buildConfig.nsis = { differentialPackage: true, runAfterFinish: false };
     const winConfig: Record<string, unknown> = {
       target: [target],
       icon: "icon.ico",
