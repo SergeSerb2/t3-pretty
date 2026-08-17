@@ -1,8 +1,12 @@
 #!/bin/bash
-# Register a trusted macOS GitHub Actions runner for T3 Pretty releases.
+# Register a trusted macOS runner for T3 Pretty releases.
+#
+# After the Origin cutover, attach this machine to the Origin Buildkite app
+# with the same t3code-fork / release-only labels. This script still knows how
+# to register a GitHub Actions runner for rollback only.
 #
 # This is optional. m1-dev already builds the signed macOS DMG and local iOS
-# IPAs. Adding this machine (m5-dev) with the same labels lets GitHub run a
+# IPAs. Adding this machine (m5-dev) with the same labels lets CI run a
 # desktop DMG and an iOS compile at the same time. Do not register a daily
 # driver until you are willing to share CPU with those jobs.
 #

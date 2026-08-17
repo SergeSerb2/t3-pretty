@@ -268,8 +268,9 @@ ${">".repeat(7)} theirs
 
     assert.include(syncWorkflow, "git diff --quiet origin/main...HEAD");
     assert.include(syncWorkflow, "mobile_release_needed=true");
-    assert.include(syncWorkflow, "gh workflow run fork-mobile-release.yml");
-    assert.include(syncWorkflow, "-f mode=release");
+    assert.include(syncWorkflow, "origin-forge.mjs dispatch");
+    assert.include(syncWorkflow, "--workflow fork-mobile-release.yml");
+    assert.include(syncWorkflow, "--input mode=release");
     assert.include(mobileWorkflow, "paths:");
     assert.include(mobileWorkflow, "- apps/mobile/**");
     assert.include(mobileWorkflow, "env.MODE == 'build' || env.MODE == 'release'");
@@ -490,15 +491,14 @@ ${">".repeat(7)} theirs
   it("lands the iOS fingerprint record through a pull request instead of pushing to main", () => {
     const mobileWorkflow = NodeFS.readFileSync(mobileWorkflowPath, "utf8");
 
-    // main enforces "changes must be made through a pull request" (GH013), so
-    // the bot commit rides a short-lived automation branch merged via the API,
-    // the same pattern the upstream sync uses. `gh` is not guaranteed on the
-    // self-hosted runner, so the API calls run on node fetch.
+    // main enforces pull requests, so the bot commit rides a short-lived
+    // automation branch merged through the Origin CLI, the same pattern the
+    // upstream sync uses.
     assert.include(mobileWorkflow, "pull-requests: write");
     assert.include(mobileWorkflow, "automation/ios-fingerprint-");
     assert.include(mobileWorkflow, 'git push --force origin "HEAD:refs/heads/$branch"');
-    assert.include(mobileWorkflow, "`/pulls/${pr.number}/merge`");
-    assert.include(mobileWorkflow, "node --input-type=module");
+    assert.include(mobileWorkflow, "origin-forge.mjs ensure-pr");
+    assert.include(mobileWorkflow, "origin-forge.mjs merge-pr");
     assert.notInclude(mobileWorkflow, 'git push origin "HEAD:${GITHUB_REF_NAME}"');
   });
 

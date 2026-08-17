@@ -574,7 +574,7 @@ async function main() {
     "-c",
     "user.name=t3-pretty-release[bot]",
     "-c",
-    "user.email=github-actions[bot]@users.noreply.github.com",
+    "user.email=t3-pretty-bot@users.noreply.cursor.com",
     "commit",
     "-m",
     `docs(changelog): add release notes through v${newest}`,

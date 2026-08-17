@@ -1,16 +1,17 @@
 # T3 Pretty parent sync and desktop releases
 
-T3 Pretty treats GitHub `main` as the only release source of truth. It does not rebuild or merge
-source code on installed machines.
+T3 Pretty treats Cursor Origin `main` (`serbinenko/t3-pretty`) as the only release source of
+truth. It does not rebuild or merge source code on installed machines. Parent T3 Code nightlies
+still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
 
 ## Flow
 
 1. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
    and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. Maintainers can use
    the manual dispatch only when an operational fix needs an immediate retry.
-2. It merges that tag into an `automation/upstream-*` branch and opens a pull request. The fork
-   deliberately keeps `.github/workflows` from its own `main`; upstream workflow changes cannot
-   replace the trusted sync/release boundary or require a personal token with workflow scope.
+2. It merges that tag into an `automation/upstream-*` branch and opens an Origin pull request.
+   The fork deliberately keeps `.github/workflows` from its own `main`; upstream workflow changes
+   cannot replace the trusted sync/release boundary.
 3. Clean changes remain untouched and do not make a model request. If Git reports text conflicts,
    the workflow asks the Railway CLIProxyAPI `gpt-5.6-sol` model to resolve each file with `xhigh`
    reasoning, in batches of at most five conflicts per request so a heavily conflicted file cannot
@@ -36,46 +37,42 @@ source code on installed machines.
    parent change intentionally omitted to protect T3 Pretty. Fork-owned parent workflow changes
    are enumerated as omissions too. The report is copied into the sync pull request and every
    T3 Pretty desktop release note, so an omission cannot exist only in a transient Actions log.
-5. The workflow merges the pull request once GitHub reports it mergeable. Parent CI is disabled
-   on this fork, so sync does not wait on Check, Test, Mobile Native Static Analysis, or Release
-   Smoke. Unsafe, binary, oversized, or uncertain resolver results still stop and create an issue
-   pointing to the failed run.
+5. The workflow merges the Origin pull request once Origin reports it mergeable. Parent CI is
+   disabled on this fork, so sync does not wait on Check, Test, Mobile Native Static Analysis, or
+   Release Smoke. Unsafe, binary, oversized, or uncertain resolver results still stop and open an
+   Origin pull request titled `Upstream sync blocked: <tag>` with the failure notes.
 6. Every commit merged to `main`, whether from the parent sync or a T3 Pretty pull request,
    starts its own `T3 Pretty Desktop Release`. Release runs are not collapsed through a workflow
-   concurrency group: the dedicated runners queue every main commit, and the GitHub run number
+   concurrency group: the dedicated runners queue every main commit, and the CI run number
    makes each fork version unique even when multiple releases overlap.
 7. Before building, the release preflight runs `scripts/fork/generate-changelog.mjs`, which asks
    the Railway CLIProxyAPI model (`gpt-5.6-sol`, `high` reasoning by default) to write one What's
    New entry per shipped fork build — the fork's own commits plus the parent nightly window —
-   for every build still missing an entry, then commits and pushes `changelogData.ts` with the
-   workflow `GITHUB_TOKEN`. That push only happens for runs triggered by `main` itself and only
-   when the triggering commit is still the `main` tip, so a manual dispatch of another ref cannot
-   move `main`, and it does not retrigger the workflow. The build and publish jobs check out the
-   pushed changelog commit, so each release ships its own notes; the already-released skip check
-   recognizes the tagged changelog child of the triggering commit, so re-running a completed
-   Actions run stays a no-op. Generation failures downgrade to warnings: the release ships
-   without new entries and the next run regenerates everything missing.
-8. GitHub-hosted `ubuntu-latest` (free on this public repo) resolves the
-   version, writes What's New notes, compiles the WSL `node-pty` binary, and
-   publishes the GitHub release. `m1-dev-t3code-fork` only signs the macOS
-   arm64 DMG. `windows-5080-t3code-fork` builds Windows x64. iOS TestFlight
-   IPAs still compile on a self-hosted Mac through `fork-mobile-release.yml`.
-   Only trusted `main` commits run on the self-hosted machines; pull requests
-   do not. iOS store binaries cannot compile on Windows. Desktop packaging is
-   skipped when the push cannot change the shipped desktop app (mobile-only,
-   docs-only, marketing, or relay-only commits). `workflow_dispatch` and the
-   upstream-sync dispatch still always run.
-9. GitHub publishes a public release marked as latest (not a prerelease — drafts and
-   prereleases cannot be latest), with the installers and both `nightly` and `latest` update
-   manifests. Packaged fork apps use a generic `electron-updater` feed at
-   `https://github.com/SergeSerb2/t3-pretty/releases/latest/download/` with multi-range requests
-   disabled, so no per-machine GitHub token is required and the in-app checker does not depend on
-   GitHub's `/releases/latest` API or the Atom feed. Blockmaps are not published: that feed only
-   has the current release's files, and GitHub's Azure CDN rejects the multi-range requests
-   `electron-updater` uses for differential downloads. Already-installed GitHub-provider builds
-   need one manual install of a release that contains this feed before later updates can be
-   automatic. Windows ships even when Azure Trusted Signing is not configured; unsigned NSIS
-   installers still update from that feed, and SmartScreen will warn until ATS secrets are added.
+   for every build still missing an entry, then commits and pushes `changelogData.ts`. That push
+   only happens for runs triggered by `main` itself and only when the triggering commit is still
+   the `main` tip, so a manual dispatch of another ref cannot move `main`, and it does not
+   retrigger the workflow. The build and publish jobs check out the pushed changelog commit, so
+   each release ships its own notes; the already-released skip check recognizes the tagged
+   changelog child of the triggering commit, so re-running a completed run stays a no-op.
+   Generation failures downgrade to warnings: the release ships without new entries and the next
+   run regenerates everything missing.
+8. Origin-connected Linux CI (Depot or Buildkite, `ubuntu-latest` in the workflow YAML) resolves
+   the version, writes What's New notes, compiles the WSL `node-pty` binary, and publishes the
+   Origin tag plus updater assets. `m1-dev-t3code-fork` only signs the macOS arm64 DMG.
+   `windows-5080-t3code-fork` builds Windows x64. iOS TestFlight IPAs still compile on a
+   self-hosted Mac through `fork-mobile-release.yml`. Only trusted `main` commits run on the
+   self-hosted machines; pull requests do not. iOS store binaries cannot compile on Windows.
+   Desktop packaging is skipped when the push cannot change the shipped desktop app (mobile-only,
+   docs-only, marketing, or relay-only commits). `workflow_dispatch` and the upstream-sync
+   dispatch still always run.
+9. The publisher creates an annotated Origin git tag and uploads the installers plus both
+   `nightly` and `latest` update manifests to the generic `electron-updater` feed in
+   `T3CODE_DESKTOP_UPDATE_FEED_URL`. Origin has no GitHub-style release-asset API, so that feed
+   is an S3-compatible bucket (Cloudflare R2 is the intended host; the relay already uses
+   Cloudflare). Multi-range requests stay disabled. Already-installed GitHub-provider builds need
+   one manual install of a release that contains this feed before later updates can be automatic.
+   Windows ships even when Azure Trusted Signing is not configured; unsigned NSIS installers
+   still update from that feed, and SmartScreen will warn until ATS secrets are added.
 
 Fork versions retain the newest integrated upstream nightly prefix and append a monotonic fork
 build number. This makes personal merges newer than the parent build without pretending that a
@@ -83,15 +80,26 @@ newer upstream tag was integrated before its sync pull request merged.
 
 ## Required repository configuration
 
+- Detach `serbinenko/t3-pretty` from GitHub under Origin **Settings → General**. Depot and
+  Buildkite only run on Origin-hosted repositories, not inbound GitHub mirrors. After detach,
+  Origin is the source of truth and pushes no longer flow to GitHub.
+- Connect Buildkite from the Origin repository **Apps** tab so the self-hosted Mac and Windows
+  machines can keep taking `t3code-fork` / `release-only` jobs. Depot CI can run the Linux jobs
+  but has no macOS or Windows sandboxes, so Buildkite is required for signed desktop and iOS.
+- Secret `CURSOR_API_KEY`: Cursor API key for the Origin CLI (`origin auth login --api-key`).
+  Used to open, merge, and tag on Origin.
 - Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used by the trusted scheduled
   sync workflow for conflict resolution and by the release preflight for What's New changelog
   generation. `CLI_PROXY_CHANGELOG_EFFORT` optionally overrides the changelog reasoning effort
   (default `high`).
-- Secret `FORK_RELEASE_TOKEN`: GitHub credential with repository Contents write access, stored as
-  a repository Actions secret. It is exposed only to the trusted `main` publishing step; GitHub's
-  own CLI creates the release and uploads its assets without handing this credential to a
-  third-party action. Prefer replacing the bootstrap OAuth token with a fine-grained token limited
-  to this repository.
+- Variable `T3CODE_DESKTOP_UPDATE_FEED_URL`: public HTTPS directory that serves `nightly.yml`,
+  `latest.yml`, and the installers. Must not be a GitHub Releases URL.
+- Secrets `T3CODE_RELEASE_S3_BUCKET`, `T3CODE_RELEASE_S3_ACCESS_KEY_ID`,
+  `T3CODE_RELEASE_S3_SECRET_ACCESS_KEY`, and optionally `T3CODE_RELEASE_S3_ENDPOINT` plus
+  `T3CODE_RELEASE_S3_REGION`: S3-compatible upload target for that feed (R2 uses the account
+  endpoint `https://<accountid>.r2.cloudflarestorage.com`).
+- Optional secret `DEPOT_TOKEN`: lets the sync job dispatch follow-up workflows when the Origin
+  merge push does not start them. Leave unset if Buildkite already triggers on push to `main`.
 - Parent CI (`Check`, `Test`, `Mobile Native Static Analysis`, `Release Smoke`) is disabled on
   this fork. Do not require those checks on `main`.
 - Dedicated runner labels:
@@ -117,7 +125,7 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 | WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                |
 | macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m1-dev (or a second Mac with the same labels) |
 | Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload            |
-| Publish GitHub release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `ubuntu-latest`                               |
+| Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `ubuntu-latest`                               |
 | Relay production deploy     | m1-dev                                | queued behind releases                      | `ubuntu-latest`                               |
 
 A desktop release that used to sit 25–40 minutes in the m1-dev queue and then take ~30 minutes of Mac occupancy should now occupy the Mac for only the ~8 minute signed DMG. Changelog, WSL, and publish no longer wait for — or block — iOS.
@@ -130,15 +138,14 @@ This machine is an M5 Pro (18 cores, 48 GB). m1-dev is the existing dedicated Ma
 
 ## Runner recovery
 
-The macOS runner lives at `/Users/m1-dev/actions-runner-t3code-fork` and runs as the LaunchAgent
-`actions.runner.SergeSerb2-t3code-fork-theme.m1-dev-t3code-fork`.
+The macOS runner lives at `/Users/m1-dev/actions-runner-t3code-fork`. After the Origin cutover
+it should be a Buildkite agent attached to the Origin app, not a GitHub Actions runner. Keep the
+same `t3code-fork` and `release-only` labels.
 
-The Windows runner lives at `C:\actions-runner-t3code-fork` and runs as the Windows service
-`actions.runner.SergeSerb2-t3code-fork-theme.windows-5080-t3code-fork`. The checked-in
-`scripts/fork/setup-windows-runner.ps1` can recreate it using a fresh short-lived registration
-token at `C:\dev\t3-runner-token.json`; the script deletes that token before configuration. It
-also runs `scripts/fork/ensure-windows-release-toolchain.ps1`, which installs Git for Windows and
-Visual Studio 2022 Build Tools (MSVC x64 + Spectre) when they are missing. A copy lives at
+The Windows runner lives at `C:\actions-runner-t3code-fork`. The checked-in
+`scripts/fork/setup-windows-runner.ps1` can still recreate a GitHub Actions runner for rollback.
+`scripts/fork/ensure-windows-release-toolchain.ps1` installs Git for Windows and Visual Studio
+2022 Build Tools (MSVC x64 + Spectre) when they are missing. A copy lives at
 `C:\dev\ensure-windows-release-toolchain.ps1` on the runner host. The release job calls that
 script with `-CheckOnly` so a missing toolchain fails before the packager starts.
 
