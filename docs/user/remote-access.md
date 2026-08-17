@@ -68,8 +68,10 @@ Surge Connect configuration instead of silently joining another relay deployment
 
 Use **Manage account** on the Surge Code account row to inspect or change the signed-in account.
 **Publish agent activity** is a separate setting for mobile notifications and Live Activities; it
-does not need the Surge Connect tunnel to be on. If the account row says **Unavailable**, that build
-does not include Surge Connect configuration.
+does not need the Surge Connect tunnel to be on. The iOS Live Activity shows how many threads are
+working and whether any need you. Tap it to open the thread that needs attention, or the first
+working thread. If the account row says **Unavailable**, that build does not include Surge Connect
+configuration.
 
 ## Enabling Network Access
 

@@ -68,7 +68,7 @@ const lightEnvironment = {
 } as const;
 
 describe("AgentActivity widget layout", () => {
-  it("tints each row by its own phase using the web sidebar's dark palette", () => {
+  it("tints working and attention counts with the web sidebar's dark palette", () => {
     const layout = AgentActivity(
       {
         ...props,
@@ -92,7 +92,6 @@ describe("AgentActivity widget layout", () => {
 
   it("uses a live ProgressView for in-flight work instead of a still spinner glyph", () => {
     const layout = AgentActivity({ ...props, activities: [makeRow({})] }, environment as never);
-    expect(JSON.stringify(layout.banner)).toContain("ProgressView");
     expect(JSON.stringify(layout.compactLeading)).toContain("ProgressView");
     expect(JSON.stringify(layout.compactLeading)).toContain('"progressViewStyle":"circular"');
   });
@@ -103,17 +102,18 @@ describe("AgentActivity widget layout", () => {
     expect(JSON.stringify(layout.banner)).toContain('"dateStyle":"relative"');
   });
 
-  it("renders a linear progress bar when a row carries plan progress", () => {
+  it("renders a linear progress bar when a single working thread carries plan progress", () => {
     const layout = AgentActivity(
-      { ...props, activities: [makeRow({ progress: 0.4 })] },
+      { ...props, activities: [makeRow({ progress: 0.4, status: "Editing AgentActivity.tsx" })] },
       environment as never,
     );
     const banner = JSON.stringify(layout.banner);
     expect(banner).toContain('"progressViewStyle":"linear"');
     expect(banner).toContain('"value":0.4');
+    expect(banner).toContain("Editing AgentActivity.tsx");
   });
 
-  it("drops thread rows when iOS asks for a simplified glass presentation", () => {
+  it("keeps the simplified glass presentation to one glance line", () => {
     const layout = AgentActivity(
       {
         ...props,
@@ -131,7 +131,8 @@ describe("AgentActivity widget layout", () => {
       { ...environment, levelOfDetail: "simplified" } as never,
     );
     const banner = JSON.stringify(layout.banner);
-    expect(banner).toContain("2 active agents");
+    expect(banner).toContain("1 approval");
+    expect(banner).not.toContain("1 working");
     expect(banner).not.toContain("Working thread");
     expect(banner).not.toContain("Blocked thread");
   });
@@ -157,11 +158,11 @@ describe("AgentActivity widget layout", () => {
     expect(banner).not.toContain("#fcd34d");
   });
 
-  it("orders rows attention-first in the banner", () => {
+  it("leads the banner with attention, then working, and never lists thread titles", () => {
     const layout = AgentActivity(
       {
         ...props,
-        activeCount: 2,
+        activeCount: 3,
         activities: [
           makeRow({ threadTitle: "Working thread" }),
           makeRow({
@@ -170,30 +171,42 @@ describe("AgentActivity widget layout", () => {
             phase: "waiting_for_approval",
             status: "Approval",
           }),
+          makeRow({
+            threadId: "thread-3",
+            threadTitle: "Another working thread",
+          }),
         ],
       },
       environment as never,
     );
     const banner = JSON.stringify(layout.banner);
-    expect(banner.indexOf("Blocked thread")).toBeGreaterThan(-1);
-    expect(banner.indexOf("Blocked thread")).toBeLessThan(banner.indexOf("Working thread"));
+    expect(banner).toContain("1 approval");
+    expect(banner).toContain("2 working");
+    expect(banner.indexOf("1 approval")).toBeLessThan(banner.indexOf("2 working"));
+    expect(banner).not.toContain("Working thread");
+    expect(banner).not.toContain("Blocked thread");
+    expect(banner).not.toContain("Another working thread");
+    expect(banner).not.toContain("Project");
   });
 
-  it("summarizes the attention count in the banner header", () => {
+  it("names mixed attention as need you", () => {
     const layout = AgentActivity(
       {
         ...props,
         activeCount: 3,
         activities: [
           makeRow({}),
-          makeRow({ threadId: "thread-2", phase: "waiting_for_input", status: "Input" }),
+          makeRow({ threadId: "thread-2", phase: "waiting_for_approval", status: "Approval" }),
+          makeRow({ threadId: "thread-3", phase: "waiting_for_input", status: "Input" }),
         ],
       },
       environment as never,
     );
     const banner = JSON.stringify(layout.banner);
-    expect(banner).toContain("3 active agents");
-    expect(banner).toContain("1 needs attention");
+    expect(banner).toContain("2 need you");
+    expect(banner).toContain("1 working");
+    expect(banner).not.toContain("1 approval");
+    expect(banner).not.toContain("1 input");
   });
 
   it("uses the attention tint for the compact presentations when a row needs input", () => {
@@ -265,11 +278,12 @@ describe("AgentActivity widget layout", () => {
       environment as never,
     );
     const banner = JSON.stringify(layout.banner);
-    expect(banner).toContain("Agent work completed");
-    expect(banner).not.toContain("0 active");
+    expect(banner).toContain("Done");
+    expect(banner).not.toContain("0 working");
+    expect(banner).not.toContain("Agent work completed");
     expect(banner).toContain("#6ee7b7"); // emerald-300 header tint
     expect(JSON.stringify(layout.compactTrailing)).toContain("Done");
-    expect(JSON.stringify(layout.compactTrailing)).not.toContain("0 active");
+    expect(JSON.stringify(layout.compactTrailing)).not.toContain("0");
     expect(JSON.stringify(layout.expandedLeading)).toContain("Done");
     expect(JSON.stringify(layout.minimal)).toContain("checkmark.circle.fill");
     expect(JSON.stringify(layout.bannerSmall)).toContain("Done");
@@ -286,7 +300,8 @@ describe("AgentActivity widget layout", () => {
       environment as never,
     );
     const banner = JSON.stringify(layout.banner);
-    expect(banner).toContain("Agent work failed");
+    expect(banner).toContain("Failed");
+    expect(banner).not.toContain("Agent work failed");
     expect(banner).toContain("#fca5a5"); // red-300 header tint
     expect(JSON.stringify(layout.compactTrailing)).toContain("Failed");
     expect(JSON.stringify(layout.expandedLeading)).toContain("Failed");
@@ -310,7 +325,8 @@ describe("AgentActivity widget layout", () => {
       environment as never,
     );
     const banner = JSON.stringify(layout.banner);
-    expect(banner).toContain("Agent work failed");
+    expect(banner).toContain("Failed");
+    expect(banner).not.toContain("Done");
     expect(banner).not.toContain("Agent work completed");
     expect(banner).toContain("#fca5a5"); // red-300 header tint
     expect(JSON.stringify(layout.compactTrailing)).toContain("Failed");
@@ -318,7 +334,27 @@ describe("AgentActivity widget layout", () => {
     expect(JSON.stringify(layout.minimal)).toContain("xmark.octagon.fill");
   });
 
-  it("renders up to three rows in the glass banner", () => {
+  it("shows a failed count beside live work without taking over the card", () => {
+    const layout = AgentActivity(
+      {
+        ...props,
+        activeCount: 2,
+        activities: [
+          makeRow({}),
+          makeRow({ threadId: "thread-2" }),
+          makeRow({ threadId: "thread-3", phase: "failed", status: "Failed" }),
+        ],
+      },
+      environment as never,
+    );
+    const banner = JSON.stringify(layout.banner);
+    expect(banner).toContain("2 working");
+    expect(banner).toContain("1 failed");
+    expect(banner).not.toContain("Failed");
+    expect(JSON.stringify(layout.compactTrailing)).toContain("2");
+  });
+
+  it("summarizes many working threads as a count instead of listing titles", () => {
     const layout = AgentActivity(
       {
         ...props,
@@ -330,10 +366,12 @@ describe("AgentActivity widget layout", () => {
       environment as never,
     );
     const banner = JSON.stringify(layout.banner);
-    for (const visible of [1, 2, 3]) {
-      expect(banner).toContain(`Thread ${visible}`);
+    expect(banner).toContain("6 working");
+    for (const n of [1, 2, 3, 4, 5, 6]) {
+      expect(banner).not.toContain(`Thread ${n}`);
     }
-    expect(banner).not.toContain("Thread 4");
-    expect(banner).not.toContain("Thread 6");
+    expect(JSON.stringify(layout.expandedBottom)).toContain("6 working");
+    expect(JSON.stringify(layout.expandedBottom)).not.toContain("Thread 1");
+    expect(JSON.stringify(layout.compactTrailing)).toContain("6");
   });
 });
