@@ -40,6 +40,21 @@ describe("ServerSettings subagent policy", () => {
   });
 });
 
+describe("ClientSettings skill favorites", () => {
+  it("defaults to an empty list", () => {
+    expect(decodeClientSettings({}).favoriteSkillIds).toEqual([]);
+  });
+
+  it("accepts skill ids", () => {
+    expect(
+      decodeClientSettings({ favoriteSkillIds: ["octo/skills:tdd"] }).favoriteSkillIds,
+    ).toEqual(["octo/skills:tdd"]);
+    expect(
+      decodeClientSettingsPatch({ favoriteSkillIds: ["host:agents:shared"] }).favoriteSkillIds,
+    ).toEqual(["host:agents:shared"]);
+  });
+});
+
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
     expect(decodeClientSettings({}).wordWrap).toBe(true);
