@@ -10,6 +10,7 @@ import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import {
   composerDraftHasUserContent,
+  draftHasInvestedContent,
   markPromotedDraftThreadByRef,
   type DraftId,
   type DraftThreadEnvMode,
@@ -26,6 +27,7 @@ import {
 import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
 import { readThreadShell, useProjects, useThreadShell } from "../state/entities";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
+import type { DraftStartSurface } from "../lib/canvasFirst";
 import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
 import { shouldReadProjectFileThreadEnvMode } from "../lib/newThreadDefaults";
 import { primaryServerSettingsAtom } from "../state/server";
@@ -88,6 +90,7 @@ export function useNewThreadHandler() {
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
         startFromOrigin?: boolean;
+        startSurface?: DraftStartSurface;
         replace?: boolean;
         /**
          * Move the viewed draft's typed content (prompt + images) into the
@@ -204,6 +207,7 @@ export function useNewThreadHandler() {
       const hasWorktreePathOption = options?.worktreePath !== undefined;
       const hasEnvModeOption = options?.envMode !== undefined;
       const hasStartFromOriginOption = options?.startFromOrigin !== undefined;
+      const startSurface = options?.startSurface ?? "chat";
       const storedDraftThread = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       const storedDraftThreadRef = storedDraftThread
         ? scopeThreadRef(storedDraftThread.environmentId, storedDraftThread.threadId)
@@ -223,7 +227,10 @@ export function useNewThreadHandler() {
       // drafts rather than deleting them.
       const emptyStoredDraftThread =
         reusableStoredDraftThread &&
-        !composerDraftHasUserContent(getComposerDraft(reusableStoredDraftThread.draftId))
+        !draftHasInvestedContent(
+          getComposerDraft(reusableStoredDraftThread.draftId),
+          reusableStoredDraftThread,
+        )
           ? reusableStoredDraftThread
           : null;
       const latestActiveDraftThread: DraftThreadState | null = currentRouteTarget
@@ -276,8 +283,9 @@ export function useNewThreadHandler() {
             const remappedMeanwhile =
               getDraftSessionByLogicalProjectKey(logicalProjectKey)?.draftId !==
               emptyStoredDraftThread.draftId;
-            const investedMeanwhile = composerDraftHasUserContent(
+            const investedMeanwhile = draftHasInvestedContent(
               getComposerDraft(emptyStoredDraftThread.draftId),
+              getDraftSession(emptyStoredDraftThread.draftId),
             );
             if (openedMeanwhile || promotedMeanwhile || remappedMeanwhile || investedMeanwhile) {
               return null;
@@ -295,6 +303,7 @@ export function useNewThreadHandler() {
           if (workspaceContext) {
             setDraftThreadContext(emptyStoredDraftThread.draftId, {
               ...workspaceContext,
+              startSurface,
               ...(carryRuntimeMode ? { runtimeMode: carryRuntimeMode } : {}),
               ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
             });
@@ -306,6 +315,8 @@ export function useNewThreadHandler() {
                 replaceOptions: true,
               });
             }
+          } else if (emptyStoredDraftThread.startSurface !== startSurface) {
+            setDraftThreadContext(emptyStoredDraftThread.draftId, { startSurface });
           }
           // The workspace context must also ride along here: when projectRef
           // targets a different physical member of the logical project,
@@ -318,6 +329,7 @@ export function useNewThreadHandler() {
             {
               threadId: emptyStoredDraftThread.threadId,
               ...workspaceContext,
+              startSurface,
               ...(carryRuntimeMode ? { runtimeMode: carryRuntimeMode } : {}),
               ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
             },
@@ -353,7 +365,10 @@ export function useNewThreadHandler() {
         latestActiveDraftThread.promotedTo == null &&
         // Same content rule as above: a new-thread request while viewing an
         // invested draft mints a fresh one instead of repurposing it.
-        !composerDraftHasUserContent(getComposerDraft(currentRouteTarget.draftId))
+        !draftHasInvestedContent(
+          getComposerDraft(currentRouteTarget.draftId),
+          latestActiveDraftThread,
+        )
       ) {
         if (
           hasBranchOption ||
@@ -361,13 +376,19 @@ export function useNewThreadHandler() {
           hasEnvModeOption ||
           hasStartFromOriginOption
         ) {
-          setDraftThreadContext(currentRouteTarget.draftId, pickExplicitWorkspaceOptions(options));
+          setDraftThreadContext(currentRouteTarget.draftId, {
+            ...pickExplicitWorkspaceOptions(options),
+            startSurface,
+          });
+        } else if (latestActiveDraftThread.startSurface !== startSurface) {
+          setDraftThreadContext(currentRouteTarget.draftId, { startSurface });
         }
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, currentRouteTarget.draftId, {
           threadId: latestActiveDraftThread.threadId,
           createdAt: latestActiveDraftThread.createdAt,
           runtimeMode: latestActiveDraftThread.runtimeMode,
           interactionMode: latestActiveDraftThread.interactionMode,
+          startSurface,
           ...pickExplicitWorkspaceOptions(options),
         });
         return Promise.resolve({
@@ -411,6 +432,7 @@ export function useNewThreadHandler() {
             createdAt: racedDraft.createdAt,
             runtimeMode: racedDraft.runtimeMode,
             interactionMode: racedDraft.interactionMode,
+            startSurface,
             ...pickExplicitWorkspaceOptions(options),
           });
           primeWorldSceneryForNewThread(
@@ -436,6 +458,7 @@ export function useNewThreadHandler() {
               envMode: initialEnvMode,
               newWorktreesStartFromOrigin: primaryServerSettings.newWorktreesStartFromOrigin,
             }),
+          startSurface,
           runtimeMode: carryRuntimeMode ?? DEFAULT_RUNTIME_MODE,
           ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
         });

@@ -9,6 +9,7 @@
 import type {
   CanvasDocument,
   CanvasImageNode,
+  CanvasImageSourceRef,
   DesktopCaptureSource,
   ScopedThreadRef,
 } from "@t3tools/contracts";
@@ -63,6 +64,11 @@ export interface CanvasCaptureApi {
   /** Capture the active tab (or the most recent one); no-op without tabs. */
   readonly capturePreferredTab: () => Promise<void>;
   readonly captureWindowSource: (source: DesktopCaptureSource) => Promise<void>;
+  readonly placeImage: (input: {
+    image: CanvasCaptureImage;
+    name: string;
+    sourceRef?: CanvasImageSourceRef;
+  }) => void;
   readonly recaptureNode: (nodeId: string) => Promise<void>;
   readonly isRecapturable: (nodeId: string) => boolean;
   readonly pickerRequest: CanvasWindowPickerRequest | null;
@@ -103,12 +109,8 @@ export function useCanvasCapture(input: {
     [selectNodesProp, threadRef],
   );
 
-  const placeCapture = useCallback(
-    (capture: {
-      image: CanvasCaptureImage;
-      name: string;
-      sourceRef: ReturnType<typeof windowSourceRef>;
-    }) => {
+  const placeImage = useCallback(
+    (capture: { image: CanvasCaptureImage; name: string; sourceRef?: CanvasImageSourceRef }) => {
       const store = useCanvasStore.getState();
       const center =
         input.worldCenter() ??
@@ -122,7 +124,7 @@ export function useCanvasCapture(input: {
         id: randomUUID(),
         image: capture.image,
         name: capture.name,
-        sourceRef: capture.sourceRef,
+        ...(capture.sourceRef !== undefined ? { sourceRef: capture.sourceRef } : {}),
         center,
       });
       store.setLocalImagePreview(threadRef, nodeId, capture.image.dataUrl);
@@ -131,6 +133,8 @@ export function useCanvasCapture(input: {
     },
     [doc, input, selectNodes, threadRef],
   );
+
+  const placeCapture = placeImage;
 
   const captureTab = useCallback(
     async (tab: CanvasCaptureTab) => {
@@ -299,6 +303,7 @@ export function useCanvasCapture(input: {
     captureTab,
     capturePreferredTab,
     captureWindowSource,
+    placeImage,
     recaptureNode,
     isRecapturable,
     pickerRequest,

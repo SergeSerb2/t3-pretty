@@ -11,7 +11,8 @@ import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import { useIsMobile } from "../hooks/useMediaQuery";
+import { startNewCanvasFromContext, startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { resolveShortcutCommand } from "../keybindings";
@@ -28,6 +29,7 @@ function ChatRouteGlobalShortcuts() {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
     useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const isMobile = useIsMobile();
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
@@ -108,6 +110,36 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
+      if (command === "chat.newCanvasLocal") {
+        if (isMobile) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void startNewCanvasFromContext({
+          activeDraftThread,
+          activeThread: activeThread ?? undefined,
+          defaultProjectRef,
+          handleNewThread,
+        });
+        return;
+      }
+
+      if (command === "chat.newCanvas") {
+        if (isMobile) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!legacySidebarEnabled && projectGroupCount > 1) {
+          openCommandPalette({ open: "new-canvas-in" });
+          return;
+        }
+        void startNewCanvasFromContext({
+          activeDraftThread,
+          activeThread: activeThread ?? undefined,
+          defaultProjectRef,
+          handleNewThread,
+        });
+        return;
+      }
+
       if (command === "preview.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -163,6 +195,7 @@ function ChatRouteGlobalShortcuts() {
     handleNewThread,
     keybindings,
     defaultProjectRef,
+    isMobile,
     previewOpen,
     projectGroupCount,
     routeThreadRef,

@@ -31,3 +31,10 @@ you send.
 Type `@` to link a workspace file or folder, or a skill the selected agent knows about. The
 menu splits into **Files** and **Skills**; a skill is inserted as a `$skill` mention, so `$`
 still works as a skills-only shortcut.
+
+## Start from Canvas
+
+On web and desktop, **Canvas** in the sidebar (or **Start from Canvas** in the command palette)
+opens a full canvas instead of an empty chat. Drop or paste images, draw, then send. A note is
+optional; sending with an empty canvas is not. After the first message, the thread is a normal
+chat with the canvas panel already open.

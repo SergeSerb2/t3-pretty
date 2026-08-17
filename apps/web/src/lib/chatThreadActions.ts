@@ -1,6 +1,7 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ProjectId, ScopedProjectRef } from "@t3tools/contracts";
 import type { DraftThreadEnvMode } from "../composerDraftStore";
+import type { DraftStartSurface } from "./canvasFirst";
 
 interface ThreadContextLike {
   environmentId: EnvironmentId;
@@ -15,6 +16,7 @@ interface NewThreadHandler {
       worktreePath?: string | null;
       envMode?: DraftThreadEnvMode;
       startFromOrigin?: boolean;
+      startSurface?: DraftStartSurface;
     },
     // The opened draft's identity, which most callers have no use for.
   ): Promise<unknown>;
@@ -64,5 +66,17 @@ export async function startNewThreadFromContext(
   }
 
   await context.handleNewThread(projectRef);
+  return true;
+}
+
+export async function startNewCanvasFromContext(
+  context: ChatThreadActionContext,
+): Promise<boolean> {
+  const projectRef = resolveThreadActionProjectRef(context);
+  if (!projectRef) {
+    return false;
+  }
+
+  await context.handleNewThread(projectRef, { startSurface: "canvas" });
   return true;
 }

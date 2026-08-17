@@ -142,7 +142,7 @@ function imageInit(input: {
   image: CanvasCaptureImage;
   name?: string | undefined;
   parentId?: string | undefined;
-  sourceRef: CanvasImageSourceRef;
+  sourceRef?: CanvasImageSourceRef | undefined;
 }): CanvasImageInit {
   const naturalWidth = positiveInt(input.image.width);
   const naturalHeight = positiveInt(input.image.height);
@@ -158,7 +158,7 @@ function imageInit(input: {
     ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
     ...(naturalWidth !== undefined ? { naturalWidth } : {}),
     ...(naturalHeight !== undefined ? { naturalHeight } : {}),
-    sourceRef: input.sourceRef,
+    ...(input.sourceRef !== undefined ? { sourceRef: input.sourceRef } : {}),
   };
 }
 
@@ -170,7 +170,7 @@ export function buildCapturePlacement(input: {
   id: string;
   image: CanvasCaptureImage;
   name: string;
-  sourceRef: CanvasImageSourceRef;
+  sourceRef?: CanvasImageSourceRef | undefined;
   center: CanvasPoint;
   maxSize?: number;
 }): { nodeId: string; op: CanvasOp } {

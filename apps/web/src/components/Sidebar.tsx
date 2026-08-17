@@ -42,6 +42,7 @@ import {
   ClockIcon,
   FolderIcon,
   FolderPlusIcon,
+  FrameIcon,
   GitBranchIcon,
   MessageSquareIcon,
   PinIcon,
@@ -98,7 +99,12 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import {
+  resolveThreadActionProjectRef,
+  startNewCanvasFromContext,
+  startNewThreadFromContext,
+} from "../lib/chatThreadActions";
+import { anyEnvironmentSupportsCanvas, environmentSupportsCanvas } from "../lib/canvasFirst";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -179,7 +185,7 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrom
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import {
-  composerDraftHasUserContent,
+  draftHasInvestedContent,
   DraftId,
   useComposerDraftStore,
   type ComposerThreadDraftState,
@@ -459,6 +465,24 @@ function SortablePinnedThreadRow(props: {
 // While the draft is open the row renders a frozen snapshot (see
 // SidebarDraftBlock); memoized so per-keystroke block re-renders skip it
 // entirely.
+// Canvas-only drafts can be invested with no composer blob yet (nodes live on
+// the canvas document). The row still needs a composer for preview text.
+const EMPTY_SIDEBAR_DRAFT_COMPOSER: ComposerThreadDraftState = {
+  prompt: "",
+  images: [],
+  nonPersistedImageIds: [],
+  persistedAttachments: [],
+  terminalContexts: [],
+  elementContexts: [],
+  previewAnnotations: [],
+  canvasSelections: [],
+  reviewComments: [],
+  modelSelectionByProvider: {},
+  activeProvider: null,
+  runtimeMode: null,
+  interactionMode: null,
+};
+
 const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   draftId: DraftId;
   session: DraftSessionState;
@@ -483,7 +507,9 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   const preview =
     promptPreview.length > 0
       ? promptPreview
-      : `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`;
+      : session.hasCanvasContent
+        ? "Canvas"
+        : `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`;
   const handleActivate = useCallback(() => onNavigate(draftId), [draftId, onNavigate]);
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent) => {
@@ -594,8 +620,8 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
       const session = store.getDraftSession(draftId);
       const composer = store.getComposerDraft(draftId);
       row =
-        session && session.promotedTo == null && composer && composerDraftHasUserContent(composer)
-          ? { draftId, session, composer }
+        session && session.promotedTo == null && draftHasInvestedContent(composer, session)
+          ? { draftId, session, composer: composer ?? EMPTY_SIDEBAR_DRAFT_COMPOSER }
           : null;
     }
     setFrozenActive({ routeDraftId: props.routeDraftId, row });
@@ -625,10 +651,14 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
         continue;
       }
       const composer = draftsByThreadKey[draftKey];
-      if (!composer || !composerDraftHasUserContent(composer)) {
+      if (!draftHasInvestedContent(composer, session)) {
         continue;
       }
-      rows.push({ draftId: DraftId.make(draftKey), session, composer });
+      rows.push({
+        draftId: DraftId.make(draftKey),
+        session,
+        composer: composer ?? EMPTY_SIDEBAR_DRAFT_COMPOSER,
+      });
     }
     rows.sort((left, right) => right.session.createdAt.localeCompare(left.session.createdAt));
     return rows;
@@ -1934,7 +1964,7 @@ export default function Sidebar() {
       if (session.promotedTo != null) {
         continue;
       }
-      if (!composerDraftHasUserContent(store.draftsByThreadKey[draftKey])) {
+      if (!draftHasInvestedContent(store.draftsByThreadKey[draftKey], session)) {
         continue;
       }
       if (
@@ -3330,6 +3360,32 @@ export default function Sidebar() {
     [isMobile, newThreadContext, projectGroups.length, setOpenMobile],
   );
 
+  const handleNewCanvasClick = useCallback(
+    (event?: ReactMouseEvent) => {
+      if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, projectGroups.length)) {
+        const projectRef = resolveThreadActionProjectRef({
+          activeDraftThread: newThreadContext.activeDraftThread,
+          activeThread: newThreadContext.activeThread ?? undefined,
+          defaultProjectRef: newThreadContext.defaultProjectRef,
+          handleNewThread: newThreadContext.handleNewThread,
+        });
+        if (projectRef && environmentSupportsCanvas(serverConfigs, projectRef.environmentId)) {
+          if (isMobile) setOpenMobile(false);
+          void startNewCanvasFromContext({
+            activeDraftThread: newThreadContext.activeDraftThread,
+            activeThread: newThreadContext.activeThread ?? undefined,
+            defaultProjectRef: newThreadContext.defaultProjectRef,
+            handleNewThread: newThreadContext.handleNewThread,
+          });
+          return;
+        }
+      }
+      if (isMobile) setOpenMobile(false);
+      openCommandPalette({ open: "new-canvas-in" });
+    },
+    [isMobile, newThreadContext, projectGroups.length, serverConfigs, setOpenMobile],
+  );
+
   // The button mirrors chat.new: in multi-project setups both route through
   // the command palette's "New thread in..." picker, and in single-project
   // setups both create immediately. In multi-project setups the label is only
@@ -3342,6 +3398,16 @@ export default function Sidebar() {
     shortcutLabelForCommand(keybindings, "chat.new") ??
     (projectGroups.length <= 1 ? shortcutLabelForCommand(keybindings, "chat.newLocal") : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
+  const showStartFromCanvas = !isMobile && anyEnvironmentSupportsCanvas(serverConfigs);
+  const newCanvasShortcutLabel =
+    shortcutLabelForCommand(keybindings, "chat.newCanvas") ??
+    (projectGroups.length <= 1
+      ? shortcutLabelForCommand(keybindings, "chat.newCanvasLocal")
+      : undefined);
+  const newCanvasInProjectShortcutLabel = shortcutLabelForCommand(
+    keybindings,
+    "chat.newCanvasLocal",
+  );
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
@@ -3441,6 +3507,51 @@ export default function Sidebar() {
                   </TooltipPopup>
                 </Tooltip>
               </div>
+              {showStartFromCanvas ? (
+                <div className="shrink-0">
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <SidebarMenuButton
+                          size="icon"
+                          type="button"
+                          className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                          onClick={handleNewCanvasClick}
+                          disabled={projects.length === 0}
+                          aria-label="Canvas"
+                        />
+                      }
+                    >
+                      <FrameIcon />
+                      <span
+                        className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
+                        aria-hidden="true"
+                      />
+                    </TooltipTrigger>
+                    <TooltipPopup side="right">
+                      {projectGroups.length > 1 ? (
+                        <span className="flex flex-col gap-0.5">
+                          <span>
+                            {newCanvasShortcutLabel
+                              ? `Canvas (${newCanvasShortcutLabel})`
+                              : "Canvas"}
+                          </span>
+                          <span className="text-muted-foreground">
+                            Canvas in current project: Shift+click
+                            {newCanvasInProjectShortcutLabel
+                              ? ` (${newCanvasInProjectShortcutLabel})`
+                              : ""}
+                          </span>
+                        </span>
+                      ) : newCanvasShortcutLabel ? (
+                        `Canvas (${newCanvasShortcutLabel})`
+                      ) : (
+                        "Canvas"
+                      )}
+                    </TooltipPopup>
+                  </Tooltip>
+                </div>
+              ) : null}
             </div>
             {projectGroups.length > 0 ? (
               <div className="flex items-center gap-1">
