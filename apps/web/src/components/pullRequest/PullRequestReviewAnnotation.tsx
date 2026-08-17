@@ -6,6 +6,7 @@ import type {
   EnvironmentId,
   PullRequestRef,
   PullRequestReviewThread,
+  PullRequestThreadCommentsResult,
   PullRequestThreadComment,
 } from "@t3tools/contracts";
 import {
@@ -24,6 +25,10 @@ import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
+import {
+  editPullRequestThreadComment,
+  mergePullRequestThreadComments,
+} from "./pullRequestDetail.logic";
 import { PullRequestActorLabel } from "./pullRequestPresentation";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
@@ -99,6 +104,7 @@ export function ReviewThreadCard({
   fixLabel = "Fix in a thread",
   onFix,
   onReply,
+  onLoadMore,
   canEditComment,
   onEditComment,
   onToggleResolved,
@@ -122,6 +128,8 @@ export function ReviewThreadCard({
   onFix?: () => void;
   /** Resolves to whether the host took it, so a reply that failed keeps the words it was given. */
   onReply: (body: string) => Promise<boolean>;
+  /** Reads one more page only after the reader asks for it. */
+  onLoadMore: (cursor: string) => Promise<PullRequestThreadCommentsResult | null>;
   /** Whether this reader wrote this remark, which is what rewriting one takes. */
   canEditComment: (comment: PullRequestThreadComment) => boolean;
   /** Resolves to whether the host took it, like `onReply`. */
@@ -137,6 +145,15 @@ export function ReviewThreadCard({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const sendingRef = useRef(false);
+  const [loadedPage, setLoadedPage] = useState<
+    (PullRequestThreadCommentsResult & { readonly threadId: string }) | null
+  >(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const currentPage = loadedPage?.threadId === thread.id ? loadedPage : null;
+  const comments = mergePullRequestThreadComments(thread.comments, currentPage?.comments ?? []);
+  const nextCommentsCursor =
+    currentPage === null ? (thread.nextCommentsCursor ?? null) : currentPage.nextCursor;
+  const commentCount = thread.commentCount ?? comments.length;
 
   // The host (or this page) marked it resolved after the card mounted: collapse it the same way
   // a first render of a resolved conversation would, rather than leaving the remarks open as if
@@ -150,7 +167,17 @@ export function ReviewThreadCard({
     setSavingEdit(true);
     const saved = await onEditComment(commentId, body);
     setSavingEdit(false);
-    if (saved) setEditingId(null);
+    if (saved) {
+      setLoadedPage((previous) =>
+        previous?.threadId === thread.id
+          ? {
+              ...previous,
+              comments: editPullRequestThreadComment(previous.comments, commentId, body),
+            }
+          : previous,
+      );
+      setEditingId(null);
+    }
   };
 
   const send = async () => {
@@ -161,11 +188,39 @@ export function ReviewThreadCard({
     // empty box, and the words have to be written again.
     try {
       if (await onReply(trimmed)) {
+        // The mutation returns no comment. Keep what the reader loaded and reopen its cursor so
+        // the new reply remains reachable without spending requests until they ask to load it.
+        setLoadedPage((previous) =>
+          previous?.threadId === thread.id
+            ? {
+                ...previous,
+                nextCursor: previous.nextCursor ?? thread.nextCommentsCursor ?? null,
+              }
+            : previous,
+        );
         setReply("");
         setReplying(false);
       }
     } finally {
       sendingRef.current = false;
+    }
+  };
+  const loadMore = async () => {
+    if (nextCommentsCursor === null || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await onLoadMore(nextCommentsCursor);
+      if (page === null) return;
+      setLoadedPage((previous) => ({
+        threadId: thread.id,
+        comments: mergePullRequestThreadComments(
+          previous?.threadId === thread.id ? previous.comments : [],
+          page.comments,
+        ),
+        nextCursor: page.nextCursor,
+      }));
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -187,8 +242,8 @@ export function ReviewThreadCard({
           aria-expanded={expanded}
           onClick={() => setExpanded((current) => !current)}
         >
-          {thread.isResolved ? "Resolved" : "Open"} · {thread.comments.length}{" "}
-          {thread.comments.length === 1 ? "comment" : "comments"}
+          {thread.isResolved ? "Resolved" : "Open"} · {commentCount}{" "}
+          {commentCount === 1 ? "comment" : "comments"}
         </button>
         {thread.isOutdated ? <span>outdated</span> : null}
         {onFix ? (
@@ -219,7 +274,7 @@ export function ReviewThreadCard({
       {expanded ? (
         <>
           <div className="mt-2 space-y-3">
-            {thread.comments.map((comment) => (
+            {comments.map((comment) => (
               <article key={comment.id} className="group min-w-0">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <PullRequestActorLabel actor={comment.author} className="text-foreground" />
@@ -267,6 +322,19 @@ export function ReviewThreadCard({
               </article>
             ))}
           </div>
+          {nextCommentsCursor !== null ? (
+            <div className="mt-2">
+              <Button
+                size="xs"
+                variant="ghost"
+                className="px-1"
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+              >
+                {loadingMore ? "Loading..." : "Load more comments"}
+              </Button>
+            </div>
+          ) : null}
 
           {canReply ? (
             replying ? (
