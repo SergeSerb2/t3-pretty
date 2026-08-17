@@ -94,17 +94,17 @@
       --color-md-blockquote-bg: rgba(39, 99, 63, 0.03);
       --color-md-code-bg: rgba(39, 99, 63, 0.06);
       --color-md-code-text: #242925;
-      --color-md-user-code-bg: rgba(255, 255, 255, 0.22);
-      --color-md-user-code-text: #ffffff;
+      --color-md-user-code-bg: rgba(20, 48, 31, 0.18);
+      --color-md-user-code-text: #14301f;
       --color-md-user-fence-bg: rgba(0, 0, 0, 0.16);
-      --color-md-user-fence-text: #ffffff;
+      --color-md-user-fence-text: #14301f;
       --color-md-hr: rgba(22, 38, 26, 0.1);
 
-      /* iMessage-style user bubble */
-      --color-user-bubble: #27633f;
-      --color-user-bubble-foreground: #ffffff;
-      --color-user-bubble-foreground-muted: rgba(255, 255, 255, 0.78);
-      --color-user-bubble-skill-foreground: #f0abfc;
+      /* Desktop World Scenery message surface (pastel sage, not iOS blue). */
+      --color-user-bubble: #dfefe3;
+      --color-user-bubble-foreground: #14301f;
+      --color-user-bubble-foreground-muted: rgba(20, 48, 31, 0.78);
+      --color-user-bubble-skill-foreground: #27633f;
 
       /* Drawer / modal backdrop */
       --color-backdrop: rgba(10, 20, 13, 0.22);
@@ -195,17 +195,17 @@
       --color-md-blockquote-bg: rgba(152, 210, 172, 0.06);
       --color-md-code-bg: rgba(234, 247, 238, 0.08);
       --color-md-code-text: #e8ece8;
-      --color-md-user-code-bg: rgba(255, 255, 255, 0.18);
-      --color-md-user-code-text: #ffffff;
+      --color-md-user-code-bg: rgba(243, 246, 243, 0.18);
+      --color-md-user-code-text: #f3f6f3;
       --color-md-user-fence-bg: rgba(0, 0, 0, 0.28);
-      --color-md-user-fence-text: #ffffff;
+      --color-md-user-fence-text: #f3f6f3;
       --color-md-hr: rgba(234, 247, 238, 0.12);
 
-      /* iMessage-style user bubble */
+      /* Desktop World Scenery message surface. */
       --color-user-bubble: #2a4a36;
       --color-user-bubble-foreground: #f3f6f3;
       --color-user-bubble-foreground-muted: rgba(243, 246, 243, 0.78);
-      --color-user-bubble-skill-foreground: #f0abfc;
+      --color-user-bubble-skill-foreground: #98d2ac;
 
       /* Drawer / modal backdrop */
       --color-backdrop: rgba(0, 0, 0, 0.48);

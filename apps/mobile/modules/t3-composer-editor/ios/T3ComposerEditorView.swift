@@ -33,6 +33,7 @@ private struct ComposerThemePayload: Decodable {
   let skillBorder: String
   let skillText: String
   let fileTint: String
+  let caret: String?
 }
 
 private struct ComposerChipStyle {
@@ -290,15 +291,16 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
   private var tokens: [ComposerTokenPayload] = []
   private var requestedSelection: ComposerSelectionPayload?
   private var theme = ComposerThemePayload(
-    text: "#262626",
-    placeholder: "#8e8e93",
-    chipBackground: "#f2f2f7",
-    chipBorder: "#dedee3",
-    chipText: "#262626",
-    skillBackground: "#f9e8fb",
-    skillBorder: "#e5a6eb",
-    skillText: "#a21caf",
-    fileTint: "#737373"
+    text: "#161a17",
+    placeholder: "#6b736c",
+    chipBackground: "#eaf0eb",
+    chipBorder: "#d8ded9",
+    chipText: "#161a17",
+    skillBackground: "#e3efe6",
+    skillBorder: "#27633f",
+    skillText: "#1c4630",
+    fileTint: "#3f473f",
+    caret: "#27633f"
   )
   private var fontFamily = "DMSans-Regular"
   private var fontSize: CGFloat = 14
@@ -760,7 +762,7 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
   private func applyTheme() {
     textView.textColor = UIColor(composerHex: theme.text) ?? .label
     placeholderLabel.textColor = UIColor(composerHex: theme.placeholder) ?? .placeholderText
-    tintColor = UIColor.systemBlue
+    tintColor = UIColor(composerHex: theme.caret) ?? UIColor(composerHex: "#27633f") ?? .systemGreen
   }
 
   private func emitTextChange() {
