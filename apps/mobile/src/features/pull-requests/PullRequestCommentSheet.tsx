@@ -4,7 +4,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Platform, Pressable, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,6 +12,8 @@ import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
+import { useThemeColor } from "../../lib/useThemeColor";
+import { PullRequestPrimaryButton } from "./PullRequestActionChip";
 import { pullRequestEnvironment } from "../../state/pullRequests";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -36,6 +38,7 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const isAndroid = Platform.OS === "android";
+  const primaryColor = useThemeColor("--color-primary");
   const environmentId = EnvironmentId.make(props.route.params.environmentId);
   const reference = useResolvedPullRequestReference(props.route.params);
   const mode = props.route.params.mode;
@@ -134,7 +137,14 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
           options={{
             title,
             headerRight: () => (
-              <Pressable disabled={!canSubmit} onPress={() => void submit()} hitSlop={8}>
+              <Pressable
+                disabled={!canSubmit}
+                hitSlop={8}
+                onPress={() => void submit()}
+                style={({ pressed }) => ({ opacity: !canSubmit ? 0.45 : pressed ? 0.7 : 1 })}
+                className="min-h-9 min-w-14 flex-row items-center justify-end gap-1.5"
+              >
+                {pending ? <ActivityIndicator color={String(primaryColor)} size="small" /> : null}
                 <Text
                   className={cn(
                     "text-base font-t3-bold",
@@ -150,14 +160,20 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
       )}
       <View className="flex-1 px-4 pt-3" style={{ paddingBottom: Math.max(insets.bottom, 12) }}>
         {mode === "review" ? (
-          <View className="mb-3 flex-row gap-2">
+          <View className="mb-3 flex-row flex-wrap gap-2">
             {verdicts.map((option) => {
               const selected = verdict === option;
               return (
                 <Pressable
                   key={option}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
                   onPress={() => setVerdict(option)}
-                  className={cn("rounded-full px-3 py-1.5", selected ? "bg-primary" : "bg-subtle")}
+                  style={({ pressed }) => ({ opacity: pressed && !selected ? 0.72 : 1 })}
+                  className={cn(
+                    "min-h-9 items-center justify-center rounded-full px-3.5",
+                    selected ? "bg-primary" : "bg-subtle",
+                  )}
                 >
                   <Text
                     className={cn(
@@ -192,23 +208,14 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
           value={body}
         />
         {isAndroid ? (
-          <Pressable
-            disabled={!canSubmit}
-            onPress={() => void submit()}
-            className={cn(
-              "mt-3 h-12 items-center justify-center rounded-full",
-              canSubmit ? "bg-primary" : "bg-subtle",
-            )}
-          >
-            <Text
-              className={cn(
-                "text-base font-t3-bold",
-                canSubmit ? "text-primary-foreground" : "text-foreground-muted",
-              )}
-            >
-              {pending ? "Sending…" : "Send"}
-            </Text>
-          </Pressable>
+          <View className="mt-3">
+            <PullRequestPrimaryButton
+              disabled={!canSubmit}
+              label={pending ? "Sending…" : "Send"}
+              loading={pending}
+              onPress={() => void submit()}
+            />
+          </View>
         ) : null}
       </View>
     </KeyboardAvoidingView>

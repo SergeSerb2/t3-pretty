@@ -35,6 +35,7 @@ import {
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
 import { scorePullRequestMatch, shouldShowPullRequestHostFilter } from "./pullRequestList.logic";
+import { PullRequestActionChip } from "./PullRequestActionChip";
 import { PullRequestRow } from "./PullRequestRow";
 
 const MATCHED_ELSEWHERE_SCORE = 10;
@@ -500,7 +501,11 @@ function StateChips(props: {
             accessibilityRole="button"
             accessibilityState={{ selected }}
             onPress={() => props.onChange(chip.value)}
-            className={cn("rounded-full px-3.5 py-1.5", selected ? "bg-primary" : "bg-subtle")}
+            style={({ pressed }) => ({ opacity: pressed && !selected ? 0.72 : 1 })}
+            className={cn(
+              "min-h-8 rounded-full px-3.5 py-1.5",
+              selected ? "bg-primary" : "bg-subtle",
+            )}
           >
             <Text
               className={cn(
@@ -701,13 +706,7 @@ export function PullRequestsScreen(props: {
       return (
         <View className="items-center gap-2 py-4">
           <Text className="text-center text-xs text-foreground-muted">{props.error}</Text>
-          <Pressable
-            accessibilityRole="button"
-            className="rounded-full bg-subtle px-4 py-2.5 active:opacity-70"
-            onPress={props.onLoadMore}
-          >
-            <Text className="text-sm font-t3-bold text-foreground">Try again</Text>
-          </Pressable>
+          <PullRequestActionChip label="Try again" onPress={props.onLoadMore} />
         </View>
       );
     }
@@ -716,13 +715,7 @@ export function PullRequestsScreen(props: {
         {props.loadingMore ? (
           <ActivityIndicator color={refreshTint} />
         ) : (
-          <Pressable
-            accessibilityRole="button"
-            className="rounded-full bg-subtle px-4 py-2.5 active:opacity-70"
-            onPress={props.onLoadMore}
-          >
-            <Text className="text-sm font-t3-bold text-foreground">Load more</Text>
-          </Pressable>
+          <PullRequestActionChip label="Load more" onPress={props.onLoadMore} />
         )}
       </View>
     );
@@ -761,7 +754,7 @@ export function PullRequestsScreen(props: {
         contentContainerStyle={{ paddingBottom: 32, paddingHorizontal: 16, paddingTop: 4 }}
         contentInsetAdjustmentBehavior="automatic"
         data={listItems}
-        estimatedItemSize={78}
+        estimatedItemSize={96}
         getItemType={(item) => item.kind}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
@@ -775,7 +768,8 @@ export function PullRequestsScreen(props: {
               <Pressable
                 accessibilityRole="button"
                 onPress={props.onRefresh}
-                className="mb-2 rounded-[16px] bg-subtle px-3 py-2.5"
+                style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
+                className="mb-2 rounded-2xl bg-subtle px-3 py-2.5"
               >
                 <Text className="text-xs text-foreground">
                   {describeProjectErrors(props.projectErrors)}

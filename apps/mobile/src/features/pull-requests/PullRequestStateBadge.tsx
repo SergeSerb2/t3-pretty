@@ -23,24 +23,21 @@ export function PullRequestStateBadge(props: {
 }) {
   const presentation = resolvePullRequestState(props);
   const fallbackIcon = useThemeColor("--color-icon");
+  const tint = SYMBOL_COLOR[presentation.kind] ?? String(fallbackIcon);
+  if (props.compact) {
+    return <SymbolView name={presentation.symbol} size={16} tintColor={tint} type="monochrome" />;
+  }
   return (
     <View
       className={cn(
-        "flex-row items-center gap-1.5 rounded-full px-2 py-1",
+        "flex-row items-center gap-1.5 rounded-full px-2.5 py-1",
         presentation.badgeClassName,
       )}
     >
-      <SymbolView
-        name={presentation.symbol}
-        size={props.compact ? 11 : 13}
-        tintColor={SYMBOL_COLOR[presentation.kind] ?? String(fallbackIcon)}
-        type="monochrome"
-      />
-      {props.compact ? null : (
-        <Text className={cn("text-2xs font-t3-bold", presentation.textClassName)} numberOfLines={1}>
-          {presentation.label}
-        </Text>
-      )}
+      <SymbolView name={presentation.symbol} size={13} tintColor={tint} type="monochrome" />
+      <Text className={cn("text-2xs font-t3-bold", presentation.textClassName)} numberOfLines={1}>
+        {presentation.label}
+      </Text>
     </View>
   );
 }

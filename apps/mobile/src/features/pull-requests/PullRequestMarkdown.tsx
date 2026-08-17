@@ -5,8 +5,10 @@ import {
   type NodeStyleOverrides,
   type PartialMarkdownTheme,
 } from "react-native-nitro-markdown";
-import { Text as NativeText, View } from "react-native";
+import { Pressable, Text as NativeText, View } from "react-native";
 
+import { SymbolView } from "../../components/AppSymbol";
+import { AppText as Text } from "../../components/AppText";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { showMarkdownLinkActionSheet } from "../../lib/showMarkdownLinkActions";
 import { useFontFamily } from "../../lib/useFontFamily";
@@ -20,17 +22,79 @@ import {
   hasNativeSelectableMarkdownText,
   SelectableMarkdownText,
 } from "../../native/SelectableMarkdownText";
+import { pullRequestBodySegments } from "./pullRequestMarkdown.logic";
 
-export function PullRequestMarkdown(props: { readonly markdown: string }) {
+export function PullRequestMarkdown(props: {
+  readonly markdown: string;
+  readonly density?: "body" | "comment";
+}) {
+  const segments = useMemo(() => pullRequestBodySegments(props.markdown), [props.markdown]);
+  const muted = String(useThemeColor("--color-icon-subtle"));
+
+  if (segments.length === 0) {
+    return null;
+  }
+
+  return (
+    <View className="min-w-0 gap-2.5 overflow-hidden">
+      {segments.map((segment) => {
+        if (segment.kind === "markdown") {
+          return (
+            <MarkdownRun
+              key={segment.id}
+              density={props.density ?? "body"}
+              markdown={segment.text}
+            />
+          );
+        }
+        return (
+          <Pressable
+            key={segment.id}
+            accessibilityRole="link"
+            onPress={() => void tryOpenExternalUrl(segment.url, "markdown-link")}
+            style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
+            className="flex-row items-center gap-2 rounded-xl bg-subtle px-3 py-2.5"
+          >
+            <SymbolView
+              name={segment.media === "video" ? "play" : "arrow.up.right"}
+              size={14}
+              tintColor={muted}
+              type="monochrome"
+            />
+            <Text
+              className="min-w-0 flex-1 text-sm font-t3-medium text-foreground"
+              numberOfLines={1}
+            >
+              {segment.media === "video" ? "Play video on the host" : "Open attachment on the host"}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function MarkdownRun(props: { readonly markdown: string; readonly density: "body" | "comment" }) {
   const { appearance } = useAppearancePreferences();
-  const markdownFontSizes = useMemo(
-    () => resolveMarkdownFontSizes(appearance.baseFontSize),
-    [appearance.baseFontSize],
-  );
-  const nativeMarkdownTypography = useMemo(
-    () => resolveNativeMarkdownTypography(appearance.baseFontSize),
-    [appearance.baseFontSize],
-  );
+  const commentBase = Math.max(13, Math.round(appearance.baseFontSize * 0.875));
+  const baseFontSize = props.density === "comment" ? commentBase : appearance.baseFontSize;
+  const markdownFontSizes = useMemo(() => resolveMarkdownFontSizes(baseFontSize), [baseFontSize]);
+  const nativeMarkdownTypography = useMemo(() => {
+    const typography = resolveNativeMarkdownTypography(baseFontSize);
+    if (props.density !== "comment") return typography;
+    // Comment cards cannot carry document-sized headings. Keep them just above body size.
+    return {
+      ...typography,
+      headingFontSizes: [
+        typography.fontSize + 3,
+        typography.fontSize + 2,
+        typography.fontSize + 1,
+        typography.fontSize,
+        typography.fontSize,
+        typography.fontSize,
+      ] as const,
+    };
+  }, [baseFontSize, props.density]);
   const body = String(useThemeColor("--color-md-body"));
   const strong = String(useThemeColor("--color-md-strong"));
   const link = String(useThemeColor("--color-md-link"));
@@ -102,6 +166,7 @@ export function PullRequestMarkdown(props: { readonly markdown: string }) {
       strong,
     ],
   );
+  const headingSize = props.density === "comment" ? markdownFontSizes.m + 1 : markdownFontSizes.h3;
   const styles: NodeStyleOverrides = useMemo(
     () => ({
       text: {
@@ -110,7 +175,12 @@ export function PullRequestMarkdown(props: { readonly markdown: string }) {
         fontSize: markdownFontSizes.m,
         lineHeight: markdownFontSizes.bodyLineHeight,
       },
-      heading: { color: strong, fontFamily: boldFontFamily },
+      heading: {
+        color: strong,
+        fontFamily: boldFontFamily,
+        fontSize: headingSize,
+        lineHeight: headingSize + 6,
+      },
       strong: { color: strong, fontFamily: boldFontFamily },
       link: { color: link, fontFamily: mediumFontFamily },
       blockquote: {
@@ -128,6 +198,7 @@ export function PullRequestMarkdown(props: { readonly markdown: string }) {
       boldFontFamily,
       codeBackground,
       codeText,
+      headingSize,
       link,
       markdownFontSizes.bodyLineHeight,
       markdownFontSizes.m,
@@ -142,7 +213,7 @@ export function PullRequestMarkdown(props: { readonly markdown: string }) {
   }
 
   return (
-    <View>
+    <View className="min-w-0 overflow-hidden">
       {hasNativeSelectableMarkdownText() ? (
         <SelectableMarkdownText
           markdown={props.markdown}
