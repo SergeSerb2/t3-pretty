@@ -366,6 +366,12 @@ html:not(.dark) .scenery-attribution:hover {
 }
 
 /* ------------------------------------------------ new-thread arrival -- */
+/* A cloud bank, not a wash: three depth bands of gradient puffs plus a
+   noise grain sheet — four compositor layers, transform/opacity only. The
+   fog gathers from the left over the hold, sits at full cover, then blows
+   off to the right with parallax: the near bank fastest and furthest, the
+   far bank mostly thinning in place. The overlay unmounts at settle, so
+   nothing here outlives the sequence. Timings mirror SCENERY_ARRIVAL. */
 
 .scenery-arrival {
   position: fixed;
@@ -375,84 +381,192 @@ html:not(.dark) .scenery-attribution:hover {
   contain: strict;
 }
 
-.scenery-fog,
-.scenery-fog__sheet {
+.scenery-fog {
   position: absolute;
   inset: 0;
-}
-
-.scenery-fog {
   overflow: hidden;
+  /* Fog ink: near-black over the dark wash, near-white over the light one.
+     Every band reads it, so light mode is a two-line override. Keyed on the
+     ink SceneryArrival captured at fog-on (data-fog), not the live html
+     class: the per-thread ink may flip while the bank is up. */
+  --fog-ink: 16 20 24;
+  --fog-grain-alpha: 0.13;
 }
 
-.scenery-fog__sheet {
-  inset: -12%;
-  opacity: 1;
+.scenery-arrival[data-fog="light"] .scenery-fog {
+  --fog-ink: 246 248 247;
+  --fog-grain-alpha: 0.11;
 }
 
-.scenery-fog__sheet--a {
+.scenery-fog__bank {
+  position: absolute;
+  /* Overscan so a band can travel a quarter of the width and still cover
+     the edge it left behind until it has thinned. Tiles outside the clip
+     never rasterize, so this costs viewport-sized textures, not overscan. */
+  inset: -14%;
+  /* No will-change: the running transform/opacity animations promote each
+     band for exactly as long as it moves. */
+  animation: scenery-fog-gather 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Depth bands. --fog-in-* is where a band starts gathering from, --fog-out-*
+   where it ends up blown; the near band travels ~3x the far band. Each
+   band's silhouette is a cluster of overlapping ellipses with a dense core
+   and a long soft skirt, so edges read as billows rather than the single
+   vignette of a sheet. */
+.scenery-fog__bank--far {
+  --fog-in-x: -3%;
+  --fog-in-y: 0.5%;
+  --fog-in-scale: 1.04;
+  --fog-out-x: 7%;
+  --fog-out-y: -2%;
+  --fog-out-scale: 1.08;
+  /* First stop is the veil: base coverage under the puffs, heavier top and
+     bottom so header and composer never show a gap between clouds. */
   background:
-    radial-gradient(ellipse 78% 52% at 18% 38%, rgb(16 20 22 / 0.78), transparent 72%),
-    radial-gradient(ellipse 64% 58% at 82% 62%, rgb(22 26 28 / 0.7), transparent 70%);
+    linear-gradient(
+      180deg,
+      rgb(var(--fog-ink) / 0.5) 0%,
+      rgb(var(--fog-ink) / 0.26) 40%,
+      rgb(var(--fog-ink) / 0.3) 65%,
+      rgb(var(--fog-ink) / 0.54) 100%
+    ),
+    radial-gradient(
+      ellipse 62% 44% at 28% 42%,
+      rgb(var(--fog-ink) / 0.64) 0%,
+      rgb(var(--fog-ink) / 0.36) 40%,
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 58% 40% at 76% 62%,
+      rgb(var(--fog-ink) / 0.6) 0%,
+      rgb(var(--fog-ink) / 0.32) 42%,
+      transparent 70%
+    ),
+    radial-gradient(ellipse 70% 36% at 52% 16%, rgb(var(--fog-ink) / 0.56), transparent 68%),
+    radial-gradient(ellipse 66% 38% at 44% 88%, rgb(var(--fog-ink) / 0.64), transparent 66%);
 }
 
-.scenery-fog__sheet--b {
+.scenery-fog__bank--mid,
+.scenery-fog__bank--grain {
+  --fog-in-x: -5%;
+  --fog-in-y: 1%;
+  --fog-in-scale: 1.06;
+  --fog-out-x: 15%;
+  --fog-out-y: -3%;
+  --fog-out-scale: 1.14;
+}
+
+.scenery-fog__bank--mid {
   background:
-    radial-gradient(ellipse 90% 46% at 50% 18%, rgb(28 32 34 / 0.62), transparent 68%),
-    radial-gradient(ellipse 80% 50% at 48% 88%, rgb(12 14 16 / 0.8), transparent 64%);
+    radial-gradient(
+      ellipse 34% 26% at 18% 56%,
+      rgb(var(--fog-ink) / 0.8) 0%,
+      rgb(var(--fog-ink) / 0.44) 46%,
+      transparent 72%
+    ),
+    radial-gradient(ellipse 26% 20% at 34% 38%, rgb(var(--fog-ink) / 0.72), transparent 70%),
+    radial-gradient(ellipse 30% 22% at 10% 30%, rgb(var(--fog-ink) / 0.68), transparent 70%),
+    radial-gradient(
+      ellipse 34% 26% at 82% 40%,
+      rgb(var(--fog-ink) / 0.8) 0%,
+      rgb(var(--fog-ink) / 0.44) 46%,
+      transparent 72%
+    ),
+    radial-gradient(ellipse 26% 20% at 66% 66%, rgb(var(--fog-ink) / 0.72), transparent 70%),
+    radial-gradient(ellipse 30% 22% at 92% 72%, rgb(var(--fog-ink) / 0.68), transparent 70%);
 }
 
-.scenery-fog__sheet--c {
-  background: linear-gradient(
-    180deg,
-    rgb(10 12 14 / 0.55) 0%,
-    rgb(18 22 24 / 0.28) 42%,
-    rgb(14 16 18 / 0.72) 100%
-  );
-}
-
-.scenery-arrival[data-fog="light"] .scenery-fog__sheet--a {
+.scenery-fog__bank--near {
+  --fog-in-x: -8%;
+  --fog-in-y: 1.5%;
+  --fog-in-scale: 1.08;
+  --fog-out-x: 26%;
+  --fog-out-y: -5%;
+  --fog-out-scale: 1.22;
   background:
-    radial-gradient(ellipse 78% 52% at 18% 38%, rgb(246 248 247 / 0.86), transparent 72%),
-    radial-gradient(ellipse 64% 58% at 82% 62%, rgb(236 240 238 / 0.78), transparent 70%);
+    radial-gradient(
+      ellipse 24% 18% at 36% 70%,
+      rgb(var(--fog-ink) / 0.88) 0%,
+      rgb(var(--fog-ink) / 0.52) 42%,
+      transparent 72%
+    ),
+    radial-gradient(ellipse 20% 15% at 52% 80%, rgb(var(--fog-ink) / 0.82), transparent 70%),
+    radial-gradient(ellipse 18% 13% at 24% 84%, rgb(var(--fog-ink) / 0.78), transparent 70%),
+    radial-gradient(
+      ellipse 24% 18% at 62% 26%,
+      rgb(var(--fog-ink) / 0.88) 0%,
+      rgb(var(--fog-ink) / 0.52) 42%,
+      transparent 72%
+    ),
+    radial-gradient(ellipse 20% 15% at 46% 14%, rgb(var(--fog-ink) / 0.82), transparent 70%),
+    radial-gradient(ellipse 18% 13% at 78% 20%, rgb(var(--fog-ink) / 0.78), transparent 70%);
 }
 
-.scenery-arrival[data-fog="light"] .scenery-fog__sheet--b {
-  background:
-    radial-gradient(ellipse 90% 46% at 50% 18%, rgb(252 253 252 / 0.72), transparent 68%),
-    radial-gradient(ellipse 80% 50% at 48% 88%, rgb(232 236 234 / 0.84), transparent 64%);
+/* Fractal-noise grain: one 400px tile, rasterized once on the first fog
+   (three octaves — cheap enough for the frame the route commits) and
+   repeated. Mid-grey ink textures both the dark and the light bank; the
+   radial mask keeps it off the edges, where a repeat would be easiest to
+   spot, and --fog-alpha keeps it a whisper. */
+.scenery-fog__bank--grain {
+  --fog-alpha: var(--fog-grain-alpha);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.02' numOctaves='3' stitchTiles='stitch' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0.6 0 0 0 0 0.62 0 0 0 0 0.62 1 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E")
+    0 0 / 400px 400px repeat;
+  -webkit-mask-image: radial-gradient(ellipse 70% 62% at 50% 50%, black 30%, transparent 100%);
+  mask-image: radial-gradient(ellipse 70% 62% at 50% 50%, black 30%, transparent 100%);
 }
 
-.scenery-arrival[data-fog="light"] .scenery-fog__sheet--c {
-  background: linear-gradient(
-    180deg,
-    rgb(244 246 245 / 0.7) 0%,
-    rgb(250 251 250 / 0.38) 42%,
-    rgb(236 239 237 / 0.8) 100%
-  );
+@keyframes scenery-fog-gather {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--fog-in-x), var(--fog-in-y), 0) scale(var(--fog-in-scale));
+  }
+  45% {
+    opacity: var(--fog-alpha, 1);
+  }
+  to {
+    opacity: var(--fog-alpha, 1);
+    transform: translate3d(0, 0, 0) scale(1);
+  }
 }
 
-.scenery-arrival[data-phase="reveal"] .scenery-fog__sheet {
-  opacity: 0;
-  transition:
-    opacity 0.52s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.52s cubic-bezier(0.16, 1, 0.3, 1);
+/* Dissipation: a slow start (chrome fades in through the still-thick bank),
+   then the bands accelerate off to the right, spread, and thin. Opacity
+   holds most of its cover through the first third so the reveal reads as
+   fog thinning rather than a sheet fading. */
+@keyframes scenery-fog-dissipate {
+  0% {
+    opacity: var(--fog-alpha, 1);
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  32% {
+    opacity: calc(var(--fog-alpha, 1) * 0.86);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--fog-out-x), var(--fog-out-y), 0) scale(var(--fog-out-scale));
+  }
 }
 
-.scenery-arrival[data-phase="reveal"] .scenery-fog__sheet--a {
-  transform: translate3d(-4%, -6%, 0);
+.scenery-arrival[data-phase="reveal"] .scenery-fog__bank {
+  animation: scenery-fog-dissipate 880ms cubic-bezier(0.5, 0.04, 0.22, 1) both;
 }
 
-.scenery-arrival[data-phase="reveal"] .scenery-fog__sheet--b {
-  transform: translate3d(5%, 4%, 0);
-  transition-delay: 40ms;
+/* Near clears first, far last; every band is done inside fogClearMs. */
+.scenery-arrival[data-phase="reveal"] .scenery-fog__bank--mid,
+.scenery-arrival[data-phase="reveal"] .scenery-fog__bank--grain {
+  animation-duration: 820ms;
+  animation-delay: 60ms;
 }
 
-.scenery-arrival[data-phase="reveal"] .scenery-fog__sheet--c {
-  transform: translate3d(0, -5%, 0);
-  transition-delay: 80ms;
+.scenery-arrival[data-phase="reveal"] .scenery-fog__bank--far {
+  animation-duration: 760ms;
+  animation-delay: 120ms;
 }
 
+/* Mounts once the photo (and so the name) is known, a beat into the fog:
+   rises out of the bank on `translate` so the reveal's `transform` travel
+   on the place name never fights it. Finishes inside fogHoldMs. */
 .scenery-arrival__copy {
   position: absolute;
   inset: 0;
@@ -463,6 +577,18 @@ html:not(.dark) .scenery-attribution:hover {
   gap: 0.55rem;
   padding: 1.5rem 1.5rem 22vh;
   text-align: center;
+  animation: scenery-arrival-copy-in 380ms cubic-bezier(0.22, 1, 0.36, 1) 40ms both;
+}
+
+@keyframes scenery-arrival-copy-in {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
 }
 
 .scenery-arrival__kicker {
@@ -492,11 +618,14 @@ html:not(.dark) .scenery-attribution:hover {
     transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* The photo pushes in as the fog gathers (the fog is still thin on its
+   first frames, so a snap zoom would show) and settles back out on the same
+   wind that clears the bank. */
 html[data-scenery-arrival="fog"] .scenery-layer__group {
   transform: scale(1.04);
   transition:
     opacity var(--scenery-motion),
-    transform 0.64s cubic-bezier(0.16, 1, 0.3, 1);
+    transform 0.46s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html[data-scenery-arrival="reveal"] .scenery-layer__group,
@@ -504,27 +633,52 @@ html[data-scenery-arrival="settled"] .scenery-layer__group {
   transform: scale(1);
   transition:
     opacity var(--scenery-motion),
-    transform 0.64s cubic-bezier(0.16, 1, 0.3, 1);
+    transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Opacity + transform only: a filter blur here would re-rasterize the
+   composer glass every frame of the reveal. */
 html[data-scenery-arrival="fog"] [data-scenery-hero-chrome] {
   opacity: 0;
-  transform: translate3d(0, 12px, 0);
+  transform: translate3d(0, 14px, 0);
   pointer-events: none;
 }
 
+/* Chrome comes up through the thinning bank: headline first, composer a
+   beat behind, so the hero reads as one gesture instead of a cut
+   (chromeInMs). */
 html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome],
 html[data-scenery-arrival="settled"] [data-scenery-hero-chrome] {
   opacity: 1;
   transform: none;
   transition:
-    opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome="composer"],
+html[data-scenery-arrival="settled"] [data-scenery-hero-chrome="composer"] {
+  transition-delay: 70ms;
+}
+
+/* An ink flip that lands mid-arrival is crossfaded by its view transition;
+   the arrival rules above outrank the parking rule at the top of the file
+   by order, so it is restated here. */
+html[data-scenery-ink-transition] .scenery-layer__group {
+  transition: none;
 }
 
 html[data-scenery-arrival="fog"] .scenery-place,
 html[data-scenery-arrival="reveal"] .scenery-place {
   visibility: hidden;
+}
+
+/* The traveling name lands exactly on .scenery-place__name, so the swap is
+   invisible; the credit line under it is new content and fades in at
+   settle instead of popping alongside. */
+html[data-scenery-arrival="fog"] .scenery-place__credit,
+html[data-scenery-arrival="reveal"] .scenery-place__credit {
+  opacity: 0;
 }
 
 .scenery-place {
@@ -540,6 +694,17 @@ html[data-scenery-arrival="reveal"] .scenery-place {
   transition:
     margin 0.42s cubic-bezier(0.16, 1, 0.3, 1),
     gap 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Same live-edge flag as the scroll-to-end pill: hide while the timeline is
+   scrolled up. Motion.css adds the fade; without Thread motion this is a
+   hard cut. */
+[data-composer-placement="docked"]
+  [data-scenery-place-slot][data-scenery-place-hidden]
+  .scenery-place {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .scenery-place__name {
@@ -563,6 +728,7 @@ html[data-scenery-arrival="reveal"] .scenery-place {
   color: var(--app-theme-text-muted, var(--app-theme-muted-foreground));
   font-size: 0.75rem;
   line-height: 1.3;
+  transition: opacity 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .scenery-place__prefix {
@@ -620,8 +786,16 @@ html[data-scenery-arrival="reveal"] .scenery-place {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .scenery-fog__sheet,
+  /* The sequence does not play under reduced motion; these only guarantee
+     nothing moves if the overlay is ever on screen anyway. */
+  .scenery-fog__bank,
+  .scenery-arrival[data-phase="reveal"] .scenery-fog__bank,
+  .scenery-arrival__copy {
+    animation: none;
+  }
+
   .scenery-arrival__kicker,
+  .scenery-place__credit,
   html[data-scenery-arrival="reveal"] .scenery-layer__group,
   html[data-scenery-arrival="settled"] .scenery-layer__group,
   html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome],

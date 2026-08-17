@@ -312,7 +312,9 @@ import {
   MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
   SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS,
   SCENERY_DRAFT_HERO_TRANSITION_EASING,
+  recordDraftHeroHandoff,
   runMobileComposerTransition,
+  takeDraftHeroHandoff,
 } from "./chat/draftHeroTransition";
 import { useMotionStore } from "../scenery/motionStore";
 import { writeSceneryComposerPlacement } from "../scenery/sceneryArrivalLogic";
@@ -390,7 +392,11 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
   const transitionGroupRef = useRef<HTMLDivElement | null>(null);
   const composerAnchorRef = useRef<HTMLDivElement | null>(null);
   const previousStateRef = useRef(isDraftHeroState);
-  const previousComposerRectRef = useRef<DOMRect | null>(null);
+  const previousComposerRectRef = useRef<Pick<DOMRect, "left" | "top"> | null>(null);
+  // undefined until the first layout pass takes (or declines) the handoff;
+  // held until its glide finishes so StrictMode's second pass replays it
+  // instead of finding it consumed.
+  const handoffRectRef = useRef<Pick<DOMRect, "left" | "top"> | null | undefined>(undefined);
   const animationRef = useRef<Animation | null>(null);
   const sceneryDockRef = useRef(sceneryDock);
   sceneryDockRef.current = sceneryDock;
@@ -404,10 +410,29 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
     previousComposerRectRef.current = composerAnchorRef.current?.getBoundingClientRect() ?? null;
   };
 
+  // Thread and draft routes are separate route components, so New thread and
+  // opening a thread from a draft remount ChatView. Layout cleanup still sees
+  // the outgoing DOM, so the composer's last rect is handed to whichever
+  // ChatView mounts next; the mount below picks it up in the same commit.
+  useLayoutEffect(
+    () => () => {
+      recordDraftHeroHandoff(
+        composerAnchorRef.current?.getBoundingClientRect() ?? null,
+        performance.now(),
+      );
+    },
+    [],
+  );
+
   useLayoutEffect(() => {
     const transitionGroup = transitionGroupRef.current;
     const nextComposerRect = composerAnchorRef.current?.getBoundingClientRect() ?? null;
-    const stateChanged = previousStateRef.current !== isDraftHeroState;
+    if (handoffRectRef.current === undefined) {
+      handoffRectRef.current = takeDraftHeroHandoff(performance.now());
+    }
+    const handoffRect = handoffRectRef.current;
+    const stateChangedInPlace = previousStateRef.current !== isDraftHeroState;
+    const stateChanged = stateChangedInPlace || handoffRect !== null;
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -418,7 +443,12 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
     animationRef.current?.cancel();
     animationRef.current = null;
 
-    const previousComposerRect = previousComposerRectRef.current;
+    // An in-place hero↔docked switch glides from the rect captured before it;
+    // a fresh mount glides from the rect the outgoing ChatView handed off.
+    const previousComposerRect = stateChangedInPlace
+      ? previousComposerRectRef.current
+      : handoffRect;
+    let handoffGlideStarted = false;
     if (
       stateChanged &&
       !prefersReducedMotion &&
@@ -453,6 +483,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
         );
         animation.id = DRAFT_HERO_TRANSITION_ANIMATION_ID;
         animationRef.current = animation;
+        handoffGlideStarted = !stateChangedInPlace;
         void animation.finished
           .catch(() => undefined)
           .then(() => {
@@ -460,8 +491,14 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
               return;
             }
             animationRef.current = null;
+            if (!stateChangedInPlace) {
+              handoffRectRef.current = null;
+            }
           });
       }
+    }
+    if (!stateChangedInPlace && !handoffGlideStarted) {
+      handoffRectRef.current = null;
     }
 
     previousStateRef.current = isDraftHeroState;
@@ -6733,7 +6770,6 @@ function ChatViewContent(props: ChatViewProps) {
                     >
                       <Button
                         aria-label="Scroll to end"
-                        title="Scroll to end"
                         onClick={() => scrollToEnd(true)}
                         className="pointer-events-auto gap-1.5 rounded-full px-3 text-muted-foreground hover:text-foreground"
                         size="xs"
@@ -6970,7 +7006,11 @@ function ChatViewContent(props: ChatViewProps) {
                     {!(isDraftHeroState && sceneryThemeActive) ? (
                       <>
                         {sceneryThemeActive ? (
-                          <div ref={bindSceneryPlaceSlot} data-scenery-place-slot="" />
+                          <div
+                            ref={bindSceneryPlaceSlot}
+                            data-scenery-place-slot=""
+                            data-scenery-place-hidden={showScrollToBottom ? "" : undefined}
+                          />
                         ) : null}
                         <div
                           aria-hidden

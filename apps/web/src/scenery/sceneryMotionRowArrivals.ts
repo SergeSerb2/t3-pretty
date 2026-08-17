@@ -5,11 +5,11 @@ export const SEEN_TOP_SLACK_PX = 8;
 export const STAGGER_MS = 40;
 export const STAGGER_CAP = 3;
 /**
- * Rise is 220ms plus at most three stagger steps. A hard cap still clears
+ * Rise is 340ms plus at most three stagger steps. A hard cap still clears
  * `scenery-row-enter` if `animationend` never fires (0-duration kill switch,
  * view-transition hiding, or a recycled node).
  */
-export const ENTER_CLEAR_MS = 500;
+export const ENTER_CLEAR_MS = 600;
 
 export const ENTER_CLASS = "scenery-row-enter";
 export const ENTER_DELAY_PROP = "--sc-enter-delay";

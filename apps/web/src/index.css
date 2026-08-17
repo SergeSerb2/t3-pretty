@@ -1919,6 +1919,25 @@ code {
   background: transparent !important;
 }
 
+/* Expanded tool-call commands reuse Shiki without inheriting the highlighter's
+   opaque pre background or blocking wrap on long tokens. */
+.tool-call-shiki .shiki {
+  margin: 0;
+  background: transparent !important;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: inherit;
+  overflow-wrap: inherit;
+  word-break: inherit;
+}
+
+.tool-call-shiki .shiki code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: inherit;
+}
+
 /* Diagnostics-style tables: row separators only, uppercase headers, and a
    scroll-fade container for horizontal overflow. The root chat-markdown
    wrapping rules (overflow-wrap: anywhere) would let columns shrink to single

@@ -59,6 +59,10 @@
       "types": "./src/shell.ts",
       "import": "./src/shell.ts"
     },
+    "./shellCommandFormat": {
+      "types": "./src/shellCommandFormat.ts",
+      "import": "./src/shellCommandFormat.ts"
+    },
     "./semver": {
       "types": "./src/semver.ts",
       "import": "./src/semver.ts"

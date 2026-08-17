@@ -33,14 +33,14 @@ html[data-scenery-motion] {
    delayed rows invisible until their turn. */
 
 html[data-scenery-motion] [data-timeline-root].scenery-row-enter {
-  animation: scenery-row-rise 220ms var(--sc-ease-out) both;
+  animation: scenery-row-rise 340ms var(--sc-ease-out) both;
   animation-delay: var(--sc-enter-delay, 0ms);
 }
 
 @keyframes scenery-row-rise {
   from {
     opacity: 0;
-    translate: 0 6px;
+    translate: 0 8px;
   }
   to {
     opacity: 1;
@@ -96,19 +96,39 @@ html[data-scenery-motion]
 
 html[data-scenery-motion] [data-changed-files-state] {
   transition:
-    opacity 240ms var(--sc-ease-out),
-    translate 240ms var(--sc-ease-out);
+    opacity 300ms var(--sc-ease-out),
+    translate 300ms var(--sc-ease-out);
   @starting-style {
     opacity: 0;
-    translate: 0 6px;
+    translate: 0 8px;
   }
 }
 
 /* -------------------------------------------------- sidebar working label -- */
-/* Working threads keep the status text only — no dashed icon. */
+/* Working threads keep the status text only — no dashed icon. The label
+   slides in from the right the moment a turn starts (one-shot; the row
+   must stay quiet after that), and the done check pops like a tool-call
+   verdict when the turn ends. */
 
 html[data-scenery-motion] [data-thread-item] [data-sidebar-working-label] {
   opacity: 0.9;
+  transition:
+    opacity 240ms var(--sc-ease-out),
+    translate 240ms var(--sc-ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: calc(4px * var(--sc-m)) 0;
+  }
+}
+
+html[data-scenery-motion] [data-thread-item] svg.lucide-circle-check {
+  transition:
+    scale 200ms var(--sc-ease-out),
+    opacity 200ms var(--sc-ease-out);
+  @starting-style {
+    scale: calc(1 - 0.4 * var(--sc-m));
+    opacity: 0;
+  }
 }
 
 /* ------------------------------------------------------------- banners -- */
@@ -243,6 +263,31 @@ html[data-scenery-motion] button[aria-label="Scroll to end"] {
   }
 }
 
+/* Inverse of the scroll-to-end pill: the place credit fades and drops on
+   the same 160ms beat. Visibility waits for the fade so the Unsplash links
+   leave the tab order after it. */
+html[data-scenery-motion] .scenery-place {
+  transition:
+    margin 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    gap 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms var(--sc-ease-out),
+    translate 160ms var(--sc-ease-out),
+    visibility 0s;
+}
+
+html[data-scenery-motion]
+  [data-composer-placement="docked"]
+  [data-scenery-place-slot][data-scenery-place-hidden]
+  .scenery-place {
+  translate: 0 calc(4px * var(--sc-m));
+  transition:
+    margin 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    gap 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms var(--sc-ease-out),
+    translate 160ms var(--sc-ease-out),
+    visibility 0s 160ms;
+}
+
 /* ------------------------------------------------------ press feedback -- */
 /* Send/stop already transition `scale` via their transition-all utility;
    these only add the missing pressed state. */
@@ -250,6 +295,15 @@ html[data-scenery-motion] button[aria-label="Scroll to end"] {
 html[data-scenery-motion] button[aria-label="Send message"]:not(:disabled):active,
 html[data-scenery-motion] button[aria-label="Stop generation"]:active {
   scale: 0.96;
+}
+
+/* The stop square replaces the send arrow the instant a turn starts; it
+   rides the button's own transition-all, only the start state is added. */
+html[data-scenery-motion] button[aria-label="Stop generation"] {
+  @starting-style {
+    scale: calc(1 - 0.25 * var(--sc-m));
+    opacity: 0;
+  }
 }
 
 html[data-scenery-motion] button[aria-label="Scroll to end"]:active {
@@ -581,7 +635,8 @@ html[data-scenery-motion] [data-slot="empty-header"].max-w-none {
     svg,
   html[data-scenery-motion] main[data-slot="sidebar-inset"] [data-slot="alert"],
   html[data-scenery-motion] main[data-slot="sidebar-inset"] [role="alert"],
-  html[data-scenery-motion] button[aria-label="Scroll to end"] {
+  html[data-scenery-motion] button[aria-label="Scroll to end"],
+  html[data-scenery-motion] .scenery-place {
     transition-property: opacity;
     @starting-style {
       translate: none;

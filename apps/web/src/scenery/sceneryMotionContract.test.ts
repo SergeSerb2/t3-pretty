@@ -57,7 +57,7 @@ describe("row arrival contract with the messages timeline", () => {
     expect(motionDriverSource).toContain("firstPaintForThread");
     expect(motionDriverSource).toContain("ENTER_CLEAR_MS");
     expect(motionStylesSource).toContain(
-      "animation: scenery-row-rise 220ms var(--sc-ease-out) both",
+      "animation: scenery-row-rise 340ms var(--sc-ease-out) both",
     );
   });
 
@@ -114,6 +114,13 @@ describe("tool card disclosure contract", () => {
 describe("chat view contract", () => {
   it("the scroll-to-end pill still carries its aria-label", () => {
     expect(chatViewSource).toContain('aria-label="Scroll to end"');
+  });
+
+  it("the docked place credit still hides on the scroll-to-end live-edge flag", () => {
+    expect(chatViewSource).toContain(
+      'data-scenery-place-hidden={showScrollToBottom ? "" : undefined}',
+    );
+    expect(motionStylesSource).toContain("[data-scenery-place-slot][data-scenery-place-hidden]");
   });
 
   it("the composer overlay (hero headline host) still carries its attribute", () => {
@@ -274,6 +281,11 @@ describe("hero and sidebar contract", () => {
     expect(sidebarSource).toContain("data-sidebar-working-label");
     expect(motionStylesSource).toContain("[data-sidebar-working-label]");
     expect(motionStylesSource).not.toContain("scenery-sidebar-working-breathe");
+  });
+
+  it("pops the done check the sidebar row renders when a turn ends", () => {
+    expect(sidebarSource).toContain("<CircleCheckIcon");
+    expect(motionStylesSource).toContain("[data-thread-item] svg.lucide-circle-check");
   });
 });
 

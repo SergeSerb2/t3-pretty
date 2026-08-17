@@ -6,6 +6,35 @@ export const SCENERY_DRAFT_HERO_TRANSITION_EASING = "cubic-bezier(0.16, 1, 0.3, 
 export const MOBILE_COMPOSER_VIEW_TRANSITION_NAME = "t3-mobile-composer";
 export const MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME = "t3-mobile-draft-headline";
 
+/**
+ * Composer rect handed across a ChatView remount. Thread and draft routes are
+ * different route components, so "New thread" from a thread (docked → hero)
+ * and opening a thread from a draft (hero → docked) both unmount and remount
+ * ChatView. The outgoing view records where its composer was; a view that
+ * mounts within {@link DRAFT_HERO_HANDOFF_MAX_AGE_MS} glides in from there,
+ * with the same FLIP the in-place hero↔docked switch already runs. Anything
+ * older is a stale record from an unrelated navigation and is ignored.
+ */
+export const DRAFT_HERO_HANDOFF_MAX_AGE_MS = 400;
+
+type ComposerRect = Pick<DOMRect, "left" | "top">;
+
+let draftHeroHandoff: { readonly rect: ComposerRect; readonly at: number } | null = null;
+
+export function recordDraftHeroHandoff(rect: ComposerRect | null, now: number): void {
+  draftHeroHandoff = rect ? { rect: { left: rect.left, top: rect.top }, at: now } : null;
+}
+
+/** Consumes the record: a handoff glides exactly one mount, never a later one. */
+export function takeDraftHeroHandoff(now: number): ComposerRect | null {
+  const handoff = draftHeroHandoff;
+  draftHeroHandoff = null;
+  if (!handoff || now - handoff.at > DRAFT_HERO_HANDOFF_MAX_AGE_MS) {
+    return null;
+  }
+  return handoff.rect;
+}
+
 type ComposerViewTransition = {
   readonly finished: Promise<void>;
 };
