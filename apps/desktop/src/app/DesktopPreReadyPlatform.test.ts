@@ -127,4 +127,32 @@ describe("DesktopPreReadyPlatform", () => {
         assert.equal(appendSwitchMock.mock.calls.length, 0);
       }),
   );
+
+  it("applies Windows GPU stability switches as Chromium command-line flags", () => {
+    const appendSwitch = vi.fn();
+    DesktopPreReadyPlatform.applyWindowsGpuStabilitySwitches({ appendSwitch });
+    assert.deepEqual(appendSwitch.mock.calls, [
+      ["disable-gpu-sandbox"],
+      ["disable-gpu-process-crash-limit"],
+      ["disable-features", "CalculateNativeWinOcclusion"],
+    ]);
+  });
+
+  it.effect("sets Windows GPU stability switches before app ready", () =>
+    Effect.gen(function* () {
+      yield* DesktopPreReadyPlatform.DesktopPreReadyElectronOptions.pipe(
+        Effect.provide(
+          DesktopPreReadyPlatform.layer.pipe(
+            Layer.provide(Layer.succeed(HostProcessPlatform, "win32")),
+          ),
+        ),
+      );
+
+      assert.deepEqual(appendSwitchMock.mock.calls, [
+        ["disable-gpu-sandbox"],
+        ["disable-gpu-process-crash-limit"],
+        ["disable-features", "CalculateNativeWinOcclusion"],
+      ]);
+    }),
+  );
 });
