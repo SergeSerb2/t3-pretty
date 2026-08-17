@@ -17,14 +17,8 @@ name: T3 Pretty Mobile Release
 on:
   push:
     branches: [main]
-    paths:
-      - apps/mobile/**
-      - packages/**
-      - patches/**
-      - pnpm-lock.yaml
-      - .github/workflows/fork-mobile-release.yml
-      - scripts/fork/resolve-ios-native-build.mjs
-      - scripts/fork/security-eas-local-keychain
+    # Path filters stay in the OTA job. Buildkite's GitHub Actions importer
+    # rejects on.push.paths; workflow_dispatch and sync dispatch still run.
   workflow_dispatch:
     inputs:
       mode:
@@ -67,7 +61,7 @@ jobs:
     permissions:
       contents: read
     outputs:
-      should_build: ${{ steps.native.outputs.should_build }}
+      should_build: ${{ steps.paths.outputs.relevant == 'true' && steps.native.outputs.should_build }}
       fingerprint: ${{ steps.native.outputs.fingerprint }}
     env:
       APP_VARIANT: production
@@ -107,8 +101,33 @@ jobs:
           # `git clone --depth 1 file://<workspace>`, which fails (exit 128)
           # when the partial clone can't serve the unfetched blobs.
 
-      - name: Setup Vite+
+      - id: paths
+        name: Skip mobile-irrelevant pushes
         if: steps.expo-token.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" != "push" ]] || ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --quiet HEAD~1 HEAD -- \
+            apps/mobile \
+            packages \
+            patches \
+            pnpm-lock.yaml \
+            .github/workflows/fork-mobile-release.yml \
+            scripts/fork/resolve-ios-native-build.mjs \
+            scripts/fork/security-eas-local-keychain \
+            scripts/fork/origin-forge.mjs; then
+            echo "Push does not change mobile-relevant paths."
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Vite+
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
@@ -119,7 +138,7 @@ jobs:
               - --filter=@t3tools/scripts...
 
       - name: Expose pnpm
-        if: steps.expo-token.outputs.present == 'true'
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
         run: |
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
           vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
@@ -127,7 +146,7 @@ jobs:
           "$vp_pnpm_bin/pnpm" --version
 
       - name: Setup EAS
-        if: steps.expo-token.outputs.present == 'true'
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
@@ -138,7 +157,7 @@ jobs:
           packager: npm
 
       - name: Pull production environment variables
-        if: steps.expo-token.outputs.present == 'true'
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -153,7 +172,7 @@ jobs:
           fi
 
       - name: Publish OTA update
-        if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'update' || env.MODE == 'release')
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true' && (env.MODE == 'update' || env.MODE == 'release')
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -171,7 +190,7 @@ jobs:
 
       - id: native
         name: Decide whether a new iOS binary is required
-        if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'build' || env.MODE == 'release')
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true' && (env.MODE == 'build' || env.MODE == 'release')
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

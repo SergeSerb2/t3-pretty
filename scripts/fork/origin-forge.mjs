@@ -134,6 +134,25 @@ export function defaultUpdateFeedUrl() {
   return resolveUpdateFeedUrl(process.env.T3CODE_DESKTOP_UPDATE_FEED_URL ?? "");
 }
 
+/** S3 key prefix matching the public feed directory, or T3CODE_RELEASE_S3_PREFIX. */
+export function resolveReleaseObjectPrefix() {
+  const explicit = process.env.T3CODE_RELEASE_S3_PREFIX?.trim();
+  if (explicit) return explicit.replace(/^\/+|\/+$/g, "");
+  const feedUrl = defaultUpdateFeedUrl();
+  if (!feedUrl) return "";
+  try {
+    return new URL(feedUrl).pathname.replace(/^\/+|\/+$/g, "");
+  } catch {
+    return "";
+  }
+}
+
+export function resolveReleaseObjectKey(fileName) {
+  const base = NodePath.basename(fileName);
+  const prefix = resolveReleaseObjectPrefix();
+  return prefix ? `${prefix}/${base}` : base;
+}
+
 export function writeGitHubOutput(values) {
   const outputPath = process.env.GITHUB_OUTPUT;
   if (!outputPath) return;
@@ -405,13 +424,27 @@ export function publishOriginRelease({ tag, target, title, notesFile, assets = [
   const existing = runCommand("git", ["tag", "--list", tag]);
   if (!existing) {
     const notePath = writeTempBody(notes || title || tag);
-    runCommand("git", ["tag", "-a", tag, target, "-F", notePath]);
+    // Annotated tags need a committer; CI checkouts have no user.name/email.
+    runCommand("git", [
+      "-c",
+      "user.name=t3-pretty-release[bot]",
+      "-c",
+      "user.email=t3-pretty-bot@users.noreply.cursor.com",
+      "tag",
+      "-a",
+      tag,
+      target,
+      "-F",
+      notePath,
+    ]);
+  }
+
+  // Push only after uploads: fork-release.yml skips commits that already have
+  // this tag, so a pre-upload push would block retries of missing assets.
+  for (const asset of assets) {
+    uploadReleaseAsset(asset, resolveReleaseObjectKey(asset));
   }
   runCommand("git", ["push", "origin", `refs/tags/${tag}`]);
-
-  for (const asset of assets) {
-    uploadReleaseAsset(asset, NodePath.basename(asset));
-  }
   writeGitHubOutput({
     tag,
     url: `${ORIGIN_WEB_URL}/releases/${encodeURIComponent(tag)}`,

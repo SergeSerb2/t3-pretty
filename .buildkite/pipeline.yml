@@ -1,0 +1,36 @@
+# Origin-connected Buildkite entrypoint for T3 Pretty.
+# Buildkite decides when a build starts (push, schedule, or New Build).
+# The GitHub Actions plugin then decides which workflow files are eligible
+# for that event. Path filters are not supported by the importer, so the
+# workflows themselves skip no-op desktop/mobile work.
+#
+# Queues:
+#   linux          — Origin/Buildkite Linux agents (ubuntu-latest jobs)
+#   macos-release  — m1-dev / extra Macs (signed DMG + local iOS)
+# Windows NSIS still needs a native Buildkite step; the importer rejects
+# Windows jobs. Mac-only desktop publishes are already allowed.
+
+steps:
+  - label: ":github: T3 Pretty Origin workflows"
+    key: origin-workflows
+    agents:
+      queue: linux
+    plugins:
+      - github-actions#v0.13.11:
+          workflows:
+            - .github/workflows/fork-upstream-sync.yml
+            - .github/workflows/fork-release.yml
+            - .github/workflows/fork-mobile-release.yml
+          runners:
+            - runs-on: ubuntu-latest
+              queue: linux
+            - runs-on: self-hosted
+              queue: macos-release
+            - runs-on: macOS
+              queue: macos-release
+            - runs-on: ARM64
+              queue: macos-release
+            - runs-on: t3code-fork
+              queue: macos-release
+            - runs-on: release-only
+              queue: macos-release

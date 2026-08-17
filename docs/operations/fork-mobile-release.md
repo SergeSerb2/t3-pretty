@@ -18,7 +18,8 @@ along — there is no separate mobile sync.
 `main` that touches mobile-relevant paths. A release publishes an OTA update on
 the production channel for both platforms from Origin-connected Linux CI
 (`ubuntu-latest` in the workflow YAML), then compiles a production iOS IPA on
-the self-hosted Mac runner (`m1-dev-t3code-fork`, same labels as desktop) only
+the self-hosted Mac Buildkite agent (`macos-release` queue, same machine as
+desktop) only
 when the native fingerprint changed. Explicit `workflow_dispatch` `build`, or
 the `force_ios` checkbox, still compiles and submits even when the fingerprint
 matches.

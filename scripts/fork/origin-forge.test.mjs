@@ -17,6 +17,7 @@ import {
   pullRequestItems,
   pullRequestNumber,
   pullRequestUrl,
+  resolveReleaseObjectKey,
   resolveUpdateFeedUrl,
 } from "./origin-forge.mjs";
 
@@ -101,6 +102,14 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");
     assert.include(desktop, "T3CODE_RELEASE_S3_BUCKET");
     assert.include(mobile, "origin-forge.mjs merge-pr");
+    const pipeline = NodeFS.readFileSync(
+      NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
+      "utf8",
+    );
+    assert.include(pipeline, "fork-upstream-sync.yml");
+    assert.include(pipeline, "fork-release.yml");
+    assert.include(pipeline, "fork-mobile-release.yml");
+    assert.include(pipeline, "queue: macos-release");
   });
 
   it("reads the baked updater feed from T3CODE_DESKTOP_UPDATE_FEED_URL", () => {
@@ -112,5 +121,33 @@ describe("Origin release and blocked-sync helpers", () => {
       if (previous === undefined) delete process.env.T3CODE_DESKTOP_UPDATE_FEED_URL;
       else process.env.T3CODE_DESKTOP_UPDATE_FEED_URL = previous;
     }
+  });
+
+  it("prefixes S3 object keys with the updater feed path", () => {
+    const previousFeed = process.env.T3CODE_DESKTOP_UPDATE_FEED_URL;
+    const previousPrefix = process.env.T3CODE_RELEASE_S3_PREFIX;
+    delete process.env.T3CODE_RELEASE_S3_PREFIX;
+    process.env.T3CODE_DESKTOP_UPDATE_FEED_URL = "https://updates.example.test/t3-pretty/latest";
+    try {
+      assert.equal(
+        resolveReleaseObjectKey("/tmp/release-assets/nightly.yml"),
+        "t3-pretty/latest/nightly.yml",
+      );
+      process.env.T3CODE_RELEASE_S3_PREFIX = "/custom/prefix/";
+      assert.equal(resolveReleaseObjectKey("latest.yml"), "custom/prefix/latest.yml");
+    } finally {
+      if (previousFeed === undefined) delete process.env.T3CODE_DESKTOP_UPDATE_FEED_URL;
+      else process.env.T3CODE_DESKTOP_UPDATE_FEED_URL = previousFeed;
+      if (previousPrefix === undefined) delete process.env.T3CODE_RELEASE_S3_PREFIX;
+      else process.env.T3CODE_RELEASE_S3_PREFIX = previousPrefix;
+    }
+  });
+
+  it("pushes the release tag only after asset uploads succeed", () => {
+    const source = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
+    const uploadAt = source.indexOf("uploadReleaseAsset(asset, resolveReleaseObjectKey(asset))");
+    const pushAt = source.indexOf('runCommand("git", ["push", "origin", `refs/tags/${tag}`])');
+    assert.isTrue(uploadAt > 0);
+    assert.isTrue(pushAt > uploadAt);
   });
 });
