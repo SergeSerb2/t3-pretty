@@ -110,6 +110,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "fork-release.yml");
     assert.include(pipeline, "fork-mobile-release.yml");
     assert.include(pipeline, "queue: macos-release");
+    assert.include(pipeline, "queue: windows-release");
+    assert.include(pipeline, "build-windows-nsis.ps1");
     assert.include(pipeline, "CURSOR_API_KEY");
   });
 

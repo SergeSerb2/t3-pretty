@@ -7,8 +7,24 @@
 # Queues:
 #   linux          — Origin/Buildkite Linux agents (ubuntu-latest jobs)
 #   macos-release  — m1-dev / extra Macs (signed DMG + local iOS)
-# Windows NSIS still needs a native Buildkite step; the importer rejects
-# Windows jobs. Mac-only desktop publishes are already allowed.
+#   windows-release — serge-pc native NSIS (importer cannot run Windows jobs)
+
+env:
+  T3CODE_DESKTOP_UPDATE_FEED_URL: "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/"
+  T3CODE_RELEASE_S3_BUCKET: t3-pretty-releases
+  T3CODE_RELEASE_S3_ENDPOINT: "https://a6f705b8c6459d937d32d31555f9fbf6.r2.cloudflarestorage.com"
+  T3CODE_RELEASE_S3_REGION: auto
+  APPLE_TEAM_ID: "78A5P57U23"
+  T3CODE_APPLE_TEAM_ID: "78A5P57U23"
+  T3CODE_IOS_SHARE_EXTENSION: "0"
+  T3CODE_MOBILE_EAS_PROJECT_ID: "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65"
+  T3CODE_MOBILE_EXPO_OWNER: sergeserbinenkoteam
+  T3CODE_MOBILE_EXPO_SLUG: t3-pretty
+  T3CODE_MOBILE_UPDATE_URL: "https://u.expo.dev/1eb51d67-48c5-4100-8aa8-f5ac9e1ada65"
+  APNS_BUNDLE_ID: com.sergeserbinenko.t3pretty
+  APNS_ENVIRONMENT: sandbox
+  APNS_KEY_ID: 6RKSND9F2B
+  APNS_TEAM_ID: "78A5P57U23"
 
 steps:
   - label: ":github: T3 Pretty Origin workflows"
@@ -40,3 +56,12 @@ steps:
               queue: macos-release
             - runs-on: release-only
               queue: macos-release
+
+  - label: ":windows: Windows NSIS"
+    key: windows-nsis
+    depends_on: origin-workflows
+    if: build.branch == "main"
+    timeout_in_minutes: 90
+    agents:
+      queue: windows-release
+    command: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fork/build-windows-nsis.ps1
