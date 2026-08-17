@@ -10,6 +10,7 @@ import {
 import {
   ArchiveIcon,
   ArrowLeftIcon,
+  BlocksIcon,
   BotIcon,
   GitBranchIcon,
   HardDriveIcon,
@@ -56,6 +57,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/instructions": ScrollTextIcon,
   "/settings/agents": UsersIcon,
   "/settings/skills": PuzzleIcon,
+  "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/storage": HardDriveIcon,
   "/settings/connections": Link2Icon,

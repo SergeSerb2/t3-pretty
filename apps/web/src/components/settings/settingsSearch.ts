@@ -8,6 +8,7 @@ export type SettingsPath =
   | "/settings/instructions"
   | "/settings/agents"
   | "/settings/skills"
+  | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/storage"
   | "/settings/connections"
@@ -35,6 +36,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/instructions": "Instructions",
   "/settings/agents": "Agents",
   "/settings/skills": "Skills",
+  "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
   "/settings/storage": "Storage",
   "/settings/connections": "Connections",
@@ -262,6 +264,30 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "skills-marketplace",
     title: "Skills marketplace",
     to: "/settings/skills",
+  },
+  {
+    id: "browser-default-viewport",
+    title: "Default browser viewport",
+    to: "/settings/integrations",
+    targetId: "browser",
+  },
+  {
+    id: "browser-default-zoom",
+    title: "Default browser zoom",
+    to: "/settings/integrations",
+    targetId: "browser",
+  },
+  {
+    id: "browser-default-appearance",
+    title: "Default browser appearance",
+    to: "/settings/integrations",
+    targetId: "browser",
+  },
+  {
+    id: "browser-auto-show-floating-preview",
+    title: "Auto-show floating preview",
+    to: "/settings/integrations",
+    targetId: "browser",
   },
   {
     id: "source-control",

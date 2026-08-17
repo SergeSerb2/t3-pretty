@@ -181,9 +181,14 @@ function CollapsedComment({
           {open ? (
             <div className="px-3 pb-3">
               {comment.path ? (
-                <p className="truncate text-xs text-muted-foreground" title={comment.path}>
-                  {comment.path}
-                </p>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <p className="truncate text-xs text-muted-foreground">{comment.path}</p>
+                    }
+                  />
+                  <TooltipPopup side="top">{comment.path}</TooltipPopup>
+                </Tooltip>
               ) : null}
               <CommentBody className="mt-2" comment={comment} editing={editing} />
               {reactionBar}
@@ -530,6 +535,7 @@ export function PullRequestSummaryTab({
                       >
                         <PullRequestActorLabel
                           actor={actor}
+                          tooltip={false}
                           className="gap-0 [&>img]:ring-2 [&>img]:ring-background [&>span:first-child]:ring-2 [&>span:first-child]:ring-background [&>span:last-child]:sr-only"
                         />
                       </TooltipTrigger>
@@ -849,12 +855,16 @@ export function PullRequestSummaryTab({
                         </span>
                       </div>
                       {comment.path ? (
-                        <p
-                          className="mt-1 truncate text-xs text-muted-foreground"
-                          title={comment.path}
-                        >
-                          {comment.path}
-                        </p>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <p className="mt-1 truncate text-xs text-muted-foreground">
+                                {comment.path}
+                              </p>
+                            }
+                          />
+                          <TooltipPopup side="top">{comment.path}</TooltipPopup>
+                        </Tooltip>
                       ) : null}
                       <CommentBody className="mt-2" comment={comment} editing={commentEditing} />
                       <PullRequestReactionBar

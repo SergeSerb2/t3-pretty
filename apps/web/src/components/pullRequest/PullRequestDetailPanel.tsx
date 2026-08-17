@@ -86,6 +86,7 @@ import {
 } from "../ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { toastManager } from "../ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PullRequestDetailGhost, PullRequestTimelineGhost } from "./PullRequestGhosts";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import { DiffPanelLoadingState } from "../DiffPanelShell";
@@ -113,6 +114,7 @@ import {
   readableFailure,
   resolveBaseFreshness,
   type PullRequestFinding,
+  shouldRefreshPullRequestActivity,
 } from "./pullRequestDetail.logic";
 import {
   findPullRequestTabScroller,
@@ -565,6 +567,17 @@ export function PullRequestDetailPanel({
     detailQuery.refresh();
     activityQuery.refresh();
   }, [activityQuery.refresh, detailQuery.refresh]);
+  const activityRevision = useRef<{ readonly key: string; readonly updatedAt: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!coreDetail) return;
+    const next = { key: pullRequestKey, updatedAt: coreDetail.updatedAt };
+    if (shouldRefreshPullRequestActivity(activityRevision.current, next)) {
+      activityQuery.refresh();
+    }
+    activityRevision.current = next;
+  }, [activityQuery.refresh, coreDetail, pullRequestKey]);
   useEffect(() => {
     if (!detail) return;
     onStateChange?.({
@@ -613,21 +626,16 @@ export function PullRequestDetailPanel({
       refreshDetail,
     ],
   );
-  // A pull request changes while it is open in front of somebody — a push lands, a check
-  // finishes, a review arrives — so the panel reads it again on the way back to the window and
-  // while a reader sits on it. Keyed by the pull request rather than by the panel, because this
-  // one panel shows a different pull request every time it is opened. Those reads go through
-  // the server's cache: only the refresh button punches through it.
-  useLiveRefresh(
-    () => {
-      refreshDetail();
-    },
-    {
-      key: `pull-request:${reference.projectId}:${reference.repository}#${reference.number}`,
-      intervalMs: PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS,
-      minIntervalMs: PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS,
-    },
-  );
+  // Core detail is cheap enough to re-read while this stays open. Activity is heavier, so the
+  // revision effect above reads it only after this same pull request reports a change. Keyed by
+  // the pull request rather than by the panel, because this one panel shows a different pull
+  // request every time it is opened. These reads go through the server's cache: only the refresh
+  // button punches through it.
+  useLiveRefresh(detailQuery.refresh, {
+    key: `pull-request:${reference.projectId}:${reference.repository}#${reference.number}`,
+    intervalMs: PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS,
+    minIntervalMs: PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS,
+  });
   const diffIdentity =
     coreDetail === null ? null : `${pullRequestKey}:${pullRequestDiffIdentity(coreDetail)}`;
   const seenDiffIdentity = useRef<string | null>(null);
@@ -1201,22 +1209,31 @@ export function PullRequestDetailPanel({
           >
             {detail && statePresentation ? (
               <>
-                <span className="min-w-0 truncate" title={detail.repository}>
-                  {detail.repository}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
-                  onContextMenu={(event) => openNumberContextMenu(event, detail)}
-                  className={cn(
-                    "shrink-0 font-medium underline-offset-2 hover:underline",
-                    statePresentation.toneClassName,
-                  )}
-                  title={openOnHostLabel(detail.provider)}
-                  aria-label={`Open pull request #${detail.number} on host`}
-                >
-                  #{detail.number}
-                </button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<span className="min-w-0 truncate">{detail.repository}</span>}
+                  />
+                  <TooltipPopup side="top">{detail.repository}</TooltipPopup>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
+                        onContextMenu={(event) => openNumberContextMenu(event, detail)}
+                        className={cn(
+                          "shrink-0 font-medium underline-offset-2 hover:underline",
+                          statePresentation.toneClassName,
+                        )}
+                        aria-label={`Open pull request #${detail.number} on host`}
+                      >
+                        #{detail.number}
+                      </button>
+                    }
+                  />
+                  <TooltipPopup side="top">{openOnHostLabel(detail.provider)}</TooltipPopup>
+                </Tooltip>
               </>
             ) : null}
           </div>
@@ -1232,23 +1249,36 @@ export function PullRequestDetailPanel({
           >
             {detail && statePresentation ? (
               <>
-                <button
-                  type="button"
-                  tabIndex={condensed ? 0 : -1}
-                  onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
-                  onContextMenu={(event) => openNumberContextMenu(event, detail)}
-                  className={cn(
-                    "shrink-0 font-medium underline-offset-2 hover:underline",
-                    statePresentation.toneClassName,
-                  )}
-                  title={openOnHostLabel(detail.provider)}
-                  aria-label={`Open pull request #${detail.number} on host`}
-                >
-                  #{detail.number}
-                </button>
-                <span className="min-w-0 truncate font-medium text-foreground" title={detail.title}>
-                  {detail.title}
-                </span>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        tabIndex={condensed ? 0 : -1}
+                        onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
+                        onContextMenu={(event) => openNumberContextMenu(event, detail)}
+                        className={cn(
+                          "shrink-0 font-medium underline-offset-2 hover:underline",
+                          statePresentation.toneClassName,
+                        )}
+                        aria-label={`Open pull request #${detail.number} on host`}
+                      >
+                        #{detail.number}
+                      </button>
+                    }
+                  />
+                  <TooltipPopup side="top">{openOnHostLabel(detail.provider)}</TooltipPopup>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span className="min-w-0 truncate font-medium text-foreground">
+                        {detail.title}
+                      </span>
+                    }
+                  />
+                  <TooltipPopup side="top">{detail.title}</TooltipPopup>
+                </Tooltip>
                 {conflicting ? (
                   <Badge
                     variant="error"
@@ -1500,14 +1530,22 @@ export function PullRequestDetailPanel({
               {/* Said where the Merge button is, because it is the answer to why nobody has
                   pressed it: the merge is already asked for, and the host is holding it. */}
               {autoMergeArmed ? (
-                <Badge
-                  variant="info"
-                  className="h-5 shrink-0 gap-1 rounded px-1.5 text-[10px]"
-                  title="The host will merge this on its own once its requirements are met"
-                >
-                  <GitMergeIcon aria-hidden className="size-3" />
-                  Auto-merge
-                </Badge>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Badge
+                        variant="info"
+                        className="h-5 shrink-0 gap-1 rounded px-1.5 text-[10px]"
+                      >
+                        <GitMergeIcon aria-hidden className="size-3" />
+                        Auto-merge
+                      </Badge>
+                    }
+                  />
+                  <TooltipPopup side="top">
+                    The host will merge this on its own once its requirements are met
+                  </TooltipPopup>
+                </Tooltip>
               ) : null}
               {primaryAction === "ready" ? (
                 <Button size="xs" disabled={actionPending} onClick={() => void perform("ready")}>
@@ -1580,11 +1618,13 @@ export function PullRequestDetailPanel({
                     </button>
                   ))}
                 </nav>
-                <span
-                  className="ml-auto inline-flex min-w-0 shrink items-center gap-1 font-mono text-[11px] text-muted-foreground"
-                  title={`${detail.baseBranch} ← ${detail.headBranch}`}
-                >
-                  <span className="truncate">{detail.baseBranch}</span>
+                <span className="ml-auto inline-flex min-w-0 shrink items-center gap-1 font-mono text-[11px] text-muted-foreground">
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="truncate" />}>
+                      {detail.baseBranch}
+                    </TooltipTrigger>
+                    <TooltipPopup side="top">{`${detail.baseBranch} ← ${detail.headBranch}`}</TooltipPopup>
+                  </Tooltip>
                   {freshness ? (
                     <PullRequestBaseFreshnessWarning
                       baseBranch={detail.baseBranch}
@@ -1595,7 +1635,12 @@ export function PullRequestDetailPanel({
                     />
                   ) : null}
                   <ArrowLeftIcon aria-label="receives changes from" className="size-3 shrink-0" />
-                  <span className="truncate">{detail.headBranch}</span>
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="truncate" />}>
+                      {detail.headBranch}
+                    </TooltipTrigger>
+                    <TooltipPopup side="top">{`${detail.baseBranch} ← ${detail.headBranch}`}</TooltipPopup>
+                  </Tooltip>
                 </span>
                 <span className="ml-2 inline-flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
                   <span className="inline-flex items-center gap-1 tabular-nums">
@@ -1709,12 +1754,16 @@ export function PullRequestDetailPanel({
                 </PullRequestMetaLine>
 
                 <div className="mt-4 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-                  <code
-                    className="min-w-0 max-w-48 shrink truncate rounded-md bg-muted px-2 py-1 font-mono text-xs text-foreground"
-                    title={detail.baseBranch}
-                  >
-                    {detail.baseBranch}
-                  </code>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <code className="min-w-0 max-w-48 shrink truncate rounded-md bg-muted px-2 py-1 font-mono text-xs text-foreground">
+                          {detail.baseBranch}
+                        </code>
+                      }
+                    />
+                    <TooltipPopup side="top">{detail.baseBranch}</TooltipPopup>
+                  </Tooltip>
                   {freshness ? (
                     <PullRequestBaseFreshnessWarning
                       baseBranch={detail.baseBranch}
@@ -1724,32 +1773,41 @@ export function PullRequestDetailPanel({
                     />
                   ) : null}
                   <ArrowLeftIcon aria-label="receives changes from" className="size-4 shrink-0" />
-                  <button
-                    type="button"
-                    className="grid min-w-0 max-w-64 shrink cursor-pointer rounded-md bg-muted px-2 py-1 font-mono text-xs text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
-                    aria-label={isBranchCopied ? "Branch name copied" : "Copy pull request branch"}
-                    title={isBranchCopied ? "Copied" : "Copy pull request branch"}
-                    onClick={() => copyBranchToClipboard(detail.headBranch)}
-                  >
-                    <code
-                      className={cn(
-                        "col-start-1 row-start-1 min-w-0 truncate transition-opacity duration-150 motion-reduce:transition-none",
-                        isBranchCopied ? "opacity-0" : "opacity-100",
-                      )}
-                      title={detail.headBranch}
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          className="grid min-w-0 max-w-64 shrink cursor-pointer rounded-md bg-muted px-2 py-1 font-mono text-xs text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                          aria-label={
+                            isBranchCopied ? "Branch name copied" : "Copy pull request branch"
+                          }
+                          onClick={() => copyBranchToClipboard(detail.headBranch)}
+                        />
+                      }
                     >
-                      {detail.headBranch}
-                    </code>
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "col-start-1 row-start-1 truncate text-center transition-opacity duration-150 motion-reduce:transition-none",
-                        isBranchCopied ? "opacity-100" : "opacity-0",
-                      )}
-                    >
-                      Copied
-                    </span>
-                  </button>
+                      <code
+                        className={cn(
+                          "col-start-1 row-start-1 min-w-0 truncate transition-opacity duration-150 motion-reduce:transition-none",
+                          isBranchCopied ? "opacity-0" : "opacity-100",
+                        )}
+                      >
+                        {detail.headBranch}
+                      </code>
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "col-start-1 row-start-1 truncate text-center transition-opacity duration-150 motion-reduce:transition-none",
+                          isBranchCopied ? "opacity-100" : "opacity-0",
+                        )}
+                      >
+                        Copied
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipPopup side="top">
+                      {`${isBranchCopied ? "Copied" : "Copy pull request branch"}: ${detail.headBranch}`}
+                    </TooltipPopup>
+                  </Tooltip>
                   <span className="ml-auto inline-flex shrink-0 items-center justify-end gap-2">
                     <span className="inline-flex items-center gap-1.5 tabular-nums">
                       <FileDiffIcon className="size-3.5" />
