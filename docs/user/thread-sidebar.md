@@ -28,3 +28,9 @@ be selected again. The option is hidden when the connected environment needs a s
 You can settle, un-settle, snooze, or wake a thread even when its machine is offline. The list
 updates immediately on this device. When that environment is reachable again — including through
 Surge Connect — T3 Code applies the same change there.
+
+On mobile, the thread screen's top bar is Settle, Snooze, and Pull request. Settle and snooze are
+the same actions as the list swipe: settle moves the thread into Settled, snooze hides it until a
+time you pick, and an already settled or snoozed thread offers Un-settle or Wake. Pull request
+opens the branch's open PR, or starts create / commit-and-PR when the branch is ready. Review
+changes, files, and other git actions live in that control's menu.
