@@ -62,16 +62,35 @@ if (-not (Test-Path $agentExe)) {
   $agentExe = "C:\buildkite-agent\buildkite-agent.exe"
 }
 
-# nssm is optional; start the agent in the background if it is missing.
-$nssm = Get-Command nssm -ErrorAction SilentlyContinue
-if ($nssm) {
-  nssm install buildkite-t3-pretty $agentExe start
-  nssm set buildkite-t3-pretty AppParameters "start"
-  nssm set buildkite-t3-pretty AppStdout "C:\buildkite-agent\buildkite-agent.log"
-  nssm set buildkite-t3-pretty AppStderr "C:\buildkite-agent\buildkite-agent.log"
-  nssm start buildkite-t3-pretty
-  Write-Host "Registered Buildkite Windows service $agentName on queue $queue"
+$nssmCmd = Get-Command nssm -ErrorAction SilentlyContinue
+if (-not $nssmCmd) {
+  $nssmDir = "C:\buildkite-agent\nssm"
+  $nssmExe = Join-Path $nssmDir "nssm.exe"
+  if (-not (Test-Path $nssmExe)) {
+    New-Item -ItemType Directory -Force -Path $nssmDir | Out-Null
+    $zip = Join-Path $env:TEMP "nssm-2.24.zip"
+    Invoke-WebRequest -UseBasicParsing -Uri "https://nssm.cc/release/nssm-2.24.zip" -OutFile $zip
+    $extract = Join-Path $env:TEMP "nssm-extract"
+    if (Test-Path $extract) { Remove-Item -Recurse -Force $extract }
+    Expand-Archive -Path $zip -DestinationPath $extract -Force
+    $src = Get-ChildItem -Path $extract -Recurse -Filter nssm.exe |
+      Where-Object { $_.FullName -match "win64" } |
+      Select-Object -First 1
+    if (-not $src) { throw "nssm.exe win64 not found in the NSSM zip" }
+    Copy-Item $src.FullName $nssmExe -Force
+  }
+  $nssm = $nssmExe
 } else {
-  Start-Process -FilePath $agentExe -ArgumentList "start" -WindowStyle Hidden
-  Write-Host "Started Buildkite agent $agentName on queue $queue (install nssm later to run it as a service)"
+  $nssm = $nssmCmd.Source
 }
+
+if (-not (Get-Service -Name "buildkite-t3-pretty" -ErrorAction SilentlyContinue)) {
+  & $nssm install buildkite-t3-pretty $agentExe start
+}
+& $nssm set buildkite-t3-pretty AppDirectory "C:\buildkite-agent"
+& $nssm set buildkite-t3-pretty AppStdout "C:\buildkite-agent\buildkite-agent.log"
+& $nssm set buildkite-t3-pretty AppStderr "C:\buildkite-agent\buildkite-agent.log"
+& $nssm set buildkite-t3-pretty Start SERVICE_AUTO_START
+Get-Process -Name buildkite-agent -ErrorAction SilentlyContinue | Stop-Process -Force
+& $nssm start buildkite-t3-pretty
+Write-Host "Registered Buildkite Windows service $agentName on queue $queue"
