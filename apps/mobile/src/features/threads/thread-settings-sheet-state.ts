@@ -1,6 +1,6 @@
-import type { ProviderOptionDescriptor } from "@t3tools/contracts";
+import type { ModelSelection, ProviderOptionDescriptor } from "@t3tools/contracts";
 
-import type { ModelOption } from "../../lib/modelOptions";
+import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { selectableChoices } from "./thread-settings-options";
 
 /** Match the terms a user can actually see or recognize in the model picker. */
@@ -50,8 +50,9 @@ export function visibleSheetOptionDescriptors(
 }
 
 /**
- * Primary and selected providers start open; all other catalogs start closed.
- * A user's disclosure tap inverts that default until the picker is dismissed.
+ * Selected provider starts open; all other catalogs start closed. A user's
+ * disclosure tap inverts that default until the picker is dismissed. Search
+ * and a single-provider filter expand every visible section.
  */
 export function providerSectionIsCollapsed(input: {
   readonly defaultExpanded: boolean;
@@ -62,4 +63,34 @@ export function providerSectionIsCollapsed(input: {
     return false;
   }
   return input.defaultExpanded ? input.hasExpansionOverride : !input.hasExpansionOverride;
+}
+
+/** Scope a multi-provider catalog to the model already on the thread. */
+export function initialProviderFilter(input: {
+  readonly providerGroups: ReadonlyArray<ProviderGroup>;
+  readonly selectedModel: ModelSelection | null;
+}): string | null {
+  if (input.providerGroups.length <= 1) {
+    return null;
+  }
+  for (const group of input.providerGroups) {
+    if (
+      group.models.some(
+        (option) =>
+          option.selection.instanceId === input.selectedModel?.instanceId &&
+          option.selection.model === input.selectedModel.model,
+      )
+    ) {
+      return group.providerKey;
+    }
+  }
+  return input.providerGroups[0]?.providerKey ?? null;
+}
+
+/** Searching looks across every provider; an idle chip still scopes the list. */
+export function effectiveProviderFilter(input: {
+  readonly providerFilter: string | null;
+  readonly searchQuery: string;
+}): string | null {
+  return input.searchQuery.trim().length > 0 ? null : input.providerFilter;
 }

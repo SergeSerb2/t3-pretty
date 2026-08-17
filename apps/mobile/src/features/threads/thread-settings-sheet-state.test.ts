@@ -8,6 +8,8 @@ import {
 
 import type { ModelOption } from "../../lib/modelOptions";
 import {
+  effectiveProviderFilter,
+  initialProviderFilter,
   modelMatchesCatalogQuery,
   pendingModelAfterPress,
   visibleSheetOptionDescriptors,
@@ -128,5 +130,52 @@ describe("visible sheet option descriptors", () => {
         (descriptor) => descriptor.id,
       ),
     ).toEqual(["effort", "fastMode"]);
+  });
+});
+
+describe("provider catalog scoping", () => {
+  const cursor = modelOption("composer-2");
+  const claude = modelOption("fable-5");
+  const cursorGroup = {
+    providerKey: "cursor",
+    providerLabel: "Cursor",
+    models: [{ ...cursor, providerKey: "cursor", providerLabel: "Cursor" }],
+  };
+  const claudeGroup = {
+    providerKey: "claude",
+    providerLabel: "Claude",
+    models: [
+      {
+        ...claude,
+        providerKey: "claude",
+        providerLabel: "Claude",
+        selection: { ...claude.selection, instanceId: ProviderInstanceId.make("claude") },
+      },
+    ],
+  };
+
+  it("defaults a multi-provider catalog to the selected provider", () => {
+    expect(
+      initialProviderFilter({
+        providerGroups: [claudeGroup, cursorGroup],
+        selectedModel: cursorGroup.models[0]?.selection ?? null,
+      }),
+    ).toBe("cursor");
+  });
+
+  it("does not chip-filter a single-provider catalog", () => {
+    expect(
+      initialProviderFilter({
+        providerGroups: [cursorGroup],
+        selectedModel: cursorGroup.models[0]?.selection ?? null,
+      }),
+    ).toBeNull();
+  });
+
+  it("clears the provider chip while searching so matches in other catalogs appear", () => {
+    expect(effectiveProviderFilter({ providerFilter: "cursor", searchQuery: "fable" })).toBeNull();
+    expect(effectiveProviderFilter({ providerFilter: "cursor", searchQuery: "   " })).toBe(
+      "cursor",
+    );
   });
 });
