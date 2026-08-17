@@ -104,7 +104,10 @@ newer upstream tag was integrated before its sync pull request merged.
   `T3CODE_RELEASE_S3_SECRET_ACCESS_KEY`, and optionally `T3CODE_RELEASE_S3_ENDPOINT` plus
   `T3CODE_RELEASE_S3_REGION`: S3-compatible upload target for that feed (R2 uses the account
   endpoint `https://<accountid>.r2.cloudflarestorage.com`). Optional
-  `T3CODE_RELEASE_S3_PREFIX` overrides the key prefix derived from the feed URL.
+  `T3CODE_RELEASE_S3_PREFIX` overrides the key prefix derived from the feed URL. If the
+  access-key pair is unset, `origin-forge.mjs` falls back to `wrangler r2 object put --remote`
+  using `CLOUDFLARE_API_TOKEN`. The live Buildkite pipeline is
+  `https://buildkite.com/serge-serbinenkos-org/t3-pretty`.
 - Optional secret `DEPOT_TOKEN`: lets the sync job dispatch follow-up workflows when the Origin
   merge push does not start them. Leave unset if Buildkite already triggers on push to `main`.
 - Parent CI (`Check`, `Test`, `Mobile Native Static Analysis`, `Release Smoke`) is disabled on

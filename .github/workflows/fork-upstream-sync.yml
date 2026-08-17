@@ -243,7 +243,7 @@ jobs:
         if: steps.discover.outputs.has_update == 'true'
         shell: bash
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
           DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
           ORIGIN_REPO: serbinenko/t3-pretty
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
@@ -297,7 +297,7 @@ jobs:
         if: failure() && steps.discover.outputs.has_update == 'true'
         shell: bash
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
           ORIGIN_REPO: serbinenko/t3-pretty
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
         run: |
