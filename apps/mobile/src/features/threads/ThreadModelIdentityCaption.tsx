@@ -1,12 +1,13 @@
-import type { MenuComponentProps } from "@react-native-menu/menu";
+import type { RuntimeMode } from "@t3tools/contracts";
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
-import { ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { useThemeColor } from "../../lib/useThemeColor";
-import type { ThreadSettingsMenu } from "./thread-settings-menu";
+import type { ModelOption } from "../../lib/modelOptions";
+import type { ThreadSettingsPickerModel } from "./thread-settings-picker";
+import { ThreadSettingsPickerPopover } from "./ThreadSettingsPickerPopover";
 import type { ThreadModelIdentity } from "./threadModelIdentity";
 
 /**
@@ -16,14 +17,14 @@ import type { ThreadModelIdentity } from "./threadModelIdentity";
  */
 export function ThreadModelIdentityCaption(props: {
   readonly identity: ThreadModelIdentity;
-  readonly menu: ThreadSettingsMenu | null;
-  readonly onMenuAction: (eventId: string) => void;
+  readonly picker: ThreadSettingsPickerModel | null;
+  readonly onSelectModel: (option: ModelOption) => void;
+  readonly onSelectOption: (id: string, value: string | boolean) => void;
+  readonly onSelectRuntime: (mode: RuntimeMode) => void;
+  readonly onBrowseModels: () => void;
   readonly onPressFallback: () => void;
 }) {
   const iconMuted = useThemeColor("--color-icon-muted");
-  const handleMenuAction: MenuComponentProps["onPressAction"] = ({ nativeEvent }) => {
-    props.onMenuAction(nativeEvent.event);
-  };
 
   const body = (
     <View className="max-w-full flex-row items-center justify-center gap-1.5 px-1">
@@ -40,18 +41,29 @@ export function ThreadModelIdentityCaption(props: {
     </View>
   );
 
-  if (props.menu) {
+  const trigger = (
+    <View
+      accessibilityHint="Opens model and reasoning settings"
+      accessibilityLabel={props.identity.accessibilityLabel}
+      accessibilityRole="button"
+      className="items-center py-1 active:opacity-70"
+    >
+      {body}
+    </View>
+  );
+
+  if (props.picker) {
     return (
-      <ControlPillMenu actions={props.menu.actions} onPressAction={handleMenuAction}>
-        <View
-          accessibilityHint="Opens model and reasoning settings"
-          accessibilityLabel={props.identity.accessibilityLabel}
-          accessibilityRole="button"
-          className="items-center py-1 active:opacity-70"
-        >
-          {body}
-        </View>
-      </ControlPillMenu>
+      <ThreadSettingsPickerPopover
+        accessibilityLabel={props.identity.accessibilityLabel}
+        model={props.picker}
+        onBrowseModels={props.onBrowseModels}
+        onSelectModel={props.onSelectModel}
+        onSelectOption={props.onSelectOption}
+        onSelectRuntime={props.onSelectRuntime}
+      >
+        {trigger}
+      </ThreadSettingsPickerPopover>
     );
   }
 

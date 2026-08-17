@@ -16,7 +16,6 @@ import {
   type ComposerTrigger,
 } from "@t3tools/shared/composerTrigger";
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
-import * as Haptics from "expo-haptics";
 import type { ReactNode } from "react";
 import {
   memo,
@@ -73,7 +72,7 @@ import {
   ComposerToolbarRow,
   ComposerToolbarScroller,
 } from "../../components/ComposerToolbar";
-import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
+import { ControlPill } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import {
@@ -97,8 +96,9 @@ import {
 } from "../../lib/providerOptions";
 import { useComposerPathSearch } from "../../state/use-composer-path-search";
 import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerCommandPopover";
-import { buildThreadSettingsMenu } from "./thread-settings-menu";
+import { buildThreadSettingsPickerModel } from "./thread-settings-picker";
 import { ThreadModelIdentityCaption } from "./ThreadModelIdentityCaption";
+import { ThreadSettingsPickerPopover } from "./ThreadSettingsPickerPopover";
 import {
   type ExistingThreadSettingsRouteSession,
   threadSettingsSummaryLabel,
@@ -890,19 +890,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     providerDriver: currentModelOption?.providerDriver ?? null,
   });
 
-  // iOS gets a native menu on the trigger pill: the everyday adjustments
-  // apply without resigning the keyboard, while "All Settings…" (and the
-  // Android trigger) still route through the sheet, which must dismiss it.
-  const settingsMenu = useMemo(
+  const settingsPicker = useMemo(
     () =>
-      Platform.OS === "ios"
-        ? buildThreadSettingsMenu({
-            providerGroups: threadProviderGroups,
-            selectedModel: currentModelSelection,
-            optionDescriptors: providerOptionDescriptors,
-            runtimeMode: currentRuntimeMode,
-          })
-        : null,
+      buildThreadSettingsPickerModel({
+        providerGroups: threadProviderGroups,
+        selectedModel: currentModelSelection,
+        optionDescriptors: providerOptionDescriptors,
+        runtimeMode: currentRuntimeMode,
+      }),
     [threadProviderGroups, currentModelSelection, providerOptionDescriptors, currentRuntimeMode],
   );
 
@@ -924,45 +919,18 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     },
     [currentRuntimeMode, onUpdateModelSelection, onUpdateRuntimeMode],
   );
-  const handleSettingsMenuAction = useCallback(
-    (eventId: string) => {
-      const event = settingsMenu?.events.get(eventId);
-      if (!event) {
-        return;
-      }
-      switch (event.type) {
-        case "select-model":
-          void Haptics.selectionAsync();
-          handleSelectModelOption(event.option);
-          return;
-        case "set-option": {
-          const options = applyProviderOptionSelection(providerOptionDescriptors, {
-            id: event.optionId,
-            value: event.value,
-          });
-          if (options) {
-            void Haptics.selectionAsync();
-            onUpdateModelSelection({ ...currentModelSelection, options });
-          }
-          return;
-        }
-        case "set-runtime":
-          void Haptics.selectionAsync();
-          onUpdateRuntimeMode(event.mode);
-          return;
+  const handleSelectPickerOption = useCallback(
+    (id: string, value: string | boolean) => {
+      const options = applyProviderOptionSelection(providerOptionDescriptors, { id, value });
+      if (options) {
+        onUpdateModelSelection({ ...currentModelSelection, options });
       }
     },
-    [
-      currentModelSelection,
-      handleSelectModelOption,
-      onUpdateModelSelection,
-      onUpdateRuntimeMode,
-      providerOptionDescriptors,
-      settingsMenu,
-    ],
+    [currentModelSelection, onUpdateModelSelection, providerOptionDescriptors],
   );
 
   const settingsOwnerId = scopedThreadKey(props.environmentId, props.selectedThread.id);
+  const settingsSheetPageRef = useRef<"home" | "catalog">("home");
   const settingsRouteSession = useMemo<ExistingThreadSettingsRouteSession>(
     () => ({
       ownerId: settingsOwnerId,
@@ -974,6 +942,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         onUpdateModelSelection({ ...currentModelSelection, options }),
       runtimeMode: currentRuntimeMode,
       onUpdateRuntimeMode,
+      initialPage: settingsSheetPageRef.current,
     }),
     [
       currentModelSelection,
@@ -986,14 +955,21 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       threadProviderGroups,
     ],
   );
-  const openSettings = useCallback(() => {
-    settingsRoutePresentation.present(settingsRouteSession);
-    settingsSheetPresentation.open();
-  }, [settingsRoutePresentation.present, settingsRouteSession, settingsSheetPresentation.open]);
+  const openSettings = useCallback(
+    (page: "home" | "catalog" = "home") => {
+      settingsSheetPageRef.current = page;
+      settingsRoutePresentation.present({ ...settingsRouteSession, initialPage: page });
+      settingsSheetPresentation.open();
+    },
+    [settingsRoutePresentation.present, settingsRouteSession, settingsSheetPresentation.open],
+  );
 
   useEffect(() => {
     if (settingsSheetPresentation.isActive) {
-      settingsRoutePresentation.present(settingsRouteSession);
+      settingsRoutePresentation.present({
+        ...settingsRouteSession,
+        initialPage: settingsSheetPageRef.current,
+      });
     }
   }, [settingsRoutePresentation.present, settingsRouteSession, settingsSheetPresentation.isActive]);
 
@@ -1163,9 +1139,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         {!isExpanded ? (
           <ThreadModelIdentityCaption
             identity={modelIdentity}
-            menu={settingsMenu}
-            onMenuAction={handleSettingsMenuAction}
-            onPressFallback={openSettings}
+            picker={settingsPicker}
+            onBrowseModels={() => openSettings("catalog")}
+            onPressFallback={() => openSettings("home")}
+            onSelectModel={handleSelectModelOption}
+            onSelectOption={handleSelectPickerOption}
+            onSelectRuntime={onUpdateRuntimeMode}
           />
         ) : null}
 
@@ -1185,22 +1164,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   onPress={() => void handlePickDraftImages()}
                   showChevron={false}
                 />
-                {settingsMenu ? (
-                  <ControlPillMenu
-                    actions={settingsMenu.actions}
-                    onPressAction={({ nativeEvent }) => handleSettingsMenuAction(nativeEvent.event)}
-                  >
-                    <ComposerInlineControl
-                      accessibilityLabel="Model and reasoning settings"
-                      emphasized
-                      iconNode={
-                        <ProviderIcon provider={currentModelOption?.providerDriver} size={16} />
-                      }
-                      label={settingsSummaryLabel}
-                      maxWidth={320}
-                    />
-                  </ControlPillMenu>
-                ) : (
+                <ThreadSettingsPickerPopover
+                  accessibilityLabel="Model and reasoning settings"
+                  model={settingsPicker}
+                  onBrowseModels={() => openSettings("catalog")}
+                  onSelectModel={handleSelectModelOption}
+                  onSelectOption={handleSelectPickerOption}
+                  onSelectRuntime={onUpdateRuntimeMode}
+                >
                   <ComposerInlineControl
                     accessibilityLabel="Model and reasoning settings"
                     emphasized
@@ -1209,9 +1180,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     }
                     label={settingsSummaryLabel}
                     maxWidth={320}
-                    onPress={openSettings}
                   />
-                )}
+                </ThreadSettingsPickerPopover>
                 {showStopAction ? (
                   <ComposerToolbarButton
                     accessibilityLabel="Stop"
