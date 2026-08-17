@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import {
+  clearSceneryArrivalRequest,
   hasPlayedSceneryArrival,
   markSceneryArrivalPlayed,
   measureCenterDelta,
+  peekSceneryArrivalRequest,
   remainingFogHoldMs,
+  requestSceneryArrival,
   resetPlayedSceneryArrivals,
   sceneryArrivalCoversSwap,
   sceneryArrivalSettleAtMs,
@@ -77,6 +80,9 @@ describe("arrival swap cover", () => {
 
 describe("remaining fog hold", () => {
   it("keeps the full hold when the photo was ready at fog-on", () => {
+    expect(SCENERY_ARRIVAL.fogHoldMs).toBe(
+      SCENERY_ARRIVAL.fogGatherMs + SCENERY_ARRIVAL.fogHoldAfterReadyMs,
+    );
     expect(remainingFogHoldMs(1000, 1000)).toBe(SCENERY_ARRIVAL.fogHoldMs);
   });
 
@@ -86,8 +92,10 @@ describe("remaining fog hold", () => {
     );
   });
 
-  it("shortens the remaining hold by time already spent in fog", () => {
-    expect(remainingFogHoldMs(0, 200)).toBe(SCENERY_ARRIVAL.fogHoldMs - 200);
+  it("finishes the gather before the after-ready sit", () => {
+    expect(remainingFogHoldMs(0, 100)).toBe(
+      SCENERY_ARRIVAL.fogGatherMs - 100 + SCENERY_ARRIVAL.fogHoldAfterReadyMs,
+    );
   });
 });
 
@@ -97,6 +105,21 @@ describe("played scenery arrivals", () => {
     markSceneryArrivalPlayed("env:a");
     expect(hasPlayedSceneryArrival("env:a")).toBe(true);
     expect(hasPlayedSceneryArrival("env:b")).toBe(false);
+  });
+});
+
+describe("new-thread fog request", () => {
+  it("arms a pending key until the overlay consumes it", () => {
+    requestSceneryArrival("env:new");
+    expect(peekSceneryArrivalRequest()).toBe("env:new");
+    clearSceneryArrivalRequest("env:new");
+    expect(peekSceneryArrivalRequest()).toBe(null);
+  });
+
+  it("does not re-arm a thread that already played the sequence", () => {
+    markSceneryArrivalPlayed("env:played");
+    requestSceneryArrival("env:played");
+    expect(peekSceneryArrivalRequest()).toBe(null);
   });
 });
 

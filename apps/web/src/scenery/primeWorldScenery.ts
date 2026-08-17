@@ -3,6 +3,7 @@
  * photo engine stays in the lazy scenery chunk and only loads when World
  * Scenery is actually the active theme.
  */
+import { requestSceneryArrival } from "./sceneryArrivalLogic";
 import { WORLD_SCENERY_THEME_ID } from "./worldSceneryTheme";
 
 export function primeWorldSceneryForNewThread(threadKey: string): void {
@@ -12,6 +13,7 @@ export function primeWorldSceneryForNewThread(threadKey: string): void {
   if (document.documentElement.dataset.themeId !== WORLD_SCENERY_THEME_ID) {
     return;
   }
+  requestSceneryArrival(threadKey);
   void import("./primeScenery").then((mod) => {
     mod.primeSceneryForThread(threadKey);
   });

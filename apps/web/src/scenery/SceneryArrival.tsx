@@ -7,13 +7,16 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 
 import { useMotionStore } from "./motionStore";
 import {
+  clearSceneryArrivalRequest,
   hasPlayedSceneryArrival,
   markSceneryArrivalPlayed,
   measureCenterDelta,
+  peekSceneryArrivalRequest,
   readSceneryArrivalFogInk,
   readSceneryComposerPlacement,
   remainingFogHoldMs,
   shouldArmSceneryArrival,
+  subscribeSceneryArrivalRequest,
   writeSceneryArrivalPhase,
   SCENERY_ARRIVAL,
   SCENERY_COMPOSER_ATTR,
@@ -62,6 +65,11 @@ export function SceneryArrival({
   const placement = useComposerPlacement();
   const motionEnabled = useMotionStore((state) => state.enabled);
   const reducedMotion = useReducedMotion();
+  const pendingArrivalKey = useSyncExternalStore(
+    subscribeSceneryArrivalRequest,
+    peekSceneryArrivalRequest,
+    () => null,
+  );
   const [phase, setPhase] = useState<SceneryArrivalPhase>("idle");
   const [fogInk, setFogInk] = useState<SceneryArrivalFogInk>("dark");
   const [sequenceKey, setSequenceKey] = useState<string | null>(null);
@@ -69,6 +77,7 @@ export function SceneryArrival({
   const travelRef = useRef<Animation | null>(null);
   const fogStartedAtRef = useRef<number | null>(null);
   const armedThreadRef = useRef<string | null>(null);
+  const originThreadRef = useRef<string | null>(null);
   const revealedRef = useRef(false);
   const onPhaseChangeRef = useRef(onPhaseChange);
   onPhaseChangeRef.current = onPhaseChange;
@@ -86,37 +95,59 @@ export function SceneryArrival({
   }, []);
 
   // Layout so fog is on the document before SceneryLayer commits a preloaded
-  // photo in the same frame. Placement is re-read from the DOM: ChatView
-  // writes hero during its render, which is after this component's render
-  // but before this layout effect.
+  // photo in the same frame. A new-thread click can arm this before the
+  // draft route paints (pendingArrivalKey). Placement is re-read from the
+  // DOM: ChatView writes hero during its render, which is after this
+  // component's render but before this layout effect.
   useLayoutEffect(() => {
-    const alreadyPlayed = threadKey !== null && hasPlayedSceneryArrival(threadKey);
+    if (pendingArrivalKey !== null && (reducedMotion || !motionEnabled)) {
+      clearSceneryArrivalRequest(pendingArrivalKey);
+    }
+
     const livePlacement = readSceneryComposerPlacement() ?? placement;
-    const arm = shouldArmSceneryArrival({
+    const armFromPrime =
+      pendingArrivalKey !== null &&
+      !reducedMotion &&
+      motionEnabled &&
+      !hasPlayedSceneryArrival(pendingArrivalKey);
+    const armFromRoute = shouldArmSceneryArrival({
       placement: livePlacement,
       threadKey,
       reducedMotion,
       motionEnabled,
-      alreadyPlayed,
+      alreadyPlayed: threadKey !== null && hasPlayedSceneryArrival(threadKey),
     });
+    const targetKey = armFromPrime ? pendingArrivalKey : threadKey;
 
-    if (arm && threadKey !== null) {
-      if (armedThreadRef.current === threadKey) {
+    if ((armFromPrime || armFromRoute) && targetKey !== null) {
+      if (armedThreadRef.current === targetKey) {
         return;
       }
-      armedThreadRef.current = threadKey;
+      originThreadRef.current = threadKey;
+      armedThreadRef.current = targetKey;
       revealedRef.current = false;
       fogStartedAtRef.current = performance.now();
       setFogInk(readSceneryArrivalFogInk());
-      setSequenceKey(threadKey);
+      setSequenceKey(targetKey);
+      clearSceneryArrivalRequest(targetKey);
       publishPhase("fog");
       return;
     }
 
-    if (armedThreadRef.current !== null) {
+    const armed = armedThreadRef.current;
+    const waitingForRoute =
+      armed !== null &&
+      threadKey !== armed &&
+      (threadKey === originThreadRef.current || threadKey === null);
+    if (waitingForRoute) {
+      return;
+    }
+
+    if (armed !== null) {
       travelRef.current?.cancel();
       travelRef.current = null;
     }
+    originThreadRef.current = null;
     armedThreadRef.current = null;
     revealedRef.current = false;
     fogStartedAtRef.current = null;
@@ -126,11 +157,11 @@ export function SceneryArrival({
     }
     const nextPhase = livePlacement === "hero" || livePlacement === "docked" ? "settled" : "idle";
     publishPhase(nextPhase);
-  }, [motionEnabled, placement, reducedMotion, threadKey]);
+  }, [motionEnabled, pendingArrivalKey, placement, reducedMotion, threadKey]);
 
   const photoId = photo?.id ?? null;
   useEffect(() => {
-    if (sequenceKey === null || revealedRef.current) {
+    if (sequenceKey === null || revealedRef.current || threadKey !== sequenceKey) {
       return;
     }
 
@@ -202,8 +233,8 @@ export function SceneryArrival({
       startReveal = window.setTimeout(beginReveal, hold);
     } else {
       // Decode never came: lift over whatever is on screen. The bank still
-      // blows off instead of cutting; without a photo there is no name to
-      // hand over, so the travel simply finds nothing to move.
+      // leaves with the clear transition instead of a cut. Without a photo
+      // there is no name to hand over, so the travel finds nothing to move.
       startReveal = window.setTimeout(beginReveal, SCENERY_ARRIVAL.fogMaxWaitMs);
     }
 
@@ -219,7 +250,7 @@ export function SceneryArrival({
     };
     // photo is read from this render when photoId changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sequenceKey, photoId, photoReady]);
+  }, [sequenceKey, photoId, photoReady, threadKey]);
 
   if (phase === "idle" || phase === "settled") {
     return null;
@@ -228,16 +259,16 @@ export function SceneryArrival({
   return (
     <div className="scenery-arrival" data-phase={phase} data-fog={fogInk}>
       {/* Depth-sorted cloud bank, one compositor layer per band: the far
-          bank is wide, thin and barely drifts, the near bank is dense and
-          blows furthest. The grain sheet rides with the mid bank and breaks
-          the gradients' banding. */}
+          bank is wide and thin, the near bank is dense and travels furthest.
+          The grain sheet rides with the mid bank and breaks the gradients'
+          banding. */}
       <div className="scenery-fog" aria-hidden>
         <div className="scenery-fog__bank scenery-fog__bank--far" />
         <div className="scenery-fog__bank scenery-fog__bank--mid" />
         <div className="scenery-fog__bank scenery-fog__bank--grain" />
         <div className="scenery-fog__bank scenery-fog__bank--near" />
       </div>
-      {photo ? (
+      {photo && threadKey === sequenceKey ? (
         <>
           <div className="scenery-arrival__copy">
             <p className="scenery-arrival__kicker">Entering...</p>

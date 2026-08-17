@@ -368,10 +368,11 @@ html:not(.dark) .scenery-attribution:hover {
 /* ------------------------------------------------ new-thread arrival -- */
 /* A cloud bank, not a wash: three depth bands of gradient puffs plus a
    noise grain sheet — four compositor layers, transform/opacity only. The
-   fog gathers from the left over the hold, sits at full cover, then blows
-   off to the right with parallax: the near bank fastest and furthest, the
-   far bank mostly thinning in place. The overlay unmounts at settle, so
-   nothing here outlives the sequence. Timings mirror SCENERY_ARRIVAL. */
+   banks start already mostly opaque so the route change stays hidden, sit
+   at full cover, then leave to the right with parallax: the near bank
+   fastest and furthest, the far bank mostly thinning in place. Transitions
+   retarget from gather to clear so the phase change does not restart from
+   zero. The overlay unmounts at settle. Timings mirror SCENERY_ARRIVAL. */
 
 .scenery-arrival {
   position: fixed;
@@ -404,13 +405,23 @@ html:not(.dark) .scenery-attribution:hover {
      the edge it left behind until it has thinned. Tiles outside the clip
      never rasterize, so this costs viewport-sized textures, not overscan. */
   inset: -14%;
-  /* No will-change: the running transform/opacity animations promote each
-     band for exactly as long as it moves. */
-  animation: scenery-fog-gather 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  opacity: var(--fog-alpha, 1);
+  transform: translate3d(0, 0, 0) scale(1);
+  /* fogGatherMs. Ease-out so cover arrives on the first frames. */
+  transition:
+    opacity 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@starting-style {
+  .scenery-fog__bank {
+    opacity: calc(var(--fog-alpha, 1) * 0.78);
+    transform: translate3d(var(--fog-in-x), var(--fog-in-y), 0) scale(var(--fog-in-scale));
+  }
 }
 
 /* Depth bands. --fog-in-* is where a band starts gathering from, --fog-out-*
-   where it ends up blown; the near band travels ~3x the far band. Each
+   where it ends after the clear; the near band travels ~3x the far band. Each
    band's silhouette is a cluster of overlapping ellipses with a dense core
    and a long soft skirt, so edges read as billows rather than the single
    vignette of a sheet. */
@@ -516,57 +527,31 @@ html:not(.dark) .scenery-attribution:hover {
   mask-image: radial-gradient(ellipse 70% 62% at 50% 50%, black 30%, transparent 100%);
 }
 
-@keyframes scenery-fog-gather {
-  from {
-    opacity: 0;
-    transform: translate3d(var(--fog-in-x), var(--fog-in-y), 0) scale(var(--fog-in-scale));
-  }
-  45% {
-    opacity: var(--fog-alpha, 1);
-  }
-  to {
-    opacity: var(--fog-alpha, 1);
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-}
-
-/* Dissipation: a slow start (chrome fades in through the still-thick bank),
-   then the bands accelerate off to the right, spread, and thin. Opacity
-   holds most of its cover through the first third so the reveal reads as
-   fog thinning rather than a sheet fading. */
-@keyframes scenery-fog-dissipate {
-  0% {
-    opacity: var(--fog-alpha, 1);
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  32% {
-    opacity: calc(var(--fog-alpha, 1) * 0.86);
-  }
-  100% {
-    opacity: 0;
-    transform: translate3d(var(--fog-out-x), var(--fog-out-y), 0) scale(var(--fog-out-scale));
-  }
-}
-
+/* fogClearMs. Ease-in-out so the bank stays thick while chrome fades in,
+   then leaves without a snap. Transitions retarget from the gather. */
 .scenery-arrival[data-phase="reveal"] .scenery-fog__bank {
-  animation: scenery-fog-dissipate 880ms cubic-bezier(0.5, 0.04, 0.22, 1) both;
+  opacity: 0;
+  transform: translate3d(var(--fog-out-x), var(--fog-out-y), 0) scale(var(--fog-out-scale));
+  transition:
+    opacity 1100ms cubic-bezier(0.77, 0, 0.175, 1),
+    transform 1100ms cubic-bezier(0.77, 0, 0.175, 1);
 }
 
-/* Near clears first, far last; every band is done inside fogClearMs. */
+/* Near leaves first, far last. Every band is done inside fogClearMs. */
 .scenery-arrival[data-phase="reveal"] .scenery-fog__bank--mid,
 .scenery-arrival[data-phase="reveal"] .scenery-fog__bank--grain {
-  animation-duration: 820ms;
-  animation-delay: 60ms;
+  transition-duration: 1040ms;
+  transition-delay: 50ms;
 }
 
 .scenery-arrival[data-phase="reveal"] .scenery-fog__bank--far {
-  animation-duration: 760ms;
-  animation-delay: 120ms;
+  transition-duration: 1000ms;
+  transition-delay: 100ms;
 }
 
-/* Mounts once the photo (and so the name) is known, a beat into the fog:
-   rises out of the bank on `translate` so the reveal's `transform` travel
-   on the place name never fights it. Finishes inside fogHoldMs. */
+/* Mounts once the photo (and so the name) is known. Uses translate so the
+   reveal transform travel on the place name never fights it. Finishes
+   inside fogHoldAfterReadyMs. */
 .scenery-arrival__copy {
   position: absolute;
   inset: 0;
@@ -577,7 +562,7 @@ html:not(.dark) .scenery-attribution:hover {
   gap: 0.55rem;
   padding: 1.5rem 1.5rem 22vh;
   text-align: center;
-  animation: scenery-arrival-copy-in 380ms cubic-bezier(0.22, 1, 0.36, 1) 40ms both;
+  animation: scenery-arrival-copy-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes scenery-arrival-copy-in {
@@ -618,14 +603,13 @@ html:not(.dark) .scenery-attribution:hover {
     transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* The photo pushes in as the fog gathers (the fog is still thin on its
-   first frames, so a snap zoom would show) and settles back out on the same
-   wind that clears the bank. */
+/* The photo pushes in as the fog gathers and settles back on the same
+   motion that clears the bank. */
 html[data-scenery-arrival="fog"] .scenery-layer__group {
   transform: scale(1.04);
   transition:
     opacity var(--scenery-motion),
-    transform 0.46s cubic-bezier(0.22, 1, 0.36, 1);
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html[data-scenery-arrival="reveal"] .scenery-layer__group,
@@ -633,7 +617,7 @@ html[data-scenery-arrival="settled"] .scenery-layer__group {
   transform: scale(1);
   transition:
     opacity var(--scenery-motion),
-    transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+    transform 1.1s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Opacity + transform only: a filter blur here would re-rasterize the
@@ -792,6 +776,7 @@ html[data-scenery-arrival="reveal"] .scenery-place__credit {
   .scenery-arrival[data-phase="reveal"] .scenery-fog__bank,
   .scenery-arrival__copy {
     animation: none;
+    transition: none;
   }
 
   .scenery-arrival__kicker,

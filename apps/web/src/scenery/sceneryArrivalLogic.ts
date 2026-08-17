@@ -1,9 +1,9 @@
 /**
  * New-thread arrival choreography for World Scenery. The sequence is a rare
  * first look at a place, not a per-keystroke animation: fog covers the
- * route change immediately, the wallpaper must be decoded under that veil,
- * then the location name travels down into the composer and the overlay
- * unmounts so nothing keeps painting.
+ * route change as soon as the user asks for a new thread, the wallpaper
+ * decodes under that veil, then the location name travels down into the
+ * composer and the overlay unmounts so nothing keeps painting.
  */
 
 export type SceneryArrivalPhase = "idle" | "fog" | "reveal" | "settled";
@@ -12,17 +12,21 @@ export type SceneryArrivalFogInk = "dark" | "light";
 
 export const SCENERY_ARRIVAL = {
   /**
-   * Intended veil when the wallpaper is already decoded at fog-on. The bank
-   * gathers over this whole beat (scenery-fog-gather runs its full length)
-   * and sits at full cover the moment the reveal starts.
+   * Time for the banks to reach full cover. CSS gather uses the same value.
+   * Banks start already mostly opaque so the route change stays hidden.
    */
-  fogHoldMs: 460,
-  /** Shortest veil after decode so the lift is over a painted photo. */
-  fogHoldAfterReadyMs: 160,
+  fogGatherMs: 180,
+  /**
+   * Sit at full cover after the wallpaper is ready. Also the sit after gather
+   * when the photo was ready at fog-on. fogHoldMs is gather plus this sit.
+   */
+  fogHoldAfterReadyMs: 320,
+  /** Veil when the wallpaper is already decoded at fog-on (gather + sit). */
+  fogHoldMs: 500,
   /** Give up waiting for decode and lift over whatever is on screen. */
   fogMaxWaitMs: 2400,
-  /** Longest fog band's dissipation; the near band ends here (see CSS delays). */
-  fogClearMs: 880,
+  /** Longest fog band dissipation. Chrome is already on screen during this. */
+  fogClearMs: 1100,
   /** Location name travel from viewport center into the composer slot. */
   locationTravelMs: 480,
   /** Headline + composer fade/slide after the veil starts lifting. */
@@ -37,6 +41,14 @@ export const SCENERY_ARRIVAL_ATTR = "sceneryArrival";
 export const SCENERY_COMPOSER_ATTR = "sceneryComposer";
 
 const playedArrivalKeys = new Set<string>();
+const arrivalRequestListeners = new Set<() => void>();
+let pendingArrivalThreadKey: string | null = null;
+
+function notifySceneryArrivalRequest(): void {
+  for (const listener of arrivalRequestListeners) {
+    listener();
+  }
+}
 
 export function hasPlayedSceneryArrival(threadKey: string): boolean {
   return playedArrivalKeys.has(threadKey);
@@ -49,6 +61,41 @@ export function markSceneryArrivalPlayed(threadKey: string): void {
 /** Test hook. Production code never clears a played key. */
 export function resetPlayedSceneryArrivals(): void {
   playedArrivalKeys.clear();
+  if (pendingArrivalThreadKey !== null) {
+    pendingArrivalThreadKey = null;
+    notifySceneryArrivalRequest();
+  }
+}
+
+/**
+ * Arm fog on the click that mints a new thread, before the draft route
+ * paints. SceneryArrival mounts the overlay in the same layout pass.
+ */
+export function requestSceneryArrival(threadKey: string): void {
+  if (hasPlayedSceneryArrival(threadKey) || pendingArrivalThreadKey === threadKey) {
+    return;
+  }
+  pendingArrivalThreadKey = threadKey;
+  notifySceneryArrivalRequest();
+}
+
+export function peekSceneryArrivalRequest(): string | null {
+  return pendingArrivalThreadKey;
+}
+
+export function subscribeSceneryArrivalRequest(onChange: () => void): () => void {
+  arrivalRequestListeners.add(onChange);
+  return () => {
+    arrivalRequestListeners.delete(onChange);
+  };
+}
+
+export function clearSceneryArrivalRequest(threadKey: string): void {
+  if (pendingArrivalThreadKey !== threadKey) {
+    return;
+  }
+  pendingArrivalThreadKey = null;
+  notifySceneryArrivalRequest();
 }
 
 export function shouldArmSceneryArrival(input: {
@@ -85,7 +132,8 @@ export function sceneryArrivalCoversSwap(phase: SceneryArrivalPhase | null): boo
 
 export function remainingFogHoldMs(fogStartedAt: number, now: number): number {
   const elapsed = Math.max(0, now - fogStartedAt);
-  return Math.max(SCENERY_ARRIVAL.fogHoldAfterReadyMs, SCENERY_ARRIVAL.fogHoldMs - elapsed);
+  const gatherLeft = Math.max(0, SCENERY_ARRIVAL.fogGatherMs - elapsed);
+  return gatherLeft + SCENERY_ARRIVAL.fogHoldAfterReadyMs;
 }
 
 export function sceneryArrivalSettleAtMs(holdMs: number = SCENERY_ARRIVAL.fogHoldMs): number {
