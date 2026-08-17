@@ -14,7 +14,7 @@ describe("getPierreTerminalTheme", () => {
     expect(getPierreTerminalTheme("light")).toMatchObject({
       background: "#f4f6f4",
       foreground: "#6C6C71",
-      cursorForeground: "#009fff",
+      cursorForeground: "#2c6e47",
       cursorBackground: "#f4f6f4",
     });
   });
@@ -23,7 +23,7 @@ describe("getPierreTerminalTheme", () => {
     expect(getPierreTerminalTheme("dark")).toMatchObject({
       background: "#0e1110",
       foreground: "#adadb1",
-      cursorForeground: "#009fff",
+      cursorForeground: "#b7e6c8",
       cursorBackground: "#0e1110",
     });
   });
@@ -62,7 +62,7 @@ describe("buildGhosttyThemeConfig", () => {
 
     expect(config).toContain("background = #0e1110");
     expect(config).toContain("foreground = #adadb1");
-    expect(config).toContain("cursor-color = #009fff");
+    expect(config).toContain("cursor-color = #b7e6c8");
     expect(config).toContain("palette = 0=#141415");
     expect(config).toContain("palette = 15=#c6c6c8");
     expect(config.endsWith("\n")).toBe(true);

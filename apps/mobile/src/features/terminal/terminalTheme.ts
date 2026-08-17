@@ -24,7 +24,7 @@ const PIERRE_LIGHT_THEME: TerminalTheme = {
   foreground: "#6C6C71",
   mutedForeground: "#8E8E95",
   border: "#e3e9e4",
-  cursorForeground: "#009fff",
+  cursorForeground: "#2c6e47",
   cursorBackground: "#f4f6f4",
   palette: [
     "#1F1F21",
@@ -52,7 +52,7 @@ const PIERRE_DARK_THEME: TerminalTheme = {
   foreground: "#adadb1",
   mutedForeground: "#8E8E95",
   border: "#232b26",
-  cursorForeground: "#009fff",
+  cursorForeground: "#b7e6c8",
   cursorBackground: "#0e1110",
   palette: [
     "#141415",
