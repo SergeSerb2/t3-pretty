@@ -193,6 +193,15 @@ export function isSameOriginRendererNavigation(input: {
   }
 }
 
+export function isRecoverableRendererGoneReason(reason: string): boolean {
+  // GPU TDR on Windows reports `killed` rather than `crashed`. Reload the
+  // renderer the same way as an OOM so the window does not stay dead until
+  // Chromium gives up and exits the process.
+  return (
+    reason === "crashed" || reason === "oom" || reason === "abnormal-exit" || reason === "killed"
+  );
+}
+
 export function isRetryableDevelopmentRendererLoadFailure(input: {
   readonly applicationUrl: string;
   readonly errorCode: number;
@@ -685,10 +694,7 @@ export const make = Effect.gen(function* () {
       },
     );
     window.webContents.on("render-process-gone", (_event, details) => {
-      const recoverable =
-        details.reason === "crashed" ||
-        details.reason === "oom" ||
-        details.reason === "abnormal-exit";
+      const recoverable = isRecoverableRendererGoneReason(details.reason);
       // Long sessions can OOM the renderer (V8 heap exhaustion from
       // accumulated thread state). Without a reload the user is left staring
       // at a dead white window while agents keep running invisibly, so

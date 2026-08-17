@@ -1043,6 +1043,15 @@ describe("DesktopWindow", () => {
     }),
   );
 
+  it("reloads the renderer after a GPU TDR kill as well as a crash", () => {
+    assert.isTrue(DesktopWindow.isRecoverableRendererGoneReason("crashed"));
+    assert.isTrue(DesktopWindow.isRecoverableRendererGoneReason("oom"));
+    assert.isTrue(DesktopWindow.isRecoverableRendererGoneReason("abnormal-exit"));
+    assert.isTrue(DesktopWindow.isRecoverableRendererGoneReason("killed"));
+    assert.isFalse(DesktopWindow.isRecoverableRendererGoneReason("clean-exit"));
+    assert.isFalse(DesktopWindow.isRecoverableRendererGoneReason("launch-failed"));
+  });
+
   it("retries only transient failures for the development renderer", () => {
     assert.isTrue(
       DesktopWindow.isRetryableDevelopmentRendererLoadFailure({

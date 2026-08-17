@@ -17,6 +17,31 @@ export interface DesktopPreReadyCommandLineReader {
   readonly getSwitchValue: (switchName: string) => string;
 }
 
+export interface DesktopPreReadyCommandLineWriter {
+  readonly appendSwitch: (switchName: string, value?: string) => void;
+}
+
+// Chromium's GPU sandbox plus the default crash-limit will exit the whole
+// Windows app after a handful of GPU process deaths (Win11 25H2 sandbox,
+// NVIDIA TDR, 50-series). Must be set before `app.whenReady`.
+export const WINDOWS_GPU_STABILITY_SWITCHES: ReadonlyArray<readonly [string, string?]> = [
+  ["disable-gpu-sandbox"],
+  ["disable-gpu-process-crash-limit"],
+  ["disable-features", "CalculateNativeWinOcclusion"],
+];
+
+export function applyWindowsGpuStabilitySwitches(
+  commandLine: DesktopPreReadyCommandLineWriter,
+): void {
+  for (const [switchName, value] of WINDOWS_GPU_STABILITY_SWITCHES) {
+    if (value === undefined) {
+      commandLine.appendSwitch(switchName);
+      continue;
+    }
+    commandLine.appendSwitch(switchName, value);
+  }
+}
+
 export function readCommandLineSwitchValue(
   commandLine: DesktopPreReadyCommandLineReader,
   switchName: string,
@@ -60,6 +85,10 @@ export const make = Effect.gen(function* () {
       if (linux.passwordStore !== null && linuxPasswordStoreCommandLine === null) {
         Electron.app.commandLine.appendSwitch("password-store", linux.passwordStore);
       }
+    }
+
+    if (platform === "win32") {
+      applyWindowsGpuStabilitySwitches(Electron.app.commandLine);
     }
 
     return { linux, linuxPasswordStoreCommandLine };
