@@ -57,21 +57,27 @@ export function threadDetailToShell(
 export function resolveSelectionDetailFallbackRef(
   threadRef: ScopedThreadRef | null,
   threadShell: EnvironmentThreadShell | null,
+  hasLocalStartingThread = false,
 ): ScopedThreadRef | null {
-  return threadRef !== null && threadShell === null ? threadRef : null;
+  return threadRef !== null && threadShell === null && !hasLocalStartingThread ? threadRef : null;
 }
 
 /**
  * Resolves the selected thread shell: the shell snapshot entry when available,
- * otherwise a shell converted from the detail fallback subscription.
+ * otherwise a local starting overlay, otherwise a shell converted from the
+ * detail fallback subscription.
  */
 export function resolveSelectedThreadShell(
   threadRef: ScopedThreadRef | null,
   threadShell: EnvironmentThreadShell | null,
   threadDetail: OrchestrationThread | null,
+  localStartingShell: EnvironmentThreadShell | null = null,
 ): EnvironmentThreadShell | null {
   if (threadShell !== null) {
     return threadShell;
+  }
+  if (localStartingShell !== null) {
+    return localStartingShell;
   }
   if (threadRef === null || threadDetail === null) {
     return null;

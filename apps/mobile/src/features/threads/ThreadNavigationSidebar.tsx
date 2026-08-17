@@ -29,7 +29,8 @@ import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useThemeColor } from "../../lib/useThemeColor";
-import { useProjects, useThreadShells } from "../../state/entities";
+import { useProjects } from "../../state/entities";
+import { usePresentedThreadShells } from "../../state/optimistic-thread-send";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { useThreadSearch } from "../../state/queries";
 import { useThreadListV2Enabled } from "./use-thread-list-v2-enabled";
@@ -196,7 +197,7 @@ function ThreadNavigationSidebarPane(
   const insets = useSafeAreaInsets();
   const { themeAppearance: colorScheme } = useAppearancePreferences();
   const projects = useProjects();
-  const threads = useThreadShells();
+  const threads = usePresentedThreadShells();
   const { environments: workspaceEnvironments, state: catalogState } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const [headerIsOverContent, setHeaderIsOverContent] = useState(false);

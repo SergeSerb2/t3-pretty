@@ -111,6 +111,10 @@ describe("resolveSelectionDetailFallbackRef", () => {
   it("returns the ref while the shell cannot identify the thread", () => {
     expect(resolveSelectionDetailFallbackRef(threadRef, null)).toBe(threadRef);
   });
+
+  it("does not subscribe to detail while a local starting thread is standing in", () => {
+    expect(resolveSelectionDetailFallbackRef(threadRef, null, true)).toBeNull();
+  });
 });
 
 describe("resolveSelectedThreadShell", () => {
@@ -148,6 +152,34 @@ describe("resolveSelectedThreadShell", () => {
       branch: "feature/detail",
       worktreePath: "/tmp/worktree",
     });
+  });
+
+  it("uses a local starting shell when the server snapshot has not landed", () => {
+    const localStarting = makeShell({
+      environmentId,
+      id: threadRef.threadId,
+      projectId: ProjectId.make("project-1"),
+      title: "Starting thread",
+    });
+
+    expect(resolveSelectedThreadShell(threadRef, null, null, localStarting)).toBe(localStarting);
+  });
+
+  it("still prefers the server shell over a local starting overlay", () => {
+    const shell = makeShell({
+      environmentId,
+      id: threadRef.threadId,
+      projectId: ProjectId.make("project-1"),
+      title: "Shell thread",
+    });
+    const localStarting = makeShell({
+      environmentId,
+      id: threadRef.threadId,
+      projectId: ProjectId.make("project-1"),
+      title: "Starting thread",
+    });
+
+    expect(resolveSelectedThreadShell(threadRef, shell, null, localStarting)).toBe(shell);
   });
 
   it("returns null when neither the shell nor the detail can resolve the thread", () => {

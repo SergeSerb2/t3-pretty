@@ -28,6 +28,18 @@ describe("thread content presentation", () => {
     ).toEqual({ kind: "loading" });
   });
 
+  it("paints a local starting thread instead of covering it with loading", () => {
+    expect(
+      projectThreadContentPresentation({
+        hasDetail: false,
+        detailError: null,
+        detailDeleted: false,
+        connectionState: "connected",
+        hasOptimisticContent: true,
+      }),
+    ).toEqual({ kind: "ready" });
+  });
+
   it("explains uncached detail while disconnected instead of loading forever", () => {
     expect(
       projectThreadContentPresentation({
