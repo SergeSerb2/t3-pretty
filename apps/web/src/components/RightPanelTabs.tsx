@@ -244,6 +244,7 @@ function RightPanelEmptyState(props: {
       label: "Canvas",
       description: "Mark up screens and iterate with the agent.",
       icon: Frame,
+      shortcut: "C",
       available: props.canvasAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.canvas,
       onClick: props.onAddCanvas,

@@ -6,54 +6,21 @@
  * (node ids, names, sizes, capture origins) and a PNG crop of the selected
  * region, paired by id the way preview annotations are.
  */
-import type { CanvasDocument, CanvasImageNode, ScopedThreadRef } from "@t3tools/contracts";
-import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import { MessageSquarePlus } from "lucide-react";
 import { useState } from "react";
 
 import { useAssetUrls } from "~/assets/assetUrls";
-import {
-  canvasImageAttachmentResources,
-  getNode,
-  isPendingImageNode,
-  type CanvasMeasuredSizes,
-} from "~/canvasDocSync";
-import { selectThreadCanvasState, useCanvasStore } from "~/canvasStore";
-import {
-  useComposerDraftStore,
-  useComposerThreadDraft,
-  type ComposerImageAttachment,
-} from "~/composerDraftStore";
-import { toastManager } from "~/components/ui/toast";
-import {
-  canvasSelectionImageName,
-  canvasSelectionNodeSummary,
-  type CanvasSelectionContext,
-} from "~/lib/canvasSelection";
-import { randomUUID } from "~/lib/utils";
+import { type CanvasMeasuredSizes } from "~/canvasDocSync";
+import type { CanvasDocument } from "@t3tools/contracts";
 
 import {
-  canvasCropRect,
-  canvasCropVisibleEntries,
-  readCanvasCropPalette,
-  renderCanvasSelectionCrop,
-} from "./canvasSelectionCrop";
-
-/**
- * Image nodes the crop may need to paint: every image overlapping the crop
- * rect, not just the selected ones, so surrounding context renders too.
- */
-function cropImageNodes(
-  doc: CanvasDocument,
-  selectedIds: readonly string[],
-  measuredSizes: CanvasMeasuredSizes | undefined,
-): CanvasImageNode[] {
-  const rect = canvasCropRect(doc, selectedIds, measuredSizes);
-  if (rect === null) return [];
-  return canvasCropVisibleEntries(doc, rect, measuredSizes).flatMap((entry) =>
-    entry.node.type === "image" ? [entry.node] : [],
-  );
-}
+  attachCanvasSelectionToDraft,
+  canvasSelectionAttachmentResources,
+  canvasSelectionImageSrcByNodeId,
+  cropImageNodes,
+} from "./canvasSelectionAttach";
+import { readCanvasCropPalette } from "./canvasSelectionCrop";
 
 export function CanvasAddToChatBar(props: {
   threadRef: ScopedThreadRef;
@@ -67,97 +34,36 @@ export function CanvasAddToChatBar(props: {
   const { doc, selectedIds, threadRef } = props;
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
-  const addCanvasSelection = useComposerDraftStore((store) => store.addCanvasSelection);
-  const addImage = useComposerDraftStore((store) => store.addImage);
-  const draftImageCount = useComposerThreadDraft(threadRef).images.length;
 
   const imageNodes = cropImageNodes(doc, selectedIds, props.measuredSizes);
-  // Pending captures still carry the empty attachmentId sentinel; asking for
-  // a signed URL with that key crashes the canvas (InvalidAssetCollectionKeyError).
-  const attachmentResources = canvasImageAttachmentResources(imageNodes);
-  // Signed asset URLs are resolved up-front through the same hook the image
-  // nodes use, so the crop never has to reach into the DOM for a src.
+  const attachmentResources = canvasSelectionAttachmentResources(
+    doc,
+    selectedIds,
+    props.measuredSizes,
+  );
   const assetUrls = useAssetUrls(threadRef.environmentId, attachmentResources);
 
   const submit = async (): Promise<void> => {
     if (busy || selectedIds.length === 0) return;
     setBusy(true);
     try {
-      const nodes = selectedIds.flatMap((id) => {
-        const node = getNode(doc, id);
-        return node === null ? [] : [canvasSelectionNodeSummary(node)];
-      });
-      if (nodes.length === 0) return;
-
-      const selectionId = randomUUID();
-      const trimmedComment = comment.trim();
-      const selection: CanvasSelectionContext = {
-        id: selectionId,
-        docRevision: props.revision,
-        ...(trimmedComment.length > 0 ? { comment: trimmedComment } : {}),
-        nodes,
-      };
-
-      const localPreviews = selectThreadCanvasState(
-        useCanvasStore.getState().byThreadKey,
-        threadRef,
-      ).localImagePreviews;
       const urlByAttachmentId = new Map(
         attachmentResources.flatMap((resource, index) => {
           const url = assetUrls[index];
           return url ? [[resource.attachmentId, url] as const] : [];
         }),
       );
-      const srcByNodeId = new Map<string, string>();
-      for (const node of imageNodes) {
-        // A local preview is only authoritative while the payload is still
-        // unresolved; once the server has an attachment, that is the bitmap
-        // on screen (a stale re-capture preview would crop the wrong image).
-        const preview = isPendingImageNode(node) ? localPreviews[node.id] : undefined;
-        const resolved = preview ?? urlByAttachmentId.get(node.attachmentId) ?? null;
-        if (resolved !== null) srcByNodeId.set(node.id, resolved);
-      }
-
-      let crop = null;
-      try {
-        crop = await renderCanvasSelectionCrop({
-          doc,
-          selectedIds,
-          measuredSizes: props.measuredSizes,
-          resolveImageSrc: (node) => srcByNodeId.get(node.id) ?? null,
-          palette: readCanvasCropPalette(props.paletteRef.current),
-          fileName: canvasSelectionImageName(selectionId),
-        });
-      } catch {
-        // A tainted or unreachable bitmap only costs the picture; the
-        // structured block still tells the agent exactly what was selected.
-      }
-
-      addCanvasSelection(threadRef, selection);
-
-      if (crop === null) {
-        toastManager.add({
-          type: "info",
-          title: "Added selection without an image",
-          description: "The canvas image could not be rendered, so only its details were attached.",
-        });
-      } else if (draftImageCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-        toastManager.add({
-          type: "info",
-          title: "Attachment limit reached",
-          description: `Added the selection details only; a message can carry ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images.`,
-        });
-      } else {
-        addImage(threadRef, {
-          type: "image",
-          id: selectionId,
-          name: crop.file.name,
-          mimeType: crop.file.type,
-          sizeBytes: crop.file.size,
-          previewUrl: URL.createObjectURL(crop.file),
-          file: crop.file,
-        } satisfies ComposerImageAttachment);
-      }
+      const srcByNodeId = canvasSelectionImageSrcByNodeId(threadRef, imageNodes, urlByAttachmentId);
+      await attachCanvasSelectionToDraft({
+        threadRef,
+        doc,
+        revision: props.revision,
+        selectedIds,
+        measuredSizes: props.measuredSizes,
+        resolveImageSrc: (node) => srcByNodeId.get(node.id) ?? null,
+        palette: readCanvasCropPalette(props.paletteRef.current),
+        comment,
+      });
       setComment("");
     } finally {
       setBusy(false);

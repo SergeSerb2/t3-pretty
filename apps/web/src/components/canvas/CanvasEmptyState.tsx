@@ -62,13 +62,16 @@ export function CanvasEmptyState(props: {
       <div className="pointer-events-auto w-full max-w-sm text-center">
         <h3 className="text-sm font-medium text-foreground">Canvas</h3>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          Capture a browser tab or app window, mark it up, and iterate with the agent.
+          Capture a browser tab or app window, drop or paste a screenshot, mark it up, and send it
+          to the agent.
         </p>
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           <CaptureButton label="Capture browser tab" icon={Globe2} onClick={props.onCaptureTab} />
           <CaptureButton label="Capture window" icon={AppWindow} onClick={props.onCaptureWindow} />
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">Or draw with the toolbar tools.</p>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Or drop an image, paste a screenshot, or draw with the toolbar tools.
+        </p>
         {!isElectron ? (
           <p className="mt-4 text-xs text-muted-foreground/70">
             Screen capture requires the T3 Pretty desktop app.

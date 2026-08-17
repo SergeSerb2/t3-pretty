@@ -78,6 +78,7 @@ function renderTabs(first: DesktopPreviewFavicon | null, second?: DesktopPreview
       onAddDiff={() => undefined}
       onAddFiles={() => undefined}
       onAddAgents={() => undefined}
+      onAddCanvas={() => undefined}
       liveAgentCount={0}
       browserAvailable
       terminalAvailable={false}
@@ -85,6 +86,7 @@ function renderTabs(first: DesktopPreviewFavicon | null, second?: DesktopPreview
       filesAvailable={false}
       pullRequestAvailable={false}
       agentsAvailable={false}
+      canvasAvailable={false}
     >
       <div>content</div>
     </RightPanelTabs>,

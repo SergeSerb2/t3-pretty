@@ -1250,6 +1250,28 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(useComposerDraftStore.getState().getDraftThread(draftId)?.startFromOrigin).toBe(false);
   });
 
+  it("stores canvas-first start surface and canvas content on the draft thread", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, {
+      threadId,
+      startSurface: "canvas",
+    });
+
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toMatchObject({
+      startSurface: "canvas",
+      hasCanvasContent: false,
+    });
+
+    store.setDraftThreadContext(draftId, { hasCanvasContent: true });
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)?.hasCanvasContent).toBe(true);
+
+    store.setDraftThreadContext(draftId, { startSurface: "chat" });
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toMatchObject({
+      startSurface: "chat",
+      hasCanvasContent: true,
+    });
+  });
+
   it("preserves existing branch and worktree when setProjectDraftThreadId receives undefined", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, {

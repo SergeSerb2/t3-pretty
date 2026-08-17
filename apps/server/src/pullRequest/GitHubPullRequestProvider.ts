@@ -93,7 +93,6 @@ export function gitHubProviderFailure(
     return { reason: "rate-limited", retryAt: error.retryAt };
   }
   return { reason: "failed" };
-
 }
 
 /**

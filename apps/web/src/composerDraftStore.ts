@@ -35,6 +35,7 @@ import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model"
 import { useMemo } from "react";
 import { getLocalStorageItem } from "./hooks/useLocalStorage";
 import { resolveAppModelSelection, resolveAppModelSelectionForInstance } from "./modelSelection";
+import { type DraftStartSurface } from "./lib/canvasFirst";
 import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE, type ChatImageAttachment } from "./types";
 import {
   type TerminalContextDraft,
@@ -227,6 +228,10 @@ const PersistedDraftThreadState = Schema.Struct({
   worktreePath: Schema.NullOr(Schema.String),
   envMode: DraftThreadEnvModeSchema,
   startFromOrigin: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  startSurface: Schema.Literals(["chat", "canvas"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("chat" as const)),
+  ),
+  hasCanvasContent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   promotedTo: Schema.optionalKey(
     Schema.NullOr(
       Schema.Struct({
@@ -345,7 +350,21 @@ export interface DraftSessionState {
   worktreePath: string | null;
   envMode: DraftThreadEnvMode;
   startFromOrigin: boolean;
+  startSurface: DraftStartSurface;
+  hasCanvasContent: boolean;
   promotedTo?: ScopedThreadRef | null;
+}
+
+/**
+ * Composer attachments plus canvas document nodes. Canvas pixels live on the
+ * per-thread canvas store (and the server), so drafts persist a flag that
+ * survives reload before the canvas hydrates.
+ */
+export function draftHasInvestedContent(
+  composer: ComposerThreadDraftState | null | undefined,
+  session: Pick<DraftSessionState, "hasCanvasContent"> | null | undefined,
+): boolean {
+  return composerDraftHasUserContent(composer) || session?.hasCanvasContent === true;
 }
 
 export type DraftThreadState = DraftSessionState;
@@ -407,6 +426,8 @@ interface ComposerDraftStoreState {
       createdAt?: string;
       envMode?: DraftThreadEnvMode;
       startFromOrigin?: boolean;
+      startSurface?: DraftStartSurface;
+      hasCanvasContent?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
     },
@@ -422,6 +443,8 @@ interface ComposerDraftStoreState {
       createdAt?: string;
       envMode?: DraftThreadEnvMode;
       startFromOrigin?: boolean;
+      startSurface?: DraftStartSurface;
+      hasCanvasContent?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
     },
@@ -436,6 +459,8 @@ interface ComposerDraftStoreState {
       createdAt?: string;
       envMode?: DraftThreadEnvMode;
       startFromOrigin?: boolean;
+      startSurface?: DraftStartSurface;
+      hasCanvasContent?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
     },
@@ -1444,6 +1469,8 @@ function createDraftThreadState(
     createdAt?: string;
     envMode?: DraftThreadEnvMode;
     startFromOrigin?: boolean;
+    startSurface?: DraftStartSurface;
+    hasCanvasContent?: boolean;
     runtimeMode?: RuntimeMode;
     interactionMode?: ProviderInteractionMode;
   },
@@ -1486,6 +1513,8 @@ function createDraftThreadState(
     envMode:
       options?.envMode ?? (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? "local")),
     startFromOrigin: nextStartFromOrigin,
+    startSurface: options?.startSurface ?? existingThread?.startSurface ?? "chat",
+    hasCanvasContent: options?.hasCanvasContent ?? existingThread?.hasCanvasContent ?? false,
     promotedTo: null,
   };
 }
@@ -1518,6 +1547,8 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
     left.worktreePath === right.worktreePath &&
     left.envMode === right.envMode &&
     left.startFromOrigin === right.startFromOrigin &&
+    left.startSurface === right.startSurface &&
+    left.hasCanvasContent === right.hasCanvasContent &&
     scopedThreadRefsEqual(left.promotedTo, right.promotedTo)
   );
 }
@@ -1661,6 +1692,8 @@ function normalizePersistedDraftThreads(
         worktreePath: normalizedWorktreePath,
         envMode: normalizeDraftThreadEnvMode(candidateDraftThread.envMode, normalizedWorktreePath),
         startFromOrigin,
+        startSurface: candidateDraftThread.startSurface === "canvas" ? "canvas" : "chat",
+        hasCanvasContent: candidateDraftThread.hasCanvasContent === true,
         promotedTo,
       };
     }
@@ -1707,6 +1740,8 @@ function normalizePersistedDraftThreads(
           worktreePath: null,
           envMode: "local",
           startFromOrigin: false,
+          startSurface: "chat",
+          hasCanvasContent: false,
           promotedTo: null,
         };
       } else if (
@@ -1974,7 +2009,7 @@ function partializeComposerDraftStoreState(
         ([threadKey, draftThread]) =>
           mappedDraftKeys.has(threadKey) ||
           isDraftThreadPromoting(draftThread) ||
-          composerDraftHasUserContent(state.draftsByThreadKey[threadKey]),
+          draftHasInvestedContent(state.draftsByThreadKey[threadKey], draftThread),
       )
       .map(([threadKey]) => threadKey),
   );
@@ -2374,6 +2409,8 @@ function toHydratedDraftThreadState(
     worktreePath: persistedDraftThread.worktreePath,
     envMode: persistedDraftThread.envMode,
     startFromOrigin: persistedDraftThread.startFromOrigin,
+    startSurface: persistedDraftThread.startSurface,
+    hasCanvasContent: persistedDraftThread.hasCanvasContent,
     promotedTo: persistedDraftThread.promotedTo
       ? scopeThreadRef(
           persistedDraftThread.promotedTo.environmentId as EnvironmentId,
@@ -2524,8 +2561,9 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 previousThreadKeyForLogicalProject,
               ) &&
               !isDraftThreadPromoting(previousDraftThread) &&
-              !composerDraftHasUserContent(
+              !draftHasInvestedContent(
                 state.draftsByThreadKey[previousThreadKeyForLogicalProject],
+                previousDraftThread,
               )
             ) {
               delete nextDraftThreadsByThreadKey[previousThreadKeyForLogicalProject];
@@ -2608,6 +2646,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               envMode:
                 options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? "local")),
               startFromOrigin: nextStartFromOrigin,
+              startSurface: options.startSurface ?? existing.startSurface,
+              hasCanvasContent: options.hasCanvasContent ?? existing.hasCanvasContent,
               promotedTo: existing.promotedTo ?? null,
             };
             const isUnchanged =
@@ -2621,6 +2661,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nextDraftThread.worktreePath === existing.worktreePath &&
               nextDraftThread.envMode === existing.envMode &&
               nextDraftThread.startFromOrigin === existing.startFromOrigin &&
+              nextDraftThread.startSurface === existing.startSurface &&
+              nextDraftThread.hasCanvasContent === existing.hasCanvasContent &&
               scopedThreadRefsEqual(nextDraftThread.promotedTo, existing.promotedTo);
             if (isUnchanged) {
               return state;

@@ -590,6 +590,9 @@ export interface ChatComposerProps {
   scheduleComposerFocus: () => void;
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   onExpandImage: (preview: ExpandedImagePreview) => void;
+  /** Canvas-first drafts hide slash/mentions/plus and send only when the canvas has nodes. */
+  surface?: "default" | "canvas-first";
+  canvasHasNodes?: boolean;
 }
 
 // --------------------------------------------------------------------------
@@ -666,7 +669,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     scheduleComposerFocus,
     setThreadError,
     onExpandImage,
+    surface = "default",
+    canvasHasNodes = false,
   } = props;
+  const isCanvasFirstSurface = surface === "canvas-first";
   const isSendDisabled = sendDisabledReason !== null;
 
   // ------------------------------------------------------------------
@@ -1001,30 +1007,34 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Derived: composer send state
   // ------------------------------------------------------------------
-  const composerSendState = useMemo(
-    () =>
-      deriveComposerSendState({
-        prompt,
-        imageCount: composerImages.length,
-        terminalContexts: composerTerminalContexts,
-        elementContextCount:
-          composerElementContexts.length +
-          composerPreviewAnnotations.length +
-          composerCanvasSelections.length +
-          composerReviewComments.length,
-        fileAttachmentCount: attachedFiles.length,
-      }),
-    [
-      attachedFiles.length,
-      composerElementContexts.length,
-      composerImages.length,
-      composerPreviewAnnotations.length,
-      composerCanvasSelections.length,
-      composerReviewComments.length,
-      composerTerminalContexts,
+  const composerSendState = useMemo(() => {
+    const state = deriveComposerSendState({
       prompt,
-    ],
-  );
+      imageCount: composerImages.length,
+      terminalContexts: composerTerminalContexts,
+      elementContextCount:
+        composerElementContexts.length +
+        composerPreviewAnnotations.length +
+        composerCanvasSelections.length +
+        composerReviewComments.length,
+      fileAttachmentCount: attachedFiles.length,
+    });
+    if (isCanvasFirstSurface) {
+      return { ...state, hasSendableContent: canvasHasNodes };
+    }
+    return state;
+  }, [
+    attachedFiles.length,
+    canvasHasNodes,
+    composerElementContexts.length,
+    composerImages.length,
+    composerPreviewAnnotations.length,
+    composerCanvasSelections.length,
+    composerReviewComments.length,
+    composerTerminalContexts,
+    isCanvasFirstSurface,
+    prompt,
+  ]);
 
   // ------------------------------------------------------------------
   // Derived: composer trigger / menu
@@ -1184,7 +1194,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     workspaceEntries.entries,
   ]);
 
-  const composerMenuOpen = Boolean(composerTrigger);
+  const composerMenuOpen = Boolean(composerTrigger) && !isCanvasFirstSurface;
   const composerMenuSearchKey = composerTrigger
     ? `${composerTrigger.kind}:${composerTrigger.query.trim().toLowerCase()}`
     : null;
@@ -1681,7 +1691,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       setComposerCursor(nextCursor);
       setComposerTrigger(
-        cursorAdjacentToMention ? null : detectComposerTrigger(nextPrompt, expandedCursor),
+        isCanvasFirstSurface || cursorAdjacentToMention
+          ? null
+          : detectComposerTrigger(nextPrompt, expandedCursor),
       );
     },
     [
@@ -1693,6 +1705,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerDraftTarget,
       composerTerminalContexts,
       setComposerDraftTerminalContexts,
+      isCanvasFirstSurface,
     ],
   );
 
@@ -2552,6 +2565,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Callbacks: paste / drag
   // ------------------------------------------------------------------
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
+    if (isCanvasFirstSurface) return;
     const files = Array.from(event.clipboardData.files);
     if (files.length === 0) return;
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
@@ -2682,6 +2696,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         composerEditorRef.current?.focusAt(cursor);
       },
       addDroppedFiles: (files: File[]) => {
+        if (isCanvasFirstSurface) return;
         void addComposerImages(files);
         focusComposer();
       },
@@ -2805,6 +2820,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedPromptEffort,
       selectedProvider,
       selectedProviderModels,
+      isCanvasFirstSurface,
     ],
   );
 
@@ -3228,9 +3244,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           ? "Choose a project above to start a thread"
                           : noProviderAvailable
                             ? "Enable a provider in Settings to send a message"
-                            : phase === "disconnected"
-                              ? "Ask for follow-up changes or attach images"
-                              : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                            : isCanvasFirstSurface
+                              ? "Add a note (optional)"
+                              : phase === "disconnected"
+                                ? "Ask for follow-up changes or attach images"
+                                : "Ask anything, @tag files/folders, $use skills, or / for commands"
                 }
                 disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
               />
@@ -3329,7 +3347,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   />
                 )}
 
-                {isComposerFooterCompact ? (
+                {isCanvasFirstSurface ? (
+                  <ComposerFooterModeControls
+                    provider={selectedProvider}
+                    showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
+                    interactionMode={interactionMode}
+                    runtimeMode={runtimeMode}
+                    onToggleInteractionMode={toggleInteractionMode}
+                    onRuntimeModeChange={handleRuntimeModeChange}
+                  />
+                ) : isComposerFooterCompact ? (
                   <ComposerOverflowMenu
                     provider={selectedProvider}
                     interactionMode={interactionMode}

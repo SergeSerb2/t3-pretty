@@ -236,7 +236,11 @@ import {
   formatElementContextLabel,
 } from "../lib/elementContext";
 import { appendPreviewAnnotationPrompt } from "../lib/previewAnnotation";
-import { appendCanvasSelectionPrompt } from "../lib/canvasSelection";
+import {
+  appendCanvasSelectionPrompt,
+  type CanvasSelectionNodeSummary,
+} from "../lib/canvasSelection";
+import { canvasFirstTitleSeed } from "../lib/canvasFirst";
 import { appendReviewCommentsToPrompt, type ReviewCommentContext } from "../reviewCommentContext";
 import { environmentCatalog } from "../connection/catalog";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
@@ -266,6 +270,7 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import type { CanvasPanelHandle } from "./canvas/CanvasPanel";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -1507,6 +1512,7 @@ function ChatViewContent(props: ChatViewProps) {
   const composerElementContextsRef = useRef<ElementContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
+  const canvasPanelRef = useRef<CanvasPanelHandle | null>(null);
   const [isWorkspaceFileDragActive, setIsWorkspaceFileDragActive] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
@@ -2780,8 +2786,22 @@ function ChatViewContent(props: ChatViewProps) {
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
+  const isCanvasFirstStart = isLocalDraftThread && draftThread?.startSurface === "canvas";
+  const isCanvasFirstDraft =
+    isCanvasFirstStart && timelineEntries.length === 0 && !isWorking && !draftHeroDockRequested;
+  const isCanvasFirstBackAvailable =
+    isLocalDraftThread &&
+    !isCanvasFirstStart &&
+    draftThread?.hasCanvasContent === true &&
+    timelineEntries.length === 0 &&
+    !isWorking &&
+    !draftHeroDockRequested;
   const isDraftHeroState =
-    isLocalDraftThread && timelineEntries.length === 0 && !isWorking && !draftHeroDockRequested;
+    isLocalDraftThread &&
+    timelineEntries.length === 0 &&
+    !isWorking &&
+    !draftHeroDockRequested &&
+    !isCanvasFirstDraft;
   const sceneryThemeActive = useSceneryThemeActive();
   // Written during render so a sibling scenery layout effect in the same
   // commit can read hero/docked before first paint. The layout cleanup still
@@ -2808,6 +2828,10 @@ function ChatViewContent(props: ChatViewProps) {
       writeSceneryComposerPlacement(null);
     };
   }, [isDraftHeroState, sceneryThemeActive]);
+  useEffect(() => {
+    if (!isCanvasFirstDraft || !activeThreadRef) return;
+    useRightPanelStore.getState().closeSurface(activeThreadRef, "canvas");
+  }, [activeThreadRef, isCanvasFirstDraft]);
   useEffect(() => {
     if (!draftHeroHeadlineGhost) {
       return;
@@ -3538,6 +3562,16 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef || !supportsCanvas) return;
     useRightPanelStore.getState().open(activeThreadRef, "canvas");
   }, [activeThreadRef, supportsCanvas]);
+  const switchCanvasFirstToChat = useCallback(() => {
+    setDraftThreadContext(composerDraftTarget, { startSurface: "chat" });
+    addCanvasSurface();
+  }, [addCanvasSurface, composerDraftTarget, setDraftThreadContext]);
+  const switchChatDraftToCanvas = useCallback(() => {
+    setDraftThreadContext(composerDraftTarget, { startSurface: "canvas" });
+    if (activeThreadRef) {
+      useRightPanelStore.getState().closeSurface(activeThreadRef, "canvas");
+    }
+  }, [activeThreadRef, composerDraftTarget, setDraftThreadContext]);
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
@@ -5207,12 +5241,18 @@ function ChatViewContent(props: ChatViewProps) {
       onAdvanceActivePendingUserInput();
       return;
     }
+    let canvasFirstSendNodes: CanvasSelectionNodeSummary[] | null = null;
+    if (isCanvasFirstDraft) {
+      const prepared = await canvasPanelRef.current?.prepareCanvasFirstSend();
+      if (!prepared?.ok) return;
+      canvasFirstSendNodes = prepared.nodes;
+    }
     const sendCtx = composerRef.current?.getSendContext();
     if (!sendCtx?.providerAvailable) {
       notifyDirectAnnotationAttached();
       return;
     }
-    const {
+    let {
       images: sendContextImages,
       terminalContexts: composerTerminalContexts,
       elementContexts: composerElementContexts,
@@ -5225,6 +5265,13 @@ function ChatViewContent(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
+    if (canvasFirstSendNodes !== null) {
+      const draft = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
+      if (draft) {
+        sendContextImages = draft.images;
+        composerCanvasSelections = draft.canvasSelections;
+      }
+    }
     const composerImages =
       directAnnotation?.image &&
       !sendContextImages.some((image) => image.id === directAnnotation.image?.id)
@@ -5427,6 +5474,11 @@ function ChatViewContent(props: ChatViewProps) {
       });
       void dockTransition.catch(() => resolveDockStarted?.());
       await dockStarted;
+    } else if (isCanvasFirstDraft && activeThreadKey) {
+      flushSync(() => {
+        setDockedDraftHeroThreadKey(activeThreadKey);
+        addCanvasSurface();
+      });
     }
     beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
 
@@ -5503,7 +5555,9 @@ function ChatViewContent(props: ChatViewProps) {
       }
     }
     let titleSeed = trimmed;
-    if (!titleSeed) {
+    if (canvasFirstSendNodes !== null) {
+      titleSeed = canvasFirstTitleSeed({ note: trimmed, nodes: canvasFirstSendNodes });
+    } else if (!titleSeed) {
       if (firstComposerImageName) {
         titleSeed = `Image: ${firstComposerImageName}`;
       } else if (attachedFilesSnapshot[0]) {
@@ -6515,7 +6569,7 @@ function ChatViewContent(props: ChatViewProps) {
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
       />
-    ) : selectedRightPanelSurface?.kind === "canvas" ? (
+    ) : selectedRightPanelSurface?.kind === "canvas" && !isCanvasFirstDraft ? (
       <Suspense fallback={null}>
         <CanvasPanel threadRef={activeThreadRef} />
       </Suspense>
@@ -6623,12 +6677,12 @@ function ChatViewContent(props: ChatViewProps) {
           <div
             className="relative flex min-h-0 min-w-0 flex-1 flex-col"
             data-chat-workspace-drop-target="true"
-            onDragEnter={workspaceFileDropHandlers.onDragEnter}
-            onDragOver={workspaceFileDropHandlers.onDragOver}
-            onDragLeave={workspaceFileDropHandlers.onDragLeave}
-            onDrop={workspaceFileDropHandlers.onDrop}
+            onDragEnter={isCanvasFirstDraft ? undefined : workspaceFileDropHandlers.onDragEnter}
+            onDragOver={isCanvasFirstDraft ? undefined : workspaceFileDropHandlers.onDragOver}
+            onDragLeave={isCanvasFirstDraft ? undefined : workspaceFileDropHandlers.onDragLeave}
+            onDrop={isCanvasFirstDraft ? undefined : workspaceFileDropHandlers.onDrop}
           >
-            {isWorkspaceFileDragActive ? (
+            {isWorkspaceFileDragActive && !isCanvasFirstDraft ? (
               <div
                 className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/60 bg-primary/[0.035]"
                 data-chat-workspace-drop-overlay="true"
@@ -6651,64 +6705,82 @@ function ChatViewContent(props: ChatViewProps) {
             </div>
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col">
-              {/* Messages — LegendList handles virtualization and scrolling internally */}
-              <MessagesTimeline
-                agentPanelModel={agentPanelModel}
-                onOpenAgents={addAgentsSurface}
-                key={activeThread.id}
-                isWorking={isWorking}
-                workingStepLabel={workingStepLabel}
-                activeTurnInProgress={isWorking || !latestTurnSettled}
-                activeTurnStartedAt={activeWorkStartedAt}
-                listRef={legendListRef}
-                timelineEntries={timelineEntries}
-                latestTurn={activeLatestTurn}
-                runningTurnId={
-                  activeThread.session?.status === "running"
-                    ? activeThread.session.activeTurnId
-                    : null
-                }
-                turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
-                activeThreadEnvironmentId={activeThread.environmentId}
-                routeThreadKey={routeThreadKey}
-                onOpenTurnDiff={onOpenTurnDiff}
-                revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
-                onRevertUserMessage={onRevertUserMessage}
-                isRevertingCheckpoint={isRevertingCheckpoint}
-                onImageExpand={onExpandTimelineImage}
-                markdownCwd={gitCwd ?? undefined}
-                resolvedTheme={resolvedTheme}
-                timestampFormat={timestampFormat}
-                workspaceRoot={activeWorkspaceRoot}
-                skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
-                anchorMessageId={timelineAnchorMessageId}
-                onAnchorReady={onTimelineAnchorReady}
-                contentInsetEndAdjustment={composerOverlayHeight}
-                liveFollowEnabled={timelineLiveFollowEnabled}
-                onIsAtEndChange={onIsAtEndChange}
-                onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
-                hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
-                topFadeEnabled={!hasTimelineTopBanner}
-                loadEarlier={loadEarlierTurns}
-              />
-
-              {/* scroll to end pill — shown when user has scrolled away from the live edge */}
-              {showScrollToBottom && (
+              {isCanvasFirstDraft && activeThreadRef ? (
                 <div
-                  className="pointer-events-none absolute left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5"
-                  style={{ bottom: composerOverlayHeight + 4 }}
+                  className="relative flex min-h-0 flex-1 flex-col"
+                  style={{ paddingBottom: composerOverlayHeight }}
                 >
-                  <Button
-                    aria-label="Scroll to end"
-                    onClick={() => scrollToEnd(true)}
-                    className="pointer-events-auto gap-1.5 rounded-full px-3 text-muted-foreground hover:text-foreground"
-                    size="xs"
-                    variant="glass"
-                  >
-                    <ChevronDownIcon className="size-3.5" />
-                    Scroll to end
-                  </Button>
+                  <Suspense fallback={null}>
+                    <CanvasPanel
+                      ref={canvasPanelRef}
+                      threadRef={activeThreadRef}
+                      hideSelectionBar
+                      captureGlobalPaste
+                    />
+                  </Suspense>
                 </div>
+              ) : (
+                <>
+                  {/* Messages — LegendList handles virtualization and scrolling internally */}
+                  <MessagesTimeline
+                    agentPanelModel={agentPanelModel}
+                    onOpenAgents={addAgentsSurface}
+                    key={activeThread.id}
+                    isWorking={isWorking}
+                    workingStepLabel={workingStepLabel}
+                    activeTurnInProgress={isWorking || !latestTurnSettled}
+                    activeTurnStartedAt={activeWorkStartedAt}
+                    listRef={legendListRef}
+                    timelineEntries={timelineEntries}
+                    latestTurn={activeLatestTurn}
+                    runningTurnId={
+                      activeThread.session?.status === "running"
+                        ? activeThread.session.activeTurnId
+                        : null
+                    }
+                    turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+                    activeThreadEnvironmentId={activeThread.environmentId}
+                    routeThreadKey={routeThreadKey}
+                    onOpenTurnDiff={onOpenTurnDiff}
+                    revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
+                    onRevertUserMessage={onRevertUserMessage}
+                    isRevertingCheckpoint={isRevertingCheckpoint}
+                    onImageExpand={onExpandTimelineImage}
+                    markdownCwd={gitCwd ?? undefined}
+                    resolvedTheme={resolvedTheme}
+                    timestampFormat={timestampFormat}
+                    workspaceRoot={activeWorkspaceRoot}
+                    skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
+                    anchorMessageId={timelineAnchorMessageId}
+                    onAnchorReady={onTimelineAnchorReady}
+                    contentInsetEndAdjustment={composerOverlayHeight}
+                    liveFollowEnabled={timelineLiveFollowEnabled}
+                    onIsAtEndChange={onIsAtEndChange}
+                    onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
+                    hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
+                    topFadeEnabled={!hasTimelineTopBanner}
+                    loadEarlier={loadEarlierTurns}
+                  />
+
+                  {/* scroll to end pill — shown when user has scrolled away from the live edge */}
+                  {showScrollToBottom && (
+                    <div
+                      className="pointer-events-none absolute left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5"
+                      style={{ bottom: composerOverlayHeight + 4 }}
+                    >
+                      <Button
+                        aria-label="Scroll to end"
+                        onClick={() => scrollToEnd(true)}
+                        className="pointer-events-auto gap-1.5 rounded-full px-3 text-muted-foreground hover:text-foreground"
+                        size="xs"
+                        variant="glass"
+                      >
+                        <ChevronDownIcon className="size-3.5" />
+                        Scroll to end
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -6771,6 +6843,31 @@ function ChatViewContent(props: ChatViewProps) {
                         : undefined
                     }
                   >
+                    {isCanvasFirstDraft ? (
+                      <div className="pointer-events-auto mb-2 flex justify-center">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          className="text-muted-foreground"
+                          onClick={switchCanvasFirstToChat}
+                        >
+                          Switch to chat
+                        </Button>
+                      </div>
+                    ) : isCanvasFirstBackAvailable ? (
+                      <div className="pointer-events-auto mb-2 flex justify-center">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          className="text-muted-foreground"
+                          onClick={switchChatDraftToCanvas}
+                        >
+                          Back to canvas
+                        </Button>
+                      </div>
+                    ) : null}
                     <div
                       className={cn(
                         "chat-composer-glass-shell relative mx-auto w-full max-w-3xl",
@@ -6863,6 +6960,8 @@ function ChatViewContent(props: ChatViewProps) {
                             scheduleComposerFocus={scheduleComposerFocus}
                             setThreadError={setThreadError}
                             onExpandImage={onExpandTimelineImage}
+                            surface={isCanvasFirstDraft ? "canvas-first" : "default"}
+                            canvasHasNodes={draftThread?.hasCanvasContent === true}
                           />
                         </div>
                       </div>
