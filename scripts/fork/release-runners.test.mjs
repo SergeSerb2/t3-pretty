@@ -75,6 +75,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(ota, "Decide whether a new iOS binary is required");
     assert.notInclude(ota, "scripts/fork/origin-forge.mjs");
     assert.include(ota, "--max-old-space-size=3072");
+    assert.include(ota, "Not failing the pipeline.");
     assert.notInclude(ota, "eas build --");
     assert.notInclude(ota, "--local");
     assert.include(ios, "runs-on: macos-latest");
