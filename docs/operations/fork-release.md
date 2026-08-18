@@ -27,8 +27,9 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. macos-release
    reuses the workspace, so the job updates an existing `upstream` remote instead of
    `git remote add`. The PATH step writes Homebrew and Vite+ bins to `GITHUB_PATH` when
-   that file exists, and otherwise persists `PATH` through `GITHUB_ENV` so later steps
-   still see those bins when the importer leaves `GITHUB_PATH` unset. Maintainers can use
+   that file exists. It writes `PATH` to `GITHUB_ENV` only when `GITHUB_PATH` is unset,
+   so a full PATH snapshot cannot clobber later `GITHUB_PATH` or tool-cache prepends.
+   Maintainers can use
    the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
    into an `automation/upstream-*` branch and opens an Origin pull request.
    The fork deliberately keeps `.github/workflows` from its own `main`; upstream workflow changes

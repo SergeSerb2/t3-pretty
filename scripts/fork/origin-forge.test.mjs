@@ -109,8 +109,10 @@ describe("Origin release and blocked-sync helpers", () => {
     );
     assert.include(preparePath, "GITHUB_PATH");
     assert.include(preparePath, "GITHUB_ENV");
+    assert.include(preparePath, 'elif [[ -n "${GITHUB_ENV:-}" ]]');
     assert.include(preparePath, 'echo "PATH=');
     assert.notInclude(preparePath, "export PATH=");
+    assert.notInclude(preparePath, "persisted=0");
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");
     assert.include(desktop, "T3CODE_RELEASE_S3_BUCKET");
     assert.include(desktop, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");
@@ -138,7 +140,11 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(sync, "Prepare macOS runner PATH");
     assert.include(sync, "checkout-origin.sh");
     assert.include(mobile, "checkout-origin.sh");
-    assert.notInclude(mobile, "uses: actions/checkout@");
+    assert.isFalse(/\n\s+uses:/u.test(mobile));
+    assert.include(desktop, "ensure-linux-node.sh");
+    assert.include(desktop, "PREFLIGHT_REF");
+    assert.notInclude(desktop, "/usr/local --strip-components=1");
+    assert.notInclude(desktop, "git fetch --force --tags origin || true");
     assert.include(mobile, "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65");
     assert.notInclude(mobile, "vars.T3CODE_MOBILE_EAS_PROJECT_ID");
     assert.notInclude(mobile, "vars.APPLE_TEAM_ID");

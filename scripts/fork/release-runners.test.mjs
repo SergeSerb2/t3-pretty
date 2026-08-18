@@ -42,6 +42,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(wsl, "sudo apt-get install -y python3 make g++ file");
     assert.include(preflight, "Use the importer checkout");
     assert.include(preflight, "continue-on-error: true");
+    assert.include(preflight, "ensure-linux-node.sh");
+    assert.include(wsl, "PREFLIGHT_REF");
+    assert.include(wsl, "ensure-linux-node.sh");
   });
 
   it("does not rebuild desktop for mobile-only or docs-only commits", () => {
@@ -71,6 +74,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(ios, "needs.ota.outputs.should_build == 'true'");
     assert.include(ios, "--local");
     assert.include(mobileWorkflow, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
+    assert.isFalse(/\n\s+uses:/u.test(mobileWorkflow));
+    assert.include(ota, "npm install -g eas-cli");
+    assert.include(ios, "npm install -g eas-cli");
   });
 
   it("deploys the relay on macos-release with baked public IDs", () => {
