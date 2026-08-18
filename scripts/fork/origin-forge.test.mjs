@@ -157,6 +157,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(nsis, "Test-OfficialVp");
     assert.include(nsis, '${LASTEXITCODE}');
     assert.include(nsis, "rustup default stable");
+    assert.include(nsis, "upload-assets");
     assert.notInclude(nsis, "VITE_PLUS_BIN_DIR");
     assert.notInclude(nsis, "AppData\\Roaming\\npm");
   });
@@ -166,6 +167,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(source, "T3CODE_RELEASE_S3_ACCESS_KEY_ID");
     assert.include(source, "T3CODE_RELEASE_S3_SECRET_ACCESS_KEY");
     assert.include(source, '"r2", "object", "put"');
+    assert.include(source, 'case "upload-assets"');
   });
 
   it("reads the baked updater feed from T3CODE_DESKTOP_UPDATE_FEED_URL", () => {

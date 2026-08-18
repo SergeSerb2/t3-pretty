@@ -106,6 +106,46 @@ Get-ChildItem (Join-Path $root "release") -File | Where-Object {
 if (Get-Command buildkite-agent -ErrorAction SilentlyContinue) {
   Push-Location $publish
   try { buildkite-agent artifact upload "*" } finally { Pop-Location }
+  if (-not $env:CLOUDFLARE_API_TOKEN) {
+    $fetched = buildkite-agent secret get CLOUDFLARE_API_TOKEN 2>$null
+    if ($LASTEXITCODE -eq 0 -and $fetched) {
+      $env:CLOUDFLARE_API_TOKEN = "$fetched".Trim()
+    }
+  }
+}
+
+if (-not $env:CLOUDFLARE_API_TOKEN) {
+  foreach ($candidate in @(
+    "C:\buildkite-agent\secrets\CLOUDFLARE_API_TOKEN",
+    (Join-Path $env:USERPROFILE ".config\t3-pretty\CLOUDFLARE_API_TOKEN")
+  )) {
+    if (Test-Path $candidate) {
+      $env:CLOUDFLARE_API_TOKEN = (Get-Content -Raw $candidate).Trim()
+      break
+    }
+  }
+}
+
+$nightlyYml = Join-Path $publish "nightly.yml"
+$latestYml = Join-Path $publish "latest.yml"
+if ((Test-Path $nightlyYml) -and -not (Test-Path $latestYml)) {
+  Copy-Item $nightlyYml $latestYml
+}
+
+if (-not $env:CLOUDFLARE_API_TOKEN) {
+  throw "CLOUDFLARE_API_TOKEN is required to publish Windows updater assets to the public feed."
+}
+
+$upload = @("scripts\fork\origin-forge.mjs", "upload-assets")
+Get-ChildItem $publish -File | Where-Object {
+  $_.Extension -in ".exe", ".blockmap", ".yml"
+} | ForEach-Object {
+  $upload += "--asset"
+  $upload += $_.FullName
+}
+node @upload
+if ($LASTEXITCODE -ne 0) {
+  throw "Windows updater upload exited $LASTEXITCODE"
 }
 
 Write-Host "Windows NSIS artifacts in $publish"

@@ -453,6 +453,13 @@ export function publishOriginRelease({ tag, target, title, notesFile, assets = [
   return feedUrl;
 }
 
+export function uploadReleaseAssets(assets = []) {
+  if (!assets.length) throw new Error("upload-assets requires --asset");
+  for (const asset of assets) {
+    uploadReleaseAsset(asset, resolveReleaseObjectKey(asset));
+  }
+}
+
 export function uploadReleaseAsset(filePath, objectKey) {
   if (!NodeFS.existsSync(filePath)) {
     throw new Error(`Release asset does not exist: ${filePath}`);
@@ -583,9 +590,12 @@ export function main(argv = process.argv.slice(2)) {
         assets: readRepeated(rest, "--asset"),
       });
       return;
+    case "upload-assets":
+      uploadReleaseAssets(readRepeated(rest, "--asset"));
+      return;
     default:
       throw new Error(
-        `Unknown origin-forge command: ${command ?? "(missing)"}. Use setup-ci, ensure-pr, merge-pr, delete-branch, report-blocked, dispatch, or publish-release.`,
+        `Unknown origin-forge command: ${command ?? "(missing)"}. Use setup-ci, ensure-pr, merge-pr, delete-branch, report-blocked, dispatch, publish-release, or upload-assets.`,
       );
   }
 }
