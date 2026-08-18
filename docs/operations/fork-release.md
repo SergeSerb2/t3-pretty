@@ -88,7 +88,8 @@ newer upstream tag was integrated before its sync pull request merged.
   `macos-release` (m1-dev), and `windows-release` (serge-pc). Register the machines with
   `scripts/fork/setup-buildkite-macos-agent.sh` and
   `scripts/fork/setup-buildkite-windows-agent.ps1`. Schedule the pipeline at `0 */4 * * *`
-  so upstream sync still runs. The GitHub Actions importer cannot run Windows jobs; `.buildkite/pipeline.yml`
+  so upstream sync still runs. Imported Mac jobs use `macos-latest` so the plugin can map
+  them onto `macos-release`. The importer cannot run Windows jobs; `.buildkite/pipeline.yml`
   runs `scripts/fork/build-windows-nsis.ps1` on `windows-release` instead. Mac-only desktop
   publishes are still allowed if that step is skipped. Depot can take Linux jobs but has no
   macOS/Windows sandboxes.

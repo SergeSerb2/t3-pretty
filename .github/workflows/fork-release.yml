@@ -306,7 +306,9 @@ jobs:
     if: needs.preflight.outputs.should_release == 'true'
     permissions:
       contents: read
-    runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
+    # macos-latest maps to the macos-release queue. The importer rejects
+    # self-hosted label lists.
+    runs-on: macos-latest
     timeout-minutes: 60
     steps:
       - name: Ensure runner action externals
@@ -574,10 +576,12 @@ jobs:
   build_windows:
     name: Build Windows x64
     needs: [preflight, build_wsl_node_pty]
-    if: needs.preflight.outputs.should_release == 'true' && needs.preflight.outputs.windows_release == 'true' && needs.build_wsl_node_pty.result == 'success'
+    # The importer cannot run Windows jobs. Origin NSIS is the native
+    # windows-release step. Keep this job off the imported graph.
+    if: false
     permissions:
       contents: read
-    runs-on: [self-hosted, Windows, X64, t3code-fork, release-only]
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
       - name: Ensure runner action externals

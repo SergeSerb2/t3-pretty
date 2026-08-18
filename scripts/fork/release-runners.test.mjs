@@ -37,8 +37,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(preflight, "runs-on: ubuntu-latest");
     assert.include(wsl, "runs-on: ubuntu-latest");
     assert.include(publish, "runs-on: ubuntu-latest");
-    assert.include(mac, "self-hosted, macOS, ARM64, t3code-fork, release-only");
-    assert.include(win, "self-hosted, Windows, X64, t3code-fork, release-only");
+    assert.include(mac, "runs-on: macos-latest");
+    assert.include(win, "if: false");
+    assert.include(win, "runs-on: ubuntu-latest");
     assert.notInclude(wsl, "docker run");
     assert.include(wsl, "npx --yes node-gyp rebuild");
     assert.include(publish, "--experimental-strip-types");
@@ -64,7 +65,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(ota, "Decide whether a new iOS binary is required");
     assert.notInclude(ota, "eas build --");
     assert.notInclude(ota, "--local");
-    assert.include(ios, "self-hosted, macOS, ARM64, t3code-fork, release-only");
+    assert.include(ios, "runs-on: macos-latest");
     assert.include(ios, "needs.ota.outputs.should_build == 'true'");
     assert.include(ios, "--local");
     assert.include(mobileWorkflow, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
