@@ -57,14 +57,15 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    Generation failures downgrade to warnings: the release ships without new entries and the next
    run regenerates everything missing.
 8. Origin-connected Linux CI (Depot or Buildkite, `ubuntu-latest` in the workflow YAML) resolves
-   the version, writes What's New notes, compiles the WSL `node-pty` binary, and publishes the
-   Origin tag plus updater assets. `m1-dev-t3code-fork` only signs the macOS arm64 DMG.
-   `windows-5080-t3code-fork` builds Windows x64. iOS TestFlight IPAs still compile on a
-   self-hosted Mac through `fork-mobile-release.yml`. Only trusted `main` commits run on the
-   self-hosted machines; pull requests do not. iOS store binaries cannot compile on Windows.
-   Desktop packaging is skipped when the push cannot change the shipped desktop app (mobile-only,
-   docs-only, marketing, or relay-only commits). `workflow_dispatch` and the upstream-sync
-   dispatch still always run.
+   the version, writes What's New notes, and compiles the WSL `node-pty` binary. Publish and
+   Origin CLI work stay on `macos-release` because hosted Linux cannot resolve `CURSOR_API_KEY`.
+   `m1-dev` signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
+   push/UI builds of `main`, not the four-hour scheduled sync. iOS TestFlight IPAs and OTA
+   exports compile on `macos-release` through `fork-mobile-release.yml`. Relay deploys from
+   `deploy-relay.yml` on hosted Linux. Only trusted `main` commits run on the self-hosted
+   machines; pull requests do not. Desktop packaging is skipped when the push cannot change the
+   shipped desktop app (mobile-only, docs-only, marketing, or relay-only commits).
+   `workflow_dispatch` and the upstream-sync dispatch still always run.
 9. The publisher creates an annotated Origin git tag and uploads the installers plus both
    `nightly` and `latest` update manifests to the generic `electron-updater` feed in
    `T3CODE_DESKTOP_UPDATE_FEED_URL`. Origin has no GitHub-style release-asset API, so that feed
@@ -91,7 +92,11 @@ newer upstream tag was integrated before its sync pull request merged.
   so upstream sync still runs. Imported Mac jobs use `macos-latest` so the plugin can map
   them onto `macos-release`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
   The importer cannot run Windows jobs; `.buildkite/pipeline.yml` runs
-  `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer.
+  `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer
+  for push/UI builds of `main`, not the four-hour schedule. Imported Mac jobs
+  use `/bin/bash` 3.2 (no `mapfile`). `CURSOR_API_KEY` and `CLI_PROXY_API_KEY`
+  also live as files under `/Users/m1-dev/.config/t3-pretty/` because in-job
+  `secret get` from imported GHA steps often fails on macos-release.
   That script installs official Vite+ (`vp.exe`) under `C:\buildkite-agent\vite-plus`
   and refuses the npm `vp` stub. Mac-only desktop publishes are still allowed if
   that step is skipped. Depot can take Linux jobs but has no macOS/Windows sandboxes.
@@ -113,6 +118,9 @@ newer upstream tag was integrated before its sync pull request merged.
   sync workflow for conflict resolution and by the release preflight for What's New changelog
   generation. `CLI_PROXY_CHANGELOG_EFFORT` optionally overrides the changelog reasoning effort
   (default `high`).
+- Relay secrets on the same cluster: `CLOUDFLARE_API_TOKEN`, `PLANETSCALE_API_TOKEN_ID`,
+  `PLANETSCALE_API_TOKEN`, `AXIOM_TOKEN`, `CLERK_SECRET_KEY`, `APNS_PRIVATE_KEY`. Public
+  relay IDs are literals in `.github/workflows/deploy-relay.yml`.
 - Variable `T3CODE_DESKTOP_UPDATE_FEED_URL`: public HTTPS directory that serves `nightly.yml`,
   `latest.yml`, and the installers. Must not be a GitHub Releases URL. Uploads use that URL's
   path as the S3 key prefix (so `…/t3-pretty/latest/` stores objects under `t3-pretty/latest/`).
@@ -151,8 +159,9 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 | WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                |
 | macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m1-dev (or a second Mac with the same labels) |
 | Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload            |
-| Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `ubuntu-latest`                               |
-| Relay production deploy     | m1-dev                                | queued behind releases                      | `ubuntu-latest`                               |
+| Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `macos-release` (Origin CLI)                  |
+| Mobile OTA                  | hosted Linux                          | SIGKILL on linux-small                      | `macos-release`                               |
+| Relay production deploy     | m1-dev                                | queued behind releases                      | `macos-release` (file-store secrets)          |
 
 A desktop release that used to sit 25–40 minutes in the m1-dev queue and then take ~30 minutes of Mac occupancy should now occupy the Mac for only the ~8 minute signed DMG. Changelog, WSL, and publish no longer wait for — or block — iOS.
 

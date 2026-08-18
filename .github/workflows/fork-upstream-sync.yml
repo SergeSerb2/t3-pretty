@@ -36,6 +36,17 @@ jobs:
       # failed or timed-out run's model work survives into the next run.
       RESOLUTION_CACHE_BRANCH: automation/sync-resolution-cache
     steps:
+      - name: Prepare macOS runner PATH
+        # GHA's `shell: bash` is /bin/bash 3.2. Homebrew node and origin live
+        # under /opt/homebrew/bin, which that login-less PATH does not include.
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+          echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
+          echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+
       - name: Checkout fork main
         shell: bash
         run: |
@@ -112,6 +123,7 @@ jobs:
           SYNC_BRANCH: ${{ steps.discover.outputs.branch }}
         run: |
           set -euo pipefail
+          export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
           git config user.name "t3-pretty-sync[bot]"
           git config user.email "t3-pretty-bot@users.noreply.cursor.com"
 
@@ -140,7 +152,11 @@ jobs:
           # workflows or requiring a broadly scoped personal token.
           git restore --source=origin/main --staged --worktree -- .github/workflows
 
-          mapfile -d '' -t resolver_paths < <(git diff --name-only --diff-filter=U -z)
+          # bash 3.2 (/bin/bash on macos-release) has no `mapfile`.
+          resolver_paths=()
+          while IFS= read -r -d '' path; do
+            resolver_paths+=("$path")
+          done < <(git diff --name-only --diff-filter=U -z)
           if (( ${#resolver_paths[@]} == 0 )) && (( merge_status != 0 )) &&
             ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
             echo "Merge failed without producing resolvable conflicts." >&2
@@ -252,6 +268,7 @@ jobs:
           SYNC_BRANCH: ${{ steps.discover.outputs.branch }}
         run: |
           set -euo pipefail
+          export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
           node scripts/fork/origin-forge.mjs setup-ci
           pr_body_path="$RUNNER_TEMP/t3-pretty-upstream-sync.md"
           {
@@ -303,6 +320,7 @@ jobs:
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
         run: |
           set -euo pipefail
+          export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
           node scripts/fork/origin-forge.mjs setup-ci
           body="The guarded four-hour T3 Pretty sync could not safely merge $UPSTREAM_TAG. Inspect the failed Origin-connected CI run for this commit."
           node scripts/fork/origin-forge.mjs report-blocked \

@@ -43,6 +43,7 @@ steps:
             - .github/workflows/fork-upstream-sync.yml
             - .github/workflows/fork-release.yml
             - .github/workflows/fork-mobile-release.yml
+            - .github/workflows/deploy-relay.yml
           runners:
             - runs-on: ubuntu-latest
               queue: linux-small
@@ -57,7 +58,9 @@ steps:
     key: windows-nsis
     # Start with the importer, not after it. Desktop compile failures must
     # not cancel the Windows agent job while it is still waiting.
-    if: build.branch == "main"
+    # Scheduled builds exist only to run upstream sync. Do not rebuild NSIS
+    # every four hours when main has not changed.
+    if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
     agents:
       queue: windows-release

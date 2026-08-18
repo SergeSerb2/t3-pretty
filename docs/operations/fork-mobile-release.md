@@ -16,18 +16,16 @@ along — there is no separate mobile sync.
 
 `.github/workflows/fork-mobile-release.yml` triggers on every push to Origin
 `main` that touches mobile-relevant paths. A release publishes an OTA update on
-the production channel for both platforms from Origin-connected Linux CI
-(`ubuntu-latest` in the workflow YAML), then compiles a production iOS IPA on
-the self-hosted Mac Buildkite agent (`macos-release` queue, same machine as
-desktop) only
-when the native fingerprint changed. Explicit `workflow_dispatch` `build`, or
-the `force_ios` checkbox, still compiles and submits even when the fingerprint
-matches.
+the production channel for both platforms from the Mac Buildkite agent
+(`macos-release`; hosted `linux-small` SIGKILLs Metro), then compiles a
+production iOS IPA on that same queue only when the native fingerprint
+changed. Explicit `workflow_dispatch` `build`, or the `force_ios` checkbox,
+still compiles and submits even when the fingerprint matches.
 
 OTA still reaches already-installed binaries whose native fingerprint matches.
-JS-only changes therefore show up as an in-app update in a few minutes and
-never wait for m1-dev. Testers who need a brand-new TestFlight binary (new
-devices, or a native module change) get one when the fingerprint changes.
+JS-only changes therefore show up as an in-app update after the Mac job
+finishes. Testers who need a brand-new TestFlight binary (new devices, or a
+native module change) get one when the fingerprint changes.
 
 Local `eas build --local` IPAs do not create hosted EAS Build records, so
 `eas build:list` alone cannot describe the last submitted binary. After a
