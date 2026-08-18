@@ -6,10 +6,12 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
 
 ## Flow
 
-1. `T3 Pretty Origin PR Review` runs on every Origin pull request (and on branch pushes that
-   already have an Origin PR). It asks Grok 4.6 to review the diff and posts a comment review
-   with `origin pr review --comment`. It does not approve or merge. Automation sync branches
-   are skipped.
+1. `T3 Pretty Origin PR Review` runs on branch pushes that already have an Origin PR, and on
+   manual dispatch. It must not use `on.pull_request`: Origin's Buildkite importer builds a
+   pull_request snapshot without `payload.action`, which fails the check. The script resolves
+   the open Origin PR from the head branch, asks Grok 4.6 to review the diff, and posts a
+   comment review with `origin pr review --comment`. It does not approve or merge. Automation
+   sync branches are skipped.
 2. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
    and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. Maintainers can use
    the manual dispatch only when an operational fix needs an immediate retry. It merges that tag

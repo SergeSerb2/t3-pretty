@@ -5,9 +5,11 @@ name: T3 Pretty Origin PR Review
 # See docs/operations/fork-release.md.
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  # Origin-connected Buildkite often surfaces PR heads as branch pushes.
+  # Do not use `on.pull_request`. Origin's Buildkite importer builds a
+  # pull_request snapshot without payload.action, so any PR trigger
+  # fails the check with "pull_request event snapshot requires
+  # payload.action". Branch pushes already start a Buildkite build;
+  # the script resolves the open Origin PR from the head branch.
   push:
     branches-ignore:
       - main

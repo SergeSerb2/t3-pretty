@@ -90,7 +90,8 @@ describe("Origin Grok review workflow wiring", () => {
       "utf8",
     );
 
-    assert.include(workflow, "pull_request:");
+    assert.notInclude(workflow, "pull_request:");
+    assert.include(workflow, "branches-ignore:");
     assert.include(workflow, "runs-on: ubuntu-latest");
     assert.include(workflow, "review-origin-pr.mjs");
     assert.include(workflow, "grok-4.6");
