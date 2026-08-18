@@ -1,14 +1,17 @@
 /**
- * HostSkills — user-scope skill folders the provider CLIs manage themselves.
+ * HostSkills — user-scope, plugin, bundled, and system skill folders the
+ * provider CLIs load themselves.
  *
  * T3's store is a separate library. Codex, Claude Code, Cursor, Grok, and
- * OpenCode also load skills from their own home `skills/` directories (and
- * from the shared `~/.agents/skills` folder). This service scans those
- * locations on the environment host, hides a skill from those CLIs without
- * deleting it (by renaming `SKILL.md` to `SKILL.md.t3-disabled`), and deletes
- * a folder when the user uninstalls it from Settings. Clients address rows by
- * the opaque ids minted here; a client-supplied path never crosses the wire
- * inbound.
+ * OpenCode also load skills from their own home `skills/` directories, from
+ * installed plugins, from bundled/system packs, and from the shared
+ * `~/.agents/skills` folder. This service scans those locations on the
+ * environment host (including nested plugin-shaped trees), hides a skill from
+ * those CLIs without deleting it (by renaming `SKILL.md` to
+ * `SKILL.md.t3-disabled`), and deletes a user-owned folder when the user
+ * uninstalls it from Settings. Plugin, bundled, and system skills can be
+ * hidden the same way but are not deleted. Clients address rows by the opaque
+ * ids minted here; a client-supplied path never crosses the wire inbound.
  *
  * @module skills/HostSkills
  */
@@ -32,37 +35,28 @@ import * as Path from "effect/Path";
 
 import { expandHomePath } from "../pathExpansion.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
+import {
+  collectProviderExtraRoots,
+  collectSkillDocuments,
+  DEFAULT_INSTANCE_KEY,
+  formatHostSkillId,
+  HOST_SKILL_DISABLED_FILE,
+  isSafeSegment,
+  joinSkillRelPath,
+  parseHostSkillId,
+  SHARED_ORIGIN_KEY,
+  SKILL_FILE,
+  toPosixRelPath,
+  type DriverOriginKey,
+  type HostSkillRoot,
+} from "./HostSkillInventory.ts";
 import { SKILL_MANAGED_MARKER_FILE } from "./SkillStore.ts";
 
-const HOST_SKILL_ID_PREFIX = "host:";
-/** Built-in root marker; empty so no configured ProviderInstanceId can collide with it. */
-const DEFAULT_INSTANCE_KEY = "";
-const SHARED_ORIGIN_KEY = "agents";
-const SKILL_FILE = "SKILL.md";
-/** Providers only discover a file named exactly `SKILL.md`; this hides one. */
-export const HOST_SKILL_DISABLED_FILE = "SKILL.md.t3-disabled";
-
-type DriverOriginKey = "claudeAgent" | "codex" | "cursor" | "grok" | "opencode";
-type HostSkillOriginKey = DriverOriginKey | typeof SHARED_ORIGIN_KEY;
-
-const DRIVER_ORIGIN_KEYS = new Set<string>(["claudeAgent", "codex", "cursor", "grok", "opencode"]);
-
-/**
- * One filesystem-safe path segment: no separators, no traversal, no leading
- * dot (dot-directories are skipped by the scan, so they cannot round-trip).
- */
-function isSafeSegment(segment: string): boolean {
-  return (
-    segment.length > 0 &&
-    segment !== "." &&
-    segment !== ".." &&
-    !segment.startsWith(".") &&
-    !segment.includes("/") &&
-    !segment.includes("\\") &&
-    !segment.includes("\0") &&
-    !segment.includes(":")
-  );
-}
+export {
+  formatHostSkillId,
+  HOST_SKILL_DISABLED_FILE,
+  parseHostSkillId,
+} from "./HostSkillInventory.ts";
 
 function joinHome(...segments: ReadonlyArray<string>): string {
   return [NodeOS.homedir(), ...segments].join("/");
@@ -114,72 +108,6 @@ const DRIVER_CONVENTIONS: ReadonlyArray<{
     },
   },
 ];
-
-interface HostSkillRoot {
-  readonly originKey: HostSkillOriginKey;
-  readonly origin: string;
-  readonly instanceKey: string;
-  readonly driver?: ProviderDriverKind;
-  readonly instanceId?: ProviderInstanceId;
-  readonly directory: string;
-}
-
-interface ParsedHostSkillId {
-  readonly originKey: HostSkillOriginKey;
-  readonly instanceKey: string;
-  readonly dirName: string;
-}
-
-export function parseHostSkillId(skillId: string): ParsedHostSkillId | null {
-  if (!skillId.startsWith(HOST_SKILL_ID_PREFIX)) {
-    return null;
-  }
-  const parts = skillId.slice(HOST_SKILL_ID_PREFIX.length).split(":");
-  if (parts.length === 2) {
-    const [originKey, dirName] = parts;
-    if (
-      originKey &&
-      dirName &&
-      (DRIVER_ORIGIN_KEYS.has(originKey) || originKey === SHARED_ORIGIN_KEY) &&
-      isSafeSegment(dirName)
-    ) {
-      return {
-        originKey: originKey as HostSkillOriginKey,
-        instanceKey: DEFAULT_INSTANCE_KEY,
-        dirName,
-      };
-    }
-    return null;
-  }
-  if (parts.length === 3) {
-    const [originKey, instanceKey, dirName] = parts;
-    if (
-      originKey &&
-      instanceKey &&
-      dirName &&
-      DRIVER_ORIGIN_KEYS.has(originKey) &&
-      isSafeSegment(instanceKey) &&
-      isSafeSegment(dirName)
-    ) {
-      return {
-        originKey: originKey as DriverOriginKey,
-        instanceKey,
-        dirName,
-      };
-    }
-  }
-  return null;
-}
-
-export function formatHostSkillId(input: {
-  readonly originKey: HostSkillOriginKey;
-  readonly instanceKey: string;
-  readonly dirName: string;
-}): string {
-  return input.instanceKey === DEFAULT_INSTANCE_KEY
-    ? `${HOST_SKILL_ID_PREFIX}${input.originKey}:${input.dirName}`
-    : `${HOST_SKILL_ID_PREFIX}${input.originKey}:${input.instanceKey}:${input.dirName}`;
-}
 
 export class HostSkills extends Context.Service<
   HostSkills,
@@ -243,17 +171,47 @@ export const make = Effect.gen(function* () {
       roots.push(root);
     };
 
+    const addHome = Effect.fn("HostSkills.addHome")(function* (input: {
+      readonly originKey: DriverOriginKey;
+      readonly origin: string;
+      readonly instanceKey: string;
+      readonly driver: ProviderDriverKind;
+      readonly instanceId?: ProviderInstanceId;
+      readonly home: string;
+    }): Effect.fn.Return<void> {
+      addRoot({
+        originKey: input.originKey,
+        origin: input.origin,
+        instanceKey: input.instanceKey,
+        driver: input.driver,
+        directory: path.join(input.home, "skills"),
+        kind: "user",
+        canUninstall: true,
+        ...(input.instanceId ? { instanceId: input.instanceId } : {}),
+      });
+      for (const extra of yield* collectProviderExtraRoots(fileSystem, path, {
+        originKey: input.originKey,
+        origin: input.origin,
+        driver: input.driver,
+        home: input.home,
+        homeInstanceKey: input.instanceKey,
+        ...(input.instanceId ? { instanceId: input.instanceId } : {}),
+      })) {
+        addRoot(extra);
+      }
+    });
+
     for (const convention of DRIVER_CONVENTIONS) {
       // No tilde expansion: an env-provided config dir reaches the CLI
       // verbatim, so this must scan the same directory the CLI would.
       const defaultHome = path.resolve(convention.defaultDirectory(process.env));
       const driver = ProviderDriverKind.make(convention.originKey);
-      addRoot({
+      yield* addHome({
         originKey: convention.originKey,
         origin: convention.title,
         instanceKey: DEFAULT_INSTANCE_KEY,
         driver,
-        directory: path.join(defaultHome, "skills"),
+        home: defaultHome,
       });
 
       for (const [instanceId, instance] of Object.entries(settings.providerInstances)) {
@@ -266,7 +224,7 @@ export const make = Effect.gen(function* () {
         }
         const instanceHome = path.resolve(expandHomePath(homePath));
         const displayName = instance.displayName?.trim();
-        addRoot({
+        yield* addHome({
           originKey: convention.originKey,
           origin:
             displayName && displayName.length > 0
@@ -275,7 +233,7 @@ export const make = Effect.gen(function* () {
           instanceKey: instanceId,
           driver,
           instanceId: ProviderInstanceId.make(instanceId),
-          directory: path.join(instanceHome, "skills"),
+          home: instanceHome,
         });
       }
     }
@@ -285,62 +243,42 @@ export const make = Effect.gen(function* () {
       origin: "Shared",
       instanceKey: DEFAULT_INSTANCE_KEY,
       directory: path.join(path.resolve(joinHome(".agents")), "skills"),
+      kind: "user",
+      canUninstall: true,
     });
 
     return roots;
   });
 
   const scanRoot = Effect.fn("HostSkills.scanRoot")(function* (root: HostSkillRoot) {
-    const entries = yield* fileSystem
-      .readDirectory(root.directory)
-      .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+    const documents = yield* collectSkillDocuments(fileSystem, path, root.directory);
     const skills: Array<HostSkill> = [];
 
-    for (const entry of [...entries].sort()) {
-      if (!isSafeSegment(entry)) {
-        continue;
-      }
-      const skillDir = path.join(root.directory, entry);
-      const info = yield* fileSystem.stat(skillDir).pipe(Effect.orElseSucceed(() => undefined));
-      if (!info || info.type !== "Directory") {
-        continue;
-      }
-      const skillFilePath = path.join(skillDir, SKILL_FILE);
-      const disabledFilePath = path.join(skillDir, HOST_SKILL_DISABLED_FILE);
-      const skillContents = yield* fileSystem
-        .readFileString(skillFilePath)
-        .pipe(Effect.orElseSucceed(() => undefined));
-      const disabledContents =
-        skillContents === undefined
-          ? yield* fileSystem
-              .readFileString(disabledFilePath)
-              .pipe(Effect.orElseSucceed(() => undefined))
-          : undefined;
-      if (skillContents === undefined && disabledContents === undefined) {
-        continue;
-      }
+    for (const document of documents) {
       const isManagedCopy = yield* fileSystem
-        .exists(path.join(skillDir, SKILL_MANAGED_MARKER_FILE))
+        .exists(path.join(document.dir, SKILL_MANAGED_MARKER_FILE))
         .pipe(Effect.orElseSucceed(() => false));
       if (isManagedCopy) {
         continue;
       }
 
-      const enabled = skillContents !== undefined;
-      const contents = skillContents ?? disabledContents ?? "";
-      const frontmatter = parseSkillFrontmatter(contents);
-      const name = frontmatter.kind === "parsed" && frontmatter.name ? frontmatter.name : entry;
+      const frontmatter = parseSkillFrontmatter(document.contents);
+      const fallbackName = document.relPath.split("/").at(-1) ?? document.relPath;
+      const name =
+        frontmatter.kind === "parsed" && frontmatter.name ? frontmatter.name : fallbackName;
       const skill: HostSkill = {
         id: formatHostSkillId({
           originKey: root.originKey,
           instanceKey: root.instanceKey,
-          dirName: entry,
+          dirName: document.relPath,
         }),
         name,
-        path: enabled ? skillFilePath : disabledFilePath,
-        displayPath: abbreviateHome(skillDir),
+        path: document.enabled ? document.skillFilePath : document.disabledFilePath,
+        displayPath: abbreviateHome(document.dir),
         origin: root.origin,
-        enabled,
+        enabled: document.enabled,
+        kind: root.kind,
+        canUninstall: root.canUninstall,
         ...(root.driver ? { driver: root.driver } : {}),
         ...(root.instanceId ? { instanceId: root.instanceId } : {}),
         ...(frontmatter.kind === "parsed" && frontmatter.description
@@ -359,9 +297,14 @@ export const make = Effect.gen(function* () {
     const seenPaths = new Set<string>();
     for (const root of roots) {
       for (const skill of yield* scanRoot(root)) {
-        if (seenPaths.has(skill.path)) {
+        const skillDirectory = path.dirname(skill.path);
+        const canonical = yield* fileSystem
+          .realPath(skillDirectory)
+          .pipe(Effect.orElseSucceed(() => skillDirectory));
+        if (seenPaths.has(canonical) || seenPaths.has(skill.path)) {
           continue;
         }
+        seenPaths.add(canonical);
         seenPaths.add(skill.path);
         skills.push(skill);
       }
@@ -388,8 +331,8 @@ export const make = Effect.gen(function* () {
       if (!root) {
         continue;
       }
-      const target = path.resolve(root.directory, parsed.dirName);
-      if (path.relative(root.directory, target) !== parsed.dirName) {
+      const target = joinSkillRelPath(root.directory, parsed.dirName, path);
+      if (toPosixRelPath(root.directory, target, path) !== parsed.dirName) {
         continue;
       }
       const info = yield* fileSystem.stat(target).pipe(Effect.orElseSucceed(() => undefined));
@@ -446,9 +389,8 @@ export const make = Effect.gen(function* () {
         message: `Host skill ${skillId} is not installed.`,
       });
     }
-    const target = path.resolve(root.directory, parsed.dirName);
-    const relative = path.relative(root.directory, target);
-    if (relative !== parsed.dirName) {
+    const target = joinSkillRelPath(root.directory, parsed.dirName, path);
+    if (toPosixRelPath(root.directory, target, path) !== parsed.dirName) {
       return yield* invalidIdError(operation, skillId);
     }
     return { root, target, dirName: parsed.dirName } as const;
@@ -496,7 +438,14 @@ export const make = Effect.gen(function* () {
   });
 
   const uninstall = Effect.fn("HostSkills.uninstall")(function* (skillId: HostSkillId) {
-    const { target } = yield* resolveTarget("uninstall-host", skillId);
+    const { root, target } = yield* resolveTarget("uninstall-host", skillId);
+    if (!root.canUninstall) {
+      return yield* new SkillsError({
+        operation: "uninstall-host",
+        skillId,
+        message: `Host skill ${skillId} is owned by a plugin or the provider CLI and cannot be deleted from T3 Code.`,
+      });
+    }
     yield* inspectTarget("uninstall-host", skillId, target);
 
     const symlinkTarget = yield* fileSystem

@@ -301,4 +301,37 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
       assert.deepEqual(skills, []);
     }),
   );
+
+  it.effect("discovers nested plugin-shaped skills and installed plugin skills", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skills-" });
+      const configDir = path.join(tempDir, "claude-home");
+      const installPath = path.join(configDir, "plugins", "cache", "caveman", "1");
+
+      yield* writeSkill(
+        path.join(configDir, "skills", "superpowers", "skills"),
+        "using-superpowers",
+        ["---", "name: using-superpowers", "description: Find skills.", "---"].join("\n"),
+      );
+      yield* writeSkill(
+        path.join(installPath, "skills"),
+        "caveman",
+        ["---", "name: caveman", "description: Talk like caveman.", "---"].join("\n"),
+      );
+      yield* fs.makeDirectory(path.join(configDir, "plugins"), { recursive: true });
+      yield* fs.writeFileString(
+        path.join(configDir, "plugins", "installed_plugins.json"),
+        `{"version":2,"plugins":{"caveman@caveman":[{"installPath":"${installPath}"}]}}`,
+      );
+
+      const skills = yield* discoverClaudeSkills({ homePath: configDir }, undefined);
+      assert.deepEqual(skills.map((skill) => skill.name).sort(), ["caveman", "using-superpowers"]);
+      assert.equal(
+        skills.find((skill) => skill.name === "caveman")?.path,
+        path.join(installPath, "skills", "caveman", "SKILL.md"),
+      );
+    }),
+  );
 });
