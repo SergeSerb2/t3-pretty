@@ -87,9 +87,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-          echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
-          echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
+          extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
+          export PATH="${extra}:${PATH}"
+          wrote=0
+          if [[ -n "${GITHUB_PATH:-}" ]]; then
+            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+            echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+            echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
+            echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+            wrote=1
+          fi
+          if [[ -n "${GITHUB_ENV:-}" ]]; then
+            echo "PATH=${PATH}" >> "$GITHUB_ENV"
+            wrote=1
+          fi
+          if [[ "$wrote" -eq 0 ]]; then
+            echo "Neither GITHUB_PATH nor GITHUB_ENV is set; cannot persist PATH for later steps." >&2
+            exit 1
+          fi
 
       - id: expo-token
         name: Check for EXPO_TOKEN
@@ -103,33 +118,20 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout
-        if: steps.expo-token.outputs.present == 'true'
-        uses: actions/checkout@v6
-        continue-on-error: true
-        id: gha_checkout
-        with:
-          fetch-depth: 0
-          ref: ${{ github.sha }}
-          clean: true
-
       - name: Checkout Origin
-        if: steps.expo-token.outputs.present == 'true' && steps.gha_checkout.outcome != 'success'
+        if: steps.expo-token.outputs.present == 'true'
         shell: bash
         env:
           CHECKOUT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          # macos-release: the GHA adapter has no Origin HTTPS creds.
-          # Hosted Macs use the previous actions/checkout step instead.
+          # macos-latest maps to macos-release. Do not call checkout@v6:
+          # the importer resolves that action from api.github.com and a
+          # burst of main merges trips the GitHub rate limit.
           helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
           test -x "$helper"
-          "$helper" main --full
-          if git cat-file -e "${CHECKOUT_SHA}^{commit}" 2>/dev/null; then
-            git checkout --force "$CHECKOUT_SHA"
-          else
-            "$helper" "$CHECKOUT_SHA" --full
-          fi
+          test -n "${CHECKOUT_SHA:-}"
+          "$helper" "$CHECKOUT_SHA" --full
 
       - id: paths
         name: Skip mobile-irrelevant pushes
@@ -155,35 +157,44 @@ jobs:
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Setup Vite+
+      - name: Install workspace
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@t3tools/mobile...
-              - --filter=@t3tools/scripts...
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v vp
+          vp i --filter=@t3tools/mobile... --filter=@t3tools/scripts...
 
       - name: Expose pnpm
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
+        shell: bash
         run: |
+          set -euo pipefail
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
           vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
-          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
-          "$vp_pnpm_bin/pnpm" --version
+          . scripts/fork/persist-ci-path.sh "$vp_pnpm_bin"
+          pnpm --version
 
-      - name: Setup EAS
+      - name: Setup EAS CLI
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-          # npm, not pnpm: this only installs eas-cli into the action's own
-          # tool dir, and pnpm 11 hard-fails that install on dtrace-provider's
+        shell: bash
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          # npm, not pnpm: pnpm 11 hard-fails eas-cli on dtrace-provider's
           # ignored build script (no allowBuilds config outside the repo).
-          packager: npm
+          # Later eas steps also set EXPO_TOKEN; export it here so a stray
+          # eas command in this job cannot run unauthenticated.
+          if [[ -n "${EXPO_TOKEN:-}" && -n "${GITHUB_ENV:-}" ]]; then
+            echo "EXPO_TOKEN=${EXPO_TOKEN}" >> "$GITHUB_ENV"
+          fi
+          if ! command -v eas >/dev/null; then
+            npm install -g eas-cli
+          fi
+          . scripts/fork/persist-ci-path.sh "$(npm prefix -g)/bin"
+          command -v eas
+          eas --version
 
       - name: Pull production environment variables
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
@@ -299,91 +310,6 @@ jobs:
       PLATFORM: ${{ github.event_name == 'push' && 'all' || inputs.platform }}
       FORCE_IOS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_ios || false }}
     steps:
-      - name: Ensure runner action externals
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Every `uses:` step runs under the runner's own bundled Node. When
-          # that tree goes missing - an interrupted runner self-update, macOS
-          # quarantining the binary, or a disk sweep that reaps `externals/` -
-          # `run:` steps keep working while every action dies with a bare
-          # ENOENT naming the node binary. Without this guard the first
-          # casualty is whichever action follows the build, so a signed
-          # release burns several minutes before failing. Check it up front
-          # and restore the runtime from nodejs.org, so a broken runner costs
-          # one download instead of parking every release until someone
-          # re-extracts the runner package by hand.
-          runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
-          externals="${runner_root}/externals"
-          case "$(uname -m)" in
-            arm64|aarch64) node_arch=arm64 ;;
-            x86_64) node_arch=x64 ;;
-            *) node_arch="" ;;
-          esac
-
-          node_ok() {
-            [[ -x "$1/bin/node" ]] && "$1/bin/node" --version >/dev/null 2>&1
-          }
-
-          # Deliberately no `set -e` reliance: this is called from an `if`,
-          # which suppresses errexit for the whole call, so every fallible
-          # command has to be checked by hand.
-          restore_node() {
-            local major="$1" dest="$2" base tmp line sha name src
-            [[ -n "$node_arch" ]] || { echo "Unsupported machine $(uname -m)."; return 1; }
-            base="https://nodejs.org/download/release/latest-v${major}.x"
-            tmp="$(mktemp -d)" || return 1
-            echo "Restoring ${dest} from ${base} (darwin-${node_arch})."
-            line="$(curl -fsSL --retry 3 "${base}/SHASUMS256.txt" \
-              | grep -E "node-v${major}\.[0-9.]+-darwin-${node_arch}\.tar\.gz$" | head -n1)"
-            if [[ -z "$line" ]]; then
-              echo "No darwin-${node_arch} build listed for node ${major}.x."
-              rm -rf "$tmp"; return 1
-            fi
-            sha="${line%% *}"
-            name="${line##* }"
-            src="${tmp}/${name%.tar.gz}"
-            if ! curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"; then
-              rm -rf "$tmp"; return 1
-            fi
-            if ! (cd "$tmp" && printf '%s  %s\n' "$sha" "$name" | shasum -a 256 -c - >/dev/null); then
-              echo "Checksum mismatch for ${name}."
-              rm -rf "$tmp"; return 1
-            fi
-            if ! tar -xzf "${tmp}/${name}" -C "$tmp"; then rm -rf "$tmp"; return 1; fi
-            rm -rf "${dest}.repair" "${dest}.broken"
-            if ! mv "$src" "${dest}.repair"; then rm -rf "$tmp"; return 1; fi
-            # A quarantined download is exactly the failure being repaired.
-            xattr -rc "${dest}.repair" >/dev/null 2>&1 || true
-            if [[ -e "$dest" ]] && ! mv "$dest" "${dest}.broken"; then
-              rm -rf "$tmp" "${dest}.repair"; return 1
-            fi
-            if ! mv "${dest}.repair" "$dest"; then rm -rf "$tmp"; return 1; fi
-            rm -rf "${dest}.broken" "$tmp"
-            node_ok "$dest"
-          }
-
-          for runtime in node24 node20; do
-            dest="${externals}/${runtime}"
-            # node20 only matters while some action still declares it. Do not
-            # conjure it onto runners that have already dropped the runtime.
-            if [[ "$runtime" != node24 && ! -d "$dest" ]]; then continue; fi
-            if node_ok "$dest"; then
-              echo "${runtime} OK (node $("${dest}/bin/node" --version))."
-              continue
-            fi
-            echo "::warning::${dest}/bin/node is missing or unusable; restoring it."
-            ls -la "$dest" 2>/dev/null || echo "${dest} does not exist."
-            if ! restore_node "${runtime#node}" "$dest"; then
-              echo "::error::Runner cannot execute actions: ${dest}/bin/node is missing and could not be restored."
-              echo "Repair on the runner host: stop the runner service, re-extract the"
-              echo "actions-runner release package over ${runner_root} to restore externals/,"
-              echo "then start the service again."
-              exit 1
-            fi
-            echo "Restored ${runtime} (node $("${dest}/bin/node" --version))."
-          done
-
       - name: Checkout
         # Full history: eas-cli archives via `git clone --depth 1 file://`.
         shell: bash
@@ -403,35 +329,58 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-          echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+          extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
+          export PATH="${extra}:${PATH}"
+          wrote=0
+          if [[ -n "${GITHUB_PATH:-}" ]]; then
+            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+            echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+            echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
+            echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+            wrote=1
+          fi
+          if [[ -n "${GITHUB_ENV:-}" ]]; then
+            echo "PATH=${PATH}" >> "$GITHUB_ENV"
+            wrote=1
+          fi
+          if [[ "$wrote" -eq 0 ]]; then
+            echo "Neither GITHUB_PATH nor GITHUB_ENV is set; cannot persist PATH for later steps." >&2
+            exit 1
+          fi
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: false
-          run-install: |
-            args:
-              - --filter=@t3tools/mobile...
-              - --filter=@t3tools/scripts...
+      - name: Install workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v vp
+          vp i --filter=@t3tools/mobile... --filter=@t3tools/scripts...
 
       - name: Expose pnpm
+        shell: bash
         run: |
+          set -euo pipefail
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
           vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
-          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
-          "$vp_pnpm_bin/pnpm" --version
+          . scripts/fork/persist-ci-path.sh "$vp_pnpm_bin"
+          pnpm --version
 
-      - name: Setup EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-          # npm, not pnpm: this only installs eas-cli into the action's own
-          # tool dir, and pnpm 11 hard-fails that install on dtrace-provider's
+      - name: Setup EAS CLI
+        shell: bash
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          # npm, not pnpm: pnpm 11 hard-fails eas-cli on dtrace-provider's
           # ignored build script (no allowBuilds config outside the repo).
-          packager: npm
+          if [[ -n "${EXPO_TOKEN:-}" && -n "${GITHUB_ENV:-}" ]]; then
+            echo "EXPO_TOKEN=${EXPO_TOKEN}" >> "$GITHUB_ENV"
+          fi
+          if ! command -v eas >/dev/null; then
+            npm install -g eas-cli
+          fi
+          . scripts/fork/persist-ci-path.sh "$(npm prefix -g)/bin"
+          command -v eas
+          eas --version
 
       - name: Pull production environment variables
         working-directory: apps/mobile

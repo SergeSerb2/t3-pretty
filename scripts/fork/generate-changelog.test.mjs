@@ -253,6 +253,15 @@ describe("release workflow wiring", () => {
     assert.include(workflow, "CLI_PROXY_API_KEY");
     assert.include(workflow, "RELEASE_VERSION: ${{ steps.release.outputs.version }}");
     assert.include(workflow, "ref: ${{ steps.changelog.outputs.ref || github.sha }}");
+    assert.include(workflow, "continue-on-error: true");
+    const changelog = NodeFS.readFileSync(
+      NodePath.resolve(
+        NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+        "generate-changelog.mjs",
+      ),
+      "utf8",
+    );
+    assert.include(changelog, "process.exitCode = 1");
   });
 
   it("restricts the changelog push to runs triggered by main", () => {

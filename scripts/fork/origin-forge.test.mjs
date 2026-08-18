@@ -97,8 +97,9 @@ describe("Origin release and blocked-sync helpers", () => {
       assert.notInclude(source, "gh api");
       assert.notInclude(source, "gh release");
       assert.notInclude(source, "gh workflow");
-      assert.include(source, "origin-forge.mjs");
     }
+    assert.include(sync, "origin-forge.mjs");
+    assert.include(mobile, "origin-forge.mjs");
     assert.include(sync, "https://github.com/pingdotgg/t3code.git");
     assert.include(sync, "git remote get-url upstream");
     assert.include(sync, "git remote set-url upstream");
@@ -108,10 +109,9 @@ describe("Origin release and blocked-sync helpers", () => {
     );
     assert.include(preparePath, "GITHUB_PATH");
     assert.include(preparePath, "GITHUB_ENV");
-    assert.include(preparePath, 'elif [[ -n "${GITHUB_ENV:-}" ]]');
-    assert.include(preparePath, 'echo "PATH=');
-    assert.notInclude(preparePath, "export PATH=");
-    assert.notInclude(preparePath, "persisted=0");
+    assert.include(preparePath, "wrote=0");
+    assert.include(preparePath, 'echo "PATH=${PATH}" >> "$GITHUB_ENV"');
+    assert.notInclude(preparePath, 'elif [[ -n "${GITHUB_ENV:-}" ]]');
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");
     assert.include(desktop, "T3CODE_RELEASE_S3_BUCKET");
     assert.include(desktop, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");
@@ -119,30 +119,36 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(desktop, "sparse-checkout:");
     assert.notInclude(desktop, "secrets.AZURE_");
     assert.notInclude(desktop, "secrets.MACOS_PROVISIONING_PROFILE");
+    assert.notInclude(desktop, "\n  build_macos:\n");
+    assert.notInclude(desktop, "\n  build_windows:\n");
+    assert.notInclude(desktop, "\n  release:\n");
+    assert.isFalse(/\n\s+uses:/u.test(desktop));
     const preflight = desktop.slice(
       desktop.indexOf("\n  preflight:\n"),
       desktop.indexOf("\n  build_wsl_node_pty:\n"),
     );
-    const publish = desktop.slice(desktop.indexOf("\n  release:\n"));
     assert.notInclude(preflight, "secrets.CURSOR_API_KEY");
     assert.notInclude(preflight, "secrets.CSC_");
     assert.notInclude(preflight, "secrets.APPLE_API_");
-    assert.notInclude(publish, "secrets.CURSOR_API_KEY");
-    assert.include(publish, "secrets.CLOUDFLARE_API_TOKEN");
-    assert.include(publish, "runs-on: macos-latest");
     assert.include(preflight, "Read Buildkite pipeline env directly");
+    assert.include(preflight, "continue-on-error: true");
     assert.include(sync, "runs-on: macos-latest");
     assert.notInclude(sync, "secrets.CURSOR_API_KEY");
     assert.notInclude(sync, "secrets.CLI_PROXY_API_KEY");
     assert.notInclude(sync, "mapfile ");
     assert.include(sync, "Prepare macOS runner PATH");
     assert.include(sync, "checkout-origin.sh");
-    assert.include(desktop, "checkout-origin.sh");
     assert.include(mobile, "checkout-origin.sh");
+    assert.isFalse(/\n\s+uses:/u.test(mobile));
+    assert.include(mobile, '"$helper" "$CHECKOUT_SHA" --full');
+    assert.notInclude(mobile, '"$helper" main --full');
+    assert.include(desktop, "ensure-linux-node.sh");
+    assert.include(desktop, "PREFLIGHT_REF");
+    assert.notInclude(desktop, "/usr/local --strip-components=1");
+    assert.notInclude(desktop, "git fetch --force --tags origin || true");
     assert.include(mobile, "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65");
     assert.notInclude(mobile, "vars.T3CODE_MOBILE_EAS_PROJECT_ID");
     assert.notInclude(mobile, "vars.APPLE_TEAM_ID");
-    assert.include(desktop, "load-buildkite-secrets.sh");
     assert.include(sync, "load-buildkite-secrets.sh");
     assert.include(mobile, "load-buildkite-secrets.sh");
     assert.include(preflight, "Mac signing secrets are resolved on macos-release");
