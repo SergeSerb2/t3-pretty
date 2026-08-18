@@ -3,6 +3,7 @@ import {
   EnvironmentId,
   MessageId,
   ORCHESTRATION_WS_METHODS,
+  OrchestrationDispatchCommandError,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -57,13 +58,18 @@ const TARGET = new PrimaryConnectionTarget({
 
 const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(function* (
   dispatched: ClientOrchestrationCommand[],
+  dispatch?: (
+    command: ClientOrchestrationCommand,
+  ) => Effect.Effect<{ sequence: number }, OrchestrationDispatchCommandError>,
 ) {
   const client = {
-    [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command: ClientOrchestrationCommand) =>
-      Effect.sync(() => {
-        dispatched.push(command);
-        return { sequence: dispatched.length };
-      }),
+    [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command: ClientOrchestrationCommand) => {
+      dispatched.push(command);
+      if (dispatch) {
+        return dispatch(command);
+      }
+      return Effect.succeed({ sequence: dispatched.length });
+    },
   } as unknown as WsRpcProtocolClient;
   const session: RpcSession.RpcSession = {
     client,
@@ -390,5 +396,96 @@ describe("environment commands", () => {
           },
         });
       }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("retries thread.turn.start without bootstrap.createThread when the thread exists", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const alreadyExists = new OrchestrationDispatchCommandError({
+        message:
+          "Orchestration command invariant failed (thread.create): Thread 'thread-1' already exists and cannot be created twice.",
+      });
+      const supervisor = yield* makeSupervisor(dispatched, (command) => {
+        if (command.type === "thread.turn.start" && command.bootstrap?.createThread) {
+          return Effect.fail(alreadyExists);
+        }
+        return Effect.succeed({ sequence: dispatched.length });
+      });
+
+      const result = yield* startThreadTurn({
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: MessageId.make("message-1"),
+          role: "user",
+          text: "hello",
+          attachments: [],
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        bootstrap: {
+          createThread: {
+            projectId: ProjectId.make("project-1"),
+            title: "Thread",
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt: "2026-06-06T00:04:00.000Z",
+          },
+        },
+        createdAt: "2026-06-06T00:04:00.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(result).toEqual({ sequence: 2 });
+      expect(dispatched).toHaveLength(2);
+      expect(dispatched[0]).toMatchObject({
+        type: "thread.turn.start",
+        bootstrap: { createThread: expect.anything() },
+      });
+      expect(dispatched[1]).toEqual({
+        type: "thread.turn.start",
+        commandId: "00000000-0000-4000-8000-000000000000",
+        threadId: "thread-1",
+        message: {
+          messageId: "message-1",
+          role: "user",
+          text: "hello",
+          attachments: [],
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdAt: "2026-06-06T00:04:00.000Z",
+      });
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("treats a duplicate thread.create as success", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched, () =>
+        Effect.fail(
+          new OrchestrationDispatchCommandError({
+            message:
+              "Orchestration command invariant failed (thread.create): Thread 'thread-1' already exists and cannot be created twice.",
+          }),
+        ),
+      );
+
+      const result = yield* createThread({
+        threadId: ThreadId.make("thread-1"),
+        projectId: ProjectId.make("project-1"),
+        title: "Thread",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdAt: "2026-06-06T00:03:00.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(result).toEqual({ sequence: 0 });
+      expect(dispatched).toHaveLength(1);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
   );
 });

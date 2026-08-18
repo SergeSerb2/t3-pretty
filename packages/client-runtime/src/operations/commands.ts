@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
+import { isThreadAlreadyExistsError } from "../errors/orchestration.ts";
 import {
   type EnvironmentRpcFailure,
   type EnvironmentRpcSuccess,
@@ -160,6 +161,13 @@ function withDefaultBootstrapCreateThreadSkillIds(
   };
 }
 
+function withoutBootstrapCreateThread(
+  bootstrap: ThreadTurnStartBootstrap,
+): ThreadTurnStartBootstrap | undefined {
+  const { createThread: _createThread, ...rest } = bootstrap;
+  return Object.keys(rest).length > 0 ? rest : undefined;
+}
+
 export const createProject: (input: CreateProjectInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.createProject",
 )(function* (input) {
@@ -202,7 +210,7 @@ export const createThread: (input: CreateThreadInput) => CommandEffect = Effect.
     commandId: metadata.commandId,
     createdAt: metadata.createdAt,
     enabledSkillIds: enabledSkillIdsOrEmpty(input.enabledSkillIds),
-  });
+  }).pipe(Effect.catchIf(isThreadAlreadyExistsError, () => Effect.succeed({ sequence: 0 })));
 });
 
 export const deleteThread: (input: DeleteThreadInput) => CommandEffect = Effect.fn(
@@ -376,15 +384,36 @@ export const startThreadTurn: (input: StartThreadTurnInput) => CommandEffect = E
 )(function* (input) {
   const metadata = yield* timestampedCommandMetadata(input);
   const { bootstrap, ...rest } = input;
-  return yield* dispatch({
+  const normalizedBootstrap =
+    bootstrap === undefined ? undefined : withDefaultBootstrapCreateThreadSkillIds(bootstrap);
+  const command = {
     ...rest,
-    type: "thread.turn.start",
+    type: "thread.turn.start" as const,
     commandId: metadata.commandId,
     createdAt: metadata.createdAt,
-    ...(bootstrap === undefined
-      ? {}
-      : { bootstrap: withDefaultBootstrapCreateThreadSkillIds(bootstrap) }),
-  });
+    ...(normalizedBootstrap === undefined ? {} : { bootstrap: normalizedBootstrap }),
+  };
+  // Remote first-sends reuse a persisted draft id. If that thread already
+  // exists, retry without create so the turn still starts on older servers.
+  return yield* dispatch(command).pipe(
+    Effect.catchIf(
+      (error) =>
+        normalizedBootstrap?.createThread !== undefined && isThreadAlreadyExistsError(error),
+      () => {
+        const retryBootstrap =
+          normalizedBootstrap === undefined
+            ? undefined
+            : withoutBootstrapCreateThread(normalizedBootstrap);
+        return dispatch({
+          ...rest,
+          type: "thread.turn.start",
+          commandId: metadata.commandId,
+          createdAt: metadata.createdAt,
+          ...(retryBootstrap === undefined ? {} : { bootstrap: retryBootstrap }),
+        });
+      },
+    ),
+  );
 });
 
 export const interruptThreadTurn: (input: InterruptThreadTurnInput) => CommandEffect = Effect.fn(

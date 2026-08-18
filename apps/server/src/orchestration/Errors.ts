@@ -40,6 +40,18 @@ export class OrchestrationCommandInvariantError extends Schema.TaggedErrorClass<
   }
 }
 
+export const isOrchestrationCommandInvariantError = Schema.is(OrchestrationCommandInvariantError);
+
+export function isThreadAlreadyExistsInvariant(
+  error: unknown,
+): error is OrchestrationCommandInvariantError {
+  return (
+    isOrchestrationCommandInvariantError(error) &&
+    error.commandType === "thread.create" &&
+    error.detail.includes("already exists and cannot be created twice")
+  );
+}
+
 export class OrchestrationCommandPreviouslyRejectedError extends Schema.TaggedErrorClass<OrchestrationCommandPreviouslyRejectedError>()(
   "OrchestrationCommandPreviouslyRejectedError",
   {
