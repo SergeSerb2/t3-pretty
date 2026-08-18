@@ -18,7 +18,7 @@ export const DEFAULT_MODEL = "grok-4.6";
 export const DEFAULT_CLI_PROXY_API_URL = "https://cli-proxy-api-production-1615.up.railway.app/v1";
 export const MAX_DIFF_CHARS = 120_000;
 export const MAX_ISSUES = 12;
-const REQUEST_TIMEOUT_MS = 180_000;
+const REQUEST_TIMEOUT_MS = 480_000;
 const SEVERITIES = new Set(["bug", "suggestion", "nit"]);
 
 const REVIEW_SCHEMA = {
@@ -85,8 +85,30 @@ export function resolveBranchName({ env = process.env, argvHead } = {}) {
   return "";
 }
 
-export function resolveExplicitPr({ env = process.env, argvPr } = {}) {
-  for (const raw of [argvPr, env.ORIGIN_PR, env.INPUT_PR, env.BUILDKITE_PULL_REQUEST]) {
+export function prNumberFromEvent(event) {
+  if (!event || typeof event !== "object") return "";
+  for (const raw of [event.inputs?.pr, event.inputs?.PR, event.pull_request?.number]) {
+    const value = String(raw ?? "").trim();
+    if (!value || value === "false" || value === "null") continue;
+    const digits = value.replace(/^#/u, "");
+    if (/^\d+$/u.test(digits)) return digits;
+  }
+  return "";
+}
+
+export function prNumberFromEventPath(env = process.env) {
+  const path = env.GITHUB_EVENT_PATH?.trim();
+  if (!path) return "";
+  try {
+    return prNumberFromEvent(JSON.parse(NodeFS.readFileSync(path, "utf8")));
+  } catch {
+    return "";
+  }
+}
+
+export function resolveExplicitPr({ env = process.env, argvPr, event } = {}) {
+  const fromEvent = event !== undefined ? prNumberFromEvent(event) : prNumberFromEventPath(env);
+  for (const raw of [argvPr, env.ORIGIN_PR, env.INPUT_PR, fromEvent, env.BUILDKITE_PULL_REQUEST]) {
     const value = String(raw ?? "").trim();
     if (!value || value === "false" || value === "null") continue;
     const digits = value.replace(/^#/u, "");
@@ -146,6 +168,23 @@ export function parseReviewResponse(text) {
   };
 }
 
+export function issueLocation(issue) {
+  return issue.path ? `${issue.path}${issue.line ? `:${issue.line}` : ""}` : "general";
+}
+
+/** One finding as its own Origin review so T3 can hand it to a new thread. */
+export function formatIssueBody({ sha, issue }) {
+  return [
+    reviewMarker(sha),
+    "",
+    `### ${issue.severity} — ${issue.title}`,
+    "",
+    `\`${issueLocation(issue)}\``,
+    ...(issue.body ? ["", issue.body] : []),
+    "",
+  ].join("\n");
+}
+
 export function formatReviewBody({ sha, model, summary, issues, truncated, url }) {
   const counts = { bug: 0, suggestion: 0, nit: 0 };
   for (const issue of issues) counts[issue.severity] += 1;
@@ -169,14 +208,10 @@ export function formatReviewBody({ sha, model, summary, issues, truncated, url }
   if (issues.length === 0) {
     lines.push("", "No blocking issues stood out in the provided diff.");
   } else {
-    lines.push("", "## Findings");
-    for (const issue of issues) {
-      const location = issue.path
-        ? `${issue.path}${issue.line ? `:${issue.line}` : ""}`
-        : "general";
-      lines.push("", `### ${issue.severity} — ${issue.title}`, "", `\`${location}\``);
-      if (issue.body) lines.push("", issue.body);
-    }
+    lines.push(
+      "",
+      `Each finding is a separate Origin comment thread. Resolve it with \`origin pr thread resolve\` after it is fixed.`,
+    );
   }
   lines.push(
     "",
@@ -276,12 +311,17 @@ export function pullRequestDiff(target, { repo } = {}) {
   return runOrigin(["pr", "diff", String(target), ...originRepoFlag(repo), "--patch"]);
 }
 
-export function postReview(target, body, { repo } = {}) {
+function writeBodyFile(body) {
   const bodyFile = NodePath.join(
     NodeOS.tmpdir(),
-    `t3-pretty-grok-review-${process.pid}-${Date.now()}.md`,
+    `t3-pretty-grok-review-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.md`,
   );
   NodeFS.writeFileSync(bodyFile, body);
+  return bodyFile;
+}
+
+export function postReview(target, body, { repo } = {}) {
+  const bodyFile = writeBodyFile(body);
   try {
     return runOrigin([
       "pr",
@@ -295,6 +335,34 @@ export function postReview(target, body, { repo } = {}) {
   } finally {
     NodeFS.rmSync(bodyFile, { force: true });
   }
+}
+
+/** Discussion comments become resolvable Origin threads. Reviews do not. */
+export function postComment(target, body, { repo } = {}) {
+  const bodyFile = writeBodyFile(body);
+  try {
+    return runOrigin([
+      "pr",
+      "comment",
+      String(target),
+      ...originRepoFlag(repo),
+      "--body-file",
+      bodyFile,
+    ]);
+  } finally {
+    NodeFS.rmSync(bodyFile, { force: true });
+  }
+}
+
+export function isActionableGrokFinding(body) {
+  if (typeof body !== "string" || !body.includes(`<!-- ${REVIEW_MARKER}`)) return false;
+  if (/^## Grok 4.6 review/mu.test(body)) return false;
+  return /^### (?:bug|suggestion|nit) — /mu.test(body);
+}
+
+export function findingTitle(body) {
+  const match = String(body ?? "").match(/^### (?:bug|suggestion|nit) — (.+)$/mu);
+  return match?.[1]?.trim() ?? "";
 }
 
 function readFlag(args, name) {
@@ -377,10 +445,18 @@ export async function reviewOriginPullRequest({
   });
 
   if (dryRun) {
+    for (const issue of review.issues) {
+      process.stdout.write(`${formatIssueBody({ sha, issue })}\n`);
+    }
     process.stdout.write(body);
     return { dryRun: true, number, sha, issues: review.issues };
   }
 
+  for (const issue of review.issues) {
+    const postedIssue = postComment(number, formatIssueBody({ sha, issue }), { repo });
+    process.stdout.write(`Posted finding "${issue.title}" on Origin PR #${number}.\n`);
+    if (postedIssue) process.stdout.write(`${postedIssue}\n`);
+  }
   const posted = postReview(number, body, { repo });
   process.stdout.write(`Posted Grok 4.6 review on Origin PR #${number}.\n`);
   if (posted) process.stdout.write(`${posted}\n`);

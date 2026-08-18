@@ -55,7 +55,7 @@ T3 Code works with the platforms your team already uses:
 - Command-click (Control-click on Windows and Linux) a pull request number in the sidebar to open it in your browser instead of in T3 Code
 - Check out a teammate's branch to review code locally
 
-When a PR/MR merges, its thread settles automatically across clients. Pinned threads and threads you explicitly kept active remain in the active list.
+When a PR/MR closes without merging, its thread settles automatically across clients. A merged PR stays in the active list until you settle it. Pinned threads and threads you explicitly kept active remain in the active list.
 
 The Codex indicator is based on activity GitHub exposes publicly: the connector's eyes reaction while
 reviewing, thumbs-up when it finishes without comments, or a posted Codex review when it finds

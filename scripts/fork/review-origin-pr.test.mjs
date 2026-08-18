@@ -10,8 +10,10 @@ import {
   alreadyReviewed,
   cliProxyApiKey,
   cliProxyApiUrl,
+  formatIssueBody,
   formatReviewBody,
   parseReviewResponse,
+  prNumberFromEvent,
   resolveExplicitPr,
   reviewMarker,
   shouldSkipBranch,
@@ -48,10 +50,19 @@ describe("Origin Grok PR review", () => {
     }
   });
 
-  it("reads an explicit PR number from Origin or Buildkite env", () => {
+  it("reads an explicit PR number from Origin, Buildkite, or the Actions event file", () => {
     assert.equal(resolveExplicitPr({ argvPr: "#44" }), "44");
     assert.equal(resolveExplicitPr({ env: { BUILDKITE_PULL_REQUEST: "false" } }), "");
     assert.equal(resolveExplicitPr({ env: { ORIGIN_PR: "12" } }), "12");
+    assert.equal(prNumberFromEvent({ inputs: { pr: "47" } }), "47");
+    assert.equal(prNumberFromEvent({ pull_request: { number: 47 } }), "47");
+    assert.equal(
+      resolveExplicitPr({
+        env: { BUILDKITE_PULL_REQUEST: "false" },
+        event: { inputs: { pr: "#47" } },
+      }),
+      "47",
+    );
   });
 
   it("parses Grok JSON even when wrapped in a fence", () => {
@@ -77,58 +88,60 @@ here you go
     assert.equal(alreadyReviewed([{ body: "other" }], sha), false);
   });
 
-  it("formats a review that Origin CLI can post as a comment", () => {
+  it("formats one Origin review per finding plus a short summary", () => {
+    const issue = {
+      severity: "bug",
+      path: "scripts/fork/resolve-fork-release.mjs",
+      line: 63,
+      title: "Non-monotonic versions",
+      body: "Bump past the highest fork tag.",
+    };
+    const finding = formatIssueBody({ sha: "deadbeef", issue });
+    assert.include(finding, reviewMarker("deadbeef"));
+    assert.include(finding, "### bug — Non-monotonic versions");
+    assert.include(finding, "scripts/fork/resolve-fork-release.mjs:63");
+    assert.include(finding, "Bump past the highest fork tag.");
+
     const body = formatReviewBody({
       sha: "deadbeef",
       model: DEFAULT_MODEL,
       summary: "Versioning can go backwards.",
-      issues: [
-        {
-          severity: "bug",
-          path: "scripts/fork/resolve-fork-release.mjs",
-          line: 63,
-          title: "Non-monotonic versions",
-          body: "Bump past the highest fork tag.",
-        },
-      ],
+      issues: [issue],
       truncated: false,
       url: "https://cursor.com/codebase/serbinenko/t3-pretty/pull/44",
     });
     assert.include(body, reviewMarker("deadbeef"));
     assert.include(body, "Grok 4.6 review");
     assert.include(body, "1 bug(s)");
-    assert.include(body, "scripts/fork/resolve-fork-release.mjs:63");
+    assert.include(body, "origin pr thread resolve");
+    assert.notInclude(body, "### bug — Non-monotonic versions");
     assert.include(body, "not a merge approval");
   });
 });
 
 describe("Origin Grok review workflow wiring", () => {
-  it("runs on Origin PRs from hosted Linux with Grok 4.6", () => {
-    const workflow = NodeFS.readFileSync(
-      NodePath.resolve(here, "../../.github/workflows/fork-pr-review.yml"),
-      "utf8",
-    );
+  it("runs Origin PR review from macos-release with Grok 4.6", () => {
+    const reviewCi = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
       "utf8",
     );
 
-    assert.notInclude(workflow, "pull_request:");
-    assert.include(workflow, "branches-ignore:");
-    assert.include(workflow, "runs-on: ubuntu-latest");
-    assert.include(workflow, "review-origin-pr.mjs");
-    assert.include(workflow, "grok-4.6");
-    assert.include(workflow, "CLI_PROXY_API_KEY");
-    assert.include(workflow, "cli-proxy-api-production-1615.up.railway.app");
-    assert.include(workflow, "load-buildkite-secrets.sh");
-    assert.include(workflow, "origin-forge.mjs setup-ci");
-    assert.notInclude(workflow, "secrets.CURSOR_API_KEY");
-    assert.notInclude(workflow, "secrets.CLI_PROXY_API_KEY");
-    assert.notInclude(workflow, "XAI_API_KEY");
-    assert.notInclude(workflow, "api.x.ai");
-    assert.notInclude(workflow, "gh api");
-    assert.notInclude(workflow, "gh pr");
-    assert.notInclude(workflow, "macos-latest");
-    assert.include(pipeline, "fork-pr-review.yml");
+    assert.notInclude(pipeline, "- .github/workflows/fork-pr-review.yml");
+    assert.include(pipeline, "run-trusted-origin-pr-ci.sh");
+    const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
+    assert.include(reviewStep.slice(0, 600), "queue: macos-release");
+    assert.include(reviewStep, "automation");
+    assert.include(reviewCi, "review-origin-pr.mjs");
+    assert.include(reviewCi, "grok-4.6");
+    assert.include(reviewCi, "CLI_PROXY_API_KEY");
+    assert.include(reviewCi, "cli-proxy-api-production-1615.up.railway.app");
+    assert.include(reviewCi, "origin-forge.mjs");
+    assert.include(reviewCi, "brew install node");
+    assert.notInclude(reviewCi, "/Users/m1-dev/");
+    assert.notInclude(reviewCi, "XAI_API_KEY");
+    assert.notInclude(reviewCi, "api.x.ai");
+    assert.notInclude(reviewCi, "gh api");
+    assert.notInclude(reviewCi, "gh pr");
   });
 });

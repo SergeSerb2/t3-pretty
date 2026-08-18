@@ -106,5 +106,7 @@ export function SourceControlIcon(props: {
           />
         </Svg>
       );
+    default:
+      return null;
   }
 }
