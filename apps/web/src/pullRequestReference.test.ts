@@ -13,6 +13,14 @@ describe("parsePullRequestReference", () => {
     expect(
       parsePullRequestReference("https://cursor.com/codebase/serbinenko/t3-pretty/pull/35"),
     ).toBe("https://cursor.com/codebase/serbinenko/t3-pretty/pull/35");
+    expect(
+      parsePullRequestReference(
+        "https://www.cursor.com/codebase/serbinenko/t3-pretty/pull/35/files",
+      ),
+    ).toBe("https://www.cursor.com/codebase/serbinenko/t3-pretty/pull/35/files");
+    expect(
+      parsePullRequestReference("https://origin.cursor.com/codebase/serbinenko/t3-pretty/pull/35"),
+    ).toBe("https://origin.cursor.com/codebase/serbinenko/t3-pretty/pull/35");
   });
 
   it("accepts Azure DevOps pull request URLs", () => {
@@ -69,6 +77,11 @@ describe("parsePullRequestReference", () => {
         "origin pr checkout https://cursor.com/codebase/serbinenko/t3-pretty/pull/35",
       ),
     ).toBe("https://cursor.com/codebase/serbinenko/t3-pretty/pull/35");
+    expect(
+      parsePullRequestReference(
+        "origin pr checkout https://origin.cursor.com/codebase/serbinenko/t3-pretty/pull/35",
+      ),
+    ).toBe("https://origin.cursor.com/codebase/serbinenko/t3-pretty/pull/35");
   });
 
   it("accepts az repos pr checkout commands with raw numbers", () => {

@@ -5,7 +5,7 @@ const GITLAB_MERGE_REQUEST_URL_PATTERN =
 const AZURE_DEVOPS_PULL_REQUEST_URL_PATTERN =
   /^https:\/\/(?:dev\.azure\.com\/[^/\s]+\/[^/\s]+|[^/\s]+\.visualstudio\.com\/[^/\s]+)\/_git\/[^/\s]+\/pullrequest\/(\d+)(?:[/?#].*)?$/i;
 const ORIGIN_PULL_REQUEST_URL_PATTERN =
-  /^https:\/\/(?:www\.)?cursor\.com\/codebase\/[^/\s]+\/[^/\s]+\/pull\/(\d+)(?:[/?#].*)?$/i;
+  /^https:\/\/(?:www\.)?(?:origin\.)?cursor\.com\/codebase\/[^/\s]+\/[^/\s]+\/pull\/(\d+)(?:[/?#].*)?$/i;
 const PULL_REQUEST_NUMBER_PATTERN = /^#?(\d+)$/;
 const GITHUB_CLI_PR_CHECKOUT_PATTERN = /^gh\s+pr\s+checkout\s+(.+)$/i;
 const GITLAB_CLI_MR_CHECKOUT_PATTERN = /^glab\s+mr\s+checkout\s+(.+)$/i;
