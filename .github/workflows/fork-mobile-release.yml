@@ -76,7 +76,7 @@ jobs:
       fingerprint: ${{ steps.native.outputs.fingerprint }}
     env:
       APP_VARIANT: production
-      NODE_OPTIONS: --max-old-space-size=8192
+      NODE_OPTIONS: --max-old-space-size=3072
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
       MODE: ${{ github.event_name == 'push' && 'release' || inputs.mode }}
@@ -123,8 +123,7 @@ jobs:
             pnpm-lock.yaml \
             .github/workflows/fork-mobile-release.yml \
             scripts/fork/resolve-ios-native-build.mjs \
-            scripts/fork/security-eas-local-keychain \
-            scripts/fork/origin-forge.mjs; then
+            scripts/fork/security-eas-local-keychain; then
             echo "Push does not change mobile-relevant paths."
             echo "relevant=false" >> "$GITHUB_OUTPUT"
           else
