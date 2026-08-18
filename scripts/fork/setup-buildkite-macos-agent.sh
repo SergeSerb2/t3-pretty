@@ -105,6 +105,16 @@ cat > "$plist" <<PLIST
 </plist>
 PLIST
 
+here="$(cd "$(dirname "$0")" && pwd)"
+hooks="$(brew --prefix)/etc/buildkite-agent"
+install -m 0755 "$here/macos-origin-git.sh" "$hooks/hooks/pre-checkout"
+install -m 0755 "$here/checkout-origin.sh" "$hooks/checkout-origin.sh"
+if [[ -f "$HOME/.git-credentials" ]]; then
+  bash "$here/macos-origin-git.sh"
+else
+  echo "Write $HOME/.git-credentials (Origin x-access-token JWT) so Mac jobs can clone."
+fi
+
 launchctl bootout "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$(id -u)" "$plist"
 echo "Registered Buildkite agent $AGENT_NAME on queues $QUEUES"

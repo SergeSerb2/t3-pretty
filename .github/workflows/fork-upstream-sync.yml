@@ -37,11 +37,12 @@ jobs:
       RESOLUTION_CACHE_BRANCH: automation/sync-resolution-cache
     steps:
       - name: Checkout fork main
-        uses: actions/checkout@v6
-        with:
-          ref: main
-          fetch-depth: 0
-          # The Buildkite importer rejects sparse-checkout.
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
+          test -x "$helper"
+          "$helper" main --full
 
       - name: Load Buildkite cluster secrets
         shell: bash

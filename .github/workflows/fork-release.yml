@@ -434,12 +434,15 @@ jobs:
           done
 
       - name: Checkout trusted main commit
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.preflight.outputs.ref }}
-          clean: true
-          # The Buildkite importer rejects sparse-checkout. Full checkouts
-          # are fine on these dedicated release jobs.
+        # The GHA checkout adapter has no Origin HTTPS creds on macos-release.
+        shell: bash
+        env:
+          CHECKOUT_REF: ${{ needs.preflight.outputs.ref }}
+        run: |
+          set -euo pipefail
+          helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
+          test -x "$helper"
+          "$helper" "$CHECKOUT_REF"
 
       - name: Prepare macOS runner PATH
         shell: bash
@@ -932,11 +935,14 @@ jobs:
       contents: write
     steps:
       - name: Checkout trusted main commit
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.preflight.outputs.ref }}
-          # The Buildkite importer rejects sparse-checkout. Full checkouts
-          # are fine on these dedicated release jobs.
+        shell: bash
+        env:
+          CHECKOUT_REF: ${{ needs.preflight.outputs.ref }}
+        run: |
+          set -euo pipefail
+          helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
+          test -x "$helper"
+          "$helper" "$CHECKOUT_REF"
 
       - name: Load Buildkite cluster secrets
         shell: bash

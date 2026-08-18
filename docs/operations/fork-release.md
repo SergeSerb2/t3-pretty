@@ -104,6 +104,9 @@ newer upstream tag was integrated before its sync pull request merged.
   `file` package, so the WSL node-pty job installs it before the ELF check.
   Buildkite GHA on macOS sets `RUNNER_TEMP` to `/var/folders/.../T`, which is
   not an actions-runner tree; the Mac externals-repair step skips there.
+  The importer's checkout adapter cannot prompt for Origin HTTPS on
+  macos-release, so Mac jobs clone through `scripts/fork/checkout-origin.sh`
+  and `$HOME/.git-credentials`.
 - Secret `CURSOR_API_KEY`: Cursor API key for the Origin CLI (`origin auth login --api-key`).
   Used to open, merge, and tag on Origin.
 - Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used by the trusted scheduled

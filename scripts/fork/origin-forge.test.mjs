@@ -119,6 +119,9 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(preflight, "Read Buildkite pipeline env directly");
     assert.include(sync, "runs-on: macos-latest");
     assert.include(sync, "secrets.CURSOR_API_KEY");
+    assert.include(sync, "checkout-origin.sh");
+    assert.include(desktop, "checkout-origin.sh");
+    assert.include(mobile, "checkout-origin.sh");
     assert.include(desktop, "load-buildkite-secrets.sh");
     assert.include(sync, "load-buildkite-secrets.sh");
     assert.include(mobile, "load-buildkite-secrets.sh");

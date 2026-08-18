@@ -47,6 +47,10 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(wsl, "sudo apt-get install -y python3 make g++ file");
     assert.include(mac, "is not an actions-runner tree; skipping externals repair.");
     assert.include(mac, "/var/folders/*");
+    assert.include(mac, "checkout-origin.sh");
+    assert.notInclude(mac, "uses: actions/checkout@v6");
+    assert.include(publish, "checkout-origin.sh");
+    assert.notInclude(publish, "uses: actions/checkout@v6");
     assert.include(publish, "--experimental-strip-types");
     assert.notInclude(publish, "voidzero-dev/setup-vp");
   });

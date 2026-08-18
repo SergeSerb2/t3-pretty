@@ -361,14 +361,15 @@ jobs:
           done
 
       - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          clean: true
-          # No sparse-checkout here: it makes actions/checkout fetch with
-          # --filter=blob:none, and eas-cli archives the project via
-          # `git clone --depth 1 file://<workspace>`, which fails (exit 128)
-          # when the partial clone can't serve the unfetched blobs.
+        # Full history: eas-cli archives via `git clone --depth 1 file://`.
+        shell: bash
+        env:
+          CHECKOUT_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
+          test -x "$helper"
+          "$helper" "$CHECKOUT_REF" --full
 
       - name: Load Buildkite cluster secrets
         shell: bash
