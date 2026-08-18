@@ -2,6 +2,9 @@
 # Prepend directories onto PATH for later GitHub Actions / Buildkite importer
 # steps. The importer sometimes sets GITHUB_PATH without applying it, so also
 # write PATH to GITHUB_ENV whenever that file exists.
+#
+# Source this file (`. path/persist-ci-path.sh dir`) so `export PATH` applies
+# to the current step. `bash persist-ci-path.sh` only updates the child.
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then

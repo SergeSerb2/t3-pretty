@@ -28,7 +28,9 @@ rm -rf "$prefix"
 mkdir -p "$prefix"
 tar -xzf "${tmp}/${name}" -C "$prefix" --strip-components=1
 HERE="$(cd "$(dirname "$0")" && pwd)"
-# persist-ci-path.sh prepends onto PATH and writes GITHUB_PATH + GITHUB_ENV.
-bash "${HERE}/persist-ci-path.sh" "${prefix}/bin"
+# Source so this shell sees the new Node for command -v / --version.
+# persist-ci-path.sh also writes GITHUB_PATH + GITHUB_ENV for later steps.
+# shellcheck source=persist-ci-path.sh
+. "${HERE}/persist-ci-path.sh" "${prefix}/bin"
 command -v node >/dev/null
 node --version

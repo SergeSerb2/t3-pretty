@@ -172,7 +172,7 @@ jobs:
           set -euo pipefail
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
           vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
-          bash scripts/fork/persist-ci-path.sh "$vp_pnpm_bin"
+          . scripts/fork/persist-ci-path.sh "$vp_pnpm_bin"
           pnpm --version
 
       - name: Setup EAS CLI
@@ -192,7 +192,7 @@ jobs:
           if ! command -v eas >/dev/null; then
             npm install -g eas-cli
           fi
-          bash scripts/fork/persist-ci-path.sh "$(npm prefix -g)/bin"
+          . scripts/fork/persist-ci-path.sh "$(npm prefix -g)/bin"
           command -v eas
           eas --version
 
@@ -361,7 +361,7 @@ jobs:
           set -euo pipefail
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
           vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
-          bash scripts/fork/persist-ci-path.sh "$vp_pnpm_bin"
+          . scripts/fork/persist-ci-path.sh "$vp_pnpm_bin"
           pnpm --version
 
       - name: Setup EAS CLI
@@ -378,7 +378,7 @@ jobs:
           if ! command -v eas >/dev/null; then
             npm install -g eas-cli
           fi
-          bash scripts/fork/persist-ci-path.sh "$(npm prefix -g)/bin"
+          . scripts/fork/persist-ci-path.sh "$(npm prefix -g)/bin"
           command -v eas
           eas --version
 

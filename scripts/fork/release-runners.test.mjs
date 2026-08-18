@@ -45,8 +45,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(preflight, "ensure-linux-node.sh");
     const nodeHelper = NodeFS.readFileSync(NodePath.resolve(here, "ensure-linux-node.sh"), "utf8");
     const persistHelper = NodeFS.readFileSync(NodePath.resolve(here, "persist-ci-path.sh"), "utf8");
-    assert.include(nodeHelper, "persist-ci-path.sh");
+    assert.include(nodeHelper, '. "${HERE}/persist-ci-path.sh" "${prefix}/bin"');
     assert.include(persistHelper, 'echo "PATH=${PATH}" >> "$GITHUB_ENV"');
+    assert.include(persistHelper, "Source this file");
     assert.notInclude(nodeHelper, 'tar -xzf "${tmp}/${name}" -C /usr/local');
     assert.include(wsl, "PREFLIGHT_REF");
     assert.include(wsl, "ensure-linux-node.sh");
@@ -82,8 +83,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.isFalse(/\n\s+uses:/u.test(mobileWorkflow));
     assert.include(ota, "npm install -g eas-cli");
     assert.include(ios, "npm install -g eas-cli");
-    assert.include(ota, "persist-ci-path.sh");
-    assert.include(ios, "persist-ci-path.sh");
+    assert.include(ota, ". scripts/fork/persist-ci-path.sh");
+    assert.include(ios, ". scripts/fork/persist-ci-path.sh");
+    assert.notInclude(ota, "bash scripts/fork/persist-ci-path.sh");
     assert.include(ota, "$(npm prefix -g)/bin");
   });
 

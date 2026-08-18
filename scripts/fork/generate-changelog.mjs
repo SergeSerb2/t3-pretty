@@ -635,5 +635,8 @@ if (invokedPath === NodeURL.fileURLToPath(import.meta.url)) {
     process.stdout.write(
       `::warning::Changelog generation failed; the release continues without new notes. ${message}\n`,
     );
+    // Unexpected exceptions still fail the step so they show up in the job.
+    // fork-release.yml marks this step continue-on-error so preflight proceeds.
+    process.exitCode = 1;
   });
 }
