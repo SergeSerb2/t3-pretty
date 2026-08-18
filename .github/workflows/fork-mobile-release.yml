@@ -5,11 +5,10 @@ name: T3 Pretty Mobile Release
 # updates and TestFlight upload still use the fork-owned EAS project; those
 # are not iOS cloud builds.
 #
-# OTA publishing and the native-fingerprint decision run on GitHub-hosted
-# ubuntu-latest (free for this public repo) so they never wait for m1-dev.
-# Xcode runs only when the fingerprint changed, or when a maintainer
-# dispatches `build` / force_ios. JS-only releases therefore never occupy
-# the Mac.
+# OTA publishing used to run on hosted linux-small, but Metro's export
+# is SIGKILL'd there. macos-release has enough RAM to finish `eas update`.
+# Xcode still runs only when the fingerprint changed, or when a maintainer
+# dispatches `build` / force_ios.
 #
 # Origin is the fork's forge. OTA still publishes through Expo; the
 # fingerprint record lands through an Origin pull request.
@@ -67,7 +66,8 @@ env:
 jobs:
   ota:
     name: Publish OTA (${{ github.event_name == 'push' && 'release' || inputs.mode }})
-    runs-on: ubuntu-latest
+    # macos-release: hosted linux-small SIGKILLs the Metro export.
+    runs-on: macos-latest
     timeout-minutes: 30
     permissions:
       contents: read
@@ -76,13 +76,21 @@ jobs:
       fingerprint: ${{ steps.native.outputs.fingerprint }}
     env:
       APP_VARIANT: production
-      NODE_OPTIONS: --max-old-space-size=3072
+      NODE_OPTIONS: --max-old-space-size=8192
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
       MODE: ${{ github.event_name == 'push' && 'release' || inputs.mode }}
       PLATFORM: ${{ github.event_name == 'push' && 'all' || inputs.platform }}
       FORCE_IOS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_ios || false }}
     steps:
+      - name: Prepare macOS runner PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+          echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
+
       - id: expo-token
         name: Check for EXPO_TOKEN
         env:
@@ -97,14 +105,21 @@ jobs:
 
       - name: Checkout
         if: steps.expo-token.outputs.present == 'true'
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          clean: true
-          # No sparse-checkout here: it makes actions/checkout fetch with
-          # --filter=blob:none, and eas-cli archives the project via
-          # `git clone --depth 1 file://<workspace>`, which fails (exit 128)
-          # when the partial clone can't serve the unfetched blobs.
+        shell: bash
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Full history: eas-cli archives via `git clone --depth 1 file://`,
+          # and the path skip needs HEAD~1.
+          helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
+          test -x "$helper"
+          "$helper" main --full
+          if git cat-file -e "${CHECKOUT_SHA}^{commit}" 2>/dev/null; then
+            git checkout --force "$CHECKOUT_SHA"
+          else
+            "$helper" "$CHECKOUT_SHA" --full
+          fi
 
       - id: paths
         name: Skip mobile-irrelevant pushes
@@ -181,7 +196,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          set +e
+          set -euo pipefail
           update_platform="$PLATFORM"
           if [[ "$MODE" == "release" ]]; then
             update_platform=all
@@ -192,12 +207,6 @@ jobs:
             --platform "$update_platform" \
             --message "${{ inputs.message || format('Production OTA ({0})', github.sha) }}" \
             --non-interactive
-          status=$?
-          set -e
-          if [[ "$status" -ne 0 ]]; then
-            echo "OTA export failed on this runner (hosted linux-small often SIGKILLs Metro). Not failing the pipeline."
-            exit 0
-          fi
 
       - id: native
         name: Decide whether a new iOS binary is required

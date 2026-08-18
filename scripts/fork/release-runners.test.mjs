@@ -66,16 +66,17 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(desktopWorkflow, "workflow_dispatch:");
   });
 
-  it("publishes mobile OTA on ubuntu and compiles iOS only when asked", () => {
+  it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
     const ota = jobBlock(mobileWorkflow, "ota");
     const ios = jobBlock(mobileWorkflow, "ios");
 
-    assert.include(ota, "runs-on: ubuntu-latest");
+    assert.include(ota, "runs-on: macos-latest");
+    assert.include(ota, "checkout-origin.sh");
     assert.include(ota, "- name: Publish OTA update");
     assert.include(ota, "Decide whether a new iOS binary is required");
     assert.notInclude(ota, "scripts/fork/origin-forge.mjs");
-    assert.include(ota, "--max-old-space-size=3072");
-    assert.include(ota, "Not failing the pipeline.");
+    assert.include(ota, "--max-old-space-size=8192");
+    assert.notInclude(ota, "Not failing the pipeline.");
     assert.notInclude(ota, "eas build --");
     assert.notInclude(ota, "--local");
     assert.include(ios, "runs-on: macos-latest");
@@ -84,8 +85,17 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileWorkflow, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
   });
 
-  it("deploys the relay on free hosted ubuntu instead of the Mac release runner", () => {
-    assert.include(relayWorkflow, "runs-on: ubuntu-latest");
+  it("deploys the relay on macos-release with baked public IDs", () => {
+    const relay = jobBlock(relayWorkflow, "deploy_relay");
+    assert.include(relay, "runs-on: macos-latest");
+    assert.include(relay, "checkout-origin.sh");
     assert.notInclude(relayWorkflow, "t3code-fork");
+    assert.notInclude(relayWorkflow, "sparse-checkout:");
+    assert.notInclude(relayWorkflow, "vars.FORK_RELAY_DEPLOY_ENABLED");
+    assert.notInclude(relayWorkflow, "actions/github-script");
+    assert.notInclude(relayWorkflow, "secrets.CLERK_SECRET_KEY");
+    assert.include(relayWorkflow, "relay.sergeserbinenko.com");
+    assert.include(relayWorkflow, "load-buildkite-secrets.sh");
+    assert.include(relayWorkflow, "Require relay deploy credentials");
   });
 });

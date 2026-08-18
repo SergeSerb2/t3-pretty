@@ -121,6 +121,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(sync, "runs-on: macos-latest");
     assert.notInclude(sync, "secrets.CURSOR_API_KEY");
     assert.notInclude(sync, "secrets.CLI_PROXY_API_KEY");
+    assert.notInclude(sync, "mapfile ");
+    assert.include(sync, "Prepare macOS runner PATH");
     assert.include(sync, "checkout-origin.sh");
     assert.include(desktop, "checkout-origin.sh");
     assert.include(mobile, "checkout-origin.sh");
@@ -139,6 +141,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "fork-upstream-sync.yml");
     assert.include(pipeline, "fork-release.yml");
     assert.include(pipeline, "fork-mobile-release.yml");
+    assert.include(pipeline, "deploy-relay.yml");
     assert.include(pipeline, "queue: macos-release");
     assert.include(pipeline, "queue: windows-release");
     assert.include(pipeline, "queue: linux-small");
@@ -146,16 +149,14 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");
+    assert.include(pipeline, 'build.source != "schedule"');
     assert.notInclude(pipeline, "depends_on: origin-workflows");
     assert.notInclude(pipeline, "\n    secrets:");
-    const nsis = NodeFS.readFileSync(
-      NodePath.resolve(here, "build-windows-nsis.ps1"),
-      "utf8",
-    );
-    assert.include(nsis, 'C:\\buildkite-agent\\vite-plus');
+    const nsis = NodeFS.readFileSync(NodePath.resolve(here, "build-windows-nsis.ps1"), "utf8");
+    assert.include(nsis, "C:\\buildkite-agent\\vite-plus");
     assert.include(nsis, "$env:VP_HOME");
     assert.include(nsis, "Test-OfficialVp");
-    assert.include(nsis, '${LASTEXITCODE}');
+    assert.include(nsis, "${LASTEXITCODE}");
     assert.include(nsis, "rustup default stable");
     assert.include(nsis, "upload-assets");
     assert.notInclude(nsis, "VITE_PLUS_BIN_DIR");
