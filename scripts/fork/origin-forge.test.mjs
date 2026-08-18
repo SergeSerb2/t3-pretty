@@ -146,11 +146,13 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(desktop, "PREFLIGHT_REF");
     assert.notInclude(desktop, "/usr/local --strip-components=1");
     assert.notInclude(desktop, "git fetch --force --tags origin || true");
+    assert.include(preflight, "origin_tags_ok");
     assert.include(mobile, "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65");
     assert.notInclude(mobile, "vars.T3CODE_MOBILE_EAS_PROJECT_ID");
     assert.notInclude(mobile, "vars.APPLE_TEAM_ID");
+    assert.notInclude(mobile, "secrets.EXPO_TOKEN");
     assert.include(sync, "load-buildkite-secrets.sh");
-    assert.include(mobile, "load-buildkite-secrets.sh");
+    assert.include(mobile, "load-buildkite-secrets.sh EXPO_TOKEN");
     assert.include(preflight, "Mac signing secrets are resolved on macos-release");
     assert.include(preflight, "git fetch --force --tags origin");
     assert.include(mobile, "origin-forge.mjs merge-pr");

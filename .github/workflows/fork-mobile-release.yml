@@ -103,23 +103,11 @@ jobs:
           fi
           if [[ "$wrote" -eq 0 ]]; then
             echo "Neither GITHUB_PATH nor GITHUB_ENV is set; cannot persist PATH for later steps." >&2
-            exit 1
-          fi
-
-      - id: expo-token
-        name: Check for EXPO_TOKEN
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          if [ -n "$EXPO_TOKEN" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "EXPO_TOKEN is required for OTA publishing and managed iOS credentials." >&2
+            env | grep -E '^(GITHUB_|RUNNER_)' || true
             exit 1
           fi
 
       - name: Checkout Origin
-        if: steps.expo-token.outputs.present == 'true'
         shell: bash
         env:
           CHECKOUT_SHA: ${{ github.sha }}
@@ -132,6 +120,20 @@ jobs:
           test -x "$helper"
           test -n "${CHECKOUT_SHA:-}"
           "$helper" "$CHECKOUT_SHA" --full
+
+      - name: Load Expo token
+        shell: bash
+        run: bash scripts/fork/load-buildkite-secrets.sh EXPO_TOKEN
+
+      - id: expo-token
+        name: Check for EXPO_TOKEN
+        run: |
+          if [ -n "${EXPO_TOKEN:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "EXPO_TOKEN is required for OTA publishing and managed iOS credentials." >&2
+            exit 1
+          fi
 
       - id: paths
         name: Skip mobile-irrelevant pushes
@@ -178,8 +180,6 @@ jobs:
       - name: Setup EAS CLI
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
         shell: bash
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
           # npm, not pnpm: pnpm 11 hard-fails eas-cli on dtrace-provider's
@@ -199,8 +199,6 @@ jobs:
       - name: Pull production environment variables
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
         working-directory: apps/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         # app.config.ts reads the repository-root env files, not apps/mobile/.env.local.
         # Local EAS builds pack a gitignore-filtered copy, so also export the
         # pulled values into the job environment for child processes.
@@ -214,8 +212,6 @@ jobs:
       - name: Publish OTA update
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true' && (env.MODE == 'update' || env.MODE == 'release')
         working-directory: apps/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
           update_platform="$PLATFORM"
@@ -233,8 +229,6 @@ jobs:
         name: Decide whether a new iOS binary is required
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true' && (env.MODE == 'build' || env.MODE == 'release')
         working-directory: apps/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
           if [[ "$MODE" == "build" && "$PLATFORM" == "android" ]]; then
@@ -323,7 +317,7 @@ jobs:
 
       - name: Load Buildkite cluster secrets
         shell: bash
-        run: bash scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY
+        run: bash scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY EXPO_TOKEN
 
       - name: Prepare macOS runner PATH
         shell: bash
@@ -345,6 +339,7 @@ jobs:
           fi
           if [[ "$wrote" -eq 0 ]]; then
             echo "Neither GITHUB_PATH nor GITHUB_ENV is set; cannot persist PATH for later steps." >&2
+            env | grep -E '^(GITHUB_|RUNNER_)' || true
             exit 1
           fi
 
@@ -366,8 +361,6 @@ jobs:
 
       - name: Setup EAS CLI
         shell: bash
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
           # npm, not pnpm: pnpm 11 hard-fails eas-cli on dtrace-provider's
@@ -384,8 +377,6 @@ jobs:
 
       - name: Pull production environment variables
         working-directory: apps/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         # app.config.ts reads the repository-root env files, not apps/mobile/.env.local.
         # Local EAS builds pack a gitignore-filtered copy, so also export the
         # pulled values into the job environment for child processes.
@@ -493,8 +484,6 @@ jobs:
 
       - name: Build and submit
         working-directory: apps/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
           # EAS local builds on macOS 26 / Xcode 27 fail Prepare credentials
