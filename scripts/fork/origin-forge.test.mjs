@@ -101,6 +101,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(sync, "https://github.com/pingdotgg/t3code.git");
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");
     assert.include(desktop, "T3CODE_RELEASE_S3_BUCKET");
+    assert.notInclude(desktop, "dtolnay/rust-toolchain");
+    assert.notInclude(desktop, "sparse-checkout:");
     assert.include(mobile, "origin-forge.mjs merge-pr");
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
@@ -116,6 +118,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");
+    assert.notInclude(pipeline, "depends_on: origin-workflows");
     assert.notInclude(pipeline, "\n    secrets:");
   });
 
