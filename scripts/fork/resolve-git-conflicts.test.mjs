@@ -278,9 +278,7 @@ ${">".repeat(7)} theirs
     assert.include(mobileWorkflow, "EXPO_ASC_API_KEY_PATH");
     assert.include(mobileWorkflow, "ascApiKeyIssuerId");
     assert.include(mobileWorkflow, "Publish OTA update");
-    assert.include(mobileWorkflow, "self-hosted");
-    assert.include(mobileWorkflow, "macOS");
-    assert.include(mobileWorkflow, "t3code-fork");
+    assert.include(mobileWorkflow, "runs-on: macos-latest");
     assert.include(mobileWorkflow, "--local");
     assert.include(mobileWorkflow, "Xcode-beta.app");
     assert.include(mobileWorkflow, "xcode-select -s");
