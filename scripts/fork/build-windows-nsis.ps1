@@ -72,7 +72,7 @@ function Invoke-Vp {
   param([Parameter(ValueFromRemainingArguments = $true)]$VpArgs)
   & $vpExe @VpArgs
   if ($LASTEXITCODE -ne 0) {
-    throw "vp exited $LASTEXITCODE: $($VpArgs -join ' ')"
+    throw "vp exited ${LASTEXITCODE}: $($VpArgs -join ' ')"
   }
 }
 

@@ -147,6 +147,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(nsis, 'C:\\buildkite-agent\\vite-plus');
     assert.include(nsis, "$env:VP_HOME");
     assert.include(nsis, "Test-OfficialVp");
+    assert.include(nsis, '${LASTEXITCODE}');
     assert.notInclude(nsis, "VITE_PLUS_BIN_DIR");
     assert.notInclude(nsis, "AppData\\Roaming\\npm");
   });
