@@ -115,6 +115,14 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
     const match = /^\/((?:[^/]+\/)*_git\/[^/]+)\/pullrequest\/(\d+)(?:\/|$)/u.exec(url.pathname);
     return claim(host, match);
   }
+  // Origin: the web UI is cursor.com/codebase/{owner}/{repo}/pull/{n}, but the project's
+  // identity is addressed below origin.cursor.com (the git host). The page matches a link
+  // against pullRequestHostOf, so the host we claim is the git host, not the web UI host.
+  // `/codebase/.../pull/` is Origin's own path, so any cursor.com host is safe to trust.
+  if (isHostOf(host, "cursor.com")) {
+    const match = /^\/codebase\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/|$)/u.exec(url.pathname);
+    return claim("origin.cursor.com", match);
+  }
   return null;
 }
 
