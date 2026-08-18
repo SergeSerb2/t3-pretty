@@ -103,6 +103,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(desktop, "T3CODE_RELEASE_S3_BUCKET");
     assert.notInclude(desktop, "dtolnay/rust-toolchain");
     assert.notInclude(desktop, "sparse-checkout:");
+    assert.notInclude(desktop, "secrets.AZURE_");
+    assert.notInclude(desktop, "secrets.MACOS_PROVISIONING_PROFILE");
     assert.include(mobile, "origin-forge.mjs merge-pr");
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
