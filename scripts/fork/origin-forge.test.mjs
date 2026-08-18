@@ -140,6 +140,15 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "build-windows-nsis.ps1");
     assert.notInclude(pipeline, "depends_on: origin-workflows");
     assert.notInclude(pipeline, "\n    secrets:");
+    const nsis = NodeFS.readFileSync(
+      NodePath.resolve(here, "build-windows-nsis.ps1"),
+      "utf8",
+    );
+    assert.include(nsis, 'C:\\buildkite-agent\\vite-plus');
+    assert.include(nsis, "$env:VP_HOME");
+    assert.include(nsis, "Test-OfficialVp");
+    assert.notInclude(nsis, "VITE_PLUS_BIN_DIR");
+    assert.notInclude(nsis, "AppData\\Roaming\\npm");
   });
 
   it("uploads updater assets with aws when keys exist and wrangler otherwise", () => {

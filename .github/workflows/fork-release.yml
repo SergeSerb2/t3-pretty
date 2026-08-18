@@ -301,7 +301,9 @@ jobs:
           # Native linux/amd64: the previous Mac job compiled this inside
           # qemu/rosetta Docker and serialized with the DMG on m1-dev.
           sudo apt-get update
-          sudo apt-get install -y python3 make g++
+          # `file` is not on Buildkite hosted linux-small. The ELF check
+          # below is how we refuse a Darwin/QEMU binary.
+          sudo apt-get install -y python3 make g++ file
           node_pty_version="$(
             node -e "console.log(require('./apps/server/package.json').dependencies['node-pty'].replace(/^[^0-9]*/, ''))"
           )"
@@ -346,8 +348,22 @@ jobs:
           # and restore the runtime from nodejs.org, so a broken runner costs
           # one download instead of parking every release until someone
           # re-extracts the runner package by hand.
+          #
+          # Buildkite's GHA importer sets RUNNER_TEMP to the host TMPDIR
+          # (`/var/folders/.../T` on macOS). `../..` is then a user cache
+          # folder, not an actions-runner install. iOS jobs on this same
+          # agent already run `uses:` without this repair. Skip so we do
+          # not fail the job inventing a node24 tree the importer never
+          # reads.
+          case "${RUNNER_TEMP:-}" in
+            /var/folders/*|/private/var/folders/*|/tmp/*|/private/tmp/*)
+              echo "RUNNER_TEMP=${RUNNER_TEMP} is not an actions-runner tree; skipping externals repair."
+              exit 0
+              ;;
+          esac
           runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
           externals="${runner_root}/externals"
+          mkdir -p "$externals"
           case "$(uname -m)" in
             arm64|aarch64) node_arch=arm64 ;;
             x86_64) node_arch=x64 ;;

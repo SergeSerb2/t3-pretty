@@ -33,30 +33,55 @@ $resolved = node "$root\scripts\fork\resolve-fork-release.mjs" | ConvertFrom-Jso
 $version = $resolved.version
 Write-Host "Building Windows NSIS $version"
 
-$vpCandidates = @(
-  (Join-Path $env:USERPROFILE ".vite-plus\bin"),
-  "C:\Users\serge\.vite-plus\bin",
-  (Join-Path $env:APPDATA "npm"),
-  "C:\Users\serge\AppData\Roaming\npm"
-)
-foreach ($dir in $vpCandidates) {
-  if (Test-Path (Join-Path $dir "vp.cmd")) { $env:Path = "$dir;$env:Path"; break }
-  if (Test-Path (Join-Path $dir "vp.exe")) { $env:Path = "$dir;$env:Path"; break }
+# Official Vite+ is vp.exe under VP_HOME. npm's global `vp` / `npx vp`
+# is a stub that prints install instructions and exits 0.
+$vpHome = "C:\buildkite-agent\vite-plus"
+$env:VP_HOME = $vpHome
+$vpBin = Join-Path $vpHome "bin"
+$vpExe = Join-Path $vpBin "vp.exe"
+
+function Test-OfficialVp($path) {
+  if (-not $path -or -not (Test-Path $path)) { return $false }
+  if ([IO.Path]::GetFileName($path) -ne "vp.exe") { return $false }
+  $out = & $path --version 2>&1 | Out-String
+  if ($out -match "npx vp") { return $false }
+  return $LASTEXITCODE -eq 0
 }
 
-if (-not (Get-Command vp -ErrorAction SilentlyContinue)) {
-  $env:VITE_PLUS_BIN_DIR = "C:\buildkite-agent\bin"
-  Invoke-RestMethod https://vite.plus/ps1 | Invoke-Expression
-  $env:Path = "C:\buildkite-agent\bin;$env:USERPROFILE\.vite-plus\bin;$env:Path"
+if (-not (Test-OfficialVp $vpExe)) {
+  Write-Host "Installing official Vite+ into $vpHome"
+  $installer = Join-Path $env:TEMP "vite-plus-install.ps1"
+  Invoke-RestMethod https://vite.plus/ps1 | Set-Content -Path $installer -Encoding UTF8
+  $env:CI = "true"
+  $install = Start-Process -FilePath "powershell.exe" -ArgumentList @(
+    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $installer
+  ) -Wait -PassThru -NoNewWindow
+  if ($null -eq $install -or $install.ExitCode -ne 0) {
+    $code = if ($null -ne $install) { $install.ExitCode } else { 1 }
+    throw "Official Vite+ installer failed with exit $code"
+  }
 }
 
-if (-not (Get-Command vp -ErrorAction SilentlyContinue)) {
-  throw "vp is not on PATH after install. Add the Vite+ bin directory to the LocalSystem PATH."
+if (-not (Test-OfficialVp $vpExe)) {
+  throw "vp.exe is not official Vite+ after install at $vpExe"
 }
 
-vp i --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+$env:Path = "$vpBin;$env:Path"
+
+function Invoke-Vp {
+  param([Parameter(ValueFromRemainingArguments = $true)]$VpArgs)
+  & $vpExe @VpArgs
+  if ($LASTEXITCODE -ne 0) {
+    throw "vp exited $LASTEXITCODE: $($VpArgs -join ' ')"
+  }
+}
+
+Invoke-Vp i --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
 node "$root\scripts\update-release-package-versions.ts" $version
-vp run dist:desktop:artifact -- --platform win --target nsis --arch x64 --build-version $version --verbose
+if ($LASTEXITCODE -ne 0) {
+  throw "update-release-package-versions exited $LASTEXITCODE"
+}
+Invoke-Vp run dist:desktop:artifact -- --platform win --target nsis --arch x64 --build-version $version --verbose
 
 $publish = Join-Path $root "release-publish"
 New-Item -ItemType Directory -Force -Path $publish | Out-Null

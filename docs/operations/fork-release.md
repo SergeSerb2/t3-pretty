@@ -92,14 +92,18 @@ newer upstream tag was integrated before its sync pull request merged.
   them onto `macos-release`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
   The importer cannot run Windows jobs; `.buildkite/pipeline.yml` runs
   `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer.
-  Mac-only desktop publishes are still allowed if that step is skipped. Depot can take
-  Linux jobs but has no macOS/Windows sandboxes.
+  That script installs official Vite+ (`vp.exe`) under `C:\buildkite-agent\vite-plus`
+  and refuses the npm `vp` stub. Mac-only desktop publishes are still allowed if
+  that step is skipped. Depot can take Linux jobs but has no macOS/Windows sandboxes.
   Hosted Linux cannot resolve `CURSOR_API_KEY`. Origin CLI work (publish and
   upstream sync) therefore runs on `macos-release`. Hosted preflight must not
   mention that secret or the Mac signing certificate names. The Windows agent
   runs as LocalSystem; Origin HTTPS checkout uses
   `C:\buildkite-agent\.git-credentials` plus
-  `scripts/fork/windows-origin-git.ps1`.
+  `scripts/fork/windows-origin-git.ps1`. Hosted `linux-small` is missing the
+  `file` package, so the WSL node-pty job installs it before the ELF check.
+  Buildkite GHA on macOS sets `RUNNER_TEMP` to `/var/folders/.../T`, which is
+  not an actions-runner tree; the Mac externals-repair step skips there.
 - Secret `CURSOR_API_KEY`: Cursor API key for the Origin CLI (`origin auth login --api-key`).
   Used to open, merge, and tag on Origin.
 - Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used by the trusted scheduled

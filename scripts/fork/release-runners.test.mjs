@@ -44,6 +44,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(win, "runs-on: ubuntu-latest");
     assert.notInclude(wsl, "docker run");
     assert.include(wsl, "npx --yes node-gyp rebuild");
+    assert.include(wsl, "sudo apt-get install -y python3 make g++ file");
+    assert.include(mac, "is not an actions-runner tree; skipping externals repair.");
+    assert.include(mac, "/var/folders/*");
     assert.include(publish, "--experimental-strip-types");
     assert.notInclude(publish, "voidzero-dev/setup-vp");
   });
