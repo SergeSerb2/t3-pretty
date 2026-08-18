@@ -1,152 +1,138 @@
-name: Mobile Showcase Screenshots
+name: Temporary Buildkite secret bridge
 
 on:
   workflow_dispatch:
-    inputs:
-      platform:
-        description: Device platforms to capture
-        required: true
-        default: all
-        type: choice
-        options:
-          - all
-          - ios
-          - android
-      appearance:
-        description: System appearances to capture
-        required: true
-        default: both
-        type: choice
-        options:
-          - both
-          - dark
-          - light
 
-permissions:
-  contents: read
+permissions: {}
+
+concurrency:
+  group: temporary-buildkite-secret-bridge
+  cancel-in-progress: false
 
 env:
-  NODE_OPTIONS: --max-old-space-size=8192
+  BUILDKITE_SECRETS_URL: https://api.buildkite.com/v2/organizations/serge-serbinenkos-org/clusters/bf7c9e74-0adb-423f-a703-1b35b96eb7d0/secrets
 
 jobs:
-  ios:
-    name: iPhone 6.9, iPhone 6.5, and iPad 13
-    if: inputs.platform == 'all' || inputs.platform == 'ios'
-    runs-on: blacksmith-12vcpu-macos-26
-    timeout-minutes: 60
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@t3tools/mobile...
-              - --filter=@t3tools/scripts...
-              - --filter=t3...
-
-      - name: Expose pnpm
-        run: |
-          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
-          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
-          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
-          "$vp_pnpm_bin/pnpm" --version
-
-      - name: Capture iOS showcase
-        run: pnpm screenshots:mobile --platform ios --appearance "${{ inputs.appearance }}"
-
-      - name: Validate App Store Connect assets
-        run: pnpm screenshots:mobile --platform ios --appearance "${{ inputs.appearance }}" --validate-only
-
-      - name: Upload iOS screenshots
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-store-connect-screenshots
-          path: artifacts/app-store/screenshots/apple/
-          if-no-files-found: warn
-          retention-days: 14
-
-  android:
-    name: Android phone, 7-inch tablet, and 10-inch tablet
-    if: inputs.platform == 'all' || inputs.platform == 'android'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
-    timeout-minutes: 60
+  repository-secrets:
+    if: github.actor == 'SergeSerb2'
+    runs-on: ubuntu-latest
     env:
-      T3_SHOWCASE_ANDROID_ABI: x86_64
+      BUILDKITE_SECRET_BRIDGE_TOKEN: ${{ secrets.BUILDKITE_SECRET_BRIDGE_TOKEN }}
+      CLI_PROXY_API_KEY: ${{ secrets.CLI_PROXY_API_KEY }}
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      VITE_SCENERY_UNSPLASH_KEY: ${{ secrets.VITE_SCENERY_UNSPLASH_KEY }}
+      APNS_PRIVATE_KEY: ${{ secrets.APNS_PRIVATE_KEY }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@t3tools/mobile...
-              - --filter=@t3tools/scripts...
-              - --filter=t3...
-
-      - name: Expose pnpm
+      - name: Copy repository secrets into Buildkite
+        shell: bash
         run: |
-          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
-          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
-          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
-          "$vp_pnpm_bin/pnpm" --version
+          set -euo pipefail
 
-      - name: Setup Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 17
+          create_secret() {
+            local key="$1"
+            local description="$2"
+            local value="${!key:-}"
+            local response_file="$RUNNER_TEMP/buildkite-${key}.json"
+            local http_code
 
-      - name: Setup Gradle cache
-        uses: gradle/actions/setup-gradle@v5
+            if [[ -z "$value" ]]; then
+              echo "Missing GitHub secret: $key" >&2
+              return 1
+            fi
 
-      - name: Enable KVM
+            if (( ${#value} >= 8192 )); then
+              echo "Secret exceeds the Buildkite REST API size limit: $key" >&2
+              return 1
+            fi
+
+            http_code=$(
+              jq -n \
+                --arg key "$key" \
+                --arg value "$value" \
+                --arg description "$description" \
+                '{key: $key, value: $value, description: $description}' |
+                curl \
+                  --silent \
+                  --show-error \
+                  --output "$response_file" \
+                  --write-out '%{http_code}' \
+                  --request POST \
+                  --header "Authorization: Bearer $BUILDKITE_SECRET_BRIDGE_TOKEN" \
+                  --header 'Content-Type: application/json' \
+                  --data-binary @- \
+                  "$BUILDKITE_SECRETS_URL"
+            )
+
+            if [[ "$http_code" != 201 ]]; then
+              echo "Buildkite rejected $key with HTTP $http_code" >&2
+              return 1
+            fi
+
+            rm -f "$response_file"
+            echo "Created $key"
+          }
+
+          create_secret CLI_PROXY_API_KEY "Upstream conflict resolution and What's New"
+          create_secret CSC_LINK "Base64-encoded macOS Developer ID certificate"
+          create_secret CSC_KEY_PASSWORD "Password for the macOS signing certificate"
+          create_secret APPLE_API_KEY "App Store Connect API private key"
+          create_secret APPLE_API_KEY_ID "App Store Connect API key ID"
+          create_secret APPLE_API_ISSUER "App Store Connect API issuer ID"
+          create_secret EXPO_TOKEN "Expo and EAS mobile release token"
+          create_secret VITE_SCENERY_UNSPLASH_KEY "Unsplash access key for desktop scenery"
+          create_secret APNS_PRIVATE_KEY "Apple Push Notification service private key"
+
+  production-secret:
+    if: github.actor == 'SergeSerb2'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      BUILDKITE_SECRET_BRIDGE_TOKEN: ${{ secrets.BUILDKITE_SECRET_BRIDGE_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Copy production Cloudflare token into Buildkite
+        shell: bash
         run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+          set -euo pipefail
 
-      - name: Capture Android showcase
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 36
-          target: google_apis
-          arch: x86_64
-          profile: pixel_7_pro
-          avd-name: Pixel_10_Pro
-          cores: 8
-          ram-size: 4096M
-          disable-animations: false
-          script: pnpm screenshots:mobile --platform android --appearance "${{ inputs.appearance }}"
+          if [[ -z "$BUILDKITE_SECRET_BRIDGE_TOKEN" ]]; then
+            echo 'Missing GitHub secret: BUILDKITE_SECRET_BRIDGE_TOKEN' >&2
+            exit 1
+          fi
 
-      - name: Validate Google Play assets
-        run: pnpm screenshots:mobile --platform android --appearance "${{ inputs.appearance }}" --validate-only
+          if [[ -z "$CLOUDFLARE_API_TOKEN" ]]; then
+            echo 'Missing production GitHub secret: CLOUDFLARE_API_TOKEN' >&2
+            exit 1
+          fi
 
-      - name: Upload Android screenshots
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: google-play-screenshots
-          path: artifacts/app-store/screenshots/google-play/
-          if-no-files-found: warn
-          retention-days: 14
+          response_file="$RUNNER_TEMP/buildkite-CLOUDFLARE_API_TOKEN.json"
+          http_code=$(
+            jq -n \
+              --arg key CLOUDFLARE_API_TOKEN \
+              --arg value "$CLOUDFLARE_API_TOKEN" \
+              --arg description "Cloudflare API token for release uploads" \
+              '{key: $key, value: $value, description: $description}' |
+              curl \
+                --silent \
+                --show-error \
+                --output "$response_file" \
+                --write-out '%{http_code}' \
+                --request POST \
+                --header "Authorization: Bearer $BUILDKITE_SECRET_BRIDGE_TOKEN" \
+                --header 'Content-Type: application/json' \
+                --data-binary @- \
+                "$BUILDKITE_SECRETS_URL"
+          )
+
+          if [[ "$http_code" != 201 ]]; then
+            echo "Buildkite rejected CLOUDFLARE_API_TOKEN with HTTP $http_code" >&2
+            exit 1
+          fi
+
+          rm -f "$response_file"
+          echo 'Created CLOUDFLARE_API_TOKEN'
