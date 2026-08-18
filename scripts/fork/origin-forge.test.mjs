@@ -112,6 +112,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "queue: macos-release");
     assert.include(pipeline, "queue: windows-release");
     assert.include(pipeline, "queue: linux-small");
+    assert.include(pipeline, "github-actions#v0.13.0");
+    assert.notInclude(pipeline, "github-actions#v0.13.11");
     assert.include(pipeline, "build-windows-nsis.ps1");
     assert.notInclude(pipeline, "\n    secrets:");
   });

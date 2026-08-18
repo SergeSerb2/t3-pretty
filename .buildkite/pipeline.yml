@@ -36,7 +36,7 @@ steps:
     agents:
       queue: linux-small
     plugins:
-      - github-actions#v0.13.11:
+      - github-actions#v0.13.0:
           workflows:
             - .github/workflows/fork-upstream-sync.yml
             - .github/workflows/fork-release.yml
