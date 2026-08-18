@@ -6,10 +6,14 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
 
 ## Flow
 
-1. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
+1. `T3 Pretty Origin PR Review` runs on every Origin pull request (and on branch pushes that
+   already have an Origin PR). It asks Grok 4.6 to review the diff and posts a comment review
+   with `origin pr review --comment`. It does not approve or merge. Automation sync branches
+   are skipped.
+2. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
    and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. Maintainers can use
-   the manual dispatch only when an operational fix needs an immediate retry.
-2. It merges that tag into an `automation/upstream-*` branch and opens an Origin pull request.
+   the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
+   into an `automation/upstream-*` branch and opens an Origin pull request.
    The fork deliberately keeps `.github/workflows` from its own `main`; upstream workflow changes
    cannot replace the trusted sync/release boundary.
 3. Clean changes remain untouched and do not make a model request. If Git reports text conflicts,
@@ -58,7 +62,11 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    run regenerates everything missing.
 8. Origin-connected Linux CI (Depot or Buildkite, `ubuntu-latest` in the workflow YAML) resolves
    the version, writes What's New notes, and compiles the WSL `node-pty` binary. Publish and
-   Origin CLI work stay on `macos-release` because hosted Linux cannot resolve `CURSOR_API_KEY`.
+   Origin CLI work stay on `macos-release` because hosted Linux cannot resolve `CURSOR_API_KEY`
+   through GitHub Actions `secrets.*`. `T3 Pretty Origin PR Review` is the exception: it runs
+   Grok 4.6 on `linux-small` and posts the review with the Origin CLI after
+   `load-buildkite-secrets.sh` reads cluster secrets (`CURSOR_API_KEY`, `XAI_API_KEY`).
+   Do not put that job on `macos-release`.
    `m1-dev` signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
    push/UI builds of `main`, not the four-hour scheduled sync. iOS TestFlight IPAs and OTA
    exports compile on `macos-release` through `fork-mobile-release.yml`. Relay deploys from
@@ -118,6 +126,12 @@ newer upstream tag was integrated before its sync pull request merged.
   sync workflow for conflict resolution and by the release preflight for What's New changelog
   generation. `CLI_PROXY_CHANGELOG_EFFORT` optionally overrides the changelog reasoning effort
   (default `high`).
+- Secret `XAI_API_KEY` (or `GROK_API_KEY`): SpaceXAI / xAI API key used by
+  `scripts/fork/review-origin-pr.mjs` to call `grok-4.6` on each Origin pull request. Store it
+  as a Buildkite cluster secret, not a GitHub Actions `secrets.*` mapping. The job loads it
+  after checkout. Without this key the review workflow fails instead of silently using another
+  model. Optional Cursor Automations at cursor.com/automations can also target this Origin repo
+  with model Grok 4.6; the in-repo workflow is the source of truth.
 - Relay secrets on the same cluster: `CLOUDFLARE_API_TOKEN`, `PLANETSCALE_API_TOKEN_ID`,
   `PLANETSCALE_API_TOKEN`, `AXIOM_TOKEN`, `CLERK_SECRET_KEY`, `APNS_PRIVATE_KEY`. Public
   relay IDs are literals in `.github/workflows/deploy-relay.yml`.
