@@ -27,11 +27,8 @@ curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"
 rm -rf "$prefix"
 mkdir -p "$prefix"
 tar -xzf "${tmp}/${name}" -C "$prefix" --strip-components=1
-export PATH="${prefix}/bin:${PATH}"
-if [[ -n "${GITHUB_PATH:-}" ]]; then
-  echo "${prefix}/bin" >> "$GITHUB_PATH"
-elif [[ -n "${GITHUB_ENV:-}" ]]; then
-  echo "PATH=${prefix}/bin:${PATH}" >> "$GITHUB_ENV"
-fi
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# persist-ci-path.sh prepends onto PATH and writes GITHUB_PATH + GITHUB_ENV.
+bash "${HERE}/persist-ci-path.sh" "${prefix}/bin"
 command -v node >/dev/null
 node --version

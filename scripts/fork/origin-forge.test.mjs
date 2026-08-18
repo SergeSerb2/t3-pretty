@@ -109,10 +109,9 @@ describe("Origin release and blocked-sync helpers", () => {
     );
     assert.include(preparePath, "GITHUB_PATH");
     assert.include(preparePath, "GITHUB_ENV");
-    assert.include(preparePath, 'elif [[ -n "${GITHUB_ENV:-}" ]]');
-    assert.include(preparePath, 'echo "PATH=');
-    assert.notInclude(preparePath, "export PATH=");
-    assert.notInclude(preparePath, "persisted=0");
+    assert.include(preparePath, "wrote=0");
+    assert.include(preparePath, 'echo "PATH=${PATH}" >> "$GITHUB_ENV"');
+    assert.notInclude(preparePath, 'elif [[ -n "${GITHUB_ENV:-}" ]]');
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");
     assert.include(desktop, "T3CODE_RELEASE_S3_BUCKET");
     assert.include(desktop, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");

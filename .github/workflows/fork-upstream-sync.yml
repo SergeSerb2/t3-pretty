@@ -46,14 +46,20 @@ jobs:
         run: |
           set -euo pipefail
           extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
+          export PATH="${extra}:${PATH}"
+          wrote=0
           if [[ -n "${GITHUB_PATH:-}" ]]; then
             echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
             echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
             echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
             echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
-          elif [[ -n "${GITHUB_ENV:-}" ]]; then
-            echo "PATH=${extra}:${PATH}" >> "$GITHUB_ENV"
-          else
+            wrote=1
+          fi
+          if [[ -n "${GITHUB_ENV:-}" ]]; then
+            echo "PATH=${PATH}" >> "$GITHUB_ENV"
+            wrote=1
+          fi
+          if [[ "$wrote" -eq 0 ]]; then
             echo "Neither GITHUB_PATH nor GITHUB_ENV is set; cannot persist PATH for later steps." >&2
             exit 1
           fi

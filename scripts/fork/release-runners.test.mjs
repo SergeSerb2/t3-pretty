@@ -44,7 +44,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(preflight, "continue-on-error: true");
     assert.include(preflight, "ensure-linux-node.sh");
     const nodeHelper = NodeFS.readFileSync(NodePath.resolve(here, "ensure-linux-node.sh"), "utf8");
-    assert.include(nodeHelper, 'elif [[ -n "${GITHUB_ENV:-}" ]]');
+    const persistHelper = NodeFS.readFileSync(NodePath.resolve(here, "persist-ci-path.sh"), "utf8");
+    assert.include(nodeHelper, "persist-ci-path.sh");
+    assert.include(persistHelper, 'echo "PATH=${PATH}" >> "$GITHUB_ENV"');
     assert.notInclude(nodeHelper, 'tar -xzf "${tmp}/${name}" -C /usr/local');
     assert.include(wsl, "PREFLIGHT_REF");
     assert.include(wsl, "ensure-linux-node.sh");
@@ -80,6 +82,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.isFalse(/\n\s+uses:/u.test(mobileWorkflow));
     assert.include(ota, "npm install -g eas-cli");
     assert.include(ios, "npm install -g eas-cli");
+    assert.include(ota, "persist-ci-path.sh");
+    assert.include(ios, "persist-ci-path.sh");
+    assert.include(ota, "$(npm prefix -g)/bin");
   });
 
   it("deploys the relay on macos-release with baked public IDs", () => {

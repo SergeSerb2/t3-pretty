@@ -88,14 +88,20 @@ jobs:
         run: |
           set -euo pipefail
           extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
+          export PATH="${extra}:${PATH}"
+          wrote=0
           if [[ -n "${GITHUB_PATH:-}" ]]; then
             echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
             echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
             echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
             echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
-          elif [[ -n "${GITHUB_ENV:-}" ]]; then
-            echo "PATH=${extra}:${PATH}" >> "$GITHUB_ENV"
-          else
+            wrote=1
+          fi
+          if [[ -n "${GITHUB_ENV:-}" ]]; then
+            echo "PATH=${PATH}" >> "$GITHUB_ENV"
+            wrote=1
+          fi
+          if [[ "$wrote" -eq 0 ]]; then
             echo "Neither GITHUB_PATH nor GITHUB_ENV is set; cannot persist PATH for later steps." >&2
             exit 1
           fi
@@ -161,11 +167,13 @@ jobs:
 
       - name: Expose pnpm
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
+        shell: bash
         run: |
+          set -euo pipefail
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
           vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
-          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
-          "$vp_pnpm_bin/pnpm" --version
+          bash scripts/fork/persist-ci-path.sh "$vp_pnpm_bin"
+          pnpm --version
 
       - name: Setup EAS CLI
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
@@ -184,6 +192,8 @@ jobs:
           if ! command -v eas >/dev/null; then
             npm install -g eas-cli
           fi
+          bash scripts/fork/persist-ci-path.sh "$(npm prefix -g)/bin"
+          command -v eas
           eas --version
 
       - name: Pull production environment variables
@@ -320,14 +330,20 @@ jobs:
         run: |
           set -euo pipefail
           extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
+          export PATH="${extra}:${PATH}"
+          wrote=0
           if [[ -n "${GITHUB_PATH:-}" ]]; then
             echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
             echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
             echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
             echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
-          elif [[ -n "${GITHUB_ENV:-}" ]]; then
-            echo "PATH=${extra}:${PATH}" >> "$GITHUB_ENV"
-          else
+            wrote=1
+          fi
+          if [[ -n "${GITHUB_ENV:-}" ]]; then
+            echo "PATH=${PATH}" >> "$GITHUB_ENV"
+            wrote=1
+          fi
+          if [[ "$wrote" -eq 0 ]]; then
             echo "Neither GITHUB_PATH nor GITHUB_ENV is set; cannot persist PATH for later steps." >&2
             exit 1
           fi
@@ -340,11 +356,13 @@ jobs:
           vp i --filter=@t3tools/mobile... --filter=@t3tools/scripts...
 
       - name: Expose pnpm
+        shell: bash
         run: |
+          set -euo pipefail
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
           vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
-          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
-          "$vp_pnpm_bin/pnpm" --version
+          bash scripts/fork/persist-ci-path.sh "$vp_pnpm_bin"
+          pnpm --version
 
       - name: Setup EAS CLI
         shell: bash
@@ -360,6 +378,8 @@ jobs:
           if ! command -v eas >/dev/null; then
             npm install -g eas-cli
           fi
+          bash scripts/fork/persist-ci-path.sh "$(npm prefix -g)/bin"
+          command -v eas
           eas --version
 
       - name: Pull production environment variables
