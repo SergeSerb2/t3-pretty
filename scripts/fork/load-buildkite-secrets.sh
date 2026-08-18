@@ -28,7 +28,9 @@ for name in "$@"; do
       "/Users/m1-dev/.config/t3-pretty/${name}" \
       "/opt/homebrew/var/buildkite-agent/secrets/${name}"; do
       if [[ -f "$candidate" ]]; then
-        value="$(tr -d '\r\n' < "$candidate")"
+        # Keep PEM newlines (APNs). Strip CRs and one trailing newline.
+        value="$(tr -d '\r' < "$candidate")"
+        value="${value%$'\n'}"
         break
       fi
     done
