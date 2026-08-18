@@ -122,6 +122,9 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(sync, "checkout-origin.sh");
     assert.include(desktop, "checkout-origin.sh");
     assert.include(mobile, "checkout-origin.sh");
+    assert.include(mobile, "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65");
+    assert.notInclude(mobile, "vars.T3CODE_MOBILE_EAS_PROJECT_ID");
+    assert.notInclude(mobile, "vars.APPLE_TEAM_ID");
     assert.include(desktop, "load-buildkite-secrets.sh");
     assert.include(sync, "load-buildkite-secrets.sh");
     assert.include(mobile, "load-buildkite-secrets.sh");
@@ -151,6 +154,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(nsis, "$env:VP_HOME");
     assert.include(nsis, "Test-OfficialVp");
     assert.include(nsis, '${LASTEXITCODE}');
+    assert.include(nsis, "rustup default stable");
     assert.notInclude(nsis, "VITE_PLUS_BIN_DIR");
     assert.notInclude(nsis, "AppData\\Roaming\\npm");
   });

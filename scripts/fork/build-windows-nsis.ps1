@@ -12,8 +12,22 @@ Set-Location $root
 
 $gitBash = Join-Path $env:ProgramFiles "Git\bin"
 $pwshDir = Join-Path $env:ProgramFiles "PowerShell\7"
+$cargoBin = "C:\Users\serge\.cargo\bin"
 if (Test-Path $gitBash) { $env:Path = "$gitBash;$env:Path" }
 if (Test-Path $pwshDir) { $env:Path = "$pwshDir;$env:Path" }
+if (Test-Path $cargoBin) { $env:Path = "$cargoBin;$env:Path" }
+if (Get-Command rustup -ErrorAction SilentlyContinue) {
+  rustup default stable
+  if ($LASTEXITCODE -ne 0) {
+    rustup toolchain install stable --profile minimal --no-self-update
+    rustup default stable
+  }
+  if ($LASTEXITCODE -ne 0) {
+    throw "rustup default stable failed with exit ${LASTEXITCODE}"
+  }
+} else {
+  throw "rustup is required on the windows-release agent."
+}
 
 if (-not $env:GITHUB_RUN_NUMBER) {
   if (-not $env:BUILDKITE_BUILD_NUMBER) {

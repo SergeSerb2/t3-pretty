@@ -49,6 +49,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mac, "/var/folders/*");
     assert.include(mac, "checkout-origin.sh");
     assert.notInclude(mac, "uses: actions/checkout@v6");
+    assert.notInclude(mac, "vars.APPLE_TEAM_ID");
     assert.include(publish, "checkout-origin.sh");
     assert.notInclude(publish, "uses: actions/checkout@v6");
     assert.include(publish, "--experimental-strip-types");

@@ -588,8 +588,6 @@ jobs:
 
       - name: Verify macOS updater signature
         shell: bash
-        env:
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           zip_path="$(find release -maxdepth 1 -type f -name '*-arm64.zip' -print -quit)"
@@ -965,7 +963,6 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
           HAS_WINDOWS: ${{ needs.build_windows.result == 'success' }}
-          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL || env.T3CODE_DESKTOP_UPDATE_FEED_URL }}
         run: |
           set -euo pipefail
           mac_manifest="$(find release-assets -maxdepth 1 -name '*-mac.yml' -print -quit)"

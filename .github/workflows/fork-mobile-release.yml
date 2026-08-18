@@ -53,6 +53,17 @@ concurrency:
   group: fork-mobile-release
   cancel-in-progress: false
 
+# Buildkite's importer does not copy pipeline `env:` or GitHub `vars.*`.
+# Public Expo/EAS IDs have to live here as literals.
+env:
+  T3CODE_MOBILE_UPDATE_URL: "https://u.expo.dev/1eb51d67-48c5-4100-8aa8-f5ac9e1ada65"
+  T3CODE_MOBILE_EAS_PROJECT_ID: "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65"
+  T3CODE_MOBILE_EXPO_OWNER: sergeserbinenkoteam
+  T3CODE_MOBILE_EXPO_SLUG: t3-pretty
+  T3CODE_APPLE_TEAM_ID: "78A5P57U23"
+  T3CODE_IOS_SHARE_EXTENSION: "0"
+  APPLE_TEAM_ID: "78A5P57U23"
+
 jobs:
   ota:
     name: Publish OTA (${{ github.event_name == 'push' && 'release' || inputs.mode }})
@@ -68,12 +79,6 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=8192
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
-      T3CODE_MOBILE_UPDATE_URL: ${{ vars.T3CODE_MOBILE_UPDATE_URL }}
-      T3CODE_MOBILE_EAS_PROJECT_ID: ${{ vars.T3CODE_MOBILE_EAS_PROJECT_ID }}
-      T3CODE_MOBILE_EXPO_OWNER: ${{ vars.T3CODE_MOBILE_EXPO_OWNER }}
-      T3CODE_MOBILE_EXPO_SLUG: ${{ vars.T3CODE_MOBILE_EXPO_SLUG }}
-      T3CODE_APPLE_TEAM_ID: ${{ vars.T3CODE_APPLE_TEAM_ID }}
-      T3CODE_IOS_SHARE_EXTENSION: ${{ vars.T3CODE_IOS_SHARE_EXTENSION }}
       MODE: ${{ github.event_name == 'push' && 'release' || inputs.mode }}
       PLATFORM: ${{ github.event_name == 'push' && 'all' || inputs.platform }}
       FORCE_IOS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_ios || false }}
@@ -265,12 +270,6 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=8192
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
-      T3CODE_MOBILE_UPDATE_URL: ${{ vars.T3CODE_MOBILE_UPDATE_URL }}
-      T3CODE_MOBILE_EAS_PROJECT_ID: ${{ vars.T3CODE_MOBILE_EAS_PROJECT_ID }}
-      T3CODE_MOBILE_EXPO_OWNER: ${{ vars.T3CODE_MOBILE_EXPO_OWNER }}
-      T3CODE_MOBILE_EXPO_SLUG: ${{ vars.T3CODE_MOBILE_EXPO_SLUG }}
-      T3CODE_APPLE_TEAM_ID: ${{ vars.T3CODE_APPLE_TEAM_ID }}
-      T3CODE_IOS_SHARE_EXTENSION: ${{ vars.T3CODE_IOS_SHARE_EXTENSION }}
       MODE: ${{ github.event_name == 'push' && 'release' || inputs.mode }}
       PLATFORM: ${{ github.event_name == 'push' && 'all' || inputs.platform }}
       FORCE_IOS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_ios || false }}
@@ -428,7 +427,6 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           for name in APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
