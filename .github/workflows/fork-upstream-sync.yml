@@ -39,15 +39,23 @@ jobs:
       - name: Prepare macOS runner PATH
         # GHA's `shell: bash` is /bin/bash 3.2. Homebrew node and origin live
         # under /opt/homebrew/bin, which that login-less PATH does not include.
+        # A step-local `export PATH` does not survive to later steps. Persist
+        # through GITHUB_PATH when the importer sets it, and through GITHUB_ENV
+        # otherwise — load-buildkite-secrets.sh already requires that file.
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
+          extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
           if [[ -n "${GITHUB_PATH:-}" ]]; then
             echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
             echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
             echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
             echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+          elif [[ -n "${GITHUB_ENV:-}" ]]; then
+            echo "PATH=${extra}:${PATH}" >> "$GITHUB_ENV"
+          else
+            echo "Neither GITHUB_PATH nor GITHUB_ENV is set; cannot persist PATH for later steps." >&2
+            exit 1
           fi
 
       - name: Checkout fork main
