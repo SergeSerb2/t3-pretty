@@ -152,6 +152,7 @@ export function resolveChangeRequestPresentation(
     case "origin":
       return ORIGIN_CHANGE_REQUEST_PRESENTATION;
     case "unknown":
+    default:
       return GENERIC_CHANGE_REQUEST_PRESENTATION;
   }
 }
