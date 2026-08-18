@@ -241,7 +241,7 @@ jobs:
         shell: bash
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
-          DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+          DEPOT_TOKEN: ${{ env.DEPOT_TOKEN }}
           ORIGIN_REPO: serbinenko/t3-pretty
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
           SYNC_BRANCH: ${{ steps.discover.outputs.branch }}
