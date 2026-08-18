@@ -6,12 +6,15 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
 
 ## Flow
 
-1. `T3 Pretty Origin PR Review` runs on branch pushes that already have an Origin PR, and on
-   manual dispatch. It must not use `on.pull_request`: Origin's Buildkite importer builds a
-   pull_request snapshot without `payload.action`, which fails the check. The script resolves
-   the open Origin PR from the head branch, asks Grok 4.6 through Railway CLIProxyAPI to
-   review the diff, and posts a comment review with `origin pr review --comment`. It does
-   not approve or merge. It does not call api.x.ai. Automation sync branches are skipped.
+1. `T3 Pretty Origin PR Review` asks Grok 4.6 through Railway CLIProxyAPI to review the
+   Origin PR diff and posts `origin pr review --comment`. It does not approve or merge.
+   It does not call api.x.ai. Automation sync branches are skipped. Origin pull-request
+   builds become a GitHub Actions `pull_request` event, so `.buildkite/pipeline.yml`
+   does not import `fork-pr-review.yml`. A native `linux-small` step runs
+   `scripts/fork/review-origin-pr-ci.sh` instead. That step must stay off
+   `macos-release`: feature-branch scripts must not run on the machine that holds
+   cluster secrets. The script resolves the open Origin PR from the head branch,
+   `BUILDKITE_PULL_REQUEST`, or `GITHUB_EVENT_PATH`.
 2. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
    and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. Maintainers can use
    the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
@@ -65,10 +68,11 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
 8. Origin-connected Linux CI (Depot or Buildkite, `ubuntu-latest` in the workflow YAML) resolves
    the version, writes What's New notes, and compiles the WSL `node-pty` binary. Publish and
    Origin CLI work stay on `macos-release` because hosted Linux cannot resolve `CURSOR_API_KEY`
-   through GitHub Actions `secrets.*`. `T3 Pretty Origin PR Review` is the exception: it runs
-   Grok 4.6 on `linux-small` and posts the review with the Origin CLI after
-   `load-buildkite-secrets.sh` reads cluster secrets (`CURSOR_API_KEY`, `CLI_PROXY_API_KEY`).
-   Do not put that job on `macos-release`.
+   through GitHub Actions `secrets.*`. `T3 Pretty Origin PR Review` is a native
+   `linux-small` step: the GitHub Actions importer cannot run that workflow on
+   Origin pull-request events, and the review must not execute feature-branch
+   scripts on `macos-release`. It loads `CURSOR_API_KEY` and `CLI_PROXY_API_KEY`
+   with `buildkite-agent secret get`.
    `m1-dev` signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
    push/UI builds of `main`, not the four-hour scheduled sync. iOS TestFlight IPAs and OTA
    exports compile on `macos-release` through `fork-mobile-release.yml`. Relay deploys from

@@ -43,7 +43,6 @@ steps:
             - .github/workflows/fork-upstream-sync.yml
             - .github/workflows/fork-release.yml
             - .github/workflows/fork-mobile-release.yml
-            - .github/workflows/fork-pr-review.yml
           runners:
             - runs-on: ubuntu-latest
               queue: linux-small
@@ -53,6 +52,17 @@ steps:
               queue: macos-release
             - runs-on: macos-14
               queue: macos-release
+
+  # Keep this on linux-small. macos-release holds cluster secrets and
+  # must not execute feature-branch scripts. The GHA importer cannot
+  # run fork-pr-review.yml on Origin pull_request events.
+  - label: ":mag: Origin PR Review"
+    key: origin-pr-review
+    if: build.branch != "main" && build.source != "schedule"
+    timeout_in_minutes: 20
+    agents:
+      queue: linux-small
+    command: bash scripts/fork/review-origin-pr-ci.sh
 
   - label: ":windows: Windows NSIS"
     key: windows-nsis

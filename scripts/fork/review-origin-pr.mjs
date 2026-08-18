@@ -18,7 +18,7 @@ export const DEFAULT_MODEL = "grok-4.6";
 export const DEFAULT_CLI_PROXY_API_URL = "https://cli-proxy-api-production-1615.up.railway.app/v1";
 export const MAX_DIFF_CHARS = 120_000;
 export const MAX_ISSUES = 12;
-const REQUEST_TIMEOUT_MS = 180_000;
+const REQUEST_TIMEOUT_MS = 480_000;
 const SEVERITIES = new Set(["bug", "suggestion", "nit"]);
 
 const REVIEW_SCHEMA = {
@@ -85,8 +85,30 @@ export function resolveBranchName({ env = process.env, argvHead } = {}) {
   return "";
 }
 
-export function resolveExplicitPr({ env = process.env, argvPr } = {}) {
-  for (const raw of [argvPr, env.ORIGIN_PR, env.INPUT_PR, env.BUILDKITE_PULL_REQUEST]) {
+export function prNumberFromEvent(event) {
+  if (!event || typeof event !== "object") return "";
+  for (const raw of [event.inputs?.pr, event.inputs?.PR, event.pull_request?.number]) {
+    const value = String(raw ?? "").trim();
+    if (!value || value === "false" || value === "null") continue;
+    const digits = value.replace(/^#/u, "");
+    if (/^\d+$/u.test(digits)) return digits;
+  }
+  return "";
+}
+
+export function prNumberFromEventPath(env = process.env) {
+  const path = env.GITHUB_EVENT_PATH?.trim();
+  if (!path) return "";
+  try {
+    return prNumberFromEvent(JSON.parse(NodeFS.readFileSync(path, "utf8")));
+  } catch {
+    return "";
+  }
+}
+
+export function resolveExplicitPr({ env = process.env, argvPr, event } = {}) {
+  const fromEvent = event !== undefined ? prNumberFromEvent(event) : prNumberFromEventPath(env);
+  for (const raw of [argvPr, env.ORIGIN_PR, env.INPUT_PR, fromEvent, env.BUILDKITE_PULL_REQUEST]) {
     const value = String(raw ?? "").trim();
     if (!value || value === "false" || value === "null") continue;
     const digits = value.replace(/^#/u, "");
