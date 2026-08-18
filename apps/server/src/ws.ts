@@ -26,6 +26,7 @@ import {
   type GitManagerServiceError,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
+  type OrchestrationThreadShell,
   type OrchestrationShellStreamItem,
   type OrchestrationThreadStreamItem,
   OrchestrationGetFullThreadDiffError,
@@ -74,6 +75,11 @@ import {
   projectActivityEvent,
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
+import {
+  isCompatibleBootstrapThread,
+  shouldSkipBootstrapWorktreePrepare,
+} from "./orchestration/bootstrapCreateThread.ts";
+import { isThreadAlreadyExistsInvariant } from "./orchestration/Errors.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -571,6 +577,7 @@ const makeWsRpcLayer = (
           const bootstrap = command.bootstrap;
           const { bootstrap: _bootstrap, ...finalTurnStartCommand } = command;
           let createdThread = false;
+          let skipPrepareWorktree = false;
           let targetProjectId = bootstrap?.createThread?.projectId;
           let targetProjectCwd = bootstrap?.prepareWorktree?.projectCwd;
           let targetWorktreePath = bootstrap?.createThread?.worktreePath ?? null;
@@ -706,27 +713,86 @@ const makeWsRpcLayer = (
 
           const bootstrapProgram = Effect.gen(function* () {
             if (bootstrap?.createThread) {
-              yield* orchestrationEngine.dispatch({
-                type: "thread.create",
-                commandId: yield* serverCommandId("bootstrap-thread-create"),
-                threadId: command.threadId,
-                projectId: bootstrap.createThread.projectId,
-                title: bootstrap.createThread.title,
-                modelSelection: bootstrap.createThread.modelSelection,
-                runtimeMode: bootstrap.createThread.runtimeMode,
-                interactionMode: bootstrap.createThread.interactionMode,
-                branch: bootstrap.createThread.branch,
-                worktreePath: bootstrap.createThread.worktreePath,
-                enabledSkillIds: bootstrap.createThread.enabledSkillIds,
-                ...(bootstrap.createThread.subagentPolicy !== undefined
-                  ? { subagentPolicy: bootstrap.createThread.subagentPolicy }
-                  : {}),
-                createdAt: bootstrap.createThread.createdAt,
-              });
-              createdThread = true;
+              const createThread = bootstrap.createThread;
+              const readActiveThreadShell = () =>
+                projectionSnapshotQuery
+                  .getThreadShellById(command.threadId)
+                  .pipe(
+                    Effect.mapError((cause) =>
+                      toDispatchCommandError(
+                        cause,
+                        "Failed to read thread before bootstrap create.",
+                      ),
+                    ),
+                  );
+              const adoptExistingThread = (
+                existing: OrchestrationThreadShell,
+              ): Effect.Effect<void, OrchestrationDispatchCommandError> => {
+                if (
+                  !isCompatibleBootstrapThread({
+                    existing,
+                    projectId: createThread.projectId,
+                  })
+                ) {
+                  return Effect.fail(
+                    new OrchestrationDispatchCommandError({
+                      message: `Thread '${command.threadId}' already exists in project '${existing.projectId}' and cannot be created for project '${createThread.projectId}'.`,
+                    }),
+                  );
+                }
+                if (shouldSkipBootstrapWorktreePrepare(existing)) {
+                  skipPrepareWorktree = true;
+                  if (existing.worktreePath) {
+                    targetWorktreePath = existing.worktreePath;
+                  }
+                }
+                return Effect.void;
+              };
+
+              const existingThread = yield* readActiveThreadShell();
+              if (Option.isSome(existingThread)) {
+                yield* adoptExistingThread(existingThread.value);
+              } else {
+                const created = yield* orchestrationEngine
+                  .dispatch({
+                    type: "thread.create",
+                    commandId: yield* serverCommandId("bootstrap-thread-create"),
+                    threadId: command.threadId,
+                    projectId: createThread.projectId,
+                    title: createThread.title,
+                    modelSelection: createThread.modelSelection,
+                    runtimeMode: createThread.runtimeMode,
+                    interactionMode: createThread.interactionMode,
+                    branch: createThread.branch,
+                    worktreePath: createThread.worktreePath,
+                    enabledSkillIds: createThread.enabledSkillIds,
+                    ...(createThread.subagentPolicy !== undefined
+                      ? { subagentPolicy: createThread.subagentPolicy }
+                      : {}),
+                    createdAt: createThread.createdAt,
+                  })
+                  .pipe(
+                    Effect.as(true),
+                    Effect.catchIf(isThreadAlreadyExistsInvariant, () => Effect.succeed(false)),
+                    Effect.mapError((cause) =>
+                      toDispatchCommandError(cause, "Failed to create bootstrap thread."),
+                    ),
+                  );
+                if (created) {
+                  createdThread = true;
+                } else {
+                  const retryExisting = yield* readActiveThreadShell();
+                  if (Option.isNone(retryExisting)) {
+                    return yield* new OrchestrationDispatchCommandError({
+                      message: `Thread '${command.threadId}' already exists and cannot be created twice.`,
+                    });
+                  }
+                  yield* adoptExistingThread(retryExisting.value);
+                }
+              }
             }
 
-            if (bootstrap?.prepareWorktree) {
+            if (bootstrap?.prepareWorktree && !skipPrepareWorktree) {
               let worktreeBaseRef = bootstrap.prepareWorktree.baseBranch;
               // "Start from origin" is a stored default; repos without an
               // origin remote fall back to the local base branch instead of
@@ -767,7 +833,9 @@ const makeWsRpcLayer = (
               yield* refreshGitStatus(targetWorktreePath);
             }
 
-            yield* runSetupProgram();
+            if (!skipPrepareWorktree) {
+              yield* runSetupProgram();
+            }
 
             return yield* orchestrationEngine.dispatch(finalTurnStartCommand);
           });
