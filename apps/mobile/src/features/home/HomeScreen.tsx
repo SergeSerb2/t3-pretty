@@ -212,9 +212,6 @@ export function HomeScreen(props: HomeScreenProps) {
   const isFocused = useIsFocused();
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const threadListV2Enabled = useThreadListV2Enabled();
-  const autoSettleOnMerge =
-    !AsyncResult.isSuccess(preferencesResult) ||
-    preferencesResult.value.autoSettleOnMerge !== false;
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const listRef = useRef<LegendListRef | null>(null);
@@ -678,7 +675,6 @@ export function HomeScreen(props: HomeScreenProps) {
       searchQuery: props.searchQuery,
       matchedThreadKeys,
       changeRequestStateByKey,
-      autoSettleOnMerge,
       settlementEnvironmentIds,
       snoozeEnvironmentIds,
       settledLimit: settledVisibleCount,
@@ -690,7 +686,6 @@ export function HomeScreen(props: HomeScreenProps) {
     });
   }, [
     changeRequestStateByKey,
-    autoSettleOnMerge,
     nowMinute,
     snoozeWakeTick,
     snoozedShelfExpanded,

@@ -22,13 +22,12 @@ const STALE = "2026-04-06T23:59:59.999Z";
 
 describe("changeRequestAutoSettles", () => {
   it.each([
-    ["open", true, false],
-    ["merged", true, true],
-    ["merged", false, false],
-    ["closed", false, true],
-    [null, false, false],
-  ] as const)("state=%s autoSettleOnMerge=%s returns %s", (state, autoSettleOnMerge, expected) => {
-    expect(changeRequestAutoSettles(state, autoSettleOnMerge)).toBe(expected);
+    ["open", false],
+    ["merged", false],
+    ["closed", true],
+    [null, false],
+  ] as const)("state=%s returns %s", (state, expected) => {
+    expect(changeRequestAutoSettles(state)).toBe(expected);
   });
 });
 
@@ -127,17 +126,18 @@ describe("effectiveSettled", () => {
             running,
             pending,
             // Settled iff nothing blocks (pending work / live session) AND
-            // the override says settled, or (with no override) a merged PR
-            // or staleness auto-settles. The "active" pin suppresses both
-            // auto signals, and an open PR suppresses the inactivity path:
-            // a thread with a PR out for review is never done, however quiet.
+            // the override says settled, or (with no override) staleness
+            // auto-settles. The "active" pin suppresses auto-settle, and an
+            // open or merged PR suppresses the inactivity path: a thread
+            // with a live change request is never done, however quiet.
             expected:
               pending === undefined &&
               !running &&
               (settledOverride === "settled" ||
                 (settledOverride === null &&
-                  (changeRequestState === "merged" ||
-                    (changeRequestState !== "open" && inactivity === "stale")))),
+                  changeRequestState !== "open" &&
+                  changeRequestState !== "merged" &&
+                  inactivity === "stale")),
           })),
         ),
       ),
@@ -168,10 +168,10 @@ describe("effectiveSettled", () => {
     },
   );
 
-  it("treats closed change requests like merged ones", () => {
-    const shell = makeShell({ activityAt: null });
+  it("settles immediately when a change request closes", () => {
+    const recentlyActive = makeShell({ activityAt: "2026-04-09T23:59:59.999Z" });
     expect(
-      effectiveSettled(shell, {
+      effectiveSettled(recentlyActive, {
         now: NOW,
         autoSettleAfterDays: null,
         changeRequestState: "closed",
@@ -179,38 +179,24 @@ describe("effectiveSettled", () => {
     ).toBe(true);
   });
 
-  it("settles immediately when a change request merges or closes", () => {
-    const recentlyActive = makeShell({ activityAt: "2026-04-09T23:59:59.999Z" });
-    for (const changeRequestState of ["merged", "closed"] as const) {
-      expect(
-        effectiveSettled(recentlyActive, {
-          now: NOW,
-          autoSettleAfterDays: null,
-          changeRequestState,
-        }),
-      ).toBe(true);
-    }
-  });
-
-  it("can keep a merged change request active", () => {
+  it("keeps a merged change request active", () => {
     const recentlyActive = makeShell({ activityAt: "2026-04-09T23:59:59.999Z" });
     expect(
       effectiveSettled(recentlyActive, {
         now: NOW,
         autoSettleAfterDays: null,
-        autoSettleOnMerge: false,
         changeRequestState: "merged",
       }),
     ).toBe(false);
 
+    const stale = makeShell({ activityAt: STALE });
     expect(
-      effectiveSettled(recentlyActive, {
+      effectiveSettled(stale, {
         now: NOW,
-        autoSettleAfterDays: null,
-        autoSettleOnMerge: false,
-        changeRequestState: "closed",
+        autoSettleAfterDays: 3,
+        changeRequestState: "merged",
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("never auto-settles a stale thread with an open change request", () => {

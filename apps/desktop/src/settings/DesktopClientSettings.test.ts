@@ -24,6 +24,7 @@ const clientSettings: ClientSettings = {
   diffIgnoreWhitespace: true,
   environmentIdentificationMode: "artwork",
   favorites: [],
+  favoriteSkillIds: [],
   fontFamilyCode: "",
   fontFamilyComposer: "",
   fontFamilySans: "",
@@ -37,7 +38,6 @@ const clientSettings: ClientSettings = {
   planModeEnabled: false,
   providerModelPreferences: {},
   sidebarAutoSettleAfterDays: 3,
-  sidebarAutoSettleOnMerge: true,
   sidebarProjectGroupingMode: "repository_path",
   sidebarProjectGroupingOverrides: {
     "environment-1:/tmp/project-a": "separate",

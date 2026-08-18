@@ -5,10 +5,8 @@ import {
   useNavigation,
   type StaticScreenProps,
 } from "@react-navigation/native";
-import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Option from "effect/Option";
-import { AsyncResult } from "effect/unstable/reactivity";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   canSettle,
@@ -48,7 +46,6 @@ import { GitActionProgressOverlay } from "./GitActionProgressOverlay";
 import { useThreadListActions } from "../home/useThreadListActions";
 import { ThreadDetailScreen } from "./ThreadDetailScreen";
 import { ThreadGitControls, useThreadDetailHeaderActionItems } from "./ThreadGitControls";
-import { mobilePreferencesAtom } from "../../state/preferences";
 import { resolveThreadListV2SnoozeGateExpiryMs } from "./threadListV2";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -216,10 +213,6 @@ function ThreadRouteContent(
   const gitActions = useSelectedThreadGitActions({ loadInitialState: false });
   const requests = useSelectedThreadRequests();
   const { settleThread, snoozeThread, unsnoozeThread, unsettleThread } = useThreadListActions();
-  const preferencesResult = useAtomValue(mobilePreferencesAtom);
-  const autoSettleOnMerge =
-    !AsyncResult.isSuccess(preferencesResult) ||
-    preferencesResult.value.autoSettleOnMerge !== false;
   const [threadLifecycleTick, bumpThreadLifecycleTick] = useState(0);
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, "thread interrupt");
   const navigation = useNavigation();
@@ -567,7 +560,6 @@ function ThreadRouteContent(
     effectiveSettled(selectedThread, {
       now: threadLifecycleNow,
       autoSettleAfterDays: 3,
-      autoSettleOnMerge,
       changeRequestState,
     });
   const threadSnoozed =

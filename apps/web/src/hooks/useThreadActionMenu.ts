@@ -60,7 +60,7 @@ export function useThreadActionMenu(input: {
   readonly threadRef: ScopedThreadRef | null;
   /** Fallback for "Copy path" when the thread has no worktree. */
   readonly projectCwd: string | null;
-  /** PR state feeding auto-settle classification, as resolved by the caller. */
+  /** PR state feeding settle classification, as resolved by the caller. */
   readonly changeRequestState: ChangeRequestStateLike | null;
   readonly onStartRename: () => void;
 }) {
@@ -81,7 +81,6 @@ export function useThreadActionMenu(input: {
   const handleNewThread = useNewThreadHandler();
   const markThreadUnread = useUiStateStore((s) => s.markThreadUnread);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
-  const autoSettleOnMerge = useClientSettings((s) => s.sidebarAutoSettleOnMerge);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
@@ -135,7 +134,6 @@ export function useThreadActionMenu(input: {
               // parked-thread banner within the same minute.
               now: `${now.toISOString().slice(0, 16)}:00.000Z`,
               autoSettleAfterDays,
-              autoSettleOnMerge,
               changeRequestState,
             }),
           isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
@@ -311,7 +309,6 @@ export function useThreadActionMenu(input: {
     [
       archiveThread,
       autoSettleAfterDays,
-      autoSettleOnMerge,
       changeRequestState,
       confirmThreadArchive,
       confirmThreadDelete,
