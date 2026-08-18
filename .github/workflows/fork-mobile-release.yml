@@ -249,7 +249,9 @@ jobs:
     name: Build and submit iOS
     needs: ota
     if: needs.ota.outputs.should_build == 'true'
-    runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
+    # macos-latest maps to the macos-release queue. The importer rejects
+    # self-hosted label lists.
+    runs-on: macos-latest
     timeout-minutes: 90
     permissions:
       # contents:write pushes the automation branch that records
