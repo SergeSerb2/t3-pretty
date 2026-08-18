@@ -203,8 +203,10 @@ function isMain(argv = process.argv) {
 }
 
 if (isMain()) {
-  checkOriginPrComments().catch((error) => {
+  try {
+    checkOriginPrComments();
+  } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
-  });
+  }
 }
