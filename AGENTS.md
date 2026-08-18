@@ -111,12 +111,33 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 
 ## Pull requests
 
+This fork lives on **Cursor Origin**. The git remote named `origin` is
+`https://origin.cursor.com/serbinenko/t3-pretty.git`. That is the only place
+commits and pull requests for T3 Pretty go.
+
+The GitHub copy (`SergeSerb2/t3-pretty`, and any local `github` remote) is
+retired. Do not push branches there for review. Do not open or babysit PRs
+with `gh pr`. Do not retarget `origin` at github.com.
+
 - Never make a PR unless the developer explicitly asks you to do so.
+- Push the branch to the `origin` remote (`origin.cursor.com`), then open the
+  PR with the Origin CLI against this repo's `main`:
+
+  ```
+  origin pr create --repo serbinenko/t3-pretty --base main --status open --title "..." --body "..."
+  ```
+
+  PRs open at `https://cursor.com/codebase/serbinenko/t3-pretty/pull/<n>`.
+
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
 - UI changes need before/after images. Motion or timing needs a short video.
 - One concern per PR. If the description says "also", split it.
-- When babysitting: poll checks and comments newer than the last push, verify each bot finding against the source, fix real ones, dismiss false positives with a written reason. Stay quiet when nothing is new. Stop when the bots are green on the latest commit.
+- When babysitting: use `origin pr view`, `origin pr checks`, and
+  `origin pr comment`. Poll checks and comments newer than the last push,
+  verify each bot finding against the source, fix real ones, dismiss false
+  positives with a written reason. Stay quiet when nothing is new. Stop when
+  the bots are green on the latest commit.
 
 ## How it works
 
