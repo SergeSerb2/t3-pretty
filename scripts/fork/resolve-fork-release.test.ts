@@ -45,6 +45,19 @@ it("emits a fork-specific semver tag that electron-updater can match to nightly"
     assert.equal(metadata.upstream_tag, "v0.0.33-nightly.20260809.1043");
     assert.equal(metadata.name, "T3 Pretty 0.0.33-nightly.20260809.1043000015");
     assert.match(metadata.tag, /^v\d+\.\d+\.\d+-nightly\.\d{8}\.\d+\.fork$/u);
+
+    const buildkiteOutput = NodeChildProcess.execFileSync(process.execPath, [scriptPath], {
+      cwd: fixtureRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GITHUB_RUN_NUMBER: "0",
+        BUILDKITE_BUILD_NUMBER: "39",
+        GITHUB_OUTPUT: "",
+      },
+    });
+    const buildkiteMetadata = JSON.parse(buildkiteOutput) as { readonly version: string };
+    assert.equal(buildkiteMetadata.version, "0.0.33-nightly.20260809.1043000039");
   } finally {
     NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
   }

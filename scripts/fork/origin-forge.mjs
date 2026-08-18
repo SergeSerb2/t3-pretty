@@ -134,6 +134,25 @@ export function defaultUpdateFeedUrl() {
   return resolveUpdateFeedUrl(process.env.T3CODE_DESKTOP_UPDATE_FEED_URL ?? "");
 }
 
+/** S3 key prefix matching the public feed directory, or T3CODE_RELEASE_S3_PREFIX. */
+export function resolveReleaseObjectPrefix() {
+  const explicit = process.env.T3CODE_RELEASE_S3_PREFIX?.trim();
+  if (explicit) return explicit.replace(/^\/+|\/+$/g, "");
+  const feedUrl = defaultUpdateFeedUrl();
+  if (!feedUrl) return "";
+  try {
+    return new URL(feedUrl).pathname.replace(/^\/+|\/+$/g, "");
+  } catch {
+    return "";
+  }
+}
+
+export function resolveReleaseObjectKey(fileName) {
+  const base = NodePath.basename(fileName);
+  const prefix = resolveReleaseObjectPrefix();
+  return prefix ? `${prefix}/${base}` : base;
+}
+
 export function writeGitHubOutput(values) {
   const outputPath = process.env.GITHUB_OUTPUT;
   if (!outputPath) return;
@@ -405,19 +424,40 @@ export function publishOriginRelease({ tag, target, title, notesFile, assets = [
   const existing = runCommand("git", ["tag", "--list", tag]);
   if (!existing) {
     const notePath = writeTempBody(notes || title || tag);
-    runCommand("git", ["tag", "-a", tag, target, "-F", notePath]);
+    // Annotated tags need a committer; CI checkouts have no user.name/email.
+    runCommand("git", [
+      "-c",
+      "user.name=t3-pretty-release[bot]",
+      "-c",
+      "user.email=t3-pretty-bot@users.noreply.cursor.com",
+      "tag",
+      "-a",
+      tag,
+      target,
+      "-F",
+      notePath,
+    ]);
+  }
+
+  // Push only after uploads: fork-release.yml skips commits that already have
+  // this tag, so a pre-upload push would block retries of missing assets.
+  for (const asset of assets) {
+    uploadReleaseAsset(asset, resolveReleaseObjectKey(asset));
   }
   runCommand("git", ["push", "origin", `refs/tags/${tag}`]);
-
-  for (const asset of assets) {
-    uploadReleaseAsset(asset, NodePath.basename(asset));
-  }
   writeGitHubOutput({
     tag,
     url: `${ORIGIN_WEB_URL}/releases/${encodeURIComponent(tag)}`,
     feed: feedUrl,
   });
   return feedUrl;
+}
+
+export function uploadReleaseAssets(assets = []) {
+  if (!assets.length) throw new Error("upload-assets requires --asset");
+  for (const asset of assets) {
+    uploadReleaseAsset(asset, resolveReleaseObjectKey(asset));
+  }
 }
 
 export function uploadReleaseAsset(filePath, objectKey) {
@@ -431,21 +471,44 @@ export function uploadReleaseAsset(filePath, objectKey) {
     );
   }
   const destination = `s3://${bucket}/${objectKey}`;
-  const args = ["s3", "cp", filePath, destination];
-  const endpoint = process.env.T3CODE_RELEASE_S3_ENDPOINT;
-  if (endpoint) args.push("--endpoint-url", endpoint);
-  const env = { ...process.env };
-  if (process.env.T3CODE_RELEASE_S3_ACCESS_KEY_ID) {
+  if (
+    process.env.T3CODE_RELEASE_S3_ACCESS_KEY_ID &&
+    process.env.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY
+  ) {
+    const args = ["s3", "cp", filePath, destination];
+    const endpoint = process.env.T3CODE_RELEASE_S3_ENDPOINT;
+    if (endpoint) args.push("--endpoint-url", endpoint);
+    const env = { ...process.env };
     env.AWS_ACCESS_KEY_ID = process.env.T3CODE_RELEASE_S3_ACCESS_KEY_ID;
-  }
-  if (process.env.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY) {
     env.AWS_SECRET_ACCESS_KEY = process.env.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY;
+    if (process.env.T3CODE_RELEASE_S3_REGION) {
+      env.AWS_DEFAULT_REGION = process.env.T3CODE_RELEASE_S3_REGION;
+      args.push("--region", process.env.T3CODE_RELEASE_S3_REGION);
+    }
+    runCommand("aws", args, { env });
+    return;
   }
-  if (process.env.T3CODE_RELEASE_S3_REGION) {
-    env.AWS_DEFAULT_REGION = process.env.T3CODE_RELEASE_S3_REGION;
-    args.push("--region", process.env.T3CODE_RELEASE_S3_REGION);
+  if (commandExists("npx") || commandExists("wrangler")) {
+    const wrangler = commandExists("wrangler") ? "wrangler" : "npx";
+    const args = commandExists("wrangler")
+      ? ["r2", "object", "put", `${bucket}/${objectKey}`, "--file", filePath, "--remote"]
+      : [
+          "--yes",
+          "wrangler",
+          "r2",
+          "object",
+          "put",
+          `${bucket}/${objectKey}`,
+          "--file",
+          filePath,
+          "--remote",
+        ];
+    runCommand(wrangler, args);
+    return;
   }
-  runCommand("aws", args, { env });
+  throw new Error(
+    "Set T3CODE_RELEASE_S3_ACCESS_KEY_ID/SECRET or install wrangler to upload Origin updater assets.",
+  );
 }
 
 function writeTempBody(body) {
@@ -527,9 +590,12 @@ export function main(argv = process.argv.slice(2)) {
         assets: readRepeated(rest, "--asset"),
       });
       return;
+    case "upload-assets":
+      uploadReleaseAssets(readRepeated(rest, "--asset"));
+      return;
     default:
       throw new Error(
-        `Unknown origin-forge command: ${command ?? "(missing)"}. Use setup-ci, ensure-pr, merge-pr, delete-branch, report-blocked, dispatch, or publish-release.`,
+        `Unknown origin-forge command: ${command ?? "(missing)"}. Use setup-ci, ensure-pr, merge-pr, delete-branch, report-blocked, dispatch, publish-release, or upload-assets.`,
       );
   }
 }

@@ -115,9 +115,10 @@ the URL manually.
 ### Deployment CI
 
 The relay is versioned separately from client releases. `.github/workflows/deploy-relay.yml` deploys
-the shared Alchemy `prod` stage on every push to `main`. Stable and nightly release builds both
-resolve their static public config from the same
-`production` GitHub environment. Pull requests do not deploy relay stages. Developers can
+the shared Alchemy `prod` stage on every push to Origin `main` through the Buildkite importer
+on `macos-release`. Public production IDs are literals in that workflow; private tokens load
+from the cluster or the macos-release file store after checkout. Pull requests do not deploy
+relay stages. Developers can
 deploy personal non-production stages locally with any stage name other than `prod`.
 
 The repository must define these Actions variables shared by relay deployments:

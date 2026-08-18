@@ -1,10 +1,9 @@
 /**
- * Settings › Skills — the server-managed skill registry: installed skills with
- * a global on/off per skill, marketplace listings browsed from configured
- * GitHub repository sources, host-folder skills the provider CLIs installed
- * themselves (enable/disable without deleting, or uninstall), and a read-only
- * view of plugin/project/system skills those CLIs still report. Install,
- * uninstall, host enablement, and marketplace refresh go through the
+ * Settings › Skills — library, environment, and marketplace in one searchable
+ * page. The library is T3's store. Environment lists host-folder, plugin,
+ * bundled, and system skills the provider CLIs already have, plus a read-only
+ * remainder those CLIs still report. Marketplace browses GitHub sources.
+ * Install, uninstall, host enablement, and marketplace refresh go through the
  * skills RPC commands; T3-store enablement and sources are patched into
  * server settings.
  */
@@ -24,11 +23,13 @@ import type {
   SkillsState,
 } from "@t3tools/contracts";
 import {
+  ChevronDownIcon,
   LaptopIcon,
   LoaderCircleIcon,
   PackageIcon,
   PlusIcon,
   RefreshCwIcon,
+  SearchIcon,
   StoreIcon,
   Trash2Icon,
   XIcon,
@@ -53,18 +54,31 @@ import {
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Skeleton } from "../ui/skeleton";
 import { Switch } from "../ui/switch";
-import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import {
+  SettingsPageContainer,
+  SettingsSection,
+  useSettingsSearchTargetId,
+} from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import {
   displaySkillRows,
   finishTombstoneExit,
+  groupSkillRowsByOrigin,
+  hostSkillCanUninstall,
+  hostSkillKindLabel,
   nextSkillOrderIds,
+  originGroupId,
   pruneHiddenSkillIds,
   retainedSkillIds,
   SKILL_ROW_EXIT_MS,
+  SKILLS_SETTINGS_TABS,
+  skillTextMatches,
+  skillsTabForSearchTarget,
   type Identified,
+  type SkillsSettingsTab,
 } from "./SkillsSettings.logic";
 import "./skillsSettings.css";
 
@@ -82,6 +96,9 @@ const EMPTY_HOST_SKILLS: ReadonlyArray<HostSkill> = [];
 
 export function SkillsSettingsPanel() {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const searchTargetId = useSettingsSearchTargetId();
+  const [tab, setTab] = useState<SkillsSettingsTab>("library");
+  const [searchQuery, setSearchQuery] = useState("");
   const skillsState = useEnvironmentQuery(
     primaryEnvironmentId === null ? null : skillsEnvironment.skillsStateAtom(primaryEnvironmentId),
   );
@@ -95,14 +112,149 @@ export function SkillsSettingsPanel() {
       ? null
       : skillsEnvironment.hostSkillsStateAtom(primaryEnvironmentId),
   );
+  const activeTab = skillsTabForSearchTarget(searchTargetId) ?? tab;
+  const hostSkills = hostSkillsState.data?.skills ?? EMPTY_HOST_SKILLS;
+  const installedSkills = skillsState.data?.installedSkills ?? EMPTY_INSTALLED_SKILLS;
+  const marketplaceSkills = useMemo(
+    () => marketplaceListings.data?.flatMap((listing) => listing.skills) ?? [],
+    [marketplaceListings.data],
+  );
+  const tabCounts = useMemo(
+    () => ({
+      library: installedSkills.filter((skill) =>
+        skillTextMatches(searchQuery, [skill.name, skill.description, skill.sourceRepo]),
+      ).length,
+      machine: hostSkills.filter((skill) =>
+        skillTextMatches(searchQuery, [
+          skill.name,
+          skill.description,
+          skill.origin,
+          skill.displayPath,
+          hostSkillKindLabel(skill.kind) ?? undefined,
+        ]),
+      ).length,
+      marketplace: marketplaceSkills.filter((skill) =>
+        skillTextMatches(searchQuery, [skill.name, skill.description, skill.id]),
+      ).length,
+    }),
+    [hostSkills, installedSkills, marketplaceSkills, searchQuery],
+  );
 
   return (
-    <SettingsPageContainer>
-      <InstalledSkillsSection environmentId={primaryEnvironmentId} query={skillsState} />
-      <HostSkillsSection environmentId={primaryEnvironmentId} query={hostSkillsState} />
-      <MarketplaceSkillsSection environmentId={primaryEnvironmentId} query={marketplaceListings} />
-      <DetectedSkillsSection hostSkills={hostSkillsState.data?.skills ?? []} />
+    <SettingsPageContainer className="gap-6">
+      <SkillsSettingsToolbar
+        activeTab={activeTab}
+        counts={tabCounts}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        onTabChange={setTab}
+      />
+      {activeTab === "library" ? (
+        <InstalledSkillsSection
+          environmentId={primaryEnvironmentId}
+          query={skillsState}
+          searchQuery={searchQuery}
+        />
+      ) : null}
+      {activeTab === "machine" ? (
+        <>
+          <HostSkillsSection
+            environmentId={primaryEnvironmentId}
+            query={hostSkillsState}
+            searchQuery={searchQuery}
+          />
+          <DetectedSkillsSection hostSkills={hostSkills} searchQuery={searchQuery} />
+        </>
+      ) : null}
+      {activeTab === "marketplace" ? (
+        <MarketplaceSkillsSection
+          environmentId={primaryEnvironmentId}
+          query={marketplaceListings}
+          searchQuery={searchQuery}
+        />
+      ) : null}
     </SettingsPageContainer>
+  );
+}
+
+function SkillsSettingsToolbar({
+  activeTab,
+  counts,
+  searchQuery,
+  onSearchQueryChange,
+  onTabChange,
+}: {
+  activeTab: SkillsSettingsTab;
+  counts: Record<SkillsSettingsTab, number>;
+  searchQuery: string;
+  onSearchQueryChange: (value: string) => void;
+  onTabChange: (tab: SkillsSettingsTab) => void;
+}) {
+  const hasQuery = searchQuery.trim().length > 0;
+  const otherMatches = SKILLS_SETTINGS_TABS.filter(
+    (entry) => entry.id !== activeTab && counts[entry.id] > 0,
+  );
+
+  return (
+    <div className="sticky top-0 z-10 -mx-4 space-y-3 border-b border-border/60 bg-background px-4 pb-3 sm:-mx-8 sm:px-8">
+      <InputGroup className="w-full">
+        <InputGroupAddon>
+          <SearchIcon />
+        </InputGroupAddon>
+        <InputGroupInput
+          aria-label="Search all skills"
+          onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
+          placeholder="Search skills, providers, or paths…"
+          type="search"
+          value={searchQuery}
+        />
+      </InputGroup>
+      <div
+        aria-label="Skills sections"
+        className="flex flex-wrap gap-1 rounded-lg bg-muted/50 p-1"
+        role="tablist"
+      >
+        {SKILLS_SETTINGS_TABS.map((entry) => {
+          const selected = entry.id === activeTab;
+          return (
+            <button
+              key={entry.id}
+              aria-selected={selected}
+              className={cn(
+                "flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors",
+                selected
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => onTabChange(entry.id)}
+              role="tab"
+              type="button"
+            >
+              <span className="truncate">{entry.label}</span>
+              <span className="tabular-nums text-xs text-muted-foreground">{counts[entry.id]}</span>
+            </button>
+          );
+        })}
+      </div>
+      {hasQuery && otherMatches.length > 0 ? (
+        <p className="px-1 text-[12px] text-muted-foreground">
+          Also{" "}
+          {otherMatches.map((entry, index) => (
+            <span key={entry.id}>
+              {index > 0 ? ", " : null}
+              <button
+                className="font-medium text-foreground underline-offset-2 hover:underline"
+                onClick={() => onTabChange(entry.id)}
+                type="button"
+              >
+                {counts[entry.id]} in {entry.label}
+              </button>
+            </span>
+          ))}
+          .
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -240,9 +392,11 @@ function SkillRowShell({
 function InstalledSkillsSection({
   environmentId,
   query,
+  searchQuery,
 }: {
   environmentId: EnvironmentId | null;
   query: EnvironmentQueryView<SkillsState>;
+  searchQuery: string;
 }) {
   const settings = usePrimarySettings();
   const persistSettings = useAtomCommand(
@@ -256,6 +410,15 @@ function InstalledSkillsSection({
   const [uninstallingIds, setUninstallingIds] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
   const installedSkills = query.data?.installedSkills ?? EMPTY_INSTALLED_SKILLS;
   const { rows, beginExit, finishExit } = useTombstonedSkillList(installedSkills);
+  const visibleRows = useMemo(
+    () =>
+      rows.filter(
+        ({ skill, exiting }) =>
+          exiting ||
+          skillTextMatches(searchQuery, [skill.name, skill.description, skill.sourceRepo]),
+      ),
+    [rows, searchQuery],
+  );
 
   // The enabled list is replaced wholesale on every write, so edits chain off
   // the last list sent, not the server value that lags a round trip behind.
@@ -339,9 +502,13 @@ function InstalledSkillsSection({
       ) : query.data === null ? (
         <SkillListSkeleton rows={3} />
       ) : rows.length === 0 ? (
-        <SkillListHint>No skills installed yet — find some in the marketplace below.</SkillListHint>
+        <SkillListHint>
+          No skills in the library yet — install some from the Marketplace tab.
+        </SkillListHint>
+      ) : visibleRows.length === 0 ? (
+        <SkillListHint>No library skills match.</SkillListHint>
       ) : (
-        rows.map(({ skill, exiting }) => (
+        visibleRows.map(({ skill, exiting }) => (
           <SkillRowShell
             key={skill.id}
             skillId={skill.id}
@@ -424,9 +591,11 @@ function InstalledSkillRow({
 function MarketplaceSkillsSection({
   environmentId,
   query,
+  searchQuery,
 }: {
   environmentId: EnvironmentId | null;
   query: EnvironmentQueryView<ReadonlyArray<SkillMarketplaceListing>>;
+  searchQuery: string;
 }) {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
@@ -434,22 +603,20 @@ function MarketplaceSkillsSection({
   const refreshMarketplace = useAtomCommand(skillsEnvironment.refreshSkillMarketplace, {
     reportFailure: false,
   });
-  const [searchQuery, setSearchQuery] = useState("");
   const [newRepo, setNewRepo] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [installingIds, setInstallingIds] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
   const [refreshingRepos, setRefreshingRepos] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
+  const [expandedRepos, setExpandedRepos] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
 
   const sources = settings.skills.marketplaceSources;
   const listings = query.data;
-  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const hasQuery = searchQuery.trim().length > 0;
   const matchesQuery = useCallback(
     (skill: MarketplaceSkill) =>
-      normalizedQuery.length === 0 ||
-      skill.name.toLowerCase().includes(normalizedQuery) ||
-      (skill.description?.toLowerCase().includes(normalizedQuery) ?? false),
-    [normalizedQuery],
+      skillTextMatches(searchQuery, [skill.name, skill.description, skill.id]),
+    [searchQuery],
   );
 
   const handleInstall = useCallback(
@@ -524,15 +691,6 @@ function MarketplaceSkillsSection({
         <SkillListHint>Connect an environment to browse the marketplace.</SkillListHint>
       ) : (
         <>
-          <div className="px-3 pb-2 sm:px-4">
-            <Input
-              type="search"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.currentTarget.value)}
-              placeholder="Search marketplace skills…"
-              aria-label="Search marketplace skills"
-            />
-          </div>
           {query.error !== null ? <SkillListHint tone="error">{query.error}</SkillListHint> : null}
           {listings === null && query.error === null ? (
             <SkillListSkeleton rows={3} />
@@ -544,12 +702,38 @@ function MarketplaceSkillsSection({
             sources.map((source) => {
               const listing = listings?.find((entry) => entry.repo === source.repo);
               const visibleSkills = (listing?.skills ?? []).filter(matchesQuery);
+              const expanded = hasQuery || expandedRepos.has(source.repo);
               return (
                 <div key={source.repo} className="space-y-1 pt-1">
                   <div className="flex items-center gap-2 px-3 py-1 sm:px-4">
-                    <code className="truncate font-mono text-xs text-muted-foreground">
-                      {source.repo}
-                    </code>
+                    <button
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      onClick={() =>
+                        setExpandedRepos((current) => {
+                          const next = new Set(current);
+                          if (next.has(source.repo)) {
+                            next.delete(source.repo);
+                          } else {
+                            next.add(source.repo);
+                          }
+                          return next;
+                        })
+                      }
+                      type="button"
+                    >
+                      <ChevronDownIcon
+                        className={cn(
+                          "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                          expanded ? "rotate-0" : "-rotate-90",
+                        )}
+                      />
+                      <code className="truncate font-mono text-xs text-muted-foreground">
+                        {source.repo}
+                      </code>
+                      <span className="tabular-nums text-[11px] text-muted-foreground/70">
+                        {visibleSkills.length}
+                      </span>
+                    </button>
                     <div className="ms-auto flex shrink-0 items-center gap-1">
                       <Button
                         variant="ghost"
@@ -575,24 +759,24 @@ function MarketplaceSkillsSection({
                       </Button>
                     </div>
                   </div>
-                  {listing === undefined ? (
-                    <SkillListHint>Not fetched yet — hit refresh.</SkillListHint>
-                  ) : visibleSkills.length === 0 ? (
-                    <SkillListHint>
-                      {normalizedQuery.length > 0
-                        ? "No skills match."
-                        : "No skills in this repository."}
-                    </SkillListHint>
-                  ) : (
-                    visibleSkills.map((skill) => (
-                      <MarketplaceSkillRow
-                        key={skill.id}
-                        skill={skill}
-                        installing={installingIds.has(skill.id)}
-                        onInstall={() => void handleInstall(skill)}
-                      />
-                    ))
-                  )}
+                  {expanded ? (
+                    listing === undefined ? (
+                      <SkillListHint>Not fetched yet — hit refresh.</SkillListHint>
+                    ) : visibleSkills.length === 0 ? (
+                      <SkillListHint>
+                        {hasQuery ? "No skills match." : "No skills in this repository."}
+                      </SkillListHint>
+                    ) : (
+                      visibleSkills.map((skill) => (
+                        <MarketplaceSkillRow
+                          key={skill.id}
+                          skill={skill}
+                          installing={installingIds.has(skill.id)}
+                          onInstall={() => void handleInstall(skill)}
+                        />
+                      ))
+                    )
+                  ) : null}
                 </div>
               );
             })
@@ -675,9 +859,11 @@ function MarketplaceSkillRow({
 function HostSkillsSection({
   environmentId,
   query,
+  searchQuery,
 }: {
   environmentId: EnvironmentId | null;
   query: EnvironmentQueryView<HostSkillsState>;
+  searchQuery: string;
 }) {
   const uninstallHostSkill = useAtomCommand(skillsEnvironment.uninstallHostSkill, {
     reportFailure: false,
@@ -688,38 +874,27 @@ function HostSkillsSection({
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
-  const [searchQuery, setSearchQuery] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
 
   const skills = query.data?.skills ?? EMPTY_HOST_SKILLS;
   const { rows, beginExit, finishExit } = useTombstonedSkillList(skills);
-  const normalizedQuery = searchQuery.trim().toLowerCase();
   const visibleRows = useMemo(
     () =>
-      rows.filter(({ skill, exiting }) => {
-        if (exiting || normalizedQuery.length === 0) return true;
-        return (
-          skill.name.toLowerCase().includes(normalizedQuery) ||
-          skill.origin.toLowerCase().includes(normalizedQuery) ||
-          skill.displayPath.toLowerCase().includes(normalizedQuery) ||
-          (skill.description?.toLowerCase().includes(normalizedQuery) ?? false)
-        );
-      }),
-    [normalizedQuery, rows],
+      rows.filter(
+        ({ skill, exiting }) =>
+          exiting ||
+          skillTextMatches(searchQuery, [
+            skill.name,
+            skill.description,
+            skill.origin,
+            skill.displayPath,
+            hostSkillKindLabel(skill.kind) ?? undefined,
+          ]),
+      ),
+    [rows, searchQuery],
   );
-  const groups = useMemo(() => {
-    const byOrigin = new Map<string, Array<(typeof visibleRows)[number]>>();
-    for (const row of visibleRows) {
-      const group = byOrigin.get(row.skill.origin);
-      if (group === undefined) {
-        byOrigin.set(row.skill.origin, [row]);
-      } else {
-        group.push(row);
-      }
-    }
-    return [...byOrigin.entries()];
-  }, [visibleRows]);
+  const groups = useMemo(() => groupSkillRowsByOrigin(visibleRows), [visibleRows]);
 
   const handleUninstall = useCallback(
     async (skill: HostSkill) => {
@@ -794,9 +969,9 @@ function HostSkillsSection({
       }
     >
       <p className="px-3 pb-2 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
-        Skills Claude, Codex, Cursor, and other provider CLIs installed in their home folders on
-        this environment — including over a remote connection. Turn a skill off to hide it from
-        those CLIs without deleting it. Removing one deletes that folder.
+        Skills this environment&rsquo;s provider CLIs already have — home folders, installed
+        plugins, and bundled packs. Turn a skill off to hide it without deleting it. Remove only
+        deletes a user-owned folder, not a plugin.
       </p>
       {environmentId === null ? (
         <SkillListHint>Connect an environment to manage provider skills.</SkillListHint>
@@ -806,29 +981,47 @@ function HostSkillsSection({
         <SkillListSkeleton rows={3} />
       ) : (
         <>
-          {rows.length > 0 || skills.length > 0 ? (
-            <div className="px-3 pb-2 sm:px-4">
-              <Input
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.currentTarget.value)}
-                placeholder="Search provider skills…"
-                aria-label="Search provider skills"
-              />
+          {groups.length > 1 ? (
+            <div className="flex flex-wrap gap-1 px-3 pb-2 sm:px-4">
+              {groups.map(([origin, originRows]) => (
+                <button
+                  key={origin}
+                  className="rounded-full border border-border/70 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  onClick={() =>
+                    document.getElementById(originGroupId(origin))?.scrollIntoView({
+                      block: "start",
+                      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+                        ? "auto"
+                        : "smooth",
+                    })
+                  }
+                  type="button"
+                >
+                  {origin}
+                  <span className="ms-1 tabular-nums text-muted-foreground/70">
+                    {originRows.length}
+                  </span>
+                </button>
+              ))}
             </div>
           ) : null}
           {rows.length === 0 ? (
             <SkillListHint>
-              No provider CLI skills in their home folders. Marketplace installs land in T3&rsquo;s
-              library above.
+              No provider CLI, plugin, or bundled skills found on this environment. Marketplace
+              installs land in the Library tab.
             </SkillListHint>
           ) : visibleRows.length === 0 ? (
             <SkillListHint>No skills match.</SkillListHint>
           ) : (
             groups.map(([origin, originRows]) => (
-              <div key={origin} className="space-y-1 pt-1">
+              <div key={origin} className="space-y-1 pt-1" id={originGroupId(origin)}>
                 <div className="px-3 py-1 sm:px-4">
-                  <span className="truncate text-xs text-muted-foreground">{origin}</span>
+                  <span className="truncate text-xs font-medium text-muted-foreground">
+                    {origin}
+                  </span>
+                  <span className="ms-2 tabular-nums text-[11px] text-muted-foreground/70">
+                    {originRows.length}
+                  </span>
                 </div>
                 {originRows.map(({ skill, exiting }) => (
                   <SkillRowShell
@@ -873,9 +1066,16 @@ function HostSkillRow({
         <PackageIcon className="size-4.5" />
       </span>
       <div className="min-w-0 flex-1 space-y-0.5">
-        <span className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
-          {skill.name}
-        </span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
+            {skill.name}
+          </span>
+          {hostSkillKindLabel(skill.kind) ? (
+            <Badge variant="outline" size="sm" className="text-muted-foreground">
+              {hostSkillKindLabel(skill.kind)}
+            </Badge>
+          ) : null}
+        </div>
         <p className="truncate text-[13px] leading-[1.45] text-muted-foreground/80">
           {skill.description ?? "No description."}
         </p>
@@ -890,26 +1090,34 @@ function HostSkillRow({
           onCheckedChange={(checked) => onToggle(Boolean(checked))}
           aria-label={`Enable ${skill.name} for its provider`}
         />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={pending ? `Removing ${skill.name}` : `Remove ${skill.name}`}
-          disabled={pending}
-          onClick={onUninstall}
-          className="text-muted-foreground hover:text-destructive-foreground"
-        >
-          {pending ? (
-            <LoaderCircleIcon className="size-4 animate-spin" />
-          ) : (
-            <Trash2Icon className="size-4" />
-          )}
-        </Button>
+        {hostSkillCanUninstall(skill) ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={pending ? `Removing ${skill.name}` : `Remove ${skill.name}`}
+            disabled={pending}
+            onClick={onUninstall}
+            className="text-muted-foreground hover:text-destructive-foreground"
+          >
+            {pending ? (
+              <LoaderCircleIcon className="size-4 animate-spin" />
+            ) : (
+              <Trash2Icon className="size-4" />
+            )}
+          </Button>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function DetectedSkillsSection({ hostSkills }: { hostSkills: ReadonlyArray<HostSkill> }) {
+function DetectedSkillsSection({
+  hostSkills,
+  searchQuery,
+}: {
+  hostSkills: ReadonlyArray<HostSkill>;
+  searchQuery: string;
+}) {
   const providers = useAtomValue(primaryServerProvidersAtom);
   const hostSkillPaths = useMemo(() => {
     const paths = new Set<string>();
@@ -927,9 +1135,18 @@ function DetectedSkillsSection({ hostSkills }: { hostSkills: ReadonlyArray<HostS
       deriveProviderInstanceEntries(providers).flatMap((entry) =>
         entry.snapshot.skills
           .filter((skill) => !hostSkillPaths.has(normalizeProviderSkillPath(skill.path)))
+          .filter((skill) =>
+            skillTextMatches(searchQuery, [
+              formatProviderSkillDisplayName(skill),
+              skill.name,
+              skill.path,
+              entry.displayName,
+              formatProviderSkillInstallSource(skill) ?? skill.scope,
+            ]),
+          )
           .map((skill) => ({ entry, skill })),
       ),
-    [hostSkillPaths, providers],
+    [hostSkillPaths, providers, searchQuery],
   );
 
   if (detected.length === 0) return null;
@@ -940,8 +1157,8 @@ function DetectedSkillsSection({ hostSkills }: { hostSkills: ReadonlyArray<HostS
       icon={<LaptopIcon className="size-4.5 text-muted-foreground" />}
     >
       <p className="px-3 pb-2 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
-        Plugin, system, or project skills the provider CLIs reported. Those stay with the plugin or
-        repo — T3 Code does not delete them.
+        Project or other skills a provider CLI reported that are not in a home, plugin, or bundled
+        folder. Those stay with the repo — T3 Code does not delete them.
       </p>
       {detected.map(({ entry, skill }) => {
         const source = formatProviderSkillInstallSource(skill);

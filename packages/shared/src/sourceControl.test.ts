@@ -61,6 +61,10 @@ describe("source control presentation", () => {
       shortLabel: "PR",
       singular: "pull request",
     });
+    expect(getChangeRequestTerminologyForKind("origin")).toEqual({
+      shortLabel: "PR",
+      singular: "pull request",
+    });
   });
 
   it("falls back to generic change request copy for unknown providers", () => {
@@ -89,6 +93,12 @@ describe("detectSourceControlProviderFromRemoteUrl", () => {
     expect(
       detectSourceControlProviderFromRemoteUrl("git@bitbucket.org:workspace/repo.git")?.kind,
     ).toBe("bitbucket");
+    expect(
+      detectSourceControlProviderFromRemoteUrl("https://origin.cursor.com/owner/repo.git")?.kind,
+    ).toBe("origin");
+    expect(
+      detectSourceControlProviderFromRemoteUrl("git@origin.cursor.com:owner/repo.git")?.kind,
+    ).toBe("origin");
   });
 
   it("returns null for remote-helper URLs", () => {
@@ -169,6 +179,12 @@ describe("detectSourceControlProviderFromRemoteUrl", () => {
       detectSourceControlProviderFromRemoteUrl(
         "https://notbitbucket.example.com/workspace/repo.git",
       )?.kind,
+    ).toBe("unknown");
+    expect(
+      detectSourceControlProviderFromRemoteUrl("https://origin.example.com/owner/repo.git")?.kind,
+    ).toBe("unknown");
+    expect(
+      detectSourceControlProviderFromRemoteUrl("https://notorigin.cursor.com/owner/repo.git")?.kind,
     ).toBe("unknown");
   });
 

@@ -261,6 +261,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/skills",
   },
   {
+    id: "skills-plugins",
+    title: "Plugin and bundled skills",
+    to: "/settings/skills",
+    targetId: "skills-on-environment",
+  },
+  {
     id: "skills-marketplace",
     title: "Skills marketplace",
     to: "/settings/skills",

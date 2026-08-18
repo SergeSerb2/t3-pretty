@@ -6,23 +6,34 @@ follow you across providers instead of living in one CLI's config directory.
 
 ## Install skills
 
-Open **Settings → Skills**. The **Marketplace** section browses skill repositories and installs
-with one click. It ships with [mattpocock/skills](https://github.com/mattpocock/skills) as a
-source; **Add repository** accepts any GitHub `owner/repo` that contains skills.
+Open **Settings → Skills**. The page is split into three tabs — **Library**, **On this
+environment**, and **Marketplace** — with one search box that filters the current tab and
+tells you when other tabs also match.
 
-The **Installed** section lists everything in your library. **Uninstall** removes a skill from
+**Marketplace** browses skill repositories and installs with one click. Repositories stay
+collapsed until you open them or search. It ships with
+[mattpocock/skills](https://github.com/mattpocock/skills) as a source; **Add repository**
+accepts any GitHub `owner/repo` that contains skills.
+
+**Library** lists everything in this environment's store. **Uninstall** removes a skill from
 the library (and from every thread that had it on).
 
 ## Clean up provider CLI skills
 
 Claude Code, Codex, Cursor, Grok, and OpenCode also keep skills in their own home folders
 (for example `~/.claude/skills` or `~/.codex/skills`), plus a shared `~/.agents/skills`
-directory. Those show up under **On this environment**. Flip a skill off to hide it from
-the provider CLI without deleting it. **Remove** deletes that folder on the connected
-environment — the same list whether you are on this machine or a remote connection.
+directory. T3 Code also finds skills those CLIs load from installed plugins, bundled packs,
+and built-in folders — including plugin-shaped trees such as
+`superpowers/skills/using-superpowers`. Those show up under **On this environment**, grouped
+by provider. Jump chips at the top of a long list skip to a group.
 
-Plugin, system, and project-local skills the CLIs report stay under **Also detected**. Those
-are owned by a plugin or a repo, so T3 Code leaves them alone.
+Flip a skill off to hide it from the provider CLI without deleting it. **Remove** deletes a
+user-owned folder on the connected environment. Plugin, bundled, and built-in skills stay
+on disk — you can hide them, but T3 Code will not delete the plugin or CLI pack they came
+from.
+
+Project-local skills a CLI reports that are not in those folders stay under **Also
+detected**. Those are owned by a repo, so T3 Code leaves them alone.
 
 ## Turn skills on
 

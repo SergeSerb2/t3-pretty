@@ -10,6 +10,7 @@ T3 Code works with the platforms your team already uses:
 - **GitLab** – Merge requests, repository publishing, and hosted clones
 - **Bitbucket** – Pull request workflows (via API token authentication)
 - **Azure DevOps** – Pull request support for Microsoft-hosted repositories
+- **Origin** – Cursor's git forge at origin.cursor.com (pull requests, clone, and publish)
 
 ## What You Can Do
 
@@ -18,13 +19,13 @@ T3 Code works with the platforms your team already uses:
 **Clone repositories directly**
 
 - Open the Command Palette (`Cmd/Ctrl + K`) → **Add Project**
-- Choose **GitHub repository**, **GitLab repository**, **Bitbucket repository**, **Azure DevOps repository**, or paste any **Git URL**
+- Choose **GitHub repository**, **GitLab repository**, **Bitbucket repository**, **Azure DevOps repository**, **Origin repository**, or paste any **Git URL**
 - Enter the repository path (`owner/repo`, `group/project`, `workspace/repository`, or `project/repository`) or a full Git URL, pick a destination, and start coding
 
 **Publish local projects to the cloud**
 
 - Have a local Git repository without a remote?
-- Use the **Publish Repository** action to create a new hosted repository (GitHub, GitLab, Bitbucket, or Azure DevOps), add it as your origin remote, and push, in one flow
+- Use the **Publish Repository** action to create a new hosted repository (GitHub, GitLab, Bitbucket, Azure DevOps, or Origin), add it as your origin remote, and push, in one flow
 - If the local repository has no commits yet, publishing creates the remote and wires it up but does not push. Make a commit, then push normally.
 
 ### Manage Code Reviews Without Context Switching
@@ -33,7 +34,7 @@ T3 Code works with the platforms your team already uses:
 
 - Push a branch and create a pull request from the Git actions controls in the toolbar
 - T3 Code can suggest titles and descriptions based on your commits
-- Supports GitHub Pull Requests, GitLab Merge Requests, Bitbucket Pull Requests, and Azure DevOps Pull Requests
+- Supports GitHub Pull Requests, GitLab Merge Requests, Bitbucket Pull Requests, Azure DevOps Pull Requests, and Origin Pull Requests
 
 **Stay on top of open reviews**
 
@@ -67,7 +68,7 @@ of truth for that configuration.
 - Rewrite a pull request's title and description from the review itself, in Markdown, with a
   preview before you save
 - Rewrite your own comments the same way, wherever they are shown
-- Works on GitHub, GitLab, and Bitbucket. Azure DevOps takes a new title and description; its
+- Works on GitHub, GitLab, Bitbucket, and Origin. Azure DevOps takes a new title and description; its
   comments stay read-only here, as they already were
 
 ### Know Your Setup at a Glance
@@ -131,6 +132,21 @@ export T3CODE_BITBUCKET_API_TOKEN="your-token"
 If both are set, the access token wins. Restart T3 Code and verify the connection in **Source
 Control settings**.
 
+### For Origin
+
+1. Install the Origin CLI on the machine running T3 Code:
+   ```bash
+   curl -fsSL https://downloads.cursor.com/origin/install.sh | sh
+   ```
+   Add `~/.local/bin` to your `PATH` if the shell cannot find `origin`.
+2. Sign in:
+   ```bash
+   origin auth login
+   ```
+3. Check **Settings → Source Control** to confirm the connection
+
+Origin remotes look like `https://origin.cursor.com/owner/repo.git`. Pull requests open at `cursor.com/codebase`.
+
 ### For Azure DevOps
 
 1. Install Azure CLI:
@@ -165,3 +181,4 @@ Control settings**.
 - [GitHub CLI](https://cli.github.com/)
 - [GitLab CLI](https://gitlab.com/gitlab-org/cli)
 - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/)
+- [Origin CLI](https://cursor.com/docs/origin/cli)

@@ -3,6 +3,10 @@
  * so siblings slide up; opacity/translate stay compositor-friendly. Suppressed
  * under reduced motion except a short opacity fade.
  */
+
+[id^="skills-origin-"] {
+  scroll-margin-top: 7.5rem;
+}
 .t3-skill-row-shell {
   display: grid;
   grid-template-rows: 1fr;

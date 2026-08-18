@@ -6,10 +6,16 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
 
 ## Flow
 
-1. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
+1. `T3 Pretty Origin PR Review` runs on branch pushes that already have an Origin PR, and on
+   manual dispatch. It must not use `on.pull_request`: Origin's Buildkite importer builds a
+   pull_request snapshot without `payload.action`, which fails the check. The script resolves
+   the open Origin PR from the head branch, asks Grok 4.6 through Railway CLIProxyAPI to
+   review the diff, and posts a comment review with `origin pr review --comment`. It does
+   not approve or merge. It does not call api.x.ai. Automation sync branches are skipped.
+2. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
    and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. Maintainers can use
-   the manual dispatch only when an operational fix needs an immediate retry.
-2. It merges that tag into an `automation/upstream-*` branch and opens an Origin pull request.
+   the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
+   into an `automation/upstream-*` branch and opens an Origin pull request.
    The fork deliberately keeps `.github/workflows` from its own `main`; upstream workflow changes
    cannot replace the trusted sync/release boundary.
 3. Clean changes remain untouched and do not make a model request. If Git reports text conflicts,
@@ -57,14 +63,19 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    Generation failures downgrade to warnings: the release ships without new entries and the next
    run regenerates everything missing.
 8. Origin-connected Linux CI (Depot or Buildkite, `ubuntu-latest` in the workflow YAML) resolves
-   the version, writes What's New notes, compiles the WSL `node-pty` binary, and publishes the
-   Origin tag plus updater assets. `m1-dev-t3code-fork` only signs the macOS arm64 DMG.
-   `windows-5080-t3code-fork` builds Windows x64. iOS TestFlight IPAs still compile on a
-   self-hosted Mac through `fork-mobile-release.yml`. Only trusted `main` commits run on the
-   self-hosted machines; pull requests do not. iOS store binaries cannot compile on Windows.
-   Desktop packaging is skipped when the push cannot change the shipped desktop app (mobile-only,
-   docs-only, marketing, or relay-only commits). `workflow_dispatch` and the upstream-sync
-   dispatch still always run.
+   the version, writes What's New notes, and compiles the WSL `node-pty` binary. Publish and
+   Origin CLI work stay on `macos-release` because hosted Linux cannot resolve `CURSOR_API_KEY`
+   through GitHub Actions `secrets.*`. `T3 Pretty Origin PR Review` is the exception: it runs
+   Grok 4.6 on `linux-small` and posts the review with the Origin CLI after
+   `load-buildkite-secrets.sh` reads cluster secrets (`CURSOR_API_KEY`, `CLI_PROXY_API_KEY`).
+   Do not put that job on `macos-release`.
+   `m1-dev` signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
+   push/UI builds of `main`, not the four-hour scheduled sync. iOS TestFlight IPAs and OTA
+   exports compile on `macos-release` through `fork-mobile-release.yml`. Relay deploys from
+   `deploy-relay.yml` on hosted Linux. Only trusted `main` commits run on the self-hosted
+   machines; pull requests do not. Desktop packaging is skipped when the push cannot change the
+   shipped desktop app (mobile-only, docs-only, marketing, or relay-only commits).
+   `workflow_dispatch` and the upstream-sync dispatch still always run.
 9. The publisher creates an annotated Origin git tag and uploads the installers plus both
    `nightly` and `latest` update manifests to the generic `electron-updater` feed in
    `T3CODE_DESKTOP_UPDATE_FEED_URL`. Origin has no GitHub-style release-asset API, so that feed
@@ -83,21 +94,57 @@ newer upstream tag was integrated before its sync pull request merged.
 - Detach `serbinenko/t3-pretty` from GitHub under Origin **Settings → General**. Depot and
   Buildkite only run on Origin-hosted repositories, not inbound GitHub mirrors. After detach,
   Origin is the source of truth and pushes no longer flow to GitHub.
-- Connect Buildkite from the Origin repository **Apps** tab so the self-hosted Mac and Windows
-  machines can keep taking `t3code-fork` / `release-only` jobs. Depot CI can run the Linux jobs
-  but has no macOS or Windows sandboxes, so Buildkite is required for signed desktop and iOS.
+- Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
+  the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux),
+  `macos-release` (m1-dev), and `windows-release` (serge-pc). Register the machines with
+  `scripts/fork/setup-buildkite-macos-agent.sh` and
+  `scripts/fork/setup-buildkite-windows-agent.ps1`. Schedule the pipeline at `0 */4 * * *`
+  so upstream sync still runs. Imported Mac jobs use `macos-latest` so the plugin can map
+  them onto `macos-release`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
+  The importer cannot run Windows jobs; `.buildkite/pipeline.yml` runs
+  `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer
+  for push/UI builds of `main`, not the four-hour schedule. Imported Mac jobs
+  use `/bin/bash` 3.2 (no `mapfile`). `CURSOR_API_KEY` and `CLI_PROXY_API_KEY`
+  also live as files under `/Users/m1-dev/.config/t3-pretty/` because in-job
+  `secret get` from imported GHA steps often fails on macos-release.
+  That script installs official Vite+ (`vp.exe`) under `C:\buildkite-agent\vite-plus`
+  and refuses the npm `vp` stub. Mac-only desktop publishes are still allowed if
+  that step is skipped. Depot can take Linux jobs but has no macOS/Windows sandboxes.
+  Hosted Linux cannot resolve `CURSOR_API_KEY`. Origin CLI work (publish and
+  upstream sync) therefore runs on `macos-release`. Hosted preflight must not
+  mention that secret or the Mac signing certificate names. The Windows agent
+  runs as LocalSystem; Origin HTTPS checkout uses
+  `C:\buildkite-agent\.git-credentials` plus
+  `scripts/fork/windows-origin-git.ps1`. Hosted `linux-small` is missing the
+  `file` package, so the WSL node-pty job installs it before the ELF check.
+  Buildkite GHA on macOS sets `RUNNER_TEMP` to `/var/folders/.../T`, which is
+  not an actions-runner tree; the Mac externals-repair step skips there.
+  The importer's checkout adapter cannot prompt for Origin HTTPS on
+  macos-release, so Mac jobs clone through `scripts/fork/checkout-origin.sh`
+  and `$HOME/.git-credentials`.
 - Secret `CURSOR_API_KEY`: Cursor API key for the Origin CLI (`origin auth login --api-key`).
   Used to open, merge, and tag on Origin.
 - Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used by the trusted scheduled
-  sync workflow for conflict resolution and by the release preflight for What's New changelog
-  generation. `CLI_PROXY_CHANGELOG_EFFORT` optionally overrides the changelog reasoning effort
-  (default `high`).
+  sync workflow for conflict resolution, the release preflight for What's New changelog
+  generation, and Origin pull-request review (`grok-4.6` via
+  `https://cli-proxy-api-production-1615.up.railway.app/v1`). Store it as a Buildkite cluster
+  secret, not a GitHub Actions `secrets.*` mapping. `CLI_PROXY_CHANGELOG_EFFORT` optionally
+  overrides the changelog reasoning effort (default `high`). `CLI_PROXY_REVIEW_MODEL`
+  defaults to `grok-4.6`. Do not add an xAI / Grok API key for reviews.
+- Relay secrets on the same cluster: `CLOUDFLARE_API_TOKEN`, `PLANETSCALE_API_TOKEN_ID`,
+  `PLANETSCALE_API_TOKEN`, `AXIOM_TOKEN`, `CLERK_SECRET_KEY`, `APNS_PRIVATE_KEY`. Public
+  relay IDs are literals in `.github/workflows/deploy-relay.yml`.
 - Variable `T3CODE_DESKTOP_UPDATE_FEED_URL`: public HTTPS directory that serves `nightly.yml`,
-  `latest.yml`, and the installers. Must not be a GitHub Releases URL.
+  `latest.yml`, and the installers. Must not be a GitHub Releases URL. Uploads use that URL's
+  path as the S3 key prefix (so `…/t3-pretty/latest/` stores objects under `t3-pretty/latest/`).
 - Secrets `T3CODE_RELEASE_S3_BUCKET`, `T3CODE_RELEASE_S3_ACCESS_KEY_ID`,
   `T3CODE_RELEASE_S3_SECRET_ACCESS_KEY`, and optionally `T3CODE_RELEASE_S3_ENDPOINT` plus
   `T3CODE_RELEASE_S3_REGION`: S3-compatible upload target for that feed (R2 uses the account
-  endpoint `https://<accountid>.r2.cloudflarestorage.com`).
+  endpoint `https://<accountid>.r2.cloudflarestorage.com`). Optional
+  `T3CODE_RELEASE_S3_PREFIX` overrides the key prefix derived from the feed URL. If the
+  access-key pair is unset, `origin-forge.mjs` falls back to `wrangler r2 object put --remote`
+  using `CLOUDFLARE_API_TOKEN`. The live Buildkite pipeline is
+  `https://buildkite.com/serge-serbinenkos-org/t3-pretty`.
 - Optional secret `DEPOT_TOKEN`: lets the sync job dispatch follow-up workflows when the Origin
   merge push does not start them. Leave unset if Buildkite already triggers on push to `main`.
 - Parent CI (`Check`, `Test`, `Mobile Native Static Analysis`, `Release Smoke`) is disabled on
@@ -119,14 +166,15 @@ go away.
 
 Measured from recent successful runs on the current two runners (2026-08-16):
 
-| Job                         | Where it used to run                  | Typical time                                | Where it runs now                             |
-| --------------------------- | ------------------------------------- | ------------------------------------------- | --------------------------------------------- |
-| Changelog + version + smoke | m1-dev                                | 10 min (6.5 min model + 3 min install)      | `ubuntu-latest`                               |
-| WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                |
-| macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m1-dev (or a second Mac with the same labels) |
-| Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload            |
-| Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `ubuntu-latest`                               |
-| Relay production deploy     | m1-dev                                | queued behind releases                      | `ubuntu-latest`                               |
+| Job                         | Where it used to run                  | Typical time                                | Where it runs now                                  |
+| --------------------------- | ------------------------------------- | ------------------------------------------- | -------------------------------------------------- |
+| Changelog + version + smoke | m1-dev                                | 10 min (6.5 min model + 3 min install)      | `ubuntu-latest`                                    |
+| WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                     |
+| macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m1-dev (or a second Mac with the same labels)      |
+| Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                 |
+| Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `macos-release` (Origin CLI)                       |
+| Mobile OTA                  | hosted Linux                          | SIGKILL on linux-small                      | `macos-release`                                    |
+| Relay production deploy     | m1-dev                                | queued behind releases                      | native `macos-release` step (`deploy-relay-ci.sh`) |
 
 A desktop release that used to sit 25–40 minutes in the m1-dev queue and then take ~30 minutes of Mac occupancy should now occupy the Mac for only the ~8 minute signed DMG. Changelog, WSL, and publish no longer wait for — or block — iOS.
 
@@ -139,8 +187,8 @@ This machine is an M5 Pro (18 cores, 48 GB). m1-dev is the existing dedicated Ma
 ## Runner recovery
 
 The macOS runner lives at `/Users/m1-dev/actions-runner-t3code-fork`. After the Origin cutover
-it should be a Buildkite agent attached to the Origin app, not a GitHub Actions runner. Keep the
-same `t3code-fork` and `release-only` labels.
+it should be a Buildkite agent on the `macos-release` queue, registered with
+`scripts/fork/setup-buildkite-macos-agent.sh`. Do not give it pull-request queues.
 
 The Windows runner lives at `C:\actions-runner-t3code-fork`. The checked-in
 `scripts/fork/setup-windows-runner.ps1` can still recreate a GitHub Actions runner for rollback.

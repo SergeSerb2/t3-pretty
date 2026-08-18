@@ -1,5 +1,68 @@
 export const SKILL_ROW_EXIT_MS = 200;
 
+export type SkillsSettingsTab = "library" | "machine" | "marketplace";
+
+export const SKILLS_SETTINGS_TABS: ReadonlyArray<{
+  readonly id: SkillsSettingsTab;
+  readonly label: string;
+  readonly searchTargetId: string;
+}> = [
+  { id: "library", label: "Library", searchTargetId: "skills-installed" },
+  { id: "machine", label: "On this environment", searchTargetId: "skills-on-environment" },
+  { id: "marketplace", label: "Marketplace", searchTargetId: "skills-marketplace" },
+];
+
+export function skillsTabForSearchTarget(targetId: string | null): SkillsSettingsTab | null {
+  if (targetId === "skills-marketplace") return "marketplace";
+  if (targetId === "skills-on-environment") return "machine";
+  if (targetId === "skills-installed") return "library";
+  return null;
+}
+
+export function skillTextMatches(query: string, parts: ReadonlyArray<string | undefined>): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (normalized.length === 0) return true;
+  return parts.some((part) => (part ?? "").toLowerCase().includes(normalized));
+}
+
+export function hostSkillCanUninstall(skill: {
+  readonly canUninstall?: boolean | undefined;
+  readonly kind?: string | undefined;
+}): boolean {
+  if (skill.canUninstall === false) return false;
+  return skill.kind !== "plugin" && skill.kind !== "bundled" && skill.kind !== "system";
+}
+
+export function hostSkillKindLabel(kind: string | undefined): string | null {
+  if (kind === "plugin") return "Plugin";
+  if (kind === "bundled") return "Bundled";
+  if (kind === "system") return "Built-in";
+  return null;
+}
+
+export function originGroupId(origin: string): string {
+  const slug = origin
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `skills-origin-${slug || "group"}`;
+}
+
+export function groupSkillRowsByOrigin<T extends { readonly skill: { readonly origin: string } }>(
+  rows: ReadonlyArray<T>,
+): Array<[string, T[]]> {
+  const byOrigin = new Map<string, T[]>();
+  for (const row of rows) {
+    const group = byOrigin.get(row.skill.origin);
+    if (group === undefined) {
+      byOrigin.set(row.skill.origin, [row]);
+    } else {
+      group.push(row);
+    }
+  }
+  return [...byOrigin.entries()];
+}
+
 export interface Identified {
   readonly id: string;
 }

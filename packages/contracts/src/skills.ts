@@ -10,9 +10,11 @@
  * turn starts.
  *
  * Provider CLIs also keep their own user-scope skill folders (`~/.claude/skills`,
- * `~/.codex/skills`, …). Those live on the environment host — the same machine
- * whether the client is local or remote — and are listed, enabled, disabled, or
- * uninstalled by opaque server-minted ids, never by a client-supplied path.
+ * `~/.codex/skills`, …), plus installed plugins, bundled packs, and the shared
+ * `~/.agents/skills` folder. Those live on the environment host — the same
+ * machine whether the client is local or remote — and are listed, enabled,
+ * disabled, or (when user-owned) uninstalled by opaque server-minted ids, never
+ * by a client-supplied path.
  *
  * @module skills
  */
@@ -96,9 +98,18 @@ export const HostSkillId = TrimmedNonEmptyString;
 export type HostSkillId = typeof HostSkillId.Type;
 
 /**
+ * Where a host skill came from on the environment. `user` is a folder the
+ * person (or a CLI install command) dropped in a `skills/` directory.
+ * `plugin` / `bundled` / `system` are owned by a plugin or the CLI itself.
+ */
+export const HostSkillKind = Schema.Literals(["user", "plugin", "bundled", "system"]);
+export type HostSkillKind = typeof HostSkillKind.Type;
+
+/**
  * A skill the environment host already has in a provider CLI's user-scope
- * `skills/` directory (or the shared `~/.agents/skills` folder). Distinct from
- * `InstalledSkill`, which lives in T3's own store.
+ * `skills/` directory, an installed plugin, a bundled/system pack, or the
+ * shared `~/.agents/skills` folder. Distinct from `InstalledSkill`, which
+ * lives in T3's own store.
  */
 export const HostSkill = Schema.Struct({
   id: HostSkillId,
@@ -118,6 +129,12 @@ export const HostSkill = Schema.Struct({
   enabled: Schema.Boolean,
   driver: Schema.optional(ProviderDriverKind),
   instanceId: Schema.optional(ProviderInstanceId),
+  kind: Schema.optional(HostSkillKind),
+  /**
+   * False for plugin, bundled, and system skills: hide or disable them, but
+   * do not delete the plugin or CLI pack they came from.
+   */
+  canUninstall: Schema.optional(Schema.Boolean),
 });
 export type HostSkill = typeof HostSkill.Type;
 

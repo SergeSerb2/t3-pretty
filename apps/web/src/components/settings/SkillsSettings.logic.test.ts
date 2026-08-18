@@ -3,9 +3,15 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   displaySkillRows,
   finishTombstoneExit,
+  groupSkillRowsByOrigin,
+  hostSkillCanUninstall,
+  hostSkillKindLabel,
   nextSkillOrderIds,
+  originGroupId,
   pruneHiddenSkillIds,
   retainedSkillIds,
+  skillTextMatches,
+  skillsTabForSearchTarget,
 } from "./SkillsSettings.logic";
 
 const alpha = { id: "alpha", name: "Alpha" };
@@ -85,6 +91,45 @@ describe("retainedSkillIds", () => {
       "alpha",
       "beta",
     ]);
+  });
+});
+
+describe("skills settings navigation", () => {
+  it("maps settings-search anchors onto the matching tab", () => {
+    expect(skillsTabForSearchTarget("skills-marketplace")).toBe("marketplace");
+    expect(skillsTabForSearchTarget("skills-on-environment")).toBe("machine");
+    expect(skillsTabForSearchTarget("skills-installed")).toBe("library");
+    expect(skillsTabForSearchTarget(null)).toBeNull();
+  });
+
+  it("matches skill text case-insensitively and treats empty query as a match", () => {
+    expect(skillTextMatches("", ["Using Superpowers"])).toBe(true);
+    expect(skillTextMatches("super", ["Using Superpowers", "Claude Code"])).toBe(true);
+    expect(skillTextMatches("codex", ["grill-me", "Claude Code"])).toBe(false);
+  });
+
+  it("labels plugin kinds and blocks uninstall for plugin, bundled, and system skills", () => {
+    expect(hostSkillKindLabel("plugin")).toBe("Plugin");
+    expect(hostSkillKindLabel("bundled")).toBe("Bundled");
+    expect(hostSkillKindLabel("system")).toBe("Built-in");
+    expect(hostSkillKindLabel("user")).toBeNull();
+    expect(hostSkillCanUninstall({ kind: "plugin" })).toBe(false);
+    expect(hostSkillCanUninstall({ kind: "user" })).toBe(true);
+    expect(hostSkillCanUninstall({ kind: "user", canUninstall: false })).toBe(false);
+  });
+
+  it("groups rows by origin and builds a stable jump id", () => {
+    expect(
+      groupSkillRowsByOrigin([
+        { skill: { origin: "Claude Code" } },
+        { skill: { origin: "Codex" } },
+        { skill: { origin: "Claude Code" } },
+      ]),
+    ).toEqual([
+      ["Claude Code", [{ skill: { origin: "Claude Code" } }, { skill: { origin: "Claude Code" } }]],
+      ["Codex", [{ skill: { origin: "Codex" } }]],
+    ]);
+    expect(originGroupId("Claude Code · Work")).toBe("skills-origin-claude-code-work");
   });
 });
 
