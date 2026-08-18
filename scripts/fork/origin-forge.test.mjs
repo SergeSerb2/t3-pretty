@@ -134,6 +134,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(sync, "load-buildkite-secrets.sh");
     assert.include(mobile, "load-buildkite-secrets.sh");
     assert.include(preflight, "Mac signing secrets are resolved on macos-release");
+    assert.include(preflight, "git fetch --force --tags origin");
     assert.include(mobile, "origin-forge.mjs merge-pr");
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
@@ -181,6 +182,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(source, "T3CODE_RELEASE_S3_SECRET_ACCESS_KEY");
     assert.include(source, '"r2", "object", "put"');
     assert.include(source, 'case "upload-assets"');
+    assert.include(source, "originGitConfigArgs");
+    assert.include(source, "credential.https://origin.cursor.com.helper");
   });
 
   it("reads the baked updater feed from T3CODE_DESKTOP_UPDATE_FEED_URL", () => {
@@ -217,7 +220,9 @@ describe("Origin release and blocked-sync helpers", () => {
   it("pushes the release tag only after asset uploads succeed", () => {
     const source = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
     const uploadAt = source.indexOf("uploadReleaseAsset(asset, resolveReleaseObjectKey(asset))");
-    const pushAt = source.indexOf('runCommand("git", ["push", "origin", `refs/tags/${tag}`])');
+    const pushAt = source.indexOf(
+      'runCommand("git", [...originGitConfigArgs(), "push", "origin", `refs/tags/${tag}`])',
+    );
     assert.isTrue(uploadAt > 0);
     assert.isTrue(pushAt > uploadAt);
   });

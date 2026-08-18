@@ -99,8 +99,10 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    still update from that feed, and SmartScreen will warn until ATS secrets are added.
 
 Fork versions retain the newest integrated upstream nightly prefix and append a monotonic fork
-build number. This makes personal merges newer than the parent build without pretending that a
-newer upstream tag was integrated before its sync pull request merged.
+build number. The resolver takes the larger of the current CI run slot and one past the highest
+already-pushed `*.fork` tag, so a later Buildkite number cannot publish below an earlier
+millisecond-fallback or feed version. This makes personal merges newer than the parent build
+without pretending that a newer upstream tag was integrated before its sync pull request merged.
 
 ## Required repository configuration
 
