@@ -141,7 +141,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "fork-upstream-sync.yml");
     assert.include(pipeline, "fork-release.yml");
     assert.include(pipeline, "fork-mobile-release.yml");
-    assert.include(pipeline, "deploy-relay.yml");
+    assert.include(pipeline, "deploy-relay-ci.sh");
+    assert.notInclude(pipeline, "deploy-relay.yml");
     assert.include(pipeline, "queue: macos-release");
     assert.include(pipeline, "queue: windows-release");
     assert.include(pipeline, "queue: linux-small");

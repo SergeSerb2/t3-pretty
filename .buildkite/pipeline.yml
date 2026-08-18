@@ -43,7 +43,6 @@ steps:
             - .github/workflows/fork-upstream-sync.yml
             - .github/workflows/fork-release.yml
             - .github/workflows/fork-mobile-release.yml
-            - .github/workflows/deploy-relay.yml
           runners:
             - runs-on: ubuntu-latest
               queue: linux-small
@@ -65,3 +64,27 @@ steps:
     agents:
       queue: windows-release
     command: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fork/build-windows-nsis.ps1
+
+  - label: ":cloud: Relay"
+    key: deploy-relay
+    # Hosted macos-latest GHA jobs do not have the Origin git store or the
+    # m1-dev file-store secrets. Keep production deploys on macos-release.
+    if: build.branch == "main" && build.source != "schedule"
+    timeout_in_minutes: 20
+    agents:
+      queue: macos-release
+    env:
+      CLOUDFLARE_ACCOUNT_ID: a6f705b8c6459d937d32d31555f9fbf6
+      PLANETSCALE_ORGANIZATION: serge-serbinenko
+      AXIOM_ORG_ID: surgecode-nmf2
+      RELAY_DOMAIN: relay.sergeserbinenko.com
+      RELAY_API_ZONE_NAME: sergeserbinenko.com
+      RELAY_TUNNEL_ZONE_NAME: sergeserbinenko.com
+      CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
+      CLERK_JWT_AUDIENCE: t3-code-relay
+      APNS_ENVIRONMENT: production
+      APNS_TEAM_ID: "336W29P997"
+      APNS_KEY_ID: 6RKSND9F2B
+      APNS_BUNDLE_ID: com.sergeserb.sergecode
+      ALCHEMY_TELEMETRY_DISABLED: "1"
+    command: bash scripts/fork/deploy-relay-ci.sh
