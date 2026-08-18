@@ -17,6 +17,7 @@ import {
   pullRequestItems,
   pullRequestNumber,
   pullRequestUrl,
+  resolveReleaseObjectKey,
   resolveUpdateFeedUrl,
 } from "./origin-forge.mjs";
 
@@ -100,7 +101,74 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(sync, "https://github.com/pingdotgg/t3code.git");
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");
     assert.include(desktop, "T3CODE_RELEASE_S3_BUCKET");
+    assert.include(desktop, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");
+    assert.notInclude(desktop, "dtolnay/rust-toolchain");
+    assert.notInclude(desktop, "sparse-checkout:");
+    assert.notInclude(desktop, "secrets.AZURE_");
+    assert.notInclude(desktop, "secrets.MACOS_PROVISIONING_PROFILE");
+    const preflight = desktop.slice(
+      desktop.indexOf("\n  preflight:\n"),
+      desktop.indexOf("\n  build_wsl_node_pty:\n"),
+    );
+    const publish = desktop.slice(desktop.indexOf("\n  release:\n"));
+    assert.notInclude(preflight, "secrets.CURSOR_API_KEY");
+    assert.notInclude(preflight, "secrets.CSC_");
+    assert.notInclude(preflight, "secrets.APPLE_API_");
+    assert.notInclude(publish, "secrets.CURSOR_API_KEY");
+    assert.include(publish, "secrets.CLOUDFLARE_API_TOKEN");
+    assert.include(publish, "runs-on: macos-latest");
+    assert.include(preflight, "Read Buildkite pipeline env directly");
+    assert.include(sync, "runs-on: macos-latest");
+    assert.notInclude(sync, "secrets.CURSOR_API_KEY");
+    assert.notInclude(sync, "secrets.CLI_PROXY_API_KEY");
+    assert.notInclude(sync, "mapfile ");
+    assert.include(sync, "Prepare macOS runner PATH");
+    assert.include(sync, "checkout-origin.sh");
+    assert.include(desktop, "checkout-origin.sh");
+    assert.include(mobile, "checkout-origin.sh");
+    assert.include(mobile, "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65");
+    assert.notInclude(mobile, "vars.T3CODE_MOBILE_EAS_PROJECT_ID");
+    assert.notInclude(mobile, "vars.APPLE_TEAM_ID");
+    assert.include(desktop, "load-buildkite-secrets.sh");
+    assert.include(sync, "load-buildkite-secrets.sh");
+    assert.include(mobile, "load-buildkite-secrets.sh");
+    assert.include(preflight, "Mac signing secrets are resolved on macos-release");
     assert.include(mobile, "origin-forge.mjs merge-pr");
+    const pipeline = NodeFS.readFileSync(
+      NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
+      "utf8",
+    );
+    assert.include(pipeline, "fork-upstream-sync.yml");
+    assert.include(pipeline, "fork-release.yml");
+    assert.include(pipeline, "fork-mobile-release.yml");
+    assert.include(pipeline, "deploy-relay.yml");
+    assert.include(pipeline, "queue: macos-release");
+    assert.include(pipeline, "queue: windows-release");
+    assert.include(pipeline, "queue: linux-small");
+    assert.include(pipeline, "github-actions#v0.13.0");
+    assert.include(pipeline, "runs-on: macos-latest");
+    assert.notInclude(pipeline, "runs-on: self-hosted");
+    assert.include(pipeline, "build-windows-nsis.ps1");
+    assert.include(pipeline, 'build.source != "schedule"');
+    assert.notInclude(pipeline, "depends_on: origin-workflows");
+    assert.notInclude(pipeline, "\n    secrets:");
+    const nsis = NodeFS.readFileSync(NodePath.resolve(here, "build-windows-nsis.ps1"), "utf8");
+    assert.include(nsis, "C:\\buildkite-agent\\vite-plus");
+    assert.include(nsis, "$env:VP_HOME");
+    assert.include(nsis, "Test-OfficialVp");
+    assert.include(nsis, "${LASTEXITCODE}");
+    assert.include(nsis, "rustup default stable");
+    assert.include(nsis, "upload-assets");
+    assert.notInclude(nsis, "VITE_PLUS_BIN_DIR");
+    assert.notInclude(nsis, "AppData\\Roaming\\npm");
+  });
+
+  it("uploads updater assets with aws when keys exist and wrangler otherwise", () => {
+    const source = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
+    assert.include(source, "T3CODE_RELEASE_S3_ACCESS_KEY_ID");
+    assert.include(source, "T3CODE_RELEASE_S3_SECRET_ACCESS_KEY");
+    assert.include(source, '"r2", "object", "put"');
+    assert.include(source, 'case "upload-assets"');
   });
 
   it("reads the baked updater feed from T3CODE_DESKTOP_UPDATE_FEED_URL", () => {
@@ -112,5 +180,33 @@ describe("Origin release and blocked-sync helpers", () => {
       if (previous === undefined) delete process.env.T3CODE_DESKTOP_UPDATE_FEED_URL;
       else process.env.T3CODE_DESKTOP_UPDATE_FEED_URL = previous;
     }
+  });
+
+  it("prefixes S3 object keys with the updater feed path", () => {
+    const previousFeed = process.env.T3CODE_DESKTOP_UPDATE_FEED_URL;
+    const previousPrefix = process.env.T3CODE_RELEASE_S3_PREFIX;
+    delete process.env.T3CODE_RELEASE_S3_PREFIX;
+    process.env.T3CODE_DESKTOP_UPDATE_FEED_URL = "https://updates.example.test/t3-pretty/latest";
+    try {
+      assert.equal(
+        resolveReleaseObjectKey("/tmp/release-assets/nightly.yml"),
+        "t3-pretty/latest/nightly.yml",
+      );
+      process.env.T3CODE_RELEASE_S3_PREFIX = "/custom/prefix/";
+      assert.equal(resolveReleaseObjectKey("latest.yml"), "custom/prefix/latest.yml");
+    } finally {
+      if (previousFeed === undefined) delete process.env.T3CODE_DESKTOP_UPDATE_FEED_URL;
+      else process.env.T3CODE_DESKTOP_UPDATE_FEED_URL = previousFeed;
+      if (previousPrefix === undefined) delete process.env.T3CODE_RELEASE_S3_PREFIX;
+      else process.env.T3CODE_RELEASE_S3_PREFIX = previousPrefix;
+    }
+  });
+
+  it("pushes the release tag only after asset uploads succeed", () => {
+    const source = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
+    const uploadAt = source.indexOf("uploadReleaseAsset(asset, resolveReleaseObjectKey(asset))");
+    const pushAt = source.indexOf('runCommand("git", ["push", "origin", `refs/tags/${tag}`])');
+    assert.isTrue(uploadAt > 0);
+    assert.isTrue(pushAt > uploadAt);
   });
 });

@@ -1,0 +1,67 @@
+# Origin-connected Buildkite entrypoint for T3 Pretty.
+# Buildkite decides when a build starts (push, schedule, or New Build).
+# The GitHub Actions plugin then decides which workflow files are eligible
+# for that event. Path filters are not supported by the importer, so the
+# workflows themselves skip no-op desktop/mobile work.
+#
+# Queues:
+#   linux-small    — Buildkite hosted Linux (importer + ubuntu-latest jobs)
+#   macos-release  — m1-dev / extra Macs (signed DMG + local iOS)
+#   windows-release — serge-pc native NSIS (importer cannot run Windows jobs)
+#
+# Do not list cluster secrets on hosted steps. Hosted agents currently 500
+# while fetching YAML `secrets:`, and the GitHub Actions importer fails the
+# job if any `secrets.*` request fails. Public values stay in `env`. Private
+# keys stay in the cluster; hosted jobs load them after checkout with
+# scripts/fork/load-buildkite-secrets.sh.
+
+env:
+  T3CODE_DESKTOP_UPDATE_FEED_URL: "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/"
+  T3CODE_RELEASE_S3_BUCKET: t3-pretty-releases
+  T3CODE_RELEASE_S3_ENDPOINT: "https://a6f705b8c6459d937d32d31555f9fbf6.r2.cloudflarestorage.com"
+  T3CODE_RELEASE_S3_REGION: auto
+  APPLE_TEAM_ID: "78A5P57U23"
+  T3CODE_APPLE_TEAM_ID: "78A5P57U23"
+  T3CODE_IOS_SHARE_EXTENSION: "0"
+  T3CODE_MOBILE_EAS_PROJECT_ID: "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65"
+  T3CODE_MOBILE_EXPO_OWNER: sergeserbinenkoteam
+  T3CODE_MOBILE_EXPO_SLUG: t3-pretty
+  T3CODE_MOBILE_UPDATE_URL: "https://u.expo.dev/1eb51d67-48c5-4100-8aa8-f5ac9e1ada65"
+  APNS_BUNDLE_ID: com.sergeserbinenko.t3pretty
+  APNS_ENVIRONMENT: sandbox
+  APNS_KEY_ID: 6RKSND9F2B
+  APNS_TEAM_ID: "78A5P57U23"
+
+steps:
+  - label: ":github: T3 Pretty Origin workflows"
+    key: origin-workflows
+    agents:
+      queue: linux-small
+    plugins:
+      - github-actions#v0.13.0:
+          workflows:
+            - .github/workflows/fork-upstream-sync.yml
+            - .github/workflows/fork-release.yml
+            - .github/workflows/fork-mobile-release.yml
+            - .github/workflows/deploy-relay.yml
+          runners:
+            - runs-on: ubuntu-latest
+              queue: linux-small
+            - runs-on: macos-latest
+              queue: macos-release
+            - runs-on: macos-15
+              queue: macos-release
+            - runs-on: macos-14
+              queue: macos-release
+
+  - label: ":windows: Windows NSIS"
+    key: windows-nsis
+    # Start with the importer, not after it. Desktop compile failures must
+    # not cancel the Windows agent job while it is still waiting.
+    # Scheduled builds exist only to run upstream sync. Do not rebuild NSIS
+    # every four hours when main has not changed.
+    if: build.branch == "main" && build.source != "schedule"
+    timeout_in_minutes: 90
+    agents:
+      queue: windows-release
+    command: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fork/build-windows-nsis.ps1

@@ -36,41 +36,69 @@ describe("T3 Pretty release runner placement", () => {
 
     assert.include(preflight, "runs-on: ubuntu-latest");
     assert.include(wsl, "runs-on: ubuntu-latest");
-    assert.include(publish, "runs-on: ubuntu-latest");
-    assert.include(mac, "self-hosted, macOS, ARM64, t3code-fork, release-only");
-    assert.include(win, "self-hosted, Windows, X64, t3code-fork, release-only");
+    assert.include(publish, "runs-on: macos-latest");
+    assert.include(mac, "runs-on: macos-latest");
+    assert.include(mac, "rustup toolchain install stable");
+    assert.notInclude(mac, "dtolnay/rust-toolchain");
+    assert.include(win, "if: false");
+    assert.include(win, "runs-on: ubuntu-latest");
     assert.notInclude(wsl, "docker run");
     assert.include(wsl, "npx --yes node-gyp rebuild");
+    assert.include(wsl, "sudo apt-get install -y python3 make g++ file");
+    assert.include(mac, "is not an actions-runner tree; skipping externals repair.");
+    assert.include(mac, "/var/folders/*");
+    assert.include(mac, "checkout-origin.sh");
+    assert.notInclude(mac, "uses: actions/checkout@v6");
+    assert.notInclude(mac, "vars.APPLE_TEAM_ID");
+    assert.include(publish, "checkout-origin.sh");
+    assert.notInclude(publish, "uses: actions/checkout@v6");
     assert.include(publish, "--experimental-strip-types");
     assert.notInclude(publish, "voidzero-dev/setup-vp");
   });
 
   it("does not rebuild desktop for mobile-only or docs-only commits", () => {
-    assert.include(desktopWorkflow, "paths:");
-    assert.include(desktopWorkflow, '"apps/desktop/**"');
-    assert.include(desktopWorkflow, '"apps/web/**"');
-    assert.notInclude(desktopWorkflow, '"apps/mobile/**"');
+    // Buildkite rejects on.push.paths, so the skip lives in the preflight job.
+    assert.include(desktopWorkflow, "Skip desktop-irrelevant pushes");
+    assert.include(desktopWorkflow, "apps/desktop");
+    assert.include(desktopWorkflow, "apps/web");
+    assert.notInclude(desktopWorkflow, "apps/mobile");
     assert.notInclude(desktopWorkflow, '"docs/**"');
     assert.include(desktopWorkflow, "workflow_dispatch:");
   });
 
-  it("publishes mobile OTA on ubuntu and compiles iOS only when asked", () => {
+  it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
     const ota = jobBlock(mobileWorkflow, "ota");
     const ios = jobBlock(mobileWorkflow, "ios");
 
-    assert.include(ota, "runs-on: ubuntu-latest");
+    assert.include(ota, "runs-on: macos-latest");
+    assert.include(ota, "checkout-origin.sh");
     assert.include(ota, "- name: Publish OTA update");
     assert.include(ota, "Decide whether a new iOS binary is required");
+    assert.notInclude(ota, "scripts/fork/origin-forge.mjs");
+    assert.include(ota, "--max-old-space-size=8192");
+    assert.notInclude(ota, "Not failing the pipeline.");
     assert.notInclude(ota, "eas build --");
     assert.notInclude(ota, "--local");
-    assert.include(ios, "self-hosted, macOS, ARM64, t3code-fork, release-only");
+    assert.include(ios, "runs-on: macos-latest");
     assert.include(ios, "needs.ota.outputs.should_build == 'true'");
     assert.include(ios, "--local");
     assert.include(mobileWorkflow, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
   });
 
-  it("deploys the relay on free hosted ubuntu instead of the Mac release runner", () => {
-    assert.include(relayWorkflow, "runs-on: ubuntu-latest");
+  it("deploys the relay on macos-release with baked public IDs", () => {
+    const relay = jobBlock(relayWorkflow, "deploy_relay");
+    assert.include(relay, "runs-on: macos-latest");
+    assert.include(relay, "checkout-origin.sh");
     assert.notInclude(relayWorkflow, "t3code-fork");
+    assert.notInclude(relayWorkflow, "sparse-checkout:");
+    assert.notInclude(relayWorkflow, "vars.FORK_RELAY_DEPLOY_ENABLED");
+    assert.notInclude(relayWorkflow, "actions/github-script");
+    assert.notInclude(relayWorkflow, "secrets.CLERK_SECRET_KEY");
+    assert.notInclude(relayWorkflow, "secrets.PLANETSCALE_API_TOKEN");
+    assert.include(relayWorkflow, "secrets.CLOUDFLARE_API_TOKEN");
+    assert.include(relayWorkflow, "secrets.APNS_PRIVATE_KEY");
+    assert.include(relayWorkflow, "relay.sergeserbinenko.com");
+    assert.include(relayWorkflow, "load-buildkite-secrets.sh");
+    assert.include(relayWorkflow, "Require relay deploy credentials");
   });
 });

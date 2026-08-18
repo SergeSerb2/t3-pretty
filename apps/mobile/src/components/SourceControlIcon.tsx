@@ -1,6 +1,6 @@
 import Svg, { Defs, LinearGradient, Path, Stop } from "react-native-svg";
 
-export type SourceControlIconKind = "github" | "gitlab" | "bitbucket" | "azure-devops";
+export type SourceControlIconKind = "github" | "gitlab" | "bitbucket" | "azure-devops" | "origin";
 
 export function SourceControlIcon(props: {
   readonly kind: SourceControlIconKind;
@@ -67,6 +67,17 @@ export function SourceControlIcon(props: {
             fill="url(#azure-b)"
             d="M66.6 9.36a4.14 4.14 0 0 0-3.93-2.82H33.65a4.15 4.15 0 0 1 3.93 2.82l25.18 74.62a4.15 4.15 0 0 1-3.93 5.48h29.02a4.15 4.15 0 0 0 3.93-5.48z"
           />
+        </Svg>
+      );
+    case "origin":
+      return (
+        <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+          <Path
+            d="M8 1.75a6.25 6.25 0 1 1 0 12.5 6.25 6.25 0 0 1 0-12.5Z"
+            stroke={props.color ?? "#111111"}
+            strokeWidth="1.5"
+          />
+          <Path d="M8 6a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z" fill={props.color ?? "#111111"} />
         </Svg>
       );
     case "bitbucket":

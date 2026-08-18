@@ -5,11 +5,10 @@ name: T3 Pretty Mobile Release
 # updates and TestFlight upload still use the fork-owned EAS project; those
 # are not iOS cloud builds.
 #
-# OTA publishing and the native-fingerprint decision run on GitHub-hosted
-# ubuntu-latest (free for this public repo) so they never wait for m1-dev.
-# Xcode runs only when the fingerprint changed, or when a maintainer
-# dispatches `build` / force_ios. JS-only releases therefore never occupy
-# the Mac.
+# OTA publishing used to run on hosted linux-small, but Metro's export
+# is SIGKILL'd there. macos-release has enough RAM to finish `eas update`.
+# Xcode still runs only when the fingerprint changed, or when a maintainer
+# dispatches `build` / force_ios.
 #
 # Origin is the fork's forge. OTA still publishes through Expo; the
 # fingerprint record lands through an Origin pull request.
@@ -17,14 +16,8 @@ name: T3 Pretty Mobile Release
 on:
   push:
     branches: [main]
-    paths:
-      - apps/mobile/**
-      - packages/**
-      - patches/**
-      - pnpm-lock.yaml
-      - .github/workflows/fork-mobile-release.yml
-      - scripts/fork/resolve-ios-native-build.mjs
-      - scripts/fork/security-eas-local-keychain
+    # Path filters stay in the OTA job. Buildkite's GitHub Actions importer
+    # rejects on.push.paths; workflow_dispatch and sync dispatch still run.
   workflow_dispatch:
     inputs:
       mode:
@@ -59,31 +52,45 @@ concurrency:
   group: fork-mobile-release
   cancel-in-progress: false
 
+# Buildkite's importer does not copy pipeline `env:` or GitHub `vars.*`.
+# Public Expo/EAS IDs have to live here as literals.
+env:
+  T3CODE_MOBILE_UPDATE_URL: "https://u.expo.dev/1eb51d67-48c5-4100-8aa8-f5ac9e1ada65"
+  T3CODE_MOBILE_EAS_PROJECT_ID: "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65"
+  T3CODE_MOBILE_EXPO_OWNER: sergeserbinenkoteam
+  T3CODE_MOBILE_EXPO_SLUG: t3-pretty
+  T3CODE_APPLE_TEAM_ID: "78A5P57U23"
+  T3CODE_IOS_SHARE_EXTENSION: "0"
+  APPLE_TEAM_ID: "78A5P57U23"
+
 jobs:
   ota:
     name: Publish OTA (${{ github.event_name == 'push' && 'release' || inputs.mode }})
-    runs-on: ubuntu-latest
+    # macos-release: hosted linux-small SIGKILLs the Metro export.
+    runs-on: macos-latest
     timeout-minutes: 30
     permissions:
       contents: read
     outputs:
-      should_build: ${{ steps.native.outputs.should_build }}
+      should_build: ${{ steps.paths.outputs.relevant == 'true' && steps.native.outputs.should_build }}
       fingerprint: ${{ steps.native.outputs.fingerprint }}
     env:
       APP_VARIANT: production
       NODE_OPTIONS: --max-old-space-size=8192
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
-      T3CODE_MOBILE_UPDATE_URL: ${{ vars.T3CODE_MOBILE_UPDATE_URL }}
-      T3CODE_MOBILE_EAS_PROJECT_ID: ${{ vars.T3CODE_MOBILE_EAS_PROJECT_ID }}
-      T3CODE_MOBILE_EXPO_OWNER: ${{ vars.T3CODE_MOBILE_EXPO_OWNER }}
-      T3CODE_MOBILE_EXPO_SLUG: ${{ vars.T3CODE_MOBILE_EXPO_SLUG }}
-      T3CODE_APPLE_TEAM_ID: ${{ vars.T3CODE_APPLE_TEAM_ID }}
-      T3CODE_IOS_SHARE_EXTENSION: ${{ vars.T3CODE_IOS_SHARE_EXTENSION }}
       MODE: ${{ github.event_name == 'push' && 'release' || inputs.mode }}
       PLATFORM: ${{ github.event_name == 'push' && 'all' || inputs.platform }}
       FORCE_IOS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_ios || false }}
     steps:
+      - name: Prepare macOS runner PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+          echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
+
       - id: expo-token
         name: Check for EXPO_TOKEN
         env:
@@ -98,17 +105,48 @@ jobs:
 
       - name: Checkout
         if: steps.expo-token.outputs.present == 'true'
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          clean: true
-          # No sparse-checkout here: it makes actions/checkout fetch with
-          # --filter=blob:none, and eas-cli archives the project via
-          # `git clone --depth 1 file://<workspace>`, which fails (exit 128)
-          # when the partial clone can't serve the unfetched blobs.
+        shell: bash
+        env:
+          CHECKOUT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Full history: eas-cli archives via `git clone --depth 1 file://`,
+          # and the path skip needs HEAD~1.
+          helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
+          test -x "$helper"
+          "$helper" main --full
+          if git cat-file -e "${CHECKOUT_SHA}^{commit}" 2>/dev/null; then
+            git checkout --force "$CHECKOUT_SHA"
+          else
+            "$helper" "$CHECKOUT_SHA" --full
+          fi
+
+      - id: paths
+        name: Skip mobile-irrelevant pushes
+        if: steps.expo-token.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" != "push" ]] || ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --quiet HEAD~1 HEAD -- \
+            apps/mobile \
+            packages \
+            patches \
+            pnpm-lock.yaml \
+            .github/workflows/fork-mobile-release.yml \
+            scripts/fork/resolve-ios-native-build.mjs \
+            scripts/fork/security-eas-local-keychain; then
+            echo "Push does not change mobile-relevant paths."
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup Vite+
-        if: steps.expo-token.outputs.present == 'true'
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
@@ -119,7 +157,7 @@ jobs:
               - --filter=@t3tools/scripts...
 
       - name: Expose pnpm
-        if: steps.expo-token.outputs.present == 'true'
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
         run: |
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
           vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
@@ -127,7 +165,7 @@ jobs:
           "$vp_pnpm_bin/pnpm" --version
 
       - name: Setup EAS
-        if: steps.expo-token.outputs.present == 'true'
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
@@ -138,7 +176,7 @@ jobs:
           packager: npm
 
       - name: Pull production environment variables
-        if: steps.expo-token.outputs.present == 'true'
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -153,11 +191,12 @@ jobs:
           fi
 
       - name: Publish OTA update
-        if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'update' || env.MODE == 'release')
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true' && (env.MODE == 'update' || env.MODE == 'release')
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
+          set -euo pipefail
           update_platform="$PLATFORM"
           if [[ "$MODE" == "release" ]]; then
             update_platform=all
@@ -171,7 +210,7 @@ jobs:
 
       - id: native
         name: Decide whether a new iOS binary is required
-        if: steps.expo-token.outputs.present == 'true' && (env.MODE == 'build' || env.MODE == 'release')
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true' && (env.MODE == 'build' || env.MODE == 'release')
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -230,7 +269,9 @@ jobs:
     name: Build and submit iOS
     needs: ota
     if: needs.ota.outputs.should_build == 'true'
-    runs-on: [self-hosted, macOS, ARM64, t3code-fork, release-only]
+    # macos-latest maps to the macos-release queue. The importer rejects
+    # self-hosted label lists.
+    runs-on: macos-latest
     timeout-minutes: 90
     permissions:
       # contents:write pushes the automation branch that records
@@ -244,12 +285,6 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=8192
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
-      T3CODE_MOBILE_UPDATE_URL: ${{ vars.T3CODE_MOBILE_UPDATE_URL }}
-      T3CODE_MOBILE_EAS_PROJECT_ID: ${{ vars.T3CODE_MOBILE_EAS_PROJECT_ID }}
-      T3CODE_MOBILE_EXPO_OWNER: ${{ vars.T3CODE_MOBILE_EXPO_OWNER }}
-      T3CODE_MOBILE_EXPO_SLUG: ${{ vars.T3CODE_MOBILE_EXPO_SLUG }}
-      T3CODE_APPLE_TEAM_ID: ${{ vars.T3CODE_APPLE_TEAM_ID }}
-      T3CODE_IOS_SHARE_EXTENSION: ${{ vars.T3CODE_IOS_SHARE_EXTENSION }}
       MODE: ${{ github.event_name == 'push' && 'release' || inputs.mode }}
       PLATFORM: ${{ github.event_name == 'push' && 'all' || inputs.platform }}
       FORCE_IOS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_ios || false }}
@@ -340,14 +375,19 @@ jobs:
           done
 
       - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          clean: true
-          # No sparse-checkout here: it makes actions/checkout fetch with
-          # --filter=blob:none, and eas-cli archives the project via
-          # `git clone --depth 1 file://<workspace>`, which fails (exit 128)
-          # when the partial clone can't serve the unfetched blobs.
+        # Full history: eas-cli archives via `git clone --depth 1 file://`.
+        shell: bash
+        env:
+          CHECKOUT_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
+          test -x "$helper"
+          "$helper" "$CHECKOUT_REF" --full
+
+      - name: Load Buildkite cluster secrets
+        shell: bash
+        run: bash scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY
 
       - name: Prepare macOS runner PATH
         shell: bash
@@ -402,7 +442,6 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           for name in APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
@@ -532,7 +571,6 @@ jobs:
         if: needs.ota.outputs.fingerprint != ''
         env:
           FINGERPRINT: ${{ needs.ota.outputs.fingerprint }}
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           ORIGIN_REPO: serbinenko/t3-pretty
         run: |
           set -euo pipefail
