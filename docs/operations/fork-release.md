@@ -94,11 +94,10 @@ newer upstream tag was integrated before its sync pull request merged.
   `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer.
   Mac-only desktop publishes are still allowed if that step is skipped. Depot can take
   Linux jobs but has no macOS/Windows sandboxes.
-  Hosted Linux jobs must not mention Mac signing certificate secret names: the
-  importer fetches every referenced secret before any step runs. `CURSOR_API_KEY`
-  stays a `secrets.*` reference so hosted agents are allowed to resolve it.
-  `scripts/fork/load-buildkite-secrets.sh` is a fallback after checkout. The
-  Windows agent runs as LocalSystem; Origin HTTPS checkout uses
+  Hosted Linux cannot resolve `CURSOR_API_KEY`. Origin CLI work (publish and
+  upstream sync) therefore runs on `macos-release`. Hosted preflight must not
+  mention that secret or the Mac signing certificate names. The Windows agent
+  runs as LocalSystem; Origin HTTPS checkout uses
   `C:\buildkite-agent\.git-credentials` plus
   `scripts/fork/windows-origin-git.ps1`.
 - Secret `CURSOR_API_KEY`: Cursor API key for the Origin CLI (`origin auth login --api-key`).

@@ -22,7 +22,8 @@ if (-not $env:GITHUB_RUN_NUMBER) {
   $env:GITHUB_RUN_NUMBER = $env:BUILDKITE_BUILD_NUMBER
 }
 
-if (git remote get-url upstream 2>$null) {
+$upstreamUrl = git remote get-url upstream 2>$null
+if ($LASTEXITCODE -eq 0 -and $upstreamUrl) {
   git remote set-url upstream https://github.com/pingdotgg/t3code.git
 } else {
   git remote add upstream https://github.com/pingdotgg/t3code.git

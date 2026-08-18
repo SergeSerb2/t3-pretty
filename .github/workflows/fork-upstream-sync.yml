@@ -24,7 +24,9 @@ permissions:
 jobs:
   sync:
     name: Sync newest upstream nightly
-    runs-on: ubuntu-latest
+    # macos-release can resolve CURSOR_API_KEY and CLI_PROXY_API_KEY.
+    # Hosted Linux cannot resolve CURSOR_API_KEY.
+    runs-on: macos-latest
     # A backlog merge resolves dozens of conflicts in sequential model
     # batches; 45 minutes hard-killed those runs mid-resolution, which
     # discarded the work and let the next nightly pile on more conflicts.
@@ -100,7 +102,7 @@ jobs:
         if: steps.discover.outputs.has_update == 'true'
         shell: bash
         env:
-          CLI_PROXY_API_KEY: ${{ secrets.CLI_PROXY_API_KEY || env.CLI_PROXY_API_KEY }}
+          CLI_PROXY_API_KEY: ${{ secrets.CLI_PROXY_API_KEY }}
           CLI_PROXY_API_URL: https://cli-proxy-api-production-1615.up.railway.app/v1
           CLI_PROXY_MODEL: gpt-5.6-sol
           CLI_PROXY_REASONING_EFFORT: xhigh
@@ -244,7 +246,7 @@ jobs:
         if: steps.discover.outputs.has_update == 'true'
         shell: bash
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           DEPOT_TOKEN: ${{ env.DEPOT_TOKEN }}
           ORIGIN_REPO: serbinenko/t3-pretty
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
@@ -298,7 +300,7 @@ jobs:
         if: failure() && steps.discover.outputs.has_update == 'true'
         shell: bash
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           ORIGIN_REPO: serbinenko/t3-pretty
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
         run: |

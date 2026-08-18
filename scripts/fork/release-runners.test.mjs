@@ -36,7 +36,7 @@ describe("T3 Pretty release runner placement", () => {
 
     assert.include(preflight, "runs-on: ubuntu-latest");
     assert.include(wsl, "runs-on: ubuntu-latest");
-    assert.include(publish, "runs-on: ubuntu-latest");
+    assert.include(publish, "runs-on: macos-latest");
     assert.include(mac, "runs-on: macos-latest");
     assert.include(mac, "rustup toolchain install stable");
     assert.notInclude(mac, "dtolnay/rust-toolchain");
