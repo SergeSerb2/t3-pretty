@@ -94,6 +94,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(relayWorkflow, "vars.FORK_RELAY_DEPLOY_ENABLED");
     assert.notInclude(relayWorkflow, "actions/github-script");
     assert.notInclude(relayWorkflow, "secrets.CLERK_SECRET_KEY");
+    assert.notInclude(relayWorkflow, "secrets.PLANETSCALE_API_TOKEN");
+    assert.include(relayWorkflow, "secrets.CLOUDFLARE_API_TOKEN");
+    assert.include(relayWorkflow, "secrets.APNS_PRIVATE_KEY");
     assert.include(relayWorkflow, "relay.sergeserbinenko.com");
     assert.include(relayWorkflow, "load-buildkite-secrets.sh");
     assert.include(relayWorkflow, "Require relay deploy credentials");
