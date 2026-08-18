@@ -151,13 +151,29 @@ function pickRemote(
   return null;
 }
 
+function groupingRemoteHost(remoteUrl: string): string | null {
+  const host = normalizeGitRemoteUrl(remoteUrl).split("/")[0]?.trim();
+  return host && host.length > 0 ? host : null;
+}
+
 // canonicalKey groups project copies across environments, so it must stay
 // stable when the same repository is checked out through different forks —
 // prefer the shared upstream's fetch URL. Display fields and the locator
 // describe the repository the user actually works against (branches push and
 // PRs open on origin), so those prefer origin, and prefer its push URL when it
 // differs from the fetch URL (triangular workflows pushing to a fork).
+// Cross-host remotes are not forks of each other: an Origin `origin` plus a
+// leftover GitHub `upstream` must not report github.com as the project host.
 function pickGroupingRemote(remotes: ReadonlyMap<string, RemoteUrls>) {
+  const originUrl = remotes.get("origin")?.fetchUrl;
+  const upstreamUrl = remotes.get("upstream")?.fetchUrl;
+  if (originUrl && upstreamUrl) {
+    const originHost = groupingRemoteHost(originUrl);
+    const upstreamHost = groupingRemoteHost(upstreamUrl);
+    if (originHost && upstreamHost && originHost !== upstreamHost) {
+      return pickRemote(remotes, ["origin"], (urls) => urls.fetchUrl);
+    }
+  }
   return pickRemote(remotes, ["upstream", "origin"], (urls) => urls.fetchUrl);
 }
 

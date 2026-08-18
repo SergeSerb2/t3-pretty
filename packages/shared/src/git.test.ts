@@ -88,7 +88,7 @@ describe("parseGitHubRepositoryNameWithOwnerFromRemoteUrl", () => {
 });
 
 describe("parseRepositoryNameWithOwnerFromGitRemoteUrl", () => {
-  it("extracts GitHub, nested GitLab, and Bitbucket repository identities", () => {
+  it("extracts GitHub, nested GitLab, Bitbucket, and Origin repository identities", () => {
     expect(parseRepositoryNameWithOwnerFromGitRemoteUrl("git@github.com:T3Tools/T3Code.git")).toBe(
       "T3Tools/T3Code",
     );
@@ -100,6 +100,16 @@ describe("parseRepositoryNameWithOwnerFromGitRemoteUrl", () => {
     expect(
       parseRepositoryNameWithOwnerFromGitRemoteUrl("https://bitbucket.org/T3Tools/T3Code.git"),
     ).toBe("T3Tools/T3Code");
+    expect(
+      parseRepositoryNameWithOwnerFromGitRemoteUrl(
+        "https://origin.cursor.com/serbinenko/t3-pretty.git",
+      ),
+    ).toBe("serbinenko/t3-pretty");
+    expect(
+      parseRepositoryNameWithOwnerFromGitRemoteUrl(
+        "git@origin.cursor.com:serbinenko/t3-pretty.git",
+      ),
+    ).toBe("serbinenko/t3-pretty");
   });
 
   it("fails closed for unsupported and local remote shapes", () => {
