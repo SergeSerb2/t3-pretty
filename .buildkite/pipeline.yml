@@ -43,6 +43,7 @@ steps:
             - .github/workflows/fork-upstream-sync.yml
             - .github/workflows/fork-release.yml
             - .github/workflows/fork-mobile-release.yml
+            - .github/workflows/fork-pr-review.yml
           runners:
             - runs-on: ubuntu-latest
               queue: linux-small
