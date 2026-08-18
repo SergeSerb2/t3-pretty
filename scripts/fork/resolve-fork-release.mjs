@@ -34,11 +34,25 @@ function findNewestIntegratedNightly() {
   throw new Error("No integrated upstream nightly tag is an ancestor of HEAD");
 }
 
-function main() {
-  const runNumber = BigInt(process.env.GITHUB_RUN_NUMBER ?? "0");
-  if (runNumber <= 0n || runNumber >= RUN_MULTIPLIER) {
-    throw new Error(`GITHUB_RUN_NUMBER must be between 1 and ${RUN_MULTIPLIER - 1n}`);
+function resolveRunNumber() {
+  // Buildkite's GitHub Actions importer often sets GITHUB_RUN_NUMBER to 0.
+  // Prefer a value that fits the fork-build slot.
+  for (const raw of [process.env.GITHUB_RUN_NUMBER, process.env.BUILDKITE_BUILD_NUMBER]) {
+    if (!raw) continue;
+    try {
+      const runNumber = BigInt(raw);
+      if (runNumber > 0n && runNumber < RUN_MULTIPLIER) return runNumber;
+    } catch {
+      // not an integer
+    }
   }
+  throw new Error(
+    `GITHUB_RUN_NUMBER or BUILDKITE_BUILD_NUMBER must be between 1 and ${RUN_MULTIPLIER - 1n}`,
+  );
+}
+
+function main() {
+  const runNumber = resolveRunNumber();
 
   const upstreamTag = findNewestIntegratedNightly();
   const match = NIGHTLY_TAG.exec(upstreamTag);
