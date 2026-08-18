@@ -46,8 +46,8 @@ foreach ($dir in $vpCandidates) {
 
 if (-not (Get-Command vp -ErrorAction SilentlyContinue)) {
   $env:VITE_PLUS_BIN_DIR = "C:\buildkite-agent\bin"
-  Invoke-Expression (Invoke-WebRequest -UseBasicParsing https://vite.plus/ps1).Content
-  $env:Path = "C:\buildkite-agent\bin;$env:Path"
+  Invoke-RestMethod https://vite.plus/ps1 | Invoke-Expression
+  $env:Path = "C:\buildkite-agent\bin;$env:USERPROFILE\.vite-plus\bin;$env:Path"
 }
 
 if (-not (Get-Command vp -ErrorAction SilentlyContinue)) {
