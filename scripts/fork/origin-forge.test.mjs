@@ -145,8 +145,11 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "fork-pr-review.yml");
     assert.include(review, "review-origin-pr.mjs");
     assert.include(review, "grok-4.6");
+    assert.include(review, "CLI_PROXY_API_KEY");
+    assert.include(review, "cli-proxy-api-production-1615.up.railway.app");
     assert.include(review, "runs-on: ubuntu-latest");
     assert.notInclude(review, "secrets.CURSOR_API_KEY");
+    assert.notInclude(review, "api.x.ai");
     assert.include(pipeline, "deploy-relay-ci.sh");
     assert.notInclude(pipeline, "deploy-relay.yml");
     assert.include(pipeline, "queue: macos-release");

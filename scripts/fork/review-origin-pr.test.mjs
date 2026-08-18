@@ -5,8 +5,11 @@ import * as NodeURL from "node:url";
 import { assert, describe, it } from "vite-plus/test";
 
 import {
+  DEFAULT_CLI_PROXY_API_URL,
   DEFAULT_MODEL,
   alreadyReviewed,
+  cliProxyApiKey,
+  cliProxyApiUrl,
   formatReviewBody,
   parseReviewResponse,
   resolveExplicitPr,
@@ -23,6 +26,26 @@ describe("Origin Grok PR review", () => {
     assert.match(shouldSkipBranch("main"), /main/);
     assert.match(shouldSkipBranch("automation/upstream-v1"), /automation/);
     assert.equal(shouldSkipBranch("t3code/fix-foo"), "");
+  });
+
+  it("uses Railway CLIProxyAPI instead of the xAI API", () => {
+    assert.include(DEFAULT_CLI_PROXY_API_URL, "railway.app");
+    assert.notInclude(DEFAULT_CLI_PROXY_API_URL, "api.x.ai");
+    const previousKey = process.env.CLI_PROXY_API_KEY;
+    const previousUrl = process.env.CLI_PROXY_API_URL;
+    delete process.env.XAI_API_KEY;
+    delete process.env.GROK_API_KEY;
+    process.env.CLI_PROXY_API_KEY = "clip_test";
+    delete process.env.CLI_PROXY_API_URL;
+    try {
+      assert.equal(cliProxyApiKey(), "clip_test");
+      assert.equal(cliProxyApiUrl(), DEFAULT_CLI_PROXY_API_URL);
+    } finally {
+      if (previousKey === undefined) delete process.env.CLI_PROXY_API_KEY;
+      else process.env.CLI_PROXY_API_KEY = previousKey;
+      if (previousUrl === undefined) delete process.env.CLI_PROXY_API_URL;
+      else process.env.CLI_PROXY_API_URL = previousUrl;
+    }
   });
 
   it("reads an explicit PR number from Origin or Buildkite env", () => {
@@ -95,10 +118,14 @@ describe("Origin Grok review workflow wiring", () => {
     assert.include(workflow, "runs-on: ubuntu-latest");
     assert.include(workflow, "review-origin-pr.mjs");
     assert.include(workflow, "grok-4.6");
+    assert.include(workflow, "CLI_PROXY_API_KEY");
+    assert.include(workflow, "cli-proxy-api-production-1615.up.railway.app");
     assert.include(workflow, "load-buildkite-secrets.sh");
     assert.include(workflow, "origin-forge.mjs setup-ci");
     assert.notInclude(workflow, "secrets.CURSOR_API_KEY");
-    assert.notInclude(workflow, "secrets.XAI_API_KEY");
+    assert.notInclude(workflow, "secrets.CLI_PROXY_API_KEY");
+    assert.notInclude(workflow, "XAI_API_KEY");
+    assert.notInclude(workflow, "api.x.ai");
     assert.notInclude(workflow, "gh api");
     assert.notInclude(workflow, "gh pr");
     assert.notInclude(workflow, "macos-latest");

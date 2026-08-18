@@ -15,27 +15,46 @@ import {
 
 export const REVIEW_MARKER = "t3-pretty-grok-review";
 export const DEFAULT_MODEL = "grok-4.6";
-export const DEFAULT_XAI_API_URL = "https://api.x.ai/v1";
+export const DEFAULT_CLI_PROXY_API_URL = "https://cli-proxy-api-production-1615.up.railway.app/v1";
 export const MAX_DIFF_CHARS = 120_000;
 export const MAX_ISSUES = 12;
 const REQUEST_TIMEOUT_MS = 180_000;
 const SEVERITIES = new Set(["bug", "suggestion", "nit"]);
 
-export function grokApiKey() {
-  return (
-    process.env.XAI_API_KEY?.trim() ||
-    process.env.GROK_API_KEY?.trim() ||
-    process.env.XAI_KEY?.trim() ||
-    ""
-  );
+const REVIEW_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary", "issues"],
+  properties: {
+    summary: { type: "string" },
+    issues: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["severity", "path", "line", "title", "body"],
+        properties: {
+          severity: { type: "string", enum: ["bug", "suggestion", "nit"] },
+          path: { type: "string" },
+          line: { type: "integer" },
+          title: { type: "string" },
+          body: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
+export function cliProxyApiKey() {
+  return process.env.CLI_PROXY_API_KEY?.trim() || "";
 }
 
-export function grokApiUrl() {
-  return (process.env.XAI_API_URL ?? DEFAULT_XAI_API_URL).replace(/\/$/u, "");
+export function cliProxyApiUrl() {
+  return (process.env.CLI_PROXY_API_URL ?? DEFAULT_CLI_PROXY_API_URL).replace(/\/$/u, "");
 }
 
 export function grokModel() {
-  return process.env.XAI_REVIEW_MODEL?.trim() || DEFAULT_MODEL;
+  return process.env.CLI_PROXY_REVIEW_MODEL?.trim() || DEFAULT_MODEL;
 }
 
 export function reviewMarker(sha) {
@@ -190,14 +209,28 @@ export function buildReviewPrompt({ title, description, head, base, sha, diff, t
     .join("\n");
 }
 
+export function extractResponseText(response) {
+  if (typeof response?.output_text === "string") return response.output_text;
+  for (const item of response?.output ?? []) {
+    for (const content of item.content ?? []) {
+      if (content.type === "output_text" && typeof content.text === "string") {
+        return content.text;
+      }
+    }
+  }
+  throw new Error("CLIProxyAPI response did not contain output text");
+}
+
 export async function callGrokReview({
   prompt,
   apiKey,
-  apiUrl = grokApiUrl(),
+  apiUrl = cliProxyApiUrl(),
   model = grokModel(),
 }) {
-  if (!apiKey) throw new Error("XAI_API_KEY or GROK_API_KEY is required for Grok 4.6 reviews.");
-  const response = await fetch(`${apiUrl}/chat/completions`, {
+  if (!apiKey) {
+    throw new Error("CLI_PROXY_API_KEY is required for Grok 4.6 Origin PR reviews.");
+  }
+  const response = await fetch(`${apiUrl}/responses`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -206,28 +239,25 @@ export async function callGrokReview({
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     body: JSON.stringify({
       model,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You review git diffs for correctness. Reply with a single JSON object and no extra prose.",
+      reasoning: { effort: process.env.CLI_PROXY_REVIEW_EFFORT ?? "high" },
+      service_tier: process.env.CLI_PROXY_SERVICE_TIER ?? "priority",
+      input: prompt,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "origin_pr_review",
+          strict: true,
+          schema: REVIEW_SCHEMA,
         },
-        { role: "user", content: prompt },
-      ],
+      },
     }),
   });
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(`Grok request failed with ${response.status}: ${body.slice(0, 500)}`);
+    throw new Error(`CLIProxyAPI request failed with ${response.status}: ${body.slice(0, 500)}`);
   }
   const payload = await response.json();
-  const text = payload?.choices?.[0]?.message?.content;
-  if (typeof text !== "string" || text.trim() === "") {
-    throw new Error("Grok response did not contain message content");
-  }
-  return parseReviewResponse(text);
+  return parseReviewResponse(extractResponseText(payload));
 }
 
 export function viewPullRequest(target, { repo } = {}) {
@@ -279,7 +309,7 @@ export async function reviewOriginPullRequest({
   repo = env.ORIGIN_REPO || ORIGIN_FULL_NAME,
   dryRun = argv.includes("--dry-run"),
   setupAuth = true,
-  apiKey = grokApiKey(),
+  apiKey = cliProxyApiKey(),
 } = {}) {
   const explicitPr = resolveExplicitPr({ env, argvPr: readFlag(argv, "--pr") });
   const head = resolveBranchName({ env, argvHead: readFlag(argv, "--head") });

@@ -1,7 +1,8 @@
 name: T3 Pretty Origin PR Review
 
-# Grok 4.6 reviews every Origin pull request. Hosted linux-small posts the
-# review through the Origin CLI. Release runners stay off pull-request jobs.
+# Grok 4.6 reviews every Origin pull request via Railway CLIProxyAPI.
+# Hosted linux-small posts the review through the Origin CLI. Release
+# runners stay off pull-request jobs.
 # See docs/operations/fork-release.md.
 
 on:
@@ -41,7 +42,7 @@ jobs:
 
       - name: Load Buildkite cluster secrets
         shell: bash
-        run: bash scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY XAI_API_KEY GROK_API_KEY
+        run: bash scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY CLI_PROXY_API_KEY
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -58,5 +59,6 @@ jobs:
           ORIGIN_REPO: serbinenko/t3-pretty
           ORIGIN_PR: ${{ github.event.inputs.pr || github.event.pull_request.number || '' }}
           ORIGIN_PR_HEAD: ${{ github.head_ref || github.ref_name }}
-          XAI_REVIEW_MODEL: grok-4.6
+          CLI_PROXY_REVIEW_MODEL: grok-4.6
+          CLI_PROXY_API_URL: https://cli-proxy-api-production-1615.up.railway.app/v1
         run: node scripts/fork/review-origin-pr.mjs
