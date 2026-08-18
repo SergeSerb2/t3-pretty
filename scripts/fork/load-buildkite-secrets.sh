@@ -21,7 +21,22 @@ for name in "$@"; do
   if [[ -n "${!name:-}" ]]; then
     continue
   fi
-  if ! value="$(buildkite-agent secret get "$name" 2>/dev/null)"; then
+  value=""
+  if command -v buildkite-agent >/dev/null; then
+    value="$(buildkite-agent secret get "$name" 2>/dev/null || true)"
+  fi
+  if [[ -z "$value" ]]; then
+    for candidate in \
+      "${HOME}/.config/t3-pretty/${name}" \
+      "/Users/m1-dev/.config/t3-pretty/${name}" \
+      "/opt/homebrew/var/buildkite-agent/secrets/${name}"; do
+      if [[ -f "$candidate" ]]; then
+        value="$(tr -d '\r\n' < "$candidate")"
+        break
+      fi
+    done
+  fi
+  if [[ -z "$value" ]]; then
     echo "cluster secret $name is not available on this agent"
     continue
   fi

@@ -1013,8 +1013,6 @@ jobs:
       - name: Publish public Origin release
         shell: bash
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
           RELEASE_REF: ${{ needs.preflight.outputs.ref }}
           RELEASE_NAME: ${{ needs.preflight.outputs.name }}

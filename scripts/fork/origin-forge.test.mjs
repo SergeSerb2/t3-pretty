@@ -114,11 +114,13 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(preflight, "secrets.CURSOR_API_KEY");
     assert.notInclude(preflight, "secrets.CSC_");
     assert.notInclude(preflight, "secrets.APPLE_API_");
-    assert.include(publish, "secrets.CURSOR_API_KEY");
+    assert.notInclude(publish, "secrets.CURSOR_API_KEY");
+    assert.notInclude(publish, "secrets.CLOUDFLARE_API_TOKEN");
     assert.include(publish, "runs-on: macos-latest");
     assert.include(preflight, "Read Buildkite pipeline env directly");
     assert.include(sync, "runs-on: macos-latest");
-    assert.include(sync, "secrets.CURSOR_API_KEY");
+    assert.notInclude(sync, "secrets.CURSOR_API_KEY");
+    assert.notInclude(sync, "secrets.CLI_PROXY_API_KEY");
     assert.include(sync, "checkout-origin.sh");
     assert.include(desktop, "checkout-origin.sh");
     assert.include(mobile, "checkout-origin.sh");
