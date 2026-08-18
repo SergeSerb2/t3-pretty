@@ -17,6 +17,16 @@ on:
 permissions:
   contents: write
 
+# Buildkite's GitHub Actions importer does not copy pipeline `env:` into
+# imported jobs. Public feed values have to live here as literals.
+env:
+  T3CODE_DESKTOP_UPDATE_FEED_URL: "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/"
+  T3CODE_RELEASE_S3_BUCKET: t3-pretty-releases
+  T3CODE_RELEASE_S3_ENDPOINT: "https://a6f705b8c6459d937d32d31555f9fbf6.r2.cloudflarestorage.com"
+  T3CODE_RELEASE_S3_REGION: auto
+  APPLE_TEAM_ID: "78A5P57U23"
+  T3CODE_APPLE_TEAM_ID: "78A5P57U23"
+
 # Versions stay monotonic, so desktop releases still queue one at a time.
 # Preflight, the WSL node-pty compile, and publish run on GitHub-hosted
 # ubuntu-latest (free for this public repo) and do not occupy m1-dev.

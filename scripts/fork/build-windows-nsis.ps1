@@ -33,16 +33,30 @@ $resolved = node "$root\scripts\fork\resolve-fork-release.mjs" | ConvertFrom-Jso
 $version = $resolved.version
 Write-Host "Building Windows NSIS $version"
 
-node "$root\scripts\update-release-package-versions.ts" $version
+$vpCandidates = @(
+  (Join-Path $env:USERPROFILE ".vite-plus\bin"),
+  "C:\Users\serge\.vite-plus\bin",
+  (Join-Path $env:APPDATA "npm"),
+  "C:\Users\serge\AppData\Roaming\npm"
+)
+foreach ($dir in $vpCandidates) {
+  if (Test-Path (Join-Path $dir "vp.cmd")) { $env:Path = "$dir;$env:Path"; break }
+  if (Test-Path (Join-Path $dir "vp.exe")) { $env:Path = "$dir;$env:Path"; break }
+}
 
 if (-not (Get-Command vp -ErrorAction SilentlyContinue)) {
   if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     throw "vp and npm are missing. Install Node.js and Vite+ on this agent."
   }
-  npm exec --yes vp -- --version | Out-Host
+  npm install -g vp | Out-Host
+}
+
+if (-not (Get-Command vp -ErrorAction SilentlyContinue)) {
+  throw "vp is not on PATH after install. Add the Vite+ bin directory to the LocalSystem PATH."
 }
 
 vp i --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+node "$root\scripts\update-release-package-versions.ts" $version
 vp run dist:desktop:artifact -- --platform win --target nsis --arch x64 --build-version $version --verbose
 
 $publish = Join-Path $root "release-publish"
