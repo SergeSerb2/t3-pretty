@@ -115,7 +115,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(preflight, "secrets.CSC_");
     assert.notInclude(preflight, "secrets.APPLE_API_");
     assert.notInclude(publish, "secrets.CURSOR_API_KEY");
-    assert.notInclude(publish, "secrets.CLOUDFLARE_API_TOKEN");
+    assert.include(publish, "secrets.CLOUDFLARE_API_TOKEN");
     assert.include(publish, "runs-on: macos-latest");
     assert.include(preflight, "Read Buildkite pipeline env directly");
     assert.include(sync, "runs-on: macos-latest");

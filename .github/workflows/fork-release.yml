@@ -1013,6 +1013,9 @@ jobs:
       - name: Publish public Origin release
         shell: bash
         env:
+          # macos-release can resolve this cluster secret at prepare.
+          # CURSOR_API_KEY cannot; that one is loaded after checkout.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
           RELEASE_REF: ${{ needs.preflight.outputs.ref }}
           RELEASE_NAME: ${{ needs.preflight.outputs.name }}
