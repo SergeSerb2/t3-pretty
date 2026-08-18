@@ -99,6 +99,8 @@ describe("Origin release and blocked-sync helpers", () => {
       assert.include(source, "origin-forge.mjs");
     }
     assert.include(sync, "https://github.com/pingdotgg/t3code.git");
+    assert.include(sync, "git remote get-url upstream");
+    assert.include(sync, "git remote set-url upstream");
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");
     assert.include(desktop, "T3CODE_RELEASE_S3_BUCKET");
     assert.include(desktop, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");

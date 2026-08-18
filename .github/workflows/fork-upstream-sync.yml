@@ -42,10 +42,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-          echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
-          echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
-          echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+          export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
+          if [[ -n "${GITHUB_PATH:-}" ]]; then
+            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+            echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+            echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
+            echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+          fi
 
       - name: Checkout fork main
         shell: bash
@@ -64,7 +67,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git remote add upstream https://github.com/pingdotgg/t3code.git
+          # macos-release reuses the workspace. A previous sync leaves
+          # `upstream` in .git/config, and `git remote add` then exits 1
+          # before the merge starts (~2s red job).
+          if git remote get-url upstream >/dev/null 2>&1; then
+            git remote set-url upstream https://github.com/pingdotgg/t3code.git
+          else
+            git remote add upstream https://github.com/pingdotgg/t3code.git
+          fi
           # Parent history stays on GitHub. The fork remote is Origin.
           # The checkout is a blob:none partial clone, and some blobs the
           # merge needs (e.g. .repos/ subtrees bumped by a nightly) exist
