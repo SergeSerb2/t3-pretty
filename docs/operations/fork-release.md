@@ -26,9 +26,11 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
 2. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
    and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. macos-release
    reuses the workspace, so the job updates an existing `upstream` remote instead of
-   `git remote add`. Maintainers can use the manual dispatch only when an operational
-   fix needs an immediate retry. It merges that tag into an `automation/upstream-*`
-   branch and opens an Origin pull request.
+   `git remote add`. The PATH step writes Homebrew and Vite+ bins to `GITHUB_PATH` when
+   that file exists, and otherwise persists `PATH` through `GITHUB_ENV` so later steps
+   still see those bins when the importer leaves `GITHUB_PATH` unset. Maintainers can use
+   the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
+   into an `automation/upstream-*` branch and opens an Origin pull request.
    The fork deliberately keeps `.github/workflows` from its own `main`; upstream workflow changes
    cannot replace the trusted sync/release boundary.
 3. Clean changes remain untouched and do not make a model request. If Git reports text conflicts,
@@ -76,21 +78,27 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    Generation failures downgrade to warnings: the release ships without new entries and the next
    run regenerates everything missing.
 8. Origin-connected Linux CI (Depot or Buildkite, `ubuntu-latest` in the workflow YAML) resolves
-   the version, writes What's New notes, and compiles the WSL `node-pty` binary. Publish and
-   Origin CLI work stay on `macos-release` because hosted Linux cannot resolve `CURSOR_API_KEY`
-   through GitHub Actions `secrets.*`. `T3 Pretty Origin PR Review` is a native
+   the version and writes What's New notes. It does not call GitHub Actions
+   (`uses:`) — the importer resolves every action from api.github.com at parse
+   time, and a burst of main merges then fails the workflow with a GitHub rate
+   limit before any job starts. Publish and Origin CLI work stay on
+   `macos-release` because hosted Linux cannot resolve `CURSOR_API_KEY`.
+   `T3 Pretty Origin PR Review` is a native
    `macos-release` step that prefers review scripts from `origin/main`: hosted
    Linux cannot load `CURSOR_API_KEY`, and the importer cannot run the old
    review workflow on Origin pull-request events.
    `m1-dev` signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
    push/UI builds of `main`, not the four-hour scheduled sync. iOS TestFlight IPAs and OTA
-   exports compile on `macos-release` through `fork-mobile-release.yml`. Relay deploys from
-   `deploy-relay.yml` on hosted Linux. Only trusted `main` commits run desktop packaging
+   exports compile on `macos-release` through `fork-mobile-release.yml` and clone with
+   `checkout-origin.sh` rather than `actions/checkout`. Relay deploys from the native
+   `macos-release` step. Only trusted `main` commits run desktop packaging
    and relay deploys on the self-hosted machines; Origin PR review is the other
    `macos-release` job on feature branches, running scripts from `origin/main`
-   when they exist. Desktop packaging is skipped when the push cannot change the
+   when they exist. Imported desktop preflight is skipped when the push cannot change the
    shipped desktop app (mobile-only, docs-only, marketing, or relay-only commits).
-   `workflow_dispatch` and the upstream-sync dispatch still always run.
+   Native Mac and Windows packaging still run on every `main` push so the public
+   updater feed stays on the latest commit. `workflow_dispatch` and the
+   upstream-sync dispatch still always run.
 9. The publisher creates an annotated Origin git tag and uploads the installers plus both
    `nightly` and `latest` update manifests to the generic `electron-updater` feed in
    `T3CODE_DESKTOP_UPDATE_FEED_URL`. Origin has no GitHub-style release-asset API, so that feed

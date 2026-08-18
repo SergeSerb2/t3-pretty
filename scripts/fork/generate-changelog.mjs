@@ -538,7 +538,17 @@ async function main() {
   // Only a run sitting exactly on the origin/main tip may publish notes to
   // main: a manual dispatch of another ref must not fast-forward main to
   // unreviewed history, and a moved tip means this run already lost the race.
-  git(["fetch", "origin", "main"]);
+  try {
+    git(["fetch", "origin", "main"]);
+  } catch (error) {
+    warn(
+      `Could not fetch origin/main; shipping without new changelog entries. ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    writeGitHubOutput({ ref: baseSha, entries: 0 });
+    return;
+  }
   const mainTip = git(["rev-parse", "origin/main"]);
   if (mainTip !== baseSha) {
     // A retry of a run that already pushed its notes finds its own untagged
@@ -620,9 +630,10 @@ function writeGitHubOutput(values) {
 const invokedPath = process.argv[1] ? NodePath.resolve(process.argv[1]) : "";
 if (invokedPath === NodeURL.fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    process.stderr.write(
-      `[fork-changelog] ${error instanceof Error ? error.message : String(error)}\n`,
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[fork-changelog] ${message}\n`);
+    process.stdout.write(
+      `::warning::Changelog generation failed; the release continues without new notes. ${message}\n`,
     );
-    process.exitCode = 1;
   });
 }

@@ -1,8 +1,15 @@
 name: T3 Pretty Desktop Release
 
 # Origin is the fork's forge and updater host. GitHub Releases are not used.
-# Signed Mac/Windows jobs stay on the dedicated self-hosted machines; Linux
-# jobs run on Origin-connected CI (Depot or Buildkite).
+# Signed Mac/Windows installers are the native macos-release and
+# windows-release steps in .buildkite/pipeline.yml. This imported workflow
+# only resolves the fork version, writes What's New notes, and compiles the
+# WSL node-pty smoke binary on hosted Linux.
+#
+# Do not add `uses:` steps. Buildkite's importer resolves every action from
+# api.github.com at parse time, including jobs that later skip, and a burst
+# of main merges then fails the whole workflow with "GitHub API rate limit
+# exceeded" before any step runs.
 # See docs/operations/fork-release.md.
 
 on:
@@ -28,9 +35,8 @@ env:
   T3CODE_APPLE_TEAM_ID: "78A5P57U23"
 
 # Versions stay monotonic, so desktop releases still queue one at a time.
-# Preflight, the WSL node-pty compile, and publish run on GitHub-hosted
-# ubuntu-latest (free for this public repo) and do not occupy m1-dev.
-# The Mac only signs the arm64 DMG; Windows stays on serge-pc.
+# Preflight and the WSL node-pty compile run on hosted ubuntu-latest and do
+# not occupy m1-dev. Packaging stays on the native Mac and Windows agents.
 concurrency:
   group: fork-release
   cancel-in-progress: false
@@ -56,13 +62,17 @@ jobs:
       upstream_tag: ${{ steps.release.outputs.upstream_tag }}
       ref: ${{ steps.changelog.outputs.ref || github.sha }}
     steps:
-      - name: Checkout trusted main commit
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          # The Buildkite importer rejects sparse-checkout. Full checkouts
-          # are fine on these dedicated release jobs.
+      - name: Use the importer checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The importer already clones the trusted SHA. Deepen it so tag
+          # ancestry checks see full history, without calling checkout@v6.
+          git rev-parse --verify HEAD
+          git fetch --force --prune --unshallow origin || git fetch --force --prune origin || true
+          if [[ -n "${GITHUB_SHA:-}" ]] && git cat-file -e "${GITHUB_SHA}^{commit}" 2>/dev/null; then
+            git checkout --force "$GITHUB_SHA"
+          fi
 
       - id: paths
         name: Skip desktop-irrelevant pushes
@@ -106,8 +116,9 @@ jobs:
           fi
           git fetch --force --tags upstream
           # Fork versions must stay above every already-pushed Origin tag.
-          # checkout@v6 does not always bring annotated fork tags on Origin.
-          git fetch --force --tags origin
+          # The importer checkout does not always bring annotated fork tags.
+          # Origin credentials are not always present on hosted linux-small.
+          git fetch --force --tags origin || true
 
       - id: existing
         name: Skip an already released commit
@@ -233,11 +244,28 @@ jobs:
           fi
           echo 'windows=true' >> "$GITHUB_OUTPUT"
 
-      - name: Setup Node
+      - name: Ensure Node
         if: steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: package.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v node >/dev/null; then
+            node --version
+            exit 0
+          fi
+          echo "Runner Node is missing; installing Node 24 for linux-x64."
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          base="https://nodejs.org/download/release/latest-v24.x"
+          line="$(curl -fsSL --retry 3 "${base}/SHASUMS256.txt" \
+            | grep -E 'node-v24\.[0-9.]+-linux-x64\.tar\.gz$' | head -n1)"
+          test -n "$line"
+          sha="${line%% *}"
+          name="${line##* }"
+          curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"
+          ( cd "$tmp" && printf '%s  %s\n' "$sha" "$name" | sha256sum -c - )
+          tar -xzf "${tmp}/${name}" -C /usr/local --strip-components=1
+          node --version
 
       - id: release
         name: Create a monotonic fork version
@@ -252,6 +280,7 @@ jobs:
           steps.existing.outputs.should_release == 'true' &&
           steps.signing.outputs.configured == 'true' &&
           github.ref == 'refs/heads/main'
+        continue-on-error: true
         env:
           CLI_PROXY_API_KEY: ${{ env.CLI_PROXY_API_KEY }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
@@ -262,20 +291,6 @@ jobs:
         # the next run regenerates whatever is missing.
         run: node scripts/fork/generate-changelog.mjs
 
-      - name: Setup release-smoke dependencies
-        if: steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@t3tools/scripts...
-
-      - name: Exercise release-only workflow steps
-        if: steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
-        run: node scripts/release-smoke.ts
-
   build_wsl_node_pty:
     name: Build WSL node-pty (linux-x64)
     needs: preflight
@@ -285,17 +300,37 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout trusted main commit
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.preflight.outputs.ref }}
-          # The Buildkite importer rejects sparse-checkout. Full checkouts
-          # are fine on these dedicated release jobs.
+      - name: Use the importer checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse --verify HEAD
+          git fetch --force --prune --unshallow origin || git fetch --force --prune origin || true
+          if [[ -n "${GITHUB_SHA:-}" ]] && git cat-file -e "${GITHUB_SHA}^{commit}" 2>/dev/null; then
+            git checkout --force "$GITHUB_SHA"
+          fi
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: package.json
+      - name: Ensure Node
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v node >/dev/null; then
+            node --version
+            exit 0
+          fi
+          echo "Runner Node is missing; installing Node 24 for linux-x64."
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          base="https://nodejs.org/download/release/latest-v24.x"
+          line="$(curl -fsSL --retry 3 "${base}/SHASUMS256.txt" \
+            | grep -E 'node-v24\.[0-9.]+-linux-x64\.tar\.gz$' | head -n1)"
+          test -n "$line"
+          sha="${line%% *}"
+          name="${line##* }"
+          curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"
+          ( cd "$tmp" && printf '%s  %s\n' "$sha" "$name" | sha256sum -c - )
+          tar -xzf "${tmp}/${name}" -C /usr/local --strip-components=1
+          node --version
 
       - name: Build node-pty Linux prebuild
         shell: bash
@@ -318,752 +353,3 @@ jobs:
           install -m 0644 node_modules/node-pty/build/Release/pty.node \
             "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
           file "$GITHUB_WORKSPACE/wsl-prebuild/pty.node" | tee /dev/stderr | grep -Eq 'x86[-_]64|ELF 64-bit'
-
-      - name: Upload WSL prebuild
-        uses: actions/upload-artifact@v7
-        with:
-          name: fork-wsl-node-pty-x64
-          path: wsl-prebuild/pty.node
-          if-no-files-found: error
-
-  build_macos:
-    name: Build macOS arm64
-    needs: preflight
-    # Hosted macos-latest can no longer be pinned to macos-release. Origin
-    # DMGs are the native macos-release step in .buildkite/pipeline.yml.
-    if: false
-    permissions:
-      contents: read
-    # macos-latest maps to the macos-release queue. The importer rejects
-    # self-hosted label lists.
-    runs-on: macos-latest
-    timeout-minutes: 60
-    steps:
-      - name: Ensure runner action externals
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Every `uses:` step runs under the runner's own bundled Node. When
-          # that tree goes missing - an interrupted runner self-update, macOS
-          # quarantining the binary, or a disk sweep that reaps `externals/` -
-          # `run:` steps keep working while every action dies with a bare
-          # ENOENT naming the node binary. Without this guard the first
-          # casualty is whichever action follows the build, so a signed
-          # release burns several minutes before failing. Check it up front
-          # and restore the runtime from nodejs.org, so a broken runner costs
-          # one download instead of parking every release until someone
-          # re-extracts the runner package by hand.
-          #
-          # Buildkite's GHA importer sets RUNNER_TEMP to the host TMPDIR
-          # (`/var/folders/.../T` on macOS). `../..` is then a user cache
-          # folder, not an actions-runner install. iOS jobs on this same
-          # agent already run `uses:` without this repair. Skip so we do
-          # not fail the job inventing a node24 tree the importer never
-          # reads.
-          case "${RUNNER_TEMP:-}" in
-            /var/folders/*|/private/var/folders/*|/tmp/*|/private/tmp/*)
-              echo "RUNNER_TEMP=${RUNNER_TEMP} is not an actions-runner tree; skipping externals repair."
-              exit 0
-              ;;
-          esac
-          runner_root="$(cd "${RUNNER_TEMP}/../.." && pwd)"
-          externals="${runner_root}/externals"
-          mkdir -p "$externals"
-          case "$(uname -m)" in
-            arm64|aarch64) node_arch=arm64 ;;
-            x86_64) node_arch=x64 ;;
-            *) node_arch="" ;;
-          esac
-
-          node_ok() {
-            [[ -x "$1/bin/node" ]] && "$1/bin/node" --version >/dev/null 2>&1
-          }
-
-          # Deliberately no `set -e` reliance: this is called from an `if`,
-          # which suppresses errexit for the whole call, so every fallible
-          # command has to be checked by hand.
-          restore_node() {
-            local major="$1" dest="$2" base tmp line sha name src
-            [[ -n "$node_arch" ]] || { echo "Unsupported machine $(uname -m)."; return 1; }
-            base="https://nodejs.org/download/release/latest-v${major}.x"
-            tmp="$(mktemp -d)" || return 1
-            echo "Restoring ${dest} from ${base} (darwin-${node_arch})."
-            line="$(curl -fsSL --retry 3 "${base}/SHASUMS256.txt" \
-              | grep -E "node-v${major}\.[0-9.]+-darwin-${node_arch}\.tar\.gz$" | head -n1)"
-            if [[ -z "$line" ]]; then
-              echo "No darwin-${node_arch} build listed for node ${major}.x."
-              rm -rf "$tmp"; return 1
-            fi
-            sha="${line%% *}"
-            name="${line##* }"
-            src="${tmp}/${name%.tar.gz}"
-            if ! curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"; then
-              rm -rf "$tmp"; return 1
-            fi
-            if ! (cd "$tmp" && printf '%s  %s\n' "$sha" "$name" | shasum -a 256 -c - >/dev/null); then
-              echo "Checksum mismatch for ${name}."
-              rm -rf "$tmp"; return 1
-            fi
-            if ! tar -xzf "${tmp}/${name}" -C "$tmp"; then rm -rf "$tmp"; return 1; fi
-            rm -rf "${dest}.repair" "${dest}.broken"
-            if ! mv "$src" "${dest}.repair"; then rm -rf "$tmp"; return 1; fi
-            # A quarantined download is exactly the failure being repaired.
-            xattr -rc "${dest}.repair" >/dev/null 2>&1 || true
-            if [[ -e "$dest" ]] && ! mv "$dest" "${dest}.broken"; then
-              rm -rf "$tmp" "${dest}.repair"; return 1
-            fi
-            if ! mv "${dest}.repair" "$dest"; then rm -rf "$tmp"; return 1; fi
-            rm -rf "${dest}.broken" "$tmp"
-            node_ok "$dest"
-          }
-
-          for runtime in node24 node20; do
-            dest="${externals}/${runtime}"
-            # node20 only matters while some action still declares it. Do not
-            # conjure it onto runners that have already dropped the runtime.
-            if [[ "$runtime" != node24 && ! -d "$dest" ]]; then continue; fi
-            if node_ok "$dest"; then
-              echo "${runtime} OK (node $("${dest}/bin/node" --version))."
-              continue
-            fi
-            echo "::warning::${dest}/bin/node is missing or unusable; restoring it."
-            ls -la "$dest" 2>/dev/null || echo "${dest} does not exist."
-            if ! restore_node "${runtime#node}" "$dest"; then
-              echo "::error::Runner cannot execute actions: ${dest}/bin/node is missing and could not be restored."
-              echo "Repair on the runner host: stop the runner service, re-extract the"
-              echo "actions-runner release package over ${runner_root} to restore externals/,"
-              echo "then start the service again."
-              exit 1
-            fi
-            echo "Restored ${runtime} (node $("${dest}/bin/node" --version))."
-          done
-
-      - name: Checkout trusted main commit
-        # The GHA checkout adapter has no Origin HTTPS creds on macos-release.
-        shell: bash
-        env:
-          CHECKOUT_REF: ${{ needs.preflight.outputs.ref }}
-        run: |
-          set -euo pipefail
-          helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
-          test -x "$helper"
-          "$helper" "$CHECKOUT_REF"
-
-      - name: Prepare macOS runner PATH
-        shell: bash
-        run: |
-          set -euo pipefail
-          rustup_bin_dir="$(dirname "$(command -v rustup)")"
-          if [[ ! -x "$rustup_bin_dir/rustc" ]]; then
-            rustup_bin_dir="$(brew --prefix rustup)/bin"
-          fi
-          mkdir -p "$HOME/.cargo/bin"
-          for tool in cargo rustc rustdoc rustfmt clippy-driver; do
-            test -x "$rustup_bin_dir/$tool"
-            ln -sf "$rustup_bin_dir/$tool" "$HOME/.cargo/bin/$tool"
-          done
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          "$HOME/.cargo/bin/rustc" +stable --version
-          # Survive `clean: true` checkouts so the resource-monitor crate
-          # does not rebuild from scratch on every DMG.
-          mkdir -p "$HOME/.cache/t3-pretty-release/cargo" \
-            "$HOME/.cache/t3-pretty-release/target-macos-arm64"
-          echo "CARGO_HOME=$HOME/.cache/t3-pretty-release/cargo" >> "$GITHUB_ENV"
-          echo "CARGO_TARGET_DIR=$HOME/.cache/t3-pretty-release/target-macos-arm64" >> "$GITHUB_ENV"
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          # Self-hosted disks keep the pnpm store. Uploading it to GitHub
-          # cache after every job added minutes on the critical path.
-          cache: false
-          run-install: |
-            args:
-              - --filter=@t3tools/desktop...
-              - --filter=t3...
-              - --filter=@t3tools/scripts...
-
-      - name: Setup Rust
-        # rustup, not the dtolnay rust toolchain action: the importer
-        # rejects that action's continue-on-error metadata.
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! command -v rustup >/dev/null; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-            export PATH="$HOME/.cargo/bin:$PATH"
-          fi
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup target add aarch64-apple-darwin
-          rustup default stable
-          rustc +stable --version
-
-      - name: Align package versions
-        run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
-
-      - name: Build macOS updater artifact
-        shell: bash
-        env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          MACOS_PROVISIONING_PROFILE: ${{ env.MACOS_PROVISIONING_PROFILE }}
-          T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.T3CODE_CLERK_PUBLISHABLE_KEY }}
-          T3CODE_CLERK_PASSKEY_RP_DOMAINS: ${{ vars.CLERK_PASSKEY_RP_DOMAINS }}
-          VITE_SCENERY_UNSPLASH_KEY: ${{ secrets.VITE_SCENERY_UNSPLASH_KEY }}
-        run: |
-          set -euo pipefail
-          args=(
-            --platform mac
-            --target dmg
-            --arch arm64
-            --build-version "${{ needs.preflight.outputs.version }}"
-            --verbose
-          )
-          required=(
-            "$CSC_LINK"
-            "$CSC_KEY_PASSWORD"
-            "$APPLE_API_KEY"
-            "$APPLE_API_KEY_ID"
-            "$APPLE_API_ISSUER"
-            "$APPLE_TEAM_ID"
-          )
-          if printf '%s\n' "${required[@]}" | grep -q '^$'; then
-            echo "Refusing to build an unsigned macOS updater artifact." >&2
-            exit 1
-          fi
-          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          printf '%s' "$APPLE_API_KEY" > "$key_path"
-          export APPLE_API_KEY="$key_path"
-          export T3CODE_APPLE_TEAM_ID="$APPLE_TEAM_ID"
-          if [[ -n "$MACOS_PROVISIONING_PROFILE" ]]; then
-            profile_path="$RUNNER_TEMP/t3code.provisionprofile"
-            printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
-            export T3CODE_MACOS_PROVISIONING_PROFILE="$profile_path"
-          else
-            echo "No provisioning profile configured; signed build ships without the passkey entitlement."
-            export T3CODE_MACOS_SKIP_PASSKEY_PROFILE=1
-          fi
-          # electron-builder's own temp-keychain import fails at
-          # set-key-partition-list under this runner's launchd session. Prepare
-          # the signing keychain the same way the proven SurgeCode release job
-          # does on this host, then hand it to electron-builder through
-          # CSC_KEYCHAIN/CSC_NAME instead of CSC_LINK.
-          signing_keychain="$RUNNER_TEMP/fork-release.keychain-db"
-          keychain_password="$(openssl rand -hex 32)"
-          certificate_path="$RUNNER_TEMP/DeveloperIDApplication.p12"
-          developer_id_g2_path="$RUNNER_TEMP/DeveloperIDG2CA.cer"
-          developer_id_g2_sha256="f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a"
-          restore_keychains() {
-            security list-keychains -d user -s "$HOME/Library/Keychains/login.keychain-db" || true
-            security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
-          }
-          trap restore_keychains EXIT
-          printf '%s' "$CSC_LINK" | tr -d ' \n' | base64 -D > "$certificate_path"
-          curl --fail --location --silent --show-error \
-            -o "$developer_id_g2_path" \
-            "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer"
-          printf '%s  %s\n' "$developer_id_g2_sha256" "$developer_id_g2_path" | shasum -a 256 -c -
-          security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
-          security create-keychain -p "$keychain_password" "$signing_keychain"
-          security set-keychain-settings -lut 21600 "$signing_keychain"
-          security unlock-keychain -p "$keychain_password" "$signing_keychain"
-          security import "$developer_id_g2_path" -k "$signing_keychain"
-          security import "$certificate_path" -k "$signing_keychain" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S 'apple-tool:,apple:,codesign:' -s -k "$keychain_password" "$signing_keychain" >/dev/null
-          security list-keychains -d user -s "$signing_keychain" "$HOME/Library/Keychains/login.keychain-db"
-          # electron-builder rejects CSC_NAME values that include the
-          # certificate-type prefix.
-          identity_name="$(security find-identity -v -p codesigning "$signing_keychain" |
-            sed -n 's/.*"Developer ID Application: \([^"]*\)".*/\1/p' | head -n 1)"
-          if [[ -z "$identity_name" ]]; then
-            echo "No valid Developer ID Application identity in the prepared keychain." >&2
-            exit 1
-          fi
-          rm -f "$certificate_path"
-          export CSC_KEYCHAIN="$signing_keychain"
-          export CSC_NAME="$identity_name"
-          unset CSC_LINK CSC_KEY_PASSWORD
-          args+=(--signed)
-          vp run dist:desktop:artifact "${args[@]}"
-
-      - name: Verify macOS updater signature
-        shell: bash
-        run: |
-          set -euo pipefail
-          zip_path="$(find release -maxdepth 1 -type f -name '*-arm64.zip' -print -quit)"
-          test -n "$zip_path"
-          verify_dir="$(mktemp -d)"
-          trap 'rm -rf "$verify_dir"' EXIT
-          ditto -x -k "$zip_path" "$verify_dir"
-          app_path="$(find "$verify_dir" -maxdepth 2 -type d -name '*.app' -print -quit)"
-          test -n "$app_path"
-          codesign --verify --deep --strict --verbose=2 "$app_path"
-          signature_details="$(codesign -d --verbose=4 "$app_path" 2>&1)"
-          team_identifier="$(sed -n 's/^TeamIdentifier=//p' <<< "$signature_details")"
-          [[ "$team_identifier" == "$APPLE_TEAM_ID" ]]
-
-      - name: Collect macOS release assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release-publish
-          find release -maxdepth 1 -type f \( \
-            -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name '*.yml' \
-          \) -exec cp {} release-publish/ \;
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: fork-desktop-mac-arm64
-          path: release-publish/*
-          if-no-files-found: error
-
-  build_windows:
-    name: Build Windows x64
-    needs: [preflight, build_wsl_node_pty]
-    # The importer cannot run Windows jobs. Origin NSIS is the native
-    # windows-release step. Keep this job off the imported graph.
-    if: false
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - name: Ensure runner action externals
-        # PowerShell, not bash: this runs before the PATH prep below, and the
-        # bash first on this runner's PATH is WSL's, which would resolve
-        # RUNNER_TEMP to a Linux path that does not exist.
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          # Every `uses:` step runs under the runner's own bundled Node. When
-          # that tree goes missing - an interrupted runner self-update, or a
-          # disk sweep that reaps `externals\` - `run:` steps keep working
-          # while every action dies with a bare ENOENT naming the node binary.
-          # Check it up front and restore the runtime from nodejs.org, so a
-          # broken runner costs one download instead of parking the release.
-          $runnerRoot = (Resolve-Path (Join-Path $env:RUNNER_TEMP "..\..")).Path
-          $externals = Join-Path $runnerRoot "externals"
-
-          function Test-RunnerNode($dest) {
-            $bin = Join-Path $dest "bin\node.exe"
-            if (-not (Test-Path $bin)) { return $false }
-            # A corrupt image fails to launch at all, which $ErrorActionPreference
-            # would turn into a terminating error instead of a false verdict.
-            try { & $bin --version *> $null } catch { return $false }
-            return $LASTEXITCODE -eq 0
-          }
-
-          # Log with Write-Host, never Write-Output: anything on the success
-          # stream inside a function becomes part of its return value.
-          function Restore-RunnerNode($major, $dest) {
-            $base = "https://nodejs.org/download/release/latest-v$major.x"
-            $tmp = Join-Path $env:RUNNER_TEMP ("node-restore-" + [guid]::NewGuid().ToString())
-            New-Item -ItemType Directory -Path $tmp | Out-Null
-            try {
-              Write-Host "Restoring $dest from $base (win-x64)."
-              $sums = (Invoke-WebRequest -UseBasicParsing "$base/SHASUMS256.txt").Content -split "`n"
-              $line = $sums | Where-Object { $_ -match "node-v$major\.[0-9.]+-win-x64\.zip\s*$" } | Select-Object -First 1
-              if (-not $line) {
-                Write-Host "No win-x64 build listed for node $major.x."
-                return $false
-              }
-              $parts = $line.Trim() -split "\s+"
-              $sha = $parts[0]
-              $name = $parts[-1]
-              $zip = Join-Path $tmp $name
-              Invoke-WebRequest -UseBasicParsing "$base/$name" -OutFile $zip
-              if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $sha.ToUpper()) {
-                Write-Host "Checksum mismatch for $name."
-                return $false
-              }
-              Expand-Archive -Path $zip -DestinationPath $tmp -Force
-              $src = Join-Path $tmp ($name -replace "\.zip$", "")
-              # The nodejs.org zip keeps node.exe at its root; the runner
-              # looks for it under bin\, the way its own package ships it.
-              New-Item -ItemType Directory -Path (Join-Path $src "bin") -Force | Out-Null
-              Copy-Item (Join-Path $src "node.exe") (Join-Path $src "bin\node.exe") -Force
-              $repair = "$dest.repair"
-              $broken = "$dest.broken"
-              Remove-Item -Recurse -Force $repair, $broken -ErrorAction SilentlyContinue
-              Move-Item $src $repair
-              if (Test-Path $dest) { Move-Item $dest $broken }
-              Move-Item $repair $dest
-              Remove-Item -Recurse -Force $broken -ErrorAction SilentlyContinue
-              return (Test-RunnerNode $dest)
-            } finally {
-              Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
-            }
-          }
-
-          foreach ($runtime in @("node24", "node20")) {
-            $dest = Join-Path $externals $runtime
-            # node20 only matters while some action still declares it. Do not
-            # conjure it onto runners that have already dropped the runtime.
-            if ($runtime -ne "node24" -and -not (Test-Path $dest)) { continue }
-            if (Test-RunnerNode $dest) {
-              Write-Output "$runtime OK (node $(& (Join-Path $dest 'bin\node.exe') --version))."
-              continue
-            }
-            Write-Output "::warning::$dest\bin\node.exe is missing or unusable; restoring it."
-            if (Test-Path $dest) { Get-ChildItem $dest | Out-String | Write-Output }
-            else { Write-Output "$dest does not exist." }
-            $restored = $false
-            try { $restored = Restore-RunnerNode ($runtime -replace "node", "") $dest }
-            catch { Write-Output $_.Exception.Message }
-            if (-not $restored) {
-              Write-Output "::error::Runner cannot execute actions: $dest\bin\node.exe is missing and could not be restored."
-              Write-Output "Repair on the runner host: stop the runner service, re-extract the"
-              Write-Output "actions-runner release package over $runnerRoot to restore externals\,"
-              Write-Output "then start the service again."
-              exit 1
-            }
-            Write-Output "Restored $runtime (node $(& (Join-Path $dest 'bin\node.exe') --version))."
-          }
-
-      - name: Checkout trusted main commit
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.preflight.outputs.ref }}
-          clean: true
-          # The Buildkite importer rejects sparse-checkout. Full checkouts
-          # are fine on these dedicated release jobs.
-
-      - name: Check Windows release toolchain
-        shell: powershell
-        run: |
-          & "$env:GITHUB_WORKSPACE\scripts\fork\ensure-windows-release-toolchain.ps1" -CheckOnly
-
-      - name: Prepare Windows runner PATH
-        shell: powershell
-        run: |
-          $pwshDir = Join-Path $env:ProgramFiles "PowerShell\7"
-          $gitBashDir = Join-Path $env:ProgramFiles "Git\bin"
-          $pwshDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          # Composite actions request `shell: bash`. Put Git Bash ahead of the
-          # Windows WSL launcher so they do not require a local WSL distro.
-          $gitBashDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          # Self-hosted disks keep the pnpm store. Uploading it to GitHub
-          # cache after every job added minutes on the critical path.
-          cache: false
-          run-install: |
-            args:
-              - --filter=@t3tools/desktop...
-              - --filter=t3...
-              - --filter=@t3tools/scripts...
-
-      - name: Setup Rust
-        shell: bash
-        run: rustup --version || true
-
-      - name: Install Spectre-mitigated MSVC libs
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $componentId = "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre"
-          $programFilesX86 = ${env:ProgramFiles(x86)}
-          $vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
-          $setupExe = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\setup.exe"
-          if (-not (Test-Path $vswhere) -or -not (Test-Path $setupExe)) {
-            throw "Visual Studio Installer is required. On the runner host run: powershell -ExecutionPolicy Bypass -File C:\dev\ensure-windows-release-toolchain.ps1"
-          }
-          $existing = & $vswhere -products * -latest -requires $componentId -property installationPath
-          if (-not [string]::IsNullOrWhiteSpace($existing)) {
-            Write-Host "Spectre MSVC libs already installed."
-            exit 0
-          }
-          $installPath = & $vswhere -products * -latest -property installationPath
-          if ([string]::IsNullOrWhiteSpace($installPath)) {
-            throw "No Visual Studio installation found. On the runner host run: powershell -ExecutionPolicy Bypass -File C:\dev\ensure-windows-release-toolchain.ps1"
-          }
-          $proc = Start-Process -FilePath $setupExe `
-            -ArgumentList "modify", "--installPath", "`"$installPath`"", "--add", `
-            $componentId, "--quiet", "--norestart" `
-            -Wait -PassThru -NoNewWindow
-          if ($null -eq $proc -or $proc.ExitCode -ne 0) {
-            $code = if ($null -ne $proc) { $proc.ExitCode } else { 1 }
-            Write-Error "Visual Studio Installer failed with exit code $code"
-            exit $code
-          }
-
-      - name: Prepare Azure Trusted Signing
-        if: needs.preflight.outputs.windows_signed == 'true'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          try {
-            Install-PackageProvider `
-              -Name NuGet `
-              -MinimumVersion 2.8.5.201 `
-              -Force `
-              -Scope CurrentUser `
-              -ErrorAction Stop
-          } catch {
-            Write-Warning "Could not bootstrap NuGet package provider. Continuing because the runner may already have a usable provider. $($_.Exception.Message)"
-          }
-
-          Install-Module `
-            -Name TrustedSigning `
-            -MinimumVersion 0.5.0 `
-            -Force `
-            -AllowClobber `
-            -Repository PSGallery `
-            -Scope CurrentUser `
-            -ErrorAction Stop
-
-          Import-Module TrustedSigning -MinimumVersion 0.5.0 -Force
-          Get-Command Invoke-TrustedSigning -ErrorAction Stop
-
-          $moduleRoots = @(
-            [System.IO.Path]::Combine([Environment]::GetFolderPath("MyDocuments"), "PowerShell", "Modules"),
-            [System.IO.Path]::Combine([Environment]::GetFolderPath("MyDocuments"), "WindowsPowerShell", "Modules"),
-            [System.IO.Path]::Combine($env:ProgramFiles, "PowerShell", "Modules"),
-            [System.IO.Path]::Combine($env:ProgramFiles, "WindowsPowerShell", "Modules")
-          )
-          $modulePathEntries = @($moduleRoots + ($env:PSModulePath -split ";")) |
-            Where-Object { $_ -and (Test-Path $_) } |
-            Select-Object -Unique
-          "PSModulePath=$($modulePathEntries -join ';')" >> $env:GITHUB_ENV
-
-      - name: Download WSL prebuild
-        uses: actions/download-artifact@v8
-        with:
-          name: fork-wsl-node-pty-x64
-          path: wsl-prebuild
-
-      - name: Align package versions
-        run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
-
-      - name: Build Windows updater artifact
-        shell: bash
-        env:
-          T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL || env.T3CODE_DESKTOP_UPDATE_FEED_URL }}
-          AZURE_TENANT_ID: ${{ env.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ env.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ env.AZURE_CLIENT_SECRET }}
-          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ env.AZURE_TRUSTED_SIGNING_ENDPOINT }}
-          AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ env.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
-          AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ env.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
-          AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ env.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
-          VITE_SCENERY_UNSPLASH_KEY: ${{ env.VITE_SCENERY_UNSPLASH_KEY }}
-          WINDOWS_SIGNED: ${{ needs.preflight.outputs.windows_signed }}
-        run: |
-          set -euo pipefail
-          args=(
-            --platform win
-            --target nsis
-            --arch x64
-            --build-version "${{ needs.preflight.outputs.version }}"
-            --wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
-            --verbose
-          )
-          if [[ "$WINDOWS_SIGNED" == "true" ]]; then
-            required=(
-              "$AZURE_TENANT_ID"
-              "$AZURE_CLIENT_ID"
-              "$AZURE_CLIENT_SECRET"
-              "$AZURE_TRUSTED_SIGNING_ENDPOINT"
-              "$AZURE_TRUSTED_SIGNING_ACCOUNT_NAME"
-              "$AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME"
-              "$AZURE_TRUSTED_SIGNING_PUBLISHER_NAME"
-            )
-            if printf '%s\n' "${required[@]}" | grep -q '^$'; then
-              echo "Refusing to build a signed Windows updater with incomplete Azure Trusted Signing secrets." >&2
-              exit 1
-            fi
-            echo "Windows signing enabled (Azure Trusted Signing)."
-            args+=(--signed)
-          else
-            echo "Windows signing disabled; shipping an unsigned updater."
-          fi
-          vp run dist:desktop:artifact "${args[@]}"
-
-      - name: Verify Windows updater signature
-        shell: powershell
-        env:
-          WINDOWS_SIGNED: ${{ needs.preflight.outputs.windows_signed }}
-        run: |
-          $installer = Get-ChildItem release -File -Filter '*-x64.exe' |
-            Where-Object { $_.Name -notlike '*uninstaller*' } |
-            Select-Object -First 1
-          if ($null -eq $installer) {
-            throw 'No Windows updater installer was produced.'
-          }
-          $signature = Get-AuthenticodeSignature -FilePath $installer.FullName
-          if ($env:WINDOWS_SIGNED -eq 'true') {
-            if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
-              throw "Windows updater signature is $($signature.Status): $($signature.StatusMessage)"
-            }
-          } else {
-            Write-Host "Unsigned Windows updater $($installer.Name) ($($signature.Status))."
-          }
-
-      - name: Collect Windows release assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release-publish
-          find release -maxdepth 1 -type f \( \
-            -name '*.exe' -o -name '*.blockmap' -o -name '*.yml' \
-          \) -exec cp {} release-publish/ \;
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: fork-desktop-win-x64
-          path: release-publish/*
-          if-no-files-found: error
-
-  release:
-    name: Publish T3 Pretty updater release
-    needs: [preflight, build_macos, build_windows]
-    if: >-
-      !cancelled() &&
-      needs.preflight.outputs.should_release == 'true' &&
-      needs.build_macos.result == 'success'
-    # macos-release can resolve CURSOR_API_KEY. Hosted Linux cannot.
-    runs-on: macos-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout trusted main commit
-        shell: bash
-        env:
-          CHECKOUT_REF: ${{ needs.preflight.outputs.ref }}
-        run: |
-          set -euo pipefail
-          helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
-          test -x "$helper"
-          "$helper" "$CHECKOUT_REF"
-
-      - name: Load Buildkite cluster secrets
-        shell: bash
-        run: bash scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY CLOUDFLARE_API_TOKEN
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: package.json
-
-      - name: Download desktop artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: fork-desktop-*
-          merge-multiple: true
-          path: release-assets
-
-      - name: Verify updater manifests
-        shell: bash
-        env:
-          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
-          HAS_WINDOWS: ${{ needs.build_windows.result == 'success' }}
-        run: |
-          set -euo pipefail
-          mac_manifest="$(find release-assets -maxdepth 1 -name '*-mac.yml' -print -quit)"
-          test -n "$mac_manifest"
-          win_manifest=""
-          if [[ "$HAS_WINDOWS" == "true" ]]; then
-            win_manifest="$(find release-assets -maxdepth 1 -name 'nightly.yml' -print -quit)"
-            test -n "$win_manifest"
-          else
-            echo "::warning::Publishing without Windows updater artifacts."
-          fi
-          node --experimental-strip-types --input-type=module - "$mac_manifest" "$win_manifest" "$RELEASE_VERSION" <<'NODE'
-          import fs from "node:fs";
-          import { parseUpdateManifest } from "./scripts/lib/update-manifest.ts";
-
-          const [macPath, winPath, expectedVersion] = process.argv.slice(2);
-          const mac = parseUpdateManifest(fs.readFileSync(macPath, "utf8"), macPath, "macOS");
-          const win = winPath
-            ? parseUpdateManifest(fs.readFileSync(winPath, "utf8"), winPath, "Windows")
-            : undefined;
-
-          const manifests = [["macOS", mac], ...(win ? [["Windows", win]] : [])];
-          for (const [platform, manifest] of manifests) {
-            if (manifest.version !== expectedVersion) {
-              throw new Error(`${platform} manifest version ${manifest.version} != ${expectedVersion}`);
-            }
-          }
-
-          const macUrls = mac.files?.map((file) => file.url) ?? [];
-          if (!macUrls.some((url) => url.endsWith("-arm64.zip"))) {
-            throw new Error("macOS manifest is missing the arm64 zip");
-          }
-          if (win && !(win.files?.some((file) => file.url.endsWith("-x64.exe")) ?? false)) {
-            throw new Error("Windows manifest is missing the x64 installer");
-          }
-          NODE
-          mac_zip="$(find release-assets -maxdepth 1 -name '*.zip' -print -quit)"
-          test -n "$mac_zip"
-          unzip -p "$mac_zip" '*/Contents/Resources/app-update.yml' > app-update.yml
-          grep -F 'provider: generic' app-update.yml
-          feed_url="${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/"
-          grep -F "$feed_url" app-update.yml
-          shopt -s nullglob
-          for nightly_manifest in release-assets/nightly*.yml; do
-            cp "$nightly_manifest" "${nightly_manifest/nightly/latest}"
-          done
-
-      - name: Publish public Origin release
-        shell: bash
-        env:
-          # macos-release can resolve this cluster secret at prepare.
-          # CURSOR_API_KEY cannot; that one is loaded after checkout.
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
-          RELEASE_REF: ${{ needs.preflight.outputs.ref }}
-          RELEASE_NAME: ${{ needs.preflight.outputs.name }}
-          UPSTREAM_TAG: ${{ needs.preflight.outputs.upstream_tag }}
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          assets=(
-            release-assets/*.dmg
-            release-assets/*.zip
-            release-assets/*.exe
-            release-assets/*.yml
-          )
-          (( ${#assets[@]} > 0 ))
-          release_notes_path="$RUNNER_TEMP/t3-pretty-release-notes.md"
-          {
-            printf \
-              'T3 Pretty build from `%s`.\nIncludes parent T3 Code through `%s` plus all changes merged to T3 Pretty `main`.\n' \
-              "$RELEASE_REF" "$UPSTREAM_TAG"
-            if [[ -s .t3-fork/upstream-sync-report.md ]]; then
-              printf '\n'
-              cat .t3-fork/upstream-sync-report.md
-            else
-              printf '\nNo parent integration report is present for this revision.\n'
-            fi
-          } > "$release_notes_path"
-          if ! command -v aws >/dev/null; then
-            if command -v apt-get >/dev/null; then
-              sudo apt-get update
-              sudo apt-get install -y awscli
-            elif command -v brew >/dev/null; then
-              brew install awscli
-            fi
-          fi
-          node scripts/fork/origin-forge.mjs setup-ci
-          publish_args=(
-            publish-release
-            --tag "$RELEASE_TAG"
-            --target "$RELEASE_REF"
-            --title "$RELEASE_NAME"
-            --notes-file "$release_notes_path"
-          )
-          for asset in "${assets[@]}"; do
-            publish_args+=(--asset "$asset")
-          done
-          node scripts/fork/origin-forge.mjs "${publish_args[@]}"

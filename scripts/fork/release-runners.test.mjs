@@ -27,34 +27,21 @@ function jobBlock(source, jobId) {
 }
 
 describe("T3 Pretty release runner placement", () => {
-  it("keeps Mac and Windows runners only for native packaging", () => {
+  it("keeps imported desktop CI on hosted Linux without GitHub actions", () => {
     const preflight = jobBlock(desktopWorkflow, "preflight");
     const wsl = jobBlock(desktopWorkflow, "build_wsl_node_pty");
-    const mac = jobBlock(desktopWorkflow, "build_macos");
-    const win = jobBlock(desktopWorkflow, "build_windows");
-    const publish = jobBlock(desktopWorkflow, "release");
 
     assert.include(preflight, "runs-on: ubuntu-latest");
     assert.include(wsl, "runs-on: ubuntu-latest");
-    assert.include(publish, "runs-on: macos-latest");
-    assert.include(mac, "if: false");
-    assert.include(mac, "runs-on: macos-latest");
-    assert.include(mac, "rustup toolchain install stable");
-    assert.notInclude(mac, "dtolnay/rust-toolchain");
-    assert.include(win, "if: false");
-    assert.include(win, "runs-on: ubuntu-latest");
+    assert.notInclude(desktopWorkflow, "\n  build_macos:\n");
+    assert.notInclude(desktopWorkflow, "\n  build_windows:\n");
+    assert.notInclude(desktopWorkflow, "\n  release:\n");
+    assert.isFalse(/\n\s+uses:/u.test(desktopWorkflow));
     assert.notInclude(wsl, "docker run");
     assert.include(wsl, "npx --yes node-gyp rebuild");
     assert.include(wsl, "sudo apt-get install -y python3 make g++ file");
-    assert.include(mac, "is not an actions-runner tree; skipping externals repair.");
-    assert.include(mac, "/var/folders/*");
-    assert.include(mac, "checkout-origin.sh");
-    assert.notInclude(mac, "uses: actions/checkout@v6");
-    assert.notInclude(mac, "vars.APPLE_TEAM_ID");
-    assert.include(publish, "checkout-origin.sh");
-    assert.notInclude(publish, "uses: actions/checkout@v6");
-    assert.include(publish, "--experimental-strip-types");
-    assert.notInclude(publish, "voidzero-dev/setup-vp");
+    assert.include(preflight, "Use the importer checkout");
+    assert.include(preflight, "continue-on-error: true");
   });
 
   it("does not rebuild desktop for mobile-only or docs-only commits", () => {
