@@ -150,6 +150,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");
+    assert.include(pipeline, "build-macos-dmg.sh");
     assert.include(pipeline, 'build.source != "schedule"');
     assert.notInclude(pipeline, "depends_on: origin-workflows");
     assert.notInclude(pipeline, "\n    secrets:");

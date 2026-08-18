@@ -326,7 +326,9 @@ jobs:
   build_macos:
     name: Build macOS arm64
     needs: preflight
-    if: needs.preflight.outputs.should_release == 'true'
+    # Hosted macos-latest can no longer be pinned to macos-release. Origin
+    # DMGs are the native macos-release step in .buildkite/pipeline.yml.
+    if: false
     permissions:
       contents: read
     # macos-latest maps to the macos-release queue. The importer rejects
