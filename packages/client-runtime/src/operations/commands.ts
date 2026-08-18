@@ -161,13 +161,6 @@ function withDefaultBootstrapCreateThreadSkillIds(
   };
 }
 
-function withoutBootstrapCreateThread(
-  bootstrap: ThreadTurnStartBootstrap,
-): ThreadTurnStartBootstrap | undefined {
-  const { createThread: _createThread, ...rest } = bootstrap;
-  return Object.keys(rest).length > 0 ? rest : undefined;
-}
-
 export const createProject: (input: CreateProjectInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.createProject",
 )(function* (input) {
@@ -210,7 +203,7 @@ export const createThread: (input: CreateThreadInput) => CommandEffect = Effect.
     commandId: metadata.commandId,
     createdAt: metadata.createdAt,
     enabledSkillIds: enabledSkillIdsOrEmpty(input.enabledSkillIds),
-  }).pipe(Effect.catchIf(isThreadAlreadyExistsError, () => Effect.succeed({ sequence: 0 })));
+  });
 });
 
 export const deleteThread: (input: DeleteThreadInput) => CommandEffect = Effect.fn(
@@ -393,25 +386,19 @@ export const startThreadTurn: (input: StartThreadTurnInput) => CommandEffect = E
     createdAt: metadata.createdAt,
     ...(normalizedBootstrap === undefined ? {} : { bootstrap: normalizedBootstrap }),
   };
-  // Remote first-sends reuse a persisted draft id. If that thread already
-  // exists, retry without create so the turn still starts on older servers.
+  // Older remotes still reject a reused draft id at create. Retry a bare
+  // turn.start so we do not run prepareWorktree/setup a second time.
   return yield* dispatch(command).pipe(
     Effect.catchIf(
       (error) =>
         normalizedBootstrap?.createThread !== undefined && isThreadAlreadyExistsError(error),
-      () => {
-        const retryBootstrap =
-          normalizedBootstrap === undefined
-            ? undefined
-            : withoutBootstrapCreateThread(normalizedBootstrap);
-        return dispatch({
+      () =>
+        dispatch({
           ...rest,
           type: "thread.turn.start",
           commandId: metadata.commandId,
           createdAt: metadata.createdAt,
-          ...(retryBootstrap === undefined ? {} : { bootstrap: retryBootstrap }),
-        });
-      },
+        }),
     ),
   );
 });
