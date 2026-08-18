@@ -9,6 +9,12 @@ describe("parsePullRequestReference", () => {
     );
   });
 
+  it("accepts Origin pull request URLs", () => {
+    expect(
+      parsePullRequestReference("https://cursor.com/codebase/serbinenko/t3-pretty/pull/35"),
+    ).toBe("https://cursor.com/codebase/serbinenko/t3-pretty/pull/35");
+  });
+
   it("accepts Azure DevOps pull request URLs", () => {
     expect(
       parsePullRequestReference("https://dev.azure.com/acme/project/_git/t3code/pullrequest/42"),
@@ -51,6 +57,18 @@ describe("parsePullRequestReference", () => {
 
   it("accepts glab mr checkout commands with raw numbers", () => {
     expect(parsePullRequestReference("glab mr checkout 42")).toBe("42");
+  });
+
+  it("accepts origin pr checkout commands with raw numbers", () => {
+    expect(parsePullRequestReference("origin pr checkout 42")).toBe("42");
+  });
+
+  it("accepts origin pr checkout commands with Origin pull request URLs", () => {
+    expect(
+      parsePullRequestReference(
+        "origin pr checkout https://cursor.com/codebase/serbinenko/t3-pretty/pull/35",
+      ),
+    ).toBe("https://cursor.com/codebase/serbinenko/t3-pretty/pull/35");
   });
 
   it("accepts az repos pr checkout commands with raw numbers", () => {

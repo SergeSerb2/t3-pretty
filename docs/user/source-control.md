@@ -44,9 +44,10 @@ T3 Code works with the platforms your team already uses:
 - Open several reviews from the **Pull requests** page as tabs in the right panel
 - On iPhone and iPad, open **Pull Requests** from the home header or sidebar to browse, review,
   merge, comment, and resolve conflicts in the app. A thread's git controls and pull request
-  links in the conversation open the same native manager instead of GitHub in the browser
+  links in the conversation open the same native manager instead of the host in the browser
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
-  leaving the conversation
+  leaving the conversation. Origin pull requests at `cursor.com/codebase` open there the same
+  way GitHub pull requests do
 - On GitHub pull requests, see emoji reactions on the description and comments — including Codex's
   eyes while it reviews and thumbs-up when it finishes without comments
 - Resolved review conversations collapse in the pull request conversation and on the diff, so you
