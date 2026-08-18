@@ -105,13 +105,23 @@ jobs:
 
       - name: Checkout
         if: steps.expo-token.outputs.present == 'true'
+        uses: actions/checkout@v6
+        continue-on-error: true
+        id: gha_checkout
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+          clean: true
+
+      - name: Checkout Origin
+        if: steps.expo-token.outputs.present == 'true' && steps.gha_checkout.outcome != 'success'
         shell: bash
         env:
           CHECKOUT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          # Full history: eas-cli archives via `git clone --depth 1 file://`,
-          # and the path skip needs HEAD~1.
+          # macos-release: the GHA adapter has no Origin HTTPS creds.
+          # Hosted Macs use the previous actions/checkout step instead.
           helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
           test -x "$helper"
           "$helper" main --full
