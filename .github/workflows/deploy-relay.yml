@@ -59,6 +59,12 @@ jobs:
 
       - name: Load Buildkite cluster secrets
         shell: bash
+        env:
+          # These two exist in the cluster and interpolate on macos-release.
+          # Do not add Clerk/PlanetScale/Axiom here: a failed secrets.*
+          # resolve aborts the whole Origin importer.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          APNS_PRIVATE_KEY: ${{ secrets.APNS_PRIVATE_KEY }}
         run: |
           bash scripts/fork/load-buildkite-secrets.sh \
             CLOUDFLARE_API_TOKEN \
@@ -77,7 +83,6 @@ jobs:
             CLOUDFLARE_API_TOKEN \
             PLANETSCALE_API_TOKEN_ID \
             PLANETSCALE_API_TOKEN \
-            AXIOM_TOKEN \
             CLERK_SECRET_KEY \
             APNS_PRIVATE_KEY
           do
@@ -88,6 +93,9 @@ jobs:
           if (( ${#missing[@]} > 0 )); then
             echo "Missing relay secrets: ${missing[*]}" >&2
             exit 1
+          fi
+          if [[ -z "${AXIOM_TOKEN:-}" ]]; then
+            echo "AXIOM_TOKEN is unset; deploy will skip Axiom-backed tracing if the stack requires it."
           fi
 
       - name: Setup Vite+
