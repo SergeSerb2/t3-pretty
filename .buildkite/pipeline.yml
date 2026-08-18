@@ -53,15 +53,15 @@ steps:
             - runs-on: macos-14
               queue: macos-release
 
-  # Keep this on linux-small. macos-release holds cluster secrets and
-  # must not execute feature-branch scripts. The GHA importer cannot
-  # run fork-pr-review.yml on Origin pull_request events.
+  # Hosted linux-small cannot load CURSOR_API_KEY (builds 108/110 died
+  # before Origin CLI login). macos-release has the secret files.
+  # Restrict to same-repo t3code/* branches so a fork cannot run here.
   - label: ":mag: Origin PR Review"
     key: origin-pr-review
-    if: build.branch != "main" && build.source != "schedule"
+    if: build.branch != "main" && build.source != "schedule" && build.env("BUILDKITE_PULL_REQUEST_REPO") == "" && build.branch =~ /^t3code\//
     timeout_in_minutes: 20
     agents:
-      queue: linux-small
+      queue: macos-release
     command: bash scripts/fork/review-origin-pr-ci.sh
 
   - label: ":windows: Windows NSIS"

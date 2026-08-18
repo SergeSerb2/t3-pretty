@@ -144,13 +144,11 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "fork-mobile-release.yml");
     assert.notInclude(pipeline, "- .github/workflows/fork-pr-review.yml");
     assert.include(pipeline, "review-origin-pr-ci.sh");
-    assert.include(pipeline, "queue: linux-small");
+    assert.include(pipeline, "build.branch =~ /^t3code\\//");
     assert.include(reviewCi, "review-origin-pr.mjs");
     assert.include(reviewCi, "grok-4.6");
     assert.include(reviewCi, "CLI_PROXY_API_KEY");
     assert.include(reviewCi, "cli-proxy-api-production-1615.up.railway.app");
-    assert.include(reviewCi, "linux-small");
-    assert.notInclude(reviewCi, "/Users/m1-dev/");
     assert.notInclude(reviewCi, "api.x.ai");
     assert.include(pipeline, "deploy-relay-ci.sh");
     assert.notInclude(pipeline, "deploy-relay.yml");

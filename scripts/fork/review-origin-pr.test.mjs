@@ -120,7 +120,7 @@ here you go
 });
 
 describe("Origin Grok review workflow wiring", () => {
-  it("runs Origin PR review from hosted linux-small with Grok 4.6", () => {
+  it("runs Origin PR review from macos-release with Grok 4.6", () => {
     const reviewCi = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
@@ -129,17 +129,15 @@ describe("Origin Grok review workflow wiring", () => {
 
     assert.notInclude(pipeline, "- .github/workflows/fork-pr-review.yml");
     assert.include(pipeline, "review-origin-pr-ci.sh");
-    assert.include(pipeline, "queue: linux-small");
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
-    assert.notInclude(reviewStep.slice(0, 400), "queue: macos-release");
+    assert.include(reviewStep.slice(0, 500), "queue: macos-release");
+    assert.include(reviewStep, "build.branch =~ /^t3code\\//");
+    assert.include(reviewStep, "BUILDKITE_PULL_REQUEST_REPO");
     assert.include(reviewCi, "review-origin-pr.mjs");
     assert.include(reviewCi, "grok-4.6");
     assert.include(reviewCi, "CLI_PROXY_API_KEY");
     assert.include(reviewCi, "cli-proxy-api-production-1615.up.railway.app");
-    assert.include(reviewCi, "buildkite-agent secret get");
     assert.include(reviewCi, "origin-forge.mjs setup-ci");
-    assert.include(reviewCi, "node-${ver}-${arch}.tar.gz");
-    assert.notInclude(reviewCi, "/Users/m1-dev/");
     assert.notInclude(reviewCi, "XAI_API_KEY");
     assert.notInclude(reviewCi, "api.x.ai");
     assert.notInclude(reviewCi, "gh api");

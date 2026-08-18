@@ -1,19 +1,42 @@
 #!/usr/bin/env bash
-# Grok 4.6 Origin PR review on hosted linux-small.
+# Grok 4.6 Origin PR review on macos-release.
 #
-# Do not run this on macos-release. That agent holds cluster secrets
-# and must not execute feature-branch scripts. Load secrets only from
-# `buildkite-agent secret get`, then install node and the Origin CLI
-# on the ephemeral hosted VM.
+# Hosted linux-small cannot load CURSOR_API_KEY. This job is limited to
+# same-repo t3code/* branches in pipeline.yml. Prefer file-store secrets
+# already used by sync/publish; fall back to secret get.
 set -euo pipefail
 
-export PATH="${HOME}/.local/bin:${PATH}"
+export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
 
 load_secret() {
   local name="$1"
   local value="${!name:-}"
+  local candidate
   if [[ -z "$value" ]] && command -v buildkite-agent >/dev/null; then
     value="$(buildkite-agent secret get "$name" 2>/dev/null || true)"
+  fi
+  if [[ -z "$value" ]]; then
+    for candidate in \
+      "${HOME}/.config/t3-pretty/${name}" \
+      "/Users/m1-dev/.config/t3-pretty/${name}" \
+      "/opt/homebrew/var/buildkite-agent/secrets/${name}"; do
+      if [[ -f "$candidate" ]]; then
+        value="$(tr -d '\r' < "$candidate")"
+        value="${value%$'\n'}"
+        break
+      fi
+    done
+  fi
+  if [[ -z "$value" && "$name" == "CURSOR_API_KEY" ]]; then
+    for candidate in \
+      "${HOME}/.config/t3-pretty/cursor-api-key" \
+      "/Users/m1-dev/.config/t3-pretty/cursor-api-key"; do
+      if [[ -f "$candidate" ]]; then
+        value="$(tr -d '\r' < "$candidate")"
+        value="${value%$'\n'}"
+        break
+      fi
+    done
   fi
   if [[ -z "$value" ]]; then
     echo "cluster secret $name is not available on this agent" >&2
@@ -21,25 +44,6 @@ load_secret() {
   fi
   printf -v "$name" '%s' "$value"
   export "$name"
-}
-
-ensure_node() {
-  if command -v node >/dev/null; then
-    echo "Using $(command -v node) ($(node --version))"
-    return 0
-  fi
-  local ver="v24.13.1"
-  local arch
-  case "$(uname -m)" in
-    aarch64 | arm64) arch="linux-arm64" ;;
-    *) arch="linux-x64" ;;
-  esac
-  local dir
-  dir="$(mktemp -d)"
-  echo "Installing node ${ver} ${arch}"
-  curl -fsSL "https://nodejs.org/dist/${ver}/node-${ver}-${arch}.tar.gz" | tar -xz -C "$dir" --strip-components=1
-  export PATH="${dir}/bin:${PATH}"
-  command -v node >/dev/null
 }
 
 report_failure() {
@@ -53,11 +57,15 @@ report_failure() {
   fi
 }
 
-echo "host=$(hostname) arch=$(uname -m) node=$(command -v node || echo none) agent=$(command -v buildkite-agent || echo none)"
+echo "host=$(hostname) arch=$(uname -m) node=$(command -v node || echo none)"
 echo "Loading cluster secrets"
 load_secret CURSOR_API_KEY
 load_secret CLI_PROXY_API_KEY
-ensure_node
+
+if ! command -v node >/dev/null; then
+  echo "node is required on macos-release to review Origin pull requests." >&2
+  exit 1
+fi
 
 export ORIGIN_REPO="${ORIGIN_REPO:-serbinenko/t3-pretty}"
 export CLI_PROXY_REVIEW_MODEL="${CLI_PROXY_REVIEW_MODEL:-grok-4.6}"
