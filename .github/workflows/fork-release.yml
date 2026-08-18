@@ -51,10 +51,8 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+          # The Buildkite importer rejects sparse-checkout. Full checkouts
+          # are fine on these dedicated release jobs.
 
       - id: paths
         name: Skip desktop-irrelevant pushes
@@ -263,10 +261,8 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.preflight.outputs.ref }}
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+          # The Buildkite importer rejects sparse-checkout. Full checkouts
+          # are fine on these dedicated release jobs.
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -401,10 +397,8 @@ jobs:
         with:
           ref: ${{ needs.preflight.outputs.ref }}
           clean: true
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+          # The Buildkite importer rejects sparse-checkout. Full checkouts
+          # are fine on these dedicated release jobs.
 
       - name: Prepare macOS runner PATH
         shell: bash
@@ -442,9 +436,20 @@ jobs:
               - --filter=@t3tools/scripts...
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
+        # rustup, not the dtolnay rust toolchain action: the importer
+        # rejects that action's continue-on-error metadata.
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup target add aarch64-apple-darwin
+          rustup default stable
+          rustc +stable --version
 
       - name: Align package versions
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
@@ -681,10 +686,8 @@ jobs:
         with:
           ref: ${{ needs.preflight.outputs.ref }}
           clean: true
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+          # The Buildkite importer rejects sparse-checkout. Full checkouts
+          # are fine on these dedicated release jobs.
 
       - name: Check Windows release toolchain
         shell: powershell
@@ -715,9 +718,8 @@ jobs:
               - --filter=@t3tools/scripts...
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
+        shell: bash
+        run: rustup --version || true
 
       - name: Install Spectre-mitigated MSVC libs
         shell: powershell
@@ -893,10 +895,8 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.preflight.outputs.ref }}
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+          # The Buildkite importer rejects sparse-checkout. Full checkouts
+          # are fine on these dedicated release jobs.
 
       - name: Setup Node
         uses: actions/setup-node@v4

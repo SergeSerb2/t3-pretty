@@ -53,7 +53,8 @@ steps:
 
   - label: ":windows: Windows NSIS"
     key: windows-nsis
-    depends_on: origin-workflows
+    # Start with the importer, not after it. Desktop compile failures must
+    # not cancel the Windows agent job while it is still waiting.
     if: build.branch == "main"
     timeout_in_minutes: 90
     agents:
