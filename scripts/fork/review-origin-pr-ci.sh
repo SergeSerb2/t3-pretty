@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Grok 4.6 Origin PR review on macos-release.
 #
-# Hosted linux-small cannot load CURSOR_API_KEY. This job is limited to
-# same-repo t3code/* branches in pipeline.yml. Prefer file-store secrets
-# already used by sync/publish; fall back to secret get.
+# Hosted linux-small cannot load CURSOR_API_KEY. Load secrets from
+# buildkite-agent or $HOME only — never a hardcoded machine path.
+# Prefer scripts copied from origin/main (see run-trusted-origin-pr-ci.sh).
 set -euo pipefail
 
+HERE="$(cd "$(dirname "$0")" && pwd)"
 export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
 
 load_secret() {
@@ -18,19 +19,10 @@ load_secret() {
   if [[ -z "$value" ]]; then
     for candidate in \
       "${HOME}/.config/t3-pretty/${name}" \
-      "/Users/m1-dev/.config/t3-pretty/${name}" \
-      "/opt/homebrew/var/buildkite-agent/secrets/${name}"; do
-      if [[ -f "$candidate" ]]; then
-        value="$(tr -d '\r' < "$candidate")"
-        value="${value%$'\n'}"
-        break
+      "${HOME}/.config/t3-pretty/cursor-api-key"; do
+      if [[ "$name" != "CURSOR_API_KEY" && "$candidate" == *cursor-api-key ]]; then
+        continue
       fi
-    done
-  fi
-  if [[ -z "$value" && "$name" == "CURSOR_API_KEY" ]]; then
-    for candidate in \
-      "${HOME}/.config/t3-pretty/cursor-api-key" \
-      "/Users/m1-dev/.config/t3-pretty/cursor-api-key"; do
       if [[ -f "$candidate" ]]; then
         value="$(tr -d '\r' < "$candidate")"
         value="${value%$'\n'}"
@@ -44,6 +36,30 @@ load_secret() {
   fi
   printf -v "$name" '%s' "$value"
   export "$name"
+}
+
+ensure_node() {
+  if command -v node >/dev/null; then
+    echo "Using $(command -v node) ($(node --version))"
+    return 0
+  fi
+  if command -v brew >/dev/null; then
+    echo "Installing node with Homebrew"
+    brew install node
+    return 0
+  fi
+  local ver="v24.13.1"
+  local arch
+  case "$(uname -m)" in
+    arm64) arch="darwin-arm64" ;;
+    *) arch="darwin-x64" ;;
+  esac
+  local dir
+  dir="$(mktemp -d)"
+  echo "Installing node ${ver} ${arch}"
+  curl -fsSL "https://nodejs.org/dist/${ver}/node-${ver}-${arch}.tar.gz" | tar -xz -C "$dir" --strip-components=1
+  export PATH="${dir}/bin:${PATH}"
+  command -v node >/dev/null
 }
 
 report_failure() {
@@ -61,11 +77,7 @@ echo "host=$(hostname) arch=$(uname -m) node=$(command -v node || echo none)"
 echo "Loading cluster secrets"
 load_secret CURSOR_API_KEY
 load_secret CLI_PROXY_API_KEY
-
-if ! command -v node >/dev/null; then
-  echo "node is required on macos-release to review Origin pull requests." >&2
-  exit 1
-fi
+ensure_node
 
 export ORIGIN_REPO="${ORIGIN_REPO:-serbinenko/t3-pretty}"
 export CLI_PROXY_REVIEW_MODEL="${CLI_PROXY_REVIEW_MODEL:-grok-4.6}"
@@ -76,11 +88,11 @@ export CLI_PROXY_API_URL="${CLI_PROXY_API_URL:-https://cli-proxy-api-production-
 trap report_failure ERR
 
 echo "Authenticating Origin CLI"
-node scripts/fork/origin-forge.mjs setup-ci
+node "${HERE}/origin-forge.mjs" setup-ci
 if [[ "${1:-review}" == "check" ]]; then
   echo "Checking Origin review comments are resolved"
-  node scripts/fork/check-origin-pr-comments.mjs
+  node "${HERE}/check-origin-pr-comments.mjs"
 else
   echo "Reviewing Origin pull request"
-  node scripts/fork/review-origin-pr.mjs
+  node "${HERE}/review-origin-pr.mjs"
 fi

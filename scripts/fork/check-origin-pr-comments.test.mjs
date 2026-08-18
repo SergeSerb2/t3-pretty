@@ -79,7 +79,7 @@ describe("Origin comment-resolution job wiring", () => {
       "utf8",
     );
     const ci = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
-    assert.include(pipeline, "review-origin-pr-ci.sh check");
+    assert.include(pipeline, "run-trusted-origin-pr-ci.sh check");
     assert.include(pipeline, "Origin PR comments resolved");
     assert.include(ci, "check-origin-pr-comments.mjs");
   });

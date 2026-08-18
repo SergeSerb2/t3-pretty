@@ -53,26 +53,26 @@ steps:
             - runs-on: macos-14
               queue: macos-release
 
-  # Hosted linux-small cannot load CURSOR_API_KEY (builds 108/110 died
-  # before Origin CLI login). macos-release has the secret files.
-  # Restrict to same-repo t3code/* branches so a fork cannot run here.
+  # Hosted linux-small cannot load CURSOR_API_KEY. macos-release has
+  # the secret files. Run review scripts from origin/main when present
+  # so a feature branch cannot swap the secret-loading script.
   - label: ":mag: Origin PR Review"
     key: origin-pr-review
-    if: build.branch != "main" && build.source != "schedule" && build.branch =~ /^t3code\//
+    if: build.branch != "main" && build.source != "schedule" && !(build.branch =~ /^automation\//)
     timeout_in_minutes: 20
     agents:
       queue: macos-release
-    command: bash scripts/fork/review-origin-pr-ci.sh
+    command: bash scripts/fork/run-trusted-origin-pr-ci.sh
 
   - label: ":white_check_mark: Origin PR comments resolved"
     key: origin-pr-comments
     depends_on: origin-pr-review
     allow_dependency_failure: true
-    if: build.branch != "main" && build.source != "schedule" && build.branch =~ /^t3code\//
+    if: build.branch != "main" && build.source != "schedule" && !(build.branch =~ /^automation\//)
     timeout_in_minutes: 10
     agents:
       queue: macos-release
-    command: bash scripts/fork/review-origin-pr-ci.sh check
+    command: bash scripts/fork/run-trusted-origin-pr-ci.sh check
 
   - label: ":windows: Windows NSIS"
     key: windows-nsis
