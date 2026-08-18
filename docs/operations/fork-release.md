@@ -24,9 +24,11 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    posted as reviews (no thread) pass only after a later comment names the
    title and says it is fixed.
 2. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
-   and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. Maintainers can use
-   the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
-   into an `automation/upstream-*` branch and opens an Origin pull request.
+   and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. macos-release
+   reuses the workspace, so the job updates an existing `upstream` remote instead of
+   `git remote add`. Maintainers can use the manual dispatch only when an operational
+   fix needs an immediate retry. It merges that tag into an `automation/upstream-*`
+   branch and opens an Origin pull request.
    The fork deliberately keeps `.github/workflows` from its own `main`; upstream workflow changes
    cannot replace the trusted sync/release boundary.
 3. Clean changes remain untouched and do not make a model request. If Git reports text conflicts,
