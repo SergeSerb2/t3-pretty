@@ -84,7 +84,7 @@ newer upstream tag was integrated before its sync pull request merged.
   Buildkite only run on Origin-hosted repositories, not inbound GitHub mirrors. After detach,
   Origin is the source of truth and pushes no longer flow to GitHub.
 - Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
-  the fork workflows. Create three agent queues: `linux` (hosted or any Linux agent),
+  the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux),
   `macos-release` (m1-dev), and `windows-release` (serge-pc). Register the machines with
   `scripts/fork/setup-buildkite-macos-agent.sh` and
   `scripts/fork/setup-buildkite-windows-agent.ps1`. Schedule the pipeline at `0 */4 * * *`
