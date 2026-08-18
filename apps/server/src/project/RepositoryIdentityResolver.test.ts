@@ -133,6 +133,39 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
+  it.effect("does not group an Origin origin under a leftover GitHub upstream", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-origin-upstream-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, [
+        "remote",
+        "add",
+        "origin",
+        "https://origin.cursor.com/serbinenko/t3-pretty.git",
+      ]);
+      yield* git(cwd, ["remote", "add", "upstream", "https://github.com/pingdotgg/t3code.git"]);
+      yield* git(cwd, ["remote", "add", "github", "https://github.com/SergeSerb2/t3-pretty.git"]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+
+      expect(identity).not.toBeNull();
+      expect(identity?.canonicalKey).toBe("origin.cursor.com/serbinenko/t3-pretty");
+      expect(identity?.provider).toBe("origin");
+      expect(identity?.locator.remoteName).toBe("origin");
+      expect(identity?.locator.remoteUrl).toBe(
+        "https://origin.cursor.com/serbinenko/t3-pretty.git",
+      );
+      expect(identity?.displayName).toBe("serbinenko/t3-pretty");
+      expect(identity?.owner).toBe("serbinenko");
+      expect(identity?.name).toBe("t3-pretty");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
   it.effect("prefers origin's push URL for display in triangular workflows", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

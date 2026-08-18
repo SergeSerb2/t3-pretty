@@ -197,7 +197,8 @@ export function parseRepositoryNameWithOwnerFromGitRemoteUrl(url: string | null)
   if (
     provider?.kind !== "github" &&
     provider?.kind !== "gitlab" &&
-    provider?.kind !== "bitbucket"
+    provider?.kind !== "bitbucket" &&
+    provider?.kind !== "origin"
   ) {
     return null;
   }

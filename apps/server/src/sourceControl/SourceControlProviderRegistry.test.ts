@@ -114,6 +114,22 @@ it.effect("routes Origin remotes to the Origin provider", () =>
   }),
 );
 
+it.effect("keeps Origin when leftover GitHub remotes are also configured", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [
+        { name: "origin", url: "https://origin.cursor.com/serbinenko/t3-pretty.git" },
+        { name: "github", url: "https://github.com/SergeSerb2/t3-pretty.git" },
+        { name: "upstream", url: "https://github.com/pingdotgg/t3code.git" },
+      ],
+    });
+
+    const provider = yield* registry.resolve({ cwd: "/repo" });
+
+    assert.strictEqual(provider.kind, "origin");
+  }),
+);
+
 it.effect("routes GitHub remotes to the GitHub provider", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry({
