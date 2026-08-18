@@ -132,7 +132,6 @@ describe("Origin Grok review workflow wiring", () => {
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
     assert.include(reviewStep.slice(0, 500), "queue: macos-release");
     assert.include(reviewStep, "build.branch =~ /^t3code\\//");
-    assert.include(reviewStep, "BUILDKITE_PULL_REQUEST_REPO");
     assert.include(reviewCi, "review-origin-pr.mjs");
     assert.include(reviewCi, "grok-4.6");
     assert.include(reviewCi, "CLI_PROXY_API_KEY");

@@ -12,8 +12,8 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    builds become a GitHub Actions `pull_request` event, so `.buildkite/pipeline.yml`
    does not import `fork-pr-review.yml`. A native `macos-release` step runs
    `scripts/fork/review-origin-pr-ci.sh` instead. Hosted `linux-small` cannot
-   load `CURSOR_API_KEY`. The step only runs for same-repo `t3code/*` branches
-   (not forks). The script resolves the open Origin PR from the head branch,
+   load `CURSOR_API_KEY`. The step only runs for `t3code/*` branches. The
+   script resolves the open Origin PR from the head branch,
    `BUILDKITE_PULL_REQUEST`, or `GITHUB_EVENT_PATH`. Each finding is posted as
    its own `origin pr review --comment` so T3 can start a new thread on one
    item; a short summary review carries the SHA marker.
@@ -71,7 +71,7 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    the version, writes What's New notes, and compiles the WSL `node-pty` binary. Publish and
    Origin CLI work stay on `macos-release` because hosted Linux cannot resolve `CURSOR_API_KEY`
    through GitHub Actions `secrets.*`. `T3 Pretty Origin PR Review` is a native
-   `macos-release` step limited to same-repo `t3code/*` branches: hosted Linux
+   `macos-release` step limited to `t3code/*` branches: hosted Linux
    cannot load `CURSOR_API_KEY`, and the importer cannot run the old review
    workflow on Origin pull-request events.
    `m1-dev` signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
@@ -79,7 +79,7 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    exports compile on `macos-release` through `fork-mobile-release.yml`. Relay deploys from
    `deploy-relay.yml` on hosted Linux. Only trusted `main` commits run desktop packaging
    and relay deploys on the self-hosted machines; Origin PR review is the other
-   `macos-release` job, and only for same-repo `t3code/*` branches. Desktop packaging is skipped when the push cannot change the
+   `macos-release` job, and only for `t3code/*` branches. Desktop packaging is skipped when the push cannot change the
    shipped desktop app (mobile-only, docs-only, marketing, or relay-only commits).
    `workflow_dispatch` and the upstream-sync dispatch still always run.
 9. The publisher creates an annotated Origin git tag and uploads the installers plus both

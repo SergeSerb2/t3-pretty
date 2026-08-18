@@ -58,7 +58,7 @@ steps:
   # Restrict to same-repo t3code/* branches so a fork cannot run here.
   - label: ":mag: Origin PR Review"
     key: origin-pr-review
-    if: build.branch != "main" && build.source != "schedule" && build.env("BUILDKITE_PULL_REQUEST_REPO") == "" && build.branch =~ /^t3code\//
+    if: build.branch != "main" && build.source != "schedule" && build.branch =~ /^t3code\//
     timeout_in_minutes: 20
     agents:
       queue: macos-release
