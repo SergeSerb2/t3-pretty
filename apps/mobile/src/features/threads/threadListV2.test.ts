@@ -264,14 +264,13 @@ describe("sortThreadsForListV2", () => {
 });
 
 describe("buildThreadListV2Items", () => {
-  it("keeps a merged thread active when auto-settle on merge is off", () => {
+  it("keeps a merged thread active", () => {
     const merged = makeThread({ id: ThreadId.make("merged"), title: "Merged" });
     const layout = buildThreadListV2Items({
       threads: [merged],
       environmentId: null,
       searchQuery: "",
       changeRequestStateByKey: new Map([[`${environmentId}:${merged.id}`, "merged"]]),
-      autoSettleOnMerge: false,
       now: NOW,
     });
 

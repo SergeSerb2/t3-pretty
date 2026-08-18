@@ -183,11 +183,10 @@ const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
           {props.count}
         </Text>
         <SymbolView
-          name="chevron.down"
+          name={props.expanded ? "chevron.up" : "chevron.down"}
           size={10}
           tintColor={chevronTint}
           type="monochrome"
-          style={{ transform: [{ rotate: props.expanded ? "180deg" : "0deg" }] }}
         />
       </View>
     </Pressable>

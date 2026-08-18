@@ -4,6 +4,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 
 const NIGHTLY_TAG = /^v(\d+)\.(\d+)\.(\d+)-nightly\.(\d{8})\.(\d+)$/u;
+const FORK_TAG = /^v(\d+)\.(\d+)\.(\d+)-nightly\.(\d{8})\.(\d+)\.fork$/u;
 const RUN_MULTIPLIER = 1_000_000n;
 
 function git(...args) {
@@ -52,6 +53,28 @@ function resolveRunNumber() {
   return fallback;
 }
 
+function findHighestForkBuild() {
+  const tags = git("tag", "--list", "v*-nightly.*.fork").split("\n").filter(Boolean);
+
+  let highest = 0n;
+  for (const tag of tags) {
+    const match = FORK_TAG.exec(tag);
+    if (!match) continue;
+    const build = BigInt(match[5] ?? "0");
+    if (build > highest) highest = build;
+  }
+  return highest;
+}
+
+function resolveForkBuild(upstreamBuildRaw, runNumber) {
+  const candidate = BigInt(upstreamBuildRaw) * RUN_MULTIPLIER + runNumber;
+  const highest = findHighestForkBuild();
+  // electron-updater compares the numeric nightly build slot. A later CI run
+  // with a small Buildkite number must not publish below an earlier
+  // millisecond-fallback or already-shipped feed version.
+  return candidate > highest ? candidate : highest + 1n;
+}
+
 function main() {
   const runNumber = resolveRunNumber();
 
@@ -60,7 +83,7 @@ function main() {
   if (!match) throw new Error(`Invalid upstream nightly tag: ${upstreamTag}`);
 
   const [, major, minor, patch, date, upstreamBuildRaw] = match;
-  const forkBuild = BigInt(upstreamBuildRaw) * RUN_MULTIPLIER + runNumber;
+  const forkBuild = resolveForkBuild(upstreamBuildRaw, runNumber);
   const version = `${major}.${minor}.${patch}-nightly.${date}.${forkBuild}`;
   // electron-updater parses GitHub release tags as semver before matching the
   // configured prerelease channel. Keep the fork marker as a prerelease

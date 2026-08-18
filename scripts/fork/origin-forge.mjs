@@ -54,6 +54,25 @@ export function redactCommandArgs(args) {
   return redacted;
 }
 
+export function originGitConfigArgs() {
+  const stores = [
+    process.env.ORIGIN_GIT_CREDENTIALS,
+    NodePath.join(NodeOS.homedir(), ".git-credentials"),
+    "/Users/m1-dev/.git-credentials",
+    "/opt/homebrew/var/buildkite-agent/.git-credentials",
+  ].filter(Boolean);
+  const store = stores.find((path) => NodeFS.existsSync(path));
+  if (!store) return [];
+  return [
+    "-c",
+    "credential.helper=",
+    "-c",
+    `credential.https://origin.cursor.com.helper=store --file=${store}`,
+    "-c",
+    `credential.https://origin.cursor.com/git.helper=store --file=${store}`,
+  ];
+}
+
 export function runCommand(command, args, options = {}) {
   const result = NodeChildProcess.spawnSync(command, args, {
     encoding: "utf8",
@@ -444,7 +463,7 @@ export function publishOriginRelease({ tag, target, title, notesFile, assets = [
   for (const asset of assets) {
     uploadReleaseAsset(asset, resolveReleaseObjectKey(asset));
   }
-  runCommand("git", ["push", "origin", `refs/tags/${tag}`]);
+  runCommand("git", [...originGitConfigArgs(), "push", "origin", `refs/tags/${tag}`]);
   writeGitHubOutput({
     tag,
     url: `${ORIGIN_WEB_URL}/releases/${encodeURIComponent(tag)}`,

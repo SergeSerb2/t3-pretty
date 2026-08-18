@@ -62,3 +62,51 @@ it("emits a fork-specific semver tag that electron-updater can match to nightly"
     NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
   }
 });
+
+it("keeps a later CI run newer than an already-shipped fork tag", () => {
+  const fixtureRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fork-release-mono-"));
+
+  try {
+    git(fixtureRoot, "init");
+    git(fixtureRoot, "config", "user.name", "T3 Fork Release Test");
+    git(fixtureRoot, "config", "user.email", "t3-fork-release-test@example.invalid");
+    NodeFS.writeFileSync(NodePath.join(fixtureRoot, "fixture.txt"), "fixture\n");
+    git(fixtureRoot, "add", "fixture.txt");
+    git(fixtureRoot, "commit", "-m", "test fixture");
+    git(fixtureRoot, "tag", "v0.0.33-nightly.20260809.1043");
+    git(fixtureRoot, "tag", "v0.0.33-nightly.20260809.1043367814.fork");
+
+    const bumped = JSON.parse(
+      NodeChildProcess.execFileSync(process.execPath, [scriptPath], {
+        cwd: fixtureRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_RUN_NUMBER: "0",
+          BUILDKITE_BUILD_NUMBER: "87",
+          GITHUB_OUTPUT: "",
+        },
+      }),
+    ) as { readonly version: string; readonly tag: string };
+
+    assert.equal(bumped.version, "0.0.33-nightly.20260809.1043367815");
+    assert.equal(bumped.tag, "v0.0.33-nightly.20260809.1043367815.fork");
+
+    const stillAhead = JSON.parse(
+      NodeChildProcess.execFileSync(process.execPath, [scriptPath], {
+        cwd: fixtureRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_RUN_NUMBER: "0",
+          BUILDKITE_BUILD_NUMBER: "367900",
+          GITHUB_OUTPUT: "",
+        },
+      }),
+    ) as { readonly version: string };
+
+    assert.equal(stillAhead.version, "0.0.33-nightly.20260809.1043367900");
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});

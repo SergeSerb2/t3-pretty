@@ -23,7 +23,6 @@ import type { ThreadSettingsPickerModel } from "./thread-settings-picker";
 const POPOVER_MAX_WIDTH = 360;
 const SCREEN_MARGIN = 12;
 const ANCHOR_GAP = 8;
-const POPOVER_ENTERING = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
 
 type AnchorSnapshot = {
   readonly x: number;
@@ -158,7 +157,10 @@ export function ThreadSettingsPickerPopover(props: {
               className="absolute inset-0"
               onPress={close}
             />
-            <Animated.View entering={POPOVER_ENTERING} style={frameStyle}>
+            <Animated.View
+              entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}
+              style={frameStyle}
+            >
               <GlassSurface
                 chrome="default"
                 glassEffectStyle="regular"

@@ -377,7 +377,7 @@ describe("resolveDisplayedThreadPr + nextThreadChangeRequestSnapshot", () => {
     ).toEqual(mergedPr);
   });
 
-  it("keeps effectiveSettled true for a retained merged PR after a main checkout", () => {
+  it("keeps a retained merged PR from auto-settling after a main checkout", () => {
     const matchingStatus = status({
       refName: featureBranch,
       pr: mergedPr,
@@ -429,7 +429,7 @@ describe("resolveDisplayedThreadPr + nextThreadChangeRequestSnapshot", () => {
         autoSettleAfterDays: null,
         changeRequestState: displayed?.state ?? null,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 

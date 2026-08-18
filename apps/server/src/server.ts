@@ -302,9 +302,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderRuntimeIngestionLive),
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
-  Layer.provideMerge(
-    ThreadMergedPullRequestReactor.layer.pipe(Layer.provideMerge(ProjectionThreadRepositoryLive)),
-  ),
+  Layer.provideMerge(ThreadMergedPullRequestReactor.layer),
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),

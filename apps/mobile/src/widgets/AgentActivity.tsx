@@ -415,4 +415,22 @@ export function AgentActivity(
   };
 }
 
-export default createLiveActivity<AgentActivityProps>("AgentActivity", AgentActivity);
+function createAgentActivityFactory() {
+  try {
+    return createLiveActivity<AgentActivityProps>("AgentActivity", AgentActivity);
+  } catch {
+    // Widget registration talks to the expo-widgets native module. A missing
+    // or mismatched factory must not abort the main app before the first
+    // screen mounts — Live Activities degrade to a no-op instead.
+    return {
+      start() {
+        throw new Error("Live Activities are unavailable.");
+      },
+      getInstances() {
+        return [];
+      },
+    } as ReturnType<typeof createLiveActivity<AgentActivityProps>>;
+  }
+}
+
+export default createAgentActivityFactory();
