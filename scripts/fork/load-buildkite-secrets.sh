@@ -18,11 +18,8 @@ if ! command -v buildkite-agent >/dev/null; then
 fi
 
 for name in "$@"; do
-  if [[ -n "${!name:-}" ]]; then
-    continue
-  fi
-  value=""
-  if command -v buildkite-agent >/dev/null; then
+  value="${!name:-}"
+  if [[ -z "$value" ]] && command -v buildkite-agent >/dev/null; then
     value="$(buildkite-agent secret get "$name" 2>/dev/null || true)"
   fi
   if [[ -z "$value" ]]; then
@@ -40,6 +37,8 @@ for name in "$@"; do
     echo "cluster secret $name is not available on this agent"
     continue
   fi
+  # Always write GITHUB_ENV, including values interpolated onto this step.
+  # Skipping that write leaves later steps (require/deploy) empty.
   {
     printf '%s<<__T3_BK_SECRET_EOF__\n' "$name"
     printf '%s\n' "$value"
