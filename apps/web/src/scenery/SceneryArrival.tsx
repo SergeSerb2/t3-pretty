@@ -3,7 +3,7 @@
  * overlay unmounts once the location name has handed off to the composer
  * slot; nothing here loops or keeps a filter live.
  */
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { useMotionStore } from "./motionStore";
 import {
@@ -41,6 +41,55 @@ function subscribeReducedMotion(onChange: () => void): () => void {
 
 function useReducedMotion(): boolean {
   return useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => false);
+}
+
+/**
+ * One viewport-sized noise field. A repeating 400px turbulence tile reads as
+ * a grid of boxes and seam lines; this is a single warped sheet, rasterized
+ * once into the grain bank and then only translated/faded with it.
+ */
+function FogField() {
+  const filterId = `${useId().replaceAll(":", "")}-field`;
+  return (
+    <svg
+      className="scenery-fog__field"
+      viewBox="0 0 1600 1000"
+      preserveAspectRatio="xMidYMid slice"
+      aria-hidden
+    >
+      <filter
+        id={filterId}
+        x="-200"
+        y="-200"
+        width="2000"
+        height="1400"
+        filterUnits="userSpaceOnUse"
+        colorInterpolationFilters="sRGB"
+      >
+        <feTurbulence
+          type="fractalNoise"
+          baseFrequency="0.0032 0.0044"
+          numOctaves="4"
+          seed="17"
+          result="n"
+        />
+        <feDisplacementMap
+          in="n"
+          in2="n"
+          scale="120"
+          xChannelSelector="R"
+          yChannelSelector="G"
+          result="w"
+        />
+        <feColorMatrix
+          in="w"
+          type="matrix"
+          values="0.18 0.18 0.18 0 0.46  0.18 0.18 0.18 0 0.48  0.18 0.18 0.18 0 0.49  0 0 0 0 1"
+        />
+      </filter>
+      <rect x="-200" y="-200" width="2000" height="1400" filter={`url(#${filterId})`} />
+    </svg>
+  );
 }
 
 function useComposerPlacement(): "hero" | "docked" | null {
@@ -259,13 +308,14 @@ export function SceneryArrival({
   return (
     <div className="scenery-arrival" data-phase={phase} data-fog={fogInk}>
       {/* Depth-sorted cloud bank, one compositor layer per band: the far
-          bank is wide and thin, the near bank is dense and travels furthest.
-          The grain sheet rides with the mid bank and breaks the gradients'
-          banding. */}
+          bank is the veil, the near bank travels furthest, and the grain
+          bank is a single warped field so it cannot tile. */}
       <div className="scenery-fog" aria-hidden>
         <div className="scenery-fog__bank scenery-fog__bank--far" />
         <div className="scenery-fog__bank scenery-fog__bank--mid" />
-        <div className="scenery-fog__bank scenery-fog__bank--grain" />
+        <div className="scenery-fog__bank scenery-fog__bank--grain">
+          <FogField />
+        </div>
         <div className="scenery-fog__bank scenery-fog__bank--near" />
       </div>
       {photo && threadKey === sequenceKey ? (

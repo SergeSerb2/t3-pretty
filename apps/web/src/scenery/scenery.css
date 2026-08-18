@@ -366,13 +366,14 @@ html:not(.dark) .scenery-attribution:hover {
 }
 
 /* ------------------------------------------------ new-thread arrival -- */
-/* A cloud bank, not a wash: three depth bands of gradient puffs plus a
-   noise grain sheet — four compositor layers, transform/opacity only. The
-   banks start already mostly opaque so the route change stays hidden, sit
-   at full cover, then leave to the right with parallax: the near bank
-   fastest and furthest, the far bank mostly thinning in place. Transitions
-   retarget from gather to clear so the phase change does not restart from
-   zero. The overlay unmounts at settle. Timings mirror SCENERY_ARRIVAL. */
+/* A cloud bank, not a wash: three depth bands of gradient puffs plus one
+   unique warped-noise field — four compositor layers, transform/opacity
+   only. The field is a single 1600×1000 sheet, never tiled: a repeating
+   turbulence tile reads as a grid of boxes and seam lines. Banks start
+   already mostly opaque so the route change stays hidden, sit at full
+   cover, then leave to the right with parallax. Transitions retarget from
+   gather to clear so the phase change does not restart from zero. The
+   overlay unmounts at settle. Timings mirror SCENERY_ARRIVAL. */
 
 .scenery-arrival {
   position: fixed;
@@ -391,19 +392,19 @@ html:not(.dark) .scenery-attribution:hover {
      ink SceneryArrival captured at fog-on (data-fog), not the live html
      class: the per-thread ink may flip while the bank is up. */
   --fog-ink: 16 20 24;
-  --fog-grain-alpha: 0.13;
+  --fog-grain-alpha: 0.28;
 }
 
 .scenery-arrival[data-fog="light"] .scenery-fog {
   --fog-ink: 246 248 247;
-  --fog-grain-alpha: 0.11;
+  --fog-grain-alpha: 0.22;
 }
 
 .scenery-fog__bank {
   position: absolute;
   /* Overscan so a band can travel a quarter of the width and still cover
-     the edge it left behind until it has thinned. Tiles outside the clip
-     never rasterize, so this costs viewport-sized textures, not overscan. */
+     the edge it left behind until it has thinned. The clip is the viewport,
+     so this costs viewport-sized textures, not the overscan box. */
   inset: -14%;
   opacity: var(--fog-alpha, 1);
   transform: translate3d(0, 0, 0) scale(1);
@@ -432,60 +433,62 @@ html:not(.dark) .scenery-attribution:hover {
   --fog-out-x: 7%;
   --fog-out-y: -2%;
   --fog-out-scale: 1.08;
-  /* First stop is the veil: base coverage under the puffs, heavier top and
-     bottom so header and composer never show a gap between clouds. */
+  /* Masses on top of a covering plate (last stop is the bottom layer).
+     Heavier top and bottom so header and composer never show a gap. */
   background:
-    linear-gradient(
-      180deg,
+    radial-gradient(
+      ellipse 78% 54% at 24% 40%,
       rgb(var(--fog-ink) / 0.5) 0%,
-      rgb(var(--fog-ink) / 0.26) 40%,
-      rgb(var(--fog-ink) / 0.3) 65%,
-      rgb(var(--fog-ink) / 0.54) 100%
+      rgb(var(--fog-ink) / 0.2) 48%,
+      transparent 80%
     ),
     radial-gradient(
-      ellipse 62% 44% at 28% 42%,
-      rgb(var(--fog-ink) / 0.64) 0%,
-      rgb(var(--fog-ink) / 0.36) 40%,
-      transparent 72%
+      ellipse 64% 50% at 80% 60%,
+      rgb(var(--fog-ink) / 0.42) 0%,
+      rgb(var(--fog-ink) / 0.16) 50%,
+      transparent 82%
     ),
-    radial-gradient(
-      ellipse 58% 40% at 76% 62%,
-      rgb(var(--fog-ink) / 0.6) 0%,
-      rgb(var(--fog-ink) / 0.32) 42%,
-      transparent 70%
-    ),
-    radial-gradient(ellipse 70% 36% at 52% 16%, rgb(var(--fog-ink) / 0.56), transparent 68%),
-    radial-gradient(ellipse 66% 38% at 44% 88%, rgb(var(--fog-ink) / 0.64), transparent 66%);
+    radial-gradient(ellipse 90% 44% at 46% 6%, rgb(var(--fog-ink) / 0.46), transparent 78%),
+    radial-gradient(ellipse 86% 46% at 58% 96%, rgb(var(--fog-ink) / 0.52), transparent 76%),
+    radial-gradient(ellipse 38% 26% at 64% 30%, rgb(var(--fog-ink) / 0.28), transparent 74%),
+    linear-gradient(
+      168deg,
+      rgb(var(--fog-ink) / 0.78) 0%,
+      rgb(var(--fog-ink) / 0.62) 28%,
+      rgb(var(--fog-ink) / 0.58) 52%,
+      rgb(var(--fog-ink) / 0.64) 76%,
+      rgb(var(--fog-ink) / 0.82) 100%
+    );
 }
 
-.scenery-fog__bank--mid,
-.scenery-fog__bank--grain {
+.scenery-fog__bank--mid {
   --fog-in-x: -5%;
   --fog-in-y: 1%;
   --fog-in-scale: 1.06;
   --fog-out-x: 15%;
   --fog-out-y: -3%;
   --fog-out-scale: 1.14;
-}
-
-.scenery-fog__bank--mid {
+  /* Irregular, not mirrored: a left/right pair reads as two boxes. The
+     last stop is a thin even wash so holes between puffs cannot form. */
   background:
     radial-gradient(
-      ellipse 34% 26% at 18% 56%,
-      rgb(var(--fog-ink) / 0.8) 0%,
-      rgb(var(--fog-ink) / 0.44) 46%,
-      transparent 72%
+      ellipse 42% 34% at 16% 62%,
+      rgb(var(--fog-ink) / 0.72) 0%,
+      rgb(var(--fog-ink) / 0.32) 52%,
+      transparent 80%
     ),
-    radial-gradient(ellipse 26% 20% at 34% 38%, rgb(var(--fog-ink) / 0.72), transparent 70%),
-    radial-gradient(ellipse 30% 22% at 10% 30%, rgb(var(--fog-ink) / 0.68), transparent 70%),
+    radial-gradient(ellipse 28% 22% at 38% 44%, rgb(var(--fog-ink) / 0.6), transparent 78%),
+    radial-gradient(ellipse 24% 32% at 8% 26%, rgb(var(--fog-ink) / 0.52), transparent 76%),
+    radial-gradient(ellipse 36% 24% at 56% 74%, rgb(var(--fog-ink) / 0.56), transparent 78%),
     radial-gradient(
-      ellipse 34% 26% at 82% 40%,
-      rgb(var(--fog-ink) / 0.8) 0%,
-      rgb(var(--fog-ink) / 0.44) 46%,
-      transparent 72%
+      ellipse 40% 32% at 86% 34%,
+      rgb(var(--fog-ink) / 0.68) 0%,
+      rgb(var(--fog-ink) / 0.3) 54%,
+      transparent 82%
     ),
-    radial-gradient(ellipse 26% 20% at 66% 66%, rgb(var(--fog-ink) / 0.72), transparent 70%),
-    radial-gradient(ellipse 30% 22% at 92% 72%, rgb(var(--fog-ink) / 0.68), transparent 70%);
+    radial-gradient(ellipse 22% 18% at 68% 16%, rgb(var(--fog-ink) / 0.48), transparent 74%),
+    radial-gradient(ellipse 30% 26% at 94% 80%, rgb(var(--fog-ink) / 0.6), transparent 78%),
+    linear-gradient(rgb(var(--fog-ink) / 0.22), rgb(var(--fog-ink) / 0.22));
 }
 
 .scenery-fog__bank--near {
@@ -497,34 +500,43 @@ html:not(.dark) .scenery-attribution:hover {
   --fog-out-scale: 1.22;
   background:
     radial-gradient(
-      ellipse 24% 18% at 36% 70%,
-      rgb(var(--fog-ink) / 0.88) 0%,
-      rgb(var(--fog-ink) / 0.52) 42%,
-      transparent 72%
+      ellipse 26% 20% at 30% 76%,
+      rgb(var(--fog-ink) / 0.8) 0%,
+      rgb(var(--fog-ink) / 0.36) 50%,
+      transparent 82%
     ),
-    radial-gradient(ellipse 20% 15% at 52% 80%, rgb(var(--fog-ink) / 0.82), transparent 70%),
-    radial-gradient(ellipse 18% 13% at 24% 84%, rgb(var(--fog-ink) / 0.78), transparent 70%),
+    radial-gradient(ellipse 18% 16% at 48% 88%, rgb(var(--fog-ink) / 0.68), transparent 78%),
+    radial-gradient(ellipse 16% 22% at 16% 58%, rgb(var(--fog-ink) / 0.58), transparent 76%),
     radial-gradient(
-      ellipse 24% 18% at 62% 26%,
-      rgb(var(--fog-ink) / 0.88) 0%,
-      rgb(var(--fog-ink) / 0.52) 42%,
-      transparent 72%
+      ellipse 28% 18% at 74% 20%,
+      rgb(var(--fog-ink) / 0.76) 0%,
+      rgb(var(--fog-ink) / 0.34) 52%,
+      transparent 82%
     ),
-    radial-gradient(ellipse 20% 15% at 46% 14%, rgb(var(--fog-ink) / 0.82), transparent 70%),
-    radial-gradient(ellipse 18% 13% at 78% 20%, rgb(var(--fog-ink) / 0.78), transparent 70%);
+    radial-gradient(ellipse 16% 14% at 58% 6%, rgb(var(--fog-ink) / 0.62), transparent 76%),
+    radial-gradient(ellipse 20% 16% at 90% 44%, rgb(var(--fog-ink) / 0.56), transparent 78%);
 }
 
-/* Fractal-noise grain: one 400px tile, rasterized once on the first fog
-   (three octaves — cheap enough for the frame the route commits) and
-   repeated. Mid-grey ink textures both the dark and the light bank; the
-   radial mask keeps it off the edges, where a repeat would be easiest to
-   spot, and --fog-alpha keeps it a whisper. */
+/* Unique warped field, not a repeating tile. Mid-grey textures both inks;
+   --fog-alpha keeps it a texture on the veil instead of a second wash.
+   Own parallax so the field slides against the puffs. */
 .scenery-fog__bank--grain {
+  --fog-in-x: -6.5%;
+  --fog-in-y: 0.75%;
+  --fog-in-scale: 1.07;
+  --fog-out-x: 19%;
+  --fog-out-y: -3.5%;
+  --fog-out-scale: 1.17;
   --fog-alpha: var(--fog-grain-alpha);
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.02' numOctaves='3' stitchTiles='stitch' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0.6 0 0 0 0 0.62 0 0 0 0 0.62 1 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E")
-    0 0 / 400px 400px repeat;
-  -webkit-mask-image: radial-gradient(ellipse 70% 62% at 50% 50%, black 30%, transparent 100%);
-  mask-image: radial-gradient(ellipse 70% 62% at 50% 50%, black 30%, transparent 100%);
+}
+
+.scenery-fog__field {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 /* fogClearMs. Ease-in-out so the bank stays thick while chrome fades in,
@@ -538,8 +550,12 @@ html:not(.dark) .scenery-attribution:hover {
 }
 
 /* Near leaves first, far last. Every band is done inside fogClearMs. */
-.scenery-arrival[data-phase="reveal"] .scenery-fog__bank--mid,
 .scenery-arrival[data-phase="reveal"] .scenery-fog__bank--grain {
+  transition-duration: 1060ms;
+  transition-delay: 40ms;
+}
+
+.scenery-arrival[data-phase="reveal"] .scenery-fog__bank--mid {
   transition-duration: 1040ms;
   transition-delay: 50ms;
 }
