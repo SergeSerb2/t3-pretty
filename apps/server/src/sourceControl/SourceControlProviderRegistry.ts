@@ -15,6 +15,7 @@ import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlPro
 import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
+import * as OriginSourceControlProvider from "./OriginSourceControlProvider.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
 import {
   probeSourceControlProvider,
@@ -307,6 +308,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
 export const make = Effect.gen(function* () {
   const github = yield* GitHubSourceControlProvider.make;
   const gitlab = yield* GitLabSourceControlProvider.make;
+  const origin = yield* OriginSourceControlProvider.make;
   const bitbucket = yield* BitbucketSourceControlProvider.make;
   const bitbucketDiscovery = yield* BitbucketSourceControlProvider.makeDiscovery;
   const azureDevOps = yield* AzureDevOpsSourceControlProvider.make;
@@ -330,6 +332,11 @@ export const make = Effect.gen(function* () {
       kind: "bitbucket",
       provider: bitbucket,
       discovery: bitbucketDiscovery,
+    },
+    {
+      kind: "origin",
+      provider: origin,
+      discovery: OriginSourceControlProvider.discovery,
     },
   ]);
 });

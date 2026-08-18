@@ -52,7 +52,7 @@ export function resolveAutomatedReviewPresentation(
 }
 
 export interface ChangeRequestPresentation {
-  readonly icon: "github" | "gitlab" | "azure-devops" | "bitbucket" | "change-request";
+  readonly icon: "github" | "gitlab" | "azure-devops" | "bitbucket" | "origin" | "change-request";
   readonly providerName: string;
   readonly shortName: string;
   readonly longName: string;
@@ -115,6 +115,17 @@ const BITBUCKET_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
   urlExample: "https://bitbucket.org/workspace/repo/pull-requests/42",
 };
 
+const ORIGIN_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
+  icon: "origin",
+  providerName: "Origin",
+  shortName: "PR",
+  longName: "pull request",
+  pluralLongName: "pull requests",
+  providerLongName: "Origin pull request",
+  checkoutCommandExample: "origin pr checkout 123",
+  urlExample: "https://cursor.com/codebase/owner/repo/pull/42",
+};
+
 const GENERIC_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
   icon: "change-request",
   providerName: "source control",
@@ -138,6 +149,8 @@ export function resolveChangeRequestPresentation(
       return AZURE_DEVOPS_CHANGE_REQUEST_PRESENTATION;
     case "bitbucket":
       return BITBUCKET_CHANGE_REQUEST_PRESENTATION;
+    case "origin":
+      return ORIGIN_CHANGE_REQUEST_PRESENTATION;
     case "unknown":
       return GENERIC_CHANGE_REQUEST_PRESENTATION;
   }
@@ -272,6 +285,12 @@ function isBitbucketHost(host: string): boolean {
   return host === "bitbucket.org" || hasDnsLabel(host, "bitbucket");
 }
 
+function isOriginHost(host: string): boolean {
+  // Only the Origin git host. Do not match a DNS label of "origin" — that is
+  // the default remote name and would misclassify unrelated forges.
+  return host === "origin.cursor.com" || host.endsWith(".origin.cursor.com");
+}
+
 export function detectSourceControlProviderFromRemoteUrl(
   remoteUrl: string,
 ): SourceControlProviderInfo | null {
@@ -309,6 +328,14 @@ export function detectSourceControlProviderFromRemoteUrl(
     return {
       kind: "bitbucket",
       name: hostname === "bitbucket.org" ? "Bitbucket" : "Bitbucket Self-Hosted",
+      baseUrl: toBaseUrl(host),
+    };
+  }
+
+  if (isOriginHost(hostname)) {
+    return {
+      kind: "origin",
+      name: "Origin",
       baseUrl: toBaseUrl(host),
     };
   }

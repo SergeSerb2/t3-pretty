@@ -68,6 +68,13 @@ export const JujutsuIcon: Icon = (props) => {
   );
 };
 
+export const OriginIcon: Icon = (props) => (
+  <svg {...props} viewBox="0 0 16 16" fill="none">
+    <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.5" />
+    <circle cx="8" cy="8" r="2" fill="currentColor" />
+  </svg>
+);
+
 export const GitLabIcon: Icon = (props) => (
   <svg {...props} viewBox="0 0 32 32" fill="none">
     <path

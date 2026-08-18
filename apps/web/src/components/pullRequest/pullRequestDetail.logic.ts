@@ -595,6 +595,8 @@ function hostResolveGuidance(provider: SourceControlProviderKind, host: string):
       return ' On GitLab, use `glab api` to PUT `{"resolved":true}` on the matching merge request discussion.';
     case "bitbucket":
       return " On Bitbucket, POST to the matching pull request comment's `/resolve` endpoint.";
+    case "origin":
+      return " On Origin, use `origin pr thread resolve <thread-id>` for the matching conversation.";
     default:
       return " Use that host's review-thread resolution API or UI for the matching conversation.";
   }
