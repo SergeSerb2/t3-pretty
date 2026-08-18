@@ -91,6 +91,33 @@ describe("parseChangeRequestUrl", () => {
     });
   });
 
+  it("reads an Origin pull request from the cursor.com web UI", () => {
+    expect(
+      parseChangeRequestUrl("https://cursor.com/codebase/Serbinenko/T3-Pretty/pull/35"),
+    ).toEqual({
+      host: "origin.cursor.com",
+      repository: "serbinenko/t3-pretty",
+      number: 35,
+    });
+  });
+
+  it("reads an Origin pull request on www.cursor.com and origin.cursor.com", () => {
+    expect(
+      parseChangeRequestUrl("https://www.cursor.com/codebase/serbinenko/t3-pretty/pull/35/files"),
+    ).toEqual({
+      host: "origin.cursor.com",
+      repository: "serbinenko/t3-pretty",
+      number: 35,
+    });
+    expect(
+      parseChangeRequestUrl("https://origin.cursor.com/codebase/serbinenko/t3-pretty/pull/35"),
+    ).toEqual({
+      host: "origin.cursor.com",
+      repository: "serbinenko/t3-pretty",
+      number: 35,
+    });
+  });
+
   it("reads both Azure DevOps URL forms, keeping `_git` in the repository path", () => {
     expect(
       parseChangeRequestUrl("https://dev.azure.com/acme/platform/_git/t3code/pullrequest/17"),
@@ -135,6 +162,9 @@ describe("parseChangeRequestUrl", () => {
       "https://github.com/t3tools/t3code/pull/abc",
       "https://gitlab.com/t3tools/t3code/-/snippets/12",
       "https://gitlab.com/t3tools/t3code/-/issues/12",
+      "https://cursor.com/codebase/serbinenko/t3-pretty",
+      "https://cursor.com/codebase/pull/35",
+      "https://cursor.com/docs",
       // A path shape that means nothing off its own host.
       "https://blog.example.test/2026/updates/pull/3",
       // A lookalike is deliberately not fought here: `github.com.evil.test` reads as a GitHub
@@ -187,6 +217,32 @@ describe("findProjectForChangeRequest", () => {
         host: "github.acme.test",
         repository: "pingdotgg/t3code",
         number: 1,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("matches an Origin project by the git host, not the web UI host", () => {
+    const projects = [
+      project({
+        canonicalKey: "origin.cursor.com/serbinenko/t3-pretty",
+        provider: "origin",
+        displayName: "serbinenko/t3-pretty",
+        owner: "serbinenko",
+        name: "t3-pretty",
+      }),
+    ];
+    expect(
+      findProjectForChangeRequest(projects, {
+        host: "origin.cursor.com",
+        repository: "serbinenko/t3-pretty",
+        number: 35,
+      }),
+    ).toBe(projects[0]);
+    expect(
+      findProjectForChangeRequest(projects, {
+        host: "cursor.com",
+        repository: "serbinenko/t3-pretty",
+        number: 35,
       }),
     ).toBeUndefined();
   });

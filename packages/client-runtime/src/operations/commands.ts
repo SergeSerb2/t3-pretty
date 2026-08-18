@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
+import { isThreadAlreadyExistsError } from "../errors/orchestration.ts";
 import {
   type EnvironmentRpcFailure,
   type EnvironmentRpcSuccess,
@@ -376,15 +377,30 @@ export const startThreadTurn: (input: StartThreadTurnInput) => CommandEffect = E
 )(function* (input) {
   const metadata = yield* timestampedCommandMetadata(input);
   const { bootstrap, ...rest } = input;
-  return yield* dispatch({
+  const normalizedBootstrap =
+    bootstrap === undefined ? undefined : withDefaultBootstrapCreateThreadSkillIds(bootstrap);
+  const command = {
     ...rest,
-    type: "thread.turn.start",
+    type: "thread.turn.start" as const,
     commandId: metadata.commandId,
     createdAt: metadata.createdAt,
-    ...(bootstrap === undefined
-      ? {}
-      : { bootstrap: withDefaultBootstrapCreateThreadSkillIds(bootstrap) }),
-  });
+    ...(normalizedBootstrap === undefined ? {} : { bootstrap: normalizedBootstrap }),
+  };
+  // Older remotes still reject a reused draft id at create. Retry a bare
+  // turn.start so we do not run prepareWorktree/setup a second time.
+  return yield* dispatch(command).pipe(
+    Effect.catchIf(
+      (error) =>
+        normalizedBootstrap?.createThread !== undefined && isThreadAlreadyExistsError(error),
+      () =>
+        dispatch({
+          ...rest,
+          type: "thread.turn.start",
+          commandId: metadata.commandId,
+          createdAt: metadata.createdAt,
+        }),
+    ),
+  );
 });
 
 export const interruptThreadTurn: (input: InterruptThreadTurnInput) => CommandEffect = Effect.fn(

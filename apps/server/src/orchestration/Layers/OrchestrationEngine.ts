@@ -36,6 +36,7 @@ import {
   OrchestrationCommandIdConflictError,
   OrchestrationCommandInvariantError,
   OrchestrationCommandPreviouslyRejectedError,
+  isOrchestrationCommandInvariantError,
   type OrchestrationDispatchError,
   type OrchestrationProjectorDecodeError,
 } from "../Errors.ts";
@@ -47,11 +48,11 @@ import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
 } from "../Services/OrchestrationEngine.ts";
+
 const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
   OrchestrationCommandPreviouslyRejectedError,
 );
 const isOrchestrationCommandIdConflictError = Schema.is(OrchestrationCommandIdConflictError);
-const isOrchestrationCommandInvariantError = Schema.is(OrchestrationCommandInvariantError);
 
 // Receipts only serve idempotent command retries; nobody retries a command
 // days later. Deleted in small batches so a first prune over a large backlog

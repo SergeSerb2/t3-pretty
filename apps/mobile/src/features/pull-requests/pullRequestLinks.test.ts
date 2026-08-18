@@ -41,9 +41,20 @@ describe("parseChangeRequestUrl", () => {
     });
   });
 
+  it("reads an Origin pull request from the cursor.com web UI", () => {
+    expect(
+      parseChangeRequestUrl("https://cursor.com/codebase/Serbinenko/T3-Pretty/pull/35"),
+    ).toEqual({
+      host: "origin.cursor.com",
+      repository: "serbinenko/t3-pretty",
+      number: 35,
+    });
+  });
+
   it("claims nothing it cannot be sure of", () => {
     expect(parseChangeRequestUrl("https://github.com/t3tools/t3code/issues/123")).toBeNull();
     expect(parseChangeRequestUrl("https://example.com/pull/1")).toBeNull();
+    expect(parseChangeRequestUrl("https://cursor.com/codebase/pull/35")).toBeNull();
   });
 });
 
@@ -116,6 +127,32 @@ describe("findProjectForChangeRequest", () => {
         host: "github.acme.test",
         repository: "pingdotgg/t3code",
         number: 1,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("matches an Origin project by the git host, not the web UI host", () => {
+    const projects = [
+      project({
+        canonicalKey: "origin.cursor.com/serbinenko/t3-pretty",
+        provider: "origin",
+        displayName: "serbinenko/t3-pretty",
+        owner: "serbinenko",
+        name: "t3-pretty",
+      }),
+    ];
+    expect(
+      findProjectForChangeRequest(projects, {
+        host: "origin.cursor.com",
+        repository: "serbinenko/t3-pretty",
+        number: 35,
+      }),
+    ).toBe(projects[0]);
+    expect(
+      findProjectForChangeRequest(projects, {
+        host: "cursor.com",
+        repository: "serbinenko/t3-pretty",
+        number: 35,
       }),
     ).toBeUndefined();
   });

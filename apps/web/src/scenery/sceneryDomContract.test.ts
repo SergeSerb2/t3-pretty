@@ -231,6 +231,14 @@ describe("scenery new-thread arrival contract", () => {
     expect(sceneryCssSource).toContain('.scenery-arrival[data-fog="light"] .scenery-fog');
     expect(sceneryCssSource).not.toContain("html:not(.dark) .scenery-fog");
   });
+
+  it("uses one warped noise field instead of a repeating turbulence tile", () => {
+    expect(sceneryArrivalSource).toContain("scenery-fog__field");
+    expect(sceneryArrivalSource).toContain("feDisplacementMap");
+    expect(sceneryCssSource).toContain(".scenery-fog__field");
+    expect(sceneryCssSource).not.toContain("400px 400px");
+    expect(sceneryCssSource).not.toContain("stitchTiles");
+  });
 });
 
 describe("ink override contract with upstream appearance handling", () => {

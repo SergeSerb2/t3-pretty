@@ -106,6 +106,17 @@ describe("resolvePullRequestRouteRepository", () => {
 });
 
 describe("resolveChangeRequestRoute", () => {
+  const originProject = {
+    environmentId: "env-1",
+    id: "project-origin",
+    repositoryIdentity: {
+      canonicalKey: "origin.cursor.com/serbinenko/t3-pretty",
+      provider: "origin",
+      displayName: "serbinenko/t3-pretty",
+      owner: "serbinenko",
+      name: "t3-pretty",
+    },
+  };
   const githubProject = {
     environmentId: "env-1",
     id: "project-1",
@@ -131,6 +142,22 @@ describe("resolveChangeRequestRoute", () => {
       projectId: "project-1",
       repository: "t3tools/t3code",
       number: "123",
+    });
+  });
+
+  it("opens an Origin pull request that matches a workspace project", () => {
+    expect(
+      resolveChangeRequestRoute({
+        environmentId: "env-1",
+        url: "https://cursor.com/codebase/serbinenko/t3-pretty/pull/35",
+        pullRequestsSupported: true,
+        projects: [originProject],
+      }),
+    ).toEqual({
+      environmentId: "env-1",
+      projectId: "project-origin",
+      repository: "serbinenko/t3-pretty",
+      number: "35",
     });
   });
 
