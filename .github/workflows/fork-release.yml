@@ -175,12 +175,10 @@ jobs:
           AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ env.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
         run: |
           set -euo pipefail
-          # Hosted Linux cannot resolve the Mac signing cluster secrets
-          # (CSC_LINK is a full certificate). Those stay on macos-release
-          # and the Mac job fails the release if they are missing. Do not
-          # reference the certificate secret names here: the importer
-          # fetches every secrets.* reference before any step runs.
-          if [[ -n "${BUILDKITE:-}" && -z "${CSC_LINK:-}" ]]; then
+          # The importer does not pass BUILDKITE=* or Mac signing secrets
+          # into this hosted job. macos-release still receives the
+          # certificate secrets and fails the release if they are missing.
+          if [[ -z "${CSC_LINK:-}" ]]; then
             echo "Mac signing secrets are resolved on macos-release, not this hosted job."
             echo 'configured=true' >> "$GITHUB_OUTPUT"
             echo 'windows_signed=false' >> "$GITHUB_OUTPUT"

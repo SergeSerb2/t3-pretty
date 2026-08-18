@@ -122,7 +122,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(desktop, "load-buildkite-secrets.sh");
     assert.include(sync, "load-buildkite-secrets.sh");
     assert.include(mobile, "load-buildkite-secrets.sh");
-    assert.include(desktop, "Mac signing secrets are resolved on macos-release");
+    assert.include(preflight, "Mac signing secrets are resolved on macos-release");
     assert.include(mobile, "origin-forge.mjs merge-pr");
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),

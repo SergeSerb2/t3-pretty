@@ -45,10 +45,9 @@ foreach ($dir in $vpCandidates) {
 }
 
 if (-not (Get-Command vp -ErrorAction SilentlyContinue)) {
-  if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-    throw "vp and npm are missing. Install Node.js and Vite+ on this agent."
-  }
-  npm install -g vp | Out-Host
+  $env:VITE_PLUS_BIN_DIR = "C:\buildkite-agent\bin"
+  Invoke-Expression (Invoke-WebRequest -UseBasicParsing https://vite.plus/ps1).Content
+  $env:Path = "C:\buildkite-agent\bin;$env:Path"
 }
 
 if (-not (Get-Command vp -ErrorAction SilentlyContinue)) {
