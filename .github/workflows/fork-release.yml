@@ -239,6 +239,8 @@ jobs:
       - id: release
         name: Create a monotonic fork version
         if: steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: node scripts/fork/resolve-fork-release.mjs
 
       - id: changelog

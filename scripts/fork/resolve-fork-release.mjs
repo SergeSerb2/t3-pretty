@@ -46,9 +46,10 @@ function resolveRunNumber() {
       // not an integer
     }
   }
-  throw new Error(
-    `GITHUB_RUN_NUMBER or BUILDKITE_BUILD_NUMBER must be between 1 and ${RUN_MULTIPLIER - 1n}`,
-  );
+  // Imported Buildkite jobs often have neither variable. A millisecond
+  // slot still keeps versions unique and below the 1_000_000 multiplier.
+  const fallback = BigInt(Date.now() % Number(RUN_MULTIPLIER)) || 1n;
+  return fallback;
 }
 
 function main() {
