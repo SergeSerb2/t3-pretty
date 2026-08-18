@@ -64,6 +64,16 @@ steps:
       queue: macos-release
     command: bash scripts/fork/review-origin-pr-ci.sh
 
+  - label: ":white_check_mark: Origin PR comments resolved"
+    key: origin-pr-comments
+    depends_on: origin-pr-review
+    allow_dependency_failure: true
+    if: build.branch != "main" && build.source != "schedule" && build.branch =~ /^t3code\//
+    timeout_in_minutes: 10
+    agents:
+      queue: macos-release
+    command: bash scripts/fork/review-origin-pr-ci.sh check
+
   - label: ":windows: Windows NSIS"
     key: windows-nsis
     # Start with the importer, not after it. Desktop compile failures must

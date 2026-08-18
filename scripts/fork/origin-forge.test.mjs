@@ -144,6 +144,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "fork-mobile-release.yml");
     assert.notInclude(pipeline, "- .github/workflows/fork-pr-review.yml");
     assert.include(pipeline, "review-origin-pr-ci.sh");
+    assert.include(pipeline, "review-origin-pr-ci.sh check");
     assert.include(pipeline, "build.branch =~ /^t3code\\//");
     assert.include(reviewCi, "review-origin-pr.mjs");
     assert.include(reviewCi, "grok-4.6");

@@ -113,7 +113,7 @@ here you go
     assert.include(body, reviewMarker("deadbeef"));
     assert.include(body, "Grok 4.6 review");
     assert.include(body, "1 bug(s)");
-    assert.include(body, "separate review comment");
+    assert.include(body, "origin pr thread resolve");
     assert.notInclude(body, "### bug — Non-monotonic versions");
     assert.include(body, "not a merge approval");
   });

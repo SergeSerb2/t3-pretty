@@ -15,8 +15,12 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    load `CURSOR_API_KEY`. The step only runs for `t3code/*` branches. The
    script resolves the open Origin PR from the head branch,
    `BUILDKITE_PULL_REQUEST`, or `GITHUB_EVENT_PATH`. Each finding is posted as
-   its own `origin pr review --comment` so T3 can start a new thread on one
-   item; a short summary review carries the SHA marker.
+   its own `origin pr comment` thread so T3 can start a new thread on one item
+   and so `origin pr thread resolve` can close it. A short summary review
+   carries the SHA marker. A follow-up `Origin PR comments resolved` step fails
+   while any of those finding threads is still open. Older findings that were
+   posted as reviews (no thread) pass only after a later comment names the
+   title and says it is fixed.
 2. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
    and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. Maintainers can use
    the manual dispatch only when an operational fix needs an immediate retry. It merges that tag

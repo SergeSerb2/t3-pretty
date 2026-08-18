@@ -210,7 +210,7 @@ export function formatReviewBody({ sha, model, summary, issues, truncated, url }
   } else {
     lines.push(
       "",
-      `Each finding is a separate review comment so T3 can start a new thread on one item.`,
+      `Each finding is a separate Origin comment thread. Resolve it with \`origin pr thread resolve\` after it is fixed.`,
     );
   }
   lines.push(
@@ -311,12 +311,17 @@ export function pullRequestDiff(target, { repo } = {}) {
   return runOrigin(["pr", "diff", String(target), ...originRepoFlag(repo), "--patch"]);
 }
 
-export function postReview(target, body, { repo } = {}) {
+function writeBodyFile(body) {
   const bodyFile = NodePath.join(
     NodeOS.tmpdir(),
-    `t3-pretty-grok-review-${process.pid}-${Date.now()}.md`,
+    `t3-pretty-grok-review-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.md`,
   );
   NodeFS.writeFileSync(bodyFile, body);
+  return bodyFile;
+}
+
+export function postReview(target, body, { repo } = {}) {
+  const bodyFile = writeBodyFile(body);
   try {
     return runOrigin([
       "pr",
@@ -330,6 +335,34 @@ export function postReview(target, body, { repo } = {}) {
   } finally {
     NodeFS.rmSync(bodyFile, { force: true });
   }
+}
+
+/** Discussion comments become resolvable Origin threads. Reviews do not. */
+export function postComment(target, body, { repo } = {}) {
+  const bodyFile = writeBodyFile(body);
+  try {
+    return runOrigin([
+      "pr",
+      "comment",
+      String(target),
+      ...originRepoFlag(repo),
+      "--body-file",
+      bodyFile,
+    ]);
+  } finally {
+    NodeFS.rmSync(bodyFile, { force: true });
+  }
+}
+
+export function isActionableGrokFinding(body) {
+  if (typeof body !== "string" || !body.includes(`<!-- ${REVIEW_MARKER}`)) return false;
+  if (/^## Grok 4.6 review/mu.test(body)) return false;
+  return /^### (?:bug|suggestion|nit) — /mu.test(body);
+}
+
+export function findingTitle(body) {
+  const match = String(body ?? "").match(/^### (?:bug|suggestion|nit) — (.+)$/mu);
+  return match?.[1]?.trim() ?? "";
 }
 
 function readFlag(args, name) {
@@ -420,7 +453,7 @@ export async function reviewOriginPullRequest({
   }
 
   for (const issue of review.issues) {
-    const postedIssue = postReview(number, formatIssueBody({ sha, issue }), { repo });
+    const postedIssue = postComment(number, formatIssueBody({ sha, issue }), { repo });
     process.stdout.write(`Posted finding "${issue.title}" on Origin PR #${number}.\n`);
     if (postedIssue) process.stdout.write(`${postedIssue}\n`);
   }

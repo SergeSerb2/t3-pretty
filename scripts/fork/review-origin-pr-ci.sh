@@ -77,5 +77,10 @@ trap report_failure ERR
 
 echo "Authenticating Origin CLI"
 node scripts/fork/origin-forge.mjs setup-ci
-echo "Reviewing Origin pull request"
-node scripts/fork/review-origin-pr.mjs
+if [[ "${1:-review}" == "check" ]]; then
+  echo "Checking Origin review comments are resolved"
+  node scripts/fork/check-origin-pr-comments.mjs
+else
+  echo "Reviewing Origin pull request"
+  node scripts/fork/review-origin-pr.mjs
+fi
