@@ -14,7 +14,9 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    `scripts/fork/review-origin-pr-ci.sh` instead. That step must stay off
    `macos-release`: feature-branch scripts must not run on the machine that holds
    cluster secrets. The script resolves the open Origin PR from the head branch,
-   `BUILDKITE_PULL_REQUEST`, or `GITHUB_EVENT_PATH`.
+   `BUILDKITE_PULL_REQUEST`, or `GITHUB_EVENT_PATH`. Each finding is posted as
+   its own `origin pr review --comment` so T3 can start a new thread on one
+   item; a short summary review carries the SHA marker.
 2. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
    and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. Maintainers can use
    the manual dispatch only when an operational fix needs an immediate retry. It merges that tag

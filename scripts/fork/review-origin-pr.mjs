@@ -168,6 +168,23 @@ export function parseReviewResponse(text) {
   };
 }
 
+export function issueLocation(issue) {
+  return issue.path ? `${issue.path}${issue.line ? `:${issue.line}` : ""}` : "general";
+}
+
+/** One finding as its own Origin review so T3 can hand it to a new thread. */
+export function formatIssueBody({ sha, issue }) {
+  return [
+    reviewMarker(sha),
+    "",
+    `### ${issue.severity} — ${issue.title}`,
+    "",
+    `\`${issueLocation(issue)}\``,
+    ...(issue.body ? ["", issue.body] : []),
+    "",
+  ].join("\n");
+}
+
 export function formatReviewBody({ sha, model, summary, issues, truncated, url }) {
   const counts = { bug: 0, suggestion: 0, nit: 0 };
   for (const issue of issues) counts[issue.severity] += 1;
@@ -191,14 +208,10 @@ export function formatReviewBody({ sha, model, summary, issues, truncated, url }
   if (issues.length === 0) {
     lines.push("", "No blocking issues stood out in the provided diff.");
   } else {
-    lines.push("", "## Findings");
-    for (const issue of issues) {
-      const location = issue.path
-        ? `${issue.path}${issue.line ? `:${issue.line}` : ""}`
-        : "general";
-      lines.push("", `### ${issue.severity} — ${issue.title}`, "", `\`${location}\``);
-      if (issue.body) lines.push("", issue.body);
-    }
+    lines.push(
+      "",
+      `Each finding is a separate review comment so T3 can start a new thread on one item.`,
+    );
   }
   lines.push(
     "",
@@ -399,10 +412,18 @@ export async function reviewOriginPullRequest({
   });
 
   if (dryRun) {
+    for (const issue of review.issues) {
+      process.stdout.write(`${formatIssueBody({ sha, issue })}\n`);
+    }
     process.stdout.write(body);
     return { dryRun: true, number, sha, issues: review.issues };
   }
 
+  for (const issue of review.issues) {
+    const postedIssue = postReview(number, formatIssueBody({ sha, issue }), { repo });
+    process.stdout.write(`Posted finding "${issue.title}" on Origin PR #${number}.\n`);
+    if (postedIssue) process.stdout.write(`${postedIssue}\n`);
+  }
   const posted = postReview(number, body, { repo });
   process.stdout.write(`Posted Grok 4.6 review on Origin PR #${number}.\n`);
   if (posted) process.stdout.write(`${posted}\n`);

@@ -29,14 +29,31 @@ ensure_node() {
     return 0
   fi
   local ver="v24.13.1"
+  local arch
+  case "$(uname -m)" in
+    aarch64 | arm64) arch="linux-arm64" ;;
+    *) arch="linux-x64" ;;
+  esac
   local dir
   dir="$(mktemp -d)"
-  echo "Installing node ${ver}"
-  curl -fsSL "https://nodejs.org/dist/${ver}/node-${ver}-linux-x64.tar.xz" | tar -xJ -C "$dir" --strip-components=1
+  echo "Installing node ${ver} ${arch}"
+  curl -fsSL "https://nodejs.org/dist/${ver}/node-${ver}-${arch}.tar.gz" | tar -xz -C "$dir" --strip-components=1
   export PATH="${dir}/bin:${PATH}"
   command -v node >/dev/null
 }
 
+report_failure() {
+  local target="${BUILDKITE_PULL_REQUEST:-}"
+  if [[ -z "$target" || "$target" == "false" ]]; then
+    target="${BUILDKITE_BRANCH:-}"
+  fi
+  if command -v origin >/dev/null && [[ -n "${CURSOR_API_KEY:-}" && -n "$target" ]]; then
+    origin pr comment "$target" -R "${ORIGIN_REPO:-serbinenko/t3-pretty}" \
+      -b "Origin PR review job failed on this build. Check the Buildkite \`Origin PR Review\` step log." || true
+  fi
+}
+
+echo "host=$(hostname) arch=$(uname -m) node=$(command -v node || echo none) agent=$(command -v buildkite-agent || echo none)"
 echo "Loading cluster secrets"
 load_secret CURSOR_API_KEY
 load_secret CLI_PROXY_API_KEY
@@ -47,6 +64,8 @@ export CLI_PROXY_REVIEW_MODEL="${CLI_PROXY_REVIEW_MODEL:-grok-4.6}"
 # high effort regularly exceeds the request timeout on grok-4.6.
 export CLI_PROXY_REVIEW_EFFORT="${CLI_PROXY_REVIEW_EFFORT:-low}"
 export CLI_PROXY_API_URL="${CLI_PROXY_API_URL:-https://cli-proxy-api-production-1615.up.railway.app/v1}"
+
+trap report_failure ERR
 
 echo "Authenticating Origin CLI"
 node scripts/fork/origin-forge.mjs setup-ci

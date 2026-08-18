@@ -10,6 +10,7 @@ import {
   alreadyReviewed,
   cliProxyApiKey,
   cliProxyApiUrl,
+  formatIssueBody,
   formatReviewBody,
   parseReviewResponse,
   prNumberFromEvent,
@@ -87,27 +88,33 @@ here you go
     assert.equal(alreadyReviewed([{ body: "other" }], sha), false);
   });
 
-  it("formats a review that Origin CLI can post as a comment", () => {
+  it("formats one Origin review per finding plus a short summary", () => {
+    const issue = {
+      severity: "bug",
+      path: "scripts/fork/resolve-fork-release.mjs",
+      line: 63,
+      title: "Non-monotonic versions",
+      body: "Bump past the highest fork tag.",
+    };
+    const finding = formatIssueBody({ sha: "deadbeef", issue });
+    assert.include(finding, reviewMarker("deadbeef"));
+    assert.include(finding, "### bug — Non-monotonic versions");
+    assert.include(finding, "scripts/fork/resolve-fork-release.mjs:63");
+    assert.include(finding, "Bump past the highest fork tag.");
+
     const body = formatReviewBody({
       sha: "deadbeef",
       model: DEFAULT_MODEL,
       summary: "Versioning can go backwards.",
-      issues: [
-        {
-          severity: "bug",
-          path: "scripts/fork/resolve-fork-release.mjs",
-          line: 63,
-          title: "Non-monotonic versions",
-          body: "Bump past the highest fork tag.",
-        },
-      ],
+      issues: [issue],
       truncated: false,
       url: "https://cursor.com/codebase/serbinenko/t3-pretty/pull/44",
     });
     assert.include(body, reviewMarker("deadbeef"));
     assert.include(body, "Grok 4.6 review");
     assert.include(body, "1 bug(s)");
-    assert.include(body, "scripts/fork/resolve-fork-release.mjs:63");
+    assert.include(body, "separate review comment");
+    assert.notInclude(body, "### bug — Non-monotonic versions");
     assert.include(body, "not a merge approval");
   });
 });
@@ -131,6 +138,7 @@ describe("Origin Grok review workflow wiring", () => {
     assert.include(reviewCi, "cli-proxy-api-production-1615.up.railway.app");
     assert.include(reviewCi, "buildkite-agent secret get");
     assert.include(reviewCi, "origin-forge.mjs setup-ci");
+    assert.include(reviewCi, "node-${ver}-${arch}.tar.gz");
     assert.notInclude(reviewCi, "/Users/m1-dev/");
     assert.notInclude(reviewCi, "XAI_API_KEY");
     assert.notInclude(reviewCi, "api.x.ai");
