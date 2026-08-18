@@ -38,6 +38,7 @@ load_secret PLANETSCALE_API_TOKEN_ID
 load_secret PLANETSCALE_API_TOKEN
 load_secret CLERK_SECRET_KEY
 load_secret APNS_PRIVATE_KEY
+load_secret AXIOM_TOKEN
 
 if ! command -v vp >/dev/null; then
   echo "vp is required on macos-release to deploy the relay." >&2
