@@ -141,6 +141,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(sync, "checkout-origin.sh");
     assert.include(mobile, "checkout-origin.sh");
     assert.isFalse(/\n\s+uses:/u.test(mobile));
+    assert.include(mobile, '"$helper" "$CHECKOUT_SHA" --full');
+    assert.notInclude(mobile, '"$helper" main --full');
     assert.include(desktop, "ensure-linux-node.sh");
     assert.include(desktop, "PREFLIGHT_REF");
     assert.notInclude(desktop, "/usr/local --strip-components=1");

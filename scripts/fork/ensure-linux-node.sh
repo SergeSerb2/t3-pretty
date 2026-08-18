@@ -30,6 +30,8 @@ tar -xzf "${tmp}/${name}" -C "$prefix" --strip-components=1
 export PATH="${prefix}/bin:${PATH}"
 if [[ -n "${GITHUB_PATH:-}" ]]; then
   echo "${prefix}/bin" >> "$GITHUB_PATH"
+elif [[ -n "${GITHUB_ENV:-}" ]]; then
+  echo "PATH=${prefix}/bin:${PATH}" >> "$GITHUB_ENV"
 fi
 command -v node >/dev/null
 node --version

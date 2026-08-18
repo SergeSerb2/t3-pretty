@@ -124,12 +124,8 @@ jobs:
           # burst of main merges trips the GitHub rate limit.
           helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
           test -x "$helper"
-          "$helper" main --full
-          if git cat-file -e "${CHECKOUT_SHA}^{commit}" 2>/dev/null; then
-            git checkout --force "$CHECKOUT_SHA"
-          else
-            "$helper" "$CHECKOUT_SHA" --full
-          fi
+          test -n "${CHECKOUT_SHA:-}"
+          "$helper" "$CHECKOUT_SHA" --full
 
       - id: paths
         name: Skip mobile-irrelevant pushes

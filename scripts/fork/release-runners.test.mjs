@@ -43,6 +43,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(preflight, "Use the importer checkout");
     assert.include(preflight, "continue-on-error: true");
     assert.include(preflight, "ensure-linux-node.sh");
+    const nodeHelper = NodeFS.readFileSync(NodePath.resolve(here, "ensure-linux-node.sh"), "utf8");
+    assert.include(nodeHelper, 'elif [[ -n "${GITHUB_ENV:-}" ]]');
+    assert.notInclude(nodeHelper, "/usr/local");
     assert.include(wsl, "PREFLIGHT_REF");
     assert.include(wsl, "ensure-linux-node.sh");
   });
