@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
-# Load named Buildkite cluster secrets into GITHUB_ENV when they are unset.
+# Load named Buildkite cluster secrets into the current shell, GITHUB_ENV when
+# that file exists, and a workspace env file the macos-release importer can
+# source later. Source this script:
+#   . scripts/fork/load-buildkite-secrets.sh EXPO_TOKEN
 #
-# The GitHub Actions importer resolves every `secrets.*` reference in a job
-# before any step runs. One failed `secret get` (common on hosted Linux for
-# some keys) kills the job. Workflows that run on linux-small should read
-# `env.NAME` and call this after checkout instead.
+# Do not interpolate secrets.* in the workflow YAML. The importer resolves
+# those before any step and one failed secret get kills the job.
 set -euo pipefail
 
-if [[ -z "${GITHUB_ENV:-}" ]]; then
-  echo "GITHUB_ENV is required." >&2
-  exit 1
-fi
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
 
-if ! command -v buildkite-agent >/dev/null; then
-  echo "buildkite-agent is not on PATH; leaving existing environment in place."
-  exit 0
-fi
+ci_env="${RUNNER_TEMP:-${GITHUB_WORKSPACE:-${HOME}}}/t3-pretty-ci.env"
+
+append_export() {
+  local name="$1"
+  local value="$2"
+  mkdir -p "$(dirname "$ci_env")"
+  if [[ -f "$ci_env" ]]; then
+    grep -v "^export ${name}=" "$ci_env" > "${ci_env}.tmp" || true
+    mv "${ci_env}.tmp" "$ci_env"
+  fi
+  printf 'export %s=%q\n' "$name" "$value" >> "$ci_env"
+}
 
 for name in "$@"; do
   value="${!name:-}"
@@ -39,11 +45,14 @@ for name in "$@"; do
     echo "cluster secret $name is not available on this agent"
     continue
   fi
-  # Always write GITHUB_ENV, including values interpolated onto this step.
-  # Skipping that write leaves later steps (require/deploy) empty.
-  {
-    printf '%s<<__T3_BK_SECRET_EOF__\n' "$name"
-    printf '%s\n' "$value"
-    printf '__T3_BK_SECRET_EOF__\n'
-  } >> "$GITHUB_ENV"
+  printf -v "$name" '%s' "$value"
+  export "$name"
+  append_export "$name" "$value"
+  if [[ -n "${GITHUB_ENV:-}" ]]; then
+    {
+      printf '%s<<__T3_BK_SECRET_EOF__\n' "$name"
+      printf '%s\n' "$value"
+      printf '__T3_BK_SECRET_EOF__\n'
+    } >> "$GITHUB_ENV"
+  fi
 done

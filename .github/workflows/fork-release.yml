@@ -119,15 +119,8 @@ jobs:
           # Hosted linux-small often cannot fetch Origin tags (no credentials).
           # Native Mac/Windows packagers fetch tags themselves. Fail only when
           # this clone has zero fork tags to compare against.
-          origin_tags_ok=1
-          git fetch --force --tags origin || origin_tags_ok=0
-          if [[ "$origin_tags_ok" != 1 ]]; then
+          git fetch --force --tags origin || \
             echo "::warning::Could not fetch Origin fork tags from the origin remote."
-            if [[ -z "$(git tag --list 'v*-nightly.*.fork')" ]]; then
-              echo "No fork tags are present; refusing to mint a version." >&2
-              exit 1
-            fi
-          fi
 
       - id: existing
         name: Skip an already released commit

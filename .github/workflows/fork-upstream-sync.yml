@@ -59,9 +59,11 @@ jobs:
             echo "PATH=${PATH}" >> "$GITHUB_ENV"
             wrote=1
           fi
+          ci_env="${RUNNER_TEMP:-${GITHUB_WORKSPACE:-${HOME}}}/t3-pretty-ci.env"
+          mkdir -p "$(dirname "$ci_env")"
+          printf 'export PATH=%q\n' "$PATH" >> "$ci_env"
           if [[ "$wrote" -eq 0 ]]; then
-            echo "Neither GITHUB_PATH nor GITHUB_ENV is set; cannot persist PATH for later steps." >&2
-            exit 1
+            echo "GITHUB_PATH and GITHUB_ENV are unset; persisted PATH in $ci_env for later steps to source."
           fi
 
       - name: Checkout fork main

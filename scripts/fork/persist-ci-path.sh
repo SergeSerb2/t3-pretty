@@ -20,19 +20,20 @@ done
 test -n "$prepend"
 export PATH="${prepend}:${PATH}"
 
-wrote=0
+ci_env="${RUNNER_TEMP:-${GITHUB_WORKSPACE:-${HOME}}}/t3-pretty-ci.env"
+mkdir -p "$(dirname "$ci_env")"
+if [[ -f "$ci_env" ]]; then
+  grep -v '^export PATH=' "$ci_env" > "${ci_env}.tmp" || true
+  mv "${ci_env}.tmp" "$ci_env"
+fi
+printf 'export PATH=%q\n' "$PATH" >> "$ci_env"
+
 if [[ -n "${GITHUB_PATH:-}" ]]; then
   for dir in "$@"; do
     [[ -n "$dir" ]] || continue
     echo "$dir" >> "$GITHUB_PATH"
   done
-  wrote=1
 fi
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   echo "PATH=${PATH}" >> "$GITHUB_ENV"
-  wrote=1
-fi
-if [[ "$wrote" -eq 0 ]]; then
-  echo "Neither GITHUB_PATH nor GITHUB_ENV is set; cannot persist PATH." >&2
-  exit 1
 fi

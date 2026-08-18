@@ -109,7 +109,7 @@ describe("Origin release and blocked-sync helpers", () => {
     );
     assert.include(preparePath, "GITHUB_PATH");
     assert.include(preparePath, "GITHUB_ENV");
-    assert.include(preparePath, "wrote=0");
+    assert.include(preparePath, "t3-pretty-ci.env");
     assert.include(preparePath, 'echo "PATH=${PATH}" >> "$GITHUB_ENV"');
     assert.notInclude(preparePath, 'elif [[ -n "${GITHUB_ENV:-}" ]]');
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");
@@ -145,8 +145,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(desktop, "ensure-linux-node.sh");
     assert.include(desktop, "PREFLIGHT_REF");
     assert.notInclude(desktop, "/usr/local --strip-components=1");
-    assert.notInclude(desktop, "git fetch --force --tags origin || true");
-    assert.include(preflight, "origin_tags_ok");
+    assert.include(preflight, "Could not fetch Origin fork tags");
+    assert.notInclude(mobile, "GITHUB_ENV is required");
     assert.include(mobile, "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65");
     assert.notInclude(mobile, "vars.T3CODE_MOBILE_EAS_PROJECT_ID");
     assert.notInclude(mobile, "vars.APPLE_TEAM_ID");

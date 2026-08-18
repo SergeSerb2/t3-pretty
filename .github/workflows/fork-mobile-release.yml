@@ -101,18 +101,22 @@ jobs:
             echo "PATH=${PATH}" >> "$GITHUB_ENV"
             wrote=1
           fi
+          ci_env="${RUNNER_TEMP:-${GITHUB_WORKSPACE:-${HOME}}}/t3-pretty-ci.env"
+          mkdir -p "$(dirname "$ci_env")"
+          printf 'export PATH=%q\n' "$PATH" >> "$ci_env"
           if [[ "$wrote" -eq 0 ]]; then
-            echo "Neither GITHUB_PATH nor GITHUB_ENV is set; cannot persist PATH for later steps." >&2
-            env | grep -E '^(GITHUB_|RUNNER_)' || true
-            exit 1
+            echo "GITHUB_PATH and GITHUB_ENV are unset; persisted PATH in $ci_env for later steps to source."
           fi
 
-      - name: Checkout Origin
+      - id: expo-token
+        name: Checkout Origin and load Expo token
         shell: bash
         env:
           CHECKOUT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
+          export PATH="${extra}:${PATH}"
           # macos-latest maps to macos-release. Do not call checkout@v6:
           # the importer resolves that action from api.github.com and a
           # burst of main merges trips the GitHub rate limit.
@@ -120,14 +124,9 @@ jobs:
           test -x "$helper"
           test -n "${CHECKOUT_SHA:-}"
           "$helper" "$CHECKOUT_SHA" --full
-
-      - name: Load Expo token
-        shell: bash
-        run: bash scripts/fork/load-buildkite-secrets.sh EXPO_TOKEN
-
-      - id: expo-token
-        name: Check for EXPO_TOKEN
-        run: |
+          # Source so EXPO_TOKEN is in this shell even when GITHUB_ENV is unset.
+          # shellcheck disable=SC1091
+          . scripts/fork/load-buildkite-secrets.sh EXPO_TOKEN
           if [ -n "${EXPO_TOKEN:-}" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
@@ -164,6 +163,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           command -v vp
           vp i --filter=@t3tools/mobile... --filter=@t3tools/scripts...
 
@@ -172,6 +172,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
           vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
           . scripts/fork/persist-ci-path.sh "$vp_pnpm_bin"
@@ -182,6 +183,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           # npm, not pnpm: pnpm 11 hard-fails eas-cli on dtrace-provider's
           # ignored build script (no allowBuilds config outside the repo).
           # Later eas steps also set EXPO_TOKEN; export it here so a stray
@@ -204,6 +206,7 @@ jobs:
         # pulled values into the job environment for child processes.
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           eas env:pull production --path ../../.env.local --non-interactive
           if [[ -f ../../.env.local ]]; then
             grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> "$GITHUB_ENV"
@@ -214,6 +217,7 @@ jobs:
         working-directory: apps/mobile
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           update_platform="$PLATFORM"
           if [[ "$MODE" == "release" ]]; then
             update_platform=all
@@ -231,6 +235,7 @@ jobs:
         working-directory: apps/mobile
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           if [[ "$MODE" == "build" && "$PLATFORM" == "android" ]]; then
             echo "Native Android cloud builds are retired. iOS compiles locally on the Mac runner; Android store binaries are not wired yet." >&2
             exit 1
@@ -317,7 +322,12 @@ jobs:
 
       - name: Load Buildkite cluster secrets
         shell: bash
-        run: bash scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY EXPO_TOKEN
+        run: |
+          set -euo pipefail
+          extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
+          export PATH="${extra}:${PATH}"
+          # shellcheck disable=SC1091
+          . scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY EXPO_TOKEN
 
       - name: Prepare macOS runner PATH
         shell: bash
@@ -337,16 +347,18 @@ jobs:
             echo "PATH=${PATH}" >> "$GITHUB_ENV"
             wrote=1
           fi
+          ci_env="${RUNNER_TEMP:-${GITHUB_WORKSPACE:-${HOME}}}/t3-pretty-ci.env"
+          mkdir -p "$(dirname "$ci_env")"
+          printf 'export PATH=%q\n' "$PATH" >> "$ci_env"
           if [[ "$wrote" -eq 0 ]]; then
-            echo "Neither GITHUB_PATH nor GITHUB_ENV is set; cannot persist PATH for later steps." >&2
-            env | grep -E '^(GITHUB_|RUNNER_)' || true
-            exit 1
+            echo "GITHUB_PATH and GITHUB_ENV are unset; persisted PATH in $ci_env for later steps to source."
           fi
 
       - name: Install workspace
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           command -v vp
           vp i --filter=@t3tools/mobile... --filter=@t3tools/scripts...
 
@@ -354,6 +366,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
           vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
           . scripts/fork/persist-ci-path.sh "$vp_pnpm_bin"
@@ -363,6 +376,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           # npm, not pnpm: pnpm 11 hard-fails eas-cli on dtrace-provider's
           # ignored build script (no allowBuilds config outside the repo).
           if [[ -n "${EXPO_TOKEN:-}" && -n "${GITHUB_ENV:-}" ]]; then
@@ -382,6 +396,7 @@ jobs:
         # pulled values into the job environment for child processes.
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           eas env:pull production --path ../../.env.local --non-interactive
           if [[ -f ../../.env.local ]]; then
             grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> "$GITHUB_ENV"
@@ -394,6 +409,7 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           for name in APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
             if [[ -z "${!name:-}" ]]; then
               echo "$name is required for unattended iOS build and submission." >&2
@@ -432,6 +448,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           # m1-dev ships Xcode-beta.app, not Xcode.app. Prefer a pre-set
           # DEVELOPER_DIR, then stable Xcode, then beta, then any other
           # Xcode*.app. Command Line Tools have no iOS SDK; skip them.
@@ -486,6 +503,7 @@ jobs:
         working-directory: apps/mobile
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           # EAS local builds on macOS 26 / Xcode 27 fail Prepare credentials
           # because `security find-identity -v` cannot validate a dist cert in
           # an ephemeral keychain (expo/eas-cli#3678). Put a shim named
@@ -522,6 +540,7 @@ jobs:
           ORIGIN_REPO: serbinenko/t3-pretty
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           # Local builds never show up in `eas build:list`. Persist the hash
           # that just landed in TestFlight so the next JS-only release can
           # skip Xcode without consulting a hosted EAS build record.
