@@ -170,10 +170,17 @@ jobs:
       - name: Setup EAS CLI
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
         shell: bash
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
           # npm, not pnpm: pnpm 11 hard-fails eas-cli on dtrace-provider's
           # ignored build script (no allowBuilds config outside the repo).
+          # Later eas steps also set EXPO_TOKEN; export it here so a stray
+          # eas command in this job cannot run unauthenticated.
+          if [[ -n "${EXPO_TOKEN:-}" && -n "${GITHUB_ENV:-}" ]]; then
+            echo "EXPO_TOKEN=${EXPO_TOKEN}" >> "$GITHUB_ENV"
+          fi
           if ! command -v eas >/dev/null; then
             npm install -g eas-cli
           fi
@@ -341,10 +348,15 @@ jobs:
 
       - name: Setup EAS CLI
         shell: bash
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
           # npm, not pnpm: pnpm 11 hard-fails eas-cli on dtrace-provider's
           # ignored build script (no allowBuilds config outside the repo).
+          if [[ -n "${EXPO_TOKEN:-}" && -n "${GITHUB_ENV:-}" ]]; then
+            echo "EXPO_TOKEN=${EXPO_TOKEN}" >> "$GITHUB_ENV"
+          fi
           if ! command -v eas >/dev/null; then
             npm install -g eas-cli
           fi
