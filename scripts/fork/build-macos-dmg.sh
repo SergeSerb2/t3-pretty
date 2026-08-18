@@ -123,7 +123,7 @@ mkdir -p "$HOME/.cache/t3-pretty-release/cargo" "$HOME/.cache/t3-pretty-release/
 export CARGO_HOME="$HOME/.cache/t3-pretty-release/cargo"
 export CARGO_TARGET_DIR="$HOME/.cache/t3-pretty-release/target-macos-arm64"
 
-vp run dist:desktop:artifact -- \
+node scripts/build-desktop-artifact.ts \
   --platform mac --target dmg --arch arm64 \
   --build-version "$version" --verbose --signed
 
