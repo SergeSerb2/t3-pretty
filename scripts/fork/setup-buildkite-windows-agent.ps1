@@ -104,7 +104,7 @@ $preCheckout = Join-Path $hooksDir "pre-checkout.bat"
   "powershell -NoProfile -ExecutionPolicy Bypass -File C:\buildkite-agent\hooks\windows-origin-git.ps1"
   "if errorlevel 1 exit /b %ERRORLEVEL%"
 ) | Set-Content -Path $preCheckout -Encoding ASCII
-if (Test-Path "C:\buildkite-agent\cursor-api-key") {
+if (Test-Path "C:\buildkite-agent\.git-credentials") {
   & (Join-Path $hooksDir "windows-origin-git.ps1")
 }
 

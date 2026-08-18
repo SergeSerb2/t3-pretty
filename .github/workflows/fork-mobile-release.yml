@@ -557,6 +557,7 @@ jobs:
         if: needs.ota.outputs.fingerprint != ''
         env:
           FINGERPRINT: ${{ needs.ota.outputs.fingerprint }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
           ORIGIN_REPO: serbinenko/t3-pretty
         run: |
           set -euo pipefail

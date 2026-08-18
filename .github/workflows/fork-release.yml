@@ -135,6 +135,7 @@ jobs:
       - name: Verify Origin release publisher credentials
         if: steps.existing.outputs.should_release == 'true'
         env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
           T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL || env.T3CODE_DESKTOP_UPDATE_FEED_URL }}
           T3CODE_RELEASE_S3_BUCKET: ${{ env.T3CODE_RELEASE_S3_BUCKET }}
         run: |
@@ -172,8 +173,8 @@ jobs:
           set -euo pipefail
           # Hosted Linux cannot resolve the Mac signing cluster secrets
           # (CSC_LINK is a full certificate). Those stay on macos-release
-          # via secrets.* and the Mac job fails the release if they are
-          # missing. Do not mention secrets.CSC_* here: the importer
+          # and the Mac job fails the release if they are missing. Do not
+          # reference the certificate secret names here: the importer
           # fetches every secrets.* reference before any step runs.
           if [[ -n "${BUILDKITE:-}" && -z "${CSC_LINK:-}" ]]; then
             echo "Mac signing secrets are resolved on macos-release, not this hosted job."
@@ -241,6 +242,7 @@ jobs:
           steps.signing.outputs.configured == 'true' &&
           github.ref == 'refs/heads/main'
         env:
+          CLI_PROXY_API_KEY: ${{ secrets.CLI_PROXY_API_KEY || env.CLI_PROXY_API_KEY }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         # Writes one What's New entry per shipped fork build — the fork's own
         # changes plus the integrated parent nightly — for every build missing
@@ -985,11 +987,13 @@ jobs:
       - name: Publish public Origin release
         shell: bash
         env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
           T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL || env.T3CODE_DESKTOP_UPDATE_FEED_URL }}
           T3CODE_RELEASE_S3_BUCKET: ${{ env.T3CODE_RELEASE_S3_BUCKET }}
           T3CODE_RELEASE_S3_ENDPOINT: ${{ env.T3CODE_RELEASE_S3_ENDPOINT }}
           T3CODE_RELEASE_S3_ACCESS_KEY_ID: ${{ env.T3CODE_RELEASE_S3_ACCESS_KEY_ID }}
           T3CODE_RELEASE_S3_SECRET_ACCESS_KEY: ${{ env.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || env.CLOUDFLARE_API_TOKEN }}
           T3CODE_RELEASE_S3_REGION: ${{ env.T3CODE_RELEASE_S3_REGION }}
           RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
           RELEASE_REF: ${{ needs.preflight.outputs.ref }}

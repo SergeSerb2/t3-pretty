@@ -105,11 +105,14 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(desktop, "sparse-checkout:");
     assert.notInclude(desktop, "secrets.AZURE_");
     assert.notInclude(desktop, "secrets.MACOS_PROVISIONING_PROFILE");
-    assert.notInclude(desktop, "secrets.CURSOR_API_KEY");
-    assert.notInclude(desktop, "secrets.CLI_PROXY_API_KEY");
-    assert.notInclude(desktop, "secrets.CLOUDFLARE_API_TOKEN");
-    assert.notInclude(sync, "secrets.CURSOR_API_KEY");
-    assert.notInclude(sync, "secrets.CLI_PROXY_API_KEY");
+    assert.include(desktop, "secrets.CURSOR_API_KEY");
+    const preflight = desktop.slice(
+      desktop.indexOf("\n  preflight:\n"),
+      desktop.indexOf("\n  build_wsl_node_pty:\n"),
+    );
+    assert.notInclude(preflight, "secrets.CSC_");
+    assert.notInclude(preflight, "secrets.APPLE_API_");
+    assert.include(sync, "secrets.CURSOR_API_KEY");
     assert.include(desktop, "load-buildkite-secrets.sh");
     assert.include(sync, "load-buildkite-secrets.sh");
     assert.include(mobile, "load-buildkite-secrets.sh");
