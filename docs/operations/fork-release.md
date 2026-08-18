@@ -94,6 +94,12 @@ newer upstream tag was integrated before its sync pull request merged.
   `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer.
   Mac-only desktop publishes are still allowed if that step is skipped. Depot can take
   Linux jobs but has no macOS/Windows sandboxes.
+  Hosted Linux jobs must not mention `secrets.NAME` in the imported workflows: the
+  importer fetches every referenced secret before any step runs, and a single failed
+  request fails the job. Those jobs call `scripts/fork/load-buildkite-secrets.sh`
+  after checkout. The Windows agent runs as LocalSystem, so Origin git login lives
+  in `scripts/fork/windows-origin-git.ps1` with the key at
+  `C:\buildkite-agent\cursor-api-key`.
 - Secret `CURSOR_API_KEY`: Cursor API key for the Origin CLI (`origin auth login --api-key`).
   Used to open, merge, and tag on Origin.
 - Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used by the trusted scheduled

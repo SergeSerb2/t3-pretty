@@ -105,6 +105,15 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(desktop, "sparse-checkout:");
     assert.notInclude(desktop, "secrets.AZURE_");
     assert.notInclude(desktop, "secrets.MACOS_PROVISIONING_PROFILE");
+    assert.notInclude(desktop, "secrets.CURSOR_API_KEY");
+    assert.notInclude(desktop, "secrets.CLI_PROXY_API_KEY");
+    assert.notInclude(desktop, "secrets.CLOUDFLARE_API_TOKEN");
+    assert.notInclude(sync, "secrets.CURSOR_API_KEY");
+    assert.notInclude(sync, "secrets.CLI_PROXY_API_KEY");
+    assert.include(desktop, "load-buildkite-secrets.sh");
+    assert.include(sync, "load-buildkite-secrets.sh");
+    assert.include(mobile, "load-buildkite-secrets.sh");
+    assert.include(desktop, "Mac signing secrets are resolved on macos-release");
     assert.include(mobile, "origin-forge.mjs merge-pr");
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),

@@ -370,6 +370,10 @@ jobs:
           # `git clone --depth 1 file://<workspace>`, which fails (exit 128)
           # when the partial clone can't serve the unfetched blobs.
 
+      - name: Load Buildkite cluster secrets
+        shell: bash
+        run: bash scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY
+
       - name: Prepare macOS runner PATH
         shell: bash
         run: |
@@ -553,7 +557,6 @@ jobs:
         if: needs.ota.outputs.fingerprint != ''
         env:
           FINGERPRINT: ${{ needs.ota.outputs.fingerprint }}
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
           ORIGIN_REPO: serbinenko/t3-pretty
         run: |
           set -euo pipefail

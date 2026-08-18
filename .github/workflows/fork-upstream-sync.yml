@@ -41,6 +41,10 @@ jobs:
           fetch-depth: 0
           # The Buildkite importer rejects sparse-checkout.
 
+      - name: Load Buildkite cluster secrets
+        shell: bash
+        run: bash scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY CLI_PROXY_API_KEY
+
       - id: discover
         name: Discover newest upstream nightly
         shell: bash
@@ -96,7 +100,6 @@ jobs:
         if: steps.discover.outputs.has_update == 'true'
         shell: bash
         env:
-          CLI_PROXY_API_KEY: ${{ secrets.CLI_PROXY_API_KEY }}
           CLI_PROXY_API_URL: https://cli-proxy-api-production-1615.up.railway.app/v1
           CLI_PROXY_MODEL: gpt-5.6-sol
           CLI_PROXY_REASONING_EFFORT: xhigh
@@ -240,7 +243,6 @@ jobs:
         if: steps.discover.outputs.has_update == 'true'
         shell: bash
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
           DEPOT_TOKEN: ${{ env.DEPOT_TOKEN }}
           ORIGIN_REPO: serbinenko/t3-pretty
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
@@ -294,7 +296,6 @@ jobs:
         if: failure() && steps.discover.outputs.has_update == 'true'
         shell: bash
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
           ORIGIN_REPO: serbinenko/t3-pretty
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
         run: |

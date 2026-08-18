@@ -10,8 +10,10 @@
 #   windows-release — serge-pc native NSIS (importer cannot run Windows jobs)
 #
 # Do not list cluster secrets on hosted steps. Hosted agents currently 500
-# while fetching `secrets:` (`CURSOR_API_KEY`, feed, S3). Public values stay
-# in `env`. Private keys stay in the cluster for `buildkite-agent secret get`.
+# while fetching YAML `secrets:`, and the GitHub Actions importer fails the
+# job if any `secrets.*` request fails. Public values stay in `env`. Private
+# keys stay in the cluster; hosted jobs load them after checkout with
+# scripts/fork/load-buildkite-secrets.sh.
 
 env:
   T3CODE_DESKTOP_UPDATE_FEED_URL: "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/"

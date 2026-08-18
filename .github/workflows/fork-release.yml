@@ -127,12 +127,16 @@ jobs:
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Load Buildkite cluster secrets
+        if: steps.existing.outputs.should_release == 'true'
+        shell: bash
+        run: bash scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY CLI_PROXY_API_KEY
+
       - name: Verify Origin release publisher credentials
         if: steps.existing.outputs.should_release == 'true'
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
           T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL || env.T3CODE_DESKTOP_UPDATE_FEED_URL }}
-          T3CODE_RELEASE_S3_BUCKET: ${{ secrets.T3CODE_RELEASE_S3_BUCKET || env.T3CODE_RELEASE_S3_BUCKET }}
+          T3CODE_RELEASE_S3_BUCKET: ${{ env.T3CODE_RELEASE_S3_BUCKET }}
         run: |
           set -euo pipefail
           test -n "$CURSOR_API_KEY"
@@ -150,12 +154,12 @@ jobs:
         if: steps.existing.outputs.should_release == 'true'
         shell: bash
         env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ env.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ env.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ env.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ env.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ env.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || env.APPLE_TEAM_ID }}
           MACOS_PROVISIONING_PROFILE: ${{ env.MACOS_PROVISIONING_PROFILE }}
           AZURE_TENANT_ID: ${{ env.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ env.AZURE_CLIENT_ID }}
@@ -166,6 +170,18 @@ jobs:
           AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ env.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
         run: |
           set -euo pipefail
+          # Hosted Linux cannot resolve the Mac signing cluster secrets
+          # (CSC_LINK is a full certificate). Those stay on macos-release
+          # via secrets.* and the Mac job fails the release if they are
+          # missing. Do not mention secrets.CSC_* here: the importer
+          # fetches every secrets.* reference before any step runs.
+          if [[ -n "${BUILDKITE:-}" && -z "${CSC_LINK:-}" ]]; then
+            echo "Mac signing secrets are resolved on macos-release, not this hosted job."
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+            echo 'windows_signed=false' >> "$GITHUB_OUTPUT"
+            echo 'windows=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # macOS signing is the release floor. Windows signing is optional:
           # unsigned NSIS installers still auto-update from the public Origin
           # feed. When Azure Trusted Signing is not configured the release still
@@ -225,7 +241,6 @@ jobs:
           steps.signing.outputs.configured == 'true' &&
           github.ref == 'refs/heads/main'
         env:
-          CLI_PROXY_API_KEY: ${{ secrets.CLI_PROXY_API_KEY }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         # Writes one What's New entry per shipped fork build — the fork's own
         # changes plus the integrated parent nightly — for every build missing
@@ -810,7 +825,7 @@ jobs:
           AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ env.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
           AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ env.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
           AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ env.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
-          VITE_SCENERY_UNSPLASH_KEY: ${{ secrets.VITE_SCENERY_UNSPLASH_KEY }}
+          VITE_SCENERY_UNSPLASH_KEY: ${{ env.VITE_SCENERY_UNSPLASH_KEY }}
           WINDOWS_SIGNED: ${{ needs.preflight.outputs.windows_signed }}
         run: |
           set -euo pipefail
@@ -898,6 +913,10 @@ jobs:
           # The Buildkite importer rejects sparse-checkout. Full checkouts
           # are fine on these dedicated release jobs.
 
+      - name: Load Buildkite cluster secrets
+        shell: bash
+        run: bash scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY CLOUDFLARE_API_TOKEN
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -966,14 +985,12 @@ jobs:
       - name: Publish public Origin release
         shell: bash
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY || env.CURSOR_API_KEY }}
           T3CODE_DESKTOP_UPDATE_FEED_URL: ${{ vars.T3CODE_DESKTOP_UPDATE_FEED_URL || env.T3CODE_DESKTOP_UPDATE_FEED_URL }}
-          T3CODE_RELEASE_S3_BUCKET: ${{ secrets.T3CODE_RELEASE_S3_BUCKET || env.T3CODE_RELEASE_S3_BUCKET }}
-          T3CODE_RELEASE_S3_ENDPOINT: ${{ secrets.T3CODE_RELEASE_S3_ENDPOINT || env.T3CODE_RELEASE_S3_ENDPOINT }}
+          T3CODE_RELEASE_S3_BUCKET: ${{ env.T3CODE_RELEASE_S3_BUCKET }}
+          T3CODE_RELEASE_S3_ENDPOINT: ${{ env.T3CODE_RELEASE_S3_ENDPOINT }}
           T3CODE_RELEASE_S3_ACCESS_KEY_ID: ${{ env.T3CODE_RELEASE_S3_ACCESS_KEY_ID }}
           T3CODE_RELEASE_S3_SECRET_ACCESS_KEY: ${{ env.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          T3CODE_RELEASE_S3_REGION: ${{ secrets.T3CODE_RELEASE_S3_REGION || env.T3CODE_RELEASE_S3_REGION }}
+          T3CODE_RELEASE_S3_REGION: ${{ env.T3CODE_RELEASE_S3_REGION }}
           RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
           RELEASE_REF: ${{ needs.preflight.outputs.ref }}
           RELEASE_NAME: ${{ needs.preflight.outputs.name }}

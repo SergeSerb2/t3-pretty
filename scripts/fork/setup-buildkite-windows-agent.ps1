@@ -91,6 +91,23 @@ if (-not (Get-Service -Name "buildkite-t3-pretty" -ErrorAction SilentlyContinue)
 & $nssm set buildkite-t3-pretty AppStdout "C:\buildkite-agent\buildkite-agent.log"
 & $nssm set buildkite-t3-pretty AppStderr "C:\buildkite-agent\buildkite-agent.log"
 & $nssm set buildkite-t3-pretty Start SERVICE_AUTO_START
+
+$hooksDir = "C:\buildkite-agent\hooks"
+New-Item -ItemType Directory -Force -Path $hooksDir | Out-Null
+$hookSrc = Join-Path $PSScriptRoot "windows-origin-git.ps1"
+if (Test-Path $hookSrc) {
+  Copy-Item $hookSrc (Join-Path $hooksDir "windows-origin-git.ps1") -Force
+}
+$preCheckout = Join-Path $hooksDir "pre-checkout.bat"
+@(
+  "@echo off"
+  "powershell -NoProfile -ExecutionPolicy Bypass -File C:\buildkite-agent\hooks\windows-origin-git.ps1"
+  "if errorlevel 1 exit /b %ERRORLEVEL%"
+) | Set-Content -Path $preCheckout -Encoding ASCII
+if (Test-Path "C:\buildkite-agent\cursor-api-key") {
+  & (Join-Path $hooksDir "windows-origin-git.ps1")
+}
+
 Get-Process -Name buildkite-agent -ErrorAction SilentlyContinue | Stop-Process -Force
 & $nssm start buildkite-t3-pretty
 Write-Host "Registered Buildkite Windows service $agentName on queue $queue"
