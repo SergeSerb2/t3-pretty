@@ -65,6 +65,16 @@ steps:
       queue: windows-release
     command: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fork/build-windows-nsis.ps1
 
+  - label: ":mac: macOS arm64 DMG"
+    key: macos-dmg
+    if: build.branch == "main" && build.source != "schedule"
+    timeout_in_minutes: 60
+    agents:
+      queue: macos-release
+    env:
+      T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
+    command: bash scripts/fork/build-macos-dmg.sh
+
   - label: ":cloud: Relay"
     key: deploy-relay
     # Hosted macos-latest GHA jobs do not have the Origin git store or the
