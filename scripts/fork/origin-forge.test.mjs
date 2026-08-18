@@ -111,8 +111,9 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "fork-mobile-release.yml");
     assert.include(pipeline, "queue: macos-release");
     assert.include(pipeline, "queue: windows-release");
+    assert.include(pipeline, "queue: linux-small");
     assert.include(pipeline, "build-windows-nsis.ps1");
-    assert.include(pipeline, "CURSOR_API_KEY");
+    assert.notInclude(pipeline, "\n    secrets:");
   });
 
   it("uploads updater assets with aws when keys exist and wrangler otherwise", () => {

@@ -5,9 +5,13 @@
 # workflows themselves skip no-op desktop/mobile work.
 #
 # Queues:
-#   linux          — Origin/Buildkite Linux agents (ubuntu-latest jobs)
+#   linux-small    — Buildkite hosted Linux (importer + ubuntu-latest jobs)
 #   macos-release  — m1-dev / extra Macs (signed DMG + local iOS)
 #   windows-release — serge-pc native NSIS (importer cannot run Windows jobs)
+#
+# Do not list cluster secrets on hosted steps. Hosted agents currently 500
+# while fetching `secrets:` (`CURSOR_API_KEY`, feed, S3). Public values stay
+# in `env`. Private keys stay in the cluster for `buildkite-agent secret get`.
 
 env:
   T3CODE_DESKTOP_UPDATE_FEED_URL: "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/"
@@ -30,13 +34,7 @@ steps:
   - label: ":github: T3 Pretty Origin workflows"
     key: origin-workflows
     agents:
-      queue: linux
-    secrets:
-      - CURSOR_API_KEY
-      - T3CODE_DESKTOP_UPDATE_FEED_URL
-      - T3CODE_RELEASE_S3_BUCKET
-      - T3CODE_RELEASE_S3_ENDPOINT
-      - T3CODE_RELEASE_S3_REGION
+      queue: linux-small
     plugins:
       - github-actions#v0.13.11:
           workflows:
@@ -45,7 +43,7 @@ steps:
             - .github/workflows/fork-mobile-release.yml
           runners:
             - runs-on: ubuntu-latest
-              queue: linux
+              queue: linux-small
             - runs-on: self-hosted
               queue: macos-release
             - runs-on: macOS
