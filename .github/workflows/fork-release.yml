@@ -230,6 +230,12 @@ jobs:
           fi
           echo 'windows=true' >> "$GITHUB_OUTPUT"
 
+      - name: Setup Node
+        if: steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+
       - id: release
         name: Create a monotonic fork version
         if: steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
