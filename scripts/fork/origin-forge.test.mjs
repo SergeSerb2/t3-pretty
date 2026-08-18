@@ -91,8 +91,9 @@ describe("Origin release and blocked-sync helpers", () => {
     const sync = workflow("fork-upstream-sync.yml");
     const desktop = workflow("fork-release.yml");
     const mobile = workflow("fork-mobile-release.yml");
+    const review = workflow("fork-pr-review.yml");
 
-    for (const source of [sync, desktop, mobile]) {
+    for (const source of [sync, desktop, mobile, review]) {
       assert.notInclude(source, "gh api");
       assert.notInclude(source, "gh release");
       assert.notInclude(source, "gh workflow");
@@ -141,6 +142,14 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "fork-upstream-sync.yml");
     assert.include(pipeline, "fork-release.yml");
     assert.include(pipeline, "fork-mobile-release.yml");
+    assert.include(pipeline, "fork-pr-review.yml");
+    assert.include(review, "review-origin-pr.mjs");
+    assert.include(review, "grok-4.6");
+    assert.include(review, "CLI_PROXY_API_KEY");
+    assert.include(review, "cli-proxy-api-production-1615.up.railway.app");
+    assert.include(review, "runs-on: ubuntu-latest");
+    assert.notInclude(review, "secrets.CURSOR_API_KEY");
+    assert.notInclude(review, "api.x.ai");
     assert.include(pipeline, "deploy-relay-ci.sh");
     assert.notInclude(pipeline, "deploy-relay.yml");
     assert.include(pipeline, "queue: macos-release");
