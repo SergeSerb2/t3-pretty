@@ -14,6 +14,9 @@ cd "$ROOT"
 . scripts/fork/macos-ci-prelude.sh
 . scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY CLI_PROXY_API_KEY
 
+# Fail instead of hanging if Origin HTTPS cannot load credentials.
+export GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}"
+
 RESOLUTION_CACHE_BRANCH="${RESOLUTION_CACHE_BRANCH:-automation/sync-resolution-cache}"
 UPSTREAM_URL="https://github.com/pingdotgg/t3code.git"
 ORIGIN_REPO="${ORIGIN_REPO:-serbinenko/t3-pretty}"

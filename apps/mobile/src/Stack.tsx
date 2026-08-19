@@ -59,6 +59,9 @@ import { NewTaskRouteScreen } from "./features/threads/NewTaskRouteScreen";
 import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppearanceRouteScreen";
 import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsClientStorageRouteScreen";
 import { SettingsEnvironmentStorageRouteScreen } from "./features/settings/SettingsEnvironmentStorageRouteScreen";
+import { SettingsAppsRouteScreen } from "./features/settings/SettingsAppsRouteScreen";
+import { SettingsAppEditRouteScreen } from "./features/settings/SettingsAppEditRouteScreen";
+import { SettingsAppOAuthClientRouteScreen } from "./features/settings/SettingsAppOAuthClientRouteScreen";
 import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteScreen";
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
@@ -213,6 +216,27 @@ const SettingsContentStack = createNativeStackNavigator({
       linking: "appearance",
       options: {
         title: "Appearance",
+      },
+    }),
+    SettingsApps: createNativeStackScreen({
+      screen: SettingsAppsRouteScreen,
+      linking: "apps",
+      options: {
+        title: "Apps",
+      },
+    }),
+    SettingsAppEdit: createNativeStackScreen({
+      screen: SettingsAppEditRouteScreen,
+      linking: "apps/edit",
+      options: {
+        title: "App",
+      },
+    }),
+    SettingsAppOAuthClient: createNativeStackScreen({
+      screen: SettingsAppOAuthClientRouteScreen,
+      linking: "apps/oauth-client",
+      options: {
+        title: "OAuth client",
       },
     }),
     SettingsProjectGrouping: createNativeStackScreen({

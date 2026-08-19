@@ -1682,18 +1682,19 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? { model: input.modelSelection.model }
             : {}),
           ...(serviceTier ? { serviceTier } : {}),
-          ...(mcpSession
+          ...(mcpSession && mcpSession.servers.length > 0
             ? {
                 environment: {
                   ...(options?.environment ?? process.env),
                   T3_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(/^Bearer\s+/, ""),
                 },
-                appServerArgs: [
+                // One env var serves every server: they all share the session bearer.
+                appServerArgs: mcpSession.servers.flatMap((server) => [
                   "-c",
-                  `mcp_servers.t3-code.url=${mcpSession.endpoint}`,
+                  `mcp_servers.${server.name}.url=${server.url}`,
                   "-c",
-                  'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
-                ],
+                  `mcp_servers.${server.name}.bearer_token_env_var="T3_MCP_BEARER_TOKEN"`,
+                ]),
               }
             : {}),
         };

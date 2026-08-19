@@ -43,6 +43,9 @@ steps:
     # and die under set -u when the importer omits the file.
     soft_fail: true
     if: build.source != "schedule"
+    # Bound the importer so a hung GHA child cannot leave this step running
+    # for hours on linux-small. Native Mac/Windows steps do not depend on it.
+    timeout_in_minutes: 30
     agents:
       queue: linux-small
     plugins:

@@ -51,6 +51,8 @@ import {
   resolveSourceControlWriterModelSelection,
   ServerSettingsService,
 } from "../../serverSettings.ts";
+import { isAppAttachable } from "../../apps/AppsService.ts";
+import { extractAppMentions, renderAppMentionsPrelude } from "@t3tools/shared/appMentions";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import {
@@ -1194,10 +1196,23 @@ const make = Effect.gen(function* () {
           ),
         })
       : undefined;
+    // `@app` mentions get a one-line pointer to the MCP server that carries the
+    // app's tools; small enough to never fight the budget above.
+    const appsPrelude = normalizedInput
+      ? renderAppMentionsPrelude(
+          extractAppMentions(
+            normalizedInput,
+            Object.values(
+              (yield* serverSettingsService.getSettings.pipe(Effect.orElseSucceed(() => undefined)))
+                ?.apps.connections ?? {},
+            ).filter(isAppAttachable),
+          ),
+        )
+      : undefined;
     // Skills first: they are standing instructions, the handoff is history.
     const inputWithPreludes =
-      skillsPrelude || handoffPrelude
-        ? [skillsPrelude, handoffPrelude, normalizedInput].filter(Boolean).join("\n\n")
+      skillsPrelude || handoffPrelude || appsPrelude
+        ? [skillsPrelude, appsPrelude, handoffPrelude, normalizedInput].filter(Boolean).join("\n\n")
         : normalizedInput;
     const inputWithSubagentPolicy = withSubagentPolicyInstructions(
       inputWithPreludes,

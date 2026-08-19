@@ -144,6 +144,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           providerInstanceId: scope.providerInstanceId,
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,
+          servers: [{ name: McpProviderSession.T3_CODE_MCP_SERVER_NAME, url: endpoint }],
         },
       };
     },
@@ -237,6 +238,17 @@ export const issueActiveMcpCredential = (
  */
 export const touchActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
   activeMcpSessionRegistry ? activeMcpSessionRegistry.touch(threadId) : Effect.void;
+
+/**
+ * Resolves a bearer against the live registry. Routes outside the `/mcp`
+ * middleware (the `/mcp/apps/*` proxy) authenticate through this so they
+ * share the one registry instance without threading the service through
+ * their layer graph.
+ */
+export const resolveActiveMcpCredential = (
+  rawToken: string,
+): Effect.Effect<McpInvocationContext.McpInvocationScope | undefined> =>
+  activeMcpSessionRegistry ? activeMcpSessionRegistry.resolve(rawToken) : Effect.succeed(undefined);
 
 export const revokeActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
   activeMcpSessionRegistry ? activeMcpSessionRegistry.revokeThread(threadId) : Effect.void;

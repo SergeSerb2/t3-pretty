@@ -9,6 +9,7 @@ import { BotIcon, type LucideIcon } from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
+import { AppIcon } from "../apps/AppIcon";
 import { formatProviderSkillInstallSource } from "~/providerSkillPresentation";
 import { cn } from "~/lib/utils";
 import {
@@ -60,6 +61,16 @@ export type ComposerCommandItem =
       skill: ServerProviderSkill;
       label: string;
       description: string;
+    }
+  | {
+      id: string;
+      type: "app";
+      slug: string;
+      name: string;
+      color: string;
+      iconDomain: string | null;
+      label: string;
+      description: string;
     };
 
 type ComposerCommandGroup = {
@@ -96,17 +107,13 @@ function groupCommandItems(
     return items.length > 0 ? [{ id: "skills", label: "Skills", items }] : [];
   }
   if (triggerKind === "path") {
-    const fileItems = items.filter((item) => item.type === "path");
-    const skillItems = items.filter((item) => item.type === "skill");
-    if (skillItems.length === 0) {
-      return [{ id: "default", label: null, items: fileItems }];
-    }
-    const groups: ComposerCommandGroup[] = [];
-    if (fileItems.length > 0) {
-      groups.push({ id: "files", label: "Files", items: fileItems });
-    }
-    groups.push({ id: "skills", label: "Skills", items: skillItems });
-    return groups;
+    const groups: ComposerCommandGroup[] = [
+      { id: "files", label: "Files", items: items.filter((item) => item.type === "path") },
+      { id: "skills", label: "Skills", items: items.filter((item) => item.type === "skill") },
+      { id: "apps", label: "Apps", items: items.filter((item) => item.type === "app") },
+    ].filter((group) => group.items.length > 0);
+    // One kind of result needs no header; `@` is mostly files.
+    return groups.length > 1 ? groups : groups.map((group) => ({ ...group, label: null }));
   }
   if (triggerKind !== "slash-command" || !groupSlashCommandSections) {
     return [{ id: "default", label: null, items }];
@@ -273,6 +280,14 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         <span className="inline-flex size-4 shrink-0 items-center justify-center text-icon-muted">
           <SkillGlyph className="size-3.5" />
         </span>
+      ) : null}
+      {props.item.type === "app" ? (
+        <AppIcon
+          name={props.item.name}
+          color={props.item.color}
+          iconDomain={props.item.iconDomain}
+          size={16}
+        />
       ) : null}
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <span className="shrink-0">{props.item.label}</span>

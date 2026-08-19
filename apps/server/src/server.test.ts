@@ -127,6 +127,8 @@ import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as AgentInstructionFiles from "./instructions/AgentInstructionFiles.ts";
 import * as HostSkills from "./skills/HostSkills.ts";
+import * as AppsService from "./apps/AppsService.ts";
+import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as SkillMarketplace from "./skills/SkillMarketplace.ts";
 import * as SkillStore from "./skills/SkillStore.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
@@ -405,6 +407,7 @@ const buildAppUnderTest = (options?: {
     skillStore?: Partial<SkillStore.SkillStore["Service"]>;
     skillMarketplace?: Partial<SkillMarketplace.SkillMarketplace["Service"]>;
     hostSkills?: Partial<HostSkills.HostSkills["Service"]>;
+    appsService?: Partial<AppsService.AppsService["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
     vcsDriverRegistry?: Partial<VcsDriverRegistry.VcsDriverRegistry["Service"]>;
@@ -697,6 +700,7 @@ const buildAppUnderTest = (options?: {
             resolve: () => Effect.succeed([]),
             ...options?.layers?.hostSkills,
           }),
+          Layer.mock(AppsService.AppsService)({ ...options?.layers?.appsService }),
         ),
       ),
       Layer.provide(
@@ -1510,6 +1514,68 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.equal(response.status, 302);
       assert.equal(response.headers.location, "http://127.0.0.1:5173/foo/bar?token=test-token");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("answers the apps OAuth callback with an HTML page", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          appsService: {
+            completeCallback: ({ state }) =>
+              Effect.succeed({
+                ok: state === "good",
+                connectionName: "Acme",
+                message: state === "good" ? "Connected." : "This authorization link has expired.",
+              }),
+          },
+        },
+      });
+
+      const good = yield* fetchEffect(
+        yield* getHttpServerUrl("/api/apps/oauth/callback?state=good&code=abc"),
+      );
+      assert.equal(good.status, 200);
+      assert.include(good.headers["content-type"], "text/html");
+      assert.include(yield* good.text, "Acme connected");
+
+      const bad = yield* fetchEffect(
+        yield* getHttpServerUrl("/api/apps/oauth/callback?state=stale&code=abc"),
+      );
+      assert.equal(bad.status, 400);
+      assert.include(yield* bad.text, "expired");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("proxies /mcp/apps/:id only for a live provider MCP credential", () =>
+    Effect.gen(function* () {
+      const descriptorUrl = yield* getHttpServerUrl("/.well-known/t3/environment");
+      yield* buildAppUnderTest({
+        layers: {
+          appsService: {
+            resolveUpstream: () => Effect.succeed({ url: descriptorUrl, headers: {} }),
+            recordError: () => Effect.void,
+          },
+        },
+      });
+      const proxyUrl = yield* getHttpServerUrl("/mcp/apps/conn-1");
+
+      const anonymous = yield* fetchEffect(proxyUrl);
+      assert.equal(anonymous.status, 401);
+
+      const issued = yield* McpSessionRegistry.issueActiveMcpCredential({
+        threadId: ThreadId.make("thread-apps-proxy"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+      });
+      assert.ok(issued);
+      const proxied = yield* fetchEffect(proxyUrl, {
+        headers: { authorization: issued!.config.authorizationHeader },
+      });
+      assert.equal(proxied.status, 200);
+      assert.deepEqual(
+        yield* responseJsonEffect<typeof testEnvironmentDescriptor>(proxied),
+        testEnvironmentDescriptor,
+      );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

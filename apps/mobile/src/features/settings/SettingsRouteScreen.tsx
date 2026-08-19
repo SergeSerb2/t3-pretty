@@ -133,6 +133,10 @@ function LocalSettingsRouteScreen() {
           <SettingsRow icon="paintbrush" label="Appearance" target="SettingsAppearance" />
         </SettingsSection>
 
+        <SettingsSection title="Apps">
+          <SettingsRow icon="square.grid.2x2" label="Apps" target="SettingsApps" />
+        </SettingsSection>
+
         <LegacySettingsSection />
 
         <ArchivedThreadsSettingsSection />
@@ -517,6 +521,10 @@ function ConfiguredSettingsRouteScreen() {
 
         <SettingsSection title="Appearance">
           <SettingsRow icon="paintbrush" label="Appearance" target="SettingsAppearance" />
+        </SettingsSection>
+
+        <SettingsSection title="Apps">
+          <SettingsRow icon="square.grid.2x2" label="Apps" target="SettingsApps" />
         </SettingsSection>
 
         <LegacySettingsSection />

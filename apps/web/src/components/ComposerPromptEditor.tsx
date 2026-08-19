@@ -74,12 +74,15 @@ import { basenameOfPath } from "~/pierre-icons";
 import {
   COMPOSER_INLINE_CHIP_DECORATOR_CLASS_NAME,
   COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
+  COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
   COMPOSER_INLINE_SKILL_CHIP_CLASS_NAME,
   COMPOSER_INLINE_SKILL_CHIP_LABEL_CLASS_NAME,
   SKILL_CHIP_ICON_SVG,
 } from "./composerInlineChip";
 import { FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
+import { getComposerAppMention, useComposerAppMention } from "./chat/composerAppMentions";
+import { AppIcon } from "./apps/AppIcon";
 import { formatProviderSkillDisplayName } from "~/providerSkillPresentation";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { registerComposerInlineTokenPaste } from "./composerInlineTokenPaste";
@@ -138,6 +141,7 @@ const ComposerTerminalContextActionsContext = createContext<{
 
 function ComposerMentionDecorator(props: { path: string }) {
   const theme = resolvedThemeFromDocument();
+  const app = useComposerAppMention(props.path.toLowerCase());
   const chip = (
     <span
       className={FILE_TAG_CHIP_CLASS_NAME}
@@ -145,7 +149,20 @@ function ComposerMentionDecorator(props: { path: string }) {
       spellCheck={false}
       data-composer-mention-chip="true"
     >
-      <FileTagChipContent path={props.path} label={basenameOfPath(props.path)} theme={theme} />
+      {app ? (
+        <>
+          <AppIcon
+            name={app.name}
+            color={app.color}
+            iconDomain={app.iconDomain}
+            size={12}
+            className="opacity-85"
+          />
+          <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{app.name}</span>
+        </>
+      ) : (
+        <FileTagChipContent path={props.path} label={basenameOfPath(props.path)} theme={theme} />
+      )}
     </span>
   );
 
@@ -153,7 +170,7 @@ function ComposerMentionDecorator(props: { path: string }) {
     <Tooltip>
       <TooltipTrigger render={chip} />
       <TooltipPopup side="top" className="max-w-120 whitespace-normal leading-tight wrap-anywhere">
-        {props.path}
+        {app ? `App · @${app.slug}` : props.path}
       </TooltipPopup>
     </Tooltip>
   );
@@ -199,6 +216,11 @@ class ComposerMentionNode extends DecoratorNode<React.ReactElement> {
   }
 
   override getTextContent(): string {
+    // App mentions stay bare `@slug` text: that is the token the server
+    // resolves against connected apps. Only paths fold into markdown links.
+    if (getComposerAppMention(this.__path.toLowerCase())) {
+      return `@${this.__path}`;
+    }
     return serializeComposerFileLink(this.__path);
   }
 

@@ -107,6 +107,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(syncScript, "git remote set-url upstream");
     assert.notInclude(syncScript, '>> "$GITHUB_OUTPUT"');
     assert.include(syncScript, "Do not write GITHUB_OUTPUT");
+    assert.include(syncScript, "GIT_TERMINAL_PROMPT");
+    assert.include(sync, 'GIT_TERMINAL_PROMPT: "0"');
     const preparePath = sync.slice(
       sync.indexOf("Prepare macOS runner PATH"),
       sync.indexOf("Checkout fork main"),

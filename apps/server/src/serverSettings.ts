@@ -22,7 +22,6 @@ import {
   ProviderInstanceId,
   ServerSettings,
   ServerSettingsError,
-  type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -49,6 +48,7 @@ import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJso
 import {
   applyServerSettingsPatch,
   isModelSelectionProviderEnabled,
+  type ServerSettingsInternalPatch,
 } from "@t3tools/shared/serverSettings";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 
@@ -175,7 +175,7 @@ export class ServerSettingsService extends Context.Service<
 
     /** Patch settings and persist. Returns the new full settings object. */
     readonly updateSettings: (
-      patch: ServerSettingsPatch,
+      patch: ServerSettingsInternalPatch,
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
 
     /** Stream of settings change events. */

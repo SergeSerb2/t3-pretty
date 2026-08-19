@@ -35,6 +35,8 @@ jobs:
       # Completed per-file resolutions are checkpointed to this branch so a
       # failed or timed-out run's model work survives into the next run.
       RESOLUTION_CACHE_BRANCH: automation/sync-resolution-cache
+      # Fail instead of hanging if Origin HTTPS cannot load credentials.
+      GIT_TERMINAL_PROMPT: "0"
     steps:
       - name: Prepare macOS runner PATH
         # GHA's `shell: bash` is /bin/bash 3.2. Homebrew node and origin live
