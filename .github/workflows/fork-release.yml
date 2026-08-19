@@ -44,6 +44,7 @@ concurrency:
 jobs:
   preflight:
     name: Resolve T3 Pretty release
+    continue-on-error: true
     # contents: write so the changelog step can push the generated release
     # notes commit. The GITHUB_TOKEN push does not retrigger this workflow.
     permissions:
