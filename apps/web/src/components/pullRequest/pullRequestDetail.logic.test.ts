@@ -20,6 +20,7 @@ import {
   groupPullRequestTimelineConversations,
   handoffPrompt,
   handoffReviewComments,
+  isPullRequestFindingThread,
   isPullRequestFixableComment,
   isPullRequestVerdictStale,
   isThreadOwnPullRequest,
@@ -916,16 +917,33 @@ describe("fix findings handoff", () => {
     ]);
   });
 
-  it("names an Origin conversation thread that has no file", () => {
+  it("does not hand ordinary Origin conversation to Fix findings", () => {
     const handoff = buildFixFindingsHandoff({
       ...base,
-      reviewThreads: [thread("keep the hook on one node", { id: "cth_1", path: null, line: null })],
+      reviewThreads: [
+        thread("Origin PR review job failed on this build.", {
+          id: "cth_fail",
+          path: null,
+          line: null,
+        }),
+      ],
       checks: [],
     });
-    expect(handoff.reviewComments[0]).toMatchObject({
-      filePath: "PR #42",
-      rangeLabel: "conversation",
-    });
+    expect(handoff.reviewComments).toEqual([]);
+    expect(handoff.prompt).toContain("No unresolved review findings");
+  });
+
+  it("still hands a Grok finding whose file was parsed from the body", () => {
+    const grokBody = [
+      "<!-- t3-pretty-grok-review sha=deadbeef -->",
+      "",
+      "### bug — Keep the hook on one node",
+      "",
+      "`apps/web/src/app.ts:12`",
+      "",
+      "Keep the hook on one node.",
+    ].join("\n");
+    expect(isPullRequestFindingThread(thread(grokBody, { path: null, line: null }))).toBe(true);
   });
 
   it("keeps failing checks in the prompt, having no line to attach them to", () => {

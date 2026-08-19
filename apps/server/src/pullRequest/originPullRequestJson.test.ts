@@ -129,8 +129,8 @@ describe("origin pull request JSON", () => {
         {
           id: "cth_1",
           path: null,
-          startLine: null,
-          endLine: null,
+          startLine: 0,
+          endLine: 0,
           resolved: false,
           comments: [comment],
         },

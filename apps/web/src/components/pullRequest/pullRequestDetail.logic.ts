@@ -742,7 +742,9 @@ export function buildFixFindingsHandoff(input: {
   // A resolved conversation is finished work, and one nobody wrote in says nothing.
   const threads = input.reviewThreads.filter(
     (thread) =>
-      !thread.isResolved && thread.comments.some((comment) => comment.body.trim().length > 0),
+      isPullRequestFindingThread(thread) &&
+      !thread.isResolved &&
+      thread.comments.some((comment) => comment.body.trim().length > 0),
   );
   // Not every finding can be a chip. A review submitted with words and no inline comment has no
   // line to hang on, and a host that reports no threads at all — Azure DevOps has no diff to pin
@@ -855,6 +857,12 @@ export function isPullRequestFixableComment(
     comment.kind === "review-comment" ||
     parseGrokReviewFinding(comment.body) !== null
   );
+}
+
+/** A file-pinned review, or a Grok finding. Ordinary Origin conversation is not a finding. */
+export function isPullRequestFindingThread(thread: PullRequestReviewThread): boolean {
+  if (thread.path !== null) return true;
+  return thread.comments.some((comment) => parseGrokReviewFinding(comment.body) !== null);
 }
 
 /** The finding a conversation row offers to fix, or none if the remark is only talk. */

@@ -46,6 +46,15 @@ function asNumber(value: unknown): number | null {
   return null;
 }
 
+/** Origin sends 0 for a general comment. That must not block a parsed Grok `path:line`. */
+function firstPositiveLine(...values: ReadonlyArray<unknown>): number | null {
+  for (const value of values) {
+    const line = asNumber(value);
+    if (line !== null && line > 0) return line;
+  }
+  return null;
+}
+
 function asBoolean(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
@@ -349,10 +358,7 @@ export function originThreads(raw: unknown): ReadonlyArray<PullRequestReviewThre
     threads.push({
       id,
       path,
-      line: (() => {
-        const line = asNumber(record.endLine) ?? asNumber(record.startLine) ?? grok?.line ?? null;
-        return line !== null && line > 0 ? line : null;
-      })(),
+      line: firstPositiveLine(record.endLine, record.startLine, grok?.line),
       side: sideRaw === "left" ? "left" : "right",
       isResolved: asBoolean(record.resolved) === true,
       isOutdated: false,

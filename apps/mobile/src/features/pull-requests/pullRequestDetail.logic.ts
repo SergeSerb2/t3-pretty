@@ -474,7 +474,10 @@ export function buildFixFindingsPrompt(input: {
 }): string {
   const threads = input.reviewThreads.filter(
     (thread) =>
-      !thread.isResolved && thread.comments.some((comment) => visibleBody(comment.body) !== null),
+      (thread.path !== null ||
+        thread.comments.some((comment) => parseGrokReviewFinding(comment.body) !== null)) &&
+      !thread.isResolved &&
+      thread.comments.some((comment) => visibleBody(comment.body) !== null),
   );
   const attached = new Set(
     input.reviewThreads.flatMap((thread) => thread.comments.map((comment) => comment.id)),

@@ -7,6 +7,13 @@ import { readLocalApi } from "~/localApi";
 import { Button } from "../ui/button";
 import type { PullRequestFixDestination } from "./pullRequestDetail.logic";
 
+export function canOpenFixFindingMenu(input: {
+  readonly disabled: boolean;
+  readonly pending: boolean;
+}): boolean {
+  return !input.disabled && !input.pending;
+}
+
 export function fixFindingMenuItems(input: {
   readonly thisThreadLabel: string;
   readonly otherThreadLabel: string;
@@ -47,6 +54,7 @@ export function FixFindingButton({
   const onContextMenu = async (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
+    if (!canOpenFixFindingMenu({ disabled, pending })) return;
     const api = readLocalApi();
     if (!api) {
       onFix("new-thread");
