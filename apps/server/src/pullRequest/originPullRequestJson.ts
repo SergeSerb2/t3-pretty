@@ -350,10 +350,11 @@ export function originThreads(raw: unknown): ReadonlyArray<PullRequestReviewThre
             : [];
         })
       : [];
-    // Origin general comments have no path. Grok findings write `path:line` in the body instead.
+    // Origin general comments have no path. Only Grok findings should become review
+    // threads in that case — job-failure / talk already live in `comments`.
     const grok = firstGrokReviewFinding(comments.map((comment) => comment.body));
     const path = asString(record.path) ?? grok?.path ?? null;
-    if (id === null) continue;
+    if (id === null || (path === null && grok === null)) continue;
     const sideRaw = asString(record.side)?.toLowerCase();
     threads.push({
       id,
