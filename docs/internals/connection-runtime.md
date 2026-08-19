@@ -50,7 +50,10 @@ The supervisor is the only retry owner.
    session.
 4. Transient failures retry forever with exponential backoff capped at 16
    seconds (`RETRY_DELAYS_MS`). A connection stable for 30 seconds resets
-   accumulated backoff.
+   accumulated backoff, and when such a connection drops the first reconnect
+   starts immediately instead of sleeping the first rung (a suspended phone
+   whose socket an idle proxy closed, a laptop waking up); only a failure of
+   that immediate attempt walks the ladder.
 5. Authentication or configuration failures remain blocked until an external
    wakeup changes the relevant input.
 6. An involuntary session close keeps the registration and cache, then retries.
@@ -75,11 +78,21 @@ Wakeup handling differs by phase, in [supervisor.ts][supervisor]:
 - While waiting out backoff, application activation resets the retry ladder so a
   foregrounded app reconnects immediately instead of serving the remaining
   delay.
-- Once connected, `monitorConnectedLease` handles plain activation by probing
-  the existing session (`lease.session.probe`, with a shorter timeout for
-  mobile's `application-active-probe`) rather than reconnecting; a healthy
-  session survives foregrounding. `application-active-reconnect` skips the probe
-  and replaces the lease outright.
+- Once connected, `monitorConnectedLease` handles every activation by probing
+  the existing session (`lease.session.probe`, with a shorter timeout for the
+  mobile reasons) rather than reconnecting; a healthy session survives
+  foregrounding. `application-active-reconnect`, which mobile emits after a
+  longer background stint, additionally opens a replacement lease in parallel
+  with the probe (make-before-break): a healthy probe cancels the replacement,
+  while a dead transport (probe failure or timeout, or the peer's buffered
+  close arriving on resume) swaps to the replacement the moment it is ready —
+  without waiting out the probe timeout and without a backoff sleep. The old
+  lease is unpublished as soon as it is known dead so the UI reports the
+  reconnect honestly.
+- Foreground wakeups never rebuild subscriptions on a surviving session: the
+  server keeps streaming into a healthy socket while the app is suspended, so
+  there is nothing to catch up on. Only a replaced session re-handshakes, from
+  the cached cursor.
 
 The UI derives `available`, `offline`, `connecting`, `reconnecting`,
 `connected`, and `error` from supervisor state plus explicit data-sync state.

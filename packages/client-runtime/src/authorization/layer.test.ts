@@ -341,12 +341,52 @@ describe("RemoteEnvironmentAuthorization", () => {
     }),
   );
 
-  it.effect("refreshes a cached endpoint after its first transient failure", () =>
+  it.effect("keeps a cached token when its endpoint fails transiently", () =>
     Effect.gen(function* () {
       const cached = new TokenStore.RemoteDpopAccessToken({
         environmentId: ENVIRONMENT_ID,
         label: DESCRIPTOR.label,
         endpoint: ENDPOINT,
+        accessToken: "cached-access-token",
+        expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+        dpopThumbprint: "thumbprint-1",
+      });
+      const harness = yield* makeHarness({
+        initialToken: cached,
+        responses: [new Response("endpoint unavailable", { status: 503 })],
+      });
+
+      const failure = yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        return yield* remote.authorizeDpop({
+          expectedEnvironmentId: ENVIRONMENT_ID,
+          obtainBootstrap: harness.obtainBootstrap,
+        });
+      }).pipe(Effect.provide(harness.layer), Effect.flip);
+
+      // The relay still points at the same endpoint, so the token is fine and
+      // the attempt fails transiently for the supervisor to retry; a full
+      // re-exchange would only add round trips on the very network that was
+      // just slow.
+      expect(failure._tag).toBe("ConnectionTransientError");
+      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+      expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)).toEqual(
+        expect.objectContaining({ accessToken: "cached-access-token" }),
+      );
+      expect(harness.fetch.calls).toHaveLength(1);
+    }),
+  );
+
+  it.effect("re-exchanges when the relay moved the environment to a new endpoint", () =>
+    Effect.gen(function* () {
+      const cached = new TokenStore.RemoteDpopAccessToken({
+        environmentId: ENVIRONMENT_ID,
+        label: DESCRIPTOR.label,
+        endpoint: {
+          ...ENDPOINT,
+          httpBaseUrl: "https://old-endpoint.example.test",
+          wsBaseUrl: "wss://old-endpoint.example.test",
+        },
         accessToken: "cached-access-token",
         expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
         dpopThumbprint: "thumbprint-1",

@@ -176,7 +176,6 @@ interface SubscriptionOptions<TTag extends EnvironmentSubscriptionRpcTag> {
     cause: Cause.Cause<EnvironmentRpcStreamFailure<TTag>>,
   ) => Effect.Effect<void, never, never>;
   readonly retryExpectedFailureAfter?: Duration.Input;
-  readonly resubscribe?: Stream.Stream<unknown, never, never>;
 }
 
 const SUBSCRIPTION_RETRY_MAX_DELAY_MS = 30_000;
@@ -210,17 +209,7 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
     Effect.gen(function* () {
       const supervisor = yield* EnvironmentSupervisor;
       const observer = yield* EnvironmentRpcSubscriptionObserver;
-      const sessionChanges = SubscriptionRef.changes(supervisor.session);
-      const sessions =
-        options?.resubscribe === undefined
-          ? sessionChanges
-          : Stream.merge(
-              sessionChanges,
-              options.resubscribe.pipe(
-                Stream.mapEffect(() => SubscriptionRef.get(supervisor.session)),
-              ),
-            );
-      return sessions.pipe(
+      return SubscriptionRef.changes(supervisor.session).pipe(
         Stream.switchMap(
           Option.match({
             onNone: () => Stream.empty,

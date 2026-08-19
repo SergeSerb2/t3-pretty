@@ -21,7 +21,6 @@ import { Atom } from "effect/unstable/reactivity";
 import { EnvironmentRegistry } from "../connection/registry.ts";
 import { connectionProjectionPhase } from "../connection/model.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
-import * as ConnectionWakeups from "../connection/wakeups.ts";
 import { EnvironmentCacheStore } from "../platform/persistence.ts";
 import { subscribeDynamic } from "../rpc/client.ts";
 import { ThreadSnapshotLoader, type ThreadSnapshotWindow } from "./threadSnapshotHttp.ts";
@@ -147,7 +146,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const supervisor = yield* EnvironmentSupervisor;
   const cache = yield* EnvironmentCacheStore;
   const snapshotLoader = yield* ThreadSnapshotLoader;
-  const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
   const environmentId = supervisor.target.environmentId;
   const cached = yield* cache.loadThread(environmentId, threadId).pipe(
     Effect.catch((error) =>
@@ -615,12 +613,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     Effect.forkScoped,
   );
 
-  const foregroundResubscriptions = Option.match(wakeups, {
-    onNone: () => Stream.never,
-    onSome: (service) =>
-      service.changes.pipe(Stream.filter(ConnectionWakeups.shouldResubscribeAfterWakeup)),
-  });
-
   yield* setSynchronizing;
   yield* Effect.forkScoped(
     subscribeDynamic(
@@ -709,7 +701,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       {
         onExpectedFailure: setStreamError,
         retryExpectedFailureAfter: "250 millis",
-        resubscribe: foregroundResubscriptions,
       },
     ).pipe(Stream.runForEach((item) => Queue.offer(streamItems, item))),
   );

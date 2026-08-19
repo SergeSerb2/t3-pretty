@@ -33,8 +33,14 @@ export function presentConnectionState(
     case "offline":
       return { phase: "offline", error: null, traceId: null };
     case "connecting":
+      // Once an environment has been connected (generation > 0) every later
+      // attempt is a reconnect, even the immediate, failure-free one that
+      // follows a dropped or resumed session.
       return {
-        phase: state.attempt <= 1 && state.lastFailure === null ? "connecting" : "reconnecting",
+        phase:
+          state.attempt <= 1 && state.lastFailure === null && state.generation === 0
+            ? "connecting"
+            : "reconnecting",
         error: state.lastFailure?.message ?? null,
         traceId: state.lastFailure?.traceId ?? null,
       };

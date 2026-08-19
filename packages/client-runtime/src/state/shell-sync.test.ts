@@ -238,16 +238,10 @@ describe("environment shell synchronization", () => {
       const live = yield* SubscriptionRef.get(shellState);
       expect(Option.getOrThrow(live.snapshot)).toEqual(resetSnapshot);
       expect(yield* Ref.get(loaderCalls)).toBe(0);
-
-      yield* Queue.offer(wakeups, "application-active");
-      const resumedInput = yield* Queue.take(subscribeInputs);
-      expect(resumedInput.afterSequence).toBe(resetSnapshot.snapshotSequence);
-      expect(resumedInput.requestCompletionMarker).toBe(true);
-      expect(yield* Ref.get(loaderCalls)).toBe(0);
     }),
   );
 
-  it.effect("resubscribes from the in-memory shell cursor when the app becomes active", () =>
+  it.effect("keeps a healthy shell subscription across foreground wakeups", () =>
     Effect.gen(function* () {
       const events = yield* Queue.unbounded<OrchestrationShellStreamItem>();
       const wakeups = yield* Queue.unbounded<ConnectionWakeups.ConnectionWakeup>();
@@ -329,39 +323,24 @@ describe("environment shell synchronization", () => {
         Stream.runHead,
       );
 
+      // A session that survives a foreground wakeup already carries every
+      // event the server pushed, so foreground wakeups never rebuild it.
       yield* Queue.offer(wakeups, "application-active");
+      yield* Queue.offer(wakeups, "application-active-probe");
+      yield* Queue.offer(wakeups, "application-active-reconnect");
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        yield* Effect.yieldNow;
+      }
+      expect(yield* Ref.get(capturedAfterSequences)).toEqual([1]);
+      expect((yield* SubscriptionRef.get(shellState)).status).toBe("live");
+
+      // Replacing the session resumes from the in-memory cursor instead of HTTP.
+      yield* SubscriptionRef.set(activeSession, Option.some(session(client)));
       for (let attempt = 0; attempt < 100; attempt += 1) {
         if ((yield* Ref.get(capturedAfterSequences)).length >= 2) break;
         yield* Effect.yieldNow;
       }
       expect(yield* Ref.get(capturedAfterSequences)).toEqual([1, 40]);
-      yield* Queue.offer(events, { kind: "synchronized" });
-
-      yield* Queue.offer(wakeups, "application-active-probe");
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        if ((yield* Ref.get(capturedAfterSequences)).length >= 3) break;
-        yield* Effect.yieldNow;
-      }
-      expect(yield* Ref.get(capturedAfterSequences)).toEqual([1, 40, 40]);
-
-      yield* Queue.offer(wakeups, "application-active-reconnect");
-      // Reconnect wakeups probe first and can keep the session now, so the
-      // resubscribe signal (not a session change) rebuilds the subscription —
-      // from the in-memory cursor as with the other foreground wakeups.
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        if ((yield* Ref.get(capturedAfterSequences)).length >= 4) break;
-        yield* Effect.yieldNow;
-      }
-      expect(yield* Ref.get(capturedAfterSequences)).toEqual([1, 40, 40, 40]);
-      expect(yield* Ref.get(loaderCalls)).toBe(0);
-
-      // Replacing the session resumes from the cached cursor instead of HTTP.
-      yield* SubscriptionRef.set(activeSession, Option.some(session(client)));
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        if ((yield* Ref.get(capturedAfterSequences)).length >= 5) break;
-        yield* Effect.yieldNow;
-      }
-      expect(yield* Ref.get(capturedAfterSequences)).toEqual([1, 40, 40, 40, 40]);
       expect(yield* Ref.get(loaderCalls)).toBe(0);
     }),
   );

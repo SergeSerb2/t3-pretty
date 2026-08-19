@@ -499,7 +499,7 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
-  it.effect("does not resurrect a deleted thread when the app returns to the foreground", () =>
+  it.effect("does not resurrect a deleted thread on a replacement session", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
         cached: BASE_THREAD,
@@ -514,7 +514,7 @@ describe("EnvironmentThreads", () => {
       yield* awaitThreadState(harness.observed, (value) => value.status === "deleted");
 
       expect(yield* Ref.get(harness.loaderCalls)).toBe(0);
-      yield* Queue.offer(harness.wakeups, "application-active");
+      yield* harness.replaceSession;
       for (let attempt = 0; attempt < 100; attempt += 1) {
         if ((yield* Ref.get(harness.subscriptionCount)) >= 2) break;
         yield* Effect.yieldNow;
@@ -779,7 +779,7 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
-  it.effect("resubscribes on app foreground from the latest applied sequence", () =>
+  it.effect("keeps a healthy thread subscription across foreground wakeups", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ cached: BASE_THREAD, completionMarker: true });
       yield* Queue.offer(
@@ -795,44 +795,26 @@ describe("EnvironmentThreads", () => {
           value.data.value.title === "Latest title",
       );
 
+      // A session that survives a foreground wakeup already carries every
+      // event the server pushed, so nothing is rebuilt and the status never
+      // drops out of "live"; only a replacement session re-handshakes.
       yield* Queue.offer(harness.wakeups, "application-active");
-      const synchronizing = yield* awaitThreadState(
-        harness.observed,
-        (value) => value.status === "synchronizing" && Option.isSome(value.data),
-      );
+      yield* Queue.offer(harness.wakeups, "application-active-probe");
+      yield* Queue.offer(harness.wakeups, "application-active-reconnect");
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        yield* Effect.yieldNow;
+      }
+      expect(yield* Ref.get(harness.subscriptionCount)).toBe(1);
+      expect((yield* Ref.get(harness.latest)).status).toBe("live");
+
+      yield* harness.replaceSession;
       for (let attempt = 0; attempt < 100; attempt += 1) {
         if ((yield* Ref.get(harness.subscriptionCount)) >= 2) break;
         yield* Effect.yieldNow;
       }
-
-      expect(synchronizing.status).toBe("synchronizing");
       expect(yield* Ref.get(harness.subscriptionCount)).toBe(2);
       expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBe(CACHED_SNAPSHOT_SEQUENCE + 1);
-      expect(yield* Ref.get(harness.lastRequestCompletionMarker)).toBe(true);
       expect(yield* Ref.get(harness.loaderCalls)).toBe(0);
-
-      yield* Queue.offer(harness.inputs, synchronized());
-      const live = yield* awaitThreadState(
-        harness.observed,
-        (value) => value.status === "live" && Option.isSome(value.data),
-      );
-      expect(Option.getOrThrow(live.data).title).toBe("Latest title");
-
-      yield* Queue.offer(harness.wakeups, "application-active-probe");
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        if ((yield* Ref.get(harness.subscriptionCount)) >= 3) break;
-        yield* Effect.yieldNow;
-      }
-      expect(yield* Ref.get(harness.subscriptionCount)).toBe(3);
-
-      yield* Queue.offer(harness.wakeups, "application-active-reconnect");
-      // A reconnect wakeup can now keep the session (probe-first), so it must
-      // trigger the resubscribe signal rather than relying on a session change.
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        if ((yield* Ref.get(harness.subscriptionCount)) >= 4) break;
-        yield* Effect.yieldNow;
-      }
-      expect(yield* Ref.get(harness.subscriptionCount)).toBe(4);
     }),
   );
 });

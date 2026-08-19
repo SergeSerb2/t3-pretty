@@ -18,6 +18,7 @@ import {
   PrimaryConnectionTarget,
   type PreparedConnection,
 } from "../connection/model.ts";
+import { remoteHttpClientLayer } from "./http.ts";
 import * as RpcSession from "./session.ts";
 
 type SocketEventType = "open" | "message" | "close" | "error";
@@ -153,14 +154,22 @@ const LEGACY_SERVER_CONFIG = {
   },
 };
 
-const makeFactory = Effect.fn("TestRpcSessionFactory.make")(function* () {
+const makeFactory = Effect.fn("TestRpcSessionFactory.make")(function* (options?: {
+  readonly fetch?: typeof fetch;
+}) {
   const sockets: TestWebSocket[] = [];
   const constructorLayer = Layer.succeed(Socket.WebSocketConstructor, (url) => {
     const socket = new TestWebSocket(url);
     sockets.push(socket);
     return socket as unknown as globalThis.WebSocket;
   });
-  const layer = RpcSession.layer.pipe(Layer.provide(constructorLayer));
+  const layer = RpcSession.layer.pipe(
+    Layer.provide(
+      options?.fetch === undefined
+        ? constructorLayer
+        : Layer.merge(constructorLayer, remoteHttpClientLayer(options.fetch)),
+    ),
+  );
   const factory = yield* RpcSession.RpcSessionFactory.pipe(Effect.provide(layer));
   return { factory, sockets };
 });
@@ -265,6 +274,41 @@ describe("RpcSessionFactory", () => {
       });
       yield* Effect.yieldNow;
       expect(sockets).toHaveLength(1);
+    }),
+  );
+
+  it.effect("fetches the initial config over HTTP while the websocket is still opening", () =>
+    Effect.gen(function* () {
+      const configRequests: Array<{ readonly socketState: number | null }> = [];
+      const sockets: TestWebSocket[] = [];
+      const fetchFn = ((request) => {
+        if (String(request).endsWith("/api/server/config")) {
+          configRequests.push({ socketState: sockets[0]?.readyState ?? null });
+          return Promise.resolve(
+            Response.json({ config: ENCODED_SERVER_CONFIG, digest: "digest-1" }),
+          );
+        }
+        return Promise.reject(new Error(`Unexpected request ${String(request)}`));
+      }) satisfies typeof fetch;
+      const factoryHarness = yield* makeFactory({ fetch: fetchFn });
+      const { factory } = factoryHarness;
+      const session = yield* factory.connect(PREPARED);
+      const readyFiber = yield* Effect.forkChild(session.ready);
+      const socket = yield* awaitSocket(factoryHarness.sockets);
+      sockets.push(socket);
+      for (let attempt = 0; attempt < 100 && configRequests.length === 0; attempt += 1) {
+        yield* Effect.yieldNow;
+      }
+
+      // The HTTP fetch is on the wire before the handshake completes, so it
+      // overlaps the socket open instead of following it.
+      expect(configRequests).toHaveLength(1);
+      expect(configRequests[0]?.socketState).not.toBe(TestWebSocket.OPEN);
+      socket.open();
+      yield* Fiber.join(readyFiber);
+
+      expect(yield* session.initialConfig).toEqual(SERVER_CONFIG);
+      expect(socket.sent).toHaveLength(0);
     }),
   );
 
