@@ -798,7 +798,22 @@ describe("hasOptimisticWorkingSettled", () => {
     ).toBe(false);
   });
 
-  it("holds through a ready or stopped flicker without a newly completed turn", () => {
+  it("holds while the session is still the pre-dispatch ready snapshot", () => {
+    const localDispatch = createLocalDispatchSnapshot(
+      makeThread({ latestTurn: completedTurn, session: readySession }),
+    );
+
+    expect(
+      hasOptimisticWorkingSettled({
+        localDispatch,
+        latestTurn: completedTurn,
+        session: readySession,
+        threadError: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("settles when the session is stopped, ready, or idle without a new turn", () => {
     const localDispatch = createLocalDispatchSnapshot(
       makeThread({ latestTurn: completedTurn, session: readySession }),
     );
@@ -810,7 +825,7 @@ describe("hasOptimisticWorkingSettled", () => {
         session: { ...readySession, status: "stopped", updatedAt: "2026-03-29T00:00:12.000Z" },
         threadError: null,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       hasOptimisticWorkingSettled({
         localDispatch,
@@ -818,7 +833,15 @@ describe("hasOptimisticWorkingSettled", () => {
         session: { ...readySession, updatedAt: "2026-03-29T00:00:12.000Z" },
         threadError: null,
       }),
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      hasOptimisticWorkingSettled({
+        localDispatch,
+        latestTurn: completedTurn,
+        session: { ...readySession, status: "idle", updatedAt: "2026-03-29T00:00:12.000Z" },
+        threadError: null,
+      }),
+    ).toBe(true);
   });
 
   it("holds while the new turn is running", () => {
