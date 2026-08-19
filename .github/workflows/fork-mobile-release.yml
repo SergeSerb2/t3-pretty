@@ -66,7 +66,6 @@ env:
 jobs:
   ota:
     name: Publish OTA (${{ github.event_name == 'push' && 'release' || inputs.mode }})
-    continue-on-error: true
     # macos-release: hosted linux-small SIGKILLs the Metro export.
     runs-on: macos-latest
     timeout-minutes: 30

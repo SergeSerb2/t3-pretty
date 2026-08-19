@@ -304,6 +304,8 @@ jobs:
         # the next run regenerates whatever is missing.
         run: node scripts/fork/generate-changelog.mjs
 
+  # Only GHA job that needs preflight. Native DMG/NSIS/relay mint versions
+  # themselves in .buildkite/pipeline.yml and do not read these outputs.
   build_wsl_node_pty:
     name: Build WSL node-pty (linux-x64)
     needs: preflight

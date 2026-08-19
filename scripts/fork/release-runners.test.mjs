@@ -52,6 +52,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(wsl, "PREFLIGHT_REF");
     assert.include(wsl, "ensure-linux-node.sh");
     assert.include(wsl, "needs.preflight.result == 'success'");
+    assert.equal((desktopWorkflow.match(/needs: preflight/g) || []).length, 1);
   });
 
   it("does not rebuild desktop for mobile-only or docs-only commits", () => {
@@ -105,7 +106,7 @@ describe("T3 Pretty release runner placement", () => {
       otaPath.indexOf('ci_env="${dir}/t3-pretty-ci.env"'),
     );
     assert.include(ota, "steps.expo-token.outputs.present == 'true'");
-    assert.include(ota, "continue-on-error: true");
+    assert.notInclude(ota, "continue-on-error: true");
     const dmg = NodeFS.readFileSync(NodePath.resolve(here, "build-macos-dmg.sh"), "utf8");
     assert.notInclude(dmg, "python3 -c");
     assert.notInclude(dmg, "process.stdin.on");
