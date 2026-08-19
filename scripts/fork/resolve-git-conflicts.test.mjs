@@ -278,6 +278,7 @@ ${">".repeat(7)} theirs
     assert.notInclude(syncWorkflow, "--workflow fork-mobile-release.yml");
     assert.include(syncWorkflow, "mobile_release_needed=true");
     assert.include(syncWorkflow, "T3CODE_MOBILE_SKIP_PATH_FILTER=1");
+    assert.include(mobileRelease, "T3CODE_MOBILE_SKIP_PATH_FILTER");
     assert.include(syncWorkflow, "bash scripts/fork/publish-mobile-release.sh");
     assert.include(syncWorkflow, "/tmp/t3-pretty-ios-mobile.lock");
     assert.include(pipeline, "publish-mobile-release.sh");

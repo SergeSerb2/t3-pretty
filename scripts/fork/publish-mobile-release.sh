@@ -102,18 +102,22 @@ load_dotenv() {
   done < "$file"
 }
 
-helper=""
-for candidate in \
-  "/opt/homebrew/etc/buildkite-agent/checkout-origin.sh" \
-  "scripts/fork/checkout-origin.sh"; do
-  if [[ -x "$candidate" ]]; then
-    helper="$candidate"
-    break
+# Upstream sync already has the merged tree. Re-checking out BUILDKITE_COMMIT
+# would reset to the scheduled starting SHA and publish a stale OTA.
+if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" ]]; then
+  helper=""
+  for candidate in \
+    "/opt/homebrew/etc/buildkite-agent/checkout-origin.sh" \
+    "scripts/fork/checkout-origin.sh"; do
+    if [[ -x "$candidate" ]]; then
+      helper="$candidate"
+      break
+    fi
+  done
+  if [[ -n "$helper" ]]; then
+    "$helper" "${BUILDKITE_COMMIT:-$(git rev-parse HEAD)}" --full ||
+      echo "checkout-origin failed; keeping current tree"
   fi
-done
-if [[ -n "$helper" ]]; then
-  "$helper" "${BUILDKITE_COMMIT:-$(git rev-parse HEAD)}" --full ||
-    echo "checkout-origin failed; keeping current tree"
 fi
 
 git fetch --unshallow || true

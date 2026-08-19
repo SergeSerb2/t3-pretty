@@ -100,6 +100,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "restore_eas_json");
     assert.include(mobileRelease, "checkout-origin.sh");
     assert.include(mobileRelease, "--full");
+    assert.include(mobileRelease, "would reset to the scheduled starting SHA");
     assert.include(mobileRelease, 'export GITHUB_OUTPUT="$gate_file"');
     assert.notInclude(mobileRelease, "--github-output");
     assert.include(mobileRelease, "APPLE_TEAM_ID:-78A5P57U23");
