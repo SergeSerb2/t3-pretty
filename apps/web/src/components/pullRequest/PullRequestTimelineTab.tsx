@@ -5,6 +5,7 @@ import type {
   PullRequestDetailView,
   PullRequestRef,
 } from "@t3tools/contracts";
+import { visiblePullRequestConversationComments } from "@t3tools/shared/sourceControl";
 import {
   CheckCircle2Icon,
   ChevronDownIcon,
@@ -538,7 +539,12 @@ export function PullRequestTimelineTab({
   onOpenCommit: (oid: string) => void;
   onRefresh: () => void;
 }) {
-  const events = buildPullRequestTimeline(detail);
+  // Auto-review write-ups stay on the comments tab's reveal. The timeline is a log of
+  // work, and those cards would bury the commits and verdicts between review rounds.
+  const events = buildPullRequestTimeline({
+    ...detail,
+    comments: visiblePullRequestConversationComments(detail.comments, false),
+  });
   const newestCommitAt = newestPullRequestCommitAt(detail.commits);
   const reactions: ReactionSurface = {
     canReact: detail.capabilities.reactions === true,

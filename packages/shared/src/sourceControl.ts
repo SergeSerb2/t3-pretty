@@ -310,6 +310,7 @@ export interface GrokReviewFinding {
 const GROK_REVIEW_MARKER_PATTERN =
   /<!--\s*t3-pretty-grok-review(?:\s+sha=([0-9a-f]{7,40}))?\s*-->/iu;
 const GROK_REVIEW_HEADING_PATTERN = /^###\s+(bug|suggestion|nit)\s+[—–-]\s+(.+)$/mu;
+const GROK_REVIEW_SUMMARY_HEADING_PATTERN = /^## Grok [\d.]+ review\b/mu;
 const GROK_REVIEW_LOCATION_PATTERN = /^`([^`]+)`$/u;
 
 function parseGrokReviewLocation(raw: string): {
@@ -363,6 +364,32 @@ export function parseGrokReviewFinding(body: string): GrokReviewFinding | null {
     line: location.line,
     body: rest.join("\n").trim(),
   };
+}
+
+/**
+ * The bulk write-up posted with each Grok Origin review (`## Grok 4.6 review`). Findings use
+ * the same HTML marker and a `###` heading, so they are not summaries.
+ */
+export function isGrokReviewSummary(body: string): boolean {
+  if (GROK_REVIEW_SUMMARY_HEADING_PATTERN.test(body)) return true;
+  return isGrokReviewComment(body) && parseGrokReviewFinding(body) === null;
+}
+
+export function countGrokReviewSummaries(comments: Iterable<{ readonly body: string }>): number {
+  let count = 0;
+  for (const comment of comments) {
+    if (isGrokReviewSummary(comment.body)) count += 1;
+  }
+  return count;
+}
+
+/** Conversation rows: hide auto-review write-ups unless the reader asked for them. */
+export function visiblePullRequestConversationComments<T extends { readonly body: string }>(
+  comments: ReadonlyArray<T>,
+  includeGrokReviewSummaries: boolean,
+): ReadonlyArray<T> {
+  if (includeGrokReviewSummaries) return comments;
+  return comments.filter((comment) => !isGrokReviewSummary(comment.body));
 }
 
 export function firstGrokReviewFinding(bodies: Iterable<string>): GrokReviewFinding | null {

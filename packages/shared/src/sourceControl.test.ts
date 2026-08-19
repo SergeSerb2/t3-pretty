@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  countGrokReviewSummaries,
   detectSourceControlProviderFromRemoteUrl,
   firstGrokReviewFinding,
   formatGrokReviewLocation,
   getChangeRequestTerminologyForKind,
   isGrokReviewComment,
+  isGrokReviewSummary,
   isSshRemoteUrl,
   parseGrokReviewFinding,
   resolveAutomatedReviewPresentation,
   resolveChangeRequestPresentation,
+  visiblePullRequestConversationComments,
 } from "./sourceControl.ts";
 
 describe("automated review presentation", () => {
@@ -79,7 +82,43 @@ describe("Grok Origin review findings", () => {
       "Looks safe.",
     ].join("\n");
     expect(isGrokReviewComment(summary)).toBe(true);
+    expect(isGrokReviewSummary(summary)).toBe(true);
     expect(parseGrokReviewFinding(summary)).toBeNull();
+  });
+
+  it("treats a marked comment without a finding heading as a summary", () => {
+    expect(isGrokReviewSummary("<!-- t3-pretty-grok-review sha=deadbeef -->\n\nLooks safe.")).toBe(
+      true,
+    );
+  });
+
+  it("recognises the summary heading even if the HTML marker was stripped", () => {
+    expect(isGrokReviewSummary("## Grok 4.6 review\n\nLooks safe.")).toBe(true);
+  });
+
+  it("does not treat a finding as a summary", () => {
+    expect(isGrokReviewSummary(findingBody)).toBe(false);
+  });
+
+  it("hides summaries from the conversation unless they are asked for", () => {
+    const summary = {
+      id: "review",
+      body: [
+        "<!-- t3-pretty-grok-review sha=deadbeef -->",
+        "",
+        "## Grok 4.6 review",
+        "",
+        "Looks safe.",
+      ].join("\n"),
+    };
+    const finding = { id: "finding", body: findingBody };
+    const talk = { id: "talk", body: "please also update the docs" };
+    const comments = [summary, finding, talk];
+    expect(countGrokReviewSummaries(comments)).toBe(1);
+    expect(
+      visiblePullRequestConversationComments(comments, false).map((comment) => comment.id),
+    ).toEqual(["finding", "talk"]);
+    expect(visiblePullRequestConversationComments(comments, true)).toEqual(comments);
   });
 
   it("finds a Grok finding after a reply-only first comment", () => {
@@ -91,6 +130,7 @@ describe("Grok Origin review findings", () => {
   it("ignores ordinary conversation", () => {
     expect(parseGrokReviewFinding("please also update the docs")).toBeNull();
     expect(isGrokReviewComment("please also update the docs")).toBe(false);
+    expect(isGrokReviewSummary("please also update the docs")).toBe(false);
   });
 });
 

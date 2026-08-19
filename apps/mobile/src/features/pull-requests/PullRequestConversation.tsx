@@ -29,6 +29,9 @@ export function PullRequestConversation(props: {
   readonly conversation: ReturnType<typeof groupPullRequestConversation>;
   readonly timeline: ReturnType<typeof buildPullRequestTimeline>;
   readonly busy: boolean;
+  readonly hiddenGrokReviewSummaryCount: number;
+  readonly showGrokReviewSummaries: boolean;
+  readonly onToggleGrokReviewSummaries: () => void;
   readonly onComment: () => void;
   readonly onReview: () => void;
   readonly canReview: boolean;
@@ -41,7 +44,9 @@ export function PullRequestConversation(props: {
 }) {
   const unresolved = countUnresolvedReviewThreads(props.detail.reviewThreads);
   const summary = describePullRequestConversationSummary({
-    commentCount: props.detail.commentCount,
+    commentCount: props.showGrokReviewSummaries
+      ? props.detail.commentCount
+      : Math.max(0, props.detail.commentCount - props.hiddenGrokReviewSummaryCount),
     unresolvedThreadCount: unresolved,
     resolvedThreadCount: props.detail.reviewThreads.length - unresolved,
   });
@@ -69,7 +74,9 @@ export function PullRequestConversation(props: {
     <View className="gap-3 pt-1">
       <View className="gap-2.5">
         <Text className="text-sm text-foreground-muted">{summary}</Text>
-        {props.detail.viewerPermissions.comment || props.canReview ? (
+        {props.detail.viewerPermissions.comment ||
+        props.canReview ||
+        props.hiddenGrokReviewSummaryCount > 0 ? (
           <PullRequestChipRow>
             {props.detail.viewerPermissions.comment ? (
               <PullRequestActionChip icon="text.bubble" label="Comment" onPress={props.onComment} />
@@ -77,14 +84,41 @@ export function PullRequestConversation(props: {
             {props.canReview ? (
               <PullRequestActionChip label="Review" onPress={props.onReview} variant="primary" />
             ) : null}
+            {props.hiddenGrokReviewSummaryCount > 0 ? (
+              <PullRequestActionChip
+                accessibilityLabel={
+                  props.showGrokReviewSummaries
+                    ? "Hide auto-review summaries"
+                    : `Show ${props.hiddenGrokReviewSummaryCount} auto-review ${
+                        props.hiddenGrokReviewSummaryCount === 1 ? "summary" : "summaries"
+                      }`
+                }
+                label={
+                  props.showGrokReviewSummaries
+                    ? "Hide summaries"
+                    : `Show ${props.hiddenGrokReviewSummaryCount} ${
+                        props.hiddenGrokReviewSummaryCount === 1 ? "summary" : "summaries"
+                      }`
+                }
+                onPress={props.onToggleGrokReviewSummaries}
+              />
+            ) : null}
           </PullRequestChipRow>
         ) : null}
       </View>
       {props.conversation.length === 0 ? (
         <EmptyState
           variant="plain"
-          title="No conversation yet"
-          detail="Comments and review threads will appear here."
+          title={
+            props.hiddenGrokReviewSummaryCount > 0 && !props.showGrokReviewSummaries
+              ? "Auto-review summaries are hidden"
+              : "No conversation yet"
+          }
+          detail={
+            props.hiddenGrokReviewSummaryCount > 0 && !props.showGrokReviewSummaries
+              ? "Finding threads and other comments still appear here. Show the summaries if you want the review write-ups."
+              : "Comments and review threads will appear here."
+          }
         />
       ) : (
         props.conversation.map((item) => {
