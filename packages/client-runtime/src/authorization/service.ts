@@ -58,7 +58,9 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
 >()("@t3tools/client-runtime/authorization/service/RemoteEnvironmentAuthorization") {}
 
 const TOKEN_EXPIRY_SAFETY_MARGIN_MS = 60_000;
-const CACHED_ENDPOINT_SOCKET_TIMEOUT_MS = 3_000;
+// The first request after a phone resumes pays radio wake-up plus a cold TLS
+// handshake through the relay; a stale endpoint still fails fast on DNS/TCP.
+const CACHED_ENDPOINT_SOCKET_TIMEOUT_MS = 6_000;
 const BEARER_DESCRIPTOR_CACHE_TTL_MS = 10_000;
 
 function mapDpopSocketError(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
@@ -175,73 +177,21 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const authorizeDpop = Effect.fn("clientRuntime.connection.remote.authorizeDpop")(
-    function* (input: {
-      readonly expectedEnvironmentId: Parameters<
-        RemoteEnvironmentAuthorization["Service"]["authorizeDpop"]
-      >[0]["expectedEnvironmentId"];
-      readonly obtainBootstrap: Parameters<
-        RemoteEnvironmentAuthorization["Service"]["authorizeDpop"]
-      >[0]["obtainBootstrap"];
-    }) {
-      const thumbprint = yield* signer.thumbprint.pipe(
-        Effect.mapError(
-          () =>
-            new ConnectionBlockedError({
-              reason: "configuration",
-              detail: "Could not load the environment authorization key.",
-            }),
-        ),
-        Effect.withSpan("environment.authorization.dpopKey.resolve"),
-      );
-      const now = yield* Clock.currentTimeMillis;
-      const cached = yield* tokenStore
-        .get(input.expectedEnvironmentId)
-        .pipe(Effect.withSpan("environment.authorization.accessToken.cache"));
-      if (
-        Option.isSome(cached) &&
-        cached.value.environmentId === input.expectedEnvironmentId &&
-        cached.value.dpopThumbprint === thumbprint &&
-        cached.value.expiresAtEpochMs > now + TOKEN_EXPIRY_SAFETY_MARGIN_MS
-      ) {
-        yield* Effect.annotateCurrentSpan({
-          "connection.remote_token_cache": "hit",
-        });
-        const cachedSocket = yield* createDpopSocketUrl(
-          cached.value,
-          CACHED_ENDPOINT_SOCKET_TIMEOUT_MS,
-        ).pipe(Effect.result);
-        if (Result.isSuccess(cachedSocket)) {
-          return {
-            environmentId: cached.value.environmentId,
-            label: cached.value.label,
-            httpBaseUrl: cached.value.endpoint.httpBaseUrl,
-            socketUrl: cachedSocket.success,
-            httpAuthorization: {
-              _tag: "Dpop" as const,
-              accessToken: cached.value.accessToken,
-            },
-          };
-        }
-        if (cachedSocket.failure._tag === "ConnectionBlockedError") {
-          return yield* mapDpopSocketError(cachedSocket.failure);
-        }
-        yield* tokenStore
-          .remove(input.expectedEnvironmentId)
-          .pipe(Effect.withSpan("environment.authorization.accessToken.remove"));
-      }
-
-      yield* Effect.annotateCurrentSpan({
-        "connection.remote_token_cache": "miss",
-      });
-      const bootstrap = yield* input.obtainBootstrap;
+  // Cold path: exchange the relay bootstrap credential for a DPoP access token
+  // at the environment, then mint the socket URL with it.
+  const exchangeAndConnect = Effect.fn("clientRuntime.connection.remote.exchangeAndConnect")(
+    function* (
+      expectedEnvironmentId: EnvironmentId,
+      thumbprint: string,
+      bootstrap: RelayEnvironmentAuthorization,
+    ) {
       const descriptor = yield* fetchDescriptor(bootstrap.endpoint.httpBaseUrl).pipe(
         Effect.provideService(HttpClient.HttpClient, httpClient),
         Effect.withSpan("environment.authorization.descriptor"),
       );
-      if (descriptor.environmentId !== input.expectedEnvironmentId) {
+      if (descriptor.environmentId !== expectedEnvironmentId) {
         return yield* environmentMismatchError({
-          expected: input.expectedEnvironmentId,
+          expected: expectedEnvironmentId,
           actual: descriptor.environmentId,
         });
       }
@@ -293,6 +243,91 @@ export const make = Effect.gen(function* () {
           accessToken: token.accessToken,
         },
       };
+    },
+  );
+
+  const authorizeDpop = Effect.fn("clientRuntime.connection.remote.authorizeDpop")(
+    function* (input: {
+      readonly expectedEnvironmentId: Parameters<
+        RemoteEnvironmentAuthorization["Service"]["authorizeDpop"]
+      >[0]["expectedEnvironmentId"];
+      readonly obtainBootstrap: Parameters<
+        RemoteEnvironmentAuthorization["Service"]["authorizeDpop"]
+      >[0]["obtainBootstrap"];
+    }) {
+      const thumbprint = yield* signer.thumbprint.pipe(
+        Effect.mapError(
+          () =>
+            new ConnectionBlockedError({
+              reason: "configuration",
+              detail: "Could not load the environment authorization key.",
+            }),
+        ),
+        Effect.withSpan("environment.authorization.dpopKey.resolve"),
+      );
+      const now = yield* Clock.currentTimeMillis;
+      const cached = yield* tokenStore
+        .get(input.expectedEnvironmentId)
+        .pipe(Effect.withSpan("environment.authorization.accessToken.cache"));
+      if (
+        Option.isSome(cached) &&
+        cached.value.environmentId === input.expectedEnvironmentId &&
+        cached.value.dpopThumbprint === thumbprint &&
+        cached.value.expiresAtEpochMs > now + TOKEN_EXPIRY_SAFETY_MARGIN_MS
+      ) {
+        yield* Effect.annotateCurrentSpan({
+          "connection.remote_token_cache": "hit",
+        });
+        const cachedSocket = yield* createDpopSocketUrl(
+          cached.value,
+          CACHED_ENDPOINT_SOCKET_TIMEOUT_MS,
+        ).pipe(Effect.result);
+        if (Result.isSuccess(cachedSocket)) {
+          return {
+            environmentId: cached.value.environmentId,
+            label: cached.value.label,
+            httpBaseUrl: cached.value.endpoint.httpBaseUrl,
+            socketUrl: cachedSocket.success,
+            httpAuthorization: {
+              _tag: "Dpop" as const,
+              accessToken: cached.value.accessToken,
+            },
+          };
+        }
+        if (cachedSocket.failure._tag === "ConnectionBlockedError") {
+          return yield* mapDpopSocketError(cachedSocket.failure);
+        }
+        const mapped = mapDpopSocketError(cachedSocket.failure);
+        if (mapped._tag === "ConnectionTransientError") {
+          // A slow or unreachable endpoint says nothing about the token. Keep
+          // it and fail the attempt so the supervisor retries with the cache
+          // intact — unless the relay now points the environment somewhere
+          // else, in which case the endpoint really is stale.
+          const bootstrap = yield* input.obtainBootstrap;
+          if (
+            bootstrap.endpoint.httpBaseUrl === cached.value.endpoint.httpBaseUrl &&
+            bootstrap.endpoint.wsBaseUrl === cached.value.endpoint.wsBaseUrl
+          ) {
+            return yield* mapped;
+          }
+          yield* Effect.annotateCurrentSpan({
+            "connection.remote_token_cache": "endpoint-moved",
+          });
+          yield* tokenStore
+            .remove(input.expectedEnvironmentId)
+            .pipe(Effect.withSpan("environment.authorization.accessToken.remove"));
+          return yield* exchangeAndConnect(input.expectedEnvironmentId, thumbprint, bootstrap);
+        }
+        yield* tokenStore
+          .remove(input.expectedEnvironmentId)
+          .pipe(Effect.withSpan("environment.authorization.accessToken.remove"));
+      }
+
+      yield* Effect.annotateCurrentSpan({
+        "connection.remote_token_cache": "miss",
+      });
+      const bootstrap = yield* input.obtainBootstrap;
+      return yield* exchangeAndConnect(input.expectedEnvironmentId, thumbprint, bootstrap);
     },
   );
 

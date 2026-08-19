@@ -829,4 +829,14 @@ describe("makeAggregateState", () => {
       { phase: "running", status: "Editing AgentActivity.tsx" },
     ]);
   });
+
+  it("carries plan progress through to the aggregate row", () => {
+    const aggregate = AgentActivityPublisher.makeAggregateState({
+      activeStates: [{ ...state, progress: 0.4, updatedAt: "1970-01-01T00:58:00.000Z" }],
+      terminalState: null,
+      nowMs: hourMs,
+    });
+
+    expect(aggregate?.activities).toMatchObject([{ phase: "running", progress: 0.4 }]);
+  });
 });

@@ -92,6 +92,10 @@ export const RelayDeviceUnregistrationParams = Schema.Struct({
 });
 export type RelayDeviceUnregistrationParams = typeof RelayDeviceUnregistrationParams.Type;
 
+export const RelayAgentActivityProgress = Schema.Number.check(
+  Schema.isBetween({ minimum: 0, maximum: 1 }),
+);
+
 export const RelayAgentActivityState = Schema.Struct({
   environmentId: EnvironmentId,
   threadId: ThreadId,
@@ -103,6 +107,9 @@ export const RelayAgentActivityState = Schema.Struct({
   modelTitle: TrimmedNonEmptyString,
   updatedAt: TrimmedNonEmptyString,
   deepLink: TrimmedNonEmptyString,
+  // Plan completion ratio for running work, so remote card updates carry the
+  // same progress bar the phone paints from its own thread shells.
+  progress: Schema.optional(RelayAgentActivityProgress),
 });
 export type RelayAgentActivityState = typeof RelayAgentActivityState.Type;
 
@@ -116,6 +123,7 @@ export const RelayAgentActivityAggregateRow = Schema.Struct({
   status: TrimmedNonEmptyString,
   updatedAt: TrimmedNonEmptyString,
   deepLink: TrimmedNonEmptyString,
+  progress: Schema.optional(RelayAgentActivityProgress),
 });
 export type RelayAgentActivityAggregateRow = typeof RelayAgentActivityAggregateRow.Type;
 

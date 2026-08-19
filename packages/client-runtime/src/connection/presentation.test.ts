@@ -62,6 +62,15 @@ describe("connection presentation", () => {
       error: null,
       traceId: null,
     });
+    // An immediate reconnect after a dropped or resumed session carries no
+    // failure but is still a reconnect, not a first connection.
+    expect(
+      presentConnectionState(supervisorState({ phase: "connecting", attempt: 1, generation: 1 })),
+    ).toEqual({
+      phase: "reconnecting",
+      error: null,
+      traceId: null,
+    });
     expect(
       presentConnectionState(
         supervisorState({

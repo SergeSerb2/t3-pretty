@@ -9,6 +9,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
 import { EnvironmentNotRegisteredError, EnvironmentRegistry } from "../connection/registry.ts";
+import * as ConnectionWakeups from "../connection/wakeups.ts";
 import {
   type EnvironmentRpcInput,
   type EnvironmentRpcStreamFailure,
@@ -506,6 +507,9 @@ const isFreshSettledResult = <A, E>(
   return timestamp !== undefined && Date.now() - timestamp < staleTimeMs;
 };
 
+// Long enough for the supervisor's mobile wake probe (3s) to have settled.
+const FOREGROUND_REVALIDATION_SETTLE_MS = 3_500;
+
 export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, ER>,
   options: EnvironmentQueryAtomOptions<Input, A, E, EnvironmentSupervisor | R>,
@@ -513,22 +517,54 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
   readonly environmentId: EnvironmentIdType;
   readonly input: Input;
 }) => Atom.Atom<AsyncResult.AsyncResult<A, E | ER | Error>> {
+  // Revalidation epoch: ticks on every connected generation (a reconnect) and
+  // on a foreground return after a long background stint whose session
+  // survived — the data is just as old either way, and the staleTime gate
+  // below decides per query whether that age warrants a refetch. The survivor
+  // tick waits out the supervisor's wake probe so a session that turns out to
+  // be dead revalidates once, through its replacement's generation, instead of
+  // first on the dead socket.
   const rpcGenerationAtom = Atom.family((environmentId: EnvironmentIdType) =>
     runtime.atom(
       followStreamInEnvironment(
         environmentId,
         Stream.unwrap(
-          EnvironmentSupervisor.pipe(
-            Effect.map((supervisor) =>
-              SubscriptionRef.changes(supervisor.state).pipe(
-                Stream.filterMap((state) =>
-                  state.phase === "connected" ? Result.succeed(state.generation) : Result.failVoid,
-                ),
-                Stream.changes,
-                Stream.map<number, number | null>((generation) => generation),
+          Effect.gen(function* () {
+            const supervisor = yield* EnvironmentSupervisor;
+            const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
+            const generations = SubscriptionRef.changes(supervisor.state).pipe(
+              Stream.filterMap((state) =>
+                state.phase === "connected" ? Result.succeed(state.generation) : Result.failVoid,
               ),
-            ),
-          ),
+              Stream.changes,
+            );
+            const connectedGeneration = SubscriptionRef.get(supervisor.state).pipe(
+              Effect.map((state) => (state.phase === "connected" ? state.generation : null)),
+            );
+            const foregroundReturns = Option.match(wakeups, {
+              onNone: () => Stream.never,
+              onSome: (service) =>
+                service.changes.pipe(
+                  Stream.filter((reason) => reason === "application-active-reconnect"),
+                  Stream.mapEffect(() => connectedGeneration),
+                  Stream.filter((generation) => generation !== null),
+                  Stream.mapEffect((generation) =>
+                    Effect.sleep(FOREGROUND_REVALIDATION_SETTLE_MS).pipe(
+                      Effect.andThen(connectedGeneration),
+                      Effect.map((current) => current === generation),
+                    ),
+                  ),
+                  Stream.filter((survived) => survived),
+                ),
+            });
+            return Stream.merge(generations, foregroundReturns).pipe(
+              Stream.mapAccum(
+                () => 0,
+                (epoch) => [epoch + 1, [epoch + 1]] as const,
+              ),
+              Stream.map<number, number | null>((epoch) => epoch),
+            );
+          }),
         ),
       ),
       { initialValue: null },
@@ -539,7 +575,7 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
     const idleTtlMs = options.idleTtlMs ?? 5 * 60_000;
     const staleTimeMs = options.staleTimeMs ?? 30_000;
     // Atom.swr already skips automatic revalidation while data is fresh, but
-    // this inner read also short-circuits on reconnect (generation bump).
+    // this inner read also short-circuits on reconnect (epoch bump).
     // Manual `registry.refresh` must still hit the server — otherwise a
     // mutation's onSettled refresh is a no-op for 30s and the UI stays stale.
     let skipStaleTime = false;

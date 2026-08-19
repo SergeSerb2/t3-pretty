@@ -73,14 +73,6 @@ function statusForPhase(phase: AgentActivityPhase): string {
   }
 }
 
-function rowProgress(thread: EnvironmentThreadShell): number | undefined {
-  const progress = thread.planProgress;
-  if (!progress || progress.totalSteps <= 0) {
-    return undefined;
-  }
-  return Math.max(0, Math.min(1, progress.completedSteps / progress.totalSteps));
-}
-
 export function liveActivityContentFingerprint(props: AgentActivityProps): string {
   return JSON.stringify({
     activeCount: props.activeCount,
@@ -137,7 +129,6 @@ export function buildLocalLiveActivityProps(input: {
     ) {
       continue;
     }
-    const progress = rowProgress(thread);
     rows.push({
       environmentId: state.environmentId,
       threadId: state.threadId,
@@ -149,7 +140,7 @@ export function buildLocalLiveActivityProps(input: {
         state.phase === "running" && state.detail ? state.detail : statusForPhase(state.phase),
       updatedAt: state.updatedAt,
       deepLink: state.deepLink,
-      ...(progress === undefined ? {} : { progress }),
+      ...(state.progress === undefined ? {} : { progress: state.progress }),
     });
   }
 

@@ -1,19 +1,23 @@
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, type EnvironmentId as EnvironmentIdType } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Latch from "effect/Latch";
 import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
 import { PrimaryConnectionTarget, type SupervisorConnectionState } from "../connection/model.ts";
 import { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
+import * as ConnectionWakeups from "../connection/wakeups.ts";
 import {
   environmentRpcKey,
   createAtomCommandScheduler,
@@ -529,6 +533,10 @@ describe("createEnvironmentQueryAtomFamily", () => {
   ) {
     const executions = yield* Ref.make(0);
     const state = yield* SubscriptionRef.make<SupervisorConnectionState>(connectedState(1));
+    const wakeups = yield* Queue.unbounded<ConnectionWakeups.ConnectionWakeup>();
+    // The atom runtime builds its own context, so the test clock is shared by
+    // instance rather than by layer.
+    const testClock = yield* TestClock.make();
     const supervisor = {
       target: TARGET,
       state,
@@ -538,7 +546,16 @@ describe("createEnvironmentQueryAtomFamily", () => {
       followStream: <A, E, R>(_environmentId: EnvironmentIdType, stream: Stream.Stream<A, E, R>) =>
         Stream.provideService(stream, EnvironmentSupervisor, supervisor),
     } as unknown as EnvironmentRegistry["Service"];
-    const runtime = Atom.runtime(Layer.succeed(EnvironmentRegistry, registryStub));
+    const runtime = Atom.runtime(
+      Layer.mergeAll(
+        Layer.succeed(EnvironmentRegistry, registryStub),
+        Layer.succeed(
+          ConnectionWakeups.ConnectionWakeups,
+          ConnectionWakeups.ConnectionWakeups.of({ changes: Stream.fromQueue(wakeups) }),
+        ),
+        Layer.succeed(Clock.Clock, testClock),
+      ),
+    );
     const queryAtom = createEnvironmentQueryAtomFamily(runtime, {
       label: "test.query",
       staleTimeMs,
@@ -547,8 +564,23 @@ describe("createEnvironmentQueryAtomFamily", () => {
     return {
       executions,
       state,
+      wakeups,
+      testClock,
       atom: queryAtom({ environmentId: TARGET.environmentId, input: "key" }),
     };
+  });
+
+  const settleExecutions = Effect.fn("TestRuntime.settleExecutions")(function* (
+    executions: Ref.Ref<number>,
+    above: number,
+  ) {
+    for (let iteration = 0; iteration < 100; iteration += 1) {
+      if ((yield* Ref.get(executions)) > above) {
+        break;
+      }
+      yield* Effect.yieldNow;
+    }
+    return yield* Ref.get(executions);
   });
 
   it.effect("does not refetch a fresh query when the connection generation bumps", () =>
@@ -616,6 +648,48 @@ describe("createEnvironmentQueryAtomFamily", () => {
       expect(
         yield* AtomRegistry.getResult(registry, harness.atom, { suspendOnWaiting: true }),
       ).toBe(baseline + 1);
+
+      unmount();
+      registry.dispose();
+    }),
+  );
+
+  it.effect("refetches a stale query after a long foreground return keeps its session", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeQueryHarness(0);
+      const registry = AtomRegistry.make();
+      const unmount = registry.mount(harness.atom);
+
+      yield* AtomRegistry.getResult(registry, harness.atom, { suspendOnWaiting: true });
+      for (let iteration = 0; iteration < 100; iteration += 1) {
+        yield* Effect.yieldNow;
+      }
+      const baseline = yield* Ref.get(harness.executions);
+
+      // The session survives the wake probe: nothing happens until the probe
+      // window has passed, then the epoch ticks once.
+      yield* Queue.offer(harness.wakeups, "application-active-reconnect");
+      for (let iteration = 0; iteration < 20; iteration += 1) {
+        yield* Effect.yieldNow;
+      }
+      expect(yield* Ref.get(harness.executions)).toBe(baseline);
+      yield* harness.testClock.adjust("3500 millis");
+      expect(yield* settleExecutions(harness.executions, baseline)).toBe(baseline + 1);
+
+      // A session replaced during the window revalidates through its new
+      // generation only, never twice.
+      yield* Queue.offer(harness.wakeups, "application-active-reconnect");
+      for (let iteration = 0; iteration < 20; iteration += 1) {
+        yield* Effect.yieldNow;
+      }
+      yield* SubscriptionRef.set(harness.state, connectedState(2));
+      const afterReplacement = yield* settleExecutions(harness.executions, baseline + 1);
+      expect(afterReplacement).toBe(baseline + 2);
+      yield* harness.testClock.adjust("3500 millis");
+      for (let iteration = 0; iteration < 20; iteration += 1) {
+        yield* Effect.yieldNow;
+      }
+      expect(yield* Ref.get(harness.executions)).toBe(baseline + 2);
 
       unmount();
       registry.dispose();

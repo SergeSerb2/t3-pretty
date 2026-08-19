@@ -130,7 +130,10 @@ export const make = Effect.gen(function* () {
       Effect.withSpan("environment.websocket.connect"),
     );
     const client = yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolContext));
-    const websocketConfig = client[WS_METHODS.serverGetConfig]({}).pipe(
+    // The WebSocket fallback must not race the handshake: a request queued on
+    // a socket that never opens would only surface as a much later timeout.
+    const websocketConfig = Deferred.await(connected).pipe(
+      Effect.andThen(client[WS_METHODS.serverGetConfig]({})),
       Effect.map((config) => ({ config, digest: serverConfigDigest(config) })),
       Effect.mapError(mapSessionRpcError),
       Effect.tap((snapshot) =>
@@ -179,11 +182,12 @@ export const make = Effect.gen(function* () {
       client,
       initialConfig,
       initialConfigSnapshot,
-      ready: Deferred.await(connected).pipe(
-        Effect.andThen(initialConfig),
-        Effect.asVoid,
-        Effect.raceFirst(Deferred.await(disconnected)),
-      ),
+      // The initial config travels over HTTP, so it is fetched while the
+      // WebSocket handshake is still in flight instead of after it: one fewer
+      // sequential round trip on every (re)connect.
+      ready: Effect.all([Deferred.await(connected), initialConfig], {
+        concurrency: "unbounded",
+      }).pipe(Effect.asVoid, Effect.raceFirst(Deferred.await(disconnected))),
       probe,
       closed: Deferred.await(disconnected),
     } satisfies RpcSession;

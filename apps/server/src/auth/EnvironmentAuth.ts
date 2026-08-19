@@ -706,7 +706,11 @@ export const make = Effect.gen(function* () {
                 ...(input?.proofKeyThumbprint
                   ? {
                       proofKeyThumbprint: input.proofKeyThumbprint,
-                      ttl: Duration.hours(1),
+                      // Sender-constrained by the client's DPoP key, so it can
+                      // outlive a bearer ticket without widening exposure; a
+                      // day keeps a phone's resume on the cached fast path
+                      // instead of a five-leg re-exchange every hour.
+                      ttl: Duration.hours(24),
                     }
                   : {}),
                 client: {

@@ -25,6 +25,7 @@ export interface AgentAwarenessState {
   readonly modelTitle: string;
   readonly updatedAt: string;
   readonly deepLink: string;
+  readonly progress?: number;
 }
 
 export interface ProjectThreadAwarenessInput {
@@ -62,6 +63,7 @@ export function projectThreadAwareness(
   }
 
   const detail = detailForPhase(phase, thread);
+  const progress = progressForPhase(phase, thread);
   return {
     environmentId,
     threadId: thread.id,
@@ -70,6 +72,7 @@ export function projectThreadAwareness(
     phase,
     headline: headlineForPhase(phase),
     ...(detail === undefined ? {} : { detail }),
+    ...(progress === undefined ? {} : { progress }),
     modelTitle: thread.modelSelection.model,
     updatedAt: thread.updatedAt,
     deepLink: buildAgentAwarenessDeepLink({ environmentId, threadId: thread.id }),
@@ -141,6 +144,17 @@ function headlineForPhase(phase: AgentAwarenessPhase): string {
     case "stale":
       return "Update delayed";
   }
+}
+
+function progressForPhase(
+  phase: AgentAwarenessPhase,
+  thread: ProjectThreadAwarenessInput["thread"],
+): number | undefined {
+  const plan = thread.planProgress;
+  if (phase !== "running" || !plan || plan.totalSteps <= 0) {
+    return undefined;
+  }
+  return Math.max(0, Math.min(1, plan.completedSteps / plan.totalSteps));
 }
 
 function detailForPhase(
