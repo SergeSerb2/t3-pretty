@@ -311,6 +311,8 @@ jobs:
         name: Create a monotonic fork version
         continue-on-error: true
         if: steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
+        env:
+          T3_SKIP_UNRESOLVABLE_MINT: "1"
         run: node scripts/fork/resolve-fork-release.mjs
 
       - id: changelog

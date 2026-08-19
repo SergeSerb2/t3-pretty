@@ -90,10 +90,12 @@ function main() {
   const upstreamTag = findNewestIntegratedNightly();
   if (!upstreamTag) {
     const detail = "No integrated upstream nightly tag is an ancestor of HEAD";
-    // Native packagers call `--print` and need a real version. The imported
-    // preflight writes GITHUB_OUTPUT and should skip minting instead of
-    // redding the Buildkite job; Mac/Windows still resolve the version.
-    if (!field && process.env.GITHUB_OUTPUT) {
+    // Native packagers call `--print` and need a real version. Hosted
+    // preflight sets T3_SKIP_UNRESOLVABLE_MINT=1 so a shallow imported
+    // checkout can skip minting instead of redding the Buildkite job.
+    // Do not infer skip from GITHUB_OUTPUT: a mis-wired Actions output
+    // must not swallow a real mint failure.
+    if (!field && process.env.T3_SKIP_UNRESOLVABLE_MINT === "1") {
       process.stderr.write(`${detail}; skipping imported version mint.\n`);
       return;
     }

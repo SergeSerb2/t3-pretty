@@ -86,10 +86,27 @@ it("skips imported minting when no upstream nightly is an ancestor of HEAD", () 
     git(fixtureRoot, "commit", "-m", "test fixture");
     NodeFS.writeFileSync(outputPath, "");
 
+    const githubOutputOnly = NodeChildProcess.spawnSync(process.execPath, [scriptPath], {
+      cwd: fixtureRoot,
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_OUTPUT: outputPath, T3_SKIP_UNRESOLVABLE_MINT: "" },
+    });
+    assert.notEqual(githubOutputOnly.status, 0);
+    assert.match(
+      githubOutputOnly.stderr,
+      /No integrated upstream nightly tag is an ancestor of HEAD/,
+    );
+    assert.equal(/skipping imported version mint/u.test(githubOutputOnly.stderr), false);
+    assert.equal(NodeFS.readFileSync(outputPath, "utf8"), "");
+
     const skipped = NodeChildProcess.spawnSync(process.execPath, [scriptPath], {
       cwd: fixtureRoot,
       encoding: "utf8",
-      env: { ...process.env, GITHUB_OUTPUT: outputPath },
+      env: {
+        ...process.env,
+        GITHUB_OUTPUT: outputPath,
+        T3_SKIP_UNRESOLVABLE_MINT: "1",
+      },
     });
     assert.equal(skipped.status, 0);
     assert.match(skipped.stderr, /skipping imported version mint/);
@@ -101,7 +118,11 @@ it("skips imported minting when no upstream nightly is an ancestor of HEAD", () 
       {
         cwd: fixtureRoot,
         encoding: "utf8",
-        env: { ...process.env, GITHUB_OUTPUT: outputPath },
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: outputPath,
+          T3_SKIP_UNRESOLVABLE_MINT: "1",
+        },
       },
     );
     assert.notEqual(printed.status, 0);
