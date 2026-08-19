@@ -72,6 +72,12 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(wsl, "ensure-linux-node.sh");
     assert.include(wsl, "needs.preflight.result == 'success'");
     assert.include(wsl, "needs.preflight.outputs.should_release == 'true'");
+    assert.include(
+      preflight,
+      "ref: ${{ steps.changelog.outputs.ref || github.sha || env.BUILDKITE_COMMIT }}",
+    );
+    assert.notInclude(preflight, "github.sha || '-'");
+    assert.include(wsl, 'ref="${PREFLIGHT_REF:-${GITHUB_SHA:-${BUILDKITE_COMMIT:-}}}"');
     assert.include(wsl, "WSL prebuild needs a commit SHA; preflight ref is missing.");
     assert.include(wsl, 'if [[ -z "$ref" || "$ref" == "-" ]]; then');
     assert.notInclude(wsl, "exit 0");
