@@ -48,6 +48,8 @@ T3 Code works with the platforms your team already uses:
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation. Origin pull requests at `cursor.com/codebase` open there the same
   way GitHub pull requests do
+- On Origin pull requests, Grok auto-review summary cards stay hidden so the conversation shows
+  findings and discussion. Use **Show auto-review summaries** when you want the write-ups
 - On GitHub pull requests, see emoji reactions on the description and comments — including Codex's
   eyes while it reviews and thumbs-up when it finishes without comments
 - Resolved review conversations collapse in the pull request conversation and on the diff, so you

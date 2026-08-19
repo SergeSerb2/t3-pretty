@@ -15,6 +15,7 @@ import type {
   PullRequestState,
 } from "@t3tools/contracts";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
+import { firstGrokReviewFinding, parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 
 import {
   originPullRequestState,
@@ -41,6 +42,15 @@ function asNumber(value: unknown): number | null {
   if (typeof value === "string" && value.trim().length > 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+/** Origin sends 0 for a general comment. That must not block a parsed Grok `path:line`. */
+function firstPositiveLine(...values: ReadonlyArray<unknown>): number | null {
+  for (const value of values) {
+    const line = asNumber(value);
+    if (line !== null && line > 0) return line;
   }
   return null;
 }
@@ -279,9 +289,12 @@ function commentFromUnknown(
   const id = asString(record.id);
   const body = typeof record.body === "string" ? record.body : asString(record.body);
   if (id === null || body === null) return null;
+  const grok = parseGrokReviewFinding(body);
   return {
     id,
-    kind,
+    // Grok findings are posted as ordinary Origin comments. Promote them so the page treats
+    // them as review remarks (Fix / Resolve) rather than conversation.
+    kind: grok !== null && kind === "issue-comment" ? "review-comment" : kind,
     author: originActor({
       login:
         asString(record.authorId) ??
@@ -293,7 +306,7 @@ function commentFromUnknown(
     body,
     createdAt: asIso(record.createdAt) ?? FALLBACK_ISO,
     url: asString(record.url),
-    path: asString(record.path),
+    path: asString(record.path) ?? grok?.path ?? null,
     reviewState: asString(record.verdict) ?? asString(record.state),
   };
 }
@@ -321,9 +334,6 @@ export function originThreads(raw: unknown): ReadonlyArray<PullRequestReviewThre
     const record = asRecord(entry);
     if (record === null) continue;
     const id = asString(record.id);
-    const path = asString(record.path);
-    if (id === null || path === null) continue;
-    const sideRaw = asString(record.side)?.toLowerCase();
     const comments = Array.isArray(record.comments)
       ? record.comments.flatMap((comment) => {
           const parsed = commentFromUnknown(comment, "review-comment");
@@ -340,13 +350,16 @@ export function originThreads(raw: unknown): ReadonlyArray<PullRequestReviewThre
             : [];
         })
       : [];
+    // Origin general comments have no path. Only Grok findings should become review
+    // threads in that case — job-failure / talk already live in `comments`.
+    const grok = firstGrokReviewFinding(comments.map((comment) => comment.body));
+    const path = asString(record.path) ?? grok?.path ?? null;
+    if (id === null || (path === null && grok === null)) continue;
+    const sideRaw = asString(record.side)?.toLowerCase();
     threads.push({
       id,
       path,
-      line: (() => {
-        const line = asNumber(record.endLine) ?? asNumber(record.startLine);
-        return line !== null && line > 0 ? line : null;
-      })(),
+      line: firstPositiveLine(record.endLine, record.startLine, grok?.line),
       side: sideRaw === "left" ? "left" : "right",
       isResolved: asBoolean(record.resolved) === true,
       isOutdated: false,

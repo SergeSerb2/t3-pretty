@@ -1,6 +1,10 @@
 import type { PullRequestAction, PullRequestMergeMethod } from "@t3tools/contracts";
 import { EnvironmentId } from "@t3tools/contracts";
 import { PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS } from "@t3tools/client-runtime/state/pull-requests";
+import {
+  countGrokReviewSummaries,
+  visiblePullRequestConversationComments,
+} from "@t3tools/shared/sourceControl";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -424,17 +428,26 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     [moreItems],
   );
 
-  const conversation = useMemo(
-    () =>
-      detail === null
-        ? []
-        : groupPullRequestConversation(detail.comments, detail.reviewThreads, "oldest"),
-    [detail],
-  );
-  const timeline = useMemo(
-    () => (detail === null ? [] : buildPullRequestTimeline(detail)),
-    [detail],
-  );
+  const [showGrokReviewSummaries, setShowGrokReviewSummaries] = useState(false);
+  useEffect(() => {
+    setShowGrokReviewSummaries(false);
+  }, [detail?.url]);
+  const grokReviewSummaryCount = detail === null ? 0 : countGrokReviewSummaries(detail.comments);
+  const conversation = useMemo(() => {
+    if (detail === null) return [];
+    return groupPullRequestConversation(
+      visiblePullRequestConversationComments(detail.comments, showGrokReviewSummaries),
+      detail.reviewThreads,
+      "oldest",
+    );
+  }, [detail, showGrokReviewSummaries]);
+  const timeline = useMemo(() => {
+    if (detail === null) return [];
+    return buildPullRequestTimeline({
+      ...detail,
+      comments: visiblePullRequestConversationComments(detail.comments, showGrokReviewSummaries),
+    });
+  }, [detail, showGrokReviewSummaries]);
 
   const conflicting = detail?.mergeability === "conflicting";
   const canMerge =
@@ -657,7 +670,12 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                     canReview={reviewVerdicts.length > 0}
                     conversation={conversation}
                     detail={detail}
+                    hiddenGrokReviewSummaryCount={grokReviewSummaryCount}
+                    showGrokReviewSummaries={showGrokReviewSummaries}
                     timeline={timeline}
+                    onToggleGrokReviewSummaries={() =>
+                      setShowGrokReviewSummaries((current) => !current)
+                    }
                     onComment={() =>
                       navigation.navigate("PullRequestComment", {
                         environmentId: String(environmentId),

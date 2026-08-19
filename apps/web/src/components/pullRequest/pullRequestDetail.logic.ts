@@ -14,6 +14,8 @@ import type {
   SourceControlProviderKind,
 } from "@t3tools/contracts";
 
+import { firstGrokReviewFinding, parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
+
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
 
 /** Activity changes only when the same host resource reports a newer revision. */
@@ -74,6 +76,7 @@ export function pullRequestHandoffLabels(inThisThread: boolean) {
   return inThisThread
     ? {
         fixFinding: "Fix in this thread",
+        fixFindingOther: "Fix in another thread",
         fixCheck: "Fix in this thread",
         fixFindings: "Fix findings in this thread",
         resolve: "Resolve in this thread",
@@ -81,11 +84,22 @@ export function pullRequestHandoffLabels(inThisThread: boolean) {
       }
     : {
         fixFinding: "Fix in a thread",
+        fixFindingOther: "Fix in another thread",
         fixCheck: "Fix",
         fixFindings: "Fix findings in a thread",
         resolve: "Resolve in a new thread",
         resolveConflicts: "Resolve conflicts in a thread",
       };
+}
+
+export type PullRequestFixDestination = "this-thread" | "new-thread";
+
+/** One Reply box per conversation — the last remark, not every card in the thread. */
+export function isThreadReplyAnchor(
+  thread: { readonly comments: ReadonlyArray<{ readonly id: string }> },
+  commentId: string,
+): boolean {
+  return thread.comments.at(-1)?.id === commentId;
 }
 
 export function pullRequestComposerTarget<T>(
@@ -531,21 +545,34 @@ function boundedField(value: string): string {
  * travels with it: the thread names a line of the pull request's diff, which the fresh checkout
  * has not fetched and the reader can open for themselves.
  */
+function grokLocationOnThread(thread: PullRequestReviewThread) {
+  const grok = firstGrokReviewFinding(thread.comments.map((comment) => comment.body));
+  return {
+    path: thread.path ?? grok?.path ?? null,
+    line: thread.line ?? grok?.line ?? null,
+  };
+}
+
 function reviewThreadContext(
   thread: PullRequestReviewThread,
   pullRequestNumber: number,
 ): ReviewCommentContext {
-  const lineIndex = Math.max(0, (thread.line ?? 1) - 1);
+  const location = grokLocationOnThread(thread);
+  const lineIndex = Math.max(0, (location.line ?? 1) - 1);
   return {
     id: `pull-request-finding:${thread.id}`,
     sectionId: `pull-request:${pullRequestNumber}`,
     sectionTitle: `PR #${pullRequestNumber} review`,
-    filePath: thread.path,
+    filePath: location.path ?? `PR #${pullRequestNumber}`,
     startIndex: lineIndex,
     endIndex: lineIndex,
     // A left-side line numbers the file before the change, so the same number means another line.
     rangeLabel:
-      thread.line === null ? "file" : `L${thread.line}${thread.side === "left" ? " (before)" : ""}`,
+      location.path === null
+        ? "conversation"
+        : location.line === null
+          ? "file"
+          : `L${location.line}${thread.side === "left" ? " (before)" : ""}`,
     // Bot bookkeeping lives in HTML comments and would otherwise eat the length bound before
     // the finding itself got any of it.
     text: bounded(
@@ -557,7 +584,7 @@ function reviewThreadContext(
         .join("\n"),
     ),
     diff: "",
-    fenceLanguage: inferReviewCommentFenceLanguage(thread.path),
+    fenceLanguage: inferReviewCommentFenceLanguage(location.path ?? ""),
   };
 }
 
@@ -732,7 +759,9 @@ export function buildFixFindingsHandoff(input: {
   // A resolved conversation is finished work, and one nobody wrote in says nothing.
   const threads = input.reviewThreads.filter(
     (thread) =>
-      !thread.isResolved && thread.comments.some((comment) => comment.body.trim().length > 0),
+      isPullRequestFindingThread(thread) &&
+      !thread.isResolved &&
+      thread.comments.some((comment) => comment.body.trim().length > 0),
   );
   // Not every finding can be a chip. A review submitted with words and no inline comment has no
   // line to hang on, and a host that reports no threads at all — Azure DevOps has no diff to pin
@@ -746,11 +775,7 @@ export function buildFixFindingsHandoff(input: {
     input.reviewThreads.flatMap((thread) => thread.comments.map((comment) => comment.id)),
   );
   const unattachable = input.comments
-    .filter(
-      (comment) =>
-        (comment.kind === "review" || comment.kind === "review-comment") &&
-        !attached.has(comment.id),
-    )
+    .filter((comment) => isPullRequestFixableComment(comment) && !attached.has(comment.id))
     .flatMap((comment) => {
       const body = visibleBody(comment.body);
       if (body === null) return [];
@@ -835,6 +860,39 @@ export type PullRequestFinding =
   | { readonly kind: "thread"; readonly thread: PullRequestReviewThread }
   | { readonly kind: "check"; readonly check: PullRequestCheck }
   | { readonly kind: "comment"; readonly comment: PullRequestComment };
+
+/**
+ * Whether this remark is something to hand to an agent. Review remarks are; talk is not.
+ * Grok Origin findings are posted as ordinary comments, so the marker is what names them.
+ */
+export function isPullRequestFixableComment(
+  comment: Pick<PullRequestComment, "kind" | "body" | "reviewState">,
+): boolean {
+  if (pullRequestReviewOutcome(comment.reviewState) === "approved") return false;
+  return (
+    comment.kind === "review" ||
+    comment.kind === "review-comment" ||
+    parseGrokReviewFinding(comment.body) !== null
+  );
+}
+
+/** A file-pinned review, or a Grok finding. Ordinary Origin conversation is not a finding. */
+export function isPullRequestFindingThread(thread: PullRequestReviewThread): boolean {
+  if (thread.path !== null) return true;
+  return firstGrokReviewFinding(thread.comments.map((comment) => comment.body)) !== null;
+}
+
+/** The finding a conversation row offers to fix, or none if the remark is only talk. */
+export function pullRequestConversationFinding(input: {
+  readonly comment: PullRequestComment;
+  readonly thread: PullRequestReviewThread | undefined;
+  readonly body: string | null;
+}): PullRequestFinding | null {
+  if (!isPullRequestFixableComment(input.comment)) return null;
+  if (input.thread !== undefined) return { kind: "thread", thread: input.thread };
+  if (input.body === null) return null;
+  return { kind: "comment", comment: input.comment };
+}
 
 /** What to call a finding where a button has to fit its name in a few words. */
 export function pullRequestFindingKey(finding: PullRequestFinding): string {

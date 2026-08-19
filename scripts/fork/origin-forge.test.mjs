@@ -157,7 +157,12 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(preflight, "No fork tags are present; refusing to mint a version.");
     assert.include(preflight, "can_mint=false");
     assert.include(preflight, "can_mint=true");
+    assert.include(preflight, "steps.checkout.outputs.ready == 'true'");
     assert.include(preflight, "steps.tags.outputs.can_mint == 'true'");
+    assert.include(preflight, "steps.release.outcome == 'success'");
+    assert.include(preflight, "steps.release.outputs.minted == 'true'");
+    assert.include(preflight, "steps.release.outputs.version != ''");
+    assert.include(preflight, "steps.release.outputs.version != '-'");
     assert.include(preflight, "continue-on-error: true");
     assert.notInclude(mobile, "GITHUB_ENV is required");
     assert.notInclude(mobile, "grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> \"$GITHUB_ENV\"");
@@ -203,6 +208,13 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(mobile, "load_secret APPLE_API_KEY_ID");
     assert.include(mobile, "load_secret APPLE_API_ISSUER");
     assert.include(mobile, "load_secret APPLE_TEAM_ID");
+    assert.include(preflight, "Create a monotonic fork version");
+    const releaseStep = preflight.slice(
+      preflight.indexOf("id: release"),
+      preflight.indexOf("id: changelog"),
+    );
+    assert.include(releaseStep, "T3_SKIP_UNRESOLVABLE_MINT");
+    assert.notInclude(releaseStep, "continue-on-error:");
     assert.include(preflight, "Mac signing secrets are resolved on macos-release");
     assert.include(preflight, "git fetch --force --tags origin");
     assert.include(mobile, "origin-forge.mjs merge-pr");

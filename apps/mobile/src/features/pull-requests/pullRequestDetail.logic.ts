@@ -11,6 +11,7 @@ import type {
   PullRequestState,
   SourceControlProviderKind,
 } from "@t3tools/contracts";
+import { firstGrokReviewFinding, parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 
 /** Plain-language state, shown beside the author. Conflicts are a merge signal, not a state. */
 export function describePullRequestState(state: PullRequestState, isDraft: boolean): string {
@@ -418,10 +419,15 @@ export function buildFixFindingPrompt(input: {
         return body === null ? [] : [`${comment.author?.login ?? "ghost"}: ${body}`];
       })
       .join("\n");
+    const grok = firstGrokReviewFinding(thread.comments.map((comment) => comment.body));
+    const path = thread.path ?? grok?.path ?? null;
+    const line = thread.line ?? grok?.line ?? null;
     const where =
-      thread.line === null
-        ? ` in \`${boundedField(thread.path)}\``
-        : ` on \`${boundedField(thread.path)}\` L${thread.line}${thread.side === "left" ? " (before)" : ""}`;
+      path === null
+        ? ""
+        : line === null
+          ? ` in \`${boundedField(path)}\``
+          : ` on \`${boundedField(path)}\` L${line}${thread.side === "left" ? " (before)" : ""}`;
     const resolveInstruction = resolveFindingsAfterFixInstruction(
       input.provider,
       input.host,
@@ -471,7 +477,10 @@ export function buildFixFindingsPrompt(input: {
 }): string {
   const threads = input.reviewThreads.filter(
     (thread) =>
-      !thread.isResolved && thread.comments.some((comment) => visibleBody(comment.body) !== null),
+      (thread.path !== null ||
+        firstGrokReviewFinding(thread.comments.map((comment) => comment.body)) !== null) &&
+      !thread.isResolved &&
+      thread.comments.some((comment) => visibleBody(comment.body) !== null),
   );
   const attached = new Set(
     input.reviewThreads.flatMap((thread) => thread.comments.map((comment) => comment.id)),
@@ -479,7 +488,9 @@ export function buildFixFindingsPrompt(input: {
   const unattachable = input.comments
     .filter(
       (comment) =>
-        (comment.kind === "review" || comment.kind === "review-comment") &&
+        (comment.kind === "review" ||
+          comment.kind === "review-comment" ||
+          parseGrokReviewFinding(comment.body) !== null) &&
         visibleBody(comment.body) !== null &&
         !attached.has(comment.id),
     )
@@ -515,10 +526,15 @@ export function buildFixFindingsPrompt(input: {
         return body === null ? [] : [`${comment.author?.login ?? "ghost"}: ${body}`];
       })
       .join("\n");
+    const grok = firstGrokReviewFinding(thread.comments.map((comment) => comment.body));
+    const path = thread.path ?? grok?.path ?? null;
+    const line = thread.line ?? grok?.line ?? null;
     const where =
-      thread.line === null
-        ? `\`${boundedField(thread.path)}\``
-        : `\`${boundedField(thread.path)}\` L${thread.line}`;
+      path === null
+        ? "conversation"
+        : line === null
+          ? `\`${boundedField(path)}\``
+          : `\`${boundedField(path)}\` L${line}`;
     return quoted.length > 0 ? [`${where}:`, `> ${bounded(quoted)}`] : [];
   });
 

@@ -1,4 +1,5 @@
 import type { PullRequestComment, PullRequestReviewThread } from "@t3tools/contracts";
+import { formatGrokReviewLocation, parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 import { useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
 
@@ -28,6 +29,9 @@ export function PullRequestConversation(props: {
   readonly conversation: ReturnType<typeof groupPullRequestConversation>;
   readonly timeline: ReturnType<typeof buildPullRequestTimeline>;
   readonly busy: boolean;
+  readonly hiddenGrokReviewSummaryCount: number;
+  readonly showGrokReviewSummaries: boolean;
+  readonly onToggleGrokReviewSummaries: () => void;
   readonly onComment: () => void;
   readonly onReview: () => void;
   readonly canReview: boolean;
@@ -40,7 +44,9 @@ export function PullRequestConversation(props: {
 }) {
   const unresolved = countUnresolvedReviewThreads(props.detail.reviewThreads);
   const summary = describePullRequestConversationSummary({
-    commentCount: props.detail.commentCount,
+    commentCount: props.showGrokReviewSummaries
+      ? props.detail.commentCount
+      : Math.max(0, props.detail.commentCount - props.hiddenGrokReviewSummaryCount),
     unresolvedThreadCount: unresolved,
     resolvedThreadCount: props.detail.reviewThreads.length - unresolved,
   });
@@ -68,7 +74,9 @@ export function PullRequestConversation(props: {
     <View className="gap-3 pt-1">
       <View className="gap-2.5">
         <Text className="text-sm text-foreground-muted">{summary}</Text>
-        {props.detail.viewerPermissions.comment || props.canReview ? (
+        {props.detail.viewerPermissions.comment ||
+        props.canReview ||
+        props.hiddenGrokReviewSummaryCount > 0 ? (
           <PullRequestChipRow>
             {props.detail.viewerPermissions.comment ? (
               <PullRequestActionChip icon="text.bubble" label="Comment" onPress={props.onComment} />
@@ -76,14 +84,41 @@ export function PullRequestConversation(props: {
             {props.canReview ? (
               <PullRequestActionChip label="Review" onPress={props.onReview} variant="primary" />
             ) : null}
+            {props.hiddenGrokReviewSummaryCount > 0 ? (
+              <PullRequestActionChip
+                accessibilityLabel={
+                  props.showGrokReviewSummaries
+                    ? "Hide auto-review summaries"
+                    : `Show ${props.hiddenGrokReviewSummaryCount} auto-review ${
+                        props.hiddenGrokReviewSummaryCount === 1 ? "summary" : "summaries"
+                      }`
+                }
+                label={
+                  props.showGrokReviewSummaries
+                    ? "Hide summaries"
+                    : `Show ${props.hiddenGrokReviewSummaryCount} ${
+                        props.hiddenGrokReviewSummaryCount === 1 ? "summary" : "summaries"
+                      }`
+                }
+                onPress={props.onToggleGrokReviewSummaries}
+              />
+            ) : null}
           </PullRequestChipRow>
         ) : null}
       </View>
       {props.conversation.length === 0 ? (
         <EmptyState
           variant="plain"
-          title="No conversation yet"
-          detail="Comments and review threads will appear here."
+          title={
+            props.hiddenGrokReviewSummaryCount > 0 && !props.showGrokReviewSummaries
+              ? "Auto-review summaries are hidden"
+              : "No conversation yet"
+          }
+          detail={
+            props.hiddenGrokReviewSummaryCount > 0 && !props.showGrokReviewSummaries
+              ? "Finding threads and other comments still appear here. Show the summaries if you want the review write-ups."
+              : "Comments and review threads will appear here."
+          }
         />
       ) : (
         props.conversation.map((item) => {
@@ -140,6 +175,50 @@ export function PullRequestConversation(props: {
   );
 }
 
+function GrokFindingBody(props: { readonly body: string; readonly fallbackPath?: string | null }) {
+  const grokFinding = parseGrokReviewFinding(props.body);
+  const location = grokFinding
+    ? formatGrokReviewLocation(grokFinding)
+    : (props.fallbackPath ?? null);
+  const markdown = grokFinding?.body ?? props.body;
+  return (
+    <>
+      {grokFinding ? (
+        <View className="mt-2.5 gap-1.5">
+          {location ? (
+            <Text className="font-mono text-2xs text-foreground-tertiary" numberOfLines={1}>
+              {location}
+            </Text>
+          ) : null}
+          <View className="flex-row items-start gap-2">
+            <Text
+              className={
+                grokFinding.severity === "bug"
+                  ? "text-2xs font-t3-bold uppercase text-danger-foreground"
+                  : "text-2xs font-t3-bold uppercase text-foreground-muted"
+              }
+            >
+              {grokFinding.severity}
+            </Text>
+            <Text className="min-w-0 flex-1 text-sm font-t3-bold text-foreground">
+              {grokFinding.title}
+            </Text>
+          </View>
+        </View>
+      ) : location ? (
+        <Text className="mt-2 font-mono text-2xs text-foreground-tertiary" numberOfLines={1}>
+          {location}
+        </Text>
+      ) : null}
+      {hasVisiblePullRequestBody(markdown) ? (
+        <View className="mt-2.5">
+          <PullRequestMarkdown density="comment" markdown={markdown} />
+        </View>
+      ) : null}
+    </>
+  );
+}
+
 function IssueCommentCard(props: { readonly comment: PullRequestComment }) {
   const reviewState = props.comment.reviewState
     ? formatReviewState(props.comment.reviewState)
@@ -151,16 +230,7 @@ function IssueCommentCard(props: { readonly comment: PullRequestComment }) {
         createdAt={props.comment.createdAt}
         reviewState={reviewState}
       />
-      {props.comment.path ? (
-        <Text className="mt-2 font-mono text-2xs text-foreground-tertiary" numberOfLines={1}>
-          {props.comment.path}
-        </Text>
-      ) : null}
-      {hasVisiblePullRequestBody(props.comment.body) ? (
-        <View className="mt-2.5">
-          <PullRequestMarkdown density="comment" markdown={props.comment.body} />
-        </View>
-      ) : null}
+      <GrokFindingBody body={props.comment.body} fallbackPath={props.comment.path} />
     </View>
   );
 }
@@ -185,7 +255,10 @@ function ReviewThreadCard(props: {
     setExpanded(!props.resolved);
   }, [props.resolved]);
 
-  const location = `${props.thread.path}${props.thread.line === null ? "" : `:${props.thread.line}`}`;
+  const location =
+    props.thread.path === null
+      ? null
+      : `${props.thread.path}${props.thread.line === null ? "" : `:${props.thread.line}`}`;
 
   return (
     <View className="rounded-2xl bg-card px-4 py-3.5">
@@ -210,10 +283,16 @@ function ReviewThreadCard(props: {
               {props.resolved ? "Resolved" : "Open"} · {commentCount}{" "}
               {commentCount === 1 ? "comment" : "comments"}
             </Text>
-            <Text className="mt-0.5 font-mono text-2xs text-foreground-tertiary" numberOfLines={1}>
-              {location}
-              {props.thread.isOutdated ? " · Outdated" : ""}
-            </Text>
+            {location || props.thread.isOutdated ? (
+              <Text
+                className="mt-0.5 font-mono text-2xs text-foreground-tertiary"
+                numberOfLines={1}
+              >
+                {location}
+                {location && props.thread.isOutdated ? " · " : ""}
+                {props.thread.isOutdated ? "Outdated" : ""}
+              </Text>
+            ) : null}
           </View>
           <SymbolView
             name={expanded ? "chevron.up" : "chevron.down"}
@@ -229,11 +308,10 @@ function ReviewThreadCard(props: {
           {props.thread.comments.map((comment, index) => (
             <View key={comment.id} className={cn(index > 0 && "border-t border-border pt-3")}>
               <CommentHeader actor={comment.author} createdAt={comment.createdAt} />
-              {hasVisiblePullRequestBody(comment.body) ? (
-                <View className="mt-2">
-                  <PullRequestMarkdown density="comment" markdown={comment.body} />
-                </View>
-              ) : null}
+              <GrokFindingBody
+                body={comment.body}
+                fallbackPath={index === 0 ? props.thread.path : null}
+              />
             </View>
           ))}
         </View>

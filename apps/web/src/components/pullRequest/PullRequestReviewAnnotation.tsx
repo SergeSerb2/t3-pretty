@@ -9,27 +9,28 @@ import type {
   PullRequestThreadCommentsResult,
   PullRequestThreadComment,
 } from "@t3tools/contracts";
+import { parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 import {
   CheckCircle2Icon,
   CircleIcon,
-  HammerIcon,
   MessageSquareIcon,
   PencilIcon,
   Trash2Icon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { cn } from "~/lib/utils";
 
 import { Button } from "../ui/button";
+import { FixFindingButton } from "./FixFindingButton";
 import { Textarea } from "../ui/textarea";
 import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
 import {
   editPullRequestThreadComment,
   mergePullRequestThreadComments,
+  type PullRequestFixDestination,
 } from "./pullRequestDetail.logic";
-import { PullRequestActorLabel } from "./pullRequestPresentation";
+import { GrokReviewFindingHeader, PullRequestActorLabel } from "./pullRequestPresentation";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
@@ -102,6 +103,8 @@ export function ReviewThreadCard({
   fixPending,
   fixDisabled,
   fixLabel = "Fix in a thread",
+  fixOtherLabel = "Fix in another thread",
+  canFixInThisThread = false,
   onFix,
   onReply,
   onLoadMore,
@@ -124,8 +127,10 @@ export function ReviewThreadCard({
   /** True while any hand-off is preparing, so a click is not silently ignored. */
   fixDisabled?: boolean;
   fixLabel?: string;
+  fixOtherLabel?: string;
+  canFixInThisThread?: boolean;
   /** Absent where a thread is shown outside the pull request page's reach. */
-  onFix?: () => void;
+  onFix?: (destination: PullRequestFixDestination) => void;
   /** Resolves to whether the host took it, so a reply that failed keeps the words it was given. */
   onReply: (body: string) => Promise<boolean>;
   /** Reads one more page only after the reader asks for it. */
@@ -247,16 +252,16 @@ export function ReviewThreadCard({
         </button>
         {thread.isOutdated ? <span>outdated</span> : null}
         {onFix ? (
-          <Button
-            size="xs"
-            variant="ghost"
-            className="ml-auto"
-            disabled={pending || fixPending || Boolean(fixDisabled)}
-            onClick={onFix}
-          >
-            <HammerIcon className="size-3" />
-            {fixPending ? "Preparing..." : fixLabel}
-          </Button>
+          <span className="ml-auto">
+            <FixFindingButton
+              label={fixLabel}
+              otherThreadLabel={fixOtherLabel}
+              canFixInThisThread={canFixInThisThread}
+              pending={Boolean(fixPending)}
+              disabled={pending || Boolean(fixPending) || Boolean(fixDisabled)}
+              onFix={onFix}
+            />
+          </span>
         ) : null}
         {canResolve ? (
           <Button
@@ -274,53 +279,65 @@ export function ReviewThreadCard({
       {expanded ? (
         <>
           <div className="mt-2 space-y-3">
-            {comments.map((comment) => (
-              <article key={comment.id} className="group min-w-0">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <PullRequestActorLabel actor={comment.author} className="text-foreground" />
-                  <span>{formatRelativeTimeLabel(comment.createdAt)}</span>
-                </div>
-                {editingId === comment.id ? (
-                  <PullRequestMarkdownEditor
-                    className="mt-1"
-                    value={comment.body}
-                    cwd={workspaceRoot}
-                    label="Edit comment"
-                    saving={savingEdit}
-                    onSave={(body) => void saveEdit(comment.id, body)}
-                    onCancel={() => setEditingId(null)}
-                  />
-                ) : (
-                  <div className="mt-1 flex items-start gap-1">
-                    <PullRequestMarkdown
-                      className="min-w-0 flex-1 text-sm"
-                      text={comment.body}
-                      cwd={workspaceRoot}
-                    />
-                    {canEditComment(comment) ? (
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
-                        aria-label="Edit comment"
-                        onClick={() => setEditingId(comment.id)}
-                      >
-                        <PencilIcon className="size-3" />
-                      </Button>
-                    ) : null}
+            {comments.map((comment) => {
+              const grokFinding = parseGrokReviewFinding(comment.body);
+              return (
+                <article key={comment.id} className="group min-w-0">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <PullRequestActorLabel actor={comment.author} className="text-foreground" />
+                    <span>{formatRelativeTimeLabel(comment.createdAt)}</span>
                   </div>
-                )}
-                <PullRequestReactionBar
-                  className="mt-1.5"
-                  reactions={comment.reactions ?? []}
-                  canReact={canReact}
-                  subjectId={comment.id}
-                  environmentId={environmentId}
-                  reference={reference}
-                  onRefresh={onReacted}
-                />
-              </article>
-            ))}
+                  {editingId === comment.id ? (
+                    <PullRequestMarkdownEditor
+                      className="mt-1"
+                      value={comment.body}
+                      cwd={workspaceRoot}
+                      label="Edit comment"
+                      saving={savingEdit}
+                      onSave={(body) => void saveEdit(comment.id, body)}
+                      onCancel={() => setEditingId(null)}
+                    />
+                  ) : (
+                    <div className="mt-1 flex items-start gap-1">
+                      <div className="min-w-0 flex-1">
+                        {grokFinding ? (
+                          <div className="mb-1.5">
+                            <GrokReviewFindingHeader finding={grokFinding} />
+                          </div>
+                        ) : null}
+                        {(grokFinding?.body ?? comment.body).trim().length > 0 ? (
+                          <PullRequestMarkdown
+                            className="text-sm"
+                            text={grokFinding?.body ?? comment.body}
+                            cwd={workspaceRoot}
+                          />
+                        ) : null}
+                      </div>
+                      {canEditComment(comment) ? (
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+                          aria-label="Edit comment"
+                          onClick={() => setEditingId(comment.id)}
+                        >
+                          <PencilIcon className="size-3" />
+                        </Button>
+                      ) : null}
+                    </div>
+                  )}
+                  <PullRequestReactionBar
+                    className="mt-1.5"
+                    reactions={comment.reactions ?? []}
+                    canReact={canReact}
+                    subjectId={comment.id}
+                    environmentId={environmentId}
+                    reference={reference}
+                    onRefresh={onReacted}
+                  />
+                </article>
+              );
+            })}
           </div>
           {nextCommentsCursor !== null ? (
             <div className="mt-2">

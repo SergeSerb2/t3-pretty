@@ -25,6 +25,8 @@ export type PullRequestPanelViewSnapshot = {
   readonly scrollTopByTab?: Partial<Record<PullRequestPanelTab, number>>;
   readonly commentOrder?: "newest" | "oldest";
   readonly shownCommentCount?: number;
+  /** Origin Grok auto-review write-ups stay hidden unless the reader asks for them. */
+  readonly showGrokReviewSummaries?: boolean;
   readonly sectionOpen?: Partial<Record<PullRequestSummarySection, boolean>>;
 };
 

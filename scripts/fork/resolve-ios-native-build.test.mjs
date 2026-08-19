@@ -190,6 +190,8 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(source, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
     assert.notInclude(source, '"$MODE" == "build" || "$MODE" == "release"');
     assert.include(source, "Native fingerprint is unchanged");
+    assert.include(source, "No native macos-release TestFlight submit recorded");
+    assert.include(source, ".t3-fork/ios-native-submit");
   });
 
   it("treats a malformed EAS build list as no previous binary", () => {

@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  countGrokReviewSummaries,
   detectSourceControlProviderFromRemoteUrl,
+  firstGrokReviewFinding,
+  formatGrokReviewLocation,
   getChangeRequestTerminologyForKind,
+  isGrokReviewComment,
+  isGrokReviewSummary,
   isSshRemoteUrl,
+  parseGrokReviewFinding,
   resolveAutomatedReviewPresentation,
   resolveChangeRequestPresentation,
+  visiblePullRequestConversationComments,
 } from "./sourceControl.ts";
 
 describe("automated review presentation", () => {
@@ -37,6 +44,93 @@ describe("automated review presentation", () => {
       "Auto review left feedback",
       "Earlier auto review",
     ]);
+  });
+});
+
+describe("Grok Origin review findings", () => {
+  const findingBody = [
+    "<!-- t3-pretty-grok-review sha=c2101ed120a579136e59d3757b3905364c66d6dc -->",
+    "",
+    "### bug — Inline frost loses to nested transparent rule",
+    "",
+    "`apps/web/src/scenery/scenery.css:943`",
+    "",
+    "The descendant selector wins.",
+    "",
+  ].join("\n");
+
+  it("parses a posted finding into severity, title, path, and body", () => {
+    expect(parseGrokReviewFinding(findingBody)).toEqual({
+      sha: "c2101ed120a579136e59d3757b3905364c66d6dc",
+      severity: "bug",
+      title: "Inline frost loses to nested transparent rule",
+      path: "apps/web/src/scenery/scenery.css",
+      line: 943,
+      body: "The descendant selector wins.",
+    });
+    expect(formatGrokReviewLocation({ path: "apps/web/src/scenery/scenery.css", line: 943 })).toBe(
+      "apps/web/src/scenery/scenery.css · L943",
+    );
+  });
+
+  it("does not treat the review summary as a finding", () => {
+    const summary = [
+      "<!-- t3-pretty-grok-review sha=deadbeef -->",
+      "",
+      "## Grok 4.6 review",
+      "",
+      "Looks safe.",
+    ].join("\n");
+    expect(isGrokReviewComment(summary)).toBe(true);
+    expect(isGrokReviewSummary(summary)).toBe(true);
+    expect(parseGrokReviewFinding(summary)).toBeNull();
+  });
+
+  it("treats a marked comment without a finding heading as a summary", () => {
+    expect(isGrokReviewSummary("<!-- t3-pretty-grok-review sha=deadbeef -->\n\nLooks safe.")).toBe(
+      true,
+    );
+  });
+
+  it("recognises the summary heading even if the HTML marker was stripped", () => {
+    expect(isGrokReviewSummary("## Grok 4.6 review\n\nLooks safe.")).toBe(true);
+  });
+
+  it("does not treat a finding as a summary", () => {
+    expect(isGrokReviewSummary(findingBody)).toBe(false);
+  });
+
+  it("hides summaries from the conversation unless they are asked for", () => {
+    const summary = {
+      id: "review",
+      body: [
+        "<!-- t3-pretty-grok-review sha=deadbeef -->",
+        "",
+        "## Grok 4.6 review",
+        "",
+        "Looks safe.",
+      ].join("\n"),
+    };
+    const finding = { id: "finding", body: findingBody };
+    const talk = { id: "talk", body: "please also update the docs" };
+    const comments = [summary, finding, talk];
+    expect(countGrokReviewSummaries(comments)).toBe(1);
+    expect(
+      visiblePullRequestConversationComments(comments, false).map((comment) => comment.id),
+    ).toEqual(["finding", "talk"]);
+    expect(visiblePullRequestConversationComments(comments, true)).toEqual(comments);
+  });
+
+  it("finds a Grok finding after a reply-only first comment", () => {
+    expect(firstGrokReviewFinding(["Fixed the frost.", findingBody])?.path).toBe(
+      "apps/web/src/scenery/scenery.css",
+    );
+  });
+
+  it("ignores ordinary conversation", () => {
+    expect(parseGrokReviewFinding("please also update the docs")).toBeNull();
+    expect(isGrokReviewComment("please also update the docs")).toBe(false);
+    expect(isGrokReviewSummary("please also update the docs")).toBe(false);
   });
 });
 

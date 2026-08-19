@@ -1,20 +1,124 @@
 # T3 Pretty upstream integration report
 
-- Parent nightly: `v0.0.34-nightly.20260817.1120`
-- Previously integrated parent nightly: `v0.0.34-nightly.20260817.1119`
+- Parent nightly: `v0.0.34-nightly.20260819.1132`
+- Previously integrated parent nightly: `v0.0.34-nightly.20260817.1120`
 - Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
 
 ## T3 Pretty changes preserved at conflict boundaries
 
-- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — T3 Pretty's shared snoozed/settled shelf-header design, including distinct clock and checkmark-circle imagery, persistent labels and tabular counts, and fork-specific theme colors.
-- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Screen, sidebar, and World Scenery spacing behavior, including the scenery-specific HOME_HORIZONTAL_INSET calculation.
-- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — The unified settled-shelf implementation and its accessibility labels, hints, expanded state, press feedback, and 44-point minimum touch target.
+- `apps/desktop/src/preview/Manager.test.ts` — Per-preview WebContents background-throttling state and setters remain present in all affected recording and screencast test fixtures.
+- `apps/desktop/src/preview/Manager.test.ts` — T3 Pretty's hidden-preview recording, concurrent capture, debugger screencast, and recording/PiP sharing coverage continues to exercise guest-level throttling.
+- `apps/desktop/src/preview/Manager.test.ts` — The shared recording/PiP test retains a dedicated guest throttling spy and its bounded-call assertions rather than allowing the parent fixture changes to replace it.
+- `apps/desktop/src/preview/Manager.ts` — Frame capture keeps a source-scoped background-throttling lease that records and restores each captured WebContents' original value rather than forcing a global final state.
+- `apps/desktop/src/preview/Manager.ts` — An active recording or picture-in-picture capture follows a replacement preview guest, disables throttling on the new source, and restores the previous source safely.
+- `apps/desktop/src/preview/Manager.ts` — Released capture sessions cannot be resurrected by an in-flight webview attachment, preserving T3 Pretty's lifecycle and performance safeguards.
+- `apps/desktop/src/preview/Manager.ts` — Desktop preview efficiency is protected by avoiding parent-wide main-window throttling changes when only a capture source needs to remain active.
+- `apps/desktop/src/window/DesktopWindow.ts` — T3 Pretty's desktop efficiency intent remains in effect after initial reveal: background throttling is re-enabled so subsequently hidden or minimized windows remain inexpensive.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Threads do not automatically transition to settled when an associated pull request merges, preserving T3 Pretty commit 741e4bc9a.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The thread-list memo no longer depends on the merge auto-settlement setting, consistent with that behavior being disabled.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — The surrounding T3 Pretty sidebar behavior remains intact, including capability-gated settlement and snoozing, precise snooze wakeups, scoped pending-task placement, filtering, and settled-shelf behavior.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Merged pull requests do not automatically settle threads. The first-pass resolver briefly restored the parent `autoSettleOnMerge` input; that was reversed so the sidebar matches Home, web, and the shared settle API.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Preserved T3 Pretty’s thread lifecycle behavior: merging a pull request does not automatically settle its thread.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Kept the regression test independent of the removed `autoSettleOnMerge` opt-out, so it verifies the fork’s unconditional behavior.
+- `apps/mobile/src/features/threads/threadListV2.ts` — Preserved T3 Pretty's thread lifecycle behavior that merging a pull request does not automatically settle the associated thread.
+- `apps/server/src/git/GitManager.test.ts` — The GitManager status test continues to verify that Codex automated-review metadata is surfaced for an existing open pull request.
+- `apps/server/src/git/GitManager.ts` — Automated-review signals remain present in PR status results, preserving T3 Pretty's Codex auto-review status behavior.
+- `apps/server/src/git/GitManager.ts` — PR lookup cache identity still distinguishes status versus settlement lookup modes and open-preferred versus latest selection.
+- `apps/server/src/git/GitManager.ts` — Durable PR head associations—including repository, owner, and cross-repository identity—remain part of cache identity and head-context resolution.
+- `apps/server/src/git/GitManager.ts` — Explicit durable branch associations remain authoritative instead of being mistaken for an inferred default-branch base.
+- `apps/server/src/git/GitManager.ts` — Preserved T3 Pretty's queryWhenLocalBranchMissing behavior for discovering PRs when a local branch is absent.
+- `apps/server/src/git/GitManager.ts` — Preserved the configurable pull-request selection policy used to keep status and settlement lookups isolated under their respective rules.
+- `apps/server/src/git/GitManager.ts` — Preserved explicit GitBranchHeadAssociation data, including cross-repository head identity, throughout lookup, cache-key, and fallback behavior.
+- `apps/server/src/git/GitManager.ts` — Preserved existing lookupStatusPr callers that do not yet supply a default-branch name.
+- `apps/web/src/components/ChatView.tsx` — Merged pull requests do not automatically settle threads, both when determining Woke-banner visibility and when calculating the active thread's effective settled state.
+- `apps/web/src/components/ChatView.tsx` — The inline right panel remains managed by InlineRightPanelPresence with a stable snapshot, preserving T3 Pretty's content-mounted opening, exit animation, and selected-surface behavior.
+- `apps/web/src/components/ChatView.tsx` — The wrapped inline panel retains T3 Pretty's extended panel behavior, including its Canvas surface controls and animated lifecycle.
+- `apps/web/src/components/RightPanelTabs.tsx` — Preserved the T3 Pretty Canvas surface, including its Frame icon, capability availability gate, disabled reason, and onAddCanvas callback, in both the empty-state launcher and the add-surface menu.
+- `apps/web/src/components/Sidebar.tsx` — Merged pull requests do not automatically settle T3 Pretty threads.
+- `apps/web/src/components/Sidebar.tsx` — A pull-request merge does not suppress a thread's fresh-wake indicator through the auto-settlement path.
+- `apps/web/src/components/Sidebar.tsx` — T3 Pretty's existing snooze, pin, settled-shelf, and wake lifecycle ordering remains unchanged.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Canvas-first thread creation continues to show the fork-specific optional-note placeholder, "Add a note (optional)", before evaluating the disconnected-state placeholder.
+- `apps/web/src/hooks/useThreadActionMenu.ts` — Threads do not become effectively settled merely because an associated pull request merges, preserving the intent of T3 Pretty commit 741e4bc9a.
+- `apps/web/src/hooks/useThreadActionMenu.ts` — Existing time-based settlement through sidebarAutoSettleAfterDays remains intact.
+- `apps/web/src/hooks/useThreadActionMenu.ts` — Change-request data continues to participate in general settle classification without reintroducing merge-triggered auto-settlement.
+- `apps/web/src/main.tsx` — T3 Pretty's lazy-loaded Electron Clerk root remains in place instead of restoring static @clerk/electron imports.
+- `apps/web/src/main.tsx` — The Clerk sign-in gate continues to avoid loading the desktop Clerk and passkey code until the Electron authentication surface is opened.
+- `apps/web/src/main.tsx` — The browser Clerk provider path and existing managed relay authentication wrapping remain unchanged.
+- `packages/client-runtime/src/state/threadSettled.test.ts` — Merged pull requests never auto-settle T3 Pretty threads, including recently active threads and stale threads that would otherwise qualify for inactivity settlement.
+- `packages/client-runtime/src/state/threadSettled.test.ts` — Closed change requests remain the terminal state that can auto-settle a thread; the parent option-driven merge policy is not restored.
+- `packages/client-runtime/src/state/threadSettled.test.ts` — T3 Pretty's fixed state-based behavior is preserved without reintroducing the removed autoSettleOnMerge setting.
+- `packages/client-runtime/src/state/threadSettled.ts` — Merged pull requests never automatically settle threads, even when the parent-compatible autoSettleOnMerge option is true or omitted.
+- `packages/client-runtime/src/state/threadSettled.ts` — Merged pull requests continue to block inactivity-based settlement so review and follow-up threads remain visible until explicitly settled.
+- `packages/client-runtime/src/state/threadSettled.ts` — Closed pull requests still auto-settle, using the parent's timestamp gate so an inherited or previously closed PR cannot settle a newer conversation.
+- `packages/client-runtime/src/state/threadSettled.ts` — Existing pending-work blockers and explicit settled/active overrides remain authoritative ahead of change-request settlement rules.
+- `packages/contracts/src/git.ts` — Preserved T3 Pretty's optional, nullable `automatedReview` contract and its distinction between no visible provider signal (`null`) and unsupported reporting (`undefined`), supporting surfaced Codex auto-review status.
+- `packages/contracts/src/settings.ts` — Preserved T3 Pretty's skills registry, marketplace source, and skills settings imports.
+- `packages/contracts/src/settings.ts` — Preserved T3 Pretty's global and per-thread subagent policy imports.
 
 ## Parent changes integrated at conflict boundaries
 
-- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Use a stable chevron.down symbol and rotate it 180 degrees for expanded shelves instead of swapping between chevron symbol names.
-- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Apply the upstream chevron behavior consistently to both snoozed and settled shelves through T3 Pretty's shared shelf-header component.
+- `apps/desktop/src/preview/Manager.test.ts` — Added upstream setAudioMuted and isCurrentlyAudible WebContents APIs to every conflicted preview fixture.
+- `apps/desktop/src/preview/Manager.test.ts` — Retained the upstream main-window host association in the shared recording/PiP fixture.
+- `apps/desktop/src/preview/Manager.test.ts` — Separated and asserted the upstream main-window background-throttling path alongside T3 Pretty's guest-level throttling path.
+- `apps/desktop/src/preview/Manager.ts` — After a replacement webview is committed, its tab mute state is reasserted on a best-effort basis so a guest that attaches unmuted does not regress user mute intent or fail registration if it dies mid-attach.
+- `apps/desktop/src/window/DesktopWindow.ts` — The main renderer now boots unthrottled while the BrowserWindow is initially hidden, preventing Chromium timer coalescing and suspended requestAnimationFrame work from delaying first paint.
+- `apps/desktop/src/window/DesktopWindow.ts` — The parent lifecycle transitions back to background throttling after the first reveal, composing the startup fix with steady-state resource efficiency.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Adopted the parent refactor from changeRequestStateByKey to the richer changeRequestByKey input in the thread-list layout builder and its memo dependencies.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Adopted the parent's first-party mobile pull-request representation by replacing changeRequestStateByKey with the richer changeRequestByKey input.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Updated the test fixture from `changeRequestStateByKey` string values to the parent’s `changeRequestByKey` object-based API with a typed `state` field.
+- `apps/mobile/src/features/threads/threadListV2.ts` — Integrated the parent refactor from `changeRequestState` to the richer `changeRequest` / `ChangeRequestSettleSource` value already obtained from `changeRequestByKey`.
+- `apps/server/src/git/GitManager.test.ts` — The existing-PR status expectation now includes the parent's `updatedAt: null` field, matching the updated pull-request metadata shape.
+- `apps/server/src/git/GitManager.ts` — PR status results now include the provider's updatedAt timestamp formatted as ISO, or null when unavailable.
+- `apps/server/src/git/GitManager.ts` — The repository default branch is included in PR lookup cache identity and decoding.
+- `apps/server/src/git/GitManager.ts` — Unassociated local feature branches that merely track a same-repository default branch no longer look up PRs against that base, preventing unrelated reverse merges from being attached or auto-settled.
+- `apps/server/src/git/GitManager.ts` — The default-branch early-return result is adapted to the fork's automated-review and unpublished-lookup result shape.
+- `apps/server/src/git/GitManager.ts` — Added the parent's nullable defaultBranch metadata to lookupStatusPrObservation without removing T3 Pretty's additional options.
+- `apps/server/src/git/GitManager.ts` — Forwarded defaultBranch through the compatibility wrapper when supplied; when absent, the wrapper derives it only when the current branch is known to be the default branch and otherwise uses the parent's supported null representation.
+- `apps/web/src/components/ChatView.tsx` — Settlement checks now consume the parent's richer change-request object containing state and updatedAt rather than only a primitive PR state.
+- `apps/web/src/components/ChatView.tsx` — The Woke-banner settlement check forwards the active thread shell to the parent's thread-aware changeRequestAutoSettles API.
+- `apps/web/src/components/ChatView.tsx` — The parent's previewRuntimeTabId resolver is supplied to the inline RightPanelTabs as well as the existing sheet implementation.
+- `apps/web/src/components/RightPanelTabs.tsx` — Integrated the parent's data-driven rendering of standard add-surface actions through addSurfaceActions.
+- `apps/web/src/components/RightPanelTabs.tsx` — Integrated parent-provided shortcut display metadata on SurfaceMenuItem entries, including Canvas as `C`.
+- `apps/web/src/components/RightPanelTabs.tsx` — Integrated handleAddSurfaceMenuKeyDown on the menu popup for the parent's keyboard shortcut behavior, with Canvas in the same data-driven action list.
+- `apps/web/src/components/Sidebar.tsx` — Updated changeRequestAutoSettles usage to the parent's richer API, passing the resolved pull request and thread context instead of the obsolete scalar PR state.
+- `apps/web/src/components/Sidebar.tsx` — Updated effectiveSettled usage to pass the parent's full change-request snapshot rather than only changeRequestState.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Disconnected composers now use the parent’s DISCONNECTED_COMPOSER_PLACEHOLDER constant instead of duplicating the prior literal text.
+- `apps/web/src/hooks/useThreadActionMenu.ts` — Adopted the parent ChangeRequestSettleSource contract.
+- `apps/web/src/hooks/useThreadActionMenu.ts` — Adopted the parent changeRequest input name in the hook, effectiveSettled call, and callback dependency list.
+- `apps/web/src/hooks/useThreadActionMenu.ts` — Adapted to the parent effectiveSettled autoSettleOnMerge option by supplying an explicit false value compatible with T3 Pretty behavior.
+- `apps/web/src/main.tsx` — The Electron passkey adapter reports autofill as unsupported, preventing Clerk sign-in from opening an unsolicited modal OS passkey prompt.
+- `apps/web/src/main.tsx` — Explicit passkey sign-in remains available because only the autofill capability check is overridden.
+- `apps/web/src/main.tsx` — The upstream workaround is applied before the deferred Electron provider module loads, adapting it to the fork's code-splitting architecture.
+- `packages/client-runtime/src/state/threadSettled.test.ts` — Tests now use the parent's structured changeRequest object with state and optional updatedAt metadata instead of the legacy changeRequestState argument.
+- `packages/client-runtime/src/state/threadSettled.test.ts` — Timestamp-aware settlement is covered for closed requests so an inherited or previously closed pull request cannot settle a newer or revived conversation.
+- `packages/client-runtime/src/state/threadSettled.test.ts` — The parent's user-initiated activity anchoring is retained: agent completion after an in-flight close does not invalidate settlement earned by that close.
+- `packages/client-runtime/src/state/threadSettled.test.ts` — The parent's safe fallback behavior for missing, null, malformed, or unusable timestamps is retained for eligible closed requests.
+- `packages/client-runtime/src/state/threadSettled.test.ts` — effectiveSettled receives integration coverage for both stale pre-thread closure metadata and closures occurring at the thread's latest event.
+- `packages/client-runtime/src/state/threadSettled.ts` — Adopted ChangeRequestSettleSource and the object-based changeRequest option, including provider updatedAt data in the shared API shape.
+- `packages/client-runtime/src/state/threadSettled.ts` — Retained the parent's contextual changeRequestAutoSettles options signature for updated shared call sites, including autoSettleOnMerge and thread timeline inputs.
+- `packages/client-runtime/src/state/threadSettled.ts` — Applied the parent's timestamp gate to closed requests so inherited or previously closed PRs cannot settle a newer conversation.
+- `packages/client-runtime/src/state/threadSettled.ts` — Updated effectiveSettled to consume the parent's change-request object and pass the parent-compatible options through cleanly.
+- `packages/contracts/src/git.ts` — Added the parent's optional, nullable `updatedAt` provider-activity timestamp to change-request status, including compatibility with old servers and providers that do not report it.
+- `packages/contracts/src/settings.ts` — Added the parent ProviderDriverKind type import alongside the existing provider instance contracts.
 
 ## Parent changes intentionally omitted
 
-- None. The resolver did not omit any parent change to protect T3 Pretty.
+- `apps/desktop/src/preview/Manager.ts` — The parent helper functions that set frame-capture background throttling on the entire main BrowserWindow.. Reason: T3 Pretty has a more precise source-scoped lease that follows replacement guests and restores the original source value; targeting the whole main window would weaken the fork's preview efficiency behavior.
+- `apps/desktop/src/preview/Manager.ts` — The parent first-session behavior that globally disables main-window background throttling.. Reason: The captured WebContents is already unthrottled during session initialization. Adding a global toggle would broaden the performance impact beyond the active capture source.
+- `apps/desktop/src/preview/Manager.ts` — The parent last-session behavior that unconditionally sets main-window background throttling to true.. Reason: The T3 Pretty scope finalizer restores the source's exact pre-capture value. A hard-coded true reset could overwrite a legitimate pre-existing false state and conflicts with the fork's source-specific lifecycle.
+- `apps/desktop/src/preview/Manager.ts` — Re-disabling main-window background throttling inside `setMainWindow` when capture sessions already exist.. Reason: The parent helper this call used was omitted with the rest of the window-wide throttle path. Capture lifetime is already source-scoped, and a leftover call to an undefined helper would not compile.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Passing autoSettleOnMerge into buildThreadListV2Items and including it in the memo dependency list.. Reason: This would restore parent behavior that automatically settles threads when pull requests merge, directly regressing T3 Pretty's explicit fix to stop that behavior.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Passing autoSettleOnMerge into buildThreadListV2Items and including it in the memo dependency list.. Reason: Same T3 Pretty policy as Home and web: merged pull requests stay active until the user settles them. The parent first-party replacement exception does not apply; this is a fork policy change, not a replaced first-party feature.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Passing the parent’s `autoSettleOnMerge: false` option at this call site.. Reason: T3 Pretty intentionally removed configurable auto-settlement on pull-request merge; merged threads must remain active without requiring an opt-out flag.
+- `apps/mobile/src/features/threads/threadListV2.ts` — Pass `autoSettleOnMerge` into `effectiveSettled`.. Reason: This would regress T3 Pretty commit 741e4bc9a by restoring automatic thread settlement when a pull request merges. The compatible API refactor to `changeRequest` is retained independently.
+- `apps/server/src/git/GitManager.ts` — Applying the default-branch upstream suppression when the resolved head came from an explicit durable GitBranchHeadAssociation.. Reason: T3 Pretty uses that association as authoritative PR identity, including when local and remote branch names differ. The upstream safeguard remains active for upstream-inferred heads—the bug scenario it targets—without regressing the fork's branch-association behavior.
+- `apps/web/src/components/ChatView.tsx` — Respecting the parent's autoSettleOnMerge value and allowing a merged pull request to auto-settle the thread.. Reason: T3 Pretty commit 741e4bc9a explicitly makes merged pull requests non-settling; passing false preserves that authoritative fork behavior while retaining the parent's updated API.
+- `apps/web/src/components/ChatView.tsx` — Directly conditionally mounting the parent's inline RightPanelTabs with activeRightPanelSurface.. Reason: That structure would remove T3 Pretty's InlineRightPanelPresence snapshot and exit lifecycle, regressing the fork's right-panel opening animation and extended wrapped-panel behavior. The compatible upstream preview-runtime addition is integrated into the wrapped component instead.
+- `apps/web/src/components/Sidebar.tsx` — Use props.autoSettleOnMerge when deciding whether a pull request suppresses the row's woke state.. Reason: T3 Pretty commit 741e4bc9a intentionally stops threads from auto-settling when a pull request merges; honoring this parent setting here would regress that authoritative fork behavior.
+- `apps/web/src/components/Sidebar.tsx` — Use autoSettleOnMerge when partitioning merged pull-request threads into the settled sidebar shelf.. Reason: This would restore merge-triggered auto-settlement that T3 Pretty explicitly removed. The parent API refactor is retained, but this option is fixed to false.
+- `apps/web/src/hooks/useThreadActionMenu.ts` — Using the parent's autoSettleOnMerge setting to classify merged pull-request threads as automatically settled.. Reason: This would directly regress T3 Pretty's authoritative fix that stops automatically settling a thread when its pull request merges. The smallest compatible omission is to keep the upstream API but pass false.
+- `packages/client-runtime/src/state/threadSettled.test.ts` — Automatic settlement when a pull request merges by default or when autoSettleOnMerge is enabled, including merges occurring after a revival or during an in-flight turn.. Reason: T3 Pretty commit 741e4bc9a intentionally makes merged pull requests remain active; restoring any timestamp-qualified merge auto-settlement would directly regress that authoritative fork behavior.
+- `packages/client-runtime/src/state/threadSettled.test.ts` — The parent's autoSettleOnMerge option-driven effective-settlement tests, including the case where disabling that path leaves a closed request active.. Reason: T3 Pretty replaced the configurable merge-settlement policy with a fixed state policy: merges do not auto-settle, while eligible closes do. Retaining the parent toggle semantics would weaken that fork policy.
+- `packages/client-runtime/src/state/threadSettled.test.ts` — Timestamp-dependent distinctions between old and current merged pull requests.. Reason: Those distinctions only affect the parent's merge auto-settlement behavior. In T3 Pretty every merged request remains non-settling, while the compatible timestamp protections are fully retained for closed requests.
+- `packages/client-runtime/src/state/threadSettled.ts` — Automatically settle merged pull requests when autoSettleOnMerge is enabled, subject to the request's updatedAt being at least as recent as user activity.. Reason: T3 Pretty commit 741e4bc9a explicitly made merged pull requests remain active until the user settles them because automatic merge settlement hid wanted threads.
+- `packages/client-runtime/src/state/threadSettled.ts` — Allow merged pull requests that did not settle immediately to fall through to inactivity-based automatic settlement.. Reason: T3 Pretty intentionally treats both open and merged pull requests as unfinished business and blocks the inactivity path until an explicit user settlement.
