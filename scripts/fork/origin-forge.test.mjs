@@ -205,6 +205,7 @@ describe("Origin release and blocked-sync helpers", () => {
       "utf8",
     );
     assert.include(pipeline, "fork-upstream-sync.yml");
+    assert.include(pipeline, "soft_fail: true");
     assert.include(pipeline, "fork-release.yml");
     assert.include(pipeline, "fork-mobile-release.yml");
     assert.notInclude(pipeline, "- .github/workflows/fork-pr-review.yml");

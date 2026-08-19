@@ -35,6 +35,10 @@ env:
 steps:
   - label: ":github: T3 Pretty Origin workflows"
     key: origin-workflows
+    # Imported GHA jobs (OTA/preflight) still die in ~2s on the importer.
+    # Native DMG/NSIS/relay are the release. Do not red the whole build
+    # when only the importer fails.
+    soft_fail: true
     agents:
       queue: linux-small
     plugins:

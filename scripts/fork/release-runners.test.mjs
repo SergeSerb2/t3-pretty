@@ -103,7 +103,11 @@ describe("T3 Pretty release runner placement", () => {
       otaPath.indexOf('mkdir -p "$dir" || dir="/tmp"'),
       otaPath.indexOf('ci_env="${dir}/t3-pretty-ci.env"'),
     );
-    assert.include(ota, "steps.expo-token.outcome == 'success'");
+    assert.include(ota, "steps.expo-token.outputs.present == 'true'");
+    assert.include(ota, "continue-on-error: true");
+    const dmg = NodeFS.readFileSync(NodePath.resolve(here, "build-macos-dmg.sh"), "utf8");
+    assert.notInclude(dmg, "python3 -c");
+    assert.include(dmg, "git fetch --force --tags origin");
     assert.include(ota, '[[ -n "${GITHUB_OUTPUT:-}" ]]');
     assert.notInclude(ios, "secrets.APPLE_API_KEY");
     assert.include(ios, "APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID");

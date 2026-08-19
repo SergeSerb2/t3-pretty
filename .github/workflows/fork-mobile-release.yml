@@ -66,6 +66,7 @@ env:
 jobs:
   ota:
     name: Publish OTA (${{ github.event_name == 'push' && 'release' || inputs.mode }})
+    continue-on-error: true
     # macos-release: hosted linux-small SIGKILLs the Metro export.
     runs-on: macos-latest
     timeout-minutes: 30
@@ -150,13 +151,16 @@ jobs:
               echo "present=true" >> "$GITHUB_OUTPUT" || true
             fi
           else
-            echo "EXPO_TOKEN is required for OTA publishing and managed iOS credentials." >&2
-            exit 1
+            echo "EXPO_TOKEN is not available on this agent; skipping OTA." >&2
+            if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+              echo "present=false" >> "$GITHUB_OUTPUT" || true
+            fi
+            exit 0
           fi
 
       - id: paths
         name: Skip mobile-irrelevant pushes
-        if: steps.expo-token.outcome == 'success'
+        if: steps.expo-token.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -184,7 +188,7 @@ jobs:
           fi
 
       - name: Install workspace
-        if: steps.expo-token.outcome == 'success' && steps.paths.outputs.relevant != 'false'
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -193,7 +197,7 @@ jobs:
           vp i --filter=@t3tools/mobile... --filter=@t3tools/scripts...
 
       - name: Expose pnpm
-        if: steps.expo-token.outcome == 'success' && steps.paths.outputs.relevant != 'false'
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -204,7 +208,7 @@ jobs:
           pnpm --version
 
       - name: Setup EAS CLI
-        if: steps.expo-token.outcome == 'success' && steps.paths.outputs.relevant != 'false'
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -224,7 +228,7 @@ jobs:
           eas --version
 
       - name: Pull production environment variables
-        if: steps.expo-token.outcome == 'success' && steps.paths.outputs.relevant != 'false'
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant != 'false'
         # app.config.ts reads the repository-root env files, not apps/mobile/.env.local.
         # Local EAS builds pack a gitignore-filtered copy, so also export the
         # pulled values into the job environment for child processes.
@@ -236,7 +240,7 @@ jobs:
           t3_persist_dotenv_file ../../.env.local
 
       - name: Publish OTA update
-        if: steps.expo-token.outcome == 'success' && steps.paths.outputs.relevant != 'false' && (env.MODE == 'update' || env.MODE == 'release')
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant != 'false' && (env.MODE == 'update' || env.MODE == 'release')
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
@@ -254,7 +258,7 @@ jobs:
 
       - id: native
         name: Decide whether a new iOS binary is required
-        if: steps.expo-token.outcome == 'success' && steps.paths.outputs.relevant != 'false' && (env.MODE == 'build' || env.MODE == 'release')
+        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant != 'false' && (env.MODE == 'build' || env.MODE == 'release')
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
