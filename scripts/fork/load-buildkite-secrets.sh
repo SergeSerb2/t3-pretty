@@ -12,6 +12,11 @@ if [[ "${BASH_SOURCE[0]-}" == "${0-}" ]]; then
   set -euo pipefail
 fi
 
+_t3_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ci-env.sh
+. "${_t3_here}/ci-env.sh"
+unset _t3_here
+
 export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
 
 # Missing agent is not a hard fail. File-backed secrets still load. An early
@@ -20,7 +25,7 @@ if ! command -v buildkite-agent >/dev/null; then
   echo "buildkite-agent is not on PATH; leaving existing environment in place."
 fi
 
-ci_env="${RUNNER_TEMP:-${GITHUB_WORKSPACE:-${HOME}}}/t3-pretty-ci.env"
+ci_env="$(t3_ci_env_path)"
 
 append_export() {
   local name="$1"

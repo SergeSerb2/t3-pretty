@@ -9,6 +9,11 @@ if [[ "${BASH_SOURCE[0]-}" == "${0-}" ]]; then
   set -euo pipefail
 fi
 
+_t3_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ci-env.sh
+. "${_t3_here}/ci-env.sh"
+unset _t3_here
+
 if [[ $# -lt 1 ]]; then
   echo "persist-ci-path.sh: need at least one directory" >&2
   exit 1
@@ -22,7 +27,7 @@ done
 test -n "$prepend"
 export PATH="${prepend}:${PATH}"
 
-ci_env="${RUNNER_TEMP:-${GITHUB_WORKSPACE:-${HOME}}}/t3-pretty-ci.env"
+ci_env="$(t3_ci_env_path)"
 mkdir -p "$(dirname "$ci_env")"
 if [[ -f "$ci_env" ]]; then
   grep -v '^export PATH=' "$ci_env" > "${ci_env}.tmp" || true

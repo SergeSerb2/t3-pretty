@@ -107,11 +107,8 @@ describe("Origin release and blocked-sync helpers", () => {
       sync.indexOf("Prepare macOS runner PATH"),
       sync.indexOf("Checkout fork main"),
     );
-    assert.include(preparePath, "GITHUB_PATH");
-    assert.include(preparePath, "GITHUB_ENV");
-    assert.include(preparePath, "t3-pretty-ci.env");
-    assert.include(preparePath, 'echo "PATH=${PATH}" >> "$GITHUB_ENV"');
-    assert.notInclude(preparePath, 'elif [[ -n "${GITHUB_ENV:-}" ]]');
+    assert.include(preparePath, ". scripts/fork/persist-ci-path.sh");
+    assert.notInclude(preparePath, "GITHUB_WORKSPACE:-${HOME}");
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");
     assert.include(desktop, "T3CODE_RELEASE_S3_BUCKET");
     assert.include(desktop, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");
@@ -175,11 +172,18 @@ describe("Origin release and blocked-sync helpers", () => {
       "buildkite-agent is not on PATH; leaving existing environment in place.",
     );
     assert.notInclude(secretsHelper, "GITHUB_ENV is required");
-    assert.include(secretsHelper, "t3-pretty-ci.env");
+    assert.include(secretsHelper, "t3_ci_env_path");
     assert.include(secretsHelper, "BASH_SOURCE[0]");
+    assert.notInclude(secretsHelper, "GITHUB_WORKSPACE:-${HOME}");
     const prelude = NodeFS.readFileSync(NodePath.resolve(here, "macos-ci-prelude.sh"), "utf8");
+    const ciEnv = NodeFS.readFileSync(NodePath.resolve(here, "ci-env.sh"), "utf8");
     assert.include(prelude, "__T3_CI_ENV_EOF__");
+    assert.include(prelude, "t3_persist_dotenv_file");
     assert.notInclude(prelude, 'printf \'%s=%s\\n\' "$name" "$value" >> "$GITHUB_ENV"');
+    assert.notInclude(prelude, "GITHUB_WORKSPACE:-${HOME}");
+    assert.include(ciEnv, "refusing to write");
+    assert.include(mobile, "t3_persist_dotenv_file");
+    assert.notInclude(mobile, "GITHUB_WORKSPACE:-${HOME}");
     assert.include(mobile, "APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID");
     assert.include(preflight, "Mac signing secrets are resolved on macos-release");
     assert.include(preflight, "git fetch --force --tags origin");

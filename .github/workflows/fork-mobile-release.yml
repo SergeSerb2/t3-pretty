@@ -87,26 +87,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
-          export PATH="${extra}:${PATH}"
-          wrote=0
-          if [[ -n "${GITHUB_PATH:-}" ]]; then
-            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-            echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
-            echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
-            echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
-            wrote=1
-          fi
-          if [[ -n "${GITHUB_ENV:-}" ]]; then
-            echo "PATH=${PATH}" >> "$GITHUB_ENV"
-            wrote=1
-          fi
-          ci_env="${RUNNER_TEMP:-${GITHUB_WORKSPACE:-${HOME}}}/t3-pretty-ci.env"
-          mkdir -p "$(dirname "$ci_env")"
-          printf 'export PATH=%q\n' "$PATH" >> "$ci_env"
-          if [[ "$wrote" -eq 0 ]]; then
-            echo "GITHUB_PATH and GITHUB_ENV are unset; persisted PATH in $ci_env for later steps to source."
-          fi
+          . scripts/fork/persist-ci-path.sh \
+            /opt/homebrew/bin \
+            /opt/homebrew/sbin \
+            "${HOME}/.vite-plus/bin" \
+            "${HOME}/.local/bin"
 
       - id: expo-token
         name: Checkout Origin and load Expo token
@@ -200,26 +185,22 @@ jobs:
 
       - name: Pull production environment variables
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
-        working-directory: apps/mobile
         # app.config.ts reads the repository-root env files, not apps/mobile/.env.local.
         # Local EAS builds pack a gitignore-filtered copy, so also export the
         # pulled values into the job environment for child processes.
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
+          cd apps/mobile
           eas env:pull production --path ../../.env.local --non-interactive
-          if [[ -f ../../.env.local ]]; then
-            while IFS= read -r line; do
-              t3_persist_env "${line%%=*}" "${line#*=}"
-            done < <(grep -vE '^[[:space:]]*(#|$)' ../../.env.local || true)
-          fi
+          t3_persist_dotenv_file ../../.env.local
 
       - name: Publish OTA update
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true' && (env.MODE == 'update' || env.MODE == 'release')
-        working-directory: apps/mobile
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
+          cd apps/mobile
           update_platform="$PLATFORM"
           if [[ "$MODE" == "release" ]]; then
             update_platform=all
@@ -234,10 +215,10 @@ jobs:
       - id: native
         name: Decide whether a new iOS binary is required
         if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true' && (env.MODE == 'build' || env.MODE == 'release')
-        working-directory: apps/mobile
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
+          cd apps/mobile
           if [[ "$MODE" == "build" && "$PLATFORM" == "android" ]]; then
             echo "Native Android cloud builds are retired. iOS compiles locally on the Mac runner; Android store binaries are not wired yet." >&2
             exit 1
@@ -337,26 +318,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
-          export PATH="${extra}:${PATH}"
-          wrote=0
-          if [[ -n "${GITHUB_PATH:-}" ]]; then
-            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-            echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
-            echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
-            echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
-            wrote=1
-          fi
-          if [[ -n "${GITHUB_ENV:-}" ]]; then
-            echo "PATH=${PATH}" >> "$GITHUB_ENV"
-            wrote=1
-          fi
-          ci_env="${RUNNER_TEMP:-${GITHUB_WORKSPACE:-${HOME}}}/t3-pretty-ci.env"
-          mkdir -p "$(dirname "$ci_env")"
-          printf 'export PATH=%q\n' "$PATH" >> "$ci_env"
-          if [[ "$wrote" -eq 0 ]]; then
-            echo "GITHUB_PATH and GITHUB_ENV are unset; persisted PATH in $ci_env for later steps to source."
-          fi
+          . scripts/fork/persist-ci-path.sh \
+            /opt/homebrew/bin \
+            /opt/homebrew/sbin \
+            "${HOME}/.vite-plus/bin" \
+            "${HOME}/.local/bin"
 
       - name: Install workspace
         shell: bash
@@ -394,19 +360,15 @@ jobs:
           eas --version
 
       - name: Pull production environment variables
-        working-directory: apps/mobile
         # app.config.ts reads the repository-root env files, not apps/mobile/.env.local.
         # Local EAS builds pack a gitignore-filtered copy, so also export the
         # pulled values into the job environment for child processes.
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
+          cd apps/mobile
           eas env:pull production --path ../../.env.local --non-interactive
-          if [[ -f ../../.env.local ]]; then
-            while IFS= read -r line; do
-              t3_persist_env "${line%%=*}" "${line#*=}"
-            done < <(grep -vE '^[[:space:]]*(#|$)' ../../.env.local || true)
-          fi
+          t3_persist_dotenv_file ../../.env.local
 
       - name: Prepare Apple CI credentials
         run: |
@@ -498,10 +460,10 @@ jobs:
           fastlane --version
 
       - name: Build and submit
-        working-directory: apps/mobile
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
+          cd apps/mobile
           # EAS local builds on macOS 26 / Xcode 27 fail Prepare credentials
           # because `security find-identity -v` cannot validate a dist cert in
           # an ephemeral keychain (expo/eas-cli#3678). Put a shim named
