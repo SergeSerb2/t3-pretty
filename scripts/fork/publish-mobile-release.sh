@@ -186,15 +186,21 @@ fi
 
 # Do not unshallow this checkout. The workspace is reused across jobs and
 # downloading the whole Origin history occupies the only macos-release agent.
-if ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
-  git fetch --deepen=50 || git fetch origin --deepen=50 || true
-fi
-git fetch --depth=1 origin main || true
+# checkout-origin --full still respects an existing shallow boundary, so fetch
+# 50 commits of this SHA and origin/main: the path filter needs HEAD~1, and
+# native_submit_recorded reads the marker from origin/main. Never fetch
+# --depth=1 afterward. That shortens the clone back to one commit and the
+# path filter then fails closed on every main push.
+git fetch --depth=50 origin "${commit}" main ||
+  git fetch --depth=50 origin main ||
+  git fetch --deepen=50 origin "${commit}" ||
+  git fetch --deepen=50 ||
+  true
 git checkout -- apps/mobile/eas.json 2>/dev/null || true
 
 if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" && "$MODE" != "build" && "$FORCE_IOS" != "true" ]]; then
   if ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
-    echo "No parent commit after deepen; refusing to publish OTA without a path diff." >&2
+    echo "No parent commit after history fetch; refusing to publish OTA without a path diff." >&2
     exit 1
   fi
   if git diff --quiet HEAD~1 HEAD -- \
