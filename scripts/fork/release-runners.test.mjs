@@ -90,6 +90,12 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(ios, "t3_persist_dotenv_file");
     assert.notInclude(ota, "GITHUB_WORKSPACE:-${HOME}");
     assert.notInclude(ios, "GITHUB_WORKSPACE:-${HOME}");
+    const otaPath = ota.slice(
+      ota.indexOf("Prepare macOS runner PATH"),
+      ota.indexOf("Checkout Origin and load Expo token"),
+    );
+    assert.notInclude(otaPath, "persist-ci-path.sh");
+    assert.include(otaPath, "refusing to write");
     assert.notInclude(ios, "secrets.APPLE_API_KEY");
     assert.include(ios, "APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID");
     assert.notInclude(ota, "grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> \"$GITHUB_ENV\"");

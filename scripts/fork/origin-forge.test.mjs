@@ -107,7 +107,9 @@ describe("Origin release and blocked-sync helpers", () => {
       sync.indexOf("Prepare macOS runner PATH"),
       sync.indexOf("Checkout fork main"),
     );
-    assert.include(preparePath, ". scripts/fork/persist-ci-path.sh");
+    assert.notInclude(preparePath, "persist-ci-path.sh");
+    assert.include(preparePath, "refusing to write");
+    assert.include(preparePath, 'echo "PATH=${PATH}" >> "$GITHUB_ENV"');
     assert.notInclude(preparePath, "GITHUB_WORKSPACE:-${HOME}");
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");
     assert.include(desktop, "T3CODE_RELEASE_S3_BUCKET");

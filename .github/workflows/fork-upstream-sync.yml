@@ -47,11 +47,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          . scripts/fork/persist-ci-path.sh \
-            /opt/homebrew/bin \
-            /opt/homebrew/sbin \
-            "${HOME}/.vite-plus/bin" \
-            "${HOME}/.local/bin"
+          extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
+          export PATH="${extra}:${PATH}"
+          if [[ -n "${GITHUB_PATH:-}" ]]; then
+            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+            echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+            echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
+            echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+          fi
+          if [[ -n "${GITHUB_ENV:-}" ]]; then
+            echo "PATH=${PATH}" >> "$GITHUB_ENV"
+          fi
+          dir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+          dir="${dir%/}"
+          ci_env="${dir}/t3-pretty-ci.env"
+          workspace="${GITHUB_WORKSPACE:-}"
+          if [[ -n "$workspace" ]]; then
+            workspace="${workspace%/}"
+            case "$ci_env" in
+              "$workspace"|"$workspace"/*)
+                echo "refusing to write $ci_env under GITHUB_WORKSPACE" >&2
+                exit 1
+                ;;
+            esac
+          fi
+          mkdir -p "$dir"
+          printf 'export PATH=%q\n' "$PATH" >> "$ci_env"
 
       - name: Checkout fork main
         shell: bash
