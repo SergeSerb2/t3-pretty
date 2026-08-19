@@ -108,7 +108,7 @@ describe("Origin release and blocked-sync helpers", () => {
       sync.indexOf("Checkout fork main"),
     );
     assert.notInclude(preparePath, "persist-ci-path.sh");
-    assert.include(preparePath, "refusing to write");
+    assert.include(preparePath, "writing t3-pretty-ci.env under /tmp");
     assert.include(preparePath, 'echo "PATH=${PATH}" >> "$GITHUB_ENV"');
     assert.notInclude(preparePath, "GITHUB_WORKSPACE:-${HOME}");
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");
@@ -147,6 +147,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(preflight, "Could not fetch Origin fork tags");
     assert.include(preflight, "origin_tags_ok");
     assert.include(preflight, "No fork tags are present; refusing to mint a version.");
+    assert.include(preflight, "can_mint=false");
+    assert.include(preflight, "steps.tags.outputs.can_mint != 'false'");
     assert.notInclude(mobile, "GITHUB_ENV is required");
     assert.notInclude(mobile, "grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> \"$GITHUB_ENV\"");
     assert.include(mobile, "t3_persist_env");
@@ -183,7 +185,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(prelude, "t3_persist_dotenv_file");
     assert.notInclude(prelude, 'printf \'%s=%s\\n\' "$name" "$value" >> "$GITHUB_ENV"');
     assert.notInclude(prelude, "GITHUB_WORKSPACE:-${HOME}");
-    assert.include(ciEnv, "refusing to write");
+    assert.include(ciEnv, "writing t3-pretty-ci.env under /tmp");
+    assert.notInclude(ciEnv, "return 1");
     assert.include(mobile, "t3_persist_dotenv_file");
     assert.notInclude(mobile, "GITHUB_WORKSPACE:-${HOME}");
     assert.include(mobile, "APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID");

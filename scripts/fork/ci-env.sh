@@ -1,21 +1,16 @@
 #!/usr/bin/env bash
 # Shared path for the importer env file (PATH + cluster secrets).
-# Never write it under GITHUB_WORKSPACE: macos-release reuses that tree
-# and eas/local packs can pick the file up. Prefer RUNNER_TEMP, then
-# TMPDIR, then /tmp.
+# Prefer RUNNER_TEMP even when that directory lives under GITHUB_WORKSPACE
+# (the GHA importer sets RUNNER_TEMP to a _temp sibling of the checkout).
+# Only avoid the workspace *root*, which eas local can pack. Never use HOME.
 t3_ci_env_path() {
   local dir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
   dir="${dir%/}"
-  local file="${dir}/t3-pretty-ci.env"
   local workspace="${GITHUB_WORKSPACE:-}"
-  if [[ -n "$workspace" ]]; then
-    workspace="${workspace%/}"
-    case "$file" in
-      "$workspace"|"$workspace"/*)
-        echo "refusing to write $file under GITHUB_WORKSPACE" >&2
-        return 1
-        ;;
-    esac
+  workspace="${workspace%/}"
+  if [[ -n "$workspace" && "$dir" == "$workspace" ]]; then
+    echo "RUNNER_TEMP is the workspace root; writing t3-pretty-ci.env under /tmp" >&2
+    dir="/tmp"
   fi
-  printf '%s\n' "$file"
+  printf '%s\n' "${dir}/t3-pretty-ci.env"
 }
