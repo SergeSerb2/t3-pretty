@@ -37,6 +37,14 @@ export type ComposerCommandItem =
       readonly skill: ServerProviderSkill;
       readonly label: string;
       readonly description: string;
+    }
+  | {
+      readonly id: string;
+      readonly type: "app";
+      readonly slug: string;
+      readonly color: string;
+      readonly label: string;
+      readonly description: string;
     };
 
 interface ComposerCommandPopoverProps {
@@ -69,18 +77,26 @@ function itemIcon(item: ComposerCommandItem) {
     case "skill":
       return "cube" as const;
     case "path":
+    case "app":
       return null;
   }
 }
 
-function groupLabel(triggerKind: ComposerTriggerKind | null): string | null {
+function groupLabel(
+  triggerKind: ComposerTriggerKind | null,
+  items: ReadonlyArray<ComposerCommandItem>,
+): string | null {
   switch (triggerKind) {
     case "slash-command":
       return "Commands";
     case "skill":
       return "Skills";
-    case "path":
-      return "Files";
+    case "path": {
+      // `@` mixes files and connected apps; name whichever kinds are present.
+      const hasApps = items.some((item) => item.type === "app");
+      const hasFiles = items.some((item) => item.type !== "app");
+      return hasApps && hasFiles ? "Files & apps" : hasApps ? "Apps" : "Files";
+    }
     default:
       return null;
   }
@@ -127,6 +143,15 @@ const CommandRow = memo(function CommandRow(props: {
     >
       {props.item.type === "path" ? (
         <PierreEntryIcon path={props.item.path} kind={props.item.kind} size={16} />
+      ) : props.item.type === "app" ? (
+        <View
+          className="size-4 items-center justify-center rounded"
+          style={{ backgroundColor: props.item.color }}
+        >
+          <Text className="text-[10px] font-t3-bold text-white">
+            {props.item.label.trim().at(0)?.toUpperCase() ?? "?"}
+          </Text>
+        </View>
       ) : iconName ? (
         <SymbolView name={iconName} size={14} tintColor={iconColor} type="monochrome" />
       ) : null}
@@ -145,7 +170,7 @@ const CommandRow = memo(function CommandRow(props: {
 export const ComposerCommandPopover = memo(function ComposerCommandPopover(
   props: ComposerCommandPopoverProps,
 ) {
-  const label = groupLabel(props.triggerKind);
+  const label = groupLabel(props.triggerKind, props.items);
 
   return (
     <PopoverSurface>

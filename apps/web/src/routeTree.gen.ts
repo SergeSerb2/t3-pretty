@@ -15,19 +15,20 @@ import { Route as PairRouteImport } from './routes/pair'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
-import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsStorageRouteImport } from './routes/settings.storage'
+import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
-import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
-import { Route as SettingsInstructionsRouteImport } from './routes/settings.instructions'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
+import { Route as SettingsInstructionsRouteImport } from './routes/settings.instructions'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
+import { Route as SettingsAppsRouteImport } from './routes/settings.apps'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
+import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ConnectCallbackRouteImport } from './routes/connect_.callback'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
@@ -63,24 +64,19 @@ const ChatIndexRoute = ChatIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ChatRoute,
 } as any)
-const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
-  id: '/source-control',
-  path: '/source-control',
-  getParentRoute: () => SettingsRoute,
-} as any)
 const SettingsStorageRoute = SettingsStorageRouteImport.update({
   id: '/storage',
   path: '/storage',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
+  id: '/source-control',
+  path: '/source-control',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSkillsRoute = SettingsSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsAgentsRoute = SettingsAgentsRouteImport.update({
-  id: '/agents',
-  path: '/agents',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
@@ -93,14 +89,14 @@ const SettingsKeybindingsRoute = SettingsKeybindingsRouteImport.update({
   path: '/keybindings',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsInstructionsRoute = SettingsInstructionsRouteImport.update({
-  id: '/instructions',
-  path: '/instructions',
-  getParentRoute: () => SettingsRoute,
-} as any)
 const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsInstructionsRoute = SettingsInstructionsRouteImport.update({
+  id: '/instructions',
+  path: '/instructions',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
@@ -123,9 +119,19 @@ const SettingsArchivedRoute = SettingsArchivedRouteImport.update({
   path: '/archived',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsAppsRoute = SettingsAppsRouteImport.update({
+  id: '/apps',
+  path: '/apps',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
   id: '/appearance',
   path: '/appearance',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAgentsRoute = SettingsAgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
   getParentRoute: () => SettingsRoute,
 } as any)
 const ProjectsProjectKeyRoute = ProjectsProjectKeyRouteImport.update({
@@ -164,7 +170,9 @@ export interface FileRoutesByFullPath {
   '/pull-requests': typeof ChatPullRequestsRoute
   '/connect/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
+  '/settings/agents': typeof SettingsAgentsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/apps': typeof SettingsAppsRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
@@ -174,7 +182,6 @@ export interface FileRoutesByFullPath {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/skills': typeof SettingsSkillsRoute
-  '/settings/agents': typeof SettingsAgentsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -188,7 +195,9 @@ export interface FileRoutesByTo {
   '/pull-requests': typeof ChatPullRequestsRoute
   '/connect/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
+  '/settings/agents': typeof SettingsAgentsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/apps': typeof SettingsAppsRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
@@ -198,7 +207,6 @@ export interface FileRoutesByTo {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/skills': typeof SettingsSkillsRoute
-  '/settings/agents': typeof SettingsAgentsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/': typeof ChatIndexRoute
@@ -215,7 +223,9 @@ export interface FileRoutesById {
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/connect_/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
+  '/settings/agents': typeof SettingsAgentsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/apps': typeof SettingsAppsRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
@@ -225,7 +235,6 @@ export interface FileRoutesById {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/skills': typeof SettingsSkillsRoute
-  '/settings/agents': typeof SettingsAgentsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/_chat/': typeof ChatIndexRoute
@@ -243,7 +252,9 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/connect/callback'
     | '/projects/$projectKey'
+    | '/settings/agents'
     | '/settings/appearance'
+    | '/settings/apps'
     | '/settings/archived'
     | '/settings/connections'
     | '/settings/diagnostics'
@@ -253,7 +264,6 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/skills'
-    | '/settings/agents'
     | '/settings/source-control'
     | '/settings/storage'
     | '/$environmentId/$threadId'
@@ -267,7 +277,9 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/connect/callback'
     | '/projects/$projectKey'
+    | '/settings/agents'
     | '/settings/appearance'
+    | '/settings/apps'
     | '/settings/archived'
     | '/settings/connections'
     | '/settings/diagnostics'
@@ -277,7 +289,6 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/skills'
-    | '/settings/agents'
     | '/settings/source-control'
     | '/settings/storage'
     | '/'
@@ -293,7 +304,9 @@ export interface FileRouteTypes {
     | '/_chat/pull-requests'
     | '/connect_/callback'
     | '/projects/$projectKey'
+    | '/settings/agents'
     | '/settings/appearance'
+    | '/settings/apps'
     | '/settings/archived'
     | '/settings/connections'
     | '/settings/diagnostics'
@@ -303,7 +316,6 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/skills'
-    | '/settings/agents'
     | '/settings/source-control'
     | '/settings/storage'
     | '/_chat/'
@@ -365,13 +377,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatIndexRouteImport
       parentRoute: typeof ChatRoute
     }
-    '/settings/source-control': {
-      id: '/settings/source-control'
-      path: '/source-control'
-      fullPath: '/settings/source-control'
-      preLoaderRoute: typeof SettingsSourceControlRouteImport
-      parentRoute: typeof SettingsRoute
-    }
     '/settings/storage': {
       id: '/settings/storage'
       path: '/storage'
@@ -379,18 +384,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsStorageRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/source-control': {
+      id: '/settings/source-control'
+      path: '/source-control'
+      fullPath: '/settings/source-control'
+      preLoaderRoute: typeof SettingsSourceControlRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/skills': {
       id: '/settings/skills'
       path: '/skills'
       fullPath: '/settings/skills'
       preLoaderRoute: typeof SettingsSkillsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/agents': {
-      id: '/settings/agents'
-      path: '/agents'
-      fullPath: '/settings/agents'
-      preLoaderRoute: typeof SettingsAgentsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/providers': {
@@ -407,18 +412,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsKeybindingsRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/settings/instructions': {
-      id: '/settings/instructions'
-      path: '/instructions'
-      fullPath: '/settings/instructions'
-      preLoaderRoute: typeof SettingsInstructionsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
     '/settings/integrations': {
       id: '/settings/integrations'
       path: '/integrations'
       fullPath: '/settings/integrations'
       preLoaderRoute: typeof SettingsIntegrationsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/instructions': {
+      id: '/settings/instructions'
+      path: '/instructions'
+      fullPath: '/settings/instructions'
+      preLoaderRoute: typeof SettingsInstructionsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/general': {
@@ -449,11 +454,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsArchivedRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/apps': {
+      id: '/settings/apps'
+      path: '/apps'
+      fullPath: '/settings/apps'
+      preLoaderRoute: typeof SettingsAppsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/appearance': {
       id: '/settings/appearance'
       path: '/appearance'
       fullPath: '/settings/appearance'
       preLoaderRoute: typeof SettingsAppearanceRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/agents': {
+      id: '/settings/agents'
+      path: '/agents'
+      fullPath: '/settings/agents'
+      preLoaderRoute: typeof SettingsAgentsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/projects/$projectKey': {
@@ -511,7 +530,9 @@ const ChatRouteChildren: ChatRouteChildren = {
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
 interface SettingsRouteChildren {
+  SettingsAgentsRoute: typeof SettingsAgentsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
+  SettingsAppsRoute: typeof SettingsAppsRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
@@ -521,13 +542,14 @@ interface SettingsRouteChildren {
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
   SettingsSkillsRoute: typeof SettingsSkillsRoute
-  SettingsAgentsRoute: typeof SettingsAgentsRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
   SettingsStorageRoute: typeof SettingsStorageRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAgentsRoute: SettingsAgentsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
+  SettingsAppsRoute: SettingsAppsRoute,
   SettingsArchivedRoute: SettingsArchivedRoute,
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
@@ -537,7 +559,6 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
   SettingsSkillsRoute: SettingsSkillsRoute,
-  SettingsAgentsRoute: SettingsAgentsRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
   SettingsStorageRoute: SettingsStorageRoute,
 }

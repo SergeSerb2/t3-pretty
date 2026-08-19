@@ -8,6 +8,7 @@ export type SettingsPath =
   | "/settings/instructions"
   | "/settings/agents"
   | "/settings/skills"
+  | "/settings/apps"
   | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/storage"
@@ -36,6 +37,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/instructions": "Instructions",
   "/settings/agents": "Agents",
   "/settings/skills": "Skills",
+  "/settings/apps": "Apps",
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
   "/settings/storage": "Storage",
@@ -259,6 +261,21 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "skills-marketplace",
     title: "Skills marketplace",
     to: "/settings/skills",
+  },
+  {
+    id: "apps-connected",
+    title: "Connected apps",
+    to: "/settings/apps",
+  },
+  {
+    id: "apps-browse",
+    title: "Browse apps",
+    to: "/settings/apps",
+  },
+  {
+    id: "apps-oauth-clients",
+    title: "OAuth clients",
+    to: "/settings/apps",
   },
   {
     id: "agent-browser-access",

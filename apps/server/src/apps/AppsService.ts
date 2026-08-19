@@ -719,7 +719,7 @@ const make = Effect.gen(function* () {
   const test: AppsService["Service"]["test"] = (connectionId) =>
     Effect.gen(function* () {
       const target = yield* resolveUpstream(connectionId, { requireEnabled: false }).pipe(
-        Effect.mapError((error) => new AppsError({ ...error, operation: "test" })),
+        Effect.mapError((error) => fail("test", error.message, connectionId, error.cause)),
       );
       const call = (sessionId: string | undefined, body: unknown, expectResult: boolean) =>
         withHttp(

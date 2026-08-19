@@ -39,6 +39,7 @@ import {
   FolderIcon,
   FolderPlusIcon,
   FrameIcon,
+  LayoutGridIcon,
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
@@ -1745,6 +1746,17 @@ function OpenCommandPaletteDialog(props: {
     icon: <SettingsIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
       await navigate({ to: "/settings" });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:settings:apps",
+    searchTerms: ["apps", "connections", "integrations", "mcp", "gmail", "github"],
+    title: "Open apps settings",
+    icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/settings/apps" });
     },
   });
 

@@ -81,6 +81,7 @@ import {
   type ModelOption,
   resolveThreadProviderGroups,
 } from "../../lib/modelOptions";
+import { appAvatarColor, attachableAppMatches } from "../settings/apps/appsSettings.logic";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useReduceTransparency } from "../scenery/useReduceTransparency";
@@ -694,7 +695,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }
 
     if (composerTrigger.kind === "path") {
-      return pathSearch.entries.map((entry) => {
+      const fileItems = pathSearch.entries.map((entry) => {
         const parts = entry.path.split("/");
         return {
           id: `path:${entry.path}`,
@@ -705,10 +706,22 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           description: parts.length > 1 ? parts.slice(0, -1).join("/") : "",
         };
       });
+      const apps = props.serverConfig?.settings.apps;
+      const appItems = apps
+        ? attachableAppMatches(apps, composerTrigger.query, 8).map((connection) => ({
+            id: `app:${connection.id}`,
+            type: "app" as const,
+            slug: connection.slug,
+            color: appAvatarColor(connection.catalogId),
+            label: connection.name,
+            description: `@${connection.slug}`,
+          }))
+        : [];
+      return [...fileItems, ...appItems];
     }
 
     return [];
-  }, [composerTrigger, pathSearch.entries, selectedProviderStatus]);
+  }, [composerTrigger, pathSearch.entries, props.serverConfig, selectedProviderStatus]);
 
   // ── Handle command selection ──────────────────────────────
   const { onChangeDraftMessage, onUpdateInteractionMode, draftMessage, onSendMessage } = props;
@@ -819,6 +832,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         replacement = `${serializeComposerFileLink(item.path)} `;
       } else if (item.type === "skill") {
         replacement = `$${skillMentionToken(item.skill.name)} `;
+      } else if (item.type === "app") {
+        // Bare `@slug`: the server matches it against connected apps.
+        replacement = `@${item.slug} `;
       } else if (item.type === "slash-command") {
         replacement = `/${item.command} `;
       } else if (item.type === "provider-slash-command") {
