@@ -61,14 +61,20 @@ const connectivityLayer = Connectivity.layer({
         const networkSubscription = Network.addNetworkStateListener((state) => {
           Queue.offerUnsafe(queue, networkStatus(state));
         });
+        // Re-query on resume so a network that came back while JS was
+        // suspended is noticed. This one-shot uses a throwaway path monitor
+        // that can time out and read as "offline" on a healthy network, so it
+        // only ever restores connectivity; genuine loss still arrives through
+        // the persistent listener above.
         const appStateSubscription = AppState.addEventListener("change", (state) => {
           if (state !== "active") {
             return;
           }
           void Network.getNetworkStateAsync()
             .then((current) => {
-              if (active) {
-                Queue.offerUnsafe(queue, networkStatus(current));
+              const status = networkStatus(current);
+              if (active && status !== "offline") {
+                Queue.offerUnsafe(queue, status);
               }
             })
             .catch(() => undefined);
@@ -97,7 +103,11 @@ const wakeupsLayer = Wakeups.layer({
               backgroundedAtMs = Date.now();
               return;
             }
-            if (state === "active") {
+            // Only a stint in the background can hurt a socket. An
+            // inactive→active blip (Control Center, notification shade, a
+            // permission sheet) never suspended the process, so it wakes
+            // nothing.
+            if (state === "active" && backgroundedAtMs !== null) {
               Queue.offerUnsafe(queue, mobileApplicationActiveWakeup(backgroundedAtMs, Date.now()));
               backgroundedAtMs = null;
             }
