@@ -18,11 +18,15 @@ export type ThreadActionMenuId =
   | "rename"
   | "regenerate-title"
   | "mark-unread"
+  | "copy"
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
   | "archive"
-  | "delete";
+  | "delete"
+  | "sep-after-lifecycle"
+  | "sep-after-edit"
+  | "sep-before-danger";
 
 export interface ThreadActionMenuState {
   readonly branch: string | null;
@@ -33,6 +37,11 @@ export interface ThreadActionMenuState {
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects a thread with an active turn, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
+  /**
+   * Sidebar rows already expose settle/snooze on hover, so those items are
+   * omitted there. The chat header has no hover row, so it keeps them.
+   */
+  readonly surface: "sidebar" | "header";
   readonly supports: {
     readonly settlement: boolean;
     readonly snooze: boolean;
@@ -42,75 +51,116 @@ export interface ThreadActionMenuState {
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
 
+function separator(id: ThreadActionMenuId): ContextMenuItem<ThreadActionMenuId> {
+  return { id, label: "", separator: true };
+}
+
+function joinGroups(
+  groups: ReadonlyArray<ReadonlyArray<ContextMenuItem<ThreadActionMenuId>>>,
+): ContextMenuItem<ThreadActionMenuId>[] {
+  const items: ContextMenuItem<ThreadActionMenuId>[] = [];
+  const separatorIds = ["sep-after-lifecycle", "sep-after-edit", "sep-before-danger"] as const;
+  let separatorIndex = 0;
+  for (const group of groups) {
+    if (group.length === 0) continue;
+    if (items.length > 0) {
+      const separatorId = separatorIds[Math.min(separatorIndex, separatorIds.length - 1)]!;
+      separatorIndex += 1;
+      items.push(separator(separatorId));
+    }
+    items.push(...group);
+  }
+  return items;
+}
+
 /**
  * Single source for the per-thread action menu: the sidebar row's right-click
- * menu and the chat header menu both render exactly this list, so labels,
- * ordering, and capability gating cannot drift between the two surfaces.
+ * menu and the chat header menu share grouping and copy, but the header keeps
+ * settle/snooze because it has no hover-row affordances.
  */
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
-  return [
+  const lifecycle: ContextMenuItem<ThreadActionMenuId>[] = [
     ...(state.branch
       ? [
           {
             id: "new-thread-on-branch" as const,
-            label: `New thread on ${state.branch}`,
+            label: "New thread on this branch",
+            icon: "git-branch",
           },
         ]
       : []),
     ...(state.supports.pinning
       ? [
           state.isPinned
-            ? { id: "unpin" as const, label: "Unpin thread" }
-            : { id: "pin" as const, label: "Pin thread" },
+            ? { id: "unpin" as const, label: "Unpin thread", icon: "pin-off" }
+            : { id: "pin" as const, label: "Pin thread", icon: "pin" },
         ]
       : []),
-    // Both lifecycle actions stay available on pinned threads: settling
-    // clears the pin ("done" beats "keep on top"), and snoozing hides the
-    // card until wake with the pin intact.
-    ...(state.supports.settlement
-      ? [
-          state.isSettled
-            ? { id: "unsettle" as const, label: "Un-settle thread" }
-            : { id: "settle" as const, label: "Settle thread" },
-        ]
-      : []),
-    ...(state.supports.snooze
-      ? [
-          state.isSnoozed
-            ? { id: "unsnooze" as const, label: "Wake thread" }
-            : {
-                id: "snooze" as const,
-                label: "Snooze",
-                disabled: !state.canSnoozeNow,
-                children: state.snoozePresets.map((preset) => ({
-                  id: `snooze:${preset.id}` as const,
-                  label: `${preset.label} (${preset.whenLabel})`,
-                })),
-              },
-        ]
-      : []),
-    { id: "rename", label: "Rename thread" },
+  ];
+
+  // Header-only: the sidebar row already has Settle and Snooze on hover.
+  if (state.surface === "header") {
+    if (state.supports.settlement) {
+      lifecycle.push(
+        state.isSettled
+          ? { id: "unsettle", label: "Un-settle thread", icon: "undo" }
+          : { id: "settle", label: "Settle thread", icon: "check" },
+      );
+    }
+    if (state.supports.snooze) {
+      lifecycle.push(
+        state.isSnoozed
+          ? { id: "unsnooze", label: "Wake thread", icon: "alarm-off" }
+          : {
+              id: "snooze",
+              label: "Snooze",
+              icon: "clock",
+              disabled: !state.canSnoozeNow,
+              children: state.snoozePresets.map((preset) => ({
+                id: `snooze:${preset.id}` as const,
+                label: `${preset.label} (${preset.whenLabel})`,
+              })),
+            },
+      );
+    }
+  }
+
+  const edit: ContextMenuItem<ThreadActionMenuId>[] = [
+    { id: "rename", label: "Rename thread", icon: "pencil" },
     ...(state.supports.titleRegeneration
       ? [
           {
             id: "regenerate-title" as const,
             label: state.isRegeneratingTitle ? "Regenerating…" : "Regenerate title",
+            icon: "refresh",
             disabled: state.isRegeneratingTitle,
           },
         ]
       : []),
-    { id: "mark-unread", label: "Mark unread" },
-    { id: "copy-path", label: "Copy path", icon: "copy" },
-    ...(state.branch ? [{ id: "copy-branch" as const, label: "Copy branch", icon: "copy" }] : []),
-    { id: "copy-thread-id", label: "Copy thread ID", icon: "copy" },
+    { id: "mark-unread", label: "Mark unread", icon: "mail" },
+  ];
+
+  const copy: ContextMenuItem<ThreadActionMenuId> = {
+    id: "copy",
+    label: "Copy",
+    icon: "copy",
+    children: [
+      { id: "copy-path", label: "Path" },
+      ...(state.branch ? [{ id: "copy-branch" as const, label: "Branch" }] : []),
+      { id: "copy-thread-id", label: "Thread ID" },
+    ],
+  };
+
+  const danger: ContextMenuItem<ThreadActionMenuId>[] = [
     // Archive removes the thread from the sidebar while keeping its
     // conversation under Settings > Archived threads — distinct from Settle
     // (stays visible in the Settled shelf) and Delete (clears history for
-    // good), so it sits beside Delete without borrowing its destructive
-    // styling.
-    { id: "archive", label: "Archive thread", disabled: state.isRunning },
+    // good).
+    { id: "archive", label: "Archive thread", icon: "archive", disabled: state.isRunning },
     { id: "delete", label: "Delete", destructive: true, icon: "trash" },
   ];
+
+  return joinGroups([lifecycle, edit, [copy], danger]);
 }

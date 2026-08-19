@@ -113,8 +113,9 @@ describe("LocalApi", () => {
     await expect(createLocalApi().dialogs.confirm("Delete this thread?")).resolves.toBe(false);
   });
 
-  it("delegates host capabilities and persistence to the desktop bridge", async () => {
-    const showContextMenu = vi.fn().mockResolvedValue("delete");
+  it("paints context menus in-app even when a desktop bridge is present", async () => {
+    const showContextMenu = vi.fn().mockResolvedValue("native");
+    showContextMenuFallbackMock.mockResolvedValue("delete");
     const pickFolder = vi.fn().mockResolvedValue("/tmp/project");
     const getClientSettings = vi.fn().mockResolvedValue(DEFAULT_CLIENT_SETTINGS);
     const setClientSettings = vi.fn().mockResolvedValue(undefined);
@@ -136,7 +137,8 @@ describe("LocalApi", () => {
     await expect(api.persistence.getClientSettings()).resolves.toEqual(DEFAULT_CLIENT_SETTINGS);
     await api.persistence.setClientSettings(DEFAULT_CLIENT_SETTINGS);
 
-    expect(showContextMenu).toHaveBeenCalledWith(items, undefined);
+    expect(showContextMenu).not.toHaveBeenCalled();
+    expect(showContextMenuFallbackMock).toHaveBeenCalledWith(items, undefined);
     expect(pickFolder).toHaveBeenCalledWith({ initialPath: "/tmp" });
     expect(getClientSettings).toHaveBeenCalledTimes(1);
     expect(setClientSettings).toHaveBeenCalledWith(DEFAULT_CLIENT_SETTINGS);

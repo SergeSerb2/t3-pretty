@@ -241,7 +241,7 @@ function ProjectSettingsBreadcrumb({ projectKey }: { projectKey: string }) {
       label: group.displayName,
     }));
     void settlePromise(() =>
-      api.contextMenu.show(items, { x: rect.left, y: rect.bottom + 4 }),
+      api.contextMenu.show(items, { x: rect.left, y: rect.bottom + 4, motion: "dropdown" }),
     ).then((clicked) => {
       if (clicked._tag === "Failure" || clicked.value === null) return;
       void navigate({

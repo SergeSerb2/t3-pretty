@@ -117,6 +117,19 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       items,
       ...(position === undefined ? {} : { position }),
     }),
+  onEditContextMenu: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, request: unknown) => {
+      if (typeof request !== "object" || request === null) return;
+      listener(request as Parameters<typeof listener>[0]);
+    };
+
+    ipcRenderer.on(IpcChannels.EDIT_CONTEXT_MENU_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.EDIT_CONTEXT_MENU_CHANNEL, wrappedListener);
+    };
+  },
+  resolveEditContextMenu: (requestId, itemId) =>
+    ipcRenderer.invoke(IpcChannels.RESOLVE_EDIT_CONTEXT_MENU_CHANNEL, { requestId, itemId }),
   openExternal: (url: string) => ipcRenderer.invoke(IpcChannels.OPEN_EXTERNAL_CHANNEL, url),
   probeRemoteEditors: () => ipcRenderer.invoke(IpcChannels.PROBE_REMOTE_EDITORS_CHANNEL, undefined),
   onMenuAction: (listener) => {

@@ -13,17 +13,25 @@ import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
-import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import { getDesktopUrl } from "../electron/ElectronProtocol.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
   BACKEND_READY_CHANNEL,
+  EDIT_CONTEXT_MENU_CHANNEL,
   MENU_ACTION_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
   WINDOW_FULLSCREEN_STATE_CHANNEL,
 } from "../ipc/channels.ts";
+import {
+  buildEditContextMenuItems,
+  completeEditContextMenuRequest,
+  nextEditContextMenuRequestIdValue,
+  registerEditContextMenuWaiter,
+  resolveEditContextMenuCommand,
+  shouldOfferEditContextMenu,
+} from "./editContextMenu.ts";
 import * as PreviewManager from "../preview/Manager.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
@@ -63,7 +71,6 @@ type DesktopWindowRuntimeServices =
   | DesktopAppSettings.DesktopAppSettings
   | DesktopClientSettings.DesktopClientSettings
   | ElectronApp.ElectronApp
-  | ElectronMenu.ElectronMenu
   | ElectronShell.ElectronShell
   | ElectronTheme.ElectronTheme
   | ElectronWindow.ElectronWindow
@@ -277,7 +284,6 @@ function bindFirstRevealTrigger(
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const assets = yield* DesktopAssets.DesktopAssets;
-  const electronMenu = yield* ElectronMenu.ElectronMenu;
   const electronShell = yield* ElectronShell.ElectronShell;
   const electronTheme = yield* ElectronTheme.ElectronTheme;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
@@ -485,49 +491,79 @@ export const make = Effect.gen(function* () {
     window.webContents.on("context-menu", (event, params) => {
       event.preventDefault();
 
-      const menuTemplate: Electron.MenuItemConstructorOptions[] = [];
+      const hasSafeLink = Option.isSome(ElectronShell.parseSafeExternalUrl(params.linkURL));
+      if (
+        !shouldOfferEditContextMenu({
+          isEditable: params.isEditable,
+          misspelledWord: params.misspelledWord,
+          hasSafeLink,
+          mediaType: params.mediaType,
+        })
+      ) {
+        return;
+      }
 
-      if (params.misspelledWord) {
-        for (const suggestion of params.dictionarySuggestions.slice(0, 5)) {
-          menuTemplate.push({
-            label: suggestion,
-            click: () => window.webContents.replaceMisspelling(suggestion),
+      const items = buildEditContextMenuItems({
+        isEditable: params.isEditable,
+        misspelledWord: params.misspelledWord,
+        dictionarySuggestions: params.dictionarySuggestions,
+        hasSafeLink,
+        mediaType: params.mediaType,
+        canCut: params.editFlags.canCut,
+        canCopy: params.editFlags.canCopy,
+        canPaste: params.editFlags.canPaste,
+        canSelectAll: params.editFlags.canSelectAll,
+      });
+      const requestId = nextEditContextMenuRequestIdValue();
+
+      void runPromise(
+        Effect.callback<string | null>((resume) => {
+          registerEditContextMenuWaiter(requestId, (itemId) => {
+            resume(Effect.succeed(itemId));
           });
-        }
-        if (params.dictionarySuggestions.length === 0) {
-          menuTemplate.push({ label: "No suggestions", enabled: false });
-        }
-        menuTemplate.push({ type: "separator" });
-      }
-
-      if (Option.isSome(ElectronShell.parseSafeExternalUrl(params.linkURL))) {
-        menuTemplate.push(
-          {
-            label: "Copy Link",
-            click: () => {
-              void runPromise(electronShell.copyText(params.linkURL));
-            },
-          },
-          { type: "separator" },
-        );
-      }
-
-      if (params.mediaType === "image") {
-        menuTemplate.push({
-          label: "Copy Image",
-          click: () => window.webContents.copyImageAt(params.x, params.y),
-        });
-        menuTemplate.push({ type: "separator" });
-      }
-
-      menuTemplate.push(
-        { role: "cut", enabled: params.editFlags.canCut },
-        { role: "copy", enabled: params.editFlags.canCopy },
-        { role: "paste", enabled: params.editFlags.canPaste },
-        { role: "selectAll", enabled: params.editFlags.canSelectAll },
+          if (window.isDestroyed() || window.webContents.isDestroyed()) {
+            completeEditContextMenuRequest(requestId, null);
+            return;
+          }
+          window.webContents.send(EDIT_CONTEXT_MENU_CHANNEL, {
+            requestId,
+            items,
+            position: { x: params.x, y: params.y, motion: "instant" },
+          });
+        }).pipe(
+          Effect.flatMap((itemId) => {
+            const command = resolveEditContextMenuCommand({
+              actionId: itemId,
+              dictionarySuggestions: params.dictionarySuggestions,
+            });
+            if (command === null) {
+              return Effect.void;
+            }
+            switch (command.type) {
+              case "replace-misspelling":
+                window.webContents.replaceMisspelling(command.suggestion);
+                return Effect.void;
+              case "copy-link":
+                return electronShell.copyText(params.linkURL);
+              case "copy-image":
+                window.webContents.copyImageAt(params.x, params.y);
+                return Effect.void;
+              case "cut":
+                window.webContents.cut();
+                return Effect.void;
+              case "copy":
+                window.webContents.copy();
+                return Effect.void;
+              case "paste":
+                window.webContents.paste();
+                return Effect.void;
+              case "select-all":
+                window.webContents.selectAll();
+                return Effect.void;
+            }
+          }),
+        ),
       );
-
-      void runPromise(electronMenu.popupTemplate({ window, template: menuTemplate }));
     });
 
     window.webContents.setWindowOpenHandler(({ url }) => {

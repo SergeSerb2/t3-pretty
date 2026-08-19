@@ -49,7 +49,7 @@ function failureToast(title: string, error: unknown) {
 /**
  * The per-thread action menu (pin, settle, snooze, rename, copy, delete…) as
  * a self-contained hook, for surfaces other than the sidebar row — today the
- * chat header. Renders through the native context-menu bridge and dispatches
+ * chat header. Renders through the in-app context menu and dispatches
  * through the same mutations the sidebar uses.
  *
  * Unlike the sidebar, settle and snooze here never navigate away: the caller
@@ -105,7 +105,7 @@ export function useThreadActionMenu(input: {
   });
 
   const openMenu = useCallback(
-    (position: { x: number; y: number }) => {
+    (position: { x: number; y: number; motion?: "instant" | "dropdown" }) => {
       if (threadRef === null) return;
       void (async () => {
         const api = readLocalApi();
@@ -124,6 +124,7 @@ export function useThreadActionMenu(input: {
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
         const items = buildThreadActionMenuItems({
+          surface: "header",
           branch: thread.branch ?? null,
           isPinned: thread.pinnedAt != null,
           isSettled:

@@ -109,9 +109,11 @@ export interface ContextMenuItem<T extends string = string> {
   label: string;
   destructive?: boolean;
   disabled?: boolean;
-  /** Renders as a non-interactive section header label. Web fallback only — stripped on desktop native menus. */
+  /** Renders as a non-interactive section header label. */
   header?: boolean;
-  /** Icon keyword resolved by the web fallback. Stripped on desktop native menus. */
+  /** Horizontal rule. In-app menus render it; native Electron menus skip it. */
+  separator?: boolean;
+  /** Icon keyword resolved by the in-app menu. */
   icon?: string;
   children?: readonly ContextMenuItem<T>[];
 }
@@ -122,6 +124,7 @@ export interface ContextMenuItemSchemaType {
   readonly destructive?: boolean;
   readonly disabled?: boolean;
   readonly header?: boolean;
+  readonly separator?: boolean;
   readonly icon?: string;
   readonly children?: readonly ContextMenuItemSchemaType[];
 }
@@ -132,6 +135,7 @@ export const ContextMenuItemSchema: Schema.Codec<ContextMenuItemSchemaType> = Sc
   destructive: Schema.optionalKey(Schema.Boolean),
   disabled: Schema.optionalKey(Schema.Boolean),
   header: Schema.optionalKey(Schema.Boolean),
+  separator: Schema.optionalKey(Schema.Boolean),
   icon: Schema.optionalKey(Schema.String),
   children: Schema.optionalKey(
     Schema.Array(
@@ -139,6 +143,20 @@ export const ContextMenuItemSchema: Schema.Codec<ContextMenuItemSchemaType> = Sc
     ),
   ),
 });
+
+/** Where to put the menu, and whether the open motion should be instant. */
+export interface ContextMenuPosition {
+  x: number;
+  y: number;
+  motion?: "instant" | "dropdown";
+}
+
+/** Main-process request to paint the desktop edit menu in the renderer. */
+export interface DesktopEditContextMenuRequest {
+  readonly requestId: string;
+  readonly items: readonly ContextMenuItem[];
+  readonly position: ContextMenuPosition;
+}
 
 export type DesktopUpdateStatus =
   | "disabled"
@@ -1231,8 +1249,16 @@ export interface DesktopBridge {
   setTheme: (theme: DesktopTheme) => Promise<void>;
   showContextMenu: <T extends string>(
     items: readonly ContextMenuItem<T>[],
-    position?: { x: number; y: number },
+    position?: ContextMenuPosition,
   ) => Promise<T | null>;
+  /**
+   * Desktop edit menus (spellcheck, copy link/image, cut/copy/paste) are
+   * authored in the main process from Electron's context-menu params, then
+   * painted in the renderer. Optional: older desktop builds popup native
+   * instead.
+   */
+  onEditContextMenu?: (listener: (request: DesktopEditContextMenuRequest) => void) => () => void;
+  resolveEditContextMenu?: (requestId: string, itemId: string | null) => Promise<void>;
   openExternal: (url: string) => Promise<boolean>;
   /**
    * Probe this desktop machine for installed remote-capable editor CLIs
@@ -1372,7 +1398,7 @@ export interface LocalApi {
   contextMenu: {
     show: <T extends string>(
       items: readonly ContextMenuItem<T>[],
-      position?: { x: number; y: number },
+      position?: ContextMenuPosition,
     ) => Promise<T | null>;
     close: () => Promise<void>;
   };

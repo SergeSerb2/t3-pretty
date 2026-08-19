@@ -28,6 +28,8 @@ function MenuPopup({
   alignOffset,
   side = "bottom",
   anchor,
+  instant = false,
+  positionerClassName,
   ...props
 }: MenuPrimitive.Popup.Props & {
   align?: MenuPrimitive.Positioner.Props["align"];
@@ -35,6 +37,9 @@ function MenuPopup({
   alignOffset?: MenuPrimitive.Positioner.Props["alignOffset"];
   side?: MenuPrimitive.Positioner.Props["side"];
   anchor?: MenuPrimitive.Positioner.Props["anchor"];
+  /** Skip the 150ms scale-in. Right-click menus use this. */
+  instant?: boolean | undefined;
+  positionerClassName?: string | undefined;
 }) {
   const hasExplicitWidthClass =
     typeof className === "string" &&
@@ -49,17 +54,18 @@ function MenuPopup({
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="z-[130]"
+        className={cn("z-[130]", positionerClassName)}
         data-slot="menu-positioner"
         side={side}
         sideOffset={sideOffset}
       >
         <MenuPrimitive.Popup
           className={cn(
-            "dropdown-glass relative flex min-w-0 origin-(--transform-origin) rounded-lg shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none transition-[scale,opacity] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)] focus:outline-none data-ending-style:scale-[0.97] data-ending-style:opacity-0 data-ending-style:duration-100 data-instant:transition-none data-starting-style:scale-[0.97] data-starting-style:opacity-0 motion-reduce:transition-opacity dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
+            "dropdown-glass relative flex min-w-0 origin-(--transform-origin) rounded-lg shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none transition-[scale,opacity] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)] focus:outline-none data-ending-style:scale-[0.97] data-ending-style:opacity-0 data-ending-style:duration-100 data-instant:transition-none data-instant:data-starting-style:scale-100 data-instant:data-starting-style:opacity-100 data-instant:data-ending-style:scale-100 data-instant:data-ending-style:opacity-100 data-starting-style:scale-[0.97] data-starting-style:opacity-0 motion-reduce:transition-opacity dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
             !hasExplicitWidthClass && "min-w-32",
             className,
           )}
+          data-instant={instant ? "" : undefined}
           data-slot="menu-popup"
           {...props}
         >
@@ -255,11 +261,15 @@ function MenuSubPopup({
   sideOffset = 0,
   alignOffset,
   align = "start",
+  instant = false,
+  positionerClassName,
   ...props
 }: MenuPrimitive.Popup.Props & {
   align?: MenuPrimitive.Positioner.Props["align"];
   sideOffset?: MenuPrimitive.Positioner.Props["sideOffset"];
   alignOffset?: MenuPrimitive.Positioner.Props["alignOffset"];
+  instant?: boolean | undefined;
+  positionerClassName?: string | undefined;
 }) {
   const defaultAlignOffset = align !== "center" ? -5 : undefined;
 
@@ -269,6 +279,8 @@ function MenuSubPopup({
       alignOffset={alignOffset ?? defaultAlignOffset}
       className={className}
       data-slot="menu-sub-content"
+      instant={instant}
+      positionerClassName={positionerClassName}
       side="inline-end"
       sideOffset={sideOffset}
       {...props}

@@ -34,6 +34,7 @@ import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
+import { completeEditContextMenuRequest } from "../../window/editContextMenu.ts";
 import {
   extractDistroFromUncPath,
   resolveWslPickFolderDefaultPath,
@@ -243,6 +244,19 @@ export const setTheme = DesktopIpc.makeIpcMethod({
     const electronTheme = yield* ElectronTheme.ElectronTheme;
     yield* electronTheme.setSource(theme);
   }),
+});
+
+export const resolveEditContextMenu = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.RESOLVE_EDIT_CONTEXT_MENU_CHANNEL,
+  payload: Schema.Struct({
+    requestId: Schema.String,
+    itemId: Schema.NullOr(Schema.String),
+  }),
+  result: Schema.Void,
+  handler: (input) =>
+    Effect.sync(() => {
+      completeEditContextMenuRequest(input.requestId, input.itemId);
+    }),
 });
 
 export const showContextMenu = DesktopIpc.makeIpcMethod({
