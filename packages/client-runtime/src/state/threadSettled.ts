@@ -3,18 +3,69 @@ import type { OrchestrationThreadShell } from "@t3tools/contracts";
 
 export type ChangeRequestStateLike = "open" | "closed" | "merged";
 
-/** Returns whether the change request state settles the thread immediately. */
+/**
+ * Parent-compatible change-request slice accepted by the settle APIs.
+ * T3 Pretty's policy currently inspects `state`; `updatedAt` remains in the
+ * shared shape so provider-backed callers do not need an adapter.
+ */
+export interface ChangeRequestSettleSource {
+  readonly state: ChangeRequestStateLike;
+  readonly updatedAt?: string | null | undefined;
+}
+
+/** Parent-compatible thread timeline shape accepted by the settle APIs. */
+export type ThreadActivitySource = Pick<
+  OrchestrationThreadShell,
+  "createdAt" | "latestUserMessageAt" | "latestTurn"
+>;
+
+/**
+ * Latest USER-initiated activity: messages and the turn requests they start,
+ * not the agent-side started/completed stamps. Used so a close that landed
+ * before this conversation existed (inherited branch history) cannot settle
+ * a newer thread. Falls back to creation time for untouched threads.
+ */
+function threadUserActivityAnchorAt(thread: ThreadActivitySource): string {
+  const messageAt = thread.latestUserMessageAt;
+  const requestedAt = thread.latestTurn?.requestedAt;
+  let anchor = thread.createdAt;
+  for (const candidate of [messageAt, requestedAt]) {
+    if (candidate != null && Date.parse(candidate) > Date.parse(anchor)) {
+      anchor = candidate;
+    }
+  }
+  return anchor;
+}
+
+/**
+ * Returns whether the change request settles the thread immediately.
+ * T3 Pretty auto-settles only closed requests. Merged requests stay active
+ * until the user settles them, regardless of the parent `autoSettleOnMerge`
+ * option. Closed requests use the parent's timestamp gate so an inherited or
+ * previously closed PR cannot settle a newer conversation.
+ */
 export function changeRequestAutoSettles(
-  state: ChangeRequestStateLike | null | undefined,
+  changeRequest: ChangeRequestSettleSource | null | undefined,
+  options: {
+    readonly autoSettleOnMerge?: boolean | undefined;
+    readonly thread?: ThreadActivitySource | null | undefined;
+  } = {},
 ): boolean {
-  // Closed PRs are abandoned work. Merged PRs stay active until the user
-  // settles them — auto-settling on merge hid threads people still wanted.
-  return state === "closed";
+  if (changeRequest?.state !== "closed") return false;
+  if (changeRequest.updatedAt == null || options.thread == null) return true;
+  const updatedAtMs = Date.parse(changeRequest.updatedAt);
+  const anchorAtMs = Date.parse(threadUserActivityAnchorAt(options.thread));
+  // Malformed timestamps fall back to settling, matching servers that never
+  // report updatedAt.
+  if (Number.isNaN(updatedAtMs) || Number.isNaN(anchorAtMs)) return true;
+  return updatedAtMs >= anchorAtMs;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
-export function threadLastActivityAt(shell: OrchestrationThreadShell): string | null {
+export function threadLastActivityAt(
+  shell: Pick<OrchestrationThreadShell, "latestUserMessageAt" | "latestTurn">,
+): string | null {
   const candidates = [
     shell.latestUserMessageAt,
     shell.latestTurn?.requestedAt,
@@ -230,9 +281,10 @@ export function threadWokeAt(
  * queued turn) are checked first and hold a thread active regardless of any
  * override. Past the blockers, the explicit user override (thread.settle /
  * thread.unsettle commands, projected into settledOverride + settledAt)
- * wins in both directions; without one, a thread always settles on a
- * closed PR, or settles on inactivity past the window. An open or merged
- * PR blocks the inactivity path entirely. The server un-settles on real
+ * wins in both directions; without one, a closed PR settles when it is at
+ * least as recent as the thread's user activity, or the thread settles on
+ * inactivity past the window. An open or merged PR blocks the inactivity
+ * path entirely. The server un-settles on real
  * activity (user message, session start, approval/user-input request), so
  * an override never goes stale silently.
  */
@@ -241,7 +293,12 @@ export function effectiveSettled(
   options: {
     readonly now: string;
     readonly autoSettleAfterDays: number | null;
-    readonly changeRequestState?: ChangeRequestStateLike | null;
+    /**
+     * Accepted for compatibility with the parent API. T3 Pretty never
+     * auto-settles merged requests, regardless of this value.
+     */
+    readonly autoSettleOnMerge?: boolean;
+    readonly changeRequest?: ChangeRequestSettleSource | null;
   },
 ): boolean {
   // Blocked work must remain visible even when a user explicitly settled it.
@@ -267,14 +324,19 @@ export function effectiveSettled(
   // "active" is the explicit keep-active pin: it suppresses auto-settle
   // until real activity clears it server-side.
   if (shell.settledOverride === "active") return false;
-  if (changeRequestAutoSettles(options.changeRequestState)) {
+  if (
+    changeRequestAutoSettles(options.changeRequest, {
+      autoSettleOnMerge: options.autoSettleOnMerge,
+      thread: shell,
+    })
+  ) {
     return true;
   }
   // An open or merged PR is unfinished business regardless of how long the
   // thread has been quiet: review and follow-up can take days, and hiding
   // the thread would bury the work waiting on it. A close or an explicit
   // user settle resolves it.
-  if (options.changeRequestState === "open" || options.changeRequestState === "merged") {
+  if (options.changeRequest?.state === "open" || options.changeRequest?.state === "merged") {
     return false;
   }
   if (options.autoSettleAfterDays === null) return false;
