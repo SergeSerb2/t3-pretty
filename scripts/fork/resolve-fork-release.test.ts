@@ -73,6 +73,44 @@ it("emits a fork-specific semver tag that electron-updater can match to nightly"
   }
 });
 
+it("skips imported minting when no upstream nightly is an ancestor of HEAD", () => {
+  const fixtureRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fork-release-skip-"));
+  const outputPath = NodePath.join(fixtureRoot, "github-output");
+
+  try {
+    git(fixtureRoot, "init");
+    git(fixtureRoot, "config", "user.name", "T3 Fork Release Test");
+    git(fixtureRoot, "config", "user.email", "t3-fork-release-test@example.invalid");
+    NodeFS.writeFileSync(NodePath.join(fixtureRoot, "fixture.txt"), "fixture\n");
+    git(fixtureRoot, "add", "fixture.txt");
+    git(fixtureRoot, "commit", "-m", "test fixture");
+    NodeFS.writeFileSync(outputPath, "");
+
+    const skipped = NodeChildProcess.spawnSync(process.execPath, [scriptPath], {
+      cwd: fixtureRoot,
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_OUTPUT: outputPath },
+    });
+    assert.equal(skipped.status, 0);
+    assert.match(skipped.stderr, /skipping imported version mint/);
+    assert.equal(NodeFS.readFileSync(outputPath, "utf8"), "");
+
+    const printed = NodeChildProcess.spawnSync(
+      process.execPath,
+      [scriptPath, "--print", "version"],
+      {
+        cwd: fixtureRoot,
+        encoding: "utf8",
+        env: { ...process.env, GITHUB_OUTPUT: outputPath },
+      },
+    );
+    assert.notEqual(printed.status, 0);
+    assert.match(printed.stderr, /No integrated upstream nightly tag is an ancestor of HEAD/);
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 it("keeps a later CI run newer than an already-shipped fork tag", () => {
   const fixtureRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fork-release-mono-"));
 

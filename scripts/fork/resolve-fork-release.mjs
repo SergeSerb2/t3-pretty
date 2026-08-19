@@ -32,7 +32,7 @@ function findNewestIntegratedNightly() {
     }
   }
 
-  throw new Error("No integrated upstream nightly tag is an ancestor of HEAD");
+  return null;
 }
 
 function resolveRunNumber() {
@@ -88,6 +88,17 @@ function main() {
   const runNumber = resolveRunNumber();
 
   const upstreamTag = findNewestIntegratedNightly();
+  if (!upstreamTag) {
+    const detail = "No integrated upstream nightly tag is an ancestor of HEAD";
+    // Native packagers call `--print` and need a real version. The imported
+    // preflight writes GITHUB_OUTPUT and should skip minting instead of
+    // redding the Buildkite job; Mac/Windows still resolve the version.
+    if (!field && process.env.GITHUB_OUTPUT) {
+      process.stderr.write(`${detail}; skipping imported version mint.\n`);
+      return;
+    }
+    throw new Error(detail);
+  }
   const match = NIGHTLY_TAG.exec(upstreamTag);
   if (!match) throw new Error(`Invalid upstream nightly tag: ${upstreamTag}`);
 
