@@ -83,6 +83,18 @@ function printField(argv) {
   return field;
 }
 
+function writeGitHubOutput(values) {
+  const outputPath = process.env.GITHUB_OUTPUT;
+  if (!outputPath) return false;
+  NodeFS.appendFileSync(
+    outputPath,
+    Object.entries(values)
+      .map(([key, value]) => `${key}=${value}`)
+      .join("\n") + "\n",
+  );
+  return true;
+}
+
 function main() {
   const field = printField(process.argv.slice(2));
   const runNumber = resolveRunNumber();
@@ -97,6 +109,7 @@ function main() {
     // must not swallow a real mint failure.
     if (!field && process.env.T3_SKIP_UNRESOLVABLE_MINT === "1") {
       process.stderr.write(`${detail}; skipping imported version mint.\n`);
+      writeGitHubOutput({ minted: "false" });
       return;
     }
     throw new Error(detail);
@@ -112,6 +125,7 @@ function main() {
   // identifier so the tag remains both fork-specific and semver-valid.
   const tag = `v${version}.fork`;
   const values = {
+    minted: "true",
     upstream_tag: upstreamTag,
     version,
     tag,
@@ -126,15 +140,7 @@ function main() {
     return;
   }
 
-  const outputPath = process.env.GITHUB_OUTPUT;
-  if (outputPath) {
-    NodeFS.appendFileSync(
-      outputPath,
-      Object.entries(values)
-        .map(([key, value]) => `${key}=${value}`)
-        .join("\n") + "\n",
-    );
-  } else {
+  if (!writeGitHubOutput(values)) {
     process.stdout.write(`${JSON.stringify(values, null, 2)}\n`);
   }
 }

@@ -34,12 +34,14 @@ it("emits a fork-specific semver tag that electron-updater can match to nightly"
       env: { ...process.env, GITHUB_RUN_NUMBER: "15", GITHUB_OUTPUT: "" },
     });
     const metadata = JSON.parse(output) as {
+      readonly minted: string;
       readonly version: string;
       readonly tag: string;
       readonly upstream_tag: string;
       readonly name: string;
     };
 
+    assert.equal(metadata.minted, "true");
     assert.equal(metadata.version, "0.0.33-nightly.20260809.1043000015");
     assert.equal(metadata.tag, "v0.0.33-nightly.20260809.1043000015.fork");
     const printed = NodeChildProcess.execFileSync(
@@ -110,7 +112,7 @@ it("skips imported minting when no upstream nightly is an ancestor of HEAD", () 
     });
     assert.equal(skipped.status, 0);
     assert.match(skipped.stderr, /skipping imported version mint/);
-    assert.equal(NodeFS.readFileSync(outputPath, "utf8"), "");
+    assert.equal(NodeFS.readFileSync(outputPath, "utf8"), "minted=false\n");
 
     const printed = NodeChildProcess.spawnSync(
       process.execPath,

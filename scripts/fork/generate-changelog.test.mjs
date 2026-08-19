@@ -252,6 +252,7 @@ describe("release workflow wiring", () => {
     assert.include(workflow, "node scripts/fork/generate-changelog.mjs");
     assert.include(workflow, "CLI_PROXY_API_KEY");
     assert.include(workflow, "RELEASE_VERSION: ${{ steps.release.outputs.version }}");
+    assert.include(workflow, "steps.release.outputs.minted == 'true'");
     assert.include(
       workflow,
       "ref: ${{ steps.changelog.outputs.ref || github.sha || env.BUILDKITE_COMMIT }}",
