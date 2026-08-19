@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
+  dismissHostedContextMenu,
   isAuthoredContextMenuOpen,
   readContextMenuState,
   registerContextMenuHost,
@@ -74,6 +75,47 @@ describe("in-app context menu coordinator", () => {
     await expect(first).resolves.toBeNull();
     respondToContextMenu("second");
     await expect(second).resolves.toBe("second");
+    unregister();
+  });
+
+  it("lets a same-turn selection win over dismiss", async () => {
+    const unregister = registerContextMenuHost();
+    const selection = requireMenu(
+      requestContextMenu([{ id: "rename", label: "Rename" }], { x: 1, y: 1 }),
+    );
+
+    dismissHostedContextMenu();
+    respondToContextMenu("rename");
+
+    await expect(selection).resolves.toBe("rename");
+    expect(readContextMenuState()).toEqual({ status: "idle" });
+    unregister();
+  });
+
+  it("does not cancel after a selection has already resolved", async () => {
+    const unregister = registerContextMenuHost();
+    const selection = requireMenu(
+      requestContextMenu([{ id: "pin", label: "Pin thread" }], { x: 1, y: 1 }),
+    );
+
+    respondToContextMenu("pin");
+    dismissHostedContextMenu();
+
+    await expect(selection).resolves.toBe("pin");
+    expect(readContextMenuState()).toEqual({ status: "idle" });
+    unregister();
+  });
+
+  it("cancels when dismissed without a selection", async () => {
+    const unregister = registerContextMenuHost();
+    const selection = requireMenu(
+      requestContextMenu([{ id: "rename", label: "Rename" }], { x: 1, y: 1 }),
+    );
+
+    dismissHostedContextMenu();
+
+    await expect(selection).resolves.toBeNull();
+    expect(readContextMenuState()).toEqual({ status: "idle" });
     unregister();
   });
 });

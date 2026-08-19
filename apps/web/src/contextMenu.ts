@@ -98,13 +98,23 @@ export function requestContextMenu(
 }
 
 export function respondToContextMenu(itemId: string | null): void {
-  if (state.status !== "open" || !activeMenu) return;
+  if (!activeMenu) return;
   resolveActive(itemId);
   publish(idleState);
 }
 
+/**
+ * Cancel only when no item has been chosen yet. Base UI fires
+ * `onOpenChange(false)` before the item `onClick`, so the cancel waits
+ * a turn for a same-event selection to settle first.
+ */
 export function dismissHostedContextMenu(): void {
-  respondToContextMenu(null);
+  const pending = activeMenu;
+  if (!pending) return;
+  queueMicrotask(() => {
+    if (activeMenu !== pending) return;
+    respondToContextMenu(null);
+  });
 }
 
 export function showInAppContextMenu<T extends string>(
