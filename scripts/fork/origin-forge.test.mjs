@@ -158,6 +158,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(preflight, "can_mint=false");
     assert.include(preflight, "can_mint=true");
     assert.include(preflight, "steps.tags.outputs.can_mint == 'true'");
+    assert.include(preflight, "steps.release.outcome == 'success'");
     assert.include(preflight, "steps.release.outputs.minted == 'true'");
     assert.include(preflight, "steps.release.outputs.version != ''");
     assert.include(preflight, "steps.release.outputs.version != '-'");

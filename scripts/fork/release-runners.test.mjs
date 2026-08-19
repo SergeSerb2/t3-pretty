@@ -55,6 +55,7 @@ describe("T3 Pretty release runner placement", () => {
     );
     assert.include(preflight, "windows_release: ${{ steps.signing.outputs.windows || 'false' }}");
     assert.include(preflight, "version: ${{ steps.release.outputs.version || '-' }}");
+    assert.include(preflight, "steps.release.outcome == 'success'");
     assert.include(preflight, "steps.release.outputs.minted == 'true'");
     assert.include(preflight, "steps.release.outputs.version != ''");
     assert.include(preflight, "steps.release.outputs.version != '-'");
