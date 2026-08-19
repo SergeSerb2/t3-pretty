@@ -1,8 +1,9 @@
 # World Scenery
 
 World Scenery puts a landscape photo behind T3 Code so chrome reads as frosted glass over a
-place, not a flat canvas. Each thread keeps its own photo; the Home screen uses the photo of
-the day.
+place, not a flat canvas. The left sidebar and the right sidebar share that glass plate, so
+the photo shows through both instead of a solid panel. Each thread keeps its own photo; the
+Home screen uses the photo of the day.
 
 ## Turn it on or off
 

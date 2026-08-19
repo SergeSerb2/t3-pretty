@@ -117,7 +117,7 @@ export function CanvasSelectionOverlay(props: {
                 key={handle}
                 data-canvas-handle={handle}
                 data-node-id={selection[0]!.id}
-                className="pointer-events-auto absolute size-2 rounded-[2px] border border-primary bg-background shadow-xs"
+                className="pointer-events-auto absolute size-2 rounded-[2px] border border-primary bg-card shadow-xs"
                 style={{ left: x - 4, top: y - 4, cursor: handleCursor(handle) }}
               />
             );

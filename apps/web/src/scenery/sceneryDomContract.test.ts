@@ -12,9 +12,11 @@ import { describe, expect, it } from "vite-plus/test";
 import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
 import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
+import previewPanelShellSource from "../components/preview/PreviewPanelShell.tsx?raw";
 import sidebarSource from "../components/ui/sidebar.tsx?raw";
 import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
+import rightPanelLayoutSource from "../rightPanelLayout.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
@@ -87,7 +89,9 @@ describe("composer attach contract with upstream markup", () => {
   });
 
   it("the composer still ingests OS-style Files drops on its drag wrapper", () => {
-    expect(chatViewSource).toContain("onDrop={workspaceFileDropHandlers.onDrop}");
+    expect(chatViewSource).toContain(
+      "onDrop={isCanvasFirstDraft ? undefined : workspaceFileDropHandlers.onDrop}",
+    );
     expect(chatComposerSource).toContain("addDroppedFiles: (files: File[]) => {");
     expect(chatComposerSource).toContain("void addComposerImages(files)");
   });
@@ -123,6 +127,17 @@ describe("glass contract with upstream chrome", () => {
   it("header controls still paint from the --toolbar-control var", () => {
     expect(indexCssSource).toContain("[data-chat-header] [data-toolbar-control]");
     expect(indexCssSource).toContain("background-color: var(--toolbar-control)");
+  });
+
+  it("the right panel still exposes the hooks the scenery glass plate targets", () => {
+    expect(previewPanelShellSource).toContain("right-panel-inline-body");
+    expect(previewPanelShellSource).toContain('data-right-panel=""');
+    expect(rightPanelLayoutSource).toContain("right-panel-sheet");
+    expect(sceneryCssSource).toContain(".right-panel-inline-body");
+    expect(sceneryCssSource).toContain(".right-panel-sheet");
+    expect(sceneryCssSource).toMatch(
+      /\[data-right-panel\]\s+\.bg-background\s*\{[^}]*background-color: transparent;/s,
+    );
   });
 });
 

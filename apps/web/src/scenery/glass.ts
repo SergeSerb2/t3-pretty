@@ -11,7 +11,7 @@
  *  3. **legibility wash** — flat tone over the photo so primary text stays
  *     readable on top (long-form text never sits on glass, so the wash is
  *     what carries its contrast)
- *  4. **chrome glass** — sidebar, header, composer
+ *  4. **chrome glass** — left sidebar, right panel, header, composer
  *
  * The invariant: **photo + wash composite to exactly `t`** over the canvas.
  * The photo gives up whatever alpha the wash takes — `photoOpacity` solves
