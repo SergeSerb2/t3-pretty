@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PATH shim used by fork-mobile-release.yml during `eas build --local`.
+# PATH shim used by publish-mobile-release.sh during `eas build --local`.
 #
 # On macOS 26 (Tahoe) / Xcode 27, EAS imports the distribution cert into an
 # ephemeral keychain, then `security find-identity -v` reports 0 valid

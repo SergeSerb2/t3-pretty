@@ -90,7 +90,7 @@ describe("Origin release and blocked-sync helpers", () => {
   it("keeps the fork release and sync workflows off the GitHub CLI", () => {
     const sync = workflow("fork-upstream-sync.yml");
     const desktop = workflow("fork-release.yml");
-    const mobile = workflow("fork-mobile-release.yml");
+    const mobile = NodeFS.readFileSync(NodePath.resolve(here, "publish-mobile-release.sh"), "utf8");
     const reviewCi = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
 
     for (const source of [sync, desktop, mobile]) {
@@ -141,11 +141,9 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(sync, "mapfile ");
     assert.include(sync, "Prepare macOS runner PATH");
     assert.include(sync, "checkout-origin.sh");
-    assert.include(mobile, "checkout-origin.sh");
-    assert.isFalse(/\n\s+uses:/u.test(mobile));
-    assert.include(mobile, "keeping importer tree");
-    assert.include(mobile, "scripts/fork/checkout-origin.sh");
-    assert.notInclude(mobile, '"$helper" main --full');
+    assert.include(mobile, "macos-release (m1-dev)");
+    assert.notInclude(mobile, "keeping importer tree");
+    assert.notInclude(mobile, "t3_require_ota");
     assert.include(desktop, "ensure-linux-node.sh");
     assert.include(desktop, "PREFLIGHT_REF");
     assert.include(desktop, "needs.preflight.result == 'success'");
@@ -163,7 +161,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(preflight, "continue-on-error: true");
     assert.notInclude(mobile, "GITHUB_ENV is required");
     assert.notInclude(mobile, "grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> \"$GITHUB_ENV\"");
-    assert.include(mobile, "t3_persist_env");
+    assert.include(mobile, "load_dotenv");
     assert.include(sync, ". scripts/fork/macos-ci-prelude.sh");
     assert.include(
       sync,
@@ -178,7 +176,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(mobile, "secrets.APPLE_API_KEY_ID");
     assert.notInclude(mobile, "secrets.APPLE_API_ISSUER");
     assert.include(sync, "load-buildkite-secrets.sh");
-    assert.include(mobile, "load-buildkite-secrets.sh EXPO_TOKEN");
+    assert.include(mobile, "load_secret EXPO_TOKEN");
     const secretsHelper = NodeFS.readFileSync(
       NodePath.resolve(here, "load-buildkite-secrets.sh"),
       "utf8",
@@ -199,9 +197,11 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(prelude, "GITHUB_WORKSPACE:-${HOME}");
     assert.include(ciEnv, "writing t3-pretty-ci.env under /tmp");
     assert.notInclude(ciEnv, "return 1");
-    assert.include(mobile, "t3_persist_dotenv_file");
+    assert.notInclude(mobile, "t3_persist_dotenv_file");
     assert.notInclude(mobile, "GITHUB_WORKSPACE:-${HOME}");
-    assert.include(mobile, "APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID");
+    assert.include(mobile, "load_secret APPLE_API_KEY");
+    assert.include(mobile, "load_secret APPLE_API_KEY_ID");
+    assert.include(mobile, "load_secret APPLE_API_ISSUER");
     assert.include(preflight, "Mac signing secrets are resolved on macos-release");
     assert.include(preflight, "git fetch --force --tags origin");
     assert.include(mobile, "origin-forge.mjs merge-pr");
@@ -212,7 +212,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "fork-upstream-sync.yml");
     assert.include(pipeline, "soft_fail: true");
     assert.include(pipeline, "fork-release.yml");
-    assert.include(pipeline, "fork-mobile-release.yml");
+    assert.notInclude(pipeline, "- .github/workflows/fork-mobile-release.yml");
     assert.notInclude(pipeline, "- .github/workflows/fork-pr-review.yml");
     assert.include(pipeline, "run-trusted-origin-pr-ci.sh");
     assert.include(pipeline, "run-trusted-origin-pr-ci.sh check");
@@ -232,6 +232,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");
     assert.include(pipeline, "build-macos-dmg.sh");
+    assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, 'build.source != "schedule"');
     assert.notInclude(pipeline, "depends_on: origin-workflows");
     assert.notInclude(pipeline, "\n    secrets:");
