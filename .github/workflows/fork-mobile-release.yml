@@ -89,16 +89,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "ci GITHUB_OUTPUT=${GITHUB_OUTPUT:-unset} GITHUB_ENV=${GITHUB_ENV:-unset} GITHUB_PATH=${GITHUB_PATH:-unset} RUNNER_TEMP=${RUNNER_TEMP:-unset} GITHUB_WORKSPACE=${GITHUB_WORKSPACE:-unset}"
           extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
           export PATH="${extra}:${PATH}"
           if [[ -n "${GITHUB_PATH:-}" ]]; then
-            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-            echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
-            echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
-            echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+            {
+              echo "/opt/homebrew/bin"
+              echo "/opt/homebrew/sbin"
+              echo "${HOME}/.vite-plus/bin"
+              echo "${HOME}/.local/bin"
+            } >> "$GITHUB_PATH" || true
           fi
           if [[ -n "${GITHUB_ENV:-}" ]]; then
-            echo "PATH=${PATH}" >> "$GITHUB_ENV"
+            echo "PATH=${PATH}" >> "$GITHUB_ENV" || true
           fi
           dir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
           dir="${dir%/}"
@@ -108,10 +111,10 @@ jobs:
             echo "RUNNER_TEMP is the workspace root; writing t3-pretty-ci.env under /tmp"
             dir="/tmp"
           fi
+          mkdir -p "$dir" || dir="/tmp"
           ci_env="${dir}/t3-pretty-ci.env"
-          mkdir -p "$dir"
-          rm -f "$ci_env"
-          printf 'export PATH=%q\n' "$PATH" > "$ci_env"
+          rm -f "$ci_env" || true
+          printf 'export PATH=%q\n' "$PATH" > "$ci_env" || true
 
       - id: expo-token
         name: Checkout Origin and load Expo token
@@ -122,19 +125,29 @@ jobs:
           set -euo pipefail
           extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
           export PATH="${extra}:${PATH}"
-          # macos-latest maps to macos-release. Do not call checkout@v6:
-          # the importer resolves that action from api.github.com and a
-          # burst of main merges trips the GitHub rate limit.
-          helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
-          test -x "$helper"
-          test -n "${CHECKOUT_SHA:-}"
-          "$helper" "$CHECKOUT_SHA" --full
+          # The importer already cloned this SHA. Prefer the agent helper so
+          # eas gets a full Origin tree; if it is missing, keep the importer
+          # checkout instead of failing in two seconds.
+          helper=""
+          for candidate in \
+            "/opt/homebrew/etc/buildkite-agent/checkout-origin.sh" \
+            "scripts/fork/checkout-origin.sh"; do
+            if [[ -x "$candidate" ]]; then
+              helper="$candidate"
+              break
+            fi
+          done
+          if [[ -n "$helper" && -n "${CHECKOUT_SHA:-}" ]]; then
+            "$helper" "$CHECKOUT_SHA" --full || echo "checkout-origin failed; keeping importer tree"
+          else
+            echo "checkout-origin helper missing; keeping importer tree"
+          fi
           # Source so EXPO_TOKEN is in this shell even when GITHUB_ENV is unset.
           # shellcheck disable=SC1091
           . scripts/fork/load-buildkite-secrets.sh EXPO_TOKEN
           if [ -n "${EXPO_TOKEN:-}" ]; then
             if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-              echo "present=true" >> "$GITHUB_OUTPUT"
+              echo "present=true" >> "$GITHUB_OUTPUT" || true
             fi
           else
             echo "EXPO_TOKEN is required for OTA publishing and managed iOS credentials." >&2
@@ -326,9 +339,20 @@ jobs:
           CHECKOUT_REF: ${{ github.sha }}
         run: |
           set -euo pipefail
-          helper="/opt/homebrew/etc/buildkite-agent/checkout-origin.sh"
-          test -x "$helper"
-          "$helper" "$CHECKOUT_REF" --full
+          helper=""
+          for candidate in \
+            "/opt/homebrew/etc/buildkite-agent/checkout-origin.sh" \
+            "scripts/fork/checkout-origin.sh"; do
+            if [[ -x "$candidate" ]]; then
+              helper="$candidate"
+              break
+            fi
+          done
+          if [[ -n "$helper" && -n "${CHECKOUT_REF:-}" ]]; then
+            "$helper" "$CHECKOUT_REF" --full || echo "checkout-origin failed; keeping importer tree"
+          else
+            echo "checkout-origin helper missing; keeping importer tree"
+          fi
 
       - name: Load Buildkite cluster secrets
         shell: bash

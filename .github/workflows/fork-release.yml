@@ -53,7 +53,7 @@ jobs:
     # stalled CLIProxy request can never get the preflight hard-killed.
     timeout-minutes: 15
     outputs:
-      should_release: ${{ steps.paths.outputs.relevant == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true' }}
+      should_release: ${{ steps.tags.outputs.can_mint == 'true' && steps.paths.outputs.relevant == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true' }}
       windows_release: ${{ steps.signing.outputs.windows }}
       windows_signed: ${{ steps.signing.outputs.windows_signed }}
       version: ${{ steps.release.outputs.version }}
@@ -79,8 +79,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          gha_out() {
+            if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+              printf '%s\n' "$1" >> "$GITHUB_OUTPUT" || true
+            fi
+          }
           if [[ "${GITHUB_EVENT_NAME}" != "push" ]] || ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
-            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            gha_out "relevant=true"
             exit 0
           fi
           if git diff --quiet HEAD~1 HEAD -- \
@@ -101,21 +106,34 @@ jobs:
             .github/workflows/fork-release.yml \
             .buildkite; then
             echo "Push does not change the shipped desktop app."
-            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            gha_out "relevant=false"
           else
-            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            gha_out "relevant=true"
           fi
 
       - id: tags
         name: Fetch upstream release tags
         if: steps.paths.outputs.relevant == 'true'
+        continue-on-error: true
+        shell: bash
         run: |
+          set -euo pipefail
+          gha_out() {
+            if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+              printf '%s\n' "$1" >> "$GITHUB_OUTPUT" || true
+            fi
+          }
+          skip_mint() {
+            echo "$1" >&2
+            gha_out "can_mint=false"
+            exit 0
+          }
           if git remote get-url upstream >/dev/null 2>&1; then
             git remote set-url upstream https://github.com/pingdotgg/t3code.git
           else
             git remote add upstream https://github.com/pingdotgg/t3code.git
           fi
-          git fetch --force --tags upstream
+          git fetch --force --tags upstream || skip_mint "Could not fetch upstream tags; skipping imported version mint."
           # Fork versions must stay above every already-pushed Origin tag.
           # Hosted linux-small often cannot fetch Origin tags (no credentials).
           # Native Mac/Windows packagers fetch tags themselves. Do not fail
@@ -126,20 +144,14 @@ jobs:
           if [[ "$origin_tags_ok" != 1 ]]; then
             echo "::warning::Could not fetch Origin fork tags from the origin remote."
             if [[ -z "$(git tag --list 'v*-nightly.*.fork')" ]]; then
-              echo "No fork tags are present; refusing to mint a version." >&2
-              if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-                echo "can_mint=false" >> "$GITHUB_OUTPUT"
-              fi
-              exit 0
+              skip_mint "No fork tags are present; refusing to mint a version."
             fi
           fi
-          if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-            echo "can_mint=true" >> "$GITHUB_OUTPUT"
-          fi
+          gha_out "can_mint=true"
 
       - id: existing
         name: Skip an already released commit
-        if: steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint != 'false'
+        if: steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true'
         shell: bash
         run: |
           existing_tag="$(
@@ -169,7 +181,7 @@ jobs:
           fi
 
       - name: Verify Origin release publisher credentials
-        if: steps.existing.outputs.should_release == 'true'
+        if: steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true'
         run: |
           set -euo pipefail
           # Read Buildkite pipeline env directly. Mapping `${{ env.NAME }}`
@@ -187,7 +199,7 @@ jobs:
 
       - id: signing
         name: Check updater signing credentials
-        if: steps.existing.outputs.should_release == 'true'
+        if: steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true'
         shell: bash
         env:
           CSC_LINK: ${{ env.CSC_LINK }}
@@ -262,13 +274,13 @@ jobs:
           echo 'windows=true' >> "$GITHUB_OUTPUT"
 
       - name: Ensure Node
-        if: steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
+        if: steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
         shell: bash
         run: bash scripts/fork/ensure-linux-node.sh
 
       - id: release
         name: Create a monotonic fork version
-        if: steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
+        if: steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
         run: node scripts/fork/resolve-fork-release.mjs
 
       - id: changelog
@@ -276,6 +288,7 @@ jobs:
         # main only: a manual dispatch of another ref must not push its
         # history to main.
         if: >-
+          steps.tags.outputs.can_mint == 'true' &&
           steps.existing.outputs.should_release == 'true' &&
           steps.signing.outputs.configured == 'true' &&
           github.ref == 'refs/heads/main'

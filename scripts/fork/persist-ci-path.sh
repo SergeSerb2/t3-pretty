@@ -38,9 +38,9 @@ printf 'export PATH=%q\n' "$PATH" >> "$ci_env"
 if [[ -n "${GITHUB_PATH:-}" ]]; then
   for dir in "$@"; do
     [[ -n "$dir" ]] || continue
-    echo "$dir" >> "$GITHUB_PATH"
+    echo "$dir" >> "$GITHUB_PATH" || true
   done
 fi
 if [[ -n "${GITHUB_ENV:-}" ]]; then
-  echo "PATH=${PATH}" >> "$GITHUB_ENV"
+  echo "PATH=${PATH}" >> "$GITHUB_ENV" || true
 fi
