@@ -88,7 +88,7 @@ steps:
     # marks the first one canceled — the check the PR inherits.
     if: >-
       build.branch != "main" && build.source != "schedule" &&
-      build.pull_request['id'] != null && !(build.branch =~ /^automation\//)
+      build.pull_request.id != null && !(build.branch =~ /^automation\//)
     timeout_in_minutes: 20
     agents:
       queue: macos-release
@@ -100,7 +100,7 @@ steps:
     allow_dependency_failure: true
     if: >-
       build.branch != "main" && build.source != "schedule" &&
-      build.pull_request['id'] != null && !(build.branch =~ /^automation\//)
+      build.pull_request.id != null && !(build.branch =~ /^automation\//)
     timeout_in_minutes: 10
     agents:
       queue: macos-release
