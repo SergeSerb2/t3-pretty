@@ -55,7 +55,7 @@ export function PreviewEmptyState({
               <History className="size-4 shrink-0" />
               <h2 className="font-medium">Recently used</h2>
             </div>
-            <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-background">
+            <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
               {recents.map((entry) => (
                 <PreviewRecentUrlCard
                   key={entry.url}
@@ -74,7 +74,7 @@ export function PreviewEmptyState({
               <RadioTower className="size-4 shrink-0" />
               <h2 className="font-medium">Local servers</h2>
             </div>
-            <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-background">
+            <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
               {servers.map((server) => (
                 <PreviewLocalServerCard
                   key={`${server.host}:${server.port}`}

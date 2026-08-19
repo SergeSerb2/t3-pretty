@@ -56,6 +56,9 @@ describe("PreviewPanelShell", () => {
     expect(html).toContain("right-panel-inline-surface");
     expect(html).toContain("--right-panel-width:540px");
     expect(html).toContain('data-preview-panel-mode="inline"');
+    expect(html).toContain('data-right-panel=""');
+    expect(html.match(/data-right-panel=""/g)).toHaveLength(1);
+    expect(html).not.toContain('data-right-panel="embedded"');
     expect(html).toContain('data-right-panel-open="true"');
   });
 
@@ -100,7 +103,23 @@ describe("PreviewPanelShell", () => {
 
     expect(html).not.toContain("right-panel-inline-gap");
     expect(html).not.toContain("right-panel-inline-surface");
+    expect(html).toContain('data-right-panel="embedded"');
+    expect(html).not.toContain('data-right-panel=""');
     expect(html).toContain('data-right-panel-open="true"');
+  });
+
+  it("keeps the scenery glass hook on one plate node per mode", () => {
+    const sidebarHtml = renderPreviewPanelShell("sidebar");
+    const embeddedHtml = renderPreviewPanelShell("embedded");
+
+    expect(sidebarHtml).toContain('data-preview-panel-mode="sidebar"');
+    expect(sidebarHtml).toContain('data-right-panel=""');
+    expect(sidebarHtml.match(/data-right-panel=""/g)).toHaveLength(1);
+    expect(sidebarHtml).not.toContain('data-right-panel="embedded"');
+
+    expect(embeddedHtml).toContain('data-preview-panel-mode="embedded"');
+    expect(embeddedHtml).toContain('data-right-panel="embedded"');
+    expect(embeddedHtml).not.toContain('data-right-panel=""');
   });
 
   it("defaults the inline gap closed so opening does not flash full width", () => {

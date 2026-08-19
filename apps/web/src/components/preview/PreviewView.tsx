@@ -737,7 +737,7 @@ export function PreviewView({
           </div>
         ) : null}
         {navStatus._tag === "LoadFailed" ? (
-          <div className="absolute inset-0 z-10 bg-background">
+          <div className="absolute inset-0 z-10 bg-card">
             <PreviewUnreachable
               url={navStatus.url}
               code={navStatus.code}

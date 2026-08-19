@@ -12,7 +12,7 @@
  * The alphas are published by SceneryHost from glass.ts: photo + wash
  * composite to exactly the configured translucency. The wash — not
  * backdrop-filter — is what carries long-form text contrast; glass is
- * reserved for chrome (sidebar, header, composer). Dark and light washes
+ * reserved for chrome (sidebars, header, composer). Dark and light washes
  * are separate layers whose opacity crossfades, because rgb() channels
  * driven by CSS variables cannot interpolate. The scenery group is
  * isolated and fades as ONE layer: fading gradient and photo separately
@@ -913,6 +913,43 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   backdrop-filter: blur(14px) saturate(1.1);
 }
 
+/* Right panel: the same glass plate as the left sidebar. One fill + blur on
+   the chrome surface (inline body, sheet popup, sidebar mode); nested plates
+   (embedded PreviewPanelShell, file/diff/preview roots) go clear so coverage
+   does not double. Nested shells use data-right-panel="embedded" so the
+   descendant fill clear cannot treat the chrome plate as a nested node.
+   Keep the mix/blur in lockstep with the rule above. */
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] .right-panel-inline-body,
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] .right-panel-sheet,
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  [data-right-panel][data-preview-panel-mode="sidebar"] {
+  background-color: color-mix(in srgb, var(--sidebar) 42%, transparent);
+  background-image: none;
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  backdrop-filter: blur(14px) saturate(1.1);
+  border-color: color-mix(in srgb, var(--sidebar-foreground) 10%, transparent);
+}
+
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on].dark .right-panel-inline-body,
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on].dark .right-panel-sheet,
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on].dark
+  [data-right-panel][data-preview-panel-mode="sidebar"] {
+  border-color: color-mix(in srgb, var(--sidebar-foreground) 8%, transparent);
+}
+
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  .right-panel-sheet
+  [data-right-panel],
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-right-panel="embedded"],
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  [data-right-panel=""]
+  .bg-background {
+  background-color: transparent;
+  background-image: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* User bubbles and code blocks ride translucent plates instead of opaque
    tokens: a fixed alpha can promise a contrast floor where a blur material
    cannot. Values are pinned by sceneryContrast.test.ts. */
@@ -962,6 +999,13 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
     [data-app-sidebar]
     [data-slot="sidebar-inner"] {
+    background-color: color-mix(in srgb, var(--sidebar) 92%, transparent);
+  }
+
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] .right-panel-inline-body,
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] .right-panel-sheet,
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+    [data-right-panel][data-preview-panel-mode="sidebar"] {
     background-color: color-mix(in srgb, var(--sidebar) 92%, transparent);
   }
 
