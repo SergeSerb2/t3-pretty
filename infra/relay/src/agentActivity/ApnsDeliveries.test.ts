@@ -573,6 +573,48 @@ describe("ApnsDeliveries", () => {
   );
 
   it.effect(
+    "throttles plan-step updates while an already delivered attention row is unchanged",
+    () => {
+      const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
+      const queuedJobs: Array<SignedApnsDeliveryJob> = [];
+      const waitingRow = {
+        ...aggregate.activities[0]!,
+        threadId:
+          "thread-waiting" as RelayAgentActivityAggregateState["activities"][number]["threadId"],
+        phase: "waiting_for_approval" as const,
+        status: "Approval",
+      };
+      const previousAggregate: RelayAgentActivityAggregateState = {
+        ...aggregate,
+        activeCount: 2,
+        activities: [waitingRow, { ...aggregate.activities[0]!, status: "Editing a.ts" }],
+      };
+      const nextAggregate: RelayAgentActivityAggregateState = {
+        ...previousAggregate,
+        updatedAt: "1970-01-01T00:00:04.000Z",
+        activities: [waitingRow, { ...aggregate.activities[0]!, status: "Editing b.ts" }],
+      };
+      const previousAggregateJson = JSON.stringify(previousAggregate);
+
+      return Effect.gen(function* () {
+        const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+        const result = yield* deliveries.sendForTarget({
+          target: {
+            ...target,
+            last_aggregate_json: previousAggregateJson,
+            last_live_activity_delivery_at: "1970-01-01T00:00:04.000Z",
+          },
+          aggregate: nextAggregate,
+          nowMs: 5_000,
+        });
+
+        expect(result).toBeNull();
+        expect(queuedJobs).toEqual([]);
+      }).pipe(Effect.provide(makeLayer({ attempts, queuedJobs })));
+    },
+  );
+
+  it.effect(
     "throttles updates for changed aggregates with stable counts and no pending attention",
     () => {
       const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];

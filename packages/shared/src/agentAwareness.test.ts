@@ -128,6 +128,7 @@ describe("projectThreadAwareness", () => {
 
     expect(state?.phase).toBe("running");
     expect(state?.detail).toBe("Editing AgentActivity.tsx");
+    expect(state?.progress).toBe(0.4);
   });
 
   it("keeps background fleets running after the parent session settles", () => {

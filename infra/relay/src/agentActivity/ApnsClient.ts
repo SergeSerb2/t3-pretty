@@ -11,15 +11,14 @@ import { ApnsEnvironment as ApnsEnvironmentSchema, type ApnsCredentials } from "
 import type { ApnsLiveActivityAlert, ApnsNotificationPayload } from "./apnsDeliveryJobs.ts";
 import { ApnsJwtEncodingError, ApnsJwtSigningError } from "./apnsJwt.ts";
 import * as ApnsProviderTokens from "./ApnsProviderTokens.ts";
+import {
+  RUNNING_AGENT_ACTIVITY_ROW_TTL_MS,
+  WAITING_AGENT_ACTIVITY_ROW_TTL_MS,
+} from "./agentActivityPayloads.ts";
 
 export { ApnsJwtEncodingError, ApnsJwtSigningError } from "./apnsJwt.ts";
 
 const LIVE_ACTIVITY_NAME = "AgentActivity";
-// Updates only flow on domain events, so a healthy agent can be silent for
-// minutes (long tool calls, pending approvals). Two minutes made iOS dim
-// perfectly healthy activities; ten minutes still bounds how long a dead
-// environment can look alive.
-const STALE_AFTER_SECONDS = 10 * 60;
 const DISMISS_AFTER_SECONDS = 5 * 60;
 // An end without a final content-state leaves whatever the card last showed
 // frozen on the lock screen until dismissal — get it off quickly instead of
@@ -121,6 +120,18 @@ function liveActivityAlertPayload(alert: ApnsLiveActivityAlert) {
   };
 }
 
+// Updates only flow on domain events, so a healthy agent can be silent for a
+// long stretch (long tool calls, an approval nobody has answered yet) and iOS
+// dims a stale card. The card shows its own age through its relative clock,
+// so the stale flag only has to agree with the relay's own row lifetimes: a
+// running row is considered live for two hours, a waiting one for a day.
+function staleAfterSeconds(state: RelayAgentActivityAggregateState): number {
+  const running = state.activities.some(
+    (row) => row.phase === "running" || row.phase === "starting",
+  );
+  return (running ? RUNNING_AGENT_ACTIVITY_ROW_TTL_MS : WAITING_AGENT_ACTIVITY_ROW_TTL_MS) / 1_000;
+}
+
 function makeLiveActivityRequest(input: MakeLiveActivityRequestInput): ApnsLiveActivityRequest {
   const timestamp = input.nowEpochSeconds;
   if (input.event === "end") {
@@ -165,7 +176,7 @@ function makeLiveActivityRequest(input: MakeLiveActivityRequestInput): ApnsLiveA
           : {}),
         ...(input.event === "update" && input.alert ? liveActivityAlertPayload(input.alert) : {}),
         "content-state": contentState(state),
-        "stale-date": timestamp + STALE_AFTER_SECONDS,
+        "stale-date": timestamp + staleAfterSeconds(state),
       },
     },
   };

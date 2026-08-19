@@ -87,7 +87,10 @@ export function shouldPublishAgentAwarenessEvent(event: OrchestrationEvent): boo
         event.payload.activity.kind === "provider.approval.respond.failed" ||
         event.payload.activity.kind === "user-input.requested" ||
         event.payload.activity.kind === "user-input.resolved" ||
-        event.payload.activity.kind === "runtime.error"
+        event.payload.activity.kind === "runtime.error" ||
+        // The current plan step feeds the running detail/progress; without it
+        // a long turn never updates the lock-screen card mid-turn.
+        event.payload.activity.kind === "turn.plan.updated"
       );
     default:
       return true;
@@ -359,7 +362,6 @@ export const make = Effect.gen(function* () {
       });
       return;
     }
-    const relayClient = yield* makeRelayClient(relayConfig);
     const environmentId = yield* serverEnvironment.getEnvironmentId;
 
     const publishState = (input: {
@@ -368,6 +370,7 @@ export const make = Effect.gen(function* () {
       readonly reason: string;
     }) =>
       Effect.gen(function* () {
+        const relayClient = yield* makeRelayClient(relayConfig);
         const proof = yield* makePublishProof({
           privateKey: cloudLinkKeyPair.privateKey,
           relayIssuer: relayConfig.issuer,

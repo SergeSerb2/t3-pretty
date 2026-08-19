@@ -222,6 +222,7 @@ function aggregateRowForState(state: RelayAgentActivityState) {
     status: statusForState(state),
     updatedAt: state.updatedAt,
     deepLink: state.deepLink,
+    ...(state.progress === undefined ? {} : { progress: state.progress }),
   };
 }
 

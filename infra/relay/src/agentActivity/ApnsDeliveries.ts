@@ -140,14 +140,28 @@ function parsePreferences(value: string): RelayAgentAwarenessPreferences | null 
   return Option.getOrNull(decodeRelayAgentAwarenessPreferencesJson(value));
 }
 
-function aggregateNeedsAttention(aggregate: RelayAgentActivityAggregateState): boolean {
-  return aggregate.activities.some(
-    (row) => row.phase === "waiting_for_approval" || row.phase === "waiting_for_input",
-  );
-}
-
 function isAttentionPhase(phase: string): boolean {
   return phase === "waiting_for_approval" || phase === "waiting_for_input";
+}
+
+// Whether any thread entered or left an attention phase since the previously
+// delivered aggregate. Only that transition may bypass the update throttle: a
+// parked approval is the most common reason a card is on screen, and every
+// plan-step tick of the other threads must not ride through unthrottled on its
+// back. A missing baseline counts as a transition.
+function attentionChanged(
+  previousAggregate: RelayAgentActivityAggregateState | null,
+  nextAggregate: RelayAgentActivityAggregateState,
+): boolean {
+  if (previousAggregate === null) {
+    return nextAggregate.activities.some((row) => isAttentionPhase(row.phase));
+  }
+  const previouslyAttention = new Map(
+    previousAggregate.activities.map((row) => [row.threadId, isAttentionPhase(row.phase)]),
+  );
+  return nextAggregate.activities.some(
+    (row) => isAttentionPhase(row.phase) !== (previouslyAttention.get(row.threadId) ?? false),
+  );
 }
 
 // Honors the same per-event notification switches the push channel uses; a
@@ -303,7 +317,7 @@ function shouldUpdateLiveActivity(input: {
   if (input.previousAggregate.activeCount !== input.nextAggregate.activeCount) {
     return true;
   }
-  if (aggregateNeedsAttention(input.nextAggregate)) {
+  if (attentionChanged(input.previousAggregate, input.nextAggregate)) {
     return true;
   }
   // A thread finishing must never be throttled away: when a completion and a
