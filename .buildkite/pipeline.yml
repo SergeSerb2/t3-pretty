@@ -105,6 +105,8 @@ steps:
   # stay on the last JS bundle that actually published.
   - label: ":iphone: iOS OTA + TestFlight"
     key: ios-mobile
+    concurrency: 1
+    concurrency_group: "t3-pretty/ios-mobile"
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
     agents:

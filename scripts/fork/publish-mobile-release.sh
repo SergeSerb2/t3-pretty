@@ -102,10 +102,25 @@ load_dotenv() {
   done < "$file"
 }
 
+helper=""
+for candidate in \
+  "/opt/homebrew/etc/buildkite-agent/checkout-origin.sh" \
+  "scripts/fork/checkout-origin.sh"; do
+  if [[ -x "$candidate" ]]; then
+    helper="$candidate"
+    break
+  fi
+done
+if [[ -n "$helper" ]]; then
+  "$helper" "${BUILDKITE_COMMIT:-$(git rev-parse HEAD)}" --full ||
+    echo "checkout-origin failed; keeping current tree"
+fi
+
 git fetch --unshallow || true
 if ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
   git fetch --deepen=50 || git fetch origin --deepen=50 || true
 fi
+git checkout -- apps/mobile/eas.json 2>/dev/null || true
 
 if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" && "$MODE" != "build" && "$FORCE_IOS" != "true" ]]; then
   if ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
@@ -123,22 +138,6 @@ if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" && "$MODE" != "build" && "$FO
     echo "Push does not change mobile-relevant paths; skipping OTA and TestFlight."
     exit 0
   fi
-fi
-
-git checkout -- apps/mobile/eas.json 2>/dev/null || true
-
-helper=""
-for candidate in \
-  "/opt/homebrew/etc/buildkite-agent/checkout-origin.sh" \
-  "scripts/fork/checkout-origin.sh"; do
-  if [[ -x "$candidate" ]]; then
-    helper="$candidate"
-    break
-  fi
-done
-if [[ -n "$helper" ]]; then
-  "$helper" "${BUILDKITE_COMMIT:-$(git rev-parse HEAD)}" --full ||
-    echo "checkout-origin failed; keeping current tree"
 fi
 
 if ! load_secret EXPO_TOKEN; then

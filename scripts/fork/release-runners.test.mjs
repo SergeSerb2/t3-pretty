@@ -72,6 +72,11 @@ describe("T3 Pretty release runner placement", () => {
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "iOS OTA + TestFlight");
+    assert.include(pipeline, 'concurrency_group: "t3-pretty/ios-mobile"');
+    assert.isBelow(
+      mobileRelease.indexOf("checkout-origin.sh"),
+      mobileRelease.indexOf("does not change mobile-relevant paths"),
+    );
     assert.notInclude(pipeline, "- .github/workflows/fork-mobile-release.yml");
     assert.isBelow(
       pipeline.indexOf("build-macos-dmg.sh"),
