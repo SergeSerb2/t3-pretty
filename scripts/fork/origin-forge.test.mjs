@@ -202,6 +202,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(mobile, "load_secret APPLE_API_KEY");
     assert.include(mobile, "load_secret APPLE_API_KEY_ID");
     assert.include(mobile, "load_secret APPLE_API_ISSUER");
+    assert.include(mobile, "load_secret APPLE_TEAM_ID");
     assert.include(preflight, "Mac signing secrets are resolved on macos-release");
     assert.include(preflight, "git fetch --force --tags origin");
     assert.include(mobile, "origin-forge.mjs merge-pr");

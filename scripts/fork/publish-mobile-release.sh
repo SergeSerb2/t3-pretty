@@ -22,8 +22,6 @@ export T3CODE_MOBILE_UPDATE_URL="${T3CODE_MOBILE_UPDATE_URL:-https://u.expo.dev/
 export T3CODE_MOBILE_EAS_PROJECT_ID="${T3CODE_MOBILE_EAS_PROJECT_ID:-1eb51d67-48c5-4100-8aa8-f5ac9e1ada65}"
 export T3CODE_MOBILE_EXPO_OWNER="${T3CODE_MOBILE_EXPO_OWNER:-sergeserbinenkoteam}"
 export T3CODE_MOBILE_EXPO_SLUG="${T3CODE_MOBILE_EXPO_SLUG:-t3-pretty}"
-export APPLE_TEAM_ID="${APPLE_TEAM_ID:-78A5P57U23}"
-export T3CODE_APPLE_TEAM_ID="${T3CODE_APPLE_TEAM_ID:-$APPLE_TEAM_ID}"
 export T3CODE_IOS_SHARE_EXTENSION="${T3CODE_IOS_SHARE_EXTENSION:-0}"
 export ORIGIN_REPO="${ORIGIN_REPO:-serbinenko/t3-pretty}"
 
@@ -224,7 +222,13 @@ if [[ ! -f "$gate_file" ]]; then
     --fingerprint-file "$fingerprint_file" \
     --builds-file "$builds_file" \
     --submitted-fingerprint "$submitted_fingerprint" \
-    --force "$force_flag" | tee "$gate_file"
+    --force "$force_flag" \
+    --github-output "$gate_file"
+fi
+if ! grep -q '^should_build=' "$gate_file"; then
+  echo "iOS native-build gate did not write should_build." >&2
+  cat "$gate_file" >&2 || true
+  exit 1
 fi
 should_build="$(awk -F= '/^should_build=/ { print $2 }' "$gate_file" | tail -n 1)"
 fingerprint="$(awk -F= '/^fingerprint=/ { print $2 }' "$gate_file" | tail -n 1)"
@@ -239,6 +243,8 @@ fi
 load_secret APPLE_API_KEY
 load_secret APPLE_API_KEY_ID
 load_secret APPLE_API_ISSUER
+load_secret APPLE_TEAM_ID
+export T3CODE_APPLE_TEAM_ID="${T3CODE_APPLE_TEAM_ID:-$APPLE_TEAM_ID}"
 load_secret CURSOR_API_KEY
 
 key_path="$tmp/AuthKey_${APPLE_API_KEY_ID}.p8"
