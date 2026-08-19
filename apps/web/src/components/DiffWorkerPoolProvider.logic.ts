@@ -1,7 +1,34 @@
 import type { WorkerStats } from "@pierre/diffs/worker";
 
+import type { DiffThemeName } from "../lib/diffRendering";
+
 /** Idle window before the diff worker pool is torn down (workers + AST caches). */
 export const DIFF_WORKER_POOL_IDLE_MS = 90_000;
+
+type DiffWorkerPoolThemeTarget = {
+  getDiffRenderOptions(): { readonly theme?: unknown };
+  setRenderOptions(options: { theme: DiffThemeName }): Promise<void>;
+};
+
+/**
+ * The page-level manager is created once so mounted diffs that captured it stay
+ * valid. World Scenery can still flip the painted appearance later, so retarget
+ * the existing Pierre theme instead of constructing a second pool.
+ */
+export async function syncDiffWorkerPoolTheme(
+  pool: DiffWorkerPoolThemeTarget,
+  themeName: DiffThemeName,
+): Promise<void> {
+  const current = pool.getDiffRenderOptions();
+  if (current.theme === themeName) {
+    return;
+  }
+
+  await pool.setRenderOptions({
+    ...current,
+    theme: themeName,
+  });
+}
 
 /** Workers plus AST caches only earn their memory while a diff surface is mounted or a task is in flight. */
 export function isDiffWorkerPoolIdle(stats: WorkerStats): boolean {

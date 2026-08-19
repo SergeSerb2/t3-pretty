@@ -4,7 +4,9 @@ import {
   DIFF_WORKER_POOL_IDLE_MS,
   createDiffWorkerPoolIdleTerminator,
   isDiffWorkerPoolIdle,
+  syncDiffWorkerPoolTheme,
 } from "./DiffWorkerPoolProvider.logic";
+import providerSource from "./DiffWorkerPoolProvider.tsx?raw";
 
 function stats(overrides: Partial<WorkerStats> = {}): WorkerStats {
   return {
@@ -91,5 +93,48 @@ describe("createDiffWorkerPoolIdleTerminator", () => {
     p.state.current = stats({ activeTasks: 1 });
     vi.advanceTimersByTime(DIFF_WORKER_POOL_IDLE_MS);
     expect(p.terminate).not.toHaveBeenCalled();
+  });
+});
+
+describe("syncDiffWorkerPoolTheme", () => {
+  it("retargets the existing pool when the painted Pierre theme changes", async () => {
+    const setRenderOptions = vi.fn(async () => undefined);
+    await syncDiffWorkerPoolTheme(
+      {
+        getDiffRenderOptions: () => ({
+          theme: "pierre-dark",
+          tokenizeMaxLineLength: 1_000,
+        }),
+        setRenderOptions,
+      },
+      "pierre-light",
+    );
+
+    expect(setRenderOptions).toHaveBeenCalledWith({
+      theme: "pierre-light",
+      tokenizeMaxLineLength: 1_000,
+    });
+  });
+
+  it("leaves the pool alone when the Pierre theme already matches", async () => {
+    const setRenderOptions = vi.fn(async () => undefined);
+    await syncDiffWorkerPoolTheme(
+      {
+        getDiffRenderOptions: () => ({ theme: "pierre-light" }),
+        setRenderOptions,
+      },
+      "pierre-light",
+    );
+
+    expect(setRenderOptions).not.toHaveBeenCalled();
+  });
+});
+
+describe("DiffWorkerPoolProvider painted theme", () => {
+  it("reconfigures the singleton pool when the painted appearance changes", () => {
+    expect(providerSource).toContain("usePaintedAppearance");
+    expect(providerSource).toContain("useState(() => getDiffWorkerPool(diffThemeName))");
+    expect(providerSource).toContain("syncDiffWorkerPoolTheme(pool, diffThemeName)");
+    expect(providerSource).toContain("[diffThemeName, pool]");
   });
 });
