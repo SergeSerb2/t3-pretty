@@ -127,6 +127,20 @@ fi
 
 git checkout -- apps/mobile/eas.json 2>/dev/null || true
 
+helper=""
+for candidate in \
+  "/opt/homebrew/etc/buildkite-agent/checkout-origin.sh" \
+  "scripts/fork/checkout-origin.sh"; do
+  if [[ -x "$candidate" ]]; then
+    helper="$candidate"
+    break
+  fi
+done
+if [[ -n "$helper" ]]; then
+  "$helper" "${BUILDKITE_COMMIT:-$(git rev-parse HEAD)}" --full ||
+    echo "checkout-origin failed; keeping current tree"
+fi
+
 if ! load_secret EXPO_TOKEN; then
   echo "EXPO_TOKEN is required to publish OTA that installed TestFlight binaries poll." >&2
   exit 1
@@ -233,6 +247,7 @@ if [[ ! -f "$gate_file" ]]; then
   if [[ "$MODE" == "build" || "$FORCE_IOS" == "true" ]]; then
     force_flag=true
   fi
+  export GITHUB_OUTPUT="$gate_file"
   node scripts/fork/resolve-ios-native-build.mjs \
     --fingerprint-file "$fingerprint_file" \
     --builds-file "$builds_file" \
@@ -260,7 +275,7 @@ load_secret APPLE_API_KEY_ID
 load_secret APPLE_API_ISSUER
 load_secret APPLE_TEAM_ID
 export T3CODE_APPLE_TEAM_ID="${T3CODE_APPLE_TEAM_ID:-$APPLE_TEAM_ID}"
-load_secret CURSOR_API_KEY
+load_secret CURSOR_API_KEY 0
 
 key_path="$tmp/AuthKey_${APPLE_API_KEY_ID}.p8"
 printf '%s' "$APPLE_API_KEY" > "$key_path"
@@ -373,6 +388,8 @@ if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
   echo "No fingerprint to record after TestFlight submit."
   exit 0
 fi
+
+load_secret CURSOR_API_KEY
 
 mkdir -p .t3-fork
 printf '%s\n' "$fingerprint" > .t3-fork/ios-production-fingerprint
