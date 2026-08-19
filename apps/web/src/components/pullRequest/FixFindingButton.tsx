@@ -56,10 +56,7 @@ export function FixFindingButton({
     event.stopPropagation();
     if (!canOpenFixFindingMenu({ disabled, pending })) return;
     const api = readLocalApi();
-    if (!api) {
-      onFix("new-thread");
-      return;
-    }
+    if (!api) return;
     try {
       const clicked = await api.contextMenu.show(
         fixFindingMenuItems({

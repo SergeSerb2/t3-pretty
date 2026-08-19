@@ -48,6 +48,7 @@ import { FixFindingButton } from "./FixFindingButton";
 import {
   latestPullRequestReviewOutcomes,
   orderPullRequestComments,
+  isThreadReplyAnchor,
   pullRequestConversationFinding,
   pullRequestFindingKey,
   pullRequestReviewOutcome,
@@ -991,7 +992,7 @@ export function PullRequestSummaryTab({
                               Resolve
                             </Button>
                           ) : null}
-                          {canReplyThreads && thread ? (
+                          {canReplyThreads && thread && isThreadReplyAnchor(thread, comment.id) ? (
                             <Button
                               size="xs"
                               variant="ghost"
@@ -1049,7 +1050,10 @@ export function PullRequestSummaryTab({
                         />
                       )}
                       {body === null ? null : reactionBar}
-                      {canReplyThreads && thread && replyingTo === thread.id ? (
+                      {canReplyThreads &&
+                      thread &&
+                      isThreadReplyAnchor(thread, comment.id) &&
+                      replyingTo === thread.id ? (
                         <div className="mt-2">
                           <Textarea
                             autoFocus

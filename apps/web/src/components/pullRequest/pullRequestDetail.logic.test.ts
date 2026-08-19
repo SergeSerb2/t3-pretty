@@ -22,6 +22,7 @@ import {
   handoffReviewComments,
   isPullRequestFindingThread,
   isPullRequestFixableComment,
+  isThreadReplyAnchor,
   isPullRequestVerdictStale,
   isThreadOwnPullRequest,
   latestPullRequestReviewOutcomes,
@@ -165,6 +166,18 @@ describe("pull request handoff labels", () => {
       resolve: "Resolve in a new thread",
       resolveConflicts: "Resolve conflicts in a thread",
     });
+  });
+});
+
+describe("thread reply anchor", () => {
+  it("puts Reply on the last remark only", () => {
+    const thread = {
+      comments: [{ id: "a" }, { id: "b" }, { id: "c" }],
+    };
+    expect(isThreadReplyAnchor(thread, "a")).toBe(false);
+    expect(isThreadReplyAnchor(thread, "b")).toBe(false);
+    expect(isThreadReplyAnchor(thread, "c")).toBe(true);
+    expect(isThreadReplyAnchor({ comments: [] }, "a")).toBe(false);
   });
 });
 

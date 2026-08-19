@@ -94,6 +94,14 @@ export function pullRequestHandoffLabels(inThisThread: boolean) {
 
 export type PullRequestFixDestination = "this-thread" | "new-thread";
 
+/** One Reply box per conversation — the last remark, not every card in the thread. */
+export function isThreadReplyAnchor(
+  thread: { readonly comments: ReadonlyArray<{ readonly id: string }> },
+  commentId: string,
+): boolean {
+  return thread.comments.at(-1)?.id === commentId;
+}
+
 export function pullRequestComposerTarget<T>(
   context: "page" | "thread",
   target: T | null | undefined,
