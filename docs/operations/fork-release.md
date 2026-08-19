@@ -34,7 +34,10 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    preflight often starts with no `.git`; it clones the triggering SHA from
    the parent Buildkite checkout when that path exists, and skips minting
    when the clone cannot be created or Origin tags cannot be fetched.
-   Native Mac/Windows packagers still mint.
+   Native Mac/Windows packagers still mint. The WSL node-pty job still
+   requires a real commit SHA (`-` is the empty-output placeholder, not a
+   skip) and fails instead of compiling an empty workspace. It only skips
+   when preflight sets `should_release` to false.
    Maintainers can use
    the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
    into an `automation/upstream-*` branch and opens an Origin pull request.

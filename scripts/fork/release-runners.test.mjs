@@ -65,6 +65,12 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(wsl, "BUILDKITE_BUILD_CHECKOUT_PATH");
     assert.include(wsl, "ensure-linux-node.sh");
     assert.include(wsl, "needs.preflight.result == 'success'");
+    assert.include(wsl, "needs.preflight.outputs.should_release == 'true'");
+    assert.include(wsl, "WSL prebuild needs a commit SHA; preflight ref is missing.");
+    assert.include(wsl, 'if [[ -z "$ref" || "$ref" == "-" ]]; then');
+    assert.notInclude(wsl, "exit 0");
+    assert.include(wsl, 'git cat-file -e "${ref}^{commit}"');
+    assert.include(wsl, 'git checkout --force "$ref"');
     assert.equal((desktopWorkflow.match(/needs: preflight/g) || []).length, 1);
   });
 
