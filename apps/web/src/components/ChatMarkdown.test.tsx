@@ -49,4 +49,9 @@ describe("streaming markdown stability", () => {
     expect(chatMarkdownSource).toContain("<code className={codeBlock.className}");
     expect(chatMarkdownSource).not.toContain("isStreaming={isStreaming}");
   });
+
+  it("highlights settled fences with the painted appearance, not the stored preference", () => {
+    expect(chatMarkdownSource).toContain("usePaintedAppearance");
+    expect(chatMarkdownSource).toContain("resolveDiffThemeName(resolvedTheme)");
+  });
 });

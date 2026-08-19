@@ -923,7 +923,31 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] {
 
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]:not(.dark) {
   --message-surface: rgb(223 239 227 / 85%);
-  --code-background: rgb(255 255 255 / 72%);
+  --code-background: rgb(232 238 233 / 88%);
+  --code-foreground: #161a17;
+}
+
+/* Ink can paint a light plate while Shiki still emits pierre-dark tokens
+   (white ink on frost). Flatten the mismatched highlighter to the plate
+   foreground so the block stays readable until the painted theme lands. */
+html[data-theme-id="world-scenery"]:not(.dark) .chat-markdown-shiki .shiki.pierre-dark,
+html[data-theme-id="world-scenery"]:not(.dark) .tool-call-shiki .shiki.pierre-dark {
+  color: var(--code-foreground) !important;
+}
+
+html[data-theme-id="world-scenery"]:not(.dark) .chat-markdown-shiki .shiki.pierre-dark span,
+html[data-theme-id="world-scenery"]:not(.dark) .tool-call-shiki .shiki.pierre-dark span {
+  color: var(--code-foreground) !important;
+}
+
+html[data-theme-id="world-scenery"].dark .chat-markdown-shiki .shiki.pierre-light,
+html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light {
+  color: var(--code-foreground) !important;
+}
+
+html[data-theme-id="world-scenery"].dark .chat-markdown-shiki .shiki.pierre-light span,
+html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light span {
+  color: var(--code-foreground) !important;
 }
 
 /* ------------------------------------------------------------ fallbacks -- */

@@ -21,7 +21,7 @@ import {
 export const WORLD_SCENERY_THEME_ID = "world-scenery";
 
 /** Bump when the palette below changes so existing installs pick it up. */
-export const WORLD_SCENERY_THEME_VERSION = 2;
+export const WORLD_SCENERY_THEME_VERSION = 3;
 
 const THEME_VERSION_STORAGE_KEY = "t3code:scenery:theme-version";
 
@@ -133,8 +133,8 @@ const WORLD_SCENERY_LIGHT_COLORS: ThemeColors = {
   messageAction: "#27633f",
   messageActionForeground: "#ffffff",
   messageActionHover: "#225738",
-  codeBackground: "#ffffff",
-  codeForeground: "#242925",
+  codeBackground: "#e8eee9",
+  codeForeground: "#161a17",
   sidebar: "#eef3ef",
   sidebarForeground: "#1d221e",
   sidebarMutedForeground: "#4b524c",
@@ -161,9 +161,8 @@ export const WORLD_SCENERY_THEME: ThemeDefinition = {
 
 /**
  * Install the theme into the user's theme library (or refresh it after a
- * palette bump). Runs on every boot. Once the current version has been
- * written, absence means the user deleted the theme in Settings — that
- * choice is respected until the next palette version bump.
+ * palette bump). Runs on every boot. World Scenery is the only supported
+ * palette: a missing entry is reinstalled rather than treated as a deletion.
  */
 export function ensureWorldSceneryThemeInstalled(): void {
   if (typeof window === "undefined") {
@@ -171,10 +170,10 @@ export function ensureWorldSceneryThemeInstalled(): void {
   }
   try {
     const storedVersion = window.localStorage.getItem(THEME_VERSION_STORAGE_KEY);
-    if (storedVersion === String(WORLD_SCENERY_THEME_VERSION)) {
+    const installed = getCustomThemes().some((theme) => theme.id === WORLD_SCENERY_THEME_ID);
+    if (storedVersion === String(WORLD_SCENERY_THEME_VERSION) && installed) {
       return;
     }
-    const installed = getCustomThemes().some((theme) => theme.id === WORLD_SCENERY_THEME_ID);
     if (installed) {
       updateCustomTheme(WORLD_SCENERY_THEME);
     } else {

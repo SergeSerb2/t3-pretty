@@ -3,7 +3,7 @@ import { WorkerPoolManager } from "@pierre/diffs/worker";
 import DiffsWorker from "@pierre/diffs/worker/worker.js?worker";
 import * as Schema from "effect/Schema";
 import { useEffect, useState, type ReactNode } from "react";
-import { useTheme } from "../hooks/useTheme";
+import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
 import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import { createDiffWorkerPoolIdleTerminator } from "./DiffWorkerPoolProvider.logic";
 
@@ -86,7 +86,7 @@ function getDiffWorkerPool(themeName: DiffThemeName): WorkerPoolManager {
 }
 
 export function DiffWorkerPoolProvider({ children }: { children?: ReactNode }) {
-  const { resolvedTheme } = useTheme();
+  const resolvedTheme = usePaintedAppearance();
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
   const [pool] = useState(() => getDiffWorkerPool(diffThemeName));
 

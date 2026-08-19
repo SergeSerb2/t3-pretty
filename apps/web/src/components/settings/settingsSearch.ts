@@ -59,10 +59,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "theme",
-    title: "Themes",
+    title: "World Scenery theme",
     to: "/settings/appearance",
-    // Theme cards live directly under the scheme tiles; the section is the
-    // stable scroll destination for both.
     targetId: "appearance",
   },
   {
