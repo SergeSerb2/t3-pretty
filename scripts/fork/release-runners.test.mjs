@@ -92,7 +92,6 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "Xcode-beta.app");
     assert.include(mobileRelease, "security-eas-local-keychain");
     assert.include(mobileRelease, "origin-forge.mjs merge-pr");
-    assert.include(mobileRelease, "--github-output");
     assert.include(mobileRelease, "did not write should_build");
     assert.include(mobileRelease, "load_secret APPLE_TEAM_ID");
     assert.include(mobileRelease, "git fetch --deepen=50");
@@ -102,6 +101,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "checkout-origin.sh");
     assert.include(mobileRelease, "--full");
     assert.include(mobileRelease, 'export GITHUB_OUTPUT="$gate_file"');
+    assert.notInclude(mobileRelease, "--github-output");
+    assert.include(mobileRelease, "APPLE_TEAM_ID:-78A5P57U23");
     assert.include(mobileRelease, "load_secret CURSOR_API_KEY 0");
     assert.include(mobileRelease, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
     assert.notInclude(mobileRelease, '"$MODE" == "build" || "$MODE" == "release"');

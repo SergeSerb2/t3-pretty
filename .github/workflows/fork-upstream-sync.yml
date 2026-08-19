@@ -326,10 +326,11 @@ jobs:
           node scripts/fork/origin-forge.mjs merge-pr --head "$SYNC_BRANCH" --sha "$head_sha"
           node scripts/fork/origin-forge.mjs delete-branch --head "$SYNC_BRANCH"
 
-          # The merge is a push to main. Native ios-mobile (and the DMG) run
-          # from that non-schedule build. Do not also publish OTA here or two
-          # eas update / local IPA jobs overlap on macos-release. Dispatch
-          # desktop preflight as a fallback when the push event is missed.
+          # The merge is a push to main. Native ios-mobile is the mobile
+          # publisher for that push (same as macos-dmg). fork-mobile-release.yml
+          # is gone; do not dispatch it and do not run publish-mobile-release.sh
+          # in this scheduled job. Dispatch desktop preflight as a fallback
+          # when the push event is missed.
           node scripts/fork/origin-forge.mjs dispatch --workflow fork-release.yml --ref main
 
       - name: Report blocked sync

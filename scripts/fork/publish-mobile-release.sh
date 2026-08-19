@@ -251,8 +251,7 @@ if [[ ! -f "$gate_file" ]]; then
     --fingerprint-file "$fingerprint_file" \
     --builds-file "$builds_file" \
     --submitted-fingerprint "$submitted_fingerprint" \
-    --force "$force_flag" \
-    --github-output "$gate_file"
+    --force "$force_flag"
 fi
 if ! grep -q '^should_build=' "$gate_file"; then
   echo "iOS native-build gate did not write should_build." >&2
@@ -272,7 +271,8 @@ fi
 load_secret APPLE_API_KEY
 load_secret APPLE_API_KEY_ID
 load_secret APPLE_API_ISSUER
-load_secret APPLE_TEAM_ID
+load_secret APPLE_TEAM_ID 0
+export APPLE_TEAM_ID="${APPLE_TEAM_ID:-78A5P57U23}"
 export T3CODE_APPLE_TEAM_ID="${T3CODE_APPLE_TEAM_ID:-$APPLE_TEAM_ID}"
 load_secret CURSOR_API_KEY 0
 

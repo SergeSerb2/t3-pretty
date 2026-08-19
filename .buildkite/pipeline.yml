@@ -116,6 +116,8 @@ steps:
       NODE_OPTIONS: "--max-old-space-size=8192"
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
+      APPLE_TEAM_ID: "78A5P57U23"
+      T3CODE_APPLE_TEAM_ID: "78A5P57U23"
     command: bash scripts/fork/publish-mobile-release.sh
 
   - label: ":cloud: Relay"
