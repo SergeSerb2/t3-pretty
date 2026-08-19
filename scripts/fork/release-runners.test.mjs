@@ -86,6 +86,10 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(ota, ". scripts/fork/persist-ci-path.sh");
     assert.include(ios, ". scripts/fork/persist-ci-path.sh");
     assert.notInclude(ota, "bash scripts/fork/persist-ci-path.sh");
+    assert.include(ota, "t3_persist_env");
+    assert.include(ios, "t3_persist_env");
+    assert.notInclude(ios, "secrets.APPLE_API_KEY");
+    assert.notInclude(ota, "grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> \"$GITHUB_ENV\"");
     assert.include(ota, "$(npm prefix -g)/bin");
   });
 

@@ -40,8 +40,10 @@ jobs:
         # GHA's `shell: bash` is /bin/bash 3.2. Homebrew node and origin live
         # under /opt/homebrew/bin, which that login-less PATH does not include.
         # A step-local `export PATH` does not survive to later steps. Persist
-        # through GITHUB_PATH when the importer sets it, and through GITHUB_ENV
-        # otherwise — load-buildkite-secrets.sh already requires that file.
+        # through GITHUB_PATH when the importer sets it, GITHUB_ENV when that
+        # file exists, and always t3-pretty-ci.env. Later steps source
+        # macos-ci-prelude.sh because the importer often sets GITHUB_PATH
+        # without applying it.
         shell: bash
         run: |
           set -euo pipefail
@@ -76,13 +78,17 @@ jobs:
 
       - name: Load Buildkite cluster secrets
         shell: bash
-        run: bash scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY CLI_PROXY_API_KEY
+        run: |
+          set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
+          . scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY CLI_PROXY_API_KEY
 
       - id: discover
         name: Discover newest upstream nightly
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           # macos-release reuses the workspace. A previous sync leaves
           # `upstream` in .git/config, and `git remote add` then exits 1
           # before the merge starts (~2s red job).
@@ -149,7 +155,7 @@ jobs:
           SYNC_BRANCH: ${{ steps.discover.outputs.branch }}
         run: |
           set -euo pipefail
-          export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
+          . scripts/fork/macos-ci-prelude.sh
           git config user.name "t3-pretty-sync[bot]"
           git config user.email "t3-pretty-bot@users.noreply.cursor.com"
 
@@ -248,6 +254,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
           export SYNC_RESOLUTION_CACHE_DIR="$RUNNER_TEMP/sync-resolution-cache"
           shopt -s nullglob
           entries=("$SYNC_RESOLUTION_CACHE_DIR"/*.json)
@@ -294,7 +301,7 @@ jobs:
           SYNC_BRANCH: ${{ steps.discover.outputs.branch }}
         run: |
           set -euo pipefail
-          export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
+          . scripts/fork/macos-ci-prelude.sh
           node scripts/fork/origin-forge.mjs setup-ci
           pr_body_path="$RUNNER_TEMP/t3-pretty-upstream-sync.md"
           {
@@ -346,7 +353,7 @@ jobs:
           UPSTREAM_TAG: ${{ steps.discover.outputs.tag }}
         run: |
           set -euo pipefail
-          export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
+          . scripts/fork/macos-ci-prelude.sh
           node scripts/fork/origin-forge.mjs setup-ci
           body="The guarded four-hour T3 Pretty sync could not safely merge $UPSTREAM_TAG. Inspect the failed Origin-connected CI run for this commit."
           node scripts/fork/origin-forge.mjs report-blocked \

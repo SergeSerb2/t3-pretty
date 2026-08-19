@@ -8,4 +8,21 @@ if [[ -f "$_t3_ci_env" ]]; then
   # shellcheck disable=SC1090
   . "$_t3_ci_env"
 fi
-unset _t3_ci_env
+
+# Persist a scalar for this step and later prelude-sourced steps. Writes
+# GITHUB_ENV only when the importer set that file.
+t3_persist_env() {
+  local name="$1"
+  local value="$2"
+  mkdir -p "$(dirname "$_t3_ci_env")"
+  if [[ -f "$_t3_ci_env" ]]; then
+    grep -v "^export ${name}=" "$_t3_ci_env" > "${_t3_ci_env}.tmp" || true
+    mv "${_t3_ci_env}.tmp" "$_t3_ci_env"
+  fi
+  printf 'export %s=%q\n' "$name" "$value" >> "$_t3_ci_env"
+  if [[ -n "${GITHUB_ENV:-}" ]]; then
+    printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+  fi
+  printf -v "$name" '%s' "$value"
+  export "$name"
+}

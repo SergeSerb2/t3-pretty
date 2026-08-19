@@ -186,10 +186,10 @@ jobs:
           . scripts/fork/macos-ci-prelude.sh
           # npm, not pnpm: pnpm 11 hard-fails eas-cli on dtrace-provider's
           # ignored build script (no allowBuilds config outside the repo).
-          # Later eas steps also set EXPO_TOKEN; export it here so a stray
+          # Later eas steps also set EXPO_TOKEN; persist it here so a stray
           # eas command in this job cannot run unauthenticated.
-          if [[ -n "${EXPO_TOKEN:-}" && -n "${GITHUB_ENV:-}" ]]; then
-            echo "EXPO_TOKEN=${EXPO_TOKEN}" >> "$GITHUB_ENV"
+          if [[ -n "${EXPO_TOKEN:-}" ]]; then
+            t3_persist_env EXPO_TOKEN "$EXPO_TOKEN"
           fi
           if ! command -v eas >/dev/null; then
             npm install -g eas-cli
@@ -209,7 +209,9 @@ jobs:
           . scripts/fork/macos-ci-prelude.sh
           eas env:pull production --path ../../.env.local --non-interactive
           if [[ -f ../../.env.local ]]; then
-            grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> "$GITHUB_ENV"
+            while IFS= read -r line; do
+              t3_persist_env "${line%%=*}" "${line#*=}"
+            done < <(grep -vE '^[[:space:]]*(#|$)' ../../.env.local || true)
           fi
 
       - name: Publish OTA update
@@ -327,7 +329,8 @@ jobs:
           extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
           export PATH="${extra}:${PATH}"
           # shellcheck disable=SC1091
-          . scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY EXPO_TOKEN
+          . scripts/fork/load-buildkite-secrets.sh \
+            CURSOR_API_KEY EXPO_TOKEN APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
 
       - name: Prepare macOS runner PATH
         shell: bash
@@ -379,8 +382,8 @@ jobs:
           . scripts/fork/macos-ci-prelude.sh
           # npm, not pnpm: pnpm 11 hard-fails eas-cli on dtrace-provider's
           # ignored build script (no allowBuilds config outside the repo).
-          if [[ -n "${EXPO_TOKEN:-}" && -n "${GITHUB_ENV:-}" ]]; then
-            echo "EXPO_TOKEN=${EXPO_TOKEN}" >> "$GITHUB_ENV"
+          if [[ -n "${EXPO_TOKEN:-}" ]]; then
+            t3_persist_env EXPO_TOKEN "$EXPO_TOKEN"
           fi
           if ! command -v eas >/dev/null; then
             npm install -g eas-cli
@@ -399,14 +402,12 @@ jobs:
           . scripts/fork/macos-ci-prelude.sh
           eas env:pull production --path ../../.env.local --non-interactive
           if [[ -f ../../.env.local ]]; then
-            grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> "$GITHUB_ENV"
+            while IFS= read -r line; do
+              t3_persist_env "${line%%=*}" "${line#*=}"
+            done < <(grep -vE '^[[:space:]]*(#|$)' ../../.env.local || true)
           fi
 
       - name: Prepare Apple CI credentials
-        env:
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
@@ -420,13 +421,11 @@ jobs:
           key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
           printf '%s' "$APPLE_API_KEY" > "$key_path"
           chmod 600 "$key_path"
-          {
-            echo "EXPO_ASC_API_KEY_PATH=$key_path"
-            echo "EXPO_ASC_KEY_ID=$APPLE_API_KEY_ID"
-            echo "EXPO_ASC_ISSUER_ID=$APPLE_API_ISSUER"
-            echo "EXPO_APPLE_TEAM_ID=$APPLE_TEAM_ID"
-            echo "EXPO_APPLE_TEAM_TYPE=INDIVIDUAL"
-          } >> "$GITHUB_ENV"
+          t3_persist_env EXPO_ASC_API_KEY_PATH "$key_path"
+          t3_persist_env EXPO_ASC_KEY_ID "$APPLE_API_KEY_ID"
+          t3_persist_env EXPO_ASC_ISSUER_ID "$APPLE_API_ISSUER"
+          t3_persist_env EXPO_APPLE_TEAM_ID "$APPLE_TEAM_ID"
+          t3_persist_env EXPO_APPLE_TEAM_TYPE INDIVIDUAL
 
           node --input-type=module - "$key_path" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER" <<'NODE'
           import fs from "node:fs";
@@ -473,8 +472,7 @@ jobs:
             exit 1
           fi
           echo "Using Xcode at $developer_dir"
-          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
-          export DEVELOPER_DIR="$developer_dir"
+          t3_persist_env DEVELOPER_DIR "$developer_dir"
           # Fastlane/EAS often call `xcode-select -p` and ignore DEVELOPER_DIR.
           # If CLT is still selected, switch the active directory for this job.
           selected="$(xcode-select -p 2>/dev/null || true)"
@@ -488,8 +486,7 @@ jobs:
           fi
           xcodebuild -version
           mkdir -p "$HOME/.cache/t3-pretty-release/cocoapods"
-          echo "CP_HOME_DIR=$HOME/.cache/t3-pretty-release/cocoapods" >> "$GITHUB_ENV"
-          export CP_HOME_DIR="$HOME/.cache/t3-pretty-release/cocoapods"
+          t3_persist_env CP_HOME_DIR "$HOME/.cache/t3-pretty-release/cocoapods"
           if ! command -v pod >/dev/null; then
             brew install cocoapods
           fi

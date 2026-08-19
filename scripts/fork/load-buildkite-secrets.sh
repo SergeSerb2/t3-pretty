@@ -10,6 +10,12 @@ set -euo pipefail
 
 export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
 
+# Missing agent is not a hard fail. File-backed secrets still load. An early
+# `exit 0` would skip ~/.config/t3-pretty and leave later steps empty.
+if ! command -v buildkite-agent >/dev/null; then
+  echo "buildkite-agent is not on PATH; leaving existing environment in place."
+fi
+
 ci_env="${RUNNER_TEMP:-${GITHUB_WORKSPACE:-${HOME}}}/t3-pretty-ci.env"
 
 append_export() {

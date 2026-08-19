@@ -27,9 +27,9 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. macos-release
    reuses the workspace, so the job updates an existing `upstream` remote instead of
    `git remote add`. The PATH step writes Homebrew and Vite+ bins to `GITHUB_PATH` when
-   that file exists, and also writes `PATH` to `GITHUB_ENV` whenever that file exists.
-   Buildkite's importer can set `GITHUB_PATH` without applying it between steps; the
-   `GITHUB_ENV` snapshot is what later `vp` / `eas` steps actually see in that case.
+   that file exists, `PATH` to `GITHUB_ENV` when that file exists, and always
+   `t3-pretty-ci.env`. Later steps source `macos-ci-prelude.sh` because the importer
+   can set `GITHUB_PATH` without applying it between steps.
    Maintainers can use
    the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
    into an `automation/upstream-*` branch and opens an Origin pull request.
