@@ -140,7 +140,7 @@ if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" && "$MODE" != "build" && "$FO
   fi
 fi
 
-lockdir="${TMPDIR:-/tmp}/t3-pretty-ios-mobile.lock"
+lockdir="/tmp/t3-pretty-ios-mobile.lock"
 while ! mkdir "$lockdir" 2>/dev/null; do
   echo "Waiting for another ios-mobile publish on this Mac..."
   sleep 10
@@ -396,7 +396,25 @@ echo "Submitted TestFlight IPA $ipa_path"
 restore_eas_json
 
 if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
-  echo "No fingerprint to record after TestFlight submit."
+  echo "Fingerprint was unknown at compile time; generating after TestFlight submit."
+  retry="$tmp/ios-fingerprint-retry.json"
+  if (
+    cd apps/mobile
+    eas fingerprint:generate \
+      --platform ios \
+      --build-profile production \
+      --json \
+      --non-interactive > "$retry"
+  ); then
+    fingerprint="$(node scripts/fork/resolve-ios-native-build.mjs \
+      --fingerprint-file "$retry" \
+      --builds-json "[]" \
+      --submitted-fingerprint "" \
+      --force false | awk -F= '/^fingerprint=/ { print $2 }' | tail -n 1)"
+  fi
+fi
+if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
+  echo "Could not record an iOS fingerprint after TestFlight submit; the next release may compile again." >&2
   exit 0
 fi
 

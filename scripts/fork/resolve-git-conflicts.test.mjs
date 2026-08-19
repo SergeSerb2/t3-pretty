@@ -279,7 +279,7 @@ ${">".repeat(7)} theirs
     assert.include(syncWorkflow, "mobile_release_needed=true");
     assert.include(syncWorkflow, "T3CODE_MOBILE_SKIP_PATH_FILTER=1");
     assert.include(syncWorkflow, "bash scripts/fork/publish-mobile-release.sh");
-    assert.include(syncWorkflow, "t3-pretty-ios-mobile.lock");
+    assert.include(syncWorkflow, "/tmp/t3-pretty-ios-mobile.lock");
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, 'build.source != "schedule"');
     assert.include(mobileRelease, "does not change mobile-relevant paths");

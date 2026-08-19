@@ -104,8 +104,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(mobileRelease, "--github-output");
     assert.include(mobileRelease, "APPLE_TEAM_ID:-78A5P57U23");
     assert.include(mobileRelease, "load_secret CURSOR_API_KEY 0");
-    assert.include(mobileRelease, "t3-pretty-ios-mobile.lock");
+    assert.include(mobileRelease, 'lockdir="/tmp/t3-pretty-ios-mobile.lock"');
     assert.include(mobileRelease, 'mkdir "$lockdir"');
+    assert.include(mobileRelease, "generating after TestFlight submit");
     assert.include(mobileRelease, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
     assert.notInclude(mobileRelease, '"$MODE" == "build" || "$MODE" == "release"');
     assert.notInclude(mobileRelease, "t3_require_ota");
