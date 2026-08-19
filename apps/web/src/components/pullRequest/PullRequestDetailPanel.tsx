@@ -888,9 +888,10 @@ export function PullRequestDetailPanel({
     // the repository itself is what you want when the point is to run the thing where you
     // already work — and it moves the branch under everything else that is open there.
     mode: "worktree" | "local" = "worktree",
+    destination: "this-thread" | "new-thread" = "this-thread",
   ) => {
     if (!detail || handoff !== null) return;
-    if (attachTarget !== null && task !== null) {
+    if (destination === "this-thread" && attachTarget !== null && task !== null) {
       writeTaskToComposer(attachTarget, task);
       toastManager.add({
         type: "success",
@@ -1058,7 +1059,10 @@ export function PullRequestDetailPanel({
   };
 
   /** One finding, handed over on its own — the surfaces that show findings call this. */
-  const startFixFinding = (finding: PullRequestFinding) => {
+  const startFixFinding = (
+    finding: PullRequestFinding,
+    destination: "this-thread" | "new-thread" = attachTarget ? "this-thread" : "new-thread",
+  ) => {
     if (!detail) return;
     // Same gate as the Resolve control: do not ask the agent to resolve when this account cannot.
     const canResolve = detail.capabilities.review.resolve && detail.viewerPermissions.resolve;
@@ -1077,6 +1081,8 @@ export function PullRequestDetailPanel({
         finding,
         canResolve,
       }),
+      "worktree",
+      destination,
     );
   };
 
@@ -2055,7 +2061,9 @@ export function PullRequestDetailPanel({
                   activityError={activityError}
                   pendingFinding={handoff}
                   fixFindingLabel={handoffLabels.fixFinding}
+                  fixFindingOtherLabel={handoffLabels.fixFindingOther}
                   fixCheckLabel={handoffLabels.fixCheck}
+                  canFixInThisThread={attachTarget !== null}
                   onFixFinding={startFixFinding}
                   onRefresh={refreshDetail}
                   {...(savedView === undefined ? {} : { restoredView: savedView })}
@@ -2096,6 +2104,8 @@ export function PullRequestDetailPanel({
                     onSelectedCommitChange={selectCodeCommit}
                     pendingFinding={handoff}
                     fixFindingLabel={handoffLabels.fixFinding}
+                    fixFindingOtherLabel={handoffLabels.fixFindingOther}
+                    canFixInThisThread={attachTarget !== null}
                     onFixFinding={startFixFinding}
                     onRefresh={refreshDetail}
                     refreshToken={refreshToken}

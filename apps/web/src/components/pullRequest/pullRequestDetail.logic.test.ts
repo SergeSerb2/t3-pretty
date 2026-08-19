@@ -20,6 +20,7 @@ import {
   groupPullRequestTimelineConversations,
   handoffPrompt,
   handoffReviewComments,
+  isPullRequestFixableComment,
   isPullRequestVerdictStale,
   isThreadOwnPullRequest,
   latestPullRequestReviewOutcomes,
@@ -30,6 +31,7 @@ import {
   pullRequestActionMenuHasGroup,
   pullRequestActionNeedsHostRefresh,
   pullRequestComposerTarget,
+  pullRequestConversationFinding,
   pullRequestFindingKey,
   pullRequestHandoffLabels,
   pullRequestReviewOutcome,
@@ -145,6 +147,7 @@ describe("pull request handoff labels", () => {
   it("names the open thread when actions write to its composer", () => {
     expect(pullRequestHandoffLabels(true)).toEqual({
       fixFinding: "Fix in this thread",
+      fixFindingOther: "Fix in another thread",
       fixCheck: "Fix in this thread",
       fixFindings: "Fix findings in this thread",
       resolve: "Resolve in this thread",
@@ -155,6 +158,7 @@ describe("pull request handoff labels", () => {
   it("keeps the standalone pull request page labels", () => {
     expect(pullRequestHandoffLabels(false)).toEqual({
       fixFinding: "Fix in a thread",
+      fixFindingOther: "Fix in another thread",
       fixCheck: "Fix",
       fixFindings: "Fix findings in a thread",
       resolve: "Resolve in a new thread",
@@ -183,6 +187,53 @@ describe("ordering comments", () => {
     expect(orderPullRequestComments(comments, "oldest")).toEqual(comments);
     // The source array is chronological input, not a mutation target.
     expect(comments).toEqual([{ createdAt: "a" }, { createdAt: "b" }, { createdAt: "c" }]);
+  });
+});
+
+describe("fixable conversation remarks", () => {
+  const grokBody = [
+    "<!-- t3-pretty-grok-review sha=deadbeef -->",
+    "",
+    "### bug — data-right-panel duplicated on inner and outer",
+    "",
+    "`apps/web/src/components/preview/PreviewPanelShell.tsx:129`",
+    "",
+    "Keep the hook on one node.",
+  ].join("\n");
+
+  it("treats a Grok Origin finding as a finding even when it arrived as an issue comment", () => {
+    const comment: PullRequestComment = {
+      id: "cmt_1",
+      kind: "issue-comment",
+      author: { login: "google-oauth2|user_01", name: null, avatarUrl: null },
+      body: grokBody,
+      createdAt: "2026-08-19T07:36:31Z",
+      url: null,
+      path: null,
+      reviewState: null,
+    };
+    expect(isPullRequestFixableComment(comment)).toBe(true);
+    expect(pullRequestConversationFinding({ comment, thread: undefined, body: grokBody })).toEqual({
+      kind: "comment",
+      comment,
+    });
+  });
+
+  it("does not offer to fix ordinary conversation", () => {
+    const comment: PullRequestComment = {
+      id: "cmt_talk",
+      kind: "issue-comment",
+      author: { login: "octocat", name: null, avatarUrl: null },
+      body: "please also update the docs",
+      createdAt: "2026-08-19T07:36:31Z",
+      url: null,
+      path: null,
+      reviewState: null,
+    };
+    expect(isPullRequestFixableComment(comment)).toBe(false);
+    expect(pullRequestConversationFinding({ comment, thread: undefined, body: comment.body })).toBe(
+      null,
+    );
   });
 });
 
@@ -972,6 +1023,32 @@ describe("findings that cannot be attached", () => {
 
     expect(handoff.prompt).toContain("src/app.ts");
     expect(handoff.prompt).toContain("revert the middleware change");
+  });
+
+  it("carries a Grok Origin finding posted as an issue comment", () => {
+    const handoff = buildFixFindingsHandoff({
+      ...base,
+      provider: "origin",
+      host: "cursor.com",
+      comments: [
+        {
+          ...review,
+          id: "cmt_1",
+          kind: "issue-comment",
+          body: [
+            "<!-- t3-pretty-grok-review sha=deadbeef -->",
+            "",
+            "### bug — data-right-panel duplicated on inner and outer",
+            "",
+            "`apps/web/src/components/preview/PreviewPanelShell.tsx:129`",
+            "",
+            "Keep the hook on one node.",
+          ].join("\n"),
+        },
+      ],
+    });
+    expect(handoff.prompt).toContain("Keep the hook on one node");
+    expect(handoff.prompt).not.toContain("No unresolved review findings");
   });
 
   it("does not repeat a remark that was already attached as a thread", () => {

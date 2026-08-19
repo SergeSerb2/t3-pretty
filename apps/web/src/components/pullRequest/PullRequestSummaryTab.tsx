@@ -6,11 +6,11 @@ import type {
   PullRequestRef,
   PullRequestReviewThread,
 } from "@t3tools/contracts";
+import { parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 import {
   ArrowDownUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  HammerIcon,
   MessageSquareIcon,
   PencilIcon,
   SendIcon,
@@ -31,6 +31,7 @@ import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
+  GrokReviewFindingHeader,
   PullRequestActorAvatar,
   PullRequestActorLabel,
   PullRequestCheckStatusIcon,
@@ -42,13 +43,16 @@ import {
 } from "./pullRequestPresentation";
 import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
+import { FixFindingButton } from "./FixFindingButton";
 import {
   latestPullRequestReviewOutcomes,
   orderPullRequestComments,
+  pullRequestConversationFinding,
   pullRequestFindingKey,
   pullRequestReviewOutcome,
   visibleBody,
   type PullRequestFinding,
+  type PullRequestFixDestination,
 } from "./pullRequestDetail.logic";
 import {
   canEditPullRequestChangeRequest,
@@ -114,10 +118,13 @@ function CommentBody({
   comment,
   editing,
   className,
+  displayText,
 }: {
   comment: PullRequestComment;
   editing: CommentEditing;
   className?: string | undefined;
+  /** Shown instead of `comment.body` — a parsed finding keeps the heading out of the markdown. */
+  displayText?: string;
 }) {
   if (editing.editingId === comment.id) {
     return (
@@ -132,9 +139,15 @@ function CommentBody({
       />
     );
   }
+  const text = displayText ?? comment.body;
+  if (text.trim().length === 0 && !editing.canEdit(comment)) return null;
   return (
     <div className={cn("flex items-start gap-1", className)}>
-      <PullRequestMarkdown className="min-w-0 flex-1" text={comment.body} cwd={editing.cwd} />
+      {text.trim().length > 0 ? (
+        <PullRequestMarkdown className="min-w-0 flex-1" text={text} cwd={editing.cwd} />
+      ) : (
+        <span className="min-w-0 flex-1" />
+      )}
       {editing.canEdit(comment) ? (
         <Button
           size="icon-xs"
@@ -392,7 +405,9 @@ export function PullRequestSummaryTab({
   activityError,
   pendingFinding,
   fixFindingLabel = "Fix in a thread",
+  fixFindingOtherLabel = "Fix in another thread",
   fixCheckLabel = "Fix",
+  canFixInThisThread = false,
   onFixFinding,
   onRefresh,
   restoredView,
@@ -406,8 +421,10 @@ export function PullRequestSummaryTab({
   /** The hand-off currently preparing, if any, so only the finding it belongs to says so. */
   pendingFinding?: string | null;
   fixFindingLabel?: string;
+  fixFindingOtherLabel?: string;
   fixCheckLabel?: string;
-  onFixFinding?: (finding: PullRequestFinding) => void;
+  canFixInThisThread?: boolean;
+  onFixFinding?: (finding: PullRequestFinding, destination: PullRequestFixDestination) => void;
   onRefresh: () => void;
   restoredView?: PullRequestPanelViewSnapshot;
   onViewChange?: (patch: PullRequestPanelViewSnapshot) => void;
@@ -783,18 +800,14 @@ export function PullRequestSummaryTab({
                   {/* Only where there is something to fix. A passing check has no failure to
                       reproduce, and the button would be an invitation to waste a thread. */}
                   {onFixFinding && failing ? (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="shrink-0"
+                    <FixFindingButton
+                      label={fixCheckLabel}
+                      otherThreadLabel={fixFindingOtherLabel}
+                      canFixInThisThread={canFixInThisThread}
+                      pending={pendingFinding === pullRequestFindingKey(finding)}
                       disabled={pendingFinding !== null && pendingFinding !== undefined}
-                      onClick={() => onFixFinding(finding)}
-                    >
-                      <HammerIcon className="size-3" />
-                      {pendingFinding === pullRequestFindingKey(finding)
-                        ? "Preparing..."
-                        : fixCheckLabel}
-                    </Button>
+                      onFix={(destination) => onFixFinding(finding, destination)}
+                    />
                   ) : null}
                 </div>
               );
@@ -902,17 +915,9 @@ export function PullRequestSummaryTab({
                     );
                   }
                   // An approval is a verdict, not a finding: there is nothing in it to fix.
-                  const finding: PullRequestFinding | null =
-                    (comment.kind !== "review" && comment.kind !== "review-comment") ||
-                    outcome === "approved"
-                      ? null
-                      : thread === undefined
-                        ? // Nor is a remark with nothing in it: offering to hand an empty review
-                          // to a thread promises work it does not describe.
-                          body === null
-                          ? null
-                          : { kind: "comment", comment }
-                        : { kind: "thread", thread };
+                  // Grok Origin findings arrive as ordinary comments; the marker names them.
+                  const finding = pullRequestConversationFinding({ comment, thread, body });
+                  const grokFinding = parseGrokReviewFinding(comment.body);
                   // One bar, two homes. Under a card with words in it, it is the row beneath
                   // them. A bodiless verdict has nothing above it, so a row reserved for an add
                   // button nobody can see until they hover is a hole — there it rides the header
@@ -962,21 +967,22 @@ export function PullRequestSummaryTab({
                           {/* Review remarks only. A plain conversation comment is talk, not a finding,
                         and offering to fix one would promise more than it says. */}
                           {onFixFinding && finding ? (
-                            <Button
-                              size="xs"
-                              variant="ghost"
+                            <FixFindingButton
+                              label={fixFindingLabel}
+                              otherThreadLabel={fixFindingOtherLabel}
+                              canFixInThisThread={canFixInThisThread}
+                              pending={pendingFinding === pullRequestFindingKey(finding)}
                               disabled={pendingFinding !== null && pendingFinding !== undefined}
-                              onClick={() => onFixFinding(finding)}
-                            >
-                              <HammerIcon className="size-3" />
-                              {pendingFinding === pullRequestFindingKey(finding)
-                                ? "Preparing..."
-                                : fixFindingLabel}
-                            </Button>
+                              onFix={(destination) => onFixFinding(finding, destination)}
+                            />
                           ) : null}
                         </span>
                       </div>
-                      {comment.path ? (
+                      {grokFinding ? (
+                        <div className="mt-2">
+                          <GrokReviewFindingHeader finding={grokFinding} />
+                        </div>
+                      ) : comment.path ? (
                         <Tooltip>
                           <TooltipTrigger
                             render={
@@ -993,7 +999,12 @@ export function PullRequestSummaryTab({
                           Kept where this reader may rewrite the remark: the pencil lives in here,
                           and hiding the block would take away the only way back to it. */}
                       {body === null && !commentEditing.canEdit(comment) ? null : (
-                        <CommentBody className="mt-2" comment={comment} editing={commentEditing} />
+                        <CommentBody
+                          className="mt-2"
+                          comment={comment}
+                          editing={commentEditing}
+                          {...(grokFinding ? { displayText: grokFinding.body } : {})}
+                        />
                       )}
                       {body === null ? null : reactionBar}
                     </article>

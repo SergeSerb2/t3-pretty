@@ -29,7 +29,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
-import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
+import {
+  pullRequestFindingKey,
+  type PullRequestFinding,
+  type PullRequestFixDestination,
+} from "./pullRequestDetail.logic";
 import { canEditPullRequestComment } from "./pullRequestEditing.logic";
 import { orderDiffFiles } from "./pullRequestFileOrder.logic";
 import {
@@ -187,6 +191,8 @@ export function PullRequestCodeTab({
   onSelectedCommitChange,
   pendingFinding,
   fixFindingLabel = "Fix in a thread",
+  fixFindingOtherLabel = "Fix in another thread",
+  canFixInThisThread = false,
   onFixFinding,
   onAddToAgentSelection,
   onRefresh,
@@ -201,7 +207,9 @@ export function PullRequestCodeTab({
   /** The hand-off currently preparing, if any, so only the finding it belongs to says so. */
   pendingFinding?: string | null;
   fixFindingLabel?: string;
-  onFixFinding?: (finding: PullRequestFinding) => void;
+  fixFindingOtherLabel?: string;
+  canFixInThisThread?: boolean;
+  onFixFinding?: (finding: PullRequestFinding, destination: PullRequestFixDestination) => void;
   /** Absent where there is no active agent composer to receive a local comment. */
   onAddToAgentSelection?: (input: PullRequestAgentSelectionInput) => void;
   onRefresh: () => void;
@@ -802,7 +810,11 @@ export function PullRequestCodeTab({
         fixPending={pendingFinding === pullRequestFindingKey({ kind: "thread", thread })}
         fixDisabled={pendingFinding !== null && pendingFinding !== undefined}
         fixLabel={fixFindingLabel}
-        {...(onFixFinding ? { onFix: () => onFixFinding({ kind: "thread", thread }) } : {})}
+        fixOtherLabel={fixFindingOtherLabel}
+        canFixInThisThread={canFixInThisThread}
+        {...(onFixFinding
+          ? { onFix: (destination) => onFixFinding({ kind: "thread", thread }, destination) }
+          : {})}
         onLoadMore={async (cursor): Promise<PullRequestThreadCommentsResult | null> => {
           const result = await loadThreadComments({
             environmentId,
@@ -852,6 +864,8 @@ export function PullRequestCodeTab({
       detail,
       environmentId,
       fixFindingLabel,
+      fixFindingOtherLabel,
+      canFixInThisThread,
       loadThreadComments,
       onRefresh,
       onFixFinding,

@@ -14,6 +14,8 @@ import type {
   SourceControlProviderKind,
 } from "@t3tools/contracts";
 
+import { parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
+
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
 
 /** Activity changes only when the same host resource reports a newer revision. */
@@ -74,6 +76,7 @@ export function pullRequestHandoffLabels(inThisThread: boolean) {
   return inThisThread
     ? {
         fixFinding: "Fix in this thread",
+        fixFindingOther: "Fix in another thread",
         fixCheck: "Fix in this thread",
         fixFindings: "Fix findings in this thread",
         resolve: "Resolve in this thread",
@@ -81,12 +84,15 @@ export function pullRequestHandoffLabels(inThisThread: boolean) {
       }
     : {
         fixFinding: "Fix in a thread",
+        fixFindingOther: "Fix in another thread",
         fixCheck: "Fix",
         fixFindings: "Fix findings in a thread",
         resolve: "Resolve in a new thread",
         resolveConflicts: "Resolve conflicts in a thread",
       };
 }
+
+export type PullRequestFixDestination = "this-thread" | "new-thread";
 
 export function pullRequestComposerTarget<T>(
   context: "page" | "thread",
@@ -746,11 +752,7 @@ export function buildFixFindingsHandoff(input: {
     input.reviewThreads.flatMap((thread) => thread.comments.map((comment) => comment.id)),
   );
   const unattachable = input.comments
-    .filter(
-      (comment) =>
-        (comment.kind === "review" || comment.kind === "review-comment") &&
-        !attached.has(comment.id),
-    )
+    .filter((comment) => isPullRequestFixableComment(comment) && !attached.has(comment.id))
     .flatMap((comment) => {
       const body = visibleBody(comment.body);
       if (body === null) return [];
@@ -835,6 +837,33 @@ export type PullRequestFinding =
   | { readonly kind: "thread"; readonly thread: PullRequestReviewThread }
   | { readonly kind: "check"; readonly check: PullRequestCheck }
   | { readonly kind: "comment"; readonly comment: PullRequestComment };
+
+/**
+ * Whether this remark is something to hand to an agent. Review remarks are; talk is not.
+ * Grok Origin findings are posted as ordinary comments, so the marker is what names them.
+ */
+export function isPullRequestFixableComment(
+  comment: Pick<PullRequestComment, "kind" | "body" | "reviewState">,
+): boolean {
+  if (pullRequestReviewOutcome(comment.reviewState) === "approved") return false;
+  return (
+    comment.kind === "review" ||
+    comment.kind === "review-comment" ||
+    parseGrokReviewFinding(comment.body) !== null
+  );
+}
+
+/** The finding a conversation row offers to fix, or none if the remark is only talk. */
+export function pullRequestConversationFinding(input: {
+  readonly comment: PullRequestComment;
+  readonly thread: PullRequestReviewThread | undefined;
+  readonly body: string | null;
+}): PullRequestFinding | null {
+  if (!isPullRequestFixableComment(input.comment)) return null;
+  if (input.thread !== undefined) return { kind: "thread", thread: input.thread };
+  if (input.body === null) return null;
+  return { kind: "comment", comment: input.comment };
+}
 
 /** What to call a finding where a button has to fit its name in a few words. */
 export function pullRequestFindingKey(finding: PullRequestFinding): string {

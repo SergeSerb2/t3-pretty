@@ -2,8 +2,11 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   detectSourceControlProviderFromRemoteUrl,
+  formatGrokReviewLocation,
   getChangeRequestTerminologyForKind,
+  isGrokReviewComment,
   isSshRemoteUrl,
+  parseGrokReviewFinding,
   resolveAutomatedReviewPresentation,
   resolveChangeRequestPresentation,
 } from "./sourceControl.ts";
@@ -37,6 +40,50 @@ describe("automated review presentation", () => {
       "Auto review left feedback",
       "Earlier auto review",
     ]);
+  });
+});
+
+describe("Grok Origin review findings", () => {
+  const findingBody = [
+    "<!-- t3-pretty-grok-review sha=c2101ed120a579136e59d3757b3905364c66d6dc -->",
+    "",
+    "### bug — Inline frost loses to nested transparent rule",
+    "",
+    "`apps/web/src/scenery/scenery.css:943`",
+    "",
+    "The descendant selector wins.",
+    "",
+  ].join("\n");
+
+  it("parses a posted finding into severity, title, path, and body", () => {
+    expect(parseGrokReviewFinding(findingBody)).toEqual({
+      sha: "c2101ed120a579136e59d3757b3905364c66d6dc",
+      severity: "bug",
+      title: "Inline frost loses to nested transparent rule",
+      path: "apps/web/src/scenery/scenery.css",
+      line: 943,
+      body: "The descendant selector wins.",
+    });
+    expect(formatGrokReviewLocation({ path: "apps/web/src/scenery/scenery.css", line: 943 })).toBe(
+      "apps/web/src/scenery/scenery.css · L943",
+    );
+  });
+
+  it("does not treat the review summary as a finding", () => {
+    const summary = [
+      "<!-- t3-pretty-grok-review sha=deadbeef -->",
+      "",
+      "## Grok 4.6 review",
+      "",
+      "Looks safe.",
+    ].join("\n");
+    expect(isGrokReviewComment(summary)).toBe(true);
+    expect(parseGrokReviewFinding(summary)).toBeNull();
+  });
+
+  it("ignores ordinary conversation", () => {
+    expect(parseGrokReviewFinding("please also update the docs")).toBeNull();
+    expect(isGrokReviewComment("please also update the docs")).toBe(false);
   });
 });
 

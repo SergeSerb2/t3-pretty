@@ -2,8 +2,10 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   originCheckStatus,
+  originComments,
   originMergeability,
   originStateAndDraft,
+  originThreads,
   toOriginDetail,
   toOriginListItem,
 } from "./originPullRequestJson.ts";
@@ -94,5 +96,77 @@ describe("origin pull request JSON", () => {
         url: "https://buildkite.com/example",
       },
     ]);
+  });
+
+  it("promotes a Grok finding comment into a review thread on the named line", () => {
+    const body = [
+      "<!-- t3-pretty-grok-review sha=deadbeef -->",
+      "",
+      "### bug — data-right-panel duplicated on inner and outer",
+      "",
+      "`apps/web/src/components/preview/PreviewPanelShell.tsx:129`",
+      "",
+      "Keep the hook on one node.",
+      "",
+    ].join("\n");
+    const comment = {
+      id: "cmt_1",
+      authorId: "google-oauth2|user_01",
+      body,
+      createdAt: "2026-08-19T07:36:31Z",
+      threadId: "cth_1",
+    };
+
+    expect(originComments([comment])).toEqual([
+      expect.objectContaining({
+        id: "cmt_1",
+        kind: "review-comment",
+        path: "apps/web/src/components/preview/PreviewPanelShell.tsx",
+      }),
+    ]);
+    expect(
+      originThreads([
+        {
+          id: "cth_1",
+          path: null,
+          startLine: null,
+          endLine: null,
+          resolved: false,
+          comments: [comment],
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        id: "cth_1",
+        path: "apps/web/src/components/preview/PreviewPanelShell.tsx",
+        line: 129,
+        isResolved: false,
+        comments: [expect.objectContaining({ id: "cmt_1" })],
+      }),
+    ]);
+  });
+
+  it("leaves a job-failure comment as conversation", () => {
+    const comment = {
+      id: "cmt_fail",
+      authorId: "google-oauth2|user_01",
+      body: "Origin PR review job failed on this build.",
+      createdAt: "2026-08-19T07:36:58Z",
+      threadId: "cth_fail",
+    };
+
+    expect(originComments([comment])[0]).toMatchObject({
+      kind: "issue-comment",
+      path: null,
+    });
+    expect(
+      originThreads([
+        {
+          id: "cth_fail",
+          path: null,
+          comments: [comment],
+        },
+      ]),
+    ).toEqual([]);
   });
 });

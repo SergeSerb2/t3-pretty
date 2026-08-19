@@ -7,6 +7,11 @@ import type {
   PullRequestState,
 } from "@t3tools/contracts";
 import {
+  formatGrokReviewLocation,
+  type GrokReviewFinding,
+  type GrokReviewSeverity,
+} from "@t3tools/shared/sourceControl";
+import {
   CircleCheckIcon,
   CircleDashedIcon,
   CircleDotIcon,
@@ -286,6 +291,32 @@ export function PullRequestReviewOutcomeIcon({
 
 export function pullRequestReviewOutcomeLabel(outcome: PullRequestReviewOutcome): string {
   return REVIEW_OUTCOME_PRESENTATION[outcome].label;
+}
+
+const GROK_SEVERITY_BADGE: Record<
+  GrokReviewSeverity,
+  { readonly variant: "warning" | "info" | "secondary"; readonly label: string }
+> = {
+  bug: { variant: "warning", label: "bug" },
+  suggestion: { variant: "info", label: "suggestion" },
+  nit: { variant: "secondary", label: "nit" },
+};
+
+/** Title, severity, and file — the Grok finding body is rendered beside this. */
+export function GrokReviewFindingHeader({ finding }: { finding: GrokReviewFinding }) {
+  const location = formatGrokReviewLocation(finding);
+  const badge = GROK_SEVERITY_BADGE[finding.severity];
+  return (
+    <div className="space-y-1.5">
+      {location ? <p className="truncate text-xs text-muted-foreground">{location}</p> : null}
+      <div className="flex items-start gap-2">
+        <Badge size="sm" variant={badge.variant} className="mt-0.5 uppercase">
+          {badge.label}
+        </Badge>
+        <p className="min-w-0 text-sm font-medium leading-5">{finding.title}</p>
+      </div>
+    </div>
+  );
 }
 
 export function PullRequestReviewOutcomeBadge({

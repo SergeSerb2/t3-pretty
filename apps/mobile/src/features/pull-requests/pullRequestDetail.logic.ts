@@ -11,6 +11,7 @@ import type {
   PullRequestState,
   SourceControlProviderKind,
 } from "@t3tools/contracts";
+import { parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 
 /** Plain-language state, shown beside the author. Conflicts are a merge signal, not a state. */
 export function describePullRequestState(state: PullRequestState, isDraft: boolean): string {
@@ -479,7 +480,9 @@ export function buildFixFindingsPrompt(input: {
   const unattachable = input.comments
     .filter(
       (comment) =>
-        (comment.kind === "review" || comment.kind === "review-comment") &&
+        (comment.kind === "review" ||
+          comment.kind === "review-comment" ||
+          parseGrokReviewFinding(comment.body) !== null) &&
         visibleBody(comment.body) !== null &&
         !attached.has(comment.id),
     )
