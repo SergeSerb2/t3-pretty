@@ -64,10 +64,7 @@ git fetch --force --tags origin || echo "warning: could not fetch Origin tags"
 git fetch --force --tags upstream
 
 # Node, not python3: macos-release PATH may not include Apple's CLT python.
-version="$(
-  node scripts/fork/resolve-fork-release.mjs |
-    node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const v=JSON.parse(s).version; if(!v) process.exit(1); process.stdout.write(v+'\n')})"
-)"
+version="$(node scripts/fork/resolve-fork-release.mjs --print version)"
 test -n "$version"
 echo "Building macOS arm64 $version"
 

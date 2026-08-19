@@ -75,7 +75,16 @@ function resolveForkBuild(upstreamBuildRaw, runNumber) {
   return candidate > highest ? candidate : highest + 1n;
 }
 
+function printField(argv) {
+  const index = argv.indexOf("--print");
+  if (index === -1) return undefined;
+  const field = argv[index + 1];
+  if (!field) throw new Error("resolve-fork-release.mjs --print needs a field name");
+  return field;
+}
+
 function main() {
+  const field = printField(process.argv.slice(2));
   const runNumber = resolveRunNumber();
 
   const upstreamTag = findNewestIntegratedNightly();
@@ -96,6 +105,13 @@ function main() {
     name: `T3 Pretty ${version}`,
     short_sha: git("rev-parse", "--short=9", "HEAD"),
   };
+
+  if (field) {
+    const value = values[field];
+    if (value == null) throw new Error(`Unknown --print field: ${field}`);
+    process.stdout.write(`${value}\n`);
+    return;
+  }
 
   const outputPath = process.env.GITHUB_OUTPUT;
   if (outputPath) {

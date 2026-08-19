@@ -148,6 +148,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(mobile, '"$helper" main --full');
     assert.include(desktop, "ensure-linux-node.sh");
     assert.include(desktop, "PREFLIGHT_REF");
+    assert.include(desktop, "needs.preflight.result == 'success'");
     assert.notInclude(desktop, "/usr/local --strip-components=1");
     assert.include(preflight, "Could not fetch Origin fork tags");
     assert.include(preflight, "origin_tags_ok");
