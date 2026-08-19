@@ -232,13 +232,15 @@ export const PullRequestThreadComment = Schema.Struct({
 export type PullRequestThreadComment = typeof PullRequestThreadComment.Type;
 
 /**
- * A conversation anchored to a line of the diff. The detail carries these alongside `comments`
- * rather than instead of them: the timeline wants one flat, chronological list, and the diff
- * wants whole threads pinned to their line — the same remarks, read two different ways.
+ * A conversation the host lets you reply to and resolve. Most are pinned to a line of the
+ * diff. Origin also threads ordinary conversation, which has no file — `path` is null then.
+ * The detail carries these alongside `comments` rather than instead of them: the timeline
+ * wants one flat list, and the diff wants whole threads pinned to their line.
  */
 export const PullRequestReviewThread = Schema.Struct({
   id: TrimmedNonEmptyString,
-  path: TrimmedNonEmptyString,
+  /** Null when the host did not pin this conversation to a file. */
+  path: Schema.NullOr(TrimmedNonEmptyString),
   /** Null when the host anchors the thread to a file rather than to a line. */
   line: Schema.NullOr(PositiveInt),
   side: PullRequestDiffSide,

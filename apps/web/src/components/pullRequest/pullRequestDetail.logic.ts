@@ -546,12 +546,16 @@ function reviewThreadContext(
     id: `pull-request-finding:${thread.id}`,
     sectionId: `pull-request:${pullRequestNumber}`,
     sectionTitle: `PR #${pullRequestNumber} review`,
-    filePath: thread.path,
+    filePath: thread.path ?? `PR #${pullRequestNumber}`,
     startIndex: lineIndex,
     endIndex: lineIndex,
     // A left-side line numbers the file before the change, so the same number means another line.
     rangeLabel:
-      thread.line === null ? "file" : `L${thread.line}${thread.side === "left" ? " (before)" : ""}`,
+      thread.path === null
+        ? "conversation"
+        : thread.line === null
+          ? "file"
+          : `L${thread.line}${thread.side === "left" ? " (before)" : ""}`,
     // Bot bookkeeping lives in HTML comments and would otherwise eat the length bound before
     // the finding itself got any of it.
     text: bounded(
@@ -563,7 +567,7 @@ function reviewThreadContext(
         .join("\n"),
     ),
     diff: "",
-    fenceLanguage: inferReviewCommentFenceLanguage(thread.path),
+    fenceLanguage: inferReviewCommentFenceLanguage(thread.path ?? ""),
   };
 }
 

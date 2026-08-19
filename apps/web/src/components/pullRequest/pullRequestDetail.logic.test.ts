@@ -916,6 +916,18 @@ describe("fix findings handoff", () => {
     ]);
   });
 
+  it("names an Origin conversation thread that has no file", () => {
+    const handoff = buildFixFindingsHandoff({
+      ...base,
+      reviewThreads: [thread("keep the hook on one node", { id: "cth_1", path: null, line: null })],
+      checks: [],
+    });
+    expect(handoff.reviewComments[0]).toMatchObject({
+      filePath: "PR #42",
+      rangeLabel: "conversation",
+    });
+  });
+
   it("keeps failing checks in the prompt, having no line to attach them to", () => {
     const handoff = buildFixFindingsHandoff({
       ...base,

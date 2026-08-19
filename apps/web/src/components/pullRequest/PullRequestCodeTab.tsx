@@ -425,6 +425,7 @@ export function PullRequestCodeTab({
       const path = resolveFileDiffPath(file);
       for (const thread of detail.reviewThreads) {
         if (
+          thread.path !== null &&
           thread.path === path &&
           thread.line !== null &&
           isLineInFileDiff(file, thread.side, thread.line)
@@ -460,7 +461,7 @@ export function PullRequestCodeTab({
         };
 
         for (const thread of detail.reviewThreads) {
-          if (thread.path !== path || thread.line === null) continue;
+          if (thread.path === null || thread.path !== path || thread.line === null) continue;
           if (!placedThreadIds.has(thread.id)) continue;
           groupAt(thread.side, thread.line).threads.push(thread);
         }
@@ -1235,14 +1236,18 @@ export function PullRequestCodeTab({
     );
   }
 
-  const orphanThreads = detail.reviewThreads.filter((thread) => !placedThreadIds.has(thread.id));
+  const orphanThreads = detail.reviewThreads.filter(
+    (thread) => thread.path !== null && !placedThreadIds.has(thread.id),
+  );
   // A file carrying five stranded conversations should read as that file once rather than as
-  // five copies of its path.
+  // five copies of its path. Conversation threads with no file live on the Comments tab.
   const orphanFiles = new Map<string, PullRequestReviewThread[]>();
   for (const thread of orphanThreads) {
-    const existing = orphanFiles.get(thread.path);
+    const path = thread.path;
+    if (path === null) continue;
+    const existing = orphanFiles.get(path);
     if (existing) existing.push(thread);
-    else orphanFiles.set(thread.path, [thread]);
+    else orphanFiles.set(path, [thread]);
   }
 
   const unstructured =

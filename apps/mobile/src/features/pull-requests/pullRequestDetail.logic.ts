@@ -420,9 +420,11 @@ export function buildFixFindingPrompt(input: {
       })
       .join("\n");
     const where =
-      thread.line === null
-        ? ` in \`${boundedField(thread.path)}\``
-        : ` on \`${boundedField(thread.path)}\` L${thread.line}${thread.side === "left" ? " (before)" : ""}`;
+      thread.path === null
+        ? ""
+        : thread.line === null
+          ? ` in \`${boundedField(thread.path)}\``
+          : ` on \`${boundedField(thread.path)}\` L${thread.line}${thread.side === "left" ? " (before)" : ""}`;
     const resolveInstruction = resolveFindingsAfterFixInstruction(
       input.provider,
       input.host,
@@ -519,9 +521,11 @@ export function buildFixFindingsPrompt(input: {
       })
       .join("\n");
     const where =
-      thread.line === null
-        ? `\`${boundedField(thread.path)}\``
-        : `\`${boundedField(thread.path)}\` L${thread.line}`;
+      thread.path === null
+        ? "conversation"
+        : thread.line === null
+          ? `\`${boundedField(thread.path)}\``
+          : `\`${boundedField(thread.path)}\` L${thread.line}`;
     return quoted.length > 0 ? [`${where}:`, `> ${bounded(quoted)}`] : [];
   });
 

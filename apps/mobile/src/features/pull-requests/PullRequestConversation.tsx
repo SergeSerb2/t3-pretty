@@ -221,7 +221,10 @@ function ReviewThreadCard(props: {
     setExpanded(!props.resolved);
   }, [props.resolved]);
 
-  const location = `${props.thread.path}${props.thread.line === null ? "" : `:${props.thread.line}`}`;
+  const location =
+    props.thread.path === null
+      ? null
+      : `${props.thread.path}${props.thread.line === null ? "" : `:${props.thread.line}`}`;
 
   return (
     <View className="rounded-2xl bg-card px-4 py-3.5">
@@ -246,10 +249,16 @@ function ReviewThreadCard(props: {
               {props.resolved ? "Resolved" : "Open"} · {commentCount}{" "}
               {commentCount === 1 ? "comment" : "comments"}
             </Text>
-            <Text className="mt-0.5 font-mono text-2xs text-foreground-tertiary" numberOfLines={1}>
-              {location}
-              {props.thread.isOutdated ? " · Outdated" : ""}
-            </Text>
+            {location || props.thread.isOutdated ? (
+              <Text
+                className="mt-0.5 font-mono text-2xs text-foreground-tertiary"
+                numberOfLines={1}
+              >
+                {location}
+                {location && props.thread.isOutdated ? " · " : ""}
+                {props.thread.isOutdated ? "Outdated" : ""}
+              </Text>
+            ) : null}
           </View>
           <SymbolView
             name={expanded ? "chevron.up" : "chevron.down"}

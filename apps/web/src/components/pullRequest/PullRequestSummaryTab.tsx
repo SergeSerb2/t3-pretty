@@ -25,6 +25,7 @@ import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
+import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Textarea } from "../ui/textarea";
@@ -508,10 +509,17 @@ export function PullRequestSummaryTab({
   const setThreadResolution = useAtomCommand(pullRequestEnvironment.setThreadResolution, {
     reportFailure: false,
   });
+  const replyToThread = useAtomCommand(pullRequestEnvironment.replyToThread, {
+    reportFailure: false,
+  });
   const [resolutionPending, setResolutionPending] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [reply, setReply] = useState("");
+  const [replyPending, setReplyPending] = useState(false);
   // What is offered is the intersection of what this host can do at all and what this account
   // may do on this repository: either one saying no means a control that only ends in refusal.
   const canResolveThreads = detail.capabilities.review.resolve && detail.viewerPermissions.resolve;
+  const canReplyThreads = detail.capabilities.review.reply && detail.viewerPermissions.comment;
 
   const toggleThreadResolution = async (thread: PullRequestReviewThread) => {
     if (resolutionPending) return;
@@ -527,6 +535,25 @@ export function PullRequestSummaryTab({
     }
     onRefresh();
   };
+
+  const sendThreadReply = async (thread: PullRequestReviewThread) => {
+    const trimmed = reply.trim();
+    if (trimmed.length === 0 || replyPending) return;
+    setReplyPending(true);
+    const result = await replyToThread({
+      environmentId,
+      input: { ...reference, threadId: thread.id, body: trimmed },
+    });
+    setReplyPending(false);
+    if (result._tag === "Failure") {
+      toastManager.add({ type: "error", title: "The reply could not be posted" });
+      return;
+    }
+    setReply("");
+    setReplyingTo(null);
+    onRefresh();
+  };
+
   // Keyed by the pull request, like the comment window above it, so an editor left open never
   // reappears over the next pull request's description.
   const [bodyScope, setBodyScope] = useState<string | null>(null);
@@ -964,6 +991,21 @@ export function PullRequestSummaryTab({
                               Resolve
                             </Button>
                           ) : null}
+                          {canReplyThreads && thread ? (
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              disabled={replyPending}
+                              onClick={() => {
+                                setReplyingTo((current) =>
+                                  current === thread.id ? null : thread.id,
+                                );
+                                setReply("");
+                              }}
+                            >
+                              Reply
+                            </Button>
+                          ) : null}
                           {/* Review remarks only. A plain conversation comment is talk, not a finding,
                         and offering to fix one would promise more than it says. */}
                           {onFixFinding && finding ? (
@@ -1007,6 +1049,48 @@ export function PullRequestSummaryTab({
                         />
                       )}
                       {body === null ? null : reactionBar}
+                      {canReplyThreads && thread && replyingTo === thread.id ? (
+                        <div className="mt-2">
+                          <Textarea
+                            autoFocus
+                            size="sm"
+                            value={reply}
+                            placeholder="Reply"
+                            aria-label="Reply to this conversation"
+                            onChange={(event) => setReply(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                setReplyingTo(null);
+                                setReply("");
+                              }
+                              if (isCommentSubmitShortcut(event, reply, replyPending)) {
+                                event.preventDefault();
+                                void sendThreadReply(thread);
+                              }
+                            }}
+                          />
+                          <div className="mt-2 flex justify-end gap-2">
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              onClick={() => {
+                                setReplyingTo(null);
+                                setReply("");
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              size="xs"
+                              disabled={replyPending || reply.trim().length === 0}
+                              onClick={() => void sendThreadReply(thread)}
+                            >
+                              {replyPending ? "Posting..." : "Reply"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
                     </article>
                   );
                 })}

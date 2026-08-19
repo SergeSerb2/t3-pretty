@@ -167,6 +167,14 @@ describe("origin pull request JSON", () => {
           comments: [comment],
         },
       ]),
-    ).toEqual([]);
+    ).toEqual([
+      expect.objectContaining({
+        id: "cth_fail",
+        path: null,
+        line: null,
+        isResolved: false,
+        comments: [expect.objectContaining({ id: "cmt_fail" })],
+      }),
+    ]);
   });
 });
