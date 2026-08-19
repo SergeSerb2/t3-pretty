@@ -26,6 +26,10 @@ const syncWorkflowPath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "../../.github/workflows/fork-upstream-sync.yml",
 );
+const syncScriptPath = NodePath.resolve(
+  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+  "./run-upstream-sync.sh",
+);
 const mobileReleasePath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "./publish-mobile-release.sh",
@@ -263,7 +267,7 @@ ${">".repeat(7)} theirs
   });
 
   it("releases synced mobile changes without releasing server-only integrations", () => {
-    const syncWorkflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+    const syncScript = NodeFS.readFileSync(syncScriptPath, "utf8");
     const mobileRelease = NodeFS.readFileSync(mobileReleasePath, "utf8");
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(
@@ -273,15 +277,16 @@ ${">".repeat(7)} theirs
       "utf8",
     );
 
-    assert.include(syncWorkflow, "origin-forge.mjs dispatch");
-    assert.include(syncWorkflow, "--workflow fork-release.yml");
-    assert.notInclude(syncWorkflow, "--workflow fork-mobile-release.yml");
-    assert.include(syncWorkflow, "mobile_release_needed=true");
-    assert.include(syncWorkflow, "T3CODE_MOBILE_SKIP_PATH_FILTER=1");
+    assert.include(syncScript, "origin-forge.mjs dispatch");
+    assert.include(syncScript, "--workflow fork-release.yml");
+    assert.notInclude(syncScript, "--workflow fork-mobile-release.yml");
+    assert.include(syncScript, "mobile_release_needed=true");
+    assert.include(syncScript, "T3CODE_MOBILE_SKIP_PATH_FILTER=1");
     assert.include(mobileRelease, "T3CODE_MOBILE_SKIP_PATH_FILTER");
-    assert.include(syncWorkflow, "bash scripts/fork/publish-mobile-release.sh");
-    assert.include(syncWorkflow, "/tmp/t3-pretty-ios-mobile.lock");
+    assert.include(syncScript, "bash scripts/fork/publish-mobile-release.sh");
+    assert.include(syncScript, "/tmp/t3-pretty-ios-mobile.lock");
     assert.include(pipeline, "publish-mobile-release.sh");
+    assert.include(pipeline, "run-upstream-sync.sh");
     assert.include(pipeline, 'build.source != "schedule"');
     assert.include(mobileRelease, "does not change mobile-relevant paths");
     assert.include(mobileRelease, "apps/mobile");
@@ -302,21 +307,21 @@ ${">".repeat(7)} theirs
   });
 
   it("fetches the previous nightly tag used for fork-history context", () => {
-    const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
 
-    assert.include(workflow, '[[ -n "$current_tag" && "$current_tag" != "$latest_tag" ]]');
-    assert.include(workflow, '"refs/tags/$current_tag:refs/tags/$current_tag"');
-    assert.include(workflow, "PREVIOUS_UPSTREAM_TAG: ${{ steps.discover.outputs.previous_tag }}");
+    assert.include(script, '[[ -n "$current_tag" && "$current_tag" != "$latest_tag" ]]');
+    assert.include(script, '"refs/tags/$current_tag:refs/tags/$current_tag"');
+    assert.include(script, 'export PREVIOUS_UPSTREAM_TAG="$current_tag"');
   });
 
   it("backfills upstream-only objects from the upstream promisor, not the fork", () => {
-    const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
 
     // The sparse checkout is a blob:none partial clone; blobs a nightly adds
     // under .repos/ exist only upstream, and the fork promisor answers
     // "not our ref" for them, killing the merge before it starts.
-    assert.include(workflow, "git config remote.upstream.promisor true");
-    assert.include(workflow, "git config remote.upstream.partialclonefilter blob:none");
+    assert.include(script, "git config remote.upstream.promisor true");
+    assert.include(script, "git config remote.upstream.partialclonefilter blob:none");
   });
 
   it("checks upstream every four hours and supports an explicit retry", () => {
@@ -330,6 +335,13 @@ ${">".repeat(7)} theirs
   it("accepts a clustered nightly with any number of conflicted files", () => {
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+    const pipeline = NodeFS.readFileSync(
+      NodePath.resolve(
+        NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+        "../../.buildkite/pipeline.yml",
+      ),
+      "utf8",
+    );
 
     // No fixed conflict ceiling: a hard refusal strands the fork while the
     // next nightly piles more conflicts onto the same unintegrated merge.
@@ -338,18 +350,19 @@ ${">".repeat(7)} theirs
     assert.include(resolver, "const MAX_CONFLICTS_PER_REQUEST = 5");
     assert.include(resolver, "const MAX_BATCHES_PER_FILE = 32");
     assert.include(workflow, "timeout-minutes: 120");
+    assert.include(pipeline, "timeout_in_minutes: 120");
   });
 
   it("does not gate the merge on model- or upstream-authored whitespace", () => {
-    const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
 
     // Only the workflow's own metadata file is whitespace-checked. Resolver
     // output is model-composed content; a blank line at EOF must not fail an
     // otherwise complete merge after all conflicts resolved.
-    assert.include(workflow, "resolver_paths+=(");
-    assert.include(workflow, "git diff --check --cached -- .t3-fork/upstream-nightly");
-    assert.notInclude(workflow, '"${resolver_paths[@]}" \\');
-    assert.notInclude(workflow, "          git diff --check --cached\n");
+    assert.include(script, "resolver_paths+=(");
+    assert.include(script, "git diff --check --cached -- .t3-fork/upstream-nightly");
+    assert.notInclude(script, '"${resolver_paths[@]}" \\');
+    assert.notInclude(script, "          git diff --check --cached\n");
   });
 
   it("refuses to reuse a legacy resolution branch without its durable report", () => {
@@ -370,9 +383,9 @@ ${">".repeat(7)} theirs
         "# T3 Pretty upstream integration report",
       );
 
-      const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
-      assert.include(workflow, 'git show "origin/$SYNC_BRANCH:.t3-fork/upstream-sync-report.md"');
-      assert.include(workflow, '== "# T3 Pretty upstream integration report"');
+      const script = NodeFS.readFileSync(syncScriptPath, "utf8");
+      assert.include(script, 'git show "origin/$SYNC_BRANCH:.t3-fork/upstream-sync-report.md"');
+      assert.include(script, '== "# T3 Pretty upstream integration report"');
     } finally {
       NodeFS.rmSync(temporaryDirectory, { recursive: true });
     }
@@ -432,10 +445,10 @@ ${">".repeat(7)} theirs
     assert.include(resolver, 'git(["checkout", "--theirs", "--", path])');
     assert.include(resolver, 'git(["checkout", "--ours", "--", path])');
 
-    const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
-    assert.include(workflow, 'grep -qx "pnpm-lock.yaml"');
-    assert.include(workflow, "corepack pnpm install --lockfile-only --no-frozen-lockfile");
-    assert.include(workflow, "git add pnpm-lock.yaml");
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
+    assert.include(script, 'grep -qx "pnpm-lock.yaml"');
+    assert.include(script, "corepack pnpm install --lockfile-only --no-frozen-lockfile");
+    assert.include(script, "git add pnpm-lock.yaml");
   });
 
   it("reports deterministic lockfile resolutions without crediting the model", () => {
@@ -540,15 +553,15 @@ ${">".repeat(7)} theirs
   });
 
   it("checkpoints completed resolutions to a durable branch even when a sync fails", () => {
-    const workflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
 
-    assert.include(workflow, "RESOLUTION_CACHE_BRANCH: automation/sync-resolution-cache");
-    assert.include(workflow, "if: always() && steps.discover.outputs.has_update == 'true'");
+    assert.include(script, "RESOLUTION_CACHE_BRANCH:-automation/sync-resolution-cache");
+    assert.include(script, "trap on_exit EXIT");
     assert.include(
-      workflow,
+      script,
       'git archive "origin/$RESOLUTION_CACHE_BRANCH" | tar -x -C "$SYNC_RESOLUTION_CACHE_DIR"',
     );
-    assert.include(workflow, "git commit-tree");
+    assert.include(script, "git commit-tree");
 
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, "reused the checkpointed resolution");
