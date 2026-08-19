@@ -90,6 +90,10 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "--github-output");
     assert.include(mobileRelease, "did not write should_build");
     assert.include(mobileRelease, "load_secret APPLE_TEAM_ID");
+    assert.include(mobileRelease, "git fetch --deepen=50");
+    assert.include(mobileRelease, "refusing to publish OTA without a path diff");
+    assert.include(mobileRelease, "git checkout -- apps/mobile/eas.json");
+    assert.include(mobileRelease, "restore_eas_json");
     assert.include(mobileRelease, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
     assert.notInclude(mobileRelease, '"$MODE" == "build" || "$MODE" == "release"');
     assert.notInclude(mobileRelease, "t3_require_ota");

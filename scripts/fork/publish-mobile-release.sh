@@ -103,22 +103,29 @@ load_dotenv() {
 }
 
 git fetch --unshallow || true
+if ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
+  git fetch --deepen=50 || git fetch origin --deepen=50 || true
+fi
 
 if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" && "$MODE" != "build" && "$FORCE_IOS" != "true" ]]; then
-  if git rev-parse --verify --quiet HEAD~1 >/dev/null; then
-    if git diff --quiet HEAD~1 HEAD -- \
-      apps/mobile \
-      packages \
-      patches \
-      pnpm-lock.yaml \
-      scripts/fork/publish-mobile-release.sh \
-      scripts/fork/resolve-ios-native-build.mjs \
-      scripts/fork/security-eas-local-keychain; then
-      echo "Push does not change mobile-relevant paths; skipping OTA and TestFlight."
-      exit 0
-    fi
+  if ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
+    echo "No parent commit after deepen; refusing to publish OTA without a path diff." >&2
+    exit 1
+  fi
+  if git diff --quiet HEAD~1 HEAD -- \
+    apps/mobile \
+    packages \
+    patches \
+    pnpm-lock.yaml \
+    scripts/fork/publish-mobile-release.sh \
+    scripts/fork/resolve-ios-native-build.mjs \
+    scripts/fork/security-eas-local-keychain; then
+    echo "Push does not change mobile-relevant paths; skipping OTA and TestFlight."
+    exit 0
   fi
 fi
+
+git checkout -- apps/mobile/eas.json 2>/dev/null || true
 
 if ! load_secret EXPO_TOKEN; then
   echo "EXPO_TOKEN is required to publish OTA that installed TestFlight binaries poll." >&2
@@ -154,7 +161,15 @@ load_dotenv "$root/.env.local"
 
 tmp="${TMPDIR:-/tmp}/t3-mobile-release-$$"
 mkdir -p "$tmp"
+eas_json="$root/apps/mobile/eas.json"
+eas_json_bak=""
+restore_eas_json() {
+  if [[ -n "${eas_json_bak:-}" && -f "$eas_json_bak" ]]; then
+    cp "$eas_json_bak" "$eas_json"
+  fi
+}
 cleanup() {
+  restore_eas_json
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -256,6 +271,8 @@ export EXPO_ASC_ISSUER_ID="$APPLE_API_ISSUER"
 export EXPO_APPLE_TEAM_ID="$APPLE_TEAM_ID"
 export EXPO_APPLE_TEAM_TYPE=INDIVIDUAL
 
+eas_json_bak="$tmp/eas.json.bak"
+cp "$eas_json" "$eas_json_bak"
 node --input-type=module - "$key_path" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER" <<'NODE'
 import fs from "node:fs";
 const [keyPath, keyId, issuer] = process.argv.slice(2);
@@ -350,6 +367,7 @@ test -f "$ipa_path"
     --non-interactive
 )
 echo "Submitted TestFlight IPA $ipa_path"
+restore_eas_json
 
 if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
   echo "No fingerprint to record after TestFlight submit."
