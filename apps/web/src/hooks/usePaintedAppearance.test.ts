@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { paintedAppearanceFromDocument } from "./usePaintedAppearance";
+import hookSource from "./usePaintedAppearance.ts?raw";
 
 describe("paintedAppearanceFromDocument", () => {
   afterEach(() => {
@@ -23,5 +24,12 @@ describe("paintedAppearanceFromDocument", () => {
       documentElement: { classList: { contains: (name: string) => name === "dark" } },
     });
     expect(paintedAppearanceFromDocument()).toBe("dark");
+  });
+
+  it("uses the painted html class for both live and hydration snapshots", () => {
+    expect(hookSource).toContain(
+      "useSyncExternalStore(\n    subscribe,\n    paintedAppearanceFromDocument,\n    paintedAppearanceFromDocument,",
+    );
+    expect(hookSource).not.toContain('() => "light"');
   });
 });

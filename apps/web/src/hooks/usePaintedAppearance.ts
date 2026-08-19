@@ -41,5 +41,12 @@ export function paintedAppearanceFromDocument(): PaintedAppearance {
 }
 
 export function usePaintedAppearance(): PaintedAppearance {
-  return useSyncExternalStore(subscribe, paintedAppearanceFromDocument, () => "light");
+  // The blocking theme script paints <html> before React boots. Both snapshots
+  // must read that class — a hardcoded "light" hydrates the wrong Pierre theme
+  // when the plate is already dark.
+  return useSyncExternalStore(
+    subscribe,
+    paintedAppearanceFromDocument,
+    paintedAppearanceFromDocument,
+  );
 }
