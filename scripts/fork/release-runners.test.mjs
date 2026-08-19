@@ -96,6 +96,9 @@ describe("T3 Pretty release runner placement", () => {
     );
     assert.notInclude(otaPath, "persist-ci-path.sh");
     assert.include(otaPath, "refusing to write");
+    assert.include(otaPath, 'printf \'export PATH=%q\\n\' "$PATH" > "$ci_env"');
+    assert.include(ota, "steps.expo-token.outcome == 'success'");
+    assert.include(ota, '[[ -n "${GITHUB_OUTPUT:-}" ]]');
     assert.notInclude(ios, "secrets.APPLE_API_KEY");
     assert.include(ios, "APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID");
     assert.notInclude(ota, "grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> \"$GITHUB_ENV\"");

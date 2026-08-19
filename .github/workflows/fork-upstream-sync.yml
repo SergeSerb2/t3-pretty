@@ -72,7 +72,8 @@ jobs:
             esac
           fi
           mkdir -p "$dir"
-          printf 'export PATH=%q\n' "$PATH" >> "$ci_env"
+          rm -f "$ci_env"
+          printf 'export PATH=%q\n' "$PATH" > "$ci_env"
 
       - name: Checkout fork main
         shell: bash

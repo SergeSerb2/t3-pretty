@@ -114,7 +114,8 @@ jobs:
             esac
           fi
           mkdir -p "$dir"
-          printf 'export PATH=%q\n' "$PATH" >> "$ci_env"
+          rm -f "$ci_env"
+          printf 'export PATH=%q\n' "$PATH" > "$ci_env"
 
       - id: expo-token
         name: Checkout Origin and load Expo token
@@ -136,7 +137,9 @@ jobs:
           # shellcheck disable=SC1091
           . scripts/fork/load-buildkite-secrets.sh EXPO_TOKEN
           if [ -n "${EXPO_TOKEN:-}" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
+            if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+              echo "present=true" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "EXPO_TOKEN is required for OTA publishing and managed iOS credentials." >&2
             exit 1
@@ -144,12 +147,17 @@ jobs:
 
       - id: paths
         name: Skip mobile-irrelevant pushes
-        if: steps.expo-token.outputs.present == 'true'
+        if: steps.expo-token.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
+          write_output() {
+            if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+              echo "$1" >> "$GITHUB_OUTPUT"
+            fi
+          }
           if [[ "${GITHUB_EVENT_NAME}" != "push" ]] || ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
-            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            write_output "relevant=true"
             exit 0
           fi
           if git diff --quiet HEAD~1 HEAD -- \
@@ -161,13 +169,13 @@ jobs:
             scripts/fork/resolve-ios-native-build.mjs \
             scripts/fork/security-eas-local-keychain; then
             echo "Push does not change mobile-relevant paths."
-            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            write_output "relevant=false"
           else
-            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            write_output "relevant=true"
           fi
 
       - name: Install workspace
-        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
+        if: steps.expo-token.outcome == 'success' && steps.paths.outputs.relevant != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -176,7 +184,7 @@ jobs:
           vp i --filter=@t3tools/mobile... --filter=@t3tools/scripts...
 
       - name: Expose pnpm
-        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
+        if: steps.expo-token.outcome == 'success' && steps.paths.outputs.relevant != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -187,7 +195,7 @@ jobs:
           pnpm --version
 
       - name: Setup EAS CLI
-        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
+        if: steps.expo-token.outcome == 'success' && steps.paths.outputs.relevant != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -207,7 +215,7 @@ jobs:
           eas --version
 
       - name: Pull production environment variables
-        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true'
+        if: steps.expo-token.outcome == 'success' && steps.paths.outputs.relevant != 'false'
         # app.config.ts reads the repository-root env files, not apps/mobile/.env.local.
         # Local EAS builds pack a gitignore-filtered copy, so also export the
         # pulled values into the job environment for child processes.
@@ -219,7 +227,7 @@ jobs:
           t3_persist_dotenv_file ../../.env.local
 
       - name: Publish OTA update
-        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true' && (env.MODE == 'update' || env.MODE == 'release')
+        if: steps.expo-token.outcome == 'success' && steps.paths.outputs.relevant != 'false' && (env.MODE == 'update' || env.MODE == 'release')
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
@@ -237,7 +245,7 @@ jobs:
 
       - id: native
         name: Decide whether a new iOS binary is required
-        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant == 'true' && (env.MODE == 'build' || env.MODE == 'release')
+        if: steps.expo-token.outcome == 'success' && steps.paths.outputs.relevant != 'false' && (env.MODE == 'build' || env.MODE == 'release')
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
