@@ -22,6 +22,7 @@ import {
   ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
   getStartedThreadModelChangeBlockReason,
   hasEnvironmentReconnectWarningGraceElapsed,
+  hasOptimisticWorkingSettled,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
@@ -776,5 +777,143 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingApproval: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingUserInput: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, threadError: "failed" })).toBe(true);
+  });
+});
+
+describe("hasOptimisticWorkingSettled", () => {
+  it("holds through session starting and title/branch session timestamp bumps", () => {
+    const localDispatch = createLocalDispatchSnapshot(makeThread());
+
+    expect(
+      hasOptimisticWorkingSettled({
+        localDispatch,
+        latestTurn: null,
+        session: {
+          ...readySession,
+          status: "starting",
+          updatedAt: "2026-03-29T00:00:03.000Z",
+        },
+        threadError: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("holds through a ready or stopped flicker without a newly completed turn", () => {
+    const localDispatch = createLocalDispatchSnapshot(
+      makeThread({ latestTurn: completedTurn, session: readySession }),
+    );
+
+    expect(
+      hasOptimisticWorkingSettled({
+        localDispatch,
+        latestTurn: completedTurn,
+        session: { ...readySession, status: "stopped", updatedAt: "2026-03-29T00:00:12.000Z" },
+        threadError: null,
+      }),
+    ).toBe(false);
+    expect(
+      hasOptimisticWorkingSettled({
+        localDispatch,
+        latestTurn: completedTurn,
+        session: { ...readySession, updatedAt: "2026-03-29T00:00:12.000Z" },
+        threadError: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("holds while the new turn is running", () => {
+    const localDispatch = createLocalDispatchSnapshot(
+      makeThread({ latestTurn: completedTurn, session: readySession }),
+    );
+    const runningTurn = {
+      ...completedTurn,
+      turnId: TurnId.make("turn-2"),
+      state: "running" as const,
+      requestedAt: "2026-03-29T00:01:00.000Z",
+      startedAt: "2026-03-29T00:01:01.000Z",
+      completedAt: null,
+    };
+
+    expect(
+      hasOptimisticWorkingSettled({
+        localDispatch,
+        latestTurn: runningTurn,
+        session: {
+          ...readySession,
+          status: "running",
+          activeTurnId: runningTurn.turnId,
+          updatedAt: runningTurn.startedAt,
+        },
+        threadError: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("settles once the new turn completes and the session is no longer busy", () => {
+    const localDispatch = createLocalDispatchSnapshot(
+      makeThread({ latestTurn: completedTurn, session: readySession }),
+    );
+    const newerTurn = {
+      ...completedTurn,
+      turnId: TurnId.make("turn-2"),
+      requestedAt: "2026-03-29T00:01:00.000Z",
+      startedAt: "2026-03-29T00:01:01.000Z",
+      completedAt: "2026-03-29T00:01:30.000Z",
+    };
+
+    expect(
+      hasOptimisticWorkingSettled({
+        localDispatch,
+        latestTurn: newerTurn,
+        session: { ...readySession, updatedAt: newerTurn.completedAt },
+        threadError: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not settle a completed turn while the session is still starting or running", () => {
+    const localDispatch = createLocalDispatchSnapshot(makeThread());
+    const runningTurn = {
+      ...completedTurn,
+      turnId: TurnId.make("turn-2"),
+      state: "running" as const,
+      requestedAt: "2026-03-29T00:01:00.000Z",
+      startedAt: "2026-03-29T00:01:01.000Z",
+      completedAt: "2026-03-29T00:01:02.000Z",
+    };
+
+    expect(
+      hasOptimisticWorkingSettled({
+        localDispatch,
+        latestTurn: runningTurn,
+        session: {
+          ...readySession,
+          status: "running",
+          activeTurnId: runningTurn.turnId,
+        },
+        threadError: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("settles on thread errors and session errors", () => {
+    const localDispatch = createLocalDispatchSnapshot(makeThread());
+
+    expect(
+      hasOptimisticWorkingSettled({
+        localDispatch,
+        latestTurn: null,
+        session: null,
+        threadError: "Failed to send message.",
+      }),
+    ).toBe(true);
+    expect(
+      hasOptimisticWorkingSettled({
+        localDispatch,
+        latestTurn: null,
+        session: { ...readySession, status: "error", lastError: "provider failed" },
+        threadError: null,
+      }),
+    ).toBe(true);
   });
 });

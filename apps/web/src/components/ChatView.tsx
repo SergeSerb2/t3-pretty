@@ -333,6 +333,7 @@ import {
   dismissBranchMismatchForSession,
   hasEnvironmentReconnectWarningGraceElapsed,
   scheduleEnvironmentReconnectWarning,
+  hasOptimisticWorkingSettled,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
   shouldShowBranchMismatchBanner,
@@ -639,7 +640,7 @@ function useLocalDispatchState(input: {
     setLocalDispatch(null);
   }, []);
 
-  const serverAcknowledgedLocalDispatch = useMemo(
+  const sendAcknowledged = useMemo(
     () =>
       hasServerAcknowledgedLocalDispatch({
         localDispatch,
@@ -662,21 +663,38 @@ function useLocalDispatchState(input: {
       localDispatch,
     ],
   );
-  const activeLocalDispatch = serverAcknowledgedLocalDispatch ? null : localDispatch;
+  const workingSettled = useMemo(
+    () =>
+      hasOptimisticWorkingSettled({
+        localDispatch,
+        latestTurn: input.activeLatestTurn,
+        session: input.activeThread?.session ?? null,
+        threadError: input.threadError,
+      }),
+    [input.activeLatestTurn, input.activeThread?.session, input.threadError, localDispatch],
+  );
+  const activeLocalDispatch = workingSettled ? null : localDispatch;
   const beginLocalDispatch = useCallback(
     (options?: { preparingWorktree?: boolean }) => {
       const preparingWorktree = Boolean(options?.preparingWorktree);
       setLocalDispatch((current) => {
-        const active = serverAcknowledgedLocalDispatch ? null : current;
-        if (active) {
-          return active.preparingWorktree === preparingWorktree
-            ? active
-            : { ...active, preparingWorktree };
+        const holdActive =
+          current !== null &&
+          !hasOptimisticWorkingSettled({
+            localDispatch: current,
+            latestTurn: input.activeLatestTurn,
+            session: input.activeThread?.session ?? null,
+            threadError: input.threadError,
+          });
+        if (holdActive) {
+          return current.preparingWorktree === preparingWorktree
+            ? current
+            : { ...current, preparingWorktree };
         }
         return createLocalDispatchSnapshot(input.activeThread, options);
       });
     },
-    [input.activeThread, serverAcknowledgedLocalDispatch],
+    [input.activeLatestTurn, input.activeThread, input.threadError],
   );
 
   return {
@@ -684,7 +702,8 @@ function useLocalDispatchState(input: {
     resetLocalDispatch,
     localDispatchStartedAt: activeLocalDispatch?.startedAt ?? null,
     isPreparingWorktree: activeLocalDispatch?.preparingWorktree ?? false,
-    isSendBusy: activeLocalDispatch !== null,
+    isSendBusy: activeLocalDispatch !== null && !sendAcknowledged,
+    isOptimisticWorking: activeLocalDispatch !== null,
   };
 }
 
@@ -2519,6 +2538,7 @@ function ChatViewContent(props: ChatViewProps) {
     localDispatchStartedAt,
     isPreparingWorktree,
     isSendBusy,
+    isOptimisticWorking,
   } = useLocalDispatchState({
     activeThread,
     activeLatestTurn,
@@ -2527,7 +2547,13 @@ function ChatViewContent(props: ChatViewProps) {
     activePendingUserInput: activePendingUserInput?.requestId ?? null,
     threadError,
   });
-  const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
+  const isWorking =
+    phase === "running" ||
+    phase === "connecting" ||
+    isOptimisticWorking ||
+    isSendBusy ||
+    isConnecting ||
+    isRevertingCheckpoint;
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
     activeThread?.session ?? null,
@@ -6898,6 +6924,7 @@ function ChatViewContent(props: ChatViewProps) {
                             phase={phase}
                             isConnecting={isConnecting}
                             isSendBusy={isSendBusy}
+                            isOptimisticWorking={isOptimisticWorking}
                             sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
                             isPreparingWorktree={isPreparingWorktree}
                             environmentUnavailable={activeEnvironmentUnavailableState}

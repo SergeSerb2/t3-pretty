@@ -604,3 +604,35 @@ export function hasServerAcknowledgedLocalDispatch(input: {
     input.localDispatch.sessionUpdatedAt !== (session?.updatedAt ?? null)
   );
 }
+
+function sessionLooksBusy(session: Thread["session"] | null): boolean {
+  return session?.status === "running" || session?.status === "starting";
+}
+
+/**
+ * Keep the post-send thinking/stop presentation until the turn actually
+ * finishes or fails. Title/branch meta updates and brief session flickers
+ * (starting ↔ running ↔ ready) must not drop the working row or morph Stop
+ * back into Send.
+ */
+export function hasOptimisticWorkingSettled(input: {
+  localDispatch: LocalDispatchSnapshot | null;
+  latestTurn: Thread["latestTurn"] | null;
+  session: Thread["session"] | null;
+  threadError: string | null | undefined;
+}): boolean {
+  if (!input.localDispatch) {
+    return true;
+  }
+  if (Boolean(input.threadError) || input.session?.status === "error") {
+    return true;
+  }
+
+  const latestTurn = input.latestTurn ?? null;
+  const turnCompletedAfterDispatch =
+    latestTurn?.completedAt != null &&
+    (input.localDispatch.latestTurnTurnId !== latestTurn.turnId ||
+      input.localDispatch.latestTurnCompletedAt !== latestTurn.completedAt);
+
+  return turnCompletedAfterDispatch && !sessionLooksBusy(input.session);
+}
