@@ -107,6 +107,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, 'lockdir="/tmp/t3-pretty-ios-mobile.lock"');
     assert.include(mobileRelease, 'mkdir "$lockdir"');
     assert.include(mobileRelease, "generating after TestFlight submit");
+    assert.include(mobileRelease, "--builds-file");
+    assert.include(mobileRelease, "Skipping the fingerprint record PR");
     assert.include(mobileRelease, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
     assert.notInclude(mobileRelease, '"$MODE" == "build" || "$MODE" == "release"');
     assert.notInclude(mobileRelease, "t3_require_ota");

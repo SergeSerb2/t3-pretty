@@ -398,6 +398,9 @@ restore_eas_json
 if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
   echo "Fingerprint was unknown at compile time; generating after TestFlight submit."
   retry="$tmp/ios-fingerprint-retry.json"
+  retry_builds="$tmp/ios-builds-retry.json"
+  retry_gate="$tmp/ios-gate-retry.txt"
+  printf '[]\n' > "$retry_builds"
   if (
     cd apps/mobile
     eas fingerprint:generate \
@@ -406,11 +409,12 @@ if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
       --json \
       --non-interactive > "$retry"
   ); then
-    fingerprint="$(node scripts/fork/resolve-ios-native-build.mjs \
+    GITHUB_OUTPUT="$retry_gate" node scripts/fork/resolve-ios-native-build.mjs \
       --fingerprint-file "$retry" \
-      --builds-json "[]" \
+      --builds-file "$retry_builds" \
       --submitted-fingerprint "" \
-      --force false | awk -F= '/^fingerprint=/ { print $2 }' | tail -n 1)"
+      --force false
+    fingerprint="$(awk -F= '/^fingerprint=/ { print $2 }' "$retry_gate" | tail -n 1)"
   fi
 fi
 if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
@@ -418,7 +422,10 @@ if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
   exit 0
 fi
 
-load_secret CURSOR_API_KEY
+if ! load_secret CURSOR_API_KEY; then
+  echo "CURSOR_API_KEY is missing; TestFlight already submitted. Skipping the fingerprint record PR." >&2
+  exit 0
+fi
 
 mkdir -p .t3-fork
 printf '%s\n' "$fingerprint" > .t3-fork/ios-production-fingerprint
