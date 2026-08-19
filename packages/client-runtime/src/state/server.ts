@@ -802,6 +802,44 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
+    // Apps (external services over remote MCP). Results land in
+    // `settings.apps` through the ordinary settings stream.
+    appsUpsert: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:apps-upsert",
+      tag: WS_METHODS.appsUpsert,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    appsRemove: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:apps-remove",
+      tag: WS_METHODS.appsRemove,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    appsAuthorize: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:apps-authorize",
+      tag: WS_METHODS.appsAuthorize,
+    }),
+    appsSetToken: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:apps-set-token",
+      tag: WS_METHODS.appsSetToken,
+    }),
+    appsSetOAuthClient: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:apps-set-oauth-client",
+      tag: WS_METHODS.appsSetOAuthClient,
+    }),
+    appsDisconnect: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:apps-disconnect",
+      tag: WS_METHODS.appsDisconnect,
+    }),
+    appsTest: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:apps-test",
+      tag: WS_METHODS.appsTest,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => `${environmentId}:${input.connectionId}`,
+      },
+    }),
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,

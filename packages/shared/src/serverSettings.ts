@@ -1,4 +1,5 @@
 import {
+  type AppsSettings,
   isProviderDriverKind,
   isProviderAvailable,
   type ModelSelection,
@@ -121,9 +122,18 @@ function mergeModelSelectionOptionsById(input: {
   return [...merged.entries()].map(([id, value]) => ({ id, value }));
 }
 
+/**
+ * `apps` is server-written only (see `ServerSettings.apps`), so it rides a
+ * wider patch type the wire schema never accepts. Whole-value replacement:
+ * the server always writes the full map it wants.
+ */
+export type ServerSettingsInternalPatch = ServerSettingsPatch & {
+  readonly apps?: AppsSettings;
+};
+
 export function applyServerSettingsPatch(
   current: ServerSettings,
-  patch: ServerSettingsPatch,
+  patch: ServerSettingsInternalPatch,
 ): ServerSettings {
   const selectionPatch = patch.textGenerationModelSelection;
   const {
@@ -131,6 +141,7 @@ export function applyServerSettingsPatch(
     providerHealthRefreshInterval,
     backgroundActivityProfile,
     backgroundActivity,
+    apps,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -187,6 +198,7 @@ export function applyServerSettingsPatch(
     ...(patch.providerInstances !== undefined
       ? { providerInstances: patch.providerInstances }
       : {}),
+    ...(apps !== undefined ? { apps } : {}),
     ...(patch.sourceControlWriterModelSelection !== undefined
       ? { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }
       : {}),

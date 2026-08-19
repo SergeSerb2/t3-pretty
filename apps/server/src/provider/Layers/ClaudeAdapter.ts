@@ -4208,17 +4208,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         env: mergeClaudeSubagentPolicyEnv(claudeEnvironment, input.subagentPolicy),
         additionalDirectories,
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
-        ...(mcpSession
+        ...(mcpSession && mcpSession.servers.length > 0
           ? {
-              mcpServers: {
-                "t3-code": {
-                  type: "http",
-                  url: mcpSession.endpoint,
-                  headers: {
-                    Authorization: mcpSession.authorizationHeader,
+              mcpServers: Object.fromEntries(
+                mcpSession.servers.map((server) => [
+                  server.name,
+                  {
+                    type: "http" as const,
+                    url: server.url,
+                    headers: {
+                      Authorization: mcpSession.authorizationHeader,
+                    },
                   },
-                },
-              },
+                ]),
+              ),
             }
           : {}),
       };

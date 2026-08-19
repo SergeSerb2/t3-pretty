@@ -18,6 +18,7 @@ import {
   PreviewViewportSetting,
   PreviewZoomFactor,
 } from "./preview.ts";
+import { AppsSettings } from "./apps.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
 import { SkillId, SkillMarketplaceSource, SkillsSettings } from "./skills.ts";
 import { SubagentChildSelection, SubagentPolicySettings } from "./subagentPolicy.ts";
@@ -706,6 +707,9 @@ export const ServerSettings = Schema.Struct({
   skills: SkillsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   subagentPolicy: SubagentPolicySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Server-written only: clients change apps through the `apps.*` RPCs, so
+  // this key is deliberately absent from `ServerSettingsPatch`.
+  apps: AppsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 

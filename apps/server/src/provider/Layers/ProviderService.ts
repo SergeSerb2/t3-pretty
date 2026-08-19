@@ -10,6 +10,7 @@
  * @module ProviderServiceLive
  */
 import {
+  type AppConnection,
   ModelSelection,
   NonNegativeInt,
   ThreadId,
@@ -57,6 +58,7 @@ import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import { isAppAttachable } from "../../apps/AppsService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 const isModelSelection = Schema.is(ModelSelection);
 
@@ -248,19 +250,23 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
    * "off" silently becoming "on" would violate the user's stated choice,
    * whereas the reverse costs an agent one toolset and is visible immediately.
    */
-  const agentBrowserAccessEnabled = serverSettings.getSettings.pipe(
-    Effect.map((settings) => settings.enableAgentBrowserAccess),
+  const mcpAttachmentPlan = serverSettings.getSettings.pipe(
+    Effect.map((settings) => ({
+      browserTools: settings.enableAgentBrowserAccess,
+      apps: Object.values(settings.apps.connections).filter(isAppAttachable),
+    })),
     Effect.catch((cause) =>
       Effect.logWarning(
-        "Could not read server settings; withholding agent browser access for this session.",
+        "Could not read server settings; withholding agent browser access and apps for this session.",
         { cause },
-      ).pipe(Effect.as(false)),
+      ).pipe(Effect.as({ browserTools: false, apps: [] as ReadonlyArray<AppConnection> })),
     ),
   );
 
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
-      if (!(yield* agentBrowserAccessEnabled)) {
+      const plan = yield* mcpAttachmentPlan;
+      if (!plan.browserTools && plan.apps.length === 0) {
         // Revoke as well as clear. Every other prepare path reaches
         // `issueActiveMcpCredential`, which revokes the thread first, so
         // skipping it here would leave a previously issued bearer token valid
@@ -272,10 +278,28 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         return undefined;
       }
       const credential = yield* issueMcpCredential({ threadId, providerInstanceId });
-      if (credential) {
-        yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
-      }
-      return credential;
+      if (!credential) return undefined;
+      // One bearer, many servers: apps ride the `/mcp/apps/<id>` proxy next to
+      // the built-in `t3-code` endpoint, and the proxy resolves the same token.
+      const config: McpProviderSession.McpProviderSessionConfig = {
+        ...credential.config,
+        servers: [
+          ...(plan.browserTools
+            ? [
+                {
+                  name: McpProviderSession.T3_CODE_MCP_SERVER_NAME,
+                  url: credential.config.endpoint,
+                },
+              ]
+            : []),
+          ...plan.apps.map((app) => ({
+            name: app.slug,
+            url: `${credential.config.endpoint}/apps/${encodeURIComponent(app.id)}`,
+          })),
+        ],
+      };
+      yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(config));
+      return { ...credential, config };
     });
   const clearMcpSession = (threadId: ThreadId) =>
     McpSessionRegistry.revokeActiveMcpThread(threadId).pipe(
