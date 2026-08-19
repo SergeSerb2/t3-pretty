@@ -66,7 +66,7 @@ import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { MemoizedReactMarkdown } from "./MemoizedReactMarkdown";
-import { useTheme } from "../hooks/useTheme";
+import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
 import { getClientSettings } from "../hooks/useSettings";
 import {
   chatMarkdownClipboardPayload,
@@ -1361,7 +1361,7 @@ function ChatMarkdown({
   // immediately and exactly.
   const deferredText = useDeferredValue(text);
   const renderedText = isStreaming ? deferredText : text;
-  const { resolvedTheme } = useTheme();
+  const resolvedTheme = usePaintedAppearance();
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
   });

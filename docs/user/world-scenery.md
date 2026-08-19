@@ -6,7 +6,8 @@ the day.
 
 ## Turn it on or off
 
-Choose the **World Scenery** theme in **Settings → Appearance**. While that theme is on:
+World Scenery is T3 Pretty's only theme. Open **Settings → Appearance** to choose **System**,
+**Light**, or **Dark**. While World Scenery is on:
 
 - A new thread opens in fog: a cloud bank gathers over the assigned place, the location
   name rises out of it, then the fog blows off to the side while the chat box comes up

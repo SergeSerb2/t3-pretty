@@ -142,23 +142,23 @@ describe("mobile themes", () => {
   });
 
   it("normalizes persisted theme preferences", () => {
-    expect(normalizeMobileThemeId("ocean")).toBe("ocean");
+    expect(normalizeMobileThemeId("ocean")).toBe(DEFAULT_MOBILE_THEME_ID);
     expect(normalizeMobileThemeId("missing-theme")).toBe(DEFAULT_MOBILE_THEME_ID);
     expect(normalizeMobileThemeMode("dark")).toBe("dark");
     expect(normalizeMobileThemeMode("sepia")).toBe("system");
   });
 
-  it("migrates one theme choice to both appearances and preserves independent choices", () => {
+  it("migrates every stored palette to World Scenery", () => {
     expect(resolveMobileThemeIds({ themeId: "grove" })).toEqual({
-      light: "grove",
-      dark: "grove",
+      light: DEFAULT_MOBILE_THEME_ID,
+      dark: DEFAULT_MOBILE_THEME_ID,
     });
     expect(
       resolveMobileThemeIds({ themeId: "grove", lightThemeId: "iris", darkThemeId: "ocean" }),
-    ).toEqual({ light: "iris", dark: "ocean" });
+    ).toEqual({ light: DEFAULT_MOBILE_THEME_ID, dark: DEFAULT_MOBILE_THEME_ID });
     expect(resolveMobileThemeIds({ themeId: "grove", lightThemeId: "missing" })).toEqual({
       light: DEFAULT_MOBILE_THEME_ID,
-      dark: "grove",
+      dark: DEFAULT_MOBILE_THEME_ID,
     });
   });
 

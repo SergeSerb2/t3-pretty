@@ -88,7 +88,7 @@ const PLATES = {
   },
   light: {
     message: { color: [223, 239, 227] as Rgb, alpha: 0.85 },
-    code: { color: [255, 255, 255] as Rgb, alpha: 0.72 },
+    code: { color: [232, 238, 233] as Rgb, alpha: 0.88 },
   },
 } as const;
 

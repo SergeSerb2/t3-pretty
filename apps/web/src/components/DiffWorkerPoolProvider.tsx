@@ -1,11 +1,14 @@
-import { WorkerPoolContext, useWorkerPool } from "@pierre/diffs/react";
+import { WorkerPoolContext } from "@pierre/diffs/react";
 import { WorkerPoolManager } from "@pierre/diffs/worker";
 import DiffsWorker from "@pierre/diffs/worker/worker.js?worker";
 import * as Schema from "effect/Schema";
-import { useEffect, useState, type ReactNode } from "react";
-import { useTheme } from "../hooks/useTheme";
+import { useLayoutEffect, useState, type ReactNode } from "react";
+import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
 import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
-import { createDiffWorkerPoolIdleTerminator } from "./DiffWorkerPoolProvider.logic";
+import {
+  createDiffWorkerPoolIdleTerminator,
+  syncDiffWorkerPoolTheme,
+} from "./DiffWorkerPoolProvider.logic";
 
 export class DiffWorkerError extends Schema.TaggedErrorClass<DiffWorkerError>()("DiffWorkerError", {
   operation: Schema.Literals(["create-worker", "get-render-options", "set-render-options"]),
@@ -15,36 +18,6 @@ export class DiffWorkerError extends Schema.TaggedErrorClass<DiffWorkerError>()(
   override get message(): string {
     return `Diff worker operation ${this.operation} failed for theme ${this.themeName}.`;
   }
-}
-
-function DiffWorkerThemeSync({ themeName }: { themeName: DiffThemeName }) {
-  const workerPool = useWorkerPool();
-
-  useEffect(() => {
-    if (!workerPool) {
-      return;
-    }
-
-    let operation: DiffWorkerError["operation"] = "get-render-options";
-    void (async () => {
-      try {
-        const current = workerPool.getDiffRenderOptions();
-        if (current.theme === themeName) {
-          return;
-        }
-
-        operation = "set-render-options";
-        await workerPool.setRenderOptions({
-          ...current,
-          theme: themeName,
-        });
-      } catch (cause) {
-        console.error(new DiffWorkerError({ operation, themeName, cause }));
-      }
-    })();
-  }, [themeName, workerPool]);
-
-  return null;
 }
 
 // One pool per page. Workers (814 KB script + oniguruma wasm each) spawn on the first
@@ -86,14 +59,21 @@ function getDiffWorkerPool(themeName: DiffThemeName): WorkerPoolManager {
 }
 
 export function DiffWorkerPoolProvider({ children }: { children?: ReactNode }) {
-  const { resolvedTheme } = useTheme();
+  const resolvedTheme = usePaintedAppearance();
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
   const [pool] = useState(() => getDiffWorkerPool(diffThemeName));
 
-  return (
-    <WorkerPoolContext.Provider value={pool}>
-      <DiffWorkerThemeSync themeName={diffThemeName} />
-      {children}
-    </WorkerPoolContext.Provider>
-  );
+  useLayoutEffect(() => {
+    void syncDiffWorkerPoolTheme(pool, diffThemeName).catch((cause) => {
+      console.error(
+        new DiffWorkerError({
+          operation: "set-render-options",
+          themeName: diffThemeName,
+          cause,
+        }),
+      );
+    });
+  }, [diffThemeName, pool]);
+
+  return <WorkerPoolContext.Provider value={pool}>{children}</WorkerPoolContext.Provider>;
 }

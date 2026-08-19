@@ -253,6 +253,16 @@ describe("ink override contract with upstream appearance handling", () => {
   it("applies ink in layout so a photo view transition captures the new palette", () => {
     expect(useInkOverrideSource).toContain("useLayoutEffect");
   });
+
+  it("light scenery code plates are sage frost, not blown white", () => {
+    expect(sceneryCssSource).toContain("--code-background: rgb(232 238 233 / 88%)");
+    expect(sceneryCssSource).toContain("--code-foreground: #161a17");
+  });
+
+  it("flattens a mismatched dark highlighter onto a light code plate", () => {
+    expect(sceneryCssSource).toContain(".shiki.pierre-dark");
+    expect(sceneryCssSource).toContain("color: var(--code-foreground) !important");
+  });
 });
 
 describe("scenery light/dark appearance crossfade", () => {

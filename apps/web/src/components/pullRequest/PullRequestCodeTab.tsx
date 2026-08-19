@@ -27,7 +27,7 @@ import { useAtomRefresh } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useClientSettings } from "~/hooks/useSettings";
-import { useTheme } from "~/hooks/useTheme";
+import { usePaintedAppearance } from "~/hooks/usePaintedAppearance";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
 import {
   pullRequestFindingKey,
@@ -216,7 +216,7 @@ export function PullRequestCodeTab({
   /** Bumped by the panel's refresh button: drop the accumulated pages and re-read the diff. */
   refreshToken?: number;
 }) {
-  const { resolvedTheme } = useTheme();
+  const resolvedTheme = usePaintedAppearance();
   const settings = useClientSettings();
   const [toggledFiles, setToggledFiles] = useState<ReadonlySet<string>>(() => new Set());
   // A change of any size can carry hundreds of commits, and a menu that long is a scroll rather

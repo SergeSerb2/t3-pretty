@@ -17,21 +17,11 @@ export type MobileThemeAppearance = ThemeAppearance;
 export type MobileThemeMode = MobileThemeAppearance | "system";
 export type MobileThemeIds = Readonly<Record<MobileThemeAppearance, MobileThemeId>>;
 
-export const MOBILE_THEME_OPTIONS: ReadonlyArray<{
-  readonly id: MobileThemeId;
-  readonly label: string;
-}> = [
-  { id: DEFAULT_MOBILE_THEME_ID, label: "World Scenery" },
-  ...BUILT_IN_THEMES.map((theme) => ({ id: theme.id as MobileThemeId, label: theme.label })),
-];
-
 type MobileThemeVariable = `--color-${string}`;
 export type MobileThemeVariables = Readonly<Record<MobileThemeVariable, string>>;
 
-export function normalizeMobileThemeId(value: unknown): MobileThemeId {
-  return typeof value === "string" && (MOBILE_THEME_IDS as readonly string[]).includes(value)
-    ? (value as MobileThemeId)
-    : DEFAULT_MOBILE_THEME_ID;
+export function normalizeMobileThemeId(_value: unknown): MobileThemeId {
+  return DEFAULT_MOBILE_THEME_ID;
 }
 
 export function normalizeMobileThemeMode(value: unknown): MobileThemeMode {

@@ -28,7 +28,7 @@ import { openDiffFilePrimaryAction } from "../diffFileActions";
 import { useCheckpointDiff } from "~/lib/checkpointDiffState";
 import { cn } from "~/lib/utils";
 import { selectThreadDiffPanelSelection, useDiffPanelStore } from "../diffPanelStore";
-import { useTheme } from "../hooks/useTheme";
+import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
 import {
   buildFileDiffRenderKey,
   getDiffCollapseIconClassName,
@@ -99,7 +99,7 @@ export default function DiffPanel({
   composerDraftTarget,
   initialGitScope: initialGitScopeProp,
 }: DiffPanelProps) {
-  const { resolvedTheme } = useTheme();
+  const resolvedTheme = usePaintedAppearance();
   const settings = useClientSettings();
   const [initialGitScope] = useState(initialGitScopeProp);
   const diffRenderMode = useDiffPanelStore((state) => state.diffRenderMode);

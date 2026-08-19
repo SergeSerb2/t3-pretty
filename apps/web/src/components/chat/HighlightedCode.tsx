@@ -1,6 +1,6 @@
 import { Suspense, use, useMemo } from "react";
 
-import { useTheme } from "~/hooks/useTheme";
+import { usePaintedAppearance } from "~/hooks/usePaintedAppearance";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { getSyntaxHighlighterPromise } from "~/lib/syntaxHighlighting";
 import { cn } from "~/lib/utils";
@@ -10,7 +10,7 @@ export function HighlightedCode(props: {
   readonly code: string;
   readonly language: string;
 }) {
-  const { resolvedTheme } = useTheme();
+  const resolvedTheme = usePaintedAppearance();
   const themeName = resolveDiffThemeName(resolvedTheme);
   return (
     <Suspense fallback={<pre className={props.className}>{props.code}</pre>}>

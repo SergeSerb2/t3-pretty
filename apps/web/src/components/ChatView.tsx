@@ -119,7 +119,7 @@ import {
   type Thread,
   type TurnDiffSummary,
 } from "../types";
-import { useTheme } from "../hooks/useTheme";
+import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
@@ -1486,7 +1486,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const timestampFormat = settings.timestampFormat;
   const navigate = useNavigate();
-  const { resolvedTheme } = useTheme();
+  const resolvedTheme = usePaintedAppearance();
   // Granular store selectors — avoid subscribing to prompt changes.
   const composerRuntimeMode = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.runtimeMode ?? null,
