@@ -22,24 +22,32 @@ keys, so those jobs died in about two seconds and TestFlight never moved.
 
 The script skips when the commit does not touch mobile-relevant paths. A
 release publishes an OTA update on the production channel, then compiles a
-production iOS IPA on that same Mac only when the native fingerprint changed.
-Set `T3CODE_FORCE_IOS=1` (or `T3CODE_MOBILE_MODE=build`) on a Buildkite rebuild
-to compile and submit even when the fingerprint matches.
+production iOS IPA on that same Mac when the native fingerprint changed, or
+when `.t3-fork/ios-native-submit` is missing. That marker is written only
+after this native job actually uploads an IPA. A fingerprint left behind by
+the old GitHub Actions importer is not enough — Buildkite #183 published
+OTA and skipped TestFlight for that reason, so testers watching
+TestFlight.app saw no new build. Set `T3CODE_FORCE_IOS=1` (or
+`T3CODE_MOBILE_MODE=build`) on a Buildkite rebuild to compile and submit
+even when the fingerprint matches.
 
 OTA still reaches already-installed TestFlight binaries whose native
 fingerprint matches. JS-only changes therefore show up as an in-app update
 after the Mac job finishes. Testers who need a brand-new TestFlight binary
 (new devices, or a native module change) get one when the fingerprint
-changes.
+changes. TestFlight.app itself only lists new IPAs.
 
 Local `eas build --local` IPAs do not create hosted EAS Build records, so
 `eas build:list` alone cannot describe the last submitted binary. After a
 successful TestFlight submit the script commits the fingerprint to
-`.t3-fork/ios-production-fingerprint`. Because `main` requires pull requests,
-the bot commit lands through a short-lived `automation/ios-fingerprint-*`
-Origin pull request that `scripts/fork/origin-forge.mjs` merges. The merged
-file is outside every release path filter, so the record itself
-schedules no further release.
+`.t3-fork/ios-production-fingerprint` and records
+`.t3-fork/ios-native-submit`. Because `main` requires pull requests, the
+bot commit lands through a short-lived `automation/ios-fingerprint-*`
+Origin pull request that `scripts/fork/origin-forge.mjs` merges. Those
+files are outside every release path filter, so the record itself
+schedules no further release. The iOS step has a higher Buildkite priority
+than Origin PR review so a feature-branch review cannot occupy m1-dev in
+front of TestFlight.
 
 iOS store binaries cannot be compiled on the Windows runner. Registering a
 second Mac (for example m5-dev) with the same `self-hosted`, `macOS`,

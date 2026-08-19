@@ -107,6 +107,9 @@ steps:
     key: ios-mobile
     concurrency: 1
     concurrency_group: "t3-pretty/ios-mobile"
+    # Ahead of Origin PR review on the single macos-release agent so a
+    # feature-branch review cannot sit in front of TestFlight.
+    priority: 20
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
     agents:

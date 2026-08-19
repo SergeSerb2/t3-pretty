@@ -6,8 +6,10 @@
 #
 # Installed TestFlight binaries already poll the fork Expo Updates URL baked
 # into the IPA. This script publishes that JS channel with eas-cli on this Mac
-# and, when the native fingerprint changes, compiles a local IPA and submits
-# it to TestFlight. It does not use Expo cloud iOS builds.
+# and, when the native fingerprint changes or this runner has never landed a
+# TestFlight IPA, compiles a local IPA and submits it. It does not use Expo
+# cloud iOS builds. A GitHub Actions-era fingerprint file is not proof that
+# this native job submitted; .t3-fork/ios-native-submit is.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -28,6 +30,7 @@ export ORIGIN_REPO="${ORIGIN_REPO:-serbinenko/t3-pretty}"
 MODE="${T3CODE_MOBILE_MODE:-release}"
 PLATFORM="${T3CODE_MOBILE_PLATFORM:-all}"
 FORCE_IOS=false
+NATIVE_SUBMIT_MARK=".t3-fork/ios-native-submit"
 case "${T3CODE_FORCE_IOS:-}" in
   true | TRUE | 1 | yes | YES) FORCE_IOS=true ;;
 esac
@@ -100,6 +103,16 @@ load_dotenv() {
     printf -v "$name" '%s' "$value"
     export "$name"
   done < "$file"
+}
+
+annotate() {
+  local style="${1:-info}"
+  shift
+  local body="$*"
+  echo "$body"
+  if command -v buildkite-agent >/dev/null; then
+    buildkite-agent annotate --style "$style" --context ios-mobile "$body" || true
+  fi
 }
 
 # Upstream sync already has the merged tree. Re-checking out BUILDKITE_COMMIT
@@ -258,6 +271,14 @@ if [[ ! -f "$gate_file" ]]; then
   if [[ -f .t3-fork/ios-production-fingerprint ]]; then
     submitted_fingerprint="$(tr -d '[:space:]' < .t3-fork/ios-production-fingerprint)"
   fi
+  # A hash recorded by the old GitHub Actions importer does not mean this
+  # macos-release job has ever uploaded an IPA. Build 183 published OTA and
+  # skipped TestFlight for that reason. Force one native submit until the
+  # marker lands.
+  if [[ ! -f "$NATIVE_SUBMIT_MARK" ]] || [[ "$(head -n 1 "$NATIVE_SUBMIT_MARK" 2>/dev/null || true)" != "macos-release" ]]; then
+    echo "No native macos-release TestFlight submit recorded; compiling an IPA."
+    FORCE_IOS=true
+  fi
   force_flag=false
   if [[ "$MODE" == "build" || "$FORCE_IOS" == "true" ]]; then
     force_flag=true
@@ -280,7 +301,7 @@ fingerprint="$(awk -F= '/^fingerprint=/ { print $2 }' "$gate_file" | tail -n 1)"
 echo "iOS native binary fingerprint=${fingerprint:-unknown} should_build=${should_build}"
 
 if [[ "$should_build" != "true" ]]; then
-  echo "Native fingerprint is unchanged; TestFlight already has this binary. OTA covers JS."
+  annotate info "Native fingerprint is unchanged; TestFlight.app will not get a new build. Installed binaries pick up JS via OTA."
   exit 0
 fi
 
@@ -396,7 +417,7 @@ test -f "$ipa_path"
     --path "$ipa_path" \
     --non-interactive
 )
-echo "Submitted TestFlight IPA $ipa_path"
+annotate success "Submitted TestFlight IPA $ipa_path"
 restore_eas_json
 
 if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
@@ -433,8 +454,9 @@ fi
 
 mkdir -p .t3-fork
 printf '%s\n' "$fingerprint" > .t3-fork/ios-production-fingerprint
-git add -- .t3-fork/ios-production-fingerprint
-if git diff --cached --quiet -- .t3-fork/ios-production-fingerprint; then
+printf '%s\n' "macos-release" "$commit" > "$NATIVE_SUBMIT_MARK"
+git add -- .t3-fork/ios-production-fingerprint "$NATIVE_SUBMIT_MARK"
+if git diff --cached --quiet -- .t3-fork/ios-production-fingerprint "$NATIVE_SUBMIT_MARK"; then
   echo "T3CODE iOS production fingerprint already recorded: $fingerprint"
   exit 0
 fi

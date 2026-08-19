@@ -73,6 +73,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "iOS OTA + TestFlight");
     assert.include(pipeline, 'concurrency_group: "t3-pretty/ios-mobile"');
+    assert.include(pipeline, "priority: 20");
     assert.isBelow(
       mobileRelease.indexOf("checkout-origin.sh"),
       mobileRelease.indexOf("does not change mobile-relevant paths"),
@@ -112,6 +113,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "Skipping the fingerprint record PR");
     assert.include(mobileRelease, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
     assert.notInclude(mobileRelease, '"$MODE" == "build" || "$MODE" == "release"');
+    assert.include(mobileRelease, ".t3-fork/ios-native-submit");
+    assert.include(mobileRelease, "No native macos-release TestFlight submit recorded");
     assert.notInclude(mobileRelease, "t3_require_ota");
     assert.notInclude(mobileRelease, "t3-ota-present");
     assert.notInclude(mobileRelease, "keeping importer tree");
