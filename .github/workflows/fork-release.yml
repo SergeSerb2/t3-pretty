@@ -212,7 +212,7 @@ jobs:
           fi
 
       - name: Verify Origin release publisher credentials
-        if: steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true'
+        if: steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true'
         run: |
           set -euo pipefail
           # Read Buildkite pipeline env directly. Mapping `${{ env.NAME }}`
@@ -230,7 +230,7 @@ jobs:
 
       - id: signing
         name: Check updater signing credentials
-        if: steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true'
+        if: steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true'
         shell: bash
         env:
           CSC_LINK: ${{ env.CSC_LINK }}
@@ -305,7 +305,7 @@ jobs:
           echo 'windows=true' >> "$GITHUB_OUTPUT"
 
       - name: Ensure Node
-        if: steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
+        if: steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
         shell: bash
         run: bash scripts/fork/ensure-linux-node.sh
 
@@ -314,7 +314,7 @@ jobs:
         # Missing nightly ancestor already exits 0 when
         # T3_SKIP_UNRESOLVABLE_MINT=1. continue-on-error would also hide
         # later throws (invalid tag, git, monotonic version).
-        if: steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
+        if: steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
         env:
           T3_SKIP_UNRESOLVABLE_MINT: "1"
         run: node scripts/fork/resolve-fork-release.mjs
@@ -324,6 +324,7 @@ jobs:
         # main only: a manual dispatch of another ref must not push its
         # history to main.
         if: >-
+          steps.paths.outputs.relevant == 'true' &&
           steps.tags.outputs.can_mint == 'true' &&
           steps.existing.outputs.should_release == 'true' &&
           steps.signing.outputs.configured == 'true' &&
