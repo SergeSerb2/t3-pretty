@@ -51,10 +51,11 @@ IPA. An M5 Pro (18-core, 48 GB) should compile the current IPA in roughly
 Macs stop taking turns.
 
 The four-hour upstream workflow uses the same whole-repository merge and
-gpt-5.6-sol/xhigh conflict resolver as desktop. The merge push onto `main`
-starts the native mobile job; the script itself skips when that integration
-changed no mobile-relevant paths. Server/web-only parent changes do not
-publish OTA or compile an IPA.
+gpt-5.6-sol/xhigh conflict resolver as desktop. Native `ios-mobile` skips
+scheduled builds, so after the Origin merge the sync job itself runs
+`publish-mobile-release.sh` when that integration changed mobile-relevant
+paths. A later `main` push still runs the same script. Server/web-only
+parent changes do not publish OTA or compile an IPA.
 
 The job fails early when required release credentials are missing instead
 of reporting a green release that shipped nothing. To activate:

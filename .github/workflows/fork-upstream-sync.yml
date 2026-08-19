@@ -322,16 +322,36 @@ jobs:
             --body-file "$pr_body_path"
           echo "url=https://cursor.com/codebase/serbinenko/t3-pretty" >> "$GITHUB_OUTPUT"
 
+          mobile_release_needed=false
+          if ! git diff --quiet origin/main...HEAD -- \
+            apps/mobile \
+            packages \
+            patches \
+            pnpm-lock.yaml \
+            scripts/fork/publish-mobile-release.sh \
+            scripts/fork/resolve-ios-native-build.mjs \
+            scripts/fork/security-eas-local-keychain; then
+            mobile_release_needed=true
+          fi
+
           head_sha="$(git rev-parse HEAD)"
           node scripts/fork/origin-forge.mjs merge-pr --head "$SYNC_BRANCH" --sha "$head_sha"
           node scripts/fork/origin-forge.mjs delete-branch --head "$SYNC_BRANCH"
 
-          # Origin-connected CI should see the merge push. Native macos-release
-          # OTA/TestFlight runs from that push; do not dispatch the retired
-          # imported mobile workflow. Dispatch desktop preflight as a fallback
-          # when Depot is configured; that workflow is commit-idempotent if
-          # the push event also arrives.
+          # Origin-connected CI should see the merge push. Dispatch desktop
+          # preflight as a fallback when that push is missed. Native ios-mobile
+          # skips scheduled builds, so if this integration changed mobile
+          # paths, publish OTA/TestFlight from this macos-release job instead
+          # of dispatching the retired imported mobile workflow.
           node scripts/fork/origin-forge.mjs dispatch --workflow fork-release.yml --ref main
+          if [[ "$mobile_release_needed" == "true" ]]; then
+            echo "Upstream integration changed mobile-relevant paths; publishing OTA/TestFlight from this Mac."
+            T3CODE_MOBILE_SKIP_PATH_FILTER=1 \
+              T3CODE_MOBILE_UPDATE_MESSAGE="Upstream sync $UPSTREAM_TAG" \
+              bash scripts/fork/publish-mobile-release.sh
+          else
+            echo "The upstream integration changed no mobile-relevant paths; skipping mobile release."
+          fi
 
       - name: Report blocked sync
         if: failure() && steps.discover.outputs.has_update == 'true'
