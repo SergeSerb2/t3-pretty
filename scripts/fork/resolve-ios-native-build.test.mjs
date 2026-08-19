@@ -10,9 +10,9 @@ const scriptPath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "resolve-ios-native-build.mjs",
 );
-const workflowPath = NodePath.resolve(
+const mobileReleasePath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
-  "../../.github/workflows/fork-mobile-release.yml",
+  "publish-mobile-release.sh",
 );
 
 function run(args, env = {}) {
@@ -186,11 +186,10 @@ describe("T3 Pretty iOS native-build gate", () => {
   });
 
   it("automatic release skips Xcode when the fingerprint is unchanged", () => {
-    const source = NodeFS.readFileSync(workflowPath, "utf8");
+    const source = NodeFS.readFileSync(mobileReleasePath, "utf8");
     assert.include(source, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
     assert.notInclude(source, '"$MODE" == "build" || "$MODE" == "release"');
-    assert.include(source, "runs-on: ubuntu-latest");
-    assert.include(source, "force_ios:");
+    assert.include(source, "Native fingerprint is unchanged");
   });
 
   it("treats a malformed EAS build list as no previous binary", () => {

@@ -94,9 +94,9 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    review workflow on Origin pull-request events.
    `m1-dev` signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
    push/UI builds of `main`, not the four-hour scheduled sync. iOS TestFlight IPAs and OTA
-   exports compile on `macos-release` through `fork-mobile-release.yml` and clone with
-   `checkout-origin.sh` rather than `actions/checkout`. Relay deploys from the native
-   `macos-release` step. Only trusted `main` commits run desktop packaging
+   exports compile on `macos-release` through the native
+   `scripts/fork/publish-mobile-release.sh` step (not the GitHub Actions importer). Relay
+   deploys from the native `macos-release` step. Only trusted `main` commits run desktop packaging
    and relay deploys on the self-hosted machines; Origin PR review is the other
    `macos-release` job on feature branches, running scripts from `origin/main`
    when they exist. Imported desktop preflight is skipped when the push cannot change the
@@ -196,15 +196,15 @@ go away.
 
 Measured from recent successful runs on the current two runners (2026-08-16):
 
-| Job                         | Where it used to run                  | Typical time                                | Where it runs now                                  |
-| --------------------------- | ------------------------------------- | ------------------------------------------- | -------------------------------------------------- |
-| Changelog + version + smoke | m1-dev                                | 10 min (6.5 min model + 3 min install)      | `ubuntu-latest`                                    |
-| WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                     |
-| macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m1-dev (or a second Mac with the same labels)      |
-| Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                 |
-| Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `macos-release` (Origin CLI)                       |
-| Mobile OTA                  | hosted Linux                          | SIGKILL on linux-small                      | `macos-release`                                    |
-| Relay production deploy     | m1-dev                                | queued behind releases                      | native `macos-release` step (`deploy-relay-ci.sh`) |
+| Job                         | Where it used to run                  | Typical time                                | Where it runs now                                    |
+| --------------------------- | ------------------------------------- | ------------------------------------------- | ---------------------------------------------------- |
+| Changelog + version + smoke | m1-dev                                | 10 min (6.5 min model + 3 min install)      | `ubuntu-latest`                                      |
+| WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                       |
+| macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m1-dev (or a second Mac with the same labels)        |
+| Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                   |
+| Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `macos-release` (Origin CLI)                         |
+| Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | native `macos-release` (`publish-mobile-release.sh`) |
+| Relay production deploy     | m1-dev                                | queued behind releases                      | native `macos-release` step (`deploy-relay-ci.sh`)   |
 
 A desktop release that used to sit 25–40 minutes in the m1-dev queue and then take ~30 minutes of Mac occupancy should now occupy the Mac for only the ~8 minute signed DMG. Changelog, WSL, and publish no longer wait for — or block — iOS.
 

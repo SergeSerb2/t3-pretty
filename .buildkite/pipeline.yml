@@ -6,7 +6,7 @@
 #
 # Queues:
 #   linux-small    — Buildkite hosted Linux (importer + ubuntu-latest jobs)
-#   macos-release  — m1-dev / extra Macs (signed DMG + local iOS)
+#   macos-release  — m1-dev / extra Macs (signed DMG + iOS OTA/TestFlight)
 #   windows-release — serge-pc native NSIS (importer cannot run Windows jobs)
 #
 # Do not list cluster secrets on hosted steps. Hosted agents currently 500
@@ -35,8 +35,8 @@ env:
 steps:
   - label: ":github: T3 Pretty Origin workflows"
     key: origin-workflows
-    # Imported GHA jobs (OTA/preflight) still die in ~2s on the importer.
-    # Native DMG/NSIS/relay are the release. Do not red the whole build
+    # Imported GHA jobs (desktop preflight) still die in ~2s on the importer.
+    # Native DMG/NSIS/iOS/relay are the release. Do not red the whole build
     # when only the importer fails.
     soft_fail: true
     agents:
@@ -46,7 +46,6 @@ steps:
           workflows:
             - .github/workflows/fork-upstream-sync.yml
             - .github/workflows/fork-release.yml
-            - .github/workflows/fork-mobile-release.yml
           runners:
             - runs-on: ubuntu-latest
               queue: linux-small
@@ -99,6 +98,27 @@ steps:
     env:
       T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
     command: bash scripts/fork/build-macos-dmg.sh
+
+  # Native m1-dev OTA + TestFlight. Do not import a GitHub Actions mobile
+  # workflow: the importer cannot load EXPO_TOKEN / Apple keys and the job
+  # dies in ~2s before eas update runs. Installed TestFlight binaries then
+  # stay on the last JS bundle that actually published.
+  - label: ":iphone: iOS OTA + TestFlight"
+    key: ios-mobile
+    concurrency: 1
+    concurrency_group: "t3-pretty/ios-mobile"
+    if: build.branch == "main" && build.source != "schedule"
+    timeout_in_minutes: 90
+    agents:
+      queue: macos-release
+    env:
+      APP_VARIANT: production
+      NODE_OPTIONS: "--max-old-space-size=8192"
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+      APPLE_TEAM_ID: "78A5P57U23"
+      T3CODE_APPLE_TEAM_ID: "78A5P57U23"
+    command: bash scripts/fork/publish-mobile-release.sh
 
   - label: ":cloud: Relay"
     key: deploy-relay

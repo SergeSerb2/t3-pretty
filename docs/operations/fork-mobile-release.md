@@ -14,26 +14,31 @@ along — there is no separate mobile sync.
 
 ## Merge-driven releases
 
-`.github/workflows/fork-mobile-release.yml` triggers on every push to Origin
-`main` that touches mobile-relevant paths. A release publishes an OTA update on
-the production channel for both platforms from the Mac Buildkite agent
-(`macos-release`; hosted `linux-small` SIGKILLs Metro), then compiles a
-production iOS IPA on that same queue only when the native fingerprint
-changed. Explicit `workflow_dispatch` `build`, or the `force_ios` checkbox,
-still compiles and submits even when the fingerprint matches.
+`.buildkite/pipeline.yml` runs `scripts/fork/publish-mobile-release.sh` on
+every push to Origin `main` that is not the four-hour schedule. The job lives
+on `macos-release` (m1-dev), the same native queue as the signed DMG. It is
+not imported GitHub Actions: the importer cannot load `EXPO_TOKEN` or Apple
+keys, so those jobs died in about two seconds and TestFlight never moved.
 
-OTA still reaches already-installed binaries whose native fingerprint matches.
-JS-only changes therefore show up as an in-app update after the Mac job
-finishes. Testers who need a brand-new TestFlight binary (new devices, or a
-native module change) get one when the fingerprint changes.
+The script skips when the commit does not touch mobile-relevant paths. A
+release publishes an OTA update on the production channel, then compiles a
+production iOS IPA on that same Mac only when the native fingerprint changed.
+Set `T3CODE_FORCE_IOS=1` (or `T3CODE_MOBILE_MODE=build`) on a Buildkite rebuild
+to compile and submit even when the fingerprint matches.
+
+OTA still reaches already-installed TestFlight binaries whose native
+fingerprint matches. JS-only changes therefore show up as an in-app update
+after the Mac job finishes. Testers who need a brand-new TestFlight binary
+(new devices, or a native module change) get one when the fingerprint
+changes.
 
 Local `eas build --local` IPAs do not create hosted EAS Build records, so
 `eas build:list` alone cannot describe the last submitted binary. After a
-successful TestFlight submit the workflow commits the fingerprint to
+successful TestFlight submit the script commits the fingerprint to
 `.t3-fork/ios-production-fingerprint`. Because `main` requires pull requests,
 the bot commit lands through a short-lived `automation/ios-fingerprint-*`
 Origin pull request that `scripts/fork/origin-forge.mjs` merges. The merged
-file is outside every release workflow's path filters, so the record itself
+file is outside every release path filter, so the record itself
 schedules no further release.
 
 iOS store binaries cannot be compiled on the Windows runner. Registering a
@@ -46,42 +51,46 @@ IPA. An M5 Pro (18-core, 48 GB) should compile the current IPA in roughly
 Macs stop taking turns.
 
 The four-hour upstream workflow uses the same whole-repository merge and
-gpt-5.6-sol/xhigh conflict resolver as desktop. After the Origin merge it
-dispatches the mobile release only when that integration changed `apps/mobile`,
-shared packages, patches, or the lockfile. Server/web-only parent changes do
-not start a mobile release.
+gpt-5.6-sol/xhigh conflict resolver as desktop. After the Origin merge, if
+that integration changed mobile-relevant paths, the sync job runs
+`publish-mobile-release.sh` on macos-release so a missed merge push still
+publishes OTA. The script takes `/tmp/t3-pretty-ios-mobile.lock`, so a
+follow-up native `ios-mobile` job cannot overlap eas update or a local IPA.
+Server/web-only parent changes do not publish OTA or compile an IPA.
 
-The workflow fails early when required release credentials are missing instead
+The job fails early when required release credentials are missing instead
 of reporting a green release that shipped nothing. To activate:
 
-1. Create an Expo account and fork-owned EAS project. EAS Update (OTA) and
-   managed credentials still go through Expo; only IPA compilation is local.
-2. Set repo secret `EXPO_TOKEN`.
-3. Set `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` from a Team
+1. Keep `EXPO_TOKEN` on the macos-release agent (cluster secret or
+   `/Users/m1-dev/.config/t3-pretty/EXPO_TOKEN`). Installed TestFlight
+   binaries poll the fork Expo Updates URL baked into the IPA; eas-cli on
+   this Mac publishes that channel. IPA compilation is local. Do not import
+   a GitHub Actions mobile workflow for this.
+2. Set `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` from a Team
    App Store Connect API key with the Admin role and **Access to Certificates,
-   Identifiers & Profiles** enabled, plus repo variable `APPLE_TEAM_ID`. The
-   workflow exposes Expo's supported ASC CI variables so EAS can create or
+   Identifiers & Profiles** enabled, plus `APPLE_TEAM_ID`. The
+   script exposes Expo's supported ASC CI variables so local EAS can create or
    repair distribution credentials, and injects the same key into the submit
    profile for TestFlight upload.
-4. In App Store Connect, create the iOS app record once (`T3 Pretty`, bundle ID
+3. In App Store Connect, create the iOS app record once (`T3 Pretty`, bundle ID
    `com.sergeserbinenko.t3pretty`, SKU `t3-pretty-ios`).
-5. Initialize EAS credentials once from an interactive local terminal with
+4. Initialize EAS credentials once from an interactive local terminal with
    `eas build --platform ios --profile production --local`. After it creates
    the first Apple Distribution certificate and both provisioning profiles,
    normal mobile releases are fully non-interactive. Do not use a cloud
    `eas build` for this bootstrap unless you intend to spend an Expo iOS
    build credit.
-6. On the Mac runner: Xcode (stable `Xcode.app` or `Xcode-beta.app`),
-   CocoaPods, and Fastlane. The workflow selects the first of those that
+5. On the Mac runner: Xcode (stable `Xcode.app` or `Xcode-beta.app`),
+   CocoaPods, and Fastlane. The script selects the first of those that
    contains `xcodebuild`, then installs CocoaPods or Fastlane via Homebrew
    only when they are missing. Command Line Tools cannot compile an IPA;
    if `xcode-select -p` still points at them, run once:
    `sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer`.
-   The workflow retries that switch with passwordless sudo during the job.
+   The script retries that switch with passwordless sudo during the job.
    Local EAS on macOS 26 / Xcode 27 also needs the `security` PATH shim in
    `scripts/fork/security-eas-local-keychain` so Prepare credentials does not
    reject a successfully imported distribution certificate.
-7. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
+6. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
    `T3CODE_MOBILE_EAS_PROJECT_ID`, `T3CODE_MOBILE_EXPO_OWNER`,
    optionally `T3CODE_MOBILE_EXPO_SLUG`.
 
@@ -107,8 +116,8 @@ DMG. It now also calls `scenery-ios-build.sh`, which:
   unchanged.
 
 That path is Development-signed device installs, not TestFlight. Store
-binaries come from `fork-mobile-release.yml` on the Origin-connected Mac
-release runner.
+binaries come from `scripts/fork/publish-mobile-release.sh` on the
+Origin-connected Mac release runner.
 
 Configuration lives in `~/.t3-scenery-updater/ios.env` (Xcode path, team id,
 device opt-in). Every assignment in that file must be `export`ed — the app

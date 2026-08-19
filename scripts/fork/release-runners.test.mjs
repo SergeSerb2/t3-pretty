@@ -9,8 +9,12 @@ const desktopWorkflow = NodeFS.readFileSync(
   NodePath.resolve(here, "../../.github/workflows/fork-release.yml"),
   "utf8",
 );
-const mobileWorkflow = NodeFS.readFileSync(
-  NodePath.resolve(here, "../../.github/workflows/fork-mobile-release.yml"),
+const mobileRelease = NodeFS.readFileSync(
+  NodePath.resolve(here, "publish-mobile-release.sh"),
+  "utf8",
+);
+const pipeline = NodeFS.readFileSync(
+  NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
   "utf8",
 );
 const relayWorkflow = NodeFS.readFileSync(
@@ -66,63 +70,62 @@ describe("T3 Pretty release runner placement", () => {
   });
 
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
-    const ota = jobBlock(mobileWorkflow, "ota");
-    const ios = jobBlock(mobileWorkflow, "ios");
-
-    assert.include(ota, "runs-on: macos-latest");
-    assert.include(ota, "checkout-origin.sh");
-    assert.include(ota, "keeping importer tree");
-    assert.notInclude(ota, 'test -x "$helper"');
-    assert.include(ota, "- name: Publish OTA update");
-    assert.include(ota, "Decide whether a new iOS binary is required");
-    assert.notInclude(ota, "scripts/fork/origin-forge.mjs");
-    assert.include(ota, "--max-old-space-size=8192");
-    assert.notInclude(ota, "Not failing the pipeline.");
-    assert.notInclude(ota, "eas build --");
-    assert.notInclude(ota, "--local");
-    assert.include(ios, "runs-on: macos-latest");
-    assert.include(ios, "needs.ota.outputs.should_build == 'true'");
-    assert.include(ios, "--local");
-    assert.include(mobileWorkflow, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
-    assert.isFalse(/\n\s+uses:/u.test(mobileWorkflow));
-    assert.include(ota, "npm install -g eas-cli");
-    assert.include(ios, "npm install -g eas-cli");
-    assert.include(ota, ". scripts/fork/persist-ci-path.sh");
-    assert.include(ios, ". scripts/fork/persist-ci-path.sh");
-    assert.notInclude(ota, "bash scripts/fork/persist-ci-path.sh");
-    assert.include(ota, "t3_persist_dotenv_file");
-    assert.include(ios, "t3_persist_dotenv_file");
-    assert.notInclude(ota, "GITHUB_WORKSPACE:-${HOME}");
-    assert.notInclude(ios, "GITHUB_WORKSPACE:-${HOME}");
-    const otaPath = ota.slice(
-      ota.indexOf("Prepare macOS runner PATH"),
-      ota.indexOf("Checkout Origin and load Expo token"),
-    );
-    assert.notInclude(otaPath, "persist-ci-path.sh");
-    assert.include(otaPath, "writing t3-pretty-ci.env under /tmp");
-    assert.include(otaPath, 'printf \'export PATH=%q\\n\' "$PATH" > "$ci_env"');
+    assert.include(pipeline, "publish-mobile-release.sh");
+    assert.include(pipeline, "iOS OTA + TestFlight");
+    assert.include(pipeline, 'concurrency_group: "t3-pretty/ios-mobile"');
     assert.isBelow(
-      otaPath.indexOf('mkdir -p "$dir" || dir="/tmp"'),
-      otaPath.indexOf('ci_env="${dir}/t3-pretty-ci.env"'),
+      mobileRelease.indexOf("checkout-origin.sh"),
+      mobileRelease.indexOf("does not change mobile-relevant paths"),
     );
-    assert.include(
-      ota,
-      "steps.expo-token.outcome == 'success' && steps.expo-token.outputs.present != 'false'",
+    assert.notInclude(pipeline, "- .github/workflows/fork-mobile-release.yml");
+    assert.isBelow(
+      pipeline.indexOf("build-macos-dmg.sh"),
+      pipeline.indexOf("publish-mobile-release.sh"),
     );
-    assert.notInclude(ota, "continue-on-error: true");
-    assert.include(ota, "t3_require_ota");
-    assert.include(ota, "t3-ota-present");
-    assert.include(ota, '[[ -n "${BUILDKITE:-}" ]]');
+    assert.include(mobileRelease, "macos-release (m1-dev)");
+    assert.include(mobileRelease, "load_secret EXPO_TOKEN");
+    assert.include(mobileRelease, "EXPO_TOKEN is required to publish OTA");
+    assert.include(mobileRelease, "eas update");
+    assert.include(mobileRelease, "eas build");
+    assert.include(mobileRelease, "--local");
+    assert.include(mobileRelease, "eas submit");
+    assert.include(mobileRelease, "Xcode-beta.app");
+    assert.include(mobileRelease, "security-eas-local-keychain");
+    assert.include(mobileRelease, "origin-forge.mjs merge-pr");
+    assert.include(mobileRelease, "did not write should_build");
+    assert.include(mobileRelease, "load_secret APPLE_TEAM_ID");
+    assert.include(mobileRelease, "git fetch --deepen=50");
+    assert.include(mobileRelease, "refusing to publish OTA without a path diff");
+    assert.include(mobileRelease, "git checkout -- apps/mobile/eas.json");
+    assert.include(mobileRelease, "restore_eas_json");
+    assert.include(mobileRelease, "checkout-origin.sh");
+    assert.include(mobileRelease, "--full");
+    assert.include(mobileRelease, "would reset to the scheduled starting SHA");
+    assert.include(mobileRelease, 'export GITHUB_OUTPUT="$gate_file"');
+    assert.notInclude(mobileRelease, "--github-output");
+    assert.include(mobileRelease, "APPLE_TEAM_ID:-78A5P57U23");
+    assert.include(mobileRelease, "load_secret CURSOR_API_KEY 0");
+    assert.include(mobileRelease, 'lockdir="/tmp/t3-pretty-ios-mobile.lock"');
+    assert.include(mobileRelease, 'mkdir "$lockdir"');
+    assert.include(mobileRelease, "generating after TestFlight submit");
+    assert.include(mobileRelease, "--builds-file");
+    assert.include(mobileRelease, "Skipping the fingerprint record PR");
+    assert.include(mobileRelease, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
+    assert.notInclude(mobileRelease, '"$MODE" == "build" || "$MODE" == "release"');
+    assert.notInclude(mobileRelease, "t3_require_ota");
+    assert.notInclude(mobileRelease, "t3-ota-present");
+    assert.notInclude(mobileRelease, "keeping importer tree");
+    assert.notInclude(mobileRelease, "Not failing the pipeline.");
+    assert.notInclude(mobileRelease, "continue-on-error: true");
+    assert.notInclude(mobileRelease, "secrets.EXPO_TOKEN");
+    assert.notInclude(mobileRelease, "secrets.APPLE_API_KEY");
+    assert.notInclude(mobileRelease, "GITHUB_WORKSPACE:-${HOME}");
+    assert.include(mobileRelease, "$(npm prefix -g)/bin");
     const dmg = NodeFS.readFileSync(NodePath.resolve(here, "build-macos-dmg.sh"), "utf8");
     assert.notInclude(dmg, "python3 -c");
     assert.notInclude(dmg, "process.stdin.on");
     assert.include(dmg, "git fetch --force --tags origin");
     assert.include(dmg, "resolve-fork-release.mjs --print version");
-    assert.include(ota, '[[ -n "${GITHUB_OUTPUT:-}" ]]');
-    assert.notInclude(ios, "secrets.APPLE_API_KEY");
-    assert.include(ios, "APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID");
-    assert.notInclude(ota, "grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> \"$GITHUB_ENV\"");
-    assert.include(ota, "$(npm prefix -g)/bin");
   });
 
   it("deploys the relay on macos-release with baked public IDs", () => {

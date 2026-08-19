@@ -327,7 +327,10 @@ jobs:
             apps/mobile \
             packages \
             patches \
-            pnpm-lock.yaml; then
+            pnpm-lock.yaml \
+            scripts/fork/publish-mobile-release.sh \
+            scripts/fork/resolve-ios-native-build.mjs \
+            scripts/fork/security-eas-local-keychain; then
             mobile_release_needed=true
           fi
 
@@ -335,17 +338,17 @@ jobs:
           node scripts/fork/origin-forge.mjs merge-pr --head "$SYNC_BRANCH" --sha "$head_sha"
           node scripts/fork/origin-forge.mjs delete-branch --head "$SYNC_BRANCH"
 
-          # Origin-connected CI should see the merge push. Dispatch is a
-          # fallback when Depot is configured; the release workflow is
-          # commit-idempotent if the push event also arrives.
+          # Dispatch desktop preflight if the merge push is missed. Mobile no
+          # longer has an imported workflow; if this integration changed
+          # mobile paths, publish from this macos-release job. The script
+          # flocks /tmp/t3-pretty-ios-mobile.lock so a follow-up ios-mobile
+          # push job cannot overlap eas update or a local IPA.
           node scripts/fork/origin-forge.mjs dispatch --workflow fork-release.yml --ref main
           if [[ "$mobile_release_needed" == "true" ]]; then
-            node scripts/fork/origin-forge.mjs dispatch \
-              --workflow fork-mobile-release.yml \
-              --ref main \
-              --input mode=release \
-              --input platform=ios \
-              --input message="Upstream sync $UPSTREAM_TAG"
+            echo "Upstream integration changed mobile-relevant paths; publishing OTA/TestFlight from this Mac."
+            T3CODE_MOBILE_SKIP_PATH_FILTER=1 \
+              T3CODE_MOBILE_UPDATE_MESSAGE="Upstream sync $UPSTREAM_TAG" \
+              bash scripts/fork/publish-mobile-release.sh
           else
             echo "The upstream integration changed no mobile-relevant paths; skipping mobile release."
           fi

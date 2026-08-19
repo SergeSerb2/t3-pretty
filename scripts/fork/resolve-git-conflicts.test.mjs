@@ -26,9 +26,9 @@ const syncWorkflowPath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "../../.github/workflows/fork-upstream-sync.yml",
 );
-const mobileWorkflowPath = NodePath.resolve(
+const mobileReleasePath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
-  "../../.github/workflows/fork-mobile-release.yml",
+  "./publish-mobile-release.sh",
 );
 
 describe("T3 Pretty upstream conflict resolver", () => {
@@ -264,36 +264,41 @@ ${">".repeat(7)} theirs
 
   it("releases synced mobile changes without releasing server-only integrations", () => {
     const syncWorkflow = NodeFS.readFileSync(syncWorkflowPath, "utf8");
-    const mobileWorkflow = NodeFS.readFileSync(mobileWorkflowPath, "utf8");
-
-    assert.include(syncWorkflow, "git diff --quiet origin/main...HEAD");
-    assert.include(syncWorkflow, "mobile_release_needed=true");
-    assert.include(syncWorkflow, "origin-forge.mjs dispatch");
-    assert.include(syncWorkflow, "--workflow fork-mobile-release.yml");
-    assert.include(syncWorkflow, "--input mode=release");
-    assert.include(mobileWorkflow, "Skip mobile-irrelevant pushes");
-    assert.include(mobileWorkflow, "apps/mobile");
-    assert.include(mobileWorkflow, "env.MODE == 'build' || env.MODE == 'release'");
-    assert.include(mobileWorkflow, "env.MODE == 'update' || env.MODE == 'release'");
-    assert.include(mobileWorkflow, "EXPO_ASC_API_KEY_PATH");
-    assert.include(mobileWorkflow, "ascApiKeyIssuerId");
-    assert.include(mobileWorkflow, "Publish OTA update");
-    assert.include(mobileWorkflow, "runs-on: macos-latest");
-    assert.include(mobileWorkflow, "--local");
-    assert.include(mobileWorkflow, "Xcode-beta.app");
-    assert.include(mobileWorkflow, "xcode-select -s");
-    assert.include(mobileWorkflow, "security-eas-local-keychain");
-    assert.include(mobileWorkflow, "eas submit");
-    assert.include(mobileWorkflow, "eas build:list");
-    assert.notInclude(mobileWorkflow, "--status finished");
-    assert.include(mobileWorkflow, "ubuntu-latest");
-    assert.include(mobileWorkflow, "name: Publish OTA");
-    assert.include(mobileWorkflow, "name: Build and submit iOS");
-    assert.notInclude(mobileWorkflow, "--no-wait");
-    assert.isBelow(
-      mobileWorkflow.indexOf("- name: Publish OTA update"),
-      mobileWorkflow.indexOf("- name: Build and submit"),
+    const mobileRelease = NodeFS.readFileSync(mobileReleasePath, "utf8");
+    const pipeline = NodeFS.readFileSync(
+      NodePath.resolve(
+        NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+        "../../.buildkite/pipeline.yml",
+      ),
+      "utf8",
     );
+
+    assert.include(syncWorkflow, "origin-forge.mjs dispatch");
+    assert.include(syncWorkflow, "--workflow fork-release.yml");
+    assert.notInclude(syncWorkflow, "--workflow fork-mobile-release.yml");
+    assert.include(syncWorkflow, "mobile_release_needed=true");
+    assert.include(syncWorkflow, "T3CODE_MOBILE_SKIP_PATH_FILTER=1");
+    assert.include(mobileRelease, "T3CODE_MOBILE_SKIP_PATH_FILTER");
+    assert.include(syncWorkflow, "bash scripts/fork/publish-mobile-release.sh");
+    assert.include(syncWorkflow, "/tmp/t3-pretty-ios-mobile.lock");
+    assert.include(pipeline, "publish-mobile-release.sh");
+    assert.include(pipeline, 'build.source != "schedule"');
+    assert.include(mobileRelease, "does not change mobile-relevant paths");
+    assert.include(mobileRelease, "apps/mobile");
+    assert.include(mobileRelease, '"$MODE" == "update" || "$MODE" == "release"');
+    assert.include(mobileRelease, '"$MODE" != "build" && "$MODE" != "release"');
+    assert.include(mobileRelease, "EXPO_ASC_API_KEY_PATH");
+    assert.include(mobileRelease, "ascApiKeyIssuerId");
+    assert.include(mobileRelease, "eas update");
+    assert.include(mobileRelease, "--local");
+    assert.include(mobileRelease, "Xcode-beta.app");
+    assert.include(mobileRelease, "xcode-select -s");
+    assert.include(mobileRelease, "security-eas-local-keychain");
+    assert.include(mobileRelease, "eas submit");
+    assert.include(mobileRelease, "eas build:list");
+    assert.notInclude(mobileRelease, "--status finished");
+    assert.notInclude(mobileRelease, "--no-wait");
+    assert.isBelow(mobileRelease.indexOf("eas update"), mobileRelease.indexOf("eas submit"));
   });
 
   it("fetches the previous nightly tag used for fork-history context", () => {
@@ -341,7 +346,7 @@ ${">".repeat(7)} theirs
     // Only the workflow's own metadata file is whitespace-checked. Resolver
     // output is model-composed content; a blank line at EOF must not fail an
     // otherwise complete merge after all conflicts resolved.
-    assert.include(workflow, "mapfile -d '' -t resolver_paths");
+    assert.include(workflow, "resolver_paths+=(");
     assert.include(workflow, "git diff --check --cached -- .t3-fork/upstream-nightly");
     assert.notInclude(workflow, '"${resolver_paths[@]}" \\');
     assert.notInclude(workflow, "          git diff --check --cached\n");
@@ -476,28 +481,27 @@ ${">".repeat(7)} theirs
   });
 
   it("records the iOS production fingerprint without tripping the format hook", () => {
-    const mobileWorkflow = NodeFS.readFileSync(mobileWorkflowPath, "utf8");
+    const mobileRelease = NodeFS.readFileSync(mobileReleasePath, "utf8");
 
     // The staged fingerprint record is extensionless, so `vp fmt` in the
     // pre-commit hook has no target file and fails the whole release.
     assert.include(
-      mobileWorkflow,
+      mobileRelease,
       'git commit --no-verify -m "chore(mobile): record iOS production fingerprint"',
     );
   });
 
   it("lands the iOS fingerprint record through a pull request instead of pushing to main", () => {
-    const mobileWorkflow = NodeFS.readFileSync(mobileWorkflowPath, "utf8");
+    const mobileRelease = NodeFS.readFileSync(mobileReleasePath, "utf8");
 
     // main enforces pull requests, so the bot commit rides a short-lived
     // automation branch merged through the Origin CLI, the same pattern the
     // upstream sync uses.
-    assert.include(mobileWorkflow, "pull-requests: write");
-    assert.include(mobileWorkflow, "automation/ios-fingerprint-");
-    assert.include(mobileWorkflow, 'git push --force origin "HEAD:refs/heads/$branch"');
-    assert.include(mobileWorkflow, "origin-forge.mjs ensure-pr");
-    assert.include(mobileWorkflow, "origin-forge.mjs merge-pr");
-    assert.notInclude(mobileWorkflow, 'git push origin "HEAD:${GITHUB_REF_NAME}"');
+    assert.include(mobileRelease, "automation/ios-fingerprint-");
+    assert.include(mobileRelease, 'git push --force origin "HEAD:refs/heads/$branch"');
+    assert.include(mobileRelease, "origin-forge.mjs ensure-pr");
+    assert.include(mobileRelease, "origin-forge.mjs merge-pr");
+    assert.notInclude(mobileRelease, 'git push origin "HEAD:${GITHUB_REF_NAME}"');
   });
 
   it("round-trips a checkpointed resolution through the cache", () => {

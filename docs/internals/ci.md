@@ -25,9 +25,9 @@ Without the core signing credentials, it still releases unsigned artifacts.
 
 T3 Pretty desktop and mobile releases are documented in
 [fork-release.md](../operations/fork-release.md) and
-[fork-mobile-release.md](../operations/fork-mobile-release.md). Preflight,
-WSL `node-pty`, OTA publish, GitHub release publication, and relay deploy run
-on `ubuntu-latest`. Only the signed macOS DMG and local iOS IPA use the
-self-hosted Mac.
+[fork-mobile-release.md](../operations/fork-mobile-release.md). Imported
+preflight and WSL `node-pty` run on hosted Linux. Native `macos-release`
+(m1-dev) signs the DMG, publishes iOS OTA, submits TestFlight IPAs, and
+deploys the relay. Windows NSIS is native `windows-release`.
 
 See [Release Checklist](../operations/release.md) for the full release/signing setup checklist.
