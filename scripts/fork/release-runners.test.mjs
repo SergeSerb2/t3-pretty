@@ -105,9 +105,13 @@ describe("T3 Pretty release runner placement", () => {
       otaPath.indexOf('mkdir -p "$dir" || dir="/tmp"'),
       otaPath.indexOf('ci_env="${dir}/t3-pretty-ci.env"'),
     );
-    assert.include(ota, "steps.expo-token.outputs.present == 'true'");
+    assert.include(
+      ota,
+      "steps.expo-token.outcome == 'success' && steps.expo-token.outputs.present != 'false'",
+    );
     assert.notInclude(ota, "continue-on-error: true");
-    assert.notInclude(mobileWorkflow, "steps.expo-token.outcome == 'success'");
+    assert.include(ota, "t3_require_ota");
+    assert.include(ota, "t3-ota-present");
     const dmg = NodeFS.readFileSync(NodePath.resolve(here, "build-macos-dmg.sh"), "utf8");
     assert.notInclude(dmg, "python3 -c");
     assert.notInclude(dmg, "process.stdin.on");

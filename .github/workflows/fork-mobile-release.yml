@@ -145,24 +145,30 @@ jobs:
           # Source so EXPO_TOKEN is in this shell even when GITHUB_ENV is unset.
           # shellcheck disable=SC1091
           . scripts/fork/load-buildkite-secrets.sh EXPO_TOKEN
+          # shellcheck disable=SC1091
+          . scripts/fork/macos-ci-prelude.sh
+          if [[ -z "${GITHUB_OUTPUT:-}" ]]; then
+            export GITHUB_OUTPUT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/t3-github-output"
+          fi
+          ota_gate="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/t3-ota-present"
           if [ -n "${EXPO_TOKEN:-}" ]; then
-            if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-              echo "present=true" >> "$GITHUB_OUTPUT" || true
-            fi
+            printf 'true\n' > "$ota_gate"
+            echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "EXPO_TOKEN is not available on this agent; skipping OTA." >&2
-            if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-              echo "present=false" >> "$GITHUB_OUTPUT" || true
-            fi
+            printf 'false\n' > "$ota_gate"
+            echo "present=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
       - id: paths
         name: Skip mobile-irrelevant pushes
-        if: steps.expo-token.outputs.present == 'true'
+        if: steps.expo-token.outcome == 'success' && steps.expo-token.outputs.present != 'false'
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/fork/macos-ci-prelude.sh
+          t3_require_ota
           write_output() {
             if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
               echo "$1" >> "$GITHUB_OUTPUT"
@@ -187,31 +193,34 @@ jobs:
           fi
 
       - name: Install workspace
-        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant != 'false'
+        if: steps.expo-token.outcome == 'success' && steps.expo-token.outputs.present != 'false' && steps.paths.outputs.relevant != 'false'
         shell: bash
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
+          t3_require_ota
           command -v vp
           vp i --filter=@t3tools/mobile... --filter=@t3tools/scripts...
 
       - name: Expose pnpm
-        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant != 'false'
+        if: steps.expo-token.outcome == 'success' && steps.expo-token.outputs.present != 'false' && steps.paths.outputs.relevant != 'false'
         shell: bash
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
+          t3_require_ota
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
           vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
           . scripts/fork/persist-ci-path.sh "$vp_pnpm_bin"
           pnpm --version
 
       - name: Setup EAS CLI
-        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant != 'false'
+        if: steps.expo-token.outcome == 'success' && steps.expo-token.outputs.present != 'false' && steps.paths.outputs.relevant != 'false'
         shell: bash
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
+          t3_require_ota
           # npm, not pnpm: pnpm 11 hard-fails eas-cli on dtrace-provider's
           # ignored build script (no allowBuilds config outside the repo).
           # Later eas steps also set EXPO_TOKEN; persist it here so a stray
@@ -227,22 +236,24 @@ jobs:
           eas --version
 
       - name: Pull production environment variables
-        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant != 'false'
+        if: steps.expo-token.outcome == 'success' && steps.expo-token.outputs.present != 'false' && steps.paths.outputs.relevant != 'false'
         # app.config.ts reads the repository-root env files, not apps/mobile/.env.local.
         # Local EAS builds pack a gitignore-filtered copy, so also export the
         # pulled values into the job environment for child processes.
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
+          t3_require_ota
           cd apps/mobile
           eas env:pull production --path ../../.env.local --non-interactive
           t3_persist_dotenv_file ../../.env.local
 
       - name: Publish OTA update
-        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant != 'false' && (env.MODE == 'update' || env.MODE == 'release')
+        if: steps.expo-token.outcome == 'success' && steps.expo-token.outputs.present != 'false' && steps.paths.outputs.relevant != 'false' && (env.MODE == 'update' || env.MODE == 'release')
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
+          t3_require_ota
           cd apps/mobile
           update_platform="$PLATFORM"
           if [[ "$MODE" == "release" ]]; then
@@ -257,10 +268,11 @@ jobs:
 
       - id: native
         name: Decide whether a new iOS binary is required
-        if: steps.expo-token.outputs.present == 'true' && steps.paths.outputs.relevant != 'false' && (env.MODE == 'build' || env.MODE == 'release')
+        if: steps.expo-token.outcome == 'success' && steps.expo-token.outputs.present != 'false' && steps.paths.outputs.relevant != 'false' && (env.MODE == 'build' || env.MODE == 'release')
         run: |
           set -euo pipefail
           . scripts/fork/macos-ci-prelude.sh
+          t3_require_ota
           cd apps/mobile
           if [[ "$MODE" == "build" && "$PLATFORM" == "android" ]]; then
             echo "Native Android cloud builds are retired. iOS compiles locally on the Mac runner; Android store binaries are not wired yet." >&2
