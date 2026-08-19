@@ -6,7 +6,11 @@ import type {
   PullRequestRef,
   PullRequestReviewThread,
 } from "@t3tools/contracts";
-import { parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
+import {
+  countGrokReviewSummaries,
+  parseGrokReviewFinding,
+  visiblePullRequestConversationComments,
+} from "@t3tools/shared/sourceControl";
 import {
   ArrowDownUpIcon,
   ChevronDownIcon,
@@ -438,10 +442,30 @@ export function PullRequestSummaryTab({
     count: restoredView?.shownCommentCount ?? COMMENT_PAGE,
   });
   const shownComments = shown.url === detail.url ? shown.count : COMMENT_PAGE;
+  const [summaryReveal, setSummaryReveal] = useState({
+    url: detail.url,
+    show: restoredView?.showGrokReviewSummaries ?? false,
+  });
+  const showGrokReviewSummaries = summaryReveal.url === detail.url ? summaryReveal.show : false;
+  const grokReviewSummaryCount = countGrokReviewSummaries(detail.comments);
+  const conversationComments = visiblePullRequestConversationComments(
+    detail.comments,
+    showGrokReviewSummaries,
+  );
   // Windowed by recency regardless of display order: expanding always reaches further back in
-  // time, whether the newest comment currently reads first or last.
-  const recentComments = detail.comments.slice(Math.max(0, detail.comments.length - shownComments));
-  const hiddenCommentCount = detail.comments.length - recentComments.length;
+  // time, whether the newest comment currently reads first or last. Summaries are taken out
+  // first so a stack of auto-reviews cannot occupy the whole first page.
+  const recentComments = conversationComments.slice(
+    Math.max(0, conversationComments.length - shownComments),
+  );
+  const hiddenCommentCount = conversationComments.length - recentComments.length;
+  const commentSectionCount = showGrokReviewSummaries
+    ? detail.commentCount
+    : Math.max(0, detail.commentCount - grokReviewSummaryCount);
+  const setShowGrokReviewSummaries = (show: boolean) => {
+    setSummaryReveal({ url: detail.url, show });
+    onViewChange?.({ showGrokReviewSummaries: show });
+  };
   const [commentOrder, setCommentOrderState] = useState<"newest" | "oldest">(
     restoredView?.commentOrder ?? "newest",
   );
@@ -846,7 +870,7 @@ export function PullRequestSummaryTab({
 
       <Section
         title="Comments"
-        {...(activityPending || activityError ? {} : { count: detail.commentCount })}
+        {...(activityPending || activityError ? {} : { count: commentSectionCount })}
         defaultOpen={restoredView?.sectionOpen?.comments ?? true}
         onOpenChange={(open) => rememberSection("comments", open)}
         actions={
@@ -880,10 +904,51 @@ export function PullRequestSummaryTab({
                 {detail.comments.length} are here; open it on the host to read the rest.
               </p>
             ) : null}
-            {detail.comments.length === 0 ? (
+            {conversationComments.length === 0 && grokReviewSummaryCount === 0 ? (
               <p className="py-2 text-xs text-muted-foreground">No comments yet.</p>
+            ) : conversationComments.length === 0 ? (
+              <div className="space-y-3">
+                <p className="py-2 text-xs text-muted-foreground">
+                  {grokReviewSummaryCount === 1
+                    ? "1 auto-review summary is hidden."
+                    : `${grokReviewSummaryCount} auto-review summaries are hidden.`}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  aria-label={`Show ${grokReviewSummaryCount} auto-review ${
+                    grokReviewSummaryCount === 1 ? "summary" : "summaries"
+                  }`}
+                  onClick={() => setShowGrokReviewSummaries(true)}
+                >
+                  Show {grokReviewSummaryCount} auto-review{" "}
+                  {grokReviewSummaryCount === 1 ? "summary" : "summaries"}
+                </Button>
+              </div>
             ) : (
               <div className="space-y-3">
+                {grokReviewSummaryCount > 0 ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    aria-label={
+                      showGrokReviewSummaries
+                        ? "Hide auto-review summaries"
+                        : `Show ${grokReviewSummaryCount} auto-review ${
+                            grokReviewSummaryCount === 1 ? "summary" : "summaries"
+                          }`
+                    }
+                    onClick={() => setShowGrokReviewSummaries(!showGrokReviewSummaries)}
+                  >
+                    {showGrokReviewSummaries
+                      ? "Hide auto-review summaries"
+                      : `Show ${grokReviewSummaryCount} auto-review ${
+                          grokReviewSummaryCount === 1 ? "summary" : "summaries"
+                        }`}
+                  </Button>
+                ) : null}
                 {hiddenCommentCount > 0 ? (
                   // Hundreds of comments are hundreds of markdown renders, and the ones worth
                   // opening a pull request for are the recent ones. The rest are one press away and
