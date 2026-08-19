@@ -37,7 +37,8 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    Native Mac/Windows packagers still mint. The WSL node-pty job still
    requires a real commit SHA (`-` is the empty-output placeholder, not a
    skip) and fails instead of compiling an empty workspace. It only skips
-   when preflight sets `should_release` to false.
+   when preflight sets `should_release` to false, including when mint
+   skips or fails and leaves `version` empty or `-`.
    Maintainers can use
    the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
    into an `automation/upstream-*` branch and opens an Origin pull request.

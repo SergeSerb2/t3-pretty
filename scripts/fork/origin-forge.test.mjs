@@ -158,6 +158,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(preflight, "can_mint=false");
     assert.include(preflight, "can_mint=true");
     assert.include(preflight, "steps.tags.outputs.can_mint == 'true'");
+    assert.include(preflight, "steps.release.outputs.version != ''");
+    assert.include(preflight, "steps.release.outputs.version != '-'");
     assert.include(preflight, "continue-on-error: true");
     assert.notInclude(mobile, "GITHUB_ENV is required");
     assert.notInclude(mobile, "grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> \"$GITHUB_ENV\"");

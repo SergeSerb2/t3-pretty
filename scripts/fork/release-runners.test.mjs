@@ -51,6 +51,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(preflight, "relevant=false");
     assert.include(preflight, "windows_release: ${{ steps.signing.outputs.windows || 'false' }}");
     assert.include(preflight, "version: ${{ steps.release.outputs.version || '-' }}");
+    assert.include(preflight, "steps.release.outputs.version != ''");
+    assert.include(preflight, "steps.release.outputs.version != '-'");
     assert.include(preflight, "continue-on-error: true");
     assert.include(preflight, "T3_SKIP_UNRESOLVABLE_MINT");
     assert.include(preflight, "ensure-linux-node.sh");

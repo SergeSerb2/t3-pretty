@@ -54,7 +54,9 @@ jobs:
     # stalled CLIProxy request can never get the preflight hard-killed.
     timeout-minutes: 15
     outputs:
-      should_release: ${{ steps.tags.outputs.can_mint == 'true' && steps.paths.outputs.relevant == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true' }}
+      # Mint can no-op (no ancestor) or fail without writing outputs; '-' is
+      # the empty-output placeholder. Do not authorize a release on a fake version.
+      should_release: ${{ steps.tags.outputs.can_mint == 'true' && steps.paths.outputs.relevant == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true' && steps.release.outputs.version != '' && steps.release.outputs.version != '-' }}
       windows_release: ${{ steps.signing.outputs.windows || 'false' }}
       windows_signed: ${{ steps.signing.outputs.windows_signed || 'false' }}
       version: ${{ steps.release.outputs.version || '-' }}
