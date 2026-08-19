@@ -547,6 +547,21 @@ export function createLocalDispatchSnapshot(
   };
 }
 
+function localDispatchHasServerDelta(
+  localDispatch: LocalDispatchSnapshot,
+  latestTurn: Thread["latestTurn"] | null,
+  session: Thread["session"] | null,
+): boolean {
+  return (
+    localDispatch.latestTurnTurnId !== (latestTurn?.turnId ?? null) ||
+    localDispatch.latestTurnRequestedAt !== (latestTurn?.requestedAt ?? null) ||
+    localDispatch.latestTurnStartedAt !== (latestTurn?.startedAt ?? null) ||
+    localDispatch.latestTurnCompletedAt !== (latestTurn?.completedAt ?? null) ||
+    localDispatch.sessionStatus !== (session?.status ?? null) ||
+    localDispatch.sessionUpdatedAt !== (session?.updatedAt ?? null)
+  );
+}
+
 export function hasServerAcknowledgedLocalDispatch(input: {
   localDispatch: LocalDispatchSnapshot | null;
   phase: SessionPhase;
@@ -598,9 +613,58 @@ export function hasServerAcknowledgedLocalDispatch(input: {
     return true;
   }
 
+  return localDispatchHasServerDelta(input.localDispatch, latestTurn, session);
+}
+
+function sessionLooksBusy(session: Thread["session"] | null): boolean {
+  return session?.status === "running" || session?.status === "starting";
+}
+
+function sessionLooksIdle(session: Thread["session"] | null): boolean {
+  const status = session?.status;
   return (
-    latestTurnChanged ||
-    input.localDispatch.sessionStatus !== (session?.status ?? null) ||
-    input.localDispatch.sessionUpdatedAt !== (session?.updatedAt ?? null)
+    status == null ||
+    status === "ready" ||
+    status === "stopped" ||
+    status === "idle" ||
+    status === "interrupted"
+  );
+}
+
+/**
+ * Keep the post-send thinking/stop presentation until the turn finishes,
+ * the session is no longer busy, or the send fails. Title/branch meta
+ * updates while starting/running must not drop the working row. A Stop or
+ * a start that never produces a turn settles once the session is
+ * ready/stopped/idle and the server has moved past the local snapshot.
+ */
+export function hasOptimisticWorkingSettled(input: {
+  localDispatch: LocalDispatchSnapshot | null;
+  latestTurn: Thread["latestTurn"] | null;
+  session: Thread["session"] | null;
+  threadError: string | null | undefined;
+}): boolean {
+  if (!input.localDispatch) {
+    return true;
+  }
+  if (Boolean(input.threadError) || input.session?.status === "error") {
+    return true;
+  }
+  if (sessionLooksBusy(input.session)) {
+    return false;
+  }
+
+  const latestTurn = input.latestTurn ?? null;
+  const turnCompletedAfterDispatch =
+    latestTurn?.completedAt != null &&
+    (input.localDispatch.latestTurnTurnId !== latestTurn.turnId ||
+      input.localDispatch.latestTurnCompletedAt !== latestTurn.completedAt);
+  if (turnCompletedAfterDispatch) {
+    return true;
+  }
+
+  return (
+    sessionLooksIdle(input.session) &&
+    localDispatchHasServerDelta(input.localDispatch, latestTurn, input.session)
   );
 }

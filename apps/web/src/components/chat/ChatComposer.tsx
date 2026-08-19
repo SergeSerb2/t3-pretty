@@ -502,6 +502,8 @@ export interface ChatComposerProps {
   phase: SessionPhase;
   isConnecting: boolean;
   isSendBusy: boolean;
+  /** Local send is in flight; keep Stop/thinking even if session status flickers. */
+  isOptimisticWorking?: boolean;
   sendDisabledReason: string | null;
   isPreparingWorktree: boolean;
   environmentUnavailable: {
@@ -619,6 +621,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     phase,
     isConnecting,
     isSendBusy,
+    isOptimisticWorking = false,
     sendDisabledReason,
     isPreparingWorktree,
     environmentUnavailable,
@@ -675,6 +678,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   } = props;
   const isCanvasFirstSurface = surface === "canvas-first";
   const isSendDisabled = sendDisabledReason !== null;
+  const turnInProgress = phase === "running" || phase === "connecting" || isOptimisticWorking;
 
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
@@ -1237,7 +1241,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (activePendingProgress) {
       return `pending:${activePendingProgress.questionIndex}:${activePendingProgress.isLastQuestion}:${activePendingIsResponding}`;
     }
-    if (phase === "running") {
+    if (turnInProgress) {
       return "running";
     }
     if (showPlanFollowUpPrompt) {
@@ -1251,9 +1255,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isConnecting,
     isPreparingWorktree,
     isSendBusy,
-    phase,
     prompt,
     showPlanFollowUpPrompt,
+    turnInProgress,
   ]);
 
   const isComposerMenuLoading =
@@ -1350,7 +1354,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [activePendingIsResponding, activePendingProgress, activePendingResolvedAnswers],
   );
   const collapsedComposerPrimaryActionDisabled =
-    phase === "running" ||
+    turnInProgress ||
     isSendBusy ||
     isSendDisabled ||
     isConnecting ||
@@ -1958,7 +1962,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       isConnecting ||
       noProviderAvailable ||
       environmentUnavailable !== null ||
-      phase === "running"
+      turnInProgress
     ) {
       return false;
     }
@@ -1976,8 +1980,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isSendBusy,
     isSendDisabled,
     noProviderAvailable,
-    phase,
     showPlanFollowUpPrompt,
+    turnInProgress,
   ]);
 
   const submitComposer = useCallback(
@@ -3440,7 +3444,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   activeContextWindow={activeContextWindow}
                   activeThreadModelDisplayName={activeThreadModelDisplayName}
                   pendingAction={pendingPrimaryAction}
-                  isRunning={phase === "running"}
+                  isRunning={turnInProgress}
                   showPlanFollowUpPrompt={pendingUserInputs.length === 0 && showPlanFollowUpPrompt}
                   promptHasText={prompt.trim().length > 0}
                   isSendBusy={isSendBusy}
