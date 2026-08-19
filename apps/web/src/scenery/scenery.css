@@ -916,7 +916,9 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
 /* Right panel: the same glass plate as the left sidebar. One fill + blur on
    the chrome surface (inline body, sheet popup, sidebar mode); nested plates
    (embedded PreviewPanelShell, file/diff/preview roots) go clear so coverage
-   does not double. Keep the mix/blur in lockstep with the rule above. */
+   does not double. Nested shells use data-right-panel="embedded" so the
+   descendant fill clear cannot treat the chrome plate as a nested node.
+   Keep the mix/blur in lockstep with the rule above. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] .right-panel-inline-body,
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] .right-panel-sheet,
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
@@ -938,10 +940,9 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on].dark
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   .right-panel-sheet
   [data-right-panel],
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-right-panel="embedded"],
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-  [data-right-panel][data-preview-panel-mode="embedded"],
-html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-  [data-right-panel]
+  [data-right-panel=""]
   .bg-background {
   background-color: transparent;
   background-image: none;

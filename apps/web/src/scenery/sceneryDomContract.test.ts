@@ -132,11 +132,15 @@ describe("glass contract with upstream chrome", () => {
   it("the right panel still exposes the hooks the scenery glass plate targets", () => {
     expect(previewPanelShellSource).toContain("right-panel-inline-body");
     expect(previewPanelShellSource).toContain('data-right-panel=""');
+    expect(previewPanelShellSource).toContain(
+      'data-right-panel={props.mode === "sidebar" ? "" : "embedded"}',
+    );
     expect(rightPanelLayoutSource).toContain("right-panel-sheet");
     expect(sceneryCssSource).toContain(".right-panel-inline-body");
     expect(sceneryCssSource).toContain(".right-panel-sheet");
+    expect(sceneryCssSource).toContain('[data-right-panel="embedded"]');
     expect(sceneryCssSource).toMatch(
-      /\[data-right-panel\]\s+\.bg-background\s*\{[^}]*background-color: transparent;/s,
+      /\[data-right-panel=""\]\s+\.bg-background\s*\{[^}]*background-color: transparent;/s,
     );
   });
 });

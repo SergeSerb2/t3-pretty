@@ -152,7 +152,7 @@ export function PreviewPanelShell(props: {
         "relative flex h-full min-h-0 min-w-0 max-w-full flex-col self-stretch bg-background",
         "w-full",
       )}
-      data-right-panel=""
+      data-right-panel={props.mode === "sidebar" ? "" : "embedded"}
       data-preview-panel-mode={props.mode}
       data-preview-panel-maximized={maximized ? "true" : "false"}
       data-right-panel-open={open ? "true" : "false"}
