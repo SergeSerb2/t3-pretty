@@ -28,8 +28,11 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    reuses the workspace, so the job updates an existing `upstream` remote instead of
    `git remote add`. The PATH step writes Homebrew and Vite+ bins to `GITHUB_PATH` when
    that file exists, `PATH` to `GITHUB_ENV` when that file exists, and always
-   `t3-pretty-ci.env`. Later steps source `macos-ci-prelude.sh` because the importer
-   can set `GITHUB_PATH` without applying it between steps.
+   `t3-pretty-ci.env` (under `RUNNER_TEMP`, including a `_temp` directory inside
+   the checkout). Later steps source `macos-ci-prelude.sh` because the importer
+   can set `GITHUB_PATH` without applying it between steps. Hosted desktop
+   preflight skips imported version mint when Origin tags cannot be fetched and
+   the clone has none; native Mac/Windows packagers still mint.
    Maintainers can use
    the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
    into an `automation/upstream-*` branch and opens an Origin pull request.

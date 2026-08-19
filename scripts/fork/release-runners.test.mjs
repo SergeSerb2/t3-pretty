@@ -95,7 +95,7 @@ describe("T3 Pretty release runner placement", () => {
       ota.indexOf("Checkout Origin and load Expo token"),
     );
     assert.notInclude(otaPath, "persist-ci-path.sh");
-    assert.include(otaPath, "refusing to write");
+    assert.include(otaPath, "writing t3-pretty-ci.env under /tmp");
     assert.include(otaPath, 'printf \'export PATH=%q\\n\' "$PATH" > "$ci_env"');
     assert.include(ota, "steps.expo-token.outcome == 'success'");
     assert.include(ota, '[[ -n "${GITHUB_OUTPUT:-}" ]]');
