@@ -252,7 +252,19 @@ describe("release workflow wiring", () => {
     assert.include(workflow, "node scripts/fork/generate-changelog.mjs");
     assert.include(workflow, "CLI_PROXY_API_KEY");
     assert.include(workflow, "RELEASE_VERSION: ${{ steps.release.outputs.version }}");
-    assert.include(workflow, "ref: ${{ steps.changelog.outputs.ref || github.sha }}");
+    const changelogStep = workflow.slice(
+      workflow.indexOf("id: changelog"),
+      workflow.indexOf("run: node scripts/fork/generate-changelog.mjs"),
+    );
+    assert.include(changelogStep, "steps.release.outcome == 'success'");
+    assert.include(changelogStep, "steps.release.outputs.minted == 'true'");
+    assert.include(changelogStep, "steps.release.outputs.version != ''");
+    assert.include(changelogStep, "steps.release.outputs.version != '-'");
+    assert.include(
+      workflow,
+      "ref: ${{ steps.changelog.outputs.ref || github.sha || env.BUILDKITE_COMMIT }}",
+    );
+    assert.notInclude(workflow, "github.sha || '-'");
     assert.include(workflow, "continue-on-error: true");
     const changelog = NodeFS.readFileSync(
       NodePath.resolve(

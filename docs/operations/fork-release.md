@@ -31,8 +31,22 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    `t3-pretty-ci.env` (under `RUNNER_TEMP`, including a `_temp` directory inside
    the checkout). Later steps source `macos-ci-prelude.sh` because the importer
    can set `GITHUB_PATH` without applying it between steps. Hosted desktop
-   preflight skips imported version mint when Origin tags cannot be fetched and
-   the clone has none; native Mac/Windows packagers still mint.
+   preflight often starts with no `.git`; it clones the triggering SHA from
+   the parent Buildkite checkout when that path exists, and skips minting
+   when the clone cannot be created or Origin tags cannot be fetched.
+   A failed clone writes `ready=false` and removes the empty `.git` so later
+   imported git and mint steps do not run against a HEAD-less repo.
+   Native Mac/Windows packagers still mint. A skipped imported mint writes
+   `minted=false` and exits 0. That mint step is not continue-on-error:
+   invalid-tag, git, and monotonic failures still fail the job. `should_release`
+   stays false unless the mint step succeeded and produced a real version, so
+   changelog and WSL do not consume `-` placeholders. Preflight
+   `ref` is the changelog commit, `github.sha`, or `BUILDKITE_COMMIT` — never
+   the empty-output placeholder `-`. The WSL node-pty job checks out that SHA,
+   treating a leftover `-` as missing and recovering from
+   `GITHUB_SHA`/`BUILDKITE_COMMIT`, and fails instead of compiling an empty
+   workspace. It only skips when preflight sets `should_release` to false,
+   including when mint skips or fails and leaves `version` empty or `-`.
    Maintainers can use
    the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
    into an `automation/upstream-*` branch and opens an Origin pull request.
