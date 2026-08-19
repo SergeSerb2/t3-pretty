@@ -66,6 +66,9 @@ to use, then authenticate it.
 | Kimi Code  | [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html) | `kimi`         | `kimi login`          |
 | OpenCode   | [OpenCode](https://opencode.ai)                                                              | `opencode`     | `opencode auth login` |
 
+Codex and Claude are on by default. Cursor, Grok Build, and OpenCode are off by default; turn
+them on in **Settings** → the provider's card when you want to use them.
+
 Cursor is the one to watch: install Cursor CLI, which provides the `cursor-agent` binary that
 T3 Code looks for, but authenticate with `agent login`, not `cursor-agent login`.
 

@@ -555,6 +555,7 @@ function toStatusPr(
   headRef: string;
   state: "open" | "closed" | "merged";
   automatedReview?: AutomatedReviewSignal | null;
+  updatedAt: string | null;
 } {
   return {
     number: pr.number,
@@ -564,6 +565,10 @@ function toStatusPr(
     headRef: pr.headRefName,
     state: pr.state,
     ...(automatedReview !== undefined ? { automatedReview } : {}),
+    updatedAt: Option.match(pr.updatedAt, {
+      onNone: () => null,
+      onSome: (updatedAt) => DateTime.formatIso(updatedAt),
+    }),
   };
 }
 
@@ -924,14 +929,19 @@ export const make = Effect.gen(function* () {
         prLookupEpochByCwd.set(cacheKey, prLookupEpoch(cacheKey) + 1);
       }),
     );
-  // Cache keys are NUL-joined [cwd, branch, upstreamRef,
+  // Cache keys are NUL-joined [cwd, branch, upstreamRef, defaultBranch,
   // queryWhenLocalBranchMissing, selection, headRef, headRepository,
   // headOwner, headIsCrossRepository, epoch]. None of the segments can contain
-  // a NUL byte. Selection and the durable head association stay in the key
-  // because status and settlement can intentionally resolve different PRs.
+  // a NUL byte; refs are never empty, so "" decodes back to null. Selection
+  // and the durable head association stay in the key because status and
+  // settlement can intentionally resolve different PRs.
   const prLookupCacheKey = (
     cwd: string,
-    details: { branch: string; upstreamRef: string | null },
+    details: {
+      branch: string;
+      upstreamRef: string | null;
+      defaultBranch: string | null;
+    },
     queryWhenLocalBranchMissing: boolean,
     selection: PullRequestLookupSelection,
     headAssociation?: GitBranchHeadAssociation,
@@ -940,6 +950,7 @@ export const make = Effect.gen(function* () {
       cwd,
       details.branch,
       details.upstreamRef ?? "",
+      details.defaultBranch ?? "",
       queryWhenLocalBranchMissing ? "1" : "0",
       selection,
       headAssociation?.headRef ?? "",
@@ -971,6 +982,7 @@ export const make = Effect.gen(function* () {
         cwd = "",
         branch = "",
         upstreamRef = "",
+        defaultBranch = "",
         queryWhenLocalBranchMissing = "0",
         selection = "prefer-open",
         associatedHeadRef = "",
@@ -981,6 +993,7 @@ export const make = Effect.gen(function* () {
       const details = {
         branch,
         upstreamRef: upstreamRef.length > 0 ? upstreamRef : null,
+        defaultBranch: defaultBranch.length > 0 ? defaultBranch : null,
       };
       const headAssociation =
         associatedHeadRef.length > 0 && associatedIsCrossRepository.length > 0
@@ -997,6 +1010,29 @@ export const make = Effect.gen(function* () {
           details,
           headAssociation ? { headAssociation } : undefined,
         );
+        const upstreamHeadIsDefault =
+          headContext.headBranch === details.defaultBranch ||
+          (details.defaultBranch === null &&
+            (headContext.headBranch === "main" || headContext.headBranch === "master"));
+        // `git worktree add -b feature origin/main` makes the new local branch
+        // track origin/main. That upstream is the branch's base, not its
+        // published PR head. Looking up PRs for it can attach an old reverse
+        // merge from main and auto-settle an unrelated feature thread.
+        // A durable head association is explicit PR identity rather than an
+        // inferred base.
+        if (
+          headAssociation === undefined &&
+          headContext.headBranch !== details.branch &&
+          upstreamHeadIsDefault &&
+          !headContext.isCrossRepository
+        ) {
+          return {
+            latest: null,
+            automatedReview: undefined,
+            headContext,
+            skippedUnpublished: false,
+          };
+        }
         // Only skip when the branch is untracked as well: anything carrying an
         // upstream keeps the old behaviour.
         if (
@@ -1126,7 +1162,12 @@ export const make = Effect.gen(function* () {
   };
   const lookupStatusPrObservation = Effect.fn("lookupStatusPrObservation")(function* (
     cwd: string,
-    details: { branch: string; upstreamRef: string | null; isDefaultBranch: boolean },
+    details: {
+      branch: string;
+      upstreamRef: string | null;
+      defaultBranch: string | null;
+      isDefaultBranch: boolean;
+    },
     options?: {
       readonly queryWhenLocalBranchMissing?: boolean;
       readonly selection?: PullRequestLookupSelection;
@@ -1224,9 +1265,17 @@ export const make = Effect.gen(function* () {
   });
   const lookupStatusPr = Effect.fn("lookupStatusPr")(function* (
     cwd: string,
-    details: { branch: string; upstreamRef: string | null; isDefaultBranch: boolean },
+    details: {
+      branch: string;
+      upstreamRef: string | null;
+      defaultBranch?: string | null;
+      isDefaultBranch: boolean;
+    },
   ) {
-    return (yield* lookupStatusPrObservation(cwd, details)).pr;
+    return (yield* lookupStatusPrObservation(cwd, {
+      ...details,
+      defaultBranch: details.defaultBranch ?? (details.isDefaultBranch ? details.branch : null),
+    })).pr;
   });
   const readRemoteStatus = Effect.fn("readRemoteStatus")(function* (
     cwd: string,
@@ -1244,6 +1293,7 @@ export const make = Effect.gen(function* () {
         ? yield* lookupStatusPr(cwd, {
             branch: details.branch,
             upstreamRef: details.upstreamRef,
+            defaultBranch: details.defaultBranch,
             isDefaultBranch: details.isDefaultBranch,
           })
         : null;
