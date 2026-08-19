@@ -944,6 +944,15 @@ describe("fix findings handoff", () => {
       "Keep the hook on one node.",
     ].join("\n");
     expect(isPullRequestFindingThread(thread(grokBody, { path: null, line: null }))).toBe(true);
+    const handoff = buildFixFindingsHandoff({
+      ...base,
+      reviewThreads: [thread(grokBody, { path: null, line: null })],
+      checks: [],
+    });
+    expect(handoff.reviewComments[0]).toMatchObject({
+      filePath: "apps/web/src/app.ts",
+      rangeLabel: "L12",
+    });
   });
 
   it("keeps failing checks in the prompt, having no line to attach them to", () => {

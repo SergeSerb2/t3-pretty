@@ -14,7 +14,7 @@ import type {
   SourceControlProviderKind,
 } from "@t3tools/contracts";
 
-import { parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
+import { firstGrokReviewFinding, parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
 
@@ -537,25 +537,34 @@ function boundedField(value: string): string {
  * travels with it: the thread names a line of the pull request's diff, which the fresh checkout
  * has not fetched and the reader can open for themselves.
  */
+function grokLocationOnThread(thread: PullRequestReviewThread) {
+  const grok = firstGrokReviewFinding(thread.comments.map((comment) => comment.body));
+  return {
+    path: thread.path ?? grok?.path ?? null,
+    line: thread.line ?? grok?.line ?? null,
+  };
+}
+
 function reviewThreadContext(
   thread: PullRequestReviewThread,
   pullRequestNumber: number,
 ): ReviewCommentContext {
-  const lineIndex = Math.max(0, (thread.line ?? 1) - 1);
+  const location = grokLocationOnThread(thread);
+  const lineIndex = Math.max(0, (location.line ?? 1) - 1);
   return {
     id: `pull-request-finding:${thread.id}`,
     sectionId: `pull-request:${pullRequestNumber}`,
     sectionTitle: `PR #${pullRequestNumber} review`,
-    filePath: thread.path ?? `PR #${pullRequestNumber}`,
+    filePath: location.path ?? `PR #${pullRequestNumber}`,
     startIndex: lineIndex,
     endIndex: lineIndex,
     // A left-side line numbers the file before the change, so the same number means another line.
     rangeLabel:
-      thread.path === null
+      location.path === null
         ? "conversation"
-        : thread.line === null
+        : location.line === null
           ? "file"
-          : `L${thread.line}${thread.side === "left" ? " (before)" : ""}`,
+          : `L${location.line}${thread.side === "left" ? " (before)" : ""}`,
     // Bot bookkeeping lives in HTML comments and would otherwise eat the length bound before
     // the finding itself got any of it.
     text: bounded(
@@ -567,7 +576,7 @@ function reviewThreadContext(
         .join("\n"),
     ),
     diff: "",
-    fenceLanguage: inferReviewCommentFenceLanguage(thread.path ?? ""),
+    fenceLanguage: inferReviewCommentFenceLanguage(location.path ?? ""),
   };
 }
 
@@ -862,7 +871,7 @@ export function isPullRequestFixableComment(
 /** A file-pinned review, or a Grok finding. Ordinary Origin conversation is not a finding. */
 export function isPullRequestFindingThread(thread: PullRequestReviewThread): boolean {
   if (thread.path !== null) return true;
-  return thread.comments.some((comment) => parseGrokReviewFinding(comment.body) !== null);
+  return firstGrokReviewFinding(thread.comments.map((comment) => comment.body)) !== null;
 }
 
 /** The finding a conversation row offers to fix, or none if the remark is only talk. */

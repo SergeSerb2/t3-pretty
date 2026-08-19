@@ -15,7 +15,7 @@ import type {
   PullRequestState,
 } from "@t3tools/contracts";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
-import { parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
+import { firstGrokReviewFinding, parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 
 import {
   originPullRequestState,
@@ -351,7 +351,7 @@ export function originThreads(raw: unknown): ReadonlyArray<PullRequestReviewThre
         })
       : [];
     // Origin general comments have no path. Grok findings write `path:line` in the body instead.
-    const grok = comments[0] === undefined ? null : parseGrokReviewFinding(comments[0].body);
+    const grok = firstGrokReviewFinding(comments.map((comment) => comment.body));
     const path = asString(record.path) ?? grok?.path ?? null;
     if (id === null) continue;
     const sideRaw = asString(record.side)?.toLowerCase();

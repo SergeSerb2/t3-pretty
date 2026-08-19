@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   detectSourceControlProviderFromRemoteUrl,
+  firstGrokReviewFinding,
   formatGrokReviewLocation,
   getChangeRequestTerminologyForKind,
   isGrokReviewComment,
@@ -79,6 +80,12 @@ describe("Grok Origin review findings", () => {
     ].join("\n");
     expect(isGrokReviewComment(summary)).toBe(true);
     expect(parseGrokReviewFinding(summary)).toBeNull();
+  });
+
+  it("finds a Grok finding after a reply-only first comment", () => {
+    expect(firstGrokReviewFinding(["Fixed the frost.", findingBody])?.path).toBe(
+      "apps/web/src/scenery/scenery.css",
+    );
   });
 
   it("ignores ordinary conversation", () => {

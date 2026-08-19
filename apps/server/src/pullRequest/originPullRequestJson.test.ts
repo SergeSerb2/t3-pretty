@@ -146,6 +146,48 @@ describe("origin pull request JSON", () => {
     ]);
   });
 
+  it("lifts path and line from a Grok finding that is not the first comment", () => {
+    const grok = {
+      id: "cmt_finding",
+      authorId: "google-oauth2|user_01",
+      body: [
+        "<!-- t3-pretty-grok-review sha=deadbeef -->",
+        "",
+        "### bug — Keep the hook on one node",
+        "",
+        "`apps/web/src/app.ts:12`",
+        "",
+        "Keep the hook on one node.",
+      ].join("\n"),
+      createdAt: "2026-08-19T07:36:32Z",
+    };
+    expect(
+      originThreads([
+        {
+          id: "cth_later",
+          path: null,
+          startLine: 0,
+          endLine: 0,
+          comments: [
+            {
+              id: "cmt_reply",
+              authorId: "google-oauth2|user_01",
+              body: "Fixed the frost.",
+              createdAt: "2026-08-19T07:36:31Z",
+            },
+            grok,
+          ],
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        id: "cth_later",
+        path: "apps/web/src/app.ts",
+        line: 12,
+      }),
+    ]);
+  });
+
   it("leaves a job-failure comment as conversation", () => {
     const comment = {
       id: "cmt_fail",

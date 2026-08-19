@@ -365,6 +365,14 @@ export function parseGrokReviewFinding(body: string): GrokReviewFinding | null {
   };
 }
 
+export function firstGrokReviewFinding(bodies: Iterable<string>): GrokReviewFinding | null {
+  for (const body of bodies) {
+    const finding = parseGrokReviewFinding(body);
+    if (finding !== null) return finding;
+  }
+  return null;
+}
+
 export function formatGrokReviewLocation(finding: {
   readonly path: string | null;
   readonly line: number | null;
