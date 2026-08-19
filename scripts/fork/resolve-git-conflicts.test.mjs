@@ -276,10 +276,10 @@ ${">".repeat(7)} theirs
     assert.include(syncWorkflow, "origin-forge.mjs dispatch");
     assert.include(syncWorkflow, "--workflow fork-release.yml");
     assert.notInclude(syncWorkflow, "--workflow fork-mobile-release.yml");
-    assert.include(syncWorkflow, "mobile_release_needed=true");
-    assert.include(syncWorkflow, "T3CODE_MOBILE_SKIP_PATH_FILTER=1");
-    assert.include(syncWorkflow, "bash scripts/fork/publish-mobile-release.sh");
+    assert.notInclude(syncWorkflow, "bash scripts/fork/publish-mobile-release.sh");
+    assert.include(syncWorkflow, "The merge is a push to main");
     assert.include(pipeline, "publish-mobile-release.sh");
+    assert.include(pipeline, 'build.source != "schedule"');
     assert.include(mobileRelease, "does not change mobile-relevant paths");
     assert.include(mobileRelease, "apps/mobile");
     assert.include(mobileRelease, '"$MODE" == "update" || "$MODE" == "release"');
