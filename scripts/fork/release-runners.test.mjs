@@ -60,7 +60,12 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(preflight, "steps.release.outputs.version != ''");
     assert.include(preflight, "steps.release.outputs.version != '-'");
     assert.include(preflight, "continue-on-error: true");
-    assert.include(preflight, "T3_SKIP_UNRESOLVABLE_MINT");
+    const releaseStep = preflight.slice(
+      preflight.indexOf("id: release"),
+      preflight.indexOf("id: changelog"),
+    );
+    assert.include(releaseStep, "T3_SKIP_UNRESOLVABLE_MINT");
+    assert.notInclude(releaseStep, "continue-on-error:");
     assert.include(preflight, "ensure-linux-node.sh");
     const nodeHelper = NodeFS.readFileSync(NodePath.resolve(here, "ensure-linux-node.sh"), "utf8");
     const persistHelper = NodeFS.readFileSync(NodePath.resolve(here, "persist-ci-path.sh"), "utf8");

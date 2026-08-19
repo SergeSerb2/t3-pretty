@@ -35,9 +35,10 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    the parent Buildkite checkout when that path exists, and skips minting
    when the clone cannot be created or Origin tags cannot be fetched.
    Native Mac/Windows packagers still mint. A skipped imported mint writes
-   `minted=false`. `should_release` stays false unless the mint step succeeded
-   and produced a real version, so changelog and WSL do not consume `-`
-   placeholders. Preflight
+   `minted=false` and exits 0. That mint step is not continue-on-error:
+   invalid-tag, git, and monotonic failures still fail the job. `should_release`
+   stays false unless the mint step succeeded and produced a real version, so
+   changelog and WSL do not consume `-` placeholders. Preflight
    `ref` is the changelog commit, `github.sha`, or `BUILDKITE_COMMIT` — never
    the empty-output placeholder `-`. The WSL node-pty job checks out that SHA,
    treating a leftover `-` as missing and recovering from

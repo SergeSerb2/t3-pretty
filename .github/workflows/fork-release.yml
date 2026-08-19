@@ -54,10 +54,10 @@ jobs:
     # stalled CLIProxy request can never get the preflight hard-killed.
     timeout-minutes: 15
     outputs:
-      # Mint can no-op (no ancestor) without writing version/tag, or fail
-      # while this job continues. That skip writes minted=false; '-' is the
-      # empty-output placeholder. Require a successful mint with a real
-      # version so a skip or failure cannot look like a release.
+      # Mint can no-op (no ancestor) and write minted=false. Real mint
+      # failures still fail that step. '-' is the empty-output placeholder.
+      # Require a successful mint with a real version so a skip or failure
+      # cannot look like a release.
       should_release: ${{ steps.tags.outputs.can_mint == 'true' && steps.paths.outputs.relevant == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true' && steps.release.outcome == 'success' && steps.release.outputs.minted == 'true' && steps.release.outputs.version != '' && steps.release.outputs.version != '-' }}
       windows_release: ${{ steps.signing.outputs.windows || 'false' }}
       windows_signed: ${{ steps.signing.outputs.windows_signed || 'false' }}
@@ -331,6 +331,7 @@ jobs:
           steps.tags.outputs.can_mint == 'true' &&
           steps.existing.outputs.should_release == 'true' &&
           steps.signing.outputs.configured == 'true' &&
+          steps.release.outcome == 'success' &&
           steps.release.outputs.minted == 'true' &&
           steps.release.outputs.version != '' &&
           steps.release.outputs.version != '-' &&
