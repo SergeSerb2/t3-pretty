@@ -6,11 +6,11 @@ import type {
   PullRequestRef,
   PullRequestReviewThread,
 } from "@t3tools/contracts";
+import { parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 import {
   ArrowDownUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  HammerIcon,
   MessageSquareIcon,
   PencilIcon,
   SendIcon,
@@ -25,12 +25,14 @@ import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
+import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
+  GrokReviewFindingHeader,
   PullRequestActorAvatar,
   PullRequestActorLabel,
   PullRequestCheckStatusIcon,
@@ -42,13 +44,17 @@ import {
 } from "./pullRequestPresentation";
 import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
+import { FixFindingButton } from "./FixFindingButton";
 import {
   latestPullRequestReviewOutcomes,
   orderPullRequestComments,
+  isThreadReplyAnchor,
+  pullRequestConversationFinding,
   pullRequestFindingKey,
   pullRequestReviewOutcome,
   visibleBody,
   type PullRequestFinding,
+  type PullRequestFixDestination,
 } from "./pullRequestDetail.logic";
 import {
   canEditPullRequestChangeRequest,
@@ -114,10 +120,13 @@ function CommentBody({
   comment,
   editing,
   className,
+  displayText,
 }: {
   comment: PullRequestComment;
   editing: CommentEditing;
   className?: string | undefined;
+  /** Shown instead of `comment.body` — a parsed finding keeps the heading out of the markdown. */
+  displayText?: string;
 }) {
   if (editing.editingId === comment.id) {
     return (
@@ -132,9 +141,15 @@ function CommentBody({
       />
     );
   }
+  const text = displayText ?? comment.body;
+  if (text.trim().length === 0 && !editing.canEdit(comment)) return null;
   return (
     <div className={cn("flex items-start gap-1", className)}>
-      <PullRequestMarkdown className="min-w-0 flex-1" text={comment.body} cwd={editing.cwd} />
+      {text.trim().length > 0 ? (
+        <PullRequestMarkdown className="min-w-0 flex-1" text={text} cwd={editing.cwd} />
+      ) : (
+        <span className="min-w-0 flex-1" />
+      )}
       {editing.canEdit(comment) ? (
         <Button
           size="icon-xs"
@@ -392,7 +407,9 @@ export function PullRequestSummaryTab({
   activityError,
   pendingFinding,
   fixFindingLabel = "Fix in a thread",
+  fixFindingOtherLabel = "Fix in another thread",
   fixCheckLabel = "Fix",
+  canFixInThisThread = false,
   onFixFinding,
   onRefresh,
   restoredView,
@@ -406,8 +423,10 @@ export function PullRequestSummaryTab({
   /** The hand-off currently preparing, if any, so only the finding it belongs to says so. */
   pendingFinding?: string | null;
   fixFindingLabel?: string;
+  fixFindingOtherLabel?: string;
   fixCheckLabel?: string;
-  onFixFinding?: (finding: PullRequestFinding) => void;
+  canFixInThisThread?: boolean;
+  onFixFinding?: (finding: PullRequestFinding, destination: PullRequestFixDestination) => void;
   onRefresh: () => void;
   restoredView?: PullRequestPanelViewSnapshot;
   onViewChange?: (patch: PullRequestPanelViewSnapshot) => void;
@@ -491,10 +510,17 @@ export function PullRequestSummaryTab({
   const setThreadResolution = useAtomCommand(pullRequestEnvironment.setThreadResolution, {
     reportFailure: false,
   });
+  const replyToThread = useAtomCommand(pullRequestEnvironment.replyToThread, {
+    reportFailure: false,
+  });
   const [resolutionPending, setResolutionPending] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [reply, setReply] = useState("");
+  const [replyPending, setReplyPending] = useState(false);
   // What is offered is the intersection of what this host can do at all and what this account
   // may do on this repository: either one saying no means a control that only ends in refusal.
   const canResolveThreads = detail.capabilities.review.resolve && detail.viewerPermissions.resolve;
+  const canReplyThreads = detail.capabilities.review.reply && detail.viewerPermissions.comment;
 
   const toggleThreadResolution = async (thread: PullRequestReviewThread) => {
     if (resolutionPending) return;
@@ -510,6 +536,25 @@ export function PullRequestSummaryTab({
     }
     onRefresh();
   };
+
+  const sendThreadReply = async (thread: PullRequestReviewThread) => {
+    const trimmed = reply.trim();
+    if (trimmed.length === 0 || replyPending) return;
+    setReplyPending(true);
+    const result = await replyToThread({
+      environmentId,
+      input: { ...reference, threadId: thread.id, body: trimmed },
+    });
+    setReplyPending(false);
+    if (result._tag === "Failure") {
+      toastManager.add({ type: "error", title: "The reply could not be posted" });
+      return;
+    }
+    setReply("");
+    setReplyingTo(null);
+    onRefresh();
+  };
+
   // Keyed by the pull request, like the comment window above it, so an editor left open never
   // reappears over the next pull request's description.
   const [bodyScope, setBodyScope] = useState<string | null>(null);
@@ -783,18 +828,14 @@ export function PullRequestSummaryTab({
                   {/* Only where there is something to fix. A passing check has no failure to
                       reproduce, and the button would be an invitation to waste a thread. */}
                   {onFixFinding && failing ? (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="shrink-0"
+                    <FixFindingButton
+                      label={fixCheckLabel}
+                      otherThreadLabel={fixFindingOtherLabel}
+                      canFixInThisThread={canFixInThisThread}
+                      pending={pendingFinding === pullRequestFindingKey(finding)}
                       disabled={pendingFinding !== null && pendingFinding !== undefined}
-                      onClick={() => onFixFinding(finding)}
-                    >
-                      <HammerIcon className="size-3" />
-                      {pendingFinding === pullRequestFindingKey(finding)
-                        ? "Preparing..."
-                        : fixCheckLabel}
-                    </Button>
+                      onFix={(destination) => onFixFinding(finding, destination)}
+                    />
                   ) : null}
                 </div>
               );
@@ -902,17 +943,9 @@ export function PullRequestSummaryTab({
                     );
                   }
                   // An approval is a verdict, not a finding: there is nothing in it to fix.
-                  const finding: PullRequestFinding | null =
-                    (comment.kind !== "review" && comment.kind !== "review-comment") ||
-                    outcome === "approved"
-                      ? null
-                      : thread === undefined
-                        ? // Nor is a remark with nothing in it: offering to hand an empty review
-                          // to a thread promises work it does not describe.
-                          body === null
-                          ? null
-                          : { kind: "comment", comment }
-                        : { kind: "thread", thread };
+                  // Grok Origin findings arrive as ordinary comments; the marker names them.
+                  const finding = pullRequestConversationFinding({ comment, thread, body });
+                  const grokFinding = parseGrokReviewFinding(comment.body);
                   // One bar, two homes. Under a card with words in it, it is the row beneath
                   // them. A bodiless verdict has nothing above it, so a row reserved for an add
                   // button nobody can see until they hover is a hole — there it rides the header
@@ -959,24 +992,40 @@ export function PullRequestSummaryTab({
                               Resolve
                             </Button>
                           ) : null}
-                          {/* Review remarks only. A plain conversation comment is talk, not a finding,
-                        and offering to fix one would promise more than it says. */}
-                          {onFixFinding && finding ? (
+                          {canReplyThreads && thread && isThreadReplyAnchor(thread, comment.id) ? (
                             <Button
                               size="xs"
                               variant="ghost"
-                              disabled={pendingFinding !== null && pendingFinding !== undefined}
-                              onClick={() => onFixFinding(finding)}
+                              disabled={replyPending}
+                              onClick={() => {
+                                setReplyingTo((current) =>
+                                  current === thread.id ? null : thread.id,
+                                );
+                                setReply("");
+                              }}
                             >
-                              <HammerIcon className="size-3" />
-                              {pendingFinding === pullRequestFindingKey(finding)
-                                ? "Preparing..."
-                                : fixFindingLabel}
+                              Reply
                             </Button>
+                          ) : null}
+                          {/* Review remarks only. A plain conversation comment is talk, not a finding,
+                        and offering to fix one would promise more than it says. */}
+                          {onFixFinding && finding ? (
+                            <FixFindingButton
+                              label={fixFindingLabel}
+                              otherThreadLabel={fixFindingOtherLabel}
+                              canFixInThisThread={canFixInThisThread}
+                              pending={pendingFinding === pullRequestFindingKey(finding)}
+                              disabled={pendingFinding !== null && pendingFinding !== undefined}
+                              onFix={(destination) => onFixFinding(finding, destination)}
+                            />
                           ) : null}
                         </span>
                       </div>
-                      {comment.path ? (
+                      {grokFinding ? (
+                        <div className="mt-2">
+                          <GrokReviewFindingHeader finding={grokFinding} />
+                        </div>
+                      ) : comment.path ? (
                         <Tooltip>
                           <TooltipTrigger
                             render={
@@ -993,9 +1042,59 @@ export function PullRequestSummaryTab({
                           Kept where this reader may rewrite the remark: the pencil lives in here,
                           and hiding the block would take away the only way back to it. */}
                       {body === null && !commentEditing.canEdit(comment) ? null : (
-                        <CommentBody className="mt-2" comment={comment} editing={commentEditing} />
+                        <CommentBody
+                          className="mt-2"
+                          comment={comment}
+                          editing={commentEditing}
+                          {...(grokFinding ? { displayText: grokFinding.body } : {})}
+                        />
                       )}
                       {body === null ? null : reactionBar}
+                      {canReplyThreads &&
+                      thread &&
+                      isThreadReplyAnchor(thread, comment.id) &&
+                      replyingTo === thread.id ? (
+                        <div className="mt-2">
+                          <Textarea
+                            autoFocus
+                            size="sm"
+                            value={reply}
+                            placeholder="Reply"
+                            aria-label="Reply to this conversation"
+                            onChange={(event) => setReply(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                setReplyingTo(null);
+                                setReply("");
+                              }
+                              if (isCommentSubmitShortcut(event, reply, replyPending)) {
+                                event.preventDefault();
+                                void sendThreadReply(thread);
+                              }
+                            }}
+                          />
+                          <div className="mt-2 flex justify-end gap-2">
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              onClick={() => {
+                                setReplyingTo(null);
+                                setReply("");
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              size="xs"
+                              disabled={replyPending || reply.trim().length === 0}
+                              onClick={() => void sendThreadReply(thread)}
+                            >
+                              {replyPending ? "Posting..." : "Reply"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
                     </article>
                   );
                 })}

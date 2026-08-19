@@ -292,6 +292,95 @@ function isOriginHost(host: string): boolean {
   return host === "origin.cursor.com" || host.endsWith(".origin.cursor.com");
 }
 
+/** HTML marker T3 Pretty's Origin Grok review job writes into each comment. */
+export const GROK_REVIEW_MARKER = "t3-pretty-grok-review";
+
+export type GrokReviewSeverity = "bug" | "suggestion" | "nit";
+
+/** One finding from `scripts/fork/review-origin-pr.mjs`, not the review summary. */
+export interface GrokReviewFinding {
+  readonly sha: string | null;
+  readonly severity: GrokReviewSeverity;
+  readonly title: string;
+  readonly path: string | null;
+  readonly line: number | null;
+  readonly body: string;
+}
+
+const GROK_REVIEW_MARKER_PATTERN =
+  /<!--\s*t3-pretty-grok-review(?:\s+sha=([0-9a-f]{7,40}))?\s*-->/iu;
+const GROK_REVIEW_HEADING_PATTERN = /^###\s+(bug|suggestion|nit)\s+[—–-]\s+(.+)$/mu;
+const GROK_REVIEW_LOCATION_PATTERN = /^`([^`]+)`$/u;
+
+function parseGrokReviewLocation(raw: string): {
+  readonly path: string | null;
+  readonly line: number | null;
+} {
+  const location = raw.trim();
+  if (location.length === 0 || location === "general") return { path: null, line: null };
+  const split = /^(.*?):(\d+)$/u.exec(location);
+  if (split === null) return { path: location, line: null };
+  const path = split[1]?.trim() ?? "";
+  const line = Number(split[2]);
+  return {
+    path: path.length > 0 ? path : null,
+    line: Number.isInteger(line) && line > 0 ? line : null,
+  };
+}
+
+export function isGrokReviewComment(body: string): boolean {
+  return GROK_REVIEW_MARKER_PATTERN.test(body);
+}
+
+/**
+ * Structured Grok Origin findings. The review summary uses the same HTML marker but a `##`
+ * heading, so it is not a finding.
+ */
+export function parseGrokReviewFinding(body: string): GrokReviewFinding | null {
+  const marker = GROK_REVIEW_MARKER_PATTERN.exec(body);
+  if (marker === null) return null;
+  const heading = GROK_REVIEW_HEADING_PATTERN.exec(body);
+  if (heading === null) return null;
+  const severity = heading[1];
+  const title = heading[2]?.trim() ?? "";
+  if (
+    (severity !== "bug" && severity !== "suggestion" && severity !== "nit") ||
+    title.length === 0
+  ) {
+    return null;
+  }
+
+  const afterHeading = body.slice((heading.index ?? 0) + heading[0].length);
+  const lines = afterHeading.replace(/^\n+/u, "").split("\n");
+  const locationLine = GROK_REVIEW_LOCATION_PATTERN.exec(lines[0]?.trim() ?? "");
+  const location = parseGrokReviewLocation(locationLine?.[1] ?? "");
+  const rest = locationLine === null ? lines : lines.slice(1);
+  return {
+    sha: marker[1]?.toLowerCase() ?? null,
+    severity,
+    title,
+    path: location.path,
+    line: location.line,
+    body: rest.join("\n").trim(),
+  };
+}
+
+export function firstGrokReviewFinding(bodies: Iterable<string>): GrokReviewFinding | null {
+  for (const body of bodies) {
+    const finding = parseGrokReviewFinding(body);
+    if (finding !== null) return finding;
+  }
+  return null;
+}
+
+export function formatGrokReviewLocation(finding: {
+  readonly path: string | null;
+  readonly line: number | null;
+}): string | null {
+  if (finding.path === null) return null;
+  return finding.line === null ? finding.path : `${finding.path} · L${finding.line}`;
+}
+
 export function detectSourceControlProviderFromRemoteUrl(
   remoteUrl: string,
 ): SourceControlProviderInfo | null {

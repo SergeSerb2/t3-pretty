@@ -29,7 +29,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
-import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
+import {
+  pullRequestFindingKey,
+  type PullRequestFinding,
+  type PullRequestFixDestination,
+} from "./pullRequestDetail.logic";
 import { canEditPullRequestComment } from "./pullRequestEditing.logic";
 import { orderDiffFiles } from "./pullRequestFileOrder.logic";
 import {
@@ -187,6 +191,8 @@ export function PullRequestCodeTab({
   onSelectedCommitChange,
   pendingFinding,
   fixFindingLabel = "Fix in a thread",
+  fixFindingOtherLabel = "Fix in another thread",
+  canFixInThisThread = false,
   onFixFinding,
   onAddToAgentSelection,
   onRefresh,
@@ -201,7 +207,9 @@ export function PullRequestCodeTab({
   /** The hand-off currently preparing, if any, so only the finding it belongs to says so. */
   pendingFinding?: string | null;
   fixFindingLabel?: string;
-  onFixFinding?: (finding: PullRequestFinding) => void;
+  fixFindingOtherLabel?: string;
+  canFixInThisThread?: boolean;
+  onFixFinding?: (finding: PullRequestFinding, destination: PullRequestFixDestination) => void;
   /** Absent where there is no active agent composer to receive a local comment. */
   onAddToAgentSelection?: (input: PullRequestAgentSelectionInput) => void;
   onRefresh: () => void;
@@ -417,6 +425,7 @@ export function PullRequestCodeTab({
       const path = resolveFileDiffPath(file);
       for (const thread of detail.reviewThreads) {
         if (
+          thread.path !== null &&
           thread.path === path &&
           thread.line !== null &&
           isLineInFileDiff(file, thread.side, thread.line)
@@ -452,7 +461,7 @@ export function PullRequestCodeTab({
         };
 
         for (const thread of detail.reviewThreads) {
-          if (thread.path !== path || thread.line === null) continue;
+          if (thread.path === null || thread.path !== path || thread.line === null) continue;
           if (!placedThreadIds.has(thread.id)) continue;
           groupAt(thread.side, thread.line).threads.push(thread);
         }
@@ -802,7 +811,11 @@ export function PullRequestCodeTab({
         fixPending={pendingFinding === pullRequestFindingKey({ kind: "thread", thread })}
         fixDisabled={pendingFinding !== null && pendingFinding !== undefined}
         fixLabel={fixFindingLabel}
-        {...(onFixFinding ? { onFix: () => onFixFinding({ kind: "thread", thread }) } : {})}
+        fixOtherLabel={fixFindingOtherLabel}
+        canFixInThisThread={canFixInThisThread}
+        {...(onFixFinding
+          ? { onFix: (destination) => onFixFinding({ kind: "thread", thread }, destination) }
+          : {})}
         onLoadMore={async (cursor): Promise<PullRequestThreadCommentsResult | null> => {
           const result = await loadThreadComments({
             environmentId,
@@ -852,6 +865,8 @@ export function PullRequestCodeTab({
       detail,
       environmentId,
       fixFindingLabel,
+      fixFindingOtherLabel,
+      canFixInThisThread,
       loadThreadComments,
       onRefresh,
       onFixFinding,
@@ -1221,14 +1236,18 @@ export function PullRequestCodeTab({
     );
   }
 
-  const orphanThreads = detail.reviewThreads.filter((thread) => !placedThreadIds.has(thread.id));
+  const orphanThreads = detail.reviewThreads.filter(
+    (thread) => thread.path !== null && !placedThreadIds.has(thread.id),
+  );
   // A file carrying five stranded conversations should read as that file once rather than as
-  // five copies of its path.
+  // five copies of its path. Conversation threads with no file live on the Comments tab.
   const orphanFiles = new Map<string, PullRequestReviewThread[]>();
   for (const thread of orphanThreads) {
-    const existing = orphanFiles.get(thread.path);
+    const path = thread.path;
+    if (path === null) continue;
+    const existing = orphanFiles.get(path);
     if (existing) existing.push(thread);
-    else orphanFiles.set(thread.path, [thread]);
+    else orphanFiles.set(path, [thread]);
   }
 
   const unstructured =
