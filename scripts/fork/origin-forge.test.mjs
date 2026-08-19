@@ -107,11 +107,10 @@ describe("Origin release and blocked-sync helpers", () => {
       sync.indexOf("Prepare macOS runner PATH"),
       sync.indexOf("Checkout fork main"),
     );
-    assert.include(preparePath, "GITHUB_PATH");
-    assert.include(preparePath, "GITHUB_ENV");
-    assert.include(preparePath, "wrote=0");
+    assert.notInclude(preparePath, "persist-ci-path.sh");
+    assert.include(preparePath, "refusing to write");
     assert.include(preparePath, 'echo "PATH=${PATH}" >> "$GITHUB_ENV"');
-    assert.notInclude(preparePath, 'elif [[ -n "${GITHUB_ENV:-}" ]]');
+    assert.notInclude(preparePath, "GITHUB_WORKSPACE:-${HOME}");
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");
     assert.include(desktop, "T3CODE_RELEASE_S3_BUCKET");
     assert.include(desktop, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");
@@ -145,14 +144,49 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(desktop, "ensure-linux-node.sh");
     assert.include(desktop, "PREFLIGHT_REF");
     assert.notInclude(desktop, "/usr/local --strip-components=1");
-    assert.notInclude(desktop, "git fetch --force --tags origin || true");
+    assert.include(preflight, "Could not fetch Origin fork tags");
     assert.include(preflight, "origin_tags_ok");
+    assert.include(preflight, "No fork tags are present; refusing to mint a version.");
+    assert.notInclude(mobile, "GITHUB_ENV is required");
+    assert.notInclude(mobile, "grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> \"$GITHUB_ENV\"");
+    assert.include(mobile, "t3_persist_env");
+    assert.include(sync, ". scripts/fork/macos-ci-prelude.sh");
+    assert.include(
+      sync,
+      ". scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY CLI_PROXY_API_KEY",
+    );
+    assert.notInclude(sync, "bash scripts/fork/load-buildkite-secrets.sh");
     assert.include(mobile, "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65");
     assert.notInclude(mobile, "vars.T3CODE_MOBILE_EAS_PROJECT_ID");
     assert.notInclude(mobile, "vars.APPLE_TEAM_ID");
     assert.notInclude(mobile, "secrets.EXPO_TOKEN");
+    assert.notInclude(mobile, "secrets.APPLE_API_KEY");
+    assert.notInclude(mobile, "secrets.APPLE_API_KEY_ID");
+    assert.notInclude(mobile, "secrets.APPLE_API_ISSUER");
     assert.include(sync, "load-buildkite-secrets.sh");
     assert.include(mobile, "load-buildkite-secrets.sh EXPO_TOKEN");
+    const secretsHelper = NodeFS.readFileSync(
+      NodePath.resolve(here, "load-buildkite-secrets.sh"),
+      "utf8",
+    );
+    assert.include(
+      secretsHelper,
+      "buildkite-agent is not on PATH; leaving existing environment in place.",
+    );
+    assert.notInclude(secretsHelper, "GITHUB_ENV is required");
+    assert.include(secretsHelper, "t3_ci_env_path");
+    assert.include(secretsHelper, "BASH_SOURCE[0]");
+    assert.notInclude(secretsHelper, "GITHUB_WORKSPACE:-${HOME}");
+    const prelude = NodeFS.readFileSync(NodePath.resolve(here, "macos-ci-prelude.sh"), "utf8");
+    const ciEnv = NodeFS.readFileSync(NodePath.resolve(here, "ci-env.sh"), "utf8");
+    assert.include(prelude, "__T3_CI_ENV_EOF__");
+    assert.include(prelude, "t3_persist_dotenv_file");
+    assert.notInclude(prelude, 'printf \'%s=%s\\n\' "$name" "$value" >> "$GITHUB_ENV"');
+    assert.notInclude(prelude, "GITHUB_WORKSPACE:-${HOME}");
+    assert.include(ciEnv, "refusing to write");
+    assert.include(mobile, "t3_persist_dotenv_file");
+    assert.notInclude(mobile, "GITHUB_WORKSPACE:-${HOME}");
+    assert.include(mobile, "APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID");
     assert.include(preflight, "Mac signing secrets are resolved on macos-release");
     assert.include(preflight, "git fetch --force --tags origin");
     assert.include(mobile, "origin-forge.mjs merge-pr");
