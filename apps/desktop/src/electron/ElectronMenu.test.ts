@@ -58,6 +58,34 @@ describe("ElectronMenu", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.effect("strips separators and headers before building a native menu", () =>
+    Effect.gen(function* () {
+      buildFromTemplateMock.mockImplementation(() => ({
+        popup: (options: Electron.PopupOptions) => {
+          options.callback?.();
+        },
+      }));
+
+      const electronMenu = yield* ElectronMenu.ElectronMenu;
+      yield* electronMenu.showContextMenu({
+        window: makeWindow(),
+        items: [
+          { id: "sep", label: "", separator: true },
+          { id: "heading", label: "Section", header: true },
+          { id: "copy", label: "Copy" },
+        ],
+        position: Option.none(),
+      });
+
+      assert.deepEqual(
+        (buildFromTemplateMock.mock.calls[0]?.[0] as Electron.MenuItemConstructorOptions[]).map(
+          (item) => item.label,
+        ),
+        ["Copy"],
+      );
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("resolves with the clicked leaf item id", () =>
     Effect.gen(function* () {
       buildFromTemplateMock.mockImplementation(

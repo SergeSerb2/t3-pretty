@@ -200,6 +200,14 @@ export function showContextMenuFallback<T extends string>(
         "max-height:min(24rem,70vh);min-width:0;max-width:24rem;overflow-x:hidden;overflow-y:auto;padding:0.25rem;";
 
       for (const item of entries) {
+        if (item.separator === true) {
+          const rule = document.createElement("div");
+          rule.setAttribute("role", "separator");
+          rule.className = "mx-2 my-1 h-px bg-border";
+          inner.appendChild(rule);
+          continue;
+        }
+
         if (item.header === true) {
           const header = document.createElement("div");
           header.className = "px-2 py-1.5 font-medium text-muted-foreground text-xs";

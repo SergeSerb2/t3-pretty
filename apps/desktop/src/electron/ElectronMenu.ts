@@ -67,9 +67,9 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
       continue;
     }
 
-    // Header items are decorative section labels for the web fallback only —
-    // Electron's native menu has no equivalent affordance, so we skip them.
-    if (sourceItem.header === true) {
+    // Header and separator items are in-app chrome. Native Electron menus
+    // have no header affordance and insert their own destructive separator.
+    if (sourceItem.header === true || sourceItem.separator === true) {
       continue;
     }
 

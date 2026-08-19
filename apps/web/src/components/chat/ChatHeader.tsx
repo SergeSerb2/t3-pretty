@@ -198,7 +198,7 @@ export const ChatHeader = memo(function ChatHeader({
   const openMenuFromTitle = useCallback(() => {
     const rect = titleButtonRef.current?.getBoundingClientRect();
     if (!rect) return;
-    openMenu({ x: rect.left, y: rect.bottom + 4 });
+    openMenu({ x: rect.left, y: rect.bottom + 4, motion: "dropdown" });
   }, [openMenu]);
   const handleHeaderContextMenu = useCallback(
     (event: ReactMouseEvent) => {

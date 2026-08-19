@@ -1,7 +1,7 @@
 import type { ConfirmDialogOptions, ContextMenuItem, LocalApi } from "@t3tools/contracts";
 
 import { requestConfirmDialog } from "./confirmDialog";
-import { dismissContextMenu, showContextMenuFallback } from "./contextMenuFallback";
+import { dismissInAppContextMenu, showInAppContextMenu } from "./contextMenu";
 import { readBrowserClientSettings, writeBrowserClientSettings } from "./clientPersistenceStorage";
 import { resetRequestLatencyStateForTests } from "./rpc/requestLatencyState";
 
@@ -34,20 +34,15 @@ function createBrowserLocalApi(): LocalApi {
     contextMenu: {
       show: async <T extends string>(
         items: readonly ContextMenuItem<T>[],
-        position?: { x: number; y: number },
+        position?: { x: number; y: number; motion?: "instant" | "dropdown" },
       ): Promise<T | null> => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.showContextMenu(items, position) as Promise<T | null>;
-        }
-        return showContextMenuFallback(items, position);
+        // Authored menus always paint in-app — desktop native popups are the
+        // thing we are replacing. The React host handles keyboard; the DOM
+        // fallback is only for the gap before the host mounts.
+        return showInAppContextMenu(items, position);
       },
-      // A native desktop menu blocks keyboard input and closes on outside
-      // interaction, so nothing to do there; the DOM fallback needs an explicit
-      // dismiss when the state behind it goes away.
       close: async () => {
-        if (!window.desktopBridge) {
-          dismissContextMenu();
-        }
+        dismissInAppContextMenu();
       },
     },
     persistence: {

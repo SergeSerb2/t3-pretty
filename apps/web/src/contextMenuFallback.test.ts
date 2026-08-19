@@ -27,6 +27,7 @@ class FakeElement {
   className = "";
   disabled = false;
   type = "";
+  attrs: Record<string, string> = {};
   private textValue = "";
   private readonly listeners = new Map<string, FakeListener[]>();
 
@@ -60,6 +61,10 @@ class FakeElement {
       listener(event);
     }
     return true;
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attrs[name] = value;
   }
 
   set textContent(value: string) {
@@ -151,6 +156,7 @@ function findButton(label: string): FakeElement | undefined {
 }
 
 beforeEach(() => {
+  dismissContextMenu();
   vi.stubGlobal("document", new FakeDocument());
   vi.stubGlobal("window", {
     innerWidth: 1280,
@@ -183,6 +189,21 @@ afterEach(() => {
 });
 
 describe("showContextMenuFallback", () => {
+  it("renders separators as non-interactive rules", async () => {
+    const selectionPromise = showContextMenuFallback([
+      { id: "rename", label: "Rename" },
+      { id: "sep", label: "", separator: true },
+      { id: "delete", label: "Delete", destructive: true },
+    ]);
+
+    const separator = (document as unknown as FakeDocument)
+      .querySelectorAll("div")
+      .find((node) => node.attrs.role === "separator");
+    expect(separator).toBeTruthy();
+    dismissContextMenu();
+    await expect(selectionPromise).resolves.toBeNull();
+  });
+
   it("resolves a clicked flat menu item", async () => {
     const selectionPromise = showContextMenuFallback([
       { id: "rename", label: "Rename" },

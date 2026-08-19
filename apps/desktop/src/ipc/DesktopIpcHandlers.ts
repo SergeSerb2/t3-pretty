@@ -40,6 +40,7 @@ import {
   probeRemoteEditors,
   pickFolder,
   pickThemeFiles,
+  resolveEditContextMenu,
   setTheme,
   showContextMenu,
 } from "./methods/window.ts";
@@ -86,6 +87,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(pickThemeFiles);
   yield* ipc.handle(setTheme);
   yield* ipc.handle(showContextMenu);
+  yield* ipc.handle(resolveEditContextMenu);
   yield* ipc.handle(openExternal);
   yield* ipc.handle(probeRemoteEditors);
   yield* ipc.handle(getUpdateState);
