@@ -24,13 +24,14 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    posted as reviews (no thread) pass only after a later comment names the
    title and says it is fixed.
 2. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
-   and 20:00 UTC. Each check finds the newest `pingdotgg/t3code` nightly tag. macos-release
+   and 20:00 UTC as a native `macos-release` Buildkite step
+   (`scripts/fork/run-upstream-sync.sh`). The imported GitHub Actions wrapper
+   is not scheduled: macos-release GHA steps often have no `GITHUB_OUTPUT`, and
+   the old discover step died under `set -u` before the merge started. Each
+   check finds the newest `pingdotgg/t3code` nightly tag. macos-release
    reuses the workspace, so the job updates an existing `upstream` remote instead of
-   `git remote add`. The PATH step writes Homebrew and Vite+ bins to `GITHUB_PATH` when
-   that file exists, `PATH` to `GITHUB_ENV` when that file exists, and always
-   `t3-pretty-ci.env` (under `RUNNER_TEMP`, including a `_temp` directory inside
-   the checkout). Later steps source `macos-ci-prelude.sh` because the importer
-   can set `GITHUB_PATH` without applying it between steps. Hosted desktop
+   `git remote add`. Maintainers retry with Buildkite New Build on `main` (UI or
+   API). Hosted desktop
    preflight often starts with no `.git`; it clones the triggering SHA from
    the parent Buildkite checkout when that path exists, and skips minting
    when the clone cannot be created or Origin tags cannot be fetched.
@@ -47,8 +48,7 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    `GITHUB_SHA`/`BUILDKITE_COMMIT`, and fails instead of compiling an empty
    workspace. It only skips when preflight sets `should_release` to false,
    including when mint skips or fails and leaves `version` empty or `-`.
-   Maintainers can use
-   the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
+   It merges that tag
    into an `automation/upstream-*` branch and opens an Origin pull request.
    The fork deliberately keeps `.github/workflows` from its own `main`; upstream workflow changes
    cannot replace the trusted sync/release boundary.
@@ -143,7 +143,7 @@ without pretending that a newer upstream tag was integrated before its sync pull
   `macos-release` (m1-dev), and `windows-release` (serge-pc). Register the machines with
   `scripts/fork/setup-buildkite-macos-agent.sh` and
   `scripts/fork/setup-buildkite-windows-agent.ps1`. Schedule the pipeline at `0 */4 * * *`
-  so upstream sync still runs. Imported Mac jobs use `macos-latest` so the plugin can map
+  so the native `macos-release` upstream-sync step still runs. Imported Mac jobs use `macos-latest` so the plugin can map
   them onto `macos-release`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
   The importer cannot run Windows jobs; `.buildkite/pipeline.yml` runs
   `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer

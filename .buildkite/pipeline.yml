@@ -38,13 +38,16 @@ steps:
     # Imported GHA jobs (desktop preflight) still die in ~2s on the importer.
     # Native DMG/NSIS/iOS/relay are the release. Do not red the whole build
     # when only the importer fails.
+    # Scheduled builds exist only to run upstream sync. That job is native
+    # macos-release below: imported macos-release steps write $GITHUB_OUTPUT
+    # and die under set -u when the importer omits the file.
     soft_fail: true
+    if: build.source != "schedule"
     agents:
       queue: linux-small
     plugins:
       - github-actions#v0.13.0:
           workflows:
-            - .github/workflows/fork-upstream-sync.yml
             - .github/workflows/fork-release.yml
           runners:
             - runs-on: ubuntu-latest
@@ -59,6 +62,22 @@ steps:
   # Hosted linux-small cannot load CURSOR_API_KEY. macos-release has
   # the secret files. Run review scripts from origin/main when present
   # so a feature branch cannot swap the secret-loading script.
+  - label: ":git: Upstream Sync"
+    key: upstream-sync
+    # The four-hour schedule is this job. Do not import
+    # fork-upstream-sync.yml: macos-release GHA steps need GITHUB_OUTPUT
+    # for discover, and the importer often leaves that file unset.
+    if: build.source == "schedule" || (build.branch == "main" && (build.source == "ui" || build.source == "api"))
+    timeout_in_minutes: 120
+    concurrency: 1
+    concurrency_group: "t3-pretty/upstream-sync"
+    # Ahead of Origin PR review so a feature-branch review cannot occupy
+    # m1-dev in front of a nightly that is already late.
+    priority: 30
+    agents:
+      queue: macos-release
+    command: bash scripts/fork/run-upstream-sync.sh
+
   - label: ":mag: Origin PR Review"
     key: origin-pr-review
     if: build.branch != "main" && build.source != "schedule" && !(build.branch =~ /^automation\//)

@@ -6,11 +6,12 @@ local build delivery.
 
 ## Upstream ingestion (shared with desktop)
 
-`.github/workflows/fork-upstream-sync.yml` runs every four hours at 00:00,
-04:00, 08:00, 12:00, 16:00, and 20:00 UTC, merges the newest upstream nightly
-tag (AI-resolving conflicts via `scripts/fork/resolve-git-conflicts.mjs`), and
-lands it on Origin `main` through an auto-merged pull request. Mobile code rides
-along — there is no separate mobile sync.
+`.buildkite/pipeline.yml` runs `scripts/fork/run-upstream-sync.sh` every four
+hours at 00:00, 04:00, 08:00, 12:00, 16:00, and 20:00 UTC on `macos-release`.
+The job merges the newest upstream nightly tag (AI-resolving conflicts via
+`scripts/fork/resolve-git-conflicts.mjs`) and lands it on Origin `main` through
+an auto-merged pull request. Mobile code rides along — there is no separate
+mobile sync. The imported `fork-upstream-sync.yml` wrapper is not scheduled.
 
 ## Merge-driven releases
 
@@ -58,7 +59,7 @@ IPA. An M5 Pro (18-core, 48 GB) should compile the current IPA in roughly
 7–10 minutes versus ~13 minutes on m1-dev; the larger win is that the two
 Macs stop taking turns.
 
-The four-hour upstream workflow uses the same whole-repository merge and
+The four-hour upstream job uses the same whole-repository merge and
 gpt-5.6-sol/xhigh conflict resolver as desktop. After the Origin merge, if
 that integration changed mobile-relevant paths, the sync job runs
 `publish-mobile-release.sh` on macos-release so a missed merge push still

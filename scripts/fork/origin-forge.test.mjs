@@ -89,20 +89,24 @@ describe("Origin release and blocked-sync helpers", () => {
 
   it("keeps the fork release and sync workflows off the GitHub CLI", () => {
     const sync = workflow("fork-upstream-sync.yml");
+    const syncScript = NodeFS.readFileSync(NodePath.resolve(here, "run-upstream-sync.sh"), "utf8");
     const desktop = workflow("fork-release.yml");
     const mobile = NodeFS.readFileSync(NodePath.resolve(here, "publish-mobile-release.sh"), "utf8");
     const reviewCi = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
 
-    for (const source of [sync, desktop, mobile]) {
+    for (const source of [sync, syncScript, desktop, mobile]) {
       assert.notInclude(source, "gh api");
       assert.notInclude(source, "gh release");
       assert.notInclude(source, "gh workflow");
     }
-    assert.include(sync, "origin-forge.mjs");
+    assert.include(sync, "run-upstream-sync.sh");
+    assert.include(syncScript, "origin-forge.mjs");
     assert.include(mobile, "origin-forge.mjs");
-    assert.include(sync, "https://github.com/pingdotgg/t3code.git");
-    assert.include(sync, "git remote get-url upstream");
-    assert.include(sync, "git remote set-url upstream");
+    assert.include(syncScript, "https://github.com/pingdotgg/t3code.git");
+    assert.include(syncScript, "git remote get-url upstream");
+    assert.include(syncScript, "git remote set-url upstream");
+    assert.notInclude(syncScript, '>> "$GITHUB_OUTPUT"');
+    assert.include(syncScript, "Do not write GITHUB_OUTPUT");
     const preparePath = sync.slice(
       sync.indexOf("Prepare macOS runner PATH"),
       sync.indexOf("Checkout fork main"),
@@ -222,7 +226,9 @@ describe("Origin release and blocked-sync helpers", () => {
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
       "utf8",
     );
-    assert.include(pipeline, "fork-upstream-sync.yml");
+    assert.include(pipeline, "run-upstream-sync.sh");
+    assert.include(pipeline, "t3-pretty/upstream-sync");
+    assert.notInclude(pipeline, "- .github/workflows/fork-upstream-sync.yml");
     assert.include(pipeline, "soft_fail: true");
     assert.include(pipeline, "fork-release.yml");
     assert.notInclude(pipeline, "- .github/workflows/fork-mobile-release.yml");
