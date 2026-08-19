@@ -34,6 +34,8 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    preflight often starts with no `.git`; it clones the triggering SHA from
    the parent Buildkite checkout when that path exists, and skips minting
    when the clone cannot be created or Origin tags cannot be fetched.
+   It never `git fetch origin` on hosted Linux: Origin HTTPS has no credentials
+   there, and git waits forever on `Username for 'https://origin.cursor.com':`.
    A failed clone writes `ready=false` and removes the empty `.git` so later
    imported git and mint steps do not run against a HEAD-less repo.
    Native Mac/Windows packagers still mint. A skipped imported mint writes
@@ -142,7 +144,10 @@ without pretending that a newer upstream tag was integrated before its sync pull
   the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux),
   `macos-release` (m1-dev), and `windows-release` (serge-pc). Register the machines with
   `scripts/fork/setup-buildkite-macos-agent.sh` and
-  `scripts/fork/setup-buildkite-windows-agent.ps1`. Schedule the pipeline at `0 */4 * * *`
+  `scripts/fork/setup-buildkite-windows-agent.ps1`. The Mac setup starts a
+  second agent (`m1-dev-t3code-fork-2`) on the same queue so Origin PR review
+  and the signed DMG can run while a local IPA occupies the first worker.
+  Schedule the pipeline at `0 */4 * * *`
   so upstream sync still runs. Imported Mac jobs use `macos-latest` so the plugin can map
   them onto `macos-release`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
   The importer cannot run Windows jobs; `.buildkite/pipeline.yml` runs
@@ -232,7 +237,8 @@ This machine is an M5 Pro (18 cores, 48 GB). m1-dev is the existing dedicated Ma
 
 The macOS runner lives at `/Users/m1-dev/actions-runner-t3code-fork`. After the Origin cutover
 it should be a Buildkite agent on the `macos-release` queue, registered with
-`scripts/fork/setup-buildkite-macos-agent.sh`. Do not give it pull-request queues.
+`scripts/fork/setup-buildkite-macos-agent.sh` (two workers: `m1-dev-t3code-fork`
+and `m1-dev-t3code-fork-2`). Do not give it pull-request queues.
 
 The Windows runner lives at `C:\actions-runner-t3code-fork`. The checked-in
 `scripts/fork/setup-windows-runner.ps1` can still recreate a GitHub Actions runner for rollback.

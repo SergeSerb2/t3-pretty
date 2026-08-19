@@ -31,6 +31,7 @@ MODE="${T3CODE_MOBILE_MODE:-release}"
 PLATFORM="${T3CODE_MOBILE_PLATFORM:-all}"
 FORCE_IOS=false
 NATIVE_SUBMIT_MARK=".t3-fork/ios-native-submit"
+LOCAL_SUBMIT_MARK="${HOME}/.cache/t3-pretty-release/ios-native-submit"
 case "${T3CODE_FORCE_IOS:-}" in
   true | TRUE | 1 | yes | YES) FORCE_IOS=true ;;
 esac
@@ -115,6 +116,56 @@ annotate() {
   fi
 }
 
+native_submit_line() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  head -n 1 "$file" 2>/dev/null | tr -d '[:space:]'
+}
+
+record_local_native_submit() {
+  mkdir -p "$(dirname "$LOCAL_SUBMIT_MARK")"
+  printf '%s\n' "macos-release" "${1:-${commit:-unknown}}" > "$LOCAL_SUBMIT_MARK"
+}
+
+# One successful macos-release TestFlight submit is enough. The git marker
+# lands through a follow-up PR, so queued jobs on older SHAs would otherwise
+# each compile another 50–90 minute IPA on the only Mac agent.
+native_submit_recorded() {
+  local first
+  first="$(native_submit_line "$NATIVE_SUBMIT_MARK" || true)"
+  if [[ "$first" == "macos-release" ]]; then
+    return 0
+  fi
+  first="$(native_submit_line "$LOCAL_SUBMIT_MARK" || true)"
+  if [[ "$first" == "macos-release" ]]; then
+    echo "Runner already submitted a TestFlight IPA; not compiling another."
+    return 0
+  fi
+  first="$(git show "origin/main:${NATIVE_SUBMIT_MARK}" 2>/dev/null | head -n 1 | tr -d '[:space:]' || true)"
+  if [[ "$first" == "macos-release" ]]; then
+    echo "origin/main already records a macos-release TestFlight submit; not compiling another."
+    record_local_native_submit "origin/main"
+    return 0
+  fi
+  return 1
+}
+
+ios_lock_holder_alive() {
+  local pid cmd other
+  if [[ -f "$lockdir/pid" ]]; then
+    pid="$(tr -d '[:space:]' < "$lockdir/pid" || true)"
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+      cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+      case "$cmd" in
+        *publish-mobile-release.sh* | *"/eas "* | *eas\ build* | *xcodebuild*) return 0 ;;
+      esac
+    fi
+  fi
+  other="$(pgrep -f 'scripts/fork/publish-mobile-release.sh' || true)"
+  other="$(printf '%s\n' "$other" | grep -v "^${$}$" || true)"
+  [[ -n "$other" ]]
+}
+
 # Upstream sync already has the merged tree. Re-checking out BUILDKITE_COMMIT
 # would reset to the scheduled starting SHA and publish a stale OTA.
 if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" ]]; then
@@ -133,10 +184,12 @@ if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" ]]; then
   fi
 fi
 
-git fetch --unshallow || true
+# Do not unshallow this checkout. The workspace is reused across jobs and
+# downloading the whole Origin history occupies the only macos-release agent.
 if ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
   git fetch --deepen=50 || git fetch origin --deepen=50 || true
 fi
+git fetch --depth=1 origin main || true
 git checkout -- apps/mobile/eas.json 2>/dev/null || true
 
 if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" && "$MODE" != "build" && "$FORCE_IOS" != "true" ]]; then
@@ -158,10 +211,21 @@ if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" && "$MODE" != "build" && "$FO
 fi
 
 lockdir="/tmp/t3-pretty-ios-mobile.lock"
+lock_wait_deadline=$((SECONDS + 900))
 while ! mkdir "$lockdir" 2>/dev/null; do
-  echo "Waiting for another ios-mobile publish on this Mac..."
-  sleep 10
+  if ios_lock_holder_alive; then
+    if (( SECONDS >= lock_wait_deadline )); then
+      echo "Timed out waiting for another ios-mobile publish on this Mac." >&2
+      exit 1
+    fi
+    echo "Waiting for another ios-mobile publish on this Mac..."
+    sleep 10
+    continue
+  fi
+  echo "Removing stale ios-mobile lock at $lockdir"
+  rm -rf "$lockdir"
 done
+printf '%s\n' "$$" > "$lockdir/pid"
 tmp=""
 eas_json="$root/apps/mobile/eas.json"
 eas_json_bak=""
@@ -172,7 +236,7 @@ cleanup() {
   if [[ -n "${tmp:-}" ]]; then
     rm -rf "$tmp"
   fi
-  rmdir "$lockdir" 2>/dev/null || true
+  rm -rf "$lockdir"
 }
 trap cleanup EXIT
 
@@ -274,8 +338,8 @@ if [[ ! -f "$gate_file" ]]; then
   # A hash recorded by the old GitHub Actions importer does not mean this
   # macos-release job has ever uploaded an IPA. Build 183 published OTA and
   # skipped TestFlight for that reason. Force one native submit until the
-  # marker lands.
-  if [[ ! -f "$NATIVE_SUBMIT_MARK" ]] || [[ "$(head -n 1 "$NATIVE_SUBMIT_MARK" 2>/dev/null || true)" != "macos-release" ]]; then
+  # marker lands on this runner, this checkout, or origin/main.
+  if ! native_submit_recorded; then
     echo "No native macos-release TestFlight submit recorded; compiling an IPA."
     FORCE_IOS=true
   fi
@@ -417,6 +481,7 @@ test -f "$ipa_path"
     --path "$ipa_path" \
     --non-interactive
 )
+record_local_native_submit "$commit"
 annotate success "Submitted TestFlight IPA $ipa_path"
 restore_eas_json
 

@@ -33,6 +33,10 @@ env:
   T3CODE_RELEASE_S3_REGION: auto
   APPLE_TEAM_ID: "78A5P57U23"
   T3CODE_APPLE_TEAM_ID: "78A5P57U23"
+  # Hosted linux-small has no Origin HTTPS credentials. Without this, git
+  # waits forever on `Username for 'https://origin.cursor.com':`.
+  GIT_TERMINAL_PROMPT: "0"
+  GIT_ASKPASS: "/bin/true"
 
 # Versions stay monotonic, so desktop releases still queue one at a time.
 # Preflight and the WSL node-pty compile run on hosted ubuntu-latest and do
@@ -73,6 +77,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_ASKPASS="${GIT_ASKPASS:-/bin/true}"
           gha_out() {
             if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
               printf '%s\n' "$1" >> "$GITHUB_OUTPUT" || true
@@ -81,6 +87,8 @@ jobs:
           # Hosted linux-small GHA workspaces often have no .git. Do not
           # call checkout@v6 (importer rate-limit). Prefer the parent
           # Buildkite checkout; Origin HTTPS has no hosted credentials.
+          # Never `git fetch origin` here: that waits forever on
+          # `Username for 'https://origin.cursor.com':`.
           # A failed clone must not leave `git init`'s empty repo behind:
           # later fetch/tag/mint steps would then run against a HEAD-less
           # tree and fail for a different reason than "no checkout".
@@ -92,25 +100,17 @@ jobs:
           }
           if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
             sha="${GITHUB_SHA:-${BUILDKITE_COMMIT:-}}"
-            url="${BUILDKITE_REPO:-https://origin.cursor.com/serbinenko/t3-pretty.git}"
             echo "Importer left no git checkout; cloning ${sha:-HEAD}"
             git init
-            if git remote get-url origin >/dev/null 2>&1; then
-              git remote set-url origin "$url"
-            else
-              git remote add origin "$url"
-            fi
             if [[ -n "${BUILDKITE_BUILD_CHECKOUT_PATH:-}" && -d "${BUILDKITE_BUILD_CHECKOUT_PATH}/.git" ]]; then
               git fetch "${BUILDKITE_BUILD_CHECKOUT_PATH}" "${sha:-HEAD}" &&
                 git -c advice.detachedHead=false checkout --force FETCH_HEAD || true
             fi
-            if ! git rev-parse --verify HEAD >/dev/null 2>&1 && [[ -n "$sha" ]]; then
-              git fetch --depth 1 origin "$sha" &&
-                git -c advice.detachedHead=false checkout --force FETCH_HEAD || true
+            if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+              skip_checkout "Hosted linux-small cannot clone Origin over HTTPS; later steps skip mint."
             fi
           fi
           if git rev-parse --verify HEAD >/dev/null 2>&1; then
-            git fetch --force --prune --unshallow origin || git fetch --force --prune origin || true
             if [[ -n "${GITHUB_SHA:-}" ]] && git cat-file -e "${GITHUB_SHA}^{commit}" 2>/dev/null; then
               git checkout --force "$GITHUB_SHA"
             fi
@@ -170,6 +170,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_ASKPASS="${GIT_ASKPASS:-/bin/true}"
           gha_out() {
             if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
               printf '%s\n' "$1" >> "$GITHUB_OUTPUT" || true
@@ -383,6 +385,8 @@ jobs:
           PREFLIGHT_REF: ${{ needs.preflight.outputs.ref }}
         run: |
           set -euo pipefail
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_ASKPASS="${GIT_ASKPASS:-/bin/true}"
           # '-' is preflight's empty-output placeholder, not a commit.
           # This job already skips when should_release is false.
           if [[ "${PREFLIGHT_REF:-}" == "-" ]]; then
@@ -390,35 +394,27 @@ jobs:
           fi
           if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
             sha="${PREFLIGHT_REF:-${GITHUB_SHA:-${BUILDKITE_COMMIT:-}}}"
-            url="${BUILDKITE_REPO:-https://origin.cursor.com/serbinenko/t3-pretty.git}"
             echo "Importer left no git checkout; cloning ${sha:-HEAD}"
             git init
-            if git remote get-url origin >/dev/null 2>&1; then
-              git remote set-url origin "$url"
-            else
-              git remote add origin "$url"
-            fi
             if [[ -n "${BUILDKITE_BUILD_CHECKOUT_PATH:-}" && -d "${BUILDKITE_BUILD_CHECKOUT_PATH}/.git" ]]; then
               git fetch "${BUILDKITE_BUILD_CHECKOUT_PATH}" "${sha:-HEAD}" &&
                 git -c advice.detachedHead=false checkout --force FETCH_HEAD || true
             fi
-            if ! git rev-parse --verify HEAD >/dev/null 2>&1 && [[ -n "$sha" ]]; then
-              git fetch --depth 1 origin "$sha" &&
-                git -c advice.detachedHead=false checkout --force FETCH_HEAD || true
-            fi
             if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
               echo "Could not clone the triggering SHA for WSL prebuild." >&2
+              echo "Hosted linux-small cannot clone Origin over HTTPS." >&2
               exit 1
             fi
           fi
-          git fetch --force --prune --unshallow origin || git fetch --force --prune origin || true
           ref="${PREFLIGHT_REF:-${GITHUB_SHA:-${BUILDKITE_COMMIT:-}}}"
           if [[ -z "$ref" || "$ref" == "-" ]]; then
             echo "WSL prebuild needs a commit SHA; preflight ref is missing." >&2
             exit 1
           fi
           if ! git cat-file -e "${ref}^{commit}" 2>/dev/null; then
-            git fetch --force origin "$ref"
+            if [[ -n "${BUILDKITE_BUILD_CHECKOUT_PATH:-}" && -d "${BUILDKITE_BUILD_CHECKOUT_PATH}/.git" ]]; then
+              git fetch "${BUILDKITE_BUILD_CHECKOUT_PATH}" "$ref" || true
+            fi
           fi
           git cat-file -e "${ref}^{commit}"
           git checkout --force "$ref"
