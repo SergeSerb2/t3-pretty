@@ -139,7 +139,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(sync, "checkout-origin.sh");
     assert.include(mobile, "checkout-origin.sh");
     assert.isFalse(/\n\s+uses:/u.test(mobile));
-    assert.include(mobile, '"$helper" "$CHECKOUT_SHA" --full');
+    assert.include(mobile, "keeping importer tree");
+    assert.include(mobile, "scripts/fork/checkout-origin.sh");
     assert.notInclude(mobile, '"$helper" main --full');
     assert.include(desktop, "ensure-linux-node.sh");
     assert.include(desktop, "PREFLIGHT_REF");
@@ -148,7 +149,9 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(preflight, "origin_tags_ok");
     assert.include(preflight, "No fork tags are present; refusing to mint a version.");
     assert.include(preflight, "can_mint=false");
-    assert.include(preflight, "steps.tags.outputs.can_mint != 'false'");
+    assert.include(preflight, "can_mint=true");
+    assert.include(preflight, "steps.tags.outputs.can_mint == 'true'");
+    assert.include(preflight, "continue-on-error: true");
     assert.notInclude(mobile, "GITHUB_ENV is required");
     assert.notInclude(mobile, "grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> \"$GITHUB_ENV\"");
     assert.include(mobile, "t3_persist_env");

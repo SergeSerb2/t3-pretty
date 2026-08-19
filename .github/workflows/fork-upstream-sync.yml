@@ -50,13 +50,15 @@ jobs:
           extra="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin"
           export PATH="${extra}:${PATH}"
           if [[ -n "${GITHUB_PATH:-}" ]]; then
-            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-            echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
-            echo "${HOME}/.vite-plus/bin" >> "$GITHUB_PATH"
-            echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+            {
+              echo "/opt/homebrew/bin"
+              echo "/opt/homebrew/sbin"
+              echo "${HOME}/.vite-plus/bin"
+              echo "${HOME}/.local/bin"
+            } >> "$GITHUB_PATH" || true
           fi
           if [[ -n "${GITHUB_ENV:-}" ]]; then
-            echo "PATH=${PATH}" >> "$GITHUB_ENV"
+            echo "PATH=${PATH}" >> "$GITHUB_ENV" || true
           fi
           dir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
           dir="${dir%/}"

@@ -69,6 +69,8 @@ describe("T3 Pretty release runner placement", () => {
 
     assert.include(ota, "runs-on: macos-latest");
     assert.include(ota, "checkout-origin.sh");
+    assert.include(ota, "keeping importer tree");
+    assert.notInclude(ota, 'test -x "$helper"');
     assert.include(ota, "- name: Publish OTA update");
     assert.include(ota, "Decide whether a new iOS binary is required");
     assert.notInclude(ota, "scripts/fork/origin-forge.mjs");
