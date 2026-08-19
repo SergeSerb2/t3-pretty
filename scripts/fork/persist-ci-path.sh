@@ -5,7 +5,9 @@
 #
 # Source this file (`. path/persist-ci-path.sh dir`) so `export PATH` applies
 # to the current step. `bash persist-ci-path.sh` only updates the child.
-set -euo pipefail
+if [[ "${BASH_SOURCE[0]-}" == "${0-}" ]]; then
+  set -euo pipefail
+fi
 
 if [[ $# -lt 1 ]]; then
   echo "persist-ci-path.sh: need at least one directory" >&2

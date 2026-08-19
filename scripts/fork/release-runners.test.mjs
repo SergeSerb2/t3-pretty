@@ -89,6 +89,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(ota, "t3_persist_env");
     assert.include(ios, "t3_persist_env");
     assert.notInclude(ios, "secrets.APPLE_API_KEY");
+    assert.include(ios, "APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID");
     assert.notInclude(ota, "grep -vE '^[[:space:]]*(#|$)' ../../.env.local >> \"$GITHUB_ENV\"");
     assert.include(ota, "$(npm prefix -g)/bin");
   });

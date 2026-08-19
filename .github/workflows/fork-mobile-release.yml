@@ -330,7 +330,8 @@ jobs:
           export PATH="${extra}:${PATH}"
           # shellcheck disable=SC1091
           . scripts/fork/load-buildkite-secrets.sh \
-            CURSOR_API_KEY EXPO_TOKEN APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
+            CURSOR_API_KEY EXPO_TOKEN \
+            APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID
 
       - name: Prepare macOS runner PATH
         shell: bash

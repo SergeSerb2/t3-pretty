@@ -176,6 +176,11 @@ describe("Origin release and blocked-sync helpers", () => {
     );
     assert.notInclude(secretsHelper, "GITHUB_ENV is required");
     assert.include(secretsHelper, "t3-pretty-ci.env");
+    assert.include(secretsHelper, "BASH_SOURCE[0]");
+    const prelude = NodeFS.readFileSync(NodePath.resolve(here, "macos-ci-prelude.sh"), "utf8");
+    assert.include(prelude, "__T3_CI_ENV_EOF__");
+    assert.notInclude(prelude, 'printf \'%s=%s\\n\' "$name" "$value" >> "$GITHUB_ENV"');
+    assert.include(mobile, "APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID");
     assert.include(preflight, "Mac signing secrets are resolved on macos-release");
     assert.include(preflight, "git fetch --force --tags origin");
     assert.include(mobile, "origin-forge.mjs merge-pr");

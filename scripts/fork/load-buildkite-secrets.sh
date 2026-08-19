@@ -6,7 +6,11 @@
 #
 # Do not interpolate secrets.* in the workflow YAML. The importer resolves
 # those before any step and one failed secret get kills the job.
-set -euo pipefail
+# Executed as a program this file fail-closes. Sourced, it inherits the
+# caller options so `set -u` does not leak into an unsuspecting parent.
+if [[ "${BASH_SOURCE[0]-}" == "${0-}" ]]; then
+  set -euo pipefail
+fi
 
 export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
 

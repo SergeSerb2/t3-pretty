@@ -21,7 +21,11 @@ t3_persist_env() {
   fi
   printf 'export %s=%q\n' "$name" "$value" >> "$_t3_ci_env"
   if [[ -n "${GITHUB_ENV:-}" ]]; then
-    printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+    {
+      printf '%s<<__T3_CI_ENV_EOF__\n' "$name"
+      printf '%s\n' "$value"
+      printf '__T3_CI_ENV_EOF__\n'
+    } >> "$GITHUB_ENV"
   fi
   printf -v "$name" '%s' "$value"
   export "$name"
