@@ -228,6 +228,10 @@ describe("Origin release and blocked-sync helpers", () => {
     );
     assert.include(pipeline, "run-upstream-sync.sh");
     assert.include(pipeline, "t3-pretty/upstream-sync");
+    assert.include(
+      pipeline,
+      'build.branch == "main" && (build.source == "schedule" || build.source == "ui" || build.source == "api")',
+    );
     assert.notInclude(pipeline, "- .github/workflows/fork-upstream-sync.yml");
     assert.include(pipeline, "soft_fail: true");
     assert.include(pipeline, "fork-release.yml");

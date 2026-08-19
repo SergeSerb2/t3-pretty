@@ -67,7 +67,7 @@ steps:
     # The four-hour schedule is this job. Do not import
     # fork-upstream-sync.yml: macos-release GHA steps need GITHUB_OUTPUT
     # for discover, and the importer often leaves that file unset.
-    if: build.source == "schedule" || (build.branch == "main" && (build.source == "ui" || build.source == "api"))
+    if: 'build.branch == "main" && (build.source == "schedule" || build.source == "ui" || build.source == "api")'
     timeout_in_minutes: 120
     concurrency: 1
     concurrency_group: "t3-pretty/upstream-sync"
@@ -80,7 +80,12 @@ steps:
 
   - label: ":mag: Origin PR Review"
     key: origin-pr-review
-    if: build.branch != "main" && build.source != "schedule" && !(build.branch =~ /^automation\//)
+    # A branch push that is not yet a pull request still starts this job.
+    # Origin then opens the PR, starts a second build, and cancel-intermediate
+    # marks the first one canceled — the check the PR inherits.
+    if: >-
+      build.branch != "main" && build.source != "schedule" &&
+      build.pull_request['id'] != null && !(build.branch =~ /^automation\//)
     timeout_in_minutes: 20
     agents:
       queue: macos-release
@@ -90,7 +95,9 @@ steps:
     key: origin-pr-comments
     depends_on: origin-pr-review
     allow_dependency_failure: true
-    if: build.branch != "main" && build.source != "schedule" && !(build.branch =~ /^automation\//)
+    if: >-
+      build.branch != "main" && build.source != "schedule" &&
+      build.pull_request['id'] != null && !(build.branch =~ /^automation\//)
     timeout_in_minutes: 10
     agents:
       queue: macos-release
