@@ -112,8 +112,7 @@ const builds = readBuildList(args);
 // workflow therefore also persists the last successfully submitted fingerprint
 // (`.t3-fork/ios-production-fingerprint`). Automatic `release` skips Xcode
 // when that hash still matches (OTA already shipped the JS). `--force` is
-// reserved for explicit `build` / force_ios dispatches and for the first
-// native macos-release submit (see `.t3-fork/ios-native-submit`).
+// reserved for explicit `build` / force_ios dispatches.
 const submittedFingerprint = (args.get("submitted-fingerprint") ?? "").trim();
 const activeBuilds = builds.filter(isActiveProductionBuild);
 const easRuntimeVersions = activeBuilds

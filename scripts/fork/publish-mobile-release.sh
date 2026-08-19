@@ -5,11 +5,12 @@
 # never sees the update.
 #
 # Installed TestFlight binaries already poll the fork Expo Updates URL baked
-# into the IPA. This script publishes that JS channel with eas-cli on this Mac
-# and, when the native fingerprint changes or this runner has never landed a
-# TestFlight IPA, compiles a local IPA and submits it. It does not use Expo
-# cloud iOS builds. A GitHub Actions-era fingerprint file is not proof that
-# this native job submitted; .t3-fork/ios-native-submit is.
+# into the IPA. Default release is that JS channel (`eas update`). A new IPA
+# is only compiled when the native fingerprint changed, or a maintainer set
+# T3CODE_FORCE_IOS / T3CODE_MOBILE_MODE=build. eas submit / Fastlane pilot
+# uploads that IPA as a TestFlight build through App Store Connect; it does
+# not submit the app for App Store review. App Store Connect rejects beta
+# SDKs, so Xcode-beta.app is not used for IPA upload.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -341,14 +342,11 @@ if [[ ! -f "$gate_file" ]]; then
   if [[ -f .t3-fork/ios-production-fingerprint ]]; then
     submitted_fingerprint="$(tr -d '[:space:]' < .t3-fork/ios-production-fingerprint)"
   fi
-  # A hash recorded by the old GitHub Actions importer does not mean this
-  # macos-release job has ever uploaded an IPA. Build 183 published OTA and
-  # skipped TestFlight for that reason. Force one native submit until the
-  # marker lands on this runner, this checkout, or origin/main.
-  if ! native_submit_recorded; then
-    echo "No native macos-release TestFlight submit recorded; compiling an IPA."
-    FORCE_IOS=true
-  fi
+  # Trust the recorded fingerprint, including one left by the old GitHub
+  # Actions importer. Installed TestFlight binaries pick up JS via OTA.
+  # Do not force an IPA upload just because this native job has never
+  # written .t3-fork/ios-native-submit: that path is App Store Connect
+  # (Fastlane pilot) and fails on Xcode beta.
   force_flag=false
   if [[ "$MODE" == "build" || "$FORCE_IOS" == "true" ]]; then
     force_flag=true
@@ -372,6 +370,47 @@ echo "iOS native binary fingerprint=${fingerprint:-unknown} should_build=${shoul
 
 if [[ "$should_build" != "true" ]]; then
   annotate info "Native fingerprint is unchanged; TestFlight.app will not get a new build. Installed binaries pick up JS via OTA."
+  exit 0
+fi
+
+is_full_xcode() {
+  [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]]
+}
+
+# App Store Connect (including TestFlight) rejects beta SDKs. m1-dev often
+# has only Xcode-beta.app. OTA already published JS to existing binaries.
+xcode_is_store_supported() {
+  local dir="$1" version
+  is_full_xcode "$dir" || return 1
+  case "$dir" in
+    *Xcode-beta.app*) return 1 ;;
+  esac
+  version="$(DEVELOPER_DIR="$dir" "$dir/usr/bin/xcodebuild" -version 2>/dev/null || true)"
+  case "$version" in
+    *[Bb]eta*) return 1 ;;
+  esac
+  [[ -n "$version" ]]
+}
+
+developer_dir=""
+if xcode_is_store_supported "${DEVELOPER_DIR:-}"; then
+  developer_dir="$DEVELOPER_DIR"
+else
+  for app in /Applications/Xcode.app /Applications/Xcode*.app; do
+    if xcode_is_store_supported "$app/Contents/Developer"; then
+      developer_dir="$app/Contents/Developer"
+      break
+    fi
+  done
+fi
+if ! xcode_is_store_supported "$developer_dir"; then
+  if [[ "$MODE" == "build" || "$FORCE_IOS" == "true" ]]; then
+    echo "Cannot upload a TestFlight IPA from ${developer_dir:-no Xcode}. App Store Connect rejects beta SDKs even for TestFlight. Install the current Xcode RC/release as /Applications/Xcode.app." >&2
+    ls -ld /Applications/Xcode*.app 2>/dev/null || echo "No Xcode*.app under /Applications." >&2
+    xcode-select -p 2>/dev/null || true
+    exit 1
+  fi
+  annotate warning "OTA published for existing TestFlight binaries. Skipping a new IPA: this Mac has no store-supported Xcode (need Xcode.app RC/release, not Xcode-beta.app)."
   exit 0
 fi
 
@@ -410,27 +449,7 @@ eas.submit.production.ios = {
 fs.writeFileSync(easJsonPath, `${JSON.stringify(eas, null, 2)}\n`);
 NODE
 
-is_full_xcode() {
-  [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]]
-}
-developer_dir=""
-if is_full_xcode "${DEVELOPER_DIR:-}"; then
-  developer_dir="$DEVELOPER_DIR"
-else
-  for app in /Applications/Xcode.app /Applications/Xcode-beta.app /Applications/Xcode*.app; do
-    if is_full_xcode "$app/Contents/Developer"; then
-      developer_dir="$app/Contents/Developer"
-      break
-    fi
-  done
-fi
-if [[ -z "$developer_dir" ]]; then
-  echo "A full Xcode.app (stable or beta) is required on this runner for local iOS production builds." >&2
-  ls -ld /Applications/Xcode*.app 2>/dev/null || echo "No Xcode*.app under /Applications." >&2
-  xcode-select -p 2>/dev/null || true
-  exit 1
-fi
-echo "Using Xcode at $developer_dir"
+echo "Using store-supported Xcode at $developer_dir"
 export DEVELOPER_DIR="$developer_dir"
 selected="$(xcode-select -p 2>/dev/null || true)"
 if [[ "$selected" != "$developer_dir" ]]; then
@@ -479,6 +498,7 @@ fi
 test -n "$ipa_path"
 test -f "$ipa_path"
 
+# Fastlane pilot uploads a TestFlight build. This is not App Store review.
 (
   cd apps/mobile
   eas submit \

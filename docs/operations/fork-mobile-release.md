@@ -25,19 +25,21 @@ The script skips when the commit does not touch mobile-relevant paths. That
 check diffs `HEAD` against `HEAD~1`, so the reused macos-release checkout
 fetches 50 commits of the release SHA and `origin/main`. A later depth-1
 fetch would drop the parent and fail the job instead of skipping. A
-release publishes an OTA update on the production channel, then compiles a
-production iOS IPA on that same Mac when the native fingerprint changed, or
-when `.t3-fork/ios-native-submit` is missing. That marker is written only
-after this native job actually uploads an IPA. A fingerprint left behind by
-the old GitHub Actions importer is not enough — Buildkite #183 published
-OTA and skipped TestFlight for that reason, so testers watching
-TestFlight.app saw no new build. The runner also writes
-`~/.cache/t3-pretty-release/ios-native-submit` immediately after submit, and
-later jobs treat `origin/main`'s copy of the git marker as enough. Queued
-jobs on older SHAs therefore do not each compile another IPA while the
-marker pull request is still landing. Set `T3CODE_FORCE_IOS=1` (or
-`T3CODE_MOBILE_MODE=build`) on a Buildkite rebuild to compile and submit
-even when the fingerprint matches.
+release publishes an OTA update on the production channel. That is the
+TestFlight deploy: installed binaries already poll the fork Expo Updates
+URL. A new IPA is compiled and uploaded with Fastlane pilot (TestFlight on
+App Store Connect, not App Store review) only when the native fingerprint
+changed. A GitHub Actions-era `.t3-fork/ios-production-fingerprint` is
+enough to skip Xcode. The job does not force an IPA just because
+`.t3-fork/ios-native-submit` is missing. App Store Connect rejects beta
+SDKs, so a Mac that only has `Xcode-beta.app` publishes OTA and skips the
+IPA. Set `T3CODE_FORCE_IOS=1` (or `T3CODE_MOBILE_MODE=build`) on a
+Buildkite rebuild to compile and submit even when the fingerprint matches;
+that path still requires a store-supported `Xcode.app`. The runner writes
+`~/.cache/t3-pretty-release/ios-native-submit` after a successful IPA
+upload, and later jobs treat `origin/main`'s copy of the git marker as
+enough so queued jobs do not each compile another IPA while the marker
+pull request is still landing.
 
 OTA still reaches already-installed TestFlight binaries whose native
 fingerprint matches. JS-only changes therefore show up as an in-app update
@@ -99,12 +101,12 @@ of reporting a green release that shipped nothing. To activate:
    normal mobile releases are fully non-interactive. Do not use a cloud
    `eas build` for this bootstrap unless you intend to spend an Expo iOS
    build credit.
-5. On the Mac runner: Xcode (stable `Xcode.app` or `Xcode-beta.app`),
-   CocoaPods, and Fastlane. The script selects the first of those that
-   contains `xcodebuild`, then installs CocoaPods or Fastlane via Homebrew
-   only when they are missing. Command Line Tools cannot compile an IPA;
-   if `xcode-select -p` still points at them, run once:
-   `sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer`.
+5. On the Mac runner: a store-supported `Xcode.app` (current RC or release,
+   not `Xcode-beta.app`) if you want new TestFlight IPAs, plus CocoaPods and
+   Fastlane. OTA still publishes when only Xcode beta is installed. Command
+   Line Tools cannot compile an IPA; if `xcode-select -p` still points at
+   them, run once:
+   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
    The script retries that switch with passwordless sudo during the job.
    Local EAS on macOS 26 / Xcode 27 also needs the `security` PATH shim in
    `scripts/fork/security-eas-local-keychain` so Prepare credentials does not
