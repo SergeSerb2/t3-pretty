@@ -501,6 +501,7 @@ ${">".repeat(7)} theirs
     assert.include(mobileRelease, 'git push --force origin "HEAD:refs/heads/$branch"');
     assert.include(mobileRelease, "origin-forge.mjs ensure-pr");
     assert.include(mobileRelease, "origin-forge.mjs merge-pr");
+    assert.include(mobileRelease, ".t3-fork/ios-native-submit");
     assert.notInclude(mobileRelease, 'git push origin "HEAD:${GITHUB_REF_NAME}"');
   });
 
