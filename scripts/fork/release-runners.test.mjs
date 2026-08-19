@@ -107,6 +107,7 @@ describe("T3 Pretty release runner placement", () => {
     );
     assert.include(ota, "steps.expo-token.outputs.present == 'true'");
     assert.notInclude(ota, "continue-on-error: true");
+    assert.notInclude(mobileWorkflow, "steps.expo-token.outcome == 'success'");
     const dmg = NodeFS.readFileSync(NodePath.resolve(here, "build-macos-dmg.sh"), "utf8");
     assert.notInclude(dmg, "python3 -c");
     assert.notInclude(dmg, "process.stdin.on");
