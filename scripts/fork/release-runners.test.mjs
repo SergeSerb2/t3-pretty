@@ -143,7 +143,12 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "origin-forge.mjs merge-pr");
     assert.include(mobileRelease, "did not write should_build");
     assert.include(mobileRelease, "load_secret APPLE_TEAM_ID");
+    assert.include(mobileRelease, 'git fetch --depth=50 origin "${commit}" main');
     assert.include(mobileRelease, "git fetch --deepen=50");
+    assert.include(mobileRelease, "Never fetch");
+    assert.include(mobileRelease, "--depth=1 afterward");
+    assert.notInclude(mobileRelease, "git fetch --depth=1 origin main");
+    assert.include(mobileRelease, "No parent commit after history fetch");
     assert.include(mobileRelease, "refusing to publish OTA without a path diff");
     assert.include(mobileRelease, "git checkout -- apps/mobile/eas.json");
     assert.include(mobileRelease, "restore_eas_json");

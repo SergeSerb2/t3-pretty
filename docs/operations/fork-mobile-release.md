@@ -21,7 +21,10 @@ on `macos-release` (m1-dev), the same native queue as the signed DMG. It is
 not imported GitHub Actions: the importer cannot load `EXPO_TOKEN` or Apple
 keys, so those jobs died in about two seconds and TestFlight never moved.
 
-The script skips when the commit does not touch mobile-relevant paths. A
+The script skips when the commit does not touch mobile-relevant paths. That
+check diffs `HEAD` against `HEAD~1`, so the reused macos-release checkout
+fetches 50 commits of the release SHA and `origin/main`. A later depth-1
+fetch would drop the parent and fail the job instead of skipping. A
 release publishes an OTA update on the production channel, then compiles a
 production iOS IPA on that same Mac when the native fingerprint changed, or
 when `.t3-fork/ios-native-submit` is missing. That marker is written only
