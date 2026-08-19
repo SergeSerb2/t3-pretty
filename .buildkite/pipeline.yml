@@ -39,6 +39,9 @@ steps:
     # Native DMG/NSIS/iOS/relay are the release. Do not red the whole build
     # when only the importer fails.
     soft_fail: true
+    # Bound the importer so a hung GHA child cannot leave this step running
+    # for hours on linux-small. Native Mac/Windows steps do not depend on it.
+    timeout_in_minutes: 30
     agents:
       queue: linux-small
     plugins:

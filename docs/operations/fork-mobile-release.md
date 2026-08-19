@@ -27,7 +27,11 @@ when `.t3-fork/ios-native-submit` is missing. That marker is written only
 after this native job actually uploads an IPA. A fingerprint left behind by
 the old GitHub Actions importer is not enough — Buildkite #183 published
 OTA and skipped TestFlight for that reason, so testers watching
-TestFlight.app saw no new build. Set `T3CODE_FORCE_IOS=1` (or
+TestFlight.app saw no new build. The runner also writes
+`~/.cache/t3-pretty-release/ios-native-submit` immediately after submit, and
+later jobs treat `origin/main`'s copy of the git marker as enough. Queued
+jobs on older SHAs therefore do not each compile another IPA while the
+marker pull request is still landing. Set `T3CODE_FORCE_IOS=1` (or
 `T3CODE_MOBILE_MODE=build`) on a Buildkite rebuild to compile and submit
 even when the fingerprint matches.
 
@@ -64,6 +68,9 @@ that integration changed mobile-relevant paths, the sync job runs
 `publish-mobile-release.sh` on macos-release so a missed merge push still
 publishes OTA. The script takes `/tmp/t3-pretty-ios-mobile.lock`, so a
 follow-up native `ios-mobile` job cannot overlap eas update or a local IPA.
+A leftover lock from a killed job is removed when no publisher process is
+still running; waiting on a live lock fails after 15 minutes instead of
+sitting until the 90-minute step timeout.
 Server/web-only parent changes do not publish OTA or compile an IPA.
 
 The job fails early when required release credentials are missing instead

@@ -1,9 +1,10 @@
 #!/bin/bash
 # Register a trusted macOS Buildkite agent for T3 Pretty Origin releases.
 #
-# Queues: macos-release (signed DMG + local iOS). Never add pull-request
-# queues. Requires a cluster agent token from the Origin-connected Buildkite
-# org (Agents → Agent tokens).
+# Queues: macos-release (signed DMG + local iOS). Registers two workers so
+# Origin PR review and the DMG can run while a local IPA occupies the first.
+# Never add pull-request queues. Requires a cluster agent token from the
+# Origin-connected Buildkite org (Agents → Agent tokens).
 #
 # Usage:
 #   printf '%s\n' '{"token":"<agent token>"}' > "$HOME/t3-buildkite-token.json"
@@ -108,6 +109,8 @@ PLIST
 here="$(cd "$(dirname "$0")" && pwd)"
 hooks="$(brew --prefix)/etc/buildkite-agent"
 install -m 0755 "$here/macos-origin-git.sh" "$hooks/hooks/pre-checkout"
+install -m 0755 "$here/persist-ios-native-submit-hook.sh" "$hooks/hooks/post-checkout"
+install -m 0755 "$here/persist-ios-native-submit-hook.sh" "$hooks/hooks/pre-exit"
 install -m 0755 "$here/checkout-origin.sh" "$hooks/checkout-origin.sh"
 if [[ -f "$HOME/.git-credentials" ]]; then
   bash "$here/macos-origin-git.sh"
@@ -118,3 +121,38 @@ fi
 launchctl bootout "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$(id -u)" "$plist"
 echo "Registered Buildkite agent $AGENT_NAME on queues $QUEUES"
+
+# A second worker on the same queue lets Origin PR review and the signed DMG
+# run while a local IPA occupies the first agent. Same token, different name.
+COMPANION_NAME="${COMPANION_NAME:-${AGENT_NAME}-2}"
+if [[ "$COMPANION_NAME" != "$AGENT_NAME" ]]; then
+  companion_plist="$plist_dir/com.buildkite.t3-pretty.${COMPANION_NAME}.plist"
+  cat > "$companion_plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.buildkite.t3-pretty.${COMPANION_NAME}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$(command -v buildkite-agent)</string>
+    <string>start</string>
+    <string>--name</string>
+    <string>${COMPANION_NAME}</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>$HOME</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>SessionCreate</key>
+  <true/>
+</dict>
+</plist>
+PLIST
+  launchctl bootout "gui/$(id -u)" "$companion_plist" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$(id -u)" "$companion_plist"
+  echo "Registered companion Buildkite agent $COMPANION_NAME on queues $QUEUES"
+fi

@@ -47,6 +47,12 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(preflight, "Use the importer checkout");
     assert.include(preflight, "Importer left no git checkout");
     assert.include(preflight, "BUILDKITE_BUILD_CHECKOUT_PATH");
+    assert.include(preflight, "GIT_TERMINAL_PROMPT=0");
+    assert.include(preflight, "Hosted linux-small cannot clone Origin over HTTPS");
+    assert.include(desktopWorkflow, 'GIT_TERMINAL_PROMPT: "0"');
+    assert.include(desktopWorkflow, 'GIT_ASKPASS: "/bin/true"');
+    assert.notInclude(desktopWorkflow, "git fetch --depth 1 origin");
+    assert.notInclude(desktopWorkflow, "unshallow origin");
     assert.include(preflight, "No git checkout; skipping imported preflight.");
     assert.include(preflight, "relevant=false");
     assert.include(preflight, "id: checkout");
@@ -81,6 +87,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(wsl, "PREFLIGHT_REF");
     assert.include(wsl, "Importer left no git checkout");
     assert.include(wsl, "BUILDKITE_BUILD_CHECKOUT_PATH");
+    assert.include(wsl, "GIT_TERMINAL_PROMPT=0");
+    assert.include(wsl, "Hosted linux-small cannot clone Origin over HTTPS");
     assert.include(wsl, "ensure-linux-node.sh");
     assert.include(wsl, "needs.preflight.result == 'success'");
     assert.include(wsl, "needs.preflight.outputs.should_release == 'true'");
@@ -113,6 +121,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(pipeline, "iOS OTA + TestFlight");
     assert.include(pipeline, 'concurrency_group: "t3-pretty/ios-mobile"');
     assert.include(pipeline, "priority: 20");
+    assert.include(pipeline, "timeout_in_minutes: 30");
     assert.isBelow(
       mobileRelease.indexOf("checkout-origin.sh"),
       mobileRelease.indexOf("does not change mobile-relevant paths"),
@@ -147,6 +156,12 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "load_secret CURSOR_API_KEY 0");
     assert.include(mobileRelease, 'lockdir="/tmp/t3-pretty-ios-mobile.lock"');
     assert.include(mobileRelease, 'mkdir "$lockdir"');
+    assert.include(mobileRelease, "Removing stale ios-mobile lock");
+    assert.include(mobileRelease, "Timed out waiting for another ios-mobile publish");
+    assert.include(mobileRelease, ".cache/t3-pretty-release/ios-native-submit");
+    assert.include(mobileRelease, "origin/main already records a macos-release TestFlight submit");
+    assert.include(mobileRelease, "Runner already submitted a TestFlight IPA");
+    assert.notInclude(mobileRelease, "git fetch --unshallow");
     assert.include(mobileRelease, "generating after TestFlight submit");
     assert.include(mobileRelease, "--builds-file");
     assert.include(mobileRelease, "Skipping the fingerprint record PR");
@@ -163,6 +178,19 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(mobileRelease, "secrets.APPLE_API_KEY");
     assert.notInclude(mobileRelease, "GITHUB_WORKSPACE:-${HOME}");
     assert.include(mobileRelease, "$(npm prefix -g)/bin");
+    const macosAgent = NodeFS.readFileSync(
+      NodePath.resolve(here, "setup-buildkite-macos-agent.sh"),
+      "utf8",
+    );
+    assert.include(macosAgent, "COMPANION_NAME");
+    assert.include(macosAgent, "${AGENT_NAME}-2");
+    assert.include(macosAgent, "persist-ios-native-submit-hook.sh");
+    const persistHook = NodeFS.readFileSync(
+      NodePath.resolve(here, "persist-ios-native-submit-hook.sh"),
+      "utf8",
+    );
+    assert.include(persistHook, 'BUILDKITE_STEP_KEY:-}" == "ios-mobile"');
+    assert.include(persistHook, ".cache/t3-pretty-release/ios-native-submit");
     const dmg = NodeFS.readFileSync(NodePath.resolve(here, "build-macos-dmg.sh"), "utf8");
     assert.notInclude(dmg, "python3 -c");
     assert.notInclude(dmg, "process.stdin.on");
