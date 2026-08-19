@@ -45,6 +45,12 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(wsl, "npx --yes node-gyp rebuild");
     assert.include(wsl, "sudo apt-get install -y python3 make g++ file");
     assert.include(preflight, "Use the importer checkout");
+    assert.include(preflight, "Importer left no git checkout");
+    assert.include(preflight, "BUILDKITE_BUILD_CHECKOUT_PATH");
+    assert.include(preflight, "No git checkout; skipping imported preflight.");
+    assert.include(preflight, "relevant=false");
+    assert.include(preflight, "windows_release: ${{ steps.signing.outputs.windows || 'false' }}");
+    assert.include(preflight, "version: ${{ steps.release.outputs.version || '-' }}");
     assert.include(preflight, "continue-on-error: true");
     assert.include(preflight, "ensure-linux-node.sh");
     const nodeHelper = NodeFS.readFileSync(NodePath.resolve(here, "ensure-linux-node.sh"), "utf8");
@@ -54,6 +60,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(persistHelper, "Source this file");
     assert.notInclude(nodeHelper, 'tar -xzf "${tmp}/${name}" -C /usr/local');
     assert.include(wsl, "PREFLIGHT_REF");
+    assert.include(wsl, "Importer left no git checkout");
+    assert.include(wsl, "BUILDKITE_BUILD_CHECKOUT_PATH");
     assert.include(wsl, "ensure-linux-node.sh");
     assert.include(wsl, "needs.preflight.result == 'success'");
     assert.equal((desktopWorkflow.match(/needs: preflight/g) || []).length, 1);

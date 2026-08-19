@@ -55,21 +55,44 @@ jobs:
     timeout-minutes: 15
     outputs:
       should_release: ${{ steps.tags.outputs.can_mint == 'true' && steps.paths.outputs.relevant == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true' }}
-      windows_release: ${{ steps.signing.outputs.windows }}
-      windows_signed: ${{ steps.signing.outputs.windows_signed }}
-      version: ${{ steps.release.outputs.version }}
-      tag: ${{ steps.release.outputs.tag }}
-      name: ${{ steps.release.outputs.name }}
-      upstream_tag: ${{ steps.release.outputs.upstream_tag }}
-      ref: ${{ steps.changelog.outputs.ref || github.sha }}
+      windows_release: ${{ steps.signing.outputs.windows || 'false' }}
+      windows_signed: ${{ steps.signing.outputs.windows_signed || 'false' }}
+      version: ${{ steps.release.outputs.version || '-' }}
+      tag: ${{ steps.release.outputs.tag || '-' }}
+      name: ${{ steps.release.outputs.name || '-' }}
+      upstream_tag: ${{ steps.release.outputs.upstream_tag || '-' }}
+      ref: ${{ steps.changelog.outputs.ref || github.sha || '-' }}
     steps:
       - name: Use the importer checkout
         shell: bash
         run: |
           set -euo pipefail
-          # The importer already clones the trusted SHA. Deepen it so tag
-          # ancestry checks see full history, without calling checkout@v6.
-          git rev-parse --verify HEAD
+          # Hosted linux-small GHA workspaces often have no .git. Do not
+          # call checkout@v6 (importer rate-limit). Prefer the parent
+          # Buildkite checkout; Origin HTTPS has no hosted credentials.
+          if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+            sha="${GITHUB_SHA:-${BUILDKITE_COMMIT:-}}"
+            url="${BUILDKITE_REPO:-https://origin.cursor.com/serbinenko/t3-pretty.git}"
+            echo "Importer left no git checkout; cloning ${sha:-HEAD}"
+            git init
+            if git remote get-url origin >/dev/null 2>&1; then
+              git remote set-url origin "$url"
+            else
+              git remote add origin "$url"
+            fi
+            if [[ -n "${BUILDKITE_BUILD_CHECKOUT_PATH:-}" && -d "${BUILDKITE_BUILD_CHECKOUT_PATH}/.git" ]]; then
+              git fetch "${BUILDKITE_BUILD_CHECKOUT_PATH}" "${sha:-HEAD}" &&
+                git -c advice.detachedHead=false checkout --force FETCH_HEAD || true
+            fi
+            if ! git rev-parse --verify HEAD >/dev/null 2>&1 && [[ -n "$sha" ]]; then
+              git fetch --depth 1 origin "$sha" &&
+                git -c advice.detachedHead=false checkout --force FETCH_HEAD || true
+            fi
+            if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+              echo "Could not clone the triggering SHA; later steps skip mint."
+              exit 0
+            fi
+          fi
           git fetch --force --prune --unshallow origin || git fetch --force --prune origin || true
           if [[ -n "${GITHUB_SHA:-}" ]] && git cat-file -e "${GITHUB_SHA}^{commit}" 2>/dev/null; then
             git checkout --force "$GITHUB_SHA"
@@ -85,6 +108,11 @@ jobs:
               printf '%s\n' "$1" >> "$GITHUB_OUTPUT" || true
             fi
           }
+          if ! git rev-parse --verify --quiet HEAD >/dev/null; then
+            echo "No git checkout; skipping imported preflight."
+            gha_out "relevant=false"
+            exit 0
+          fi
           if [[ "${GITHUB_EVENT_NAME}" != "push" ]] || ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
             gha_out "relevant=true"
             exit 0
@@ -322,14 +350,40 @@ jobs:
           PREFLIGHT_REF: ${{ needs.preflight.outputs.ref }}
         run: |
           set -euo pipefail
+          if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+            sha="${PREFLIGHT_REF:-${GITHUB_SHA:-${BUILDKITE_COMMIT:-}}}"
+            url="${BUILDKITE_REPO:-https://origin.cursor.com/serbinenko/t3-pretty.git}"
+            echo "Importer left no git checkout; cloning ${sha:-HEAD}"
+            git init
+            if git remote get-url origin >/dev/null 2>&1; then
+              git remote set-url origin "$url"
+            else
+              git remote add origin "$url"
+            fi
+            if [[ -n "${BUILDKITE_BUILD_CHECKOUT_PATH:-}" && -d "${BUILDKITE_BUILD_CHECKOUT_PATH}/.git" ]]; then
+              git fetch "${BUILDKITE_BUILD_CHECKOUT_PATH}" "${sha:-HEAD}" &&
+                git -c advice.detachedHead=false checkout --force FETCH_HEAD || true
+            fi
+            if ! git rev-parse --verify HEAD >/dev/null 2>&1 && [[ -n "$sha" && "$sha" != "-" ]]; then
+              git fetch --depth 1 origin "$sha" &&
+                git -c advice.detachedHead=false checkout --force FETCH_HEAD || true
+            fi
+            if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+              echo "Could not clone the triggering SHA for WSL prebuild." >&2
+              exit 1
+            fi
+          fi
           git fetch --force --prune --unshallow origin || git fetch --force --prune origin || true
           ref="${PREFLIGHT_REF:-${GITHUB_SHA:-}}"
-          test -n "$ref"
-          if ! git cat-file -e "${ref}^{commit}" 2>/dev/null; then
-            git fetch --force origin "$ref"
+          if [[ -z "$ref" || "$ref" == "-" ]]; then
+            exit 0
           fi
-          git cat-file -e "${ref}^{commit}"
-          git checkout --force "$ref"
+          if ! git cat-file -e "${ref}^{commit}" 2>/dev/null; then
+            git fetch --force origin "$ref" || true
+          fi
+          if git cat-file -e "${ref}^{commit}" 2>/dev/null; then
+            git checkout --force "$ref"
+          fi
 
       - name: Ensure Node
         shell: bash

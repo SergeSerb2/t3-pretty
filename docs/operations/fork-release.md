@@ -31,8 +31,10 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    `t3-pretty-ci.env` (under `RUNNER_TEMP`, including a `_temp` directory inside
    the checkout). Later steps source `macos-ci-prelude.sh` because the importer
    can set `GITHUB_PATH` without applying it between steps. Hosted desktop
-   preflight skips imported version mint when Origin tags cannot be fetched and
-   the clone has none; native Mac/Windows packagers still mint.
+   preflight often starts with no `.git`; it clones the triggering SHA from
+   the parent Buildkite checkout when that path exists, and skips minting
+   when the clone cannot be created or Origin tags cannot be fetched.
+   Native Mac/Windows packagers still mint.
    Maintainers can use
    the manual dispatch only when an operational fix needs an immediate retry. It merges that tag
    into an `automation/upstream-*` branch and opens an Origin pull request.
