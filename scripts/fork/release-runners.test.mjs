@@ -112,6 +112,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(ota, "continue-on-error: true");
     assert.include(ota, "t3_require_ota");
     assert.include(ota, "t3-ota-present");
+    assert.include(ota, '[[ -n "${BUILDKITE:-}" ]]');
     const dmg = NodeFS.readFileSync(NodePath.resolve(here, "build-macos-dmg.sh"), "utf8");
     assert.notInclude(dmg, "python3 -c");
     assert.notInclude(dmg, "process.stdin.on");

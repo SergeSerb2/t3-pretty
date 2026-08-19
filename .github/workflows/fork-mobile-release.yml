@@ -155,10 +155,14 @@ jobs:
             printf 'true\n' > "$ota_gate"
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
-            echo "EXPO_TOKEN is not available on this agent; skipping OTA." >&2
-            printf 'false\n' > "$ota_gate"
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            if [[ -n "${BUILDKITE:-}" ]]; then
+              echo "EXPO_TOKEN is not available on this Buildkite agent; skipping OTA." >&2
+              printf 'false\n' > "$ota_gate"
+              echo "present=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "EXPO_TOKEN is required for OTA publishing and managed iOS credentials." >&2
+            exit 1
           fi
 
       - id: paths
