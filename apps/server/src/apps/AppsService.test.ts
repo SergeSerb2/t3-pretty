@@ -5,6 +5,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
@@ -13,6 +14,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as AppsService from "./AppsService.ts";
 
 const textDecoder = new TextDecoder();
+const parseJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 /** Everything the fake upstream saw, for assertions. */
 interface Recorded {
@@ -55,7 +57,7 @@ function makeFakeUpstream() {
             'Bearer resource_metadata="https://mcp.acme.test/.well-known/oauth-protected-resource/mcp"',
         });
       }
-      const parsed = JSON.parse(body) as { id?: number; method: string };
+      const parsed = parseJson(body) as { id?: number; method: string };
       if (parsed.method === "initialize") {
         return respond(
           200,
@@ -184,7 +186,7 @@ it.effect("runs the OAuth flow end to end: discover, register, authorize, exchan
     expect(url.searchParams.get("scope")).toBe("read write");
     expect(url.searchParams.get("resource")).toBe("https://mcp.acme.test/mcp");
     const registration = recorded.find((entry) => entry.url.endsWith("/register"));
-    expect(JSON.parse(registration!.body).redirect_uris).toEqual([
+    expect((parseJson(registration!.body) as { redirect_uris: unknown }).redirect_uris).toEqual([
       "http://127.0.0.1:4321/api/apps/oauth/callback",
     ]);
 
