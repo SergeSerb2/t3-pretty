@@ -140,6 +140,25 @@ if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" && "$MODE" != "build" && "$FO
   fi
 fi
 
+lockdir="${TMPDIR:-/tmp}/t3-pretty-ios-mobile.lock"
+while ! mkdir "$lockdir" 2>/dev/null; do
+  echo "Waiting for another ios-mobile publish on this Mac..."
+  sleep 10
+done
+tmp=""
+eas_json="$root/apps/mobile/eas.json"
+eas_json_bak=""
+cleanup() {
+  if [[ -n "${eas_json_bak:-}" && -f "$eas_json_bak" ]]; then
+    cp "$eas_json_bak" "$eas_json"
+  fi
+  if [[ -n "${tmp:-}" ]]; then
+    rm -rf "$tmp"
+  fi
+  rmdir "$lockdir" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 if ! load_secret EXPO_TOKEN; then
   echo "EXPO_TOKEN is required to publish OTA that installed TestFlight binaries poll." >&2
   exit 1
@@ -174,18 +193,11 @@ load_dotenv "$root/.env.local"
 
 tmp="${TMPDIR:-/tmp}/t3-mobile-release-$$"
 mkdir -p "$tmp"
-eas_json="$root/apps/mobile/eas.json"
-eas_json_bak=""
 restore_eas_json() {
   if [[ -n "${eas_json_bak:-}" && -f "$eas_json_bak" ]]; then
     cp "$eas_json_bak" "$eas_json"
   fi
 }
-cleanup() {
-  restore_eas_json
-  rm -rf "$tmp"
-}
-trap cleanup EXIT
 
 if [[ "$MODE" == "update" || "$MODE" == "release" ]]; then
   update_platform="$PLATFORM"

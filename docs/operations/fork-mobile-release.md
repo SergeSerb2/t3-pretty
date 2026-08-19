@@ -51,10 +51,11 @@ IPA. An M5 Pro (18-core, 48 GB) should compile the current IPA in roughly
 Macs stop taking turns.
 
 The four-hour upstream workflow uses the same whole-repository merge and
-gpt-5.6-sol/xhigh conflict resolver as desktop. The merge is a push onto
-`main`, which starts native `ios-mobile`. The scheduled sync build itself
-does not publish OTA, so two eas jobs cannot overlap on macos-release.
-The script skips when that integration changed no mobile-relevant paths.
+gpt-5.6-sol/xhigh conflict resolver as desktop. After the Origin merge, if
+that integration changed mobile-relevant paths, the sync job runs
+`publish-mobile-release.sh` on macos-release so a missed merge push still
+publishes OTA. The script takes `/tmp/t3-pretty-ios-mobile.lock`, so a
+follow-up native `ios-mobile` job cannot overlap eas update or a local IPA.
 Server/web-only parent changes do not publish OTA or compile an IPA.
 
 The job fails early when required release credentials are missing instead
