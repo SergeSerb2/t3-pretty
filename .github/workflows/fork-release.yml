@@ -44,6 +44,7 @@ concurrency:
 jobs:
   preflight:
     name: Resolve T3 Pretty release
+    continue-on-error: true
     # contents: write so the changelog step can push the generated release
     # notes commit. The GITHUB_TOKEN push does not retrigger this workflow.
     permissions:
@@ -303,10 +304,12 @@ jobs:
         # the next run regenerates whatever is missing.
         run: node scripts/fork/generate-changelog.mjs
 
+  # Only GHA job that needs preflight. Native DMG/NSIS/relay mint versions
+  # themselves in .buildkite/pipeline.yml and do not read these outputs.
   build_wsl_node_pty:
     name: Build WSL node-pty (linux-x64)
     needs: preflight
-    if: needs.preflight.outputs.should_release == 'true' && needs.preflight.outputs.windows_release == 'true'
+    if: needs.preflight.result == 'success' && needs.preflight.outputs.should_release == 'true' && needs.preflight.outputs.windows_release == 'true'
     permissions:
       contents: read
     runs-on: ubuntu-latest

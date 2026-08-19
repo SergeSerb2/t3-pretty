@@ -148,6 +148,11 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(mobile, '"$helper" main --full');
     assert.include(desktop, "ensure-linux-node.sh");
     assert.include(desktop, "PREFLIGHT_REF");
+    assert.include(desktop, "needs.preflight.result == 'success'");
+    assert.match(
+      desktop,
+      /\n  preflight:\n    name: Resolve T3 Pretty release\n    continue-on-error: true\n/,
+    );
     assert.notInclude(desktop, "/usr/local --strip-components=1");
     assert.include(preflight, "Could not fetch Origin fork tags");
     assert.include(preflight, "origin_tags_ok");
@@ -205,6 +210,7 @@ describe("Origin release and blocked-sync helpers", () => {
       "utf8",
     );
     assert.include(pipeline, "fork-upstream-sync.yml");
+    assert.include(pipeline, "soft_fail: true");
     assert.include(pipeline, "fork-release.yml");
     assert.include(pipeline, "fork-mobile-release.yml");
     assert.notInclude(pipeline, "- .github/workflows/fork-pr-review.yml");

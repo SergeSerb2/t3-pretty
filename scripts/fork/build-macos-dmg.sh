@@ -54,14 +54,18 @@ if [[ -z "${GITHUB_RUN_NUMBER:-}" ]]; then
   export GITHUB_RUN_NUMBER="$BUILDKITE_BUILD_NUMBER"
 fi
 
+git fetch --unshallow || true
 if git remote get-url upstream >/dev/null 2>&1; then
   git remote set-url upstream https://github.com/pingdotgg/t3code.git
 else
   git remote add upstream https://github.com/pingdotgg/t3code.git
 fi
+git fetch --force --tags origin || echo "warning: could not fetch Origin tags"
 git fetch --force --tags upstream
 
-version="$(node scripts/fork/resolve-fork-release.mjs | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+# Node, not python3: macos-release PATH may not include Apple's CLT python.
+version="$(node scripts/fork/resolve-fork-release.mjs --print version)"
+test -n "$version"
 echo "Building macOS arm64 $version"
 
 if ! command -v rustup >/dev/null; then

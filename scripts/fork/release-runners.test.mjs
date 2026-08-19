@@ -51,6 +51,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(nodeHelper, 'tar -xzf "${tmp}/${name}" -C /usr/local');
     assert.include(wsl, "PREFLIGHT_REF");
     assert.include(wsl, "ensure-linux-node.sh");
+    assert.include(wsl, "needs.preflight.result == 'success'");
+    assert.equal((desktopWorkflow.match(/needs: preflight/g) || []).length, 1);
   });
 
   it("does not rebuild desktop for mobile-only or docs-only commits", () => {
@@ -103,7 +105,19 @@ describe("T3 Pretty release runner placement", () => {
       otaPath.indexOf('mkdir -p "$dir" || dir="/tmp"'),
       otaPath.indexOf('ci_env="${dir}/t3-pretty-ci.env"'),
     );
-    assert.include(ota, "steps.expo-token.outcome == 'success'");
+    assert.include(
+      ota,
+      "steps.expo-token.outcome == 'success' && steps.expo-token.outputs.present != 'false'",
+    );
+    assert.notInclude(ota, "continue-on-error: true");
+    assert.include(ota, "t3_require_ota");
+    assert.include(ota, "t3-ota-present");
+    assert.include(ota, '[[ -n "${BUILDKITE:-}" ]]');
+    const dmg = NodeFS.readFileSync(NodePath.resolve(here, "build-macos-dmg.sh"), "utf8");
+    assert.notInclude(dmg, "python3 -c");
+    assert.notInclude(dmg, "process.stdin.on");
+    assert.include(dmg, "git fetch --force --tags origin");
+    assert.include(dmg, "resolve-fork-release.mjs --print version");
     assert.include(ota, '[[ -n "${GITHUB_OUTPUT:-}" ]]');
     assert.notInclude(ios, "secrets.APPLE_API_KEY");
     assert.include(ios, "APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID");

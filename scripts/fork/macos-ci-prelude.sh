@@ -69,3 +69,11 @@ t3_persist_dotenv_file() {
     t3_persist_env "$name" "$value"
   done < "$file"
 }
+
+t3_require_ota() {
+  local gate="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/t3-ota-present"
+  if [[ -f "$gate" ]] && [[ "$(cat "$gate")" == "false" ]]; then
+    echo "Skipping OTA step: Expo token was not loaded"
+    exit 0
+  fi
+}
