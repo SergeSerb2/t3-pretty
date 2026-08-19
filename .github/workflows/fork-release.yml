@@ -309,7 +309,9 @@ jobs:
 
       - id: release
         name: Create a monotonic fork version
-        continue-on-error: true
+        # Missing nightly ancestor already exits 0 when
+        # T3_SKIP_UNRESOLVABLE_MINT=1. continue-on-error would also hide
+        # later throws (invalid tag, git, monotonic version).
         if: steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
         env:
           T3_SKIP_UNRESOLVABLE_MINT: "1"
