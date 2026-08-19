@@ -34,6 +34,8 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    preflight often starts with no `.git`; it clones the triggering SHA from
    the parent Buildkite checkout when that path exists, and skips minting
    when the clone cannot be created or Origin tags cannot be fetched.
+   A failed clone writes `ready=false` and removes the empty `.git` so later
+   imported git and mint steps do not run against a HEAD-less repo.
    Native Mac/Windows packagers still mint. A skipped imported mint writes
    `minted=false` and exits 0. That mint step is not continue-on-error:
    invalid-tag, git, and monotonic failures still fail the job. `should_release`

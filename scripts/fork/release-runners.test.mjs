@@ -49,9 +49,14 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(preflight, "BUILDKITE_BUILD_CHECKOUT_PATH");
     assert.include(preflight, "No git checkout; skipping imported preflight.");
     assert.include(preflight, "relevant=false");
+    assert.include(preflight, "id: checkout");
+    assert.include(preflight, "ready=false");
+    assert.include(preflight, "ready=true");
+    assert.include(preflight, "rm -rf .git");
+    assert.include(preflight, "steps.checkout.outputs.ready == 'true'");
     assert.include(
       preflight,
-      "if: steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'",
+      "if: steps.checkout.outputs.ready == 'true' && steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'",
     );
     assert.include(preflight, "windows_release: ${{ steps.signing.outputs.windows || 'false' }}");
     assert.include(preflight, "version: ${{ steps.release.outputs.version || '-' }}");

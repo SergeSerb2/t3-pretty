@@ -157,6 +157,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(preflight, "No fork tags are present; refusing to mint a version.");
     assert.include(preflight, "can_mint=false");
     assert.include(preflight, "can_mint=true");
+    assert.include(preflight, "steps.checkout.outputs.ready == 'true'");
     assert.include(preflight, "steps.tags.outputs.can_mint == 'true'");
     assert.include(preflight, "steps.release.outcome == 'success'");
     assert.include(preflight, "steps.release.outputs.minted == 'true'");

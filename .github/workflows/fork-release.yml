@@ -58,7 +58,7 @@ jobs:
       # failures still fail that step. '-' is the empty-output placeholder.
       # Require a successful mint with a real version so a skip or failure
       # cannot look like a release.
-      should_release: ${{ steps.tags.outputs.can_mint == 'true' && steps.paths.outputs.relevant == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true' && steps.release.outcome == 'success' && steps.release.outputs.minted == 'true' && steps.release.outputs.version != '' && steps.release.outputs.version != '-' }}
+      should_release: ${{ steps.checkout.outputs.ready == 'true' && steps.tags.outputs.can_mint == 'true' && steps.paths.outputs.relevant == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true' && steps.release.outcome == 'success' && steps.release.outputs.minted == 'true' && steps.release.outputs.version != '' && steps.release.outputs.version != '-' }}
       windows_release: ${{ steps.signing.outputs.windows || 'false' }}
       windows_signed: ${{ steps.signing.outputs.windows_signed || 'false' }}
       version: ${{ steps.release.outputs.version || '-' }}
@@ -68,13 +68,28 @@ jobs:
       # ref is a commit-ish. Never default it to the empty placeholder '-'.
       ref: ${{ steps.changelog.outputs.ref || github.sha || env.BUILDKITE_COMMIT }}
     steps:
-      - name: Use the importer checkout
+      - id: checkout
+        name: Use the importer checkout
         shell: bash
         run: |
           set -euo pipefail
+          gha_out() {
+            if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+              printf '%s\n' "$1" >> "$GITHUB_OUTPUT" || true
+            fi
+          }
           # Hosted linux-small GHA workspaces often have no .git. Do not
           # call checkout@v6 (importer rate-limit). Prefer the parent
           # Buildkite checkout; Origin HTTPS has no hosted credentials.
+          # A failed clone must not leave `git init`'s empty repo behind:
+          # later fetch/tag/mint steps would then run against a HEAD-less
+          # tree and fail for a different reason than "no checkout".
+          skip_checkout() {
+            echo "$1"
+            rm -rf .git
+            gha_out "ready=false"
+            exit 0
+          }
           if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
             sha="${GITHUB_SHA:-${BUILDKITE_COMMIT:-}}"
             url="${BUILDKITE_REPO:-https://origin.cursor.com/serbinenko/t3-pretty.git}"
@@ -93,18 +108,21 @@ jobs:
               git fetch --depth 1 origin "$sha" &&
                 git -c advice.detachedHead=false checkout --force FETCH_HEAD || true
             fi
-            if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
-              echo "Could not clone the triggering SHA; later steps skip mint."
-              exit 0
+          fi
+          if git rev-parse --verify HEAD >/dev/null 2>&1; then
+            git fetch --force --prune --unshallow origin || git fetch --force --prune origin || true
+            if [[ -n "${GITHUB_SHA:-}" ]] && git cat-file -e "${GITHUB_SHA}^{commit}" 2>/dev/null; then
+              git checkout --force "$GITHUB_SHA"
             fi
           fi
-          git fetch --force --prune --unshallow origin || git fetch --force --prune origin || true
-          if [[ -n "${GITHUB_SHA:-}" ]] && git cat-file -e "${GITHUB_SHA}^{commit}" 2>/dev/null; then
-            git checkout --force "$GITHUB_SHA"
+          if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+            skip_checkout "Could not clone the triggering SHA; later steps skip mint."
           fi
+          gha_out "ready=true"
 
       - id: paths
         name: Skip desktop-irrelevant pushes
+        if: steps.checkout.outputs.ready == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -147,7 +165,7 @@ jobs:
 
       - id: tags
         name: Fetch upstream release tags
-        if: steps.paths.outputs.relevant == 'true'
+        if: steps.checkout.outputs.ready == 'true' && steps.paths.outputs.relevant == 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -185,7 +203,7 @@ jobs:
 
       - id: existing
         name: Skip an already released commit
-        if: steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true'
+        if: steps.checkout.outputs.ready == 'true' && steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true'
         shell: bash
         run: |
           existing_tag="$(
@@ -215,7 +233,7 @@ jobs:
           fi
 
       - name: Verify Origin release publisher credentials
-        if: steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true'
+        if: steps.checkout.outputs.ready == 'true' && steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true'
         run: |
           set -euo pipefail
           # Read Buildkite pipeline env directly. Mapping `${{ env.NAME }}`
@@ -233,7 +251,7 @@ jobs:
 
       - id: signing
         name: Check updater signing credentials
-        if: steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true'
+        if: steps.checkout.outputs.ready == 'true' && steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true'
         shell: bash
         env:
           CSC_LINK: ${{ env.CSC_LINK }}
@@ -308,7 +326,7 @@ jobs:
           echo 'windows=true' >> "$GITHUB_OUTPUT"
 
       - name: Ensure Node
-        if: steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
+        if: steps.checkout.outputs.ready == 'true' && steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
         shell: bash
         run: bash scripts/fork/ensure-linux-node.sh
 
@@ -317,7 +335,7 @@ jobs:
         # Missing nightly ancestor already exits 0 when
         # T3_SKIP_UNRESOLVABLE_MINT=1. continue-on-error would also hide
         # later throws (invalid tag, git, monotonic version).
-        if: steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
+        if: steps.checkout.outputs.ready == 'true' && steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true' && steps.existing.outputs.should_release == 'true' && steps.signing.outputs.configured == 'true'
         env:
           T3_SKIP_UNRESOLVABLE_MINT: "1"
         run: node scripts/fork/resolve-fork-release.mjs
@@ -327,6 +345,7 @@ jobs:
         # main only: a manual dispatch of another ref must not push its
         # history to main.
         if: >-
+          steps.checkout.outputs.ready == 'true' &&
           steps.paths.outputs.relevant == 'true' &&
           steps.tags.outputs.can_mint == 'true' &&
           steps.existing.outputs.should_release == 'true' &&
