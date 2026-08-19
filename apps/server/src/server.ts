@@ -52,6 +52,8 @@ import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/Provide
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
+import * as AppsHttp from "./apps/AppsHttp.ts";
+import * as AppsService from "./apps/AppsService.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as CanvasStore from "./canvas/Store.ts";
 import { ThreadCanvasRepositoryLive } from "./persistence/Layers/ThreadCanvas.ts";
@@ -184,6 +186,11 @@ const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
 const UsageLayerLive = UsageService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
 
 const HostSkillsLayerLive = HostSkills.layer.pipe(Layer.provide(ServerSettingsLayerLive));
+
+const AppsLayerLive = AppsService.layer.pipe(
+  Layer.provide(ServerSettingsLayerLive),
+  Layer.provide(ServerSecretStore.layer),
+);
 
 const SkillsLayerLive = Layer.mergeAll(
   SkillStore.layer,
@@ -451,7 +458,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // SkillsLayerLive rides the settings merge to stay inside pipe()'s
   // 20-argument ceiling (see the AgentInstructionFiles note below); layer
   // memoization dedupes the shared ServerSettingsLayerLive dependency.
-  Layer.provideMerge(Layer.mergeAll(ServerSettingsLayerLive, SkillsLayerLive)),
+  Layer.provideMerge(Layer.mergeAll(ServerSettingsLayerLive, SkillsLayerLive, AppsLayerLive)),
   Layer.provideMerge(CheckpointingLayerLive),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(GitLayerLive),
@@ -554,6 +561,9 @@ export const makeRoutesLayer = Layer.mergeAll(
     websocketRpcRouteLayer,
   ),
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
+  // `/mcp/apps/*` authenticates against the same registry through its
+  // module-global accessor, so it needs no layer of its own.
+  AppsHttp.layer,
 ).pipe(
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.

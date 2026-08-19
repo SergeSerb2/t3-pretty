@@ -96,6 +96,7 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import { loadServerConfig, resolveAvailableEditorsForConfig } from "./serverConfigSnapshot.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as AppsService from "./apps/AppsService.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -405,6 +406,7 @@ const makeWsRpcLayer = (
       const skillStore = yield* SkillStore.SkillStore;
       const skillMarketplace = yield* SkillMarketplace.SkillMarketplace;
       const hostSkills = yield* HostSkills.HostSkills;
+      const appsService = yield* AppsService.AppsService;
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
@@ -1453,6 +1455,34 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "server",
             },
           ),
+        [WS_METHODS.appsUpsert]: ({ connection }) =>
+          observeRpcEffect(WS_METHODS.appsUpsert, appsService.upsert(connection), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.appsRemove]: ({ connectionId }) =>
+          observeRpcEffect(WS_METHODS.appsRemove, appsService.remove(connectionId), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.appsAuthorize]: (input) =>
+          observeRpcEffect(WS_METHODS.appsAuthorize, appsService.authorize(input), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.appsSetToken]: (input) =>
+          observeRpcEffect(WS_METHODS.appsSetToken, appsService.setToken(input), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.appsSetOAuthClient]: (input) =>
+          observeRpcEffect(WS_METHODS.appsSetOAuthClient, appsService.setOAuthClient(input), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.appsDisconnect]: ({ connectionId }) =>
+          observeRpcEffect(WS_METHODS.appsDisconnect, appsService.disconnect(connectionId), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.appsTest]: ({ connectionId }) =>
+          observeRpcEffect(WS_METHODS.appsTest, appsService.test(connectionId), {
+            "rpc.aggregate": "server",
+          }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) =>
           observeRpcEffect(
             WS_METHODS.serverDiscoverSourceControl,

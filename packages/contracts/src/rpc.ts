@@ -13,6 +13,18 @@ import {
   AgentInstructionsWriteResult,
 } from "./agentInstructions.ts";
 import {
+  AppsAuthorizeInput,
+  AppsAuthorizeResult,
+  AppsDisconnectInput,
+  AppsError,
+  AppsRemoveInput,
+  AppsSetOAuthClientInput,
+  AppsSetTokenInput,
+  AppsTestInput,
+  AppsTestResult,
+  AppsUpsertInput,
+} from "./apps.ts";
+import {
   HostSkillId,
   HostSkillsState,
   SkillId,
@@ -327,6 +339,15 @@ export const WS_METHODS = {
   serverRemoveKeybinding: "server.removeKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
+
+  // Apps (external services over remote MCP)
+  appsUpsert: "apps.upsert",
+  appsRemove: "apps.remove",
+  appsAuthorize: "apps.authorize",
+  appsSetToken: "apps.setToken",
+  appsSetOAuthClient: "apps.setOAuthClient",
+  appsDisconnect: "apps.disconnect",
+  appsTest: "apps.test",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
@@ -451,6 +472,48 @@ export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSetting
   payload: Schema.Struct({ patch: ServerSettingsPatch }),
   success: ServerSettings,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+export const WsAppsUpsertRpc = Rpc.make(WS_METHODS.appsUpsert, {
+  payload: AppsUpsertInput,
+  success: Schema.Void,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
+export const WsAppsRemoveRpc = Rpc.make(WS_METHODS.appsRemove, {
+  payload: AppsRemoveInput,
+  success: Schema.Void,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
+export const WsAppsAuthorizeRpc = Rpc.make(WS_METHODS.appsAuthorize, {
+  payload: AppsAuthorizeInput,
+  success: AppsAuthorizeResult,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
+export const WsAppsSetTokenRpc = Rpc.make(WS_METHODS.appsSetToken, {
+  payload: AppsSetTokenInput,
+  success: Schema.Void,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
+export const WsAppsSetOAuthClientRpc = Rpc.make(WS_METHODS.appsSetOAuthClient, {
+  payload: AppsSetOAuthClientInput,
+  success: Schema.Void,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
+export const WsAppsDisconnectRpc = Rpc.make(WS_METHODS.appsDisconnect, {
+  payload: AppsDisconnectInput,
+  success: Schema.Void,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
+export const WsAppsTestRpc = Rpc.make(WS_METHODS.appsTest, {
+  payload: AppsTestInput,
+  success: AppsTestResult,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
@@ -1185,6 +1248,13 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRemoveKeybindingRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
+  WsAppsUpsertRpc,
+  WsAppsRemoveRpc,
+  WsAppsAuthorizeRpc,
+  WsAppsSetTokenRpc,
+  WsAppsSetOAuthClientRpc,
+  WsAppsDisconnectRpc,
+  WsAppsTestRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,

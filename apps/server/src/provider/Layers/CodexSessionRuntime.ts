@@ -61,8 +61,12 @@ const RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS = [
   "no rollout found",
 ];
 
-export function hasConfiguredMcpServer(appServerArgs: ReadonlyArray<string> | undefined): boolean {
-  return appServerArgs?.some((argument) => argument.includes("mcp_servers.")) === true;
+export function hasConfiguredMcpServer(
+  appServerArgs: ReadonlyArray<string> | undefined,
+  serverName?: string,
+): boolean {
+  const needle = serverName === undefined ? "mcp_servers." : `mcp_servers.${serverName}.`;
+  return appServerArgs?.some((argument) => argument.includes(needle)) === true;
 }
 
 export const CodexResumeCursorSchema = Schema.Struct({
@@ -1830,7 +1834,7 @@ export const makeCodexSessionRuntime = (
             // Derived from the session's own MCP configuration rather than the
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
-            browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs),
+            browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs, "t3-code"),
           });
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(

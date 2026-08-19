@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./appMentions": {
+      "types": "./src/appMentions.ts",
+      "import": "./src/appMentions.ts"
+    },
     "./activityProjection": {
       "types": "./src/activityProjection.ts",
       "import": "./src/activityProjection.ts"

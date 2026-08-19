@@ -81,6 +81,7 @@ import {
   removeInlineTerminalContextPlaceholder,
 } from "../../lib/terminalContext";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
+import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { type ElementContextDraft } from "../../lib/elementContext";
 import { type CanvasSelectionContext } from "../../lib/canvasSelection";
 import { ComposerPendingElementContexts } from "./ComposerPendingElementContexts";
@@ -94,6 +95,8 @@ import {
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
+import { isAttachableApp, searchAppMentions, setComposerAppMentions } from "./composerAppMentions";
+import { appPresentation } from "../apps/AppIcon";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { ComposerOverflowMenu } from "./ComposerOverflowMenu";
 import { resolveRuntimeModeOption, runtimeModeOptionsForProvider } from "./runtimeModeOptions";
@@ -1052,6 +1055,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     cwd: isPathTrigger ? gitCwd : null,
     query: isPathTrigger ? pathTriggerQuery : null,
   });
+  const appConnections = useEnvironmentSettings(
+    environmentId,
+    (settings) => settings.apps.connections,
+  );
+  const attachableApps = useMemo(
+    () => Object.values(appConnections).filter(isAttachableApp),
+    [appConnections],
+  );
+  useEffect(() => {
+    setComposerAppMentions(attachableApps);
+  }, [attachableApps]);
 
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
@@ -1079,7 +1093,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
         }),
       );
-      return [...fileItems, ...skillItems(composerTrigger.query)];
+      const appItems = searchAppMentions(attachableApps, composerTrigger.query).map(
+        (app): ComposerCommandItem => ({
+          id: `app:${app.id}`,
+          type: "app",
+          slug: app.slug,
+          ...appPresentation(app),
+          label: app.name,
+          description: `@${app.slug}`,
+        }),
+      );
+      return [...fileItems, ...skillItems(composerTrigger.query), ...appItems];
     }
     if (composerTrigger.kind === "slash-command") {
       const runtimeModeItems = runtimeModeOptionsForProvider(selectedProvider).map(
@@ -1189,6 +1213,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     return [];
   }, [
+    attachableApps,
     autoCreatePullRequest,
     composerTrigger,
     planModeUiEnabled,
@@ -1807,6 +1832,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (!trigger) return;
       if (item.type === "path") {
         const replacement = `${serializeComposerFileLink(item.path)} `;
+        const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+          snapshot.value,
+          trigger.rangeEnd,
+          replacement,
+        );
+        const applied = applyPromptReplacement(
+          trigger.rangeStart,
+          replacementRangeEnd,
+          replacement,
+          { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+        );
+        if (applied) {
+          setComposerHighlightedItemId(null);
+        }
+        return;
+      }
+      if (item.type === "app") {
+        // Plain text on purpose: the server resolves `@slug` out of the sent message.
+        const replacement = `@${item.slug} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,
           trigger.rangeEnd,
@@ -3253,7 +3297,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               ? "Add a note (optional)"
                               : phase === "disconnected"
                                 ? DISCONNECTED_COMPOSER_PLACEHOLDER
-                                : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                                : "Ask anything, @tag files or apps, $use skills, or / for commands"
                 }
                 disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
               />
