@@ -109,6 +109,10 @@ describe("Origin release and blocked-sync helpers", () => {
     );
     assert.notInclude(preparePath, "persist-ci-path.sh");
     assert.include(preparePath, "writing t3-pretty-ci.env under /tmp");
+    assert.isBelow(
+      preparePath.indexOf('mkdir -p "$dir" || dir="/tmp"'),
+      preparePath.indexOf('ci_env="${dir}/t3-pretty-ci.env"'),
+    );
     assert.include(preparePath, 'echo "PATH=${PATH}" >> "$GITHUB_ENV"');
     assert.notInclude(preparePath, "GITHUB_WORKSPACE:-${HOME}");
     assert.include(desktop, "T3CODE_DESKTOP_UPDATE_FEED_URL");

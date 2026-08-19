@@ -111,8 +111,8 @@ jobs:
             echo "RUNNER_TEMP is the workspace root; writing t3-pretty-ci.env under /tmp"
             dir="/tmp"
           fi
-          ci_env="${dir}/t3-pretty-ci.env"
           mkdir -p "$dir" || dir="/tmp"
+          ci_env="${dir}/t3-pretty-ci.env"
           rm -f "$ci_env" || true
           printf 'export PATH=%q\n' "$PATH" > "$ci_env" || true
 
