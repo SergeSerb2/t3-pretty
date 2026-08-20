@@ -2,9 +2,13 @@ import { useEffect, useState, type CSSProperties } from "react";
 
 import { isMacPlatform } from "../lib/utils";
 
-// Matches the hold duration in apps/desktop/src/window/QuitHold.ts: the hint
-// from a quick tap lingers for as long as a full hold would have taken.
-const HIDE_AFTER_RELEASE_MS = 1200;
+// Mirrors QUIT_HOLD_DURATION_MS in apps/desktop/src/window/QuitHold.ts (the
+// web bundle cannot import the Electron main process): the fill must complete
+// exactly when the desktop hold actually quits.
+const QUIT_HOLD_DURATION_MS = 1200;
+// The hint from a quick tap lingers for as long as a full hold would have
+// taken — the same duration by design, but a separate meaning.
+const HIDE_AFTER_RELEASE_MS = QUIT_HOLD_DURATION_MS;
 
 /**
  * Chrome-style "Hold ⌘Q to Quit" hint. The desktop main process intercepts
@@ -42,9 +46,9 @@ export function QuitHoldOverlay() {
     <div
       role="status"
       data-quit-phase={phase}
-      // Drives the CSS fill duration from the same constant that mirrors the
-      // desktop hold, so the bar cannot drift from the real quit timing.
-      style={{ "--quit-hold-ms": `${HIDE_AFTER_RELEASE_MS}ms` } as CSSProperties}
+      // Drives the CSS fill duration from the mirrored hold constant, so the
+      // bar cannot drift from the real quit timing.
+      style={{ "--quit-hold-ms": `${QUIT_HOLD_DURATION_MS}ms` } as CSSProperties}
       className="pointer-events-none fixed inset-0 z-100 flex items-start justify-center"
     >
       <div className="quit-hold-scrim absolute inset-0" />

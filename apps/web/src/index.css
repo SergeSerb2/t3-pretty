@@ -1077,6 +1077,12 @@ html[data-window-inactive]
     }
   }
 
+  /* The Motion toggle parks the highlight too; ComposerSpecular also skips
+     its pointer work while the attribute is absent. */
+  html:not([data-scenery-motion]) .chat-composer-specular {
+    display: none;
+  }
+
   .chat-composer-glass-shell-with-context .chat-composer-glass-host::after {
     /* Keep the attachment seam open; the strip continues the outer outline below. */
     clip-path: polygon(

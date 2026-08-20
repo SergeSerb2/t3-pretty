@@ -5,9 +5,10 @@ import { useEffect, useRef } from "react";
  * an aria-hidden layer and listens for pointermove on its parent (the glass
  * shell): each update writes two CSS vars that move a pre-rasterized radial
  * gradient with `translate` only, rAF-coalesced to at most one write per
- * frame. A still pointer produces zero work; styling and the hover fade live
- * in index.css (.chat-composer-specular), which also disables the layer for
- * coarse pointers and reduced motion.
+ * frame (latest sample wins — every move updates the coordinates, only the
+ * scheduling is skipped). A still pointer produces zero work; styling and the
+ * hover fade live in index.css (.chat-composer-specular), which also disables
+ * the layer for coarse pointers, reduced motion, and the Motion toggle.
  */
 export function ComposerSpecular() {
   const layerRef = useRef<HTMLDivElement>(null);
@@ -17,11 +18,17 @@ export function ComposerSpecular() {
     const host = layer?.parentElement;
     if (!layer || !host) return;
     let frame = 0;
+    let x = 0;
+    let y = 0;
     const onPointerMove = (event: PointerEvent) => {
-      if (event.pointerType !== "mouse" || frame !== 0) return;
+      // The Motion toggle hides the layer (index.css); skip the layout read
+      // and rAF too so a disabled highlight costs nothing per move.
+      if (event.pointerType !== "mouse") return;
+      if (!document.documentElement.hasAttribute("data-scenery-motion")) return;
       const rect = host.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
+      x = event.clientX - rect.left;
+      y = event.clientY - rect.top;
+      if (frame !== 0) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
         layer.style.setProperty("--spec-x", `${x}px`);
