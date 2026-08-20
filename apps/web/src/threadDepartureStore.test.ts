@@ -7,6 +7,9 @@ function resetDepartureStore() {
   for (const threadKey of Object.keys(state.departingKindByKey)) {
     state.clearDeparting(threadKey);
   }
+  for (const threadKey of Object.keys(state.arrivingByKey)) {
+    state.clearArriving(threadKey);
+  }
 }
 
 describe("threadDepartureStore", () => {
@@ -63,5 +66,43 @@ describe("threadDepartureStore", () => {
     const before = useThreadDepartureStore.getState().departingKindByKey;
     useThreadDepartureStore.getState().clearDeparting("env1:nope");
     expect(useThreadDepartureStore.getState().departingKindByKey).toBe(before);
+  });
+
+  it("raises a short-lived arrive marker when a departure clears", () => {
+    vi.useFakeTimers();
+    const store = useThreadDepartureStore.getState();
+    store.markDeparting("env1:thread1", "settle");
+    store.clearDeparting("env1:thread1");
+    expect(useThreadDepartureStore.getState().departingKindByKey).toEqual({});
+    expect(useThreadDepartureStore.getState().arrivingByKey["env1:thread1"]).toBe(true);
+    // The marker must outlive sidebar-row-arrive's 200ms so the class never
+    // disappears mid-animation, then clear on its own.
+    vi.advanceTimersByTime(299);
+    expect(useThreadDepartureStore.getState().arrivingByKey["env1:thread1"]).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(useThreadDepartureStore.getState().arrivingByKey).toEqual({});
+  });
+
+  it("does not raise an arrive marker when clearing an unknown thread", () => {
+    useThreadDepartureStore.getState().clearDeparting("env1:nope");
+    expect(useThreadDepartureStore.getState().arrivingByKey).toEqual({});
+  });
+
+  it("lets a fresh departure supersede a pending arrive marker", () => {
+    const store = useThreadDepartureStore.getState();
+    store.markDeparting("env1:thread1", "settle");
+    store.clearDeparting("env1:thread1");
+    expect(useThreadDepartureStore.getState().arrivingByKey["env1:thread1"]).toBe(true);
+    store.markDeparting("env1:thread1", "snooze");
+    expect(useThreadDepartureStore.getState().arrivingByKey).toEqual({});
+    expect(useThreadDepartureStore.getState().departingKindByKey["env1:thread1"]).toBe("snooze");
+  });
+
+  it("raises an arrive marker when the departure backstop expires", () => {
+    vi.useFakeTimers();
+    useThreadDepartureStore.getState().markDeparting("env1:thread1", "settle");
+    vi.advanceTimersByTime(4_000);
+    expect(useThreadDepartureStore.getState().departingKindByKey).toEqual({});
+    expect(useThreadDepartureStore.getState().arrivingByKey["env1:thread1"]).toBe(true);
   });
 });

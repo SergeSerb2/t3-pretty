@@ -59,6 +59,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -187,7 +188,7 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
-import { useThreadDepartureStore, type ThreadDepartureKind } from "../threadDepartureStore";
+import { useThreadDepartureStore } from "../threadDepartureStore";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -807,27 +808,20 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
   // Settle/snooze departure: the dispatch site marks the thread the moment
   // the action fires, so the row slides out ahead of the server round trip.
-  // When the marker clears (classification landed, or the command failed)
-  // the same surface replays the arrive half — at its new spot on success,
-  // in place on failure.
+  // When the marker clears, the store raises a short-lived arrive marker that
+  // survives the source row's unmount, so the freshly mounted destination row
+  // replays the arrive half — at its new spot on success, in place on failure.
   const departureKind = useThreadDepartureStore(
     (state) => state.departingKindByKey[threadKey] ?? null,
   );
-  const [isArriving, setIsArriving] = useState(false);
-  const previousDepartureKindRef = useRef<ThreadDepartureKind | null>(departureKind);
-  if (previousDepartureKindRef.current !== departureKind) {
-    const wasDeparting = previousDepartureKindRef.current !== null;
-    previousDepartureKindRef.current = departureKind;
-    if (wasDeparting && departureKind === null) {
-      setIsArriving(true);
-    }
-  }
-  useEffect(() => {
-    if (!isArriving) return;
-    // Matches sidebar-row-arrive's duration in index.css.
-    const id = window.setTimeout(() => setIsArriving(false), 200);
-    return () => window.clearTimeout(id);
-  }, [isArriving]);
+  const isArriving = useThreadDepartureStore((state) => state.arrivingByKey[threadKey] === true);
+  // A landed row already renders in its destination shelf while the marker
+  // still waits on the sidebar's clearing pass: suppress the exit animation
+  // there so only the arrive fade plays.
+  const hasLanded =
+    (departureKind === "settle" && variantAction === "unsettle") ||
+    (departureKind === "snooze" && variantAction === "unsnooze");
+  const isDeparting = departureKind !== null && !hasLanded;
   const openPrLink = useOpenPrLink();
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
@@ -1159,7 +1153,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       !props.isActive &&
       !isSelected &&
       "opacity-70 transition-opacity hover:opacity-100",
-    departureKind !== null && "sidebar-row-departing",
+    isDeparting && "sidebar-row-departing",
     isArriving && "sidebar-row-arriving",
   );
 
@@ -2374,10 +2368,13 @@ export default function Sidebar() {
 
   // A departure ends when the canonical classification lands: the row is by
   // then rendering in its destination shelf, so clearing the marker here
-  // hands off from the slide-out to the arrive fade. Failures clear at the
-  // dispatch site (useThreadActions); anything else falls to the store TTL.
+  // hands off from the slide-out to the arrive fade. This runs as a layout
+  // effect so the arrive marker is set before the destination row's first
+  // paint — otherwise the row would paint a frame at full opacity before the
+  // fade starts. Failures clear at the dispatch site (useThreadActions);
+  // anything else falls to the store TTL.
   const departingKindByKey = useThreadDepartureStore((state) => state.departingKindByKey);
-  useEffect(() => {
+  useLayoutEffect(() => {
     for (const [threadKey, kind] of Object.entries(departingKindByKey)) {
       const landed =
         kind === "settle" ? settledThreadKeys.has(threadKey) : snoozedThreadKeys.has(threadKey);
