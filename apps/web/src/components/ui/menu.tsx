@@ -5,10 +5,25 @@ import { ChevronRightIcon } from "lucide-react";
 import type * as React from "react";
 
 import { cn } from "~/lib/utils";
+import { handleRootMenuOpenChange } from "./menu.logic";
 
 const MenuCreateHandle = MenuPrimitive.createHandle;
 
-const Menu = MenuPrimitive.Root;
+function MenuRoot<Payload>(props: MenuPrimitive.Root.Props<Payload>) {
+  const { onOpenChange, ...rest } = props;
+  return (
+    <MenuPrimitive.Root
+      {...rest}
+      onOpenChange={(open, eventDetails) => {
+        handleRootMenuOpenChange(open, eventDetails, onOpenChange);
+      }}
+    />
+  );
+}
+
+MenuRoot.displayName = (MenuPrimitive.Root as { displayName?: string }).displayName ?? "MenuRoot";
+
+const Menu = MenuRoot as typeof MenuPrimitive.Root;
 
 const MenuPortal = MenuPrimitive.Portal;
 
@@ -30,6 +45,7 @@ function MenuPopup({
   anchor,
   instant = false,
   positionerClassName,
+  positionMethod,
   ...props
 }: MenuPrimitive.Popup.Props & {
   align?: MenuPrimitive.Positioner.Props["align"];
@@ -40,6 +56,7 @@ function MenuPopup({
   /** Skip the 150ms scale-in. Right-click menus use this. */
   instant?: boolean | undefined;
   positionerClassName?: string | undefined;
+  positionMethod?: MenuPrimitive.Positioner.Props["positionMethod"];
 }) {
   const hasExplicitWidthClass =
     typeof className === "string" &&
@@ -56,6 +73,7 @@ function MenuPopup({
         anchor={anchor}
         className={cn("z-[130]", positionerClassName)}
         data-slot="menu-positioner"
+        positionMethod={positionMethod}
         side={side}
         sideOffset={sideOffset}
       >
@@ -280,6 +298,7 @@ function MenuSubPopup({
       className={className}
       data-slot="menu-sub-content"
       instant={instant}
+      positionMethod="fixed"
       positionerClassName={positionerClassName}
       side="inline-end"
       sideOffset={sideOffset}
