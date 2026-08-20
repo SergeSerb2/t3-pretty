@@ -1353,14 +1353,15 @@ html[data-theme-swap]::view-transition-new(root) {
   }
 }
 
-[data-chat-composer-form="true"][data-reject-shake="true"] {
+/* Gated on the Motion toggle like the rest of the animation vocabulary. */
+html[data-scenery-motion] [data-chat-composer-form="true"][data-reject-shake="true"] {
   animation: composer-reject-shake 300ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
 /* Copy confirmation flash: the whole code block glows once so the copy reads
    at block scale, not just the 12px icon swap. The pseudo-element only exists
    while data-copied is true; `both` parks it at opacity 0 either way. */
-.chat-markdown-codeblock[data-copied="true"]::after {
+html[data-scenery-motion] .chat-markdown-codeblock[data-copied="true"]::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1382,9 +1383,10 @@ html[data-theme-swap]::view-transition-new(root) {
   }
 }
 
-/* Hold-to-quit progress: the fill tracks the desktop hold duration (keep in
-   sync with QUIT_HOLD_DURATION_MS in apps/desktop/src/window/QuitHold.ts) and
-   drains back the moment the shortcut is released. scale/opacity only. */
+/* Hold-to-quit progress: the fill tracks the desktop hold duration —
+   QuitHoldOverlay sets --quit-hold-ms from its constant, which mirrors
+   QUIT_HOLD_DURATION_MS in apps/desktop/src/window/QuitHold.ts — and drains
+   back the moment the shortcut is released. scale/opacity only. */
 .quit-hold-fill {
   transform-origin: left center;
   scale: 0 1;
@@ -1392,7 +1394,7 @@ html[data-theme-swap]::view-transition-new(root) {
 
 [data-quit-phase="holding"] .quit-hold-fill {
   scale: 1 1;
-  transition: scale 1200ms linear;
+  transition: scale var(--quit-hold-ms, 1200ms) linear;
 }
 
 [data-quit-phase="released"] .quit-hold-fill {
@@ -1411,11 +1413,11 @@ html[data-theme-swap]::view-transition-new(root) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-chat-composer-form="true"][data-reject-shake="true"] {
+  html[data-scenery-motion] [data-chat-composer-form="true"][data-reject-shake="true"] {
     animation: none;
   }
 
-  .chat-markdown-codeblock[data-copied="true"]::after {
+  html[data-scenery-motion] .chat-markdown-codeblock[data-copied="true"]::after {
     animation: none;
   }
 

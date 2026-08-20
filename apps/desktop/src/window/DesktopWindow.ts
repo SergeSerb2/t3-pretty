@@ -315,6 +315,10 @@ export const make = Effect.gen(function* () {
   // focus moving into an embedded preview blurs it while the window stays key.
   let mainWindowFocused = false;
   let dockAttentionCount = 0;
+  // The first push after boot is a baseline, not news: the renderer paints
+  // (and reports its backlog) before the window is revealed and focused, and
+  // launching into pending work must not bounce the Dock at the launcher.
+  let dockAttentionSeeded = false;
   let dockBounceId = -1;
 
   const dismissConnectingSplash = Effect.gen(function* () {
@@ -671,6 +675,11 @@ export const make = Effect.gen(function* () {
     // Key-state pushes come from the window, not the renderer: focus moving
     // into an embedded preview WebContentsView blurs the renderer while the
     // window is still key, which would falsely dim the whole app chrome.
+    // Seed from the window's current state — the focus event for an
+    // already-key window fired before these listeners existed, and an
+    // unseeded false would let the first badge push bounce the Dock at a
+    // user who is looking straight at the app.
+    mainWindowFocused = window.isFocused();
     window.on("focus", () => {
       mainWindowFocused = true;
       sendWindowState(WINDOW_ACTIVE_STATE_CHANNEL, true);
@@ -1008,11 +1017,17 @@ export const make = Effect.gen(function* () {
     }),
     setDockAttention: Effect.fn("desktop.window.setDockAttention")(function* (count) {
       const previousCount = dockAttentionCount;
+      const seeded = dockAttentionSeeded;
+      dockAttentionSeeded = true;
       dockAttentionCount = count;
       yield* electronApp.setDockBadge(count === 0 ? "" : String(count));
-      // Only a *growing* backlog is news, and only while the user is looking
-      // elsewhere — bouncing at someone who is already in the app is nagging.
-      if (count <= previousCount || mainWindowFocused) return;
+      // Only a *growing* backlog is news — never the boot baseline — and only
+      // while the user is looking elsewhere; bouncing at someone who is
+      // already in the app is nagging.
+      if (!seeded || count <= previousCount || mainWindowFocused) return;
+      // A bounce may still be in flight from the last growth; cancel it so
+      // the id we keep is always the one focus needs to cancel.
+      if (dockBounceId >= 0) yield* electronApp.cancelDockBounce(dockBounceId);
       dockBounceId = yield* electronApp.bounceDock;
     }),
     syncAppearance: Effect.gen(function* () {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 import { isMacPlatform } from "../lib/utils";
 
@@ -42,6 +42,9 @@ export function QuitHoldOverlay() {
     <div
       role="status"
       data-quit-phase={phase}
+      // Drives the CSS fill duration from the same constant that mirrors the
+      // desktop hold, so the bar cannot drift from the real quit timing.
+      style={{ "--quit-hold-ms": `${HIDE_AFTER_RELEASE_MS}ms` } as CSSProperties}
       className="pointer-events-none fixed inset-0 z-100 flex items-start justify-center"
     >
       <div className="quit-hold-scrim absolute inset-0" />

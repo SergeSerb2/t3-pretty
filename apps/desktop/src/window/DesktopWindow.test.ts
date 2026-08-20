@@ -95,6 +95,7 @@ function makeFakeBrowserWindow() {
     getBounds: vi.fn(() => ({ x: 0, y: 0, width: 1100, height: 780 })),
     getNormalBounds: vi.fn(() => ({ x: 0, y: 0, width: 1100, height: 780 })),
     isDestroyed: vi.fn(() => false),
+    isFocused: vi.fn(() => false),
     isFullScreen: vi.fn(() => false),
     isMaximized: vi.fn(() => false),
     isMinimized: vi.fn(() => false),
@@ -1124,23 +1125,29 @@ describe("DesktopWindow", () => {
           return yield* Effect.die("focus listeners were not registered");
         }
 
-        // Backgrounded and growing: badge plus one bounce, cancelled on return.
+        // The first push after boot is a baseline: badge only, no bounce even
+        // while backgrounded — launching into pending work is not news.
         blur();
+        yield* desktopWindow.setDockAttention(1);
+        // Backgrounded and growing: badge plus one bounce. A second growth
+        // cancels the in-flight bounce before starting the next, and focus
+        // cancels the one still standing.
         yield* desktopWindow.setDockAttention(2);
+        yield* desktopWindow.setDockAttention(4);
         focus();
         yield* Effect.yieldNow;
-        assert.deepEqual(dockBounceCancels, [7]);
+        assert.deepEqual(dockBounceCancels, [7, 7]);
 
         // Focused, or shrinking, never bounces — and zero clears the badge.
-        yield* desktopWindow.setDockAttention(3);
+        yield* desktopWindow.setDockAttention(5);
         yield* desktopWindow.setDockAttention(0);
         blur();
         yield* desktopWindow.setDockAttention(0);
         focus();
         yield* Effect.yieldNow;
 
-        assert.deepEqual(dockBadges, ["2", "3", "", ""]);
-        assert.deepEqual(dockBounceCancels, [7, -1]);
+        assert.deepEqual(dockBadges, ["1", "2", "4", "5", "", ""]);
+        assert.deepEqual(dockBounceCancels, [7, 7, -1]);
       }).pipe(Effect.provide(layer));
     }),
   );
