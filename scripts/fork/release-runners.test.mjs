@@ -175,7 +175,11 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, ".t3-fork/ios-native-submit");
     assert.include(mobileRelease, "xcode_is_store_supported");
     assert.include(mobileRelease, "This is not App Store review");
-    assert.include(mobileRelease, "Skipping a new IPA");
+    assert.include(mobileRelease, "ipa_via_cloud");
+    assert.include(mobileRelease, "--wait");
+    assert.include(mobileRelease, "--latest");
+    assert.include(mobileRelease, "Submitted TestFlight IPA via EAS cloud");
+    assert.notInclude(mobileRelease, "Skipping a new IPA");
     assert.notInclude(mobileRelease, "No native macos-release TestFlight submit recorded");
     assert.notInclude(mobileRelease, "t3_require_ota");
     assert.notInclude(mobileRelease, "t3-ota-present");
@@ -200,6 +204,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(persistHook, 'BUILDKITE_STEP_KEY:-}" == "ios-mobile"');
     assert.include(persistHook, ".cache/t3-pretty-release/ios-native-submit");
     assert.include(persistHook, "refresh_macos_agent_hooks");
+    assert.include(persistHook, 'grep -q "helpers_ready"');
     assert.isBelow(
       persistHook.indexOf("refresh_macos_agent_hooks"),
       persistHook.indexOf('BUILDKITE_STEP_KEY:-}" == "ios-mobile"'),

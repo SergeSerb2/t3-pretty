@@ -190,7 +190,9 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(source, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
     assert.notInclude(source, '"$MODE" == "build" || "$MODE" == "release"');
     assert.include(source, "Native fingerprint is unchanged");
-    assert.include(source, "Skipping a new IPA");
+    assert.include(source, "ipa_via_cloud");
+    assert.include(source, "Submitted TestFlight IPA via EAS cloud");
+    assert.notInclude(source, "Skipping a new IPA");
     assert.notInclude(source, "No native macos-release TestFlight submit recorded");
     assert.include(source, ".t3-fork/ios-native-submit");
   });
