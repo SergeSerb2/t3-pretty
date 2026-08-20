@@ -7,6 +7,8 @@ export const BRAND_ASSET_PATHS = {
   prettyWebFavicon16Png: "assets/pretty/t3-pretty-favicon-16x16.png",
   prettyWebFavicon32Png: "assets/pretty/t3-pretty-favicon-32x32.png",
   prettyWebAppleTouchIconPng: "assets/pretty/t3-pretty-apple-touch-180.png",
+  prettyMarkPng: "assets/pretty/t3-pretty-mark.png",
+  prettyMarkPublicPng: "apps/web/public/t3-pretty-mark.png",
 
   developmentIconComposerProject: "assets/dev/app-icon.icon",
   developmentIosIconPng: "assets/dev/blueprint-ios-1024.png",

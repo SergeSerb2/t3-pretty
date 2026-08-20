@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - Compares the committed in-app mark with its public copy.
+import * as NodeFS from "node:fs";
+
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -98,5 +101,15 @@ describe("brand-assets", () => {
     expect(BRAND_ASSET_PATHS.productionMacIconPng).toBe(BRAND_ASSET_PATHS.prettyIconPng);
     expect(BRAND_ASSET_PATHS.nightlyWindowsIconIco).toBe(BRAND_ASSET_PATHS.prettyIconIco);
     expect(BRAND_ASSET_PATHS.productionWebFaviconIco).toBe(BRAND_ASSET_PATHS.prettyWebFaviconIco);
+  });
+
+  it("keeps the in-app sidebar mark in public in sync with the pretty source", () => {
+    const source = NodeFS.readFileSync(
+      new URL(`../../${BRAND_ASSET_PATHS.prettyMarkPng}`, import.meta.url),
+    );
+    const published = NodeFS.readFileSync(
+      new URL(`../../${BRAND_ASSET_PATHS.prettyMarkPublicPng}`, import.meta.url),
+    );
+    expect(published.equals(source)).toBe(true);
   });
 });

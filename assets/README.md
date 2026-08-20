@@ -11,6 +11,10 @@ logo appear for this repository in T3 Pretty project rows instead of the folder 
 The master was generated from the upstream blueprint T3 icon with OpenAI's built-in image generator,
 then its flat outer background was removed and the derived sizes were exported locally.
 
+`pretty/t3-pretty-mark.png` is the in-app lockup (web sidebar, mobile thread header). It is a
+cropped, transparent copy of the generated T3 Pretty mark, not the squircle application icon. The
+web client also serves it from `apps/web/public/t3-pretty-mark.png`.
+
 The three Icon Composer projects are the source of truth for full application icons:
 
 - `dev/app-icon.icon`
