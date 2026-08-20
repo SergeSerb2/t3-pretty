@@ -101,6 +101,21 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   );
 });
 
+/** Electron no-drag only punches descendants of a drag node. Mount this
+ *  inside whichever titlebar drag region currently covers the parked
+ *  layout-control cluster (chat header when the right panel is closed,
+ *  right-panel tab bar when it is open). */
+export function TitlebarLayoutControlsDragHole({ controlCount }: { controlCount: 2 | 3 }) {
+  return (
+    <div
+      aria-hidden
+      data-titlebar-controls-drag-hole
+      data-titlebar-layout-control-count={controlCount}
+      className="pointer-events-none absolute inset-y-0 right-0 [-webkit-app-region:no-drag]"
+    />
+  );
+}
+
 export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl({
   maximized,
   onToggle,

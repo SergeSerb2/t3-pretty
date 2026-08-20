@@ -282,7 +282,11 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
 import { ChatHeader } from "./chat/ChatHeader";
-import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
+import {
+  PanelLayoutControls,
+  RightPanelMaximizeControl,
+  TitlebarLayoutControlsDragHole,
+} from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
@@ -6547,7 +6551,6 @@ function ChatViewContent(props: ChatViewProps) {
     </div>
   );
   const parkTitlebarLayoutControls = !(shouldUseRightPanelSheet && rightPanelOpen);
-  const titlebarLayoutControlCount = rightPanelOpen && !shouldUseRightPanelSheet ? 3 : 2;
   const rightPanelContent = activeThreadRef ? (
     selectedRightPanelSurface?.kind === "preview" ? (
       <Suspense fallback={null}>
@@ -6723,13 +6726,12 @@ function ChatViewContent(props: ChatViewProps) {
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
           />
-          {isElectron && parkTitlebarLayoutControls ? (
-            <div
-              aria-hidden
-              data-titlebar-controls-drag-hole
-              data-titlebar-layout-control-count={titlebarLayoutControlCount}
-              className="pointer-events-none absolute inset-y-0 right-0 [-webkit-app-region:no-drag]"
-            />
+          {/* no-drag only punches descendants of a drag node. The parked
+              cluster sits on the workspace root; this header covers it while
+              the right panel is closed. The open inline panel's tab bar
+              mounts the matching hole. */}
+          {isElectron && parkTitlebarLayoutControls && !inlineRightPanelOwnsTitleBar ? (
+            <TitlebarLayoutControlsDragHole controlCount={2} />
           ) : null}
         </header>
 
