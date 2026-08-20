@@ -17,8 +17,10 @@ The `| Pretty` wordmark (`pretty/t3-pretty-wordmark.png`) is for the README,
 DMG installer, and other large lockups. The in-app mark is that T3 with
 the paper knocked out.
 
-`t3-pretty-1024.png` is the macOS asset (824px body inset 100px, with
-a light contact shadow). `t3-pretty-ios-1024.png` is the full-bleed iOS asset.
+`t3-pretty-1024.png` is the macOS asset (824px frosted-glass body inset 100px,
+with a light contact shadow and a translucent plate). `t3-pretty-ios-1024.png`
+is the full-bleed iOS asset — the same glass look, flattened opaque because
+iOS home-screen icons cannot be transparent.
 The ICO, ICNS, favicon, and apple-touch files are derived from those masters.
 Desktop packaging copies them into `apps/desktop/resources`.
 
