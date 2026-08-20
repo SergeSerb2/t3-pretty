@@ -32,7 +32,7 @@ function renderTerminalDrawerShell(
 function terminalDrawerCssBlock(): string {
   const start = indexCssSource.indexOf(".terminal-drawer-inline-gap {");
   expect(start).toBeGreaterThanOrEqual(0);
-  const end = indexCssSource.indexOf(".chat-composer-horizontal-inset", start);
+  const end = indexCssSource.indexOf(".chat-composer-glass-shell {", start);
   expect(end).toBeGreaterThan(start);
   return indexCssSource.slice(start, end);
 }
