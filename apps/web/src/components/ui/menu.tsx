@@ -9,7 +9,7 @@ import { handleRootMenuOpenChange } from "./menu.logic";
 
 const MenuCreateHandle = MenuPrimitive.createHandle;
 
-function Menu<Payload>(props: MenuPrimitive.Root.Props<Payload>) {
+function MenuRoot<Payload>(props: MenuPrimitive.Root.Props<Payload>) {
   const { onOpenChange, ...rest } = props;
   return (
     <MenuPrimitive.Root
@@ -20,6 +20,10 @@ function Menu<Payload>(props: MenuPrimitive.Root.Props<Payload>) {
     />
   );
 }
+
+MenuRoot.displayName = (MenuPrimitive.Root as { displayName?: string }).displayName ?? "MenuRoot";
+
+const Menu = MenuRoot as typeof MenuPrimitive.Root;
 
 const MenuPortal = MenuPrimitive.Portal;
 
