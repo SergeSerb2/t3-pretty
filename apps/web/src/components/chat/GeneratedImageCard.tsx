@@ -3,7 +3,7 @@ import { extractGeneratedImagePath } from "@t3tools/shared/imageTool";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { cn } from "~/lib/utils";
 import { useAssetUrlState } from "~/assets/assetUrls";
-import { useState, type ImgHTMLAttributes } from "react";
+import { useLayoutEffect, useRef, useState, type ImgHTMLAttributes } from "react";
 
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import type { WorkLogEntry } from "../../session-logic";
@@ -16,15 +16,38 @@ export function fadingImageClassName(loaded: boolean, className?: string): strin
   );
 }
 
-export function FadingImg({ className, onLoad, ...props }: ImgHTMLAttributes<HTMLImageElement>) {
+/** Cached and already-failed images report `complete` without firing onLoad. */
+export function isFadingImageSettled(image: { readonly complete: boolean } | null): boolean {
+  return image?.complete === true;
+}
+
+export function FadingImg({
+  className,
+  onError,
+  onLoad,
+  src,
+  ...props
+}: ImgHTMLAttributes<HTMLImageElement>) {
   const [loaded, setLoaded] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  useLayoutEffect(() => {
+    setLoaded(isFadingImageSettled(imgRef.current));
+  }, [src]);
+
   return (
     <img
       {...props}
+      ref={imgRef}
+      src={src}
       className={fadingImageClassName(loaded, className)}
       onLoad={(event) => {
         setLoaded(true);
         onLoad?.(event);
+      }}
+      onError={(event) => {
+        setLoaded(true);
+        onError?.(event);
       }}
     />
   );
