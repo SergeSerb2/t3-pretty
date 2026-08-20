@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
+
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -80,5 +83,19 @@ describe("resolveRenameCommit", () => {
     expect(resolveRenameCommit({ title: " Old ", originalTitle: "Old" })).toEqual({
       action: "noop",
     });
+  });
+});
+
+describe("header action padding", () => {
+  it("animates the layout-control reserve with the right panel slide", () => {
+    const source = NodeFS.readFileSync(new URL("./ChatHeader.tsx", import.meta.url), "utf8");
+    const actionsStart = source.indexOf("data-chat-header-actions\n");
+    const actionsBlock = source.slice(actionsStart, actionsStart + 500);
+
+    expect(actionsStart).toBeGreaterThanOrEqual(0);
+    expect(actionsBlock).toContain("transition-[padding-right]");
+    expect(actionsBlock).toContain("duration-200");
+    expect(actionsBlock).toContain("ease-linear");
+    expect(actionsBlock).toContain('rightPanelOpen ? "pr-0" : "pr-16"');
   });
 });
