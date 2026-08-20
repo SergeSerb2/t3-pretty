@@ -3,6 +3,7 @@ import {
   archiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
   buildMultiSelectThreadContextMenuItems,
+  countThreadsAwaitingUser,
   createThreadJumpHintVisibilityController,
   getSidebarThreadIdsToPrewarm,
   getVisibleSidebarThreadIds,
@@ -36,6 +37,7 @@ import {
   shouldCreateNewThreadInCurrentProject,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
 } from "./Sidebar.logic";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   EnvironmentId,
   OrchestrationLatestTurn,
@@ -287,6 +289,68 @@ describe("hasUnseenCompletion", () => {
         session: null,
       }),
     ).toBe(false);
+  });
+});
+
+describe("countThreadsAwaitingUser", () => {
+  const base = {
+    environmentId: localEnvironmentId,
+    hasActionableProposedPlan: false,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    interactionMode: "default" as const,
+    latestTurn: null,
+    session: null,
+  };
+  const threadKey = (id: string) =>
+    scopedThreadKey(scopeThreadRef(localEnvironmentId, ThreadId.make(id)));
+
+  it("counts approvals, questions, and unread completions exactly once each", () => {
+    const count = countThreadsAwaitingUser(
+      [
+        { ...base, id: ThreadId.make("approval"), hasPendingApprovals: true },
+        { ...base, id: ThreadId.make("input"), hasPendingUserInput: true },
+        { ...base, id: ThreadId.make("unread"), latestTurn: makeLatestTurn() },
+        // Both actionable and unread: still one thread needing the user.
+        {
+          ...base,
+          id: ThreadId.make("both"),
+          hasPendingApprovals: true,
+          latestTurn: makeLatestTurn(),
+        },
+      ],
+      {
+        [threadKey("unread")]: "2026-03-09T10:04:00.000Z",
+        [threadKey("both")]: "2026-03-09T10:04:00.000Z",
+      },
+    );
+    expect(count).toBe(4);
+  });
+
+  it("ignores threads that are merely working, read, or never visited", () => {
+    expect(
+      countThreadsAwaitingUser(
+        [
+          {
+            ...base,
+            id: ThreadId.make("working"),
+            session: {
+              threadId: ThreadId.make("working"),
+              status: "running" as const,
+              providerName: "Codex",
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              runtimeMode: DEFAULT_RUNTIME_MODE,
+              activeTurnId: "turn-1" as never,
+              lastError: null,
+              updatedAt: "2026-03-09T10:00:00.000Z",
+            },
+          },
+          { ...base, id: ThreadId.make("read"), latestTurn: makeLatestTurn() },
+          { ...base, id: ThreadId.make("never-visited"), latestTurn: makeLatestTurn() },
+        ],
+        { [threadKey("read")]: "2026-03-09T10:06:00.000Z" },
+      ),
+    ).toBe(0);
   });
 });
 

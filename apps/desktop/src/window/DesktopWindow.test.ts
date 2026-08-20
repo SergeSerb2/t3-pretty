@@ -43,7 +43,12 @@ import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { MENU_ACTION_CHANNEL, WINDOW_FULLSCREEN_STATE_CHANNEL } from "../ipc/channels.ts";
+import {
+  MENU_ACTION_CHANNEL,
+  WINDOW_ACTIVE_STATE_CHANNEL,
+  WINDOW_FULLSCREEN_STATE_CHANNEL,
+  WINDOW_INTERACTING_CHANNEL,
+} from "../ipc/channels.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 import * as PreviewManager from "../preview/Manager.ts";
@@ -136,9 +141,25 @@ const desktopClientSettingsLayer = Layer.mock(DesktopClientSettings.DesktopClien
   get: Effect.succeed(Option.none()),
 });
 
-const electronAppLayer = Layer.mock(ElectronApp.ElectronApp)({
-  quit: Effect.void,
-});
+const makeElectronAppLayer = (recorders: {
+  readonly dockBadges?: string[];
+  readonly dockBounceCancels?: number[];
+  readonly nextDockBounceId?: number;
+}) =>
+  Layer.mock(ElectronApp.ElectronApp)({
+    quit: Effect.void,
+    setDockBadge: (label) =>
+      Effect.sync(() => {
+        recorders.dockBadges?.push(label);
+      }),
+    bounceDock: Effect.succeed(recorders.nextDockBounceId ?? 7),
+    cancelDockBounce: (id) =>
+      Effect.sync(() => {
+        recorders.dockBounceCancels?.push(id);
+      }),
+  });
+
+const electronAppLayer = makeElectronAppLayer({});
 
 const desktopAssetsLayer = Layer.succeed(DesktopAssets.DesktopAssets, {
   iconPaths: Effect.succeed({
@@ -206,6 +227,8 @@ function makeTestLayer(input: {
   readonly openedExternalUrls?: unknown[];
   readonly previewZoomReapplies?: number[];
   readonly broadcastChannels?: string[];
+  readonly dockBadges?: string[];
+  readonly dockBounceCancels?: number[];
 }) {
   let desktopSettings = input.desktopSettings ?? DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS;
   const desktopAppSettingsLayer = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
@@ -272,7 +295,12 @@ function makeTestLayer(input: {
         desktopClientSettingsLayer,
         desktopServerExposureLayer,
         DesktopState.layer,
-        electronAppLayer,
+        makeElectronAppLayer({
+          ...(input.dockBadges === undefined ? {} : { dockBadges: input.dockBadges }),
+          ...(input.dockBounceCancels === undefined
+            ? {}
+            : { dockBounceCancels: input.dockBounceCancels }),
+        }),
         electronMenuLayer,
         Layer.succeed(ElectronShell.ElectronShell, {
           openExternal: (url) =>
@@ -1030,6 +1058,89 @@ describe("DesktopWindow", () => {
           [WINDOW_FULLSCREEN_STATE_CHANNEL, true],
           [WINDOW_FULLSCREEN_STATE_CHANNEL, false],
         ]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("publishes window key state and drag/resize gestures to the renderer", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const listeners = ["focus", "blur", "will-resize", "resized", "will-move", "moved"].map(
+          (eventName) => fakeWindow.windowListeners.get(eventName),
+        );
+        if (listeners.some((listener) => listener === undefined)) {
+          return yield* Effect.die("window state listeners were not registered");
+        }
+        for (const listener of listeners) {
+          listener?.();
+        }
+
+        assert.deepEqual(fakeWindow.send.mock.calls, [
+          [WINDOW_ACTIVE_STATE_CHANNEL, true],
+          [WINDOW_ACTIVE_STATE_CHANNEL, false],
+          [WINDOW_INTERACTING_CHANNEL, true],
+          [WINDOW_INTERACTING_CHANNEL, false],
+          [WINDOW_INTERACTING_CHANNEL, true],
+          [WINDOW_INTERACTING_CHANNEL, false],
+        ]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("badges the dock and bounces once while the window is in the background", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const dockBadges: string[] = [];
+      const dockBounceCancels: number[] = [];
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        dockBadges,
+        dockBounceCancels,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const focus = fakeWindow.windowListeners.get("focus");
+        const blur = fakeWindow.windowListeners.get("blur");
+        if (!focus || !blur) {
+          return yield* Effect.die("focus listeners were not registered");
+        }
+
+        // Backgrounded and growing: badge plus one bounce, cancelled on return.
+        blur();
+        yield* desktopWindow.setDockAttention(2);
+        focus();
+        yield* Effect.yieldNow;
+        assert.deepEqual(dockBounceCancels, [7]);
+
+        // Focused, or shrinking, never bounces — and zero clears the badge.
+        yield* desktopWindow.setDockAttention(3);
+        yield* desktopWindow.setDockAttention(0);
+        blur();
+        yield* desktopWindow.setDockAttention(0);
+        focus();
+        yield* Effect.yieldNow;
+
+        assert.deepEqual(dockBadges, ["2", "3", "", ""]);
+        assert.deepEqual(dockBounceCancels, [7, -1]);
       }).pipe(Effect.provide(layer));
     }),
   );

@@ -22,7 +22,9 @@ import {
   EDIT_CONTEXT_MENU_CHANNEL,
   MENU_ACTION_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
+  WINDOW_ACTIVE_STATE_CHANNEL,
   WINDOW_FULLSCREEN_STATE_CHANNEL,
+  WINDOW_INTERACTING_CHANNEL,
 } from "../ipc/channels.ts";
 import {
   buildEditContextMenuItems,
@@ -115,6 +117,10 @@ export class DesktopWindow extends Context.Service<
     // guest page instead of the app UI. The menu routes here to always target
     // the main window.
     readonly zoomMain: (direction: MainWindowZoomDirection) => Effect.Effect<void>;
+    // How many threads are waiting on the human right now. Drives the dock
+    // badge, plus a single informational bounce whenever that total grows
+    // while the window is in the background.
+    readonly setDockAttention: (count: number) => Effect.Effect<void>;
     readonly syncAppearance: Effect.Effect<void>;
   }
 >()("@t3tools/desktop/window/DesktopWindow") {}
@@ -304,6 +310,12 @@ export const make = Effect.gen(function* () {
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
   let flushMainWindowBounds: Effect.Effect<void> = Effect.void;
+  // Dock attention state. `mainWindowFocused` is the main process's view of
+  // window key state — the renderer's own focus is not a substitute, since
+  // focus moving into an embedded preview blurs it while the window stays key.
+  let mainWindowFocused = false;
+  let dockAttentionCount = 0;
+  let dockBounceId = -1;
 
   const dismissConnectingSplash = Effect.gen(function* () {
     const splash = yield* Ref.getAndSet(splashWindowRef, Option.none());
@@ -651,6 +663,48 @@ export const make = Effect.gen(function* () {
       });
     }
 
+    const sendWindowState = (channel: string, value: boolean) => {
+      if (window.isDestroyed()) return;
+      window.webContents.send(channel, value);
+    };
+
+    // Key-state pushes come from the window, not the renderer: focus moving
+    // into an embedded preview WebContentsView blurs the renderer while the
+    // window is still key, which would falsely dim the whole app chrome.
+    window.on("focus", () => {
+      mainWindowFocused = true;
+      sendWindowState(WINDOW_ACTIVE_STATE_CHANNEL, true);
+      const bounceId = dockBounceId;
+      dockBounceId = -1;
+      runFork(electronApp.cancelDockBounce(bounceId));
+    });
+    window.on("blur", () => {
+      mainWindowFocused = false;
+      sendWindowState(WINDOW_ACTIVE_STATE_CHANNEL, false);
+    });
+    // Glass blur is expensive to recomposite every frame of a drag or resize.
+    // `will-resize`/`will-move` fire on every frame of the gesture while
+    // `resized`/`moved` fire once at its end, so dedupe to exactly one IPC
+    // push per edge instead of one per frame.
+    let windowInteracting = false;
+    const sendWindowInteracting = (value: boolean) => {
+      if (windowInteracting === value) return;
+      windowInteracting = value;
+      sendWindowState(WINDOW_INTERACTING_CHANNEL, value);
+    };
+    window.on("will-resize", () => {
+      sendWindowInteracting(true);
+    });
+    window.on("will-move", () => {
+      sendWindowInteracting(true);
+    });
+    window.on("resized", () => {
+      sendWindowInteracting(false);
+    });
+    window.on("moved", () => {
+      sendWindowInteracting(false);
+    });
+
     let developmentLoadRetryIndex = 0;
     let developmentLoadRetryFiber: Fiber.Fiber<void, never> | undefined;
     let rendererRecoveryTimestamps: number[] = [];
@@ -951,6 +1005,15 @@ export const make = Effect.gen(function* () {
       // the previewed page along with the app UI. The preview browser keeps its
       // own zoom, so put each guest back where the preview left it.
       yield* previewManager.reapplyZoom();
+    }),
+    setDockAttention: Effect.fn("desktop.window.setDockAttention")(function* (count) {
+      const previousCount = dockAttentionCount;
+      dockAttentionCount = count;
+      yield* electronApp.setDockBadge(count === 0 ? "" : String(count));
+      // Only a *growing* backlog is news, and only while the user is looking
+      // elsewhere — bouncing at someone who is already in the app is nagging.
+      if (count <= previousCount || mainWindowFocused) return;
+      dockBounceId = yield* electronApp.bounceDock;
     }),
     syncAppearance: Effect.gen(function* () {
       const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;

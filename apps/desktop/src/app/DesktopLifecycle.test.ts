@@ -47,6 +47,9 @@ function makeElectronAppLayer(
     setAsDefaultProtocolClient: () => Effect.succeed(true),
     setDesktopName: () => Effect.void,
     setDockIcon: () => Effect.void,
+    setDockBadge: () => Effect.void,
+    bounceDock: Effect.succeed(-1),
+    cancelDockBounce: () => Effect.void,
     startLocalCrashReporter: () => Effect.void,
     appendCommandLineSwitch: () => Effect.void,
     removeCommandLineSwitch: () => Effect.void,
@@ -95,6 +98,7 @@ function makeDesktopWindowLayer(
     flushMainWindowBounds: input.flushMainWindowBounds ?? Effect.void,
     dispatchMenuAction: () => Effect.void,
     zoomMain: () => Effect.void,
+    setDockAttention: () => Effect.void,
     syncAppearance: Effect.void,
   });
 }

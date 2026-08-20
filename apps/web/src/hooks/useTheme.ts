@@ -2,6 +2,7 @@ import type { DesktopBridge } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { canAnimateSceneryInkTransition } from "../scenery/sceneryInkTransition";
 import {
   applyThemePalette,
   CUSTOM_THEMES_STORAGE_KEY,
@@ -299,30 +300,75 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
     return;
   }
 
-  if (suppressTransitions) {
-    document.documentElement.classList.add("no-transitions");
+  const isFirstApply = lastAppliedTheme === null;
+  const commitTheme = () => {
+    const resolvedAppearance = resolveThemeAppearance(
+      theme,
+      systemDark,
+      followSystem,
+      appearanceMode,
+      themeHalves,
+    );
+    applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
+    const isDark = resolvedAppearance === "dark";
+    document.documentElement.classList.toggle("dark", isDark);
+    lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
+    syncBrowserChromeTheme();
+    syncDesktopTheme(theme, followSystem, appearanceMode);
+  };
+
+  if (!suppressTransitions) {
+    commitTheme();
+    return;
   }
-  const resolvedAppearance = resolveThemeAppearance(
-    theme,
-    systemDark,
-    followSystem,
-    appearanceMode,
-    themeHalves,
-  );
-  applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
-  const isDark = resolvedAppearance === "dark";
-  document.documentElement.classList.toggle("dark", isDark);
-  lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
-  syncBrowserChromeTheme();
-  syncDesktopTheme(theme, followSystem, appearanceMode);
-  if (suppressTransitions) {
+
+  const root = document.documentElement;
+  root.classList.add("no-transitions");
+  const releaseTransitions = () => {
     // Force a reflow so the no-transitions class takes effect before removal
     // oxlint-disable-next-line no-unused-expressions
-    document.documentElement.offsetHeight;
+    root.offsetHeight;
     requestAnimationFrame(() => {
-      document.documentElement.classList.remove("no-transitions");
+      root.classList.remove("no-transitions");
     });
+  };
+
+  // The whole window dissolves from the old palette to the new one as one
+  // snapshot crossfade (see html[data-theme-swap] in index.css), with
+  // no-transitions still suppressing per-element color tweens underneath.
+  // Never on the boot apply, in hidden documents, or while the scenery ink
+  // transition owns the flip.
+  if (isFirstApply || document.hidden || !canAnimateThemeSwapTransition()) {
+    commitTheme();
+    releaseTransitions();
+    return;
   }
+
+  root.dataset.themeSwap = "true";
+  const finishSwap = () => {
+    delete root.dataset.themeSwap;
+    releaseTransitions();
+  };
+  try {
+    const transition = (
+      document as Document & {
+        startViewTransition: (update: () => void) => { finished: Promise<void> };
+      }
+    ).startViewTransition(commitTheme);
+    void transition.finished.then(finishSwap, finishSwap);
+  } catch {
+    commitTheme();
+    finishSwap();
+  }
+}
+
+// A theme swap crossfade is worth a view transition only when the scenery ink
+// transition is not already coordinating this flip (it runs its own), View
+// Transitions exist, the Motion toggle is on, and the OS allows motion — the
+// last three via the scenery helper's own gate.
+function canAnimateThemeSwapTransition(): boolean {
+  if (document.documentElement.dataset.sceneryInkTransition !== undefined) return false;
+  return canAnimateSceneryInkTransition();
 }
 
 export async function syncDesktopThemePreference(

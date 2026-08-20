@@ -1,4 +1,5 @@
 import * as React from "react";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import {
@@ -496,6 +497,35 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
     return "monitoring";
   }
   return "ready";
+}
+
+type ThreadAttentionInput = ThreadStatusInput &
+  SidebarThreadStatusInput &
+  Pick<SidebarThreadSummary, "environmentId" | "id">;
+
+/**
+ * Threads that need the human right now: an agent blocked on an approval or a
+ * question, or a completion the user has not read yet. Drives the desktop dock
+ * badge, so it deliberately ignores rows that are merely working.
+ */
+export function countThreadsAwaitingUser(
+  threads: readonly ThreadAttentionInput[],
+  lastVisitedAtByThreadKey: Readonly<Record<string, string | undefined>>,
+): number {
+  let count = 0;
+  for (const thread of threads) {
+    const status = resolveSidebarThreadStatus(thread);
+    const lastVisitedAt =
+      lastVisitedAtByThreadKey[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))];
+    if (
+      status === "approval" ||
+      status === "input" ||
+      hasUnseenCompletion({ ...thread, lastVisitedAt })
+    ) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 /** NaN-safe Date.parse for sort comparators: a malformed timestamp must not

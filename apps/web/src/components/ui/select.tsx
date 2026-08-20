@@ -12,7 +12,7 @@ import { cn } from "~/lib/utils";
 const Select = SelectPrimitive.Root;
 
 const selectTriggerVariants = cva(
-  "relative inline-flex cursor-pointer select-none items-center justify-between gap-2 border rounded-lg text-left text-base outline-none transition-[color,box-shadow,background-color] data-disabled:pointer-events-none data-disabled:opacity-64 sm:text-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
+  "relative inline-flex cursor-pointer select-none items-center justify-between gap-2 border rounded-lg text-left text-base outline-none transition-[color,box-shadow,background-color,border-color,scale] duration-150 ease-out data-disabled:pointer-events-none data-disabled:opacity-64 sm:text-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
   {
     defaultVariants: {
       size: "default",
@@ -54,7 +54,7 @@ function SelectButton({ className, size, variant, render, children, ...props }: 
       <>
         <span className="flex-1 truncate in-data-placeholder:text-placeholder">{children}</span>
         {variant === "ghost" ? (
-          <ChevronDownIcon className="-me-1 size-3 opacity-50" />
+          <ChevronDownIcon className="-me-1 size-3 opacity-50 transition-transform duration-150 ease-out in-data-popup-open:rotate-180" />
         ) : (
           <ChevronsUpDownIcon className={selectTriggerIconClassName} />
         )}

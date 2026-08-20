@@ -12,7 +12,9 @@ const HIDE_AFTER_RELEASE_MS = 1200;
  * this pill while a full hold quits the app.
  */
 export function QuitHoldOverlay() {
-  const [visible, setVisible] = useState(false);
+  // "holding" while the shortcut is down (the fill tracks the hold duration),
+  // "released" while the hint lingers after a quick tap (the fill drains).
+  const [phase, setPhase] = useState<"idle" | "holding" | "released">("idle");
 
   useEffect(() => {
     const subscribe = window.desktopBridge?.onQuitShortcut;
@@ -21,10 +23,12 @@ export function QuitHoldOverlay() {
     const unsubscribe = subscribe((state) => {
       window.clearTimeout(hideTimer);
       if (state === "down") {
-        setVisible(true);
+        setPhase("holding");
         return;
       }
-      hideTimer = window.setTimeout(() => setVisible(false), HIDE_AFTER_RELEASE_MS);
+      hideTimer = window.setTimeout(() => setPhase("idle"), HIDE_AFTER_RELEASE_MS);
+      // A release with no prior press stays hidden, matching the old behavior.
+      setPhase((current) => (current === "holding" ? "released" : current));
     });
     return () => {
       window.clearTimeout(hideTimer);
@@ -32,15 +36,18 @@ export function QuitHoldOverlay() {
     };
   }, []);
 
-  if (!visible) return null;
+  if (phase === "idle") return null;
   const shortcut = isMacPlatform(navigator.platform) ? "⌘Q" : "Ctrl+Q";
   return (
     <div
       role="status"
-      className="pointer-events-none fixed inset-x-0 top-[22%] z-100 flex justify-center"
+      data-quit-phase={phase}
+      className="pointer-events-none fixed inset-0 z-100 flex items-start justify-center"
     >
-      <div className="rounded-full bg-neutral-700/95 px-8 py-4 text-2xl font-bold text-white shadow-xl">
-        Hold {shortcut} to Quit
+      <div className="quit-hold-scrim absolute inset-0" />
+      <div className="relative mt-[22vh] overflow-hidden rounded-full bg-neutral-700/95 px-8 py-4 text-2xl font-bold text-white shadow-xl">
+        <span aria-hidden className="quit-hold-fill absolute inset-0 bg-white/14" />
+        <span className="relative">Hold {shortcut} to Quit</span>
       </div>
     </div>
   );
