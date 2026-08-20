@@ -74,11 +74,13 @@ function SceneryParallaxImage(props: { readonly uri: string }) {
     liveValue.value = live;
   }, [live, liveValue]);
   const sensor = useAnimatedSensor(SensorType.ROTATION, { interval: live ? 32 : 1000 });
-  const available = sensor.isAvailable;
   const style = useAnimatedStyle(() => {
-    if (!liveValue.value || !available) {
+    if (!liveValue.value) {
       return { transform: [{ scale: 1 }] };
     }
+    // Read pose from the sensor SharedValue inside the worklet. The JS
+    // `isAvailable` flag is set after register and does not re-render, so
+    // capturing it on the React side would freeze tilt at identity.
     const pitch = sensor.sensor.value.pitch;
     const roll = sensor.sensor.value.roll;
     const tiltY = Math.max(-8, Math.min(8, ((roll * 180) / Math.PI) * 0.32));

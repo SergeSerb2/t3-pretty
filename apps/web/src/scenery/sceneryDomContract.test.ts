@@ -244,6 +244,12 @@ describe("scenery attribution contract", () => {
     expect(sceneryCssSource).toContain("perspective: 1600px");
     expect(sceneryCssSource).toContain(".scenery-parallax__rig--live");
   });
+
+  it("drops a stale parallax ready key when 3D is parked", () => {
+    expect(sceneryLayerSource).toContain("sceneryParallaxReady");
+    expect(sceneryLayerSource).toContain("setParallaxReadyKey(null)");
+    expect(sceneryLayerSource).toMatch(/\[parallaxEnabled\]/);
+  });
 });
 
 describe("scenery new-thread arrival contract", () => {

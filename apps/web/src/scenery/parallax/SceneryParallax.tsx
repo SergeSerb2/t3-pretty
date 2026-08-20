@@ -90,6 +90,7 @@ export function SceneryParallax({
     });
     return () => {
       cancelled = true;
+      onReadyRef.current?.(false);
     };
   }, [enabled, photoId, url]);
 

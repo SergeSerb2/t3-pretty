@@ -32,6 +32,7 @@ import { runSceneryInkTransition } from "./sceneryInkTransition";
 import { planScenerySwap } from "./scenerySwap";
 import { isWallpaperReady, preloadWallpaper } from "./sceneryWallpaper";
 import { SceneryParallax } from "./parallax/SceneryParallax";
+import { sceneryParallaxReady } from "./parallax/sceneryParallaxReady";
 import { UNSPLASH_UTM, wallpaperURL, type SceneryPhoto } from "./unsplash";
 
 interface DisplayedPhoto {
@@ -205,8 +206,20 @@ export function SceneryLayer({
   const credited = displayed ?? outgoing;
   const parallaxEnabled = depthEffects && motionEnabled && !systemReducedMotion;
   const displayedKey = displayed ? displayedPhotoKey(displayed) : null;
-  const parallaxReady =
-    parallaxEnabled && displayedKey !== null && parallaxReadyKey === displayedKey;
+  const parallaxReady = sceneryParallaxReady({
+    enabled: parallaxEnabled,
+    displayedKey,
+    readyKey: parallaxReadyKey,
+  });
+
+  // Drop a previous mount's ready key when 3D is parked. Otherwise turning
+  // the setting back on hides the CSS wallpaper before the new cards exist.
+  useEffect(() => {
+    if (parallaxEnabled) {
+      return;
+    }
+    setParallaxReadyKey(null);
+  }, [parallaxEnabled]);
 
   return (
     <>
