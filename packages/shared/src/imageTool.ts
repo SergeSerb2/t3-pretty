@@ -129,11 +129,12 @@ function collectImagePaths(
 
 function firstImagePath(paths: ReadonlyArray<string | undefined>): string | undefined {
   for (const path of paths) {
-    if (path && isWorkspaceImagePreviewPath(path)) {
-      return path;
+    const candidate = asTrimmedString(path);
+    if (candidate && isWorkspaceImagePreviewPath(candidate)) {
+      return candidate;
     }
   }
-  return paths.find((path) => path !== undefined && path.length > 0);
+  return undefined;
 }
 
 /** Pick a generated-image file path from tool payload, changed files, or detail text. */

@@ -62,6 +62,31 @@ describe("extractGeneratedImagePath", () => {
     ).toBe("assets/icon.jpg");
     expect(extractGeneratedImagePath({ detail: "generated/hero.gif" })).toBe("generated/hero.gif");
   });
+
+  it("does not treat leftover titles or prose as an image path", () => {
+    expect(extractGeneratedImagePath({ detail: "Generated image" })).toBeUndefined();
+    expect(
+      extractGeneratedImagePath({
+        data: { item: { status: "completed" } },
+        detail: "Created a landscape of rolling hills at dusk.",
+      }),
+    ).toBeUndefined();
+    expect(
+      extractGeneratedImagePath({
+        changedFiles: ["notes.md"],
+        detail: "Generated image",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("still prefers a real image path when detail is a title", () => {
+    expect(
+      extractGeneratedImagePath({
+        data: { item: { savedPath: "assets/hero.png" } },
+        detail: "Generated image",
+      }),
+    ).toBe("assets/hero.png");
+  });
 });
 
 describe("projectNeedsGeneratedIcon", () => {
