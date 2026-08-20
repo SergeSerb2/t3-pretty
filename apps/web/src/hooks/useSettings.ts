@@ -259,8 +259,8 @@ export function resolveEnvironmentIdentificationMode(input: {
     input.paletteThemeActive && !input.paletteThemeAllowsArtwork && input.mode === "artwork"
       ? "pill"
       : input.mode;
-  // Nightly has no version pill. Keep identification via the stage artwork
-  // rather than treating a stored or remapped pill as none.
+  // A stored or remapped pill with no label becomes artwork. Callers that have
+  // no artwork for this stage still paint nothing.
   return mode === "pill" && input.pillAvailable === false ? "artwork" : mode;
 }
 

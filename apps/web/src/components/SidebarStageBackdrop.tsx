@@ -18,7 +18,8 @@ export function resolveSidebarStageBackdropVariant(
 ): SidebarStageBackdropVariant | null {
   if (!enabled) return null;
   const normalized = stageLabel.trim().toLowerCase();
-  if (normalized === "nightly") return "nightly";
+  // T3 Pretty does not present as a nightly product: no night-sky header over
+  // the sidebar glass. Dev still uses the blueprint art.
   if (normalized === "dev") return "dev";
   return null;
 }
