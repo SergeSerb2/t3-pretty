@@ -311,7 +311,7 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
   return projectedData;
 }
 
-function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
+function projectRawOutput(value: unknown, itemType: unknown): Record<string, unknown> | undefined {
   const direct = asTrimmedString(value);
   if (direct) {
     const summary = summarizeToolTextOutput(direct);
@@ -323,23 +323,25 @@ function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
     return undefined;
   }
 
-  const projectedImage: Record<string, unknown> = {};
-  for (const key of IMAGE_FILE_PATH_KEYS) {
-    const candidate = asTrimmedString(rawOutput[key]);
-    if (candidate && isWorkspaceImagePreviewPath(candidate)) {
-      projectedImage[key] = candidate;
+  if (itemType === "image_generation") {
+    const projectedImage: Record<string, unknown> = {};
+    for (const key of IMAGE_FILE_PATH_KEYS) {
+      const candidate = asTrimmedString(rawOutput[key]);
+      if (candidate && isWorkspaceImagePreviewPath(candidate)) {
+        projectedImage[key] = candidate;
+      }
     }
-  }
-  if (Object.keys(projectedImage).length > 0) {
-    const filename = asTrimmedString(rawOutput.filename);
-    if (filename) {
-      projectedImage.filename = filename;
+    if (Object.keys(projectedImage).length > 0) {
+      const filename = asTrimmedString(rawOutput.filename);
+      if (filename) {
+        projectedImage.filename = filename;
+      }
+      const sessionFolder = asTrimmedString(rawOutput.session_folder);
+      if (sessionFolder) {
+        projectedImage.session_folder = sessionFolder;
+      }
+      return projectedImage;
     }
-    const sessionFolder = asTrimmedString(rawOutput.session_folder);
-    if (sessionFolder) {
-      projectedImage.session_folder = sessionFolder;
-    }
-    return projectedImage;
   }
 
   if (typeof rawOutput.totalFiles === "number" && Number.isFinite(rawOutput.totalFiles)) {
@@ -428,7 +430,9 @@ export function projectActivityPayload(
   collectChangedFiles(data, changedFiles, seenFiles, 0, {
     remaining: CHANGED_FILE_SCAN_MAX_NODES,
   });
-  collectProjectedImageFiles(data.rawOutput, changedFiles, seenFiles);
+  if (payload.itemType === "image_generation") {
+    collectProjectedImageFiles(data.rawOutput, changedFiles, seenFiles);
+  }
   if (changedFiles.length > 0) {
     // Both clients discover file names by walking objects with path-like keys.
     projectedData.files = changedFiles.map((path) => ({ path }));
@@ -445,7 +449,8 @@ export function projectActivityPayload(
     projectedData.toolName = toolName;
   }
 
-  const rawOutput = projectRawOutput(data.rawOutput) ?? projectAcpContent(data.content);
+  const rawOutput =
+    projectRawOutput(data.rawOutput, payload.itemType) ?? projectAcpContent(data.content);
   if (rawOutput) {
     projectedData.rawOutput = rawOutput;
   }

@@ -266,6 +266,29 @@ describe("projectActivityPayload", () => {
     });
   });
 
+  it("does not treat command rawOutput image paths as generated-image metadata", () => {
+    const projected = projectActivityPayload(
+      makeActivity("command-image-path", "command_execution", {
+        rawOutput: {
+          content: "first useful line\nsecond line",
+          path: "images/1.jpg",
+          filename: "1.jpg",
+          session_folder: "images",
+        },
+      }),
+    );
+    expect(projected.payload).toEqual({
+      itemType: "command_execution",
+      title: "command_execution",
+      detail: "command_execution detail",
+      status: "completed",
+      requestKind: "command",
+      data: {
+        rawOutput: { content: "first useful line" },
+      },
+    });
+  });
+
   it("slims MCP tool data to the fields the expanded row renders", () => {
     expect(projectActivityPayload(fixtures[4]!).payload).toEqual({
       itemType: "mcp_tool_call",
