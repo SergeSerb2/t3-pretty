@@ -179,4 +179,45 @@ describe("GrokSessionImages", () => {
       ).toBeNull();
     }).pipe(Effect.provide(NodeServices.layer)),
   );
+
+  it.effect("rejects relative images outside the session images/ directory", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const homeDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-grok-image-prefix-home-",
+      });
+      const workspaceRoot = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-grok-image-prefix-workspace-",
+      });
+      yield* writeSessionImage({
+        homeDir,
+        workspaceRoot,
+        sessionId: "session-1",
+        relativePath: "secret.jpg",
+      });
+      yield* writeSessionImage({
+        homeDir,
+        workspaceRoot,
+        sessionId: "session-1",
+        relativePath: "other/1.jpg",
+      });
+
+      expect(
+        yield* resolveGrokSessionImageFile({
+          homeDir,
+          workspaceRoot,
+          requestedPath: "secret.jpg",
+          grokSessionId: "session-1",
+        }),
+      ).toBeNull();
+      expect(
+        yield* resolveGrokSessionImageFile({
+          homeDir,
+          workspaceRoot,
+          requestedPath: "other/1.jpg",
+          grokSessionId: "session-1",
+        }),
+      ).toBeNull();
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });

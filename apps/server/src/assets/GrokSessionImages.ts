@@ -57,6 +57,10 @@ function isUnsafeRelativePath(relativePath: string, path: Path.Path): boolean {
     .some((segment) => segment === "" || segment === "." || segment === "..");
 }
 
+function hasSessionImagesPrefix(relativePath: string): boolean {
+  return relativePath.replaceAll("\\", "/").startsWith("images/");
+}
+
 function isInsideRoot(root: string, candidate: string, path: Path.Path): boolean {
   const relative = path.relative(root, candidate);
   return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
@@ -139,6 +143,9 @@ export const resolveGrokSessionImageFile = Effect.fn("GrokSessionImages.resolve"
     }
 
     if (isUnsafeRelativePath(input.requestedPath, path)) {
+      return null;
+    }
+    if (!hasSessionImagesPrefix(input.requestedPath)) {
       return null;
     }
 
