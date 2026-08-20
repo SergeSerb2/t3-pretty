@@ -193,10 +193,11 @@ function buildConnectingSplashDataUrl(shouldUseDarkColors: boolean): string {
 // blank. Same inlined data URL as the connecting splash: no asset, no backend,
 // and nothing to load from a renderer that keeps dying.
 function buildRendererCrashDataUrl(shouldUseDarkColors: boolean, displayName: string): string {
+  const safeDisplayName = displayName.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
   const background = getInitialWindowBackgroundColor(shouldUseDarkColors);
   const label = shouldUseDarkColors ? "#9ca3af" : "#6b7280";
   const accent = shouldUseDarkColors ? "#f8fafc" : "#1f2937";
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:0 32px;text-align:center;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.title{font-size:15px;font-weight:600;color:${accent}}.label{font-size:13px;max-width:34em;line-height:1.5}</style></head><body><div class="title">${displayName} stopped responding</div><div class="label">Quit and reopen the app to get back to work. Your agents keep running in the background, so nothing is lost.</div></body></html>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:0 32px;text-align:center;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.title{font-size:15px;font-weight:600;color:${accent}}.label{font-size:13px;max-width:34em;line-height:1.5}</style></head><body><div class="title">${safeDisplayName} stopped responding</div><div class="label">Quit and reopen the app to get back to work. Your agents keep running in the background, so nothing is lost.</div></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 

@@ -17,6 +17,7 @@ import {
   type TurnId,
   type KeybindingCommand,
   OrchestrationThreadActivity,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderInteractionMode,
   ProviderDriverKind,
   resolveRuntimeModeForProviderDriver,
@@ -5720,18 +5721,31 @@ function ChatViewContent(props: ChatViewProps) {
           prompt: promptForSend,
           detectTrigger: true,
         });
-      } else if (promptForSend.length > 0) {
+      } else {
         // The composer already holds new content, so merge the failed
-        // message's text back in rather than silently destroying it.
-        const merged =
-          promptRef.current.length > 0 ? `${promptForSend}\n\n${promptRef.current}` : promptForSend;
-        promptRef.current = merged;
-        setComposerDraftPrompt(composerDraftTarget, merged);
-        composerRef.current?.resetCursorState({
-          cursor: collapseExpandedComposerCursor(merged, merged.length),
-          prompt: merged,
-          detectTrigger: true,
-        });
+        // message's text and images back in rather than silently destroying
+        // them.
+        if (promptForSend.length > 0) {
+          const merged =
+            promptRef.current.length > 0
+              ? `${promptForSend}\n\n${promptRef.current}`
+              : promptForSend;
+          promptRef.current = merged;
+          setComposerDraftPrompt(composerDraftTarget, merged);
+          composerRef.current?.resetCursorState({
+            cursor: collapseExpandedComposerCursor(merged, merged.length),
+            prompt: merged,
+            detectTrigger: true,
+          });
+        }
+        const imageCapacity = PROVIDER_SEND_TURN_MAX_ATTACHMENTS - composerImagesRef.current.length;
+        if (composerImagesSnapshot.length > 0 && imageCapacity > 0) {
+          const retryComposerImages = composerImagesSnapshot
+            .slice(0, imageCapacity)
+            .map(cloneComposerImageForRetry);
+          composerImagesRef.current = [...composerImagesRef.current, ...retryComposerImages];
+          addComposerDraftImages(composerDraftTarget, retryComposerImages);
+        }
       }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
