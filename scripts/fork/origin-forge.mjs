@@ -332,24 +332,49 @@ export function waitForMergeable(target, { repo, attempts = 12, delayMs = 5000 }
   );
 }
 
+export function originUnknownOption(message, name) {
+  const text = String(message).toLowerCase();
+  const option = String(name).toLowerCase();
+  return (
+    (text.includes("unknown flag") || text.includes("unknown argument")) && text.includes(option)
+  );
+}
+
 export function mergePullRequest({ repo, target, sha } = {}) {
   if (!target) throw new Error("merge-pr requires a pull request number or head branch");
+  if (sha) {
+    try {
+      const viewed = parseJson(
+        runOrigin([
+          "pr",
+          "view",
+          String(target),
+          ...originRepoFlag(repo),
+          "--json",
+          "number,headSha,status",
+        ]),
+        {},
+      );
+      const headSha = String(viewed.headSha ?? "").trim();
+      if (headSha && !headSha.startsWith(sha) && !sha.startsWith(headSha)) {
+        throw new Error(`Origin pull request ${target} head is ${headSha}, expected ${sha}.`);
+      }
+    } catch (error) {
+      if (String(error.message).includes("expected")) throw error;
+    }
+  }
   try {
     waitForMergeable(target, { repo });
   } catch {
     // Origin's --auto merge waits for its own requirements when view JSON
     // does not expose a GitHub-shaped mergeable_state.
   }
-  const args = ["pr", "merge", String(target), ...originRepoFlag(repo), "--auto"];
-  if (sha) args.push("--sha", sha);
+  // Origin CLI has no --sha on `pr merge`. Pin the head ourselves above.
   try {
-    return runOrigin(args);
+    return runOrigin(["pr", "merge", String(target), ...originRepoFlag(repo), "--auto"]);
   } catch (error) {
     const message = String(error.message);
-    if (sha && message.includes("unknown flag")) {
-      return runOrigin(["pr", "merge", String(target), ...originRepoFlag(repo), "--auto"]);
-    }
-    if (message.includes("unknown flag") && message.includes("auto")) {
+    if (originUnknownOption(message, "auto")) {
       return runOrigin(["pr", "merge", String(target), ...originRepoFlag(repo)]);
     }
     throw error;
