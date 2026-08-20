@@ -121,10 +121,10 @@ const isCursorAgentShimAtPath = Effect.fn("editorLaunch.isCursorAgentShimAtPath"
 });
 
 /**
- * Resolves the IDE executable to spawn for Open-in-editor. Prefers a non-shim
- * PATH hit so a user-installed CLI still wins, then well-known app-bundle
- * locations. Returns the absolute path so launch does not re-walk PATH and
- * land on the agent shim.
+ * Resolves the IDE executable to spawn for Open-in-editor. Walks each listed
+ * command across PATH (preferred name first), skipping the Cursor agent shim,
+ * then well-known app-bundle locations. Returns the absolute path so launch
+ * does not re-walk PATH and land on the agent shim.
  */
 export const resolveEditorExecutable = Effect.fn("editorLaunch.resolveEditorExecutable")(
   function* (input: {
@@ -140,33 +140,35 @@ export const resolveEditorExecutable = Effect.fn("editorLaunch.resolveEditorExec
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
 
-    const candidates: string[] = [];
-    for (const pathEntry of pathEntries) {
-      for (const command of input.commands) {
-        candidates.push(path.join(pathEntry, command));
-      }
-    }
-    for (const extra of extraEditorCliPaths({
-      editorId: input.editorId,
-      platform: input.platform,
-      env: input.env,
-    })) {
-      candidates.push(extra);
-    }
-
     const seen = new Set<string>();
-    for (const candidate of candidates) {
-      if (seen.has(candidate)) continue;
+    const tryCandidate = Effect.fn("editorLaunch.tryCandidate")(function* (candidate: string) {
+      if (seen.has(candidate)) return Option.none<string>();
       seen.add(candidate);
       const resolved = yield* resolveCommandPath(candidate, { env: input.env }).pipe(
         Effect.map(Option.some),
         Effect.catchTag("CommandResolutionError", () => Effect.succeed(Option.none<string>())),
       );
-      if (Option.isNone(resolved)) continue;
+      if (Option.isNone(resolved)) return Option.none<string>();
       const executable = resolved.value;
       const commandName = (executable.split(/[/\\]/).pop() ?? executable).replace(/\.cmd$/i, "");
-      if (yield* isCursorAgentShimAtPath(commandName, executable)) continue;
+      if (yield* isCursorAgentShimAtPath(commandName, executable)) return Option.none<string>();
       return Option.some(executable);
+    });
+
+    for (const command of input.commands) {
+      for (const pathEntry of pathEntries) {
+        const hit = yield* tryCandidate(path.join(pathEntry, command));
+        if (Option.isSome(hit)) return hit;
+      }
+    }
+
+    for (const extra of extraEditorCliPaths({
+      editorId: input.editorId,
+      platform: input.platform,
+      env: input.env,
+    })) {
+      const hit = yield* tryCandidate(extra);
+      if (Option.isSome(hit)) return hit;
     }
 
     return Option.none();

@@ -138,6 +138,33 @@ effectIt.layer(NodeServices.layer)("resolveEditorExecutable", (it) => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("prefers the first listed command name even if a fallback is earlier on PATH", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editor-order-" });
+      const fallbackDir = path.join(root, "fallback");
+      const preferredDir = path.join(root, "preferred");
+      yield* fileSystem.makeDirectory(fallbackDir);
+      yield* fileSystem.makeDirectory(preferredDir);
+      const fallbackPath = path.join(fallbackDir, "zeditor");
+      const preferredPath = path.join(preferredDir, "zed");
+      yield* fileSystem.writeFileString(fallbackPath, "#!/bin/sh\nexit 0\n");
+      yield* fileSystem.writeFileString(preferredPath, "#!/bin/sh\nexit 0\n");
+      yield* fileSystem.chmod(fallbackPath, 0o755);
+      yield* fileSystem.chmod(preferredPath, 0o755);
+
+      const resolved = yield* resolveEditorExecutable({
+        editorId: "zed",
+        commands: ["zed", "zeditor"],
+        platform: "linux",
+        env: { PATH: `${fallbackDir}:${preferredDir}` },
+      });
+
+      expect(Option.getOrNull(resolved)).toBe(preferredPath);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("does not treat the agent shim as an installed IDE", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
