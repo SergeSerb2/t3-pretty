@@ -15,6 +15,10 @@ import * as Option from "effect/Option";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { environmentCatalog } from "~/connection/catalog";
+import {
+  environmentMachineKey,
+  selectVisibleRemoteEnvironmentIds,
+} from "~/connection/environmentGrouping";
 import { cn } from "~/lib/utils";
 import { relayEnvironmentDiscovery } from "~/state/relay";
 import { useRelayEnvironmentDiscovery } from "~/state/environments";
@@ -52,17 +56,21 @@ export function RemoteEnvironmentRowsSkeleton() {
  * Connect button. The primary environment is always excluded; already-saved
  * environments are hidden unless `showSavedEnvironments` renders them with
  * their live connection state (used by onboarding, where the full device mesh
- * should be visible).
+ * should be visible). Rows for a machine that already has a working saved
+ * connection (`hiddenMachineKeys`) are dropped, and duplicate rows for the
+ * same machine collapse to the working ones (or a single representative).
  */
 export function CloudEnvironmentConnectRows({
   primaryEnvironmentId,
   savedEnvironments,
   showSavedEnvironments = false,
+  hiddenMachineKeys,
   empty = null,
 }: {
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly savedEnvironments: ReadonlyArray<SavedCloudEnvironmentConnection>;
   readonly showSavedEnvironments?: boolean;
+  readonly hiddenMachineKeys?: ReadonlySet<string>;
   readonly empty?: ReactNode;
 }) {
   const environmentsState = useRelayEnvironmentDiscovery();
@@ -147,21 +155,57 @@ export function CloudEnvironmentConnectRows({
   const visibleEnvironments = [...environmentsState.environments.values()].filter(
     ({ environment }) =>
       environment.environmentId !== primaryEnvironmentId &&
-      (showSavedEnvironments || !savedById.has(environment.environmentId)),
+      (showSavedEnvironments || !savedById.has(environment.environmentId)) &&
+      !hiddenMachineKeys?.has(environmentMachineKey(environment.label)),
+  );
+
+  // Several T3 homes on one machine (installed app, nightly, dev worktrees)
+  // publish one environment each under the same machine label. Collapse those
+  // to the working rows, or to a single representative when none are working.
+  const visibleEnvironmentIds = selectVisibleRemoteEnvironmentIds(
+    visibleEnvironments.map(({ environment, availability }) => {
+      const savedEnvironment = savedById.get(environment.environmentId);
+      const savedTone = savedEnvironment
+        ? presentSavedCloudEnvironmentConnection(savedEnvironment.connection).tone
+        : null;
+      return {
+        id: environment.environmentId as string,
+        machineKey: environmentMachineKey(environment.label),
+        priority:
+          savedTone === "connected"
+            ? 0
+            : savedTone === "connecting"
+              ? 1
+              : availability === "online"
+                ? 2
+                : availability === "checking"
+                  ? 3
+                  : availability === "offline"
+                    ? 4
+                    : 5,
+        working:
+          savedTone === "connected" ||
+          savedTone === "connecting" ||
+          (savedTone === null && availability === "online"),
+      };
+    }),
+  );
+  const dedupedEnvironments = visibleEnvironments.filter(({ environment }) =>
+    visibleEnvironmentIds.has(environment.environmentId),
   );
 
   const standalone = showSavedEnvironments || savedEnvironments.length === 0;
 
   if (
     standalone &&
-    visibleEnvironments.length === 0 &&
+    dedupedEnvironments.length === 0 &&
     environmentsState.refreshing &&
     environmentsState.environments.size === 0
   ) {
     return <RemoteEnvironmentRowsSkeleton />;
   }
 
-  if (standalone && visibleEnvironments.length === 0) {
+  if (standalone && dedupedEnvironments.length === 0) {
     // A failed or offline discovery is not "no environments" — misreporting it
     // as empty would read as the user's devices having disappeared.
     const discoveryProblem = environmentsState.offline
@@ -188,7 +232,7 @@ export function CloudEnvironmentConnectRows({
     return empty;
   }
 
-  return visibleEnvironments.map(({ environment, availability, error }) => {
+  return dedupedEnvironments.map(({ environment, availability, error }) => {
     const savedEnvironment = savedById.get(environment.environmentId);
     const savedConnection = savedEnvironment
       ? presentSavedCloudEnvironmentConnection(savedEnvironment.connection)

@@ -1,10 +1,4 @@
-import {
-  ChevronsLeftRightEllipsisIcon,
-  PlusIcon,
-  QrCodeIcon,
-  RefreshCwIcon,
-  TerminalIcon,
-} from "lucide-react";
+import { ChevronsLeftRightEllipsisIcon, PlusIcon, QrCodeIcon, RefreshCwIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { type ReactNode, memo, useCallback, useId, useMemo, useState } from "react";
 import {
@@ -85,10 +79,8 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
-import { AnimatedHeight } from "../AnimatedHeight";
 import { Textarea } from "../ui/textarea";
-import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "../../pairingUrl";
-import { readHostedPairingRequest } from "../../hostedPairing";
+import { setPairingTokenOnUrl } from "../../pairingUrl";
 import {
   createServerPairingCredential,
   revokeOtherServerClientSessions,
@@ -100,6 +92,12 @@ import {
   type ServerPairingLinkRecord,
 } from "~/environments/primary";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
+import {
+  connectionPhaseGroupPriority,
+  environmentMachineKey,
+  isWorkingConnectionPhase,
+  selectVisibleRemoteEnvironmentIds,
+} from "~/connection/environmentGrouping";
 import { useUiStateStore } from "~/uiStateStore";
 import {
   resolveServerConfigVersionMismatch,
@@ -110,10 +108,7 @@ import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { authEnvironment } from "~/state/auth";
 import { environmentCatalog } from "~/connection/catalog";
-import {
-  connectPairing as connectPairingAtom,
-  connectSshEnvironment as connectSshEnvironmentAtom,
-} from "~/connection/onboarding";
+import { connectSshEnvironment as connectSshEnvironmentAtom } from "~/connection/onboarding";
 import { useEnvironmentQuery } from "~/state/query";
 import {
   desktopNetworkAccessStateAtom,
@@ -309,55 +304,6 @@ function parseManualDesktopSshTarget(input: {
     username,
     port,
   };
-}
-
-function parsePairingUrlFields(
-  input: string,
-): { readonly host: string; readonly pairingCode: string } | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-
-  try {
-    const urlLikeInput =
-      /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//u.test(trimmed) || trimmed.startsWith("//")
-        ? trimmed
-        : `https://${trimmed}`;
-    const url = new URL(urlLikeInput, window.location.origin);
-    const hostedPairingRequest = readHostedPairingRequest(url);
-    if (hostedPairingRequest) {
-      return {
-        host: hostedPairingRequest.host,
-        pairingCode: hostedPairingRequest.token,
-      };
-    }
-
-    const pairingCode = getPairingTokenFromUrl(url);
-    if (!pairingCode) return null;
-    return {
-      host: url.origin,
-      pairingCode,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function parseRemotePairingFields(input: { readonly host: string; readonly pairingCode: string }): {
-  readonly host: string;
-  readonly pairingCode: string;
-} {
-  const parsedPairingUrl = parsePairingUrlFields(input.host);
-  if (parsedPairingUrl) return parsedPairingUrl;
-
-  const host = input.host.trim();
-  const pairingCode = input.pairingCode.trim();
-  if (!host) {
-    throw new Error("Enter a backend host.");
-  }
-  if (!pairingCode) {
-    throw new Error("Enter a pairing code.");
-  }
-  return { host, pairingCode };
 }
 
 function formatDesktopSshConnectionError(error: unknown): string {
@@ -1723,7 +1669,7 @@ function EmptyRemoteEnvironments({ cloudEnabled = true }: { readonly cloudEnable
         <EmptyTitle>No saved remote environments</EmptyTitle>
         <EmptyDescription>
           {cloudEnabled
-            ? `Click “Add environment” to pair another environment, or connect one from ${SURGE_CONNECT_NAME}.`
+            ? `Connect one from ${SURGE_CONNECT_NAME}.`
             : "Click “Add environment” to pair another environment."}
         </EmptyDescription>
       </EmptyHeader>
@@ -1734,14 +1680,17 @@ function EmptyRemoteEnvironments({ cloudEnabled = true }: { readonly cloudEnable
 function CloudRemoteEnvironmentRows({
   primaryEnvironmentId,
   savedEnvironments,
+  hiddenMachineKeys,
 }: {
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly savedEnvironments: ReadonlyArray<EnvironmentPresentation>;
+  readonly hiddenMachineKeys: ReadonlySet<string>;
 }) {
   return useCloudUiEnabled() ? (
     <CloudEnvironmentConnectRows
       primaryEnvironmentId={primaryEnvironmentId}
       savedEnvironments={savedEnvironments}
+      hiddenMachineKeys={hiddenMachineKeys}
       empty={<EmptyRemoteEnvironments />}
     />
   ) : savedEnvironments.length === 0 ? (
@@ -1753,7 +1702,6 @@ export function ConnectionsSettings() {
   const desktopBridge = window.desktopBridge;
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
-  const connectPairing = useAtomCommand(connectPairingAtom, { reportFailure: false });
   const connectSshEnvironment = useAtomCommand(connectSshEnvironmentAtom, {
     reportFailure: false,
   });
@@ -1770,9 +1718,52 @@ export function ConnectionsSettings() {
   const savedEnvironments = useMemo(
     () =>
       environments
-        .filter((environment) => environment.entry.target._tag !== "PrimaryConnectionTarget")
+        .filter((environment) => {
+          const target = environment.entry.target;
+          if (target._tag === "PrimaryConnectionTarget") return false;
+          // Direct LAN/Tailscale connections are no longer a supported way to
+          // reach a remote machine — Surge Connect (or SSH on desktop) is.
+          // Desktop-local backends (WSL) are host-managed and stay.
+          if (target._tag === "BearerConnectionTarget" && !isDesktopLocalConnectionTarget(target)) {
+            return false;
+          }
+          return true;
+        })
         .toSorted((left, right) => left.label.localeCompare(right.label)),
     [environments],
+  );
+  // Multiple T3 homes on one machine each save their own environment under the
+  // same machine label. Collapse those duplicates: when any entry for the
+  // machine is working, only the working ones render; otherwise one
+  // representative survives so the machine stays manageable.
+  const visibleSavedEnvironments = useMemo(() => {
+    const visibleIds = selectVisibleRemoteEnvironmentIds(
+      savedEnvironments.map((environment) => ({
+        id: environment.environmentId as string,
+        // Desktop-local backends (WSL) never collapse into a machine group.
+        machineKey: isDesktopLocalConnectionTarget(environment.entry.target)
+          ? `local:${environment.environmentId}`
+          : environmentMachineKey(environment.label),
+        priority: connectionPhaseGroupPriority(environment.connection.phase),
+        working: isWorkingConnectionPhase(environment.connection.phase),
+      })),
+    );
+    return savedEnvironments.filter((environment) => visibleIds.has(environment.environmentId));
+  }, [savedEnvironments]);
+  // Machines with a working saved connection hide their unsaved relay
+  // discovery rows too — the user already has the real connection.
+  const workingSavedMachineKeys = useMemo(
+    () =>
+      new Set(
+        savedEnvironments
+          .filter(
+            (environment) =>
+              !isDesktopLocalConnectionTarget(environment.entry.target) &&
+              isWorkingConnectionPhase(environment.connection.phase),
+          )
+          .map((environment) => environmentMachineKey(environment.label)),
+      ),
+    [savedEnvironments],
   );
   const savedDesktopSshEnvironmentsByAlias = useMemo(
     () =>
@@ -1809,7 +1800,6 @@ export function ConnectionsSettings() {
     }
     return keys;
   }, [savedEnvironments]);
-  const [sshConnectionError, setSshConnectionError] = useState<string | null>(null);
   const [connectingSshHostAlias, setConnectingSshHostAlias] = useState<string | null>(null);
 
   const [desktopServerExposureMutationError, setDesktopServerExposureMutationError] = useState<
@@ -1826,9 +1816,6 @@ export function ConnectionsSettings() {
   >(null);
   const [isRevokingOtherDesktopClients, setIsRevokingOtherDesktopClients] = useState(false);
   const [addBackendDialogOpen, setAddBackendDialogOpen] = useState(false);
-  const [savedBackendMode, setSavedBackendMode] = useState<"remote" | "ssh">("remote");
-  const [savedBackendHost, setSavedBackendHost] = useState("");
-  const [savedBackendPairingCode, setSavedBackendPairingCode] = useState("");
   const [savedBackendSshHost, setSavedBackendSshHost] = useState("");
   const [savedBackendSshUsername, setSavedBackendSshUsername] = useState("");
   const [savedBackendSshPort, setSavedBackendSshPort] = useState("");
@@ -1898,9 +1885,7 @@ export function ConnectionsSettings() {
     canManageLocalBackend && desktopBridge ? desktopNetworkAccessStateAtom : null,
   );
   const desktopSshHosts = useEnvironmentQuery(
-    desktopBridge && addBackendDialogOpen && savedBackendMode === "ssh"
-      ? desktopSshHostsStateAtom
-      : null,
+    desktopBridge && addBackendDialogOpen ? desktopSshHostsStateAtom : null,
   );
   const desktopWsl = useEnvironmentQuery(
     canManageLocalBackend && desktopBridge ? desktopWslStateAtom : null,
@@ -1923,7 +1908,7 @@ export function ConnectionsSettings() {
   const hasLoadedDiscoveredSshHosts =
     desktopSshHosts.data !== null || desktopSshHosts.error !== null;
   const isLoadingDiscoveredSshHosts = desktopSshHosts.isPending;
-  const discoveredSshHostsError = sshConnectionError ?? desktopSshHosts.error;
+  const discoveredSshHostsError = desktopSshHosts.error;
   const desktopServerExposureState = desktopNetworkAccess.data?.serverExposureState ?? null;
   const desktopAdvertisedEndpoints =
     desktopNetworkAccess.data?.advertisedEndpoints ?? EMPTY_ADVERTISED_ENDPOINTS;
@@ -2148,108 +2133,41 @@ export function ConnectionsSettings() {
   }, []);
 
   const handleAddSavedBackend = useCallback(async () => {
-    if (savedBackendMode === "ssh") {
-      setIsAddingSavedBackend(true);
-      setSavedBackendError(null);
-      let target: DesktopSshEnvironmentTarget;
-      try {
-        target = parseManualDesktopSshTarget({
-          host: savedBackendSshHost,
-          username: savedBackendSshUsername,
-          port: savedBackendSshPort,
-        });
-      } catch (error) {
-        setSavedBackendError(formatDesktopSshConnectionError(error));
-        setIsAddingSavedBackend(false);
-        return;
-      }
-
-      const result = await connectSshEnvironment({ target, label: "" });
-      if (result._tag === "Failure") {
-        if (!isAtomCommandInterrupted(result)) {
-          setSavedBackendError(formatDesktopSshConnectionError(squashAtomCommandFailure(result)));
-        }
-        setIsAddingSavedBackend(false);
-        return;
-      }
-
-      setSavedBackendHost("");
-      setSavedBackendPairingCode("");
-      setSavedBackendSshHost("");
-      setSavedBackendSshUsername("");
-      setSavedBackendSshPort("");
-      setAddBackendDialogOpen(false);
-      toastManager.add({
-        type: "success",
-        title: "Environment connected",
-        description: `${target.alias} is ready over an SSH-managed tunnel.`,
-      });
-      setIsAddingSavedBackend(false);
-      return;
-    }
-
     setIsAddingSavedBackend(true);
     setSavedBackendError(null);
-    let remotePairingInput: ReturnType<typeof parseRemotePairingFields>;
+    let target: DesktopSshEnvironmentTarget;
     try {
-      remotePairingInput = parseRemotePairingFields({
-        host: savedBackendHost,
-        pairingCode: savedBackendPairingCode,
+      target = parseManualDesktopSshTarget({
+        host: savedBackendSshHost,
+        username: savedBackendSshUsername,
+        port: savedBackendSshPort,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to add backend.";
-      setSavedBackendError(message);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Could not add backend",
-          description: message,
-        }),
-      );
+      setSavedBackendError(formatDesktopSshConnectionError(error));
       setIsAddingSavedBackend(false);
       return;
     }
 
-    const result = await connectPairing(remotePairingInput);
+    const result = await connectSshEnvironment({ target, label: "" });
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        const message = error instanceof Error ? error.message : "Failed to add backend.";
-        setSavedBackendError(message);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not add backend",
-            description: message,
-          }),
-        );
+        setSavedBackendError(formatDesktopSshConnectionError(squashAtomCommandFailure(result)));
       }
       setIsAddingSavedBackend(false);
       return;
     }
 
-    setSavedBackendHost("");
-    setSavedBackendPairingCode("");
     setSavedBackendSshHost("");
     setSavedBackendSshUsername("");
     setSavedBackendSshPort("");
     setAddBackendDialogOpen(false);
     toastManager.add({
       type: "success",
-      title: "Backend added",
-      description: "The environment is saved and will reconnect on app startup.",
+      title: "Environment connected",
+      description: `${target.alias} is ready over an SSH-managed tunnel.`,
     });
     setIsAddingSavedBackend(false);
-  }, [
-    connectPairing,
-    connectSshEnvironment,
-    savedBackendHost,
-    savedBackendMode,
-    savedBackendPairingCode,
-    savedBackendSshHost,
-    savedBackendSshPort,
-    savedBackendSshUsername,
-  ]);
+  }, [connectSshEnvironment, savedBackendSshHost, savedBackendSshPort, savedBackendSshUsername]);
 
   const handleConnectSavedBackend = useCallback(
     async (environmentId: EnvironmentId) => {
@@ -2296,11 +2214,7 @@ export function ConnectionsSettings() {
   const handleConnectSshHost = useCallback(
     async (target: DesktopSshEnvironmentTarget, label?: string) => {
       setConnectingSshHostAlias(target.alias);
-      if (savedBackendMode === "ssh") {
-        setSavedBackendError(null);
-      } else {
-        setSshConnectionError(null);
-      }
+      setSavedBackendError(null);
       const result = await connectSshEnvironment({
         target,
         ...(label === undefined ? {} : { label }),
@@ -2322,15 +2236,10 @@ export function ConnectionsSettings() {
       }
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        const message = formatDesktopSshConnectionError(error);
-        if (savedBackendMode === "ssh") {
-          setSavedBackendError(message);
-        } else {
-          setSshConnectionError(message);
-        }
+        setSavedBackendError(formatDesktopSshConnectionError(error));
       }
     },
-    [connectSshEnvironment, savedBackendMode, savedDesktopSshEnvironmentsByAlias],
+    [connectSshEnvironment, savedDesktopSshEnvironmentsByAlias],
   );
 
   const visibleDesktopPairingLinks = desktopPairingLinks;
@@ -2377,104 +2286,7 @@ export function ConnectionsSettings() {
     },
     [setDefaultAdvertisedEndpointKey],
   );
-  const handleSavedBackendHostChange = useCallback((value: string) => {
-    const parsedPairingUrl = parsePairingUrlFields(value);
-    if (parsedPairingUrl) {
-      setSavedBackendHost(parsedPairingUrl.host);
-      setSavedBackendPairingCode(parsedPairingUrl.pairingCode);
-      return;
-    }
-    setSavedBackendHost(value);
-  }, []);
 
-  const renderConnectionModeCard = (input: {
-    readonly mode: "remote" | "ssh";
-    readonly title: string;
-    readonly description: string;
-    readonly icon?: ReactNode;
-  }) => {
-    const selected = savedBackendMode === input.mode;
-    return (
-      <button
-        type="button"
-        aria-pressed={selected}
-        className={cn(
-          "group flex min-h-24 items-start gap-3 rounded-lg border p-4 text-left",
-          selected ? "border-primary/50 bg-primary/5" : "border-border/60 hover:bg-muted/40",
-        )}
-        disabled={isAddingSavedBackend}
-        onClick={() => {
-          setSavedBackendMode(input.mode);
-        }}
-      >
-        {input.icon ? (
-          <span
-            className={cn(
-              "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border",
-              selected
-                ? "border-primary/30 bg-primary/10 text-primary"
-                : "border-border/70 bg-background text-muted-foreground group-hover:text-foreground",
-            )}
-          >
-            {input.icon}
-          </span>
-        ) : null}
-        <span className="min-w-0">
-          <span className="block text-sm font-medium text-foreground">{input.title}</span>
-          <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-            {input.description}
-          </span>
-        </span>
-      </button>
-    );
-  };
-
-  const renderRemoteFields = () => (
-    <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-medium text-foreground">Host</span>
-          <Input
-            value={savedBackendHost}
-            onChange={(event) => handleSavedBackendHostChange(event.target.value)}
-            placeholder="backend.example.com"
-            disabled={isAddingSavedBackend}
-            spellCheck={false}
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-medium text-foreground">Pairing code</span>
-          <Input
-            value={savedBackendPairingCode}
-            onChange={(event) => setSavedBackendPairingCode(event.target.value)}
-            placeholder="PAIRCODE"
-            disabled={isAddingSavedBackend}
-            spellCheck={false}
-          />
-        </label>
-      </div>
-      <div>
-        <span className="mt-1 block text-[11px] text-muted-foreground">
-          Paste a full pairing URL here to fill both fields automatically.
-        </span>
-      </div>
-    </div>
-  );
-  const renderRemoteModeBody = () => (
-    <div className="space-y-4">
-      {renderRemoteFields()}
-      {savedBackendError ? <p className="text-xs text-destructive">{savedBackendError}</p> : null}
-      <Button
-        variant="outline"
-        className="w-full"
-        disabled={isAddingSavedBackend}
-        onClick={() => void handleAddSavedBackend()}
-      >
-        <PlusIcon className="size-3.5" />
-        {isAddingSavedBackend ? "Adding…" : "Add environment"}
-      </Button>
-    </div>
-  );
   const renderSshFields = () => (
     <div className="space-y-4">
       <div className="space-y-3">
@@ -3390,68 +3202,52 @@ export function ConnectionsSettings() {
       <SettingsSection
         {...searchableSetting("remote-environments")}
         headerAction={
-          <Dialog
-            open={addBackendDialogOpen}
-            onOpenChange={(open) => {
-              setAddBackendDialogOpen(open);
-              if (!open) {
-                setSavedBackendError(null);
-              }
-            }}
-          >
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <DialogTrigger
-                    render={
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        className="h-5 gap-1 rounded-sm px-1 text-[11px] font-normal text-muted-foreground/60 hover:text-muted-foreground"
-                        aria-label="Add environment"
-                      >
-                        <PlusIcon className="size-3" />
-                        <span>Add environment</span>
-                      </Button>
-                    }
-                  />
+          // Desktop is the only surface that can add an environment by hand
+          // (SSH); everything else connects through Surge Connect below.
+          desktopBridge ? (
+            <Dialog
+              open={addBackendDialogOpen}
+              onOpenChange={(open) => {
+                setAddBackendDialogOpen(open);
+                if (!open) {
+                  setSavedBackendError(null);
                 }
-              />
-              <TooltipPopup side="top">Add environment</TooltipPopup>
-            </Tooltip>
-            <DialogPopup className="max-h-[80dvh] sm:max-w-3xl">
-              <DialogHeader>
-                <DialogTitle>Add Environment</DialogTitle>
-                <DialogDescription>Pair another environment to this client.</DialogDescription>
-              </DialogHeader>
-              <DialogPanel>
-                <div className="space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {renderConnectionModeCard({
-                      mode: "remote",
-                      title: "Remote link",
-                      description: "Enter a backend host and pairing code.",
-                      icon: <ChevronsLeftRightEllipsisIcon aria-hidden className="size-4" />,
-                    })}
-                    {desktopBridge
-                      ? renderConnectionModeCard({
-                          mode: "ssh",
-                          title: "SSH",
-                          description: "Use local SSH config, agent, and tunnels for the backend.",
-                          icon: <TerminalIcon aria-hidden className="size-4" />,
-                        })
-                      : null}
-                  </div>
-                  <AnimatedHeight>
-                    {savedBackendMode === "ssh" ? renderSshFields() : renderRemoteModeBody()}
-                  </AnimatedHeight>
-                </div>
-              </DialogPanel>
-            </DialogPopup>
-          </Dialog>
+              }}
+            >
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <DialogTrigger
+                      render={
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          className="h-5 gap-1 rounded-sm px-1 text-[11px] font-normal text-muted-foreground/60 hover:text-muted-foreground"
+                          aria-label="Add environment"
+                        >
+                          <PlusIcon className="size-3" />
+                          <span>Add environment</span>
+                        </Button>
+                      }
+                    />
+                  }
+                />
+                <TooltipPopup side="top">Add environment</TooltipPopup>
+              </Tooltip>
+              <DialogPopup className="max-h-[80dvh] sm:max-w-3xl">
+                <DialogHeader>
+                  <DialogTitle>Add Environment</DialogTitle>
+                  <DialogDescription>
+                    Connect another environment over an SSH-managed tunnel.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogPanel>{renderSshFields()}</DialogPanel>
+              </DialogPopup>
+            </Dialog>
+          ) : null
         }
       >
-        {savedEnvironments.map((environment) => (
+        {visibleSavedEnvironments.map((environment) => (
           <SavedBackendListRow
             key={environment.environmentId}
             environment={environment}
@@ -3463,6 +3259,7 @@ export function ConnectionsSettings() {
         <CloudRemoteEnvironmentRows
           primaryEnvironmentId={primaryEnvironmentId}
           savedEnvironments={savedEnvironments}
+          hiddenMachineKeys={workingSavedMachineKeys}
         />
       </SettingsSection>
     </SettingsPageContainer>
