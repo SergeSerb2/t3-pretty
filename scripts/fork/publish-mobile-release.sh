@@ -385,9 +385,9 @@ is_full_xcode() {
 }
 
 # Prefer a full Xcode.app, then Xcode-beta.app, if xcodebuild actually runs.
-# Command Line Tools cannot compile an IPA. TestFlight accepts the current
-# Xcode 27 beta; this Mac is on macOS 27 developer beta so a leftover
-# Xcode.app often cannot run and Xcode-beta.app is the expected toolchain.
+# Command Line Tools cannot compile an IPA. TestFlight currently accepts
+# Xcode 27 beta 5 (27A5237l). This Mac is on macOS 27 developer beta so a
+# leftover Xcode.app often cannot run and Xcode-beta.app is the toolchain.
 developer_dir=""
 if is_full_xcode "${DEVELOPER_DIR:-}"; then
   developer_dir="$DEVELOPER_DIR"
