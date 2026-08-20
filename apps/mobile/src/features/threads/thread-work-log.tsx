@@ -149,7 +149,7 @@ function workspaceGeneratedImagePath(cwd: string | null | undefined, path: strin
     return path;
   }
   if (!cwd) {
-    return null;
+    return path;
   }
   return resolveWorkspaceFilePath(cwd, path);
 }
