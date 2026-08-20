@@ -17,10 +17,14 @@ export function formatStorageBytes(value: number): string {
 }
 
 export function isStorageScanInProgress(
-  _inventory: StorageInventory | null,
+  inventory: StorageInventory | null,
   isPending: boolean,
 ): boolean {
-  return isPending;
+  // The inventory stream is mounted through `followStream`, which stays open
+  // after the finite walk ends, so `waiting` remains true once a complete
+  // frame has arrived. A leftover `scan.status === "scanning"` snapshot after
+  // a dropped stream is not in-flight work either.
+  return isPending && inventory?.scan?.status !== "complete";
 }
 
 export function scanProgressCaption(inventory: StorageInventory): string | null {

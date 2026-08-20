@@ -472,9 +472,7 @@ function EnvironmentStorage({
       <SettingsSection
         id={isFirst ? searchableSetting("storage-disk-use").id : undefined}
         title={searchableSetting("storage-disk-use").title}
-        headerAction={
-          <StorageRefreshButton isPending={environment.isPending} onRefresh={onRefresh} />
-        }
+        headerAction={<StorageRefreshButton isPending={scanning} onRefresh={onRefresh} />}
       >
         <div className="rounded-xl px-3 py-3 sm:px-4">
           <div className="flex items-baseline gap-3">
