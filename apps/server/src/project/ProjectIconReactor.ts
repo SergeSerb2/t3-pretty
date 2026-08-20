@@ -57,6 +57,37 @@ function mimeTypeForPath(filePath: string): string {
   return "image/png";
 }
 
+function resolveInsideWorkspaceImagePath(
+  path: Path.Path,
+  workspaceRoot: string,
+  candidate: string,
+): string | null {
+  const trimmed = candidate.trim();
+  if (trimmed.length === 0 || !isWorkspaceImagePreviewPath(trimmed)) {
+    return null;
+  }
+  const root = path.resolve(workspaceRoot);
+  const resolved = path.resolve(root, trimmed);
+  const relative = path.relative(root, resolved);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    return null;
+  }
+  return resolved;
+}
+
+/** Prefer the known output path; only trust a model-reported path if it stays in the workspace. */
+export function resolveGeneratedProjectIconPath(input: {
+  readonly path: Path.Path;
+  readonly workspaceRoot: string;
+  readonly outputPath: string;
+  readonly reportedPath: string;
+}): string | null {
+  return (
+    resolveInsideWorkspaceImagePath(input.path, input.workspaceRoot, input.outputPath) ??
+    resolveInsideWorkspaceImagePath(input.path, input.workspaceRoot, input.reportedPath)
+  );
+}
+
 function pickImageCapableSelection(
   instances: ReadonlyArray<ProviderInstance>,
   preferred: ModelSelection,
@@ -134,7 +165,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const outputPath = path.join(project.workspaceRoot, GENERATED_ICON_FILE_NAME);
+    const outputPath = path.resolve(project.workspaceRoot, GENERATED_ICON_FILE_NAME);
     const generated = yield* textGeneration
       .generateProjectIcon({
         cwd: project.workspaceRoot,
@@ -153,11 +184,17 @@ const make = Effect.gen(function* () {
     if (!generated) {
       return;
     }
-    const candidatePath = generated.path.trim().length > 0 ? generated.path.trim() : outputPath;
-    if (!isWorkspaceImagePreviewPath(candidatePath)) {
-      yield* Effect.logWarning("project icon generation returned a non-image path", {
+    const reportedPath = generated.path.trim();
+    const candidatePath = resolveGeneratedProjectIconPath({
+      path,
+      workspaceRoot: project.workspaceRoot,
+      outputPath,
+      reportedPath,
+    });
+    if (!candidatePath) {
+      yield* Effect.logWarning("project icon generation returned a path outside the workspace", {
         projectId,
-        path: candidatePath,
+        path: reportedPath.length > 0 ? reportedPath : outputPath,
       });
       return;
     }
@@ -207,10 +244,7 @@ const make = Effect.gen(function* () {
           }),
         ),
       );
-    yield* fileSystem.remove(candidatePath).pipe(Effect.catchCause(() => Effect.void));
-    if (candidatePath !== outputPath) {
-      yield* fileSystem.remove(outputPath).pipe(Effect.catchCause(() => Effect.void));
-    }
+    yield* fileSystem.remove(outputPath).pipe(Effect.catchCause(() => Effect.void));
   });
 
   const worker = yield* makeKeyedCoalescingWorker({
