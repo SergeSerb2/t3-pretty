@@ -65,7 +65,7 @@ const environmentInput = {
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
-function makeFakeBrowserWindow() {
+function makeFakeBrowserWindow(options?: { readonly focused?: boolean }) {
   const windowListeners = new Map<string, (...args: readonly unknown[]) => void>();
   const webContentsListeners = new Map<string, (...args: readonly unknown[]) => void>();
   let zoomLevel = 0;
@@ -95,7 +95,7 @@ function makeFakeBrowserWindow() {
     getBounds: vi.fn(() => ({ x: 0, y: 0, width: 1100, height: 780 })),
     getNormalBounds: vi.fn(() => ({ x: 0, y: 0, width: 1100, height: 780 })),
     isDestroyed: vi.fn(() => false),
-    isFocused: vi.fn(() => false),
+    isFocused: vi.fn(() => options?.focused ?? false),
     isFullScreen: vi.fn(() => false),
     isMaximized: vi.fn(() => false),
     isMinimized: vi.fn(() => false),
@@ -1053,6 +1053,7 @@ describe("DesktopWindow", () => {
           return yield* Effect.die("fullscreen listeners were not registered");
         }
 
+        fakeWindow.send.mockClear();
         enterFullscreen();
         leaveFullscreen();
         assert.deepEqual(fakeWindow.send.mock.calls, [
@@ -1089,6 +1090,7 @@ describe("DesktopWindow", () => {
         }
 
         assert.deepEqual(fakeWindow.send.mock.calls, [
+          [WINDOW_ACTIVE_STATE_CHANNEL, false],
           [WINDOW_ACTIVE_STATE_CHANNEL, true],
           [WINDOW_ACTIVE_STATE_CHANNEL, false],
           [WINDOW_INTERACTING_CHANNEL, true],
@@ -1096,6 +1098,59 @@ describe("DesktopWindow", () => {
           [WINDOW_INTERACTING_CHANNEL, true],
           [WINDOW_INTERACTING_CHANNEL, false],
         ]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("pushes a focused seed so the renderer does not start inactive", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow({ focused: true });
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        assert.deepEqual(fakeWindow.send.mock.calls, [[WINDOW_ACTIVE_STATE_CHANNEL, true]]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("re-pushes window key state after the renderer finishes loading", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const didFinishLoad = fakeWindow.webContentsListeners.get("did-finish-load");
+        const focus = fakeWindow.windowListeners.get("focus");
+        if (!didFinishLoad || !focus) {
+          return yield* Effect.die("window key-state listeners were not registered");
+        }
+
+        fakeWindow.send.mockClear();
+        didFinishLoad();
+        assert.deepEqual(fakeWindow.send.mock.calls, [[WINDOW_ACTIVE_STATE_CHANNEL, false]]);
+
+        focus();
+        fakeWindow.send.mockClear();
+        didFinishLoad();
+        assert.deepEqual(fakeWindow.send.mock.calls, [[WINDOW_ACTIVE_STATE_CHANNEL, true]]);
       }).pipe(Effect.provide(layer));
     }),
   );
@@ -1365,7 +1420,10 @@ describe("DesktopWindow", () => {
         yield* desktopWindow.dispatchMenuAction("open-settings");
 
         assert.equal(yield* Ref.get(scenario.createCalls), 3);
-        assert.deepEqual(main.send.mock.calls, [[MENU_ACTION_CHANNEL, "open-settings"]]);
+        assert.deepEqual(main.send.mock.calls, [
+          [WINDOW_ACTIVE_STATE_CHANNEL, false],
+          [MENU_ACTION_CHANNEL, "open-settings"],
+        ]);
       }).pipe(Effect.provide(scenario.layer));
     }),
   );

@@ -678,7 +678,9 @@ export const make = Effect.gen(function* () {
     // Seed from the window's current state — the focus event for an
     // already-key window fired before these listeners existed, and an
     // unseeded false would let the first badge push bounce the Dock at a
-    // user who is looking straight at the app.
+    // user who is looking straight at the app. Push that seed to the
+    // renderer too: focus/blur only fire on later transitions, so an
+    // already-unfocused window would never get `data-window-inactive`.
     mainWindowFocused = window.isFocused();
     window.on("focus", () => {
       mainWindowFocused = true;
@@ -691,6 +693,7 @@ export const make = Effect.gen(function* () {
       mainWindowFocused = false;
       sendWindowState(WINDOW_ACTIVE_STATE_CHANNEL, false);
     });
+    sendWindowState(WINDOW_ACTIVE_STATE_CHANNEL, mainWindowFocused);
     // Glass blur is expensive to recomposite every frame of a drag or resize.
     // `will-resize`/`will-move` fire on every frame of the gesture while
     // `resized`/`moved` fire once at its end, so dedupe to exactly one IPC
@@ -770,6 +773,10 @@ export const make = Effect.gen(function* () {
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
       window.setTitle(environment.displayName);
+      // Listener-attach seed is dropped if the renderer is not live yet.
+      // Re-push so a first load (or crash-recovery reload) still gets the
+      // current key state.
+      sendWindowState(WINDOW_ACTIVE_STATE_CHANNEL, mainWindowFocused);
     });
     window.webContents.on(
       "did-fail-load",

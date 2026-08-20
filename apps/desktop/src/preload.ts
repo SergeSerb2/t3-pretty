@@ -11,6 +11,15 @@ import * as IpcChannels from "./ipc/channels.ts";
 
 exposeClerkBridge({ passkeys: true });
 
+// Cache key-state before React subscribes. The main process seeds this on
+// did-finish-load, which can land before AppSidebarLayout's effect attaches.
+let lastWindowActiveState: boolean | undefined;
+ipcRenderer.on(IpcChannels.WINDOW_ACTIVE_STATE_CHANNEL, (_event, active) => {
+  if (typeof active === "boolean") {
+    lastWindowActiveState = active;
+  }
+});
+
 function unwrapEnsureSshEnvironmentResult(result: unknown) {
   if (
     typeof result === "object" &&
@@ -174,6 +183,9 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     };
 
     ipcRenderer.on(IpcChannels.WINDOW_ACTIVE_STATE_CHANNEL, wrappedListener);
+    if (lastWindowActiveState !== undefined) {
+      listener(lastWindowActiveState);
+    }
     return () => {
       ipcRenderer.removeListener(IpcChannels.WINDOW_ACTIVE_STATE_CHANNEL, wrappedListener);
     };
