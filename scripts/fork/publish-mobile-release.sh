@@ -9,10 +9,10 @@
 # is only compiled when the native fingerprint changed, or a maintainer set
 # T3CODE_FORCE_IOS / T3CODE_MOBILE_MODE=build. eas submit / Fastlane pilot
 # uploads that IPA as a TestFlight build through App Store Connect; it does
-# not submit the app for App Store review. App Store Connect rejects beta
-# SDKs, so Xcode-beta.app is not used for a local IPA. If that is all this
-# Mac has, the job compiles and submits on EAS cloud instead of going green
-# with nothing for TestFlight.app.
+# not submit the app for App Store review. macos-release runs macOS 27
+# developer beta, so the compiler is Xcode-beta.app. TestFlight accepts the
+# current Xcode 27 beta (not every older beta). EAS cloud is only the
+# fallback when this Mac has no full Xcode at all.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -347,8 +347,7 @@ if [[ ! -f "$gate_file" ]]; then
   # Trust the recorded fingerprint, including one left by the old GitHub
   # Actions importer. Installed TestFlight binaries pick up JS via OTA.
   # Do not force an IPA upload just because this native job has never
-  # written .t3-fork/ios-native-submit: that path is App Store Connect
-  # (Fastlane pilot) and fails on Xcode beta.
+  # written .t3-fork/ios-native-submit.
   force_flag=false
   if [[ "$MODE" == "build" || "$FORCE_IOS" == "true" ]]; then
     force_flag=true
@@ -379,28 +378,15 @@ is_full_xcode() {
   [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]]
 }
 
-# App Store Connect (including TestFlight) rejects beta SDKs. m1-dev often
-# has only Xcode-beta.app. Local compile stays on store Xcode; otherwise
-# EAS cloud builds and submits so TestFlight.app still gets a binary.
-xcode_is_store_supported() {
-  local dir="$1" version
-  is_full_xcode "$dir" || return 1
-  case "$dir" in
-    *Xcode-beta.app*) return 1 ;;
-  esac
-  version="$(DEVELOPER_DIR="$dir" "$dir/usr/bin/xcodebuild" -version 2>/dev/null || true)"
-  case "$version" in
-    *[Bb]eta*) return 1 ;;
-  esac
-  [[ -n "$version" ]]
-}
-
+# Prefer a full Xcode.app, then Xcode-beta.app. Command Line Tools cannot
+# compile an IPA. TestFlight accepts the current Xcode 27 beta; this Mac is
+# on macOS 27 developer beta so Xcode-beta.app is the expected toolchain.
 developer_dir=""
-if xcode_is_store_supported "${DEVELOPER_DIR:-}"; then
+if is_full_xcode "${DEVELOPER_DIR:-}"; then
   developer_dir="$DEVELOPER_DIR"
 else
-  for app in /Applications/Xcode.app /Applications/Xcode*.app; do
-    if xcode_is_store_supported "$app/Contents/Developer"; then
+  for app in /Applications/Xcode.app /Applications/Xcode-beta.app /Applications/Xcode*.app; do
+    if is_full_xcode "$app/Contents/Developer"; then
       developer_dir="$app/Contents/Developer"
       break
     fi
@@ -408,11 +394,11 @@ else
 fi
 
 ipa_via_cloud=false
-if ! xcode_is_store_supported "$developer_dir"; then
+if ! is_full_xcode "$developer_dir"; then
   ipa_via_cloud=true
   ls -ld /Applications/Xcode*.app 2>/dev/null || echo "No Xcode*.app under /Applications."
   xcode-select -p 2>/dev/null || true
-  annotate info "No store-supported Xcode on this Mac (need Xcode.app RC/release, not Xcode-beta.app). Compiling the TestFlight IPA on EAS cloud."
+  annotate info "No full Xcode on this Mac (need Xcode.app or Xcode-beta.app, not Command Line Tools). Compiling the TestFlight IPA on EAS cloud."
 fi
 
 load_secret APPLE_API_KEY
@@ -468,7 +454,7 @@ if [[ "$ipa_via_cloud" == "true" ]]; then
   annotate success "Submitted TestFlight IPA via EAS cloud"
   restore_eas_json
 else
-  echo "Using store-supported Xcode at $developer_dir"
+  echo "Using Xcode at $developer_dir"
   export DEVELOPER_DIR="$developer_dir"
   selected="$(xcode-select -p 2>/dev/null || true)"
   if [[ "$selected" != "$developer_dir" ]]; then
