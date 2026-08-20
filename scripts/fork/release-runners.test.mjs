@@ -199,6 +199,16 @@ describe("T3 Pretty release runner placement", () => {
     );
     assert.include(persistHook, 'BUILDKITE_STEP_KEY:-}" == "ios-mobile"');
     assert.include(persistHook, ".cache/t3-pretty-release/ios-native-submit");
+    assert.include(persistHook, "refresh_macos_agent_hooks");
+    assert.isBelow(
+      persistHook.indexOf("refresh_macos_agent_hooks"),
+      persistHook.indexOf('BUILDKITE_STEP_KEY:-}" == "ios-mobile"'),
+    );
+    const originGit = NodeFS.readFileSync(NodePath.resolve(here, "macos-origin-git.sh"), "utf8");
+    assert.include(originGit, "helpers_ready");
+    assert.include(originGit, "gitconfig.write.lock");
+    assert.include(originGit, "Removing stale");
+    assert.include(originGit, "could not lock config file");
     const dmg = NodeFS.readFileSync(NodePath.resolve(here, "build-macos-dmg.sh"), "utf8");
     assert.notInclude(dmg, "python3 -c");
     assert.notInclude(dmg, "process.stdin.on");

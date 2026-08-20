@@ -147,6 +147,10 @@ without pretending that a newer upstream tag was integrated before its sync pull
   `scripts/fork/setup-buildkite-windows-agent.ps1`. The Mac setup starts a
   second agent (`m1-dev-t3code-fork-2`) on the same queue so Origin PR review
   and the signed DMG can run while a local IPA occupies the first worker.
+  Those two workers share `$HOME`, so the pre-checkout hook skips rewriting
+  `~/.gitconfig` when the Origin credential helper is already set; concurrent
+  writes used to fail with `could not lock config file`. After checkout the
+  post-checkout hook copies hook scripts from the repo onto the agent.
   Schedule the pipeline at `0 */4 * * *`
   so the native `macos-release` upstream-sync step still runs. Imported Mac jobs use `macos-latest` so the plugin can map
   them onto `macos-release`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
