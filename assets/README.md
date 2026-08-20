@@ -11,10 +11,10 @@ logo appear for this repository in T3 Pretty project rows instead of the folder 
 Earlier studies live in `pretty/logo-explorations/`. The shipping mark is the
 cut-out T3 from that lockup, recast in World Scenery sage.
 
-The master mark is the original lockup T3, recolored to pastel sage (`#7EAA8C`)
-on a sage-frost plate (`#DFEFE3`). Shapes are taken from the lockup raster —
-not redrawn. The `| Pretty` wordmark (`pretty/t3-pretty-wordmark.png`) is for
-the README, DMG installer, and other large lockups — not the app icon.
+The master mark is the original lockup T3, cropped from the lockup raster —
+same letters, same cream paper. The `| Pretty` wordmark
+(`pretty/t3-pretty-wordmark.png`) is for the README, DMG installer, and other
+large lockups. The in-app mark is that T3 with the paper knocked out.
 
 `t3-pretty-1024.png` is the macOS asset (824px body inset 100px, with
 a light contact shadow). `t3-pretty-ios-1024.png` is the full-bleed iOS asset.

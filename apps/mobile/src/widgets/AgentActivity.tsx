@@ -300,7 +300,7 @@ export function AgentActivity(
   // foreground style, which the template image inherits. The frame matches
   // the cut-out T3's aspect ratio so it never distorts.
   const renderLogo = (height: number, color: string) => (
-    <HStack modifiers={[frame({ width: height * (480 / 353), height }), foregroundStyle(color)]}>
+    <HStack modifiers={[frame({ width: height * (480 / 354), height }), foregroundStyle(color)]}>
       <Image assetName="T3Mark" modifiers={[resizable()]} />
     </HStack>
   );
