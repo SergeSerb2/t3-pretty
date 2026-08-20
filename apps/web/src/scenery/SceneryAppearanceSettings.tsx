@@ -50,11 +50,9 @@ export default function SceneryAppearanceSettings() {
   const blur = useSceneryStore((state) => state.blur);
   const translucency = useSceneryStore((state) => state.translucency);
   const inkMode = useSceneryStore((state) => state.inkMode);
-  const depthEffects = useSceneryStore((state) => state.depthEffects);
   const setBlur = useSceneryStore((state) => state.setBlur);
   const setTranslucency = useSceneryStore((state) => state.setTranslucency);
   const setInkMode = useSceneryStore((state) => state.setInkMode);
-  const setDepthEffects = useSceneryStore((state) => state.setDepthEffects);
   const motionEnabled = useMotionStore((state) => state.enabled);
   const setMotionEnabled = useMotionStore((state) => state.setEnabled);
 
@@ -157,23 +155,6 @@ export default function SceneryAppearanceSettings() {
               value={photoPresence}
             />
           </div>
-        }
-      />
-
-      <SettingsRow
-        {...searchableSetting("setting-scenery-3d")}
-        description="Layer the landscape into depth so it shifts with the pointer. Uses more GPU; the system reduce-motion setting and Thread motion both park it."
-        resetAction={
-          depthEffects ? (
-            <SettingResetButton label="3D effects" onClick={() => setDepthEffects(false)} />
-          ) : null
-        }
-        control={
-          <Switch
-            aria-label="3D effects"
-            checked={depthEffects}
-            onCheckedChange={(checked) => setDepthEffects(Boolean(checked))}
-          />
         }
       />
 

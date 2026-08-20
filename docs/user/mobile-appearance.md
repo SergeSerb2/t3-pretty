@@ -12,6 +12,3 @@ To change the color scheme:
 
 **System** follows the device appearance automatically. Color scheme, text, code, and terminal
 appearance preferences are stored on the device.
-
-World Scenery photos, blur, photo presence, and 3D effects also live in **Settings →
-Appearance**. 3D effects tilt the landscape with the device; Reduce Motion keeps it still.
