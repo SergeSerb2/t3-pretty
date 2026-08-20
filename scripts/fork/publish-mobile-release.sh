@@ -375,12 +375,19 @@ if [[ "$should_build" != "true" ]]; then
 fi
 
 is_full_xcode() {
-  [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]]
+  [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]] || return 1
+  # leftover Xcode.app on macOS 27 can exist without being runnable.
+  if DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "Skipping $1: xcodebuild -version failed." >&2
+  return 1
 }
 
-# Prefer a full Xcode.app, then Xcode-beta.app. Command Line Tools cannot
-# compile an IPA. TestFlight accepts the current Xcode 27 beta; this Mac is
-# on macOS 27 developer beta so Xcode-beta.app is the expected toolchain.
+# Prefer a full Xcode.app, then Xcode-beta.app, if xcodebuild actually runs.
+# Command Line Tools cannot compile an IPA. TestFlight accepts the current
+# Xcode 27 beta; this Mac is on macOS 27 developer beta so a leftover
+# Xcode.app often cannot run and Xcode-beta.app is the expected toolchain.
 developer_dir=""
 if is_full_xcode "${DEVELOPER_DIR:-}"; then
   developer_dir="$DEVELOPER_DIR"

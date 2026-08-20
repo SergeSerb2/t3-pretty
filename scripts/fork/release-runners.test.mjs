@@ -175,6 +175,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, ".t3-fork/ios-native-submit");
     assert.include(mobileRelease, "is_full_xcode");
     assert.include(mobileRelease, "/Applications/Xcode-beta.app");
+    assert.include(mobileRelease, 'DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version');
     assert.include(mobileRelease, "This is not App Store review");
     assert.include(mobileRelease, "ipa_via_cloud");
     assert.include(mobileRelease, "--wait");

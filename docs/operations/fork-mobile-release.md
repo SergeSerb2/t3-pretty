@@ -106,10 +106,11 @@ of reporting a green release that shipped nothing. To activate:
    build credit.
 5. On the Mac runner: a full `Xcode.app` or `Xcode-beta.app`. This machine
    is on the macOS developer beta, so `Xcode-beta.app` is the one that
-   runs. Keep it on the Xcode 27 beta that App Store Connect currently
-   accepts for TestFlight (today that is beta 5). Command Line Tools
-   cannot compile an IPA; if `xcode-select -p` still points at them, run
-   once:
+   runs. The script probes `xcodebuild -version` and skips a leftover
+   `Xcode.app` that cannot run. Keep it on the Xcode 27 beta that App
+   Store Connect currently accepts for TestFlight (today that is beta 5).
+   Command Line Tools cannot compile an IPA; if `xcode-select -p` still
+   points at them, run once:
    `sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer`.
    The script retries that switch with passwordless sudo during the job.
    Local EAS on macOS 26 / Xcode 27 also needs the `security` PATH shim in
