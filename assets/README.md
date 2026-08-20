@@ -8,6 +8,10 @@ same family in every release channel so upstream dev/nightly/prod artwork cannot
 identity during packaging. The checked-in `t3.json` also points to the master image, which makes the
 logo appear for this repository in T3 Pretty project rows instead of the folder fallback.
 
+Logo candidates that drop the candy 3D treatment live in `pretty/logo-explorations/`.
+They are studies only — open `pretty/logo-explorations/board.html` to review. The live
+icon family below is unchanged until a direction is chosen.
+
 The master application icon is the generated colorful T3 mark on a dark glass
 squircle. `t3-pretty-1024.png` is the macOS asset (824px body inset 100px, with
 a light contact shadow). `t3-pretty-ios-1024.png` is the full-bleed iOS asset.

@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>T3 Pretty · identity explorations</title>
+    <style>
+      :root {
+        --cream: #f4f1ea;
+        --paper: #ebe6db;
+        --forest: #14261b;
+        --sage: #dfefe3;
+        --sage-ink: #3d5a48;
+        --olive: #6b7a55;
+        --sea: #a8c5b5;
+        --ink: #161a17;
+        --mute: #5c675f;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: var(--cream); color: var(--forest); }
+      body {
+        font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+        line-height: 1.45;
+      }
+      .wrap { max-width: 1120px; margin: 0 auto; padding: 56px 28px 96px; }
+      header { max-width: 640px; margin-bottom: 56px; }
+      .eyebrow {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 11px;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: var(--sage-ink);
+        margin: 0 0 18px;
+      }
+      h1 {
+        font-size: 42px;
+        font-weight: 400;
+        letter-spacing: -0.03em;
+        margin: 0 0 16px;
+      }
+      .lede { font-size: 18px; color: var(--mute); margin: 0; }
+      h2 {
+        font-size: 22px;
+        font-weight: 400;
+        margin: 64px 0 8px;
+        letter-spacing: -0.02em;
+      }
+      .note {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 13px;
+        color: var(--mute);
+        max-width: 640px;
+        margin: 0 0 24px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 18px;
+      }
+      .grid.wide { grid-template-columns: 1fr; }
+      .grid.two { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+      .grid.icons { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+      figure {
+        margin: 0;
+        background: var(--paper);
+        border-radius: 18px;
+        overflow: hidden;
+        padding: 0;
+      }
+      figure.plain { background: transparent; }
+      figure img, figure svg { display: block; width: 100%; height: auto; }
+      figcaption {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 12px;
+        color: var(--mute);
+        padding: 10px 12px 14px;
+      }
+      .now {
+        display: grid;
+        grid-template-columns: 180px 180px 1fr;
+        gap: 20px;
+        align-items: center;
+        background: var(--paper);
+        border-radius: 24px;
+        padding: 24px;
+      }
+      .now img { width: 180px; height: 180px; object-fit: contain; }
+      .now p { margin: 0; color: var(--mute); font-size: 16px; }
+      .swatches { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0 0; }
+      .swatch {
+        width: 72px;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 11px;
+        color: var(--mute);
+      }
+      .swatch i {
+        display: block;
+        height: 44px;
+        border-radius: 8px;
+        margin-bottom: 6px;
+        box-shadow: inset 0 0 0 1px rgba(20, 38, 27, 0.08);
+      }
+      .lockup {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 140px;
+        padding: 24px;
+        background: var(--paper);
+        border-radius: 18px;
+      }
+      .lockup svg { width: min(100%, 480px); height: auto; }
+      hr {
+        border: 0;
+        border-top: 1px solid rgba(20, 38, 27, 0.12);
+        margin: 56px 0 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 13px;
+      }
+      th, td {
+        text-align: left;
+        padding: 10px 12px 10px 0;
+        border-bottom: 1px solid rgba(20, 38, 27, 0.1);
+        vertical-align: top;
+      }
+      th { color: var(--sage-ink); font-weight: 500; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <p class="eyebrow">T3 Pretty · identity</p>
+      <header>
+        <h1>Quieter marks for a landscape-first tool</h1>
+        <p class="lede">
+          The live logo is a purple-to-orange 3D T3 on nested glass. It reads as generated.
+          These studies stay in the T3 family and borrow Pretty’s actual inks: moss, sage frost, cream, fog.
+        </p>
+      </header>
+
+      <h2>Now</h2>
+      <p class="note">Unchanged in this branch. Shown so the new work has something to stand next to.</p>
+      <div class="now">
+        <img src="../t3-pretty-1024.png" alt="Current T3 Pretty app icon" />
+        <img src="../t3-pretty-mark.png" alt="Current T3 Pretty mark" />
+        <p>Candy split, extruded letters, inner glow, glass on glass. Fine as a Midjourney app icon. Wrong for a long-session landscape tool.</p>
+      </div>
+
+      <h2>Palette</h2>
+      <p class="note">Taken from World Scenery plates, not invented for the mark.</p>
+      <div class="swatches">
+        <div class="swatch"><i style="background:#14261B"></i>Forest #14261B</div>
+        <div class="swatch"><i style="background:#DFEFE3"></i>Sage #DFEFE3</div>
+        <div class="swatch"><i style="background:#F4F1EA"></i>Cream #F4F1EA</div>
+        <div class="swatch"><i style="background:#3D5A48"></i>Sage ink #3D5A48</div>
+        <div class="swatch"><i style="background:#A8C5B5"></i>Sea #A8C5B5</div>
+        <div class="swatch"><i style="background:#161A17"></i>Ink #161A17</div>
+      </div>
+
+      <h2>1. Vector system</h2>
+      <p class="note">Official T3 Code letterform, recast. These are the ones we can actually ship. Open the SVGs if a raster letter looks prettier — the raster is a mood, the vector is the type.</p>
+      <div class="grid icons">
+        <figure>
+          <img src="vector/icon-forest-on-sage.svg" alt="Forest T3 on sage" />
+          <figcaption>Forest on sage</figcaption>
+        </figure>
+        <figure>
+          <img src="vector/icon-cream-on-forest.svg" alt="Cream T3 on forest" />
+          <figcaption>Cream on forest</figcaption>
+        </figure>
+        <figure>
+          <img src="vector/icon-sage-on-cream.svg" alt="Sage T3 on cream" />
+          <figcaption>Sage on cream</figcaption>
+        </figure>
+        <figure>
+          <img src="vector/icon-forest-on-cream.svg" alt="Forest T3 on cream" />
+          <figcaption>Forest on cream</figcaption>
+        </figure>
+        <figure>
+          <img src="vector/icon-cream-on-oled.svg" alt="Cream T3 on black" />
+          <figcaption>Cream on OLED</figcaption>
+        </figure>
+        <figure>
+          <img src="vector/icon-two-ink.svg" alt="Two-ink T3" />
+          <figcaption>Two-ink, quiet split</figcaption>
+        </figure>
+        <figure>
+          <img src="vector/icon-sea-on-forest.svg" alt="Sea T3 on forest" />
+          <figcaption>Sea on forest</figcaption>
+        </figure>
+        <figure>
+          <img src="vector/icon-outline-on-cream.svg" alt="Outline T3 on cream" />
+          <figcaption>Outline on cream</figcaption>
+        </figure>
+        <figure>
+          <img src="vector/icon-macos-sage.svg" alt="macOS inset sage icon" />
+          <figcaption>macOS inset, sage</figcaption>
+        </figure>
+        <figure>
+          <img src="vector/icon-macos-forest.svg" alt="macOS inset forest icon" />
+          <figcaption>macOS inset, forest</figcaption>
+        </figure>
+      </div>
+
+      <p class="note" style="margin-top:28px">Marks for the sidebar and lockups, transparent.</p>
+      <div class="grid icons">
+        <figure class="plain" style="background:#f4f1ea"><img src="vector/mark-forest.svg" alt="Forest mark" /><figcaption>Forest</figcaption></figure>
+        <figure class="plain" style="background:#14261b"><img src="vector/mark-cream.svg" alt="Cream mark" /><figcaption>Cream</figcaption></figure>
+        <figure class="plain" style="background:#dfefe3"><img src="vector/mark-sage.svg" alt="Sage mark" /><figcaption>Sage ink</figcaption></figure>
+        <figure class="plain" style="background:#f4f1ea"><img src="vector/mark-two-ink.svg" alt="Two-ink mark" /><figcaption>Two-ink</figcaption></figure>
+        <figure class="plain" style="background:#f4f1ea"><img src="vector/mark-outline.svg" alt="Outline mark" /><figcaption>Outline</figcaption></figure>
+        <figure class="plain" style="background:#14261b"><img src="vector/mark-sea.svg" alt="Sea mark" /><figcaption>Sea</figcaption></figure>
+      </div>
+
+      <div class="lockup" style="margin-top:18px">
+        <img src="vector/wordmark-editorial.svg" alt="T3 Pretty editorial lockup" />
+      </div>
+      <div class="grid two" style="margin-top:18px">
+        <div class="lockup"><img src="vector/wordmark-stacked.svg" alt="Stacked T3 Pretty" /></div>
+        <div class="lockup"><img src="vector/wordmark-horizon.svg" alt="Horizon lockup" /></div>
+      </div>
+      <div class="lockup" style="margin-top:18px; max-width: 320px">
+        <img src="vector/seal.svg" alt="T3 Pretty seal" />
+      </div>
+
+      <h2>2. Quiet app icons</h2>
+      <p class="note">Full-bleed studies. Sage ceramic and champagne aluminum are the closest to something you’d put in a Dock.</p>
+      <div class="grid">
+        <figure><img src="raster/12-sage-ceramic-icon.jpg" alt="" /><figcaption>Sage ceramic, geometric T3</figcaption></figure>
+        <figure><img src="raster/19-sage-on-cream-icon.jpg" alt="" /><figcaption>Sage on cream paper</figcaption></figure>
+        <figure><img src="raster/09-oled-cream.jpg" alt="" /><figcaption>OLED, cream T3</figcaption></figure>
+        <figure><img src="raster/11-brushed-aluminum.jpg" alt="" /><figcaption>Brushed champagne aluminum</figcaption></figure>
+        <figure><img src="raster/27-official-cream-on-forest.jpg" alt="" /><figcaption>Official T3, cream on forest</figcaption></figure>
+        <figure><img src="raster/28-official-forest-on-sage.jpg" alt="" /><figcaption>Official T3, forest on sage tile</figcaption></figure>
+        <figure><img src="raster/06-forest-ligature.jpg" alt="" /><figcaption>Interlocking T3, bone on moss</figcaption></figure>
+        <figure><img src="raster/17-two-ink-split.jpg" alt="" /><figcaption>Two inks, serif T and 3</figcaption></figure>
+      </div>
+
+      <h2>3. Keep the chubby Pretty T3, lose the candy</h2>
+      <p class="note">Same rounded letter as today, flattened into scenery inks. If the current shapes are the thing you like, start here rather than the official T3 path.</p>
+      <div class="grid">
+        <figure><img src="raster/32-chubby-forest-on-cream.jpg" alt="" /><figcaption>Forest on cream, flat</figcaption></figure>
+        <figure><img src="raster/30-chubby-sage-mark.jpg" alt="" /><figcaption>Sage mark, no plate</figcaption></figure>
+        <figure><img src="raster/29-candy-recast-moss.jpg" alt="" /><figcaption>Same extrusion, moss instead of purple — halfway</figcaption></figure>
+      </div>
+
+      <h2>4. Wordmarks</h2>
+      <p class="note">For the README, marketing, and the disk-image header. T3 stays geometric; Pretty can be a quiet serif.</p>
+      <div class="grid two">
+        <figure><img src="raster/02-editorial-poster.jpg" alt="" /><figcaption>Swiss poster, PRETTY + rule</figcaption></figure>
+        <figure><img src="raster/25-lockup-t3-pretty.jpg" alt="" /><figcaption>T3 | Pretty, stationery</figcaption></figure>
+        <figure><img src="raster/26-circular-stamp.jpg" alt="" /><figcaption>Library stamp</figcaption></figure>
+        <figure><img src="raster/13-didot-serif.jpg" alt="" /><figcaption>Didot T3, editorial</figcaption></figure>
+      </div>
+
+      <h2>5. The landscape is the mark</h2>
+      <p class="note">World Scenery already is the identity. These treat the photograph as the icon, with T3 as a cartographic note.</p>
+      <div class="grid">
+        <figure><img src="raster/18-fog-peaks.jpg" alt="" /><figcaption>Fog peaks, hairline T3</figcaption></figure>
+        <figure><img src="raster/15-meadow-cartograph.jpg" alt="" /><figcaption>Meadow, map mark</figcaption></figure>
+        <figure><img src="raster/20-coastal-boat.jpg" alt="" /><figcaption>Los Roques cousin</figcaption></figure>
+        <figure><img src="raster/01-landscape-frost-window.jpg" alt="" /><figcaption>Window + frosted T3 plate</figcaption></figure>
+        <figure><img src="raster/14-ridge-cairn.jpg" alt="" /><figcaption>T3 as a cairn</figcaption></figure>
+        <figure><img src="raster/10-forest-botanical.jpg" alt="" /><figcaption>Bone letters on night moss</figcaption></figure>
+      </div>
+
+      <h2>6. Analog and material</h2>
+      <p class="note">Physical objects, for taste, not Dock icons. Useful if we want the mark to feel printed or made.</p>
+      <div class="grid">
+        <figure><img src="raster/07-sage-ceramic-object.jpg" alt="" /><figcaption>Sage tile, torii T</figcaption></figure>
+        <figure><img src="raster/03-enamel-pin.jpg" alt="" /><figcaption>Enamel pin</figcaption></figure>
+        <figure><img src="raster/05-cream-painted-tile.jpg" alt="" /><figcaption>Painted cream wood</figcaption></figure>
+        <figure><img src="raster/08-etched-glass-plate.jpg" alt="" /><figcaption>Etched glass on oak</figcaption></figure>
+        <figure><img src="raster/16-sumi-e.jpg" alt="" /><figcaption>Sumi-e</figcaption></figure>
+        <figure><img src="raster/22-wax-seal.jpg" alt="" /><figcaption>Wax seal</figcaption></figure>
+        <figure><img src="raster/23-sea-glass.jpg" alt="" /><figcaption>Sea glass</figcaption></figure>
+        <figure><img src="raster/21-luggage-tag.jpg" alt="" /><figcaption>Luggage tag</figcaption></figure>
+        <figure><img src="raster/04-letterpress-hex.jpg" alt="" /><figcaption>Letterpress badge</figcaption></figure>
+        <figure><img src="raster/24-construction-grid.jpg" alt="" /><figcaption>Swiss construction sheet</figcaption></figure>
+      </div>
+
+      <hr />
+      <h2>How to pick</h2>
+      <table>
+        <thead>
+          <tr><th>If you want…</th><th>Take</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>A Dock icon that still reads at 16px</td><td>Vector sage or forest, or the sage ceramic raster.</td></tr>
+          <tr><td>To keep today’s chubby T3</td><td>Forest-on-cream or the sage mark, then we redraw it in SVG.</td></tr>
+          <tr><td>To stay in the T3 Code family</td><td>Official letterform vectors. Cream on forest is the night twin of upstream black.</td></tr>
+          <tr><td>The product to be the logo</td><td>Fog peaks or meadow, with T3 as a map tick.</td></tr>
+          <tr><td>README / marketing type</td><td>Editorial lockup, T3 geometric + Pretty in a serif.</td></tr>
+        </tbody>
+      </table>
+      <p class="note" style="margin-top:28px">
+        Nothing in this folder is wired into the app. Say which direction, and the live
+        <code>t3-pretty-1024</code> / <code>t3-pretty-mark</code> family can be cut from it.
+      </p>
+    </div>
+  </body>
+</html>
