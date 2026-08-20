@@ -171,8 +171,7 @@ function settlePendingUserInputsAsCancelled(
 // trailing `q<n>_skip` escape. Selecting anything else (e.g. a generic
 // approval option id) makes the CLI resolve the tool as "user dismissed".
 const KIMI_ASK_USER_QUESTION_TITLE = "AskUserQuestion";
-const KIMI_QUESTION_OPTION_ID_PATTERN = /^q\d+_opt_(\d+)$/;
-const KIMI_QUESTION_SKIP_OPTION_ID_PATTERN = /^q\d+_skip$/;
+const KIMI_QUESTION_OPTION_ID_PATTERN = /^q(\d+)_opt_(\d+)$/;
 
 interface KimiQuestionPermissionBridge {
   readonly questionText: string;
@@ -199,21 +198,33 @@ function parseKimiQuestionPermissionBridge(
   if (request.toolCall.title !== KIMI_ASK_USER_QUESTION_TITLE) {
     return undefined;
   }
-  const options = request.options.flatMap((option) => {
+  // The CLI bridges one question per request (multi-question degrades to the
+  // first). Group by the embedded question index anyway and answer only the
+  // first group: the wire response carries a single optionId, so any group a
+  // future CLI might mix in is unanswerable here.
+  const optionsByQuestion = new Map<
+    number,
+    Array<{ readonly optionId: string; readonly label: string; readonly index: number }>
+  >();
+  for (const option of request.options) {
     const match = KIMI_QUESTION_OPTION_ID_PATTERN.exec(option.optionId);
-    if (!match) return [];
-    return [{ optionId: option.optionId, label: option.name, index: Number(match[1]) }];
-  });
-  if (options.length === 0) {
+    if (!match) continue;
+    const questionIndex = Number(match[1]);
+    const group = optionsByQuestion.get(questionIndex) ?? [];
+    group.push({ optionId: option.optionId, label: option.name, index: Number(match[2]) });
+    optionsByQuestion.set(questionIndex, group);
+  }
+  const questionIndex = Math.min(...optionsByQuestion.keys());
+  const options = optionsByQuestion.get(questionIndex);
+  if (!options || options.length === 0) {
     return undefined;
   }
   options.sort((left, right) => left.index - right.index);
   return {
     questionText: kimiQuestionTextFromToolCall(request.toolCall) ?? KIMI_ASK_USER_QUESTION_TITLE,
     options,
-    skipOptionId: request.options.find((option) =>
-      KIMI_QUESTION_SKIP_OPTION_ID_PATTERN.test(option.optionId),
-    )?.optionId,
+    skipOptionId: request.options.find((option) => option.optionId === `q${questionIndex}_skip`)
+      ?.optionId,
   };
 }
 
@@ -221,18 +232,19 @@ function kimiQuestionPermissionOutcome(
   bridge: KimiQuestionPermissionBridge,
   resolution: PendingUserInputResolution,
 ): EffectAcpSchema.RequestPermissionResponse["outcome"] {
-  if (resolution._tag !== "answered") {
-    return { outcome: "cancelled" };
+  if (resolution._tag === "answered") {
+    const answer = resolution.answers[bridge.questionText];
+    const label =
+      typeof answer === "string" ? answer : Array.isArray(answer) ? answer[0] : undefined;
+    const option = bridge.options.find((entry) => entry.label === label);
+    if (option) {
+      return { outcome: "selected", optionId: option.optionId };
+    }
   }
-  const answer = resolution.answers[bridge.questionText];
-  const label = typeof answer === "string" ? answer : Array.isArray(answer) ? answer[0] : undefined;
-  const option = bridge.options.find((entry) => entry.label === label);
-  if (option) {
-    return { outcome: "selected", optionId: option.optionId };
-  }
-  // Free-text "Other" answers have no wire representation in the bridge, so
-  // resolve as a skip (the CLI's canonical "user dismissed" branch) rather
-  // than fabricating an option the question did not offer.
+  // Dismissal — cancel, interrupt, or a free-text answer the bridge cannot
+  // carry — resolves through the offered skip option. The CLI maps skip and
+  // a cancelled outcome to the same "user dismissed" branch; skip is the
+  // bridge's canonical spelling of it.
   if (bridge.skipOptionId) {
     return { outcome: "selected", optionId: bridge.skipOptionId };
   }

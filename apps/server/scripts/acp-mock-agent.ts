@@ -857,6 +857,11 @@ const program = Effect.gen(function* () {
             { optionId: "q0_opt_0", name: "Workspace", kind: "allow_once" },
             { optionId: "q0_opt_1", name: "Session", kind: "allow_once" },
             { optionId: "q0_skip", name: "Skip", kind: "reject_once" },
+            // A second question group the adapter must ignore: the CLI
+            // degrades multi-question to the first, and the wire response
+            // carries a single optionId.
+            { optionId: "q1_opt_0", name: "Later question option", kind: "allow_once" },
+            { optionId: "q1_skip", name: "Later skip", kind: "reject_once" },
           ],
         });
 
