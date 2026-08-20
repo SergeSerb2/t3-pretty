@@ -102,6 +102,7 @@ export function ChatMarkdownImage(props: {
   readonly alt?: string | undefined;
   readonly environmentId: EnvironmentId | null;
   readonly localPath?: string | null | undefined;
+  readonly onExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
   readonly src: string;
   readonly threadRef?: ScopedThreadRef | undefined;
 }) {
@@ -121,6 +122,7 @@ export function ChatMarkdownImage(props: {
         <WorkspaceGeneratedImage
           alt={alt}
           environmentId={props.environmentId}
+          onExpand={props.onExpand}
           path={localPath}
           threadId={props.threadRef.threadId}
         />

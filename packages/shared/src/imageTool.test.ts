@@ -27,6 +27,11 @@ describe("classifyImageToolItemType", () => {
   it("returns undefined when the tool is unrelated", () => {
     expect(classifyImageToolItemType({ toolName: "bash" })).toBeUndefined();
   });
+
+  it("does not treat imagined/imaginary tool names as image generation", () => {
+    expect(classifyImageToolItemType({ toolName: "imagined" })).toBeUndefined();
+    expect(classifyImageToolItemType({ title: "Imaginary" })).toBeUndefined();
+  });
 });
 
 describe("extractGeneratedImagePath", () => {

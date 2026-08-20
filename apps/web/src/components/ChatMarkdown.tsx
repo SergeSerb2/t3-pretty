@@ -46,6 +46,7 @@ import remarkGfm from "remark-gfm";
 import { remarkGithubAlerts } from "../markdown-github-alerts";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
 import { ChatMarkdownImage, FadingImg } from "./chat/GeneratedImageCard";
+import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import {
@@ -113,6 +114,7 @@ interface ChatMarkdownProps {
   text: string;
   cwd: string | undefined;
   threadRef?: ScopedThreadRef | undefined;
+  onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
   onTaskListChange?: ((input: { markerOffset: number; checked: boolean }) => void) | undefined;
   isStreaming?: boolean;
   skills?: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
@@ -1348,6 +1350,7 @@ function ChatMarkdown({
   text,
   cwd,
   threadRef,
+  onImageExpand,
   onTaskListChange,
   isStreaming = false,
   skills = EMPTY_MARKDOWN_SKILLS,
@@ -1735,6 +1738,7 @@ function ChatMarkdown({
             alt={alt}
             environmentId={threadRef.environmentId}
             localPath={fileLinkMeta?.filePath ?? null}
+            onExpand={onImageExpand}
             src={src}
             threadRef={threadRef}
           />
@@ -1800,6 +1804,7 @@ function ChatMarkdown({
     cwd,
     diffThemeName,
     isStreaming,
+    onImageExpand,
     onTaskListChange,
     openFileInPanel,
     openInPreferredEditor,

@@ -1844,7 +1844,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("auto-generate-project-icons")}
-          description="Grok or Codex generates an icon for new projects and for existing projects that still use automatic detection."
+          description="Grok or Codex generates an icon for new projects and for existing projects that do not already have a stored icon."
           resetAction={
             settings.autoGenerateProjectIcons !==
             DEFAULT_UNIFIED_SETTINGS.autoGenerateProjectIcons ? (

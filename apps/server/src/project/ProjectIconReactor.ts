@@ -75,17 +75,29 @@ function resolveInsideWorkspaceImagePath(
   return resolved;
 }
 
-/** Prefer the known output path; only trust a model-reported path if it stays in the workspace. */
-export function resolveGeneratedProjectIconPath(input: {
+/**
+ * Workspace-safe image paths to try, planned output first then a model-reported
+ * path. Callers must pick the first path that actually exists on disk.
+ */
+export function resolveGeneratedProjectIconCandidates(input: {
   readonly path: Path.Path;
   readonly workspaceRoot: string;
   readonly outputPath: string;
   readonly reportedPath: string;
-}): string | null {
-  return (
-    resolveInsideWorkspaceImagePath(input.path, input.workspaceRoot, input.outputPath) ??
-    resolveInsideWorkspaceImagePath(input.path, input.workspaceRoot, input.reportedPath)
-  );
+}): ReadonlyArray<string> {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of [
+    resolveInsideWorkspaceImagePath(input.path, input.workspaceRoot, input.outputPath),
+    resolveInsideWorkspaceImagePath(input.path, input.workspaceRoot, input.reportedPath),
+  ]) {
+    if (!candidate || seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
+    candidates.push(candidate);
+  }
+  return candidates;
 }
 
 function pickImageCapableSelection(
@@ -185,29 +197,36 @@ const make = Effect.gen(function* () {
       return;
     }
     const reportedPath = generated.path.trim();
-    const candidatePath = resolveGeneratedProjectIconPath({
+    const candidates = resolveGeneratedProjectIconCandidates({
       path,
       workspaceRoot: project.workspaceRoot,
       outputPath,
       reportedPath,
     });
-    if (!candidatePath) {
+    if (candidates.length === 0) {
       yield* Effect.logWarning("project icon generation returned a path outside the workspace", {
         projectId,
         path: reportedPath.length > 0 ? reportedPath : outputPath,
       });
       return;
     }
-    const bytes = yield* fileSystem.readFile(candidatePath).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("project icon generation could not read output", {
-          projectId,
-          path: candidatePath,
-          cause: Cause.pretty(cause),
-        }).pipe(Effect.as(null)),
-      ),
-    );
-    if (!bytes) {
+    let candidatePath: string | null = null;
+    let bytes: Uint8Array | null = null;
+    for (const candidate of candidates) {
+      const read = yield* fileSystem
+        .readFile(candidate)
+        .pipe(Effect.catchCause(() => Effect.succeed(null)));
+      if (read) {
+        candidatePath = candidate;
+        bytes = read;
+        break;
+      }
+    }
+    if (!candidatePath || !bytes) {
+      yield* Effect.logWarning("project icon generation could not read output", {
+        projectId,
+        path: reportedPath.length > 0 ? reportedPath : outputPath,
+      });
       return;
     }
     const dataUrl = `data:${mimeTypeForPath(candidatePath)};base64,${Encoding.encodeBase64(bytes)}`;
@@ -229,7 +248,7 @@ const make = Effect.gen(function* () {
     const commandId = yield* crypto.randomUUIDv4.pipe(
       Effect.map((uuid) => CommandId.make(`server:project-icon:${uuid}`)),
     );
-    yield* orchestrationEngine
+    const updated = yield* orchestrationEngine
       .dispatch({
         type: "project.meta.update",
         commandId,
@@ -237,14 +256,21 @@ const make = Effect.gen(function* () {
         faviconPath: imported.faviconPath,
       })
       .pipe(
+        Effect.as(true),
         Effect.catchCause((cause) =>
           Effect.logWarning("project icon update failed", {
             projectId,
             cause: Cause.pretty(cause),
-          }),
+          }).pipe(Effect.as(false)),
         ),
       );
-    yield* fileSystem.remove(outputPath).pipe(Effect.catchCause(() => Effect.void));
+    if (!updated) {
+      return;
+    }
+    yield* fileSystem.remove(candidatePath).pipe(Effect.catchCause(() => Effect.void));
+    if (candidatePath !== outputPath) {
+      yield* fileSystem.remove(outputPath).pipe(Effect.catchCause(() => Effect.void));
+    }
   });
 
   const worker = yield* makeKeyedCoalescingWorker({

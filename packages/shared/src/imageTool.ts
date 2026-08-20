@@ -22,10 +22,9 @@ function compactToolName(value: string): string {
 }
 
 function isImageGenerationCompact(compact: string): boolean {
-  if (compact === "imagine" || compact.startsWith("imagine")) {
-    return true;
-  }
   return (
+    compact === "imagine" ||
+    compact === "grokimagine" ||
     compact.includes("imagegeneration") ||
     compact.includes("imagegen") ||
     compact.includes("generateimage") ||

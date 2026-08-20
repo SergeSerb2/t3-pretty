@@ -913,7 +913,7 @@ const CadencedAssistantMarkdown = memo(function CadencedAssistantMarkdown(props:
 
 function renderFeedEntry(
   info: { item: ThreadFeedEntry; index: number },
-  props: Pick<ThreadFeedProps, "environmentId" | "skills"> & {
+  props: Pick<ThreadFeedProps, "environmentId" | "skills" | "threadId" | "workspaceRoot"> & {
     readonly copiedRowId: string | null;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly terminalAssistantMessageIds: ReadonlySet<string>;
@@ -1135,10 +1135,14 @@ function renderFeedEntry(
     <ThreadWorkLog
       activities={entry.activities}
       copiedRowId={props.copiedRowId}
+      environmentId={props.environmentId}
       expandedRows={props.expandedWorkRows}
       iconSubtleColor={iconSubtleColor}
       onCopyRow={props.onCopyWorkRow}
+      onPressImage={props.onPressImage}
       onToggleRow={props.onToggleWorkRow}
+      threadId={props.threadId}
+      workspaceRoot={props.workspaceRoot}
     />
   );
 }
@@ -1986,6 +1990,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     (info: { item: ThreadFeedEntry; index: number }) =>
       renderFeedEntry(info, {
         environmentId: props.environmentId,
+        threadId: props.threadId,
+        workspaceRoot: props.workspaceRoot,
         copiedRowId,
         expandedWorkRows,
         terminalAssistantMessageIds,
@@ -2026,6 +2032,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       onToggleWorkRow,
       props.environmentId,
       props.skills,
+      props.threadId,
+      props.workspaceRoot,
       isFocused,
     ],
   );

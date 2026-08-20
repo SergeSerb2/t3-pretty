@@ -1,4 +1,5 @@
 import { ApprovalRequestId, isToolLifecycleItemType } from "@t3tools/contracts";
+import { extractGeneratedImagePath } from "@t3tools/shared/imageTool";
 import type {
   OrchestrationLatestTurn,
   OrchestrationThread,
@@ -61,6 +62,8 @@ export interface ThreadFeedActivity {
   readonly toolLike: boolean;
   readonly status: "success" | "failure" | "neutral" | null;
   readonly itemType?: ToolLifecycleItemType;
+  readonly generatedImagePath?: string;
+  readonly generatedImagePending?: boolean;
 }
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
@@ -1770,6 +1773,20 @@ function updateMessageFeedEntryCache(
 function toActivityFeedEntry(entry: DerivedWorkLogEntry): RawThreadFeedEntry {
   const summary = workEntryHeading(entry);
   const detail = workEntryPreview(entry);
+  const generatedImagePath =
+    entry.itemType === "image_generation"
+      ? extractGeneratedImagePath({
+          changedFiles: entry.changedFiles,
+          detail: entry.detail,
+          data: entry.toolData,
+        })
+      : undefined;
+  const status = workEntryStatus(entry);
+  const generatedImagePending =
+    entry.itemType === "image_generation" &&
+    generatedImagePath === undefined &&
+    status !== "success" &&
+    status !== "failure";
   const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry));
   const getCopyText = memoizeValue(() =>
     [summary, detail, getFullDetail()]
@@ -1794,8 +1811,10 @@ function toActivityFeedEntry(entry: DerivedWorkLogEntry): RawThreadFeedEntry {
       getCopyText,
       icon: workEntryIcon(entry),
       toolLike: workLogEntryIsToolLike(entry),
-      status: workEntryStatus(entry),
+      status,
       ...(entry.itemType ? { itemType: entry.itemType } : {}),
+      ...(generatedImagePath ? { generatedImagePath } : {}),
+      ...(generatedImagePending ? { generatedImagePending: true } : {}),
     },
   };
 }

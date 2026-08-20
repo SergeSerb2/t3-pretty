@@ -1,6 +1,14 @@
 import * as Haptics from "expo-haptics";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { type AppSymbolName, SymbolView } from "../../components/AppSymbol";
-import { LayoutAnimation, Pressable, ScrollView, View } from "react-native";
+import {
+  ActivityIndicator,
+  Image,
+  LayoutAnimation,
+  Pressable,
+  ScrollView,
+  View,
+} from "react-native";
 import { memo, useMemo } from "react";
 
 import { AppText as Text } from "../../components/AppText";
@@ -9,6 +17,8 @@ import { cn } from "../../lib/cn";
 import type { ThreadFeedActivity } from "../../lib/threadActivity";
 import { MOBILE_TYPOGRAPHY } from "../../lib/typography";
 import { useThemeColor } from "../../lib/useThemeColor";
+import { useAssetUrl } from "../../state/assets";
+import { resolveWorkspaceFilePath } from "../files/filePath";
 import Animated, { FadeIn } from "react-native-reanimated";
 
 const WORK_LOG_LAYOUT_ANIMATION = {
@@ -103,6 +113,8 @@ const WORK_ROW_HEIGHT = 32; // min-h-8
 const WORK_ROW_GAP = 1; // gap-px
 const WORK_LOG_HEADER_PADDING = 2; // pb-0.5 under the "work log" label
 const WORK_LOG_BOTTOM_MARGIN = 4; // mb-1
+const WORK_GENERATED_IMAGE_HEIGHT = 168;
+const WORK_GENERATED_IMAGE_MARGIN = 4;
 
 export const WORK_GROUP_TOGGLE_HEIGHT = 36; // min-h-8 (32) + mb-1 (4)
 
@@ -117,21 +129,81 @@ export function collapsedWorkLogHeight(
   const onlyToolRows = rows.every((row) => row.toolLike);
   const headerHeight =
     scaledTypographyLineHeight(MOBILE_TYPOGRAPHY.caption, baseFontSize) + WORK_LOG_HEADER_PADDING;
+  const generatedImageHeight = rows.reduce((height, row) => {
+    if (!row.generatedImagePath && !row.generatedImagePending) {
+      return height;
+    }
+    return height + WORK_GENERATED_IMAGE_HEIGHT + WORK_GENERATED_IMAGE_MARGIN;
+  }, 0);
   return (
     WORK_LOG_BOTTOM_MARGIN +
     (onlyToolRows ? 0 : headerHeight) +
     rows.length * WORK_ROW_HEIGHT +
-    (rows.length - 1) * WORK_ROW_GAP
+    (rows.length - 1) * WORK_ROW_GAP +
+    generatedImageHeight
+  );
+}
+
+function workspaceGeneratedImagePath(cwd: string | null | undefined, path: string): string | null {
+  if (path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\")) {
+    return path;
+  }
+  if (!cwd) {
+    return null;
+  }
+  return resolveWorkspaceFilePath(cwd, path);
+}
+
+function WorkLogGeneratedImage(props: {
+  readonly cwd: string | null | undefined;
+  readonly environmentId: EnvironmentId;
+  readonly onPressImage: (uri: string) => void;
+  readonly path: string;
+  readonly threadId: ThreadId;
+}) {
+  const absolutePath = workspaceGeneratedImagePath(props.cwd, props.path);
+  const uri = useAssetUrl(
+    props.environmentId,
+    absolutePath === null
+      ? null
+      : {
+          _tag: "workspace-file",
+          threadId: props.threadId,
+          path: absolutePath,
+        },
+  );
+
+  if (uri === null) {
+    return (
+      <View className="mb-1 ml-7 h-[168px] items-center justify-center rounded-xl bg-subtle">
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Open generated image"
+      className="mb-1 ml-7 h-[168px] overflow-hidden rounded-xl bg-subtle"
+      onPress={() => props.onPressImage(uri)}
+    >
+      <Image source={{ uri }} className="h-full w-full" resizeMode="contain" />
+    </Pressable>
   );
 }
 
 export const ThreadWorkLog = memo(function ThreadWorkLog(props: {
   readonly activities: ReadonlyArray<ThreadFeedActivity>;
   readonly copiedRowId: string | null;
+  readonly environmentId?: EnvironmentId;
   readonly expandedRows: Readonly<Record<string, boolean>>;
   readonly iconSubtleColor: import("react-native").ColorValue;
   readonly onCopyRow: (rowId: string, value: string) => void;
+  readonly onPressImage?: (uri: string) => void;
   readonly onToggleRow: (rowId: string) => void;
+  readonly threadId?: ThreadId;
+  readonly workspaceRoot?: string | null;
 }) {
   const pressedBackground = useThemeColor("--color-subtle");
   // Row details run a normalize regex each; key on the activities array so
@@ -258,6 +330,23 @@ export const ThreadWorkLog = memo(function ThreadWorkLog(props: {
                   </View>
                 </View>
               </Pressable>
+
+              {row.generatedImagePath &&
+              props.environmentId &&
+              props.threadId &&
+              props.onPressImage ? (
+                <WorkLogGeneratedImage
+                  cwd={props.workspaceRoot}
+                  environmentId={props.environmentId}
+                  onPressImage={props.onPressImage}
+                  path={row.generatedImagePath}
+                  threadId={props.threadId}
+                />
+              ) : row.generatedImagePending ? (
+                <View className="mb-1 ml-7 h-[168px] items-center justify-center rounded-xl bg-subtle">
+                  <Text className="text-xs text-foreground-muted">Generating image…</Text>
+                </View>
+              ) : null}
 
               {fullDetail ? (
                 <View className="ml-7 border-l border-neutral-300/60 pb-1 pl-3 pt-0.5 dark:border-white/[0.12]">
