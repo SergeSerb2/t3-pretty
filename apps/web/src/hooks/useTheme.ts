@@ -317,13 +317,7 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
     syncDesktopTheme(theme, followSystem, appearanceMode);
   };
 
-  if (!suppressTransitions) {
-    commitTheme();
-    return;
-  }
-
   const root = document.documentElement;
-  root.classList.add("no-transitions");
   const releaseTransitions = () => {
     // Force a reflow so the no-transitions class takes effect before removal
     // oxlint-disable-next-line no-unused-expressions
@@ -332,18 +326,35 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
       root.classList.remove("no-transitions");
     });
   };
+  const commitWithoutElementTweens = () => {
+    root.classList.add("no-transitions");
+    commitTheme();
+    releaseTransitions();
+  };
+
+  // Forced applies (cross-tab storage, refresh) hard-cut under no-transitions
+  // and never start a view transition.
+  if (suppressTransitions) {
+    commitWithoutElementTweens();
+    return;
+  }
+
+  // Boot has nothing to dissolve from. Hidden documents and motion-gated
+  // sessions still suppress per-element color tweens so the palette does not
+  // tween field-by-field when the snapshot path is unavailable.
+  if (isFirstApply) {
+    commitTheme();
+    return;
+  }
+  if (document.hidden || !canAnimateThemeSwapTransition()) {
+    commitWithoutElementTweens();
+    return;
+  }
 
   // The whole window dissolves from the old palette to the new one as one
   // snapshot crossfade (see html[data-theme-swap] in index.css), with
   // no-transitions still suppressing per-element color tweens underneath.
-  // Never on the boot apply, in hidden documents, or while the scenery ink
-  // transition owns the flip.
-  if (isFirstApply || document.hidden || !canAnimateThemeSwapTransition()) {
-    commitTheme();
-    releaseTransitions();
-    return;
-  }
-
+  root.classList.add("no-transitions");
   root.dataset.themeSwap = "true";
   const finishSwap = () => {
     delete root.dataset.themeSwap;
@@ -453,7 +464,7 @@ function getServerSnapshot() {
 
 function handleSystemAppearanceChange() {
   const storedTheme = getStored();
-  if (readAppearanceModePreference(storedTheme) === "system") applyTheme(storedTheme, true);
+  if (readAppearanceModePreference(storedTheme) === "system") applyTheme(storedTheme);
   emitChange();
 }
 
@@ -557,7 +568,7 @@ export function useTheme() {
       });
       return false;
     }
-    applyTheme(next, true);
+    applyTheme(next);
     emitChange();
     return true;
   }, []);
@@ -582,7 +593,7 @@ export function useTheme() {
       return false;
     }
     themeStorageReadFailure = null;
-    applyTheme(getStored(), true);
+    applyTheme(getStored());
     emitChange();
     return true;
   }, []);
@@ -626,7 +637,7 @@ export function useTheme() {
         });
         return false;
       }
-      applyTheme(getStored(), true);
+      applyTheme(getStored());
       emitChange();
       return true;
     },
@@ -650,7 +661,7 @@ export function useTheme() {
       });
       return false;
     }
-    applyTheme(getStored(), true);
+    applyTheme(getStored());
     emitChange();
     return true;
   }, []);

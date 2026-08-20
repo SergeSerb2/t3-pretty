@@ -300,6 +300,11 @@ describe("ink override contract with upstream appearance handling", () => {
     expect(useThemeSource).toContain('classList.toggle("dark", isDark)');
   });
 
+  it("theme swap view transitions run only when transitions are not suppressed", () => {
+    expect(useThemeSource).toContain("if (suppressTransitions)");
+    expect(useThemeSource).not.toContain("if (!suppressTransitions)");
+  });
+
   it("applies ink in layout so a photo view transition captures the new palette", () => {
     expect(useInkOverrideSource).toContain("useLayoutEffect");
   });

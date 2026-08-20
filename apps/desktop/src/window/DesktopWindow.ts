@@ -315,9 +315,9 @@ export const make = Effect.gen(function* () {
   // focus moving into an embedded preview blurs it while the window stays key.
   let mainWindowFocused = false;
   let dockAttentionCount = 0;
-  // The first push after boot is a baseline, not news: the renderer paints
-  // (and reports its backlog) before the window is revealed and focused, and
-  // launching into pending work must not bounce the Dock at the launcher.
+  // Growth is only news after the user has seen the window. Empty first
+  // counts (sidebar mounts at 0 before threads hydrate) and backlog that
+  // arrives during splash/reveal are a baseline, not a bounce.
   let dockAttentionSeeded = false;
   let dockBounceId = -1;
 
@@ -682,8 +682,10 @@ export const make = Effect.gen(function* () {
     // renderer too: focus/blur only fire on later transitions, so an
     // already-unfocused window would never get `data-window-inactive`.
     mainWindowFocused = window.isFocused();
+    if (mainWindowFocused) dockAttentionSeeded = true;
     window.on("focus", () => {
       mainWindowFocused = true;
+      dockAttentionSeeded = true;
       sendWindowState(WINDOW_ACTIVE_STATE_CHANNEL, true);
       const bounceId = dockBounceId;
       dockBounceId = -1;
@@ -1025,12 +1027,12 @@ export const make = Effect.gen(function* () {
     setDockAttention: Effect.fn("desktop.window.setDockAttention")(function* (count) {
       const previousCount = dockAttentionCount;
       const seeded = dockAttentionSeeded;
-      dockAttentionSeeded = true;
       dockAttentionCount = count;
       yield* electronApp.setDockBadge(count === 0 ? "" : String(count));
-      // Only a *growing* backlog is news — never the boot baseline — and only
-      // while the user is looking elsewhere; bouncing at someone who is
-      // already in the app is nagging.
+      // Only a *growing* backlog is news — never splash hydration, never the
+      // first count before the window has been key — and only while the user
+      // is looking elsewhere; bouncing at someone who is already in the app
+      // is nagging.
       if (!seeded || count <= previousCount || mainWindowFocused) return;
       // A bounce may still be in flight from the last growth; cancel it so
       // the id we keep is always the one focus needs to cancel.

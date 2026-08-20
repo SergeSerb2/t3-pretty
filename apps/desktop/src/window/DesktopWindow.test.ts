@@ -144,6 +144,7 @@ const desktopClientSettingsLayer = Layer.mock(DesktopClientSettings.DesktopClien
 
 const makeElectronAppLayer = (recorders: {
   readonly dockBadges?: string[];
+  readonly dockBounces?: number[];
   readonly dockBounceCancels?: number[];
   readonly nextDockBounceId?: number;
 }) =>
@@ -153,7 +154,11 @@ const makeElectronAppLayer = (recorders: {
       Effect.sync(() => {
         recorders.dockBadges?.push(label);
       }),
-    bounceDock: Effect.succeed(recorders.nextDockBounceId ?? 7),
+    bounceDock: Effect.sync(() => {
+      const id = recorders.nextDockBounceId ?? 7;
+      recorders.dockBounces?.push(id);
+      return id;
+    }),
     cancelDockBounce: (id) =>
       Effect.sync(() => {
         recorders.dockBounceCancels?.push(id);
@@ -229,6 +234,7 @@ function makeTestLayer(input: {
   readonly previewZoomReapplies?: number[];
   readonly broadcastChannels?: string[];
   readonly dockBadges?: string[];
+  readonly dockBounces?: number[];
   readonly dockBounceCancels?: number[];
 }) {
   let desktopSettings = input.desktopSettings ?? DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS;
@@ -298,6 +304,7 @@ function makeTestLayer(input: {
         DesktopState.layer,
         makeElectronAppLayer({
           ...(input.dockBadges === undefined ? {} : { dockBadges: input.dockBadges }),
+          ...(input.dockBounces === undefined ? {} : { dockBounces: input.dockBounces }),
           ...(input.dockBounceCancels === undefined
             ? {}
             : { dockBounceCancels: input.dockBounceCancels }),
@@ -1161,12 +1168,14 @@ describe("DesktopWindow", () => {
       const createCount = yield* Ref.make(0);
       const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
       const dockBadges: string[] = [];
+      const dockBounces: number[] = [];
       const dockBounceCancels: number[] = [];
       const layer = makeTestLayer({
         window: fakeWindow.window,
         createCount,
         mainWindow,
         dockBadges,
+        dockBounces,
         dockBounceCancels,
       });
 
@@ -1180,29 +1189,76 @@ describe("DesktopWindow", () => {
           return yield* Effect.die("focus listeners were not registered");
         }
 
-        // The first push after boot is a baseline: badge only, no bounce even
-        // while backgrounded — launching into pending work is not news.
+        // The user has to have seen the window before growth is news. Splash
+        // hydration — including 0 before threads load, then a non-zero jump,
+        // then further growth — only badges.
         blur();
-        yield* desktopWindow.setDockAttention(1);
-        // Backgrounded and growing: badge plus one bounce. A second growth
-        // cancels the in-flight bounce before starting the next, and focus
-        // cancels the one still standing.
-        yield* desktopWindow.setDockAttention(2);
-        yield* desktopWindow.setDockAttention(4);
+        yield* desktopWindow.setDockAttention(0);
+        yield* desktopWindow.setDockAttention(3);
+        yield* desktopWindow.setDockAttention(5);
+        assert.deepEqual(dockBadges, ["", "3", "5"]);
+        assert.deepEqual(dockBounces, []);
+
+        // After a focus, the current count is the seen baseline. Backgrounded
+        // growth badges plus one bounce. A second growth cancels the in-flight
+        // bounce before starting the next, and focus cancels the one still
+        // standing.
+        focus();
+        blur();
+        yield* desktopWindow.setDockAttention(6);
+        yield* desktopWindow.setDockAttention(8);
         focus();
         yield* Effect.yieldNow;
-        assert.deepEqual(dockBounceCancels, [7, 7]);
+        assert.deepEqual(dockBounces, [7, 7]);
+        // The seeding focus cancels a never-started bounce (-1); the next
+        // growth cancels the in-flight one; the return focus cancels the rest.
+        assert.deepEqual(dockBounceCancels, [-1, 7, 7]);
 
         // Focused, or shrinking, never bounces — and zero clears the badge.
-        yield* desktopWindow.setDockAttention(5);
+        yield* desktopWindow.setDockAttention(9);
         yield* desktopWindow.setDockAttention(0);
         blur();
         yield* desktopWindow.setDockAttention(0);
         focus();
         yield* Effect.yieldNow;
 
-        assert.deepEqual(dockBadges, ["1", "2", "4", "5", "", ""]);
-        assert.deepEqual(dockBounceCancels, [7, 7, -1]);
+        assert.deepEqual(dockBadges, ["", "3", "5", "6", "8", "9", "", ""]);
+        assert.deepEqual(dockBounces, [7, 7]);
+        assert.deepEqual(dockBounceCancels, [-1, 7, 7, -1]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("treats an already-key window as a dock-attention baseline", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow({ focused: true });
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const dockBadges: string[] = [];
+      const dockBounces: number[] = [];
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        dockBadges,
+        dockBounces,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const blur = fakeWindow.windowListeners.get("blur");
+        if (!blur) {
+          return yield* Effect.die("blur listener was not registered");
+        }
+
+        yield* desktopWindow.setDockAttention(0);
+        blur();
+        yield* desktopWindow.setDockAttention(2);
+
+        assert.deepEqual(dockBadges, ["", "2"]);
+        assert.deepEqual(dockBounces, [7]);
       }).pipe(Effect.provide(layer));
     }),
   );
