@@ -165,6 +165,47 @@ effectIt.layer(NodeServices.layer)("resolveEditorExecutable", (it) => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("skips a Cursor agent shim with a Windows executable suffix", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const shimDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-editor-shim-exe-",
+      });
+      const shimPath = path.join(shimDir, "cursor.exe");
+      yield* fileSystem.writeFileString(shimPath, CURSOR_AGENT_SHIM);
+      yield* fileSystem.chmod(shimPath, 0o755);
+
+      const resolved = yield* resolveEditorExecutable({
+        editorId: "cursor",
+        commands: ["cursor"],
+        platform: "linux",
+        env: { PATH: shimDir },
+      });
+
+      expect(Option.isNone(resolved)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("resolves a Windows PATHEXT CLI from a joined PATH directory", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editor-pathext-" });
+      const cliPath = path.join(binDir, "code.CMD");
+      yield* fileSystem.writeFileString(cliPath, "@echo off\r\n");
+
+      const resolved = yield* resolveEditorExecutable({
+        editorId: "vscode",
+        commands: ["code"],
+        platform: "win32",
+        env: { PATH: binDir, PATHEXT: ".COM;.EXE;.BAT;.CMD" },
+      });
+
+      expect(Option.getOrNull(resolved)).toBe(cliPath);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("does not treat the agent shim as an installed IDE", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

@@ -15,6 +15,15 @@ import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as ExternalLauncher from "./externalLauncher.ts";
 
+const WINDOWS_SHELL_META_CHARS = /([()\][%!^"`<>&|;, *?])/g;
+
+function escapeWindowsShellArg(arg: string): string {
+  let escaped = arg.replace(/(\\*)"/g, '$1$1\\"');
+  escaped = escaped.replace(/(\\*)$/, "$1$1");
+  escaped = `"${escaped}"`;
+  return escaped.replace(WINDOWS_SHELL_META_CHARS, "^$1");
+}
+
 function makeMockDetachedHandle(onUnref: () => void = () => undefined) {
   return ChildProcessSpawner.makeHandle({
     pid: ChildProcessSpawner.ProcessId(1),
@@ -98,8 +107,11 @@ it.effect("launches an installed editor with platform-safe arguments", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editors-" });
-    yield* fileSystem.writeFileString(path.join(binDir, "code.CMD"), "@echo off\r\n");
+    const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editors-" });
+    const binDir = path.join(root, "Program Files", "Microsoft VS Code", "bin");
+    yield* fileSystem.makeDirectory(binDir, { recursive: true });
+    const cliPath = path.join(binDir, "code.CMD");
+    yield* fileSystem.writeFileString(cliPath, "@echo off\r\n");
 
     let spawned: ChildProcess.StandardCommand | undefined;
     yield* Effect.gen(function* () {
@@ -113,8 +125,6 @@ it.effect("launches an installed editor with platform-safe arguments", () =>
         testLayer({
           platform: "win32",
           env: { PATH: binDir, PATHEXT: ".COM;.EXE;.BAT;.CMD" },
-          resolveExecutable: (command) =>
-            command === "code" ? "C:\\Program Files\\Microsoft VS Code\\bin\\code.CMD" : command,
           onSpawn: (command) => {
             spawned = command;
           },
@@ -123,7 +133,7 @@ it.effect("launches an installed editor with platform-safe arguments", () =>
     );
 
     assert.ok(spawned);
-    assert.equal(spawned.command.includes("code.CMD"), true);
+    assert.equal(spawned.command, escapeWindowsShellArg(cliPath));
     assert.deepEqual(spawned.args, [
       '^"--goto^"',
       '^"C:\\workspace^ with^ spaces\\src\\index.ts:12:4^"',

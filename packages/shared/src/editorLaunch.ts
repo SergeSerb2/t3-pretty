@@ -4,6 +4,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
+import { HostProcessPlatform } from "./hostProcess.ts";
 import { resolveCommandPath } from "./shell.ts";
 
 /**
@@ -20,6 +21,12 @@ const CURSOR_AGENT_SHIM_MARKERS = [
 
 const WINDOWS_PATH_DELIMITER = ";";
 const POSIX_PATH_DELIMITER = ":";
+const WINDOWS_EXECUTABLE_SUFFIX = /\.(cmd|bat|exe|com)$/i;
+
+function editorCommandStem(filePath: string): string {
+  const base = filePath.split(/[/\\]/).pop() ?? filePath;
+  return base.replace(WINDOWS_EXECUTABLE_SUFFIX, "");
+}
 
 export function isCursorAgentShimContents(contents: string): boolean {
   return CURSOR_AGENT_SHIM_MARKERS.every((marker) => contents.includes(marker));
@@ -145,13 +152,15 @@ export const resolveEditorExecutable = Effect.fn("editorLaunch.resolveEditorExec
       if (seen.has(candidate)) return Option.none<string>();
       seen.add(candidate);
       const resolved = yield* resolveCommandPath(candidate, { env: input.env }).pipe(
+        Effect.provideService(HostProcessPlatform, input.platform),
         Effect.map(Option.some),
         Effect.catchTag("CommandResolutionError", () => Effect.succeed(Option.none<string>())),
       );
       if (Option.isNone(resolved)) return Option.none<string>();
       const executable = resolved.value;
-      const commandName = (executable.split(/[/\\]/).pop() ?? executable).replace(/\.cmd$/i, "");
-      if (yield* isCursorAgentShimAtPath(commandName, executable)) return Option.none<string>();
+      if (yield* isCursorAgentShimAtPath(editorCommandStem(executable), executable)) {
+        return Option.none<string>();
+      }
       return Option.some(executable);
     });
 
