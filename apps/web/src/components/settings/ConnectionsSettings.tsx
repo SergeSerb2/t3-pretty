@@ -1660,6 +1660,10 @@ function CloudLinkRow({ canManageRelay }: { readonly canManageRelay: boolean }) 
 }
 
 function EmptyRemoteEnvironments({ cloudEnabled = true }: { readonly cloudEnabled?: boolean }) {
+  // Desktop keeps a manual add path (SSH); every other surface only gains
+  // remote environments through Surge Connect, so the copy must not point at
+  // an “Add environment” button that is not rendered there.
+  const desktopBridge = window.desktopBridge;
   return (
     <Empty className="min-h-52">
       <EmptyMedia variant="icon">
@@ -1669,8 +1673,12 @@ function EmptyRemoteEnvironments({ cloudEnabled = true }: { readonly cloudEnable
         <EmptyTitle>No saved remote environments</EmptyTitle>
         <EmptyDescription>
           {cloudEnabled
-            ? `Connect one from ${SURGE_CONNECT_NAME}.`
-            : "Click “Add environment” to pair another environment."}
+            ? desktopBridge
+              ? `Click “Add environment” to pair over SSH, or connect one from ${SURGE_CONNECT_NAME}.`
+              : `Connect one from ${SURGE_CONNECT_NAME}.`
+            : desktopBridge
+              ? "Click “Add environment” to pair another environment."
+              : "Remote environments you connect to will appear here."}
         </EmptyDescription>
       </EmptyHeader>
     </Empty>
