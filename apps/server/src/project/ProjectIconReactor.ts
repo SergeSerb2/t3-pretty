@@ -47,6 +47,12 @@ function isImageCapableDriver(driver: ProviderDriverKind): boolean {
   return driver === "grok" || driver === "codex";
 }
 
+function hasImageCapableInstance(instances: ReadonlyArray<ProviderInstance>): boolean {
+  return instances.some(
+    (instance) => instance.enabled && isImageCapableDriver(instance.driverKind),
+  );
+}
+
 function mimeTypeForPath(filePath: string): string {
   const extension = filePath.slice(filePath.lastIndexOf(".")).toLowerCase();
   for (const [mimeType, mimeExtension] of Object.entries(IMAGE_EXTENSION_BY_MIME_TYPE)) {
@@ -355,6 +361,28 @@ const make = Effect.gen(function* () {
               }),
             ),
           ),
+        ),
+      );
+
+      const hadImageCapableRef = yield* Ref.make(
+        hasImageCapableInstance(yield* registry.listInstances),
+      );
+      yield* forkParked(
+        Stream.runForEach(registry.streamChanges, () =>
+          Effect.gen(function* () {
+            const enabled = yield* Ref.get(enabledRef);
+            const capable = hasImageCapableInstance(yield* registry.listInstances);
+            const wasCapable = yield* Ref.get(hadImageCapableRef);
+            yield* Ref.set(hadImageCapableRef, capable);
+            if (!enabled || !capable || wasCapable) {
+              return;
+            }
+            yield* enqueueEligibleProjects().pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("project icon backfill failed", { cause: Cause.pretty(cause) }),
+              ),
+            );
+          }),
         ),
       );
     },

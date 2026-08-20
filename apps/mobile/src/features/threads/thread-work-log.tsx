@@ -9,7 +9,7 @@ import {
   ScrollView,
   View,
 } from "react-native";
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 
 import { AppText as Text } from "../../components/AppText";
 import { scaledTypographyLineHeight } from "../../lib/appearancePreferences";
@@ -154,6 +154,14 @@ function workspaceGeneratedImagePath(cwd: string | null | undefined, path: strin
   return resolveWorkspaceFilePath(cwd, path);
 }
 
+function WorkLogGeneratedImageUnavailable() {
+  return (
+    <View className="mb-1 ml-7 h-[168px] items-center justify-center rounded-xl bg-subtle">
+      <Text className="text-xs text-foreground-muted">Unable to load generated image.</Text>
+    </View>
+  );
+}
+
 function WorkLogGeneratedImage(props: {
   readonly cwd: string | null | undefined;
   readonly environmentId: EnvironmentId;
@@ -161,6 +169,7 @@ function WorkLogGeneratedImage(props: {
   readonly path: string;
   readonly threadId: ThreadId;
 }) {
+  const [failed, setFailed] = useState(false);
   const absolutePath = workspaceGeneratedImagePath(props.cwd, props.path);
   const uri = useAssetUrl(
     props.environmentId,
@@ -173,6 +182,9 @@ function WorkLogGeneratedImage(props: {
         },
   );
 
+  if (absolutePath === null || failed) {
+    return <WorkLogGeneratedImageUnavailable />;
+  }
   if (uri === null) {
     return (
       <View className="mb-1 ml-7 h-[168px] items-center justify-center rounded-xl bg-subtle">
@@ -181,7 +193,14 @@ function WorkLogGeneratedImage(props: {
     );
   }
 
-  const image = <Image source={{ uri }} className="h-full w-full" resizeMode="contain" />;
+  const image = (
+    <Image
+      source={{ uri }}
+      className="h-full w-full"
+      resizeMode="contain"
+      onError={() => setFailed(true)}
+    />
+  );
   const onPressImage = props.onPressImage;
   if (!onPressImage) {
     return (

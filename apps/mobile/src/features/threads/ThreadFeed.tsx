@@ -913,7 +913,12 @@ const CadencedAssistantMarkdown = memo(function CadencedAssistantMarkdown(props:
 
 function renderFeedEntry(
   info: { item: ThreadFeedEntry; index: number },
-  props: Pick<ThreadFeedProps, "environmentId" | "skills" | "threadId" | "workspaceRoot"> & {
+  props: {
+    readonly environmentId: ThreadFeedProps["environmentId"];
+    readonly threadId: ThreadFeedProps["threadId"];
+    readonly workspaceRoot: ThreadFeedProps["workspaceRoot"];
+    readonly onPressImage: (uri: string, headers?: Record<string, string>) => void;
+    readonly skills: ThreadFeedProps["skills"];
     readonly copiedRowId: string | null;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly terminalAssistantMessageIds: ReadonlySet<string>;
@@ -922,7 +927,6 @@ function renderFeedEntry(
     readonly onToggleWorkGroup: (groupId: string) => void;
     readonly onToggleWorkRow: (rowId: string) => void;
     readonly onToggleTurnFold: (turnId: TurnId) => void;
-    readonly onPressImage: (uri: string, headers?: Record<string, string>) => void;
     readonly onMarkdownLinkPress: (href: string) => void;
     readonly iconSubtleColor: string | import("react-native").ColorValue;
     readonly userBubbleColor: string | import("react-native").ColorValue;
@@ -1992,6 +1996,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         environmentId: props.environmentId,
         threadId: props.threadId,
         workspaceRoot: props.workspaceRoot,
+        onPressImage,
         copiedRowId,
         expandedWorkRows,
         terminalAssistantMessageIds,
@@ -2000,7 +2005,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         onToggleWorkGroup,
         onToggleWorkRow,
         onToggleTurnFold,
-        onPressImage,
         onMarkdownLinkPress,
         iconSubtleColor,
         userBubbleColor,
