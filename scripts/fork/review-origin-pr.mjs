@@ -304,7 +304,7 @@ export function viewPullRequest(target, { repo } = {}) {
     String(target),
     ...originRepoFlag(repo),
     "--json",
-    "number,title,description,headRef,baseRef,headSha,baseSha,status,url,latestReviews,changedFiles",
+    "number,title,description,headRef,baseRef,headSha,baseSha,status,url,latestReviews",
   ]);
   return parseJson(json, null);
 }

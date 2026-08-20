@@ -8,6 +8,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import {
+  resolvePrettyMarkCopies,
   resolveWebAssetBrandForChannel,
   resolveWebIconOverrides,
   WEB_ASSET_CHANNELS,
@@ -29,7 +30,7 @@ export const applyWebBrandAssets = Effect.fn("applyWebBrandAssets")(function* (
   const repoRoot = yield* path.fromFileUrl(new URL("..", import.meta.url));
 
   yield* Effect.forEach(
-    resolveWebIconOverrides(brand, targetDirectory),
+    [...resolveWebIconOverrides(brand, targetDirectory), ...resolvePrettyMarkCopies()],
     (override) =>
       fs.copyFile(
         path.join(repoRoot, override.sourceRelativePath),

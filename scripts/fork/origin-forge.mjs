@@ -41,6 +41,17 @@ export function withLocalBinPath(env = process.env) {
   return `${localBin}${NodePath.delimiter}${current}`;
 }
 
+/** Env for Origin CLI / git helpers. Buildkite's FORCE_COLOR+NO_COLOR pair can 255 bun. */
+export function originChildEnv(env = process.env) {
+  const next = { ...env, PATH: withLocalBinPath(env) };
+  delete next.NO_COLOR;
+  if (next.FORCE_COLOR === "1" || next.FORCE_COLOR === "true") {
+    next.FORCE_COLOR = "0";
+  }
+  next.GIT_TERMINAL_PROMPT = "0";
+  return next;
+}
+
 export function redactCommandArgs(args) {
   const redacted = [];
   for (let index = 0; index < args.length; index += 1) {
@@ -77,7 +88,7 @@ export function runCommand(command, args, options = {}) {
   const result = NodeChildProcess.spawnSync(command, args, {
     encoding: "utf8",
     stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PATH: withLocalBinPath(process.env), ...options.env },
+    env: { ...originChildEnv(process.env), ...options.env },
     cwd: options.cwd,
   });
   if (result.status !== 0) {

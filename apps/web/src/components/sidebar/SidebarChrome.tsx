@@ -96,8 +96,8 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       <img
         alt=""
         aria-hidden="true"
-        className="size-4 shrink-0 rounded-[5px] object-contain"
-        src="/apple-touch-icon.png"
+        className="h-5 w-auto shrink-0 object-contain"
+        src="/t3-pretty-mark.png"
       />
       <span
         className={cn(

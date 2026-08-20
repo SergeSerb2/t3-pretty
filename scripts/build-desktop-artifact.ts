@@ -1881,10 +1881,18 @@ export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const sourcePath = path.join(stageResourcesDir, "dmg", `dmg-background-${channel}.svg`);
-  if (!(yield* fs.exists(sourcePath))) {
-    return yield* new DesktopDmgBackgroundSourceMissingError({ channel, sourcePath });
+  const dmgDir = path.join(stageResourcesDir, "dmg");
+  const svgPath = path.join(dmgDir, `dmg-background-${channel}.svg`);
+  const artJpegPath = path.join(dmgDir, `dmg-background-${channel}-art.jpg`);
+  const artPngPath = path.join(dmgDir, `dmg-background-${channel}-art.png`);
+  if (!(yield* fs.exists(svgPath))) {
+    return yield* new DesktopDmgBackgroundSourceMissingError({ channel, sourcePath: svgPath });
   }
+  const sourcePath = (yield* fs.exists(artJpegPath))
+    ? artJpegPath
+    : (yield* fs.exists(artPngPath))
+      ? artPngPath
+      : svgPath;
 
   for (const output of [
     { suffix: "", width: 540, height: 380 },

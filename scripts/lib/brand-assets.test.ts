@@ -1,9 +1,13 @@
+// @effect-diagnostics nodeBuiltinImport:off - Compares the committed in-app mark with its public copy.
+import * as NodeFS from "node:fs";
+
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   BRAND_ASSET_PATHS,
   DEVELOPMENT_ICON_OVERRIDES,
   DEVELOPMENT_PUBLIC_ICON_OVERRIDES,
+  resolvePrettyMarkCopies,
   resolveWebAssetBrandForChannel,
   resolveWebAssetBrandForPackageVersion,
   resolveWebIconOverrides,
@@ -27,6 +31,10 @@ describe("brand-assets", () => {
       {
         sourceRelativePath: BRAND_ASSET_PATHS.productionWebAppleTouchIconPng,
         targetRelativePath: "dist/client/apple-touch-icon.png",
+      },
+      {
+        sourceRelativePath: BRAND_ASSET_PATHS.prettyMarkPng,
+        targetRelativePath: "dist/client/t3-pretty-mark.png",
       },
     ]);
   });
@@ -55,6 +63,10 @@ describe("brand-assets", () => {
       {
         sourceRelativePath: BRAND_ASSET_PATHS.developmentWebAppleTouchIconPng,
         targetRelativePath: "apps/web/public/apple-touch-icon.png",
+      },
+      {
+        sourceRelativePath: BRAND_ASSET_PATHS.prettyMarkPng,
+        targetRelativePath: "apps/web/public/t3-pretty-mark.png",
       },
     ]);
   });
@@ -98,5 +110,45 @@ describe("brand-assets", () => {
     expect(BRAND_ASSET_PATHS.productionMacIconPng).toBe(BRAND_ASSET_PATHS.prettyIconPng);
     expect(BRAND_ASSET_PATHS.nightlyWindowsIconIco).toBe(BRAND_ASSET_PATHS.prettyIconIco);
     expect(BRAND_ASSET_PATHS.productionWebFaviconIco).toBe(BRAND_ASSET_PATHS.prettyWebFaviconIco);
+  });
+
+  it("copies the generated mark into web public and the mobile package", () => {
+    expect(resolvePrettyMarkCopies()).toEqual([
+      {
+        sourceRelativePath: BRAND_ASSET_PATHS.prettyMarkPng,
+        targetRelativePath: BRAND_ASSET_PATHS.prettyMarkPublicPng,
+      },
+      {
+        sourceRelativePath: BRAND_ASSET_PATHS.prettyMarkPng,
+        targetRelativePath: BRAND_ASSET_PATHS.prettyMarkMobilePng,
+      },
+    ]);
+  });
+
+  it("keeps the in-app sidebar mark in public in sync with the pretty source", () => {
+    const source = NodeFS.readFileSync(
+      new URL(`../../${BRAND_ASSET_PATHS.prettyMarkPng}`, import.meta.url),
+    );
+    const published = NodeFS.readFileSync(
+      new URL(`../../${BRAND_ASSET_PATHS.prettyMarkPublicPng}`, import.meta.url),
+    );
+    const mobile = NodeFS.readFileSync(
+      new URL(`../../${BRAND_ASSET_PATHS.prettyMarkMobilePng}`, import.meta.url),
+    );
+    expect(published.equals(source)).toBe(true);
+    expect(mobile.equals(source)).toBe(true);
+  });
+
+  it("keeps the macOS DMG installer branded as T3 Pretty", () => {
+    for (const channel of ["latest", "nightly"] as const) {
+      const svg = NodeFS.readFileSync(
+        new URL(`../../apps/desktop/resources/dmg/dmg-background-${channel}.svg`, import.meta.url),
+        "utf8",
+      );
+      expect(svg).toContain("T3 PRETTY");
+      expect(svg).toContain("Drag T3 Pretty to Applications");
+      expect(svg).not.toContain("T3 CODE");
+      expect(svg).not.toContain("Drag T3 Code");
+    }
   });
 });
