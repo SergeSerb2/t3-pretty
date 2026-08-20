@@ -62,7 +62,7 @@ describe("thread titlebar layout controls", () => {
       '[data-titlebar-controls-drag-hole][data-titlebar-layout-control-count="3"]',
     );
     expect(source).toContain(
-      "const titlebarLayoutControlCount =\n    rightPanelOpen && !shouldUseRightPanelSheet ? 3 : 2",
+      "const titlebarLayoutControlCount = rightPanelOpen && !shouldUseRightPanelSheet ? 3 : 2",
     );
   });
 });
