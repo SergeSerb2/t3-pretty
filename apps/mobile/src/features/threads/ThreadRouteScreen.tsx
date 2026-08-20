@@ -570,10 +570,22 @@ function ThreadRouteContent(
     selectedThread !== null && canSettle(selectedThread, { now: threadLifecycleNow });
   const canSnoozeThread =
     selectedThread !== null && canSnooze(selectedThread, { now: threadLifecycleNow });
+  // Settle and snooze both park the thread you're done with, so a successful
+  // park dismisses the detail view back to the threads list — the same Home
+  // escape deep links use when no back history exists.
+  const dismissToThreadList = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.dispatch(StackActions.replace("Home"));
+    }
+  }, [navigation]);
   const handleSettleThread = useCallback(() => {
     if (selectedThread === null) return;
-    void settleThread(selectedThread);
-  }, [selectedThread, settleThread]);
+    void settleThread(selectedThread).then((settled) => {
+      if (settled) dismissToThreadList();
+    });
+  }, [selectedThread, settleThread, dismissToThreadList]);
   const handleUnsettleThread = useCallback(() => {
     if (selectedThread === null) return;
     void unsettleThread(selectedThread);
@@ -581,9 +593,11 @@ function ThreadRouteContent(
   const handleSnoozeThread = useCallback(
     (snoozedUntil: string) => {
       if (selectedThread === null) return;
-      void snoozeThread(selectedThread, snoozedUntil);
+      void snoozeThread(selectedThread, snoozedUntil).then((snoozed) => {
+        if (snoozed) dismissToThreadList();
+      });
     },
-    [selectedThread, snoozeThread],
+    [selectedThread, snoozeThread, dismissToThreadList],
   );
   const handleUnsnoozeThread = useCallback(() => {
     if (selectedThread === null) return;
