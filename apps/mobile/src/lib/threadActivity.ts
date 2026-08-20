@@ -1427,10 +1427,6 @@ function appendPresentedFeedEntry(
     (activity) => activity.itemType !== "image_generation",
   );
   const hiddenActivities = overflowCandidates.slice(0, -MAX_VISIBLE_WORK_LOG_ENTRIES);
-  if (hiddenActivities.length === 0) {
-    result.push(presented.collapsed);
-    return;
-  }
   const hiddenIds = new Set(hiddenActivities.map((activity) => activity.id));
   const visibleActivities = expanded
     ? activities
@@ -1451,6 +1447,9 @@ function appendPresentedFeedEntry(
       presentedSingleActivityGroupCache.set(activity, single);
     }
     result.push(single);
+  }
+  if (hiddenActivities.length === 0) {
+    return;
   }
   let toggle = expanded ? presented.expandedToggle : presented.collapsedToggle;
   if (toggle === undefined) {
