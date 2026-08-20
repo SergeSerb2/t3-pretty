@@ -37,6 +37,10 @@ import * as Struct from "effect/Struct";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
 import { usePrimaryEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
+import {
+  resolveEnvironmentIdentificationPillLabel,
+  useEnvironmentStageLabel,
+} from "../components/SidebarStageBackdrop";
 import { useTheme } from "./useTheme";
 
 const CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE = "[CLIENT_SETTINGS]";
@@ -245,19 +249,45 @@ export function resolveEnvironmentIdentificationMode(input: {
   settingsHydrated: boolean;
   paletteThemeActive?: boolean;
   paletteThemeAllowsArtwork?: boolean;
+  pillAvailable?: boolean;
 }): EnvironmentIdentificationMode {
   // Avoid briefly rendering the default artwork before a persisted pill/none choice loads.
   if (!input.settingsHydrated) return "none";
   // Artwork palettes are maintained for built-ins only. Keep an explicit
   // "none", but use the theme-aware pill for user-controlled palettes.
-  return input.paletteThemeActive && !input.paletteThemeAllowsArtwork && input.mode === "artwork"
-    ? "pill"
-    : input.mode;
+  const mode =
+    input.paletteThemeActive && !input.paletteThemeAllowsArtwork && input.mode === "artwork"
+      ? "pill"
+      : input.mode;
+  // Nightly has no version pill. Keep identification via the stage artwork
+  // rather than treating a stored or remapped pill as none.
+  return mode === "pill" && input.pillAvailable === false ? "artwork" : mode;
+}
+
+const ENVIRONMENT_IDENTIFICATION_MODES_WITH_PILL = ["artwork", "pill", "none"] as const;
+const ENVIRONMENT_IDENTIFICATION_MODES_WITHOUT_PILL = ["artwork", "none"] as const;
+
+export function resolveEnvironmentIdentificationSetting(input: {
+  mode: EnvironmentIdentificationMode;
+  pillAvailable: boolean;
+}): {
+  value: EnvironmentIdentificationMode;
+  modes: readonly EnvironmentIdentificationMode[];
+} {
+  const modes = input.pillAvailable
+    ? ENVIRONMENT_IDENTIFICATION_MODES_WITH_PILL
+    : ENVIRONMENT_IDENTIFICATION_MODES_WITHOUT_PILL;
+
+  return {
+    modes,
+    value: input.mode === "pill" && !input.pillAvailable ? "artwork" : input.mode,
+  };
 }
 
 export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMode {
   const settingsHydrated = useClientSettingsHydrated();
   const mode = useClientSettingsValue().environmentIdentificationMode;
+  const stageLabel = useEnvironmentStageLabel();
   const { resolvedTheme, theme, themeHalves } = useTheme();
   const previewSidebarArtwork = useSyncExternalStore(
     subscribeToThemePreview,
@@ -271,6 +301,7 @@ export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMod
     settingsHydrated,
     paletteThemeActive: previewSidebarArtwork !== null || activeThemeDefinition !== null,
     paletteThemeAllowsArtwork: previewSidebarArtwork ?? themeAllowsSidebarArtwork(activeTheme),
+    pillAvailable: resolveEnvironmentIdentificationPillLabel(stageLabel) !== null,
   });
 }
 

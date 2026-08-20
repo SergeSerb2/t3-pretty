@@ -51,6 +51,7 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import {
   resolveEnvironmentIdentificationPillLabel,
+  resolveSidebarStageBackdropVariant,
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { isElectron } from "../../env";
@@ -62,7 +63,11 @@ import {
   useTheme,
 } from "../../hooks/useTheme";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
-import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import {
+  resolveEnvironmentIdentificationSetting,
+  usePrimarySettings,
+  useUpdatePrimarySettings,
+} from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import {
@@ -970,7 +975,11 @@ export function AppearanceSettingsPanel() {
   const updateSettings = useUpdatePrimarySettings();
   const environmentStageLabel = useEnvironmentStageLabel();
   const showEnvironmentIdentification =
-    resolveEnvironmentIdentificationPillLabel(environmentStageLabel) !== null;
+    resolveSidebarStageBackdropVariant(environmentStageLabel) !== null;
+  const environmentIdentification = resolveEnvironmentIdentificationSetting({
+    mode: settings.environmentIdentificationMode,
+    pillAvailable: resolveEnvironmentIdentificationPillLabel(environmentStageLabel) !== null,
+  });
   const sceneryThemeActive = useSceneryThemeActive();
   const glassOpacityRatio =
     (settings.glassOpacity - MIN_GLASS_OPACITY) / (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
@@ -1043,7 +1052,7 @@ export function AppearanceSettingsPanel() {
             {...searchableSetting("environment-identification")}
             description="Choose how Dev and Nightly environments are identified."
             resetAction={
-              settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
+              environmentIdentification.value !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
                 <SettingResetButton
                   label="environment identification"
                   onClick={() =>
@@ -1056,22 +1065,25 @@ export function AppearanceSettingsPanel() {
             }
             control={
               <Select
-                value={settings.environmentIdentificationMode}
+                value={environmentIdentification.value}
                 onValueChange={(value) => {
-                  if (value === "artwork" || value === "pill" || value === "none") {
+                  if (
+                    (value === "artwork" || value === "pill" || value === "none") &&
+                    environmentIdentification.modes.includes(value)
+                  ) {
                     updateSettings({ environmentIdentificationMode: value });
                   }
                 }}
               >
                 <SelectTrigger className="w-full sm:w-40" aria-label="Environment identification">
                   <SelectValue>
-                    {ENVIRONMENT_IDENTIFICATION_LABELS[settings.environmentIdentificationMode]}
+                    {ENVIRONMENT_IDENTIFICATION_LABELS[environmentIdentification.value]}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {Object.entries(ENVIRONMENT_IDENTIFICATION_LABELS).map(([value, label]) => (
+                  {environmentIdentification.modes.map((value) => (
                     <SelectItem hideIndicator key={value} value={value}>
-                      {label}
+                      {ENVIRONMENT_IDENTIFICATION_LABELS[value]}
                     </SelectItem>
                   ))}
                 </SelectPopup>
