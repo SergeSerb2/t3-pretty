@@ -59,6 +59,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -187,6 +188,7 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
+import { useThreadDepartureStore } from "../threadDepartureStore";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -804,6 +806,22 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
+  // Settle/snooze departure: the dispatch site marks the thread the moment
+  // the action fires, so the row slides out ahead of the server round trip.
+  // When the marker clears, the store raises a short-lived arrive marker that
+  // survives the source row's unmount, so the freshly mounted destination row
+  // replays the arrive half — at its new spot on success, in place on failure.
+  const departureKind = useThreadDepartureStore(
+    (state) => state.departingKindByKey[threadKey] ?? null,
+  );
+  const isArriving = useThreadDepartureStore((state) => state.arrivingByKey[threadKey] === true);
+  // A landed row already renders in its destination shelf while the marker
+  // still waits on the sidebar's clearing pass: suppress the exit animation
+  // there so only the arrive fade plays.
+  const hasLanded =
+    (departureKind === "settle" && variantAction === "unsettle") ||
+    (departureKind === "snooze" && variantAction === "unsnooze");
+  const isDeparting = departureKind !== null && !hasLanded;
   const openPrLink = useOpenPrLink();
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
@@ -1135,6 +1153,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       !props.isActive &&
       !isSelected &&
       "opacity-70 transition-opacity hover:opacity-100",
+    isDeparting && "sidebar-row-departing",
+    isArriving && "sidebar-row-arriving",
   );
 
   const title = isRenaming ? (
@@ -2346,6 +2366,47 @@ export default function Sidebar() {
   const snoozedThreadKeysRef = useRef(snoozedThreadKeys);
   snoozedThreadKeysRef.current = snoozedThreadKeys;
 
+  // A departure ends when the canonical classification lands: the row is by
+  // then rendering in its destination shelf, so clearing the marker here
+  // hands off from the slide-out to the arrive fade. This runs as a layout
+  // effect so the arrive marker is set before the destination row's first
+  // paint — otherwise the row would paint a frame at full opacity before the
+  // fade starts. Failures clear at the dispatch site (useThreadActions);
+  // anything else falls to the store TTL.
+  //
+  // Only a membership CHANGE completes a departure. Re-settling/re-snoozing
+  // a thread already on the destination shelf (the guards allow it, e.g. via
+  // multi-select) marks departing while the classification already matches;
+  // treating that as "landed" would skip the exit and flash the arrive fade
+  // in place. The baseline recorded when a marker first appears tells the
+  // two apart: pre-existing membership clears silently instead.
+  const departingKindByKey = useThreadDepartureStore((state) => state.departingKindByKey);
+  const departureBaselineByKeyRef = useRef(new Map<string, boolean>());
+  useLayoutEffect(() => {
+    const baselineByKey = departureBaselineByKeyRef.current;
+    for (const [threadKey, kind] of Object.entries(departingKindByKey)) {
+      const landed =
+        kind === "settle" ? settledThreadKeys.has(threadKey) : snoozedThreadKeys.has(threadKey);
+      const baseline = baselineByKey.get(threadKey);
+      if (baseline === undefined) {
+        baselineByKey.set(threadKey, landed);
+        if (landed) {
+          useThreadDepartureStore.getState().clearDeparting(threadKey, { raiseArrive: false });
+        }
+        continue;
+      }
+      if (landed && !baseline) {
+        baselineByKey.delete(threadKey);
+        useThreadDepartureStore.getState().clearDeparting(threadKey);
+      }
+    }
+    // Markers that left without landing here (failure, TTL) drop their
+    // baseline with them.
+    for (const threadKey of baselineByKey.keys()) {
+      if (!(threadKey in departingKindByKey)) baselineByKey.delete(threadKey);
+    }
+  }, [departingKindByKey, settledThreadKeys, snoozedThreadKeys]);
+
   const jumpLabelByKey = useMemo(() => {
     const mapping = new Map<string, string>();
     for (const [index, threadKey] of orderedThreadKeys.entries()) {
@@ -3402,7 +3463,9 @@ export default function Sidebar() {
 
   const attachListAutoAnimateRef = useCallback((node: HTMLUListElement | null) => {
     if (!node) return;
-    autoAnimate(node, { duration: 150, easing: "ease-out" });
+    // 200ms so a settled/snoozed row's slide to its shelf reads as a motion,
+    // not a snap — this list's dominant move is exactly that lifecycle trip.
+    autoAnimate(node, { duration: 200, easing: "ease-out" });
   }, []);
 
   // New thread defaults to the project you're in (active thread's project,
