@@ -315,6 +315,10 @@ export const ChatHeader = memo(function ChatHeader({
         data-chat-header-actions
         className={cn(
           "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
+          // Same 200ms linear slide as the right panel gap. Snapping this
+          // padding made git/scripts/open-in jump into the layout-control
+          // cluster, then get pushed back as the chat column shrank.
+          "transition-[padding-right] duration-200 ease-linear motion-reduce:transition-none",
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
       >

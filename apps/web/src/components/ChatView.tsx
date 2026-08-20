@@ -6454,9 +6454,10 @@ function ChatViewContent(props: ChatViewProps) {
   const panelLayoutControls = (
     <div
       className={cn(
-        // One inset in both states: the controls move between containers when
-        // the right panel opens, and a different right offset made them jump
-        // sideways on every toggle.
+        // Parked on the workspace root in both states, same inset as the
+        // sidebar trigger. Remounting into the shrinking chat header made the
+        // cluster jump to the panel seam on close, and the rest of the top bar
+        // jittered against buttons that stayed put.
         "absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
       )}
       data-workspace-titlebar-controls
@@ -6594,7 +6595,7 @@ function ChatViewContent(props: ChatViewProps) {
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-      {rightPanelOpen && !shouldUseRightPanelSheet ? panelLayoutControls : null}
+      {shouldUseRightPanelSheet && rightPanelOpen ? null : panelLayoutControls}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
@@ -6606,7 +6607,7 @@ function ChatViewContent(props: ChatViewProps) {
         <header
           data-chat-header
           className={cn(
-            "bg-background transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none",
+            "bg-background transition-[padding] duration-200 ease-linear motion-reduce:transition-none",
             isElectron
               ? cn(
                   "drag-region relative flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
@@ -6618,7 +6619,6 @@ function ChatViewContent(props: ChatViewProps) {
             COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
           )}
         >
-          {!rightPanelOpen ? panelLayoutControls : null}
           <ChatHeader
             {...(!supportsPullRequests || threadRepository === null
               ? {}
