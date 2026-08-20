@@ -112,4 +112,17 @@ describe("brand-assets", () => {
     );
     expect(published.equals(source)).toBe(true);
   });
+
+  it("keeps the macOS DMG installer branded as T3 Pretty", () => {
+    for (const channel of ["latest", "nightly"] as const) {
+      const svg = NodeFS.readFileSync(
+        new URL(`../../apps/desktop/resources/dmg/dmg-background-${channel}.svg`, import.meta.url),
+        "utf8",
+      );
+      expect(svg).toContain("T3 PRETTY");
+      expect(svg).toContain("Drag T3 Pretty to Applications");
+      expect(svg).not.toContain("T3 CODE");
+      expect(svg).not.toContain("Drag T3 Code");
+    }
+  });
 });

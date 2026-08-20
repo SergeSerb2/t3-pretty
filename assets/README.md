@@ -8,8 +8,11 @@ same family in every release channel so upstream dev/nightly/prod artwork cannot
 identity during packaging. The checked-in `t3.json` also points to the master image, which makes the
 logo appear for this repository in T3 Pretty project rows instead of the folder fallback.
 
-The master was generated from the upstream blueprint T3 icon with OpenAI's built-in image generator,
-then its flat outer background was removed and the derived sizes were exported locally.
+The master application icon is the generated colorful T3 mark on a dark glass
+squircle. `t3-pretty-1024.png` is the macOS asset (824px body inset 100px, with
+a light contact shadow). `t3-pretty-ios-1024.png` is the full-bleed iOS asset.
+The ICO, ICNS, favicon, and apple-touch files are derived from those masters.
+Desktop packaging copies them into `apps/desktop/resources`.
 
 `pretty/t3-pretty-mark.png` is the in-app lockup (web sidebar, mobile thread header). It is a
 cropped, transparent copy of the generated T3 Pretty mark, not the squircle application icon. The
