@@ -520,13 +520,15 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       }
       updateComposerDraftSettings(selectedProjectDraftKey, {
         modelSelection: options ? { ...option.selection, options } : option.selection,
-        // Kimi's "yolo" mode has no equivalent on other providers; normalize
-        // to the generic full-access mode in the same write so the Kimi-only
-        // literal never reaches another provider's session config. Landing on
-        // Kimi with the generic default flips to Kimi's own default, "yolo".
+        // A mode still reading as the generic default was never picked, so
+        // the switch applies the target provider's own default ("yolo" for
+        // Kimi). Any other mode is explicit and only normalizes: Kimi's
+        // "yolo" has no equivalent on other providers and falls back to the
+        // generic full-access mode so the Kimi-only literal never reaches
+        // another provider's session config.
         runtimeMode:
-          option.providerDriver === "kimi" && runtimeMode === DEFAULT_RUNTIME_MODE
-            ? "yolo"
+          runtimeMode === DEFAULT_RUNTIME_MODE
+            ? defaultRuntimeModeForProviderDriver(option.providerDriver)
             : resolveRuntimeModeForProviderDriver(option.providerDriver, runtimeMode),
       });
     },

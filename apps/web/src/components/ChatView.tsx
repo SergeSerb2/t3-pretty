@@ -2434,15 +2434,20 @@ function ChatViewContent(props: ChatViewProps) {
   const selectedProvider: ProviderDriverKind =
     modelPickerLockedProvider ?? unlockedSelectedProvider;
   // Kimi's default access mode is "yolo"; other providers default to
-  // "full-access". A mode the user never picked still reads as the generic
-  // default, so surface the provider's own default instead. An explicit
-  // picker choice (composer draft override, or any non-default mode) wins.
-  const storedRuntimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? null;
+  // "full-access". A composer pick always wins, and a server thread's stored
+  // mode is authoritative — even "full-access" on Kimi, which may be an
+  // explicit pick or the pre-Yolo default and must not be remapped. Only a
+  // draft whose mode still reads as the generic default (never picked, never
+  // carried from a non-default thread) inherits the provider's own default.
+  const storedRuntimeMode =
+    composerRuntimeMode ??
+    (isServerThread
+      ? (activeThread?.runtimeMode ?? null)
+      : activeThread?.runtimeMode !== DEFAULT_RUNTIME_MODE
+        ? (activeThread?.runtimeMode ?? null)
+        : null);
   const runtimeMode: RuntimeMode =
-    composerRuntimeMode === null &&
-    (storedRuntimeMode === null || storedRuntimeMode === DEFAULT_RUNTIME_MODE)
-      ? defaultRuntimeModeForProviderDriver(selectedProvider)
-      : (storedRuntimeMode ?? DEFAULT_RUNTIME_MODE);
+    storedRuntimeMode ?? defaultRuntimeModeForProviderDriver(selectedProvider);
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
@@ -6456,14 +6461,17 @@ function ChatViewContent(props: ChatViewProps) {
         nextModelSelection,
       );
       setStickyComposerModelSelection(nextModelSelection);
-      // Kimi's "yolo" mode has no equivalent on other providers; switching
-      // providers falls back to the generic full-access mode instead of
-      // leaking the Kimi-only literal into another provider's session config.
-      if (resolvedDriverKind !== "kimi") {
-        handleRuntimeModeChange(
-          resolveRuntimeModeForProviderDriver(resolvedDriverKind, runtimeMode),
-        );
-      }
+      // A mode still reading as the generic default was never picked, so the
+      // switch applies the target provider's own default ("yolo" for Kimi).
+      // Any other mode is explicit and only normalizes: Kimi's "yolo" has no
+      // equivalent on other providers and falls back to the generic
+      // full-access mode instead of leaking the Kimi-only literal into
+      // another provider's session config.
+      handleRuntimeModeChange(
+        runtimeMode === DEFAULT_RUNTIME_MODE
+          ? defaultRuntimeModeForProviderDriver(resolvedDriverKind)
+          : resolveRuntimeModeForProviderDriver(resolvedDriverKind, runtimeMode),
+      );
       scheduleComposerFocus();
     },
     [
