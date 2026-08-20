@@ -102,13 +102,14 @@ export function archivedDeleteDetail(inventory: StorageInventory): string {
 }
 
 export function isStorageScanInProgress(
-  _inventory: StorageInventory | null,
+  inventory: StorageInventory | null,
   isPending: boolean,
 ): boolean {
-  // A leftover `scan.status === "scanning"` snapshot is not in-flight work.
-  // After a dropped stream the last frame can still say scanning; only the
-  // live query/subscription waiting flag means bytes are still arriving.
-  return isPending;
+  // The inventory stream is mounted through `followStream`, which stays open
+  // after the finite walk ends, so `waiting` remains true once a complete
+  // frame has arrived. A leftover `scan.status === "scanning"` snapshot after
+  // a dropped stream is not in-flight work either.
+  return isPending && inventory?.scan?.status !== "complete";
 }
 
 export function scanProgressCaption(inventory: StorageInventory): string | null {

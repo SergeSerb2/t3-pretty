@@ -170,7 +170,9 @@ export function SettingsEnvironmentStorageRouteScreen() {
   );
 
   const refreshing = environments.some(
-    (environment) => environment.isPending && environment.inventory !== null,
+    (environment) =>
+      environment.inventory !== null &&
+      isStorageScanInProgress(environment.inventory, environment.isPending),
   );
 
   return (
