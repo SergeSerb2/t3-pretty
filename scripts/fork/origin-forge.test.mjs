@@ -14,6 +14,7 @@ import {
   isGitHubFeedUrl,
   isMergeableState,
   originChildEnv,
+  originUnknownOption,
   redactCommandArgs,
   pullRequestItems,
   pullRequestNumber,
@@ -58,6 +59,15 @@ describe("Origin pull request parsing", () => {
     assert.equal(pullRequestNumber({ number: "13" }), "13");
     assert.equal(pullRequestNumber({ pullRequest: { number: 7 } }), "7");
     assert.equal(pullRequestUrl("13"), "https://cursor.com/codebase/serbinenko/t3-pretty/pull/13");
+  });
+
+  it("does not pass --sha to origin pr merge", () => {
+    const forge = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
+    assert.notInclude(forge, 'args.push("--sha", sha)');
+    assert.include(forge, "Origin CLI has no --sha on `pr merge`");
+    assert.isTrue(originUnknownOption("Unknown argument: sha", "sha"));
+    assert.isTrue(originUnknownOption("unknown flag: auto", "auto"));
+    assert.isFalse(originUnknownOption("merge failed", "sha"));
   });
 
   it("treats Origin mergeability variants as mergeable", () => {

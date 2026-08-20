@@ -1855,20 +1855,6 @@ export default function Sidebar() {
     },
     [markThreadVisited],
   );
-  // Desktop dock badge + one informational bounce. The sidebar already owns
-  // the "does this thread need me" question, so the count is derived here and
-  // pushed only when the number itself moves — the bridge call is a no-op on
-  // web and off macOS.
-  const threadLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
-  const threadsAwaitingUser = useMemo(
-    () => countThreadsAwaitingUser(threads, threadLastVisitedAtById),
-    [threadLastVisitedAtById, threads],
-  );
-  useEffect(() => {
-    void window.desktopBridge
-      ?.setDockAttention?.({ count: threadsAwaitingUser })
-      ?.catch(() => undefined);
-  }, [threadsAwaitingUser]);
   const routeTarget = useParams({
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
@@ -2072,6 +2058,7 @@ export default function Sidebar() {
     activeThreads,
     snoozedThreads,
     settledThreads,
+    inboxThreadsForDock,
     snoozeNow,
   } = useMemo(() => {
     const now = `${nowMinute}:00.000Z`;
@@ -2081,17 +2068,13 @@ export default function Sidebar() {
     // memo exactly at the next wake boundary.
     void snoozeWakeTick;
     const preciseNow = new Date().toISOString();
-    const visible = threads.filter(
-      (thread) =>
-        thread.archivedAt === null &&
-        (scopedProjectKeys === null ||
-          scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
-    );
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
     const snoozed: EnvironmentThreadShell[] = [];
     const settled: EnvironmentThreadShell[] = [];
-    for (const thread of visible) {
+    const inboxForDock: EnvironmentThreadShell[] = [];
+    for (const thread of threads) {
+      if (thread.archivedAt !== null) continue;
       // Threads on servers without the settlement capability (old server,
       // or descriptor not loaded yet) never classify as settled: the user
       // could neither un-settle nor pin them, so auto-settling them would
@@ -2112,14 +2095,15 @@ export default function Sidebar() {
       // its exact slot in the pinned block. (For unpinned threads
       // this is also the snooze-beats-auto-settle rule: the wake time is a
       // stronger statement about when the thread matters again.)
+      let shelf: "snoozed" | "pinned" | "settled" | "active";
       if (supportsSnooze && effectiveSnoozed(thread, { now: preciseNow })) {
-        snoozed.push(thread);
+        shelf = "snoozed";
         // A pin otherwise overrides the lifecycle: pinned threads never
         // auto-settle out of sight. (The decider clears settled state on
         // pin and the pin on settle, so pin-vs-settled conflicts only
         // arise from stale or raced writes.)
       } else if (thread.pinnedAt != null) {
-        pinned.push(thread);
+        shelf = "pinned";
       } else if (
         supportsSettlement &&
         effectiveSettled(thread, {
@@ -2129,6 +2113,27 @@ export default function Sidebar() {
           changeRequest,
         })
       ) {
+        shelf = "settled";
+      } else {
+        shelf = "active";
+      }
+      // Dock is OS-level, so it counts every environment/project — not just
+      // the scoped sidebar — but only inbox rows. Settled/snoozed unread
+      // completions are history, not a request.
+      if (shelf === "pinned" || shelf === "active") {
+        inboxForDock.push(thread);
+      }
+      if (
+        scopedProjectKeys !== null &&
+        !scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)
+      ) {
+        continue;
+      }
+      if (shelf === "snoozed") {
+        snoozed.push(thread);
+      } else if (shelf === "pinned") {
+        pinned.push(thread);
+      } else if (shelf === "settled") {
         settled.push(thread);
       } else {
         active.push(thread);
@@ -2158,6 +2163,7 @@ export default function Sidebar() {
           firstValidTimestampMs(right.snoozedUntil ?? null),
       ),
       settledThreads: sortSettledThreadsForSidebar(settled),
+      inboxThreadsForDock: inboxForDock,
       snoozeNow: preciseNow,
     };
   }, [
@@ -2169,6 +2175,20 @@ export default function Sidebar() {
     snoozeWakeTick,
     threads,
   ]);
+
+  // Desktop dock badge + one informational bounce. Counted from the same
+  // inbox partition the sidebar uses, minus project scope, so a parked
+  // unread completion cannot keep a red badge on an empty inbox.
+  const threadLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
+  const threadsAwaitingUser = useMemo(
+    () => countThreadsAwaitingUser(inboxThreadsForDock, threadLastVisitedAtById),
+    [inboxThreadsForDock, threadLastVisitedAtById],
+  );
+  useEffect(() => {
+    void window.desktopBridge
+      ?.setDockAttention?.({ count: threadsAwaitingUser })
+      ?.catch(() => undefined);
+  }, [threadsAwaitingUser]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
