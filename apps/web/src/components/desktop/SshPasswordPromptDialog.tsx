@@ -160,8 +160,9 @@ function ActiveSshPasswordPrompt({
         <DialogHeader>
           <DialogTitle>SSH Password Required</DialogTitle>
           <DialogDescription>
-            T3 needs your SSH password to connect to <code>{target}</code>. The password is passed
-            to the local SSH process for this connection attempt and is not saved by T3 Pretty.
+            T3 Pretty needs your SSH password to connect to <code>{target}</code>. The password is
+            passed to the local SSH process for this connection attempt and is not saved by T3
+            Pretty.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-3" scrollFade={false}>
@@ -190,6 +191,7 @@ function ActiveSshPasswordPrompt({
               </div>
               <Input
                 ref={inputRef}
+                aria-label={request.prompt}
                 autoComplete="current-password"
                 disabled={isResponding || isExpired}
                 name="ssh-password"
@@ -199,7 +201,9 @@ function ActiveSshPasswordPrompt({
               />
             </div>
             {visibleResponseError ? (
-              <p className="text-sm text-destructive">{visibleResponseError}</p>
+              <p key="ssh-error" className="text-sm text-destructive" role="alert">
+                {visibleResponseError}
+              </p>
             ) : (
               <p className="text-sm text-muted-foreground">
                 Use SSH keys to avoid repeated password prompts on new SSH sessions.

@@ -32,6 +32,19 @@ describe("ComposerBannerStack", () => {
     expect(markup).toContain("group-focus-within/banner-stack:visible");
   });
 
+  it("makes the collapsed stack cap a focusable way into the hidden banners", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerBannerStack items={[banner("front"), banner("stacked")]} />,
+    );
+
+    expect(markup).toContain('aria-label="Show 1 more notice"');
+    expect(
+      renderToStaticMarkup(
+        <ComposerBannerStack items={[banner("front"), banner("a"), banner("b")]} />,
+      ),
+    ).toContain('aria-label="Show 2 more notices"');
+  });
+
   it("colors the collapsed stack cap by the hidden banner's variant, not a fixed warning", () => {
     const neutralBehind = renderToStaticMarkup(
       <ComposerBannerStack items={[banner("front", "default"), banner("stacked", "default")]} />,

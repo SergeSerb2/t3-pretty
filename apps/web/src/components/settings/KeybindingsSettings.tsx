@@ -787,7 +787,7 @@ function KeybindingTableRow({
   };
 
   return (
-    <div className="grid grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] items-center px-4 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
+    <div className="grid grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_120px] items-center px-4 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
       <div className="min-w-0 pr-4">
         <div className="flex min-w-0 items-center gap-1.5">
           <Tooltip>
@@ -868,7 +868,25 @@ function KeybindingTableRow({
         </Popover>
       </div>
       <div className="flex items-center justify-end gap-1">
+        {row.source !== "Default" ? (
+          <span className="shrink-0 rounded-sm bg-muted px-1.5 text-[10px] text-muted-foreground">
+            {row.source}
+          </span>
+        ) : null}
         <KeybindingConflictWarning labels={conflictLabels} />
+        {isDirty ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="size-7 text-muted-foreground hover:text-foreground sm:size-7"
+            disabled={isSaving}
+            aria-label={`Discard changes to ${commandLabel(row.command)}`}
+            onClick={() => setDraft(createKeybindingRowDraft(row))}
+          >
+            <XIcon className="size-3.5" />
+          </Button>
+        ) : null}
         {hasRowActions ? (
           <Menu>
             <MenuTrigger
@@ -958,7 +976,7 @@ function NewKeybindingTableRow({
   };
 
   return (
-    <div className="grid grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] items-center px-4 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
+    <div className="grid grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_120px] items-center px-4 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
       <div className="min-w-0 pr-4">
         <Select
           value={commandDraft}
@@ -1260,13 +1278,13 @@ export function KeybindingsSettingsPanel() {
           hideScrollbars
           className="w-full max-w-full rounded-none"
         >
-          <div className="grid min-w-[680px] grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] border-b border-border/70 bg-muted/25 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+          <div className="grid min-w-[740px] grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_120px] border-b border-border/70 bg-muted/25 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
             <div>Command</div>
             <div>Keybinding</div>
             <div>When</div>
-            <div>Status</div>
+            <div className="text-right">Status</div>
           </div>
-          <div className="min-w-[680px] divide-y divide-border/60">
+          <div className="min-w-[740px] divide-y divide-border/60">
             {isAddingBinding ? (
               <NewKeybindingTableRow
                 commandOptions={commandOptions}

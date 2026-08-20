@@ -873,6 +873,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                         <button
                           type="button"
                           className="cursor-pointer flex min-w-0 items-center"
+                          aria-current={active ? "true" : undefined}
                           onClick={() => props.onActivate(surface)}
                         >
                           <span className="truncate">{title}</span>

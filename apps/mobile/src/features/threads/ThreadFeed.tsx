@@ -28,7 +28,6 @@ import {
   type PartialMarkdownTheme,
 } from "react-native-nitro-markdown";
 import {
-  ActivityIndicator,
   Image,
   Platform,
   type LayoutChangeEvent,
@@ -125,12 +124,27 @@ const MESSAGE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
   minute: "2-digit",
 });
+const MESSAGE_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  month: "numeric",
+  day: "numeric",
+});
+// Mirrors web's formatDayAwareTimestamp: the feed has no day dividers, so a
+// message older than today has to carry its own date.
 function formatMessageTime(input: string): string {
   const timestamp = Date.parse(input);
   if (Number.isNaN(timestamp)) {
     return "";
   }
-  return MESSAGE_TIME_FORMATTER.format(timestamp);
+  const date = new Date(timestamp);
+  const time = MESSAGE_TIME_FORMATTER.format(date);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  // Round so DST-shifted 23/25 hour days still count as whole days.
+  const dayDiff = Math.round((startOfToday - startOfDay) / 86_400_000);
+  if (dayDiff <= 0) return time;
+  if (dayDiff === 1) return `yesterday at ${time}`;
+  return `${MESSAGE_DATE_FORMATTER.format(date)} ${time}`;
 }
 
 // Pre-measurement heights for getFixedItemSize, mirroring renderFeedEntry's
@@ -209,12 +223,11 @@ function MessageAttachmentImage(props: {
   const displayUri = props.image.localPreviewUri ?? remotePreviewUri;
   const expandedUri = remoteUri ?? props.image.localPreviewUri;
 
+  // A null URI means the signed URL is resolving, the environment is
+  // disconnected, or the request failed — indistinguishable here, so hold the
+  // caller's muted box instead of a spinner that may never finish.
   if (displayUri === null || expandedUri === null) {
-    return (
-      <View className={`${props.className} items-center justify-center`}>
-        <ActivityIndicator />
-      </View>
-    );
+    return <View className={props.className} />;
   }
 
   return (
@@ -2176,7 +2189,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
                   <Pressable
                     onPress={props.loadEarlier.onLoadEarlier}
                     disabled={props.loadEarlier.loading}
-                    className="items-center py-2"
+                    className="min-h-11 items-center justify-center py-2 active:opacity-60"
                   >
                     <Text className="text-xs text-foreground-secondary">
                       {props.loadEarlier.loading ? "Loading earlier turns…" : "Load earlier turns"}

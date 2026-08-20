@@ -7,7 +7,15 @@ import {
   usePreventRemove,
 } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import * as Linking from "expo-linking";
 import {
   KeyboardController,
@@ -46,6 +54,7 @@ import { composerDispatchStatusLabel } from "../../lib/composerDispatchStatus";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
+import { EmptyState } from "../../components/EmptyState";
 import { GlassSurface } from "../../components/GlassSurface";
 import { ComposerSurface } from "./ThreadComposer";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
@@ -82,6 +91,8 @@ import { rememberOutgoingMessageDraftAttachments } from "../../state/outgoing-me
 import { enqueueThreadOutboxMessage, removeThreadOutboxMessage } from "../../state/thread-outbox";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { useNewTaskFlow } from "./new-task-flow-provider";
+import { deriveProjectEmptyState } from "./NewTaskRouteScreen";
+import { useWorkspaceState } from "../../state/workspace";
 import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
 import { useCreateProjectThread } from "./use-project-actions";
 import { resolveDraftProjectSelection } from "./new-task-project-selection";
@@ -214,6 +225,7 @@ export function NewTaskDraftScreen(props: {
     reportFailure: false,
   });
   const flow = useNewTaskFlow();
+  const { state: catalogState } = useWorkspaceState();
   const navigation = useNavigation();
   const {
     consumeShare,
@@ -1060,6 +1072,9 @@ export function NewTaskDraftScreen(props: {
   }
 
   if (!selectedProject) {
+    // No project can mean "still loading" or a real dead end (no environments,
+    // environment offline, no projects) — a bare spinner would lie forever.
+    const projectEmptyState = deriveProjectEmptyState(catalogState);
     return (
       <NewTaskDraftFrame sceneryChrome={sceneryChrome}>
         {Platform.OS === "android" ? (
@@ -1068,8 +1083,21 @@ export function NewTaskDraftScreen(props: {
             <AndroidScreenHeader title="New Thread" onBack={() => navigation.goBack()} />
           </>
         ) : (
-          <NativeStackScreenOptions options={{ title: "Loading task" }} />
+          <NativeStackScreenOptions
+            options={{ title: projectEmptyState.loading ? "Loading task" : "New task" }}
+          />
         )}
+        <View className="flex-1 items-center justify-center">
+          {projectEmptyState.loading ? (
+            <ActivityIndicator />
+          ) : (
+            <EmptyState
+              title={projectEmptyState.title}
+              detail={projectEmptyState.detail}
+              variant="plain"
+            />
+          )}
+        </View>
       </NewTaskDraftFrame>
     );
   }

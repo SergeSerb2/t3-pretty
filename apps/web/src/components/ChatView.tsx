@@ -5677,6 +5677,16 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     if (failure !== null) {
+      // The bubble must go even when the composer is busy: nothing else prunes
+      // it, so leaving it would claim a message that never reached the server.
+      setOptimisticUserMessages((existing) => {
+        const removed = existing.filter((message) => message.id === messageIdForSend);
+        for (const message of removed) {
+          revokeUserMessagePreviewUrls(message);
+        }
+        const next = existing.filter((message) => message.id !== messageIdForSend);
+        return next.length === existing.length ? existing : next;
+      });
       if (
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
@@ -5690,14 +5700,6 @@ function ChatViewContent(props: ChatViewProps) {
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
           .length ?? 0) === 0
       ) {
-        setOptimisticUserMessages((existing) => {
-          const removed = existing.filter((message) => message.id === messageIdForSend);
-          for (const message of removed) {
-            revokeUserMessagePreviewUrls(message);
-          }
-          const next = existing.filter((message) => message.id !== messageIdForSend);
-          return next.length === existing.length ? existing : next;
-        });
         promptRef.current = promptForSend;
         const retryComposerImages = composerImagesSnapshot.map(cloneComposerImageForRetry);
         composerImagesRef.current = retryComposerImages;
@@ -5716,6 +5718,18 @@ function ChatViewContent(props: ChatViewProps) {
         composerRef.current?.resetCursorState({
           cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
           prompt: promptForSend,
+          detectTrigger: true,
+        });
+      } else if (promptForSend.length > 0) {
+        // The composer already holds new content, so merge the failed
+        // message's text back in rather than silently destroying it.
+        const merged =
+          promptRef.current.length > 0 ? `${promptForSend}\n\n${promptRef.current}` : promptForSend;
+        promptRef.current = merged;
+        setComposerDraftPrompt(composerDraftTarget, merged);
+        composerRef.current?.resetCursorState({
+          cursor: collapseExpandedComposerCursor(merged, merged.length),
+          prompt: merged,
           detectTrigger: true,
         });
       }
@@ -5797,18 +5811,28 @@ function ChatViewContent(props: ChatViewProps) {
     threadDetailLoading,
   ]);
 
+  const [isInterrupting, setIsInterrupting] = useState(false);
+  useEffect(() => {
+    // The interrupt command resolving only means the request was accepted, so
+    // the pending state holds until the work stops; it never crosses threads.
+    setIsInterrupting(false);
+  }, [isWorking, activeThreadId]);
   const onInterrupt = async () => {
     if (!activeThread) return;
+    setIsInterrupting(true);
     const result = await interruptThreadTurn({
       environmentId,
       input: buildThreadTurnInterruptInput(activeThread),
     });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      setThreadError(
-        activeThread.id,
-        error instanceof Error ? error.message : "Failed to interrupt the current turn.",
-      );
+    if (result._tag === "Failure") {
+      setIsInterrupting(false);
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThread.id,
+          error instanceof Error ? error.message : "Failed to interrupt the current turn.",
+        );
+      }
     }
   };
 
@@ -6915,6 +6939,7 @@ function ChatViewContent(props: ChatViewProps) {
                             phase={phase}
                             isConnecting={isConnecting}
                             isSendBusy={isSendBusy}
+                            isInterrupting={isInterrupting}
                             isOptimisticWorking={isOptimisticWorking}
                             sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
                             isPreparingWorktree={isPreparingWorktree}

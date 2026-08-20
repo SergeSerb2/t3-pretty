@@ -1496,7 +1496,9 @@ function SavedBackendListRow({
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <Button size="xs" variant="outline" disabled>
+                  // Stays hoverable and focusable so the tooltip can explain
+                  // itself; a real disabled attribute would swallow both.
+                  <Button aria-disabled size="xs" variant="outline" className="opacity-50">
                     Managed above
                   </Button>
                 }

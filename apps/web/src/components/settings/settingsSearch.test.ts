@@ -46,7 +46,7 @@ describe("searchSettings", () => {
   it("matches normalized title substrings", () => {
     expect(searchSettings("  WORD   WRAP  ", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("glass").map((item) => item.id)).toEqual(["setting-glass-opacity"]);
-    expect(searchSettings("photo blur").map((item) => item.id)).toEqual(["setting-photo-blur"]);
+    expect(searchSettings("interface font").map((item) => item.id)).toEqual(["interface-font"]);
     expect(searchSettings("xyzzy")).toEqual([]);
   });
 
@@ -64,6 +64,11 @@ describe("searchSettings", () => {
   it("hides desktop-only settings from browser search", () => {
     expect(SETTINGS_SEARCH_ITEMS.some((item) => item.id === "quit-confirmation")).toBe(true);
     expect(searchSettings("quit confirmation")).toEqual([]);
+  });
+
+  it("hides World Scenery settings when that theme is not active", () => {
+    expect(SETTINGS_SEARCH_ITEMS.some((item) => item.id === "setting-photo-blur")).toBe(true);
+    expect(searchSettings("photo blur")).toEqual([]);
   });
 
   it("keeps catalog result ids unique", () => {

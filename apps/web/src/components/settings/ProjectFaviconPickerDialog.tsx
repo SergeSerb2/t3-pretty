@@ -134,7 +134,7 @@ export function ProjectFaviconPickerDialog(props: {
           <input
             ref={fileInputRef}
             accept={PROJECT_ICON_FILE_ACCEPT}
-            className="sr-only"
+            hidden
             type="file"
             onChange={handleComputerFileChange}
           />

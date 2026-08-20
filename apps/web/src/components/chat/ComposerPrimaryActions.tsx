@@ -22,6 +22,8 @@ interface ComposerPrimaryActionsProps {
   showPlanFollowUpPrompt: boolean;
   promptHasText: boolean;
   isSendBusy: boolean;
+  /** An interrupt was requested and the turn has not stopped yet. */
+  isInterrupting?: boolean;
   sendDisabledReason: string | null;
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
@@ -65,6 +67,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   showPlanFollowUpPrompt,
   promptHasText,
   isSendBusy,
+  isInterrupting = false,
   sendDisabledReason,
   isConnecting,
   isEnvironmentUnavailable,
@@ -98,11 +101,19 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       )}
       {...pointerFocusProps}
       onClick={onInterrupt}
+      // Never disabled while interrupting: a turn that does not settle must not
+      // leave the only stop affordance dead. The label stays put because the
+      // scenery press feedback keys on it.
+      aria-busy={isInterrupting}
       aria-label="Stop generation"
     >
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-        <rect x="2" y="2" width="8" height="8" rx="1.5" />
-      </svg>
+      {isInterrupting ? (
+        <Spinner className="size-3.5" aria-hidden="true" />
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+          <rect x="2" y="2" width="8" height="8" rx="1.5" />
+        </svg>
+      )}
     </button>
   );
 
