@@ -83,12 +83,11 @@ steps:
 
   - label: ":mag: Origin PR Review"
     key: origin-pr-review
-    # A branch push that is not yet a pull request still starts this job.
-    # Origin then opens the PR, starts a second build, and cancel-intermediate
-    # marks the first one canceled — the check the PR inherits.
+    # Origin does not reliably start a second Buildkite build when a PR opens.
+    # Let the push build run; the review script briefly waits for the PR.
     if: >-
       build.branch != "main" && build.source != "schedule" &&
-      build.pull_request.id != null && !(build.branch =~ /^automation\//)
+      !(build.branch =~ /^automation\//)
     timeout_in_minutes: 20
     agents:
       queue: macos-release
@@ -100,7 +99,7 @@ steps:
     allow_dependency_failure: true
     if: >-
       build.branch != "main" && build.source != "schedule" &&
-      build.pull_request.id != null && !(build.branch =~ /^automation\//)
+      !(build.branch =~ /^automation\//)
     timeout_in_minutes: 10
     agents:
       queue: macos-release
