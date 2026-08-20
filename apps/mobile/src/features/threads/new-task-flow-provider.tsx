@@ -12,7 +12,6 @@ import type {
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
-  DEFAULT_RUNTIME_MODE,
   MessageId,
   defaultRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
@@ -520,19 +519,22 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       }
       updateComposerDraftSettings(selectedProjectDraftKey, {
         modelSelection: options ? { ...option.selection, options } : option.selection,
-        // A mode still reading as the generic default was never picked, so
-        // the switch applies the target provider's own default ("yolo" for
-        // Kimi). Any other mode is explicit and only normalizes: Kimi's
-        // "yolo" has no equivalent on other providers and falls back to the
-        // generic full-access mode so the Kimi-only literal never reaches
-        // another provider's session config.
-        runtimeMode:
-          runtimeMode === DEFAULT_RUNTIME_MODE
-            ? defaultRuntimeModeForProviderDriver(option.providerDriver)
-            : resolveRuntimeModeForProviderDriver(option.providerDriver, runtimeMode),
+        // Only an explicit pick follows the switch: Kimi's "yolo" has no
+        // equivalent on other providers and normalizes to the generic
+        // full-access mode so the Kimi-only literal never reaches another
+        // provider's session config. An untouched draft stores nothing and
+        // keeps tracking the provider's own default ("yolo" for Kimi).
+        ...(selectedProjectDraft.runtimeMode != null
+          ? {
+              runtimeMode: resolveRuntimeModeForProviderDriver(
+                option.providerDriver,
+                selectedProjectDraft.runtimeMode,
+              ),
+            }
+          : {}),
       });
     },
-    [modelOptions, runtimeMode, selectedProjectDraftKey],
+    [modelOptions, selectedProjectDraft.runtimeMode, selectedProjectDraftKey],
   );
   const setSelectedModelOptions = useCallback(
     (options: ReadonlyArray<ProviderOptionSelection> | undefined) => {

@@ -6461,17 +6461,18 @@ function ChatViewContent(props: ChatViewProps) {
         nextModelSelection,
       );
       setStickyComposerModelSelection(nextModelSelection);
-      // A mode still reading as the generic default was never picked, so the
-      // switch applies the target provider's own default ("yolo" for Kimi).
-      // Any other mode is explicit and only normalizes: Kimi's "yolo" has no
-      // equivalent on other providers and falls back to the generic
+      // Only an explicit mode follows the switch across providers: Kimi's
+      // "yolo" has no equivalent elsewhere and normalizes to the generic
       // full-access mode instead of leaking the Kimi-only literal into
-      // another provider's session config.
-      handleRuntimeModeChange(
-        runtimeMode === DEFAULT_RUNTIME_MODE
-          ? defaultRuntimeModeForProviderDriver(resolvedDriverKind)
-          : resolveRuntimeModeForProviderDriver(resolvedDriverKind, runtimeMode),
-      );
+      // another provider's session config. An unset mode
+      // (storedRuntimeMode === null) keeps tracking the provider's own
+      // default, so an explicit Full access pick is never rewritten by a
+      // model switch.
+      if (storedRuntimeMode !== null) {
+        handleRuntimeModeChange(
+          resolveRuntimeModeForProviderDriver(resolvedDriverKind, storedRuntimeMode),
+        );
+      }
       scheduleComposerFocus();
     },
     [
@@ -6481,7 +6482,7 @@ function ChatViewContent(props: ChatViewProps) {
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
       handleRuntimeModeChange,
-      runtimeMode,
+      storedRuntimeMode,
       providerStatuses,
       settings,
       supportsProviderHandoff,

@@ -8,11 +8,7 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
-import {
-  resolveRuntimeModeForProviderDriver,
-  DEFAULT_RUNTIME_MODE,
-  defaultRuntimeModeForProviderDriver,
-} from "@t3tools/contracts";
+import { resolveRuntimeModeForProviderDriver } from "@t3tools/contracts";
 import {
   detectComposerTrigger,
   replaceTextRange,
@@ -926,18 +922,17 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const onUpdateModelSelection = props.onUpdateModelSelection;
   const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
-  // A mode still reading as the generic default was never picked, so a model
-  // pick applies the target provider's own default ("yolo" for Kimi). Any
-  // other mode is explicit and only normalizes: Kimi's "yolo" has no
-  // equivalent on other providers and falls back to the generic full-access
-  // mode in the same gesture.
+  // A thread's stored mode is an explicit value, so a model pick only
+  // normalizes: Kimi's "yolo" mode has no equivalent on other providers and
+  // falls back to the generic full-access mode in the same gesture. New
+  // threads pick up the provider's own default from the new-task flow.
   const handleSelectModelOption = useCallback(
     (option: ModelOption) => {
       onUpdateModelSelection(option.selection);
-      const nextRuntimeMode =
-        currentRuntimeMode === DEFAULT_RUNTIME_MODE
-          ? defaultRuntimeModeForProviderDriver(option.providerDriver)
-          : resolveRuntimeModeForProviderDriver(option.providerDriver, currentRuntimeMode);
+      const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
+        option.providerDriver,
+        currentRuntimeMode,
+      );
       if (nextRuntimeMode !== currentRuntimeMode) {
         onUpdateRuntimeMode(nextRuntimeMode);
       }
