@@ -879,29 +879,48 @@ function buildFileLinkParentSuffixByPath(filePaths: ReadonlyArray<string>): Map<
   return suffixByPath;
 }
 
-const FENCED_CODE_SEGMENT_PATTERN = /(```[\s\S]*?(?:```|$))/;
 const INLINE_CODE_SPAN_PATTERN = /`([^`\n]+)`/g;
+const MARKDOWN_FILE_LINK_CANDIDATE_PATTERN =
+  /(```[\s\S]*?(?:```|$))|\[[^\]]*]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)|`([^`\n]+)`/g;
 
-function extractInlineCodeSpans(text: string): string[] {
-  const spans: string[] = [];
-  const segments = text.split(FENCED_CODE_SEGMENT_PATTERN);
-  for (let index = 0; index < segments.length; index += 2) {
-    for (const match of (segments[index] ?? "").matchAll(INLINE_CODE_SPAN_PATTERN)) {
+export function extractMarkdownFileLinkCandidates(text: string): {
+  readonly hrefs: ReadonlyArray<string>;
+  readonly inlineCodeSpans: ReadonlyArray<string>;
+} {
+  const hrefs: string[] = [];
+  const inlineCodeSpans: string[] = [];
+  const collectHrefs = (segment: string) => {
+    for (const match of segment.matchAll(MARKDOWN_LINK_HREF_PATTERN)) {
+      const href = match[1]?.trim();
+      if (href) hrefs.push(href);
+    }
+  };
+  const collectInlineCodeSpans = (segment: string) => {
+    for (const match of segment.matchAll(INLINE_CODE_SPAN_PATTERN)) {
       const span = match[1]?.trim();
-      if (span) spans.push(span);
+      if (span) inlineCodeSpans.push(span);
+    }
+  };
+
+  for (const match of text.matchAll(MARKDOWN_FILE_LINK_CANDIDATE_PATTERN)) {
+    const token = match[0];
+    if (match[1] !== undefined) {
+      // Fenced code never renders inline-code links, but keep collecting
+      // explicit markdown destinations exactly as the previous full scan did.
+      collectHrefs(token);
+    } else if (match[2] !== undefined) {
+      const href = match[2].trim();
+      if (href) hrefs.push(href);
+      // A link label can itself contain inline code.
+      collectInlineCodeSpans(token);
+    } else {
+      const span = match[3]?.trim();
+      if (span) inlineCodeSpans.push(span);
+      // An inline-code span can itself contain markdown-looking text.
+      collectHrefs(token);
     }
   }
-  return spans;
-}
-
-function extractMarkdownLinkHrefs(text: string): string[] {
-  const hrefs: string[] = [];
-  for (const match of text.matchAll(MARKDOWN_LINK_HREF_PATTERN)) {
-    const href = match[1]?.trim();
-    if (!href) continue;
-    hrefs.push(href);
-  }
-  return hrefs;
+  return { hrefs, inlineCodeSpans };
 }
 
 function normalizeMarkdownLinkHrefKey(href: string): string {
@@ -1379,12 +1398,13 @@ function ChatMarkdown({
     serverConfig?.availableEditors ?? [],
   );
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
-  const markdownFileLinkMetaByHref = useMemo(() => {
+  const { markdownFileLinkMetaByHref, inlineCodeFileLinkMetaByText } = useMemo(() => {
+    const candidates = extractMarkdownFileLinkCandidates(renderedText);
     const metaByHref = new Map<
       string,
       NonNullable<ReturnType<typeof resolveMarkdownFileLinkMeta>>
     >();
-    for (const href of extractMarkdownLinkHrefs(renderedText)) {
+    for (const href of candidates.hrefs) {
       const normalizedHref = normalizeMarkdownLinkHrefKey(href);
       if (metaByHref.has(normalizedHref)) continue;
       const meta = resolveMarkdownFileLinkMeta(normalizedHref, cwd);
@@ -1392,24 +1412,21 @@ function ChatMarkdown({
         metaByHref.set(normalizedHref, meta);
       }
     }
-    return metaByHref;
-  }, [cwd, renderedText]);
-  const inlineCodeFileLinkMetaByText = useMemo(() => {
-    const metaByText = new Map<string, MarkdownFileLinkMeta>();
-    for (const span of extractInlineCodeSpans(renderedText)) {
+    const metaByText = new Map<string, MarkdownFileLinkMeta | null>();
+    for (const span of candidates.inlineCodeSpans) {
       if (metaByText.has(span)) continue;
-      const meta = resolveInlineCodeFileLinkMeta(span, cwd);
-      if (meta) {
-        metaByText.set(span, meta);
-      }
+      metaByText.set(span, resolveInlineCodeFileLinkMeta(span, cwd));
     }
-    return metaByText;
+    return {
+      markdownFileLinkMetaByHref: metaByHref,
+      inlineCodeFileLinkMetaByText: metaByText,
+    };
   }, [cwd, renderedText]);
   const fileLinkParentSuffixByPath = useMemo(() => {
-    const filePaths = [
-      ...[...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath),
-      ...[...inlineCodeFileLinkMetaByText.values()].map((meta) => meta.filePath),
-    ];
+    const filePaths = [...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath);
+    for (const meta of inlineCodeFileLinkMetaByText.values()) {
+      if (meta !== null) filePaths.push(meta.filePath);
+    }
     return buildFileLinkParentSuffixByPath(filePaths);
   }, [inlineCodeFileLinkMetaByText, markdownFileLinkMetaByHref]);
   const renderedTextRef = useRef(renderedText);
@@ -1725,9 +1742,11 @@ function ChatMarkdown({
       code({ node, children, className, ...props }) {
         if (node?.properties?.dataInlineCode != null) {
           const codeText = nodeToPlainText(children);
+          const cachedFileLinkMeta = inlineCodeFileLinkMetaByTextRef.current.get(codeText.trim());
           const fileLinkMeta =
-            inlineCodeFileLinkMetaByTextRef.current.get(codeText.trim()) ??
-            resolveInlineCodeFileLinkMeta(codeText, cwd);
+            cachedFileLinkMeta === undefined
+              ? resolveInlineCodeFileLinkMeta(codeText, cwd)
+              : cachedFileLinkMeta;
           if (fileLinkMeta) {
             return fileLinkChip(fileLinkMeta, `\`${codeText}\``);
           }
