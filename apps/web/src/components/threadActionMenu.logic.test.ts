@@ -23,6 +23,12 @@ function visibleIds(state: ThreadActionMenuState): string[] {
     .map((item) => item.id);
 }
 
+function allIds(state: ThreadActionMenuState): string[] {
+  const flatten = (items: ReturnType<typeof buildThreadActionMenuItems>): string[] =>
+    items.flatMap((item) => [item.id, ...(item.children ? flatten(item.children) : [])]);
+  return flatten(buildThreadActionMenuItems(state));
+}
+
 describe("buildThreadActionMenuItems", () => {
   it("keeps the sidebar residual: no settle or snooze, nested copy", () => {
     expect(visibleIds(baseState)).toEqual([
@@ -60,9 +66,11 @@ describe("buildThreadActionMenuItems", () => {
   });
 
   it("includes branch items only for threads with a branch", () => {
-    const withBranch = visibleIds({ ...baseState, branch: "feat/menu" });
+    const withBranch = allIds({ ...baseState, branch: "feat/menu" });
     expect(withBranch).toContain("new-thread-on-branch");
-    expect(visibleIds(baseState)).not.toContain("new-thread-on-branch");
+    expect(withBranch).toContain("copy-branch");
+    expect(allIds(baseState)).not.toContain("new-thread-on-branch");
+    expect(allIds(baseState)).not.toContain("copy-branch");
 
     const copy = buildThreadActionMenuItems({ ...baseState, branch: "feat/menu" }).find(
       (item) => item.id === "copy",
@@ -140,11 +148,12 @@ describe("buildThreadActionMenuItems", () => {
     const items = buildThreadActionMenuItems({ ...baseState, branch: "main" });
     expect(items.at(-1)).toMatchObject({ id: "delete", destructive: true });
   });
-
   it("offers archive as a non-destructive action right before delete", () => {
     const items = buildThreadActionMenuItems(baseState);
     const archiveItem = items.at(-2);
     expect(archiveItem?.id).toBe("archive");
+    expect(archiveItem?.icon).toBe("archive");
+    expect(archiveItem?.separatorBefore).toBe(true);
     expect(archiveItem?.destructive).toBeFalsy();
     expect(items.at(-1)?.id).toBe("delete");
   });

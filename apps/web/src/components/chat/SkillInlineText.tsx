@@ -1,8 +1,8 @@
 import { skillMentionMatchesName } from "@t3tools/shared/skillTool";
 import { Children, cloneElement, isValidElement, type ReactNode } from "react";
 import type { ServerProviderSkill } from "@t3tools/contracts";
+import { formatProviderSkillDisplayName } from "@t3tools/client-runtime/providerSkills";
 
-import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import {
   CHAT_INLINE_CHIP_CLASS_NAME,
   CHAT_INLINE_CHIP_LABEL_CLASS_NAME,

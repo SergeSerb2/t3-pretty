@@ -115,6 +115,8 @@ export interface ContextMenuItem<T extends string = string> {
   separator?: boolean;
   /** Icon keyword resolved by the in-app menu. */
   icon?: string;
+  /** Inserts a visual section divider immediately before this item. */
+  separatorBefore?: boolean;
   children?: readonly ContextMenuItem<T>[];
 }
 
@@ -126,6 +128,7 @@ export interface ContextMenuItemSchemaType {
   readonly header?: boolean;
   readonly separator?: boolean;
   readonly icon?: string;
+  readonly separatorBefore?: boolean;
   readonly children?: readonly ContextMenuItemSchemaType[];
 }
 
@@ -137,6 +140,7 @@ export const ContextMenuItemSchema: Schema.Codec<ContextMenuItemSchemaType> = Sc
   header: Schema.optionalKey(Schema.Boolean),
   separator: Schema.optionalKey(Schema.Boolean),
   icon: Schema.optionalKey(Schema.String),
+  separatorBefore: Schema.optionalKey(Schema.Boolean),
   children: Schema.optionalKey(
     Schema.Array(
       Schema.suspend((): Schema.Codec<ContextMenuItemSchemaType> => ContextMenuItemSchema),
