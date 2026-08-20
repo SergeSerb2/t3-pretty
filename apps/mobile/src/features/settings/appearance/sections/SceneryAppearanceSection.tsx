@@ -1,8 +1,8 @@
 /**
  * Settings → Appearance section for the World Scenery theme: the mobile
- * counterpart of the desktop's quick-settings dock (enable, blur, photo
- * presence). Text color (ink) modes stay desktop-only for now — the mobile
- * wash follows the system appearance.
+ * counterpart of the desktop's Appearance scenery controls (enable, blur,
+ * photo presence, 3D effects). Text color (ink) modes stay desktop-only for
+ * now — the mobile wash follows the system appearance.
  */
 import { BLUR_RANGE, TRANSLUCENCY_RANGE } from "../../../scenery/sceneryLogic";
 import { useScenery } from "../../../scenery/SceneryProvider";
@@ -28,8 +28,17 @@ function presenceToTranslucency(presence: number): number {
 }
 
 export function SceneryAppearanceSection() {
-  const { isReady, enabled, blur, translucency, setEnabled, setBlur, setTranslucency } =
-    useScenery();
+  const {
+    isReady,
+    enabled,
+    blur,
+    translucency,
+    depthEffects,
+    setEnabled,
+    setBlur,
+    setTranslucency,
+    setDepthEffects,
+  } = useScenery();
 
   return (
     <SettingsSection card title="World Scenery">
@@ -67,6 +76,14 @@ export function SceneryAppearanceSection() {
             step={5}
             value={translucencyToPresence(translucency)}
             valueLabel={`${translucencyToPresence(translucency)}%`}
+          />
+          <SettingsSwitchRow
+            disabled={!isReady}
+            icon="cube"
+            label="3D effects"
+            onValueChange={setDepthEffects}
+            subtitle="Tilt the landscape with the device"
+            value={depthEffects}
           />
         </>
       ) : null}

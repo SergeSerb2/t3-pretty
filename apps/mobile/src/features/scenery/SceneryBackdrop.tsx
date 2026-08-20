@@ -13,8 +13,21 @@
  * (absolute-fill) child; content above it stays untouched.
  */
 import { Image } from "expo-image";
-import { useEffect, useMemo } from "react";
-import { PixelRatio, StyleSheet, useColorScheme, useWindowDimensions, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import {
+  AppState,
+  PixelRatio,
+  StyleSheet,
+  useColorScheme,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import Animated, {
+  SensorType,
+  useAnimatedSensor,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
 import {
@@ -27,6 +40,7 @@ import {
   type SceneryPhoto,
 } from "./sceneryLogic";
 import { useScenery } from "./SceneryProvider";
+import { useReduceMotion } from "./useReduceMotion";
 import { useReduceTransparency } from "./useReduceTransparency";
 
 function SceneryGradient(props: { readonly seed: string; readonly opacity?: number }) {
@@ -42,6 +56,52 @@ function SceneryGradient(props: { readonly seed: string; readonly opacity?: numb
       </Defs>
       <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${gradientId})`} />
     </Svg>
+  );
+}
+
+function SceneryParallaxImage(props: { readonly uri: string }) {
+  const reduceMotion = useReduceMotion();
+  const [appActive, setAppActive] = useState(true);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      setAppActive(state === "active");
+    });
+    return () => subscription.remove();
+  }, []);
+  const live = !reduceMotion && appActive;
+  const liveValue = useSharedValue(live);
+  useEffect(() => {
+    liveValue.value = live;
+  }, [live, liveValue]);
+  const sensor = useAnimatedSensor(SensorType.ROTATION, { interval: live ? 32 : 1000 });
+  const available = sensor.isAvailable;
+  const style = useAnimatedStyle(() => {
+    if (!liveValue.value || !available) {
+      return { transform: [{ scale: 1 }] };
+    }
+    const pitch = sensor.sensor.value.pitch;
+    const roll = sensor.sensor.value.roll;
+    const tiltY = Math.max(-8, Math.min(8, ((roll * 180) / Math.PI) * 0.32));
+    const tiltX = Math.max(-6, Math.min(6, ((pitch * 180) / Math.PI) * 0.28));
+    return {
+      transform: [
+        { perspective: 900 },
+        { rotateX: `${-tiltX}deg` },
+        { rotateY: `${tiltY}deg` },
+        { scale: 1.14 },
+      ],
+    };
+  });
+
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, style]}>
+      <Image
+        contentFit="cover"
+        source={{ uri: props.uri }}
+        style={StyleSheet.absoluteFill}
+        transition={250}
+      />
+    </Animated.View>
   );
 }
 
@@ -71,8 +131,15 @@ export function SceneryBackdrop(props: {
    *  photo-of-the-day rotation. */
   readonly threadKey: string | null;
 }) {
-  const { enabled, blur, translucency, dailyPhoto, photoForThreadKey, ensureThreadAssignment } =
-    useScenery();
+  const {
+    enabled,
+    blur,
+    translucency,
+    depthEffects,
+    dailyPhoto,
+    photoForThreadKey,
+    ensureThreadAssignment,
+  } = useScenery();
   const colorScheme = useColorScheme() === "light" ? "light" : "dark";
   const reduceTransparency = useReduceTransparency();
   const { width: windowWidth } = useWindowDimensions();
@@ -103,15 +170,19 @@ export function SceneryBackdrop(props: {
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <View style={[StyleSheet.absoluteFill, { opacity: stack.photoOpacity }]}>
+      <View style={[StyleSheet.absoluteFill, { overflow: "hidden", opacity: stack.photoOpacity }]}>
         <SceneryGradient seed={gradientSeed} />
         {imageSource !== null ? (
-          <Image
-            source={{ uri: imageSource }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            transition={250}
-          />
+          depthEffects ? (
+            <SceneryParallaxImage uri={imageSource} />
+          ) : (
+            <Image
+              contentFit="cover"
+              source={{ uri: imageSource }}
+              style={StyleSheet.absoluteFill}
+              transition={250}
+            />
+          )
         ) : null}
       </View>
       <View

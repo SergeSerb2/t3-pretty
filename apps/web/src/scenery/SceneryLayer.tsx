@@ -24,12 +24,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useMotionStore } from "./motionStore";
 import { gradientCss } from "./palette";
 import { readSceneryArrivalPhase, sceneryArrivalCoversSwap } from "./sceneryArrivalLogic";
 import { runSceneryInkTransition } from "./sceneryInkTransition";
 import { planScenerySwap } from "./scenerySwap";
 import { isWallpaperReady, preloadWallpaper } from "./sceneryWallpaper";
+import { SceneryParallax } from "./parallax/SceneryParallax";
 import { UNSPLASH_UTM, wallpaperURL, type SceneryPhoto } from "./unsplash";
 
 interface DisplayedPhoto {
@@ -63,6 +65,7 @@ export function SceneryLayer({
   seed,
   blur,
   appearanceCrossfade = false,
+  depthEffects = false,
   onPhotoDisplayed,
 }: {
   photo: SceneryPhoto | null;
@@ -75,6 +78,8 @@ export function SceneryLayer({
    * swap inside a view transition so chrome and wash don't snap first.
    */
   appearanceCrossfade?: boolean;
+  /** Layer the photo in 2.5D and follow the pointer. */
+  depthEffects?: boolean;
   onPhotoDisplayed?: (photo: SceneryPhoto) => void;
 }) {
   const [displayed, setDisplayed] = useState<DisplayedPhoto | null>(null);
@@ -82,6 +87,9 @@ export function SceneryLayer({
   // A photo committed inside an ink view transition mounts settled: the
   // snapshot already crossfaded it, so a CSS fade would replay afterwards.
   const [settledKey, setSettledKey] = useState<string | null>(null);
+  const [parallaxReadyKey, setParallaxReadyKey] = useState<string | null>(null);
+  const motionEnabled = useMotionStore((state) => state.enabled);
+  const systemReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const appearanceCrossfadeRef = useRef(appearanceCrossfade);
   appearanceCrossfadeRef.current = appearanceCrossfade;
   const onPhotoDisplayedRef = useRef(onPhotoDisplayed);
@@ -195,6 +203,10 @@ export function SceneryLayer({
   // The credit follows whatever is actually on screen: the settled photo, or
   // the outgoing one while its dissolve is still the only photo visible.
   const credited = displayed ?? outgoing;
+  const parallaxEnabled = depthEffects && motionEnabled && !systemReducedMotion;
+  const displayedKey = displayed ? displayedPhotoKey(displayed) : null;
+  const parallaxReady =
+    parallaxEnabled && displayedKey !== null && parallaxReadyKey === displayedKey;
 
   return (
     <>
@@ -219,8 +231,19 @@ export function SceneryLayer({
                   : "scenery-layer__photo scenery-layer__photo--current"
               }
               key={displayedPhotoKey(displayed)}
-              style={{ backgroundImage: `url(${displayed.url})` }}
-            />
+              style={{ backgroundImage: parallaxReady ? "none" : `url(${displayed.url})` }}
+            >
+              {parallaxEnabled ? (
+                <SceneryParallax
+                  enabled
+                  onReady={(ready) => {
+                    setParallaxReadyKey(ready ? displayedPhotoKey(displayed) : null);
+                  }}
+                  photoId={displayed.id}
+                  url={displayed.url}
+                />
+              ) : null}
+            </div>
           ) : null}
         </div>
         <div className="scenery-layer__wash scenery-layer__wash--dark" />

@@ -82,6 +82,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
   },
   {
+    id: "setting-scenery-3d",
+    title: "3D effects",
+    to: "/settings/appearance",
+  },
+  {
     id: "setting-scenery-motion",
     title: "Thread motion",
     to: "/settings/appearance",

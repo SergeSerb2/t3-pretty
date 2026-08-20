@@ -37,6 +37,7 @@ export interface ResolvedScenery {
   readonly enabled: boolean;
   readonly blur: number;
   readonly translucency: number;
+  readonly depthEffects: boolean;
   readonly assignments: Readonly<Record<string, SceneryAssignment>>;
 }
 
@@ -45,6 +46,7 @@ function resolveScenery(raw: MobileSceneryPreferences | null | undefined): Resol
     enabled: raw?.enabled ?? true,
     blur: clampBlur(raw?.blur ?? DEFAULT_BLUR),
     translucency: clampTranslucency(raw?.translucency ?? DEFAULT_TRANSLUCENCY),
+    depthEffects: raw?.depthEffects === true,
     assignments: raw?.assignments ?? {},
   };
 }
@@ -60,6 +62,7 @@ interface SceneryContextValue extends ResolvedScenery {
   readonly setEnabled: (value: boolean) => void;
   readonly setBlur: (value: number) => void;
   readonly setTranslucency: (value: number) => void;
+  readonly setDepthEffects: (value: boolean) => void;
 }
 
 const SceneryContext = createContext<SceneryContextValue | null>(null);
@@ -111,6 +114,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
           enabled: current.enabled,
           blur: current.blur,
           translucency: current.translucency,
+          depthEffects: current.depthEffects,
           assignments: current.assignments,
           ...patch,
         },
@@ -150,6 +154,10 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     (value: number) => persistScenery({ translucency: clampTranslucency(value) }),
     [persistScenery],
   );
+  const setDepthEffects = useCallback(
+    (value: boolean) => persistScenery({ depthEffects: value }),
+    [persistScenery],
+  );
 
   const value = useMemo(
     (): SceneryContextValue => ({
@@ -161,6 +169,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
       setEnabled,
       setBlur,
       setTranslucency,
+      setDepthEffects,
     }),
     [
       scenery,
@@ -171,6 +180,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
       setEnabled,
       setBlur,
       setTranslucency,
+      setDepthEffects,
     ],
   );
 
