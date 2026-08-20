@@ -95,7 +95,7 @@ const PROJECT_CONVENTIONS: ReadonlyArray<{
   {
     fileName: AGENTS_FILE_NAME,
     title: "Shared rules",
-    description: "The AGENTS.md standard, read by Codex, Cursor, and Grok.",
+    description: "The AGENTS.md standard, read by Codex, Cursor, Grok, and Kimi.",
   },
   {
     fileName: "CLAUDE.md",
