@@ -46,8 +46,8 @@ sage. Chrome is glass over a photo, not a solid slab.
 | 🗺️ **A place per thread** | Each conversation keeps its own landscape. Home uses the photo of the day. |
 | 🌫️ **Fog on a new thread** | A cloud bank gathers, the place name rises, the composer comes up through it. |
 | 🪟 **Shared glass** | Left sidebar, right sidebar, composer, and terminal share one frosted plate. |
-| 🏔️ **Optional 3D** | **3D effects** peel the photo into depth layers. Off by default. Reduce Motion keeps it still. |
 | 🎚️ **Your density** | Photo blur, photo presence, glass opacity, scenery text color, thread motion, fonts. |
+| 🧘 **Still when you want** | Thread motion off, or the system reduce-motion setting, parks fades and keeps status dots still. |
 
 Open **Settings → Appearance**. On a phone, the same controls live under **Scenery photos**.
 
