@@ -1094,6 +1094,12 @@ export function NewTaskDraftScreen(props: {
             <EmptyState
               title={projectEmptyState.title}
               detail={projectEmptyState.detail}
+              actionLabel={catalogState.hasReadyEnvironment ? "Add new project" : "Add environment"}
+              onAction={() =>
+                catalogState.hasReadyEnvironment
+                  ? navigation.dispatch(StackActions.push("AddProject"))
+                  : navigation.navigate("ConnectionsNew")
+              }
               variant="plain"
             />
           )}
