@@ -96,7 +96,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       <img
         alt=""
         aria-hidden="true"
-        className="h-5 w-auto shrink-0 object-contain"
+        className={cn("h-5 w-auto shrink-0 object-contain", onBackdrop && "brightness-0 invert")}
         src="/t3-pretty-mark.png"
       />
       <span

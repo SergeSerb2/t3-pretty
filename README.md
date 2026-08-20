@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/pretty/t3-pretty-1024.png" alt="T3 Pretty" width="160" />
+  <img src="./assets/pretty/t3-pretty-wordmark.png" alt="T3 Pretty" width="280" />
 </p>
 
 <h1 align="center">T3 Pretty</h1>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 160" width="560" height="160">
+  <g id="t3" transform="translate(8,22) scale(1.32)">
+    <path fill="#3D5A48" d="M6 8H57L71 24H40V80H24V24H6Z"/>
+    <path fill="#3D5A48" fill-rule="evenodd" d="M63 8H104V24C104 24 110 38 108 52C106 68 96 80 82 80C70 80 62 72 66 62C74 56 80 54 66 42L80 30 77 24Z M91 55A9 8 0 1 0 91 71A9 8 0 1 0 91 55Z"/>
+  </g>
+  <line x1="176" y1="44" x2="176" y2="116" stroke="#3D5A48" stroke-width="1.5"/>
+  <text x="196" y="104" fill="#3D5A48"
+        font-family="Iowan Old Style, Palatino Linotype, Palatino, Georgia, serif"
+        font-style="italic" font-size="64">Pretty</text>
+</svg>

@@ -297,10 +297,10 @@ export function AgentActivity(
   // the widget extension's asset catalog. Image views only honor `resizable`
   // directly (frame/foregroundStyle are dropped), so we size it via a container
   // frame the resizable image fills and tint it through the container's
-  // foreground style, which the template image inherits. The 3:2 frame matches
-  // the glyph's aspect ratio so it never distorts.
+  // foreground style, which the template image inherits. The frame matches
+  // the cut-out T3's aspect ratio so it never distorts.
   const renderLogo = (height: number, color: string) => (
-    <HStack modifiers={[frame({ width: height * 1.5, height }), foregroundStyle(color)]}>
+    <HStack modifiers={[frame({ width: height * (480 / 343), height }), foregroundStyle(color)]}>
       <Image assetName="T3Mark" modifiers={[resizable()]} />
     </HStack>
   );

@@ -1,8 +1,9 @@
 # T3 Pretty logo explorations
 
-Candidates for a quieter mark. The live icon in `assets/pretty/` is unchanged.
+Studies that led to the shipping cut-out T3. The live icon is now that
+letterform in World Scenery sage — see `assets/pretty/t3-letterform.svg`.
 
-Open `board.html` in a browser to review everything on one page.
+Open `board.html` in a browser to review the other directions.
 
 ## Why
 
@@ -19,11 +20,11 @@ feel like that, and still sit in the T3 Code family.
 
 ## Likely shortlist
 
-| Role | Start here |
-| --- | --- |
-| App icon | `vector/icon-forest-on-sage.svg`, `vector/icon-cream-on-forest.svg`, `raster/12-sage-ceramic-icon.jpg`, `raster/11-brushed-aluminum.jpg` |
-| In-app mark | `vector/mark-forest.svg`, `raster/30-chubby-sage-mark.jpg`, `raster/32-chubby-forest-on-cream.jpg` |
-| Wordmark | `vector/wordmark-editorial.svg`, `raster/02-editorial-poster.jpg`, `raster/25-lockup-t3-pretty.jpg` |
+| Role        | Start here                                                                                                                               |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| App icon    | `vector/icon-forest-on-sage.svg`, `vector/icon-cream-on-forest.svg`, `raster/12-sage-ceramic-icon.jpg`, `raster/11-brushed-aluminum.jpg` |
+| In-app mark | `vector/mark-forest.svg`, `raster/30-chubby-sage-mark.jpg`, `raster/32-chubby-forest-on-cream.jpg`                                       |
+| Wordmark    | `vector/wordmark-editorial.svg`, `raster/02-editorial-poster.jpg`, `raster/25-lockup-t3-pretty.jpg`                                      |
 
 Pick a direction, then we can cut the live `t3-pretty-1024` / `t3-pretty-mark` family from
 the matching vector (and redraw the chubby Pretty T3 in SVG if that letterform wins).
