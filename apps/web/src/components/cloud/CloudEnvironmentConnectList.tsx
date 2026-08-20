@@ -16,7 +16,9 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { environmentCatalog } from "~/connection/catalog";
 import {
+  connectionPhaseGroupPriority,
   environmentMachineKey,
+  isWorkingConnectionPhase,
   selectVisibleRemoteEnvironmentIds,
 } from "~/connection/environmentGrouping";
 import { cn } from "~/lib/utils";
@@ -164,29 +166,29 @@ export function CloudEnvironmentConnectRows({
   // to the working rows, or to a single representative when none are working.
   const visibleEnvironmentIds = selectVisibleRemoteEnvironmentIds(
     visibleEnvironments.map(({ environment, availability }) => {
-      const savedEnvironment = savedById.get(environment.environmentId);
-      const savedTone = savedEnvironment
-        ? presentSavedCloudEnvironmentConnection(savedEnvironment.connection).tone
-        : null;
+      const savedPhase = savedById.get(environment.environmentId)?.connection.phase ?? null;
+      const availabilityPriority =
+        availability === "online"
+          ? 2
+          : availability === "checking"
+            ? 3
+            : availability === "offline"
+              ? 4
+              : 5;
       return {
         id: environment.environmentId as string,
         machineKey: environmentMachineKey(environment.label),
+        // A saved row ranks by its live connection phase; a relay-verified
+        // online home never ranks below an idle sibling.
         priority:
-          savedTone === "connected"
-            ? 0
-            : savedTone === "connecting"
-              ? 1
-              : availability === "online"
-                ? 2
-                : availability === "checking"
-                  ? 3
-                  : availability === "offline"
-                    ? 4
-                    : 5,
+          savedPhase === null
+            ? availabilityPriority
+            : Math.min(connectionPhaseGroupPriority(savedPhase), availabilityPriority),
+        // Verified-online relay availability counts as working even when a
+        // saved row exists but its local connection is idle or down.
         working:
-          savedTone === "connected" ||
-          savedTone === "connecting" ||
-          (savedTone === null && availability === "online"),
+          (savedPhase !== null && isWorkingConnectionPhase(savedPhase)) ||
+          availability === "online",
       };
     }),
   );

@@ -1743,7 +1743,9 @@ export function ConnectionsSettings() {
   // Multiple T3 homes on one machine each save their own environment under the
   // same machine label. Collapse those duplicates: when any entry for the
   // machine is working, only the working ones render; otherwise one
-  // representative survives so the machine stays manageable.
+  // representative survives so the machine stays manageable. Hidden duplicates
+  // stay in the catalog and remain reachable through the expander below, so a
+  // stale extra home can still be removed while a sibling is live.
   const visibleSavedEnvironments = useMemo(() => {
     const visibleIds = selectVisibleRemoteEnvironmentIds(
       savedEnvironments.map((environment) => ({
@@ -1758,6 +1760,13 @@ export function ConnectionsSettings() {
     );
     return savedEnvironments.filter((environment) => visibleIds.has(environment.environmentId));
   }, [savedEnvironments]);
+  const hiddenSavedEnvironments = useMemo(() => {
+    const visibleIds = new Set(
+      visibleSavedEnvironments.map((environment) => environment.environmentId),
+    );
+    return savedEnvironments.filter((environment) => !visibleIds.has(environment.environmentId));
+  }, [savedEnvironments, visibleSavedEnvironments]);
+  const [showHiddenSavedEnvironments, setShowHiddenSavedEnvironments] = useState(false);
   // Machines with a working saved connection hide their unsaved relay
   // discovery rows too — the user already has the real connection.
   const workingSavedMachineKeys = useMemo(
@@ -3264,6 +3273,33 @@ export function ConnectionsSettings() {
             onRemove={handleRemoveSavedBackend}
           />
         ))}
+        {hiddenSavedEnvironments.length > 0 ? (
+          <div className="px-3 py-2 sm:px-4">
+            <button
+              type="button"
+              className="text-muted-foreground text-xs underline-offset-4 hover:text-foreground hover:underline"
+              onClick={() => setShowHiddenSavedEnvironments((show) => !show)}
+              aria-expanded={showHiddenSavedEnvironments}
+            >
+              {showHiddenSavedEnvironments
+                ? "Hide duplicate saved environments"
+                : `Show ${hiddenSavedEnvironments.length} more saved ${
+                    hiddenSavedEnvironments.length === 1 ? "environment" : "environments"
+                  }`}
+            </button>
+          </div>
+        ) : null}
+        {showHiddenSavedEnvironments
+          ? hiddenSavedEnvironments.map((environment) => (
+              <SavedBackendListRow
+                key={environment.environmentId}
+                environment={environment}
+                removingEnvironmentId={removingSavedEnvironmentId}
+                onConnect={handleConnectSavedBackend}
+                onRemove={handleRemoveSavedBackend}
+              />
+            ))
+          : null}
         <CloudRemoteEnvironmentRows
           primaryEnvironmentId={primaryEnvironmentId}
           savedEnvironments={savedEnvironments}
