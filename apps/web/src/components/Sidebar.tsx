@@ -187,6 +187,7 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
+import { useThreadDepartureStore, type ThreadDepartureKind } from "../threadDepartureStore";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -804,6 +805,29 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
+  // Settle/snooze departure: the dispatch site marks the thread the moment
+  // the action fires, so the row slides out ahead of the server round trip.
+  // When the marker clears (classification landed, or the command failed)
+  // the same surface replays the arrive half — at its new spot on success,
+  // in place on failure.
+  const departureKind = useThreadDepartureStore(
+    (state) => state.departingKindByKey[threadKey] ?? null,
+  );
+  const [isArriving, setIsArriving] = useState(false);
+  const previousDepartureKindRef = useRef<ThreadDepartureKind | null>(departureKind);
+  if (previousDepartureKindRef.current !== departureKind) {
+    const wasDeparting = previousDepartureKindRef.current !== null;
+    previousDepartureKindRef.current = departureKind;
+    if (wasDeparting && departureKind === null) {
+      setIsArriving(true);
+    }
+  }
+  useEffect(() => {
+    if (!isArriving) return;
+    // Matches sidebar-row-arrive's duration in index.css.
+    const id = window.setTimeout(() => setIsArriving(false), 200);
+    return () => window.clearTimeout(id);
+  }, [isArriving]);
   const openPrLink = useOpenPrLink();
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
@@ -1135,6 +1159,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       !props.isActive &&
       !isSelected &&
       "opacity-70 transition-opacity hover:opacity-100",
+    departureKind !== null && "sidebar-row-departing",
+    isArriving && "sidebar-row-arriving",
   );
 
   const title = isRenaming ? (
@@ -2326,6 +2352,21 @@ export default function Sidebar() {
   const snoozedThreadKeysRef = useRef(snoozedThreadKeys);
   snoozedThreadKeysRef.current = snoozedThreadKeys;
 
+  // A departure ends when the canonical classification lands: the row is by
+  // then rendering in its destination shelf, so clearing the marker here
+  // hands off from the slide-out to the arrive fade. Failures clear at the
+  // dispatch site (useThreadActions); anything else falls to the store TTL.
+  const departingKindByKey = useThreadDepartureStore((state) => state.departingKindByKey);
+  useEffect(() => {
+    for (const [threadKey, kind] of Object.entries(departingKindByKey)) {
+      const landed =
+        kind === "settle" ? settledThreadKeys.has(threadKey) : snoozedThreadKeys.has(threadKey);
+      if (landed) {
+        useThreadDepartureStore.getState().clearDeparting(threadKey);
+      }
+    }
+  }, [departingKindByKey, settledThreadKeys, snoozedThreadKeys]);
+
   const jumpLabelByKey = useMemo(() => {
     const mapping = new Map<string, string>();
     for (const [index, threadKey] of orderedThreadKeys.entries()) {
@@ -3382,7 +3423,9 @@ export default function Sidebar() {
 
   const attachListAutoAnimateRef = useCallback((node: HTMLUListElement | null) => {
     if (!node) return;
-    autoAnimate(node, { duration: 150, easing: "ease-out" });
+    // 200ms so a settled/snoozed row's slide to its shelf reads as a motion,
+    // not a snap — this list's dominant move is exactly that lifecycle trip.
+    autoAnimate(node, { duration: 200, easing: "ease-out" });
   }, []);
 
   // New thread defaults to the project you're in (active thread's project,
