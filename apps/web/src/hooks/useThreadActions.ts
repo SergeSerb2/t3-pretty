@@ -509,6 +509,12 @@ export function useThreadActions() {
       const result = await settleThreadMutation({
         environmentId: target.environmentId,
         input: { threadId: target.threadId },
+      }).catch((error: unknown) => {
+        // A thrown mutation (aborted request, defect in reporting) never
+        // produces a Failure result, so the branch below never runs — clear
+        // here or the row stays hidden until the store TTL expires.
+        useThreadDepartureStore.getState().clearDeparting(threadKey);
+        throw error;
       });
       if (result._tag === "Failure") {
         useThreadDepartureStore.getState().clearDeparting(threadKey);
@@ -654,6 +660,10 @@ export function useThreadActions() {
       const result = await snoozeThreadMutation({
         environmentId: target.environmentId,
         input: { threadId: target.threadId, snoozedUntil },
+      }).catch((error: unknown) => {
+        // Same thrown-mutation contract as settle above.
+        useThreadDepartureStore.getState().clearDeparting(threadKey);
+        throw error;
       });
       if (result._tag === "Failure") {
         useThreadDepartureStore.getState().clearDeparting(threadKey);
