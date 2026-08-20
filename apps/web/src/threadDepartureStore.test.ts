@@ -88,6 +88,18 @@ describe("threadDepartureStore", () => {
     expect(useThreadDepartureStore.getState().arrivingByKey).toEqual({});
   });
 
+  it("clears silently when raiseArrive is false", () => {
+    vi.useFakeTimers();
+    const store = useThreadDepartureStore.getState();
+    store.markDeparting("env1:thread1", "snooze");
+    store.clearDeparting("env1:thread1", { raiseArrive: false });
+    expect(useThreadDepartureStore.getState().departingKindByKey).toEqual({});
+    expect(useThreadDepartureStore.getState().arrivingByKey).toEqual({});
+    // No arrive timer is pending either: later ticks must stay clean.
+    vi.advanceTimersByTime(1_000);
+    expect(useThreadDepartureStore.getState().arrivingByKey).toEqual({});
+  });
+
   it("lets a fresh departure supersede a pending arrive marker", () => {
     const store = useThreadDepartureStore.getState();
     store.markDeparting("env1:thread1", "settle");

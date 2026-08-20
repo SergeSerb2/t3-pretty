@@ -2373,14 +2373,37 @@ export default function Sidebar() {
   // paint — otherwise the row would paint a frame at full opacity before the
   // fade starts. Failures clear at the dispatch site (useThreadActions);
   // anything else falls to the store TTL.
+  //
+  // Only a membership CHANGE completes a departure. Re-settling/re-snoozing
+  // a thread already on the destination shelf (the guards allow it, e.g. via
+  // multi-select) marks departing while the classification already matches;
+  // treating that as "landed" would skip the exit and flash the arrive fade
+  // in place. The baseline recorded when a marker first appears tells the
+  // two apart: pre-existing membership clears silently instead.
   const departingKindByKey = useThreadDepartureStore((state) => state.departingKindByKey);
+  const departureBaselineByKeyRef = useRef(new Map<string, boolean>());
   useLayoutEffect(() => {
+    const baselineByKey = departureBaselineByKeyRef.current;
     for (const [threadKey, kind] of Object.entries(departingKindByKey)) {
       const landed =
         kind === "settle" ? settledThreadKeys.has(threadKey) : snoozedThreadKeys.has(threadKey);
-      if (landed) {
+      const baseline = baselineByKey.get(threadKey);
+      if (baseline === undefined) {
+        baselineByKey.set(threadKey, landed);
+        if (landed) {
+          useThreadDepartureStore.getState().clearDeparting(threadKey, { raiseArrive: false });
+        }
+        continue;
+      }
+      if (landed && !baseline) {
+        baselineByKey.delete(threadKey);
         useThreadDepartureStore.getState().clearDeparting(threadKey);
       }
+    }
+    // Markers that left without landing here (failure, TTL) drop their
+    // baseline with them.
+    for (const threadKey of baselineByKey.keys()) {
+      if (!(threadKey in departingKindByKey)) baselineByKey.delete(threadKey);
     }
   }, [departingKindByKey, settledThreadKeys, snoozedThreadKeys]);
 

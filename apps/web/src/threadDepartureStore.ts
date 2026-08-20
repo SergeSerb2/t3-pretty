@@ -16,7 +16,10 @@ interface ThreadDepartureState {
   readonly departingKindByKey: Readonly<Record<string, ThreadDepartureKind>>;
   readonly arrivingByKey: Readonly<Record<string, true>>;
   readonly markDeparting: (threadKey: string, kind: ThreadDepartureKind) => void;
-  readonly clearDeparting: (threadKey: string) => void;
+  readonly clearDeparting: (
+    threadKey: string,
+    options?: { readonly raiseArrive?: boolean },
+  ) => void;
   readonly clearArriving: (threadKey: string) => void;
 }
 
@@ -64,25 +67,31 @@ export const useThreadDepartureStore = create<ThreadDepartureState>()((set, get)
       };
     });
   },
-  clearDeparting: (threadKey) => {
+  clearDeparting: (threadKey, options) => {
     const timer = departureExpiryTimerByKey.get(threadKey);
     if (timer !== undefined) {
       clearTimeout(timer);
       departureExpiryTimerByKey.delete(threadKey);
     }
     if (!(threadKey in get().departingKindByKey)) return;
-    const existingArrive = arriveExpiryTimerByKey.get(threadKey);
-    if (existingArrive !== undefined) clearTimeout(existingArrive);
-    arriveExpiryTimerByKey.set(
-      threadKey,
-      setTimeout(() => get().clearArriving(threadKey), ARRIVE_MARKER_TTL_MS),
-    );
+    // raiseArrive: false is for departures that never moved the row (e.g.
+    // re-snoozing a thread already on the snoozed shelf): the marker clears
+    // without the arrive fade, which would otherwise flash in place.
+    const raiseArrive = options?.raiseArrive !== false;
+    if (raiseArrive) {
+      const existingArrive = arriveExpiryTimerByKey.get(threadKey);
+      if (existingArrive !== undefined) clearTimeout(existingArrive);
+      arriveExpiryTimerByKey.set(
+        threadKey,
+        setTimeout(() => get().clearArriving(threadKey), ARRIVE_MARKER_TTL_MS),
+      );
+    }
     set((state) => {
       const departingKindByKey = { ...state.departingKindByKey };
       delete departingKindByKey[threadKey];
       return {
         departingKindByKey,
-        arrivingByKey: { ...state.arrivingByKey, [threadKey]: true },
+        ...(raiseArrive ? { arrivingByKey: { ...state.arrivingByKey, [threadKey]: true } } : null),
       };
     });
   },
