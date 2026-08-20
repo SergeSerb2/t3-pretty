@@ -142,6 +142,55 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("issues the Grok session image for the thread resume cursor", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const homeDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-grok-resume-home-",
+      });
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-grok-resume-workspace-",
+      });
+      const writeSessionImage = (sessionId: string) =>
+        Effect.gen(function* () {
+          const sessionDir = path.join(
+            homeDir,
+            ".grok",
+            "sessions",
+            encodeURIComponent(root),
+            sessionId,
+            "images",
+          );
+          yield* fileSystem.makeDirectory(sessionDir, { recursive: true });
+          const imagePath = path.join(sessionDir, "1.jpg");
+          yield* fileSystem.writeFile(imagePath, new Uint8Array([137, 80, 78, 71]));
+          return yield* fileSystem.realPath(imagePath);
+        });
+      const olderImagePath = yield* writeSessionImage("session-old");
+      yield* writeSessionImage("session-new");
+
+      const result = yield* issueAssetUrl({
+        resource: {
+          _tag: "workspace-file",
+          threadId: ThreadId.make("thread-1"),
+          path: "images/1.jpg",
+        },
+        workspaceRoot: root,
+        homeDir,
+        grokSessionId: "session-old",
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const token = suffix.slice(0, suffix.indexOf("/"));
+
+      expect(yield* resolveAsset(token, "1.jpg")).toEqual({
+        kind: "file",
+        path: olderImagePath,
+        source: "generated-image",
+      });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("rejects workspace files outside the authorized root", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

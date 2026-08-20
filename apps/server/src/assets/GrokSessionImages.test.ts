@@ -125,6 +125,36 @@ describe("GrokSessionImages", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("uses the requested session instead of the newest image", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const homeDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-grok-image-multi-home-",
+      });
+      const workspaceRoot = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-grok-image-multi-workspace-",
+      });
+      const olderImagePath = yield* writeSessionImage({
+        homeDir,
+        workspaceRoot,
+        sessionId: "session-old",
+      });
+      yield* writeSessionImage({
+        homeDir,
+        workspaceRoot,
+        sessionId: "session-new",
+      });
+
+      const resolved = yield* resolveGrokSessionImageFile({
+        homeDir,
+        workspaceRoot,
+        requestedPath: "images/1.jpg",
+        grokSessionId: "session-old",
+      });
+      expect(resolved?.file).toBe(olderImagePath);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("rejects relative path traversal", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
