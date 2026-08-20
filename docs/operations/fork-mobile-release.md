@@ -59,8 +59,9 @@ Origin pull request that `scripts/fork/origin-forge.mjs` merges. Those
 files are outside every release path filter, so the record itself
 schedules no further release. The iOS step has a higher Buildkite priority
 than Origin PR review so a feature-branch review cannot occupy m1-dev in
-front of TestFlight. It is also `interruptible: false`, so a later `main`
-push does not cancel an in-flight Xcode archive.
+front of TestFlight. Origin's `pipeline upload` rejects `interruptible` on
+command steps, so a later `main` push can still cancel an in-flight Xcode
+archive. Do not merge unrelated `main` PRs while that job is compiling.
 
 iOS store binaries cannot be compiled on the Windows runner. Registering a
 second Mac (for example m5-dev) with the same `self-hosted`, `macOS`,

@@ -121,7 +121,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(pipeline, "iOS OTA + TestFlight");
     assert.include(pipeline, 'concurrency_group: "t3-pretty/ios-mobile"');
     assert.include(pipeline, "priority: 20");
-    assert.include(pipeline, "interruptible: false");
+    assert.notInclude(pipeline, "interruptible:");
     assert.include(pipeline, "timeout_in_minutes: 30");
     assert.isBelow(
       mobileRelease.indexOf("checkout-origin.sh"),
