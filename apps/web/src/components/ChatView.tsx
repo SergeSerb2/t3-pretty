@@ -61,6 +61,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
@@ -157,6 +158,12 @@ import {
   usePreviewMiniPlayerStore,
 } from "../previewMiniPlayerStore";
 import { isThreadOwnPullRequest } from "./pullRequest/pullRequestDetail.logic";
+import {
+  composerAutoSendKey,
+  peekComposerAutoSend,
+  subscribeComposerAutoSend,
+  takeComposerAutoSend,
+} from "./pullRequest/composerAutoSend";
 import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
@@ -5726,6 +5733,59 @@ function ChatViewContent(props: ChatViewProps) {
       resetLocalDispatch();
     }
   };
+
+  const onSendRef = useRef(onSend);
+  onSendRef.current = onSend;
+  const composerAutoSendTargetKey = composerAutoSendKey(composerDraftTarget);
+  const pendingComposerAutoSend = useSyncExternalStore(
+    subscribeComposerAutoSend,
+    peekComposerAutoSend,
+    peekComposerAutoSend,
+  );
+  useEffect(() => {
+    if (pendingComposerAutoSend !== composerAutoSendTargetKey) return;
+    let cancelled = false;
+    let retryTimer = 0;
+    const attempt = () => {
+      if (cancelled) return;
+      if (peekComposerAutoSend() !== composerAutoSendTargetKey) return;
+      if (isSendBusy || isConnecting || threadDetailLoading || sendInFlightRef.current) {
+        retryTimer = window.setTimeout(attempt, 50);
+        return;
+      }
+      if (composerRef.current?.getSendContext()?.providerAvailable !== true) {
+        retryTimer = window.setTimeout(attempt, 50);
+        return;
+      }
+      if (!takeComposerAutoSend(composerAutoSendTargetKey)) return;
+      void onSendRef.current();
+    };
+    retryTimer = window.setTimeout(attempt, 0);
+    const giveUpTimer = window.setTimeout(() => {
+      if (cancelled) return;
+      if (takeComposerAutoSend(composerAutoSendTargetKey)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "info",
+            title: "The task is in the composer",
+            description: "Send when you are ready.",
+          }),
+        );
+      }
+    }, 4000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(retryTimer);
+      window.clearTimeout(giveUpTimer);
+    };
+  }, [
+    composerAutoSendTargetKey,
+    composerRef,
+    isConnecting,
+    isSendBusy,
+    pendingComposerAutoSend,
+    threadDetailLoading,
+  ]);
 
   const onInterrupt = async () => {
     if (!activeThread) return;

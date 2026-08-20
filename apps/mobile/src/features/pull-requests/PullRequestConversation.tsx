@@ -37,6 +37,7 @@ export function PullRequestConversation(props: {
   readonly canReview: boolean;
   readonly onReply: (threadId: string) => void;
   readonly onFixThread: (thread: PullRequestReviewThread) => void;
+  readonly onFixAll?: () => void;
   readonly onToggleResolved: (
     thread: PullRequestReviewThread,
     resolved: boolean,
@@ -76,6 +77,7 @@ export function PullRequestConversation(props: {
         <Text className="text-sm text-foreground-muted">{summary}</Text>
         {props.detail.viewerPermissions.comment ||
         props.canReview ||
+        props.onFixAll !== undefined ||
         props.hiddenGrokReviewSummaryCount > 0 ? (
           <PullRequestChipRow>
             {props.detail.viewerPermissions.comment ? (
@@ -83,6 +85,9 @@ export function PullRequestConversation(props: {
             ) : null}
             {props.canReview ? (
               <PullRequestActionChip label="Review" onPress={props.onReview} variant="primary" />
+            ) : null}
+            {props.onFixAll !== undefined ? (
+              <PullRequestActionChip icon="hammer" label="Fix all" onPress={props.onFixAll} />
             ) : null}
             {props.hiddenGrokReviewSummaryCount > 0 ? (
               <PullRequestActionChip

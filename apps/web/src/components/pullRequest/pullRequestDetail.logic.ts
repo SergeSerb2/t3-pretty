@@ -78,7 +78,7 @@ export function pullRequestHandoffLabels(inThisThread: boolean) {
         fixFinding: "Fix in this thread",
         fixFindingOther: "Fix in another thread",
         fixCheck: "Fix in this thread",
-        fixFindings: "Fix findings in this thread",
+        fixFindings: "Fix all findings",
         resolve: "Resolve in this thread",
         resolveConflicts: "Resolve conflicts in this thread",
       }
@@ -86,7 +86,7 @@ export function pullRequestHandoffLabels(inThisThread: boolean) {
         fixFinding: "Fix in a thread",
         fixFindingOther: "Fix in another thread",
         fixCheck: "Fix",
-        fixFindings: "Fix findings in a thread",
+        fixFindings: "Fix all findings",
         resolve: "Resolve in a new thread",
         resolveConflicts: "Resolve conflicts in a thread",
       };
@@ -731,6 +731,46 @@ export function handoffReviewComments(
   ];
 }
 
+/** Unresolved review findings a Fix all sweep will hand to an agent. */
+export function collectFixableFindings(input: {
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+  readonly checks: ReadonlyArray<PullRequestCheck>;
+}): {
+  readonly threads: ReadonlyArray<PullRequestReviewThread>;
+  readonly remarks: ReadonlyArray<PullRequestComment>;
+  readonly failingChecks: ReadonlyArray<PullRequestCheck>;
+} {
+  const threads = input.reviewThreads.filter(
+    (thread) =>
+      isPullRequestFindingThread(thread) &&
+      !thread.isResolved &&
+      thread.comments.some((comment) => comment.body.trim().length > 0),
+  );
+  const attached = new Set(
+    input.reviewThreads.flatMap((thread) => thread.comments.map((comment) => comment.id)),
+  );
+  const remarks = input.comments.filter(
+    (comment) =>
+      isPullRequestFixableComment(comment) &&
+      !attached.has(comment.id) &&
+      visibleBody(comment.body) !== null,
+  );
+  const failingChecks = input.checks.filter(
+    (check) => check.status === "failure" || check.status === "cancelled",
+  );
+  return { threads, remarks, failingChecks };
+}
+
+export function countFixableFindings(input: {
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+  readonly checks: ReadonlyArray<PullRequestCheck>;
+}): number {
+  const collected = collectFixableFindings(input);
+  return collected.threads.length + collected.remarks.length + collected.failingChecks.length;
+}
+
 /**
  * The task for handing a pull request's review findings to a fresh thread. Everything derived
  * from the pull request is explicitly marked untrusted: review bodies and check output are
@@ -756,37 +796,20 @@ export function buildFixFindingsHandoff(input: {
    */
   readonly canResolve: boolean;
 }): FixFindingsHandoff {
-  // A resolved conversation is finished work, and one nobody wrote in says nothing.
-  const threads = input.reviewThreads.filter(
-    (thread) =>
-      isPullRequestFindingThread(thread) &&
-      !thread.isResolved &&
-      thread.comments.some((comment) => comment.body.trim().length > 0),
-  );
+  const collected = collectFixableFindings(input);
+  const threads = collected.threads;
   // Not every finding can be a chip. A review submitted with words and no inline comment has no
   // line to hang on, and a host that reports no threads at all — Azure DevOps has no diff to pin
   // one to — has only these. They travel as text, the way a failing check does, rather than
   // being dropped for lacking somewhere to point.
-  // Every thread's comments, not only the unresolved ones the sweep is about to include: the
-  // flat conversation carries resolved threads too, and a comment that is already on a line is
-  // not a remark with nowhere to hang — quoting a settled finding is how a fixed thing gets
-  // fixed twice.
-  const attached = new Set(
-    input.reviewThreads.flatMap((thread) => thread.comments.map((comment) => comment.id)),
+  const unattachable = collected.remarks.map((comment) => {
+    const body = visibleBody(comment.body) ?? "";
+    const where = comment.path === null ? "" : ` on \`${boundedField(comment.path)}\``;
+    return `${boundedField(comment.author?.login ?? "ghost")}${where}: ${boundedField(body)}`;
+  });
+  const failingChecks = collected.failingChecks.map((check) =>
+    boundedField(check.description ? `${check.name} — ${check.description}` : check.name),
   );
-  const unattachable = input.comments
-    .filter((comment) => isPullRequestFixableComment(comment) && !attached.has(comment.id))
-    .flatMap((comment) => {
-      const body = visibleBody(comment.body);
-      if (body === null) return [];
-      const where = comment.path === null ? "" : ` on \`${boundedField(comment.path)}\``;
-      return [`${boundedField(comment.author?.login ?? "ghost")}${where}: ${boundedField(body)}`];
-    });
-  const failingChecks = input.checks
-    .filter((check) => check.status === "failure" || check.status === "cancelled")
-    .map((check) =>
-      boundedField(check.description ? `${check.name} — ${check.description}` : check.name),
-    );
   // Threads and checks share one bound, taken from the end: current failures and recent review
   // threads, not stale ones.
   const includedChecks = failingChecks.slice(-FINDING_LIMIT);

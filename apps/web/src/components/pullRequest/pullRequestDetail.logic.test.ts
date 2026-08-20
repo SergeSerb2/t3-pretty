@@ -13,6 +13,7 @@ import {
   buildExplainPullRequestHandoff,
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
+  countFixableFindings,
   countResolvedReviewThreads,
   countUnresolvedReviewThreads,
   describePullRequestConversationSummary,
@@ -151,7 +152,7 @@ describe("pull request handoff labels", () => {
       fixFinding: "Fix in this thread",
       fixFindingOther: "Fix in another thread",
       fixCheck: "Fix in this thread",
-      fixFindings: "Fix findings in this thread",
+      fixFindings: "Fix all findings",
       resolve: "Resolve in this thread",
       resolveConflicts: "Resolve conflicts in this thread",
     });
@@ -162,7 +163,7 @@ describe("pull request handoff labels", () => {
       fixFinding: "Fix in a thread",
       fixFindingOther: "Fix in another thread",
       fixCheck: "Fix",
-      fixFindings: "Fix findings in a thread",
+      fixFindings: "Fix all findings",
       resolve: "Resolve in a new thread",
       resolveConflicts: "Resolve conflicts in a thread",
     });
@@ -944,6 +945,53 @@ describe("fix findings handoff", () => {
     });
     expect(handoff.reviewComments).toEqual([]);
     expect(handoff.prompt).toContain("No unresolved review findings");
+    expect(
+      countFixableFindings({
+        reviewThreads: [
+          thread("Origin PR review job failed on this build.", {
+            id: "cth_fail",
+            path: null,
+            line: null,
+          }),
+        ],
+        comments: [],
+        checks: [],
+      }),
+    ).toBe(0);
+  });
+
+  it("counts unresolved review threads, unattached remarks, and failing checks", () => {
+    const grokBody = [
+      "<!-- t3-pretty-grok-review sha=deadbeef -->",
+      "",
+      "### bug — Keep the hook on one node",
+      "",
+      "`apps/web/src/app.ts:12`",
+      "",
+      "Keep the hook on one node.",
+    ].join("\n");
+    expect(
+      countFixableFindings({
+        reviewThreads: [
+          thread("please rename this"),
+          thread("already done", { id: "t-resolved", isResolved: true }),
+          thread(grokBody, { id: "t-grok", path: null, line: null }),
+        ],
+        comments: [
+          {
+            id: "c-review",
+            kind: "review",
+            author: { login: "reviewer", name: null, avatarUrl: null },
+            body: "Also drop the unused export.",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: null,
+            reviewState: "CHANGES_REQUESTED",
+          },
+        ],
+        checks: [failingCheck, { name: "build", status: "success", description: null, url: null }],
+      }),
+    ).toBe(4);
   });
 
   it("still hands a Grok finding whose file was parsed from the body", () => {
