@@ -73,10 +73,6 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server understands regenerateTitle on thread.meta.update. Absent on
       older servers, so clients hide the action instead of sending it. */
   threadTitleRegeneration: Schema.optionalKey(Schema.Boolean),
-  /** Server exposes the canvas workspace RPCs (canvas.get / canvas.apply /
-      canvas events). Absent on servers from before the canvas workspace
-      shipped, so clients must gate the canvas surface instead of probing it. */
-  canvas: Schema.optionalKey(Schema.Boolean),
   /** Server can start a fresh provider session and replay bounded thread
       context when a started thread switches to an incompatible provider. */
   providerHandoff: Schema.optionalKey(Schema.Boolean),

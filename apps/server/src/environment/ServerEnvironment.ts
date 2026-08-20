@@ -154,7 +154,6 @@ export const make = Effect.gen(function* () {
       threadPinReorder: true,
       threadScenery: true,
       threadTitleRegeneration: true,
-      canvas: true,
       providerHandoff: true,
       storageInventory: true,
       storageInventoryStream: true,

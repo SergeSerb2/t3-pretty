@@ -30,17 +30,6 @@ describe("RPC authorization scopes", () => {
     );
   });
 
-  it("splits canvas reads from canvas mutations", () => {
-    expect(requiredScopeForRpcMethod(WS_METHODS.canvasGet)).toBe(AuthOrchestrationReadScope);
-    expect(requiredScopeForRpcMethod(WS_METHODS.subscribeCanvasEvents)).toBe(
-      AuthOrchestrationReadScope,
-    );
-    expect(requiredScopeForRpcMethod(WS_METHODS.canvasApply)).toBe(AuthOrchestrationOperateScope);
-    expect(requiredScopeForRpcMethod(WS_METHODS.canvasUpdateSelection)).toBe(
-      AuthOrchestrationOperateScope,
-    );
-  });
-
   it("allows relay status reads without granting relay installation access", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.cloudGetRelayClientStatus)).toBe(
       AuthRelayReadScope,

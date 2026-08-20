@@ -783,23 +783,6 @@ export const DesktopPreviewScreenshotArtifactSchema: Schema.Codec<DesktopPreview
   });
 
 /**
- * In-memory capture of a preview tab's guest page. Unlike
- * DesktopPreviewScreenshotArtifact it is never written to disk — the data URL
- * goes straight to the caller (canvas image placement).
- */
-export interface DesktopPreviewTabImage {
-  dataUrl: string;
-  width: number;
-  height: number;
-}
-
-export const DesktopPreviewTabImageSchema: Schema.Codec<DesktopPreviewTabImage> = Schema.Struct({
-  dataUrl: Schema.String,
-  width: Schema.Int,
-  height: Schema.Int,
-});
-
-/**
  * Single stack frame captured by react-grab's `getElementContext`. We surface
  * the source file/line so coding agents can jump straight to the JSX that
  * produced the picked DOM node.
@@ -1064,14 +1047,6 @@ export const DesktopPreviewRecordingSaveInputSchema = Schema.Struct({
   data: Schema.Uint8Array,
 });
 
-export const DesktopPreviewCaptureTabImageInputSchema = Schema.Struct({
-  tabId: DesktopPreviewTabIdSchema,
-  /** Longest output edge in pixels. Defaults to 2048 on the desktop side. */
-  maxDimension: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
-});
-export type DesktopPreviewCaptureTabImageInput =
-  typeof DesktopPreviewCaptureTabImageInputSchema.Type;
-
 export const DesktopPreviewAutomationClickInputSchema = Schema.Struct({
   tabId: DesktopPreviewTabIdSchema,
   input: PreviewAutomationClickInput,
@@ -1101,100 +1076,6 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
   tabId: DesktopPreviewTabIdSchema,
   input: PreviewAutomationWaitForInput,
 });
-
-export type DesktopCaptureSourceKind = "screen" | "window";
-
-export const DesktopCaptureSourceKindSchema: Schema.Codec<DesktopCaptureSourceKind> =
-  Schema.Literals(["screen", "window"]);
-
-export type DesktopCapturePermissionStatus =
-  | "granted"
-  | "denied"
-  | "restricted"
-  | "not-determined"
-  | "unknown";
-
-export const DesktopCapturePermissionStatusSchema: Schema.Codec<DesktopCapturePermissionStatus> =
-  Schema.Literals(["granted", "denied", "restricted", "not-determined", "unknown"]);
-
-/** A screen or window offered by Electron's desktopCapturer. */
-export interface DesktopCaptureSource {
-  /**
-   * Electron desktopCapturer source id such as `window:123:0`. Not stable
-   * across app restarts; clients re-match by appName/windowTitle.
-   */
-  sourceId: string;
-  kind: DesktopCaptureSourceKind;
-  /** Window title or display name. */
-  name: string;
-  appName: string | null;
-  appIconDataUrl: string | null;
-  thumbnailDataUrl: string;
-  thumbnailWidth: number;
-  thumbnailHeight: number;
-  displayId: string | null;
-}
-
-export const DesktopCaptureSourceSchema: Schema.Codec<DesktopCaptureSource> = Schema.Struct({
-  sourceId: Schema.String,
-  kind: DesktopCaptureSourceKindSchema,
-  name: Schema.String,
-  appName: Schema.NullOr(Schema.String),
-  appIconDataUrl: Schema.NullOr(Schema.String),
-  thumbnailDataUrl: Schema.String,
-  thumbnailWidth: Schema.Int,
-  thumbnailHeight: Schema.Int,
-  displayId: Schema.NullOr(Schema.String),
-});
-
-export interface DesktopCaptureListSourcesInput {
-  kinds?: readonly DesktopCaptureSourceKind[];
-  /**
-   * Longest thumbnail edge in pixels. Defaults to 320; the desktop clamps to
-   * 1024. desktopCapturer renders EVERY listed source at thumbnailSize — the
-   * thumbnail is itself the capture — so large sizes are expensive.
-   */
-  thumbnailMaxDimension?: number;
-}
-
-export const DesktopCaptureListSourcesInputSchema = Schema.Struct({
-  kinds: Schema.optionalKey(Schema.Array(DesktopCaptureSourceKindSchema)),
-  thumbnailMaxDimension: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
-});
-
-export interface DesktopCaptureSourceInput {
-  sourceId: string;
-  /** Longest output edge in pixels. Defaults to 2048; the desktop clamps to 8192. */
-  maxDimension?: number;
-}
-
-export const DesktopCaptureSourceInputSchema = Schema.Struct({
-  sourceId: Schema.String,
-  maxDimension: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
-});
-
-export interface DesktopCaptureResult {
-  sourceId: string;
-  dataUrl: string;
-  width: number;
-  height: number;
-  /** Wall-clock capture time as ISO-8601 string. */
-  capturedAt: string;
-}
-
-export const DesktopCaptureResultSchema: Schema.Codec<DesktopCaptureResult> = Schema.Struct({
-  sourceId: Schema.String,
-  dataUrl: Schema.String,
-  width: Schema.Int,
-  height: Schema.Int,
-  capturedAt: Schema.String,
-});
-
-export interface DesktopCaptureBridge {
-  getPermissionStatus: () => Promise<DesktopCapturePermissionStatus>;
-  listSources: (input?: DesktopCaptureListSourcesInput) => Promise<readonly DesktopCaptureSource[]>;
-  captureSource: (input: DesktopCaptureSourceInput) => Promise<DesktopCaptureResult>;
-}
 
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
@@ -1306,12 +1187,6 @@ export interface DesktopBridge {
    * Electron desktop build; web builds have `preview === undefined`.
    */
   preview?: DesktopPreviewBridge;
-  /**
-   * Desktop-only screen/window capture surface. Present iff the renderer is
-   * hosted by the Electron desktop build; web builds have
-   * `capture === undefined`.
-   */
-  capture?: DesktopCaptureBridge;
 }
 
 export interface DesktopPreviewBridge {
@@ -1362,11 +1237,6 @@ export interface DesktopPreviewBridge {
   /** Cancel an in-flight preview annotation session. */
   cancelPickElement: (tabId: string) => Promise<void>;
   captureScreenshot: (tabId: string) => Promise<DesktopPreviewScreenshotArtifact>;
-  /**
-   * Capture the tab's guest page as an in-memory PNG data URL, scaled so the
-   * longest edge does not exceed maxDimension (defaults to 2048).
-   */
-  captureTabImage: (tabId: string, maxDimension?: number) => Promise<DesktopPreviewTabImage>;
   revealArtifact: (path: string) => Promise<void>;
   copyArtifactToClipboard: (path: string) => Promise<void>;
   pictureInPicture: {

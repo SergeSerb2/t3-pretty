@@ -46,7 +46,7 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
 
     const resolved = yield* registry.resolve(token);
     expect(resolved?.threadId).toBe(threadId);
-    expect(Array.from(resolved?.capabilities ?? []).sort()).toEqual(["canvas", "preview"]);
+    expect(Array.from(resolved?.capabilities ?? []).sort()).toEqual(["preview"]);
 
     yield* registry.revokeThread(threadId);
     expect(yield* registry.resolve(token)).toBeUndefined();

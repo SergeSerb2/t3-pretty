@@ -38,7 +38,6 @@ import {
   FileSearchIcon,
   FolderIcon,
   FolderPlusIcon,
-  FrameIcon,
   LayoutGridIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -68,7 +67,6 @@ import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstra
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useClientSettings } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
-import { useIsMobile } from "../hooks/useMediaQuery";
 import { readLocalApi } from "../localApi";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
 import { filesystemEnvironment } from "../state/filesystem";
@@ -78,14 +76,9 @@ import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useServerConfigs, useThreadShells } from "../state/entities";
+import { useProjects, useThreadShells } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
-import {
-  resolveThreadActionProjectRef,
-  startNewCanvasFromContext,
-  startNewThreadFromContext,
-} from "../lib/chatThreadActions";
-import { environmentSupportsCanvas } from "../lib/canvasFirst";
+import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
@@ -423,7 +416,6 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   );
   const openAddProject = useCallback(() => dispatch({ _tag: "OpenAddProject" }), []);
   const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
-  const openNewCanvasIn = useCallback(() => dispatch({ _tag: "OpenNewCanvasIn" }), []);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme } = useTheme();
@@ -496,15 +488,13 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       onOpenCommandPalette((detail) => {
         if (detail.open === "new-thread-in") {
           openNewThreadIn();
-        } else if (detail.open === "new-canvas-in") {
-          openNewCanvasIn();
         } else if (detail.open === "add-project") {
           openAddProject();
         } else {
           setOpen(true);
         }
       }),
-    [openAddProject, openNewCanvasIn, openNewThreadIn, setOpen],
+    [openAddProject, openNewThreadIn, setOpen],
   );
 
   return (
@@ -611,8 +601,6 @@ function OpenCommandPaletteDialog(props: {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const projects = useProjects();
-  const serverConfigs = useServerConfigs();
-  const isMobile = useIsMobile();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -1105,57 +1093,6 @@ function OpenCommandPaletteDialog(props: {
     ],
   );
 
-  const canvasPickerProjects = useMemo(
-    () =>
-      isMobile
-        ? []
-        : pickerProjects.filter((project) =>
-            environmentSupportsCanvas(serverConfigs, project.environmentId),
-          ),
-    [isMobile, pickerProjects, serverConfigs],
-  );
-
-  const projectCanvasItems = useMemo(
-    () =>
-      enumerateCommandPaletteItems(
-        buildProjectActionItems({
-          projects: canvasPickerProjects,
-          valuePrefix: "new-canvas-in",
-          searchTerms: (project) => {
-            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-            return (
-              group?.memberProjects.flatMap((member) => [member.title, member.workspaceRoot]) ?? []
-            );
-          },
-          icon: projectFavicon,
-          runProject: async (project) => {
-            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-            const contextualRefBelongsToGroup =
-              contextualProjectRef !== null &&
-              group?.memberProjectRefs.some(
-                (projectRef) =>
-                  projectRef.environmentId === contextualProjectRef.environmentId &&
-                  projectRef.projectId === contextualProjectRef.projectId,
-              );
-            const projectRef = contextualRefBelongsToGroup
-              ? contextualProjectRef
-              : scopeProjectRef(project.environmentId, project.id);
-            if (!environmentSupportsCanvas(serverConfigs, projectRef.environmentId)) {
-              return;
-            }
-            await handleNewThread(projectRef, { startSurface: "canvas" });
-          },
-        }),
-      ),
-    [
-      canvasPickerProjects,
-      contextualProjectRef,
-      handleNewThread,
-      projectGroupByTargetKey,
-      serverConfigs,
-    ],
-  );
-
   const allThreadItems = useMemo(
     () =>
       buildThreadActionItems({
@@ -1559,45 +1496,6 @@ function OpenCommandPaletteDialog(props: {
     pushPaletteView,
   ]);
 
-  useLayoutEffect(() => {
-    if (openIntent?.kind !== "new-canvas-in" || projectCanvasItems.length === 0) {
-      return;
-    }
-    clearOpenIntent();
-    browseNavigation.invalidate();
-    setAddProjectCloneFlow(null);
-    setViewStack([]);
-    setQuery("");
-    const currentPrefix =
-      currentProjectEnvironmentId && currentProjectId
-        ? `new-canvas-in:${currentProjectEnvironmentId}:${currentProjectId}`
-        : null;
-    const prioritized = currentPrefix
-      ? [
-          ...projectCanvasItems.filter((item) => item.value === currentPrefix),
-          ...projectCanvasItems.filter((item) => item.value !== currentPrefix),
-        ]
-      : projectCanvasItems;
-    pushPaletteView({
-      addonIcon: <FrameIcon className={ADDON_ICON_CLASS} />,
-      groups: [
-        {
-          value: "projects",
-          label: "Projects",
-          items: enumerateCommandPaletteItems(prioritized),
-        },
-      ],
-    });
-  }, [
-    clearOpenIntent,
-    browseNavigation,
-    currentProjectEnvironmentId,
-    currentProjectId,
-    openIntent,
-    projectCanvasItems,
-    pushPaletteView,
-  ]);
-
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
   if (projects.length > 0) {
@@ -1637,52 +1535,6 @@ function OpenCommandPaletteDialog(props: {
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
-
-    if (canvasPickerProjects.length > 0 && activeProjectTitle) {
-      const canvasProjectRef = resolveThreadActionProjectRef({
-        activeDraftThread,
-        activeThread: activeThread ?? undefined,
-        defaultProjectRef,
-        handleNewThread,
-      });
-      const canStartCanvasHere =
-        canvasProjectRef !== null &&
-        environmentSupportsCanvas(serverConfigs, canvasProjectRef.environmentId);
-      if (canStartCanvasHere) {
-        actionItems.push({
-          kind: "action",
-          value: "action:new-canvas",
-          searchTerms: ["start from canvas", "canvas", "new canvas", "create"],
-          title: (
-            <>
-              Start from Canvas in <span className="font-semibold">{activeProjectTitle}</span>
-            </>
-          ),
-          icon: <FrameIcon className={ITEM_ICON_CLASS} />,
-          shortcutCommand: "chat.newCanvas",
-          run: async () => {
-            await startNewCanvasFromContext({
-              activeDraftThread,
-              activeThread: activeThread ?? undefined,
-              defaultProjectRef,
-              handleNewThread,
-            });
-          },
-        });
-      }
-    }
-
-    if (projectCanvasItems.length > 0) {
-      actionItems.push({
-        kind: "submenu",
-        value: "action:new-canvas-in",
-        searchTerms: ["start from canvas", "canvas", "project", "pick", "choose", "select"],
-        title: "Start from Canvas in...",
-        icon: <FrameIcon className={ITEM_ICON_CLASS} />,
-        addonIcon: <FrameIcon className={ADDON_ICON_CLASS} />,
-        groups: [{ value: "projects", label: "Projects", items: projectCanvasItems }],
-      });
-    }
   }
 
   actionItems.push({

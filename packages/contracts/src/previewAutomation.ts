@@ -647,10 +647,9 @@ export class PreviewAutomationUnavailableError extends Schema.TaggedErrorClass<P
 }
 
 /**
- * The capability gate covers every MCP surface, not just preview automation;
- * canvas call sites use this capability-neutral alias so they don't reference
- * a "preview"-named error. The wire tag stays PreviewAutomationUnavailableError
- * for compatibility with existing clients.
+ * The capability gate covers every MCP surface, not just preview automation.
+ * The wire tag stays PreviewAutomationUnavailableError for compatibility
+ * with existing clients.
  */
 export const McpCapabilityUnavailableError = PreviewAutomationUnavailableError;
 export type McpCapabilityUnavailableError = PreviewAutomationUnavailableError;

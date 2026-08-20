@@ -15,7 +15,7 @@ describe("resolveAssetUrl", () => {
 });
 
 describe("queryable asset resources", () => {
-  it("rejects the canvas pending-image attachment sentinel", () => {
+  it("rejects empty attachment ids", () => {
     expect(isQueryableAssetResource({ _tag: "attachment", attachmentId: "" })).toBe(false);
     expect(isQueryableAssetResource({ _tag: "attachment", attachmentId: "   " })).toBe(false);
     expect(isQueryableAssetResource({ _tag: "attachment", attachmentId: "att-1" })).toBe(true);

@@ -1,4 +1,3 @@
-import type { CanvasImageSourceRef, CanvasNode } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 export const CANVAS_SELECTION_IMAGE_PREFIX = "canvas-selection-";
@@ -8,10 +7,9 @@ export function canvasSelectionImageName(selectionId: string): string {
 }
 
 /**
- * Compact per-node description carried by a canvas selection. `source` is the
- * humanized capture origin of image nodes (see `humanizeCanvasImageSource`);
- * the full node payload stays on the canvas document, reachable through
- * `canvas_get_state`.
+ * Compact per-node description carried by a historical canvas selection.
+ * New selections cannot be created; this exists so old drafts and sent
+ * prompts still decode and display.
  */
 export const CanvasSelectionNodeSummarySchema = Schema.Struct({
   id: Schema.String,
@@ -32,11 +30,8 @@ export interface CanvasSelectionNodeSummary {
 }
 
 /**
- * A "canvas selection" attached to the composer: a set of selected canvas
- * nodes (plus an optional user comment) pinned to the document revision the
- * selection was made against. Persisted inline with the composer draft; the
- * rendered crop travels separately as an image attachment whose id matches
- * the selection id.
+ * A canvas selection attached to a composer draft or historical prompt.
+ * Kept so persisted drafts and sent messages still decode.
  */
 export const CanvasSelectionContextSchema = Schema.Struct({
   id: Schema.String,
@@ -71,44 +66,6 @@ const TRAILING_CANVAS_SELECTION_BLOCK_PATTERN =
 const CANVAS_SELECTION_NODE_LINE_PATTERN =
   /^- (\S+)(?: "(.*)")? \(([^,()]+)(?:, (\d+)x(\d+))?\)(?: — source: (.*))?$/;
 
-export function humanizeCanvasImageSource(sourceRef: CanvasImageSourceRef): string {
-  switch (sourceRef.kind) {
-    case "preview-tab": {
-      const url = sourceRef.url?.trim();
-      return url ? `preview tab ${url}` : "preview tab";
-    }
-    case "window": {
-      const appName = sourceRef.appName?.trim();
-      const windowTitle = sourceRef.windowTitle?.trim();
-      return ["window", appName, windowTitle ? `"${windowTitle}"` : null]
-        .filter((part) => part)
-        .join(" ");
-    }
-    case "agent":
-      return "agent";
-  }
-}
-
-/**
- * Project a full canvas node down to the summary carried by a selection.
- * Size is included only for node types that carry both dimensions; note
- * nodes (auto-height) and ink strokes summarize without one.
- */
-export function canvasSelectionNodeSummary(node: CanvasNode): CanvasSelectionNodeSummary {
-  const name = node.name?.trim();
-  return {
-    id: node.id,
-    type: node.type,
-    ...(name ? { name } : {}),
-    ...("width" in node && node.width !== undefined && "height" in node
-      ? { width: node.width, height: node.height }
-      : {}),
-    ...(node.type === "image" && node.sourceRef
-      ? { source: humanizeCanvasImageSource(node.sourceRef) }
-      : {}),
-  };
-}
-
 function formatCanvasSelectionNodeLine(node: CanvasSelectionNodeSummary): string {
   const size =
     node.width !== undefined && node.height !== undefined
@@ -133,7 +90,7 @@ export function buildCanvasSelectionPrompt(selection: CanvasSelectionContext): s
     lines.push(formatCanvasSelectionNodeLine(node));
   }
   lines.push(
-    `The attached screenshot titled ${canvasSelectionImageName(selection.id)} is a rendering of the selected canvas region. Use canvas_get_state for full structure.`,
+    `The attached screenshot titled ${canvasSelectionImageName(selection.id)} is a rendering of the selected canvas region.`,
   );
   return ["<canvas_selection>", ...lines, "</canvas_selection>"].join("\n");
 }
@@ -165,9 +122,7 @@ function parseCanvasSelectionNodeLine(line: string): CanvasSelectionNodeSummary 
 
 /**
  * Pull one trailing `<canvas_selection>` block off a sent prompt for display.
- * Call repeatedly (like `extractTrailingPreviewAnnotation`) to unwind several
- * sequentially appended selections; returns null once the text no longer ends
- * with a block.
+ * Call repeatedly to unwind several sequentially appended selections.
  */
 export function extractTrailingCanvasSelection(prompt: string): ExtractedCanvasSelection | null {
   const match = TRAILING_CANVAS_SELECTION_BLOCK_PATTERN.exec(prompt);

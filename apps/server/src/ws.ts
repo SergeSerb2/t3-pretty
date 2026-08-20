@@ -100,7 +100,6 @@ import * as AppsService from "./apps/AppsService.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
-import * as CanvasStore from "./canvas/Store.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
@@ -389,7 +388,6 @@ const makeWsRpcLayer = (
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
       const previewManager = yield* PreviewManager.PreviewManager;
-      const canvasStore = yield* CanvasStore.CanvasStore;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
@@ -2235,26 +2233,6 @@ const makeWsRpcLayer = (
           observeRpcStream(WS_METHODS.subscribePreviewEvents, previewManager.events, {
             "rpc.aggregate": "preview",
           }),
-        [WS_METHODS.canvasGet]: (input) =>
-          observeRpcEffect(WS_METHODS.canvasGet, canvasStore.get(input), {
-            "rpc.aggregate": "canvas",
-          }),
-        [WS_METHODS.canvasApply]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.canvasApply,
-            canvasStore.apply({ ...input, origin: "client" }),
-            { "rpc.aggregate": "canvas" },
-          ),
-        [WS_METHODS.canvasUpdateSelection]: (input) =>
-          observeRpcEffect(WS_METHODS.canvasUpdateSelection, canvasStore.updateSelection(input), {
-            "rpc.aggregate": "canvas",
-          }),
-        [WS_METHODS.subscribeCanvasEvents]: (input) =>
-          observeRpcStream(
-            WS_METHODS.subscribeCanvasEvents,
-            canvasStore.subscribe(input.threadId),
-            { "rpc.aggregate": "canvas" },
-          ),
         [WS_METHODS.subscribeDiscoveredLocalServers]: (input) =>
           observeRpcStream(
             WS_METHODS.subscribeDiscoveredLocalServers,

@@ -1,21 +1,13 @@
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import {
-  type CanvasAgentState,
-  EnvironmentId,
-  PreviewTabId,
-  ProviderInstanceId,
-  ThreadId,
-} from "@t3tools/contracts";
+import { EnvironmentId, PreviewTabId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import { McpProtocol, McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
-import { CanvasStore } from "../canvas/Store.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
@@ -29,31 +21,9 @@ const invocation = {
   threadId,
   providerSessionId: "provider-session-mcp-test",
   providerInstanceId: ProviderInstanceId.make("codex"),
-  capabilities: new Set(["preview", "canvas"] as const),
+  capabilities: new Set(["preview"] as const),
   issuedAt: 1,
 };
-const canvasAgentState: CanvasAgentState = {
-  document: { schemaVersion: 1, nodes: [] },
-  revision: 3,
-  selectedNodeIds: [],
-  images: [],
-};
-const CanvasStoreStubLive = Layer.succeed(
-  CanvasStore,
-  CanvasStore.of({
-    get: () => Effect.die("unused"),
-    apply: () => Effect.die("unused"),
-    updateSelection: () => Effect.die("unused"),
-    subscribe: () => Stream.empty,
-    getAgentState: () => Effect.succeed(canvasAgentState),
-  }),
-);
-// canvas_get_state never touches the projection; only workspace-file image
-// resolution does, and these tests do not exercise it.
-const ProjectionSnapshotQueryStubLive = Layer.succeed(
-  ProjectionSnapshotQuery,
-  {} as unknown as ProjectionSnapshotQuery["Service"],
-);
 const client = McpSchema.McpServerClient.of({
   clientId: 1,
   protocolVersion: "2025-06-18",
@@ -64,13 +34,7 @@ const client = McpSchema.McpServerClient.of({
   },
   getClient: Effect.die("unused"),
 });
-const TestLayer = Layer.mergeAll(
-  McpHttpServer.PreviewToolkitRegistrationLive,
-  McpHttpServer.CanvasToolkitRegistrationLive.pipe(
-    Layer.provide(CanvasStoreStubLive),
-    Layer.provide(ProjectionSnapshotQueryStubLive),
-  ),
-).pipe(
+const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provideMerge(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
   Layer.provideMerge(NodeServices.layer),
@@ -320,45 +284,6 @@ it.effect("registers annotated tools and preserves authenticated request context
         expect(result.structuredContent).toEqual({});
         expect(result.content).toEqual([{ type: "text", text: "{}" }]);
       }
-    }),
-  ).pipe(Effect.provide(TestLayer)),
-);
-
-it.effect("registers the canvas toolkit and serves canvas state as plain JSON", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const server = yield* McpServer.McpServer;
-      const canvasToolNames = server.tools
-        .map(({ tool }) => tool.name)
-        .filter((name) => name.startsWith("canvas_"))
-        .sort();
-      expect(canvasToolNames).toEqual([
-        "canvas_add_image",
-        "canvas_add_node",
-        "canvas_get_state",
-        "canvas_remove_node",
-        "canvas_update_node",
-      ]);
-
-      const state = yield* server
-        .callTool({ name: "canvas_get_state", arguments: {} })
-        .pipe(
-          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
-          Effect.provideService(McpSchema.McpServerClient, client),
-        );
-      expect(state.isError).toBe(false);
-      expect(state.structuredContent).toEqual({
-        document: { schemaVersion: 1, nodes: [] },
-        revision: 3,
-        selectedNodeIds: [],
-        images: [],
-      });
-      expect(state.content).toEqual([
-        {
-          type: "text",
-          text: '{"document":{"schemaVersion":1,"nodes":[]},"revision":3,"selectedNodeIds":[],"images":[]}',
-        },
-      ]);
     }),
   ).pipe(Effect.provide(TestLayer)),
 );

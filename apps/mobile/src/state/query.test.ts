@@ -9,8 +9,8 @@ describe("formatEnvironmentQueryError", () => {
   });
 
   it("surfaces string defects instead of the generic fallback", () => {
-    expect(formatEnvironmentQueryError(Cause.die("Unknown request tag: canvas.get"))).toBe(
-      "Unknown request tag: canvas.get",
+    expect(formatEnvironmentQueryError(Cause.die("Unknown request tag: example.get"))).toBe(
+      "Unknown request tag: example.get",
     );
   });
 

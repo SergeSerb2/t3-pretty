@@ -90,9 +90,7 @@ describe("composer attach contract with upstream markup", () => {
   });
 
   it("the composer still ingests OS-style Files drops on its drag wrapper", () => {
-    expect(chatViewSource).toContain(
-      "onDrop={isCanvasFirstDraft ? undefined : workspaceFileDropHandlers.onDrop}",
-    );
+    expect(chatViewSource).toContain("onDrop={workspaceFileDropHandlers.onDrop}");
     expect(chatComposerSource).toContain("addDroppedFiles: (files: File[]) => {");
     expect(chatComposerSource).toContain("void addComposerImages(files)");
   });

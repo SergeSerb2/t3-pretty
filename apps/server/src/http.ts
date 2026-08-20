@@ -64,8 +64,8 @@ export function assetResponseHeaders(
       source === "attachment" ? "private, max-age=31536000, immutable" : "private, max-age=3600",
     "X-Content-Type-Options": "nosniff",
     // Asset URLs are signed capability URLs (the token is the whole
-    // authorization), so cross-origin reads — canvas bitmaps, the desktop
-    // renderer origin — are safe to allow for any origin.
+    // authorization), so cross-origin reads — the desktop renderer origin
+    // included — are safe to allow for any origin.
     ...(source === "attachment" || source === "workspace-file"
       ? { "Access-Control-Allow-Origin": "*" }
       : {}),

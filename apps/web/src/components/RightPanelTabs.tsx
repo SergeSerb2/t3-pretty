@@ -4,7 +4,6 @@ import {
   Bot,
   FileDiff,
   Files,
-  Frame,
   GitPullRequest,
   Globe2,
   Plus,
@@ -77,13 +76,11 @@ interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddAgents: () => void;
-  onAddCanvas: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
-  canvasAvailable: boolean;
   agentsAvailable: boolean;
   pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
   /** Running + waiting subagents; badges the Agents card in the empty state. */
@@ -105,7 +102,6 @@ const SURFACE_DISABLED_REASONS = {
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
   pullRequest: "This thread's branch has no pull request yet.",
-  canvas: "This environment's server is too old for the canvas — update the server to enable it.",
   agents: "Agents are only available from a thread.",
 } as const;
 
@@ -241,13 +237,11 @@ function RightPanelEmptyState(props: {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddAgents: () => void;
-  onAddCanvas: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
-  canvasAvailable: boolean;
   agentsAvailable: boolean;
   liveAgentCount: number;
 }) {
@@ -314,16 +308,6 @@ function RightPanelEmptyState(props: {
       disabledReason: SURFACE_UNAVAILABLE_HINTS.agents,
       onClick: props.onAddAgents,
       badgeCount: props.liveAgentCount,
-    },
-    {
-      label: "Canvas",
-      description: "Mark up screens and iterate with the agent.",
-      icon: Frame,
-      shortcut: "C",
-      available: props.canvasAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.canvas,
-      onClick: props.onAddCanvas,
-      badgeCount: 0,
     },
   ] as const;
 
@@ -515,8 +499,6 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "agents":
       return "Agents";
-    case "canvas":
-      return "Canvas";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -602,8 +584,6 @@ function SurfaceIcon({
     }
     case "agents":
       return <Bot className="size-3 shrink-0" />;
-    case "canvas":
-      return <Frame className="size-3 shrink-0" />;
   }
 }
 
@@ -661,14 +641,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       available: props.agentsAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.agents,
       onClick: props.onAddAgents,
-    },
-    {
-      label: "Canvas",
-      icon: Frame,
-      shortcut: "C",
-      available: props.canvasAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.canvas,
-      onClick: props.onAddCanvas,
     },
   ] as const;
 
@@ -964,13 +936,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}
             onAddAgents={props.onAddAgents}
-            onAddCanvas={props.onAddCanvas}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
-            canvasAvailable={props.canvasAvailable}
             agentsAvailable={props.agentsAvailable}
             liveAgentCount={props.liveAgentCount}
           />
