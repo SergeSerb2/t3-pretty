@@ -1,137 +1,235 @@
 <p align="center">
-  <img src="./assets/pretty/t3-pretty-1024.png" alt="T3 Pretty" width="180" />
+  <img src="./assets/pretty/t3-pretty-1024.png" alt="T3 Pretty" width="160" />
 </p>
 
 <h1 align="center">T3 Pretty</h1>
 
 <p align="center">
-  All the features of T3 Code, dressed for personal taste.
+  <strong>All the agents. A landscape instead of a blank canvas.</strong>
 </p>
 
-T3 Pretty is a style-focused personal fork of [T3 Code](https://github.com/pingdotgg/t3code). It
-keeps the upstream coding-agent workflow, providers, remote access, desktop/web behavior, and update
-compatibility while adding a prettier visual identity, personal themes, and scenery.
+<p align="center">
+  🌄 World Scenery &nbsp;·&nbsp; 🪟 Frosted glass &nbsp;·&nbsp; 🖥️ Desktop &nbsp;·&nbsp; 🌐 Web &nbsp;·&nbsp; 📱 Mobile &nbsp;·&nbsp; MIT
+</p>
 
-The fork intentionally keeps internal T3 package names, protocols, and data paths stable so visual
-changes do not trade away functionality or existing state.
+<p align="center">
+  A personal, style-focused fork of
+  <a href="https://github.com/pingdotgg/t3code">T3 Code</a>.
+  Same harness. Same subscriptions. Dressed for long sessions.
+</p>
 
-## About the upstream project
+<p align="center">
+  <img src="./assets/pretty/screenshot-world-scenery.jpg" alt="T3 Pretty new thread over a Los Roques beach, with a frosted sidebar and a glass composer" width="920" />
+</p>
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+T3 Pretty is an **agent harness control surface**. It runs the coding-agent CLIs already on your
+machine and gives you one place to steer them — from a desktop window, a browser, or a phone.
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, T3 Code can control them.
+It keeps T3 Code's workflow, providers, remote access, and data paths. The fork's job is the
+look: **World Scenery** puts a real landscape behind frosted chrome, so the app reads as a place
+rather than a flat panel. Internal package names, protocols, and `~/.t3` stay stable on purpose.
+Visual changes are not allowed to trade away capability or existing state.
 
-## "Wait, what are you selling me?"
+> [!IMPORTANT]
+> `npx t3@latest`, Homebrew `t3-code`, and winget `T3Tools.T3Code` install **upstream T3 Code**,
+> not this fork. T3 Pretty is this repository. Run it from source (below).
 
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
+---
 
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
+## Why it's Pretty 🌄
 
-## Installation
+World Scenery is T3 Pretty's only theme. Light, dark, or system — the palette is alpine moss and
+sage. Chrome is glass over a photo, not a solid slab.
 
-> [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build and OpenCode. Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
+| | What you get |
+| --- | --- |
+| 🗺️ **A place per thread** | Each conversation keeps its own landscape. Home uses the photo of the day. |
+| 🌫️ **Fog on a new thread** | A cloud bank gathers, the place name rises, the composer comes up through it. |
+| 🪟 **Shared glass** | Left sidebar, right sidebar, composer, and terminal share one frosted plate. |
+| 🎚️ **Your density** | Photo blur, photo presence, glass opacity, scenery text color, thread motion, fonts. |
+| 🧘 **Still when you want** | Thread motion off, or the system reduce-motion setting, parks fades and keeps status dots still. |
 
-### Try it out (install-free)
+Open **Settings → Appearance**. On a phone, the same controls live under **Scenery photos**.
 
-The easiest way to test T3 Code is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
+The product should feel calm during a long day, candid about what is running, and confident
+without becoming ornamental. Motion is a fade or a press — not a GPU hobby.
+
+---
+
+## Surfaces ✨
+
+| Surface | What you get |
+| --- | --- |
+| 🖥️ **Desktop** | Electron app, product name **T3 Pretty (Alpha)**. Hosts the local server so a phone or another machine can join. |
+| 🌐 **Web** | The same UI, served by the local server. Pair a browser with the printed pairing URL. |
+| 📱 **Mobile** | React Native for iOS and Android. Build from source — it is not on the App Store or Play Store yet. |
+
+Remote is a first-class path: pair over your tailnet, scan the QR from a running server, or use
+**Surge Connect** (this fork's account mesh) so every signed-in device sees the same environments.
+
+---
+
+## Bring your own subscriptions 🔌
+
+T3 Pretty does not sell models. It drives provider CLIs you already installed and logged into.
+
+| Provider | CLI | Login | Default |
+| --- | --- | --- | --- |
+| **Codex** | [Codex CLI](https://developers.openai.com/codex/cli) | `codex login` | On |
+| **Claude** | [Claude Code](https://claude.com/product/claude-code) | `claude auth login` | On |
+| **Kimi Code** | [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html) | `kimi login` | On |
+| **Cursor** | [Cursor CLI](https://cursor.com/cli) (`cursor-agent`) | `agent login` | Off |
+| **Grok Build** | [Grok Build CLI](https://x.ai/cli) | `grok login` | Off |
+| **OpenCode** | [OpenCode](https://opencode.ai) | `opencode auth login` | Off |
+
+Install and authenticate at least one provider on the machine that runs the server. Cursor is the
+one to watch: the binary is `cursor-agent`, the login command is `agent login`.
+
+You can hand a thread to another provider mid-conversation, attach MCP **Apps**, load **Skills**,
+and let the agent open a pull request when it finishes.
+
+---
+
+## What still works (on purpose) 🛠️
+
+Everything you would expect from T3 Code is still here:
+
+- Permission modes (Supervised, Auto-accept edits, Auto, Full access — Kimi uses Auto / Yolo)
+- Worktrees, checkpoints, diffs, and a Ghostty-backed terminal
+- Source control for GitHub, GitLab, Bitbucket, Azure DevOps, and [Origin](https://origin.cursor.com)
+- Automatic pull requests, usage, storage cleanup, project icons
+- Command palette, custom keybindings, subagents
+
+The fork syncs upstream T3 Code nightlies on a four-hour cadence and keeps Pretty-specific
+behavior at conflict boundaries. See [docs/operations/fork-release.md](./docs/operations/fork-release.md).
+
+---
+
+## Run from source 🚀
+
+This is how you actually get T3 Pretty.
+
+**Needs:** Node **24** (`^24.13.1`) and [Vite+](https://viteplus.dev/guide/) (`vp`).
+
+### 1. Clone from Origin
+
+This fork lives on Cursor Origin. GitHub is not the source of truth.
 
 ```bash
-npx t3@latest
+git clone https://origin.cursor.com/serbinenko/t3-pretty.git
+cd t3-pretty
 ```
 
-This will launch T3 Code's backend on your machine as well as the local web app to control your agents.
+### 2. Install `vp`
 
-Tip: Use `npx t3@latest --help` for the full CLI reference.
-
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
-
-```bash
-winget install T3Tools.T3Code
-```
-
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
-```
-
-#### Arch Linux (AUR)
-
-Stable:
-
-```bash
-yay -S t3code-bin
-```
-
-Nightly:
-
-```bash
-yay -S t3code-nightly-bin
-```
-
-The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
-
-## Some notes
-
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
-
-## Documentation
-
-Full docs live in [docs/](./docs). There's no docs site yet.
-
-- [Install and first run](./docs/user/install.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Keyboard shortcuts](./docs/user/keybindings.md)
-- [Customize a project icon](./docs/user/project-settings.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
-- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- Linux: [run T3 Code as a background service](./docs/user/background-service.md)
-
-Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
-
-## If you REALLY want to contribute still.... read this first
-
-### Install `vp`
-
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
+macOS / Linux:
 
 ```bash
 curl -fsSL https://vite.plus | bash
 ```
 
-#### Windows
+Windows:
 
-```bash
+```powershell
 irm https://vite.plus/ps1 | iex
 ```
 
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
+### 3. Install and start
 
 ```bash
 vp i
+vp run dev
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
+`vp run dev` starts the server and web app, then prints a **pairing URL**. Open that full URL
+(token included) in the browser. A URL without its token will not let you in. If the token was
+already used, mint a fresh one with `node apps/server/src/bin.ts pair`.
 
-Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
+Useful variants:
 
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+```bash
+vp run dev --share      # publish over your tailnet (HTTPS)
+vp run dev:desktop      # Electron shell against the dev server
+vp run dev --help
+```
+
+### 4. Desktop installers (optional)
+
+```bash
+vp run dist:desktop:dmg        # macOS
+vp run dist:desktop:win        # Windows NSIS
+vp run dist:desktop:linux      # Linux AppImage
+```
+
+Artifacts land in `./release`. Local DMGs are unsigned unless you set signing credentials.
+
+Mobile builds: [apps/mobile/README.md](./apps/mobile/README.md).
+
+---
+
+## Docs 📚
+
+Full docs live in [docs/](./docs). There is no separate docs site.
+
+**Using the app**
+
+- [World Scenery](./docs/user/world-scenery.md)
+- [Install and first run](./docs/user/install.md)
+- [Permission modes](./docs/user/permission-modes.md)
+- [Keyboard shortcuts](./docs/user/keybindings.md)
+- [Message composer](./docs/user/composer.md)
+- [Organizing threads](./docs/user/thread-sidebar.md)
+- [Skills](./docs/user/skills.md) · [Apps](./docs/user/apps.md) · [Subagents](./docs/user/subagents.md)
+- [Remote access](./docs/user/remote-access.md) · [Surge Connect](./docs/user/remote-access.md#surge-connect)
+- [Source control](./docs/user/source-control.md) · [Automatic pull requests](./docs/user/auto-pull-requests.md)
+- [Provider handoff](./docs/user/provider-handoff.md)
+- [Usage](./docs/user/usage.md) · [Storage](./docs/user/storage.md)
+- [Project icons](./docs/user/project-settings.md) · [Mobile appearance](./docs/user/mobile-appearance.md)
+- [Keeping client and server in sync](./docs/user/updating.md)
+- [Background service](./docs/user/background-service.md) (Linux and macOS)
+- Providers: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md) · [Kimi](./docs/user/providers-kimi.md)
+
+**Working on the fork**
+
+- [Architecture overview](./docs/internals/overview.md)
+- [Workspace layout](./docs/internals/workspace-layout.md)
+- [Contributing](./CONTRIBUTING.md) · [AGENTS.md](./AGENTS.md)
+- [Parent sync and desktop releases](./docs/operations/fork-release.md)
+
+---
+
+## This is a fork 🌿
+
+| | Upstream T3 Code | T3 Pretty |
+| --- | --- | --- |
+| Home | [github.com/pingdotgg/t3code](https://github.com/pingdotgg/t3code) | Cursor Origin `serbinenko/t3-pretty` |
+| Look | Stock T3 chrome | World Scenery + Pretty icon |
+| Connect mesh | T3 Connect | **Surge Connect** (same protocol, fork relay) |
+| Desktop | `T3 Code` | `T3 Pretty (Alpha)` |
+| Data | `~/.t3` | `~/.t3` (same on purpose) |
+
+Want the original instead? [T3 Code](https://github.com/pingdotgg/t3code) ships desktop downloads,
+`npx t3@latest`, and mobile apps on [iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824)
+and [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code).
+
+---
+
+## Contributing 🫶
+
+This is a personal fork. Pull requests belong on Origin, against `main`:
+
+[https://cursor.com/codebase/serbinenko/t3-pretty](https://cursor.com/codebase/serbinenko/t3-pretty)
+
+Keep the change small. Say exactly what changed and why. UI needs before/after images. Motion
+needs a short video. Read [CONTRIBUTING.md](./CONTRIBUTING.md) first.
+
+Do not open review PRs against GitHub. That copy is retired.
+
+---
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
+
+T3 Pretty stands on [T3 Code](https://github.com/pingdotgg/t3code) by T3 Tools. Thank you for
+making something worth forking.
