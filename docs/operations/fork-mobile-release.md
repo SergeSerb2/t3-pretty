@@ -34,8 +34,8 @@ enough to skip Xcode. The job does not force an IPA just because
 `.t3-fork/ios-native-submit` is missing. macos-release runs macOS 27
 developer beta, so the IPA is compiled with `Xcode-beta.app`. TestFlight
 accepts the current Xcode 27 beta; an older beta is rejected. If the Mac
-has no full Xcode at all, the job compiles on EAS cloud (`eas build --wait`,
-then `eas submit --latest`). Set `T3CODE_FORCE_IOS=1` (or
+has no full Xcode at all, the job compiles on EAS cloud (`eas build --wait --json`,
+then `eas submit --id` of that build). Set `T3CODE_FORCE_IOS=1` (or
 `T3CODE_MOBILE_MODE=build`) on a Buildkite rebuild to compile and submit
 even when the fingerprint matches. The runner writes
 `~/.cache/t3-pretty-release/ios-native-submit` after a successful IPA

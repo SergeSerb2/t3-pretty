@@ -178,7 +178,10 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "This is not App Store review");
     assert.include(mobileRelease, "ipa_via_cloud");
     assert.include(mobileRelease, "--wait");
-    assert.include(mobileRelease, "--latest");
+    assert.include(mobileRelease, '--json > "$cloud_build_json"');
+    assert.include(mobileRelease, "eas build --json did not include a build id");
+    assert.include(mobileRelease, '--id "$build_id"');
+    assert.notInclude(mobileRelease, "--latest");
     assert.include(mobileRelease, "Submitted TestFlight IPA via EAS cloud");
     assert.include(mobileRelease, "No full Xcode on this Mac");
     assert.notInclude(mobileRelease, "Skipping a new IPA");
@@ -207,7 +210,11 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(persistHook, 'BUILDKITE_STEP_KEY:-}" == "ios-mobile"');
     assert.include(persistHook, ".cache/t3-pretty-release/ios-native-submit");
     assert.include(persistHook, "refresh_macos_agent_hooks");
-    assert.include(persistHook, 'grep -q "helpers_ready"');
+    assert.include(persistHook, 'grep -q "helpers_ready" "$src/macos-origin-git.sh"');
+    assert.include(
+      persistHook,
+      'grep -q "refresh_macos_agent_hooks" "$src/persist-ios-native-submit-hook.sh"',
+    );
     assert.isBelow(
       persistHook.indexOf("refresh_macos_agent_hooks"),
       persistHook.indexOf('BUILDKITE_STEP_KEY:-}" == "ios-mobile"'),

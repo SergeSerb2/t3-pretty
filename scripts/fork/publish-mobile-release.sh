@@ -437,17 +437,41 @@ fs.writeFileSync(easJsonPath, `${JSON.stringify(eas, null, 2)}\n`);
 NODE
 
 if [[ "$ipa_via_cloud" == "true" ]]; then
+  cloud_build_json="$tmp/eas-cloud-build.json"
   (
     cd apps/mobile
     eas build \
       --platform ios \
       --profile production \
       --non-interactive \
-      --wait
+      --wait \
+      --json > "$cloud_build_json"
+  )
+  build_id="$(
+    node --input-type=module - "$cloud_build_json" <<'NODE'
+import fs from "node:fs";
+const raw = fs.readFileSync(process.argv[2], "utf8").trim();
+let data;
+try {
+  data = JSON.parse(raw);
+} catch {
+  const start = Math.max(raw.lastIndexOf("\n{") + 1, raw.lastIndexOf("{"));
+  data = JSON.parse(raw.slice(start));
+}
+const build = Array.isArray(data) ? data[data.length - 1] : data;
+const id = typeof build?.id === "string" ? build.id : "";
+if (!id) {
+  throw new Error("eas build --json did not include a build id");
+}
+process.stdout.write(`${id}\n`);
+NODE
+  )"
+  (
+    cd apps/mobile
     eas submit \
       --platform ios \
       --profile production \
-      --latest \
+      --id "$build_id" \
       --non-interactive
   )
   record_local_native_submit "$commit"
