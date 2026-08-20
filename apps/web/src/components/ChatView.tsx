@@ -6528,17 +6528,22 @@ function ChatViewContent(props: ChatViewProps) {
         // sidebar trigger. Remounting into the shrinking chat header made the
         // cluster jump to the panel seam on close, and the rest of the top bar
         // jittered against buttons that stayed put.
-        "absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
+        // pointer-events-none on the strip, auto on the buttons: same as the
+        // left sidebar trigger. A later sibling than the chat header, so the
+        // header's frost/drag-region cannot sit on top of the cluster.
+        "pointer-events-none absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
       )}
       data-workspace-titlebar-controls
     >
-      {rightPanelOpen && !shouldUseRightPanelSheet ? (
-        <RightPanelMaximizeControl
-          maximized={rightPanelMaximized}
-          onToggle={toggleRightPanelMaximized}
-        />
-      ) : null}
-      {panelToggleControls}
+      <div className="pointer-events-auto flex h-full items-center gap-1">
+        {rightPanelOpen && !shouldUseRightPanelSheet ? (
+          <RightPanelMaximizeControl
+            maximized={rightPanelMaximized}
+            onToggle={toggleRightPanelMaximized}
+          />
+        ) : null}
+        {panelToggleControls}
+      </div>
     </div>
   );
   const rightPanelContent = activeThreadRef ? (
@@ -6665,7 +6670,6 @@ function ChatViewContent(props: ChatViewProps) {
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-      {shouldUseRightPanelSheet && rightPanelOpen ? null : panelLayoutControls}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
@@ -6689,6 +6693,13 @@ function ChatViewContent(props: ChatViewProps) {
             COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
           )}
         >
+          {isElectron && !rightPanelOpen ? (
+            <div
+              aria-hidden
+              data-titlebar-controls-drag-hole
+              className="pointer-events-none absolute inset-y-0 right-[var(--workspace-controls-right)] z-50 mr-px w-16 [-webkit-app-region:no-drag]"
+            />
+          ) : null}
           <ChatHeader
             {...(!supportsPullRequests || threadRepository === null
               ? {}
@@ -7233,6 +7244,8 @@ function ChatViewContent(props: ChatViewProps) {
           </RightPanelTabs>
         </RightPanelSheet>
       ) : null}
+
+      {shouldUseRightPanelSheet && rightPanelOpen ? null : panelLayoutControls}
 
       {expandedImage && (
         <ExpandedImageDialog
