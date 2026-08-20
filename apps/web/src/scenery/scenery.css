@@ -75,47 +75,8 @@ html[data-theme-id="world-scenery"] {
 .scenery-layer__photo {
   position: absolute;
   inset: 0;
-  overflow: hidden;
   background-size: cover;
   background-position: center;
-}
-
-/* 2.5D LDI cards live inside the photo slot so thread-swap fades still
-   apply to the whole landscape. Overflow clips the overscan; perspective
-   is the virtual camera. */
-.scenery-parallax {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  perspective: 1600px;
-  perspective-origin: 50% 42%;
-  pointer-events: none;
-}
-
-.scenery-parallax__rig {
-  position: absolute;
-  inset: -12%;
-  transform-style: preserve-3d;
-}
-
-.scenery-parallax__rig--live {
-  will-change: transform;
-}
-
-.scenery-parallax__card {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transform-style: preserve-3d;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .scenery-parallax {
-    display: none;
-  }
 }
 
 .scenery-layer__photo--current {

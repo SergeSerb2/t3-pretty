@@ -47,7 +47,6 @@ describe("searchSettings", () => {
     expect(searchSettings("  WORD   WRAP  ", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("glass").map((item) => item.id)).toEqual(["setting-glass-opacity"]);
     expect(searchSettings("photo blur").map((item) => item.id)).toEqual(["setting-photo-blur"]);
-    expect(searchSettings("3d effects").map((item) => item.id)).toEqual(["setting-scenery-3d"]);
     expect(searchSettings("xyzzy")).toEqual([]);
   });
 

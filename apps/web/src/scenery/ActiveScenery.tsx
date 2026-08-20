@@ -101,7 +101,6 @@ export default function ActiveScenery() {
   const translucency = useSceneryStore((state) => state.translucency);
   const blur = useSceneryStore((state) => state.blur);
   const inkMode = useSceneryStore((state) => state.inkMode);
-  const depthEffects = useSceneryStore((state) => state.depthEffects);
   const ensureAssignment = useSceneryStore((state) => state.ensureAssignment);
   const registerDisplayed = useSceneryStore((state) => state.registerDisplayed);
   const refreshPoolIfStale = useSceneryStore((state) => state.refreshPoolIfStale);
@@ -294,7 +293,6 @@ export default function ActiveScenery() {
         seed={seed}
         blur={blur}
         appearanceCrossfade={appearanceCrossfade}
-        depthEffects={depthEffects}
         onPhotoDisplayed={(displayed) => {
           registerDisplayed(displayed);
           setDisplayedPhotoId(displayed.id);

@@ -234,21 +234,6 @@ describe("scenery attribution contract", () => {
     expect(activeScenerySource).not.toContain("SceneryQuickSettings");
     expect(sceneryCssSource).not.toContain(".scenery-quick__trigger");
     expect(sceneryAppearanceSettingsSource).toContain("Photo blur");
-    expect(sceneryAppearanceSettingsSource).toContain("3D effects");
-  });
-
-  it("builds 2.5D depth cards inside the photo slot", () => {
-    expect(sceneryLayerSource).toContain("SceneryParallax");
-    expect(sceneryLayerSource).toContain("depthEffects");
-    expect(sceneryCssSource).toContain(".scenery-parallax");
-    expect(sceneryCssSource).toContain("perspective: 1600px");
-    expect(sceneryCssSource).toContain(".scenery-parallax__rig--live");
-  });
-
-  it("drops a stale parallax ready key when 3D is parked", () => {
-    expect(sceneryLayerSource).toContain("sceneryParallaxReady");
-    expect(sceneryLayerSource).toContain("setParallaxReadyKey(null)");
-    expect(sceneryLayerSource).toMatch(/\[parallaxEnabled\]/);
   });
 });
 

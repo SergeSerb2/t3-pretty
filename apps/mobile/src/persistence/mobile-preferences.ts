@@ -72,8 +72,6 @@ export interface MobileSceneryPreferences {
   readonly blur?: number;
   /** How much of the screen the app paints over the photo, 0.5–1. */
   readonly translucency?: number;
-  /** Tilt the landscape with the device. Defaults off. */
-  readonly depthEffects?: boolean;
   /** Thread key → assigned photo, LRU-capped by the scenery feature. */
   readonly assignments?: Readonly<Record<string, MobileSceneryAssignment>>;
 }
@@ -226,7 +224,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
       enabled?: boolean;
       blur?: number;
       translucency?: number;
-      depthEffects?: boolean;
       assignments?: Record<string, MobileSceneryAssignment>;
     } = {};
     if (typeof parsed.scenery.enabled === "boolean") {
@@ -237,9 +234,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     }
     if (typeof parsed.scenery.translucency === "number") {
       scenery.translucency = parsed.scenery.translucency;
-    }
-    if (typeof parsed.scenery.depthEffects === "boolean") {
-      scenery.depthEffects = parsed.scenery.depthEffects;
     }
     if (typeof parsed.scenery.assignments === "object" && parsed.scenery.assignments !== null) {
       const assignments: Record<string, MobileSceneryAssignment> = {};
