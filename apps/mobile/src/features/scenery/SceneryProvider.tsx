@@ -15,8 +15,10 @@ import { createContext, use, useCallback, useEffect, useMemo, useRef, type React
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
 
+import { isBoringMobileTheme } from "../../lib/mobileTheme";
 import type { MobileSceneryPreferences } from "../../persistence/mobile-preferences";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useReduceTransparency } from "./useReduceTransparency";
 import {
   capAssignments,
@@ -185,29 +187,38 @@ export function useScenery(): SceneryContextValue {
   return context;
 }
 
+function useSceneryPhotosAllowed(): boolean {
+  const { themeId } = useAppearancePreferences();
+  return !isBoringMobileTheme(themeId);
+}
+
 /**
  * True when list chrome should go translucent over the scenery photo.
- * Reduce Transparency and a disabled engine keep the opaque plates.
+ * Reduce Transparency, Boring mode, and a disabled engine keep the opaque plates.
  */
 export function useSceneryChromeActive(): boolean {
   const context = use(SceneryContext);
   const reduceTransparency = useReduceTransparency();
-  return context !== null && context.enabled && !reduceTransparency;
+  const photosAllowed = useSceneryPhotosAllowed();
+  return context !== null && context.enabled && photosAllowed && !reduceTransparency;
 }
 
 /** Photo bound to a thread key, assigning one on first sight. */
 export function useThreadSceneryPhoto(threadKey: string): SceneryPhoto | null {
   const { enabled, ensureThreadAssignment, photoForThreadKey } = useScenery();
+  const photosAllowed = useSceneryPhotosAllowed();
+  const active = enabled && photosAllowed;
   useEffect(() => {
-    if (enabled) {
+    if (active) {
       ensureThreadAssignment(threadKey);
     }
-  }, [enabled, ensureThreadAssignment, threadKey]);
-  return enabled ? photoForThreadKey(threadKey) : null;
+  }, [active, ensureThreadAssignment, threadKey]);
+  return active ? photoForThreadKey(threadKey) : null;
 }
 
 /** Today's featured photo for the no-thread home screen. */
 export function useDailySceneryPhoto(): SceneryPhoto | null {
   const { enabled, dailyPhoto } = useScenery();
-  return enabled ? dailyPhoto : null;
+  const photosAllowed = useSceneryPhotosAllowed();
+  return enabled && photosAllowed ? dailyPhoto : null;
 }

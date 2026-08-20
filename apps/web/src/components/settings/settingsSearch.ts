@@ -60,8 +60,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "appearance",
   },
   {
+    id: "personalization",
+    title: "Personalization",
+    to: "/settings/appearance",
+    targetId: "appearance",
+  },
+  {
     id: "theme",
     title: "World Scenery theme",
+    to: "/settings/appearance",
+    targetId: "appearance",
+  },
+  {
+    id: "boring-mode",
+    title: "Boring",
     to: "/settings/appearance",
     targetId: "appearance",
   },

@@ -25,6 +25,7 @@ import sceneryLayerSource from "./SceneryLayer.tsx?raw";
 import sceneryPlaceCreditSource from "./SceneryPlaceCredit.tsx?raw";
 import sceneryArrivalSource from "./SceneryArrival.tsx?raw";
 import sceneryAppearanceSettingsSource from "./SceneryAppearanceSettings.tsx?raw";
+import sceneryHostSource from "./SceneryHost.tsx?raw";
 import activeScenerySource from "./ActiveScenery.tsx?raw";
 import primeWorldScenerySource from "./primeWorldScenery.ts?raw";
 import useInkOverrideSource from "./useInkOverride.ts?raw";
@@ -70,6 +71,12 @@ describe("scenery structural contract with upstream markup", () => {
 
   it("SceneryHost is still mounted at the root route", () => {
     expect(rootRouteSource).toContain("<SceneryHost />");
+  });
+
+  it("SceneryHost still installs World Scenery without pinning it as the only palette", () => {
+    expect(sceneryHostSource).toContain("ensureWorldSceneryThemeInstalled");
+    expect(sceneryHostSource).toContain("shouldForceWorldSceneryTheme");
+    expect(sceneryHostSource).not.toContain("if (theme !== WORLD_SCENERY_THEME_ID)");
   });
 
   it("the thread routes still render ChatView inside SidebarInset", () => {

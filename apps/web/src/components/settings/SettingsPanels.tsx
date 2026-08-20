@@ -970,7 +970,7 @@ function BackgroundActivityAdvancedDialog({
 }
 
 export function AppearanceSettingsPanel() {
-  const { appearanceMode, setAppearanceMode } = useTheme();
+  const { appearanceMode, setAppearanceMode, theme, setTheme } = useTheme();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const environmentStageLabel = useEnvironmentStageLabel();
@@ -992,7 +992,12 @@ export function AppearanceSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="appearance" title="Appearance">
         <div id={searchableSetting("theme").id}>
-          <ThemeLibrary appearanceMode={appearanceMode} setAppearanceMode={setAppearanceMode} />
+          <ThemeLibrary
+            appearanceMode={appearanceMode}
+            setAppearanceMode={setAppearanceMode}
+            setTheme={setTheme}
+            theme={theme}
+          />
         </div>
 
         <SettingsRow

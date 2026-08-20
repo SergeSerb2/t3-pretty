@@ -2,13 +2,25 @@ import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../../../components/AppText";
 import {
+  BORING_MOBILE_THEME_ID,
+  DEFAULT_MOBILE_THEME_ID,
   getMobileThemeVariables,
+  isBoringMobileTheme,
+  type MobileThemeId,
   type MobileThemeIds,
   type MobileThemeMode,
   type MobileThemeVariables,
 } from "../../../../lib/mobileTheme";
 import { useThemeColor } from "../../../../lib/useThemeColor";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
+
+const PRODUCT_THEMES: ReadonlyArray<{
+  readonly id: MobileThemeId;
+  readonly label: string;
+}> = [
+  { id: DEFAULT_MOBILE_THEME_ID, label: "World Scenery" },
+  { id: BORING_MOBILE_THEME_ID, label: "Boring" },
+];
 
 const APPEARANCE_MODES: ReadonlyArray<{
   readonly id: MobileThemeMode;
@@ -158,10 +170,31 @@ function SectionLabel({ children }: { readonly children: string }) {
 }
 
 export function ThemeAppearanceSection() {
-  const { isReady, setThemeMode, themeIds, themeMode } = useAppearancePreferences();
+  const { isReady, setThemeIdForBothAppearances, setThemeMode, themeId, themeIds, themeMode } =
+    useAppearancePreferences();
+  const boring = isBoringMobileTheme(themeId);
 
   return (
     <View className="gap-6">
+      <View className="gap-2">
+        <SectionLabel>Personalization</SectionLabel>
+        <Text className="px-2 text-sm text-foreground-muted">
+          Boring restores the original T3 Chat colors and turns landscape photos off.
+        </Text>
+        <View accessibilityRole="radiogroup" className="flex-row gap-2">
+          {PRODUCT_THEMES.map((product) => (
+            <ModeCard
+              disabled={!isReady}
+              key={product.id}
+              label={product.label}
+              mode={themeMode}
+              onPress={() => setThemeIdForBothAppearances(product.id)}
+              selected={product.id === BORING_MOBILE_THEME_ID ? boring : !boring}
+              themeIds={{ light: product.id, dark: product.id }}
+            />
+          ))}
+        </View>
+      </View>
       <View className="gap-2">
         <SectionLabel>Color scheme</SectionLabel>
         <View accessibilityRole="radiogroup" className="flex-row gap-2">

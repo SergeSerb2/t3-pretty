@@ -17,11 +17,18 @@ export type MobileThemeAppearance = ThemeAppearance;
 export type MobileThemeMode = MobileThemeAppearance | "system";
 export type MobileThemeIds = Readonly<Record<MobileThemeAppearance, MobileThemeId>>;
 
+/** Upstream T3 Chat palette. Settings → Appearance calls this Boring. */
+export const BORING_MOBILE_THEME_ID = "t3-chat" satisfies MobileThemeId;
+
 type MobileThemeVariable = `--color-${string}`;
 export type MobileThemeVariables = Readonly<Record<MobileThemeVariable, string>>;
 
-export function normalizeMobileThemeId(_value: unknown): MobileThemeId {
-  return DEFAULT_MOBILE_THEME_ID;
+export function isBoringMobileTheme(themeId: MobileThemeId): boolean {
+  return themeId === BORING_MOBILE_THEME_ID;
+}
+
+export function normalizeMobileThemeId(value: unknown): MobileThemeId {
+  return value === BORING_MOBILE_THEME_ID ? BORING_MOBILE_THEME_ID : DEFAULT_MOBILE_THEME_ID;
 }
 
 export function normalizeMobileThemeMode(value: unknown): MobileThemeMode {
