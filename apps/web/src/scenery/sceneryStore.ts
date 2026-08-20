@@ -22,7 +22,7 @@ import seedPoolJson from "./seedPool.json";
 import { makeUnsplashClient, type SceneryPhoto } from "./unsplash";
 
 const SCENERY_STORAGE_KEY = "t3code:scenery:v1";
-const SCENERY_STORAGE_VERSION = 1;
+const SCENERY_STORAGE_VERSION = 2;
 
 /** CDN pre-blur (imgix `blur`), 0–100. 50 is the SurgeCode mobile bake. */
 export const BLUR_RANGE = { lowerBound: 0, upperBound: 100 } as const;
@@ -93,12 +93,15 @@ interface SceneryStoreState {
   blur: number;
   /** Chat ink selection policy (see SceneryInkMode). */
   inkMode: SceneryInkMode;
+  /** Layer the landscape into 2.5D depth cards that follow the pointer. */
+  depthEffects: boolean;
   ensureAssignment: (threadKey: string) => void;
   registerDisplayed: (photo: SceneryPhoto) => void;
   refreshPoolIfStale: () => Promise<void>;
   setTranslucency: (value: number) => void;
   setBlur: (value: number) => void;
   setInkMode: (mode: SceneryInkMode) => void;
+  setDepthEffects: (enabled: boolean) => void;
   removeThread: (threadKey: string) => void;
 }
 
@@ -204,6 +207,7 @@ export const useSceneryStore = create<SceneryStoreState>()(
       translucency: DEFAULT_TRANSLUCENCY,
       blur: DEFAULT_BLUR,
       inkMode: "auto",
+      depthEffects: false,
       ensureAssignment: (threadKey) =>
         set((state) => {
           if (state.assignments[threadKey]) {
@@ -310,6 +314,7 @@ export const useSceneryStore = create<SceneryStoreState>()(
       setTranslucency: (value) => set(() => ({ translucency: clampTranslucency(value) })),
       setBlur: (value) => set(() => ({ blur: clampBlur(value) })),
       setInkMode: (mode) => set(() => ({ inkMode: INK_MODES.has(mode) ? mode : "auto" })),
+      setDepthEffects: (enabled) => set(() => ({ depthEffects: enabled })),
       removeThread: (threadKey) =>
         set((state) => {
           if (!(threadKey in state.assignments)) {
@@ -337,10 +342,15 @@ export const useSceneryStore = create<SceneryStoreState>()(
         translucency: state.translucency,
         blur: state.blur,
         inkMode: state.inkMode,
+        depthEffects: state.depthEffects,
       }),
-      // Placeholder so a future version bump migrates instead of silently
-      // discarding every persisted assignment.
-      migrate: (persisted) => persisted as SceneryStoreState,
+      migrate: (persisted) => {
+        const state = persisted as SceneryStoreState;
+        return {
+          ...state,
+          depthEffects: state.depthEffects === true,
+        };
+      },
     },
   ),
 );
