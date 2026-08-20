@@ -261,5 +261,6 @@ export const makeKimiTextGeneration = Effect.fn("makeKimiTextGeneration")(functi
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateProjectIcon: TextGeneration.unsupportedProjectIconGeneration("Kimi"),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

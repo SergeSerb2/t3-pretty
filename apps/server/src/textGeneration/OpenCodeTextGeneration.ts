@@ -620,5 +620,6 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateProjectIcon: TextGeneration.unsupportedProjectIconGeneration("OpenCode"),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

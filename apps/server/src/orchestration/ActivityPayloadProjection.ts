@@ -62,6 +62,7 @@ function collectChangedFiles(
     return;
   }
 
+  pushChangedFile(target, seen, record.savedPath);
   pushChangedFile(target, seen, record.path);
   pushChangedFile(target, seen, record.filePath);
   pushChangedFile(target, seen, record.relativePath);
@@ -80,6 +81,7 @@ function collectChangedFiles(
     "result",
     "input",
     "data",
+    "locations",
   ]) {
     if (!(nestedKey in record)) {
       continue;

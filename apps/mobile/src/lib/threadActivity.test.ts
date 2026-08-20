@@ -1007,6 +1007,92 @@ describe("buildThreadFeed", () => {
     });
   });
 
+  it("keeps image generation rows visible without a zero-count toggle", () => {
+    const activity = (
+      id: string,
+      createdAt: string,
+      itemType?: ThreadFeedActivity["itemType"],
+    ): ThreadFeedActivity => ({
+      id,
+      createdAt,
+      turnId: null,
+      summary: itemType === "image_generation" ? `Image ${id}` : `Tool ${id}`,
+      detail: null,
+      canExpand: false,
+      getFullDetail: () => null,
+      getCopyText: () => id,
+      icon: itemType === "image_generation" ? "image" : "command",
+      toolLike: true,
+      status: "success",
+      ...(itemType ? { itemType } : {}),
+    });
+
+    const imagesOnly = deriveThreadFeedPresentation(
+      [
+        {
+          type: "activity-group",
+          id: "work-group-images",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          turnId: null,
+          activities: [
+            activity("image-1", "2026-04-01T00:00:01.000Z", "image_generation"),
+            activity("image-2", "2026-04-01T00:00:02.000Z", "image_generation"),
+          ],
+        },
+      ],
+      null,
+      new Set(),
+    );
+    expect(imagesOnly.map((entry) => entry.id)).toEqual(["image-1", "image-2"]);
+
+    const imagesAndTail = deriveThreadFeedPresentation(
+      [
+        {
+          type: "activity-group",
+          id: "work-group-images-tail",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          turnId: null,
+          activities: [
+            activity("image-1", "2026-04-01T00:00:01.000Z", "image_generation"),
+            activity("tool-1", "2026-04-01T00:00:02.000Z"),
+          ],
+        },
+      ],
+      null,
+      new Set(),
+    );
+    expect(imagesAndTail.map((entry) => entry.id)).toEqual(["image-1", "tool-1"]);
+
+    const mixed = deriveThreadFeedPresentation(
+      [
+        {
+          type: "activity-group",
+          id: "work-group-mixed",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          turnId: null,
+          activities: [
+            activity("tool-1", "2026-04-01T00:00:01.000Z"),
+            activity("image-1", "2026-04-01T00:00:02.000Z", "image_generation"),
+            activity("tool-2", "2026-04-01T00:00:03.000Z"),
+            activity("tool-3", "2026-04-01T00:00:04.000Z"),
+          ],
+        },
+      ],
+      null,
+      new Set(),
+    );
+    expect(mixed.map((entry) => entry.id)).toEqual([
+      "image-1",
+      "tool-3",
+      "work-toggle:work-group-mixed",
+    ]);
+    expect(mixed.at(-1)).toMatchObject({
+      type: "work-toggle",
+      hiddenCount: 2,
+      expanded: false,
+    });
+  });
+
   it("keeps the feed identical when only dropped activity kinds stream in", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-dropped-append"),

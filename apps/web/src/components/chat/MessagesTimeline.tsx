@@ -57,6 +57,7 @@ import {
   FrameIcon,
   GlobeIcon,
   HammerIcon,
+  ImageIcon,
   MessageCircleIcon,
   MousePointerClickIcon,
   PackageIcon,
@@ -93,6 +94,7 @@ import {
   TIMELINE_MINIMAP_MIN_ITEMS,
   type TimelineLatestTurn,
 } from "./MessagesTimeline.logic";
+import { GeneratedImageCard, generatedImageWorkEntryPath } from "./GeneratedImageCard";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { ToolCallExpandedBody } from "./ToolCallExpandedBody";
 import {
@@ -1177,6 +1179,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           text={messageText}
           cwd={ctx.markdownCwd}
           threadRef={ctx.threadRef ?? undefined}
+          onImageExpand={ctx.onImageExpand}
           isStreaming={Boolean(row.message.streaming)}
           lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
           skills={ctx.skills}
@@ -2071,6 +2074,7 @@ type WorkEntryIconName =
   | "eye"
   | "globe"
   | "hammer"
+  | "image"
   | "message-circle"
   | "package"
   | "square-pen"
@@ -2093,6 +2097,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <GlobeIcon className={className} aria-hidden />;
     case "hammer":
       return <HammerIcon className={className} aria-hidden />;
+    case "image":
+      return <ImageIcon className={className} aria-hidden />;
     case "message-circle":
       return <MessageCircleIcon className={className} aria-hidden />;
     case "package":
@@ -2188,6 +2194,7 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   }
   if (workEntry.itemType === "web_search") return "globe";
   if (workEntry.itemType === "image_view") return "eye";
+  if (workEntry.itemType === "image_generation") return "image";
 
   switch (workEntry.itemType) {
     case "mcp_tool_call":
@@ -2334,7 +2341,13 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   workspaceRoot: string | undefined;
 }) {
   const { workEntry, workspaceRoot } = props;
+  const ctx = use(TimelineRowCtx);
   const activity = use(TimelineRowActivityCtx);
+  const generatedImagePath = generatedImageWorkEntryPath(workEntry);
+  const generatedImagePending =
+    workEntry.itemType === "image_generation" &&
+    workEntry.toolLifecycleStatus !== "completed" &&
+    workEntry.toolLifecycleStatus !== "failed";
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
@@ -2474,6 +2487,18 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         <AnimatedHeight>
           {expanded ? <ToolCallExpandedBody sections={displaySections} /> : null}
         </AnimatedHeight>
+      ) : null}
+      {workEntry.itemType === "image_generation" ? (
+        <div className="mt-1 mb-2 max-w-xl ps-6">
+          <GeneratedImageCard
+            cwd={ctx.workspaceRoot ?? ctx.markdownCwd}
+            environmentId={ctx.activeThreadEnvironmentId}
+            onExpand={ctx.onImageExpand}
+            path={generatedImagePath}
+            pending={generatedImagePending}
+            threadRef={ctx.threadRef}
+          />
+        </div>
       ) : null}
     </div>
   );

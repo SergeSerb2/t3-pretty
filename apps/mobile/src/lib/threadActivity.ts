@@ -1,4 +1,5 @@
 import { ApprovalRequestId, isToolLifecycleItemType } from "@t3tools/contracts";
+import { extractGeneratedImagePath } from "@t3tools/shared/imageTool";
 import type {
   OrchestrationLatestTurn,
   OrchestrationThread,
@@ -52,6 +53,7 @@ export interface ThreadFeedActivity {
     | "eye"
     | "globe"
     | "hammer"
+    | "image"
     | "message"
     | "package"
     | "warning"
@@ -59,6 +61,9 @@ export interface ThreadFeedActivity {
     | "zap";
   readonly toolLike: boolean;
   readonly status: "success" | "failure" | "neutral" | null;
+  readonly itemType?: ToolLifecycleItemType;
+  readonly generatedImagePath?: string;
+  readonly generatedImagePending?: boolean;
 }
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
@@ -435,6 +440,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       entry.toolData = data.item;
     }
   }
+  if (itemType === "image_generation") {
+    const data = asRecord(payload?.data);
+    if (data !== undefined) {
+      entry.toolData = data;
+    }
+  }
   if (itemType) {
     entry.itemType = itemType;
   }
@@ -660,6 +671,7 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.itemType === "file_change" || (entry.changedFiles?.length ?? 0) > 0) return "edit";
   if (entry.itemType === "web_search") return "globe";
   if (entry.itemType === "image_view") return "eye";
+  if (entry.itemType === "image_generation") return "image";
   if (entry.itemType === "mcp_tool_call") return "wrench";
   if (entry.itemType === "skill_load") return "package";
   if (entry.itemType === "dynamic_tool_call" || entry.itemType === "collab_agent_tool_call") {
@@ -1021,6 +1033,7 @@ function collectChangedFiles(value: unknown, target: string[], seen: Set<string>
     return;
   }
 
+  pushChangedFile(target, seen, record.savedPath);
   pushChangedFile(target, seen, record.path);
   pushChangedFile(target, seen, record.filePath);
   pushChangedFile(target, seen, record.relativePath);
@@ -1039,6 +1052,7 @@ function collectChangedFiles(value: unknown, target: string[], seen: Set<string>
     "patch",
     "patches",
     "operations",
+    "locations",
   ]) {
     if (!(nestedKey in record)) {
       continue;
@@ -1412,7 +1426,16 @@ function appendPresentedFeedEntry(
 
   const groupId = entry.id;
   const expanded = expandedWorkGroupIds.has(groupId);
-  const visibleActivities = expanded ? activities : activities.slice(-MAX_VISIBLE_WORK_LOG_ENTRIES);
+  const overflowCandidates = activities.filter(
+    (activity) => activity.itemType !== "image_generation",
+  );
+  const hiddenActivities = overflowCandidates.slice(0, -MAX_VISIBLE_WORK_LOG_ENTRIES);
+  const hiddenIds = new Set(hiddenActivities.map((activity) => activity.id));
+  const visibleActivities = expanded
+    ? activities
+    : activities.filter(
+        (activity) => activity.itemType === "image_generation" || !hiddenIds.has(activity.id),
+      );
 
   for (const activity of visibleActivities) {
     let single = presentedSingleActivityGroupCache.get(activity);
@@ -1428,6 +1451,9 @@ function appendPresentedFeedEntry(
     }
     result.push(single);
   }
+  if (hiddenActivities.length === 0) {
+    return;
+  }
   let toggle = expanded ? presented.expandedToggle : presented.collapsedToggle;
   if (toggle === undefined) {
     toggle = {
@@ -1436,7 +1462,7 @@ function appendPresentedFeedEntry(
       createdAt: entry.createdAt,
       turnId: entry.turnId,
       groupId,
-      hiddenCount: activities.length - MAX_VISIBLE_WORK_LOG_ENTRIES,
+      hiddenCount: hiddenActivities.length,
       expanded,
       onlyToolActivities: activities.every((activity) => activity.toolLike),
     };
@@ -1747,6 +1773,20 @@ function updateMessageFeedEntryCache(
 function toActivityFeedEntry(entry: DerivedWorkLogEntry): RawThreadFeedEntry {
   const summary = workEntryHeading(entry);
   const detail = workEntryPreview(entry);
+  const generatedImagePath =
+    entry.itemType === "image_generation"
+      ? extractGeneratedImagePath({
+          changedFiles: entry.changedFiles,
+          detail: entry.detail,
+          data: entry.toolData,
+        })
+      : undefined;
+  const status = workEntryStatus(entry);
+  const generatedImagePending =
+    entry.itemType === "image_generation" &&
+    generatedImagePath === undefined &&
+    status !== "success" &&
+    status !== "failure";
   const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry));
   const getCopyText = memoizeValue(() =>
     [summary, detail, getFullDetail()]
@@ -1771,7 +1811,10 @@ function toActivityFeedEntry(entry: DerivedWorkLogEntry): RawThreadFeedEntry {
       getCopyText,
       icon: workEntryIcon(entry),
       toolLike: workLogEntryIsToolLike(entry),
-      status: workEntryStatus(entry),
+      status,
+      ...(entry.itemType ? { itemType: entry.itemType } : {}),
+      ...(generatedImagePath ? { generatedImagePath } : {}),
+      ...(generatedImagePending ? { generatedImagePending: true } : {}),
     },
   };
 }

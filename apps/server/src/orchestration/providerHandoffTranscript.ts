@@ -235,6 +235,10 @@ function describeTool(
       tag = "view";
       subject = fileList ?? title;
       break;
+    case "image_generation":
+      tag = "image";
+      subject = fileList ?? title;
+      break;
     case "skill_load":
       tag = "skill";
       subject = title ?? command ?? fileList;

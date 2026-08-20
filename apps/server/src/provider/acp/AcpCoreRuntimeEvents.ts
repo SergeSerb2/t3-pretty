@@ -12,6 +12,7 @@ import {
   type ToolLifecycleItemType,
   type TurnId,
 } from "@t3tools/contracts";
+import { classifyImageToolItemType } from "@t3tools/shared/imageTool";
 import { classifySkillLoadItemType } from "@t3tools/shared/skillTool";
 
 import type { AcpPermissionRequest, AcpPlanUpdate, AcpToolCallState } from "./AcpRuntimeModel.ts";
@@ -187,7 +188,12 @@ export function makeAcpToolCallEvent(input: {
         classifySkillLoadItemType({
           kind: input.toolCall.kind,
           title: input.toolCall.title,
-        }) ?? canonicalItemTypeFromAcpToolKind(input.toolCall.kind),
+        }) ??
+        classifyImageToolItemType({
+          kind: input.toolCall.kind,
+          title: input.toolCall.title,
+        }) ??
+        canonicalItemTypeFromAcpToolKind(input.toolCall.kind),
       ...(runtimeStatus ? { status: runtimeStatus } : {}),
       ...(input.toolCall.title ? { title: input.toolCall.title } : {}),
       ...(input.toolCall.detail ? { detail: input.toolCall.detail } : {}),

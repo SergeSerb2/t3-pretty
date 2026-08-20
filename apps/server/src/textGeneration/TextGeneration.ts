@@ -79,6 +79,17 @@ export interface ThreadTitleGenerationResult {
   title: string;
 }
 
+export interface ProjectIconGenerationInput {
+  cwd: string;
+  projectTitle: string;
+  outputPath: string;
+  modelSelection: ModelSelection;
+}
+
+export interface ProjectIconGenerationResult {
+  path: string;
+}
+
 export interface TextGenerationService {
   generateCommitMessage(
     input: CommitMessageGenerationInput,
@@ -86,6 +97,7 @@ export interface TextGenerationService {
   generatePrContent(input: PrContentGenerationInput): Promise<PrContentGenerationResult>;
   generateBranchName(input: BranchNameGenerationInput): Promise<BranchNameGenerationResult>;
   generateThreadTitle(input: ThreadTitleGenerationInput): Promise<ThreadTitleGenerationResult>;
+  generateProjectIcon(input: ProjectIconGenerationInput): Promise<ProjectIconGenerationResult>;
 }
 
 /**
@@ -119,8 +131,23 @@ export class TextGeneration extends Context.Service<
     readonly generateThreadTitle: (
       input: ThreadTitleGenerationInput,
     ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
+
+    /** Generate a square project icon and save it to `outputPath`. */
+    readonly generateProjectIcon: (
+      input: ProjectIconGenerationInput,
+    ) => Effect.Effect<ProjectIconGenerationResult, TextGenerationError>;
   }
 >()("t3/textGeneration/TextGeneration") {}
+
+export const unsupportedProjectIconGeneration = (providerLabel: string) =>
+  Effect.fn("unsupportedProjectIconGeneration")(function* (
+    _input: ProjectIconGenerationInput,
+  ): Effect.fn.Return<ProjectIconGenerationResult, TextGenerationError> {
+    return yield* new TextGenerationError({
+      operation: "generateProjectIcon",
+      detail: `${providerLabel} does not generate images.`,
+    });
+  });
 
 /** @deprecated Use `TextGeneration["Service"]`. */
 export type TextGenerationShape = TextGeneration["Service"];
@@ -129,7 +156,8 @@ type TextGenerationOp =
   | "generateCommitMessage"
   | "generatePrContent"
   | "generateBranchName"
-  | "generateThreadTitle";
+  | "generateThreadTitle"
+  | "generateProjectIcon";
 
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
@@ -168,6 +196,10 @@ export const makeTextGenerationFromRegistry = (
     generateThreadTitle: (input) =>
       resolveInstance(registry, "generateThreadTitle", input.modelSelection.instanceId).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generateThreadTitle(input)),
+      ),
+    generateProjectIcon: (input) =>
+      resolveInstance(registry, "generateProjectIcon", input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.generateProjectIcon(input)),
       ),
   });
 

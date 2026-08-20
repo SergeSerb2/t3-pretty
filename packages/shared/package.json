@@ -95,6 +95,10 @@
       "types": "./src/toolActivity.ts",
       "import": "./src/toolActivity.ts"
     },
+    "./imageTool": {
+      "types": "./src/imageTool.ts",
+      "import": "./src/imageTool.ts"
+    },
     "./Struct": {
       "types": "./src/Struct.ts",
       "import": "./src/Struct.ts"

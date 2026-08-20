@@ -421,6 +421,25 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
     ),
   );
 
+  it.effect("runs project icon generation with a writable sandbox", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({
+          path: "/tmp/icon.png",
+        }),
+        requireArg: "workspace-write",
+        forbidArg: "read-only",
+      },
+      (textGeneration) =>
+        textGeneration.generateProjectIcon({
+          cwd: process.cwd(),
+          projectTitle: "T3 Pretty",
+          outputPath: "/tmp/icon.png",
+          modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+        }),
+    ),
+  );
+
   it.effect("falls back when thread title normalization becomes whitespace-only", () =>
     withFakeCodexEnv(
       {

@@ -40,6 +40,9 @@ are owned by a plugin or a repo, so T3 Code leaves them alone.
   one you turned off in settings. Thread picks stack on top of the global set and apply
   from the next turn.
 
+Grok and Codex can generate images (Grok Imagine, Codex imagegen). When an agent creates an
+image, T3 Code shows it in the thread as it finishes.
+
 When a turn starts with skills attached (from Settings, the thread picker, or a `$skill` mention
 in the prompt), T3 Code sends each skill's instructions along with your message, so the agent
 has them without having to look them up. The thread log shows a **Skill** row for each one, the

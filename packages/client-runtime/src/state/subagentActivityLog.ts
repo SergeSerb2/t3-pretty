@@ -173,6 +173,8 @@ function completedToolSummary(
       return "Searched web";
     case "image_view":
       return "Viewed image";
+    case "image_generation":
+      return "Generated image";
     case "mcp_tool_call":
       return "Called integration";
     case "skill_load":

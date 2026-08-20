@@ -492,6 +492,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
         ? ["Project Grouping"]
         : []),
+      ...(settings.autoGenerateProjectIcons !== DEFAULT_UNIFIED_SETTINGS.autoGenerateProjectIcons
+        ? ["Auto-generate project icons"]
+        : []),
       ...(settings.sidebarAutoSettleAfterDays !==
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
         ? ["Auto-settle inactive threads"]
@@ -543,6 +546,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.browserDefaultAppearance,
       settings.browserAutoShowFloatingPreview,
       settings.enableAgentBrowserAccess,
+      settings.autoGenerateProjectIcons,
       settings.confirmQuit,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
@@ -673,6 +677,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       // name, so a user restoring defaults is told the agent regains access
       // rather than discovering it later.
       enableAgentBrowserAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess,
+      autoGenerateProjectIcons: DEFAULT_UNIFIED_SETTINGS.autoGenerateProjectIcons,
     });
     onRestored?.();
   }, [
@@ -1833,6 +1838,33 @@ export function GeneralSettingsPanel() {
                 });
               }}
               aria-label="Project grouping"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("auto-generate-project-icons")}
+          description="Grok or Codex generates an icon for new projects and for existing projects that do not already have a stored icon."
+          resetAction={
+            settings.autoGenerateProjectIcons !==
+            DEFAULT_UNIFIED_SETTINGS.autoGenerateProjectIcons ? (
+              <SettingResetButton
+                label="auto-generate project icons"
+                onClick={() =>
+                  updateSettings({
+                    autoGenerateProjectIcons: DEFAULT_UNIFIED_SETTINGS.autoGenerateProjectIcons,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.autoGenerateProjectIcons}
+              onCheckedChange={(checked) =>
+                updateSettings({ autoGenerateProjectIcons: Boolean(checked) })
+              }
+              aria-label="Auto-generate project icons"
             />
           }
         />
