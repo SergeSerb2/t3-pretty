@@ -18,7 +18,7 @@ import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
 } from "@t3tools/client-runtime/state/threads";
-import { Platform, ScrollView, View } from "react-native";
+import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
 import { useEnvironmentQuery } from "../../state/query";
@@ -582,9 +582,15 @@ function ThreadRouteContent(
   }, [navigation]);
   const handleSettleThread = useCallback(() => {
     if (selectedThread === null) return;
-    void settleThread(selectedThread).then((settled) => {
-      if (settled) dismissToThreadList();
-    });
+    void (async () => {
+      try {
+        if (await settleThread(selectedThread)) dismissToThreadList();
+      } catch {
+        // Handled failures alert inside settleThread; an unexpected rejection
+        // must not surface as an unhandled promise.
+        Alert.alert("Could not settle thread", "The thread could not be settled.");
+      }
+    })();
   }, [selectedThread, settleThread, dismissToThreadList]);
   const handleUnsettleThread = useCallback(() => {
     if (selectedThread === null) return;
@@ -593,9 +599,15 @@ function ThreadRouteContent(
   const handleSnoozeThread = useCallback(
     (snoozedUntil: string) => {
       if (selectedThread === null) return;
-      void snoozeThread(selectedThread, snoozedUntil).then((snoozed) => {
-        if (snoozed) dismissToThreadList();
-      });
+      void (async () => {
+        try {
+          if (await snoozeThread(selectedThread, snoozedUntil)) dismissToThreadList();
+        } catch {
+          // Handled failures alert inside snoozeThread; an unexpected rejection
+          // must not surface as an unhandled promise.
+          Alert.alert("Could not snooze thread", "The thread could not be snoozed.");
+        }
+      })();
     },
     [selectedThread, snoozeThread, dismissToThreadList],
   );
