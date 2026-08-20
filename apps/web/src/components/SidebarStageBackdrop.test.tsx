@@ -19,7 +19,8 @@ describe("SidebarStageBackdrop", () => {
 
   it("resolves supported environment pill labels", () => {
     expect(resolveEnvironmentIdentificationPillLabel("Dev")).toBe("Dev");
-    expect(resolveEnvironmentIdentificationPillLabel("nightly")).toBe("Nightly");
+    expect(resolveEnvironmentIdentificationPillLabel("nightly")).toBeNull();
+    expect(resolveEnvironmentIdentificationPillLabel("Nightly")).toBeNull();
     expect(resolveEnvironmentIdentificationPillLabel("Latest")).toBeNull();
     expect(resolveEnvironmentIdentificationPillLabel("Alpha")).toBeNull();
   });

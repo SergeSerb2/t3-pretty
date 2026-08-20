@@ -17,8 +17,8 @@ the landscape photo. Solid rows return if scenery is off or iOS Reduce Transpare
 ## Environment artwork
 
 Dev and Nightly environments can identify themselves with artwork at the top of the sidebar and in
-the send button. Choose **Artwork**, **Version pill**, or **None** in Settings under environment
-identification. Artwork is recolored to match World Scenery.
+the send button. Dev can also show a version pill. Choose **Artwork**, **Version pill**, or
+**None** in Settings under environment identification. Artwork is recolored to match World Scenery.
 
 To generate a fresh title from the conversation, open a thread's context menu and choose
 **Regenerate title**. While T3 Code is generating it, the action reads **Regenerating…** and cannot
