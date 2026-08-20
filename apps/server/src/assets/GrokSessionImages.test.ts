@@ -35,9 +35,11 @@ describe("GrokSessionImages", () => {
     expect(grokSessionIdFromResumeCursor({ schemaVersion: 1, sessionId: "session-1" })).toBe(
       "session-1",
     );
-    expect(
-      grokSessionIdFromResumeCursor({ schemaVersion: 2, sessionId: "session-1" }),
-    ).toBeUndefined();
+    expect(grokSessionIdFromResumeCursor({ schemaVersion: 2, sessionId: "session-1" })).toBe(
+      "session-1",
+    );
+    expect(grokSessionIdFromResumeCursor({ sessionId: "session-1" })).toBe("session-1");
+    expect(grokSessionIdFromResumeCursor({ schemaVersion: 1, sessionId: "  " })).toBeUndefined();
     expect(grokSessionIdFromResumeCursor(null)).toBeUndefined();
   });
 
@@ -56,6 +58,7 @@ describe("GrokSessionImages", () => {
         sessionId: "session-1",
       });
 
+      const path = yield* Path.Path;
       const resolved = yield* resolveGrokSessionImageFile({
         homeDir,
         workspaceRoot,
@@ -63,6 +66,7 @@ describe("GrokSessionImages", () => {
         grokSessionId: "session-1",
       });
       expect(resolved?.file).toBe(imagePath);
+      expect(resolved?.allowedRoot).toBe(path.dirname(imagePath));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -81,12 +85,14 @@ describe("GrokSessionImages", () => {
         sessionId: "session-1",
       });
 
+      const path = yield* Path.Path;
       const resolved = yield* resolveGrokSessionImageFile({
         homeDir,
         workspaceRoot,
         requestedPath: imagePath,
       });
       expect(resolved?.file).toBe(imagePath);
+      expect(resolved?.allowedRoot).toBe(path.dirname(imagePath));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -152,6 +158,36 @@ describe("GrokSessionImages", () => {
         grokSessionId: "session-old",
       });
       expect(resolved?.file).toBe(olderImagePath);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("does not pick another session's image when the session id is missing", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const homeDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-grok-image-missing-home-",
+      });
+      const workspaceRoot = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-grok-image-missing-workspace-",
+      });
+      yield* writeSessionImage({
+        homeDir,
+        workspaceRoot,
+        sessionId: "session-old",
+      });
+      yield* writeSessionImage({
+        homeDir,
+        workspaceRoot,
+        sessionId: "session-new",
+      });
+
+      expect(
+        yield* resolveGrokSessionImageFile({
+          homeDir,
+          workspaceRoot,
+          requestedPath: "images/1.jpg",
+        }),
+      ).toBeNull();
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

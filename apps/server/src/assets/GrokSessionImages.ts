@@ -24,7 +24,7 @@ export function grokSessionIdFromResumeCursor(cursor: unknown): string | undefin
     return undefined;
   }
   const record = cursor as Record<string, unknown>;
-  if (record.schemaVersion !== 1 || typeof record.sessionId !== "string") {
+  if (typeof record.sessionId !== "string") {
     return undefined;
   }
   const sessionId = record.sessionId.trim();
@@ -66,8 +66,24 @@ function isInsideRoot(root: string, candidate: string, path: Path.Path): boolean
   return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
-function mtimeMs(info: { readonly mtime: Option.Option<Date> }): number {
-  return Option.isSome(info.mtime) ? info.mtime.value.getTime() : 0;
+function sessionImagesDirectory(
+  sessionRoot: string,
+  filePath: string,
+  path: Path.Path,
+): string | null {
+  const relative = path.relative(sessionRoot, filePath).replaceAll("\\", "/");
+  if (relative === "" || relative.startsWith("../") || path.isAbsolute(relative)) {
+    return null;
+  }
+  const slash = relative.indexOf("/");
+  if (slash <= 0) {
+    return null;
+  }
+  const rest = relative.slice(slash + 1);
+  if (!hasSessionImagesPrefix(rest)) {
+    return null;
+  }
+  return path.dirname(filePath);
 }
 
 function isSafeSessionId(sessionId: string): boolean {
@@ -106,14 +122,14 @@ export const resolveGrokSessionImageFile = Effect.fn("GrokSessionImages.resolve"
     }
 
     const resolveExistingImage = Effect.fn("GrokSessionImages.resolveExistingImage")(function* (
-      allowedRoot: string,
+      sessionRoot: string,
       candidatePath: string,
     ) {
       if (!isWorkspaceImagePreviewPath(candidatePath)) {
         return null;
       }
       const [canonicalRoot, canonicalFile] = yield* Effect.all([
-        optionOnNotFound(fileSystem.realPath(allowedRoot)),
+        optionOnNotFound(fileSystem.realPath(sessionRoot)),
         optionOnNotFound(fileSystem.realPath(candidatePath)),
       ]);
       if (Option.isNone(canonicalRoot) || Option.isNone(canonicalFile)) {
@@ -122,12 +138,16 @@ export const resolveGrokSessionImageFile = Effect.fn("GrokSessionImages.resolve"
       if (!isInsideRoot(canonicalRoot.value, canonicalFile.value, path)) {
         return null;
       }
+      const allowedRoot = sessionImagesDirectory(canonicalRoot.value, canonicalFile.value, path);
+      if (allowedRoot === null) {
+        return null;
+      }
       const info = yield* optionOnNotFound(fileSystem.stat(canonicalFile.value));
       if (Option.isNone(info) || info.value.type !== "File") {
         return null;
       }
       return {
-        allowedRoot: canonicalRoot.value,
+        allowedRoot,
         file: canonicalFile.value,
       } satisfies ResolvedGrokSessionImage;
     });
@@ -142,45 +162,23 @@ export const resolveGrokSessionImageFile = Effect.fn("GrokSessionImages.resolve"
       return null;
     }
 
-    if (isUnsafeRelativePath(input.requestedPath, path)) {
+    if (
+      isUnsafeRelativePath(input.requestedPath, path) ||
+      !hasSessionImagesPrefix(input.requestedPath)
+    ) {
       return null;
     }
-    if (!hasSessionImagesPrefix(input.requestedPath)) {
+    if (input.grokSessionId === undefined || !isSafeSessionId(input.grokSessionId)) {
       return null;
     }
 
-    const matches: Array<ResolvedGrokSessionImage & { readonly mtime: number }> = [];
     for (const sessionRoot of sessionRoots) {
-      const sessionIds =
-        input.grokSessionId !== undefined && isSafeSessionId(input.grokSessionId)
-          ? [input.grokSessionId]
-          : yield* optionOnNotFound(fileSystem.readDirectory(sessionRoot)).pipe(
-              Effect.map((entries) => Option.getOrElse(entries, () => [] as string[])),
-            );
-      for (const sessionId of sessionIds) {
-        if (!isSafeSessionId(sessionId) || sessionId.includes("\0")) {
-          continue;
-        }
-        const candidatePath = path.join(sessionRoot, sessionId, input.requestedPath);
-        const resolved = yield* resolveExistingImage(sessionRoot, candidatePath);
-        if (!resolved) {
-          continue;
-        }
-        if (input.grokSessionId !== undefined) {
-          return resolved;
-        }
-        const info = yield* optionOnNotFound(fileSystem.stat(resolved.file));
-        matches.push({
-          ...resolved,
-          mtime: Option.isSome(info) ? mtimeMs(info.value) : 0,
-        });
+      const candidatePath = path.join(sessionRoot, input.grokSessionId, input.requestedPath);
+      const resolved = yield* resolveExistingImage(sessionRoot, candidatePath);
+      if (resolved) {
+        return resolved;
       }
     }
-    if (matches.length === 0) {
-      return null;
-    }
-    matches.sort((left, right) => right.mtime - left.mtime);
-    const newest = matches[0];
-    return newest ? { allowedRoot: newest.allowedRoot, file: newest.file } : null;
+    return null;
   },
 );

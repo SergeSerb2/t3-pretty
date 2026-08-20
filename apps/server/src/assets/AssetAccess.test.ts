@@ -191,6 +191,43 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("does not issue a Grok session URL without a session id", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const homeDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-grok-noid-home-",
+      });
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-grok-noid-workspace-",
+      });
+      const sessionDir = path.join(
+        homeDir,
+        ".grok",
+        "sessions",
+        encodeURIComponent(root),
+        "session-1",
+        "images",
+      );
+      yield* fileSystem.makeDirectory(sessionDir, { recursive: true });
+      yield* fileSystem.writeFile(
+        path.join(sessionDir, "1.jpg"),
+        new Uint8Array([137, 80, 78, 71]),
+      );
+
+      const error = yield* issueAssetUrl({
+        resource: {
+          _tag: "workspace-file",
+          threadId: ThreadId.make("thread-1"),
+          path: "images/1.jpg",
+        },
+        workspaceRoot: root,
+        homeDir,
+      }).pipe(Effect.flip);
+      expect(error._tag).toBe("AssetWorkspaceAssetNotFoundError");
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("rejects workspace files outside the authorized root", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
