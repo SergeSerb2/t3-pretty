@@ -246,6 +246,7 @@ describe("buildProjectIconPrompt", () => {
     expect(result.prompt).toContain("T3 Pretty");
     expect(result.prompt).toContain("/tmp/icon.png");
     expect(result.prompt).toContain("image generation");
+    expect(result.prompt).toContain("do not write any other files");
   });
 });
 
