@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { orderedListGutterStyle } from "./ChatMarkdown";
+import { extractMarkdownFileLinkCandidates, orderedListGutterStyle } from "./ChatMarkdown";
 import chatMarkdownSource from "./ChatMarkdown.tsx?raw";
 
 describe("orderedListGutterStyle", () => {
@@ -36,12 +36,52 @@ describe("orderedListGutterStyle", () => {
   });
 });
 
+describe("extractMarkdownFileLinkCandidates", () => {
+  it("collects mixed candidates in one pass without linking fenced inline code", () => {
+    const candidates = extractMarkdownFileLinkCandidates(
+      [
+        "[doc](/outside.md) and `src/a.ts:1`",
+        "[`src/in-label.ts`](./target.md)",
+        "`[nested](./nested.md)`",
+        "```md",
+        "[fenced](./fenced.md) and `ignored.ts`",
+        "```",
+      ].join("\n"),
+    );
+
+    expect(candidates).toEqual({
+      hrefs: ["/outside.md", "./target.md", "./nested.md", "./fenced.md"],
+      inlineCodeSpans: ["src/a.ts:1", "src/in-label.ts", "[nested](./nested.md)"],
+    });
+  });
+
+  it("treats an unclosed fence as fenced through the end", () => {
+    expect(
+      extractMarkdownFileLinkCandidates(
+        "`src/before.ts`\n```md\n[fenced](./inside.md) and `ignored.ts`",
+      ),
+    ).toEqual({
+      hrefs: ["./inside.md"],
+      inlineCodeSpans: ["src/before.ts"],
+    });
+  });
+});
+
 describe("streaming markdown stability", () => {
   it("reads per-delta text and link maps through refs", () => {
     expect(chatMarkdownSource).toContain("renderedTextRef.current");
     expect(chatMarkdownSource).toContain("markdownFileLinkMetaByHrefRef.current");
     expect(chatMarkdownSource).toContain("inlineCodeFileLinkMetaByTextRef.current");
     expect(chatMarkdownSource).toContain("fileLinkParentSuffixByPathRef.current");
+  });
+
+  it("caches negative inline-code file-link resolutions", () => {
+    expect(chatMarkdownSource).toContain(
+      "metaByText.set(span, resolveInlineCodeFileLinkMeta(span, cwd))",
+    );
+    expect(chatMarkdownSource).not.toContain(
+      "inlineCodeFileLinkMetaByTextRef.current.get(codeText.trim()) ??",
+    );
   });
 
   it("renders fenced code as plain text while streaming", () => {

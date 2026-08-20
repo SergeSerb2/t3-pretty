@@ -535,12 +535,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const hostPlatform = yield* HostProcessPlatform;
   const path = yield* Path.Path;
   const parentScope = yield* Scope.Scope;
+  const clock = yield* Clock.Clock;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
   const resolvedArtifactDirectory = path.resolve(artifactDirectory);
   const annotationThemeRef = yield* Ref.make(DEFAULT_ANNOTATION_THEME);
   const mainWindowRef = yield* Ref.make<Option.Option<BrowserWindow>>(Option.none());
   const tabsRef = yield* SynchronizedRef.make<ReadonlyMap<string, PreviewTabState>>(new Map());
+  // Reverse index for compositor events; validate against tabsRef because guest
+  // replacement and close commit independently of this small index.
+  const tabIdByWebContentsId = new Map<number, string>();
   const attachedRef = yield* Ref.make<ReadonlyMap<number, ManagedListeners>>(new Map());
   const listenersRef = yield* Ref.make<ReadonlySet<Listener>>(new Set());
   const pointerEventListenersRef = yield* Ref.make<ReadonlySet<PointerEventListener>>(new Set());
@@ -594,6 +598,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     });
   const currentIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const currentMillis = Clock.currentTimeMillis;
+  const currentIsoUnsafe = () =>
+    DateTime.formatIso(DateTime.makeUnsafe(clock.currentTimeMillisUnsafe()));
   const encodeJson = (errorContext: PreviewOperationContext, value: unknown) =>
     encodeUnknownJson(value).pipe(
       Effect.mapError((cause) => new PreviewOperationError({ ...errorContext, cause })),
@@ -907,9 +913,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const tabIdForWebContents = Effect.fnUntraced(function* (webContentsId: number) {
     const tabs = yield* SynchronizedRef.get(tabsRef);
-    return (
-      Array.from(tabs.entries()).find(([, tab]) => tab.webContentsId === webContentsId)?.[0] ?? null
-    );
+    const tabId = tabIdByWebContentsId.get(webContentsId);
+    return tabId !== undefined && tabs.get(tabId)?.webContentsId === webContentsId ? tabId : null;
   });
 
   const pushBounded = <A>(buffer: Array<A>, entry: A): void => {
@@ -921,7 +926,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     current: BrowserDiagnostics,
     method: string,
     params: Record<string, unknown>,
-    timestamp: string,
   ): void => {
     const requestId = typeof params["requestId"] === "string" ? params["requestId"] : null;
     if (method === "Runtime.consoleAPICalled") {
@@ -936,7 +940,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       pushBounded(current.consoleEntries, {
         level: typeof params["type"] === "string" ? params["type"] : "log",
         text,
-        timestamp,
+        timestamp: currentIsoUnsafe(),
         source: "console",
       });
       return;
@@ -949,7 +953,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       pushBounded(current.consoleEntries, {
         level: "error",
         text: String(details["text"] ?? "Uncaught exception"),
-        timestamp,
+        timestamp: currentIsoUnsafe(),
         source: "exception",
       });
       return;
@@ -962,7 +966,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       pushBounded(current.consoleEntries, {
         level: typeof entry["level"] === "string" ? entry["level"] : "info",
         text: String(entry["text"] ?? ""),
-        timestamp,
+        timestamp: currentIsoUnsafe(),
         source: typeof entry["source"] === "string" ? entry["source"] : "log",
       });
       return;
@@ -993,7 +997,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           : {};
       const status = typeof response["status"] === "number" ? response["status"] : null;
       if (request && status !== null && status >= 400) {
-        pushBounded(current.networkEntries, { ...request, status, failed: true, timestamp });
+        pushBounded(current.networkEntries, {
+          ...request,
+          status,
+          failed: true,
+          timestamp: currentIsoUnsafe(),
+        });
       }
       return;
     }
@@ -1006,7 +1015,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           status: null,
           failed: true,
           errorText: String(params["errorText"] ?? "Network request failed"),
-          timestamp,
+          timestamp: currentIsoUnsafe(),
         });
       }
       return;
@@ -1112,11 +1121,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             }
             const current = diagnostics.get(wc.id);
             if (!current) return;
-            runFork(
-              Effect.map(currentIso, (timestamp) =>
-                recordDiagnosticMessage(current, method, params, timestamp),
-              ),
-            );
+            recordDiagnosticMessage(current, method, params);
           };
           yield* Scope.addFinalizer(
             scope,
@@ -1892,6 +1897,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     if (Option.isNone(tab)) return;
     const closedTab = tab.value;
     if (closedTab.webContentsId != null) {
+      tabIdByWebContentsId.delete(closedTab.webContentsId);
       yield* Effect.all(
         [detachControlSession(closedTab.webContentsId), detachListeners(closedTab.webContentsId)],
         { concurrency: 2, discard: true },
@@ -2054,6 +2060,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       });
       return yield* new PreviewTabNotFoundError({ tabId });
     }
+    if (replacedWebContentsId !== null) tabIdByWebContentsId.delete(replacedWebContentsId);
+    tabIdByWebContentsId.set(webContentsId, tabId);
     const { state: registered, pendingUrl } = registration.value;
     // A zoom or mute action that landed while this attach was in flight
     // addressed the guest this one replaced, so settle the new guest on the
@@ -2185,7 +2193,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               }),
             ] as const;
           });
-          if (Option.isSome(detached)) yield* emitIfCurrent(tabId, detached.value);
+          if (Option.isSome(detached)) {
+            tabIdByWebContentsId.delete(webContentsId);
+            yield* emitIfCurrent(tabId, detached.value);
+          }
         }),
       );
       return;

@@ -1,6 +1,6 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
-import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
   NativeHeaderToolbar,
   NativeStackScreenOptions,
@@ -342,6 +342,7 @@ type ReviewSheetProps = StaticScreenProps<{
 
 export function ReviewSheet(props: ReviewSheetProps) {
   const isAndroid = Platform.OS === "android";
+  const isFocused = useIsFocused();
   const { nativeReviewDiffStyle } = useAppearanceCodeSurface();
   useAdaptiveWorkspacePaneRole("inspector");
   const { panes, showAuxiliaryPane, toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
@@ -388,6 +389,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
       reviewCache,
     });
   useReviewDiffPrewarming({
+    enabled: isFocused,
     threadKey: reviewCache.threadKey,
     sections: reviewSections,
     selectedSectionId: selectedSection?.id ?? null,
