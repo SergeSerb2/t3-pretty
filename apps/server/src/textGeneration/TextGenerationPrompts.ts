@@ -328,7 +328,7 @@ export function buildProjectIconPrompt(input: {
     "Style: simple, distinctive, readable at 32px, no tiny text.",
     "Use image generation (imagegen / Imagine / GPT image).",
     `Save a PNG to this exact path and do not write any other files: ${input.outputPath}`,
-    `When done, reply with JSON only: {"path":"${input.outputPath}"}`,
+    `After the PNG exists on disk, reply with JSON only: {"path":"${input.outputPath}"}`,
   ].join("\n");
   const outputSchema = Schema.Struct({
     path: Schema.String,

@@ -89,7 +89,7 @@ function WorkspaceGeneratedImage(props: {
     return <GeneratedImagePlaceholder label="Unable to load generated image." />;
   }
   if (assetUrl._tag !== "Success") {
-    return <GeneratedImagePlaceholder label="Generating image…" />;
+    return <GeneratedImagePlaceholder label="Loading image…" />;
   }
 
   return (
