@@ -38,7 +38,8 @@ const { completeWidgetInfoPlist, useSourceInfoPlistFile } = require("./lib/widge
 const TARGET_NAME = "ExpoWidgetsTarget";
 const CATALOG_NAME = "Assets.xcassets";
 const IMAGE_SET = "T3Mark.imageset";
-// Single-channel template glyph (`assets/pretty/kit/mark-black.png`, 480×351).
+// Committed next to this plugin at assets/widget/T3Mark.png — a copy of the
+// brand kit's black template glyph (assets/pretty/kit/mark-black.png, 480×351).
 // AgentActivity tints it via foregroundStyle, so the imageset must stay a
 // template — a full-color or vector-wrapped raster asset would not recolor.
 const PNG_NAME = "T3Mark.png";
