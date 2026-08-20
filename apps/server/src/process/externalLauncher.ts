@@ -17,6 +17,7 @@ import {
   type EditorId,
   type LaunchEditorInput,
 } from "@t3tools/contracts";
+import { resolveEditorExecutable } from "@t3tools/shared/editorLaunch";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { isCommandAvailable, resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Clock from "effect/Clock";
@@ -106,6 +107,9 @@ const CommandLookupEnvConfig = Config.all({
   Path: Config.string("Path").pipe(Config.option),
   path: Config.string("path").pipe(Config.option),
   PATHEXT: Config.string("PATHEXT").pipe(Config.option),
+  HOME: Config.string("HOME").pipe(Config.option),
+  USERPROFILE: Config.string("USERPROFILE").pipe(Config.option),
+  LOCALAPPDATA: Config.string("LOCALAPPDATA").pipe(Config.option),
 }).pipe(Config.map(compactEnv));
 
 const readBrowserLaunchEnv = BrowserLaunchEnvConfig.pipe(Effect.orElseSucceed(() => ({})));
@@ -158,18 +162,6 @@ function resolveEditorArgs(
   const baseArgs = "baseArgs" in editor ? editor.baseArgs : [];
   return [...baseArgs, ...resolveCommandEditorArgs(editor, target)];
 }
-
-const resolveAvailableCommand = Effect.fn("externalLauncher.resolveAvailableCommand")(function* (
-  commands: ReadonlyArray<string>,
-  env: NodeJS.ProcessEnv,
-): Effect.fn.Return<Option.Option<string>, never, FileSystem.FileSystem | Path.Path> {
-  for (const command of commands) {
-    if (yield* isCommandAvailable(command, { env })) {
-      return Option.some(command);
-    }
-  }
-  return Option.none();
-});
 
 function encodeUtf16LeBase64(input: string): string {
   const bytes = new Uint8Array(input.length * 2);
@@ -277,7 +269,12 @@ const buildAvailableEditors = Effect.fn("externalLauncher.buildAvailableEditors"
       continue;
     }
 
-    const command = yield* resolveAvailableCommand(editor.commands, env);
+    const command = yield* resolveEditorExecutable({
+      editorId: editor.id,
+      commands: editor.commands,
+      platform,
+      env,
+    });
     if (Option.isSome(command)) {
       available.push(editor.id);
     }
@@ -360,14 +357,22 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
   }
 
   if (editorDef.commands) {
-    const command = Option.getOrElse(
-      yield* resolveAvailableCommand(editorDef.commands, env),
-      () => editorDef.commands[0],
-    );
+    const command = yield* resolveEditorExecutable({
+      editorId: editorDef.id,
+      commands: editorDef.commands,
+      platform,
+      env,
+    });
+    if (Option.isNone(command)) {
+      return yield* new ExternalLauncherCommandNotFoundError({
+        editor: editorDef.id,
+        command: editorDef.commands[0],
+      });
+    }
     return {
       editor: editorDef.id,
       target: input.cwd,
-      command,
+      command: command.value,
       args: resolveEditorArgs(editorDef, input.cwd),
     };
   }
