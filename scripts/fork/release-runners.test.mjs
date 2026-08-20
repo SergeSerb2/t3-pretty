@@ -173,7 +173,10 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
     assert.notInclude(mobileRelease, '"$MODE" == "build" || "$MODE" == "release"');
     assert.include(mobileRelease, ".t3-fork/ios-native-submit");
-    assert.include(mobileRelease, "No native macos-release TestFlight submit recorded");
+    assert.include(mobileRelease, "xcode_is_store_supported");
+    assert.include(mobileRelease, "This is not App Store review");
+    assert.include(mobileRelease, "Skipping a new IPA");
+    assert.notInclude(mobileRelease, "No native macos-release TestFlight submit recorded");
     assert.notInclude(mobileRelease, "t3_require_ota");
     assert.notInclude(mobileRelease, "t3-ota-present");
     assert.notInclude(mobileRelease, "keeping importer tree");
