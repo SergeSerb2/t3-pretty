@@ -32,9 +32,6 @@ const mobileEndorsementRows = [
       <span class="hero-float-mark hf-codex" title="Codex">
         <img src="/harnesses/openai_dark.svg" alt="" />
       </span>
-      <span class="hero-float-mark hf-opencode" title="OpenCode">
-        <img src="/harnesses/opencode-dark.svg" alt="" />
-      </span>
       <span class="hero-float-mark hf-cursor" title="Cursor">
         <img src="/harnesses/cursor_light.svg" alt="" />
       </span>
@@ -52,7 +49,7 @@ const mobileEndorsementRows = [
       </h1>
 
       <p class="hero-sub">
-        Orchestrate Claude Code, Codex, OpenCode, Cursor, Grok, and Kimi from one surface.
+        Orchestrate Claude Code, Codex, Cursor, Grok, and Kimi from one surface.
         Bring your own subscription. Fork the whole thing.
       </p>
 
@@ -189,7 +186,7 @@ const mobileEndorsementRows = [
       <div class="section-head">
         <h2>Bring your own sub</h2>
         <p>
-          T3 Code doesn't resell tokens. Plug in Claude Code, Codex, OpenCode,
+          T3 Code doesn't resell tokens. Plug in Claude Code, Codex,
           Cursor, Grok, or Kimi with the credentials you already have — we orchestrate
           them, you keep your plan.
         </p>
@@ -208,13 +205,6 @@ const mobileEndorsementRows = [
           <div class="harness-meta">
             <div class="harness-name">Codex CLI</div>
             <div class="harness-tag">codex login</div>
-          </div>
-        </div>
-        <div class="harness">
-          <div class="harness-mark"><img src="/harnesses/opencode-dark.svg" alt="" /></div>
-          <div class="harness-meta">
-            <div class="harness-name">OpenCode</div>
-            <div class="harness-tag">opencode auth</div>
           </div>
         </div>
         <div class="harness">
@@ -668,7 +658,6 @@ const mobileEndorsementRows = [
 
   .hero-float-mark.hf-claude   { background: radial-gradient(circle at 30% 25%, rgba(217, 119, 87, 0.22), rgba(20, 20, 24, 0.92) 65%); top: 8%;  left: 7%;  animation-delay: 0s;    transform: rotate(-8deg); }
   .hero-float-mark.hf-codex    { background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.08), rgba(20, 20, 24, 0.92) 65%); top: 6%;  right: 7%; animation-delay: -2.5s; transform: rotate(6deg); }
-  .hero-float-mark.hf-opencode { background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.06), rgba(20, 20, 24, 0.92) 65%); top: 30%; left: 5%;  animation-delay: -5s;   transform: rotate(4deg); }
   .hero-float-mark.hf-cursor   { background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.08), rgba(20, 20, 24, 0.92) 65%); top: 30%; right: 5%; animation-delay: -7s;   transform: rotate(-5deg); }
   .hero-float-mark.hf-grok     { background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.08), rgba(20, 20, 24, 0.92) 65%); top: 52%; left: 6%;  animation-delay: -1.2s; transform: rotate(3deg); }
   .hero-float-mark.hf-kimi     { background: radial-gradient(circle at 30% 25%, rgba(86, 168, 255, 0.14), rgba(20, 20, 24, 0.92) 65%); top: 52%; right: 6%; animation-delay: -3.8s; transform: rotate(-4deg); }
@@ -678,7 +667,6 @@ const mobileEndorsementRows = [
     .hero-float-mark img { width: 42px; height: 42px; }
     .hero-float-mark.hf-claude   { top: 4%;  left: 3%; }
     .hero-float-mark.hf-codex    { top: 2%;  right: 3%; }
-    .hero-float-mark.hf-opencode { top: 26%; left: 2%; }
     .hero-float-mark.hf-cursor   { top: 24%; right: 2%; }
     .hero-float-mark.hf-grok     { top: 48%; left: 2%;  transform: rotate(3deg); }
     .hero-float-mark.hf-kimi     { top: 48%; right: 2%; transform: rotate(-4deg); }
@@ -716,7 +704,7 @@ const mobileEndorsementRows = [
       height: 44px;
     }
 
-    /* Three above the headline, Kimi beside the copy, and two beside the CTA — keeps the center clear. */
+    /* Three above the headline, Kimi beside the copy, and Cursor beside the CTA — keeps the center clear. */
     .hero-float-mark.hf-claude {
       top: 44px;
       left: 10px;
@@ -735,13 +723,6 @@ const mobileEndorsementRows = [
       right: 4px;
       left: auto;
       transform: rotate(4deg);
-    }
-
-    .hero-float-mark.hf-opencode {
-      top: 474px;
-      left: 4px;
-      right: auto;
-      transform: rotate(-6deg);
     }
 
     .hero-float-mark.hf-codex {
@@ -776,25 +757,16 @@ const mobileEndorsementRows = [
       border-radius: 14px;
     }
 
-    .hero-float-mark.hf-opencode,
     .hero-float-mark.hf-cursor {
       top: 580px;
+      right: 0;
       width: 52px;
       height: 52px;
       border-radius: 14px;
     }
 
-    .hero-float-mark.hf-opencode {
-      left: 0;
-    }
-
-    .hero-float-mark.hf-cursor {
-      right: 0;
-    }
-
     .hero-float-mark.hf-grok img,
     .hero-float-mark.hf-kimi img,
-    .hero-float-mark.hf-opencode img,
     .hero-float-mark.hf-cursor img {
       width: 30px;
       height: 30px;

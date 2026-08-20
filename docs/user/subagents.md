@@ -1,7 +1,7 @@
 # Subagents
 
 Provider CLIs can spawn child agents — Claude Task/Agent, Codex collaboration
-threads, Grok and OpenCode subagents. T3 Code does not start those children
+threads, and Grok subagents. T3 Code does not start those children
 itself. It watches them in the Agents panel, and it can tell the provider how
 you want them run.
 

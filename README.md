@@ -41,12 +41,12 @@ Visual changes are not allowed to trade away capability or existing state.
 World Scenery is T3 Pretty's only theme. Light, dark, or system — the palette is alpine moss and
 sage. Chrome is glass over a photo, not a solid slab.
 
-| | What you get |
-| --- | --- |
-| 🗺️ **A place per thread** | Each conversation keeps its own landscape. Home uses the photo of the day. |
-| 🌫️ **Fog on a new thread** | A cloud bank gathers, the place name rises, the composer comes up through it. |
-| 🪟 **Shared glass** | Left sidebar, right sidebar, composer, and terminal share one frosted plate. |
-| 🎚️ **Your density** | Photo blur, photo presence, glass opacity, scenery text color, thread motion, fonts. |
+|                            | What you get                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------ |
+| 🗺️ **A place per thread**  | Each conversation keeps its own landscape. Home uses the photo of the day.                       |
+| 🌫️ **Fog on a new thread** | A cloud bank gathers, the place name rises, the composer comes up through it.                    |
+| 🪟 **Shared glass**        | Left sidebar, right sidebar, composer, and terminal share one frosted plate.                     |
+| 🎚️ **Your density**        | Photo blur, photo presence, glass opacity, scenery text color, thread motion, fonts.             |
 | 🧘 **Still when you want** | Thread motion off, or the system reduce-motion setting, parks fades and keeps status dots still. |
 
 Open **Settings → Appearance**. On a phone, the same controls live under **Scenery photos**.
@@ -58,11 +58,11 @@ without becoming ornamental. Motion is a fade or a press — not a GPU hobby.
 
 ## Surfaces ✨
 
-| Surface | What you get |
-| --- | --- |
+| Surface        | What you get                                                                                                     |
+| -------------- | ---------------------------------------------------------------------------------------------------------------- |
 | 🖥️ **Desktop** | Electron app, product name **T3 Pretty (Alpha)**. Hosts the local server so a phone or another machine can join. |
-| 🌐 **Web** | The same UI, served by the local server. Pair a browser with the printed pairing URL. |
-| 📱 **Mobile** | React Native for iOS and Android. Build from source — it is not on the App Store or Play Store yet. |
+| 🌐 **Web**     | The same UI, served by the local server. Pair a browser with the printed pairing URL.                            |
+| 📱 **Mobile**  | React Native for iOS and Android. Build from source — it is not on the App Store or Play Store yet.              |
 
 Remote is a first-class path: pair over your tailnet, scan the QR from a running server, or use
 **Surge Connect** (this fork's account mesh) so every signed-in device sees the same environments.
@@ -73,14 +73,13 @@ Remote is a first-class path: pair over your tailnet, scan the QR from a running
 
 T3 Pretty does not sell models. It drives provider CLIs you already installed and logged into.
 
-| Provider | CLI | Login | Default |
-| --- | --- | --- | --- |
-| **Codex** | [Codex CLI](https://developers.openai.com/codex/cli) | `codex login` | On |
-| **Claude** | [Claude Code](https://claude.com/product/claude-code) | `claude auth login` | On |
-| **Kimi Code** | [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html) | `kimi login` | On |
-| **Cursor** | [Cursor CLI](https://cursor.com/cli) (`cursor-agent`) | `agent login` | Off |
-| **Grok Build** | [Grok Build CLI](https://x.ai/cli) | `grok login` | Off |
-| **OpenCode** | [OpenCode](https://opencode.ai) | `opencode auth login` | Off |
+| Provider       | CLI                                                                                          | Login               | Default |
+| -------------- | -------------------------------------------------------------------------------------------- | ------------------- | ------- |
+| **Codex**      | [Codex CLI](https://developers.openai.com/codex/cli)                                         | `codex login`       | On      |
+| **Claude**     | [Claude Code](https://claude.com/product/claude-code)                                        | `claude auth login` | On      |
+| **Kimi Code**  | [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html) | `kimi login`        | On      |
+| **Cursor**     | [Cursor CLI](https://cursor.com/cli) (`cursor-agent`)                                        | `agent login`       | Off     |
+| **Grok Build** | [Grok Build CLI](https://x.ai/cli)                                                           | `grok login`        | Off     |
 
 Install and authenticate at least one provider on the machine that runs the server. Cursor is the
 one to watch: the binary is `cursor-agent`, the login command is `agent login`.
@@ -200,13 +199,13 @@ Full docs live in [docs/](./docs). There is no separate docs site.
 
 ## This is a fork 🌿
 
-| | Upstream T3 Code | T3 Pretty |
-| --- | --- | --- |
-| Home | [github.com/pingdotgg/t3code](https://github.com/pingdotgg/t3code) | Cursor Origin `serbinenko/t3-pretty` |
-| Look | Stock T3 chrome | World Scenery + Pretty icon |
-| Connect mesh | T3 Connect | **Surge Connect** (same protocol, fork relay) |
-| Desktop | `T3 Code` | `T3 Pretty (Alpha)` |
-| Data | `~/.t3` | `~/.t3` (same on purpose) |
+|              | Upstream T3 Code                                                   | T3 Pretty                                     |
+| ------------ | ------------------------------------------------------------------ | --------------------------------------------- |
+| Home         | [github.com/pingdotgg/t3code](https://github.com/pingdotgg/t3code) | Cursor Origin `serbinenko/t3-pretty`          |
+| Look         | Stock T3 chrome                                                    | World Scenery + Pretty icon                   |
+| Connect mesh | T3 Connect                                                         | **Surge Connect** (same protocol, fork relay) |
+| Desktop      | `T3 Code`                                                          | `T3 Pretty (Alpha)`                           |
+| Data         | `~/.t3`                                                            | `~/.t3` (same on purpose)                     |
 
 Want the original instead? [T3 Code](https://github.com/pingdotgg/t3code) ships desktop downloads,
 `npx t3@latest`, and mobile apps on [iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824)

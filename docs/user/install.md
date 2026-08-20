@@ -57,16 +57,15 @@ yay -S t3code-nightly-bin
 T3 Code drives provider CLIs; it does not ship them. Install the CLI for each provider you want
 to use, then authenticate it.
 
-| Provider   | CLI                                                                                          | Default binary | Log in with           |
-| ---------- | -------------------------------------------------------------------------------------------- | -------------- | --------------------- |
-| Codex      | [Codex CLI](https://developers.openai.com/codex/cli)                                         | `codex`        | `codex login`         |
-| Claude     | [Claude Code](https://claude.com/product/claude-code)                                        | `claude`       | `claude auth login`   |
-| Cursor     | [Cursor CLI](https://cursor.com/cli)                                                         | `cursor-agent` | `agent login`         |
-| Grok Build | [Grok Build CLI](https://x.ai/cli)                                                           | `grok`         | `grok login`          |
-| Kimi Code  | [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html) | `kimi`         | `kimi login`          |
-| OpenCode   | [OpenCode](https://opencode.ai)                                                              | `opencode`     | `opencode auth login` |
+| Provider   | CLI                                                                                          | Default binary | Log in with         |
+| ---------- | -------------------------------------------------------------------------------------------- | -------------- | ------------------- |
+| Codex      | [Codex CLI](https://developers.openai.com/codex/cli)                                         | `codex`        | `codex login`       |
+| Claude     | [Claude Code](https://claude.com/product/claude-code)                                        | `claude`       | `claude auth login` |
+| Cursor     | [Cursor CLI](https://cursor.com/cli)                                                         | `cursor-agent` | `agent login`       |
+| Grok Build | [Grok Build CLI](https://x.ai/cli)                                                           | `grok`         | `grok login`        |
+| Kimi Code  | [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html) | `kimi`         | `kimi login`        |
 
-Codex and Claude are on by default. Cursor, Grok Build, and OpenCode are off by default; turn
+Codex, Claude, and Kimi are on by default. Cursor and Grok Build are off by default; turn
 them on in **Settings** → the provider's card when you want to use them.
 
 Cursor is the one to watch: install Cursor CLI, which provides the `cursor-agent` binary that

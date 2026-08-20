@@ -15,7 +15,7 @@ the library (and from every thread that had it on).
 
 ## Clean up provider CLI skills
 
-Claude Code, Codex, Cursor, Grok, and OpenCode also keep skills in their own home folders
+Claude Code, Codex, Cursor, and Grok also keep skills in their own home folders
 (for example `~/.claude/skills` or `~/.codex/skills`), plus a shared `~/.agents/skills`
 directory. Those show up under **On this environment**. Flip a skill off to hide it from
 the provider CLI without deleting it. **Remove** deletes that folder on the connected

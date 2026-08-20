@@ -10,7 +10,7 @@ To generate icons with Grok or Codex:
 
 T3 Code then generates an icon for new projects and for existing projects that do not already have
 a stored icon, including projects still using automatic detection. This uses your Grok or Codex
-subscription. Claude, Cursor, Kimi, and OpenCode do not generate images. Projects with a chosen
+subscription. Claude, Cursor, and Kimi do not generate images. Projects with a chosen
 file or a previously generated icon are left alone.
 
 To choose a different icon:

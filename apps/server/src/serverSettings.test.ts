@@ -559,10 +559,9 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           claudeAgent: {
             binaryPath: "  /opt/homebrew/bin/claude  ",
           },
-          opencode: {
-            binaryPath: "  /opt/homebrew/bin/opencode  ",
-            serverUrl: "  http://127.0.0.1:4096  ",
-            serverPassword: "  secret-password  ",
+          cursor: {
+            binaryPath: "  /opt/homebrew/bin/cursor-agent  ",
+            apiEndpoint: "  https://api.example.com  ",
           },
         },
       });
@@ -582,12 +581,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         customModels: [],
         launchArgs: "",
       });
-      assert.deepEqual(next.providers.opencode, {
-        // OpenCode is disabled by default; this update only touches paths.
+      assert.deepEqual(next.providers.cursor, {
+        // Cursor is disabled by default; this update only touches paths.
         enabled: false,
-        binaryPath: "/opt/homebrew/bin/opencode",
-        serverUrl: "http://127.0.0.1:4096",
-        serverPassword: "secret-password",
+        binaryPath: "/opt/homebrew/bin/cursor-agent",
+        apiEndpoint: "https://api.example.com",
         customModels: [],
       });
     }).pipe(Effect.provide(makeServerSettingsLayer())),
@@ -648,9 +646,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           codex: {
             binaryPath: "/opt/homebrew/bin/codex",
           },
-          opencode: {
-            serverUrl: "http://127.0.0.1:4096",
-            serverPassword: "secret-password",
+          cursor: {
+            apiEndpoint: "https://api.example.com",
           },
         },
         automaticGitFetchInterval: Duration.seconds(10),
@@ -670,9 +667,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           codex: {
             binaryPath: "/opt/homebrew/bin/codex",
           },
-          opencode: {
-            serverUrl: "http://127.0.0.1:4096",
-            serverPassword: "secret-password",
+          cursor: {
+            apiEndpoint: "https://api.example.com",
           },
         },
         backgroundActivity: {

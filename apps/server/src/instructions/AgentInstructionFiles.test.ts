@@ -53,7 +53,6 @@ it.layer(NodeServices.layer)("AgentInstructionFiles", (it) => {
         "global:claudeAgent",
         "global:cursor",
         "global:grok",
-        "global:opencode",
       ]);
       const codex = files.find((file) => file.id === "global:codex");
       assert.isDefined(codex);
