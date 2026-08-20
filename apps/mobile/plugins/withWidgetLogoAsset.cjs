@@ -63,6 +63,11 @@ function withAssetFiles(config) {
     "ios",
     (cfg) => {
       const source = path.join(cfg.modRequest.projectRoot, "assets", "widget", PNG_NAME);
+      if (!fs.existsSync(source)) {
+        throw new Error(
+          `withWidgetLogoAsset: ${source} is missing — copy assets/pretty/kit/mark-black.png to apps/mobile/assets/widget/${PNG_NAME} before prebuild.`,
+        );
+      }
       const catalogDir = path.join(cfg.modRequest.platformProjectRoot, TARGET_NAME, CATALOG_NAME);
       const imageSetDir = path.join(catalogDir, IMAGE_SET);
       fs.mkdirSync(imageSetDir, { recursive: true });

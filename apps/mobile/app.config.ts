@@ -37,6 +37,10 @@ const DEVELOPMENT_ASSETS = {
   androidNotificationColor: "#00639B",
 } as const;
 
+// The nightly*/production* PNG keys in BRAND_ASSET_PATHS all resolve to the
+// assets/pretty family (see scripts/lib/brand-assets.ts), so splash and
+// adaptive foregrounds track the same glass/sage art as iosIcon in every
+// channel — the sage plate below is not behind leftover candy art.
 const PREVIEW_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   // The T3 Pretty icon ships as a plain PNG, not an Icon Composer project, so
