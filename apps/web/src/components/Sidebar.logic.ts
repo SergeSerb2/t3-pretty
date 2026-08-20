@@ -506,7 +506,10 @@ type ThreadAttentionInput = ThreadStatusInput &
 /**
  * Threads that need the human right now: an agent blocked on an approval or a
  * question, or a completion the user has not read yet. Drives the desktop dock
- * badge, so it deliberately ignores rows that are merely working.
+ * badge. Callers pass inbox threads only (pinned + active) — settled and
+ * snoozed shelves are history, not a human request. Working/monitoring rows
+ * are ignored even when they still carry an unread completion: the sidebar
+ * labels those Working, not Done.
  */
 export function countThreadsAwaitingUser(
   threads: readonly ThreadAttentionInput[],
@@ -515,13 +518,16 @@ export function countThreadsAwaitingUser(
   let count = 0;
   for (const thread of threads) {
     const status = resolveSidebarThreadStatus(thread);
+    if (status === "approval" || status === "input") {
+      count += 1;
+      continue;
+    }
+    if (status === "working" || status === "monitoring") {
+      continue;
+    }
     const lastVisitedAt =
       lastVisitedAtByThreadKey[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))];
-    if (
-      status === "approval" ||
-      status === "input" ||
-      hasUnseenCompletion({ ...thread, lastVisitedAt })
-    ) {
+    if (hasUnseenCompletion({ ...thread, lastVisitedAt })) {
       count += 1;
     }
   }

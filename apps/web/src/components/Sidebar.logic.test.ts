@@ -352,6 +352,40 @@ describe("countThreadsAwaitingUser", () => {
       ),
     ).toBe(0);
   });
+
+  it("does not count unread completions on working or monitoring threads", () => {
+    expect(
+      countThreadsAwaitingUser(
+        [
+          {
+            ...base,
+            id: ThreadId.make("working-unread"),
+            latestTurn: makeLatestTurn(),
+            session: {
+              threadId: ThreadId.make("working-unread"),
+              status: "running" as const,
+              providerName: "Codex",
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              runtimeMode: DEFAULT_RUNTIME_MODE,
+              activeTurnId: "turn-1" as never,
+              lastError: null,
+              updatedAt: "2026-03-09T10:00:00.000Z",
+            },
+          },
+          {
+            ...base,
+            id: ThreadId.make("monitoring-unread"),
+            latestTurn: makeLatestTurn(),
+            backgroundLiveness: "monitoring",
+          },
+        ],
+        {
+          [threadKey("working-unread")]: "2026-03-09T10:04:00.000Z",
+          [threadKey("monitoring-unread")]: "2026-03-09T10:04:00.000Z",
+        },
+      ),
+    ).toBe(0);
+  });
 });
 
 describe("createThreadJumpHintVisibilityController", () => {
