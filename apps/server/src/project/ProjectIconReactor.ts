@@ -273,10 +273,7 @@ const make = Effect.gen(function* () {
     if (!updated) {
       return;
     }
-    yield* fileSystem.remove(candidatePath).pipe(Effect.catchCause(() => Effect.void));
-    if (candidatePath !== outputPath) {
-      yield* fileSystem.remove(outputPath).pipe(Effect.catchCause(() => Effect.void));
-    }
+    yield* fileSystem.remove(outputPath).pipe(Effect.catchCause(() => Effect.void));
   });
 
   const worker = yield* makeKeyedCoalescingWorker({
