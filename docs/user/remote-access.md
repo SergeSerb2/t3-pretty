@@ -54,6 +54,12 @@ Connect. Once both desktops participate, each app automatically keeps the full a
 connection list, including machines added later. Threads from every linked desktop are therefore
 available in either app without repeating **Connect** on both sides.
 
+The **Remote Environments** list shows one row per machine. When several environments publish from
+the same machine (for example an installed app and a second server on one host), only the working
+connections are shown while at least one is online, and offline duplicates collapse away instead of
+cluttering the list. Saved direct LAN or Tailscale connections are no longer offered in the app —
+connect through Surge Connect instead.
+
 Settle and snooze still work when a linked machine is offline. The change is saved on this device
 and applied on that machine as soon as Surge Connect can reach it again.
 
@@ -141,8 +147,8 @@ npx t3 serve --host "$(tailscale ip -4)"
 From there, connect from another device in either of these ways:
 
 - scan the QR code on your phone
-- in the desktop app, enter the full pairing URL
-- in the desktop app, enter the host and token separately
+- in the mobile app, enter the full pairing URL
+- in the mobile app, enter the host and token separately
 - in the hosted web app, open a hosted pairing URL when the backend is reachable over HTTPS
 
 Use `t3 serve --help` for the full flag reference. It supports the same general startup options as the normal server command, including an optional `cwd` argument.
@@ -169,10 +175,9 @@ Use this when you want the desktop app to start or reuse T3 Code on another mach
 
 1. Open **Settings** → **Connections**.
 2. Under **Remote Environments**, choose **Add environment**.
-3. Select the SSH launch flow.
-4. Enter the SSH target, such as `user@example.com`. When you use an SSH config alias, leave the
+3. Enter the SSH target, such as `user@example.com`. When you use an SSH config alias, leave the
    username blank to use the alias's configured `User` value.
-5. Confirm the launch. The desktop app probes the host, starts or reuses a remote T3 server, opens a local port forward, and saves the environment.
+4. Confirm the launch. The desktop app probes the host, starts or reuses a remote T3 server, opens a local port forward, and saves the environment.
 
 After setup, the renderer connects to a local forwarded HTTP/WebSocket endpoint. The remote host still owns the actual T3 server, projects, files, git state, terminals, and provider sessions.
 
