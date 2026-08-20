@@ -71,6 +71,11 @@ export interface GhosttyTheme {
   readonly cursor: GhosttyColor;
   /** CSS color the renderer overlays on selected cells; not sent to Ghostty. */
   readonly selectionBackground?: string;
+  /**
+   * Skip painting the default cell background so the CSS glass plate behind
+   * the canvas can show through. ANSI cell colors still paint.
+   */
+  readonly transparentBackground?: boolean;
 }
 
 export interface GhosttyCell {

@@ -614,13 +614,17 @@ export class GhosttyTerminalSurface {
     scrollbar.append(scrollbarThumb);
     mount.replaceChildren(canvas, input, scrollbar);
 
-    const context = canvas.getContext("2d", { alpha: false });
+    const context = canvas.getContext("2d", { alpha: true });
     if (!context) throw new Error("Canvas 2D is unavailable");
-    // An opaque canvas backing store initializes to solid black, and the font
-    // and WASM loads below leave it on screen for the whole setup window; paint
-    // the theme background first so the mount never flashes a black box.
-    context.fillStyle = `rgb(${options.theme.background.r}, ${options.theme.background.g}, ${options.theme.background.b})`;
-    context.fillRect(0, 0, canvas.width, canvas.height);
+    // The font and WASM loads below leave this first frame on screen for the
+    // whole setup window. An opaque theme fills the canvas so it never flashes
+    // empty; a glass theme stays clear so the CSS plate behind it can show.
+    if (options.theme.transparentBackground === true) {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+    } else {
+      context.fillStyle = `rgb(${options.theme.background.r}, ${options.theme.background.g}, ${options.theme.background.b})`;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    }
     const fontSize = terminalFontSize(options.font?.size);
     try {
       // Cell metrics must come from the faces that will render; measuring before
@@ -1640,6 +1644,7 @@ export class GhosttyTerminalSurface {
       ...(this.theme.selectionBackground !== undefined
         ? { selectionBackground: this.theme.selectionBackground }
         : {}),
+      ...(this.theme.transparentBackground === true ? { transparentBackground: true } : {}),
     });
     this.positionInput();
     this.renderedCursorY =

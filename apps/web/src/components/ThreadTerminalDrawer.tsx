@@ -196,6 +196,7 @@ export function terminalThemeFromApp(mountElement?: HTMLElement | null): Ghostty
       isDark ? { r: 180, g: 203, b: 255 } : { r: 38, g: 56, b: 78 },
     ),
     selectionBackground: terminalSelection,
+    transparentBackground: document.documentElement.hasAttribute("data-scenery-on"),
   };
 }
 
@@ -852,7 +853,7 @@ export function TerminalViewport({
       });
       themeObserver.observe(document.documentElement, {
         attributes: true,
-        attributeFilter: ["class", "style"],
+        attributeFilter: ["class", "style", "data-scenery-on"],
       });
       setupCleanups.push(() => themeObserver.disconnect());
 

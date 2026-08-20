@@ -13,6 +13,7 @@ import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
 import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import previewPanelShellSource from "../components/preview/PreviewPanelShell.tsx?raw";
+import threadTerminalDrawerSource from "../components/ThreadTerminalDrawer.tsx?raw";
 import sidebarSource from "../components/ui/sidebar.tsx?raw";
 import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
@@ -141,6 +142,38 @@ describe("glass contract with upstream chrome", () => {
     expect(sceneryCssSource).toContain('[data-right-panel="embedded"]');
     expect(sceneryCssSource).toMatch(
       /\[data-right-panel=""\]\s+\.bg-background\s*\{[^}]*background-color: transparent;/s,
+    );
+  });
+
+  it("the bottom terminal drawer wears the same chrome glass plate as the sidebars", () => {
+    expect(threadTerminalDrawerSource).toContain(
+      'data-terminal-owner={isPanel ? "right-panel" : "drawer"}',
+    );
+    expect(sceneryCssSource).toContain('[data-terminal-owner="drawer"]');
+    expect(sceneryCssSource).toContain("var(--scenery-chrome-fill)");
+    expect(sceneryCssSource).toMatch(
+      /\[data-terminal-owner="drawer"\]\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-terminal-owner="drawer"\]\s+\.bg-background\s*\{[^}]*background-color: transparent;/s,
+    );
+    expect(threadTerminalDrawerSource).toContain(
+      'attributeFilter: ["class", "style", "data-scenery-on"]',
+    );
+    expect(threadTerminalDrawerSource).toContain(
+      'transparentBackground: document.documentElement.hasAttribute("data-scenery-on")',
+    );
+  });
+
+  it("chrome glass panels meet without a painted divider", () => {
+    const seamRule =
+      sceneryCssSource.match(/\/\* Chrome seams:[\s\S]*?\{[^}]*border-color: transparent;/)?.[0] ??
+      "";
+    expect(seamRule).toContain("[data-app-sidebar]");
+    expect(seamRule).toContain(".right-panel-inline-body");
+    expect(seamRule).toContain('[data-terminal-owner="drawer"]');
+    expect(sceneryCssSource).not.toContain(
+      "border-color: color-mix(in srgb, var(--sidebar-foreground) 10%, transparent)",
     );
   });
 });

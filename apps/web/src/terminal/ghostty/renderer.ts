@@ -23,6 +23,23 @@ function cssColor(color: GhosttyColor): string {
   return `rgb(${color.r}, ${color.g}, ${color.b})`;
 }
 
+function paintDefaultBackground(
+  context: CanvasRenderingContext2D,
+  color: GhosttyColor,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  transparent: boolean,
+): void {
+  if (transparent) {
+    context.clearRect(x, y, width, height);
+    return;
+  }
+  context.fillStyle = cssColor(color);
+  context.fillRect(x, y, width, height);
+}
+
 function sameTextStyle(left: GhosttyCell, right: GhosttyCell): boolean {
   // Selection deliberately does not participate: it only tints the background
   // overlay, and splitting a text run at a selection boundary visibly shifts
@@ -106,6 +123,11 @@ export function renderGhosttySnapshot(options: {
   readonly hoveredLinkRange?: GhosttyCellRange | null;
   /** Vertical origin of row 0; defaults to the horizontal padding. */
   readonly originY?: number;
+  /**
+   * Clear default-background pixels instead of filling them so a CSS glass
+   * plate behind the canvas can show through.
+   */
+  readonly transparentBackground?: boolean;
 }): void {
   const {
     context,
@@ -122,6 +144,7 @@ export function renderGhosttySnapshot(options: {
   const selectionBackground = options.selectionBackground ?? DEFAULT_SELECTION_BACKGROUND;
   const hoveredLinkRange = options.hoveredLinkRange ?? null;
   const originY = options.originY ?? padding;
+  const transparentBackground = options.transparentBackground === true;
   const rowsToDraw = forceFull
     ? Array.from({ length: snapshot.rows }, (_, index) => index)
     : [...snapshot.dirtyRows];
@@ -140,8 +163,15 @@ export function renderGhosttySnapshot(options: {
   if (forceFull) {
     context.save();
     context.resetTransform();
-    context.fillStyle = cssColor(snapshot.background);
-    context.fillRect(0, 0, context.canvas.width, context.canvas.height);
+    paintDefaultBackground(
+      context,
+      snapshot.background,
+      0,
+      0,
+      context.canvas.width,
+      context.canvas.height,
+      transparentBackground,
+    );
     context.restore();
   }
 
@@ -151,8 +181,15 @@ export function renderGhosttySnapshot(options: {
     if (!row) continue;
     const top = originY + rowIndex * metrics.height;
 
-    context.fillStyle = cssColor(snapshot.background);
-    context.fillRect(padding, top, snapshot.cols * metrics.width, metrics.height);
+    paintDefaultBackground(
+      context,
+      snapshot.background,
+      padding,
+      top,
+      snapshot.cols * metrics.width,
+      metrics.height,
+      transparentBackground,
+    );
 
     let backgroundStart = 0;
     while (backgroundStart < row.cells.length) {

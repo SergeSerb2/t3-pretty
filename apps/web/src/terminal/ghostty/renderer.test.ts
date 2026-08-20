@@ -282,4 +282,66 @@ describe("renderGhosttySnapshot", () => {
 
     expect(clearedRows).toEqual([4, 36, 36]);
   });
+
+  it("clears default background pixels when the glass plate should show through", () => {
+    const clearRectCalls: number[][] = [];
+    const fillRectCalls: number[][] = [];
+    const context = {
+      canvas: { width: 200, height: 40 },
+      beginPath: () => {},
+      clearRect: (...args: number[]) => clearRectCalls.push(args),
+      clip: () => {},
+      fillRect: (...args: number[]) => fillRectCalls.push(args),
+      fillText: () => {},
+      rect: () => {},
+      resetTransform: () => {},
+      restore: () => {},
+      save: () => {},
+      set fillStyle(_value: string) {},
+      set font(_value: string) {},
+      set textBaseline(_value: string) {},
+    } as unknown as CanvasRenderingContext2D;
+    const snapshot: GhosttySnapshot = {
+      cols: 2,
+      rows: 1,
+      foreground: { r: 255, g: 255, b: 255 },
+      background: { r: 12, g: 16, b: 14 },
+      cursor: { r: 255, g: 255, b: 255 },
+      cursorX: -1,
+      cursorY: -1,
+      cursorVisible: false,
+      cursorBlinking: false,
+      cursorStyle: 1,
+      dirtyRows: new Set([0]),
+      rowData: [
+        {
+          cells: [
+            { ...cell("a"), background: { r: 12, g: 16, b: 14 } },
+            { ...cell("b"), background: { r: 12, g: 16, b: 14 } },
+          ],
+          text: "ab",
+          isWrapContinuation: false,
+          wrapsToNext: false,
+        },
+      ],
+    };
+
+    renderGhosttySnapshot({
+      context,
+      snapshot,
+      metrics: { width: 10, height: 20, baseline: 15 },
+      fontSize: 12,
+      fontFamily: "monospace",
+      padding: 4,
+      forceFull: true,
+      cursorOn: false,
+      transparentBackground: true,
+    });
+
+    expect(clearRectCalls).toEqual([
+      [0, 0, 200, 40],
+      [4, 4, 20, 20],
+    ]);
+    expect(fillRectCalls).toEqual([]);
+  });
 });
