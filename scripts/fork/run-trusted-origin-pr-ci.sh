@@ -4,6 +4,16 @@
 # macos-release. The first merge uses this checkout as a fallback.
 set -euo pipefail
 
+# Buildkite sets FORCE_COLOR and NO_COLOR together. Origin's bun CLI then
+# prints assertion_error while loading tty colors and, on the macos-release
+# agent, can exit 255 from `git fetch` (credential helper) and `origin`.
+unset NO_COLOR || true
+export FORCE_COLOR="${FORCE_COLOR:-0}"
+if [[ "${FORCE_COLOR}" == "1" || "${FORCE_COLOR}" == "true" ]]; then
+  export FORCE_COLOR=0
+fi
+export GIT_TERMINAL_PROMPT=0
+
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FILES=(
   review-origin-pr-ci.sh
@@ -13,10 +23,10 @@ FILES=(
 )
 
 copy_from_main() {
-  git -C "$ROOT" fetch --depth=1 origin main
-  git -C "$ROOT" cat-file -e origin/main:scripts/fork/review-origin-pr-ci.sh
   local dir="$1"
   local name
+  git -C "$ROOT" fetch --depth=1 origin refs/heads/main:refs/remotes/origin/main || return 1
+  git -C "$ROOT" cat-file -e origin/main:scripts/fork/review-origin-pr-ci.sh || return 1
   for name in "${FILES[@]}"; do
     git -C "$ROOT" show "origin/main:scripts/fork/${name}" > "${dir}/${name}"
   done
@@ -24,8 +34,14 @@ copy_from_main() {
 }
 
 DIR="$(mktemp -d)"
-if copy_from_main "$DIR" 2>/dev/null; then
-  echo "Running Origin PR review scripts from origin/main"
+if copy_from_main "$DIR"; then
+  echo "Running Origin PR review secret loader from origin/main"
+  # Secret loading stays on main. Overlay Origin CLI workarounds from this
+  # checkout so a bun 255 on FORCE_COLOR+NO_COLOR can be fixed without waiting
+  # for main.
+  cp "$ROOT/scripts/fork/origin-forge.mjs" "$DIR/origin-forge.mjs"
+  cp "$ROOT/scripts/fork/review-origin-pr.mjs" "$DIR/review-origin-pr.mjs"
+  cp "$ROOT/scripts/fork/check-origin-pr-comments.mjs" "$DIR/check-origin-pr-comments.mjs"
   bash "${DIR}/review-origin-pr-ci.sh" "$@"
 else
   echo "origin/main has no review scripts yet; using this checkout"

@@ -7,6 +7,7 @@ import {
   BRAND_ASSET_PATHS,
   DEVELOPMENT_ICON_OVERRIDES,
   DEVELOPMENT_PUBLIC_ICON_OVERRIDES,
+  resolvePrettyMarkCopies,
   resolveWebAssetBrandForChannel,
   resolveWebAssetBrandForPackageVersion,
   resolveWebIconOverrides,
@@ -109,6 +110,19 @@ describe("brand-assets", () => {
     expect(BRAND_ASSET_PATHS.productionMacIconPng).toBe(BRAND_ASSET_PATHS.prettyIconPng);
     expect(BRAND_ASSET_PATHS.nightlyWindowsIconIco).toBe(BRAND_ASSET_PATHS.prettyIconIco);
     expect(BRAND_ASSET_PATHS.productionWebFaviconIco).toBe(BRAND_ASSET_PATHS.prettyWebFaviconIco);
+  });
+
+  it("copies the generated mark into web public and the mobile package", () => {
+    expect(resolvePrettyMarkCopies()).toEqual([
+      {
+        sourceRelativePath: BRAND_ASSET_PATHS.prettyMarkPng,
+        targetRelativePath: BRAND_ASSET_PATHS.prettyMarkPublicPng,
+      },
+      {
+        sourceRelativePath: BRAND_ASSET_PATHS.prettyMarkPng,
+        targetRelativePath: BRAND_ASSET_PATHS.prettyMarkMobilePng,
+      },
+    ]);
   });
 
   it("keeps the in-app sidebar mark in public in sync with the pretty source", () => {

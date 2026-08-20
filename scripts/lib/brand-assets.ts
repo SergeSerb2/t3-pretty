@@ -94,6 +94,20 @@ const WEB_ICON_SOURCE_PATHS_BY_BRAND = {
   },
 } as const satisfies Record<WebAssetBrand, Record<keyof typeof WEB_ICON_TARGET_FILENAMES, string>>;
 
+/** Keep the in-app lockup copies next to the generated source mark. */
+export function resolvePrettyMarkCopies(): ReadonlyArray<IconOverride> {
+  return [
+    {
+      sourceRelativePath: BRAND_ASSET_PATHS.prettyMarkPng,
+      targetRelativePath: BRAND_ASSET_PATHS.prettyMarkPublicPng,
+    },
+    {
+      sourceRelativePath: BRAND_ASSET_PATHS.prettyMarkPng,
+      targetRelativePath: BRAND_ASSET_PATHS.prettyMarkMobilePng,
+    },
+  ];
+}
+
 export function resolveWebIconOverrides(
   brand: WebAssetBrand,
   targetDirectory: string,

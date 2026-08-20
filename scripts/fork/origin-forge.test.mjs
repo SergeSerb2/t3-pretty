@@ -13,6 +13,7 @@ import {
   defaultUpdateFeedUrl,
   isGitHubFeedUrl,
   isMergeableState,
+  originChildEnv,
   redactCommandArgs,
   pullRequestItems,
   pullRequestNumber,
@@ -26,6 +27,20 @@ const here = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 function workflow(name) {
   return NodeFS.readFileSync(NodePath.resolve(here, `../../.github/workflows/${name}`), "utf8");
 }
+
+describe("Origin CLI child environment", () => {
+  it("drops NO_COLOR and turns off FORCE_COLOR so bun Origin does not 255", () => {
+    const env = originChildEnv({
+      PATH: "/usr/bin",
+      NO_COLOR: "1",
+      FORCE_COLOR: "1",
+      GIT_TERMINAL_PROMPT: "1",
+    });
+    assert.equal("NO_COLOR" in env, false);
+    assert.equal(env.FORCE_COLOR, "0");
+    assert.equal(env.GIT_TERMINAL_PROMPT, "0");
+  });
+});
 
 describe("Origin forge constants", () => {
   it("points the fork at the Origin codebase, not GitHub", () => {
