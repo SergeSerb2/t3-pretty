@@ -42,7 +42,6 @@ import {
   ClockIcon,
   FolderIcon,
   FolderPlusIcon,
-  FrameIcon,
   GitBranchIcon,
   MessageSquareIcon,
   PinIcon,
@@ -99,12 +98,7 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
-import {
-  resolveThreadActionProjectRef,
-  startNewCanvasFromContext,
-  startNewThreadFromContext,
-} from "../lib/chatThreadActions";
-import { anyEnvironmentSupportsCanvas, environmentSupportsCanvas } from "../lib/canvasFirst";
+import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -3378,32 +3372,6 @@ export default function Sidebar() {
     [isMobile, newThreadContext, projectGroups.length, setOpenMobile],
   );
 
-  const handleNewCanvasClick = useCallback(
-    (event?: ReactMouseEvent) => {
-      if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, projectGroups.length)) {
-        const projectRef = resolveThreadActionProjectRef({
-          activeDraftThread: newThreadContext.activeDraftThread,
-          activeThread: newThreadContext.activeThread ?? undefined,
-          defaultProjectRef: newThreadContext.defaultProjectRef,
-          handleNewThread: newThreadContext.handleNewThread,
-        });
-        if (projectRef && environmentSupportsCanvas(serverConfigs, projectRef.environmentId)) {
-          if (isMobile) setOpenMobile(false);
-          void startNewCanvasFromContext({
-            activeDraftThread: newThreadContext.activeDraftThread,
-            activeThread: newThreadContext.activeThread ?? undefined,
-            defaultProjectRef: newThreadContext.defaultProjectRef,
-            handleNewThread: newThreadContext.handleNewThread,
-          });
-          return;
-        }
-      }
-      if (isMobile) setOpenMobile(false);
-      openCommandPalette({ open: "new-canvas-in" });
-    },
-    [isMobile, newThreadContext, projectGroups.length, serverConfigs, setOpenMobile],
-  );
-
   // The button mirrors chat.new: in multi-project setups both route through
   // the command palette's "New thread in..." picker, and in single-project
   // setups both create immediately. In multi-project setups the label is only
@@ -3416,16 +3384,6 @@ export default function Sidebar() {
     shortcutLabelForCommand(keybindings, "chat.new") ??
     (projectGroups.length <= 1 ? shortcutLabelForCommand(keybindings, "chat.newLocal") : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
-  const showStartFromCanvas = !isMobile && anyEnvironmentSupportsCanvas(serverConfigs);
-  const newCanvasShortcutLabel =
-    shortcutLabelForCommand(keybindings, "chat.newCanvas") ??
-    (projectGroups.length <= 1
-      ? shortcutLabelForCommand(keybindings, "chat.newCanvasLocal")
-      : undefined);
-  const newCanvasInProjectShortcutLabel = shortcutLabelForCommand(
-    keybindings,
-    "chat.newCanvasLocal",
-  );
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
@@ -3525,51 +3483,6 @@ export default function Sidebar() {
                   </TooltipPopup>
                 </Tooltip>
               </div>
-              {showStartFromCanvas ? (
-                <div className="shrink-0">
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <SidebarMenuButton
-                          size="icon"
-                          type="button"
-                          className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                          onClick={handleNewCanvasClick}
-                          disabled={projects.length === 0}
-                          aria-label="Canvas"
-                        />
-                      }
-                    >
-                      <FrameIcon />
-                      <span
-                        className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                        aria-hidden="true"
-                      />
-                    </TooltipTrigger>
-                    <TooltipPopup side="right">
-                      {projectGroups.length > 1 ? (
-                        <span className="flex flex-col gap-0.5">
-                          <span>
-                            {newCanvasShortcutLabel
-                              ? `Canvas (${newCanvasShortcutLabel})`
-                              : "Canvas"}
-                          </span>
-                          <span className="text-muted-foreground">
-                            Canvas in current project: Shift+click
-                            {newCanvasInProjectShortcutLabel
-                              ? ` (${newCanvasInProjectShortcutLabel})`
-                              : ""}
-                          </span>
-                        </span>
-                      ) : newCanvasShortcutLabel ? (
-                        `Canvas (${newCanvasShortcutLabel})`
-                      ) : (
-                        "Canvas"
-                      )}
-                    </TooltipPopup>
-                  </Tooltip>
-                </div>
-              ) : null}
             </div>
             {projectGroups.length > 0 ? (
               <div className="flex items-center gap-1">

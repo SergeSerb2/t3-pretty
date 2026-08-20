@@ -4,7 +4,6 @@ import {
   appendCanvasSelectionPrompt,
   buildCanvasSelectionPrompt,
   canvasSelectionImageName,
-  canvasSelectionNodeSummary,
   extractTrailingCanvasSelection,
   type CanvasSelectionContext,
 } from "./canvasSelection";
@@ -49,7 +48,6 @@ describe("canvas selections", () => {
     expect(result).toContain("- image (node_image, 640x481) — source: preview tab");
     expect(result).toContain("- ink (node_ink)");
     expect(result).toContain("canvas-selection-selection_1.png");
-    expect(result).toContain("canvas_get_state");
   });
 
   it("omits the comment line and node detail parts when absent", () => {
@@ -113,53 +111,6 @@ describe("canvas selections", () => {
         `${appendCanvasSelectionPrompt("Fix this", selection)}\n\nP.S.`,
       ),
     ).toBeNull();
-  });
-
-  it("summarizes canvas nodes with humanized image sources", () => {
-    expect(
-      canvasSelectionNodeSummary({
-        id: "node_image",
-        type: "image",
-        x: 0,
-        y: 0,
-        width: 640,
-        height: 480,
-        attachmentId: "attachment_1",
-        sourceRef: {
-          kind: "window",
-          sourceId: "window:1:0",
-          appName: "Safari",
-          windowTitle: "Docs",
-        },
-      }),
-    ).toEqual({
-      id: "node_image",
-      type: "image",
-      width: 640,
-      height: 480,
-      source: 'window Safari "Docs"',
-    });
-    expect(
-      canvasSelectionNodeSummary({
-        id: "node_note",
-        type: "note",
-        x: 0,
-        y: 0,
-        text: "hello",
-        width: 200,
-      }),
-    ).toEqual({ id: "node_note", type: "note" });
-    expect(
-      canvasSelectionNodeSummary({
-        id: "node_ink",
-        type: "ink",
-        x: 0,
-        y: 0,
-        points: [],
-        color: "#000",
-        strokeWidth: 2,
-      }),
-    ).toEqual({ id: "node_ink", type: "ink" });
   });
 
   it("names selection screenshots by selection id", () => {

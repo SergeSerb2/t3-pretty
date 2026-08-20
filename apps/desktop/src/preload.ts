@@ -220,11 +220,6 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke(IpcChannels.PREVIEW_CANCEL_PICK_ELEMENT_CHANNEL, { tabId }),
     captureScreenshot: (tabId) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_CAPTURE_SCREENSHOT_CHANNEL, { tabId }),
-    captureTabImage: (tabId, maxDimension) =>
-      ipcRenderer.invoke(IpcChannels.PREVIEW_CAPTURE_TAB_IMAGE_CHANNEL, {
-        tabId,
-        ...(maxDimension === undefined ? {} : { maxDimension }),
-      }),
     revealArtifact: (path) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_REVEAL_ARTIFACT_CHANNEL, { path }),
     copyArtifactToClipboard: (path) =>
@@ -296,11 +291,5 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       return () =>
         ipcRenderer.removeListener(IpcChannels.PREVIEW_POINTER_EVENT_CHANNEL, wrappedListener);
     },
-  },
-  capture: {
-    getPermissionStatus: () =>
-      ipcRenderer.invoke(IpcChannels.CAPTURE_GET_PERMISSION_STATUS_CHANNEL),
-    listSources: (input) => ipcRenderer.invoke(IpcChannels.CAPTURE_LIST_SOURCES_CHANNEL, input),
-    captureSource: (input) => ipcRenderer.invoke(IpcChannels.CAPTURE_SOURCE_CHANNEL, input),
   },
 } satisfies DesktopBridge);

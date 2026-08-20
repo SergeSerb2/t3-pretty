@@ -55,8 +55,6 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as AppsHttp from "./apps/AppsHttp.ts";
 import * as AppsService from "./apps/AppsService.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
-import * as CanvasStore from "./canvas/Store.ts";
-import { ThreadCanvasRepositoryLive } from "./persistence/Layers/ThreadCanvas.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as ProcessRunner from "./processRunner.ts";
@@ -411,12 +409,6 @@ const PreviewLayerLive = Layer.empty.pipe(
   Layer.provideMerge(PortScannerLayerLive),
 );
 
-// Provided exactly once (below, merged next to PreviewLayerLive): a second
-// instance would hold its own in-memory canvas state and split the world.
-// SqlClient resolves downstream through PersistenceLayerLive like the other
-// repositories.
-const CanvasLayerLive = CanvasStore.layer.pipe(Layer.provide(ThreadCanvasRepositoryLive));
-
 const WorkspaceEntriesLayerLive = WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer));
 
 const WorkspaceFileSystemLayerLive = WorkspaceFileSystem.layer.pipe(
@@ -464,9 +456,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
   Layer.provideMerge(ProviderRuntimeLayerLive),
-  // CanvasLayerLive rides this merge to stay inside pipe()'s 20-argument
-  // ceiling (see the AgentInstructionFiles note below).
-  Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive, CanvasLayerLive)),
+  Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(Keybindings.layer),
   Layer.provideMerge(ProviderRegistryLive),

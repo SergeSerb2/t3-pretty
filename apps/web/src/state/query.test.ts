@@ -10,9 +10,9 @@ describe("formatEnvironmentQueryError", () => {
 
   it("surfaces string defects instead of the generic fallback", () => {
     // An older server answers an unknown RPC with `Exit.die("Unknown request
-    // tag: ...")`; that defect must reach the user (e.g. the canvas panel).
-    expect(formatEnvironmentQueryError(Cause.die("Unknown request tag: canvas.get"))).toBe(
-      "Unknown request tag: canvas.get",
+    // tag: ...")`; that defect must reach the user.
+    expect(formatEnvironmentQueryError(Cause.die("Unknown request tag: example.get"))).toBe(
+      "Unknown request tag: example.get",
     );
   });
 

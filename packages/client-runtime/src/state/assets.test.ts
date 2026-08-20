@@ -25,7 +25,7 @@ describe("asset collection keys", () => {
     expect(error).toMatchObject({ key, cause: expect.any(SyntaxError) });
   });
 
-  it("rejects empty attachment ids used as the canvas pending sentinel", () => {
+  it("rejects empty attachment ids", () => {
     const key = JSON.stringify(["environment-1", [{ _tag: "attachment", attachmentId: "" }]]);
 
     expect(() => parseAssetCollectionKey(key)).toThrowError(InvalidAssetCollectionKeyError);

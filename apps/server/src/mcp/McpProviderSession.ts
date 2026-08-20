@@ -26,7 +26,7 @@ export interface McpProviderSessionConfig {
   readonly servers: ReadonlyArray<McpProviderSessionServer>;
 }
 
-/** Whether the built-in `t3-code` toolkit (preview/canvas tools) is attached. */
+/** Whether the built-in `t3-code` toolkit (preview tools) is attached. */
 export function hasBrowserTools(config: McpProviderSessionConfig | undefined): boolean {
   return config?.servers.some((server) => server.name === T3_CODE_MCP_SERVER_NAME) === true;
 }

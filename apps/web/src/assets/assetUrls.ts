@@ -50,9 +50,9 @@ export function useAssetUrl(environmentId: EnvironmentId, resource: AssetResourc
 }
 
 /**
- * Resources the collection atom can key. Empty attachment ids are the canvas
- * pending-image sentinel and fail `AssetResource` decode, which throws
- * `InvalidAssetCollectionKeyError` during render.
+ * Resources the collection atom can key. Empty attachment ids fail
+ * `AssetResource` decode, which throws `InvalidAssetCollectionKeyError`
+ * during render.
  */
 export function isQueryableAssetResource(resource: AssetResource): boolean {
   return resource._tag !== "attachment" || resource.attachmentId.trim().length > 0;

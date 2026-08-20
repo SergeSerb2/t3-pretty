@@ -13,8 +13,6 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
-import { CanvasToolkitHandlersLive } from "./toolkits/canvas/handlers.ts";
-import { CanvasToolkit } from "./toolkits/canvas/tools.ts";
 import {
   PreviewSnapshotToolkitHandlersLive,
   PreviewStandardToolkitHandlersLive,
@@ -218,14 +216,6 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewSnapshotRegistrationLive,
 );
 
-// CanvasStore (plus the workspace-resolution services) intentionally stays a
-// requirement here: it must be the single runtime instance shared with the
-// websocket canvas RPCs, so it flows in from the server runtime layers the
-// same way ws.ts resolves it.
-export const CanvasToolkitRegistrationLive = McpServer.toolkit(CanvasToolkit).pipe(
-  Layer.provide(CanvasToolkitHandlersLive),
-);
-
 const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
@@ -233,7 +223,4 @@ const McpTransportLive = McpServer.layerHttp({
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = Layer.mergeAll(
-  PreviewToolkitRegistrationLive,
-  CanvasToolkitRegistrationLive,
-).pipe(Layer.provideMerge(McpTransportLive));
+export const layer = PreviewToolkitRegistrationLive.pipe(Layer.provideMerge(McpTransportLive));

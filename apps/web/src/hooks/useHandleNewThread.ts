@@ -27,7 +27,6 @@ import {
 import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
 import { readThreadShell, useProjects, useThreadShell } from "../state/entities";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
-import type { DraftStartSurface } from "../lib/canvasFirst";
 import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
 import { shouldReadProjectFileThreadEnvMode } from "../lib/newThreadDefaults";
 import { primaryServerSettingsAtom } from "../state/server";
@@ -90,7 +89,6 @@ export function useNewThreadHandler() {
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
         startFromOrigin?: boolean;
-        startSurface?: DraftStartSurface;
         replace?: boolean;
         /**
          * Move the viewed draft's typed content (prompt + images) into the
@@ -207,7 +205,7 @@ export function useNewThreadHandler() {
       const hasWorktreePathOption = options?.worktreePath !== undefined;
       const hasEnvModeOption = options?.envMode !== undefined;
       const hasStartFromOriginOption = options?.startFromOrigin !== undefined;
-      const startSurface = options?.startSurface ?? "chat";
+      const startSurface = "chat";
       const storedDraftThread = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       const storedDraftThreadRef = storedDraftThread
         ? scopeThreadRef(storedDraftThread.environmentId, storedDraftThread.threadId)

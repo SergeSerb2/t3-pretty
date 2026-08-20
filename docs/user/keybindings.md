@@ -67,10 +67,6 @@ at. To keep a worktree, use the explicit "new thread in this worktree" action in
 toolbar. The only difference between the two commands: with the current sidebar and more than one
 project, `chat.new` opens a project chooser first.
 
-`chat.newCanvas` and `chat.newCanvasLocal` start the same kind of thread on the canvas instead of
-in an empty composer. They follow the same project-picker vs current-project split as `chat.new`
-and `chat.newLocal`. Defaults are `mod+alt+n` and `mod+alt+shift+n`.
-
 ## `when` Conditions
 
 A `when` expression is evaluated against context keys describing the current UI state. The keys
