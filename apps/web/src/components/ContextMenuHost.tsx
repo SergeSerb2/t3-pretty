@@ -126,6 +126,7 @@ export function ContextMenuHost() {
           align="start"
           anchor={anchor}
           instant={instant}
+          positionMethod="fixed"
           positionerClassName="z-[10000]"
           side="bottom"
           sideOffset={4}
