@@ -35,13 +35,7 @@ copy_from_main() {
 
 DIR="$(mktemp -d)"
 if copy_from_main "$DIR"; then
-  echo "Running Origin PR review secret loader from origin/main"
-  # Secret loading stays on main. Overlay Origin CLI workarounds from this
-  # checkout so a bun 255 on FORCE_COLOR+NO_COLOR can be fixed without waiting
-  # for main.
-  cp "$ROOT/scripts/fork/origin-forge.mjs" "$DIR/origin-forge.mjs"
-  cp "$ROOT/scripts/fork/review-origin-pr.mjs" "$DIR/review-origin-pr.mjs"
-  cp "$ROOT/scripts/fork/check-origin-pr-comments.mjs" "$DIR/check-origin-pr-comments.mjs"
+  echo "Running Origin PR review scripts from origin/main"
   bash "${DIR}/review-origin-pr-ci.sh" "$@"
 else
   echo "origin/main has no review scripts yet; using this checkout"

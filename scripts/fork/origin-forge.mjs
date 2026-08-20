@@ -52,35 +52,6 @@ export function originChildEnv(env = process.env) {
   return next;
 }
 
-function tryJsonSlice(text) {
-  try {
-    JSON.parse(text);
-    return text;
-  } catch {
-    return "";
-  }
-}
-
-function usableJsonStdout(stdout) {
-  const text = typeof stdout === "string" ? stdout.trim() : "";
-  if (!text) return "";
-  const direct = tryJsonSlice(text);
-  if (direct) return direct;
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start !== -1 && end > start) {
-    const slice = tryJsonSlice(text.slice(start, end + 1));
-    if (slice) return slice;
-  }
-  const listStart = text.indexOf("[");
-  const listEnd = text.lastIndexOf("]");
-  if (listStart !== -1 && listEnd > listStart) {
-    const slice = tryJsonSlice(text.slice(listStart, listEnd + 1));
-    if (slice) return slice;
-  }
-  return "";
-}
-
 export function redactCommandArgs(args) {
   const redacted = [];
   for (let index = 0; index < args.length; index += 1) {
@@ -120,16 +91,13 @@ export function runCommand(command, args, options = {}) {
     env: { ...originChildEnv(process.env), ...options.env },
     cwd: options.cwd,
   });
-  const stdout = (result.stdout ?? "").trim();
   if (result.status !== 0) {
-    const recovered = options.acceptJson === false ? "" : usableJsonStdout(stdout);
-    if (recovered) return recovered;
     const detail = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
     throw new Error(
       `${command} ${redactCommandArgs(args).join(" ")} failed (${result.status ?? "spawn"}): ${detail || result.error?.message || "no output"}`,
     );
   }
-  return stdout;
+  return (result.stdout ?? "").trim();
 }
 
 export function runOrigin(args, options = {}) {
