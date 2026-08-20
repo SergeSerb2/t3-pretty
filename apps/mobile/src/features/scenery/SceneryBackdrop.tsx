@@ -40,6 +40,7 @@ import {
   type SceneryPhoto,
 } from "./sceneryLogic";
 import { useScenery } from "./SceneryProvider";
+import { shouldMountSceneryParallax } from "./sceneryParallaxMount";
 import { useReduceMotion } from "./useReduceMotion";
 import { useReduceTransparency } from "./useReduceTransparency";
 
@@ -60,7 +61,6 @@ function SceneryGradient(props: { readonly seed: string; readonly opacity?: numb
 }
 
 function SceneryParallaxImage(props: { readonly uri: string }) {
-  const reduceMotion = useReduceMotion();
   const [appActive, setAppActive] = useState(true);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
@@ -68,7 +68,7 @@ function SceneryParallaxImage(props: { readonly uri: string }) {
     });
     return () => subscription.remove();
   }, []);
-  const live = !reduceMotion && appActive;
+  const live = appActive;
   const liveValue = useSharedValue(live);
   useEffect(() => {
     liveValue.value = live;
@@ -144,6 +144,7 @@ export function SceneryBackdrop(props: {
   } = useScenery();
   const colorScheme = useColorScheme() === "light" ? "light" : "dark";
   const reduceTransparency = useReduceTransparency();
+  const reduceMotion = useReduceMotion();
   const { width: windowWidth } = useWindowDimensions();
 
   const threadKey = props.threadKey;
@@ -175,7 +176,7 @@ export function SceneryBackdrop(props: {
       <View style={[StyleSheet.absoluteFill, { overflow: "hidden", opacity: stack.photoOpacity }]}>
         <SceneryGradient seed={gradientSeed} />
         {imageSource !== null ? (
-          depthEffects ? (
+          shouldMountSceneryParallax(depthEffects, reduceMotion) ? (
             <SceneryParallaxImage uri={imageSource} />
           ) : (
             <Image
