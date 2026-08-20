@@ -19,6 +19,7 @@ const emitInterleavedAssistantToolCalls =
   process.env.T3_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
 const emitGenericToolPlaceholders = process.env.T3_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS === "1";
 const emitAskQuestion = process.env.T3_ACP_EMIT_ASK_QUESTION === "1";
+const emitKimiAskUserQuestion = process.env.T3_ACP_EMIT_KIMI_ASK_USER_QUESTION === "1";
 const emitXAiAskUserQuestion = process.env.T3_ACP_EMIT_XAI_ASK_USER_QUESTION === "1";
 const emitXAiPromptCompleteThenHang = process.env.T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG === "1";
 const emitForeignSessionUpdates = process.env.T3_ACP_EMIT_FOREIGN_SESSION_UPDATES === "1";
@@ -815,6 +816,58 @@ const program = Effect.gen(function* () {
             rawOutput: {
               content: "package.json\n",
             },
+          },
+        });
+
+        return { stopReason: "end_turn" };
+      }
+
+      if (emitKimiAskUserQuestion) {
+        const toolCallId = "kimi-ask-user-question-tool-call-1";
+
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            title: "AskUserQuestion",
+            status: "pending",
+          },
+        });
+
+        // Mirror the Kimi CLI's AskUserQuestion permission bridge: question
+        // text in the tool call content, `q0_opt_*` answer options, and a
+        // trailing `q0_skip`.
+        const permission = yield* agent.client.requestPermission({
+          sessionId: requestedSessionId,
+          toolCall: {
+            toolCallId,
+            title: "AskUserQuestion",
+            content: [
+              {
+                type: "content",
+                content: {
+                  type: "text",
+                  text: "Which scope should Kimi use?",
+                },
+              },
+            ],
+          },
+          options: [
+            { optionId: "q0_opt_0", name: "Workspace", kind: "allow_once" },
+            { optionId: "q0_opt_1", name: "Session", kind: "allow_once" },
+            { optionId: "q0_skip", name: "Skip", kind: "reject_once" },
+          ],
+        });
+
+        const selectedOptionId =
+          permission.outcome.outcome === "selected" ? permission.outcome.optionId : "cancelled";
+
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: `question outcome: ${selectedOptionId}` },
           },
         });
 
