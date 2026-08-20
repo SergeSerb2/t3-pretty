@@ -1176,6 +1176,24 @@ export interface DesktopBridge {
   onQuitShortcut?: (listener: (state: "down" | "up") => void) => () => void;
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
+  /**
+   * Native window key state, pushed from the main process. Not the renderer's
+   * own focus: focus moving into an embedded preview blurs the renderer while
+   * the window is still key. Optional; older desktop builds never emit it.
+   */
+  onWindowActiveStateChange?: (listener: (active: boolean) => void) => () => void;
+  /**
+   * True while the user is dragging or resizing the window, so the renderer
+   * can drop expensive effects for the duration of the gesture. Optional;
+   * older desktop builds never emit it.
+   */
+  onWindowInteractingChange?: (listener: (interacting: boolean) => void) => () => void;
+  /**
+   * How many threads are waiting on the human. Sets the dock badge and, when
+   * the total grows while the app is in the background, bounces the dock once.
+   * Optional: older desktop builds lack it, and it is a no-op off macOS.
+   */
+  setDockAttention?: (input: { count: number }) => Promise<void>;
   getUpdateState: () => Promise<DesktopUpdateState>;
   setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;

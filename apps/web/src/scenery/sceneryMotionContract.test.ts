@@ -22,6 +22,7 @@ import expandedImageSource from "../components/chat/ExpandedImageDialog.tsx?raw"
 import messagesTimelineSource from "../components/chat/MessagesTimeline.tsx?raw";
 import providerBannerSource from "../components/chat/ProviderStatusBanner.tsx?raw";
 import threadSyncPillSource from "../components/chat/ThreadSyncStatusPill.tsx?raw";
+import toolCallExpandedBodySource from "../components/chat/ToolCallExpandedBody.tsx?raw";
 import gitActionsSource from "../components/GitActionsControl.tsx?raw";
 import noActiveThreadSource from "../components/NoActiveThreadState.tsx?raw";
 import quitHoldSource from "../components/QuitHoldOverlay.tsx?raw";
@@ -101,7 +102,8 @@ describe("composer attach mutation contract", () => {
 
 describe("tool card disclosure contract", () => {
   it("the expanded body still mounts under the ms-7 indent wrapper", () => {
-    expect(messagesTimelineSource).toContain("mb-1 ms-7 mt-0.5");
+    // The wrapper moved from MessagesTimeline into ToolCallExpandedBody.
+    expect(toolCallExpandedBodySource).toContain("mb-1 ms-7 mt-0.5");
   });
 
   it("status verdict icons still live in the gap-1 indicator cluster, wrapped in a span", () => {

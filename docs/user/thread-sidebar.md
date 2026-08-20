@@ -15,6 +15,13 @@ On phone, [World Scenery](./world-scenery.md) draws the Home list as frosted car
 the landscape photo. Solid rows return if Boring is on, scenery is off, or iOS Reduce Transparency
 is on.
 
+## Dock badge on macOS
+
+The desktop app's Dock icon shows how many threads are waiting on you — an agent blocked on an
+approval or a question, or a finished turn you have not opened yet. When that number grows while
+T3 Code is in the background, the icon bounces once; clearing the backlog clears the badge. It
+never bounces while you are already in the app.
+
 ## Environment artwork
 
 Dev environments can identify themselves with artwork at the top of the sidebar and in the send

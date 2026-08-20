@@ -123,6 +123,7 @@ import { cn } from "~/lib/utils";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   buildBulkTitleRegenerationContextMenuItem,
+  countThreadsAwaitingUser,
   formatWorkingDurationLabel,
   firstValidTimestampMs,
   hasUnseenCompletion,
@@ -1828,6 +1829,20 @@ export default function Sidebar() {
     },
     [markThreadVisited],
   );
+  // Desktop dock badge + one informational bounce. The sidebar already owns
+  // the "does this thread need me" question, so the count is derived here and
+  // pushed only when the number itself moves — the bridge call is a no-op on
+  // web and off macOS.
+  const threadLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
+  const threadsAwaitingUser = useMemo(
+    () => countThreadsAwaitingUser(threads, threadLastVisitedAtById),
+    [threadLastVisitedAtById, threads],
+  );
+  useEffect(() => {
+    void window.desktopBridge
+      ?.setDockAttention?.({ count: threadsAwaitingUser })
+      ?.catch(() => undefined);
+  }, [threadsAwaitingUser]);
   const routeTarget = useParams({
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),

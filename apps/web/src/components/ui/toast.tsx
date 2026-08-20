@@ -588,6 +588,11 @@ function Toasts({ position }: { position: ToastPosition }) {
             <Toast.Root
               className={cn(
                 "dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full overflow-visible select-none rounded-lg text-popover-foreground shadow-xl shadow-black/25 [transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s]",
+                // Buried cards flatten: only the frontmost toast pays for blur
+                // (a real GPU saving), and the stack reads as depth. Expanding
+                // fans them out over real page content, so glass comes back.
+                visibleIndex > 0 &&
+                  "not-data-expanded:[--glass-blur-raised:0px] not-data-expanded:[--glass-opacity:100%]",
                 // Base positioning using data-position
                 "data-[position*=right]:right-0 data-[position*=right]:left-auto",
                 "data-[position*=left]:right-auto data-[position*=left]:left-0",

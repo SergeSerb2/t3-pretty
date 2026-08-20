@@ -2060,7 +2060,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         },
       });
       setComposerSubmissionError(submission.validationMessage);
-      if (!submission.didDispatch) return;
+      if (!submission.didDispatch) {
+        // Put the failure where the click was: one imperative 300ms shake on
+        // the form, removed on animationend so nothing is left at rest.
+        const form = composerFormRef.current;
+        if (form) {
+          form.removeAttribute("data-reject-shake");
+          // Force a reflow so re-setting the attribute restarts the one-shot.
+          void form.offsetWidth;
+          form.setAttribute("data-reject-shake", "true");
+          form.addEventListener("animationend", () => form.removeAttribute("data-reject-shake"), {
+            once: true,
+          });
+        }
+        return;
+      }
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
       }
@@ -2895,6 +2909,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onDragLeaveCapture={onComposerMentionDragLeaveCapture}
         onDropCapture={composerMentionDragHandlers.onDrop}
       >
+        {composerProviderState.composerFrameClassName === "ultrathink-frame" ? (
+          // The rainbow ring: mask + conic gradient rasterize once, the inner
+          // layer rotates on the compositor (see .ultrathink-ring in index.css).
+          <span aria-hidden className="ultrathink-ring">
+            <span className="ultrathink-ring-spin" />
+          </span>
+        ) : null}
         <div
           ref={composerSurfaceRef}
           data-chat-composer-mobile-collapsed={isComposerCollapsedMobile ? "true" : "false"}

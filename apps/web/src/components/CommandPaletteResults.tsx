@@ -172,7 +172,10 @@ function CommandPaletteResultRow(props: {
     <CommandItem
       value={props.item.value}
       className={cn(
-        "cursor-pointer gap-2 hover:bg-transparent hover:text-inherit data-highlighted:bg-transparent data-highlighted:text-inherit data-selected:bg-transparent data-selected:text-inherit [&[data-highlighted][data-selected]]:bg-transparent [&[data-highlighted][data-selected]]:text-inherit",
+        // 90ms: at held-arrow scrubbing speed each row still reaches ~45%
+        // opacity, which reads as motion blur rather than lag. Above ~120ms
+        // navigation starts smearing.
+        "cursor-pointer gap-2 transition-colors duration-[90ms] ease-out hover:bg-transparent hover:text-inherit data-highlighted:bg-transparent data-highlighted:text-inherit data-selected:bg-transparent data-selected:text-inherit [&[data-highlighted][data-selected]]:bg-transparent [&[data-highlighted][data-selected]]:text-inherit",
         props.isActive && "bg-accent! text-accent-foreground!",
       )}
       onMouseDown={(event) => {
@@ -212,7 +215,12 @@ function CommandPaletteResultRow(props: {
       ) : null}
       {shortcutLabel ? <CommandShortcut>{shortcutLabel}</CommandShortcut> : null}
       {props.item.kind === "submenu" ? (
-        <ChevronRightIcon className="-me-0.5 ms-auto size-4 shrink-0 text-muted-foreground/70" />
+        <ChevronRightIcon
+          className={cn(
+            "-me-0.5 ms-auto size-4 shrink-0 text-muted-foreground/70 transition-[translate,color] duration-150 ease-out",
+            props.isActive && "translate-x-0.5 text-foreground/80",
+          )}
+        />
       ) : null}
     </CommandItem>
   );
