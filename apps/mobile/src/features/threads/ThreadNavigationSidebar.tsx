@@ -1297,7 +1297,7 @@ function ThreadNavigationSidebarPane(
         borderRightWidth: StyleSheet.hairlineWidth,
       }}
     >
-      <View className="flex-1" style={{ paddingBottom: insets.bottom }}>
+      <View className="flex-1">
         <SwipeableScrollGateProvider enabled={swipeEnabled}>
           <GestureDetector gesture={sidebarScrollGesture}>
             <LegendList

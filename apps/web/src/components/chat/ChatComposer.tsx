@@ -211,6 +211,7 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
 }
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
+import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { BotIcon, CircleAlertIcon, PencilRulerIcon, XIcon } from "lucide-react";
@@ -389,6 +390,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   showPlanFollowUpPrompt: boolean;
   promptHasText: boolean;
   isSendBusy: boolean;
+  isInterrupting: boolean;
   sendDisabledReason: string | null;
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
@@ -417,6 +419,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         showPlanFollowUpPrompt={props.showPlanFollowUpPrompt}
         promptHasText={props.promptHasText}
         isSendBusy={props.isSendBusy}
+        isInterrupting={props.isInterrupting}
         sendDisabledReason={props.sendDisabledReason}
         isConnecting={props.isConnecting}
         isEnvironmentUnavailable={props.isEnvironmentUnavailable}
@@ -505,6 +508,8 @@ export interface ChatComposerProps {
   phase: SessionPhase;
   isConnecting: boolean;
   isSendBusy: boolean;
+  /** An interrupt is in flight; the Stop button shows it until the work stops. */
+  isInterrupting?: boolean;
   /** Local send is in flight; keep Stop/thinking even if session status flickers. */
   isOptimisticWorking?: boolean;
   sendDisabledReason: string | null;
@@ -621,6 +626,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     phase,
     isConnecting,
     isSendBusy,
+    isInterrupting = false,
     isOptimisticWorking = false,
     sendDisabledReason,
     isPreparingWorktree,
@@ -1005,6 +1011,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * next draft.
    */
   const pendingImageCompressionsRef = useRef<Map<ThreadId, number>>(new Map());
+  /** Render mirror of the ref above; the ref stays the synchronous source of truth. */
+  const [pendingImageCompressions, setPendingImageCompressions] = useState<
+    ReadonlyMap<ThreadId, number>
+  >(() => new Map());
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -1240,6 +1250,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => new Set(nonPersistedComposerImageIds),
     [nonPersistedComposerImageIds],
   );
+
+  const compressingImageCount = activeThreadId
+    ? (pendingImageCompressions.get(activeThreadId) ?? 0)
+    : 0;
 
   const isComposerApprovalState = activePendingApproval !== null;
   const activePendingUserInput = pendingUserInputs[0] ?? null;
@@ -2539,10 +2553,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       acceptedFiles.push(file);
       reservedCount += 1;
     }
-    setThreadError(threadId, error);
+    // Same rule as the compression failure below: only report failures, never
+    // clear on success, or an unread error from other work is swallowed.
+    if (error !== null) {
+      setThreadError(threadId, error);
+    }
     if (acceptedFiles.length === 0) return;
 
     pendingImageCompressionsRef.current.set(threadId, pendingCount + acceptedFiles.length);
+    setPendingImageCompressions(new Map(pendingImageCompressionsRef.current));
     try {
       const nextImages: ComposerImageAttachment[] = [];
       let compressionError: string | null = null;
@@ -2589,6 +2608,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       } else {
         pendingImageCompressionsRef.current.delete(threadId);
       }
+      setPendingImageCompressions(new Map(pendingImageCompressionsRef.current));
     }
   };
 
@@ -3166,11 +3186,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             {!isComposerCollapsedMobile &&
               !isComposerApprovalState &&
               pendingUserInputs.length === 0 &&
-              composerImages.some(
-                (image) =>
-                  !composerPreviewAnnotations.some((annotation) => annotation.id === image.id) &&
-                  !composerCanvasSelections.some((selection) => selection.id === image.id),
-              ) && (
+              (compressingImageCount > 0 ||
+                composerImages.some(
+                  (image) =>
+                    !composerPreviewAnnotations.some((annotation) => annotation.id === image.id) &&
+                    !composerCanvasSelections.some((selection) => selection.id === image.id),
+                )) && (
                 <div className="mb-3 flex flex-wrap gap-2">
                   {composerImages
                     .filter(
@@ -3240,6 +3261,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         </Button>
                       </div>
                     ))}
+                  {Array.from({ length: compressingImageCount }, (_, index) => (
+                    <div
+                      key={`compressing-${index}`}
+                      className="flex h-16 w-16 items-center justify-center rounded-lg border border-border/80 bg-background"
+                    >
+                      <Spinner
+                        className="size-3.5 text-secondary-label"
+                        aria-label="Compressing image"
+                      />
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -3267,7 +3299,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 onPaste={onComposerPaste}
                 placeholder={
                   isComposerApprovalState
-                    ? (activePendingApproval?.detail ?? "Resolve this approval request to continue")
+                    ? "Resolve this approval request to continue"
                     : activePendingProgress
                       ? "Type your own answer, or leave this blank to use the selected option"
                       : showPlanFollowUpPrompt && activeProposedPlan
@@ -3464,6 +3496,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   showPlanFollowUpPrompt={pendingUserInputs.length === 0 && showPlanFollowUpPrompt}
                   promptHasText={prompt.trim().length > 0}
                   isSendBusy={isSendBusy}
+                  isInterrupting={isInterrupting}
                   sendDisabledReason={sendDisabledReason}
                   isConnecting={isConnecting}
                   isEnvironmentUnavailable={

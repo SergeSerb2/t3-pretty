@@ -232,7 +232,7 @@ function OpenContentSearchDialog(props: {
           ) : search.invalidRegex ? (
             <span className="text-destructive">Invalid regular expression</span>
           ) : (
-            `${matches.length.toLocaleString()}${search.truncated ? "+" : ""} results in ${fileCount.toLocaleString()} files`
+            `${matches.length.toLocaleString()}${search.truncated ? "+" : ""} ${matches.length === 1 ? "result" : "results"} in ${fileCount.toLocaleString()} ${fileCount === 1 ? "file" : "files"}`
           )}
         </div>
       ) : null}

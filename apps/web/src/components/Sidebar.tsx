@@ -18,6 +18,7 @@ import {
 import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  canSettle,
   canSnooze,
   changeRequestAutoSettles,
   effectiveSettled,
@@ -193,6 +194,8 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 // Keep the v2 key so existing preferences survive the v2-to-default rename.
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:snoozed-expanded";
+const PROJECT_SCOPE_KEY = "t3code:sidebar-v2:project-scope";
+const ProjectScopeKeySchema = Schema.NullOr(Schema.String);
 
 function compactSidebarTimeLabel(label: string): string {
   if (label === "just now") return "now";
@@ -1939,7 +1942,11 @@ export default function Sidebar() {
 
   // Project scope: one menu above the list. Scoping filters the list without
   // making the header width depend on the number or length of project names.
-  const [projectScopeKey, setProjectScopeKey] = useState<string | null>(null);
+  const [projectScopeKey, setProjectScopeKey] = useLocalStorage(
+    PROJECT_SCOPE_KEY,
+    null as string | null,
+    ProjectScopeKeySchema,
+  );
   const scopedProjectGroup = useMemo(
     () =>
       projectScopeKey === null
@@ -1959,10 +1966,12 @@ export default function Sidebar() {
     [scopedProjectGroup],
   );
   useEffect(() => {
-    if (projectScopeKey !== null && scopedProjectGroup === null) {
+    // Wait for the first project payload: projects arrive over the websocket,
+    // so an empty list means "not loaded yet", not "scope is stale".
+    if (projectGroups.length > 0 && projectScopeKey !== null && scopedProjectGroup === null) {
       setProjectScopeKey(null);
     }
-  }, [projectScopeKey, scopedProjectGroup]);
+  }, [projectGroups.length, projectScopeKey, scopedProjectGroup, setProjectScopeKey]);
   // Count-only subscription: the parent needs "are there draft rows" for the
   // empty state, while SidebarDraftBlock owns the per-keystroke content
   // subscription. Selecting a number keeps typing in a draft composer from
@@ -2841,6 +2850,18 @@ export default function Sidebar() {
           serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true &&
           canSnooze(thread, { now: selectionNow.toISOString() }),
       );
+      // Settle differs from snooze: a mixed selection settles the actionable
+      // subset (the label carries the real count) instead of hiding the item,
+      // matching the per-row settle button and the idempotent decider.
+      const settleableThreadKeys = threadKeys.filter((threadKey) => {
+        const thread = threadByKeyRef.current.get(threadKey);
+        return (
+          thread !== undefined &&
+          serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSettlement ===
+            true &&
+          canSettle(thread, { now: selectionNow.toISOString() })
+        );
+      });
       const titleRegenerationThreads = selectedThreads.filter(
         (thread) =>
           serverConfigs.get(thread.environmentId)?.environment.capabilities
@@ -2857,7 +2878,9 @@ export default function Sidebar() {
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
-            { id: "settle", label: `Settle (${count})` },
+            ...(settleableThreadKeys.length > 0
+              ? [{ id: "settle", label: `Settle (${settleableThreadKeys.length})` }]
+              : []),
             ...(canSnoozeSelection
               ? [
                   {
@@ -2967,7 +2990,7 @@ export default function Sidebar() {
         // valid mixed selection. Pinned rows ARE included: the decider
         // clears the pin as part of settling, so they park like the rest.
         const coSettlingKeys = new Set(threadKeys);
-        for (const threadKey of threadKeys) {
+        for (const threadKey of settleableThreadKeys) {
           const thread = threadByKeyRef.current.get(threadKey);
           if (!thread || thread.settledOverride === "settled") continue;
           attemptSettle(scopeThreadRef(thread.environmentId, thread.id), { coSettlingKeys });
@@ -3638,7 +3661,9 @@ export default function Sidebar() {
                 role="status"
                 className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
               >
-                No threads found
+                {scopedProjectGroup
+                  ? `No threads found in ${scopedProjectGroup.displayName}`
+                  : "No threads found"}
               </p>
             )
           ) : null}
