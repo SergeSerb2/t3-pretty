@@ -4,6 +4,10 @@ Settings → Storage shows disk use for **managed worktrees** on each connected 
 isolated checkouts T3 Code creates for threads. Project folders you opened yourself are never
 counted and never deleted from here.
 
+With more than one environment connected, a device picker at the top chooses which environment's
+storage is shown — this device first, then your other connections. Only the selected environment's
+sections are listed.
+
 Disconnected or offline environments are left alone. Opening Storage does not reconnect them, and
 older servers that do not advertise storage inventory are not probed — update that server, then
 reopen the page.
