@@ -166,7 +166,8 @@ export function grokSessionRelativeImagePath(path: string): string | undefined {
 /**
  * Prefer the tool-result file for a markdown `images/N.jpg` link so the asset
  * request carries the generating Grok session directory, not only the latest
- * resume cursor.
+ * resume cursor. Callers must pass only the Imagine results for this message's
+ * turn; the first matching path is the generating tool result.
  */
 export function matchGeneratedImagePath(
   requestedPath: string,
@@ -176,13 +177,12 @@ export function matchGeneratedImagePath(
   if (!requestedRelative) {
     return undefined;
   }
-  let match: string | undefined;
   for (const generated of generatedImagePaths) {
     if (grokSessionRelativeImagePath(generated) === requestedRelative) {
-      match = generated;
+      return generated;
     }
   }
-  return match;
+  return undefined;
 }
 
 /** True when the project still uses automatic detection instead of a stored icon. */

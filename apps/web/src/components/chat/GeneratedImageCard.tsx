@@ -178,6 +178,29 @@ export function generatedImageWorkEntryPath(workEntry: WorkLogEntry): string | u
   });
 }
 
+/** Imagine files grouped by the turn that produced them, in work-log order. */
+export function generatedImagePathsByTurnFromWorkEntries(
+  workEntries: ReadonlyArray<WorkLogEntry>,
+): ReadonlyMap<string, ReadonlyArray<string>> {
+  const byTurn = new Map<string, string[]>();
+  for (const entry of workEntries) {
+    const path = generatedImageWorkEntryPath(entry);
+    const turnId = entry.turnId;
+    if (!path || !turnId) {
+      continue;
+    }
+    const existing = byTurn.get(turnId);
+    if (existing) {
+      if (!existing.includes(path)) {
+        existing.push(path);
+      }
+    } else {
+      byTurn.set(turnId, [path]);
+    }
+  }
+  return byTurn;
+}
+
 export function GeneratedImageCard(props: {
   readonly cwd?: string | undefined;
   readonly environmentId: EnvironmentId | null;

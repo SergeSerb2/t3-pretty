@@ -137,8 +137,8 @@ describe("matchGeneratedImagePath", () => {
     expect(matchGeneratedImagePath("images/2.jpg", [grokPath])).toBeUndefined();
   });
 
-  it("prefers the later generated file when two sessions reuse images/1.jpg", () => {
-    expect(matchGeneratedImagePath("images/1.jpg", [grokPath, laterGrokPath])).toBe(laterGrokPath);
+  it("keeps the earlier generated file when two sessions reuse images/1.jpg", () => {
+    expect(matchGeneratedImagePath("images/1.jpg", [grokPath, laterGrokPath])).toBe(grokPath);
   });
 });
 
