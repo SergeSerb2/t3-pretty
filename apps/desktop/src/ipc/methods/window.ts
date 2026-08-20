@@ -12,7 +12,8 @@ import {
   type DesktopEnvironmentBootstrap,
   type PickedThemeFile,
 } from "@t3tools/contracts";
-import { isCommandAvailable } from "@t3tools/shared/shell";
+import { resolveEditorExecutable } from "@t3tools/shared/editorLaunch";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as NodeOS from "node:os";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -299,15 +300,19 @@ export const probeRemoteEditors = DesktopIpc.makeIpcMethod({
   // A Finder-launched app can miss PATH entries; an empty result makes the
   // renderer fall back to VS Code only, so that fails soft.
   handler: Effect.fn("desktop.ipc.window.probeRemoteEditors")(function* () {
+    const platform = yield* HostProcessPlatform;
     const available: Array<EditorId> = [];
     for (const editorId of REMOTE_CAPABLE_EDITOR_IDS) {
       const commands = EDITORS.find((editor) => editor.id === editorId)?.commands;
       if (!commands) continue;
-      for (const command of commands) {
-        if (yield* isCommandAvailable(command, { env: process.env })) {
-          available.push(editorId);
-          break;
-        }
+      const resolved = yield* resolveEditorExecutable({
+        editorId,
+        commands,
+        platform,
+        env: process.env,
+      });
+      if (Option.isSome(resolved)) {
+        available.push(editorId);
       }
     }
     return available;

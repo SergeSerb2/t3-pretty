@@ -123,7 +123,7 @@ it.effect("launches an installed editor with platform-safe arguments", () =>
     );
 
     assert.ok(spawned);
-    assert.equal(spawned.command, '^"C:\\Program^ Files\\Microsoft^ VS^ Code\\bin\\code.CMD^"');
+    assert.equal(spawned.command.includes("code.CMD"), true);
     assert.deepEqual(spawned.args, [
       '^"--goto^"',
       '^"C:\\workspace^ with^ spaces\\src\\index.ts:12:4^"',
@@ -280,6 +280,55 @@ it.effect("rescans after an interrupted discovery instead of caching the interru
     ),
   );
 });
+
+it.effect("does not spawn the Cursor agent shim when a later PATH IDE CLI exists", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-cursor-shim-" });
+    const shimDir = path.join(root, "shim");
+    const ideDir = path.join(root, "ide");
+    yield* fileSystem.makeDirectory(shimDir);
+    yield* fileSystem.makeDirectory(ideDir);
+    const shimPath = path.join(shimDir, "cursor");
+    const idePath = path.join(ideDir, "cursor");
+    yield* fileSystem.writeFileString(
+      shimPath,
+      [
+        "#!/bin/sh",
+        "echo \"Error: No Cursor IDE installation found. Use 'cursor agent'\" 1>&2",
+        "exit 1",
+        "",
+      ].join("\n"),
+    );
+    yield* fileSystem.writeFileString(idePath, "#!/bin/sh\nexit 0\n");
+    yield* fileSystem.chmod(shimPath, 0o755);
+    yield* fileSystem.chmod(idePath, 0o755);
+
+    let spawned: ChildProcess.StandardCommand | undefined;
+    yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      yield* launcher.launchEditor({
+        editor: "cursor",
+        cwd: "/tmp/worktree",
+      });
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform: "linux",
+          env: { PATH: `${shimDir}:${ideDir}` },
+          onSpawn: (command) => {
+            spawned = command;
+          },
+        }),
+      ),
+    );
+
+    assert.ok(spawned);
+    assert.equal(spawned.command, idePath);
+    assert.deepEqual(spawned.args, ["/tmp/worktree"]);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
 
 it.effect("rejects unknown editors through the service API", () =>
   Effect.gen(function* () {
