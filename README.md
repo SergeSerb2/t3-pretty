@@ -19,6 +19,16 @@
 </p>
 
 <p align="center">
+  <a href="https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest"><strong>⬇ Latest release</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-arm64.dmg">macOS</a>
+  &nbsp;·&nbsp;
+  <a href="https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-x64.exe">Windows</a>
+  &nbsp;·&nbsp;
+  <a href="https://cursor.com/codebase/serbinenko/t3-pretty/releases">All releases</a>
+</p>
+
+<p align="center">
   <img src="./assets/pretty/screenshot-world-scenery.jpg" alt="T3 Pretty new thread over a Los Roques beach, with a frosted sidebar and a glass composer" width="920" />
 </p>
 
@@ -32,7 +42,9 @@ Visual changes are not allowed to trade away capability or existing state.
 
 > [!IMPORTANT]
 > `npx t3@latest`, Homebrew `t3-code`, and winget `T3Tools.T3Code` install **upstream T3 Code**,
-> not this fork. T3 Pretty is this repository. Run it from source (below).
+> not this fork. T3 Pretty is this repository. Grab a desktop build from
+> [Latest release](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest), or run from
+> source (below).
 
 ---
 
@@ -104,9 +116,25 @@ behavior at conflict boundaries. See [docs/operations/fork-release.md](./docs/op
 
 ---
 
+## Download 📦
+
+Every merge to `main` publishes a desktop build. **[Latest release](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest)** always points at the current Origin tag. **[All releases](https://cursor.com/codebase/serbinenko/t3-pretty/releases)** lists the rest.
+
+| Platform | Installer |
+| --- | --- |
+| 🍎 **macOS** (Apple Silicon) | [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-arm64.dmg) |
+| 🪟 **Windows** (x64) | [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-x64.exe) |
+| 📋 **Release notes** | [Latest](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest) · [All](https://cursor.com/codebase/serbinenko/t3-pretty/releases) |
+
+The installer filenames still say `T3-Code-…` on purpose: internal package names stay compatible with T3 Code. The app you launch is **T3 Pretty (Alpha)**. After the first install, the desktop app updates itself from the same public feed.
+
+The feed always lists whatever is current: [macOS manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml) · [Windows manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml). Linux AppImages are not on that feed yet — build one with `vp run dist:desktop:linux`. Mobile is source-only for now: [apps/mobile/README.md](./apps/mobile/README.md).
+
+---
+
 ## Run from source 🚀
 
-This is how you actually get T3 Pretty.
+Prefer a local checkout, or want to hack on the look? This is the source path.
 
 **Needs:** Node **24** (`^24.13.1`) and [Vite+](https://viteplus.dev/guide/) (`vp`).
 
