@@ -8,7 +8,7 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
-import { resolveRuntimeModeForProviderDriver } from "@t3tools/contracts";
+import { resolveRuntimeModeForProviderDriver, DEFAULT_RUNTIME_MODE } from "@t3tools/contracts";
 import {
   detectComposerTrigger,
   replaceTextRange,
@@ -924,14 +924,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
   // Kimi's "yolo" mode has no equivalent on other providers; a model pick
   // that crosses providers normalizes it to the generic full-access mode in
-  // the same gesture.
+  // the same gesture. Landing on Kimi with the generic default flips to
+  // Kimi's own default, "yolo".
   const handleSelectModelOption = useCallback(
     (option: ModelOption) => {
       onUpdateModelSelection(option.selection);
-      const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
-        option.providerDriver,
-        currentRuntimeMode,
-      );
+      const nextRuntimeMode =
+        option.providerDriver === "kimi" && currentRuntimeMode === DEFAULT_RUNTIME_MODE
+          ? ("yolo" as const)
+          : resolveRuntimeModeForProviderDriver(option.providerDriver, currentRuntimeMode);
       if (nextRuntimeMode !== currentRuntimeMode) {
         onUpdateRuntimeMode(nextRuntimeMode);
       }

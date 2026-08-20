@@ -14,6 +14,7 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   MessageId,
+  defaultRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
   T3_PROJECT_FILE_NAME,
   ThreadId,
@@ -451,7 +452,6 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     draftStartFromOrigin ??
     selectedEnvironmentServerConfig?.settings.newWorktreesStartFromOrigin ??
     true;
-  const runtimeMode = selectedProjectDraft.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   const interactionMode = planModeEnabled
     ? (selectedProjectDraft.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE)
     : DEFAULT_PROVIDER_INTERACTION_MODE;
@@ -495,6 +495,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         option.selection.instanceId === selectedModel.instanceId &&
         option.selection.model === selectedModel.model,
     ) ?? null;
+  // Untouched drafts inherit the provider's own default access mode: "yolo"
+  // for Kimi, the generic "full-access" everywhere else.
+  const runtimeMode =
+    selectedProjectDraft.runtimeMode ??
+    defaultRuntimeModeForProviderDriver(selectedModelOption?.providerDriver);
   const selectedProviderSkills = useMemo(
     () =>
       selectedEnvironmentServerConfig?.providers.find(
@@ -517,8 +522,12 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         modelSelection: options ? { ...option.selection, options } : option.selection,
         // Kimi's "yolo" mode has no equivalent on other providers; normalize
         // to the generic full-access mode in the same write so the Kimi-only
-        // literal never reaches another provider's session config.
-        runtimeMode: resolveRuntimeModeForProviderDriver(option.providerDriver, runtimeMode),
+        // literal never reaches another provider's session config. Landing on
+        // Kimi with the generic default flips to Kimi's own default, "yolo".
+        runtimeMode:
+          option.providerDriver === "kimi" && runtimeMode === DEFAULT_RUNTIME_MODE
+            ? "yolo"
+            : resolveRuntimeModeForProviderDriver(option.providerDriver, runtimeMode),
       });
     },
     [modelOptions, runtimeMode, selectedProjectDraftKey],
@@ -947,7 +956,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         }),
         attachments: draft.attachments,
         modelSelection: draftModelSelection,
-        runtimeMode: draft.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+        runtimeMode: draft.runtimeMode ?? runtimeMode,
         interactionMode: resolvePendingTaskInteractionMode({
           preferenceLoaded: planModePreferenceLoaded,
           planModeEnabled,
@@ -987,6 +996,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       selectedProjectDraftKey,
       planModeEnabled,
       planModePreferenceLoaded,
+      runtimeMode,
       startFromOrigin,
       workspaceMode,
     ],

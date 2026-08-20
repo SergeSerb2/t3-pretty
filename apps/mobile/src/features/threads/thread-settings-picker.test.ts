@@ -192,7 +192,7 @@ describe("buildThreadSettingsPickerModel", () => {
     expect(picker.selectSections[0]?.label).toBe("Reasoning");
   });
 
-  it("offers Kimi Auto and Yolo instead of Full access", () => {
+  it("offers Kimi Yolo and Full access in ascending order of access", () => {
     const kimiModels = [
       modelOption("k3", { providerKey: "kimi", providerLabel: "Kimi", providerDriver: "kimi" }),
     ];
@@ -205,9 +205,9 @@ describe("buildThreadSettingsPickerModel", () => {
 
     expect(picker.runtimeChoices.map((choice) => choice.label)).toEqual([
       "Approve actions",
-      "Auto",
       "Yolo",
+      "Full access",
     ]);
-    expect(picker.runtimeChoices.find((choice) => choice.selected)?.shortLabel).toBe("Auto");
+    expect(picker.runtimeChoices.find((choice) => choice.selected)?.shortLabel).toBe("Full");
   });
 });

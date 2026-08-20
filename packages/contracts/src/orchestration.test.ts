@@ -18,6 +18,7 @@ import {
   OrchestrationThread,
   OrchestrationThreadShell,
   ProjectCreateCommand,
+  defaultRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
   ThreadMetaUpdatedPayload,
   ThreadTurnStartCommand,
@@ -1006,6 +1007,13 @@ it("resolveRuntimeModeForProviderDriver maps yolo to full-access off Kimi", () =
     resolveRuntimeModeForProviderDriver("codex", "approval-required"),
     "approval-required",
   );
+});
+
+it("defaultRuntimeModeForProviderDriver defaults Kimi to yolo", () => {
+  assert.strictEqual(defaultRuntimeModeForProviderDriver("kimi"), "yolo");
+  assert.strictEqual(defaultRuntimeModeForProviderDriver("codex"), "full-access");
+  assert.strictEqual(defaultRuntimeModeForProviderDriver(null), "full-access");
+  assert.strictEqual(defaultRuntimeModeForProviderDriver(undefined), "full-access");
 });
 
 it("isProviderSendTurnSupportedImageMimeType accepts raster formats and rejects svg", () => {

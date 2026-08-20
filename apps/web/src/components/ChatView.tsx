@@ -20,6 +20,7 @@ import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderInteractionMode,
   ProviderDriverKind,
+  defaultRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
   RuntimeMode,
   TerminalOpenInput,
@@ -1748,7 +1749,6 @@ function ChatViewContent(props: ChatViewProps) {
   // session.lastError. Bump a tick so the banner hides immediately. Mirrors
   // the branch mismatch banner.
   const [, setThreadErrorBannerDismissTick] = useState(0);
-  const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   // Plan mode is legacy (Settings → Beta). With the flag off the effective
   // mode is forced to "default" — even for threads with a stored plan mode —
   // so nobody is trapped in plan mode while its toggle is hidden. The next
@@ -2433,6 +2433,16 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const selectedProvider: ProviderDriverKind =
     modelPickerLockedProvider ?? unlockedSelectedProvider;
+  // Kimi's default access mode is "yolo"; other providers default to
+  // "full-access". A mode the user never picked still reads as the generic
+  // default, so surface the provider's own default instead. An explicit
+  // picker choice (composer draft override, or any non-default mode) wins.
+  const storedRuntimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? null;
+  const runtimeMode: RuntimeMode =
+    composerRuntimeMode === null &&
+    (storedRuntimeMode === null || storedRuntimeMode === DEFAULT_RUNTIME_MODE)
+      ? defaultRuntimeModeForProviderDriver(selectedProvider)
+      : (storedRuntimeMode ?? DEFAULT_RUNTIME_MODE);
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
