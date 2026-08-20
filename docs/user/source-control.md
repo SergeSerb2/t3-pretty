@@ -50,6 +50,10 @@ T3 Code works with the platforms your team already uses:
   way GitHub pull requests do
 - On Origin pull requests, Grok auto-review summary cards stay hidden so the conversation shows
   findings and discussion. Use **Show auto-review summaries** when you want the write-ups
+- **Fix all** on an open pull request starts a thread that works through every unresolved review
+  finding — GitHub, GitLab, Bitbucket, Azure DevOps, Origin, and Grok Origin comments — then
+  resolves the conversations it fixed. You pick the agent and reasoning effort first. Per-comment
+  **Fix in a thread** buttons still handle one finding at a time
 - On GitHub pull requests, see emoji reactions on the description and comments — including Codex's
   eyes while it reviews and thumbs-up when it finishes without comments
 - Resolved review conversations collapse in the pull request conversation and on the diff, so you

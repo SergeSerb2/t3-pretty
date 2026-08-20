@@ -461,6 +461,49 @@ export function buildFixFindingPrompt(input: {
   ].join("\n");
 }
 
+/** Unresolved review findings a Fix all sweep will hand to an agent. */
+export function collectFixableFindings(input: {
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+  readonly checks: ReadonlyArray<PullRequestCheck>;
+}): {
+  readonly threads: ReadonlyArray<PullRequestReviewThread>;
+  readonly remarks: ReadonlyArray<PullRequestComment>;
+  readonly failingChecks: ReadonlyArray<PullRequestCheck>;
+} {
+  const threads = input.reviewThreads.filter(
+    (thread) =>
+      (thread.path !== null ||
+        firstGrokReviewFinding(thread.comments.map((comment) => comment.body)) !== null) &&
+      !thread.isResolved &&
+      thread.comments.some((comment) => visibleBody(comment.body) !== null),
+  );
+  const attached = new Set(
+    input.reviewThreads.flatMap((thread) => thread.comments.map((comment) => comment.id)),
+  );
+  const remarks = input.comments.filter(
+    (comment) =>
+      (comment.kind === "review" ||
+        comment.kind === "review-comment" ||
+        parseGrokReviewFinding(comment.body) !== null) &&
+      visibleBody(comment.body) !== null &&
+      !attached.has(comment.id),
+  );
+  const failingChecks = input.checks.filter(
+    (check) => check.status === "failure" || check.status === "cancelled",
+  );
+  return { threads, remarks, failingChecks };
+}
+
+export function countFixableFindings(input: {
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+  readonly checks: ReadonlyArray<PullRequestCheck>;
+}): number {
+  const collected = collectFixableFindings(input);
+  return collected.threads.length + collected.remarks.length + collected.failingChecks.length;
+}
+
 export function buildFixFindingsPrompt(input: {
   readonly provider: SourceControlProviderKind;
   readonly host: string;
@@ -475,36 +518,17 @@ export function buildFixFindingsPrompt(input: {
   readonly commentsTruncated: boolean;
   readonly canResolve: boolean;
 }): string {
-  const threads = input.reviewThreads.filter(
-    (thread) =>
-      (thread.path !== null ||
-        firstGrokReviewFinding(thread.comments.map((comment) => comment.body)) !== null) &&
-      !thread.isResolved &&
-      thread.comments.some((comment) => visibleBody(comment.body) !== null),
+  const collected = collectFixableFindings(input);
+  const threads = collected.threads;
+  const unattachable = collected.remarks.flatMap((comment) => {
+    const body = visibleBody(comment.body);
+    if (body === null) return [];
+    const where = comment.path === null ? "" : ` on \`${boundedField(comment.path)}\``;
+    return [`${boundedField(comment.author?.login ?? "ghost")}${where}: ${boundedField(body)}`];
+  });
+  const failingChecks = collected.failingChecks.map((check) =>
+    boundedField(check.description ? `${check.name} — ${check.description}` : check.name),
   );
-  const attached = new Set(
-    input.reviewThreads.flatMap((thread) => thread.comments.map((comment) => comment.id)),
-  );
-  const unattachable = input.comments
-    .filter(
-      (comment) =>
-        (comment.kind === "review" ||
-          comment.kind === "review-comment" ||
-          parseGrokReviewFinding(comment.body) !== null) &&
-        visibleBody(comment.body) !== null &&
-        !attached.has(comment.id),
-    )
-    .flatMap((comment) => {
-      const body = visibleBody(comment.body);
-      if (body === null) return [];
-      const where = comment.path === null ? "" : ` on \`${boundedField(comment.path)}\``;
-      return [`${boundedField(comment.author?.login ?? "ghost")}${where}: ${boundedField(body)}`];
-    });
-  const failingChecks = input.checks
-    .filter((check) => check.status === "failure" || check.status === "cancelled")
-    .map((check) =>
-      boundedField(check.description ? `${check.name} — ${check.description}` : check.name),
-    );
   const includedChecks = failingChecks.slice(-FINDING_LIMIT);
   const includedRemarks = unattachable.slice(
     Math.max(0, unattachable.length - (FINDING_LIMIT - includedChecks.length)),

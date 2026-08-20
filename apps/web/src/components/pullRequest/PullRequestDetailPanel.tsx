@@ -3,12 +3,14 @@ import { PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS } from "@t3tools/client-runti
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
+  ModelSelection,
   PullRequestAction,
   PullRequestMergeMethod,
   PullRequestUpdateMethod,
   PullRequestRef,
   PullRequestState,
   ScopedThreadRef,
+  ThreadId,
 } from "@t3tools/contracts";
 import {
   ArrowDownUpIcon,
@@ -102,6 +104,7 @@ import {
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
   buildResolveConflictsPrompt,
+  countFixableFindings,
   handoffPrompt,
   handoffReviewComments,
   latestPullRequestReviewOutcomes,
@@ -135,6 +138,8 @@ import {
   resolvePickableEnvironments,
   type PickableEnvironment,
 } from "./pullRequestProjectAssignment.logic";
+import { composerAutoSendKey, queueComposerAutoSend } from "./composerAutoSend";
+import { FixAllFindingsDialog } from "./FixAllFindingsDialog";
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
 import {
   PullRequestActorLabel,
@@ -517,6 +522,7 @@ export function PullRequestDetailPanel({
   // Which handoff is preparing, keyed so a per-finding button can say "Preparing..." on itself
   // alone. One at a time whatever the key: they all check the same pull request out.
   const [handoff, setHandoff] = useState<string | null>(null);
+  const [fixAllOpen, setFixAllOpen] = useState(false);
   const { copyToClipboard: copyBranchToClipboard, isCopied: isBranchCopied } = useCopyToClipboard({
     target: "branch name",
     timeout: 1600,
@@ -802,6 +808,14 @@ export function PullRequestDetailPanel({
   // the work.
   const attachTarget = pullRequestComposerTarget(context, composerDraftTarget);
   const handoffLabels = pullRequestHandoffLabels(attachTarget !== null);
+  const findingCount =
+    detail === null
+      ? 0
+      : countFixableFindings({
+          reviewThreads: detail.reviewThreads,
+          comments: detail.comments,
+          checks: detail.checks,
+        });
 
   const writeTaskToComposer = (target: ScopedThreadRef | DraftId, task: ThreadTask) => {
     const store = useComposerDraftStore.getState();
@@ -897,14 +911,30 @@ export function PullRequestDetailPanel({
     // already work — and it moves the branch under everything else that is open there.
     mode: "worktree" | "local" = "worktree",
     destination: "this-thread" | "new-thread" = "this-thread",
+    run?: { readonly modelSelection: ModelSelection },
   ) => {
     if (!detail || handoff !== null) return;
+    const sendAfterWrite = (target: ScopedThreadRef | DraftId, threadId?: ThreadId) => {
+      if (!run || task === null) return;
+      const store = useComposerDraftStore.getState();
+      store.setModelSelection(target, run.modelSelection, {
+        replaceOptions: true,
+      });
+      const keys = [composerAutoSendKey(target)];
+      if (typeof target === "string" && threadId !== undefined) {
+        keys.push(composerAutoSendKey({ environmentId: actingEnvironmentId, threadId }));
+      }
+      queueComposerAutoSend(keys, store.getComposerDraft(target)?.prompt ?? task.prompt);
+    };
     if (destination === "this-thread" && attachTarget !== null && task !== null) {
       writeTaskToComposer(attachTarget, task);
+      sendAfterWrite(attachTarget);
       toastManager.add({
         type: "success",
-        title: "Added to the composer",
-        description: "The task is in the composer — read it over, then send.",
+        title: run ? "Fix all started" : "Added to the composer",
+        description: run
+          ? "The findings are in this thread and the agent is running."
+          : "The task is in the composer — read it over, then send.",
       });
       return;
     }
@@ -1007,13 +1037,16 @@ export function PullRequestDetailPanel({
       return;
     }
     await openThreadWithTask(projectRef, task, opened);
+    sendAfterWrite(opened.draftId, opened.threadId);
     toastManager.update(
       toastId,
       prepared.value.isOnPullRequestHead
         ? {
             type: "success",
-            title: "Checkout ready",
-            description: "The task is in the composer — read it over, then send.",
+            title: run ? "Fix all started" : "Checkout ready",
+            description: run
+              ? "The findings are in a new thread and the agent is running."
+              : "The task is in the composer — read it over, then send.",
           }
         : staleCheckoutToast,
     );
@@ -1094,10 +1127,11 @@ export function PullRequestDetailPanel({
     );
   };
 
-  const startFixFindings = () => {
+  const startFixFindings = (modelSelection: ModelSelection) => {
     if (!detail) return;
     const canResolve = detail.capabilities.review.resolve && detail.viewerPermissions.resolve;
     const host = pullRequestUrlHost(detail.url) ?? detail.provider;
+    setFixAllOpen(false);
     void startHandoff(
       "findings",
       buildFixFindingsHandoff({
@@ -1114,6 +1148,9 @@ export function PullRequestDetailPanel({
         commentsTruncated: detail.commentsTruncated,
         canResolve,
       }),
+      "worktree",
+      "new-thread",
+      { modelSelection },
     );
   };
 
@@ -1333,6 +1370,17 @@ export function PullRequestDetailPanel({
         <div className="mr-4 flex h-11 min-w-0 flex-nowrap items-center justify-end gap-1">
           {detail ? (
             <>
+              {findingCount > 0 ? (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={handoff !== null}
+                  onClick={() => setFixAllOpen(true)}
+                >
+                  <HammerIcon className="size-3.5" />
+                  {handoff === "findings" ? "Starting..." : "Fix all"}
+                </Button>
+              ) : null}
               <Menu>
                 <MenuTrigger
                   render={
@@ -1371,10 +1419,19 @@ export function PullRequestDetailPanel({
                       </span>
                     </span>
                   </MenuItem>
-                  <MenuItem disabled={handoff !== null} onClick={startFixFindings}>
-                    <HammerIcon className="size-3.5" />
-                    {handoff === "findings" ? "Preparing..." : handoffLabels.fixFindings}
-                  </MenuItem>
+                  {findingCount > 0 ? (
+                    <MenuItem disabled={handoff !== null} onClick={() => setFixAllOpen(true)}>
+                      <HammerIcon className="mt-0.5 size-3.5 shrink-0 self-start" />
+                      <span className="flex min-w-0 flex-col">
+                        <span>
+                          {handoff === "findings" ? "Starting..." : handoffLabels.fixFindings}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Runs every unresolved review finding in a new thread.
+                        </span>
+                      </span>
+                    </MenuItem>
+                  ) : null}
                   {pickableEnvironments.length > 0 ? (
                     <ActOnEnvironmentPicker
                       environments={pickableEnvironments}
@@ -2127,6 +2184,15 @@ export function PullRequestDetailPanel({
           </>
         ) : null}
       </div>
+
+      <FixAllFindingsDialog
+        open={fixAllOpen}
+        onOpenChange={setFixAllOpen}
+        findingCount={findingCount}
+        composerTarget={attachTarget}
+        pending={handoff === "findings"}
+        onConfirm={startFixFindings}
+      />
 
       <AlertDialog
         open={confirmation.open}

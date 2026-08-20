@@ -53,6 +53,7 @@ import {
   buildResolveConflictsPrompt,
   canRequestPullRequestReviewers,
   composePullRequestDetailView,
+  countFixableFindings,
   groupPullRequestConversation,
   pullRequestUrlHost,
   readableFailure,
@@ -276,6 +277,35 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     [detail, environmentId, startHandoff],
   );
 
+  const startFixFindings = useCallback(() => {
+    if (detail === null) return;
+    handoff(
+      buildFixFindingsPrompt({
+        provider: detail.provider,
+        host: pullRequestUrlHost(detail.url) ?? detail.repository,
+        number: detail.number,
+        title: detail.title,
+        url: detail.url,
+        headBranch: detail.headBranch,
+        baseBranch: detail.baseBranch,
+        reviewThreads: detail.reviewThreads,
+        comments: detail.comments,
+        checks: detail.checks,
+        commentsTruncated: detail.commentsTruncated,
+        canResolve: detail.viewerPermissions.resolve && detail.capabilities.review.resolve,
+      }),
+    );
+  }, [detail, handoff]);
+
+  const findingCount =
+    detail === null
+      ? 0
+      : countFixableFindings({
+          reviewThreads: detail.reviewThreads,
+          comments: detail.comments,
+          checks: detail.checks,
+        });
+
   const openOnHost = useCallback(() => {
     if (detail === null) return;
     void tryOpenExternalUrl(detail.url, "pull-request");
@@ -322,31 +352,17 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
       },
     ];
     if (activityQuery.data !== null) {
-      items.push({
-        type: "action",
-        title: "Fix findings in a thread",
-        onPress: () =>
-          handoff(
-            buildFixFindingsPrompt({
-              provider: detail.provider,
-              host: pullRequestUrlHost(detail.url) ?? detail.repository,
-              number: detail.number,
-              title: detail.title,
-              url: detail.url,
-              headBranch: detail.headBranch,
-              baseBranch: detail.baseBranch,
-              reviewThreads: detail.reviewThreads,
-              comments: detail.comments,
-              checks: detail.checks,
-              commentsTruncated: detail.commentsTruncated,
-              canResolve: detail.viewerPermissions.resolve && detail.capabilities.review.resolve,
-            }),
-          ),
-      });
+      if (findingCount > 0) {
+        items.push({
+          type: "action",
+          title: "Fix all findings",
+          onPress: startFixFindings,
+        });
+      }
     } else if (activityQuery.error !== null) {
       items.push({
         type: "action",
-        title: "Fix findings in a thread",
+        title: "Fix all findings",
         onPress: () =>
           Alert.alert(
             "Could not load the conversation",
@@ -408,7 +424,9 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     can,
     detail,
     environmentId,
+    findingCount,
     handoff,
+    startFixFindings,
     navigation,
     number,
     openOnHost,
@@ -685,6 +703,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                         mode: "comment",
                       })
                     }
+                    onFixAll={findingCount > 0 ? startFixFindings : undefined}
                     onFixThread={(thread) =>
                       handoff(
                         buildFixFindingPrompt({
