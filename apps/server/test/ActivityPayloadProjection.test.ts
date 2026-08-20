@@ -204,7 +204,7 @@ describe("projectActivityPayload", () => {
     expect(deriveWorkLogEntries([projected])[0]?.changedFiles).toEqual(["/tmp/hero.png"]);
   });
 
-  it("keeps Grok Imagine allowlisted rawOutput image fields without walking rawOutput into files", () => {
+  it("keeps Grok Imagine filesystem paths in projected files and filename as metadata", () => {
     const grokPath =
       "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg";
     const projected = projectActivityPayload(
@@ -225,6 +225,7 @@ describe("projectActivityPayload", () => {
       status: "completed",
       requestKind: "command",
       data: {
+        files: [{ path: grokPath }],
         rawOutput: {
           path: grokPath,
           filename: "1.jpg",
@@ -233,7 +234,7 @@ describe("projectActivityPayload", () => {
       },
     });
     const [entry] = deriveWorkLogEntries([projected]);
-    expect(entry?.changedFiles).toBeUndefined();
+    expect(entry?.changedFiles).toEqual([grokPath]);
     expect(
       extractGeneratedImagePath({
         changedFiles: entry?.changedFiles,

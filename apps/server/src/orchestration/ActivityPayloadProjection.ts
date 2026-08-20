@@ -13,6 +13,7 @@ import {
 const TOOL_TEXT_SCAN_MAX_CHARS = 64 * 1_024;
 const MCP_RESULT_SCAN_MAX_BLOCKS = 256;
 const CHANGED_FILE_SCAN_MAX_NODES = 512;
+const IMAGE_FILE_PATH_KEYS = ["savedPath", "path", "filePath"] as const;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -90,6 +91,23 @@ function collectChangedFiles(
     collectChangedFiles(record[nestedKey], target, seen, depth + 1, budget);
     if (target.length >= 12 || budget.remaining <= 0) {
       return;
+    }
+  }
+}
+
+function collectProjectedImageFiles(
+  rawOutputValue: unknown,
+  target: string[],
+  seen: Set<string>,
+): void {
+  const rawOutput = asRecord(rawOutputValue);
+  if (!rawOutput) {
+    return;
+  }
+  for (const key of IMAGE_FILE_PATH_KEYS) {
+    const candidate = asTrimmedString(rawOutput[key]);
+    if (candidate && isWorkspaceImagePreviewPath(candidate)) {
+      pushChangedFile(target, seen, candidate);
     }
   }
 }
@@ -306,21 +324,21 @@ function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
   }
 
   const projectedImage: Record<string, unknown> = {};
-  for (const key of ["savedPath", "path", "filePath"] as const) {
+  for (const key of IMAGE_FILE_PATH_KEYS) {
     const candidate = asTrimmedString(rawOutput[key]);
     if (candidate && isWorkspaceImagePreviewPath(candidate)) {
       projectedImage[key] = candidate;
     }
   }
-  const filename = asTrimmedString(rawOutput.filename);
-  if (filename && isWorkspaceImagePreviewPath(filename)) {
-    projectedImage.filename = filename;
-  }
-  const sessionFolder = asTrimmedString(rawOutput.session_folder);
-  if (sessionFolder && Object.keys(projectedImage).length > 0) {
-    projectedImage.session_folder = sessionFolder;
-  }
   if (Object.keys(projectedImage).length > 0) {
+    const filename = asTrimmedString(rawOutput.filename);
+    if (filename) {
+      projectedImage.filename = filename;
+    }
+    const sessionFolder = asTrimmedString(rawOutput.session_folder);
+    if (sessionFolder) {
+      projectedImage.session_folder = sessionFolder;
+    }
     return projectedImage;
   }
 
@@ -406,9 +424,11 @@ export function projectActivityPayload(
   }
 
   const changedFiles: string[] = [];
-  collectChangedFiles(data, changedFiles, new Set<string>(), 0, {
+  const seenFiles = new Set<string>();
+  collectChangedFiles(data, changedFiles, seenFiles, 0, {
     remaining: CHANGED_FILE_SCAN_MAX_NODES,
   });
+  collectProjectedImageFiles(data.rawOutput, changedFiles, seenFiles);
   if (changedFiles.length > 0) {
     // Both clients discover file names by walking objects with path-like keys.
     projectedData.files = changedFiles.map((path) => ({ path }));
