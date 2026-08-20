@@ -50,8 +50,9 @@ Visual changes are not allowed to trade away capability or existing state.
 
 ## Why it's Pretty 🌄
 
-World Scenery is T3 Pretty's only theme. Light, dark, or system — the palette is alpine moss and
-sage. Chrome is glass over a photo, not a solid slab.
+World Scenery is T3 Pretty's default theme. Light, dark, or system — the palette is alpine moss and
+sage. Chrome is glass over a photo, not a solid slab. **Settings → Appearance → Personalization**
+has **Boring** for people who want the original T3 Chat colors and no landscape photos.
 
 |                            | What you get                                                                                     |
 | -------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -61,7 +62,8 @@ sage. Chrome is glass over a photo, not a solid slab.
 | 🎚️ **Your density**        | Photo blur, photo presence, glass opacity, scenery text color, thread motion, fonts.             |
 | 🧘 **Still when you want** | Thread motion off, or the system reduce-motion setting, parks fades and keeps status dots still. |
 
-Open **Settings → Appearance**. On a phone, the same controls live under **Scenery photos**.
+Open **Settings → Appearance**. On a phone, Personalization and **Scenery photos** live in the
+same Appearance screen.
 
 The product should feel calm during a long day, candid about what is running, and confident
 without becoming ornamental. Motion is a fade or a press — not a GPU hobby.
@@ -120,11 +122,11 @@ behavior at conflict boundaries. See [docs/operations/fork-release.md](./docs/op
 
 Every merge to `main` publishes a desktop build. **[Latest release](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest)** always points at the current Origin tag. **[All releases](https://cursor.com/codebase/serbinenko/t3-pretty/releases)** lists the rest.
 
-| Platform | Installer |
-| --- | --- |
-| 🍎 **macOS** (Apple Silicon) | [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-arm64.dmg) |
-| 🪟 **Windows** (x64) | [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-x64.exe) |
-| 📋 **Release notes** | [Latest](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest) · [All](https://cursor.com/codebase/serbinenko/t3-pretty/releases) |
+| Platform                     | Installer                                                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🍎 **macOS** (Apple Silicon) | [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-arm64.dmg)              |
+| 🪟 **Windows** (x64)         | [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-x64.exe)               |
+| 📋 **Release notes**         | [Latest](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest) · [All](https://cursor.com/codebase/serbinenko/t3-pretty/releases) |
 
 The installer filenames still say `T3-Code-…` on purpose: internal package names stay compatible with T3 Code. The app you launch is **T3 Pretty (Alpha)**. After the first install, the desktop app updates itself from the same public feed.
 
