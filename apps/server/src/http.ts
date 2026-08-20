@@ -66,7 +66,7 @@ export function assetResponseHeaders(
     // Asset URLs are signed capability URLs (the token is the whole
     // authorization), so cross-origin reads — the desktop renderer origin
     // included — are safe to allow for any origin.
-    ...(source === "attachment" || source === "workspace-file"
+    ...(source === "attachment" || source === "workspace-file" || source === "generated-image"
       ? { "Access-Control-Allow-Origin": "*" }
       : {}),
     ...(filePath.toLowerCase().endsWith(".svg")

@@ -3,6 +3,7 @@ import type {
   OrchestrationThreadActivity,
   OrchestrationThreadDetailSnapshot,
 } from "@t3tools/contracts";
+import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 
 import {
   activityContextUsedTokens,
@@ -12,6 +13,7 @@ import {
 const TOOL_TEXT_SCAN_MAX_CHARS = 64 * 1_024;
 const MCP_RESULT_SCAN_MAX_BLOCKS = 256;
 const CHANGED_FILE_SCAN_MAX_NODES = 512;
+const IMAGE_FILE_PATH_KEYS = ["savedPath", "path", "filePath"] as const;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -89,6 +91,23 @@ function collectChangedFiles(
     collectChangedFiles(record[nestedKey], target, seen, depth + 1, budget);
     if (target.length >= 12 || budget.remaining <= 0) {
       return;
+    }
+  }
+}
+
+function collectProjectedImageFiles(
+  rawOutputValue: unknown,
+  target: string[],
+  seen: Set<string>,
+): void {
+  const rawOutput = asRecord(rawOutputValue);
+  if (!rawOutput) {
+    return;
+  }
+  for (const key of IMAGE_FILE_PATH_KEYS) {
+    const candidate = asTrimmedString(rawOutput[key]);
+    if (candidate && isWorkspaceImagePreviewPath(candidate)) {
+      pushChangedFile(target, seen, candidate);
     }
   }
 }
@@ -292,7 +311,7 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
   return projectedData;
 }
 
-function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
+function projectRawOutput(value: unknown, itemType: unknown): Record<string, unknown> | undefined {
   const direct = asTrimmedString(value);
   if (direct) {
     const summary = summarizeToolTextOutput(direct);
@@ -302,6 +321,27 @@ function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
   const rawOutput = asRecord(value);
   if (!rawOutput) {
     return undefined;
+  }
+
+  if (itemType === "image_generation") {
+    const projectedImage: Record<string, unknown> = {};
+    for (const key of IMAGE_FILE_PATH_KEYS) {
+      const candidate = asTrimmedString(rawOutput[key]);
+      if (candidate && isWorkspaceImagePreviewPath(candidate)) {
+        projectedImage[key] = candidate;
+      }
+    }
+    if (Object.keys(projectedImage).length > 0) {
+      const filename = asTrimmedString(rawOutput.filename);
+      if (filename) {
+        projectedImage.filename = filename;
+      }
+      const sessionFolder = asTrimmedString(rawOutput.session_folder);
+      if (sessionFolder) {
+        projectedImage.session_folder = sessionFolder;
+      }
+      return projectedImage;
+    }
   }
 
   if (typeof rawOutput.totalFiles === "number" && Number.isFinite(rawOutput.totalFiles)) {
@@ -386,9 +426,13 @@ export function projectActivityPayload(
   }
 
   const changedFiles: string[] = [];
-  collectChangedFiles(data, changedFiles, new Set<string>(), 0, {
+  const seenFiles = new Set<string>();
+  collectChangedFiles(data, changedFiles, seenFiles, 0, {
     remaining: CHANGED_FILE_SCAN_MAX_NODES,
   });
+  if (payload.itemType === "image_generation") {
+    collectProjectedImageFiles(data.rawOutput, changedFiles, seenFiles);
+  }
   if (changedFiles.length > 0) {
     // Both clients discover file names by walking objects with path-like keys.
     projectedData.files = changedFiles.map((path) => ({ path }));
@@ -405,7 +449,8 @@ export function projectActivityPayload(
     projectedData.toolName = toolName;
   }
 
-  const rawOutput = projectRawOutput(data.rawOutput) ?? projectAcpContent(data.content);
+  const rawOutput =
+    projectRawOutput(data.rawOutput, payload.itemType) ?? projectAcpContent(data.content);
   if (rawOutput) {
     projectedData.rawOutput = rawOutput;
   }

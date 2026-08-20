@@ -8,6 +8,7 @@ import {
   type OrchestrationThread,
   type OrchestrationThreadActivity,
 } from "@t3tools/contracts";
+import { extractGeneratedImagePath } from "@t3tools/shared/imageTool";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildThreadFeed, type ThreadFeedActivity } from "../../mobile/src/lib/threadActivity.ts";
@@ -201,6 +202,91 @@ describe("projectActivityPayload", () => {
       },
     });
     expect(deriveWorkLogEntries([projected])[0]?.changedFiles).toEqual(["/tmp/hero.png"]);
+  });
+
+  it("keeps Grok Imagine filesystem paths in projected files and filename as metadata", () => {
+    const grokPath =
+      "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg";
+    const projected = projectActivityPayload(
+      makeActivity("grok-image-gen", "image_generation", {
+        rawOutput: {
+          type: "ImageGen",
+          path: grokPath,
+          filename: "1.jpg",
+          session_folder: "images",
+          prompt: "secret prompt",
+        },
+      }),
+    );
+    expect(projected.payload).toEqual({
+      itemType: "image_generation",
+      title: "image_generation",
+      detail: "image_generation detail",
+      status: "completed",
+      requestKind: "command",
+      data: {
+        files: [{ path: grokPath }],
+        rawOutput: {
+          path: grokPath,
+          filename: "1.jpg",
+          session_folder: "images",
+        },
+      },
+    });
+    const [entry] = deriveWorkLogEntries([projected]);
+    expect(entry?.changedFiles).toEqual([grokPath]);
+    expect(
+      extractGeneratedImagePath({
+        changedFiles: entry?.changedFiles,
+        detail: entry?.detail,
+        data: entry?.toolData,
+      }),
+    ).toBe(grokPath);
+  });
+
+  it("does not copy nested rawOutput paths into projected files", () => {
+    const projected = projectActivityPayload(
+      makeActivity("command-secret-path", "command_execution", {
+        rawOutput: {
+          content: "ok",
+          path: "/secret/credentials.json",
+          files: [{ path: "/secret/other.env" }],
+        },
+      }),
+    );
+    expect(projected.payload).toEqual({
+      itemType: "command_execution",
+      title: "command_execution",
+      detail: "command_execution detail",
+      status: "completed",
+      requestKind: "command",
+      data: {
+        rawOutput: { content: "ok" },
+      },
+    });
+  });
+
+  it("does not treat command rawOutput image paths as generated-image metadata", () => {
+    const projected = projectActivityPayload(
+      makeActivity("command-image-path", "command_execution", {
+        rawOutput: {
+          content: "first useful line\nsecond line",
+          path: "images/1.jpg",
+          filename: "1.jpg",
+          session_folder: "images",
+        },
+      }),
+    );
+    expect(projected.payload).toEqual({
+      itemType: "command_execution",
+      title: "command_execution",
+      detail: "command_execution detail",
+      status: "completed",
+      requestKind: "command",
+      data: {
+        rawOutput: { content: "first useful line" },
+      },
+    });
   });
 
   it("slims MCP tool data to the fields the expanded row renders", () => {

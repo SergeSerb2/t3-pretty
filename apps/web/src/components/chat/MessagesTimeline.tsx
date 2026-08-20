@@ -94,7 +94,11 @@ import {
   TIMELINE_MINIMAP_MIN_ITEMS,
   type TimelineLatestTurn,
 } from "./MessagesTimeline.logic";
-import { GeneratedImageCard, generatedImageWorkEntryPath } from "./GeneratedImageCard";
+import {
+  GeneratedImageCard,
+  generatedImagePathsByTurnFromWorkEntries,
+  generatedImageWorkEntryPath,
+} from "./GeneratedImageCard";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { ToolCallExpandedBody } from "./ToolCallExpandedBody";
 import {
@@ -154,6 +158,7 @@ interface TimelineRowSharedState {
   routeThreadKey: string;
   threadRef: ScopedThreadRef | null;
   markdownCwd: string | undefined;
+  generatedImagePathsByTurn: ReadonlyMap<string, ReadonlyArray<string>>;
   resolvedTheme: "light" | "dark";
   workspaceRoot: string | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
@@ -209,6 +214,7 @@ function TimelineLoadEarlierHeader({
 }
 const TIMELINE_LIST_FOOTER = <div className="h-3 sm:h-4" />;
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const EMPTY_GENERATED_IMAGE_PATHS: ReadonlyArray<string> = [];
 const TIMELINE_MAINTAIN_SCROLL_AT_END = {
   animated: false,
   on: {
@@ -440,6 +446,15 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     ],
   );
   const rows = useStableRows(rawRows);
+  const generatedImagePathsByTurn = useMemo(() => {
+    const workEntries = [];
+    for (const entry of timelineEntries) {
+      if (entry.kind === "work") {
+        workEntries.push(entry.entry);
+      }
+    }
+    return generatedImagePathsByTurnFromWorkEntries(workEntries);
+  }, [timelineEntries]);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
@@ -527,6 +542,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       routeThreadKey,
       threadRef: parseScopedThreadKey(routeThreadKey),
       markdownCwd,
+      generatedImagePathsByTurn,
       resolvedTheme,
       workspaceRoot,
       skills,
@@ -543,6 +559,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       timestampFormat,
       routeThreadKey,
       markdownCwd,
+      generatedImagePathsByTurn,
       resolvedTheme,
       workspaceRoot,
       skills,
@@ -1179,6 +1196,12 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           text={messageText}
           cwd={ctx.markdownCwd}
           threadRef={ctx.threadRef ?? undefined}
+          generatedImagePaths={
+            row.message.turnId
+              ? (ctx.generatedImagePathsByTurn.get(row.message.turnId) ??
+                EMPTY_GENERATED_IMAGE_PATHS)
+              : EMPTY_GENERATED_IMAGE_PATHS
+          }
           onImageExpand={ctx.onImageExpand}
           isStreaming={Boolean(row.message.streaming)}
           lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}

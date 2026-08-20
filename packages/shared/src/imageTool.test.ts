@@ -3,6 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   classifyImageToolItemType,
   extractGeneratedImagePath,
+  grokSessionRelativeImagePath,
+  matchGeneratedImagePath,
   projectNeedsGeneratedIcon,
 } from "./imageTool.ts";
 
@@ -15,6 +17,9 @@ describe("classifyImageToolItemType", () => {
 
   it("maps Grok imagine / imagegen tools to image_generation", () => {
     expect(classifyImageToolItemType({ title: "Imagine" })).toBe("image_generation");
+    expect(classifyImageToolItemType({ title: "imagine: A chubby Boston Terrier" })).toBe(
+      "image_generation",
+    );
     expect(classifyImageToolItemType({ toolName: "image_gen" })).toBe("image_generation");
     expect(classifyImageToolItemType({ toolName: "imagegen" })).toBe("image_generation");
   });
@@ -91,6 +96,49 @@ describe("extractGeneratedImagePath", () => {
         detail: "Generated image",
       }),
     ).toBe("assets/hero.png");
+  });
+
+  it("reads Grok Imagine rawOutput and keeps encoded session folder names", () => {
+    const grokPath =
+      "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg";
+    expect(
+      extractGeneratedImagePath({
+        data: {
+          rawOutput: {
+            type: "ImageGen",
+            path: grokPath,
+            filename: "1.jpg",
+            session_folder: "images",
+          },
+        },
+      }),
+    ).toBe(grokPath);
+  });
+});
+
+describe("matchGeneratedImagePath", () => {
+  const grokPath =
+    "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg";
+  const laterGrokPath =
+    "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d96/images/1.jpg";
+
+  it("reads the Imagine relative path from workspace and session files", () => {
+    expect(grokSessionRelativeImagePath("images/1.jpg")).toBe("images/1.jpg");
+    expect(grokSessionRelativeImagePath("/repo/images/1.jpg")).toBe("images/1.jpg");
+    expect(grokSessionRelativeImagePath(grokPath)).toBe("images/1.jpg");
+    expect(grokSessionRelativeImagePath("assets/icon.png")).toBeUndefined();
+  });
+
+  it("maps markdown images/1.jpg to the generating session file", () => {
+    expect(matchGeneratedImagePath("images/1.jpg", [grokPath])).toBe(grokPath);
+    expect(matchGeneratedImagePath("/Users/serge/Documents/General/images/1.jpg", [grokPath])).toBe(
+      grokPath,
+    );
+    expect(matchGeneratedImagePath("images/2.jpg", [grokPath])).toBeUndefined();
+  });
+
+  it("keeps the earlier generated file when two sessions reuse images/1.jpg", () => {
+    expect(matchGeneratedImagePath("images/1.jpg", [grokPath, laterGrokPath])).toBe(grokPath);
   });
 });
 

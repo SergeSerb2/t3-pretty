@@ -90,6 +90,7 @@ import {
   observeRpcStreamEffect as instrumentRpcStreamEffect,
 } from "./observability/RpcInstrumentation.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -101,6 +102,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
+import { grokSessionIdFromResumeCursor } from "./assets/GrokSessionImages.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -390,6 +392,7 @@ const makeWsRpcLayer = (
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
+      const providerSessionDirectory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
@@ -2004,9 +2007,34 @@ const makeWsRpcLayer = (
                   resource: input.resource,
                 });
               }
+              const grokSessionId = yield* providerSessionDirectory
+                .getBinding(input.resource.threadId)
+                .pipe(
+                  Effect.map((binding) => {
+                    if (Option.isNone(binding) || binding.value.provider !== "grok") {
+                      return undefined;
+                    }
+                    return grokSessionIdFromResumeCursor(binding.value.resumeCursor);
+                  }),
+                  Effect.tapError((cause) =>
+                    Effect.logWarning("Failed to read Grok session id for generated image.", {
+                      threadId: input.resource.threadId,
+                      cause,
+                    }),
+                  ),
+                  Effect.orElseSucceed(() => undefined),
+                );
+              const workspaceRoot = thread.value.worktreePath ?? project.value.workspaceRoot;
+              const extraGrokWorkspaceRoots =
+                thread.value.worktreePath &&
+                thread.value.worktreePath !== project.value.workspaceRoot
+                  ? [project.value.workspaceRoot]
+                  : undefined;
               return yield* issueAssetUrl({
                 resource: input.resource,
-                workspaceRoot: thread.value.worktreePath ?? project.value.workspaceRoot,
+                workspaceRoot,
+                ...(grokSessionId ? { grokSessionId } : {}),
+                ...(extraGrokWorkspaceRoots ? { extraGrokWorkspaceRoots } : {}),
               });
             }),
             { "rpc.aggregate": "workspace" },

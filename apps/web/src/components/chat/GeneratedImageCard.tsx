@@ -1,5 +1,5 @@
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
-import { extractGeneratedImagePath } from "@t3tools/shared/imageTool";
+import { extractGeneratedImagePath, matchGeneratedImagePath } from "@t3tools/shared/imageTool";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { cn } from "~/lib/utils";
 import { useAssetUrlState } from "~/assets/assetUrls";
@@ -9,12 +9,32 @@ import { resolveMarkdownFileLinkMeta } from "../../markdown-links";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import type { WorkLogEntry } from "../../session-logic";
 
+function isAbsoluteFilesystemPath(path: string): boolean {
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\");
+}
+
 /** Join a generated-image path against the workspace cwd when it is relative. */
 export function resolveGeneratedImageAssetPath(
   path: string,
   cwd: string | undefined,
+  generatedImagePaths: ReadonlyArray<string> = [],
 ): string | null {
-  const resolved = resolveMarkdownFileLinkMeta(path, cwd)?.filePath ?? path;
+  const matched =
+    matchGeneratedImagePath(path, generatedImagePaths) ??
+    (isAbsoluteFilesystemPath(path)
+      ? undefined
+      : matchGeneratedImagePath(
+          resolveMarkdownFileLinkMeta(path, cwd)?.filePath ?? path,
+          generatedImagePaths,
+        ));
+  if (matched && isWorkspaceImagePreviewPath(matched)) {
+    return matched;
+  }
+  // Grok session folders use literal `%2F` segments. URI-decoding those
+  // absolute tool paths would collapse them into the wrong location.
+  const resolved = isAbsoluteFilesystemPath(path)
+    ? path
+    : (resolveMarkdownFileLinkMeta(path, cwd)?.filePath ?? path);
   return isWorkspaceImagePreviewPath(resolved) ? resolved : null;
 }
 
@@ -111,6 +131,7 @@ function WorkspaceGeneratedImage(props: {
 export function ChatMarkdownImage(props: {
   readonly alt?: string | undefined;
   readonly environmentId: EnvironmentId | null;
+  readonly generatedImagePaths?: ReadonlyArray<string> | undefined;
   readonly localPath?: string | null | undefined;
   readonly onExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
   readonly src: string;
@@ -120,7 +141,11 @@ export function ChatMarkdownImage(props: {
   if (/^(?:https?:|data:)/iu.test(props.src)) {
     return <FadingImg src={props.src} alt={alt} />;
   }
-  const localPath = props.localPath ?? null;
+  const generatedImagePaths = props.generatedImagePaths ?? [];
+  const localPath =
+    matchGeneratedImagePath(props.localPath ?? props.src, generatedImagePaths) ??
+    props.localPath ??
+    null;
   if (
     localPath &&
     props.threadRef &&
@@ -151,6 +176,29 @@ export function generatedImageWorkEntryPath(workEntry: WorkLogEntry): string | u
     detail: workEntry.detail,
     data: workEntry.toolData,
   });
+}
+
+/** Imagine files grouped by the turn that produced them, in work-log order. */
+export function generatedImagePathsByTurnFromWorkEntries(
+  workEntries: ReadonlyArray<WorkLogEntry>,
+): ReadonlyMap<string, ReadonlyArray<string>> {
+  const byTurn = new Map<string, string[]>();
+  for (const entry of workEntries) {
+    const path = generatedImageWorkEntryPath(entry);
+    const turnId = entry.turnId;
+    if (!path || !turnId) {
+      continue;
+    }
+    const existing = byTurn.get(turnId);
+    if (existing) {
+      if (!existing.includes(path)) {
+        existing.push(path);
+      }
+    } else {
+      byTurn.set(turnId, [path]);
+    }
+  }
+  return byTurn;
 }
 
 export function GeneratedImageCard(props: {

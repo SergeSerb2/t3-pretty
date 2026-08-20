@@ -120,6 +120,7 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -401,6 +402,9 @@ const buildAppUnderTest = (options?: {
   layers?: {
     keybindings?: Partial<Keybindings.Keybindings["Service"]>;
     providerRegistry?: Partial<ProviderRegistry.ProviderRegistry["Service"]>;
+    providerSessionDirectory?: Partial<
+      ProviderSessionDirectory.ProviderSessionDirectory["Service"]
+    >;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
     agentInstructionFiles?: Partial<AgentInstructionFiles.AgentInstructionFiles["Service"]>;
     skillStore?: Partial<SkillStore.SkillStore["Service"]>;
@@ -808,6 +812,15 @@ const buildAppUnderTest = (options?: {
             unregisterTerminal: () => Effect.void,
           }),
           ToolProgress.layer,
+          Layer.mock(ProviderSessionDirectory.ProviderSessionDirectory)({
+            upsert: () => Effect.void,
+            getProvider: () =>
+              Effect.die(new Error("ProviderSessionDirectory.getProvider is not used in test")),
+            getBinding: () => Effect.succeed(Option.none()),
+            listThreadIds: () => Effect.succeed([]),
+            listBindings: () => Effect.succeed([]),
+            ...options?.layers?.providerSessionDirectory,
+          }),
         ),
       ),
       Layer.provide(

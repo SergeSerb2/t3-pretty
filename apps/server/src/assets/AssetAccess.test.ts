@@ -78,6 +78,156 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("issues URLs for Grok session images missing from the workspace", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const homeDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-grok-home-",
+      });
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-grok-workspace-",
+      });
+      const sessionDir = path.join(
+        homeDir,
+        ".grok",
+        "sessions",
+        encodeURIComponent(root),
+        "session-1",
+        "images",
+      );
+      yield* fileSystem.makeDirectory(sessionDir, { recursive: true });
+      const imagePath = path.join(sessionDir, "1.jpg");
+      yield* fileSystem.writeFile(imagePath, new Uint8Array([137, 80, 78, 71]));
+      const canonicalImagePath = yield* fileSystem.realPath(imagePath);
+
+      const relativeResult = yield* issueAssetUrl({
+        resource: {
+          _tag: "workspace-file",
+          threadId: ThreadId.make("thread-1"),
+          path: path.join(root, "images", "1.jpg"),
+        },
+        workspaceRoot: root,
+        homeDir,
+        grokSessionId: "session-1",
+      });
+      const relativeSuffix = relativeResult.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const relativeSeparator = relativeSuffix.indexOf("/");
+      const relativeToken = relativeSuffix.slice(0, relativeSeparator);
+
+      expect(yield* resolveAsset(relativeToken, "1.jpg")).toEqual({
+        kind: "file",
+        path: canonicalImagePath,
+        source: "generated-image",
+      });
+
+      const absoluteResult = yield* issueAssetUrl({
+        resource: {
+          _tag: "workspace-file",
+          threadId: ThreadId.make("thread-1"),
+          path: imagePath,
+        },
+        workspaceRoot: root,
+        homeDir,
+      });
+      const absoluteSuffix = absoluteResult.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const absoluteSeparator = absoluteSuffix.indexOf("/");
+      const absoluteToken = absoluteSuffix.slice(0, absoluteSeparator);
+
+      expect(yield* resolveAsset(absoluteToken, "1.jpg")).toEqual({
+        kind: "file",
+        path: canonicalImagePath,
+        source: "generated-image",
+      });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("issues the Grok session image for the thread resume cursor", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const homeDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-grok-resume-home-",
+      });
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-grok-resume-workspace-",
+      });
+      const writeSessionImage = (sessionId: string) =>
+        Effect.gen(function* () {
+          const sessionDir = path.join(
+            homeDir,
+            ".grok",
+            "sessions",
+            encodeURIComponent(root),
+            sessionId,
+            "images",
+          );
+          yield* fileSystem.makeDirectory(sessionDir, { recursive: true });
+          const imagePath = path.join(sessionDir, "1.jpg");
+          yield* fileSystem.writeFile(imagePath, new Uint8Array([137, 80, 78, 71]));
+          return yield* fileSystem.realPath(imagePath);
+        });
+      const olderImagePath = yield* writeSessionImage("session-old");
+      yield* writeSessionImage("session-new");
+
+      const result = yield* issueAssetUrl({
+        resource: {
+          _tag: "workspace-file",
+          threadId: ThreadId.make("thread-1"),
+          path: "images/1.jpg",
+        },
+        workspaceRoot: root,
+        homeDir,
+        grokSessionId: "session-old",
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const token = suffix.slice(0, suffix.indexOf("/"));
+
+      expect(yield* resolveAsset(token, "1.jpg")).toEqual({
+        kind: "file",
+        path: olderImagePath,
+        source: "generated-image",
+      });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("does not issue a Grok session URL without a session id", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const homeDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-grok-noid-home-",
+      });
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-grok-noid-workspace-",
+      });
+      const sessionDir = path.join(
+        homeDir,
+        ".grok",
+        "sessions",
+        encodeURIComponent(root),
+        "session-1",
+        "images",
+      );
+      yield* fileSystem.makeDirectory(sessionDir, { recursive: true });
+      yield* fileSystem.writeFile(
+        path.join(sessionDir, "1.jpg"),
+        new Uint8Array([137, 80, 78, 71]),
+      );
+
+      const error = yield* issueAssetUrl({
+        resource: {
+          _tag: "workspace-file",
+          threadId: ThreadId.make("thread-1"),
+          path: "images/1.jpg",
+        },
+        workspaceRoot: root,
+        homeDir,
+      }).pipe(Effect.flip);
+      expect(error._tag).toBe("AssetWorkspaceAssetNotFoundError");
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("rejects workspace files outside the authorized root", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
