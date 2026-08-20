@@ -1052,7 +1052,7 @@ export function AppearanceSettingsPanel() {
             {...searchableSetting("environment-identification")}
             description="Choose how Dev and Nightly environments are identified."
             resetAction={
-              settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
+              environmentIdentification.value !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
                 <SettingResetButton
                   label="environment identification"
                   onClick={() =>

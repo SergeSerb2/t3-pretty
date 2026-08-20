@@ -52,6 +52,35 @@ describe("resolveEnvironmentIdentificationMode", () => {
       }),
     ).toBe("artwork");
   });
+
+  it("falls back to artwork when a stored or remapped pill has no label", () => {
+    expect(
+      resolveEnvironmentIdentificationMode({
+        mode: "pill",
+        settingsHydrated: true,
+        pillAvailable: false,
+      }),
+    ).toBe("artwork");
+    expect(
+      resolveEnvironmentIdentificationMode({
+        mode: "artwork",
+        settingsHydrated: true,
+        paletteThemeActive: true,
+        pillAvailable: false,
+      }),
+    ).toBe("artwork");
+  });
+
+  it("keeps none when the version pill is unavailable", () => {
+    expect(
+      resolveEnvironmentIdentificationMode({
+        mode: "none",
+        settingsHydrated: true,
+        paletteThemeActive: true,
+        pillAvailable: false,
+      }),
+    ).toBe("none");
+  });
 });
 
 describe("resolveEnvironmentIdentificationSetting", () => {
@@ -62,11 +91,11 @@ describe("resolveEnvironmentIdentificationSetting", () => {
     });
   });
 
-  it("hides the version pill and treats a stored pill as none when none exists", () => {
+  it("hides the version pill and treats a stored pill as artwork when none exists", () => {
     expect(resolveEnvironmentIdentificationSetting({ mode: "pill", pillAvailable: false })).toEqual(
       {
         modes: ["artwork", "none"],
-        value: "none",
+        value: "artwork",
       },
     );
   });
