@@ -81,7 +81,6 @@ function collectChangedFiles(
     "item",
     "result",
     "input",
-    "rawOutput",
     "data",
     "locations",
   ]) {

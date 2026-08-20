@@ -8,6 +8,7 @@ import {
   type OrchestrationThread,
   type OrchestrationThreadActivity,
 } from "@t3tools/contracts";
+import { extractGeneratedImagePath } from "@t3tools/shared/imageTool";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildThreadFeed, type ThreadFeedActivity } from "../../mobile/src/lib/threadActivity.ts";
@@ -203,7 +204,7 @@ describe("projectActivityPayload", () => {
     expect(deriveWorkLogEntries([projected])[0]?.changedFiles).toEqual(["/tmp/hero.png"]);
   });
 
-  it("keeps Grok Imagine rawOutput paths in projected files", () => {
+  it("keeps Grok Imagine allowlisted rawOutput image fields without walking rawOutput into files", () => {
     const grokPath =
       "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg";
     const projected = projectActivityPayload(
@@ -213,13 +214,17 @@ describe("projectActivityPayload", () => {
           path: grokPath,
           filename: "1.jpg",
           session_folder: "images",
+          prompt: "secret prompt",
         },
       }),
     );
-    expect(projected.payload).toMatchObject({
+    expect(projected.payload).toEqual({
       itemType: "image_generation",
+      title: "image_generation",
+      detail: "image_generation detail",
+      status: "completed",
+      requestKind: "command",
       data: {
-        files: [{ path: grokPath }, { path: "1.jpg" }],
         rawOutput: {
           path: grokPath,
           filename: "1.jpg",
@@ -227,7 +232,37 @@ describe("projectActivityPayload", () => {
         },
       },
     });
-    expect(deriveWorkLogEntries([projected])[0]?.changedFiles).toEqual([grokPath, "1.jpg"]);
+    const [entry] = deriveWorkLogEntries([projected]);
+    expect(entry?.changedFiles).toBeUndefined();
+    expect(
+      extractGeneratedImagePath({
+        changedFiles: entry?.changedFiles,
+        detail: entry?.detail,
+        data: entry?.toolData,
+      }),
+    ).toBe(grokPath);
+  });
+
+  it("does not copy nested rawOutput paths into projected files", () => {
+    const projected = projectActivityPayload(
+      makeActivity("command-secret-path", "command_execution", {
+        rawOutput: {
+          content: "ok",
+          path: "/secret/credentials.json",
+          files: [{ path: "/secret/other.env" }],
+        },
+      }),
+    );
+    expect(projected.payload).toEqual({
+      itemType: "command_execution",
+      title: "command_execution",
+      detail: "command_execution detail",
+      status: "completed",
+      requestKind: "command",
+      data: {
+        rawOutput: { content: "ok" },
+      },
+    });
   });
 
   it("slims MCP tool data to the fields the expanded row renders", () => {
