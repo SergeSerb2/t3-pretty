@@ -10,6 +10,7 @@ import type {
   PullRequestRef,
   PullRequestState,
   ScopedThreadRef,
+  ThreadId,
 } from "@t3tools/contracts";
 import {
   ArrowDownUpIcon,
@@ -913,16 +914,17 @@ export function PullRequestDetailPanel({
     run?: { readonly modelSelection: ModelSelection },
   ) => {
     if (!detail || handoff !== null) return;
-    const sendAfterWrite = (target: ScopedThreadRef | DraftId) => {
+    const sendAfterWrite = (target: ScopedThreadRef | DraftId, threadId?: ThreadId) => {
       if (!run || task === null) return;
       const store = useComposerDraftStore.getState();
       store.setModelSelection(target, run.modelSelection, {
         replaceOptions: true,
       });
-      queueComposerAutoSend(
-        composerAutoSendKey(target),
-        store.getComposerDraft(target)?.prompt ?? task.prompt,
-      );
+      const keys = [composerAutoSendKey(target)];
+      if (typeof target === "string" && threadId !== undefined) {
+        keys.push(composerAutoSendKey({ environmentId: actingEnvironmentId, threadId }));
+      }
+      queueComposerAutoSend(keys, store.getComposerDraft(target)?.prompt ?? task.prompt);
     };
     if (destination === "this-thread" && attachTarget !== null && task !== null) {
       writeTaskToComposer(attachTarget, task);
@@ -1035,7 +1037,7 @@ export function PullRequestDetailPanel({
       return;
     }
     await openThreadWithTask(projectRef, task, opened);
-    sendAfterWrite(opened.draftId);
+    sendAfterWrite(opened.draftId, opened.threadId);
     toastManager.update(
       toastId,
       prepared.value.isOnPullRequestHead

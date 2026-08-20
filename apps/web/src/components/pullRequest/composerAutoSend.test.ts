@@ -4,6 +4,7 @@ import {
   clearComposerAutoSend,
   composerAutoSendKey,
   composerHoldsQueuedAutoSend,
+  pendingComposerAutoSendMatches,
   peekComposerAutoSend,
   queueComposerAutoSend,
   subscribeComposerAutoSend,
@@ -11,21 +12,25 @@ import {
 } from "./composerAutoSend";
 
 describe("composer auto-send", () => {
-  it("hands the queued key and prompt to the matching consumer once", () => {
+  it("hands the queued keys and prompt to the matching consumer once", () => {
     clearComposerAutoSend();
     const seen: string[] = [];
     const stop = subscribeComposerAutoSend(() => {
       const next = peekComposerAutoSend();
-      if (next !== null) seen.push(`${next.key}:${next.prompt}`);
+      if (next !== null) seen.push(`${next.keys.join(",")}:${next.prompt}`);
     });
-    queueComposerAutoSend("draft-1", "Fix the findings.");
-    expect(peekComposerAutoSend()).toEqual({ key: "draft-1", prompt: "Fix the findings." });
+    queueComposerAutoSend(["draft-1", "env-1:thr-1"], "Fix the findings.");
+    expect(peekComposerAutoSend()).toEqual({
+      keys: ["draft-1", "env-1:thr-1"],
+      prompt: "Fix the findings.",
+    });
+    expect(pendingComposerAutoSendMatches(peekComposerAutoSend(), "env-1:thr-1")).toBe(true);
     expect(takeComposerAutoSend("draft-1", "something else")).toBe(false);
     expect(takeComposerAutoSend("draft-2", "Fix the findings.")).toBe(false);
-    expect(takeComposerAutoSend("draft-1", "Fix the findings.")).toBe(true);
+    expect(takeComposerAutoSend("env-1:thr-1", "Fix the findings.")).toBe(true);
     expect(peekComposerAutoSend()).toBeNull();
     expect(takeComposerAutoSend("draft-1", "Fix the findings.")).toBe(false);
-    expect(seen).toEqual(["draft-1:Fix the findings."]);
+    expect(seen).toEqual(["draft-1,env-1:thr-1:Fix the findings."]);
     stop();
   });
 

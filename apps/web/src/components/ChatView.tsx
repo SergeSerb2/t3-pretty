@@ -161,6 +161,7 @@ import { isThreadOwnPullRequest } from "./pullRequest/pullRequestDetail.logic";
 import {
   composerAutoSendKey,
   composerHoldsQueuedAutoSend,
+  pendingComposerAutoSendMatches,
   peekComposerAutoSend,
   subscribeComposerAutoSend,
   takeComposerAutoSend,
@@ -5744,13 +5745,13 @@ function ChatViewContent(props: ChatViewProps) {
     peekComposerAutoSend,
   );
   useEffect(() => {
-    if (pendingComposerAutoSend?.key !== composerAutoSendTargetKey) return;
+    if (!pendingComposerAutoSendMatches(pendingComposerAutoSend, composerAutoSendTargetKey)) return;
     let cancelled = false;
     let retryTimer = 0;
     const attempt = () => {
       if (cancelled) return;
       const queued = peekComposerAutoSend();
-      if (queued?.key !== composerAutoSendTargetKey) return;
+      if (!pendingComposerAutoSendMatches(queued, composerAutoSendTargetKey)) return;
       if (isSendBusy || isConnecting || threadDetailLoading || sendInFlightRef.current) {
         retryTimer = window.setTimeout(attempt, 50);
         return;
@@ -5764,15 +5765,16 @@ function ChatViewContent(props: ChatViewProps) {
         retryTimer = window.setTimeout(attempt, 50);
         return;
       }
-      if (!takeComposerAutoSend(queued.key, queued.prompt)) return;
+      if (!takeComposerAutoSend(composerAutoSendTargetKey, queued.prompt)) return;
       void onSendRef.current();
     };
     retryTimer = window.setTimeout(attempt, 0);
     const giveUpTimer = window.setTimeout(() => {
       if (cancelled) return;
       const queued = peekComposerAutoSend();
-      if (queued?.key !== composerAutoSendTargetKey) return;
-      if (!takeComposerAutoSend(queued.key, queued.prompt)) return;
+      if (!pendingComposerAutoSendMatches(queued, composerAutoSendTargetKey)) return;
+      const prompt = composerRef.current?.getSendContext()?.prompt ?? "";
+      if (!composerHoldsQueuedAutoSend(prompt, queued.prompt)) return;
       toastManager.add(
         stackedThreadToast({
           type: "info",
