@@ -180,6 +180,7 @@ const ANDROID_ICON_BY_MATERIAL_NAME: Record<string, Icon> = {
   content_copy: IconCopy,
   edit: IconEdit,
   error: IconAlertCircle,
+  image: IconCamera,
   folder: IconFolder,
   folder_open: IconFolderOpen,
   keyboard: IconKeyboard,

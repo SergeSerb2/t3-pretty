@@ -45,6 +45,7 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { remarkGithubAlerts } from "../markdown-github-alerts";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
+import { ChatMarkdownImage, FadingImg } from "./chat/GeneratedImageCard";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import {
@@ -1719,8 +1720,25 @@ function ChatMarkdown({
           props.className,
         );
       },
-      img({ node: _node, title: _title, ...props }) {
-        return <img {...props} />;
+      img({ node: _node, title: _title, src, alt }) {
+        if (typeof src !== "string" || src.length === 0) {
+          return null;
+        }
+        if (!threadRef) {
+          return <FadingImg src={src} alt={alt} />;
+        }
+        const fileLinkMeta =
+          markdownFileLinkMetaByHrefRef.current.get(normalizeMarkdownLinkHrefKey(src)) ??
+          resolveMarkdownFileLinkMeta(src, cwd);
+        return (
+          <ChatMarkdownImage
+            alt={alt}
+            environmentId={threadRef.environmentId}
+            localPath={fileLinkMeta?.filePath ?? null}
+            src={src}
+            threadRef={threadRef}
+          />
+        );
       },
       code({ node, children, className, ...props }) {
         if (node?.properties?.dataInlineCode != null) {

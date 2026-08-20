@@ -184,6 +184,25 @@ describe("projectActivityPayload", () => {
     });
   });
 
+  it("keeps generated image savedPath in projected files", () => {
+    const projected = projectActivityPayload(
+      makeActivity("image-gen", "image_generation", {
+        item: {
+          type: "imageGeneration",
+          savedPath: "/tmp/hero.png",
+          status: "completed",
+        },
+      }),
+    );
+    expect(projected.payload).toMatchObject({
+      itemType: "image_generation",
+      data: {
+        files: [{ path: "/tmp/hero.png" }],
+      },
+    });
+    expect(deriveWorkLogEntries([projected])[0]?.changedFiles).toEqual(["/tmp/hero.png"]);
+  });
+
   it("slims MCP tool data to the fields the expanded row renders", () => {
     expect(projectActivityPayload(fixtures[4]!).payload).toEqual({
       itemType: "mcp_tool_call",

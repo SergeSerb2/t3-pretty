@@ -59,6 +59,7 @@ import {
   getProviderOptionDescriptors,
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
+import { classifyImageToolItemType } from "@t3tools/shared/imageTool";
 import { classifySkillLoadItemType, resolveSkillToolName } from "@t3tools/shared/skillTool";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -702,6 +703,10 @@ function classifyToolItemType(toolName: string): CanonicalItemType {
   if (skillItemType) {
     return skillItemType;
   }
+  const imageGenerationType = classifyImageToolItemType({ toolName });
+  if (imageGenerationType === "image_generation") {
+    return imageGenerationType;
+  }
   const normalized = toolName.toLowerCase();
   if (normalized.includes("agent")) {
     return "collab_agent_tool_call";
@@ -1218,6 +1223,8 @@ function titleForTool(itemType: CanonicalItemType): string {
       return "Web search";
     case "image_view":
       return "Image view";
+    case "image_generation":
+      return "Generated image";
     case "skill_load":
       return "Skill";
     case "dynamic_tool_call":

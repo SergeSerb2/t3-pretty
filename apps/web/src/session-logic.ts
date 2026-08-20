@@ -893,6 +893,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       entry.toolData = data.item;
     }
   }
+  if (itemType === "image_generation") {
+    const data = asRecord(payload?.data);
+    if (data !== undefined) {
+      entry.toolData = data;
+    }
+  }
   if (itemType) {
     entry.itemType = itemType;
   }
@@ -1607,6 +1613,7 @@ function collectChangedFiles(value: unknown, target: string[], seen: Set<string>
     return;
   }
 
+  pushChangedFile(target, seen, record.savedPath);
   pushChangedFile(target, seen, record.path);
   pushChangedFile(target, seen, record.filePath);
   pushChangedFile(target, seen, record.relativePath);
@@ -1625,6 +1632,7 @@ function collectChangedFiles(value: unknown, target: string[], seen: Set<string>
     "patch",
     "patches",
     "operations",
+    "locations",
   ]) {
     if (!(nestedKey in record)) {
       continue;

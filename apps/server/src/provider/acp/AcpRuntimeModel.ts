@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import type * as EffectAcpSchema from "effect-acp/schema";
+import { classifyImageToolItemType } from "@t3tools/shared/imageTool";
 import { deriveToolActivityPresentation } from "@t3tools/shared/toolActivity";
 import { classifySkillLoadItemType } from "@t3tools/shared/skillTool";
 import type { RuntimeContentStreamKind, ToolLifecycleItemType } from "@t3tools/contracts";
@@ -367,7 +368,9 @@ function makeToolCallState(
   const presentation = hasPresentationSeed
     ? deriveToolActivityPresentation({
         itemType:
-          classifySkillLoadItemType({ kind, title }) ?? canonicalItemTypeFromAcpToolKind(kind),
+          classifySkillLoadItemType({ kind, title }) ??
+          classifyImageToolItemType({ kind, title }) ??
+          canonicalItemTypeFromAcpToolKind(kind),
         title,
         detail: fallbackDetail,
         data,

@@ -111,7 +111,15 @@ function collectPaths(value: unknown, paths: string[], seen: Set<string>, depth:
   if (!record) {
     return;
   }
-  for (const key of ["path", "filePath", "relativePath", "filename", "newPath", "oldPath"]) {
+  for (const key of [
+    "savedPath",
+    "path",
+    "filePath",
+    "relativePath",
+    "filename",
+    "newPath",
+    "oldPath",
+  ]) {
     const candidate = maybePathLike(asTrimmedString(record[key]));
     if (!candidate || seen.has(candidate)) {
       continue;
@@ -221,6 +229,13 @@ export function deriveToolActivityPresentation(
     title,
     data,
   });
+
+  if (input.itemType === "image_generation") {
+    return {
+      summary: "Generated image",
+      ...(primaryPath ? { detail: primaryPath } : {}),
+    };
+  }
 
   if (action === "command") {
     return {

@@ -490,6 +490,13 @@ describe("ProviderCommandReactor", () => {
         Layer.mock(TextGeneration, {
           generateBranchName,
           generateThreadTitle,
+          generateProjectIcon: () =>
+            Effect.fail(
+              new TextGenerationError({
+                operation: "generateProjectIcon",
+                detail: "disabled in test harness",
+              }),
+            ),
         }),
       ),
       Layer.provideMerge(

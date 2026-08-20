@@ -144,6 +144,15 @@ describe("serverSettings helpers", () => {
     });
   });
 
+  it("patches auto-generate project icons", () => {
+    expect(DEFAULT_SERVER_SETTINGS.autoGenerateProjectIcons).toBe(false);
+    expect(
+      applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+        autoGenerateProjectIcons: true,
+      }).autoGenerateProjectIcons,
+    ).toBe(true);
+  });
+
   it("accepts array-based text generation selection patches", () => {
     expect(
       applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {

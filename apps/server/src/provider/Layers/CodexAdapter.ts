@@ -39,6 +39,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
+import { classifyImageToolItemType } from "@t3tools/shared/imageTool";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
@@ -230,7 +231,8 @@ function toCanonicalItemType(raw: string | undefined | null): CanonicalItemType 
   if (type.includes("dynamic tool")) return "dynamic_tool_call";
   if (type.includes("collab")) return "collab_agent_tool_call";
   if (type.includes("web search")) return "web_search";
-  if (type.includes("image")) return "image_view";
+  const imageItemType = classifyImageToolItemType({ type });
+  if (imageItemType) return imageItemType;
   if (type.includes("skill")) return "skill_load";
   if (type.includes("review entered")) return "review_entered";
   if (type.includes("review exited")) return "review_exited";
@@ -264,6 +266,8 @@ function itemTitle(itemType: CanonicalItemType, item?: CodexLifecycleItem): stri
       return "Web search";
     case "image_view":
       return "Image view";
+    case "image_generation":
+      return "Generated image";
     case "skill_load":
       return "Skill";
     case "error":
@@ -285,8 +289,10 @@ function itemDetail(itemType: CanonicalItemType, item: CodexLifecycleItem): stri
     "title" in item ? item.title : undefined,
     "summary" in item ? item.summary : undefined,
     "text" in item ? item.text : undefined,
+    "savedPath" in item ? item.savedPath : undefined,
     "path" in item ? item.path : undefined,
     "prompt" in item ? item.prompt : undefined,
+    "revisedPrompt" in item ? item.revisedPrompt : undefined,
   ];
 
   for (const candidate of candidates) {

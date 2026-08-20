@@ -4,6 +4,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildProjectIconPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import { normalizeCliError, sanitizeThreadTitle } from "./TextGenerationUtils.ts";
@@ -233,6 +234,18 @@ describe("buildThreadTitlePrompt", () => {
       `Thread contents:\n[Earlier content truncated]\n\n${retainedContext}`,
     );
     expect(result.prompt.match(/\[Earlier content truncated\]/g)).toHaveLength(1);
+  });
+});
+
+describe("buildProjectIconPrompt", () => {
+  it("asks the model to save a PNG to the given path", () => {
+    const result = buildProjectIconPrompt({
+      projectTitle: "T3 Pretty",
+      outputPath: "/tmp/icon.png",
+    });
+    expect(result.prompt).toContain("T3 Pretty");
+    expect(result.prompt).toContain("/tmp/icon.png");
+    expect(result.prompt).toContain("image generation");
   });
 });
 

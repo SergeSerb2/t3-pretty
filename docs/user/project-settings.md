@@ -3,6 +3,15 @@
 T3 Code selects a project icon automatically. It checks `t3.json`, common favicon and app icon
 paths, and icon links in project HTML files.
 
+To generate icons with Grok or Codex:
+
+1. Open **Settings** and select **General**.
+2. Turn on **Auto-generate project icons**.
+
+T3 Code then generates an icon for new projects and for existing projects that still use automatic
+detection. This uses your Grok or Codex subscription. Claude, Cursor, Kimi, and OpenCode do not
+generate images.
+
 To choose a different icon:
 
 1. Open **Settings** and select **Projects**.

@@ -55,6 +55,22 @@ describe("toolActivity", () => {
     });
   });
 
+  it("normalizes image generation tools to a Generated image heading", () => {
+    expect(
+      deriveToolActivityPresentation({
+        itemType: "image_generation",
+        title: "imageGeneration",
+        data: {
+          item: { savedPath: "/tmp/hero.png" },
+        },
+        fallbackSummary: "Tool",
+      }),
+    ).toEqual({
+      summary: "Generated image",
+      detail: "/tmp/hero.png",
+    });
+  });
+
   it("normalizes skill loader tools to a Skill heading and skill name", () => {
     expect(
       deriveToolActivityPresentation({

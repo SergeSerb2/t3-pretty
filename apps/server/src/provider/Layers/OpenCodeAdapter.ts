@@ -25,6 +25,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import type { OpencodeClient, Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { classifyImageToolItemType } from "@t3tools/shared/imageTool";
 import { classifySkillLoadItemType, resolveSkillToolName } from "@t3tools/shared/skillTool";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
@@ -305,6 +306,10 @@ function toToolLifecycleItemType(toolName: string): ToolLifecycleItemType {
   const skillItemType = classifySkillLoadItemType({ toolName });
   if (skillItemType) {
     return skillItemType;
+  }
+  const imageGenerationType = classifyImageToolItemType({ toolName });
+  if (imageGenerationType === "image_generation") {
+    return imageGenerationType;
   }
   const normalized = toolName.toLowerCase();
   if (normalized.includes("bash") || normalized.includes("command")) {

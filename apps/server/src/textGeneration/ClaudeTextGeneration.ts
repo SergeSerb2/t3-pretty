@@ -364,5 +364,6 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateProjectIcon: TextGeneration.unsupportedProjectIconGeneration("Claude"),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

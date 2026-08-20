@@ -297,6 +297,10 @@ function createTextGeneration(
       Effect.succeed({
         title: "Update workflow",
       }),
+    generateProjectIcon: () =>
+      Effect.succeed({
+        path: "/tmp/icon.png",
+      }),
     ...overrides,
   };
 
@@ -340,6 +344,17 @@ function createTextGeneration(
           (cause) =>
             new TextGenerationError({
               operation: "generateThreadTitle",
+              detail: "fake text generation failed",
+              ...(cause !== undefined ? { cause } : {}),
+            }),
+        ),
+      ),
+    generateProjectIcon: (input) =>
+      implementation.generateProjectIcon(input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({
+              operation: "generateProjectIcon",
               detail: "fake text generation failed",
               ...(cause !== undefined ? { cause } : {}),
             }),
