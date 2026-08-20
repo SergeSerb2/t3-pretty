@@ -138,6 +138,8 @@ steps:
     # Ahead of Origin PR review on the single macos-release agent so a
     # feature-branch review cannot sit in front of TestFlight.
     priority: 20
+    # A later main push (docs/web) must not cancel an in-flight Xcode archive.
+    interruptible: false
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
     agents:

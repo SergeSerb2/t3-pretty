@@ -388,6 +388,8 @@ is_full_xcode() {
 # Command Line Tools cannot compile an IPA. TestFlight currently accepts
 # Xcode 27 beta 5 (27A5237l). This Mac is on macOS 27 developer beta so a
 # leftover Xcode.app often cannot run and Xcode-beta.app is the toolchain.
+# The ios-mobile Buildkite step is interruptible: false so a later main
+# push cannot cancel an in-flight archive.
 developer_dir=""
 if is_full_xcode "${DEVELOPER_DIR:-}"; then
   developer_dir="$DEVELOPER_DIR"
