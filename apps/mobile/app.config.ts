@@ -47,7 +47,7 @@ const PREVIEW_ASSETS = {
   androidAdaptiveBackgroundColor: "#DFEFE3",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#3D5A48",
+  androidNotificationColor: "#7EAA8C",
 } as const;
 
 const RELEASE_ASSETS = {
@@ -58,7 +58,7 @@ const RELEASE_ASSETS = {
   androidAdaptiveBackgroundColor: "#DFEFE3",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#3D5A48",
+  androidNotificationColor: "#7EAA8C",
 } as const;
 
 // The fork's Clerk instance hosts the passkey relying party + universal links.
