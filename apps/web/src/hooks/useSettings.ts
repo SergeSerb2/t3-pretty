@@ -255,6 +255,26 @@ export function resolveEnvironmentIdentificationMode(input: {
     : input.mode;
 }
 
+const ENVIRONMENT_IDENTIFICATION_MODES_WITH_PILL = ["artwork", "pill", "none"] as const;
+const ENVIRONMENT_IDENTIFICATION_MODES_WITHOUT_PILL = ["artwork", "none"] as const;
+
+export function resolveEnvironmentIdentificationSetting(input: {
+  mode: EnvironmentIdentificationMode;
+  pillAvailable: boolean;
+}): {
+  value: EnvironmentIdentificationMode;
+  modes: readonly EnvironmentIdentificationMode[];
+} {
+  const modes = input.pillAvailable
+    ? ENVIRONMENT_IDENTIFICATION_MODES_WITH_PILL
+    : ENVIRONMENT_IDENTIFICATION_MODES_WITHOUT_PILL;
+
+  return {
+    modes,
+    value: input.mode === "pill" && !input.pillAvailable ? "none" : input.mode,
+  };
+}
+
 export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMode {
   const settingsHydrated = useClientSettingsHydrated();
   const mode = useClientSettingsValue().environmentIdentificationMode;

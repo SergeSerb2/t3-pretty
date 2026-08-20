@@ -6,7 +6,11 @@ import {
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { describe, expect, it } from "vite-plus/test";
 
-import { mergeEnvironmentSettings, resolveEnvironmentIdentificationMode } from "./useSettings";
+import {
+  mergeEnvironmentSettings,
+  resolveEnvironmentIdentificationMode,
+  resolveEnvironmentIdentificationSetting,
+} from "./useSettings";
 
 describe("resolveEnvironmentIdentificationMode", () => {
   it("keeps identification hidden until client settings hydrate", () => {
@@ -47,6 +51,33 @@ describe("resolveEnvironmentIdentificationMode", () => {
         paletteThemeAllowsArtwork: true,
       }),
     ).toBe("artwork");
+  });
+});
+
+describe("resolveEnvironmentIdentificationSetting", () => {
+  it("offers the version pill when the stage has a pill label", () => {
+    expect(resolveEnvironmentIdentificationSetting({ mode: "pill", pillAvailable: true })).toEqual({
+      modes: ["artwork", "pill", "none"],
+      value: "pill",
+    });
+  });
+
+  it("hides the version pill and treats a stored pill as none when none exists", () => {
+    expect(resolveEnvironmentIdentificationSetting({ mode: "pill", pillAvailable: false })).toEqual(
+      {
+        modes: ["artwork", "none"],
+        value: "none",
+      },
+    );
+  });
+
+  it("keeps artwork and none when the version pill is unavailable", () => {
+    expect(
+      resolveEnvironmentIdentificationSetting({ mode: "artwork", pillAvailable: false }),
+    ).toEqual({
+      modes: ["artwork", "none"],
+      value: "artwork",
+    });
   });
 });
 
