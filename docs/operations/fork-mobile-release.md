@@ -31,11 +31,13 @@ URL. A new IPA is compiled and uploaded with Fastlane pilot (TestFlight on
 App Store Connect, not App Store review) only when the native fingerprint
 changed. A GitHub Actions-era `.t3-fork/ios-production-fingerprint` is
 enough to skip Xcode. The job does not force an IPA just because
-`.t3-fork/ios-native-submit` is missing. App Store Connect rejects beta
-SDKs, so a Mac that only has `Xcode-beta.app` publishes OTA and skips the
-IPA. Set `T3CODE_FORCE_IOS=1` (or `T3CODE_MOBILE_MODE=build`) on a
-Buildkite rebuild to compile and submit even when the fingerprint matches;
-that path still requires a store-supported `Xcode.app`. The runner writes
+`.t3-fork/ios-native-submit` is missing. macos-release runs macOS 27
+developer beta, so the IPA is compiled with `Xcode-beta.app`. TestFlight
+accepts the current Xcode 27 beta; an older beta is rejected. If the Mac
+has no full Xcode at all, the job compiles on EAS cloud (`eas build --wait --json`,
+then `eas submit --id` of that build). Set `T3CODE_FORCE_IOS=1` (or
+`T3CODE_MOBILE_MODE=build`) on a Buildkite rebuild to compile and submit
+even when the fingerprint matches. The runner writes
 `~/.cache/t3-pretty-release/ios-native-submit` after a successful IPA
 upload, and later jobs treat `origin/main`'s copy of the git marker as
 enough so queued jobs do not each compile another IPA while the marker
@@ -85,8 +87,9 @@ of reporting a green release that shipped nothing. To activate:
 1. Keep `EXPO_TOKEN` on the macos-release agent (cluster secret or
    `/Users/m1-dev/.config/t3-pretty/EXPO_TOKEN`). Installed TestFlight
    binaries poll the fork Expo Updates URL baked into the IPA; eas-cli on
-   this Mac publishes that channel. IPA compilation is local. Do not import
-   a GitHub Actions mobile workflow for this.
+   this Mac publishes that channel. IPA compilation is local from
+   `Xcode.app` or `Xcode-beta.app`. Do not import a GitHub Actions mobile
+   workflow for this.
 2. Set `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` from a Team
    App Store Connect API key with the Admin role and **Access to Certificates,
    Identifiers & Profiles** enabled, plus `APPLE_TEAM_ID`. The
@@ -101,12 +104,14 @@ of reporting a green release that shipped nothing. To activate:
    normal mobile releases are fully non-interactive. Do not use a cloud
    `eas build` for this bootstrap unless you intend to spend an Expo iOS
    build credit.
-5. On the Mac runner: a store-supported `Xcode.app` (current RC or release,
-   not `Xcode-beta.app`) if you want new TestFlight IPAs, plus CocoaPods and
-   Fastlane. OTA still publishes when only Xcode beta is installed. Command
-   Line Tools cannot compile an IPA; if `xcode-select -p` still points at
-   them, run once:
-   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+5. On the Mac runner: a full `Xcode.app` or `Xcode-beta.app`. This machine
+   is on the macOS developer beta, so `Xcode-beta.app` is the one that
+   runs. The script probes `xcodebuild -version` and skips a leftover
+   `Xcode.app` that cannot run. Keep it on the Xcode 27 beta that App
+   Store Connect currently accepts for TestFlight (today that is beta 5).
+   Command Line Tools cannot compile an IPA; if `xcode-select -p` still
+   points at them, run once:
+   `sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer`.
    The script retries that switch with passwordless sudo during the job.
    Local EAS on macOS 26 / Xcode 27 also needs the `security` PATH shim in
    `scripts/fork/security-eas-local-keychain` so Prepare credentials does not

@@ -107,3 +107,123 @@ describe("iOS publish shallow history", () => {
     assert.include(mobileRelease, "refusing to publish OTA without a path diff");
   });
 });
+
+function extractIsFullXcode() {
+  const match = mobileRelease.match(/is_full_xcode\(\) \{\n[\s\S]*?\n\}/);
+  assert.ok(match, "is_full_xcode function missing");
+  return match[0];
+}
+
+function extractXcodeSearch() {
+  const match = mobileRelease.match(/developer_dir=""\nif is_full_xcode[\s\S]*?done\nfi/);
+  assert.ok(match, "Xcode search loop missing");
+  return match[0].replaceAll("/Applications", '"$apps"');
+}
+
+function installFakeXcode(applicationsDir, appName, runnable) {
+  const developerDir = NodePath.join(applicationsDir, appName, "Contents", "Developer");
+  NodeFS.mkdirSync(NodePath.join(developerDir, "usr", "bin"), { recursive: true });
+  NodeFS.writeFileSync(
+    NodePath.join(developerDir, "usr", "bin", "xcodebuild"),
+    runnable
+      ? "#!/bin/bash\necho 'Xcode 27.0'\nexit 0\n"
+      : "#!/bin/bash\necho 'this Xcode is not compatible with this macOS' >&2\nexit 1\n",
+    { mode: 0o755 },
+  );
+  return developerDir;
+}
+
+function runIsFullXcode(fn, developerDir) {
+  try {
+    NodeChildProcess.execFileSync(
+      "bash",
+      ["-c", `${fn}\nis_full_xcode "$1"`, "is_full_xcode", developerDir],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function selectDeveloperDir({ apps, env = {} }) {
+  return NodeChildProcess.execFileSync(
+    "bash",
+    [
+      "-c",
+      `${extractIsFullXcode()}\napps="$1"\n${extractXcodeSearch()}\nprintf '%s' "$developer_dir"`,
+      "select-xcode",
+      apps,
+    ],
+    {
+      encoding: "utf8",
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+}
+
+describe("iOS publish Xcode selection", () => {
+  it("probes xcodebuild -version inside is_full_xcode before accepting a path", () => {
+    const fn = extractIsFullXcode();
+    assert.include(fn, 'DEVELOPER_DIR="$1"');
+    assert.include(fn, "xcodebuild");
+    assert.include(fn, "-version");
+    assert.isBelow(
+      mobileRelease.indexOf("/Applications/Xcode.app"),
+      mobileRelease.indexOf("/Applications/Xcode-beta.app"),
+    );
+  });
+
+  it("rejects Command Line Tools and a leftover Xcode whose xcodebuild cannot run", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-xcode-"));
+    try {
+      const fn = extractIsFullXcode();
+      const broken = installFakeXcode(root, "Xcode.app", false);
+      const working = installFakeXcode(root, "Xcode-beta.app", true);
+      const clt = installFakeXcode(root, "CommandLineTools", true);
+
+      assert.isFalse(runIsFullXcode(fn, ""));
+      assert.isFalse(runIsFullXcode(fn, broken));
+      assert.isFalse(runIsFullXcode(fn, clt));
+      assert.isTrue(runIsFullXcode(fn, working));
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("falls through to Xcode-beta.app when Xcode.app cannot run", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-xcode-search-"));
+    try {
+      const apps = NodePath.join(root, "Applications");
+      NodeFS.mkdirSync(apps);
+      const broken = installFakeXcode(apps, "Xcode.app", false);
+      const working = installFakeXcode(apps, "Xcode-beta.app", true);
+
+      assert.equal(selectDeveloperDir({ apps, env: { DEVELOPER_DIR: "" } }), working);
+      assert.equal(
+        selectDeveloperDir({
+          apps,
+          env: { DEVELOPER_DIR: broken },
+        }),
+        working,
+      );
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("still prefers a runnable Xcode.app over Xcode-beta.app", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-xcode-prefer-"));
+    try {
+      const apps = NodePath.join(root, "Applications");
+      NodeFS.mkdirSync(apps);
+      const stable = installFakeXcode(apps, "Xcode.app", true);
+      installFakeXcode(apps, "Xcode-beta.app", true);
+
+      assert.equal(selectDeveloperDir({ apps, env: { DEVELOPER_DIR: "" } }), stable);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
