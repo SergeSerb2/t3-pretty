@@ -1152,7 +1152,12 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
             detail: `Unknown pending user-input request: ${requestId}`,
           });
         }
-        yield* Deferred.succeed(pending.resolution, { _tag: "answered", answers });
+        ctx.pendingUserInputs.delete(requestId);
+        // Interrupt/stop may have already settled this request as cancelled;
+        // a late answer must not fail the call.
+        yield* Deferred.succeed(pending.resolution, { _tag: "answered", answers }).pipe(
+          Effect.ignore,
+        );
       });
 
     const readThread: KimiAdapterShape["readThread"] = (threadId) =>
