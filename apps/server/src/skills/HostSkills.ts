@@ -1,9 +1,9 @@
 /**
  * HostSkills — user-scope skill folders the provider CLIs manage themselves.
  *
- * T3's store is a separate library. Codex, Claude Code, Cursor, Grok, and
- * OpenCode also load skills from their own home `skills/` directories (and
- * from the shared `~/.agents/skills` folder). This service scans those
+ * T3's store is a separate library. Codex, Claude Code, Cursor, and Grok
+ * also load skills from their own home `skills/` directories (and from
+ * the shared `~/.agents/skills` folder). This service scans those
  * locations on the environment host, hides a skill from those CLIs without
  * deleting it (by renaming `SKILL.md` to `SKILL.md.t3-disabled`), and deletes
  * a folder when the user uninstalls it from Settings. Clients address rows by
@@ -42,10 +42,10 @@ const SKILL_FILE = "SKILL.md";
 /** Providers only discover a file named exactly `SKILL.md`; this hides one. */
 export const HOST_SKILL_DISABLED_FILE = "SKILL.md.t3-disabled";
 
-type DriverOriginKey = "claudeAgent" | "codex" | "cursor" | "grok" | "opencode";
+type DriverOriginKey = "claudeAgent" | "codex" | "cursor" | "grok";
 type HostSkillOriginKey = DriverOriginKey | typeof SHARED_ORIGIN_KEY;
 
-const DRIVER_ORIGIN_KEYS = new Set<string>(["claudeAgent", "codex", "cursor", "grok", "opencode"]);
+const DRIVER_ORIGIN_KEYS = new Set<string>(["claudeAgent", "codex", "cursor", "grok"]);
 
 /**
  * One filesystem-safe path segment: no separators, no traversal, no leading
@@ -103,15 +103,6 @@ const DRIVER_CONVENTIONS: ReadonlyArray<{
     originKey: "grok",
     title: "Grok",
     defaultDirectory: () => joinHome(".grok"),
-  },
-  {
-    originKey: "opencode",
-    title: "OpenCode",
-    defaultDirectory: (environment) => {
-      const xdgConfigHome = environment.XDG_CONFIG_HOME?.trim() ?? "";
-      const configRoot = xdgConfigHome.length > 0 ? xdgConfigHome : joinHome(".config");
-      return `${configRoot}/opencode`;
-    },
   },
 ];
 

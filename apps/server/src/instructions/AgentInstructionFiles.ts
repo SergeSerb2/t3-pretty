@@ -8,7 +8,7 @@
  * crosses the wire inbound. Global paths follow each CLI's own lookup rules:
  * the provider instance's configured home directory when set, otherwise the
  * CLI's default (`~/.codex`, `~/.claude` honoring `CLAUDE_CONFIG_DIR`,
- * `~/.cursor`, `~/.grok`, `~/.config/opencode` honoring `XDG_CONFIG_HOME`).
+ * `~/.cursor`, `~/.grok`).
  */
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeOS from "node:os";
@@ -85,17 +85,6 @@ const GLOBAL_CONVENTIONS: ReadonlyArray<{
     description: "Loaded by Grok at the start of every session, in every project.",
     defaultDirectory: () => joinHome(".grok"),
   },
-  {
-    driver: "opencode",
-    title: "OpenCode",
-    fileName: AGENTS_FILE_NAME,
-    description: "Loaded by OpenCode at the start of every session, in every project.",
-    defaultDirectory: (environment) => {
-      const xdgConfigHome = environment.XDG_CONFIG_HOME?.trim() ?? "";
-      const configRoot = xdgConfigHome.length > 0 ? xdgConfigHome : joinHome(".config");
-      return `${configRoot}/opencode`;
-    },
-  },
 ];
 
 const PROJECT_CONVENTIONS: ReadonlyArray<{
@@ -106,7 +95,7 @@ const PROJECT_CONVENTIONS: ReadonlyArray<{
   {
     fileName: AGENTS_FILE_NAME,
     title: "Shared rules",
-    description: "The AGENTS.md standard, read by Codex, Cursor, Grok, and OpenCode.",
+    description: "The AGENTS.md standard, read by Codex, Cursor, Grok, and Kimi.",
   },
   {
     fileName: "CLAUDE.md",

@@ -58,7 +58,6 @@ const transientCodexNativeMethods = new Set([
   "item/fileChange/outputDelta",
   "item/plan/delta",
 ]);
-const transientOpenCodeNativeTypes = new Set(["message.part.delta", "message.part.updated"]);
 const transientAcpSessionUpdates = new Set([
   "agent_message_chunk",
   "agent_thought_chunk",
@@ -203,8 +202,8 @@ function providerLogPath(directory: string, prefix: string, threadSegment: strin
 
 /**
  * Recognizes the high-volume native record shapes each adapter writes:
- * `{ observedAt, event: { method | type, payload } }` (Claude, ACP adapters,
- * OpenCode) or a bare `ProviderEvent` with `method` (Codex).
+ * `{ observedAt, event: { method | type, payload } }` (Claude, ACP adapters)
+ * or a bare `ProviderEvent` with `method` (Codex).
  */
 export function isTransientNativeEvent(event: unknown): boolean {
   if (typeof event !== "object" || event === null) return false;
@@ -215,7 +214,6 @@ export function isTransientNativeEvent(event: unknown): boolean {
     if (typeof method !== "string") return false;
     if (method.startsWith("claude/stream_event")) return true;
     if (transientCodexNativeMethods.has(method)) return true;
-    if (transientOpenCodeNativeTypes.has(method)) return true;
     if (method !== "session/update") return false;
     const payload: unknown = Reflect.get(inner, "payload");
     if (typeof payload !== "object" || payload === null) return false;

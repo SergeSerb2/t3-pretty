@@ -23,32 +23,31 @@ describe("ProviderSettingsForm helpers", () => {
   });
 
   it("sources labels and descriptions from schema annotations", () => {
-    const opencode = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("opencode")];
-    expect(opencode).toBeDefined();
+    const cursor = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("cursor")];
+    expect(cursor).toBeDefined();
 
-    const serverPassword = deriveProviderSettingsFields(opencode!).find(
-      (field) => field.key === "serverPassword",
+    const apiEndpoint = deriveProviderSettingsFields(cursor!).find(
+      (field) => field.key === "apiEndpoint",
     );
 
-    expect(serverPassword).toMatchObject({
-      label: "Server password",
-      description: "Stored in plain text on disk.",
-      control: "password",
+    expect(apiEndpoint).toMatchObject({
+      label: "API endpoint",
+      description: "Override the Cursor API endpoint for this instance.",
     });
   });
 
   it("preserves unknown config keys while omitting empty configurable fields", () => {
-    const opencode = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("opencode")];
-    expect(opencode).toBeDefined();
+    const cursor = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("cursor")];
+    expect(cursor).toBeDefined();
 
-    const serverUrl = deriveProviderSettingsFields(opencode!).find(
-      (field) => field.key === "serverUrl",
+    const apiEndpoint = deriveProviderSettingsFields(cursor!).find(
+      (field) => field.key === "apiEndpoint",
     );
-    expect(serverUrl).toBeDefined();
+    expect(apiEndpoint).toBeDefined();
 
     const next = nextProviderConfigWithFieldValue(
-      { forkOwned: 1, serverUrl: "http://127.0.0.1:4096" },
-      serverUrl!,
+      { forkOwned: 1, apiEndpoint: "https://api.example.com" },
+      apiEndpoint!,
       "",
     );
 

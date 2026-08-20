@@ -6,7 +6,7 @@ or `@github summarize the open PRs` and the agent does it with that service's ow
 
 Each app is a remote MCP server (Streamable HTTP). T3 Code connects to it once, keeps the
 credential on the environment that runs your agents, and hands every provider (Codex, Claude,
-Cursor, Grok, Kimi, OpenCode) the same set of apps. Nothing runs on your machine for an app;
+Cursor, Grok, Kimi) the same set of apps. Nothing runs on your machine for an app;
 there is no background process to keep alive.
 
 ## Connect an app

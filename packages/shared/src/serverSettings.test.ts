@@ -134,13 +134,13 @@ describe("serverSettings helpers", () => {
     expect(
       applyServerSettingsPatch(current, {
         textGenerationModelSelection: {
-          instanceId: ProviderInstanceId.make("opencode"),
-          model: "openai/gpt-5",
+          instanceId: ProviderInstanceId.make("kimi"),
+          model: "kimi-code/k3",
         },
       }).textGenerationModelSelection,
     ).toEqual({
-      instanceId: "opencode",
-      model: "openai/gpt-5",
+      instanceId: "kimi",
+      model: "kimi-code/k3",
     });
   });
 
@@ -157,8 +157,8 @@ describe("serverSettings helpers", () => {
     expect(
       applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
         textGenerationModelSelection: {
-          instanceId: ProviderInstanceId.make("opencode"),
-          model: "openai/gpt-5",
+          instanceId: ProviderInstanceId.make("kimi"),
+          model: "kimi-code/k3",
           options: [
             { id: "variant", value: "prod" },
             { id: "agent", value: "build" },
@@ -166,8 +166,8 @@ describe("serverSettings helpers", () => {
         },
       }).textGenerationModelSelection,
     ).toEqual({
-      instanceId: "opencode",
-      model: "openai/gpt-5",
+      instanceId: "kimi",
+      model: "kimi-code/k3",
       options: [
         { id: "variant", value: "prod" },
         { id: "agent", value: "build" },
@@ -188,13 +188,13 @@ describe("serverSettings helpers", () => {
     expect(
       applyServerSettingsPatch(current, {
         sourceControlWriterModelSelection: {
-          instanceId: ProviderInstanceId.make("opencode"),
-          model: "openai/gpt-5",
+          instanceId: ProviderInstanceId.make("kimi"),
+          model: "kimi-code/k3",
         },
       }).sourceControlWriterModelSelection,
     ).toEqual({
-      instanceId: "opencode",
-      model: "openai/gpt-5",
+      instanceId: "kimi",
+      model: "kimi-code/k3",
     });
   });
 

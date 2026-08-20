@@ -242,7 +242,7 @@ function summarizeMcpResult(result: unknown): Record<string, unknown> | undefine
 
 /**
  * MCP tool calls carry full tool results (`data.item.result` on Codex,
- * `data.result` on Claude/OpenCode) that used to bypass slimming entirely to
+ * `data.result` on Claude) that used to bypass slimming entirely to
  * keep the expanded-row UI working. Keep the fields the UI actually renders
  * and summarize the result like regular tool output.
  */

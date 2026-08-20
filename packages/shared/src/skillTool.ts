@@ -1,7 +1,7 @@
 /**
  * Shared skill-tool detection for provider adapters and the thread log.
  *
- * Claude Code, Cursor, and OpenCode all surface skill loading as a tool-shaped
+ * Claude Code and Cursor surface skill loading as a tool-shaped
  * event, but the names and payloads differ. Keep the match tight: a generic
  * `name` field is too common to treat as a skill id.
  */

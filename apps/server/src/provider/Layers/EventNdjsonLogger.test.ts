@@ -333,7 +333,6 @@ describe("EventNdjsonLogger", () => {
           event: { method: "claude/stream_event/content_block_delta/text_delta" },
         },
         { method: "item/agentMessage/delta", threadId },
-        { observedAt: "t", event: { type: "message.part.delta" } },
         {
           observedAt: "t",
           event: {

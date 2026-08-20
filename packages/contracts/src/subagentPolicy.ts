@@ -97,9 +97,6 @@ export function defaultSubagentChildOptions(
   if (driver === CLAUDE_DRIVER || driver === KIMI_DRIVER) {
     return [{ id: "effort", value: "low" }];
   }
-  if (driver === ProviderDriverKind.make("opencode")) {
-    return [];
-  }
   return [{ id: "reasoningEffort", value: "low" }];
 }
 

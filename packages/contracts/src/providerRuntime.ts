@@ -25,6 +25,7 @@ const RuntimeEventRawSource = Schema.Union([
   Schema.Literal("claude.sdk.message"),
   Schema.Literal("claude.sdk.permission"),
   Schema.Literal("codex.sdk.thread-event"),
+  // Historical OpenCode sessions may still persist this source.
   Schema.Literal("opencode.sdk.event"),
   Schema.Literal("acp.jsonrpc"),
   Schema.TemplateLiteral(["acp.", Schema.String, ".extension"]),
