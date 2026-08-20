@@ -3540,7 +3540,11 @@ function ChatViewContent(props: ChatViewProps) {
 
   const handleRuntimeModeChange = useCallback(
     (mode: RuntimeMode) => {
-      if (mode === runtimeMode) return;
+      // Skip only when the composer already records this exact pick. Picking
+      // the value currently shown because of a default must still write, or
+      // an explicit pick of the default would be indistinguishable from
+      // "never picked" and lost on the next provider switch.
+      if (composerRuntimeMode === mode) return;
       setComposerDraftRuntimeMode(composerDraftTarget, mode);
       if (isLocalDraftThread) {
         setDraftThreadContext(composerDraftTarget, { runtimeMode: mode });
@@ -3549,7 +3553,7 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [
       isLocalDraftThread,
-      runtimeMode,
+      composerRuntimeMode,
       scheduleComposerFocus,
       composerDraftTarget,
       setComposerDraftRuntimeMode,
@@ -6469,9 +6473,13 @@ function ChatViewContent(props: ChatViewProps) {
       // default, so an explicit Full access pick is never rewritten by a
       // model switch.
       if (storedRuntimeMode !== null) {
-        handleRuntimeModeChange(
-          resolveRuntimeModeForProviderDriver(resolvedDriverKind, storedRuntimeMode),
+        const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
+          resolvedDriverKind,
+          storedRuntimeMode,
         );
+        if (nextRuntimeMode !== runtimeMode) {
+          handleRuntimeModeChange(nextRuntimeMode);
+        }
       }
       scheduleComposerFocus();
     },
@@ -6483,6 +6491,7 @@ function ChatViewContent(props: ChatViewProps) {
       setStickyComposerModelSelection,
       handleRuntimeModeChange,
       storedRuntimeMode,
+      runtimeMode,
       providerStatuses,
       settings,
       supportsProviderHandoff,
