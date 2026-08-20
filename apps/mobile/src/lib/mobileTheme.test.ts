@@ -5,12 +5,14 @@ import { BUILT_IN_THEME_IDS, BUILT_IN_THEMES } from "@t3tools/shared/themePalett
 import { DEFAULT_MOBILE_THEME_VARIABLES } from "./mobileDefaultTheme";
 
 import {
+  BORING_MOBILE_THEME_ID,
   createMobileThemePairPatch,
   createMobileThemeSelectionPatch,
   createMobileThemeVariables,
   DEFAULT_MOBILE_THEME_ID,
   getMobileThemePreviewColors,
   getMobileThemeVariables,
+  isBoringMobileTheme,
   MOBILE_THEME_IDS,
   normalizeMobileThemeId,
   normalizeMobileThemeMode,
@@ -144,11 +146,18 @@ describe("mobile themes", () => {
   it("normalizes persisted theme preferences", () => {
     expect(normalizeMobileThemeId("ocean")).toBe(DEFAULT_MOBILE_THEME_ID);
     expect(normalizeMobileThemeId("missing-theme")).toBe(DEFAULT_MOBILE_THEME_ID);
+    expect(normalizeMobileThemeId(BORING_MOBILE_THEME_ID)).toBe(BORING_MOBILE_THEME_ID);
     expect(normalizeMobileThemeMode("dark")).toBe("dark");
     expect(normalizeMobileThemeMode("sepia")).toBe("system");
   });
 
-  it("migrates every stored palette to World Scenery", () => {
+  it("keeps Boring (T3 Chat) and migrates every other stored palette to World Scenery", () => {
+    expect(isBoringMobileTheme(BORING_MOBILE_THEME_ID)).toBe(true);
+    expect(isBoringMobileTheme(DEFAULT_MOBILE_THEME_ID)).toBe(false);
+    expect(resolveMobileThemeIds({ themeId: BORING_MOBILE_THEME_ID })).toEqual({
+      light: BORING_MOBILE_THEME_ID,
+      dark: BORING_MOBILE_THEME_ID,
+    });
     expect(resolveMobileThemeIds({ themeId: "grove" })).toEqual({
       light: DEFAULT_MOBILE_THEME_ID,
       dark: DEFAULT_MOBILE_THEME_ID,

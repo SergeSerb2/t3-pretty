@@ -3,14 +3,16 @@
  * engine (store, 400 KB seed pool, layer CSS) lives in a lazy chunk that only
  * loads once the "world-scenery" theme is actually the active palette.
  *
- * T3 Pretty ships World Scenery as the only product theme: this host installs
- * the palette and switches any other stored preference over to it. Activation
- * is then observed through `data-theme-id` on <html>.
+ * T3 Pretty ships World Scenery as the default product theme and Boring
+ * (upstream T3 Chat) as the opt-out. This host installs the scenery palette
+ * and snaps any other stored preference to World Scenery. Activation is then
+ * observed through `data-theme-id` on <html>.
  */
 import { lazy, Suspense, useEffect } from "react";
 
 import { useTheme } from "../hooks/useTheme";
 import { ComposerAttachControl } from "./ComposerAttachControl";
+import { shouldForceWorldSceneryTheme } from "./productTheme";
 import { useSceneryThemeActive } from "./useHtmlAttributes";
 import { ensureWorldSceneryThemeInstalled, WORLD_SCENERY_THEME_ID } from "./worldSceneryTheme";
 
@@ -23,7 +25,7 @@ export function SceneryHost() {
 
   useEffect(() => {
     ensureWorldSceneryThemeInstalled();
-    if (theme !== WORLD_SCENERY_THEME_ID) {
+    if (shouldForceWorldSceneryTheme(theme)) {
       setTheme(WORLD_SCENERY_THEME_ID);
     }
   }, [setTheme, theme]);

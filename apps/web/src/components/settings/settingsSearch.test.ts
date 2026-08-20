@@ -90,6 +90,14 @@ describe("searchSettings", () => {
       id: "theme",
       to: "/settings/appearance",
     });
+    expect(searchSettings("personalization")[0]).toMatchObject({
+      id: "personalization",
+      to: "/settings/appearance",
+    });
+    expect(searchSettings("boring")[0]).toMatchObject({
+      id: "boring-mode",
+      to: "/settings/appearance",
+    });
     expect(searchSettings("word wrap")[0]).toMatchObject({
       id: "word-wrap",
       to: "/settings/appearance",

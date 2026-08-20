@@ -999,7 +999,7 @@ function BackgroundActivityAdvancedDialog({
 }
 
 export function AppearanceSettingsPanel() {
-  const { appearanceMode, setAppearanceMode } = useTheme();
+  const { appearanceMode, setAppearanceMode, theme, setTheme } = useTheme();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const environmentStageLabel = useEnvironmentStageLabel();
@@ -1021,7 +1021,12 @@ export function AppearanceSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="appearance" title="Appearance">
         <div id={searchableSetting("theme").id}>
-          <ThemeLibrary appearanceMode={appearanceMode} setAppearanceMode={setAppearanceMode} />
+          <ThemeLibrary
+            appearanceMode={appearanceMode}
+            setAppearanceMode={setAppearanceMode}
+            setTheme={setTheme}
+            theme={theme}
+          />
         </div>
 
         <SettingsRow
@@ -1079,7 +1084,7 @@ export function AppearanceSettingsPanel() {
         {showEnvironmentIdentification ? (
           <SettingsRow
             {...searchableSetting("environment-identification")}
-            description="Choose how Dev and Nightly environments are identified."
+            description="Choose how Dev environments are identified."
             resetAction={
               environmentIdentification.value !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
                 <SettingResetButton
