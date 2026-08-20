@@ -6547,6 +6547,7 @@ function ChatViewContent(props: ChatViewProps) {
     </div>
   );
   const parkTitlebarLayoutControls = !(shouldUseRightPanelSheet && rightPanelOpen);
+  const titlebarLayoutControlCount = rightPanelOpen && !shouldUseRightPanelSheet ? 3 : 2;
   const rightPanelContent = activeThreadRef ? (
     selectedRightPanelSurface?.kind === "preview" ? (
       <Suspense fallback={null}>
@@ -6694,13 +6695,6 @@ function ChatViewContent(props: ChatViewProps) {
             COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
           )}
         >
-          {isElectron && parkTitlebarLayoutControls ? (
-            <div
-              aria-hidden
-              data-titlebar-controls-drag-hole
-              className="pointer-events-none absolute inset-y-0 right-0 w-[calc(var(--workspace-titlebar-layout-cluster-width)+var(--workspace-controls-right))] [-webkit-app-region:no-drag]"
-            />
-          ) : null}
           <ChatHeader
             {...(!supportsPullRequests || threadRepository === null
               ? {}
@@ -6729,6 +6723,14 @@ function ChatViewContent(props: ChatViewProps) {
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
           />
+          {isElectron && parkTitlebarLayoutControls ? (
+            <div
+              aria-hidden
+              data-titlebar-controls-drag-hole
+              data-titlebar-layout-control-count={titlebarLayoutControlCount}
+              className="pointer-events-none absolute inset-y-0 right-0 [-webkit-app-region:no-drag]"
+            />
+          ) : null}
         </header>
 
         <ThreadErrorBanner

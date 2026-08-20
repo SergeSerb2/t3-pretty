@@ -10,6 +10,7 @@ describe("thread titlebar layout controls", () => {
   );
   const headerStart = source.indexOf("data-chat-header", rootStart);
   const headerEnd = source.indexOf("<ChatHeader", headerStart);
+  const headerClose = source.indexOf("</header>", headerStart);
   const controlsRender = "{parkTitlebarLayoutControls ? panelLayoutControls : null}";
 
   it("keeps the layout-control cluster on the workspace root across right-panel toggles", () => {
@@ -31,7 +32,8 @@ describe("thread titlebar layout controls", () => {
   it("lets clicks reach the cluster through the header drag region", () => {
     const clusterStart = source.indexOf("const panelLayoutControls = (");
     const cluster = source.slice(clusterStart, clusterStart + 900);
-    const headerSlice = source.slice(headerStart, headerEnd);
+    const headerSlice = source.slice(headerStart, headerClose);
+    const holeIndex = source.indexOf("data-titlebar-controls-drag-hole", headerStart);
 
     expect(clusterStart).toBeGreaterThanOrEqual(0);
     expect(cluster).toContain("pointer-events-none");
@@ -41,13 +43,26 @@ describe("thread titlebar layout controls", () => {
     expect(headerSlice).toContain("isElectron && parkTitlebarLayoutControls");
     expect(headerSlice).not.toContain("isElectron && !rightPanelOpen");
     expect(headerSlice).not.toContain("w-16");
-    expect(headerSlice).toContain("--workspace-titlebar-layout-cluster-width");
-    expect(headerSlice).toContain("--workspace-controls-right");
+    expect(headerSlice).toContain("drag-region relative flex");
+    expect(holeIndex).toBeGreaterThan(headerEnd);
+    expect(holeIndex).toBeLessThan(headerClose);
+    expect(headerSlice).toContain(
+      "data-titlebar-layout-control-count={titlebarLayoutControlCount}",
+    );
   });
 
-  it("sizes the Electron no-drag hole from the layout-cluster token", () => {
+  it("sizes the Electron no-drag hole from the mounted control count", () => {
     const css = NodeFS.readFileSync(new URL("../index.css", import.meta.url), "utf8");
+    expect(css).toContain("--workspace-titlebar-layout-control-count");
     expect(css).toContain("--workspace-titlebar-layout-cluster-width");
-    expect(css).toContain("3 * var(--workspace-titlebar-control-size)");
+    expect(css).toContain(
+      "var(--workspace-titlebar-layout-control-count) * var(--workspace-titlebar-control-size)",
+    );
+    expect(css).toContain(
+      '[data-titlebar-controls-drag-hole][data-titlebar-layout-control-count="3"]',
+    );
+    expect(source).toContain(
+      "const titlebarLayoutControlCount =\n    rightPanelOpen && !shouldUseRightPanelSheet ? 3 : 2",
+    );
   });
 });

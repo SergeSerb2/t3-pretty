@@ -103,10 +103,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --workspace-native-controls-inset: 0px;
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: 0.75rem;
-  /* Terminal + right-panel + maximize, gap-1 between them. Electron no-drag
-     hole uses this so two/three sm toggles are never clipped at 64px. */
+  /* Parked titlebar cluster: sm toggles with gap-1. Count is 2, or 3 with
+     maximize. The Electron no-drag hole overrides count on itself. */
+  --workspace-titlebar-layout-control-count: 2;
   --workspace-titlebar-layout-cluster-width: calc(
-    3 * var(--workspace-titlebar-control-size) + 0.5rem
+    var(--workspace-titlebar-layout-control-count) * var(--workspace-titlebar-control-size) +
+      (var(--workspace-titlebar-layout-control-count) - 1) * 0.25rem
   );
 
   @variant dark {
@@ -1663,6 +1665,19 @@ code {
 /* Window drag region (frameless titlebar) */
 .drag-region {
   -webkit-app-region: drag;
+}
+
+[data-titlebar-controls-drag-hole] {
+  --workspace-titlebar-layout-control-count: 2;
+  --workspace-titlebar-layout-cluster-width: calc(
+    var(--workspace-titlebar-layout-control-count) * var(--workspace-titlebar-control-size) +
+      (var(--workspace-titlebar-layout-control-count) - 1) * 0.25rem
+  );
+  width: calc(var(--workspace-titlebar-layout-cluster-width) + var(--workspace-controls-right));
+}
+
+[data-titlebar-controls-drag-hole][data-titlebar-layout-control-count="3"] {
+  --workspace-titlebar-layout-control-count: 3;
 }
 
 .drag-region button,
