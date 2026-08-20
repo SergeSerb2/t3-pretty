@@ -35,18 +35,19 @@ const runtimeModeConfig: Record<RuntimeMode, RuntimeModeOption> = {
   },
 };
 
-// Kimi names its full-access modes after the CLI: "Auto" never stops to ask,
-// "Yolo" runs the same full-access session but can stop to ask questions.
+// Kimi runs both full-access modes in the same unrestricted session; they
+// differ only in whether Kimi can stop to ask questions. Listed in ascending
+// order of access: "Yolo" may ask, "Full access" never does.
 const kimiRuntimeModeConfig: Partial<Record<RuntimeMode, RuntimeModeOption>> = {
-  "full-access": {
-    label: "Auto",
-    description: "Full access. Never stops to ask questions.",
-    icon: LockOpenIcon,
-  },
   yolo: {
     label: "Yolo",
     description: "Full access. Can stop to ask questions.",
     icon: SparklesIcon,
+  },
+  "full-access": {
+    label: "Full access",
+    description: "Full access. Never stops to ask questions.",
+    icon: LockOpenIcon,
   },
 };
 
@@ -54,7 +55,7 @@ const kimiRuntimeModeConfig: Partial<Record<RuntimeMode, RuntimeModeOption>> = {
 const genericRuntimeModeOptions = (Object.keys(runtimeModeConfig) as RuntimeMode[]).filter(
   (mode) => mode !== "yolo",
 );
-const kimiRuntimeModeOptions: RuntimeMode[] = ["approval-required", "full-access", "yolo"];
+const kimiRuntimeModeOptions: RuntimeMode[] = ["approval-required", "yolo", "full-access"];
 
 export function runtimeModeOptionsForProvider(
   provider: ProviderDriverKind,

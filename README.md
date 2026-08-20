@@ -107,7 +107,7 @@ and let the agent open a pull request when it finishes.
 
 Everything you would expect from T3 Code is still here:
 
-- Permission modes (Supervised, Auto-accept edits, Auto, Full access — Kimi uses Auto / Yolo)
+- Permission modes (Supervised, Auto-accept edits, Auto, Full access — Kimi offers Supervised / Yolo / Full access, defaulting to Yolo)
 - Worktrees, checkpoints, diffs, and a Ghostty-backed terminal
 - Source control for GitHub, GitLab, Bitbucket, Azure DevOps, and [Origin](https://origin.cursor.com)
 - Automatic pull requests, usage, storage cleanup, project icons

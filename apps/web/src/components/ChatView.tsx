@@ -20,6 +20,7 @@ import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderInteractionMode,
   ProviderDriverKind,
+  defaultRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
   RuntimeMode,
   TerminalOpenInput,
@@ -1748,7 +1749,6 @@ function ChatViewContent(props: ChatViewProps) {
   // session.lastError. Bump a tick so the banner hides immediately. Mirrors
   // the branch mismatch banner.
   const [, setThreadErrorBannerDismissTick] = useState(0);
-  const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   // Plan mode is legacy (Settings → Beta). With the flag off the effective
   // mode is forced to "default" — even for threads with a stored plan mode —
   // so nobody is trapped in plan mode while its toggle is hidden. The next
@@ -2433,6 +2433,21 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const selectedProvider: ProviderDriverKind =
     modelPickerLockedProvider ?? unlockedSelectedProvider;
+  // Kimi's default access mode is "yolo"; other providers default to
+  // "full-access". A composer pick always wins, and a server thread's stored
+  // mode is authoritative — even "full-access" on Kimi, which may be an
+  // explicit pick or the pre-Yolo default and must not be remapped. Only a
+  // draft whose mode still reads as the generic default (never picked, never
+  // carried from a non-default thread) inherits the provider's own default.
+  const storedRuntimeMode =
+    composerRuntimeMode ??
+    (isServerThread
+      ? (activeThread?.runtimeMode ?? null)
+      : activeThread?.runtimeMode !== DEFAULT_RUNTIME_MODE
+        ? (activeThread?.runtimeMode ?? null)
+        : null);
+  const runtimeMode: RuntimeMode =
+    storedRuntimeMode ?? defaultRuntimeModeForProviderDriver(selectedProvider);
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
@@ -3525,7 +3540,11 @@ function ChatViewContent(props: ChatViewProps) {
 
   const handleRuntimeModeChange = useCallback(
     (mode: RuntimeMode) => {
-      if (mode === runtimeMode) return;
+      // Skip only when the composer already records this exact pick. Picking
+      // the value currently shown because of a default must still write, or
+      // an explicit pick of the default would be indistinguishable from
+      // "never picked" and lost on the next provider switch.
+      if (composerRuntimeMode === mode) return;
       setComposerDraftRuntimeMode(composerDraftTarget, mode);
       if (isLocalDraftThread) {
         setDraftThreadContext(composerDraftTarget, { runtimeMode: mode });
@@ -3534,7 +3553,7 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [
       isLocalDraftThread,
-      runtimeMode,
+      composerRuntimeMode,
       scheduleComposerFocus,
       composerDraftTarget,
       setComposerDraftRuntimeMode,
@@ -6446,13 +6465,21 @@ function ChatViewContent(props: ChatViewProps) {
         nextModelSelection,
       );
       setStickyComposerModelSelection(nextModelSelection);
-      // Kimi's "yolo" mode has no equivalent on other providers; switching
-      // providers falls back to the generic full-access mode instead of
-      // leaking the Kimi-only literal into another provider's session config.
-      if (resolvedDriverKind !== "kimi") {
-        handleRuntimeModeChange(
-          resolveRuntimeModeForProviderDriver(resolvedDriverKind, runtimeMode),
+      // Only an explicit mode follows the switch across providers: Kimi's
+      // "yolo" has no equivalent elsewhere and normalizes to the generic
+      // full-access mode instead of leaking the Kimi-only literal into
+      // another provider's session config. An unset mode
+      // (storedRuntimeMode === null) keeps tracking the provider's own
+      // default, so an explicit Full access pick is never rewritten by a
+      // model switch.
+      if (storedRuntimeMode !== null) {
+        const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
+          resolvedDriverKind,
+          storedRuntimeMode,
         );
+        if (nextRuntimeMode !== runtimeMode) {
+          handleRuntimeModeChange(nextRuntimeMode);
+        }
       }
       scheduleComposerFocus();
     },
@@ -6463,6 +6490,7 @@ function ChatViewContent(props: ChatViewProps) {
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
       handleRuntimeModeChange,
+      storedRuntimeMode,
       runtimeMode,
       providerStatuses,
       settings,

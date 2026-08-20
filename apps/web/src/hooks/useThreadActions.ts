@@ -15,6 +15,7 @@ import { useCallback, useMemo, useRef } from "react";
 
 import { getFallbackThreadIdAfterDelete, pinOrderKeyBetween } from "../components/Sidebar.logic";
 import { useComposerDraftStore } from "../composerDraftStore";
+import { useThreadDepartureStore } from "../threadDepartureStore";
 import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
@@ -500,12 +501,26 @@ export function useThreadActions() {
         ? threadWokeAt(resolved.thread, { now: new Date().toISOString() })
         : null;
       // Settle is a high-frequency lifecycle action and stays silent — no
-      // toast.
+      // toast. The departure marker lets the sidebar row start its slide-out
+      // now, ahead of the server round trip; the sidebar clears it once the
+      // settled classification lands.
+      const threadKey = scopedThreadKey(target);
+      useThreadDepartureStore.getState().markDeparting(threadKey, "settle");
       const result = await settleThreadMutation({
         environmentId: target.environmentId,
         input: { threadId: target.threadId },
+      }).catch((error: unknown) => {
+        // A thrown mutation (aborted request, defect in reporting) never
+        // produces a Failure result, so the branch below never runs — clear
+        // here or the row stays hidden until the store TTL expires.
+        useThreadDepartureStore.getState().clearDeparting(threadKey);
+        throw error;
       });
-      if (result._tag === "Success" && wokeAt !== null) {
+      if (result._tag === "Failure") {
+        useThreadDepartureStore.getState().clearDeparting(threadKey);
+        return result;
+      }
+      if (wokeAt !== null) {
         markThreadVisited(scopedThreadKey(target), wokeAt);
       }
       return result;
@@ -638,10 +653,22 @@ export function useThreadActions() {
           ),
         );
       }
-      return snoozeThreadMutation({
+      // Same optimistic departure contract as settle: the row slides out on
+      // click, and the marker clears when the snoozed classification lands.
+      const threadKey = scopedThreadKey(target);
+      useThreadDepartureStore.getState().markDeparting(threadKey, "snooze");
+      const result = await snoozeThreadMutation({
         environmentId: target.environmentId,
         input: { threadId: target.threadId, snoozedUntil },
+      }).catch((error: unknown) => {
+        // Same thrown-mutation contract as settle above.
+        useThreadDepartureStore.getState().clearDeparting(threadKey);
+        throw error;
       });
+      if (result._tag === "Failure") {
+        useThreadDepartureStore.getState().clearDeparting(threadKey);
+      }
+      return result;
     },
     [resolveThreadTarget, snoozeThreadMutation],
   );

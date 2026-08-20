@@ -922,9 +922,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const onUpdateModelSelection = props.onUpdateModelSelection;
   const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
-  // Kimi's "yolo" mode has no equivalent on other providers; a model pick
-  // that crosses providers normalizes it to the generic full-access mode in
-  // the same gesture.
+  // A thread's stored mode is an explicit value, so a model pick only
+  // normalizes: Kimi's "yolo" mode has no equivalent on other providers and
+  // falls back to the generic full-access mode in the same gesture. New
+  // threads pick up the provider's own default from the new-task flow.
   const handleSelectModelOption = useCallback(
     (option: ModelOption) => {
       onUpdateModelSelection(option.selection);
