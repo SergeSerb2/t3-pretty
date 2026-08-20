@@ -10,8 +10,7 @@ describe("thread titlebar layout controls", () => {
   );
   const headerStart = source.indexOf("data-chat-header", rootStart);
   const headerEnd = source.indexOf("<ChatHeader", headerStart);
-  const controlsRender =
-    "{shouldUseRightPanelSheet && rightPanelOpen ? null : panelLayoutControls}";
+  const controlsRender = "{parkTitlebarLayoutControls ? panelLayoutControls : null}";
 
   it("keeps the layout-control cluster on the workspace root across right-panel toggles", () => {
     expect(rootStart).toBeGreaterThanOrEqual(0);
@@ -24,6 +23,9 @@ describe("thread titlebar layout controls", () => {
     expect(headerSlice).not.toContain("panelLayoutControls");
     expect(controlsIndex).toBeGreaterThan(headerEnd);
     expect(source.slice(rootStart, headerStart)).not.toContain(controlsRender);
+    expect(source).toContain(
+      "const parkTitlebarLayoutControls = !(shouldUseRightPanelSheet && rightPanelOpen)",
+    );
   });
 
   it("lets clicks reach the cluster through the header drag region", () => {
@@ -36,5 +38,16 @@ describe("thread titlebar layout controls", () => {
     expect(cluster).toContain("pointer-events-auto");
     expect(headerSlice).toContain("data-titlebar-controls-drag-hole");
     expect(headerSlice).toContain("[-webkit-app-region:no-drag]");
+    expect(headerSlice).toContain("isElectron && parkTitlebarLayoutControls");
+    expect(headerSlice).not.toContain("isElectron && !rightPanelOpen");
+    expect(headerSlice).not.toContain("w-16");
+    expect(headerSlice).toContain("--workspace-titlebar-layout-cluster-width");
+    expect(headerSlice).toContain("--workspace-controls-right");
+  });
+
+  it("sizes the Electron no-drag hole from the layout-cluster token", () => {
+    const css = NodeFS.readFileSync(new URL("../index.css", import.meta.url), "utf8");
+    expect(css).toContain("--workspace-titlebar-layout-cluster-width");
+    expect(css).toContain("3 * var(--workspace-titlebar-control-size)");
   });
 });

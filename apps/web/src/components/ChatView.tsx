@@ -6546,6 +6546,7 @@ function ChatViewContent(props: ChatViewProps) {
       </div>
     </div>
   );
+  const parkTitlebarLayoutControls = !(shouldUseRightPanelSheet && rightPanelOpen);
   const rightPanelContent = activeThreadRef ? (
     selectedRightPanelSurface?.kind === "preview" ? (
       <Suspense fallback={null}>
@@ -6693,11 +6694,11 @@ function ChatViewContent(props: ChatViewProps) {
             COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
           )}
         >
-          {isElectron && !rightPanelOpen ? (
+          {isElectron && parkTitlebarLayoutControls ? (
             <div
               aria-hidden
               data-titlebar-controls-drag-hole
-              className="pointer-events-none absolute inset-y-0 right-[var(--workspace-controls-right)] z-50 mr-px w-16 [-webkit-app-region:no-drag]"
+              className="pointer-events-none absolute inset-y-0 right-0 w-[calc(var(--workspace-titlebar-layout-cluster-width)+var(--workspace-controls-right))] [-webkit-app-region:no-drag]"
             />
           ) : null}
           <ChatHeader
@@ -7245,7 +7246,7 @@ function ChatViewContent(props: ChatViewProps) {
         </RightPanelSheet>
       ) : null}
 
-      {shouldUseRightPanelSheet && rightPanelOpen ? null : panelLayoutControls}
+      {parkTitlebarLayoutControls ? panelLayoutControls : null}
 
       {expandedImage && (
         <ExpandedImageDialog
