@@ -11,8 +11,8 @@ logo appear for this repository in T3 Pretty project rows instead of the folder 
 Earlier studies live in `pretty/logo-explorations/`. The shipping mark is the
 cut-out T3 from that lockup, recast in World Scenery sage.
 
-The master mark is the lockup T3 in World Scenery pastel sage (`#6B9A7A`)
-on cream paper (`#E4DFCC`). Extra sizes and colorways live in `pretty/kit/`.
+The master mark is the lockup T3 in pastel mint (`#8FCFA8`) on cream paper
+(`#E4DFCC`). Extra sizes and colorways live in `pretty/kit/`.
 The `| Pretty` wordmark (`pretty/t3-pretty-wordmark.png`) is for the README,
 DMG installer, and other large lockups. The in-app mark is that T3 with
 the paper knocked out.

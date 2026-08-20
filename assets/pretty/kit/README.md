@@ -1,8 +1,9 @@
 # T3 Pretty brand kit
 
 Source letterform: `../t3-pretty-source-icon.jpg` (T3) and
-`../t3-pretty-source-wordmark.jpg` (T3 | Pretty). Ink is World Scenery pastel
-sage `#6B9A7A` on cream paper `#E4DFCC`.
+`../t3-pretty-source-wordmark.jpg` (T3 | Pretty). The T3 is pastel mint
+`#8FCFA8` on cream paper `#E4DFCC`. In the wordmark, "Pretty" stays the
+original dark olive.
 
 ## Mark (T3 only)
 
