@@ -2491,6 +2491,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       {workEntry.itemType === "image_generation" ? (
         <div className="mt-1 mb-2 max-w-xl ps-6">
           <GeneratedImageCard
+            cwd={ctx.workspaceRoot ?? ctx.markdownCwd}
             environmentId={ctx.activeThreadEnvironmentId}
             onExpand={ctx.onImageExpand}
             path={generatedImagePath}

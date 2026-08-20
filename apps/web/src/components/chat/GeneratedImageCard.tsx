@@ -5,8 +5,18 @@ import { cn } from "~/lib/utils";
 import { useAssetUrlState } from "~/assets/assetUrls";
 import { useLayoutEffect, useRef, useState, type ImgHTMLAttributes } from "react";
 
+import { resolveMarkdownFileLinkMeta } from "../../markdown-links";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import type { WorkLogEntry } from "../../session-logic";
+
+/** Join a generated-image path against the workspace cwd when it is relative. */
+export function resolveGeneratedImageAssetPath(
+  path: string,
+  cwd: string | undefined,
+): string | null {
+  const resolved = resolveMarkdownFileLinkMeta(path, cwd)?.filePath ?? path;
+  return isWorkspaceImagePreviewPath(resolved) ? resolved : null;
+}
 
 export function fadingImageClassName(loaded: boolean, className?: string): string {
   return cn(
@@ -144,13 +154,15 @@ export function generatedImageWorkEntryPath(workEntry: WorkLogEntry): string | u
 }
 
 export function GeneratedImageCard(props: {
+  readonly cwd?: string | undefined;
   readonly environmentId: EnvironmentId | null;
   readonly onExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
   readonly path: string | undefined;
   readonly pending: boolean;
   readonly threadRef: ScopedThreadRef | null;
 }) {
-  if (!props.path || !props.threadRef || !props.environmentId) {
+  const path = props.path ? resolveGeneratedImageAssetPath(props.path, props.cwd) : null;
+  if (!path || !props.threadRef || !props.environmentId) {
     return (
       <GeneratedImagePlaceholder
         label={props.pending ? "Generating image…" : "Image unavailable."}
@@ -162,7 +174,7 @@ export function GeneratedImageCard(props: {
       alt="Generated image"
       environmentId={props.environmentId}
       onExpand={props.onExpand}
-      path={props.path}
+      path={path}
       threadId={props.threadRef.threadId}
     />
   );
