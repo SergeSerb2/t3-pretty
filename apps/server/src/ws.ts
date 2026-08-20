@@ -2024,10 +2024,17 @@ const makeWsRpcLayer = (
                   ),
                   Effect.orElseSucceed(() => undefined),
                 );
+              const workspaceRoot = thread.value.worktreePath ?? project.value.workspaceRoot;
+              const extraGrokWorkspaceRoots =
+                thread.value.worktreePath &&
+                thread.value.worktreePath !== project.value.workspaceRoot
+                  ? [project.value.workspaceRoot]
+                  : undefined;
               return yield* issueAssetUrl({
                 resource: input.resource,
-                workspaceRoot: thread.value.worktreePath ?? project.value.workspaceRoot,
+                workspaceRoot,
                 ...(grokSessionId ? { grokSessionId } : {}),
+                ...(extraGrokWorkspaceRoots ? { extraGrokWorkspaceRoots } : {}),
               });
             }),
             { "rpc.aggregate": "workspace" },

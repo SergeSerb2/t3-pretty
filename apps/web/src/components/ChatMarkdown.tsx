@@ -114,6 +114,7 @@ interface ChatMarkdownProps {
   text: string;
   cwd: string | undefined;
   threadRef?: ScopedThreadRef | undefined;
+  generatedImagePaths?: ReadonlyArray<string> | undefined;
   onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
   onTaskListChange?: ((input: { markerOffset: number; checked: boolean }) => void) | undefined;
   isStreaming?: boolean;
@@ -1369,6 +1370,7 @@ function ChatMarkdown({
   text,
   cwd,
   threadRef,
+  generatedImagePaths,
   onImageExpand,
   onTaskListChange,
   isStreaming = false,
@@ -1754,6 +1756,7 @@ function ChatMarkdown({
           <ChatMarkdownImage
             alt={alt}
             environmentId={threadRef.environmentId}
+            generatedImagePaths={generatedImagePaths}
             localPath={fileLinkMeta?.filePath ?? null}
             onExpand={onImageExpand}
             src={src}
@@ -1822,6 +1825,7 @@ function ChatMarkdown({
   }, [
     cwd,
     diffThemeName,
+    generatedImagePaths,
     isStreaming,
     onImageExpand,
     onTaskListChange,

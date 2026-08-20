@@ -154,6 +154,7 @@ interface TimelineRowSharedState {
   routeThreadKey: string;
   threadRef: ScopedThreadRef | null;
   markdownCwd: string | undefined;
+  generatedImagePaths: ReadonlyArray<string>;
   resolvedTheme: "light" | "dark";
   workspaceRoot: string | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
@@ -440,6 +441,22 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     ],
   );
   const rows = useStableRows(rawRows);
+  const generatedImagePaths = useMemo(() => {
+    const paths: string[] = [];
+    const seen = new Set<string>();
+    for (const entry of timelineEntries) {
+      if (entry.kind !== "work") {
+        continue;
+      }
+      const path = generatedImageWorkEntryPath(entry.entry);
+      if (!path || seen.has(path)) {
+        continue;
+      }
+      seen.add(path);
+      paths.push(path);
+    }
+    return paths;
+  }, [timelineEntries]);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
@@ -527,6 +544,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       routeThreadKey,
       threadRef: parseScopedThreadKey(routeThreadKey),
       markdownCwd,
+      generatedImagePaths,
       resolvedTheme,
       workspaceRoot,
       skills,
@@ -543,6 +561,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       timestampFormat,
       routeThreadKey,
       markdownCwd,
+      generatedImagePaths,
       resolvedTheme,
       workspaceRoot,
       skills,
@@ -1179,6 +1198,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           text={messageText}
           cwd={ctx.markdownCwd}
           threadRef={ctx.threadRef ?? undefined}
+          generatedImagePaths={ctx.generatedImagePaths}
           onImageExpand={ctx.onImageExpand}
           isStreaming={Boolean(row.message.streaming)}
           lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}

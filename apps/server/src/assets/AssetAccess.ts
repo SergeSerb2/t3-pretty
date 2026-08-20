@@ -254,6 +254,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   readonly workspaceRoot?: string;
   readonly projectFaviconPath?: string;
   readonly projectId?: string;
+  readonly extraGrokWorkspaceRoots?: ReadonlyArray<string>;
   readonly grokSessionId?: string;
   readonly homeDir?: string;
 }) {
@@ -355,6 +356,9 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
               workspaceRoot,
               requestedPath: grokRequestedPath,
               ...(input.grokSessionId ? { grokSessionId: input.grokSessionId } : {}),
+              ...(input.extraGrokWorkspaceRoots && input.extraGrokWorkspaceRoots.length > 0
+                ? { extraWorkspaceRoots: input.extraGrokWorkspaceRoots }
+                : {}),
             }).pipe(
               Effect.tapError((cause) =>
                 Effect.logError("Failed to resolve Grok session image.", {

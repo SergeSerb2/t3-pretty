@@ -161,6 +161,35 @@ describe("GrokSessionImages", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("resolves session images under an extra workspace root encoding", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const homeDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-grok-image-extra-home-",
+      });
+      const lookupRoot = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-grok-image-extra-lookup-",
+      });
+      const recordedRoot = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-grok-image-extra-recorded-",
+      });
+      const imagePath = yield* writeSessionImage({
+        homeDir,
+        workspaceRoot: recordedRoot,
+        sessionId: "session-1",
+      });
+
+      const resolved = yield* resolveGrokSessionImageFile({
+        extraWorkspaceRoots: [recordedRoot],
+        grokSessionId: "session-1",
+        homeDir,
+        requestedPath: "images/1.jpg",
+        workspaceRoot: lookupRoot,
+      });
+      expect(resolved?.file).toBe(imagePath);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("does not pick another session's image when the session id is missing", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

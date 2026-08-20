@@ -42,10 +42,18 @@ const optionOnNotFound = <A, R>(
     }),
   );
 
-function grokWorkspaceSessionKeys(workspaceRoot: string): ReadonlyArray<string> {
-  const trimmed = workspaceRoot.replace(/[\\/]+$/u, "");
-  const posix = trimmed.replaceAll("\\", "/");
-  return [...new Set([workspaceRoot, trimmed, posix].map((value) => encodeURIComponent(value)))];
+function grokWorkspaceSessionKeys(workspaceRoots: ReadonlyArray<string>): ReadonlyArray<string> {
+  const variants: string[] = [];
+  for (const workspaceRoot of workspaceRoots) {
+    const trimmed = workspaceRoot.replace(/[\\/]+$/u, "");
+    const posix = trimmed.replaceAll("\\", "/");
+    variants.push(workspaceRoot, trimmed, posix);
+  }
+  return [
+    ...new Set(
+      variants.filter((value) => value.length > 0).map((value) => encodeURIComponent(value)),
+    ),
+  ];
 }
 
 function isUnsafeRelativePath(relativePath: string, path: Path.Path): boolean {
@@ -98,10 +106,11 @@ function isSafeSessionId(sessionId: string): boolean {
 
 export const resolveGrokSessionImageFile = Effect.fn("GrokSessionImages.resolve")(
   function* (input: {
+    readonly extraWorkspaceRoots?: ReadonlyArray<string>;
+    readonly grokSessionId?: string;
     readonly homeDir: string;
     readonly requestedPath: string;
     readonly workspaceRoot: string;
-    readonly grokSessionId?: string;
   }) {
     if (!isWorkspaceImagePreviewPath(input.requestedPath)) {
       return null;
@@ -109,8 +118,16 @@ export const resolveGrokSessionImageFile = Effect.fn("GrokSessionImages.resolve"
 
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    const workspaceRoots = [input.workspaceRoot, ...(input.extraWorkspaceRoots ?? [])];
+    const resolvedWorkspaceRoots = [...workspaceRoots];
+    for (const workspaceRoot of workspaceRoots) {
+      const canonicalWorkspace = yield* optionOnNotFound(fileSystem.realPath(workspaceRoot));
+      if (Option.isSome(canonicalWorkspace)) {
+        resolvedWorkspaceRoots.push(canonicalWorkspace.value);
+      }
+    }
     const sessionRoots: string[] = [];
-    for (const key of grokWorkspaceSessionKeys(input.workspaceRoot)) {
+    for (const key of grokWorkspaceSessionKeys(resolvedWorkspaceRoots)) {
       const candidate = path.join(input.homeDir, ".grok", "sessions", key);
       const canonical = yield* optionOnNotFound(fileSystem.realPath(candidate));
       if (Option.isSome(canonical) && !sessionRoots.includes(canonical.value)) {

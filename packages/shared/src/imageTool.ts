@@ -149,6 +149,42 @@ export function extractGeneratedImagePath(input: {
   return firstImagePath([...collected, ...(input.changedFiles ?? []), input.detail]);
 }
 
+/** Session-relative Imagine path (`images/1.jpg`) from a workspace or Grok session file. */
+export function grokSessionRelativeImagePath(path: string): string | undefined {
+  const normalized = (path.split(/[?#]/u, 1)[0] ?? "").replaceAll("\\", "/");
+  if (!isWorkspaceImagePreviewPath(normalized)) {
+    return undefined;
+  }
+  const marker = "/images/";
+  const index = normalized.lastIndexOf(marker);
+  if (index >= 0) {
+    return normalized.slice(index + 1);
+  }
+  return normalized.startsWith("images/") ? normalized : undefined;
+}
+
+/**
+ * Prefer the tool-result file for a markdown `images/N.jpg` link so the asset
+ * request carries the generating Grok session directory, not only the latest
+ * resume cursor.
+ */
+export function matchGeneratedImagePath(
+  requestedPath: string,
+  generatedImagePaths: ReadonlyArray<string>,
+): string | undefined {
+  const requestedRelative = grokSessionRelativeImagePath(requestedPath);
+  if (!requestedRelative) {
+    return undefined;
+  }
+  let match: string | undefined;
+  for (const generated of generatedImagePaths) {
+    if (grokSessionRelativeImagePath(generated) === requestedRelative) {
+      match = generated;
+    }
+  }
+  return match;
+}
+
 /** True when the project still uses automatic detection instead of a stored icon. */
 export function projectNeedsGeneratedIcon(faviconPath: string | null | undefined): boolean {
   return faviconPath == null || faviconPath.length === 0;

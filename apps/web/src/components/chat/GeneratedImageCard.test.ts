@@ -50,4 +50,12 @@ describe("resolveGeneratedImageAssetPath", () => {
       grokPath,
     );
   });
+
+  it("rewrites markdown images/1.jpg to the generating Grok session file", () => {
+    const grokPath =
+      "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg";
+    expect(
+      resolveGeneratedImageAssetPath("images/1.jpg", "/Users/serge/Documents/General", [grokPath]),
+    ).toBe(grokPath);
+  });
 });
