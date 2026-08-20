@@ -157,7 +157,7 @@ function workspaceGeneratedImagePath(cwd: string | null | undefined, path: strin
 function WorkLogGeneratedImage(props: {
   readonly cwd: string | null | undefined;
   readonly environmentId: EnvironmentId;
-  readonly onPressImage: (uri: string) => void;
+  readonly onPressImage?: (uri: string) => void;
   readonly path: string;
   readonly threadId: ThreadId;
 }) {
@@ -181,14 +181,22 @@ function WorkLogGeneratedImage(props: {
     );
   }
 
+  const image = <Image source={{ uri }} className="h-full w-full" resizeMode="contain" />;
+  const onPressImage = props.onPressImage;
+  if (!onPressImage) {
+    return (
+      <View className="mb-1 ml-7 h-[168px] overflow-hidden rounded-xl bg-subtle">{image}</View>
+    );
+  }
+
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Open generated image"
       className="mb-1 ml-7 h-[168px] overflow-hidden rounded-xl bg-subtle"
-      onPress={() => props.onPressImage(uri)}
+      onPress={() => onPressImage(uri)}
     >
-      <Image source={{ uri }} className="h-full w-full" resizeMode="contain" />
+      {image}
     </Pressable>
   );
 }
@@ -331,10 +339,7 @@ export const ThreadWorkLog = memo(function ThreadWorkLog(props: {
                 </View>
               </Pressable>
 
-              {row.generatedImagePath &&
-              props.environmentId &&
-              props.threadId &&
-              props.onPressImage ? (
+              {row.generatedImagePath && props.environmentId && props.threadId ? (
                 <WorkLogGeneratedImage
                   cwd={props.workspaceRoot}
                   environmentId={props.environmentId}
