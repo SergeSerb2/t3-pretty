@@ -31,6 +31,10 @@ describe("brand-assets", () => {
         sourceRelativePath: BRAND_ASSET_PATHS.productionWebAppleTouchIconPng,
         targetRelativePath: "dist/client/apple-touch-icon.png",
       },
+      {
+        sourceRelativePath: BRAND_ASSET_PATHS.prettyMarkPng,
+        targetRelativePath: "dist/client/t3-pretty-mark.png",
+      },
     ]);
   });
 
@@ -58,6 +62,10 @@ describe("brand-assets", () => {
       {
         sourceRelativePath: BRAND_ASSET_PATHS.developmentWebAppleTouchIconPng,
         targetRelativePath: "apps/web/public/apple-touch-icon.png",
+      },
+      {
+        sourceRelativePath: BRAND_ASSET_PATHS.prettyMarkPng,
+        targetRelativePath: "apps/web/public/t3-pretty-mark.png",
       },
     ]);
   });
@@ -110,7 +118,11 @@ describe("brand-assets", () => {
     const published = NodeFS.readFileSync(
       new URL(`../../${BRAND_ASSET_PATHS.prettyMarkPublicPng}`, import.meta.url),
     );
+    const mobile = NodeFS.readFileSync(
+      new URL(`../../${BRAND_ASSET_PATHS.prettyMarkMobilePng}`, import.meta.url),
+    );
     expect(published.equals(source)).toBe(true);
+    expect(mobile.equals(source)).toBe(true);
   });
 
   it("keeps the macOS DMG installer branded as T3 Pretty", () => {

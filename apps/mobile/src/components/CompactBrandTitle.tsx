@@ -54,7 +54,7 @@ export function CompactBrandTitle(
         marginLeft: titleOffset,
       }}
     >
-      <T3Wordmark height={18} />
+      <T3Wordmark height={15} />
       <Text
         style={{
           color: mutedColor,

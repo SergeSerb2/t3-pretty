@@ -220,7 +220,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               brand={
                 <View className="flex-row items-center gap-2">
                   {/* Mirrors the desktop SidebarBrand: generated T3 mark + muted "Pretty". */}
-                  <T3Wordmark height={18} />
+                  <T3Wordmark height={15} />
                   <RNText className="-ml-0.5 text-[21px] font-t3-medium tracking-[-0.5px] text-foreground-muted">
                     Pretty
                   </RNText>

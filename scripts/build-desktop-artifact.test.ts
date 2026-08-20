@@ -981,6 +981,35 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
+  it.effect("rasterizes a committed DMG art JPEG when one sits beside the SVG", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const stageResourcesDir = yield* fs.makeTempDirectoryScoped({
+          prefix: "t3code-dmg-background-art-",
+        });
+        const dmgDir = path.join(stageResourcesDir, "dmg");
+        yield* fs.makeDirectory(dmgDir, { recursive: true });
+        yield* fs.writeFileString(
+          path.join(dmgDir, "dmg-background-latest.svg"),
+          '<svg xmlns="http://www.w3.org/2000/svg"/>',
+        );
+        const artPath = path.join(dmgDir, "dmg-background-latest-art.jpg");
+        yield* fs.writeFileString(artPath, "jpeg");
+        const commands: Array<{ readonly command: string; readonly args: ReadonlyArray<string> }> =
+          [];
+
+        yield* stageDesktopDmgBackground(stageResourcesDir, "latest", false).pipe(
+          Effect.provide(iconResizeSpawnerLayer(commands, [0, 0])),
+        );
+
+        assert.equal(commands[0]?.args.includes(artPath), true);
+        assert.equal(commands[1]?.args.includes(artPath), true);
+      }),
+    ),
+  );
+
   it.effect("fails clearly when the selected DMG background source is missing", () =>
     Effect.scoped(
       Effect.gen(function* () {
