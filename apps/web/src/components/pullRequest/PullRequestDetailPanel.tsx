@@ -914,11 +914,15 @@ export function PullRequestDetailPanel({
   ) => {
     if (!detail || handoff !== null) return;
     const sendAfterWrite = (target: ScopedThreadRef | DraftId) => {
-      if (!run) return;
-      useComposerDraftStore.getState().setModelSelection(target, run.modelSelection, {
+      if (!run || task === null) return;
+      const store = useComposerDraftStore.getState();
+      store.setModelSelection(target, run.modelSelection, {
         replaceOptions: true,
       });
-      queueComposerAutoSend(composerAutoSendKey(target));
+      queueComposerAutoSend(
+        composerAutoSendKey(target),
+        store.getComposerDraft(target)?.prompt ?? task.prompt,
+      );
     };
     if (destination === "this-thread" && attachTarget !== null && task !== null) {
       writeTaskToComposer(attachTarget, task);

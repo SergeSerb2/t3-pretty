@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   clearComposerAutoSend,
   composerAutoSendKey,
+  composerHoldsQueuedAutoSend,
   peekComposerAutoSend,
   queueComposerAutoSend,
   subscribeComposerAutoSend,
@@ -10,25 +11,35 @@ import {
 } from "./composerAutoSend";
 
 describe("composer auto-send", () => {
-  it("hands the queued key to the matching consumer once", () => {
+  it("hands the queued key and prompt to the matching consumer once", () => {
     clearComposerAutoSend();
     const seen: string[] = [];
     const stop = subscribeComposerAutoSend(() => {
-      const pending = peekComposerAutoSend();
-      if (pending !== null) seen.push(pending);
+      const next = peekComposerAutoSend();
+      if (next !== null) seen.push(`${next.key}:${next.prompt}`);
     });
-    queueComposerAutoSend("draft-1");
-    expect(peekComposerAutoSend()).toBe("draft-1");
-    expect(takeComposerAutoSend("draft-2")).toBe(false);
-    expect(takeComposerAutoSend("draft-1")).toBe(true);
+    queueComposerAutoSend("draft-1", "Fix the findings.");
+    expect(peekComposerAutoSend()).toEqual({ key: "draft-1", prompt: "Fix the findings." });
+    expect(takeComposerAutoSend("draft-1", "something else")).toBe(false);
+    expect(takeComposerAutoSend("draft-2", "Fix the findings.")).toBe(false);
+    expect(takeComposerAutoSend("draft-1", "Fix the findings.")).toBe(true);
     expect(peekComposerAutoSend()).toBeNull();
-    expect(takeComposerAutoSend("draft-1")).toBe(false);
-    expect(seen).toEqual(["draft-1"]);
+    expect(takeComposerAutoSend("draft-1", "Fix the findings.")).toBe(false);
+    expect(seen).toEqual(["draft-1:Fix the findings."]);
     stop();
   });
 
   it("keys a thread the same way the panel addresses its composer", () => {
     expect(composerAutoSendKey({ environmentId: "env-1", threadId: "thr-1" })).toBe("env-1:thr-1");
     expect(composerAutoSendKey("draft-1")).toBe("draft-1");
+  });
+
+  it("only sends when the composer still holds the queued task", () => {
+    expect(composerHoldsQueuedAutoSend("Fix the findings.", "Fix the findings.")).toBe(true);
+    expect(
+      composerHoldsQueuedAutoSend("Keep this.\n\nFix the findings.", "Fix the findings."),
+    ).toBe(true);
+    expect(composerHoldsQueuedAutoSend("a different prompt", "Fix the findings.")).toBe(false);
+    expect(composerHoldsQueuedAutoSend("Fix the findings.", "")).toBe(false);
   });
 });

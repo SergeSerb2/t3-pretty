@@ -1,6 +1,11 @@
 type Listener = () => void;
 
-let pendingKey: string | null = null;
+export type PendingComposerAutoSend = {
+  readonly key: string;
+  readonly prompt: string;
+};
+
+let pending: PendingComposerAutoSend | null = null;
 const listeners = new Set<Listener>();
 
 function emit(): void {
@@ -13,18 +18,24 @@ export function composerAutoSendKey(
   return typeof target === "string" ? target : `${target.environmentId}:${target.threadId}`;
 }
 
-export function queueComposerAutoSend(key: string): void {
-  pendingKey = key;
+/** The composer holds the queued task: exactly, or appended under the reader's own text. */
+export function composerHoldsQueuedAutoSend(composerPrompt: string, queuedPrompt: string): boolean {
+  if (queuedPrompt.length === 0) return false;
+  return composerPrompt === queuedPrompt || composerPrompt.endsWith(`\n\n${queuedPrompt}`);
+}
+
+export function queueComposerAutoSend(key: string, prompt: string): void {
+  pending = { key, prompt };
   emit();
 }
 
-export function peekComposerAutoSend(): string | null {
-  return pendingKey;
+export function peekComposerAutoSend(): PendingComposerAutoSend | null {
+  return pending;
 }
 
-export function takeComposerAutoSend(key: string): boolean {
-  if (pendingKey !== key) return false;
-  pendingKey = null;
+export function takeComposerAutoSend(key: string, prompt: string): boolean {
+  if (pending === null || pending.key !== key || pending.prompt !== prompt) return false;
+  pending = null;
   emit();
   return true;
 }
@@ -37,7 +48,7 @@ export function subscribeComposerAutoSend(listener: Listener): () => void {
 }
 
 export function clearComposerAutoSend(): void {
-  if (pendingKey === null) return;
-  pendingKey = null;
+  if (pending === null) return;
+  pending = null;
   emit();
 }

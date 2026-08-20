@@ -53,7 +53,7 @@ import {
   buildResolveConflictsPrompt,
   canRequestPullRequestReviewers,
   composePullRequestDetailView,
-  countUnresolvedReviewThreads,
+  countFixableFindings,
   groupPullRequestConversation,
   pullRequestUrlHost,
   readableFailure,
@@ -297,6 +297,15 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     );
   }, [detail, handoff]);
 
+  const findingCount =
+    detail === null
+      ? 0
+      : countFixableFindings({
+          reviewThreads: detail.reviewThreads,
+          comments: detail.comments,
+          checks: detail.checks,
+        });
+
   const openOnHost = useCallback(() => {
     if (detail === null) return;
     void tryOpenExternalUrl(detail.url, "pull-request");
@@ -343,11 +352,13 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
       },
     ];
     if (activityQuery.data !== null) {
-      items.push({
-        type: "action",
-        title: "Fix all findings",
-        onPress: startFixFindings,
-      });
+      if (findingCount > 0) {
+        items.push({
+          type: "action",
+          title: "Fix all findings",
+          onPress: startFixFindings,
+        });
+      }
     } else if (activityQuery.error !== null) {
       items.push({
         type: "action",
@@ -413,6 +424,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     can,
     detail,
     environmentId,
+    findingCount,
     handoff,
     startFixFindings,
     navigation,
@@ -691,14 +703,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                         mode: "comment",
                       })
                     }
-                    onFixAll={
-                      countUnresolvedReviewThreads(detail.reviewThreads) > 0 ||
-                      detail.checks.some(
-                        (check) => check.status === "failure" || check.status === "cancelled",
-                      )
-                        ? startFixFindings
-                        : undefined
-                    }
+                    onFixAll={findingCount > 0 ? startFixFindings : undefined}
                     onFixThread={(thread) =>
                       handoff(
                         buildFixFindingPrompt({

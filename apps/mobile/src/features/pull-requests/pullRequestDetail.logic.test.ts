@@ -7,6 +7,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   buildFixFindingsPrompt,
+  countFixableFindings,
   buildPullRequestTimeline,
   buildResolveConflictsPrompt,
   countResolvedReviewThreads,
@@ -318,6 +319,31 @@ describe("handoffs and failures", () => {
     });
     expect(prompt).toContain("No unresolved review findings were returned");
     expect(prompt).not.toContain("MURMUR_IGNORE");
+    expect(
+      countFixableFindings({
+        reviewThreads: [
+          {
+            id: "t1",
+            path: "src/app.ts",
+            line: 12,
+            side: "right",
+            isResolved: false,
+            isOutdated: false,
+            comments: [
+              {
+                id: "rc1",
+                author: { login: "reviewer", name: null, avatarUrl: null },
+                body: "<!-- MURMUR_IGNORE -->",
+                createdAt: "2026-07-02T00:00:00Z",
+                url: null,
+              },
+            ],
+          },
+        ],
+        comments: [],
+        checks: [],
+      }),
+    ).toBe(0);
   });
 
   it("does not treat a general issue comment as a review finding", () => {
@@ -337,6 +363,24 @@ describe("handoffs and failures", () => {
       ],
     });
     expect(prompt).not.toContain("update the docs");
+    expect(
+      countFixableFindings({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "c1",
+            kind: "issue-comment",
+            author: { login: "octocat", name: null, avatarUrl: null },
+            body: "please also update the docs",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: null,
+            reviewState: null,
+          },
+        ],
+        checks: [],
+      }),
+    ).toBe(0);
   });
 
   it("carries a review submitted with words but no line", () => {
@@ -357,6 +401,24 @@ describe("handoffs and failures", () => {
     });
     expect(prompt).toContain("revert the middleware change");
     expect(prompt).not.toContain("No unresolved review findings");
+    expect(
+      countFixableFindings({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "r1",
+            kind: "review",
+            author: { login: "reviewer", name: null, avatarUrl: null },
+            body: "This breaks SSO auth, revert the middleware change.",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: null,
+            reviewState: "CHANGES_REQUESTED",
+          },
+        ],
+        checks: [],
+      }),
+    ).toBe(1);
   });
 });
 
