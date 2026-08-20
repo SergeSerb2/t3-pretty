@@ -203,6 +203,33 @@ describe("projectActivityPayload", () => {
     expect(deriveWorkLogEntries([projected])[0]?.changedFiles).toEqual(["/tmp/hero.png"]);
   });
 
+  it("keeps Grok Imagine rawOutput paths in projected files", () => {
+    const grokPath =
+      "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg";
+    const projected = projectActivityPayload(
+      makeActivity("grok-image-gen", "image_generation", {
+        rawOutput: {
+          type: "ImageGen",
+          path: grokPath,
+          filename: "1.jpg",
+          session_folder: "images",
+        },
+      }),
+    );
+    expect(projected.payload).toMatchObject({
+      itemType: "image_generation",
+      data: {
+        files: [{ path: grokPath }, { path: "1.jpg" }],
+        rawOutput: {
+          path: grokPath,
+          filename: "1.jpg",
+          session_folder: "images",
+        },
+      },
+    });
+    expect(deriveWorkLogEntries([projected])[0]?.changedFiles).toEqual([grokPath, "1.jpg"]);
+  });
+
   it("slims MCP tool data to the fields the expanded row renders", () => {
     expect(projectActivityPayload(fixtures[4]!).payload).toEqual({
       itemType: "mcp_tool_call",

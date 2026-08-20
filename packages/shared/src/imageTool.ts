@@ -24,6 +24,7 @@ function compactToolName(value: string): string {
 function isImageGenerationCompact(compact: string): boolean {
   return (
     compact === "imagine" ||
+    compact.startsWith("imagine:") ||
     compact === "grokimagine" ||
     compact.includes("imagegeneration") ||
     compact.includes("imagegen") ||
@@ -112,6 +113,7 @@ function collectImagePaths(
     "input",
     "result",
     "rawInput",
+    "rawOutput",
     "data",
     "files",
     "content",

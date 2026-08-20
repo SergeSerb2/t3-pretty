@@ -182,6 +182,36 @@ describe("AcpCoreRuntimeEvents", () => {
     });
 
     expect(
+      makeAcpToolCallEvent({
+        stamp,
+        provider: ProviderDriverKind.make("grok"),
+        threadId: "thread-1" as never,
+        turnId,
+        toolCall: {
+          toolCallId: "tool-image-1",
+          kind: "other",
+          status: "completed",
+          title: "imagine: A chubby Boston Terrier sitting upright",
+          data: {
+            rawOutput: {
+              type: "ImageGen",
+              path: "/Users/serge/.grok/sessions/%2Fproject/session-1/images/1.jpg",
+              filename: "1.jpg",
+              session_folder: "images",
+            },
+          },
+        },
+        rawPayload: { sessionId: "session-1" },
+      }),
+    ).toMatchObject({
+      type: "item.completed",
+      payload: {
+        itemType: "image_generation",
+        status: "completed",
+      },
+    });
+
+    expect(
       makeAcpContentDeltaEvent({
         stamp,
         provider: ProviderDriverKind.make("cursor"),

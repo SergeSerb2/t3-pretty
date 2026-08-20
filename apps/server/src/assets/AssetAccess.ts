@@ -24,6 +24,8 @@ import {
   managedProjectFaviconFileName,
   PROJECT_FAVICON_FALLBACK_MARKER,
 } from "@t3tools/shared/projectFavicon";
+import * as NodeOS from "node:os";
+
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -46,6 +48,7 @@ import * as ServerConfig from "../config.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import { resolveManagedProjectFaviconFile } from "../project/ProjectFaviconStore.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+import { resolveGrokSessionImageFile } from "./GrokSessionImages.ts";
 
 export const ASSET_ROUTE_PREFIX = "/api/assets";
 
@@ -94,6 +97,13 @@ const AssetClaimsSchema = Schema.Union([
     absolutePath: Schema.optional(Schema.String),
     expiresAt: Schema.Number,
   }),
+  Schema.Struct({
+    version: Schema.Literal(1),
+    kind: Schema.Literal("generated-image"),
+    allowedRoot: Schema.String,
+    absolutePath: Schema.String,
+    expiresAt: Schema.Number,
+  }),
 ]);
 type AssetClaims = typeof AssetClaimsSchema.Type;
 
@@ -101,7 +111,11 @@ const AssetClaimsJson = Schema.fromJsonString(AssetClaimsSchema);
 const decodeAssetClaims = Schema.decodeUnknownOption(AssetClaimsJson);
 const encodeAssetClaims = Schema.encodeSync(AssetClaimsJson);
 
-export type ResolvedAssetSource = "attachment" | "workspace-file" | "project-favicon";
+export type ResolvedAssetSource =
+  | "attachment"
+  | "workspace-file"
+  | "project-favicon"
+  | "generated-image";
 
 export type ResolvedAsset = {
   readonly kind: "file";
@@ -208,11 +222,40 @@ const resolveCanonicalManagedFaviconFile = Effect.fn(
   return Option.isSome(info) && info.value.type === "File" ? canonicalFile.value : null;
 });
 
+const resolveCanonicalGeneratedImageFile = Effect.fn(
+  "AssetAccess.resolveCanonicalGeneratedImageFile",
+)(function* (input: { readonly allowedRoot: string; readonly absolutePath: string }) {
+  if (!isWorkspaceImagePreviewPath(input.absolutePath)) return null;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const [canonicalRoot, canonicalFile] = yield* Effect.all([
+    optionOnNotFound(fileSystem.realPath(input.allowedRoot)),
+    optionOnNotFound(fileSystem.realPath(input.absolutePath)),
+  ]).pipe(
+    Effect.tapError((cause) =>
+      Effect.logError("Failed to resolve generated image asset.", {
+        path: input.absolutePath,
+        cause,
+      }),
+    ),
+    Effect.orElseSucceed(() => [Option.none<string>(), Option.none<string>()] as const),
+  );
+  if (Option.isNone(canonicalRoot) || Option.isNone(canonicalFile)) return null;
+  const relative = path.relative(canonicalRoot.value, canonicalFile.value);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  const info = yield* optionOnNotFound(fileSystem.stat(canonicalFile.value)).pipe(
+    Effect.orElseSucceed(() => Option.none()),
+  );
+  return Option.isSome(info) && info.value.type === "File" ? canonicalFile.value : null;
+});
+
 export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (input: {
   readonly resource: AssetResource;
   readonly workspaceRoot?: string;
   readonly projectFaviconPath?: string;
   readonly projectId?: string;
+  readonly grokSessionId?: string;
+  readonly homeDir?: string;
 }) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -241,65 +284,108 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       const relativePath = path.isAbsolute(input.resource.path)
         ? path.relative(workspaceRoot, input.resource.path)
         : input.resource.path;
-      const resolved = yield* workspacePaths
+      const resolvedOrOutside = yield* workspacePaths
         .resolveRelativePathWithinRoot({ workspaceRoot, relativePath })
         .pipe(
+          Effect.map((resolved) => ({ _tag: "inside" as const, resolved })),
+          Effect.catchTag("WorkspacePathOutsideRootError", (cause) =>
+            Effect.succeed({ _tag: "outside" as const, cause }),
+          ),
+        );
+      if (
+        resolvedOrOutside._tag === "inside" &&
+        !isWorkspacePreviewEntryPath(resolvedOrOutside.resolved.relativePath)
+      ) {
+        return yield* new AssetPreviewTypeValidationError({
+          resource: input.resource,
+        });
+      }
+      const workspaceCanonicalFile =
+        resolvedOrOutside._tag === "inside"
+          ? yield* resolveCanonicalWorkspaceFile({
+              workspaceRoot,
+              relativePath: resolvedOrOutside.resolved.relativePath,
+            }).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new AssetWorkspaceAssetInspectionError({
+                    resource: input.resource,
+                    cause,
+                  }),
+              ),
+            )
+          : null;
+      if (workspaceCanonicalFile && resolvedOrOutside._tag === "inside") {
+        const canonicalWorkspaceRoot = yield* fileSystem.realPath(workspaceRoot).pipe(
           Effect.mapError(
             (cause) =>
-              new AssetWorkspacePathValidationError({
+              new AssetWorkspaceResolutionError({
                 resource: input.resource,
                 cause,
               }),
           ),
         );
-      if (!isWorkspacePreviewEntryPath(resolved.relativePath)) {
-        return yield* new AssetPreviewTypeValidationError({
+        claims = isWorkspaceImagePreviewPath(resolvedOrOutside.resolved.relativePath)
+          ? {
+              version: 1,
+              kind: "workspace-file-exact",
+              workspaceRoot: canonicalWorkspaceRoot,
+              relativePath: resolvedOrOutside.resolved.relativePath,
+              expiresAt,
+            }
+          : {
+              version: 1,
+              kind: "workspace-file",
+              workspaceRoot: canonicalWorkspaceRoot,
+              baseRelativePath: path.dirname(resolvedOrOutside.resolved.relativePath),
+              expiresAt,
+            };
+        fileName = path.basename(resolvedOrOutside.resolved.relativePath);
+        break;
+      }
+      const grokRequestedPath =
+        resolvedOrOutside._tag === "inside"
+          ? resolvedOrOutside.resolved.relativePath
+          : input.resource.path;
+      const grokImage =
+        isWorkspaceImagePreviewPath(grokRequestedPath) ||
+        isWorkspaceImagePreviewPath(input.resource.path)
+          ? yield* resolveGrokSessionImageFile({
+              homeDir: input.homeDir ?? NodeOS.homedir(),
+              workspaceRoot,
+              requestedPath: grokRequestedPath,
+              ...(input.grokSessionId ? { grokSessionId: input.grokSessionId } : {}),
+            }).pipe(
+              Effect.tapError((cause) =>
+                Effect.logError("Failed to resolve Grok session image.", {
+                  workspaceRoot,
+                  requestedPath: grokRequestedPath,
+                  cause,
+                }),
+              ),
+              Effect.orElseSucceed(() => null),
+            )
+          : null;
+      if (grokImage) {
+        claims = {
+          version: 1,
+          kind: "generated-image",
+          allowedRoot: grokImage.allowedRoot,
+          absolutePath: grokImage.file,
+          expiresAt,
+        };
+        fileName = path.basename(grokImage.file);
+        break;
+      }
+      if (resolvedOrOutside._tag === "outside") {
+        return yield* new AssetWorkspacePathValidationError({
           resource: input.resource,
+          cause: resolvedOrOutside.cause,
         });
       }
-      const canonicalFile = yield* resolveCanonicalWorkspaceFile({
-        workspaceRoot,
-        relativePath: resolved.relativePath,
-      }).pipe(
-        Effect.mapError(
-          (cause) =>
-            new AssetWorkspaceAssetInspectionError({
-              resource: input.resource,
-              cause,
-            }),
-        ),
-      );
-      if (!canonicalFile) {
-        return yield* new AssetWorkspaceAssetNotFoundError({
-          resource: input.resource,
-        });
-      }
-      const canonicalWorkspaceRoot = yield* fileSystem.realPath(workspaceRoot).pipe(
-        Effect.mapError(
-          (cause) =>
-            new AssetWorkspaceResolutionError({
-              resource: input.resource,
-              cause,
-            }),
-        ),
-      );
-      claims = isWorkspaceImagePreviewPath(resolved.relativePath)
-        ? {
-            version: 1,
-            kind: "workspace-file-exact",
-            workspaceRoot: canonicalWorkspaceRoot,
-            relativePath: resolved.relativePath,
-            expiresAt,
-          }
-        : {
-            version: 1,
-            kind: "workspace-file",
-            workspaceRoot: canonicalWorkspaceRoot,
-            baseRelativePath: path.dirname(resolved.relativePath),
-            expiresAt,
-          };
-      fileName = path.basename(resolved.relativePath);
-      break;
+      return yield* new AssetWorkspaceAssetNotFoundError({
+        resource: input.resource,
+      });
     }
     case "attachment": {
       const config = yield* ServerConfig.ServerConfig;
@@ -510,6 +596,24 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
           path: attachmentPath,
           source: "attachment",
           attachmentId: claims.attachmentId,
+        } satisfies ResolvedAsset)
+      : null;
+  }
+
+  if (claims.kind === "generated-image") {
+    const decodedPath = decodeRelativePath(relativePath);
+    if (decodedPath === null) return null;
+    const path = yield* Path.Path;
+    if (decodedPath !== path.basename(claims.absolutePath)) return null;
+    const generatedImagePath = yield* resolveCanonicalGeneratedImageFile({
+      allowedRoot: claims.allowedRoot,
+      absolutePath: claims.absolutePath,
+    });
+    return generatedImagePath
+      ? ({
+          kind: "file",
+          path: generatedImagePath,
+          source: "generated-image",
         } satisfies ResolvedAsset)
       : null;
   }

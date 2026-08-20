@@ -15,6 +15,9 @@ describe("classifyImageToolItemType", () => {
 
   it("maps Grok imagine / imagegen tools to image_generation", () => {
     expect(classifyImageToolItemType({ title: "Imagine" })).toBe("image_generation");
+    expect(classifyImageToolItemType({ title: "imagine: A chubby Boston Terrier" })).toBe(
+      "image_generation",
+    );
     expect(classifyImageToolItemType({ toolName: "image_gen" })).toBe("image_generation");
     expect(classifyImageToolItemType({ toolName: "imagegen" })).toBe("image_generation");
   });
@@ -91,6 +94,23 @@ describe("extractGeneratedImagePath", () => {
         detail: "Generated image",
       }),
     ).toBe("assets/hero.png");
+  });
+
+  it("reads Grok Imagine rawOutput and keeps encoded session folder names", () => {
+    const grokPath =
+      "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg";
+    expect(
+      extractGeneratedImagePath({
+        data: {
+          rawOutput: {
+            type: "ImageGen",
+            path: grokPath,
+            filename: "1.jpg",
+            session_folder: "images",
+          },
+        },
+      }),
+    ).toBe(grokPath);
   });
 });
 

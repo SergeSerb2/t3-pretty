@@ -78,6 +78,70 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("issues URLs for Grok session images missing from the workspace", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const homeDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-grok-home-",
+      });
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-grok-workspace-",
+      });
+      const sessionDir = path.join(
+        homeDir,
+        ".grok",
+        "sessions",
+        encodeURIComponent(root),
+        "session-1",
+        "images",
+      );
+      yield* fileSystem.makeDirectory(sessionDir, { recursive: true });
+      const imagePath = path.join(sessionDir, "1.jpg");
+      yield* fileSystem.writeFile(imagePath, new Uint8Array([137, 80, 78, 71]));
+      const canonicalImagePath = yield* fileSystem.realPath(imagePath);
+
+      const relativeResult = yield* issueAssetUrl({
+        resource: {
+          _tag: "workspace-file",
+          threadId: ThreadId.make("thread-1"),
+          path: path.join(root, "images", "1.jpg"),
+        },
+        workspaceRoot: root,
+        homeDir,
+        grokSessionId: "session-1",
+      });
+      const relativeSuffix = relativeResult.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const relativeSeparator = relativeSuffix.indexOf("/");
+      const relativeToken = relativeSuffix.slice(0, relativeSeparator);
+
+      expect(yield* resolveAsset(relativeToken, "1.jpg")).toEqual({
+        kind: "file",
+        path: canonicalImagePath,
+        source: "generated-image",
+      });
+
+      const absoluteResult = yield* issueAssetUrl({
+        resource: {
+          _tag: "workspace-file",
+          threadId: ThreadId.make("thread-1"),
+          path: imagePath,
+        },
+        workspaceRoot: root,
+        homeDir,
+      });
+      const absoluteSuffix = absoluteResult.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const absoluteSeparator = absoluteSuffix.indexOf("/");
+      const absoluteToken = absoluteSuffix.slice(0, absoluteSeparator);
+
+      expect(yield* resolveAsset(absoluteToken, "1.jpg")).toEqual({
+        kind: "file",
+        path: canonicalImagePath,
+        source: "generated-image",
+      });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("rejects workspace files outside the authorized root", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

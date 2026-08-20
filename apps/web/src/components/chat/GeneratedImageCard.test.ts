@@ -42,4 +42,12 @@ describe("resolveGeneratedImageAssetPath", () => {
   it("rejects non-image paths", () => {
     expect(resolveGeneratedImageAssetPath("README.md", "/repo/project")).toBeNull();
   });
+
+  it("keeps literal %2F segments in Grok session image paths", () => {
+    const grokPath =
+      "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg";
+    expect(resolveGeneratedImageAssetPath(grokPath, "/Users/serge/Documents/General")).toBe(
+      grokPath,
+    );
+  });
 });

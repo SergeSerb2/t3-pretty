@@ -3,6 +3,7 @@ import type {
   OrchestrationThreadActivity,
   OrchestrationThreadDetailSnapshot,
 } from "@t3tools/contracts";
+import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 
 import {
   activityContextUsedTokens,
@@ -80,6 +81,7 @@ function collectChangedFiles(
     "item",
     "result",
     "input",
+    "rawOutput",
     "data",
     "locations",
   ]) {
@@ -302,6 +304,25 @@ function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
   const rawOutput = asRecord(value);
   if (!rawOutput) {
     return undefined;
+  }
+
+  const projectedImage: Record<string, unknown> = {};
+  for (const key of ["savedPath", "path", "filePath"] as const) {
+    const candidate = asTrimmedString(rawOutput[key]);
+    if (candidate && isWorkspaceImagePreviewPath(candidate)) {
+      projectedImage[key] = candidate;
+    }
+  }
+  const filename = asTrimmedString(rawOutput.filename);
+  if (filename && isWorkspaceImagePreviewPath(filename)) {
+    projectedImage.filename = filename;
+  }
+  const sessionFolder = asTrimmedString(rawOutput.session_folder);
+  if (sessionFolder && Object.keys(projectedImage).length > 0) {
+    projectedImage.session_folder = sessionFolder;
+  }
+  if (Object.keys(projectedImage).length > 0) {
+    return projectedImage;
   }
 
   if (typeof rawOutput.totalFiles === "number" && Number.isFinite(rawOutput.totalFiles)) {

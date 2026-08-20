@@ -70,6 +70,14 @@ describe("assetResponseHeaders", () => {
     });
   });
 
+  it("allows cross-origin reads for generated images outside the workspace", () => {
+    expect(assetResponseHeaders("/tmp/generated.jpg", "generated-image")).toEqual({
+      "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+      "Access-Control-Allow-Origin": "*",
+    });
+  });
+
   it("does not open project favicons to cross-origin reads", () => {
     expect(assetResponseHeaders("/workspace/favicon.png", "project-favicon")).toEqual({
       "Cache-Control": "private, max-age=3600",

@@ -9,12 +9,20 @@ import { resolveMarkdownFileLinkMeta } from "../../markdown-links";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import type { WorkLogEntry } from "../../session-logic";
 
+function isAbsoluteFilesystemPath(path: string): boolean {
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\");
+}
+
 /** Join a generated-image path against the workspace cwd when it is relative. */
 export function resolveGeneratedImageAssetPath(
   path: string,
   cwd: string | undefined,
 ): string | null {
-  const resolved = resolveMarkdownFileLinkMeta(path, cwd)?.filePath ?? path;
+  // Grok session folders use literal `%2F` segments. URI-decoding those
+  // absolute tool paths would collapse them into the wrong location.
+  const resolved = isAbsoluteFilesystemPath(path)
+    ? path
+    : (resolveMarkdownFileLinkMeta(path, cwd)?.filePath ?? path);
   return isWorkspaceImagePreviewPath(resolved) ? resolved : null;
 }
 

@@ -71,6 +71,29 @@ describe("toolActivity", () => {
     });
   });
 
+  it("reads Grok Imagine rawOutput paths for the Generated image detail", () => {
+    const grokPath =
+      "/Users/serge/.grok/sessions/%2FUsers%2Fserge%2FDocuments%2FGeneral/01a01d95/images/1.jpg";
+    expect(
+      deriveToolActivityPresentation({
+        itemType: "image_generation",
+        title: "imagine: A chubby Boston Terrier",
+        data: {
+          rawOutput: {
+            type: "ImageGen",
+            path: grokPath,
+            filename: "1.jpg",
+            session_folder: "images",
+          },
+        },
+        fallbackSummary: "Tool",
+      }),
+    ).toEqual({
+      summary: "Generated image",
+      detail: grokPath,
+    });
+  });
+
   it("normalizes skill loader tools to a Skill heading and skill name", () => {
     expect(
       deriveToolActivityPresentation({
