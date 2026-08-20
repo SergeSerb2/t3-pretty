@@ -2,7 +2,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
-import { assert, describe, it } from "vite-plus/test";
+import { assert, describe, expect, it } from "vite-plus/test";
 
 import {
   DEFAULT_CLI_PROXY_API_URL,
@@ -15,9 +15,11 @@ import {
   parseReviewResponse,
   prNumberFromEvent,
   resolveExplicitPr,
+  reviewOriginPullRequest,
   reviewMarker,
   shouldSkipBranch,
   truncateDiff,
+  viewPullRequestWithRetry,
 } from "./review-origin-pr.mjs";
 
 const here = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
@@ -88,6 +90,65 @@ here you go
     assert.equal(alreadyReviewed([{ body: "other" }], sha), false);
   });
 
+  it("waits for a pull request created just after its branch push", async () => {
+    let attempts = 0;
+    let waits = 0;
+    const pullRequest = await viewPullRequestWithRetry("t3code/fix-foo", {
+      attempts: 3,
+      delayMs: 0,
+      view: () => {
+        attempts += 1;
+        if (attempts < 3) {
+          throw new Error('No open or draft change found for branch "t3code/fix-foo"');
+        }
+        return { number: 82 };
+      },
+      wait: async () => {
+        waits += 1;
+      },
+    });
+
+    assert.equal(pullRequest.number, 82);
+    assert.equal(attempts, 3);
+    assert.equal(waits, 2);
+  });
+
+  it("does not hide unrelated Origin failures", async () => {
+    await expect(
+      viewPullRequestWithRetry("t3code/fix-foo", {
+        attempts: 3,
+        delayMs: 0,
+        view: () => {
+          throw new Error("Origin authentication failed");
+        },
+      }),
+    ).rejects.toThrow("Origin authentication failed");
+  });
+
+  it("only treats a genuinely missing branch pull request as a clean skip", async () => {
+    const input = {
+      env: { BUILDKITE_BRANCH: "t3code/fix-foo" },
+      setupAuth: false,
+      apiKey: "unused",
+    };
+    const skipped = await reviewOriginPullRequest({
+      ...input,
+      lookupPullRequest: async () => {
+        throw new Error('No open or draft change found for branch "t3code/fix-foo"');
+      },
+    });
+    assert.match(skipped.skipped, /No Origin pull request/);
+
+    await expect(
+      reviewOriginPullRequest({
+        ...input,
+        lookupPullRequest: async () => {
+          throw new Error("401 Unauthorized");
+        },
+      }),
+    ).rejects.toThrow("401 Unauthorized");
+  });
+
   it("formats one Origin review per finding plus a short summary", () => {
     const issue = {
       severity: "bug",
@@ -132,7 +193,8 @@ describe("Origin Grok review workflow wiring", () => {
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
     assert.include(reviewStep.slice(0, 800), "queue: macos-release");
     assert.include(reviewStep, "automation");
-    assert.include(reviewStep, "build.pull_request['id'] != null");
+    assert.notInclude(reviewStep, "build.pull_request");
+    assert.include(reviewStep, "briefly waits for the PR");
     assert.include(reviewCi, "review-origin-pr.mjs");
     assert.include(reviewCi, "grok-4.6");
     assert.include(reviewCi, "CLI_PROXY_API_KEY");

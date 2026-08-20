@@ -18,6 +18,8 @@ export const DEFAULT_MODEL = "grok-4.6";
 export const DEFAULT_CLI_PROXY_API_URL = "https://cli-proxy-api-production-1615.up.railway.app/v1";
 export const MAX_DIFF_CHARS = 120_000;
 export const MAX_ISSUES = 12;
+const PR_LOOKUP_ATTEMPTS = 25;
+const PR_LOOKUP_DELAY_MS = 5_000;
 const REQUEST_TIMEOUT_MS = 480_000;
 const SEVERITIES = new Set(["bug", "suggestion", "nit"]);
 
@@ -307,6 +309,33 @@ export function viewPullRequest(target, { repo } = {}) {
   return parseJson(json, null);
 }
 
+export function isMissingPullRequestError(error) {
+  return /No open or draft change found for branch/iu.test(
+    error instanceof Error ? error.message : String(error),
+  );
+}
+
+export async function viewPullRequestWithRetry(
+  target,
+  {
+    repo,
+    attempts = PR_LOOKUP_ATTEMPTS,
+    delayMs = PR_LOOKUP_DELAY_MS,
+    view = viewPullRequest,
+    wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  } = {},
+) {
+  const limit = Math.max(1, attempts);
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return view(target, { repo });
+    } catch (error) {
+      if (attempt >= limit || !isMissingPullRequestError(error)) throw error;
+      await wait(delayMs);
+    }
+  }
+}
+
 export function pullRequestDiff(target, { repo } = {}) {
   return runOrigin(["pr", "diff", String(target), ...originRepoFlag(repo), "--patch"]);
 }
@@ -378,6 +407,7 @@ export async function reviewOriginPullRequest({
   dryRun = argv.includes("--dry-run"),
   setupAuth = true,
   apiKey = cliProxyApiKey(),
+  lookupPullRequest = viewPullRequestWithRetry,
 } = {}) {
   const explicitPr = resolveExplicitPr({ env, argvPr: readFlag(argv, "--pr") });
   const head = resolveBranchName({ env, argvHead: readFlag(argv, "--head") });
@@ -397,9 +427,12 @@ export async function reviewOriginPullRequest({
 
   let pullRequest;
   try {
-    pullRequest = viewPullRequest(target, { repo });
+    pullRequest = await lookupPullRequest(target, {
+      repo,
+      attempts: explicitPr ? 1 : PR_LOOKUP_ATTEMPTS,
+    });
   } catch (error) {
-    if (explicitPr) throw error;
+    if (explicitPr || !isMissingPullRequestError(error)) throw error;
     const message = `No Origin pull request is open for ${target}.`;
     process.stdout.write(`${message}\n`);
     return { skipped: message };

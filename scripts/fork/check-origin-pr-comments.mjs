@@ -11,6 +11,7 @@ import {
 } from "./origin-forge.mjs";
 import {
   findingTitle,
+  isMissingPullRequestError,
   isActionableGrokFinding,
   resolveBranchName,
   resolveExplicitPr,
@@ -167,6 +168,8 @@ export function checkOriginPrComments({
   argv = process.argv.slice(2),
   env = process.env,
   repo = env.ORIGIN_REPO || ORIGIN_FULL_NAME,
+  listThreadsForTarget = listThreads,
+  viewReviewsAndComments = listReviewsAndComments,
 } = {}) {
   const explicitPr = resolveExplicitPr({ env, argvPr: readFlag(argv, "--pr") });
   const head = resolveBranchName({ env, argvHead: readFlag(argv, "--head") });
@@ -181,8 +184,17 @@ export function checkOriginPrComments({
     return { skipped: "No Origin pull request to check." };
   }
 
-  const listed = listThreads(target, { repo });
-  const viewed = listReviewsAndComments(target, { repo });
+  let listed;
+  let viewed;
+  try {
+    listed = listThreadsForTarget(target, { repo });
+    viewed = viewReviewsAndComments(target, { repo });
+  } catch (error) {
+    if (explicitPr || !isMissingPullRequestError(error)) throw error;
+    const message = `No Origin pull request is open for ${target}.`;
+    process.stdout.write(`${message}\n`);
+    return { skipped: message };
+  }
   const threads = listed.length > 0 ? listed : viewed.threads;
   const unresolved = unresolvedActionableFindings({
     threads,

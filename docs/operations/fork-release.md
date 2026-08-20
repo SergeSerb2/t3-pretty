@@ -15,8 +15,9 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    scripts on `origin/main` so a feature branch cannot swap the secret loader.
    Hosted `linux-small` cannot load `CURSOR_API_KEY`. The step runs on every
    non-`main`, non-`automation/*` branch (Buildkite New Build is the manual
-   path). The script resolves the open Origin PR from the head branch,
-   `BUILDKITE_PULL_REQUEST`, or `GITHUB_EVENT_PATH`. Each finding is posted as
+   path). Push builds briefly wait for PR creation because Origin does not
+   reliably start a second Buildkite build when the PR opens. The script resolves the PR from the
+   head branch, `BUILDKITE_PULL_REQUEST`, or `GITHUB_EVENT_PATH`. Each finding is posted as
    its own `origin pr comment` thread so T3 can start a new thread on one item
    and so `origin pr thread resolve` can close it. A short summary review
    carries the SHA marker. A follow-up `Origin PR comments resolved` step fails

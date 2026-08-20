@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
 import {
+  checkOriginPrComments,
   formatUnresolvedReport,
   hasFixedReply,
   isFixedReply,
@@ -70,6 +71,16 @@ describe("Origin review comment resolution check", () => {
     assert.include(report, "origin pr thread resolve cth_1");
     assert.include(report, "Missing tag fetch");
   });
+
+  it("skips a branch build when no pull request was opened", () => {
+    const result = checkOriginPrComments({
+      env: { BUILDKITE_BRANCH: "t3code/no-pr" },
+      listThreadsForTarget: () => {
+        throw new Error('No open or draft change found for branch "t3code/no-pr"');
+      },
+    });
+    assert.match(result.skipped, /No Origin pull request/);
+  });
 });
 
 describe("Origin comment-resolution job wiring", () => {
@@ -81,7 +92,8 @@ describe("Origin comment-resolution job wiring", () => {
     const ci = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
     assert.include(pipeline, "run-trusted-origin-pr-ci.sh check");
     assert.include(pipeline, "Origin PR comments resolved");
-    assert.include(pipeline, "build.pull_request['id'] != null");
+    assert.notInclude(pipeline, "build.pull_request");
     assert.include(ci, "check-origin-pr-comments.mjs");
+    assert.match(ci, /if \[\[ "\$mode" != "check" \]\]; then\s+trap report_failure ERR\s+fi/u);
   });
 });

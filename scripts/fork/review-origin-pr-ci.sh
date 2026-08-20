@@ -73,6 +73,11 @@ report_failure() {
   fi
 }
 
+mode="${1:-review}"
+if [[ "$mode" != "check" ]]; then
+  trap report_failure ERR
+fi
+
 echo "host=$(hostname) arch=$(uname -m) node=$(command -v node || echo none)"
 echo "Loading cluster secrets"
 load_secret CURSOR_API_KEY
@@ -85,11 +90,9 @@ export CLI_PROXY_REVIEW_MODEL="${CLI_PROXY_REVIEW_MODEL:-grok-4.6}"
 export CLI_PROXY_REVIEW_EFFORT="${CLI_PROXY_REVIEW_EFFORT:-low}"
 export CLI_PROXY_API_URL="${CLI_PROXY_API_URL:-https://cli-proxy-api-production-1615.up.railway.app/v1}"
 
-trap report_failure ERR
-
 echo "Authenticating Origin CLI"
 node "${HERE}/origin-forge.mjs" setup-ci
-if [[ "${1:-review}" == "check" ]]; then
+if [[ "$mode" == "check" ]]; then
   echo "Checking Origin review comments are resolved"
   node "${HERE}/check-origin-pr-comments.mjs"
 else
