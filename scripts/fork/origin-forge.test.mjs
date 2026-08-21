@@ -84,7 +84,13 @@ describe("Origin pull request parsing", () => {
     );
     assert.equal(pullRequestHeadName({ headRefName: "legacy" }), "legacy");
     const forge = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
-    assert.include(forge, "number,title,status,headRef,headSha");
+    const listFn = forge.slice(
+      forge.indexOf("export function listPullRequests"),
+      forge.indexOf("export function findPullRequest"),
+    );
+    assert.include(listFn, "number,title,status,headRef,headSha");
+    assert.include(listFn, '"number,title,status"');
+    assert.include(listFn, "fields.at(-1)");
   });
 
   it("treats Origin mergeability variants as mergeable", () => {

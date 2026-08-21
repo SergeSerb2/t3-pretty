@@ -281,17 +281,19 @@ export function setupOriginAuth() {
 }
 
 export function listPullRequests({ repo, base, head, state = "open" } = {}) {
-  const args = [
-    "pr",
-    "list",
-    ...originRepoFlag(repo),
-    "--json",
-    "number,title,status,headRef,headSha",
-  ];
-  if (state) args.push("-s", state);
-  if (base) args.push("-B", base);
-  if (head) args.push("-H", head);
-  return pullRequestItems(parseJson(runOrigin(args), []));
+  const fields = ["number,title,status,headRef,headSha", "number,title,status"];
+  for (const json of fields) {
+    const args = ["pr", "list", ...originRepoFlag(repo), "--json", json];
+    if (state) args.push("-s", state);
+    if (base) args.push("-B", base);
+    if (head) args.push("-H", head);
+    try {
+      return pullRequestItems(parseJson(runOrigin(args), []));
+    } catch (error) {
+      if (json === fields.at(-1)) throw error;
+    }
+  }
+  return [];
 }
 
 export function findPullRequest({ repo, base, head, state = "open" } = {}) {
@@ -303,6 +305,7 @@ export function findPullRequest({ repo, base, head, state = "open" } = {}) {
     });
     if (named) return named;
   }
+  // Older Origin CLIs omit headRef from --json; -H already filtered the list.
   return matches[0];
 }
 
