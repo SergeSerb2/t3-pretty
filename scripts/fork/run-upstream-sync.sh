@@ -411,6 +411,12 @@ land_sync_pr() {
 if ! land_sync_pr; then
   echo "Origin merge failed; merging origin/main and retrying once."
   origin_git fetch origin main
+  # Treat the existing integration report as the base for this merge:
+  # without REUSED_SYNC_RESOLUTION the resolver formats a fresh report
+  # from the retry merge alone, so a clean (or marker-only) origin/main
+  # merge would replace the upstream integration record with "no text
+  # conflicts" and the landed PR body would misdescribe the tree.
+  export REUSED_SYNC_RESOLUTION=true
   merge_ref origin/main "chore(sync): merge origin/main before landing $UPSTREAM_TAG"
   printf '%s\n' "$UPSTREAM_TAG" > .t3-fork/upstream-nightly
   git add .t3-fork/upstream-nightly
