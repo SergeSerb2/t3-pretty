@@ -126,13 +126,59 @@ export function pullRequestNumber(payload) {
   return String(value);
 }
 
+export function pullRequestHeadName(item) {
+  return item?.headRef ?? item?.headRefName ?? item?.head ?? item?.headBranch;
+}
+
+export function pullRequestStatus(viewed) {
+  return String(viewed?.status ?? viewed?.state ?? "").toLowerCase();
+}
+
+export function isPullRequestMerged(viewed) {
+  if (viewed == null) return false;
+  if (pullRequestStatus(viewed) === "merged") return true;
+  if (viewed.mergedAt || viewed.mergeCommitSha) return true;
+  return false;
+}
+
+export function mergeConflictPaths(viewed) {
+  const mergeability = viewed?.mergeability;
+  if (!mergeability || typeof mergeability !== "object") return [];
+  if (Array.isArray(mergeability.conflictedPaths) && mergeability.conflictedPaths.length > 0) {
+    return mergeability.conflictedPaths.map(String);
+  }
+  const inner = mergeability.mergeability;
+  if (inner && Array.isArray(inner.blockers)) {
+    const fromBlockers = inner.blockers.flatMap((blocker) =>
+      Array.isArray(blocker?.conflictedPaths) ? blocker.conflictedPaths.map(String) : [],
+    );
+    if (fromBlockers.length > 0) return fromBlockers;
+  }
+  return [];
+}
+
+export function hasMergeConflicts(viewed) {
+  const mergeability = viewed?.mergeability;
+  if (!mergeability || typeof mergeability !== "object") return false;
+  if (mergeability.hasMergeConflicts === true) return true;
+  return mergeConflictPaths(viewed).length > 0;
+}
+
 export function isMergeableState(value) {
   if (value == null) return false;
   if (typeof value === "boolean") return value;
   if (typeof value === "object") {
+    if (value.hasMergeConflicts === true) return false;
+    if (Array.isArray(value.conflictedPaths) && value.conflictedPaths.length > 0) return false;
+    if (value.verdict != null) return isMergeableState(value.verdict);
+    if (value.mergeability && typeof value.mergeability === "object") {
+      return isMergeableState(value.mergeability);
+    }
     return isMergeableState(value.state ?? value.status ?? value.mergeable);
   }
-  return MERGEABLE_STATES.has(String(value));
+  const normalized = String(value);
+  if (/^(blocked|dirty|conflicting|conflicted|unmergeable)$/iu.test(normalized)) return false;
+  return MERGEABLE_STATES.has(normalized);
 }
 
 export function blockedSyncBranch(upstreamTag) {
@@ -235,22 +281,31 @@ export function setupOriginAuth() {
 }
 
 export function listPullRequests({ repo, base, head, state = "open" } = {}) {
-  const args = ["pr", "list", ...originRepoFlag(repo), "--json", "number,title,status"];
-  if (state) args.push("-s", state);
-  if (base) args.push("-B", base);
-  if (head) args.push("-H", head);
-  return pullRequestItems(parseJson(runOrigin(args), []));
+  const fields = ["number,title,status,headRef,headSha", "number,title,status"];
+  for (const json of fields) {
+    const args = ["pr", "list", ...originRepoFlag(repo), "--json", json];
+    if (state) args.push("-s", state);
+    if (base) args.push("-B", base);
+    if (head) args.push("-H", head);
+    try {
+      return pullRequestItems(parseJson(runOrigin(args), []));
+    } catch (error) {
+      if (json === fields.at(-1)) throw error;
+    }
+  }
+  return [];
 }
 
 export function findPullRequest({ repo, base, head, state = "open" } = {}) {
   const matches = listPullRequests({ repo, base, head, state });
   if (head) {
     const named = matches.find((item) => {
-      const headName = item.headRefName ?? item.head ?? item.headBranch;
+      const headName = pullRequestHeadName(item);
       return headName === head || String(headName).endsWith(`/${head}`);
     });
     if (named) return named;
   }
+  // Older Origin CLIs omit headRef from --json; -H already filtered the list.
   return matches[0];
 }
 
@@ -303,7 +358,11 @@ export function pullRequestUrl(number, repo = ORIGIN_FULL_NAME) {
 }
 
 export function viewPullRequest(target, { repo } = {}) {
-  const fields = ["number,status,mergeability,ciState", "number,status"];
+  const fields = [
+    "number,status,mergeability,ciState,headSha,headRef,mergedAt,mergeCommitSha",
+    "number,status,mergeability,headSha",
+    "number,status",
+  ];
   for (const json of fields) {
     try {
       return parseJson(
@@ -317,19 +376,36 @@ export function viewPullRequest(target, { repo } = {}) {
   return {};
 }
 
+export function describeMergeConflicts(target, viewed) {
+  const paths = mergeConflictPaths(viewed);
+  const suffix = paths.length > 0 ? `: ${paths.join(", ")}` : ".";
+  return `Origin pull request ${target} has merge conflicts${suffix}`;
+}
+
 export function waitForMergeable(target, { repo, attempts = 12, delayMs = 5000 } = {}) {
   let last = "";
+  let lastViewed;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const viewed = viewPullRequest(target, { repo });
+    lastViewed = viewed;
+    if (isPullRequestMerged(viewed)) return viewed;
+    if (hasMergeConflicts(viewed)) {
+      throw new Error(describeMergeConflicts(target, viewed));
+    }
+    // Origin reports null, {}, or { mergeable: null } while it computes
+    // mergeability. None of those are a verdict; only a real state, a
+    // merged status, or conflicts above may end the wait early.
     const state = viewed.mergeability ?? viewed.mergeableState;
-    if (state == null) return viewed;
-    last = typeof state === "object" ? JSON.stringify(state) : String(state);
-    if (isMergeableState(state)) return viewed;
+    if (state != null) {
+      last = typeof state === "object" ? JSON.stringify(state) : String(state);
+      if (isMergeableState(state)) return viewed;
+    }
     if (attempt < attempts - 1) sleep(delayMs);
   }
-  throw new Error(
-    `Origin pull request ${target} remained ${last || "unknown"} and could not be merged.`,
-  );
+  // A CLI whose --json never exposes mergeability leaves `last` empty; let
+  // the caller try the merge instead of failing on missing information.
+  if (!last) return lastViewed;
+  throw new Error(`Origin pull request ${target} remained ${last} and could not be merged.`);
 }
 
 export function originUnknownOption(message, name) {
@@ -340,51 +416,78 @@ export function originUnknownOption(message, name) {
   );
 }
 
+export function resolvePullRequestTarget({ repo, target } = {}) {
+  if (!target) throw new Error("merge-pr requires a pull request number or head branch");
+  const raw = String(target);
+  if (/^\d+$/u.test(raw)) return raw;
+  const found =
+    findPullRequest({ repo, head: raw, state: "open" }) ??
+    findPullRequest({ repo, head: raw, state: "all" });
+  return pullRequestNumber(found) ?? raw;
+}
+
+function runOriginMerge(target, { repo, extraArgs = [] } = {}) {
+  return runOrigin(["pr", "merge", String(target), ...originRepoFlag(repo), ...extraArgs]);
+}
+
 export function mergePullRequest({ repo, target, sha } = {}) {
   if (!target) throw new Error("merge-pr requires a pull request number or head branch");
+  const resolved = resolvePullRequestTarget({ repo, target });
+  const viewed = viewPullRequest(resolved, { repo });
+  if (isPullRequestMerged(viewed)) return "";
+  if (hasMergeConflicts(viewed)) {
+    throw new Error(describeMergeConflicts(resolved, viewed));
+  }
   if (sha) {
-    try {
-      const viewed = parseJson(
-        runOrigin([
-          "pr",
-          "view",
-          String(target),
-          ...originRepoFlag(repo),
-          "--json",
-          "number,headSha,status",
-        ]),
-        {},
-      );
-      const headSha = String(viewed.headSha ?? "").trim();
-      if (headSha && !headSha.startsWith(sha) && !sha.startsWith(headSha)) {
-        throw new Error(`Origin pull request ${target} head is ${headSha}, expected ${sha}.`);
-      }
-    } catch (error) {
-      if (String(error.message).includes("expected")) throw error;
+    const headSha = String(viewed.headSha ?? "").trim();
+    if (headSha && !headSha.startsWith(sha) && !sha.startsWith(headSha)) {
+      throw new Error(`Origin pull request ${resolved} head is ${headSha}, expected ${sha}.`);
     }
   }
   try {
-    waitForMergeable(target, { repo });
-  } catch {
-    // Origin's --auto merge waits for its own requirements when view JSON
-    // does not expose a GitHub-shaped mergeable_state.
+    waitForMergeable(resolved, { repo });
+  } catch (error) {
+    if (String(error.message).includes("has merge conflicts")) throw error;
+    // Origin mergeability JSON is still computing; try the merge anyway.
   }
   // Origin CLI has no --sha on `pr merge`. Pin the head ourselves above.
-  try {
-    return runOrigin(["pr", "merge", String(target), ...originRepoFlag(repo), "--auto"]);
-  } catch (error) {
-    const message = String(error.message);
-    if (originUnknownOption(message, "auto")) {
-      return runOrigin(["pr", "merge", String(target), ...originRepoFlag(repo)]);
+  // --auto only enables merge-when-ready and can return 0 before the change
+  // lands. Prefer an immediate merge commit, then wait until Origin reports
+  // merged so the caller never deletes the head branch of an open change.
+  let lastError;
+  for (const extraArgs of [["--merge"], [], ["--auto"]]) {
+    try {
+      runOriginMerge(resolved, { repo, extraArgs });
+      lastError = undefined;
+      break;
+    } catch (error) {
+      lastError = error;
+      const now = viewPullRequest(resolved, { repo });
+      if (isPullRequestMerged(now)) return "";
+      const message = String(error.message);
+      if (/conflict/iu.test(message) || hasMergeConflicts(now)) {
+        throw new Error(describeMergeConflicts(resolved, now));
+      }
+      const flag = extraArgs[0]?.replace(/^--/u, "") ?? "";
+      if (flag && originUnknownOption(message, flag)) continue;
     }
-    throw error;
   }
+  if (lastError) throw lastError;
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const now = viewPullRequest(resolved, { repo });
+    if (isPullRequestMerged(now)) return "";
+    if (hasMergeConflicts(now)) {
+      throw new Error(describeMergeConflicts(resolved, now));
+    }
+    if (attempt < 23) sleep(5000);
+  }
+  throw new Error(`Origin pull request ${resolved} did not merge.`);
 }
 
 export function deleteBranch(head, { remote = "origin" } = {}) {
   if (!head) throw new Error("delete-branch requires --head");
   try {
-    runCommand("git", ["push", remote, "--delete", head]);
+    runCommand("git", [...originGitConfigArgs(), "push", remote, "--delete", head]);
   } catch {
     // The merge step may already have deleted the branch.
   }
@@ -405,7 +508,7 @@ export function reportBlockedSync({
   NodeFS.rmSync(indexFile, { force: true });
   const env = { ...process.env, GIT_INDEX_FILE: indexFile };
   try {
-    runCommand("git", ["fetch", "origin", "main"], { env });
+    runCommand("git", [...originGitConfigArgs(), "fetch", "origin", "main"], { env });
   } catch {
     // A failed merge may still have origin/main from the checkout step.
   }
@@ -433,7 +536,13 @@ export function reportBlockedSync({
     ],
     { env },
   );
-  runCommand("git", ["push", "--force", "origin", `${commit}:refs/heads/${head}`]);
+  runCommand("git", [
+    ...originGitConfigArgs(),
+    "push",
+    "--force",
+    "origin",
+    `${commit}:refs/heads/${head}`,
+  ]);
   return ensurePullRequest({
     repo,
     base: "main",

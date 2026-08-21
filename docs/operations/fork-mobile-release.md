@@ -10,7 +10,7 @@ local build delivery.
 hours at 00:00, 04:00, 08:00, 12:00, 16:00, and 20:00 UTC on `macos-release`.
 The job merges the newest upstream nightly tag (AI-resolving conflicts via
 `scripts/fork/resolve-git-conflicts.mjs`) and lands it on Origin `main` through
-an auto-merged pull request. Mobile code rides along — there is no separate
+an immediately merged pull request. Mobile code rides along — there is no separate
 mobile sync. The imported `fork-upstream-sync.yml` wrapper is not scheduled.
 
 ## Merge-driven releases

@@ -11,11 +11,15 @@ import {
   UPSTREAM_GIT_URL,
   blockedSyncBranch,
   defaultUpdateFeedUrl,
+  describeMergeConflicts,
+  hasMergeConflicts,
   isGitHubFeedUrl,
   isMergeableState,
+  isPullRequestMerged,
   originChildEnv,
   originUnknownOption,
   redactCommandArgs,
+  pullRequestHeadName,
   pullRequestItems,
   pullRequestNumber,
   pullRequestUrl,
@@ -65,18 +69,85 @@ describe("Origin pull request parsing", () => {
     const forge = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
     assert.notInclude(forge, 'args.push("--sha", sha)');
     assert.include(forge, "Origin CLI has no --sha on `pr merge`");
+    assert.include(forge, '["--merge"]');
+    assert.include(forge, "did not merge");
+    assert.include(forge, "has merge conflicts");
     assert.isTrue(originUnknownOption("Unknown argument: sha", "sha"));
     assert.isTrue(originUnknownOption("unknown flag: auto", "auto"));
     assert.isFalse(originUnknownOption("merge failed", "sha"));
+  });
+
+  it("matches Origin list payloads by headRef", () => {
+    assert.equal(
+      pullRequestHeadName({ headRef: "automation/upstream-v1" }),
+      "automation/upstream-v1",
+    );
+    assert.equal(pullRequestHeadName({ headRefName: "legacy" }), "legacy");
+    const forge = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
+    const listFn = forge.slice(
+      forge.indexOf("export function listPullRequests"),
+      forge.indexOf("export function findPullRequest"),
+    );
+    assert.include(listFn, "number,title,status,headRef,headSha");
+    assert.include(listFn, '"number,title,status"');
+    assert.include(listFn, "fields.at(-1)");
   });
 
   it("treats Origin mergeability variants as mergeable", () => {
     assert.isTrue(isMergeableState("clean"));
     assert.isTrue(isMergeableState("unstable"));
     assert.isTrue(isMergeableState("MERGEABLE"));
+    assert.isTrue(isMergeableState("mergeable"));
     assert.isTrue(isMergeableState({ state: "ready" }));
+    assert.isTrue(isMergeableState({ verdict: "mergeable" }));
+    assert.isTrue(isMergeableState({ mergeable: true, hasMergeConflicts: false }));
     assert.isFalse(isMergeableState("blocked"));
     assert.isFalse(isMergeableState("dirty"));
+    assert.isFalse(isMergeableState({ mergeable: false }));
+    assert.isFalse(isMergeableState({ hasMergeConflicts: true, mergeable: true }));
+    assert.isFalse(
+      isMergeableState({
+        mergeability: { verdict: "blocked" },
+      }),
+    );
+  });
+
+  it("reads Origin nested mergeability for conflicts and merged status", () => {
+    const conflicted = {
+      status: "open",
+      mergeability: {
+        mergeable: false,
+        hasMergeConflicts: true,
+        conflictedPaths: ["apps/web/src/index.css"],
+        mergeability: {
+          verdict: "blocked",
+          blockers: [{ kind: "stack-conflicts-with-root-base" }],
+        },
+      },
+    };
+    assert.isTrue(hasMergeConflicts(conflicted));
+    assert.isFalse(isPullRequestMerged(conflicted));
+    assert.include(describeMergeConflicts("104", conflicted), "apps/web/src/index.css");
+
+    assert.isTrue(
+      isPullRequestMerged({
+        status: "merged",
+        mergedAt: "2026-08-21T16:00:00Z",
+        mergeCommitSha: "abc",
+      }),
+    );
+    assert.isFalse(hasMergeConflicts({ status: "open", mergeability: { mergeable: true } }));
+  });
+
+  it("keeps polling while Origin computes mergeability", () => {
+    const forge = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
+    const waitFn = forge.slice(
+      forge.indexOf("export function waitForMergeable"),
+      forge.indexOf("export function originUnknownOption"),
+    );
+    assert.notInclude(waitFn, "if (state == null) return viewed;");
+    assert.include(waitFn, "while it computes");
+    assert.include(waitFn, "if (!last) return lastViewed;");
   });
 });
 
@@ -133,6 +204,10 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(syncScript, '>> "$GITHUB_OUTPUT"');
     assert.include(syncScript, "Do not write GITHUB_OUTPUT");
     assert.include(syncScript, "GIT_TERMINAL_PROMPT");
+    assert.include(syncScript, "unset NO_COLOR");
+    assert.include(syncScript, "git merge --abort");
+    assert.include(syncScript, "refs/heads/automation/upstream-*");
+    assert.include(syncScript, "same_first_parent_line");
     assert.include(sync, 'GIT_TERMINAL_PROMPT: "0"');
     const preparePath = sync.slice(
       sync.indexOf("Prepare macOS runner PATH"),
