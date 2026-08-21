@@ -138,6 +138,17 @@ describe("Origin pull request parsing", () => {
     );
     assert.isFalse(hasMergeConflicts({ status: "open", mergeability: { mergeable: true } }));
   });
+
+  it("keeps polling while Origin computes mergeability", () => {
+    const forge = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
+    const waitFn = forge.slice(
+      forge.indexOf("export function waitForMergeable"),
+      forge.indexOf("export function originUnknownOption"),
+    );
+    assert.notInclude(waitFn, "if (state == null) return viewed;");
+    assert.include(waitFn, "while it computes");
+    assert.include(waitFn, "if (!last) return lastViewed;");
+  });
 });
 
 describe("Origin release and blocked-sync helpers", () => {
@@ -196,6 +207,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(syncScript, "unset NO_COLOR");
     assert.include(syncScript, "git merge --abort");
     assert.include(syncScript, "refs/heads/automation/upstream-*");
+    assert.include(syncScript, "same_first_parent_line");
     assert.include(sync, 'GIT_TERMINAL_PROMPT: "0"');
     const preparePath = sync.slice(
       sync.indexOf("Prepare macOS runner PATH"),

@@ -300,6 +300,20 @@ merge_ref() {
 # conflict, and time out while the resolved branch went stale against main.
 reusable_sync_branch=""
 reusable_sync_tag=""
+
+# Nightly tags are not always one fast-forward line (retagged, rebuilt, or
+# parallel nightlies). Ancestry between two tags is only a staleness signal
+# when both commits sit on the same upstream first-parent line; otherwise
+# the tag-name sort below and the finished report check decide.
+same_first_parent_line() {
+  local a b
+  a="$(git rev-parse "$1")"
+  b="$(git rev-parse "$2")"
+  [[ "$a" == "$b" ]] && return 0
+  git rev-list --first-parent "$a" | grep -qx "$b" && return 0
+  git rev-list --first-parent "$b" | grep -qx "$a" && return 0
+  return 1
+}
 while IFS=$'\t' read -r _sha ref; do
   [[ -n "$ref" ]] || continue
   local_name="${ref#refs/heads/}"
@@ -315,7 +329,10 @@ while IFS=$'\t' read -r _sha ref; do
     continue
   git merge-base --is-ancestor "$candidate_tag^{commit}" "origin/$local_name" || continue
   [[ "$(git show "origin/$local_name:.t3-fork/upstream-sync-report.md" 2>/dev/null | sed -n '1p')" == "# T3 Pretty upstream integration report" ]] || continue
-  git merge-base --is-ancestor "$candidate_tag^{commit}" "$latest_tag^{commit}" || continue
+  if ! git merge-base --is-ancestor "$candidate_tag^{commit}" "$latest_tag^{commit}" &&
+    same_first_parent_line "$candidate_tag^{commit}" "$latest_tag^{commit}"; then
+    continue
+  fi
   if [[ -z "$reusable_sync_tag" ]] ||
     [[ "$(printf '%s\n%s\n' "$reusable_sync_tag" "$candidate_tag" | sort -V | tail -n 1)" == "$candidate_tag" ]]; then
     reusable_sync_branch="$local_name"

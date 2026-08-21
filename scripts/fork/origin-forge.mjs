@@ -384,21 +384,28 @@ export function describeMergeConflicts(target, viewed) {
 
 export function waitForMergeable(target, { repo, attempts = 12, delayMs = 5000 } = {}) {
   let last = "";
+  let lastViewed;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const viewed = viewPullRequest(target, { repo });
+    lastViewed = viewed;
     if (isPullRequestMerged(viewed)) return viewed;
     if (hasMergeConflicts(viewed)) {
       throw new Error(describeMergeConflicts(target, viewed));
     }
+    // Origin reports null, {}, or { mergeable: null } while it computes
+    // mergeability. None of those are a verdict; only a real state, a
+    // merged status, or conflicts above may end the wait early.
     const state = viewed.mergeability ?? viewed.mergeableState;
-    if (state == null) return viewed;
-    last = typeof state === "object" ? JSON.stringify(state) : String(state);
-    if (isMergeableState(state)) return viewed;
+    if (state != null) {
+      last = typeof state === "object" ? JSON.stringify(state) : String(state);
+      if (isMergeableState(state)) return viewed;
+    }
     if (attempt < attempts - 1) sleep(delayMs);
   }
-  throw new Error(
-    `Origin pull request ${target} remained ${last || "unknown"} and could not be merged.`,
-  );
+  // A CLI whose --json never exposes mergeability leaves `last` empty; let
+  // the caller try the merge instead of failing on missing information.
+  if (!last) return lastViewed;
+  throw new Error(`Origin pull request ${target} remained ${last} and could not be merged.`);
 }
 
 export function originUnknownOption(message, name) {
