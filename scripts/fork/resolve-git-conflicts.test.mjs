@@ -384,8 +384,16 @@ ${">".repeat(7)} theirs
       );
 
       const script = NodeFS.readFileSync(syncScriptPath, "utf8");
-      assert.include(script, 'git show "origin/$SYNC_BRANCH:.t3-fork/upstream-sync-report.md"');
+      assert.include(script, 'git show "origin/$local_name:.t3-fork/upstream-sync-report.md"');
       assert.include(script, '== "# T3 Pretty upstream integration report"');
+      assert.include(script, "git merge --abort");
+      assert.include(script, "unset NO_COLOR");
+      assert.include(script, "refs/heads/automation/upstream-*");
+      assert.include(script, "Reusing the previously validated AI resolution on");
+      assert.include(script, "credential.https://origin.cursor.com.helper=store --file=");
+      assert.include(script, "SYNC_FAIL_REASON");
+      assert.include(script, "merging origin/main and retrying once");
+      assert.include(script, 'git checkout --ours -- "$path"');
     } finally {
       NodeFS.rmSync(temporaryDirectory, { recursive: true });
     }
