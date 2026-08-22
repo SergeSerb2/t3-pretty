@@ -468,10 +468,16 @@ describe("RelayEnvironmentDiscovery", () => {
         yield* discovery.refresh;
         yield* Effect.yieldNow;
 
-        // The first wakeup outside the coalescing window refreshes.
+        // The first wakeup outside the coalescing window refreshes. A second
+        // overlapping wakeup (visibilitychange racing connectivity) must lose
+        // the atomic claim rather than both observing a stale timestamp.
         yield* TestClock.adjust("61 seconds");
         yield* harness.wake("application-active");
+        yield* harness.wake("application-active");
         yield* Deferred.await(harness.secondListCall);
+        for (let attempt = 0; attempt < 100; attempt++) {
+          yield* Effect.yieldNow;
+        }
         expect(yield* Ref.get(harness.listCalls)).toBe(2);
 
         // A wakeup inside the window is dropped.

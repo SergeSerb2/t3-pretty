@@ -349,10 +349,17 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
   const lastAutoRefreshStartedAt = yield* Ref.make(-AUTO_REFRESH_MIN_INTERVAL_MS);
   const refreshAutoThrottled = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
-    if (now - (yield* Ref.get(lastAutoRefreshStartedAt)) < AUTO_REFRESH_MIN_INTERVAL_MS) {
+    // Claim the window atomically so overlapping wakeup and connectivity
+    // forks cannot both observe a stale timestamp and both hit the Worker.
+    const shouldRefresh = yield* Ref.modify(lastAutoRefreshStartedAt, (lastStartedAt) => {
+      if (now - lastStartedAt < AUTO_REFRESH_MIN_INTERVAL_MS) {
+        return [false, lastStartedAt];
+      }
+      return [true, now];
+    });
+    if (!shouldRefresh) {
       return;
     }
-    yield* Ref.set(lastAutoRefreshStartedAt, now);
     yield* refresh;
   });
 
