@@ -72,10 +72,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(preflight, "steps.release.outputs.version != ''");
     assert.include(preflight, "steps.release.outputs.version != '-'");
     assert.include(preflight, "continue-on-error: true");
-    const releaseStep = preflight.slice(
-      preflight.indexOf("id: release"),
-      preflight.indexOf("id: changelog"),
-    );
+    const releaseStep = preflight.slice(preflight.indexOf("id: release"));
     assert.include(releaseStep, "T3_SKIP_UNRESOLVABLE_MINT");
     assert.notInclude(releaseStep, "continue-on-error:");
     assert.include(preflight, "ensure-linux-node.sh");
@@ -93,10 +90,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(wsl, "ensure-linux-node.sh");
     assert.include(wsl, "needs.preflight.result == 'success'");
     assert.include(wsl, "needs.preflight.outputs.should_release == 'true'");
-    assert.include(
-      preflight,
-      "ref: ${{ steps.changelog.outputs.ref || github.sha || env.BUILDKITE_COMMIT }}",
-    );
+    assert.include(preflight, "ref: ${{ github.sha || env.BUILDKITE_COMMIT }}");
     assert.notInclude(preflight, "github.sha || '-'");
     assert.include(wsl, 'ref="${PREFLIGHT_REF:-${GITHUB_SHA:-${BUILDKITE_COMMIT:-}}}"');
     assert.include(wsl, "WSL prebuild needs a commit SHA; preflight ref is missing.");
@@ -110,6 +104,10 @@ describe("T3 Pretty release runner placement", () => {
   it("does not rebuild desktop for mobile-only or docs-only commits", () => {
     // Buildkite rejects on.push.paths, so the skip lives in the preflight job.
     assert.include(desktopWorkflow, "Skip desktop-irrelevant pushes");
+    assert.notInclude(desktopWorkflow, "Changelog-only commit; skipping imported preflight.");
+    // Hosted preflight cannot push notes and nothing there consumes them;
+    // generation belongs to the native packagers.
+    assert.notInclude(desktopWorkflow, "generate-changelog.mjs");
     assert.include(desktopWorkflow, "apps/desktop");
     assert.include(desktopWorkflow, "apps/web");
     assert.notInclude(desktopWorkflow, "apps/mobile");
@@ -238,6 +236,53 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(dmg, "process.stdin.on");
     assert.include(dmg, "git fetch --force --tags origin");
     assert.include(dmg, "resolve-fork-release.mjs --print version");
+  });
+
+  it("packages a Linux x64 AppImage on linux-small without fetching Origin", () => {
+    assert.include(pipeline, "build-linux-appimage.sh");
+    assert.include(pipeline, "Linux x64 AppImage");
+    assert.include(pipeline, "key: linux-appimage");
+    assert.isBelow(
+      pipeline.indexOf("build-windows-nsis.ps1"),
+      pipeline.indexOf("build-linux-appimage.sh"),
+    );
+    assert.isBelow(
+      pipeline.indexOf("build-linux-appimage.sh"),
+      pipeline.indexOf("build-macos-dmg.sh"),
+    );
+    const linux = NodeFS.readFileSync(NodePath.resolve(here, "build-linux-appimage.sh"), "utf8");
+    assert.include(linux, "Do not git fetch origin");
+    assert.notInclude(linux, "git fetch --force --tags origin");
+    assert.notInclude(linux, "git fetch --unshallow");
+    assert.include(linux, "GIT_TERMINAL_PROMPT=0");
+    assert.include(linux, 'GIT_ASKPASS="${GIT_ASKPASS:-/bin/true}"');
+    assert.include(linux, "git fetch --force --tags upstream");
+    assert.include(linux, "ensure-linux-node.sh");
+    assert.include(linux, "x86_64-unknown-linux-gnu");
+    assert.include(linux, "--platform linux --target AppImage --arch x64");
+    assert.include(linux, "upload-assets");
+    assert.include(linux, "T3_FORK_BUILD_FLOOR");
+    assert.include(linux, "latest-linux.yml");
+    assert.include(linux, "nightly-linux.yml");
+    assert.include(linux, "-name '*-linux.yml'");
+    assert.notInclude(linux, "-o -name '*.yml'");
+    assert.notInclude(linux, '"$publish"/nightly*.yml');
+    assert.include(linux, "imagemagick");
+    assert.include(linux, "https://vite.plus");
+    assert.include(linux, "npx vp");
+    assert.include(linux, "load-buildkite-secrets.sh");
+    assert.include(linux, "buildkite-agent secret get");
+    assert.include(linux, "Hosted linux-small has no file-store fallback");
+    assert.include(linux, "T3CODE_RELEASE_S3_BUCKET");
+    assert.include(linux, "T3CODE_RELEASE_S3_ENDPOINT");
+    assert.include(linux, "refusing to guess an upload target");
+    assert.isBelow(
+      linux.indexOf("Hosted linux-small has no file-store fallback"),
+      linux.indexOf("rustup toolchain install"),
+    );
+    assert.notInclude(linux, "checkout-origin.sh");
+    assert.notInclude(linux, "CURSOR_API_KEY");
+    assert.notInclude(pipeline, "\n    secrets:");
   });
 
   it("deploys the relay on macos-release with baked public IDs", () => {

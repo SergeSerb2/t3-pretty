@@ -23,7 +23,10 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    carries the SHA marker. A follow-up `Origin PR comments resolved` step fails
    while any of those finding threads is still open. Older findings that were
    posted as reviews (no thread) pass only after a later comment names the
-   title and says it is fixed.
+   title and says it is fixed. Review-only Macs spawn 10 workers, so up to 10
+   PRs review in parallel; a per-branch Buildkite concurrency group
+   (`t3-pretty/origin-pr-review/$BUILDKITE_BRANCH`, limit 1) keeps a second
+   reviewer for the same PR waiting instead of duplicating the review.
 2. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
    and 20:00 UTC as a native `macos-release` Buildkite step
    (`scripts/fork/run-upstream-sync.sh`). The imported GitHub Actions wrapper
@@ -50,8 +53,8 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    `minted=false` and exits 0. That mint step is not continue-on-error:
    invalid-tag, git, and monotonic failures still fail the job. `should_release`
    stays false unless the mint step succeeded and produced a real version, so
-   changelog and WSL do not consume `-` placeholders. Preflight
-   `ref` is the changelog commit, `github.sha`, or `BUILDKITE_COMMIT` — never
+   the WSL job does not consume `-` placeholders. Preflight
+   `ref` is `github.sha` or `BUILDKITE_COMMIT` — never
    the empty-output placeholder `-`. The WSL node-pty job checks out that SHA,
    treating a leftover `-` as missing and recovering from
    `GITHUB_SHA`/`BUILDKITE_COMMIT`, and fails instead of compiling an empty
@@ -96,19 +99,33 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    starts its own `T3 Pretty Desktop Release`. Release runs are not collapsed through a workflow
    concurrency group: the dedicated runners queue every main commit, and the CI run number
    makes each fork version unique even when multiple releases overlap.
-7. Before building, the release preflight runs `scripts/fork/generate-changelog.mjs`, which asks
-   the Railway CLIProxyAPI model (`gpt-5.6-sol`, `high` reasoning by default) to write one What's
-   New entry per shipped fork build — the fork's own commits plus the parent nightly window —
-   for every build still missing an entry, then commits and pushes `changelogData.ts`. That push
-   only happens for runs triggered by `main` itself and only when the triggering commit is still
-   the `main` tip, so a manual dispatch of another ref cannot move `main`, and it does not
-   retrigger the workflow. The build and publish jobs check out the pushed changelog commit, so
-   each release ships its own notes; the already-released skip check recognizes the tagged
-   changelog child of the triggering commit, so re-running a completed run stays a no-op.
-   Generation failures downgrade to warnings: the release ships without new entries and the next
-   run regenerates everything missing.
+7. Native macOS and Windows packagers run `scripts/fork/generate-changelog.mjs` after minting
+   the fork version and before compiling, so What's New notes land in the artifact users
+   install. The script lists non-merge commit subjects (Origin merge commits are
+   `Merge pull request #N` and hide the real feat/fix titles), asks the Railway CLIProxyAPI
+   model (`gpt-5.6-sol`) when `CLI_PROXY_API_KEY` is available, and always falls back to those
+   subjects so a missing key cannot skip the file. Hosted Linux preflight does
+   not run the generator: it cannot push to Origin and no imported job
+   consumes the file, so a pass there would only spend the model budget.
+   macos-release generates with `--no-push` (baking the notes into the DMG)
+   and runs `--publish` only after the artifacts and update feed are live,
+   committing and pushing `changelogData.ts` when HEAD is still the `main`
+   tip; the build that push triggers sees the version in the feed and skips
+   packaging instead of publishing it twice. windows-release first reuses the
+   notes commit from `origin/main` when it covers the same version, so both
+   installers ship the same What's New text, and generates locally only as a
+   fallback. Both packagers run `--publish` after their uploads, so main
+   still gets exactly one notes commit when one packager never ran or died
+   mid-release; the later publisher reuses the commit already on main. A retry whose HEAD is
+   already `docs(changelog):` skips generation so it cannot mint another
+   notes commit. Hosted Linux preflight recognizes the notes commit by
+   subject and skips minting and the imported jobs (WSL node-pty): the
+   version already shipped from the parent commit. Native packagers reuse the same version
+   and skip packaging only when the public feed already lists it, so a retry
+   after a changelog push still produces a DMG/NSIS. Generation failures warn
+   and the release continues; the next run fills whatever is still missing.
 8. Origin-connected Linux CI (Depot or Buildkite, `ubuntu-latest` in the workflow YAML) resolves
-   the version and writes What's New notes. It does not call GitHub Actions
+   the version. What's New notes are written by the native Mac and Windows packagers. It does not call GitHub Actions
    (`uses:`) — the importer resolves every action from api.github.com at parse
    time, and a burst of main merges then fails the workflow with a GitHub rate
    limit before any job starts. Publish and Origin CLI packaging stay on
@@ -118,25 +135,30 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    Linux cannot load `CURSOR_API_KEY`, and the importer cannot run the old
    review workflow on Origin pull-request events.
    A packaging Mac signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
-   push/UI builds of `main`, not the four-hour scheduled sync. iOS TestFlight IPAs and OTA
-   exports compile on `macos-release` through the native
+   push/UI builds of `main`, not the four-hour scheduled sync. Hosted `linux-small` builds the
+   Linux x64 AppImage (`scripts/fork/build-linux-appimage.sh`) on those same push/UI builds and
+   uploads `latest-linux.yml` to the public feed. That script never `git fetch origin`: Origin
+   HTTPS has no credentials there, and git waits forever on the username prompt. iOS TestFlight
+   IPAs and OTA exports compile on `macos-release` through the native
    `scripts/fork/publish-mobile-release.sh` step (not the GitHub Actions importer). Relay
    deploys from the native `macos-release` step. Only trusted `main` commits run desktop packaging
    and relay deploys on the self-hosted machines; Origin PR review is the
    `macos-release` job on feature branches, running scripts from `origin/main`
    when they exist. Imported desktop preflight is skipped when the push cannot change the
    shipped desktop app (mobile-only, docs-only, marketing, or relay-only commits).
-   Native Mac and Windows packaging still run on every `main` push so the public
+   Native Mac, Windows, and Linux packaging still run on every `main` push so the public
    updater feed stays on the latest commit. `workflow_dispatch` and the
    upstream-sync dispatch still always run.
-9. The publisher creates an annotated Origin git tag and uploads the installers plus both
-   `nightly` and `latest` update manifests to the generic `electron-updater` feed in
-   `T3CODE_DESKTOP_UPDATE_FEED_URL`. Origin has no GitHub-style release-asset API, so that feed
-   is an S3-compatible bucket (Cloudflare R2 is the intended host; the relay already uses
-   Cloudflare). Multi-range requests stay disabled. Already-installed GitHub-provider builds need
-   one manual install of a release that contains this feed before later updates can be automatic.
-   Windows ships even when Azure Trusted Signing is not configured; unsigned NSIS installers
-   still update from that feed, and SmartScreen will warn until ATS secrets are added.
+9. The publisher creates an annotated Origin git tag and uploads the Mac and Windows installers
+   plus their `nightly` and `latest` update manifests to the generic `electron-updater` feed in
+   `T3CODE_DESKTOP_UPDATE_FEED_URL`. Linux AppImage, `nightly-linux.yml`, and `latest-linux.yml`
+   come from hosted `linux-small`, not that Origin tag/upload job. Origin has no GitHub-style
+   release-asset API, so that feed is an S3-compatible bucket (Cloudflare R2 is the intended host;
+   the relay already uses Cloudflare). Multi-range requests stay disabled. Already-installed
+   GitHub-provider builds need one manual install of a release that contains this feed before later
+   updates can be automatic. Windows ships even when Azure Trusted Signing is not configured;
+   unsigned NSIS installers still update from that feed, and SmartScreen will warn until ATS secrets
+   are added.
 
 Fork versions retain the newest integrated upstream nightly prefix and append a monotonic fork
 build number. The resolver takes the larger of the current CI run slot and one past the highest
@@ -150,14 +172,16 @@ without pretending that a newer upstream tag was integrated before its sync pull
   Buildkite only run on Origin-hosted repositories, not inbound GitHub mirrors. After detach,
   Origin is the source of truth and pushes no longer flow to GitHub.
 - Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
-  the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux),
+  the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux: importer,
+  WSL node-pty, and the x64 AppImage),
   `macos-release` (Origin PR Review on m5-dev with `REVIEW_ONLY=1`; packaging
   when a Mac without that flag is registered), and `windows-release` (serge-pc).
   Do not add a second Mac queue until it exists in the cluster — unknown queues
   fail pipeline upload for every PR. Register the machines with
   `scripts/fork/setup-buildkite-macos-agent.sh` and
   `scripts/fork/setup-buildkite-windows-agent.ps1`. A Mac without Xcode.app
-  defaults to `REVIEW_ONLY=1`: one worker on `macos-release`, and a
+  defaults to `REVIEW_ONLY=1`: one agent process spawning `REVIEW_WORKERS`
+  (default 10) workers on `macos-release` for parallel PR reviews, and a
   pre-command hook that refuses packaging jobs. A packaging Mac uses
   `REVIEW_ONLY=0` and starts a second worker so a DMG can run while a local IPA
   occupies the first. Those two workers share `$HOME`, so the pre-checkout hook skips rewriting
@@ -169,7 +193,8 @@ without pretending that a newer upstream tag was integrated before its sync pull
   them onto `macos-release`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
   The importer cannot run Windows jobs; `.buildkite/pipeline.yml` runs
   `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer
-  for push/UI builds of `main`, not the four-hour schedule. Imported Mac jobs
+  for push/UI builds of `main`, not the four-hour schedule. The Linux AppImage is the
+  same: a native `linux-small` step, not an imported job. Imported Mac jobs
   use `/bin/bash` 3.2 (no `mapfile`). `CURSOR_API_KEY` and `CLI_PROXY_API_KEY`
   also live as files under `$HOME/.config/t3-pretty/` (and still
   `/Users/m1-dev/.config/t3-pretty/` if that host is a packaging Mac) because in-job
@@ -193,18 +218,20 @@ without pretending that a newer upstream tag was integrated before its sync pull
 - Secret `CURSOR_API_KEY`: Cursor API key for the Origin CLI (`origin auth login --api-key`).
   Used to open, merge, and tag on Origin.
 - Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used by the trusted scheduled
-  sync workflow for conflict resolution, the release preflight for What's New changelog
+  sync workflow for conflict resolution, native Mac/Windows packagers for What's New changelog
   generation, and Origin pull-request review (`grok-4.6` via
   `https://cli-proxy-api-production-1615.up.railway.app/v1`). Store it as a Buildkite cluster
-  secret, not a GitHub Actions `secrets.*` mapping. `CLI_PROXY_CHANGELOG_EFFORT` optionally
-  overrides the changelog reasoning effort (default `high`). `CLI_PROXY_REVIEW_MODEL`
-  defaults to `grok-4.6`. Do not add an xAI / Grok API key for reviews.
+  secret or a file under `~/.config/t3-pretty/`, not a GitHub Actions `secrets.*` mapping.
+  `CLI_PROXY_CHANGELOG_EFFORT` optionally overrides the changelog reasoning effort (default
+  `high`). `CLI_PROXY_REVIEW_MODEL` defaults to `grok-4.6`. Do not add an xAI / Grok API key
+  for reviews.
 - Relay secrets on the same cluster: `CLOUDFLARE_API_TOKEN`, `PLANETSCALE_API_TOKEN_ID`,
   `PLANETSCALE_API_TOKEN`, `AXIOM_TOKEN`, `CLERK_SECRET_KEY`, `APNS_PRIVATE_KEY`. Public
   relay IDs are literals in `.github/workflows/deploy-relay.yml`.
 - Variable `T3CODE_DESKTOP_UPDATE_FEED_URL`: public HTTPS directory that serves `nightly.yml`,
-  `latest.yml`, and the installers. Must not be a GitHub Releases URL. Uploads use that URL's
-  path as the S3 key prefix (so `…/t3-pretty/latest/` stores objects under `t3-pretty/latest/`).
+  `latest.yml`, `latest-mac.yml`, `latest-linux.yml`, and the installers. Must not be a GitHub
+  Releases URL. Uploads use that URL's path as the S3 key prefix (so `…/t3-pretty/latest/`
+  stores objects under `t3-pretty/latest/`).
 - Secrets `T3CODE_RELEASE_S3_BUCKET`, `T3CODE_RELEASE_S3_ACCESS_KEY_ID`,
   `T3CODE_RELEASE_S3_SECRET_ACCESS_KEY`, and optionally `T3CODE_RELEASE_S3_ENDPOINT` plus
   `T3CODE_RELEASE_S3_REGION`: S3-compatible upload target for that feed (R2 uses the account
@@ -238,6 +265,7 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 | --------------------------- | ------------------------------------- | ------------------------------------------- | ---------------------------------------------------- |
 | Changelog + version + smoke | m1-dev                                | 10 min (6.5 min model + 3 min install)      | `ubuntu-latest`                                      |
 | WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                       |
+| Linux x64 AppImage          | not shipped on the feed               | —                                           | hosted `linux-small` (`build-linux-appimage.sh`)     |
 | macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m1-dev (or a second Mac with the same labels)        |
 | Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                   |
 | Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `macos-release` (Origin CLI)                         |
@@ -250,7 +278,8 @@ A desktop release that used to sit 25–40 minutes in the m1-dev queue and then 
 
 This machine is an M5 Pro (18 cores, 48 GB) daily driver. m1-dev was the dedicated
 Mac runner and is being converted to Linux. Origin PR Review runs here on
-`macos-release` with `REVIEW_ONLY=1`. The pre-command hook refuses DMG/iOS/relay
+`macos-release` with `REVIEW_ONLY=1` and 10 spawned workers, so up to 10 PRs
+review at once. The pre-command hook refuses DMG/iOS/relay
 jobs: there is no full Xcode.app, and release jobs would share CPU with
 interactive use. A later packaging Mac should register with `REVIEW_ONLY=0` on
 the same queue. Never give either runner `pull_request` labels.

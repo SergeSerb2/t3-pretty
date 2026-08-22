@@ -190,6 +190,12 @@ describe("Origin Grok review workflow wiring", () => {
 
     assert.notInclude(pipeline, "- .github/workflows/fork-pr-review.yml");
     assert.include(pipeline, "run-trusted-origin-pr-ci.sh");
+    const trusted = NodeFS.readFileSync(
+      NodePath.resolve(here, "run-trusted-origin-pr-ci.sh"),
+      "utf8",
+    );
+    assert.notInclude(trusted, "fetch --depth=1 origin refs/heads/main");
+    assert.include(trusted, "fetch --deepen=200 origin refs/heads/main");
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
     assert.include(reviewStep.slice(0, 800), "queue: macos-release");
     assert.include(reviewStep, "automation");

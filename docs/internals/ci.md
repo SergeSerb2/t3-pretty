@@ -32,8 +32,11 @@ Without the core signing credentials, it still releases unsigned artifacts.
 T3 Pretty desktop and mobile releases are documented in
 [fork-release.md](../operations/fork-release.md) and
 [fork-mobile-release.md](../operations/fork-mobile-release.md). Imported
-preflight and WSL `node-pty` run on hosted Linux. Native `macos-release`
-(m5-dev, `REVIEW_ONLY=1`) runs Origin PR Review and refuses packaging.
+preflight and WSL `node-pty` run on hosted Linux. Native `linux-small`
+builds the x64 AppImage onto the same updater feed. Native `macos-release`
+(m5-dev, `REVIEW_ONLY=1`, 10 spawned workers) runs Origin PR Review — up to
+10 PRs in parallel, one reviewer per PR branch via a Buildkite concurrency
+group — and refuses packaging.
 A packaging Mac on the same queue without that flag signs the DMG,
 publishes iOS OTA, submits TestFlight IPAs, and deploys the relay (m1-dev
 is Linux). Windows NSIS is native `windows-release`.

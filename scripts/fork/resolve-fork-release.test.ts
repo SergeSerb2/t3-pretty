@@ -75,6 +75,123 @@ it("emits a fork-specific semver tag that electron-updater can match to nightly"
   }
 });
 
+it("does not reuse a version from a non-automated docs(changelog) subject", () => {
+  const fixtureRoot = NodeFS.mkdtempSync(
+    NodePath.join(NodeOS.tmpdir(), "t3-fork-changelog-manual-"),
+  );
+
+  try {
+    git(fixtureRoot, "init");
+    git(fixtureRoot, "config", "user.name", "T3 Fork Release Test");
+    git(fixtureRoot, "config", "user.email", "t3-fork-release-test@example.invalid");
+    NodeFS.writeFileSync(NodePath.join(fixtureRoot, "fixture.txt"), "fixture\n");
+    git(fixtureRoot, "add", "fixture.txt");
+    git(fixtureRoot, "commit", "-m", "test fixture");
+    git(fixtureRoot, "tag", "v0.0.33-nightly.20260809.1043");
+    git(fixtureRoot, "commit", "--allow-empty", "-m", "docs(changelog): tweak wording");
+
+    const minted = JSON.parse(
+      NodeChildProcess.execFileSync(process.execPath, [scriptPath], {
+        cwd: fixtureRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_RUN_NUMBER: "15",
+          GITHUB_OUTPUT: "",
+        },
+      }),
+    ) as { readonly version: string };
+
+    assert.equal(minted.version, "0.0.33-nightly.20260809.1043000015");
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+it("reuses the version already recorded on a changelog commit", () => {
+  const fixtureRoot = NodeFS.mkdtempSync(
+    NodePath.join(NodeOS.tmpdir(), "t3-fork-changelog-reuse-"),
+  );
+
+  try {
+    git(fixtureRoot, "init");
+    git(fixtureRoot, "config", "user.name", "T3 Fork Release Test");
+    git(fixtureRoot, "config", "user.email", "t3-fork-release-test@example.invalid");
+    NodeFS.writeFileSync(NodePath.join(fixtureRoot, "fixture.txt"), "fixture\n");
+    git(fixtureRoot, "add", "fixture.txt");
+    git(fixtureRoot, "commit", "-m", "test fixture");
+    git(fixtureRoot, "tag", "v0.0.33-nightly.20260809.1043");
+    git(
+      fixtureRoot,
+      "commit",
+      "--allow-empty",
+      "-m",
+      "docs(changelog): add release notes through v0.0.33-nightly.20260809.1043000015",
+    );
+
+    const reused = JSON.parse(
+      NodeChildProcess.execFileSync(process.execPath, [scriptPath], {
+        cwd: fixtureRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_RUN_NUMBER: "99",
+          GITHUB_OUTPUT: "",
+        },
+      }),
+    ) as {
+      readonly minted: string;
+      readonly version: string;
+      readonly tag: string;
+      readonly upstream_tag: string;
+    };
+
+    assert.equal(reused.minted, "true");
+    assert.equal(reused.version, "0.0.33-nightly.20260809.1043000015");
+    assert.equal(reused.tag, "v0.0.33-nightly.20260809.1043000015.fork");
+    assert.equal(reused.upstream_tag, "v0.0.33-nightly.20260809.1043");
+
+    const orphanRoot = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-fork-changelog-orphan-"),
+    );
+    try {
+      git(orphanRoot, "init");
+      git(orphanRoot, "config", "user.name", "T3 Fork Release Test");
+      git(orphanRoot, "config", "user.email", "t3-fork-release-test@example.invalid");
+      NodeFS.writeFileSync(NodePath.join(orphanRoot, "fixture.txt"), "fixture\n");
+      git(orphanRoot, "add", "fixture.txt");
+      git(
+        orphanRoot,
+        "commit",
+        "-m",
+        "docs(changelog): add release notes through v0.0.33-nightly.20260809.1043000015",
+      );
+      const orphanOutput = NodePath.join(orphanRoot, "github-output");
+      NodeFS.writeFileSync(orphanOutput, "");
+      const orphan = NodeChildProcess.spawnSync(process.execPath, [scriptPath], {
+        cwd: orphanRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: orphanOutput,
+          T3_SKIP_UNRESOLVABLE_MINT: "1",
+          GITHUB_RUN_NUMBER: "99",
+        },
+      });
+      assert.equal(orphan.status, 0);
+      assert.match(NodeFS.readFileSync(orphanOutput, "utf8"), /minted=true/u);
+      assert.match(
+        NodeFS.readFileSync(orphanOutput, "utf8"),
+        /version=0\.0\.33-nightly\.20260809\.1043000015/u,
+      );
+    } finally {
+      NodeFS.rmSync(orphanRoot, { recursive: true, force: true });
+    }
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 it("skips imported minting when no upstream nightly is an ancestor of HEAD", () => {
   const fixtureRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fork-release-skip-"));
   const outputPath = NodePath.join(fixtureRoot, "github-output");
@@ -177,6 +294,54 @@ it("keeps a later CI run newer than an already-shipped fork tag", () => {
     ) as { readonly version: string };
 
     assert.equal(stillAhead.version, "0.0.33-nightly.20260809.1043367900");
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+it("stays above the update-feed floor when no fork tags are visible", () => {
+  const fixtureRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fork-release-floor-"));
+
+  try {
+    git(fixtureRoot, "init");
+    git(fixtureRoot, "config", "user.name", "T3 Fork Release Test");
+    git(fixtureRoot, "config", "user.email", "t3-fork-release-test@example.invalid");
+    NodeFS.writeFileSync(NodePath.join(fixtureRoot, "fixture.txt"), "fixture\n");
+    git(fixtureRoot, "add", "fixture.txt");
+    git(fixtureRoot, "commit", "-m", "test fixture");
+    git(fixtureRoot, "tag", "v0.0.33-nightly.20260809.1043");
+
+    const floored = JSON.parse(
+      NodeChildProcess.execFileSync(process.execPath, [scriptPath], {
+        cwd: fixtureRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_RUN_NUMBER: "0",
+          BUILDKITE_BUILD_NUMBER: "87",
+          T3_FORK_BUILD_FLOOR: "1043367814",
+          GITHUB_OUTPUT: "",
+        },
+      }),
+    ) as { readonly version: string };
+
+    assert.equal(floored.version, "0.0.33-nightly.20260809.1043367815");
+
+    const belowFloor = JSON.parse(
+      NodeChildProcess.execFileSync(process.execPath, [scriptPath], {
+        cwd: fixtureRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_RUN_NUMBER: "0",
+          BUILDKITE_BUILD_NUMBER: "87",
+          T3_FORK_BUILD_FLOOR: "12",
+          GITHUB_OUTPUT: "",
+        },
+      }),
+    ) as { readonly version: string };
+
+    assert.equal(belowFloor.version, "0.0.33-nightly.20260809.1043000087");
   } finally {
     NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
   }

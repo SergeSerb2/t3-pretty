@@ -301,12 +301,15 @@ export function showContextMenuFallback<T extends string>(
         }
 
         if (item.separatorBefore === true && inner.children.length > 0) {
-          const separator = document.createElement("div");
-          separator.className = "mx-2 my-1 h-px bg-border";
-          separator.style.cssText = "height:1px;margin:0.25rem 0.5rem;background:var(--border);";
-          separator.dataset.contextMenuSeparator = "true";
-          separator.setAttribute("role", "separator");
-          inner.appendChild(separator);
+          const previous = inner.children[inner.children.length - 1] as HTMLElement | undefined;
+          if (previous?.dataset?.contextMenuSeparator !== "true") {
+            const separator = document.createElement("div");
+            separator.className = "mx-2 my-1 h-px bg-border";
+            separator.style.cssText = "height:1px;margin:0.25rem 0.5rem;background:var(--border);";
+            separator.dataset.contextMenuSeparator = "true";
+            separator.setAttribute("role", "separator");
+            inner.appendChild(separator);
+          }
         }
 
         if (item.header === true) {
@@ -409,7 +412,9 @@ export function showContextMenuFallback<T extends string>(
           if (hasChildren) {
             const openSubmenu = (focusFirstItem = false) => {
               const rect = button.getBoundingClientRect();
-              const nextLeft = rect.right + 4;
+              // Overlap the parent so the pointer never crosses a gap that
+              // the document treats as an outside click.
+              const nextLeft = rect.right - 4;
               const nextTop = rect.top;
               openMenu(item.children!, nextLeft, nextTop, level + 1, button);
               button.setAttribute("aria-expanded", "true");
@@ -433,6 +438,11 @@ export function showContextMenuFallback<T extends string>(
             });
             button.addEventListener("click", (event) => {
               event.preventDefault();
+              if (item.activateOnClick === true) {
+                event.stopPropagation();
+                if (canDismissFromPointer) cleanup(item.id);
+                return;
+              }
               openSubmenu(true);
             });
           } else {

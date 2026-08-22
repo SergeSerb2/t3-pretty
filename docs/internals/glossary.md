@@ -46,6 +46,10 @@ A single user-to-assistant work cycle inside a thread. It starts with user input
 
 A user-visible log item attached to a thread. In [the contracts][1], activities cover important non-message events like approvals, tool actions, and failures. They are projected into thread state in [projector.ts][4].
 
+#### Search index
+
+The plain-table inverted index behind `orchestration.searchThreads`: `search_index_docs` / `search_index_terms` / `search_index_postings` (migration 049), maintained by the `projection.search-index` projector in [ProjectionPipeline.ts][11] and read with BM25 ranking in `apps/server/src/search/ThreadSearch.ts`. It indexes user messages (visible text only, auto-PR instruction block stripped) and canonical assistant messages (turn-final `assistant_message_id` rows), and drops those entries when a thread is archived, deleted, or reverted, or when its project is deleted. Plain tables because the production SQLite driver (`node:sqlite`) ships without FTS5; query semantics are AND of content tokens (stopwords and truncated common terms rank without filtering) with prefix matching on the final query token.
+
 ### Orchestration
 
 Orchestration is the server-side domain layer that turns runtime activity into stable app state. The main entry point is [OrchestrationEngine.ts][7], with core logic in [decider.ts][8] and [projector.ts][4].

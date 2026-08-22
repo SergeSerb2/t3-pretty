@@ -3,8 +3,10 @@
 #
 # Default queue is macos-release (Origin PR Review). Packaging (DMG, iOS,
 # relay, upstream sync) uses the same queue; REVIEW_ONLY=1 refuses those jobs.
-# Registers two workers unless REVIEW_ONLY=1 so review and a DMG can run while
-# a local IPA occupies the first.
+# Review-only machines spawn REVIEW_WORKERS (default 10) workers so many PRs
+# review in parallel; the pipeline's per-branch concurrency group keeps one
+# reviewer per PR. Packaging machines register two workers so review and a
+# DMG can run while a local IPA occupies the first.
 # Never add pull-request queues. Requires a cluster agent token from the
 # Origin-connected Buildkite org (Agents → Agent tokens).
 #
@@ -102,6 +104,16 @@ PY
 
 agent_bin="$(command -v buildkite-agent)"
 agent_path="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.local/bin:${HOME}/.vite-plus/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# Review-only machines run many Grok reviewers at once from one agent
+# process. Packaging machines stay on the two-worker companion setup below.
+program_args="    <string>${agent_bin}</string>
+    <string>start</string>"
+if [[ "$REVIEW_ONLY" == "1" ]]; then
+  REVIEW_WORKERS="${REVIEW_WORKERS:-10}"
+  program_args="${program_args}
+    <string>--spawn</string>
+    <string>${REVIEW_WORKERS}</string>"
+fi
 mkdir -p "$HOME/.config/t3-pretty" "$HOME/Library/Logs"
 : >> "$HOME/.config/t3-pretty/gitconfig"
 chmod 600 "$HOME/.config/t3-pretty/gitconfig" 2>/dev/null || true
@@ -117,8 +129,7 @@ cat > "$plist" <<PLIST
   <string>com.buildkite.t3-pretty.${AGENT_NAME}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${agent_bin}</string>
-    <string>start</string>
+${program_args}
   </array>
   <key>WorkingDirectory</key>
   <string>$HOME</string>
@@ -169,7 +180,8 @@ echo "Registered Buildkite agent $AGENT_NAME on queues $QUEUES (REVIEW_ONLY=${RE
 
 # A second worker on the same queue lets Origin PR review and the signed DMG
 # run while a local IPA occupies the first agent. Same token, different name.
-# Review-only daily drivers skip it: one worker is enough for Grok reviews.
+# Review-only machines skip it: --spawn already gives them REVIEW_WORKERS
+# workers for parallel Grok reviews.
 if [[ "$REVIEW_ONLY" == "1" ]]; then
   COMPANION_NAME="${COMPANION_NAME:-$AGENT_NAME}"
 fi
