@@ -162,6 +162,7 @@ describe("toPickerSkills", () => {
       (row) => row.id === "octo/skills:tdd",
     )!;
     expect(skill.locked).toBe(true);
+    const onToggleFavorite = vi.fn();
     const html = renderToStaticMarkup(
       createElement(
         Menu,
@@ -172,12 +173,33 @@ describe("toPickerSkills", () => {
           isFavorite: false,
           disabled: true,
           onToggle: () => {},
-          onToggleFavorite: () => {},
+          onToggleFavorite,
         }),
       ),
     );
     expect(html).toContain("aria-disabled");
     expect(html).not.toContain("pointer-events-auto");
+    const row = SkillPickerRow({
+      skill,
+      isEnabled: true,
+      isFavorite: false,
+      disabled: true,
+      onToggle: () => {},
+      onToggleFavorite,
+    }) as ReactElement<{ children: ReactElement<{ children: ReactNode }> }>;
+    const star = Children.toArray(row.props.children.props.children).find(
+      (
+        child,
+      ): child is ReactElement<{
+        disabled?: boolean;
+        onClick: (event: { preventDefault: () => void; stopPropagation: () => void }) => void;
+      }> =>
+        isValidElement<{ "aria-label"?: string }>(child) &&
+        String(child.props["aria-label"]).includes("favorites"),
+    )!;
+    expect(star.props.disabled).toBe(true);
+    star.props.onClick({ preventDefault: () => {}, stopPropagation: () => {} });
+    expect(onToggleFavorite).not.toHaveBeenCalled();
   });
 
   it("does not let the favorite star punch through a disabled non-locked row", () => {

@@ -399,7 +399,7 @@ export const threadLifecycleOutboxLayer = Layer.effect(
 
 export function createThreadLifecyclePendingValueAtom<R, E>(
   runtime: Atom.AtomRuntime<ThreadLifecycleOutbox | R, E>,
-) {
+): Atom.Atom<ThreadLifecyclePendingByEnvironment> {
   const pendingAtom = runtime
     .atom(
       Stream.unwrap(

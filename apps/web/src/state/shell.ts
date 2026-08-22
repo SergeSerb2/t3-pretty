@@ -8,6 +8,7 @@ import {
   createEnvironmentSnapshotAtom,
   createShellEnvironmentAtoms,
   createThreadLifecyclePendingValueAtom,
+  type ThreadLifecyclePendingByEnvironment,
 } from "@t3tools/client-runtime/state/shell";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
@@ -17,7 +18,7 @@ import { connectionAtomRuntime } from "../connection/runtime";
 
 export const shellEnvironment = createShellEnvironmentAtoms(connectionAtomRuntime);
 export const environmentShell = createEnvironmentShellAtoms(connectionAtomRuntime);
-export const threadLifecyclePendingAtom =
+export const threadLifecyclePendingAtom: Atom.Atom<ThreadLifecyclePendingByEnvironment> =
   createThreadLifecyclePendingValueAtom(connectionAtomRuntime);
 export const environmentSnapshotAtom = createEnvironmentSnapshotAtom(
   environmentShell.stateAtom,

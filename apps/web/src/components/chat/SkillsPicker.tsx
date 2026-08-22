@@ -303,7 +303,7 @@ export function SkillPickerRow(props: {
       onCheckedChange={
         skill.locked
           ? (_checked, details) => {
-              details.cancel();
+              details?.cancel?.();
             }
           : props.onToggle
       }
@@ -323,9 +323,13 @@ export function SkillPickerRow(props: {
             "text-muted-foreground/70 opacity-70 hover:text-foreground hover:opacity-100",
             props.isFavorite && "text-foreground opacity-100",
           )}
+          disabled={props.disabled}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
+            if (props.disabled) {
+              return;
+            }
             props.onToggleFavorite();
           }}
           onKeyDown={(event) => {
