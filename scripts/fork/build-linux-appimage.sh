@@ -10,16 +10,15 @@ cd "$root"
 export PATH="${HOME}/.vite-plus/bin:${HOME}/.local/t3-pretty-node24/bin:${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
 export T3CODE_DESKTOP_UPDATE_FEED_URL="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"
 export T3CODE_CLERK_PUBLISHABLE_KEY="${T3CODE_CLERK_PUBLISHABLE_KEY:-pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ}"
-# Public feed location — same literals as .buildkite/pipeline.yml env. Not cluster
-# secrets. Native linux-small inherits pipeline env; keep defaults if a job
-# starts without it so origin-forge upload-assets still has a bucket.
-export T3CODE_RELEASE_S3_BUCKET="${T3CODE_RELEASE_S3_BUCKET:-t3-pretty-releases}"
-export T3CODE_RELEASE_S3_ENDPOINT="${T3CODE_RELEASE_S3_ENDPOINT:-https://a6f705b8c6459d937d32d31555f9fbf6.r2.cloudflarestorage.com}"
-export T3CODE_RELEASE_S3_REGION="${T3CODE_RELEASE_S3_REGION:-auto}"
+# Upload target comes from .buildkite/pipeline.yml env. No in-script defaults:
+# baking the prod bucket in here would publish to the live feed from any run
+# that happens to hold the upload keys. Checked after the secrets load below.
 export GIT_TERMINAL_PROMPT=0
 export GIT_ASKPASS="${GIT_ASKPASS:-/bin/true}"
 export APPIMAGE_EXTRACT_AND_RUN=1
-export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=3072}"
+# No NODE_OPTIONS heap override: linux-small is a tight memory class, and a
+# multi-GiB V8 heap plus rustc and electron-builder gets SIGKILLed. Node's
+# default heap leaves headroom; an OOM still fails the job via set -e.
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "build-linux-appimage.sh must run on Linux." >&2
@@ -51,7 +50,10 @@ if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]] &&
   echo "Need CLOUDFLARE_API_TOKEN or T3CODE_RELEASE_S3_ACCESS_KEY_ID+SECRET from cluster secrets (buildkite-agent secret get). Hosted linux-small has no file-store fallback." >&2
   exit 1
 fi
-test -n "${T3CODE_RELEASE_S3_BUCKET:-}"
+if [[ -z "${T3CODE_RELEASE_S3_BUCKET:-}" || -z "${T3CODE_RELEASE_S3_ENDPOINT:-}" ]]; then
+  echo "T3CODE_RELEASE_S3_BUCKET and T3CODE_RELEASE_S3_ENDPOINT must come from pipeline env (.buildkite/pipeline.yml); refusing to guess an upload target." >&2
+  exit 1
+fi
 
 if git remote get-url upstream >/dev/null 2>&1; then
   git remote set-url upstream https://github.com/pingdotgg/t3code.git

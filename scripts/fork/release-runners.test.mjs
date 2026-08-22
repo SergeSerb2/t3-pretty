@@ -277,7 +277,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(linux, "Hosted linux-small has no file-store fallback");
     assert.include(linux, "T3CODE_RELEASE_S3_BUCKET");
     assert.include(linux, "T3CODE_RELEASE_S3_ENDPOINT");
-    assert.include(linux, "T3CODE_RELEASE_S3_REGION");
+    assert.include(linux, "refusing to guess an upload target");
     assert.isBelow(
       linux.indexOf("Hosted linux-small has no file-store fallback"),
       linux.indexOf("rustup toolchain install"),
