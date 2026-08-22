@@ -10,6 +10,8 @@ import { showMarkdownLinkActionSheet } from "../lib/showMarkdownLinkActions";
 type MobileSelectableMarkdownTextProps = Omit<SelectableMarkdownTextProps, "highlightCode">;
 
 export type {
+  MarkdownImageRenderer,
+  MarkdownImageRequest,
   NativeMarkdownTextStyle,
   SelectableMarkdownSkill,
 } from "@t3tools/mobile-markdown-text/types";

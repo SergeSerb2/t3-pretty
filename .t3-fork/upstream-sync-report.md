@@ -300,3 +300,60 @@
 ## Parent changes intentionally omitted
 
 - `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.34-nightly.20260822.1162`
+- Previously integrated parent nightly: `v0.0.34-nightly.20260822.1155`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — Long-press handling for chat links remains available through `onLinkLongPress`, including direct handling by native selectable text and context propagation for links rendered inside rich markdown blocks.
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — The fork's `highlightCodeEnabled` control remains forwarded to `NativeMarkdownBlock`.
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — The mobile shrink-to-fit text reflow safeguard (`flexShrink: 1` and `minWidth: 0`) and existing native markdown chunk spacing remain intact.
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.types.ts` — Preserved the optional onLinkLongPress callback used by T3 Pretty mobile to expose copy and open actions when long-pressing chat links.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Preserved useOutgoingMessagePreviewUris, which keeps local outgoing image previews visible for newly sent mobile messages.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Preserved renderItem dependency tracking for threadId, workspaceRoot, and focus state so rows refresh with the correct thread/workspace context and active-screen behavior.
+- `apps/server/src/persistence/Migrations.ts` — The established T3 Pretty migration IDs 41–49 remain unchanged, avoiding corruption or reinterpretation of migration history on existing fork databases.
+- `apps/server/src/persistence/Migrations.ts` — Migration 41 continues to add orchestration-event recorded-at persistence.
+- `apps/server/src/persistence/Migrations.ts` — Migration 42 continues to preserve projection thread branch heads and associated PR branch identity behavior.
+- `apps/server/src/persistence/Migrations.ts` — Migration 43 continues to persist World Scenery thread assignments.
+- `apps/server/src/persistence/Migrations.ts` — Migration 44 continues to provide the fork's thread canvas schema.
+- `apps/server/src/persistence/Migrations.ts` — Migration 45 continues to provide thread-activity compaction metadata.
+- `apps/server/src/persistence/Migrations.ts` — Migration 46 continues to persist enabled skill IDs for the skills registry and per-thread materialization behavior.
+- `apps/server/src/persistence/Migrations.ts` — Migration 47 continues to clean up superseded tool-updated activities.
+- `apps/server/src/persistence/Migrations.ts` — Migration 48 continues to persist T3 Pretty's global and per-thread subagent policy.
+- `apps/server/src/persistence/Migrations.ts` — Migration 49 continues to provide the fork's ranked search index.
+- `apps/server/src/server.test.ts` — Preserved the T3 Pretty StorageInventoryService test dependency used by the fork's storage-management behavior.
+- `apps/server/src/ws.ts` — The ShellStream broadcaster dependency used by T3 Pretty's shell synchronization and resume behavior remains available.
+- `apps/server/src/ws.ts` — Bootstrap turn starts safely adopt an already-existing compatible thread, reject cross-project collisions, recover from concurrent duplicate-creation races, and reuse an existing prepared worktree when appropriate.
+- `apps/server/src/ws.ts` — Bootstrap thread creation continues to carry T3 Pretty's enabled-skill IDs and optional global/per-thread subagent policy.
+- `apps/server/src/ws.ts` — Managed project favicons continue to be released after successful favicon replacement or project deletion, preventing leaked fork-managed icon files.
+- `apps/web/src/components/ChatMarkdown.tsx` — T3 Pretty's single-pass extraction of markdown href and inline-code file candidates, including fenced-code, link-label, and markdown-looking inline-code edge cases.
+- `apps/web/src/components/ChatMarkdown.tsx` — T3 Pretty's ref-backed file-link metadata cache remains the first lookup, preserving its render hot-path optimization.
+- `apps/web/src/components/ChatMarkdown.tsx` — The fork's requirement that generated or workspace images remain pinned to the originating conversation is satisfied by the parent replacement's environment- and thread-scoped signed asset request.
+- `packages/ssh/src/tunnel.ts` — Windows SSH remote launch continues to invoke Node directly with the remote state key instead of attempting to run a POSIX shell.
+- `packages/ssh/src/tunnel.ts` — Remote launch script generation remains platform-specific: Windows uses buildRemoteWindowsLaunchScript, while POSIX uses buildRemoteLaunchScript.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — Integrated upstream custom markdown image rendering by accepting `renderImage` and providing it through `MarkdownImageRendererContext` around the rendered markdown tree.
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.types.ts` — Integrated the optional renderImage prop and its MarkdownImageRenderer type contract for app-supplied rendering of markdown images, including workspace-relative image resolution.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Integrated the parent useAssetUrlState API alongside the existing useAssetUrl import.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Added renderMarkdownImage to the renderItem callback dependency list, preventing stale markdown image rendering behavior.
+- `apps/server/src/persistence/Migrations.ts` — The parent AuthSessionClientConnection migration is imported and registered in the fork as migration 50, so its first-party auth-session connection persistence behavior is applied after T3 Pretty's already-published migrations.
+- `apps/server/src/server.test.ts` — Integrated the parent AnalyticsService test dependency for the new telemetry/analytics implementation.
+- `apps/server/src/ws.ts` — WebSocket orchestration dispatches now carry the connecting client's surface and app-version origin metadata when available.
+- `apps/server/src/ws.ts` — Upstream analytics records client thread-start and turn-request events, including bootstrap turn starts that create a thread.
+- `apps/server/src/ws.ts` — Bootstrap-created threads and ordinary normalized commands are routed through the upstream dispatchFromClient wrapper while retaining T3 Pretty's surrounding safeguards.
+- `apps/web/src/components/ChatMarkdown.tsx` — Uncached markdown file links now fall back to resolveMarkdownFileLinkMeta, so valid links missed by the precomputed candidate cache still render as file chips.
+- `apps/web/src/components/ChatMarkdown.tsx` — The parent's first-party markdown image renderer replaces the fork-only renderer, including normalized source classification, constrained lazy loading for direct images, signed thread-scoped workspace assets, loading placeholders, and unavailable-image fallbacks.
+- `apps/web/src/components/ChatMarkdown.tsx` — The obsolete base extractMarkdownLinkHrefs helper remains removed; Pretty's newer combined candidate extractor serves the fork's cache instead.
+- `packages/ssh/src/tunnel.ts` — POSIX remote launches now invoke `sh` with `-l`, enabling login-shell environment initialization before executing the streamed launch script.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/persistence/Migrations.ts` — The parent's numeric assignment of AuthSessionClientConnection as migration 41.. Reason: Migration ID 41 is already published by T3 Pretty as OrchestrationEventRecordedAt, and IDs 42–49 are also occupied. Reusing or renumbering those IDs would regress existing fork databases, so the complete parent migration is retained under the next available ID, 50.
