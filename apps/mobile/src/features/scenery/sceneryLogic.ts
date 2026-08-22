@@ -108,6 +108,8 @@ export interface SceneryAssignment {
   /** Curated "Location, Country" name, denormalized for display. */
   readonly name: string;
   readonly assignedAt: number;
+  /** Which catalog this bind was picked from; absent on pre-theme-set records. */
+  readonly photoSetId?: PhotoSetId;
 }
 
 /** utm_source value Unsplash attribution links must carry. */
@@ -212,16 +214,12 @@ const RECENT_EXCLUSION_WINDOW = 120;
 const MAX_ASSIGNMENTS = 300;
 
 type SeedFile = { readonly photos: ReadonlyArray<SceneryPhoto> };
-type SeedModule = {
-  photos?: ReadonlyArray<SceneryPhoto>;
-  default?: SeedFile;
-};
 
 const EMPTY_SEED: ReadonlyArray<SceneryPhoto> = [];
 const seedCache = new Map<PhotoSetId, ReadonlyArray<SceneryPhoto>>();
 seedCache.set("world-scenery", (seedPoolJson as SeedFile).photos);
 
-const seedLoaders: Record<PhotoSetId, () => Promise<SeedModule>> = {
+const seedLoaders: Record<PhotoSetId, () => Promise<unknown>> = {
   "world-scenery": () => Promise.resolve(seedPoolJson as SeedFile),
   "night-cities": () => import("./seeds/night-cities.json"),
   "deep-forest": () => import("./seeds/deep-forest.json"),
@@ -229,8 +227,21 @@ const seedLoaders: Record<PhotoSetId, () => Promise<SeedModule>> = {
   "grand-buildings": () => import("./seeds/grand-buildings.json"),
 };
 
-function photosFromModule(mod: SeedModule): ReadonlyArray<SceneryPhoto> {
-  return mod.photos ?? mod.default?.photos ?? [];
+/** Metro/Vite JSON imports show up as `{photos}`, `{default:{photos}}`, or the array. */
+export function photosFromSeedModule(mod: unknown): ReadonlyArray<SceneryPhoto> {
+  if (Array.isArray(mod)) {
+    return mod as ReadonlyArray<SceneryPhoto>;
+  }
+  if (mod !== null && typeof mod === "object") {
+    const record = mod as { photos?: unknown; default?: unknown };
+    if (Array.isArray(record.photos)) {
+      return record.photos as ReadonlyArray<SceneryPhoto>;
+    }
+    if ("default" in record) {
+      return photosFromSeedModule(record.default);
+    }
+  }
+  return EMPTY_SEED;
 }
 
 export function peekSeedPhotos(photoSetId: PhotoSetId): ReadonlyArray<SceneryPhoto> {
@@ -239,11 +250,13 @@ export function peekSeedPhotos(photoSetId: PhotoSetId): ReadonlyArray<SceneryPho
 
 export async function loadSeedPhotos(photoSetId: PhotoSetId): Promise<ReadonlyArray<SceneryPhoto>> {
   const hit = seedCache.get(photoSetId);
-  if (hit && (photoSetId === "world-scenery" || hit.length > 0)) {
+  if (hit && hit.length > 0) {
     return hit;
   }
-  const loaded = photosFromModule(await seedLoaders[photoSetId]());
-  seedCache.set(photoSetId, loaded);
+  const loaded = photosFromSeedModule(await seedLoaders[photoSetId]());
+  if (loaded.length > 0) {
+    seedCache.set(photoSetId, loaded);
+  }
   return loaded;
 }
 

@@ -28,7 +28,7 @@ import { isBoringMobileTheme } from "../../lib/mobileTheme";
 import type { MobileSceneryPreferences } from "../../persistence/mobile-preferences";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
-import { parsePhotoSetId, type PhotoSetId } from "./photoSets";
+import { DEFAULT_PHOTO_SET_ID, parsePhotoSetId, type PhotoSetId } from "./photoSets";
 import { useReduceTransparency } from "./useReduceTransparency";
 import {
   capAssignments,
@@ -138,7 +138,8 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
   const photoForThreadKey = useCallback(
     (threadKey: string): SceneryPhoto | null => {
       const assignment = scenery.assignments[threadKey];
-      if (assignment !== undefined) {
+      const boundSet = assignment?.photoSetId ?? DEFAULT_PHOTO_SET_ID;
+      if (assignment !== undefined && boundSet === scenery.photoSetId) {
         const photo = pool.find((entry) => entry.id === assignment.photoId);
         if (photo !== undefined) {
           return photo;
@@ -146,7 +147,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
       }
       return fallbackPhoto(pool, threadKey);
     },
-    [pool, scenery.assignments],
+    [pool, scenery.assignments, scenery.photoSetId],
   );
 
   const dailyPhoto = useMemo(() => dailyFeatured(pool, dailySeed()), [pool]);
@@ -175,7 +176,12 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
       }
       const current = sceneryRef.current;
       const existing = current.assignments[threadKey];
-      if (existing !== undefined && pool.some((entry) => entry.id === existing.photoId)) {
+      const boundSet = existing?.photoSetId ?? DEFAULT_PHOTO_SET_ID;
+      if (
+        existing !== undefined &&
+        boundSet === current.photoSetId &&
+        pool.some((entry) => entry.id === existing.photoId)
+      ) {
         return;
       }
       const pick = pickScenery(pool, current.assignments);
@@ -184,7 +190,12 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
       }
       const assignments = capAssignments({
         ...current.assignments,
-        [threadKey]: { photoId: pick.id, name: pick.name, assignedAt: Date.now() },
+        [threadKey]: {
+          photoId: pick.id,
+          name: pick.name,
+          assignedAt: Date.now(),
+          photoSetId: current.photoSetId,
+        },
       });
       persistScenery({ assignments });
     },

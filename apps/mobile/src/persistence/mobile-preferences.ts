@@ -64,6 +64,8 @@ export interface MobileSceneryAssignment {
   /** Curated "Location, Country" name, denormalized for display. */
   readonly name: string;
   readonly assignedAt: number;
+  /** Catalog this bind was picked from; absent on older records. */
+  readonly photoSetId?: PhotoSetId;
 }
 
 export interface MobileSceneryPreferences {
@@ -256,6 +258,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
             photoId: assignment.photoId,
             name: assignment.name,
             assignedAt: assignment.assignedAt,
+            ...("photoSetId" in assignment && typeof assignment.photoSetId === "string"
+              ? { photoSetId: parsePhotoSetId(assignment.photoSetId) }
+              : {}),
           };
         }
       }
