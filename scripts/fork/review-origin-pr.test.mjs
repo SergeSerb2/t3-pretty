@@ -191,7 +191,8 @@ describe("Origin Grok review workflow wiring", () => {
     assert.notInclude(pipeline, "- .github/workflows/fork-pr-review.yml");
     assert.include(pipeline, "run-trusted-origin-pr-ci.sh");
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
-    assert.include(reviewStep.slice(0, 800), "queue: macos-release");
+    assert.include(reviewStep.slice(0, 900), "queue: macos-release");
+    assert.include(reviewStep.slice(0, 900), "soft_fail: true");
     assert.include(reviewStep, "automation");
     assert.notInclude(reviewStep, "build.pull_request");
     assert.include(reviewStep, "briefly waits for the PR");

@@ -88,6 +88,9 @@ steps:
     key: origin-pr-review
     # Origin does not reliably start a second Buildkite build when a PR opens.
     # Let the push build run; the review script briefly waits for the PR.
+    # A crashed or timed-out Grok review must not red the whole build.
+    # Posted findings still gate via origin-pr-comments.
+    soft_fail: true
     if: >-
       build.branch != "main" && build.source != "schedule" &&
       !(build.branch =~ /^automation\//)

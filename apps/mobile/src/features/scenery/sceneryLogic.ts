@@ -11,6 +11,10 @@
  * render (imgix `blur` param), so the device does no gaussian work.
  */
 import { DEFAULT_PHOTO_SET_ID, type PhotoSetId } from "./photoSets";
+import deepForestSeedJson from "./seeds/deep-forest.json";
+import grandBuildingsSeedJson from "./seeds/grand-buildings.json";
+import nightCitiesSeedJson from "./seeds/night-cities.json";
+import nightSkySeedJson from "./seeds/night-sky.json";
 import seedPoolJson from "./seedPool.json";
 
 export interface Rgb {
@@ -215,50 +219,13 @@ const MAX_ASSIGNMENTS = 300;
 
 type SeedFile = { readonly photos: ReadonlyArray<SceneryPhoto> };
 
-const EMPTY_SEED: ReadonlyArray<SceneryPhoto> = [];
-const seedCache = new Map<PhotoSetId, ReadonlyArray<SceneryPhoto>>();
-seedCache.set("world-scenery", (seedPoolJson as SeedFile).photos);
-
-const seedLoaders: Record<PhotoSetId, () => Promise<unknown>> = {
-  "world-scenery": () => Promise.resolve(seedPoolJson as SeedFile),
-  "night-cities": () => import("./seeds/night-cities.json"),
-  "deep-forest": () => import("./seeds/deep-forest.json"),
-  "night-sky": () => import("./seeds/night-sky.json"),
-  "grand-buildings": () => import("./seeds/grand-buildings.json"),
+export const SEED_POOLS: Record<PhotoSetId, ReadonlyArray<SceneryPhoto>> = {
+  "world-scenery": (seedPoolJson as SeedFile).photos,
+  "night-cities": (nightCitiesSeedJson as SeedFile).photos,
+  "deep-forest": (deepForestSeedJson as SeedFile).photos,
+  "night-sky": (nightSkySeedJson as SeedFile).photos,
+  "grand-buildings": (grandBuildingsSeedJson as SeedFile).photos,
 };
-
-/** Metro/Vite JSON imports show up as `{photos}`, `{default:{photos}}`, or the array. */
-export function photosFromSeedModule(mod: unknown): ReadonlyArray<SceneryPhoto> {
-  if (Array.isArray(mod)) {
-    return mod as ReadonlyArray<SceneryPhoto>;
-  }
-  if (mod !== null && typeof mod === "object") {
-    const record = mod as { photos?: unknown; default?: unknown };
-    if (Array.isArray(record.photos)) {
-      return record.photos as ReadonlyArray<SceneryPhoto>;
-    }
-    if ("default" in record) {
-      return photosFromSeedModule(record.default);
-    }
-  }
-  return EMPTY_SEED;
-}
-
-export function peekSeedPhotos(photoSetId: PhotoSetId): ReadonlyArray<SceneryPhoto> {
-  return seedCache.get(photoSetId) ?? EMPTY_SEED;
-}
-
-export async function loadSeedPhotos(photoSetId: PhotoSetId): Promise<ReadonlyArray<SceneryPhoto>> {
-  const hit = seedCache.get(photoSetId);
-  if (hit && hit.length > 0) {
-    return hit;
-  }
-  const loaded = photosFromSeedModule(await seedLoaders[photoSetId]());
-  if (loaded.length > 0) {
-    seedCache.set(photoSetId, loaded);
-  }
-  return loaded;
-}
 
 /**
  * The photo pool: the bundled seed merged with photos fetched at runtime
@@ -266,7 +233,7 @@ export async function loadSeedPhotos(photoSetId: PhotoSetId): Promise<ReadonlyAr
  */
 export function getSceneryPool(
   fetchedPhotos: ReadonlyArray<SceneryPhoto>,
-  seedPhotos: ReadonlyArray<SceneryPhoto> = peekSeedPhotos(DEFAULT_PHOTO_SET_ID),
+  seedPhotos: ReadonlyArray<SceneryPhoto> = SEED_POOLS[DEFAULT_PHOTO_SET_ID],
 ): SceneryPhoto[] {
   const byId = new Map<string, SceneryPhoto>();
   for (const photo of seedPhotos) {
@@ -279,7 +246,7 @@ export function getSceneryPool(
 }
 
 export function sceneryPoolForSet(photoSetId: PhotoSetId): ReadonlyArray<SceneryPhoto> {
-  return getSceneryPool([], peekSeedPhotos(photoSetId));
+  return getSceneryPool([], SEED_POOLS[photoSetId]);
 }
 
 /** The World Scenery pool — the default set and the one golden tests pin. */
