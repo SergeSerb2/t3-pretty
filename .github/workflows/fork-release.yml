@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 # Buildkite's GitHub Actions importer does not copy pipeline `env:` into
 # imported jobs. Public feed values have to live here as literals.
@@ -50,7 +50,7 @@ jobs:
     name: Resolve T3 Pretty release
     continue-on-error: true
     permissions:
-      contents: write
+      contents: read
     runs-on: ubuntu-latest
     # Bound the importer so a stalled hosted job cannot run for hours.
     timeout-minutes: 15
@@ -135,9 +135,10 @@ jobs:
             gha_out "relevant=false"
             exit 0
           fi
-          # docs(changelog) still changes apps/web. Keep relevant=true so
-          # imported jobs (WSL node-pty) finish after a notes-push retry.
-          # resolve-fork-release.mjs reuses the already-minted version.
+          # docs(changelog) still changes apps/web, so notes pushes stay
+          # relevant. resolve-fork-release.mjs reuses the already-minted
+          # version from the subject; a fork tag covering the notes commit
+          # instead ends preflight early at the already-released check.
           if [[ "${GITHUB_EVENT_NAME}" != "push" ]] || ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
             gha_out "relevant=true"
             exit 0

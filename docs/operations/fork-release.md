@@ -111,11 +111,14 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    packaging instead of publishing it twice. windows-release first reuses the
    notes commit from `origin/main` when it covers the same version, so both
    installers ship the same What's New text, and generates locally only as a
-   fallback. A retry whose HEAD is
+   fallback. Both packagers run `--publish` after their uploads, so main
+   still gets exactly one notes commit when one packager never ran or died
+   mid-release; the later publisher reuses the commit already on main. A retry whose HEAD is
    already `docs(changelog):` skips generation so it cannot mint another
-   notes commit. Hosted Linux preflight reuses that already-minted version
-   instead of minting another, so imported jobs (WSL node-pty) still run when
-   a retry lands after the notes push. Native packagers reuse the same version
+   notes commit. Hosted Linux preflight reads that already-minted version
+   from the commit subject instead of minting another; when a fork tag
+   covers the notes commit, the already-released check skips the imported
+   jobs (WSL node-pty) instead. Native packagers reuse the same version
    and skip packaging only when the public feed already lists it, so a retry
    after a changelog push still produces a DMG/NSIS. Generation failures warn
    and the release continues; the next run fills whatever is still missing.

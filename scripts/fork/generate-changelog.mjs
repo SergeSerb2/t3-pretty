@@ -367,20 +367,24 @@ function readCliProxyToken() {
   if (fromEnv) {
     return fromEnv;
   }
+  // The native packagers export the key via load_secret; the file fallback
+  // only covers manual runs.
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
-  const candidates = [
-    home ? NodePath.join(home, ".config", "t3-pretty", "CLI_PROXY_API_KEY") : "",
-    "/Users/m1-dev/.config/t3-pretty/CLI_PROXY_API_KEY",
-  ].filter(Boolean);
-  for (const candidate of candidates) {
-    try {
-      const value = NodeFS.readFileSync(candidate, "utf8").replace(/\r/g, "").trim();
-      if (value) {
-        return value;
-      }
-    } catch {
-      // File-backed secrets are optional; fallback entries still ship.
+  if (!home) {
+    return "";
+  }
+  try {
+    const value = NodeFS.readFileSync(
+      NodePath.join(home, ".config", "t3-pretty", "CLI_PROXY_API_KEY"),
+      "utf8",
+    )
+      .replace(/\r/g, "")
+      .trim();
+    if (value) {
+      return value;
     }
+  } catch {
+    // A file-backed secret is optional; fallback entries still ship.
   }
   return "";
 }

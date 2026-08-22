@@ -215,4 +215,13 @@ if ($LASTEXITCODE -ne 0) {
   throw "Windows updater upload exited $LASTEXITCODE"
 }
 
+# Publish the baked notes when the Mac job has not: main must not keep the
+# frozen 2026-08-12 file when macos-release died before its own --publish.
+# The script no-ops when the working tree has no pending notes or main
+# already carries this version's notes commit.
+node "$root\scripts\fork\generate-changelog.mjs" --publish
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "warning: release notes ship with $version but could not be pushed to main"
+}
+
 Write-Host "Windows NSIS artifacts in $publish"

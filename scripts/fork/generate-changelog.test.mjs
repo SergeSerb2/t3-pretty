@@ -520,6 +520,13 @@ describe("release workflow wiring", () => {
       windows.indexOf("origin/main -- apps/web/src/changelog/changelogData.ts"),
       windows.indexOf("generate-changelog.mjs"),
     );
+    // Windows also publishes after its upload so main still gets the notes
+    // when macos-release never ran or died before its own --publish.
+    assert.include(windows, 'generate-changelog.mjs" --publish');
+    assert.isBelow(
+      windows.indexOf("upload-assets"),
+      windows.indexOf('generate-changelog.mjs" --publish'),
+    );
     assert.notInclude(windows, "Changelog-only commit; skipping Windows packaging.");
   });
 
