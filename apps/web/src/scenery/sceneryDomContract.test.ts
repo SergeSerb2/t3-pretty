@@ -357,6 +357,15 @@ describe("scenery light/dark appearance crossfade", () => {
     expect(sceneryInkTransitionSource).toContain("sceneryInkTransition");
   });
 
+  it("keeps the chat transcript out of the ink view-transition overlay", () => {
+    expect(sceneryCssSource).toContain("view-transition-name: scenery-chat-transcript");
+    expect(sceneryCssSource).toContain(
+      "html[data-scenery-ink-transition]::view-transition-old(scenery-chat-transcript)",
+    );
+    expect(sceneryCssSource).toContain("display: none");
+    expect(sceneryInkTransitionSource).toContain("document.hidden");
+  });
+
   it("parks the CSS layers only when the view transition really animates", () => {
     // Fallbacks (no API, reduced motion, a skipped start) must keep the CSS
     // dissolve; parking layers for a snapshot that never happens hard-cuts

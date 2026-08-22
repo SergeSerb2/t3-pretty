@@ -192,6 +192,25 @@ html[data-scenery-ink-transition]::view-transition-new(root) {
   mix-blend-mode: normal;
 }
 
+/* Thread switches capture two different transcripts in the root snapshot.
+   Isolating the list and hiding the outgoing copy stops the plus-lighter
+   overlay that reads as missing/doubled letters. */
+html[data-scenery-ink-transition] [data-chat-transcript] {
+  view-transition-name: scenery-chat-transcript;
+}
+
+html[data-scenery-ink-transition]::view-transition-group(scenery-chat-transcript) {
+  animation: none;
+}
+
+html[data-scenery-ink-transition]::view-transition-old(scenery-chat-transcript) {
+  display: none;
+}
+
+html[data-scenery-ink-transition]::view-transition-new(scenery-chat-transcript) {
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .scenery-layer__group,
   .scenery-layer__wash,

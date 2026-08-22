@@ -53,6 +53,10 @@ describe("row arrival contract with the messages timeline", () => {
     expect(messagesTimelineSource).toContain('data-timeline-root="true"');
   });
 
+  it("the timeline viewport still exposes a unique transcript hook", () => {
+    expect(messagesTimelineSource).toContain('data-chat-transcript="true"');
+  });
+
   it("seeds the first paint of a thread instead of racing the load window", () => {
     expect(motionDriverSource).toContain("shouldDeferThreadSeed");
     expect(motionDriverSource).toContain("firstPaintForThread");

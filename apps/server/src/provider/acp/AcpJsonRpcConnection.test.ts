@@ -35,7 +35,7 @@ describe("AcpSessionRuntime", () => {
         protocolVersion: 1,
         clientCapabilities: {
           fs: { readTextFile: false, writeTextFile: false },
-          terminal: false,
+          terminal: true,
           _meta: { parameterizedModelPicker: true },
         },
       });

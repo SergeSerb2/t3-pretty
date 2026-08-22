@@ -29,12 +29,25 @@ describe("canAnimateSceneryInkTransition", () => {
   it("is true when the API exists and motion is allowed", () => {
     vi.stubGlobal("document", {
       documentElement: { dataset: {} },
+      hidden: false,
       startViewTransition: () => ({ finished: Promise.resolve() }),
     });
     vi.stubGlobal("window", {
       matchMedia: () => ({ matches: false }),
     });
     expect(canAnimateSceneryInkTransition()).toBe(true);
+  });
+
+  it("is false when the document is hidden", () => {
+    vi.stubGlobal("document", {
+      documentElement: { dataset: {} },
+      hidden: true,
+      startViewTransition: () => ({ finished: Promise.resolve() }),
+    });
+    vi.stubGlobal("window", {
+      matchMedia: () => ({ matches: false }),
+    });
+    expect(canAnimateSceneryInkTransition()).toBe(false);
   });
 });
 

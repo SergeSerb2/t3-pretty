@@ -32,6 +32,11 @@ export function canAnimateSceneryInkTransition(): boolean {
   if (typeof document === "undefined" || typeof window === "undefined") {
     return false;
   }
+  // Background tabs throttle rAF; a snapshot taken here can stick as a
+  // garbled overlay until the tab is focused again.
+  if (document.hidden) {
+    return false;
+  }
   // While useTheme's swap dissolve is mid-flight, a second startViewTransition
   // would skip it and park the scenery layers; commit directly instead.
   if (document.documentElement.dataset.themeSwap !== undefined) {
