@@ -1808,6 +1808,10 @@ export const OrchestrationThreadSearchMatch = Schema.Struct({
   source: OrchestrationThreadSearchSource,
   snippet: Schema.String.check(Schema.isMaxLength(240)),
   messageCreatedAt: Schema.NullOr(IsoDateTime),
+  // BM25 relevance of the winning message. Absent on legacy substring matches
+  // (queries that yield no indexable terms) and from servers predating ranked
+  // search; older clients simply ignore the field.
+  score: Schema.optionalKey(Schema.Number),
 });
 export type OrchestrationThreadSearchMatch = typeof OrchestrationThreadSearchMatch.Type;
 

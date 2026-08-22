@@ -26,6 +26,7 @@ import {
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
   ClientOrchestrationCommand,
+  OrchestrationThreadSearchMatch,
   isProviderSendTurnSupportedImageMimeType,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
@@ -1021,3 +1022,20 @@ it("isProviderSendTurnSupportedImageMimeType accepts raster formats and rejects 
   assert.strictEqual(isProviderSendTurnSupportedImageMimeType("IMAGE/JPEG"), true);
   assert.strictEqual(isProviderSendTurnSupportedImageMimeType("image/svg+xml"), false);
 });
+
+it.effect("decodes a thread search match with and without a score", () =>
+  Effect.gen(function* () {
+    const decodeSearchMatch = Schema.decodeUnknownEffect(OrchestrationThreadSearchMatch);
+    const base = {
+      threadId: "thread-1",
+      projectId: "project-1",
+      source: "user",
+      snippet: "hello",
+      messageCreatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const withoutScore = yield* decodeSearchMatch(base);
+    assert.strictEqual(withoutScore.score, undefined);
+    const withScore = yield* decodeSearchMatch({ ...base, score: 1.25 });
+    assert.strictEqual(withScore.score, 1.25);
+  }),
+);

@@ -69,6 +69,8 @@ import {
 } from "../threadDetailCursor.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
+import { ThreadSearch, ThreadSearchLive } from "../../search/ThreadSearch.ts";
+import { rankedSearchTerms } from "../../search/tokenizer.ts";
 import {
   ProjectionSnapshotQuery,
   type ProjectionFullThreadDiffContext,
@@ -383,6 +385,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const threadPlanProgress = yield* ThreadPlanProgressService;
   const toolProgress = yield* ToolProgressService;
   const sql = yield* SqlClient.SqlClient;
+  const threadSearch = yield* ThreadSearch;
   const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const repositoryIdentityResolutionConcurrency = 4;
   const resolveRepositoryIdentitiesForProjects = Effect.fn(
@@ -2543,6 +2546,13 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const searchThreads: ProjectionSnapshotQueryShape["searchThreads"] = Effect.fn(
     "ProjectionSnapshotQuery.searchThreads",
   )(function* (input) {
+    // Ranked index search for tokenizable queries; the legacy substring scan
+    // stays for queries with no indexable terms (single characters,
+    // punctuation) and as the behavior of servers without an index.
+    const terms = rankedSearchTerms(input.query);
+    if (terms !== null) {
+      return yield* threadSearch.searchThreads({ request: input, terms });
+    }
     const escapedQuery = escapeLikePattern(input.query);
     const rows = yield* searchActiveThreadRows({
       pattern: `%${escapedQuery}%`,
@@ -3143,4 +3153,4 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
 export const OrchestrationProjectionSnapshotQueryLive = Layer.effect(
   ProjectionSnapshotQuery,
   makeProjectionSnapshotQuery,
-);
+).pipe(Layer.provideMerge(ThreadSearchLive));

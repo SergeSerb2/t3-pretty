@@ -55,6 +55,7 @@ import {
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
 import { attachmentFeedPreviewPath } from "../../assets/attachmentFeedPreviewPath.ts";
+import { SearchIndex, SearchIndexLive } from "../../search/SearchIndex.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -66,6 +67,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   threadTurns: "projection.thread-turns",
   checkpoints: "projection.checkpoints",
   pendingApprovals: "projection.pending-approvals",
+  searchIndex: "projection.search-index",
 } as const;
 
 type ProjectorName =
@@ -515,6 +517,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionThreadSessionRepository = yield* ProjectionThreadSessionRepository;
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
+    const searchIndex = yield* SearchIndex;
 
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -1624,6 +1627,39 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyCheckpointsProjection: ProjectorDefinition["apply"] = () => Effect.void;
 
+    const applySearchIndexProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applySearchIndexProjection",
+    )(function* (event, _attachmentSideEffects) {
+      switch (event.type) {
+        case "thread.message-sent": {
+          // Streaming deltas only append text; the final message-sent event
+          // indexes the finished message.
+          if (event.payload.streaming) {
+            return;
+          }
+          yield* searchIndex.reindexMessage({ messageId: event.payload.messageId });
+          return;
+        }
+
+        case "thread.turn-diff-completed": {
+          // Turn completion can make an assistant message canonical (its turn
+          // row gains assistant_message_id), which makes it searchable.
+          if (event.payload.assistantMessageId !== null) {
+            yield* searchIndex.reindexMessage({ messageId: event.payload.assistantMessageId });
+          }
+          return;
+        }
+
+        case "thread.reverted": {
+          yield* searchIndex.reindexThread({ threadId: event.payload.threadId });
+          return;
+        }
+
+        default:
+          return;
+      }
+    });
+
     const applyPendingApprovalsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyPendingApprovalsProjection",
     )(function* (event, _attachmentSideEffects) {
@@ -1785,6 +1821,12 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         name: ORCHESTRATION_PROJECTOR_NAMES.threads,
         apply: applyThreadsProjection,
       },
+      // Last on purpose: reads projection_thread_messages / projection_turns
+      // written by the projectors above within the same transaction.
+      {
+        name: ORCHESTRATION_PROJECTOR_NAMES.searchIndex,
+        apply: applySearchIndexProjection,
+      },
     ];
 
     // Attachment cleanup only happens for a handful of event types; skip the
@@ -1928,4 +1970,5 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
+  Layer.provideMerge(SearchIndexLive),
 );
