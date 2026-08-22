@@ -979,4 +979,27 @@ it.layer(makeTestLayer("t3-thread-search-unicode-"))("ThreadSearch", (it) => {
       assert.ok(result.matches[0]?.snippet.includes("CÉDRIC"));
     }),
   );
+
+  it.effect("keeps the snippet window aligned when lowercasing changes length", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+
+      yield* appendProject("project-2");
+      yield* appendThread("thread-2", "project-2");
+      yield* appendMessage({
+        eventId: "evt-m2",
+        threadId: "thread-2",
+        messageId: "message-2",
+        role: "user",
+        // "İ" lowercases to two UTF-16 units ("i̇"), so folded-string offsets
+        // drift from the original. The window must still land on the term.
+        text: `${"İ".repeat(200)} lorem ipsum dolor sit amet windowtargetzebra ${"consectetur adipiscing elit ".repeat(12)}`,
+      });
+      yield* projectionPipeline.bootstrap;
+
+      const result = yield* search("windowtargetzebra");
+      assert.equal(result.matches.length, 1);
+      assert.ok(result.matches[0]?.snippet.includes("windowtargetzebra"));
+    }),
+  );
 });

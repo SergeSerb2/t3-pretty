@@ -71,17 +71,21 @@ function buildRankedSnippet(text: string, terms: RankedSearchTerms, rawQuery: st
 
   // Fold with toLowerCase like the tokenizer, so Unicode terms ("cédric")
   // locate their window instead of falling back to the message start. Exact
-  // and prefix terms are tokenizer output, already lowercased.
+  // and prefix terms are tokenizer output, already lowercased. The fold can
+  // change UTF-16 length ("İ" → "i̇"), which would shift offsets against the
+  // original; a length-preserving fold keeps indexes aligned 1:1. When it
+  // does not, terms already lowercase in the text still locate directly.
   const foldedText = normalizedText.toLowerCase();
+  const indexedText = foldedText.length === normalizedText.length ? foldedText : normalizedText;
   let matchIndex = -1;
   for (const term of [...terms.exact, terms.prefix]) {
-    const index = foldedText.indexOf(term);
+    const index = indexedText.indexOf(term);
     if (index !== -1 && (matchIndex === -1 || index < matchIndex)) {
       matchIndex = index;
     }
   }
   if (matchIndex === -1) {
-    matchIndex = foldedText.indexOf(rawQuery.replace(/\s+/g, " ").trim().toLowerCase());
+    matchIndex = indexedText.indexOf(rawQuery.replace(/\s+/g, " ").trim().toLowerCase());
   }
   if (matchIndex === -1) {
     matchIndex = 0;
