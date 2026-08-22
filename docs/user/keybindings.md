@@ -54,8 +54,9 @@ so add one in **Settings** → **Keybindings** if you want to use it.
 
 The command palette searches active thread titles, projects, branches, user messages, and final
 agent responses across connected environments. Message matches show one labeled excerpt while
-keeping the thread's project, branch, and machine context visible. Message search begins after two
-characters and uses SQLite's ASCII case-insensitive matching.
+keeping the thread's project, branch, and machine context visible. Message search begins after
+two characters. It matches on whole words and ranks threads by relevance; the last word of a
+query also matches the start of words, so results refine as you type.
 
 The full command list and the current defaults are shown in **Settings** → **Keybindings**, which
 always matches the build you are running. Use that rather than a copied list.
