@@ -289,11 +289,14 @@ describe("RelayEnvironmentDiscovery", () => {
           yield* Fiber.join(offlineFiber);
           expect((yield* SubscriptionRef.get(discovery.state)).environments.size).toBe(2);
 
+          // The explicit refresh claimed the auto-refresh window; only a
+          // reconnect after it elapses triggers a new listing.
+          yield* TestClock.adjust("61 seconds");
           yield* SubscriptionRef.set(harness.networkStatus, "online");
           yield* Deferred.await(harness.secondListCall);
           expect(yield* Ref.get(harness.listCalls)).toBe(2);
         }).pipe(Effect.provide(harness.layer));
-      }),
+      }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("publishes listing failures without rejecting the refresh command", () =>
@@ -419,28 +422,40 @@ describe("RelayEnvironmentDiscovery", () => {
     }),
   );
 
-  it.effect("refreshes discovered environments when the application becomes active", () =>
-    Effect.gen(function* () {
-      const harness = yield* makeHarness();
-      yield* Effect.gen(function* () {
-        const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
-        const requests = yield* Ref.get(harness.statusRequests);
-        for (const environment of environments) {
-          yield* Deferred.succeed(
-            requests.get(environment.environmentId)!,
-            status(environment, "online"),
-          );
-        }
-        yield* discovery.refresh;
-        yield* Effect.yieldNow;
+  it.effect(
+    "claims the auto-refresh window on an explicit refresh, so a wakeup inside it skips",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness();
+        yield* Effect.gen(function* () {
+          const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+          const requests = yield* Ref.get(harness.statusRequests);
+          for (const environment of environments) {
+            yield* Deferred.succeed(
+              requests.get(environment.environmentId)!,
+              status(environment, "online"),
+            );
+          }
+          yield* discovery.refresh;
+          yield* Effect.yieldNow;
 
-        yield* harness.wake("application-active");
-        yield* Deferred.await(harness.secondListCall);
+          // The explicit refresh just ran the list+N probes, so a wakeup inside
+          // the window does not repeat them.
+          yield* harness.wake("application-active");
+          for (let attempt = 0; attempt < 100; attempt++) {
+            yield* Effect.yieldNow;
+          }
+          expect(yield* Ref.get(harness.listCalls)).toBe(1);
 
-        expect(yield* Ref.get(harness.listCalls)).toBe(2);
-        expect((yield* SubscriptionRef.get(discovery.state)).loaded).toBe(true);
-      }).pipe(Effect.provide(harness.layer), Effect.scoped);
-    }),
+          // Once the window elapses, the wakeup refreshes again.
+          yield* TestClock.adjust("61 seconds");
+          yield* harness.wake("application-active");
+          yield* Deferred.await(harness.secondListCall);
+
+          expect(yield* Ref.get(harness.listCalls)).toBe(2);
+          expect((yield* SubscriptionRef.get(discovery.state)).loaded).toBe(true);
+        }).pipe(Effect.provide(harness.layer), Effect.scoped);
+      }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("coalesces rapid application-active wakeups into one refresh", () =>

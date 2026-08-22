@@ -30,7 +30,9 @@ export type RelayEnvironmentAvailability = "checking" | "online" | "offline" | "
 // on every foreground, and each wakeup-triggered refresh costs 1 + N relay
 // requests (list plus a status probe per environment, each billed Worker CPU).
 // Explicit refreshes (pull-to-refresh, screen mounts, catalog polls, sign-in)
-// are never throttled; only wakeup- and connectivity-driven ones coalesce.
+// are never throttled; only wakeup- and connectivity-driven ones coalesce. A
+// successful full refresh also claims the window, since it just ran the same
+// list+N probe fan-out an auto refresh would repeat.
 const AUTO_REFRESH_MIN_INTERVAL_MS = 60_000;
 
 export interface RelayDiscoveredEnvironment {
@@ -126,6 +128,9 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
   const activeAccountId = yield* Ref.make<Option.Option<string>>(Option.none());
   const refreshGeneration = yield* Ref.make(0);
   const offlineReportFingerprints = yield* Ref.make<ReadonlyMap<string, string>>(new Map());
+  // Seeded so the first wakeup-driven refresh always runs; only repeats inside
+  // the window coalesce. (Tests start on a TestClock at time 0.)
+  const lastAutoRefreshStartedAt = yield* Ref.make(-AUTO_REFRESH_MIN_INTERVAL_MS);
 
   const clearOfflineReport = Effect.fn("RelayEnvironmentDiscovery.clearOfflineReport")(function* (
     environmentId: string,
@@ -322,6 +327,12 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
           ...current,
           refreshing: false,
         }));
+        if (refreshStatuses) {
+          // A full refresh just paid the list+N probes, so wakeup- and
+          // connectivity-driven paths skip until the window elapses. Explicit
+          // refreshes never read this timestamp and stay unblocked.
+          yield* Ref.set(lastAutoRefreshStartedAt, yield* Clock.currentTimeMillis);
+        }
       }).pipe(
         Effect.catch((error) =>
           Effect.gen(function* () {
@@ -344,9 +355,6 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
   const refresh = refreshDiscovery(true);
   const refreshCatalog = refreshDiscovery(false);
 
-  // Seeded so the first wakeup-driven refresh always runs; only repeats inside
-  // the window coalesce. (Tests start on a TestClock at time 0.)
-  const lastAutoRefreshStartedAt = yield* Ref.make(-AUTO_REFRESH_MIN_INTERVAL_MS);
   const refreshAutoThrottled = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     // Claim the window atomically so overlapping wakeup and connectivity
