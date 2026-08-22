@@ -106,7 +106,6 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
   // Extra sets import lazily. Prefer the in-memory cache on the same tick as a
   // set change (world-scenery is always cached; extras after first load) so
   // the pool is never [] just because seedState still names the previous set.
-  // An empty peek means this extra set has never been imported — wait.
   const [seedState, setSeedState] = useState<{
     readonly photoSetId: PhotoSetId;
     readonly photos: ReadonlyArray<SceneryPhoto>;
@@ -122,8 +121,18 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
       cancelled = true;
     };
   }, [photoSetId]);
+  const cachedSeeds = peekSeedPhotos(photoSetId);
+  // First switch to a never-imported extra set: the cache peeks empty until
+  // loadSeedPhotos resolves. Keep serving the previous pool in that window so
+  // threads never see an empty pool; ensureThreadAssignment gates its pick on
+  // seedsReady so nothing binds to the wrong set while it is stale.
+  const seedsReady = seedState.photoSetId === photoSetId || cachedSeeds.length > 0;
   const photos =
-    seedState.photoSetId === photoSetId ? seedState.photos : peekSeedPhotos(photoSetId);
+    seedState.photoSetId === photoSetId
+      ? seedState.photos
+      : cachedSeeds.length > 0
+        ? cachedSeeds
+        : seedState.photos;
   const pool = useMemo(() => getSceneryPool([], photos), [photos]);
 
   const photoForThreadKey = useCallback(
@@ -161,6 +170,9 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
 
   const ensureThreadAssignment = useCallback(
     (threadKey: string) => {
+      if (!seedsReady) {
+        return;
+      }
       const current = sceneryRef.current;
       const existing = current.assignments[threadKey];
       if (existing !== undefined && pool.some((entry) => entry.id === existing.photoId)) {
@@ -176,7 +188,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
       });
       persistScenery({ assignments });
     },
-    [persistScenery, pool],
+    [persistScenery, pool, seedsReady],
   );
 
   const setEnabled = useCallback(
