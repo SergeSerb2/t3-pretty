@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { handleRootMenuOpenChange, isSpuriousRootSiblingOpen } from "./menu.logic";
+import {
+  handleRootMenuOpenChange,
+  isSpuriousNestedMenuDismiss,
+  isSpuriousRootSiblingOpen,
+} from "./menu.logic";
 
 describe("isSpuriousRootSiblingOpen", () => {
   it("keeps a standalone root open when a nested submenu reports sibling-open", () => {
@@ -58,5 +62,51 @@ describe("isSpuriousRootSiblingOpen", () => {
     handleRootMenuOpenChange(false, details, onOpenChange);
     expect(cancel).not.toHaveBeenCalled();
     expect(onOpenChange).toHaveBeenCalledWith(false, details);
+  });
+});
+
+describe("isSpuriousNestedMenuDismiss", () => {
+  const itemTarget = {
+    closest: (selector: string) => (selector.includes("menu-item") ? ({} as Element) : null),
+  };
+
+  it("keeps the root open when the press lands on an item in a nested popup", () => {
+    expect(
+      isSpuriousNestedMenuDismiss(false, "outside-press", {
+        target: itemTarget,
+      } as unknown as Event),
+    ).toBe(true);
+    const cancel = vi.fn();
+    const onOpenChange = vi.fn();
+    const details = {
+      reason: "outside-press" as const,
+      cancel,
+      event: { target: itemTarget } as unknown as Event,
+    };
+    handleRootMenuOpenChange(false, details, onOpenChange);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("still dismisses a press on popup padding that selects nothing", () => {
+    const popupPadding = {
+      closest: (selector: string) => (selector.includes("menu-popup") ? ({} as Element) : null),
+    };
+    expect(
+      isSpuriousNestedMenuDismiss(false, "outside-press", {
+        target: popupPadding,
+      } as unknown as Event),
+    ).toBe(false);
+  });
+
+  it("still dismisses a press outside any menu popup", () => {
+    const outside = {
+      closest: () => null,
+    };
+    expect(
+      isSpuriousNestedMenuDismiss(false, "outside-press", {
+        target: outside,
+      } as unknown as Event),
+    ).toBe(false);
   });
 });

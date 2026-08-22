@@ -30,8 +30,12 @@ import {
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftPromotionNavigationTarget,
   resolveThreadMetadataUpdateForNextTurn,
+  resolveCarriedRuntimeMode,
+  resolveCarriedComposerRuntimeMode,
+  resolveComposerRuntimeMode,
   resolveSendEnvMode,
   resolveDraftHeroState,
+  storedComposerRuntimeMode,
   scheduleEnvironmentReconnectWarning,
   startNewThreadForProject,
   shouldDockDraftHeroForSubmission,
@@ -993,5 +997,149 @@ describe("hasOptimisticWorkingSettled", () => {
         threadError: null,
       }),
     ).toBe(true);
+  });
+});
+
+describe("composer runtime mode", () => {
+  it("remaps carried Kimi yolo off Grok on a new draft", () => {
+    expect(
+      resolveComposerRuntimeMode({
+        providerDriver: "grok",
+        composerRuntimeMode: null,
+        threadRuntimeMode: "yolo",
+        isServerThread: false,
+      }),
+    ).toBe("full-access");
+  });
+
+  it("keeps yolo on Kimi", () => {
+    expect(
+      resolveComposerRuntimeMode({
+        providerDriver: "kimi",
+        composerRuntimeMode: null,
+        threadRuntimeMode: "yolo",
+        isServerThread: false,
+      }),
+    ).toBe("yolo");
+  });
+
+  it("lets an untouched draft inherit Kimi's yolo default", () => {
+    expect(
+      resolveComposerRuntimeMode({
+        providerDriver: "kimi",
+        composerRuntimeMode: null,
+        threadRuntimeMode: "full-access",
+        isServerThread: false,
+      }),
+    ).toBe("yolo");
+  });
+
+  it("keeps an explicit Full access pick on Kimi", () => {
+    expect(
+      resolveComposerRuntimeMode({
+        providerDriver: "kimi",
+        composerRuntimeMode: "full-access",
+        threadRuntimeMode: "yolo",
+        isServerThread: false,
+      }),
+    ).toBe("full-access");
+  });
+
+  it("treats the generic default as unset on drafts only", () => {
+    expect(
+      storedComposerRuntimeMode({
+        composerRuntimeMode: null,
+        threadRuntimeMode: "full-access",
+        isServerThread: false,
+      }),
+    ).toBeNull();
+    expect(
+      storedComposerRuntimeMode({
+        composerRuntimeMode: null,
+        threadRuntimeMode: "full-access",
+        isServerThread: true,
+      }),
+    ).toBe("full-access");
+  });
+
+  it("keeps a composer-recorded full-access carry instead of inheriting Kimi yolo", () => {
+    expect(
+      storedComposerRuntimeMode({
+        composerRuntimeMode: "full-access",
+        threadRuntimeMode: "full-access",
+        isServerThread: false,
+      }),
+    ).toBe("full-access");
+    expect(
+      resolveComposerRuntimeMode({
+        providerDriver: "kimi",
+        composerRuntimeMode: "full-access",
+        threadRuntimeMode: "full-access",
+        isServerThread: false,
+      }),
+    ).toBe("full-access");
+  });
+
+  it("remaps carried yolo onto a known non-Kimi destination", () => {
+    expect(
+      resolveCarriedRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "grok",
+      }),
+    ).toBe("full-access");
+    expect(
+      resolveCarriedRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "kimi",
+      }),
+    ).toBe("yolo");
+    expect(
+      resolveCarriedRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: null,
+      }),
+    ).toBe("yolo");
+    expect(
+      resolveCarriedRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "unconfigured",
+      }),
+    ).toBe("yolo");
+    expect(
+      resolveCarriedRuntimeMode({
+        runtimeMode: null,
+        destinationProviderDriver: "grok",
+      }),
+    ).toBeNull();
+  });
+
+  it("records only real picks as the carried composer runtime mode", () => {
+    // Remapped yolo sticks as an explicit full-access pick.
+    expect(
+      resolveCarriedComposerRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "grok",
+      }),
+    ).toBe("full-access");
+    // Non-default modes carry as explicit picks.
+    expect(
+      resolveCarriedComposerRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "kimi",
+      }),
+    ).toBe("yolo");
+    // A plain carried full-access stays unset so Kimi inherits yolo.
+    expect(
+      resolveCarriedComposerRuntimeMode({
+        runtimeMode: "full-access",
+        destinationProviderDriver: "kimi",
+      }),
+    ).toBeNull();
+    expect(
+      resolveCarriedComposerRuntimeMode({
+        runtimeMode: null,
+        destinationProviderDriver: "grok",
+      }),
+    ).toBeNull();
   });
 });

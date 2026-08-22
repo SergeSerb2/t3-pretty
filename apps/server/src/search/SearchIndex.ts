@@ -1,0 +1,328 @@
+/**
+ * SearchIndex - write path for the thread search inverted index.
+ *
+ * Maintains `search_index_docs` / `search_index_terms` /
+ * `search_index_postings` (migration 049) from projected message and turn
+ * state. Fed by the `projection.search-index` projector in
+ * ProjectionPipeline, including a first-boot backfill from current
+ * projection tables; read by ThreadSearch.
+ *
+ * Only the two sources the search contract exposes are indexed: user
+ * messages (reduced to their visible text, auto-PR instruction block
+ * stripped) and canonical assistant messages (the turn-final
+ * `assistant_message_id` rows in `projection_turns`). Archived, deleted,
+ * and project-deleted threads are treated as gone.
+ *
+ * @module SearchIndex
+ */
+import { MessageId, ThreadId } from "@t3tools/contracts";
+import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+
+import {
+  isPersistenceError,
+  toPersistenceSqlError,
+  type ProjectionRepositoryError,
+} from "../persistence/Errors.ts";
+import { termFrequencies } from "./tokenizer.ts";
+
+export interface SearchIndexShape {
+  /**
+   * Re-derive one message's index entry from current projection state:
+   * indexes indexable messages, removes entries for messages that are gone or
+   * no longer indexable. Mid-stream messages drop any existing entry; their
+   * final message-sent event re-triggers this.
+   */
+  readonly reindexMessage: (input: {
+    readonly messageId: MessageId;
+  }) => Effect.Effect<void, ProjectionRepositoryError>;
+
+  /**
+   * Re-derive every index entry of a thread (after a revert, archive,
+   * unarchive, or delete): drops entries for messages the thread no longer
+   * holds or that are no longer searchable, re-indexes the rest.
+   */
+  readonly reindexThread: (input: {
+    readonly threadId: ThreadId;
+  }) => Effect.Effect<void, ProjectionRepositoryError>;
+
+  /**
+   * Re-index every thread from current projection tables. First boot of
+   * `projection.search-index` uses this so historical messages are searchable
+   * without replaying the event log (bootstrap replay is capped, then a live
+   * event advances every projector cursor and skips the rest).
+   */
+  readonly backfillFromProjection: () => Effect.Effect<void, ProjectionRepositoryError>;
+
+  /**
+   * After a turn's canonical assistant changes: re-index the new id and every
+   * assistant already in the index for this thread, so a superseded
+   * `assistant_message_id` is dropped instead of staying searchable.
+   */
+  readonly reindexCanonicalAssistants: (input: {
+    readonly threadId: ThreadId;
+    readonly assistantMessageId: MessageId | null;
+  }) => Effect.Effect<void, ProjectionRepositoryError>;
+}
+
+export class SearchIndex extends Context.Service<SearchIndex, SearchIndexShape>()(
+  "t3/search/SearchIndex",
+) {}
+
+interface MessageRow {
+  readonly messageId: string;
+  readonly threadId: string;
+  readonly role: string;
+  readonly text: string;
+  readonly isStreaming: number;
+  readonly createdAt: string;
+}
+
+const makeSearchIndex = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+
+  const decrementTerms = (terms: Iterable<string>) =>
+    Effect.forEach(
+      terms,
+      (term) =>
+        Effect.gen(function* () {
+          yield* sql`UPDATE search_index_terms SET doc_freq = doc_freq - 1 WHERE term = ${term}`;
+          yield* sql`DELETE FROM search_index_terms WHERE term = ${term} AND doc_freq <= 0`;
+        }),
+      { concurrency: 1, discard: true },
+    );
+
+  const removeMessage = (messageId: string) =>
+    Effect.gen(function* () {
+      const rows = yield* sql<{ readonly term: string }>`
+        SELECT term FROM search_index_postings WHERE message_id = ${messageId}
+      `;
+      yield* decrementTerms(rows.map((row) => row.term));
+      yield* sql`DELETE FROM search_index_postings WHERE message_id = ${messageId}`;
+      yield* sql`DELETE FROM search_index_docs WHERE message_id = ${messageId}`;
+    });
+
+  const replaceEntry = (input: {
+    readonly messageId: string;
+    readonly threadId: string;
+    readonly role: "user" | "assistant";
+    readonly text: string;
+    readonly createdAt: string;
+  }) =>
+    Effect.gen(function* () {
+      const existingRows = yield* sql<{ readonly term: string }>`
+        SELECT term FROM search_index_postings WHERE message_id = ${input.messageId}
+      `;
+      const existingTerms = new Set(existingRows.map((row) => row.term));
+      const frequencies = termFrequencies(input.text);
+
+      yield* decrementTerms([...existingTerms].filter((term) => !frequencies.has(term)));
+      yield* sql`DELETE FROM search_index_postings WHERE message_id = ${input.messageId}`;
+      yield* sql`DELETE FROM search_index_docs WHERE message_id = ${input.messageId}`;
+
+      if (frequencies.size === 0) {
+        return;
+      }
+
+      const tokenCount = [...frequencies.values()].reduce((total, tf) => total + tf, 0);
+      yield* sql`
+        INSERT INTO search_index_docs (message_id, thread_id, role, token_count, created_at)
+        VALUES (${input.messageId}, ${input.threadId}, ${input.role}, ${tokenCount}, ${input.createdAt})
+      `;
+      yield* Effect.forEach(
+        frequencies,
+        ([term, tf]) =>
+          Effect.gen(function* () {
+            yield* sql`
+              INSERT INTO search_index_postings (term, message_id, tf)
+              VALUES (${term}, ${input.messageId}, ${tf})
+            `;
+            if (!existingTerms.has(term)) {
+              yield* sql`
+                INSERT INTO search_index_terms (term, doc_freq)
+                VALUES (${term}, 1)
+                ON CONFLICT (term) DO UPDATE SET doc_freq = doc_freq + 1
+              `;
+            }
+          }),
+        { concurrency: 1, discard: true },
+      );
+    });
+
+  const reindexRow = (message: MessageRow) =>
+    Effect.gen(function* () {
+      // Mid-stream text is not searchable. Drop a previously indexed final
+      // version so a rewrite-as-streaming or turn-diff during stream cannot
+      // leave stale postings.
+      if (message.isStreaming !== 0) {
+        yield* removeMessage(message.messageId);
+        return;
+      }
+      if (message.role === "user") {
+        yield* replaceEntry({
+          messageId: message.messageId,
+          threadId: message.threadId,
+          role: "user",
+          text: stripCreatePullRequestSuffix(message.text),
+          createdAt: message.createdAt,
+        });
+        return;
+      }
+      if (message.role === "assistant") {
+        const canonicalRows = yield* sql`
+          SELECT 1 AS one FROM projection_turns
+          WHERE assistant_message_id = ${message.messageId}
+          LIMIT 1
+        `;
+        if (canonicalRows.length === 0) {
+          yield* removeMessage(message.messageId);
+          return;
+        }
+        yield* replaceEntry({
+          messageId: message.messageId,
+          threadId: message.threadId,
+          role: "assistant",
+          text: message.text,
+          createdAt: message.createdAt,
+        });
+        return;
+      }
+      yield* removeMessage(message.messageId);
+    });
+
+  const reindexMessage: SearchIndexShape["reindexMessage"] = ({ messageId }) =>
+    Effect.gen(function* () {
+      const rows = yield* sql<MessageRow>`
+        SELECT
+          messages.message_id AS "messageId",
+          messages.thread_id AS "threadId",
+          messages.role,
+          messages.text,
+          messages.is_streaming AS "isStreaming",
+          messages.created_at AS "createdAt"
+        FROM projection_thread_messages AS messages
+        INNER JOIN projection_threads AS threads
+          ON threads.thread_id = messages.thread_id
+        INNER JOIN projection_projects AS projects
+          ON projects.project_id = threads.project_id
+        WHERE messages.message_id = ${messageId}
+          AND threads.deleted_at IS NULL
+          AND threads.archived_at IS NULL
+          AND projects.deleted_at IS NULL
+        LIMIT 1
+      `;
+      const message = rows[0];
+      if (message === undefined) {
+        yield* removeMessage(messageId);
+        return;
+      }
+      yield* reindexRow(message);
+    }).pipe(
+      Effect.mapError((error) =>
+        isPersistenceError(error)
+          ? error
+          : toPersistenceSqlError("SearchIndex.reindexMessage:query")(error),
+      ),
+    );
+
+  const reindexThread: SearchIndexShape["reindexThread"] = ({ threadId }) =>
+    Effect.gen(function* () {
+      const messageRows = yield* sql<MessageRow>`
+        SELECT
+          messages.message_id AS "messageId",
+          messages.thread_id AS "threadId",
+          messages.role,
+          messages.text,
+          messages.is_streaming AS "isStreaming",
+          messages.created_at AS "createdAt"
+        FROM projection_thread_messages AS messages
+        INNER JOIN projection_threads AS threads
+          ON threads.thread_id = messages.thread_id
+        INNER JOIN projection_projects AS projects
+          ON projects.project_id = threads.project_id
+        WHERE messages.thread_id = ${threadId}
+          AND threads.deleted_at IS NULL
+          AND threads.archived_at IS NULL
+          AND projects.deleted_at IS NULL
+      `;
+      const presentIds = new Set(messageRows.map((row) => row.messageId));
+      const indexedRows = yield* sql<{ readonly messageId: string }>`
+        SELECT message_id AS "messageId" FROM search_index_docs WHERE thread_id = ${threadId}
+      `;
+      yield* Effect.forEach(
+        indexedRows.filter((row) => !presentIds.has(row.messageId)),
+        (row) => removeMessage(row.messageId),
+        { concurrency: 1, discard: true },
+      );
+      yield* Effect.forEach(messageRows, reindexRow, { concurrency: 1, discard: true });
+    }).pipe(
+      Effect.mapError((error) =>
+        isPersistenceError(error)
+          ? error
+          : toPersistenceSqlError("SearchIndex.reindexThread:query")(error),
+      ),
+    );
+
+  const backfillFromProjection: SearchIndexShape["backfillFromProjection"] = () =>
+    Effect.gen(function* () {
+      const messageThreadRows = yield* sql<{ readonly threadId: string }>`
+        SELECT DISTINCT thread_id AS "threadId" FROM projection_thread_messages
+      `;
+      const indexedThreadRows = yield* sql<{ readonly threadId: string }>`
+        SELECT DISTINCT thread_id AS "threadId" FROM search_index_docs
+      `;
+      const threadIds = new Set(
+        [...messageThreadRows, ...indexedThreadRows].map((row) => row.threadId),
+      );
+      yield* Effect.forEach(
+        threadIds,
+        (threadId) => reindexThread({ threadId: ThreadId.make(threadId) }),
+        { concurrency: 1, discard: true },
+      );
+    }).pipe(
+      Effect.mapError((error) =>
+        isPersistenceError(error)
+          ? error
+          : toPersistenceSqlError("SearchIndex.backfillFromProjection:query")(error),
+      ),
+    );
+
+  const reindexCanonicalAssistants: SearchIndexShape["reindexCanonicalAssistants"] = ({
+    threadId,
+    assistantMessageId,
+  }) =>
+    Effect.gen(function* () {
+      const indexedRows = yield* sql<{ readonly messageId: string }>`
+        SELECT message_id AS "messageId"
+        FROM search_index_docs
+        WHERE thread_id = ${threadId} AND role = 'assistant'
+      `;
+      const messageIds = new Set(indexedRows.map((row) => row.messageId));
+      if (assistantMessageId !== null) {
+        messageIds.add(assistantMessageId);
+      }
+      yield* Effect.forEach(
+        messageIds,
+        (messageId) => reindexMessage({ messageId: MessageId.make(messageId) }),
+        { concurrency: 1, discard: true },
+      );
+    }).pipe(
+      Effect.mapError((error) =>
+        isPersistenceError(error)
+          ? error
+          : toPersistenceSqlError("SearchIndex.reindexCanonicalAssistants:query")(error),
+      ),
+    );
+
+  return {
+    reindexMessage,
+    reindexThread,
+    backfillFromProjection,
+    reindexCanonicalAssistants,
+  } satisfies SearchIndexShape;
+});
+
+export const SearchIndexLive = Layer.effect(SearchIndex, makeSearchIndex);

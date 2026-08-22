@@ -20,6 +20,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { SearchIndex, SearchIndexLive } from "../../search/SearchIndex.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
@@ -43,6 +44,7 @@ const projectionSnapshotLayer = it.layer(
     // Merged so tests can record live tool progress the query splices in.
     Layer.provideMerge(ToolProgress.layer),
     Layer.provideMerge(RepositoryIdentityResolver.layer),
+    Layer.provideMerge(SearchIndexLive),
     Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(NodeServices.layer),
   ),
@@ -1772,6 +1774,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       yield* sql`DELETE FROM projection_turns`;
       yield* sql`DELETE FROM projection_threads`;
       yield* sql`DELETE FROM projection_projects`;
+      yield* sql`DELETE FROM search_index_postings`;
+      yield* sql`DELETE FROM search_index_terms`;
+      yield* sql`DELETE FROM search_index_docs`;
 
       yield* sql`
         INSERT INTO projection_projects (
@@ -2076,10 +2081,28 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           )
       `;
 
+      // The fixture writes projection rows directly, so build the search
+      // index from them the way the projector would.
+      const searchIndex = yield* SearchIndex;
+      for (const threadId of [
+        "thread-active",
+        "thread-percent-decoy",
+        "thread-hidden",
+        "thread-autopr",
+      ]) {
+        yield* searchIndex.reindexThread({ threadId: ThreadId.make(threadId) });
+      }
+
       const literalPercent = yield* snapshotQuery.searchThreads({ query: "100%" });
+      // "%" is not a wildcard: it tokenizes away, leaving "100" — which also
+      // prefix-matches the "100x" decoy, on purpose (typeahead). Identical
+      // scores order by thread recency.
       assert.deepStrictEqual(
         literalPercent.matches.map((match) => [match.threadId, match.source]),
-        [[ThreadId.make("thread-active"), "user"]],
+        [
+          [ThreadId.make("thread-percent-decoy"), "user"],
+          [ThreadId.make("thread-active"), "user"],
+        ],
       );
 
       const user = yield* snapshotQuery.searchThreads({ query: "user needle" });
@@ -2109,9 +2132,11 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       );
       assert.equal(autoPr.matches[0]?.snippet, "Refactor the AUTOPR parser.");
       // A hidden-block hit must not shadow a genuine assistant match in the
-      // same thread: "pull request" appears in the user suffix (excluded
-      // before ranking) and in the visible assistant reply (returned).
-      const shadowed = yield* snapshotQuery.searchThreads({ query: "pull request" });
+      // same thread: the block's words are excluded before indexing, and the
+      // visible assistant reply is what remains. ("pull request" alone would
+      // also tokenize-match inline quotes of the marker tag name, so probe
+      // the assistant-only phrase.)
+      const shadowed = yield* snapshotQuery.searchThreads({ query: "opened the pull request" });
       assert.deepStrictEqual(
         shadowed.matches.map((match) => [match.threadId, match.source]),
         [[ThreadId.make("thread-autopr"), "assistant"]],

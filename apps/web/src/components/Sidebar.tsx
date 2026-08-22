@@ -103,6 +103,7 @@ import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
+import { useCopyThreadConversation } from "../hooks/useCopyThreadConversation";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -1840,6 +1841,7 @@ export default function Sidebar() {
       );
     },
   });
+  const copyThreadConversation = useCopyThreadConversation();
   const [projectScopeMenuOpen, setProjectScopeMenuOpen] = useState(false);
   const newThreadContext = useHandleNewThread();
   const openAddProjectCommandPalette = useCallback(
@@ -3303,6 +3305,10 @@ export default function Sidebar() {
           case "mark-unread":
             markThreadUnread(threadKey, thread.latestTurn?.completedAt);
             return;
+          case "copy":
+          case "copy-conversation":
+            copyThreadConversation(threadRef, thread.title);
+            return;
           case "copy-path":
             if (!threadWorkspacePath) {
               toastManager.add(
@@ -3396,6 +3402,7 @@ export default function Sidebar() {
       confirmThreadDelete,
       copyBranchToClipboard,
       copyPathToClipboard,
+      copyThreadConversation,
       copyThreadIdToClipboard,
       deleteThread,
       handleMultiSelectContextMenu,

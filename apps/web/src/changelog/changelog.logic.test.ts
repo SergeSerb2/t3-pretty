@@ -4,6 +4,7 @@ import {
   advanceLastSeenChangelogVersion,
   compareAppVersions,
   isAnnounceableAppVersion,
+  omitMaintenanceOnlyReleases,
   readLastSeenChangelogVersion,
   resolveWhatsNewDecision,
   writeLastSeenChangelogVersion,
@@ -211,5 +212,43 @@ describe("resolveWhatsNewDecision", () => {
       releases: RELEASES,
     });
     expect(decision).toEqual({ releases: [], acknowledgeVersion: "0.0.40" });
+  });
+
+  it("hides maintenance-only nightlies when a user-facing entry is also unseen", () => {
+    const decision = resolveWhatsNewDecision({
+      currentVersion: "0.0.34-nightly.20260816.1",
+      lastSeenVersion: "0.0.34-nightly.20260812.1",
+      hasExistingInstallData: true,
+      releases: [
+        {
+          version: "0.0.34-nightly.20260816.1",
+          date: "2026-08-16",
+          items: [{ kind: "new", title: "Boring personalization" }],
+        },
+        {
+          version: "0.0.34-nightly.20260814.1",
+          date: "2026-08-14",
+          items: [{ kind: "improved", title: "Under-the-hood stability and maintenance" }],
+        },
+      ],
+    });
+    expect(decision.releases.map((entry) => entry.version)).toEqual(["0.0.34-nightly.20260816.1"]);
+  });
+});
+
+describe("omitMaintenanceOnlyReleases", () => {
+  const stub: ChangelogRelease = {
+    version: "0.0.34-nightly.1",
+    date: "2026-08-12",
+    items: [{ kind: "improved", title: "Under-the-hood stability and maintenance" }],
+  };
+
+  it("keeps stubs when they are the only entries", () => {
+    expect(omitMaintenanceOnlyReleases([stub])).toEqual([stub]);
+  });
+
+  it("drops stubs when a user-facing entry is also in the list", () => {
+    const visible = omitMaintenanceOnlyReleases([release("0.0.34-nightly.2"), stub]);
+    expect(visible.map((entry) => entry.version)).toEqual(["0.0.34-nightly.2"]);
   });
 });
