@@ -1061,6 +1061,24 @@ describe("composer runtime mode", () => {
     ).toBe("full-access");
   });
 
+  it("keeps a composer-recorded full-access carry instead of inheriting Kimi yolo", () => {
+    expect(
+      storedComposerRuntimeMode({
+        composerRuntimeMode: "full-access",
+        threadRuntimeMode: "full-access",
+        isServerThread: false,
+      }),
+    ).toBe("full-access");
+    expect(
+      resolveComposerRuntimeMode({
+        providerDriver: "kimi",
+        composerRuntimeMode: "full-access",
+        threadRuntimeMode: "full-access",
+        isServerThread: false,
+      }),
+    ).toBe("full-access");
+  });
+
   it("remaps carried yolo onto a known non-Kimi destination", () => {
     expect(
       resolveCarriedRuntimeMode({

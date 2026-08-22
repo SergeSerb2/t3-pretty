@@ -124,11 +124,13 @@ export function resolveThreadMetadataUpdateForNextTurn(input: {
   };
 }
 
-// Composer pick wins. A server thread's stored mode is authoritative — even
+// Composer pick wins, including an explicit "full-access" that a carry or
+// picker wrote there. A server thread's stored mode is authoritative — even
 // "full-access" on Kimi, which may be an explicit pick or the pre-Yolo
-// default. A draft whose mode still reads as the generic default (never
-// picked, never carried from a non-default thread) inherits the provider's
-// own default.
+// default. A draft whose thread mode still reads as the generic default
+// (never picked, never recorded on the composer) inherits the provider's
+// own default. Remapped carries must land in composerRuntimeMode so they
+// are not treated as unset.
 export function storedComposerRuntimeMode(input: {
   readonly composerRuntimeMode: RuntimeMode | null;
   readonly threadRuntimeMode: RuntimeMode | null | undefined;

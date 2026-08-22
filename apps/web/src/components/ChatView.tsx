@@ -378,7 +378,6 @@ import {
   resolveThreadMetadataUpdateForNextTurn,
   resolveComposerRuntimeMode,
   resolveSendEnvMode,
-  storedComposerRuntimeMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
   shouldWriteThreadErrorToCurrentServerThread,
@@ -2477,14 +2476,9 @@ function ChatViewContent(props: ChatViewProps) {
   // mode is authoritative — even "full-access" on Kimi, which may be an
   // explicit pick or the pre-Yolo default and must not be remapped. Only a
   // draft whose mode still reads as the generic default (never picked, never
-  // carried from a non-default thread) inherits the provider's own default.
+  // recorded on the composer) inherits the provider's own default.
   // Carried Kimi "yolo" is remapped off Kimi so a Grok new thread cannot
   // show or send a mode Grok does not offer.
-  const storedRuntimeMode = storedComposerRuntimeMode({
-    composerRuntimeMode,
-    threadRuntimeMode: activeThread?.runtimeMode,
-    isServerThread,
-  });
   const runtimeMode: RuntimeMode = resolveComposerRuntimeMode({
     providerDriver: selectedProvider,
     composerRuntimeMode,
@@ -6669,22 +6663,9 @@ function ChatViewContent(props: ChatViewProps) {
         nextModelSelection,
       );
       setStickyComposerModelSelection(nextModelSelection);
-      // Only an explicit mode follows the switch across providers: Kimi's
-      // "yolo" has no equivalent elsewhere and normalizes to the generic
-      // full-access mode instead of leaking the Kimi-only literal into
-      // another provider's session config. An unset mode
-      // (storedRuntimeMode === null) keeps tracking the provider's own
-      // default, so an explicit Full access pick is never rewritten by a
-      // model switch.
-      if (storedRuntimeMode !== null) {
-        const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
-          resolvedDriverKind,
-          storedRuntimeMode,
-        );
-        if (nextRuntimeMode !== runtimeMode) {
-          handleRuntimeModeChange(nextRuntimeMode);
-        }
-      }
+      // Display and send remap Kimi-only "yolo" off other providers. Do not
+      // write the remapped mode back: an unset mode keeps tracking the
+      // provider default, and a stored Yolo can still show on Kimi.
       scheduleComposerFocus();
     },
     [
@@ -6693,9 +6674,6 @@ function ChatViewContent(props: ChatViewProps) {
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
-      handleRuntimeModeChange,
-      storedRuntimeMode,
-      runtimeMode,
       providerStatuses,
       settings,
       supportsProviderHandoff,

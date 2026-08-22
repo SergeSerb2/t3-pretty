@@ -8,7 +8,7 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
-import { resolveRuntimeModeForProviderDriver } from "@t3tools/contracts";
+import { displayRuntimeModeForProviderDriver } from "@t3tools/contracts";
 import {
   detectComposerTrigger,
   replaceTextRange,
@@ -912,7 +912,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       providerOptionDescriptors,
     ],
   );
-  const currentRuntimeMode = resolveRuntimeModeForProviderDriver(
+  const currentRuntimeMode = displayRuntimeModeForProviderDriver(
     currentModelOption?.providerDriver,
     storedRuntimeMode,
   );
@@ -937,23 +937,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const onUpdateModelSelection = props.onUpdateModelSelection;
   const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
-  // A thread's stored mode is an explicit value, so a model pick only
-  // normalizes: Kimi's "yolo" mode has no equivalent on other providers and
-  // falls back to the generic full-access mode in the same gesture. Display
-  // remaps without writing back. New threads pick up the provider's own
-  // default from the new-task flow.
+  // Display remaps Kimi's "yolo" off other providers without writing back, so
+  // switching back to Kimi can still show Yolo. Send remaps at queue time.
   const handleSelectModelOption = useCallback(
     (option: ModelOption) => {
       onUpdateModelSelection(option.selection);
-      const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
-        option.providerDriver,
-        storedRuntimeMode,
-      );
-      if (nextRuntimeMode !== storedRuntimeMode) {
-        onUpdateRuntimeMode(nextRuntimeMode);
-      }
     },
-    [onUpdateModelSelection, onUpdateRuntimeMode, storedRuntimeMode],
+    [onUpdateModelSelection],
   );
   const handleSelectPickerOption = useCallback(
     (id: string, value: string | boolean) => {

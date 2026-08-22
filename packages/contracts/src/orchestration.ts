@@ -133,20 +133,29 @@ export const RuntimeMode = Schema.Literals([
 export type RuntimeMode = typeof RuntimeMode.Type;
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 
-// "yolo" is a Kimi-only mode that other providers never offer. When a
-// selection moves from Kimi to another known provider, clients normalize the
-// mode with this helper so the Kimi-specific literal never reaches another
-// provider's session config (where it would hit an unintended default
-// branch). "full-access" is the generic equivalent: same unrestricted
-// session, provider-native approval behavior. A missing driver is not a
-// non-Kimi provider: leave yolo so a failed lookup cannot drop it.
+// "yolo" is a Kimi-only mode that other providers never offer. Send and
+// create paths use this helper so the Kimi-specific literal never reaches
+// another provider's session config (where it would hit an unintended
+// default branch). "full-access" is the generic equivalent: same unrestricted
+// session, provider-native approval behavior. A missing driver is not kimi:
+// remap so a failed config lookup cannot leak yolo onto Grok/Codex/Claude.
 export function resolveRuntimeModeForProviderDriver(
   providerDriver: string | null | undefined,
   runtimeMode: RuntimeMode,
 ): RuntimeMode {
-  return runtimeMode === "yolo" && providerDriver != null && providerDriver !== "kimi"
-    ? "full-access"
-    : runtimeMode;
+  return runtimeMode === "yolo" && providerDriver !== "kimi" ? "full-access" : runtimeMode;
+}
+
+// Display remap: keep yolo when the destination provider is unknown so a
+// missed lookup cannot hide Kimi's mode. Send/create uses
+// resolveRuntimeModeForProviderDriver, which remaps that unknown case.
+export function displayRuntimeModeForProviderDriver(
+  providerDriver: string | null | undefined,
+  runtimeMode: RuntimeMode,
+): RuntimeMode {
+  return providerDriver == null
+    ? runtimeMode
+    : resolveRuntimeModeForProviderDriver(providerDriver, runtimeMode);
 }
 
 // Kimi's default access mode is "yolo": the same unrestricted session as
@@ -165,7 +174,7 @@ export function effectiveRuntimeModeForProviderDriver(
   providerDriver: string | null | undefined,
   runtimeMode: RuntimeMode | null | undefined,
 ): RuntimeMode {
-  return resolveRuntimeModeForProviderDriver(
+  return displayRuntimeModeForProviderDriver(
     providerDriver,
     runtimeMode ?? defaultRuntimeModeForProviderDriver(providerDriver),
   );

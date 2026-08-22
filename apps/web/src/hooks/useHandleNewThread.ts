@@ -114,6 +114,7 @@ export function useNewThreadHandler() {
         setDraftThreadContext,
         setLogicalProjectDraftThreadId,
         setModelSelection,
+        setRuntimeMode,
         stickyActiveProvider,
       } = useComposerDraftStore.getState();
       const currentRouteTarget = getCurrentRouteTarget();
@@ -329,6 +330,11 @@ export function useNewThreadHandler() {
                 replaceOptions: true,
               });
             }
+            // Record the carried mode on the composer so remapped "full-access"
+            // is an explicit pick, not the draft-thread generic default.
+            if (carryRuntimeMode) {
+              setRuntimeMode(emptyStoredDraftThread.draftId, carryRuntimeMode);
+            }
           } else if (emptyStoredDraftThread.startSurface !== startSurface) {
             setDraftThreadContext(emptyStoredDraftThread.draftId, { startSurface });
           }
@@ -484,6 +490,9 @@ export function useNewThreadHandler() {
           // complete snapshot — absent options mean "no options", not "keep
           // whatever sticky state just wrote".
           setModelSelection(draftId, carryModelSelection, { replaceOptions: true });
+        }
+        if (carryRuntimeMode) {
+          setRuntimeMode(draftId, carryRuntimeMode);
         }
         carryComposerContentTo(draftId);
 

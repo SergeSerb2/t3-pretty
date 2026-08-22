@@ -20,6 +20,7 @@ import {
   OrchestrationThreadShell,
   ProjectCreateCommand,
   defaultRuntimeModeForProviderDriver,
+  displayRuntimeModeForProviderDriver,
   effectiveRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
   ThreadMetaUpdatedPayload,
@@ -1012,18 +1013,25 @@ it.effect("project favicon overrides accept only supported image files", () =>
   }),
 );
 
-it("resolveRuntimeModeForProviderDriver maps yolo to full-access off Kimi", () => {
+it("resolveRuntimeModeForProviderDriver maps yolo to full-access unless the driver is kimi", () => {
   assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "yolo"), "full-access");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("claudeAgent", "yolo"), "full-access");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver(null, "yolo"), "yolo");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver(undefined, "yolo"), "yolo");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver(null, "yolo"), "full-access");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver(undefined, "yolo"), "full-access");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "full-access"), "full-access");
   assert.strictEqual(
     resolveRuntimeModeForProviderDriver("codex", "approval-required"),
     "approval-required",
   );
+});
+
+it("displayRuntimeModeForProviderDriver keeps yolo when the driver is unknown", () => {
+  assert.strictEqual(displayRuntimeModeForProviderDriver(null, "yolo"), "yolo");
+  assert.strictEqual(displayRuntimeModeForProviderDriver(undefined, "yolo"), "yolo");
+  assert.strictEqual(displayRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
+  assert.strictEqual(displayRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
 });
 
 it("defaultRuntimeModeForProviderDriver defaults Kimi to yolo", () => {

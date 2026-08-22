@@ -20,7 +20,7 @@ import {
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-  resolveRuntimeModeForProviderDriver,
+  displayRuntimeModeForProviderDriver,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -888,7 +888,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderEntry?.driverKind ?? requestedDriverKind;
   // The picker only offers Kimi's "yolo" on Kimi. A carried Kimi pick must
   // not keep showing "Yolo" after the user switches this draft to Grok.
-  const resolvedRuntimeMode = resolveRuntimeModeForProviderDriver(selectedProvider, runtimeMode);
+  const resolvedRuntimeMode = displayRuntimeModeForProviderDriver(selectedProvider, runtimeMode);
 
   const { modelOptions: composerModelOptions, selectedModel } = useEffectiveComposerModelState({
     threadRef: composerDraftTarget,

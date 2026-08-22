@@ -1,7 +1,7 @@
 import {
   type ModelSelection,
   type ProviderOptionDescriptor,
-  resolveRuntimeModeForProviderDriver,
+  displayRuntimeModeForProviderDriver,
   type RuntimeMode,
 } from "@t3tools/contracts";
 import { getProviderOptionCurrentValue } from "@t3tools/shared/model";
@@ -154,7 +154,7 @@ export function buildThreadSettingsPickerModel(input: {
       providerGroups: input.providerGroups,
       selectedModel: input.selectedModel,
     });
-  const runtimeMode = resolveRuntimeModeForProviderDriver(providerDriver, input.runtimeMode);
+  const runtimeMode = displayRuntimeModeForProviderDriver(providerDriver, input.runtimeMode);
   const runtimeChoices = runtimeModeChoicesForProvider(providerDriver).map((choice) => ({
     mode: choice.mode,
     label: choice.label,
