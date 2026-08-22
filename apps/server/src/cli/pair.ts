@@ -54,6 +54,7 @@ import {
   resolveHeadlessConnectionString,
 } from "../startupAccess.ts";
 import { baseDirFlag, DurationFromString } from "./config.ts";
+import { resolveCliCommand } from "./invocation.ts";
 
 const WELL_KNOWN_ENVIRONMENT_PATH = "/.well-known/t3/environment";
 const PAIR_PROBE_TIMEOUT = Duration.millis(2_500);
@@ -72,13 +73,15 @@ export class NoRunningServerError extends Schema.TaggedErrorClass<NoRunningServe
   "NoRunningServerError",
   {
     checkedStatePaths: Schema.Array(Schema.String),
+    serveCommand: Schema.String,
+    connectCommand: Schema.String,
   },
 ) {
   override get message(): string {
     return [
       "No running T3 Code server found.",
       ...this.checkedStatePaths.map((statePath) => `  checked ${statePath}`),
-      "Start one with `npx t3 serve`, or connect this machine with T3 Connect: `npx t3 connect`.",
+      `Start one with \`${this.serveCommand}\`, or connect this machine with Surge Connect: \`${this.connectCommand}\`.`,
     ].join("\n");
   }
 }
@@ -297,7 +300,13 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
       } satisfies DiscoveredPairTarget;
     }
   }
-  return yield* new NoRunningServerError({ checkedStatePaths });
+  const serveCommand = yield* resolveCliCommand("serve");
+  const connectCommand = yield* resolveCliCommand("connect");
+  return yield* new NoRunningServerError({
+    checkedStatePaths,
+    serveCommand,
+    connectCommand,
+  });
 });
 
 /**

@@ -5,28 +5,34 @@ keeping a terminal open.
 
 ## Manage the Service
 
-Install it with the latest T3 Code release:
+Install the T3 Pretty CLI first (not `npx t3`, which is upstream T3 Code):
 
 ```sh
-npx t3@latest service install
+curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
+```
+
+Then install the service:
+
+```sh
+t3 service install
 ```
 
 Check whether it is installed:
 
 ```sh
-npx t3@latest service status
+t3 service status
 ```
 
 Update or repair it:
 
 ```sh
-npx t3@latest service update
+npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz t3 service update
 ```
 
 Stop it and remove it from startup:
 
 ```sh
-npx t3@latest service uninstall
+t3 service uninstall
 ```
 
 Updating restarts T3 Code briefly. Let active agent work and terminal commands finish first.

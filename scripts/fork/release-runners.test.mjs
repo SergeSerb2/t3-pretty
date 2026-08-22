@@ -115,6 +115,25 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(desktopWorkflow, "workflow_dispatch:");
   });
 
+  it("publishes the headless CLI tarball from linux-small", () => {
+    assert.include(pipeline, "publish-cli.sh");
+    assert.include(pipeline, "key: publish-cli");
+    assert.include(pipeline, "CLI tarball");
+    assert.include(pipeline, "depends_on: macos-dmg");
+    const publishCli = NodeFS.readFileSync(NodePath.resolve(here, "publish-cli.sh"), "utf8");
+    assert.include(publishCli, "cli.ts pack");
+    assert.include(publishCli, "bash scripts/fork/ensure-linux-node.sh");
+    assert.notInclude(publishCli, ". scripts/fork/ensure-linux-node.sh");
+    assert.include(publishCli, "Do not git fetch origin");
+    assert.notInclude(publishCli, "git fetch --force --tags origin");
+    assert.include(publishCli, "GIT_TERMINAL_PROMPT=0");
+    assert.notInclude(publishCli, "git fetch --force --tags upstream");
+    assert.notInclude(publishCli, "T3_FORK_BUILD_FLOOR");
+    assert.notInclude(publishCli, "resolve-fork-release.mjs");
+    assert.include(publishCli, "latest-mac.yml");
+    assert.include(publishCli, "https://vite.plus");
+  });
+
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "iOS OTA + TestFlight");

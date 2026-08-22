@@ -43,8 +43,9 @@ Visual changes are not allowed to trade away capability or existing state.
 > [!IMPORTANT]
 > `npx t3@latest`, Homebrew `t3-code`, and winget `T3Tools.T3Code` install **upstream T3 Code**,
 > not this fork. T3 Pretty is this repository. Grab a desktop build from
-> [Latest release](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest), or run from
-> source (below).
+> [Latest release](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest), run from
+> source (below), or install the headless server with
+> `curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh`.
 
 ---
 
