@@ -1286,7 +1286,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       remoteCommandArgs:
         remotePlatform === "windows"
           ? ["node", "-", remoteStateKey(target)]
-          : ["sh", "-s", "--", remoteStateKey(target)],
+          : ["sh", "-l", "-s", "--", remoteStateKey(target)],
       stdin:
         remotePlatform === "windows"
           ? buildRemoteWindowsLaunchScript(runner)

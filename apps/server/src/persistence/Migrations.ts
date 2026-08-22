@@ -62,6 +62,7 @@ import Migration0046 from "./Migrations/046_ProjectionThreadsEnabledSkillIds.ts"
 import Migration0047 from "./Migrations/047_DeleteSupersededToolUpdatedActivities.ts";
 import Migration0048 from "./Migrations/048_ProjectionThreadsSubagentPolicy.ts";
 import Migration0049 from "./Migrations/049_SearchIndex.ts";
+import Migration0050 from "./Migrations/041_AuthSessionClientConnection.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -123,6 +124,7 @@ export const migrationEntries = [
   [47, "DeleteSupersededToolUpdatedActivities", Migration0047],
   [48, "ProjectionThreadsSubagentPolicy", Migration0048],
   [49, "SearchIndex", Migration0049],
+  [50, "AuthSessionClientConnection", Migration0050],
 ] as const;
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
 
