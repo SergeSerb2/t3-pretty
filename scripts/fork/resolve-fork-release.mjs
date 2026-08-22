@@ -83,6 +83,31 @@ function printField(argv) {
   return field;
 }
 
+const CHANGELOG_SUBJECT_PREFIX = "docs(changelog): add release notes through v";
+
+function reusedChangelogVersion() {
+  let subject;
+  try {
+    subject = git("log", "-1", "--format=%s");
+  } catch {
+    return null;
+  }
+  if (!subject.startsWith("docs(changelog):")) return null;
+  if (subject.startsWith(CHANGELOG_SUBJECT_PREFIX)) {
+    const version = subject.slice(CHANGELOG_SUBJECT_PREFIX.length).trim();
+    if (version) return version;
+  }
+  let source;
+  try {
+    source = NodeFS.readFileSync("apps/web/src/changelog/changelogData.ts", "utf8");
+  } catch {
+    throw new Error("Changelog commit has no reusable version");
+  }
+  const match = /^\s+version:\s*"([^"]+)",$/m.exec(source);
+  if (!match?.[1]) throw new Error("Changelog commit has no reusable version");
+  return match[1];
+}
+
 function writeGitHubOutput(values) {
   const outputPath = process.env.GITHUB_OUTPUT;
   if (!outputPath) return false;
@@ -95,8 +120,37 @@ function writeGitHubOutput(values) {
   return true;
 }
 
+function emit(values, field) {
+  if (field) {
+    const value = values[field];
+    if (value == null) throw new Error(`Unknown --print field: ${field}`);
+    process.stdout.write(`${value}\n`);
+    return;
+  }
+  if (!writeGitHubOutput(values)) {
+    process.stdout.write(`${JSON.stringify(values, null, 2)}\n`);
+  }
+}
+
 function main() {
   const field = printField(process.argv.slice(2));
+  const reused = reusedChangelogVersion();
+  if (reused) {
+    // Changelog-commit retries already minted a version. Reuse it so hosted
+    // preflight can still run imported jobs without minting another release.
+    emit(
+      {
+        minted: "true",
+        upstream_tag: "",
+        version: reused,
+        tag: `v${reused}.fork`,
+        name: `T3 Pretty ${reused}`,
+        short_sha: git("rev-parse", "--short=9", "HEAD"),
+      },
+      field,
+    );
+    return;
+  }
   const runNumber = resolveRunNumber();
 
   const upstreamTag = findNewestIntegratedNightly();
@@ -124,25 +178,17 @@ function main() {
   // configured prerelease channel. Keep the fork marker as a prerelease
   // identifier so the tag remains both fork-specific and semver-valid.
   const tag = `v${version}.fork`;
-  const values = {
-    minted: "true",
-    upstream_tag: upstreamTag,
-    version,
-    tag,
-    name: `T3 Pretty ${version}`,
-    short_sha: git("rev-parse", "--short=9", "HEAD"),
-  };
-
-  if (field) {
-    const value = values[field];
-    if (value == null) throw new Error(`Unknown --print field: ${field}`);
-    process.stdout.write(`${value}\n`);
-    return;
-  }
-
-  if (!writeGitHubOutput(values)) {
-    process.stdout.write(`${JSON.stringify(values, null, 2)}\n`);
-  }
+  emit(
+    {
+      minted: "true",
+      upstream_tag: upstreamTag,
+      version,
+      tag,
+      name: `T3 Pretty ${version}`,
+      short_sha: git("rev-parse", "--short=9", "HEAD"),
+    },
+    field,
+  );
 }
 
 main();

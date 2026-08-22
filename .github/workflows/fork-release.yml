@@ -136,11 +136,9 @@ jobs:
             gha_out "relevant=false"
             exit 0
           fi
-          if [[ "$(git log -1 --format=%s)" == "docs(changelog):"* ]]; then
-            echo "Changelog-only commit; skipping imported preflight."
-            gha_out "relevant=false"
-            exit 0
-          fi
+          # docs(changelog) still changes apps/web. Keep relevant=true so
+          # imported jobs (WSL node-pty) finish after a notes-push retry.
+          # resolve-fork-release.mjs reuses the already-minted version.
           if [[ "${GITHUB_EVENT_NAME}" != "push" ]] || ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
             gha_out "relevant=true"
             exit 0

@@ -96,11 +96,13 @@ echo "Building macOS arm64 $version"
 # they pass --no-push and cannot mint a second docs(changelog) commit.
 # Hosted Linux preflight cannot load CLI_PROXY_API_KEY or push to Origin,
 # which is why notes froze after 2026-08-12.
-changelog_push=()
+# Always keep at least --version in this array: Apple bash 3.2 with `set -u`
+# treats an empty `"${arr[@]}"` as unbound.
+changelog_args=(--version "$version")
 if [[ "$subject" == "docs(changelog):"* ]]; then
-  changelog_push=(--no-push)
+  changelog_args+=(--no-push)
 fi
-if ! node scripts/fork/generate-changelog.mjs --version "$version" "${changelog_push[@]}"; then
+if ! node scripts/fork/generate-changelog.mjs "${changelog_args[@]}"; then
   echo "warning: changelog generation failed; continuing the macOS release"
 fi
 

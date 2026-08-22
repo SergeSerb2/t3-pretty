@@ -106,12 +106,12 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    `${{ env.CLI_PROXY_API_KEY }}` would blank a real secret. macos-release commits and pushes
    `changelogData.ts` when HEAD is still the `main` tip. A retry whose HEAD is
    already `docs(changelog):` passes `--no-push` so it cannot mint another
-   notes commit. Hosted Linux preflight skips minting on `docs(changelog):`
-   commits. Native packagers reuse the already-minted version from that commit
-   instead of minting another, and skip packaging only when the public feed
-   already lists it, so a retry after a changelog push still produces a
-   DMG/NSIS. Generation failures warn and the release continues; the next run
-   fills whatever is still missing.
+   notes commit. Hosted Linux preflight reuses that already-minted version
+   instead of minting another, so imported jobs (WSL node-pty) still run when
+   a retry lands after the notes push. Native packagers reuse the same version
+   and skip packaging only when the public feed already lists it, so a retry
+   after a changelog push still produces a DMG/NSIS. Generation failures warn
+   and the release continues; the next run fills whatever is still missing.
 8. Origin-connected Linux CI (Depot or Buildkite, `ubuntu-latest` in the workflow YAML) resolves
    the version. What's New notes are written by the native Mac and Windows packagers. It does not call GitHub Actions
    (`uses:`) — the importer resolves every action from api.github.com at parse
