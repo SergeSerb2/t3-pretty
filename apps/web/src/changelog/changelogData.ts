@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260822.1155000594",
+    date: "2026-08-22",
+    items: [
+      {
+        kind: "new",
+        title: "ship a headless T3 Pretty CLI for Surge Connect",
+      },
+      {
+        kind: "fixed",
+        title: 'standardize reasoning effort labels to "<level> effort"',
+      },
+      {
+        kind: "fixed",
+        title: "globally enabled skills can still be favorited",
+      },
+      {
+        kind: "fixed",
+        title: "auto-dismiss in-app toasts after 5–10s",
+      },
+      {
+        kind: "fixed",
+        title: "keep thread Copy flyout clickable and copy conversation",
+      },
+      {
+        kind: "fixed",
+        title: "restore in-app What's New notes after Aug 12",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260817.1120367814",
     date: "2026-08-18",
     items: [
