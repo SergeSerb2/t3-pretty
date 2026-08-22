@@ -434,7 +434,6 @@ export {
   createThreadLifecyclePendingValueAtom,
   decodeStoredPendingEntries,
   encodePendingEntries,
-  type ThreadLifecyclePendingByEnvironment,
   ThreadLifecycleOutboxPersistenceError,
   ThreadLifecycleOutboxStore,
   threadLifecycleOutboxLayer,
