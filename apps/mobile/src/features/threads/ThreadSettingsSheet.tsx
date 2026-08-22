@@ -4,6 +4,7 @@ import type {
   ProviderOptionDescriptor,
   ProviderOptionSelection,
   RuntimeMode,
+  ScopedThreadRef,
 } from "@t3tools/contracts";
 import type { LegendListRenderItemProps } from "@legendapp/list/react-native";
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
@@ -64,6 +65,7 @@ import {
   selectedModelProviderDriver,
 } from "./thread-settings-options";
 import { buildThreadModelIdentity } from "./threadModelIdentity";
+import { ThreadCheckpointsSection } from "./ThreadCheckpointsSection";
 import {
   effectiveProviderFilter,
   initialProviderFilter,
@@ -341,6 +343,9 @@ type ThreadSettingsSessionProps = {
   readonly runtimeMode: RuntimeMode;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
   readonly initialPage?: ThreadSettingsSheetPage;
+  /** Existing-thread sessions only: enables the Checkpoints card with its
+      per-checkpoint revert action. Absent in the new-task flow. */
+  readonly checkpointsThreadRef?: ScopedThreadRef | null;
 };
 
 export type ExistingThreadSettingsRouteSession = ThreadSettingsSessionProps & {
@@ -394,6 +399,7 @@ type ThreadSettingsSessionValue = {
   readonly providerExpansionOverrides: ReadonlySet<string>;
   readonly hasLegacyModels: boolean;
   readonly initialPage: ThreadSettingsSheetPage;
+  readonly checkpointsThreadRef: ScopedThreadRef | null;
   readonly pendingModel: ModelOption | null;
   readonly providerFilter: string | null;
   readonly searchQuery: string;
@@ -549,6 +555,7 @@ function ThreadSettingsSessionProvider(
       providerExpansionOverrides,
       hasLegacyModels,
       initialPage: props.initialPage ?? "home",
+      checkpointsThreadRef: props.checkpointsThreadRef ?? null,
       pendingModel,
       providerFilter,
       searchQuery,
@@ -571,6 +578,7 @@ function ThreadSettingsSessionProvider(
       providerExpansionOverrides,
       hasLegacyModels,
       props.initialPage,
+      props.checkpointsThreadRef,
       isApplied,
       isDisplayed,
       pendingModel,
@@ -840,6 +848,10 @@ function ThreadSettingsHomeContent(props: {
 
       <Text className="px-5 pb-2 pt-7 text-sm font-t3-medium text-foreground-muted">Options</Text>
       <ThreadSettingsOptionsCard onOpenSubmenu={props.onOpenSubmenu} />
+
+      {session.checkpointsThreadRef !== null ? (
+        <ThreadCheckpointsSection threadRef={session.checkpointsThreadRef} />
+      ) : null}
     </ScrollView>
   );
 }

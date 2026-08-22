@@ -963,6 +963,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       runtimeMode: currentRuntimeMode,
       onUpdateRuntimeMode,
       initialPage: settingsSheetPageRef.current,
+      checkpointsThreadRef: {
+        environmentId: props.environmentId,
+        threadId: props.selectedThread.id,
+      },
     }),
     [
       currentModelSelection,
@@ -970,6 +974,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       handleSelectModelOption,
       onUpdateModelSelection,
       onUpdateRuntimeMode,
+      props.environmentId,
+      props.selectedThread.id,
       providerOptionDescriptors,
       settingsOwnerId,
       threadProviderGroups,

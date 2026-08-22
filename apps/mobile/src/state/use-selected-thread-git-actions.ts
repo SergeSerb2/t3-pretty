@@ -32,6 +32,9 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, {
+    reportFailure: false,
+  });
   const refreshStatus = useAtomCommand(vcsEnvironment.refreshStatus, { reportFailure: false });
   const switchRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
   const createRef = useAtomCommand(vcsEnvironment.createRef, { reportFailure: false });
@@ -304,6 +307,16 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
           if (AsyncResult.isFailure(result)) {
             return result;
           }
+          // Web parity (BranchToolbarBranchSelector.setThreadBranch): a branch
+          // change that moves the thread into a different worktree stops the
+          // provider session first — the running session is bound to the old
+          // workspace.
+          if (thread.session && result.value.worktree.path !== selectedThreadWorktreePath) {
+            void stopThreadSession({
+              environmentId: thread.environmentId,
+              input: { threadId: thread.id },
+            });
+          }
           const syncResult = await syncSelectedThreadBranchState({
             thread,
             cwd: result.value.worktree.path,
@@ -316,7 +329,13 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
         },
       );
     },
-    [createWorktree, runSelectedThreadGitMutation, syncSelectedThreadBranchState],
+    [
+      createWorktree,
+      runSelectedThreadGitMutation,
+      selectedThreadWorktreePath,
+      stopThreadSession,
+      syncSelectedThreadBranchState,
+    ],
   );
 
   const onPullSelectedThreadBranch = useCallback(async () => {
