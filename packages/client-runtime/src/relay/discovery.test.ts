@@ -12,6 +12,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as ManagedRelay from "./managedRelay.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
@@ -119,7 +120,9 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
   } satisfies ManagedRelay.ManagedRelayClient["Service"]);
   const connectivity = Connectivity.Connectivity.of({
     status: SubscriptionRef.get(networkStatus),
-    changes: SubscriptionRef.changes(networkStatus),
+    // Drop the SubscriptionRef replay: production Connectivity.changes only
+    // emits on real online/offline transitions.
+    changes: SubscriptionRef.changes(networkStatus).pipe(Stream.drop(1)),
   });
   const layer = RelayEnvironmentDiscovery.layer.pipe(
     Layer.provide(
@@ -272,6 +275,10 @@ describe("RelayEnvironmentDiscovery", () => {
             );
           }
           yield* discovery.refresh;
+
+          // Let the scoped connectivity subscription start before emitting, so
+          // the offline/online transitions below are observed as changes.
+          yield* Effect.yieldNow;
 
           const offlineFiber = yield* SubscriptionRef.changes(discovery.state).pipe(
             Stream.filter((state) => state.offline),
@@ -434,6 +441,52 @@ describe("RelayEnvironmentDiscovery", () => {
         expect((yield* SubscriptionRef.get(discovery.state)).loaded).toBe(true);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
+  );
+
+  it.effect("coalesces rapid application-active wakeups into one refresh", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const awaitListCalls = (expected: number) =>
+        Effect.gen(function* () {
+          for (let attempt = 0; attempt < 1_000; attempt++) {
+            if ((yield* Ref.get(harness.listCalls)) >= expected) {
+              return;
+            }
+            yield* Effect.yieldNow;
+          }
+          throw new Error(`Timed out waiting for ${expected} environment listings.`);
+        });
+      yield* Effect.gen(function* () {
+        const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+        const requests = yield* Ref.get(harness.statusRequests);
+        for (const environment of environments) {
+          yield* Deferred.succeed(
+            requests.get(environment.environmentId)!,
+            status(environment, "online"),
+          );
+        }
+        yield* discovery.refresh;
+        yield* Effect.yieldNow;
+
+        // The first wakeup outside the coalescing window refreshes.
+        yield* TestClock.adjust("61 seconds");
+        yield* harness.wake("application-active");
+        yield* Deferred.await(harness.secondListCall);
+        expect(yield* Ref.get(harness.listCalls)).toBe(2);
+
+        // A wakeup inside the window is dropped.
+        yield* harness.wake("application-active");
+        for (let attempt = 0; attempt < 100; attempt++) {
+          yield* Effect.yieldNow;
+        }
+        expect(yield* Ref.get(harness.listCalls)).toBe(2);
+
+        // The next wakeup after the window refreshes again.
+        yield* TestClock.adjust("61 seconds");
+        yield* harness.wake("application-active");
+        yield* awaitListCalls(3);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("settles to a clean empty state when refreshed while signed out", () =>

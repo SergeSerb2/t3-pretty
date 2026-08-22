@@ -30,7 +30,13 @@ import * as RpcSession from "../rpc/session.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
 
-const RETRY_DELAYS_MS = [3_000, 4_000, 8_000, 16_000] as const;
+// The long tail matters more than the early rungs: the desktop mesh keeps
+// every discovered relay environment desired, so a dead environment otherwise
+// retries every 16s forever, and each relay attempt is a billed Worker request
+// (~5,400/day per offline environment per client). The 5-minute cap bounds
+// that to ~288/day; application-active and network-change wakeups still reset
+// the ladder, so a user returning to the app reconnects immediately.
+const RETRY_DELAYS_MS = [3_000, 4_000, 8_000, 16_000, 32_000, 60_000, 120_000, 300_000] as const;
 const CONNECTION_ESTABLISHMENT_TIMEOUT = "15 seconds";
 const CONNECTION_PROBE_TIMEOUT = "15 seconds";
 const MOBILE_CONNECTION_PROBE_TIMEOUT = "3 seconds";
@@ -135,7 +141,7 @@ export interface EnvironmentSupervisorOptions {
 }
 
 function retryDelayMs(failureCount: number): number {
-  return RETRY_DELAYS_MS[Math.min(failureCount, RETRY_DELAYS_MS.length - 1)] ?? 16_000;
+  return RETRY_DELAYS_MS[Math.min(failureCount, RETRY_DELAYS_MS.length - 1)] ?? 300_000;
 }
 
 // Applies ±20% jitter so environments recovering from a shared outage do not

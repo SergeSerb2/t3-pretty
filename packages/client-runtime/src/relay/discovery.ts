@@ -7,6 +7,7 @@ import {
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
 } from "@t3tools/contracts/relay";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -24,6 +25,13 @@ import { ConnectionBlockedError, type ConnectionAttemptError } from "../connecti
 import * as ConnectionWakeups from "../connection/wakeups.ts";
 
 export type RelayEnvironmentAvailability = "checking" | "online" | "offline" | "error";
+
+// Web fires an application-active wakeup on every visibility change and mobile
+// on every foreground, and each wakeup-triggered refresh costs 1 + N relay
+// requests (list plus a status probe per environment, each billed Worker CPU).
+// Explicit refreshes (pull-to-refresh, screen mounts, catalog polls, sign-in)
+// are never throttled; only wakeup- and connectivity-driven ones coalesce.
+const AUTO_REFRESH_MIN_INTERVAL_MS = 60_000;
 
 export interface RelayDiscoveredEnvironment {
   readonly environment: RelayClientEnvironmentRecord;
@@ -336,6 +344,18 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
   const refresh = refreshDiscovery(true);
   const refreshCatalog = refreshDiscovery(false);
 
+  // Seeded so the first wakeup-driven refresh always runs; only repeats inside
+  // the window coalesce. (Tests start on a TestClock at time 0.)
+  const lastAutoRefreshStartedAt = yield* Ref.make(-AUTO_REFRESH_MIN_INTERVAL_MS);
+  const refreshAutoThrottled = Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    if (now - (yield* Ref.get(lastAutoRefreshStartedAt)) < AUTO_REFRESH_MIN_INTERVAL_MS) {
+      return;
+    }
+    yield* Ref.set(lastAutoRefreshStartedAt, now);
+    yield* refresh;
+  });
+
   yield* connectivity.changes.pipe(
     Stream.changes,
     Stream.runForEach((networkStatus) =>
@@ -346,7 +366,7 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
             offline: true,
           }))
         : Ref.get(hasRefreshed).pipe(
-            Effect.flatMap((shouldRefresh) => (shouldRefresh ? refresh : Effect.void)),
+            Effect.flatMap((shouldRefresh) => (shouldRefresh ? refreshAutoThrottled : Effect.void)),
           ),
     ),
     Effect.forkScoped,
@@ -367,7 +387,7 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
           })
         : Ref.get(hasRefreshed).pipe(
             Effect.flatMap((shouldRefresh) =>
-              shouldRefresh ? refresh.pipe(Effect.forkScoped) : Effect.void,
+              shouldRefresh ? refreshAutoThrottled.pipe(Effect.forkScoped) : Effect.void,
             ),
           ),
     ),
