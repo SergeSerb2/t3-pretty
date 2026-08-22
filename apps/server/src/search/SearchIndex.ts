@@ -10,7 +10,8 @@
  * Only the two sources the search contract exposes are indexed: user
  * messages (reduced to their visible text, auto-PR instruction block
  * stripped) and canonical assistant messages (the turn-final
- * `assistant_message_id` rows in `projection_turns`).
+ * `assistant_message_id` rows in `projection_turns`). Archived, deleted,
+ * and project-deleted threads are treated as gone.
  *
  * @module SearchIndex
  */
@@ -40,8 +41,9 @@ export interface SearchIndexShape {
   }) => Effect.Effect<void, ProjectionRepositoryError>;
 
   /**
-   * Re-derive every index entry of a thread (after a revert): drops entries
-   * for messages the thread no longer holds, re-indexes the rest.
+   * Re-derive every index entry of a thread (after a revert, archive,
+   * unarchive, or delete): drops entries for messages the thread no longer
+   * holds or that are no longer searchable, re-indexes the rest.
    */
   readonly reindexThread: (input: {
     readonly threadId: ThreadId;
@@ -192,14 +194,21 @@ const makeSearchIndex = Effect.gen(function* () {
     Effect.gen(function* () {
       const rows = yield* sql<MessageRow>`
         SELECT
-          message_id AS "messageId",
-          thread_id AS "threadId",
-          role,
-          text,
-          is_streaming AS "isStreaming",
-          created_at AS "createdAt"
-        FROM projection_thread_messages
-        WHERE message_id = ${messageId}
+          messages.message_id AS "messageId",
+          messages.thread_id AS "threadId",
+          messages.role,
+          messages.text,
+          messages.is_streaming AS "isStreaming",
+          messages.created_at AS "createdAt"
+        FROM projection_thread_messages AS messages
+        INNER JOIN projection_threads AS threads
+          ON threads.thread_id = messages.thread_id
+        INNER JOIN projection_projects AS projects
+          ON projects.project_id = threads.project_id
+        WHERE messages.message_id = ${messageId}
+          AND threads.deleted_at IS NULL
+          AND threads.archived_at IS NULL
+          AND projects.deleted_at IS NULL
         LIMIT 1
       `;
       const message = rows[0];
@@ -220,14 +229,21 @@ const makeSearchIndex = Effect.gen(function* () {
     Effect.gen(function* () {
       const messageRows = yield* sql<MessageRow>`
         SELECT
-          message_id AS "messageId",
-          thread_id AS "threadId",
-          role,
-          text,
-          is_streaming AS "isStreaming",
-          created_at AS "createdAt"
-        FROM projection_thread_messages
-        WHERE thread_id = ${threadId}
+          messages.message_id AS "messageId",
+          messages.thread_id AS "threadId",
+          messages.role,
+          messages.text,
+          messages.is_streaming AS "isStreaming",
+          messages.created_at AS "createdAt"
+        FROM projection_thread_messages AS messages
+        INNER JOIN projection_threads AS threads
+          ON threads.thread_id = messages.thread_id
+        INNER JOIN projection_projects AS projects
+          ON projects.project_id = threads.project_id
+        WHERE messages.thread_id = ${threadId}
+          AND threads.deleted_at IS NULL
+          AND threads.archived_at IS NULL
+          AND projects.deleted_at IS NULL
       `;
       const presentIds = new Set(messageRows.map((row) => row.messageId));
       const indexedRows = yield* sql<{ readonly messageId: string }>`
@@ -249,12 +265,18 @@ const makeSearchIndex = Effect.gen(function* () {
 
   const backfillFromProjection: SearchIndexShape["backfillFromProjection"] = () =>
     Effect.gen(function* () {
-      const threadRows = yield* sql<{ readonly threadId: string }>`
+      const messageThreadRows = yield* sql<{ readonly threadId: string }>`
         SELECT DISTINCT thread_id AS "threadId" FROM projection_thread_messages
       `;
+      const indexedThreadRows = yield* sql<{ readonly threadId: string }>`
+        SELECT DISTINCT thread_id AS "threadId" FROM search_index_docs
+      `;
+      const threadIds = new Set(
+        [...messageThreadRows, ...indexedThreadRows].map((row) => row.threadId),
+      );
       yield* Effect.forEach(
-        threadRows,
-        (row) => reindexThread({ threadId: ThreadId.make(row.threadId) }),
+        threadIds,
+        (threadId) => reindexThread({ threadId: ThreadId.make(threadId) }),
         { concurrency: 1, discard: true },
       );
     }).pipe(

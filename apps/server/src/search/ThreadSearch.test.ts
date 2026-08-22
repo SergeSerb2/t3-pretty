@@ -23,7 +23,12 @@ import {
   OrchestrationProjectionPipelineLive,
 } from "../orchestration/Layers/ProjectionPipeline.ts";
 import { OrchestrationProjectionPipeline } from "../orchestration/Services/ProjectionPipeline.ts";
-import { PER_TERM_POSTINGS_LIMIT, ThreadSearch, ThreadSearchLive } from "./ThreadSearch.ts";
+import {
+  PER_TERM_POSTINGS_LIMIT,
+  PREFIX_EXPANSION_LIMIT,
+  ThreadSearch,
+  ThreadSearchLive,
+} from "./ThreadSearch.ts";
 import { rankedSearchTerms } from "./tokenizer.ts";
 
 const makeTestLayer = (prefix: string) =>
@@ -157,6 +162,87 @@ const appendTurnDiffCompleted = (input: {
         assistantMessageId:
           input.assistantMessageId !== undefined ? MessageId.make(input.assistantMessageId) : null,
         completedAt: LATER,
+      },
+    });
+  });
+
+const appendThreadArchived = (threadId: string, at: string = LATER) =>
+  Effect.gen(function* () {
+    const eventStore = yield* OrchestrationEventStore;
+    yield* eventStore.append({
+      type: "thread.archived",
+      eventId: EventId.make(`evt-archive-${threadId}`),
+      aggregateKind: "thread",
+      aggregateId: ThreadId.make(threadId),
+      occurredAt: at,
+      commandId: CommandId.make(`cmd-archive-${threadId}`),
+      causationEventId: null,
+      correlationId: CommandId.make(`cmd-archive-${threadId}`),
+      metadata: {},
+      payload: {
+        threadId: ThreadId.make(threadId),
+        archivedAt: at,
+        updatedAt: at,
+      },
+    });
+  });
+
+const appendThreadUnarchived = (threadId: string, at: string = LATER) =>
+  Effect.gen(function* () {
+    const eventStore = yield* OrchestrationEventStore;
+    yield* eventStore.append({
+      type: "thread.unarchived",
+      eventId: EventId.make(`evt-unarchive-${threadId}`),
+      aggregateKind: "thread",
+      aggregateId: ThreadId.make(threadId),
+      occurredAt: at,
+      commandId: CommandId.make(`cmd-unarchive-${threadId}`),
+      causationEventId: null,
+      correlationId: CommandId.make(`cmd-unarchive-${threadId}`),
+      metadata: {},
+      payload: {
+        threadId: ThreadId.make(threadId),
+        updatedAt: at,
+      },
+    });
+  });
+
+const appendThreadDeleted = (threadId: string, at: string = LATER) =>
+  Effect.gen(function* () {
+    const eventStore = yield* OrchestrationEventStore;
+    yield* eventStore.append({
+      type: "thread.deleted",
+      eventId: EventId.make(`evt-delete-${threadId}`),
+      aggregateKind: "thread",
+      aggregateId: ThreadId.make(threadId),
+      occurredAt: at,
+      commandId: CommandId.make(`cmd-delete-${threadId}`),
+      causationEventId: null,
+      correlationId: CommandId.make(`cmd-delete-${threadId}`),
+      metadata: {},
+      payload: {
+        threadId: ThreadId.make(threadId),
+        deletedAt: at,
+      },
+    });
+  });
+
+const appendProjectDeleted = (projectId: string, at: string = LATER) =>
+  Effect.gen(function* () {
+    const eventStore = yield* OrchestrationEventStore;
+    yield* eventStore.append({
+      type: "project.deleted",
+      eventId: EventId.make(`evt-delete-project-${projectId}`),
+      aggregateKind: "project",
+      aggregateId: ProjectId.make(projectId),
+      occurredAt: at,
+      commandId: CommandId.make(`cmd-delete-project-${projectId}`),
+      causationEventId: null,
+      correlationId: CommandId.make(`cmd-delete-project-${projectId}`),
+      metadata: {},
+      payload: {
+        projectId: ProjectId.make(projectId),
+        deletedAt: at,
       },
     });
   });
@@ -629,6 +715,167 @@ it.layer(makeTestLayer("t3-thread-search-limit-recency-"))("ThreadSearch", (it) 
         result.matches.map((match) => match.threadId),
         ["thread-4", "thread-3"],
       );
+    }),
+  );
+});
+
+it.layer(makeTestLayer("t3-thread-search-prefix-trunc-"))("ThreadSearch", (it) => {
+  it.effect("typeahead still finds common completions when prefix expansions are truncated", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* appendProject("project-1");
+      yield* appendThread("thread-1", "project-1");
+      yield* appendMessage({
+        eventId: "evt-m1",
+        threadId: "thread-1",
+        messageId: "message-1",
+        role: "user",
+        text: "search bananas",
+      });
+      yield* projectionPipeline.bootstrap;
+
+      // Surround `search` in df so both ASC and DESC LIMIT 25 miss it.
+      const dummyTerms = [
+        ...Array.from({ length: PREFIX_EXPANSION_LIMIT }, (_, index) => ({
+          term: `searalow${String(index).padStart(2, "0")}`,
+          doc_freq: 1,
+        })),
+        ...Array.from({ length: PREFIX_EXPANSION_LIMIT }, (_, index) => ({
+          term: `searahigh${String(index).padStart(2, "0")}`,
+          doc_freq: 10_000,
+        })),
+      ];
+      yield* sql`INSERT INTO search_index_terms ${sql.insert(dummyTerms)}`;
+      yield* sql`UPDATE search_index_terms SET doc_freq = 100 WHERE term = ${"search"}`;
+
+      const result = yield* search("sear");
+      assert.equal(result.matches.length, 1);
+      assert.strictEqual(result.matches[0]?.threadId, "thread-1");
+    }),
+  );
+});
+
+it.layer(makeTestLayer("t3-thread-search-lifecycle-"))("ThreadSearch", (it) => {
+  it.effect("drops index rows on archive and delete, and restores them on unarchive", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* appendProject("project-1");
+      yield* appendThread("thread-1", "project-1");
+      yield* appendThread("thread-2", "project-1");
+      yield* appendMessage({
+        eventId: "evt-m1",
+        threadId: "thread-1",
+        messageId: "message-1",
+        role: "user",
+        text: "archivezebra from thread one",
+      });
+      yield* appendMessage({
+        eventId: "evt-m2",
+        threadId: "thread-2",
+        messageId: "message-2",
+        role: "user",
+        text: "deletezebra from thread two",
+      });
+      yield* projectionPipeline.bootstrap;
+      assert.equal((yield* search("archivezebra")).matches.length, 1);
+      assert.equal((yield* search("deletezebra")).matches.length, 1);
+
+      yield* appendThreadArchived("thread-1");
+      yield* projectionPipeline.bootstrap;
+      assert.equal((yield* search("archivezebra")).matches.length, 0);
+      const archivedDocs = yield* sql<{ readonly n: number }>`
+        SELECT COUNT(*) AS "n" FROM search_index_docs WHERE thread_id = ${"thread-1"}
+      `;
+      assert.equal(archivedDocs[0]?.n, 0);
+
+      yield* appendThreadUnarchived("thread-1", "2026-01-01T00:00:02.000Z");
+      yield* projectionPipeline.bootstrap;
+      assert.equal((yield* search("archivezebra")).matches.length, 1);
+
+      yield* appendThreadDeleted("thread-2", "2026-01-01T00:00:03.000Z");
+      yield* projectionPipeline.bootstrap;
+      assert.equal((yield* search("deletezebra")).matches.length, 0);
+      const deletedDocs = yield* sql<{ readonly n: number }>`
+        SELECT COUNT(*) AS "n" FROM search_index_docs WHERE thread_id = ${"thread-2"}
+      `;
+      assert.equal(deletedDocs[0]?.n, 0);
+    }),
+  );
+});
+
+it.layer(makeTestLayer("t3-thread-search-project-del-"))("ThreadSearch", (it) => {
+  it.effect("drops index rows when the project is deleted", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* appendProject("project-1");
+      yield* appendThread("thread-1", "project-1");
+      yield* appendMessage({
+        eventId: "evt-m1",
+        threadId: "thread-1",
+        messageId: "message-1",
+        role: "user",
+        text: "projectzebra gone with the project",
+      });
+      yield* projectionPipeline.bootstrap;
+      assert.equal((yield* search("projectzebra")).matches.length, 1);
+
+      yield* appendProjectDeleted("project-1");
+      yield* projectionPipeline.bootstrap;
+      assert.equal((yield* search("projectzebra")).matches.length, 0);
+      const docs = yield* sql<{ readonly n: number }>`
+        SELECT COUNT(*) AS "n" FROM search_index_docs
+      `;
+      assert.equal(docs[0]?.n, 0);
+    }),
+  );
+});
+
+it.layer(makeTestLayer("t3-thread-search-orphan-"))("ThreadSearch", (it) => {
+  it.effect("backfill drops leftover docs for threads that are no longer searchable", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* appendProject("project-1");
+      yield* appendThread("thread-1", "project-1");
+      yield* appendMessage({
+        eventId: "evt-m1",
+        threadId: "thread-1",
+        messageId: "message-1",
+        role: "user",
+        text: "keepzebra stays searchable",
+      });
+      yield* projectionPipeline.bootstrap;
+
+      yield* sql`
+        INSERT INTO search_index_docs (message_id, thread_id, role, token_count, created_at)
+        VALUES (${"orphan-message"}, ${"thread-gone"}, ${"user"}, ${1}, ${NOW})
+      `;
+      yield* sql`
+        INSERT INTO search_index_terms (term, doc_freq) VALUES (${"orphanzebra"}, ${1})
+      `;
+      yield* sql`
+        INSERT INTO search_index_postings (term, message_id, tf)
+        VALUES (${"orphanzebra"}, ${"orphan-message"}, ${1})
+      `;
+      yield* sql`
+        DELETE FROM projection_state
+        WHERE projector = ${ORCHESTRATION_PROJECTOR_NAMES.searchIndex}
+      `;
+
+      yield* projectionPipeline.bootstrap;
+
+      const orphanDocs = yield* sql<{ readonly n: number }>`
+        SELECT COUNT(*) AS "n" FROM search_index_docs WHERE thread_id = ${"thread-gone"}
+      `;
+      assert.equal(orphanDocs[0]?.n, 0);
+      assert.equal((yield* search("keepzebra")).matches.length, 1);
     }),
   );
 });

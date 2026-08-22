@@ -1653,8 +1653,23 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
         }
 
+        case "thread.archived":
+        case "thread.unarchived":
+        case "thread.deleted":
         case "thread.reverted": {
           yield* searchIndex.reindexThread({ threadId: event.payload.threadId });
+          return;
+        }
+
+        case "project.deleted": {
+          const threads = yield* projectionThreadRepository.listByProjectId({
+            projectId: event.payload.projectId,
+          });
+          yield* Effect.forEach(
+            threads,
+            (thread) => searchIndex.reindexThread({ threadId: thread.threadId }),
+            { concurrency: 1, discard: true },
+          );
           return;
         }
 
