@@ -373,8 +373,8 @@ function applyTheme(theme: Theme, suppressTransitions = false, source: ThemeSwap
   // The new palette sweeps across the held old snapshot as a terminator
   // front — dusk settles downward, dawn rises — with a feather veil riding
   // the edge (see html[data-theme-sweep] in index.css). WebKit stays on the
-  // 250ms dissolve. no-transitions still suppresses per-element color tweens
-  // underneath, and a system flip runs slower than a deliberate toggle.
+  // dissolve (250ms user, 1200ms system). no-transitions still suppresses
+  // per-element color tweens underneath.
   root.classList.add("no-transitions");
   root.dataset.themeSwap = source;
   const sweeping = canSweepTerminatorFront();

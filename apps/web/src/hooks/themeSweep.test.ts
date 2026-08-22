@@ -103,6 +103,13 @@ describe("theme swap wiring", () => {
     expect(useThemeSource).toContain("canSweepTerminatorFront");
   });
 
+  it("applies the system weather tempo to the dissolve as well as the sweep", () => {
+    const css = NodeFS.readFileSync(new URL("../index.css", import.meta.url), "utf8");
+    expect(css).toMatch(
+      /html\[data-theme-swap="system"\]::view-transition-group\(root\),\s*html\[data-theme-swap="system"\]::view-transition-old\(root\),\s*html\[data-theme-swap="system"\]::view-transition-new\(root\)\s*\{\s*animation-duration:\s*var\(--theme-sweep-ms\);/,
+    );
+  });
+
   it("hides the live sweep veil; only the view-transition new snapshot reveals it", () => {
     const css = NodeFS.readFileSync(new URL("../index.css", import.meta.url), "utf8");
     expect(css).toMatch(/\.theme-sweep-veil\s*\{[^}]*opacity:\s*0/s);

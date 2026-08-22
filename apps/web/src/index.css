@@ -1465,7 +1465,8 @@ html[data-theme-swap] {
   --theme-sweep-ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* A system flip is weather, not a switch: let it cross the window slowly. */
+/* A system flip is weather, not a switch: let it cross the window slowly
+   on the sweep and the dissolve fallback (WebKit never sets data-theme-sweep). */
 html[data-theme-swap="system"] {
   --theme-sweep-ms: 1200ms;
 }
@@ -1480,6 +1481,12 @@ html[data-theme-swap]::view-transition-new(root) {
   animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
   /* plus-lighter flashes a bright frame between a light and dark snapshot. */
   mix-blend-mode: normal;
+}
+
+html[data-theme-swap="system"]::view-transition-group(root),
+html[data-theme-swap="system"]::view-transition-old(root),
+html[data-theme-swap="system"]::view-transition-new(root) {
+  animation-duration: var(--theme-sweep-ms);
 }
 
 html[data-theme-sweep]::view-transition-group(root) {

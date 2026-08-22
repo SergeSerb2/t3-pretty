@@ -42,9 +42,9 @@ export function shouldMashCut(now: number): boolean {
 /**
  * Clip-path on a full-viewport snapshot is compositor-cheap on Blink/Gecko.
  * WebKit (Safari and every iOS browser) can re-clip every frame for
- * 600–1200ms — keep those on the 250ms dissolve by not setting
- * data-theme-sweep. Brand tokens must be rejected before the allowlist:
- * EdgiOS matches /Edg/.
+ * 600–1200ms — keep those on the dissolve by not setting data-theme-sweep
+ * (250ms user, 1200ms system). Brand tokens must be rejected before the
+ * allowlist: EdgiOS matches /Edg/.
  */
 export function canSweepTerminatorFront(
   userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent,
