@@ -23,7 +23,9 @@ import { useEnvironmentQuery } from "../state/query";
 import { environmentThreadShells, threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { layerStack } from "./glass";
+import { usePhotoSetStore } from "./photoSetStore";
 import { pickInkVariant, type InkDecisionInput } from "./sceneryInk";
+import { loadSeedPhotos, peekSeedPhotos } from "./scenerySeeds";
 import { SceneryArrival } from "./SceneryArrival";
 import { SceneryLayer } from "./SceneryLayer";
 import { SceneryPlaceCredit } from "./SceneryPlaceCredit";
@@ -44,6 +46,7 @@ import "./scenery.css";
 
 const CONTRAST_QUERY = "(prefers-contrast: more)";
 const TRANSPARENCY_QUERY = "(prefers-reduced-transparency: reduce)";
+const EMPTY_FETCHED_PHOTOS: ReadonlyArray<import("./unsplash").SceneryPhoto> = [];
 
 function subscribeToCachedMediaQuery(query: string) {
   return (onChange: () => void): (() => void) => {
@@ -97,7 +100,10 @@ export default function ActiveScenery() {
   const connectionReady =
     connection.data !== null && connectionProjectionPhase(connection.data) === "ready";
   const assignments = useSceneryStore((state) => state.assignments);
-  const fetchedPhotos = useSceneryStore((state) => state.fetchedPhotos);
+  const photoSetId = usePhotoSetStore((state) => state.photoSetId);
+  const fetchedPhotos = useSceneryStore(
+    (state) => state.fetchedBySet[photoSetId] ?? EMPTY_FETCHED_PHOTOS,
+  );
   const translucency = useSceneryStore((state) => state.translucency);
   const blur = useSceneryStore((state) => state.blur);
   const inkMode = useSceneryStore((state) => state.inkMode);
@@ -110,20 +116,41 @@ export default function ActiveScenery() {
     reportFailure: false,
   });
 
-  const pool = useMemo(() => getSceneryPool(fetchedPhotos), [fetchedPhotos]);
+  const [seedPhotos, setSeedPhotos] = useState(() => peekSeedPhotos(photoSetId));
+  useEffect(() => {
+    setSeedPhotos(peekSeedPhotos(photoSetId));
+    let cancelled = false;
+    void loadSeedPhotos(photoSetId).then((photos) => {
+      if (!cancelled) {
+        setSeedPhotos(photos);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [photoSetId]);
+  const pool = useMemo(
+    () => getSceneryPool(fetchedPhotos, seedPhotos),
+    [fetchedPhotos, seedPhotos],
+  );
 
   useEffect(() => {
     void refreshPoolIfStale();
-  }, [refreshPoolIfStale]);
+  }, [photoSetId, refreshPoolIfStale]);
 
   useEffect(() => {
-    if (!threadKey || serverScenery) {
+    if (!threadKey) {
+      return;
+    }
+    if (serverScenery && pool.some((entry) => entry.id === serverScenery.photoId)) {
       return;
     }
     // Local first: the photo shows this tick and covers drafts (no server
-    // thread yet) and pre-scenery servers.
+    // thread yet) and pre-scenery servers. Also used when the server photo
+    // belongs to a different photo set than the one on screen.
     ensureAssignment(threadKey);
     if (
+      serverScenery ||
       !threadRef ||
       !serverThreadKnown ||
       !connectionReady ||
@@ -140,7 +167,10 @@ export default function ActiveScenery() {
     // Resolve exactly what the render path shows for this assignment —
     // including the deterministic fallback when the saved photo left the
     // pool — so the photo on screen is the one other devices converge on.
-    const poolSnapshot = getSceneryPool(state.fetchedPhotos);
+    const poolSnapshot = getSceneryPool(
+      state.fetchedBySet[usePhotoSetStore.getState().photoSetId] ?? EMPTY_FETCHED_PHOTOS,
+      peekSeedPhotos(usePhotoSetStore.getState().photoSetId),
+    );
     const photo = assignment
       ? (poolSnapshot.find((entry) => entry.id === assignment.photoId) ??
         fallbackPhoto(poolSnapshot, threadKey))
@@ -160,15 +190,20 @@ export default function ActiveScenery() {
     connectionReady,
     ensureAssignment,
     assignScenery,
+    pool,
   ]);
 
   const assignment = threadKey ? (assignments[threadKey] ?? null) : null;
   const photo = useMemo(() => {
     if (threadKey) {
-      // The server-synced binding wins: every device of the environment
-      // renders the same photo, even one this device's pool lacks.
+      // Server binding wins when that photo still belongs to the active set.
+      // A Night Cities session should not keep painting a World Scenery
+      // assignment just because the server wrote it first.
       if (serverScenery) {
-        return photoFromAssignment(serverScenery);
+        const bound = photoFromAssignment(serverScenery);
+        if (pool.some((entry) => entry.id === bound.id)) {
+          return bound;
+        }
       }
       if (assignment) {
         return (

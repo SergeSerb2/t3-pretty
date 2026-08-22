@@ -1,9 +1,12 @@
 import { cn } from "../../lib/utils";
+import { PHOTO_SETS, type PhotoSetId } from "../../scenery/photoSets";
+import { usePhotoSetStore } from "../../scenery/photoSetStore";
 import { isBoringChatTheme } from "../../scenery/productTheme";
 import { WORLD_SCENERY_THEME, WORLD_SCENERY_THEME_ID } from "../../scenery/worldSceneryTheme";
 import {
   T3_CHAT_THEME,
   T3_CHAT_THEME_ID,
+  type ThemeColors,
   type ThemeDefinition,
   type ThemePreference,
 } from "../../themePalette";
@@ -12,20 +15,79 @@ import { searchableSetting } from "./settingsSearch";
 import { getThemeCardDefinition, previewColorsOf, type ThemeMode } from "./ThemePreviewCircles";
 import { ThemeWireframe } from "./ThemeWireframe";
 
-const PRODUCT_THEMES = [
-  {
-    id: WORLD_SCENERY_THEME_ID,
-    label: "World Scenery",
-    ariaLabel: "Use World Scenery",
-    theme: WORLD_SCENERY_THEME,
+const PHOTO_SET_PREVIEW: Record<
+  PhotoSetId,
+  { readonly dark: Partial<ThemeColors>; readonly light: Partial<ThemeColors> }
+> = {
+  "world-scenery": { dark: {}, light: {} },
+  "night-cities": {
+    dark: {
+      canvas: "#0a0e1a",
+      accent: "#7aa2ff",
+      accentSurface: "#243056",
+      messageSurface: "#1b2744",
+    },
+    light: {
+      canvas: "#eef1f8",
+      accent: "#2a4a9a",
+      accentSurface: "#d9e3f7",
+      messageSurface: "#d4def0",
+    },
   },
-  {
-    id: T3_CHAT_THEME_ID,
-    label: "Boring",
-    ariaLabel: "Use Boring, the original T3 Chat colors without World Scenery photos",
-    theme: T3_CHAT_THEME,
+  "deep-forest": {
+    dark: {
+      canvas: "#0b140e",
+      accent: "#8fce7a",
+      accentSurface: "#2a4a32",
+      messageSurface: "#1e3826",
+    },
+    light: {
+      canvas: "#eef4ee",
+      accent: "#2f6a3a",
+      accentSurface: "#d7ead8",
+      messageSurface: "#d3e6d4",
+    },
   },
-] as const;
+  "night-sky": {
+    dark: {
+      canvas: "#0b0a16",
+      accent: "#9b8cff",
+      accentSurface: "#2e2858",
+      messageSurface: "#221e40",
+    },
+    light: {
+      canvas: "#f1eff8",
+      accent: "#4a3d9a",
+      accentSurface: "#e0dcf4",
+      messageSurface: "#dcd7f0",
+    },
+  },
+  "grand-buildings": {
+    dark: {
+      canvas: "#14110e",
+      accent: "#d4b483",
+      accentSurface: "#4a3c2a",
+      messageSurface: "#3a2e20",
+    },
+    light: {
+      canvas: "#f5f1ea",
+      accent: "#8a6430",
+      accentSurface: "#eadcc4",
+      messageSurface: "#e6d7bc",
+    },
+  },
+};
+
+function photoSetTheme(photoSetId: PhotoSetId): ThemeDefinition {
+  const preview = PHOTO_SET_PREVIEW[photoSetId];
+  return {
+    ...WORLD_SCENERY_THEME,
+    id: photoSetId,
+    label: PHOTO_SETS.find((set) => set.id === photoSetId)?.label ?? WORLD_SCENERY_THEME.label,
+    colors: { ...WORLD_SCENERY_THEME.colors, ...preview.dark },
+    variants: { light: { ...WORLD_SCENERY_THEME.variants!.light!, ...preview.light } },
+  };
+}
 
 function notifyAppearanceSaveFailure() {
   toastManager.add(
@@ -105,7 +167,9 @@ export function ThemeLibrary({
   setTheme: (theme: ThemePreference) => boolean;
 }) {
   const boring = isBoringChatTheme(theme);
-  const schemeTheme = boring ? T3_CHAT_THEME : WORLD_SCENERY_THEME;
+  const photoSetId = usePhotoSetStore((state) => state.photoSetId);
+  const setPhotoSetId = usePhotoSetStore((state) => state.setPhotoSetId);
+  const schemeTheme = boring ? T3_CHAT_THEME : photoSetTheme(photoSetId);
 
   const setMode = (mode: ThemeMode) => {
     if (!setAppearanceMode(mode)) {
@@ -113,8 +177,15 @@ export function ThemeLibrary({
     }
   };
 
-  const setProductTheme = (next: ThemePreference) => {
-    if (!setTheme(next)) {
+  const selectPhotoSet = (next: PhotoSetId) => {
+    setPhotoSetId(next);
+    if (!setTheme(WORLD_SCENERY_THEME_ID)) {
+      notifyAppearanceSaveFailure();
+    }
+  };
+
+  const selectBoring = () => {
+    if (!setTheme(T3_CHAT_THEME_ID)) {
       notifyAppearanceSaveFailure();
     }
   };
@@ -127,31 +198,35 @@ export function ThemeLibrary({
             Personalization
           </h3>
           <p className="text-[13px] leading-[1.45] text-muted-foreground/80">
-            World Scenery is the default. Boring restores the original T3 Chat colors and turns the
-            landscape photos off.
+            Photo themes put a different kind of place behind the glass. Boring restores the
+            original T3 Chat colors and turns the photos off.
           </p>
         </div>
         <div
           aria-label="Personalization"
-          className="mx-auto grid w-full max-w-[56rem] grid-cols-2 gap-3 px-3 sm:px-4"
+          className="mx-auto grid w-full max-w-[56rem] grid-cols-2 gap-3 px-3 sm:px-4 sm:grid-cols-3"
           role="group"
         >
-          {PRODUCT_THEMES.map((product) => {
-            const selected = product.id === T3_CHAT_THEME_ID ? boring : !boring;
-            return (
-              <ThemeChoiceCard
-                ariaLabel={product.ariaLabel}
-                id={
-                  product.id === T3_CHAT_THEME_ID ? searchableSetting("boring-mode").id : undefined
-                }
-                key={product.id}
-                label={product.label}
-                onSelect={() => setProductTheme(product.id)}
-                panes={panesForTheme(product.theme, appearanceMode)}
-                selected={selected}
-              />
-            );
-          })}        </div>
+          {PHOTO_SETS.map((product) => (
+            <ThemeChoiceCard
+              ariaLabel={product.ariaLabel}
+              id={product.id}
+              key={product.id}
+              label={product.label}
+              onSelect={() => selectPhotoSet(product.id)}
+              panes={panesForTheme(photoSetTheme(product.id), appearanceMode)}
+              selected={!boring && photoSetId === product.id}
+            />
+          ))}
+          <ThemeChoiceCard
+            ariaLabel="Use Boring, the original T3 Chat colors without scenery photos"
+            id={searchableSetting("boring-mode").id}
+            label="Boring"
+            onSelect={selectBoring}
+            panes={panesForTheme(T3_CHAT_THEME, appearanceMode)}
+            selected={boring}
+          />
+        </div>
       </div>
 
       <div className="space-y-3">
