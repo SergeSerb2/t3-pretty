@@ -363,6 +363,11 @@ describe("scenery light/dark appearance crossfade", () => {
       "html[data-scenery-ink-transition]::view-transition-old(scenery-chat-transcript)",
     );
     expect(sceneryCssSource).toContain("display: none");
+    expect(sceneryCssSource).toContain(
+      "html[data-scenery-ink-transition] [data-chat-transcript] ~ [data-chat-transcript]",
+    );
+    expect(sceneryCssSource).toContain("view-transition-name: none");
+    expect(chatViewSource).toContain('data-chat-transcript="true"');
     expect(sceneryInkTransitionSource).toContain("document.hidden");
   });
 

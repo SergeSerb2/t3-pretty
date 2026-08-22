@@ -361,8 +361,14 @@ export const makeAcpTerminalHost = (options: { readonly cwd: string }) =>
     const output: AcpTerminalHost["output"] = (request) =>
       Effect.gen(function* () {
         const terminal = yield* getTerminal(request);
-        const buffer = yield* Ref.get(terminal.outputRef);
         const exitStatus = yield* Ref.get(terminal.exitStatusRef);
+        // exitCode can land while `child.all` is still appending. If we
+        // already know the process exited, wait for drain so exitStatus
+        // never ships with a truncated tail.
+        if (exitStatus) {
+          yield* Deferred.await(terminal.drained);
+        }
+        const buffer = yield* Ref.get(terminal.outputRef);
         return {
           output: decodeTerminalOutput(buffer.bytes),
           truncated: buffer.truncated,

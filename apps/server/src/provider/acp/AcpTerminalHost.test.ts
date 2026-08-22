@@ -346,6 +346,37 @@ describe("AcpTerminalHost", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("output includes the full stdout tail once it reports exitStatus", () =>
+    Effect.gen(function* () {
+      const cwd = yield* HostProcessWorkingDirectory;
+      const execPath = yield* HostProcessExecutablePath;
+      const host = yield* makeAcpTerminalHost({ cwd });
+      const created = yield* host.create({
+        sessionId,
+        command: execPath,
+        args: [
+          "-e",
+          "process.stdout.write('a'.repeat(65536) + 'DRAIN-TAIL', () => process.exit(0))",
+        ],
+      });
+      let output = yield* host.output({
+        sessionId,
+        terminalId: created.terminalId,
+      });
+      while (output.exitStatus == null) {
+        yield* Effect.yieldNow;
+        output = yield* host.output({
+          sessionId,
+          terminalId: created.terminalId,
+        });
+      }
+      expect(output.exitStatus.exitCode).toBe(0);
+      expect(output.output.endsWith("DRAIN-TAIL")).toBe(true);
+      expect(output.output.length).toBe(65536 + "DRAIN-TAIL".length);
+      yield* host.release({ sessionId, terminalId: created.terminalId });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("rejects output after release", () =>
     Effect.gen(function* () {
       const cwd = yield* HostProcessWorkingDirectory;

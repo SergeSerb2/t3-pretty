@@ -194,9 +194,16 @@ html[data-scenery-ink-transition]::view-transition-new(root) {
 
 /* Thread switches capture two different transcripts in the root snapshot.
    Isolating the list and hiding the outgoing copy stops the plus-lighter
-   overlay that reads as missing/doubled letters. */
+   overlay that reads as missing/doubled letters. The name is on ChatView's
+   single transcript wrapper — not the list viewport — so a second timeline
+   cannot share it. Extra sibling/nested hooks drop the name. */
 html[data-scenery-ink-transition] [data-chat-transcript] {
   view-transition-name: scenery-chat-transcript;
+}
+
+html[data-scenery-ink-transition] [data-chat-transcript] ~ [data-chat-transcript],
+html[data-scenery-ink-transition] [data-chat-transcript] [data-chat-transcript] {
+  view-transition-name: none;
 }
 
 html[data-scenery-ink-transition]::view-transition-group(scenery-chat-transcript) {
