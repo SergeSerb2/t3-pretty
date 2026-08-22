@@ -35,6 +35,10 @@ describe("resolveToastAutoDismissMs", () => {
   it("keeps loading and explicit persist toasts on screen", () => {
     assert.equal(resolveToastAutoDismissMs({ type: "loading" }), undefined);
     assert.equal(
+      resolveToastAutoDismissMs({ type: "loading", timeout: 5_000, dismissAfterVisibleMs: 5_000 }),
+      undefined,
+    );
+    assert.equal(
       resolveToastAutoDismissMs({ type: "success", dismissAfterVisibleMs: 0 }),
       undefined,
     );
@@ -103,6 +107,17 @@ describe("stripToastTimeout", () => {
     assert.deepEqual(
       stripToastTimeout({ timeout: 5_000, data: { dismissAfterVisibleMs: 3_000 } }),
       { timeout: 0, data: { dismissAfterVisibleMs: 3_000 } },
+    );
+  });
+
+  it("does not turn a loading or persist timeout into a dismiss duration", () => {
+    assert.deepEqual(stripToastTimeout({ type: "loading", timeout: 5_000 }), {
+      type: "loading",
+      timeout: 0,
+    });
+    assert.deepEqual(
+      stripToastTimeout({ type: "warning", timeout: 5_000, data: { dismissAfterVisibleMs: 0 } }),
+      { type: "warning", timeout: 0, data: { dismissAfterVisibleMs: 0 } },
     );
   });
 });

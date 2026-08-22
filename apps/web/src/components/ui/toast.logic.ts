@@ -29,11 +29,11 @@ export function resolveToastAutoDismissMs(input: {
   timeout?: number | undefined;
   dismissAfterVisibleMs?: number | undefined;
 }): number | undefined {
+  if (input.type === "loading" || input.dismissAfterVisibleMs === 0) {
+    return undefined;
+  }
   if (typeof input.dismissAfterVisibleMs === "number") {
     return input.dismissAfterVisibleMs > 0 ? input.dismissAfterVisibleMs : undefined;
-  }
-  if (input.type === "loading") {
-    return undefined;
   }
   // Provider timeout is always 0; that is not persist. Only a positive
   // per-toast timeout (before stripToastTimeout) is a duration.
@@ -67,12 +67,16 @@ export function shouldRunToastAutoDismissTimer(
  */
 export function stripToastTimeout<
   TOptions extends {
+    type?: string | undefined;
     timeout?: number | undefined;
     data?: { dismissAfterVisibleMs?: number | undefined } | undefined;
   },
 >(options: TOptions): TOptions {
   if (typeof options.timeout !== "number") {
     return options;
+  }
+  if (options.type === "loading" || options.data?.dismissAfterVisibleMs === 0) {
+    return options.timeout > 0 ? { ...options, timeout: 0 } : options;
   }
   if (options.timeout <= 0) {
     if (options.data?.dismissAfterVisibleMs !== undefined) {
