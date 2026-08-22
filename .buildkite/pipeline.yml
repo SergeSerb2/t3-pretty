@@ -110,6 +110,9 @@ steps:
   - label: ":white_check_mark: Origin PR comments resolved"
     key: origin-pr-comments
     depends_on: origin-pr-review
+    # Re-queries Origin for unresolved Grok threads. No artifact from the
+    # review job. Must still run after review crash/timeout: review is
+    # soft_fail, and this step allows a failed dependency.
     allow_dependency_failure: true
     if: >-
       build.branch != "main" && build.source != "schedule" &&

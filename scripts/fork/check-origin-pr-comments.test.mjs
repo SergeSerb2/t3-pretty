@@ -90,7 +90,14 @@ describe("Origin comment-resolution job wiring", () => {
       "utf8",
     );
     const ci = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
-    assert.include(pipeline, "run-trusted-origin-pr-ci.sh check");
+    const commentsStep = pipeline.slice(
+      pipeline.indexOf(":white_check_mark: Origin PR comments resolved"),
+    );
+    const commentsHead = commentsStep.slice(0, 1200);
+    assert.include(commentsHead, "depends_on: origin-pr-review");
+    assert.include(commentsHead, "allow_dependency_failure: true");
+    assert.include(commentsHead, "No artifact from the");
+    assert.include(commentsHead, "run-trusted-origin-pr-ci.sh check");
     assert.include(pipeline, "Origin PR comments resolved");
     assert.notInclude(pipeline, "build.pull_request");
     assert.include(ci, "check-origin-pr-comments.mjs");
