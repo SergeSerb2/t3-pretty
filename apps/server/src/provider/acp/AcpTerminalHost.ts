@@ -44,6 +44,7 @@ interface TerminalOutputBuffer {
 }
 
 interface HostedTerminal {
+  readonly sessionId: string;
   readonly child: ChildProcessSpawner.ChildProcessHandle;
   readonly outputRef: Ref.Ref<TerminalOutputBuffer>;
   readonly exitStatusRef: Ref.Ref<EffectAcpSchema.WaitForTerminalExitResponse | null>;
@@ -112,12 +113,75 @@ function decodeTerminalOutput(bytes: Uint8Array): string {
   return NodeBuffer.Buffer.from(bytes).toString("utf8");
 }
 
-function resolveTerminalCwd(requestCwd: string | null | undefined, sessionCwd: string): string {
-  const cwd = requestCwd?.trim();
-  if (!cwd) {
-    return sessionCwd;
+export function resolveAcpTerminalCwd(
+  requestCwd: string | null | undefined,
+  sessionCwd: string,
+): string | undefined {
+  const root = NodePath.resolve(sessionCwd);
+  const requested = requestCwd?.trim();
+  const resolved = !requested
+    ? root
+    : NodePath.isAbsolute(requested)
+      ? NodePath.resolve(requested)
+      : NodePath.resolve(root, requested);
+  return isPathInsideRoot(root, resolved) ? resolved : undefined;
+}
+
+function isPathInsideRoot(root: string, candidate: string): boolean {
+  const relative = NodePath.relative(root, candidate);
+  return (
+    relative === "" ||
+    (relative !== ".." &&
+      !relative.startsWith(`..${NodePath.sep}`) &&
+      !NodePath.isAbsolute(relative))
+  );
+}
+
+export function terminalExitFromCode(
+  code: number | null | undefined,
+): EffectAcpSchema.WaitForTerminalExitResponse {
+  if (code == null) {
+    return { exitCode: 1 };
   }
-  return NodePath.isAbsolute(cwd) ? cwd : NodePath.resolve(sessionCwd, cwd);
+  const exitCode = Number(code);
+  if (!Number.isInteger(exitCode) || exitCode < 0) {
+    return { exitCode: 1 };
+  }
+  return { exitCode };
+}
+
+export function terminalExitFromFailure(
+  error: unknown,
+): EffectAcpSchema.WaitForTerminalExitResponse {
+  const signal = signalFromExitError(error);
+  return signal ? { exitCode: 1, signal } : { exitCode: 1 };
+}
+
+function signalFromExitError(error: unknown): string | undefined {
+  const match = /receipt of signal:\s*'([^']+)'/i.exec(exitErrorText(error));
+  const signal = match?.[1]?.trim();
+  return signal ? signal : undefined;
+}
+
+function exitErrorText(error: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current != null && !seen.has(current)) {
+    seen.add(current);
+    if (typeof current === "string") {
+      parts.push(current);
+      break;
+    }
+    if (typeof current === "object" && "message" in current) {
+      parts.push(String(current.message));
+    }
+    current =
+      typeof current === "object" && current !== null && "cause" in current
+        ? current.cause
+        : undefined;
+  }
+  return parts.join("\n");
 }
 
 function envFromRequest(
@@ -146,10 +210,10 @@ export const makeAcpTerminalHost = (options: { readonly cwd: string }) =>
     const hostEnvironment = yield* HostProcessEnvironment;
     const terminals = new Map<string, HostedTerminal>();
 
-    const getTerminal = (terminalId: string) => {
-      const terminal = terminals.get(terminalId);
-      if (!terminal) {
-        return Effect.fail(unknownTerminalError(terminalId));
+    const getTerminal = (request: { readonly sessionId: string; readonly terminalId: string }) => {
+      const terminal = terminals.get(request.terminalId);
+      if (!terminal || terminal.sessionId !== request.sessionId) {
+        return Effect.fail(unknownTerminalError(request.terminalId));
       }
       return Effect.succeed(terminal);
     };
@@ -160,6 +224,12 @@ export const makeAcpTerminalHost = (options: { readonly cwd: string }) =>
         if (!command) {
           return yield* EffectAcpErrors.AcpRequestError.invalidParams(
             "ACP terminal command cannot be empty.",
+          );
+        }
+        const cwd = resolveAcpTerminalCwd(request.cwd, options.cwd);
+        if (!cwd) {
+          return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+            "ACP terminal cwd must stay inside the session working directory.",
           );
         }
         const planned = resolveAcpTerminalSpawn({
@@ -177,7 +247,6 @@ export const makeAcpTerminalHost = (options: { readonly cwd: string }) =>
               }),
           ),
         );
-        const cwd = resolveTerminalCwd(request.cwd, options.cwd);
         const env = envFromRequest(request.env);
         const child = yield* spawner
           .spawn(
@@ -222,8 +291,8 @@ export const makeAcpTerminalHost = (options: { readonly cwd: string }) =>
           Ref.set(exitStatusRef, status).pipe(Effect.andThen(Deferred.succeed(exit, status)));
         yield* child.exitCode.pipe(
           Effect.matchEffect({
-            onSuccess: (code) => completeExit({ exitCode: Number(code) }),
-            onFailure: () => completeExit({ exitCode: 1 }),
+            onSuccess: (code) => completeExit(terminalExitFromCode(code)),
+            onFailure: (error) => completeExit(terminalExitFromFailure(error)),
           }),
           Effect.forkIn(sessionScope),
         );
@@ -237,13 +306,20 @@ export const makeAcpTerminalHost = (options: { readonly cwd: string }) =>
               }),
           ),
         );
-        terminals.set(terminalId, { child, outputRef, exitStatusRef, exit, drained });
+        terminals.set(terminalId, {
+          sessionId: request.sessionId,
+          child,
+          outputRef,
+          exitStatusRef,
+          exit,
+          drained,
+        });
         return { terminalId };
       });
 
     const output: AcpTerminalHost["output"] = (request) =>
       Effect.gen(function* () {
-        const terminal = yield* getTerminal(request.terminalId);
+        const terminal = yield* getTerminal(request);
         const buffer = yield* Ref.get(terminal.outputRef);
         const exitStatus = yield* Ref.get(terminal.exitStatusRef);
         return {
@@ -255,7 +331,7 @@ export const makeAcpTerminalHost = (options: { readonly cwd: string }) =>
 
     const waitForExit: AcpTerminalHost["waitForExit"] = (request) =>
       Effect.gen(function* () {
-        const terminal = yield* getTerminal(request.terminalId);
+        const terminal = yield* getTerminal(request);
         const status = yield* Deferred.await(terminal.exit);
         yield* Deferred.await(terminal.drained);
         return status;
@@ -263,14 +339,14 @@ export const makeAcpTerminalHost = (options: { readonly cwd: string }) =>
 
     const kill: AcpTerminalHost["kill"] = (request) =>
       Effect.gen(function* () {
-        const terminal = yield* getTerminal(request.terminalId);
+        const terminal = yield* getTerminal(request);
         yield* terminal.child.kill().pipe(Effect.ignore);
         return {};
       });
 
     const release: AcpTerminalHost["release"] = (request) =>
       Effect.gen(function* () {
-        const terminal = yield* getTerminal(request.terminalId);
+        const terminal = yield* getTerminal(request);
         terminals.delete(request.terminalId);
         yield* terminal.child.kill().pipe(Effect.ignore);
         return {};

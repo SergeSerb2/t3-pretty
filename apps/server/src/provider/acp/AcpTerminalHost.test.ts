@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodePath from "node:path";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -11,10 +14,14 @@ import {
 import {
   appendTerminalOutput,
   makeAcpTerminalHost,
+  resolveAcpTerminalCwd,
   resolveAcpTerminalSpawn,
+  terminalExitFromCode,
+  terminalExitFromFailure,
 } from "./AcpTerminalHost.ts";
 
 const sessionId = "mock-session-1";
+const sessionRoot = NodePath.resolve("/session/root");
 
 describe("resolveAcpTerminalSpawn", () => {
   it("spawns argv when args are present", () => {
@@ -47,6 +54,56 @@ describe("resolveAcpTerminalSpawn", () => {
       command: "C:\\Windows\\System32\\cmd.exe",
       args: ["/d", "/s", "/c", "git status --short"],
     });
+  });
+});
+
+describe("resolveAcpTerminalCwd", () => {
+  it("uses the session cwd when the request omits cwd", () => {
+    expect(resolveAcpTerminalCwd(undefined, sessionRoot)).toBe(sessionRoot);
+    expect(resolveAcpTerminalCwd("  ", sessionRoot)).toBe(sessionRoot);
+  });
+
+  it("allows a subdirectory of the session cwd", () => {
+    expect(resolveAcpTerminalCwd(NodePath.join(sessionRoot, "src"), sessionRoot)).toBe(
+      NodePath.join(sessionRoot, "src"),
+    );
+    expect(resolveAcpTerminalCwd(NodePath.join("src", "pkg"), sessionRoot)).toBe(
+      NodePath.join(sessionRoot, "src", "pkg"),
+    );
+  });
+
+  it("rejects cwd that escapes the session cwd", () => {
+    expect(resolveAcpTerminalCwd("..", sessionRoot)).toBeUndefined();
+    expect(resolveAcpTerminalCwd(NodePath.resolve("/tmp"), sessionRoot)).toBeUndefined();
+    expect(resolveAcpTerminalCwd(`${sessionRoot}-evil`, sessionRoot)).toBeUndefined();
+  });
+});
+
+describe("terminalExitFromCode", () => {
+  it("maps null and non-integer codes to a non-zero status", () => {
+    expect(terminalExitFromCode(null)).toEqual({ exitCode: 1 });
+    expect(terminalExitFromCode(undefined)).toEqual({ exitCode: 1 });
+    expect(terminalExitFromCode(Number.NaN)).toEqual({ exitCode: 1 });
+  });
+
+  it("keeps a successful numeric exit code", () => {
+    expect(terminalExitFromCode(0)).toEqual({ exitCode: 0 });
+    expect(terminalExitFromCode(7)).toEqual({ exitCode: 7 });
+  });
+});
+
+describe("terminalExitFromFailure", () => {
+  it("maps a signal termination to a non-zero status with the signal", () => {
+    expect(
+      terminalExitFromFailure({
+        message: "Unknown: ChildProcess.exitCode (node -e setTimeout(() => {}, 60_000))",
+        cause: new Error("Process interrupted due to receipt of signal: 'SIGTERM'"),
+      }),
+    ).toEqual({ exitCode: 1, signal: "SIGTERM" });
+  });
+
+  it("maps an unknown failure to a non-zero status", () => {
+    expect(terminalExitFromFailure(new Error("spawn failed"))).toEqual({ exitCode: 1 });
   });
 });
 
@@ -129,7 +186,48 @@ describe("AcpTerminalHost", () => {
         terminalId: created.terminalId,
       });
       expect(status.exitCode).not.toBe(0);
+      if (status.signal != null) {
+        expect(status.signal.length).toBeGreaterThan(0);
+      }
       yield* host.release({ sessionId, terminalId: created.terminalId });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects terminal access from a different session", () =>
+    Effect.gen(function* () {
+      const cwd = yield* HostProcessWorkingDirectory;
+      const execPath = yield* HostProcessExecutablePath;
+      const host = yield* makeAcpTerminalHost({ cwd });
+      const created = yield* host.create({
+        sessionId,
+        command: execPath,
+        args: ["-e", "process.exit(0)"],
+      });
+      yield* host.waitForExit({ sessionId, terminalId: created.terminalId });
+      const error = yield* host
+        .output({ sessionId: "other-session", terminalId: created.terminalId })
+        .pipe(Effect.flip);
+      expect(error._tag).toBe("AcpRequestError");
+      yield* host.release({ sessionId, terminalId: created.terminalId });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects cwd outside the session working directory", () =>
+    Effect.gen(function* () {
+      const cwd = yield* HostProcessWorkingDirectory;
+      const execPath = yield* HostProcessExecutablePath;
+      const host = yield* makeAcpTerminalHost({ cwd });
+      const outside = NodePath.resolve(cwd, "..");
+      expect(outside).not.toBe(NodePath.resolve(cwd));
+      const error = yield* host
+        .create({
+          sessionId,
+          command: execPath,
+          args: ["-e", "process.exit(0)"],
+          cwd: outside,
+        })
+        .pipe(Effect.flip);
+      expect(error._tag).toBe("AcpRequestError");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
