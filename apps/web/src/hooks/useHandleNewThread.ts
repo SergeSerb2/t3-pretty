@@ -6,6 +6,7 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { DEFAULT_RUNTIME_MODE, type ScopedProjectRef, type ThreadId } from "@t3tools/contracts";
+import { resolveCarriedRuntimeMode } from "../components/ChatView.logic";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import {
@@ -113,13 +114,15 @@ export function useNewThreadHandler() {
         setDraftThreadContext,
         setLogicalProjectDraftThreadId,
         setModelSelection,
+        stickyActiveProvider,
       } = useComposerDraftStore.getState();
       const currentRouteTarget = getCurrentRouteTarget();
       // A new thread carries the user's *working mode* from the thread being
       // viewed: model (including options like reasoning effort and context
       // window), permission mode, and interaction mode. Branch, worktree, and
       // env mode never carry implicitly — those come from the configured
-      // defaults unless the caller passes them explicitly.
+      // defaults unless the caller passes them explicitly. Kimi-only "yolo"
+      // is remapped when the destination model is a different provider.
       const carrySourceShell =
         currentRouteTarget?.kind === "server"
           ? readThreadShell(currentRouteTarget.threadRef)
@@ -141,11 +144,21 @@ export function useNewThreadHandler() {
         : null;
       const carryModelSelection =
         composerModelSelection ?? carrySourceShell?.modelSelection ?? null;
-      const carryRuntimeMode =
-        carrySourceComposer?.runtimeMode ??
-        carrySourceShell?.runtimeMode ??
-        carrySourceDraft?.runtimeMode ??
-        null;
+      const destinationInstanceId = carryModelSelection?.instanceId ?? stickyActiveProvider ?? null;
+      const destinationProviderDriver =
+        environments
+          .find((environment) => environment.environmentId === projectRef.environmentId)
+          ?.serverConfig?.providers.find(
+            (provider) => provider.instanceId === destinationInstanceId,
+          )?.driver ?? null;
+      const carryRuntimeMode = resolveCarriedRuntimeMode({
+        runtimeMode:
+          carrySourceComposer?.runtimeMode ??
+          carrySourceShell?.runtimeMode ??
+          carrySourceDraft?.runtimeMode ??
+          null,
+        destinationProviderDriver,
+      });
       const carryInteractionMode =
         carrySourceComposer?.interactionMode ??
         carrySourceShell?.interactionMode ??
@@ -484,6 +497,7 @@ export function useNewThreadHandler() {
     },
     [
       environmentConnectedById,
+      environments,
       getCurrentRouteTarget,
       primaryServerSettings,
       projectGroupingSettings,

@@ -20,6 +20,7 @@ import {
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  resolveRuntimeModeForProviderDriver,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -885,6 +886,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // disabled.
   const selectedProvider: ProviderDriverKind =
     selectedProviderEntry?.driverKind ?? requestedDriverKind;
+  // The picker only offers Kimi's "yolo" on Kimi. A carried Kimi pick must
+  // not keep showing "Yolo" after the user switches this draft to Grok.
+  const resolvedRuntimeMode = resolveRuntimeModeForProviderDriver(selectedProvider, runtimeMode);
 
   const { modelOptions: composerModelOptions, selectedModel } = useEffectiveComposerModelState({
     threadRef: composerDraftTarget,
@@ -1150,7 +1154,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             icon: option.icon,
             label: `/${option.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
             description:
-              mode === runtimeMode ? `${option.description} (current)` : option.description,
+              mode === resolvedRuntimeMode ? `${option.description} (current)` : option.description,
           };
         },
       );
@@ -1265,7 +1269,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     autoCreatePullRequest,
     composerTrigger,
     planModeUiEnabled,
-    runtimeMode,
+    resolvedRuntimeMode,
     selectedProvider,
     selectedProviderStatus,
     showAutoCreatePullRequestToggle,
@@ -3602,7 +3606,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       interactionMode={interactionMode}
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                       onToggleInteractionMode={toggleInteractionMode}
-                      runtimeMode={runtimeMode}
+                      runtimeMode={resolvedRuntimeMode}
                       showRuntimeModeSelect
                       onRuntimeModeChange={handleRuntimeModeChange}
                       autoCreatePullRequest={autoCreatePullRequest}
@@ -3641,7 +3645,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           composerProviderControls.showInteractionModeToggle
                         }
                         interactionMode={interactionMode}
-                        runtimeMode={runtimeMode}
+                        runtimeMode={resolvedRuntimeMode}
                         onToggleInteractionMode={toggleInteractionMode}
                         onRuntimeModeChange={handleRuntimeModeChange}
                       />
@@ -3651,7 +3655,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         interactionMode={interactionMode}
                         showInteractionModeToggle={false}
                         onToggleInteractionMode={toggleInteractionMode}
-                        runtimeMode={runtimeMode}
+                        runtimeMode={resolvedRuntimeMode}
                         showRuntimeModeSelect={false}
                         onRuntimeModeChange={handleRuntimeModeChange}
                         autoCreatePullRequest={autoCreatePullRequest}

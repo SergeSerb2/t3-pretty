@@ -20,7 +20,6 @@ import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderInteractionMode,
   ProviderDriverKind,
-  defaultRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
   RuntimeMode,
   TerminalOpenInput,
@@ -377,7 +376,9 @@ import {
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftHeroState,
   resolveThreadMetadataUpdateForNextTurn,
+  resolveComposerRuntimeMode,
   resolveSendEnvMode,
+  storedComposerRuntimeMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
   shouldWriteThreadErrorToCurrentServerThread,
@@ -2477,15 +2478,19 @@ function ChatViewContent(props: ChatViewProps) {
   // explicit pick or the pre-Yolo default and must not be remapped. Only a
   // draft whose mode still reads as the generic default (never picked, never
   // carried from a non-default thread) inherits the provider's own default.
-  const storedRuntimeMode =
-    composerRuntimeMode ??
-    (isServerThread
-      ? (activeThread?.runtimeMode ?? null)
-      : activeThread?.runtimeMode !== DEFAULT_RUNTIME_MODE
-        ? (activeThread?.runtimeMode ?? null)
-        : null);
-  const runtimeMode: RuntimeMode =
-    storedRuntimeMode ?? defaultRuntimeModeForProviderDriver(selectedProvider);
+  // Carried Kimi "yolo" is remapped off Kimi so a Grok new thread cannot
+  // show or send a mode Grok does not offer.
+  const storedRuntimeMode = storedComposerRuntimeMode({
+    composerRuntimeMode,
+    threadRuntimeMode: activeThread?.runtimeMode,
+    isServerThread,
+  });
+  const runtimeMode: RuntimeMode = resolveComposerRuntimeMode({
+    providerDriver: selectedProvider,
+    composerRuntimeMode,
+    threadRuntimeMode: activeThread?.runtimeMode,
+    isServerThread,
+  });
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
@@ -5407,6 +5412,10 @@ function ChatViewContent(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
+    const runtimeModeForTurn = resolveRuntimeModeForProviderDriver(
+      ctxSelectedProvider,
+      runtimeMode,
+    );
     const composerImages =
       directAnnotation?.image &&
       !sendContextImages.some((image) => image.id === directAnnotation.image?.id)
@@ -5740,7 +5749,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
-        runtimeMode,
+        runtimeMode: runtimeModeForTurn,
         interactionMode,
       });
       if (settingsResult._tag === "Failure") {
@@ -5764,7 +5773,7 @@ function ChatViewContent(props: ChatViewProps) {
                       projectId: activeProject.id,
                       title,
                       modelSelection: threadCreateModelSelection,
-                      runtimeMode,
+                      runtimeMode: runtimeModeForTurn,
                       interactionMode,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
@@ -5810,7 +5819,7 @@ function ChatViewContent(props: ChatViewProps) {
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: title,
-          runtimeMode,
+          runtimeMode: runtimeModeForTurn,
           interactionMode,
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
@@ -6257,6 +6266,10 @@ function ChatViewContent(props: ChatViewProps) {
         selectedPromptEffort: ctxSelectedPromptEffort,
         selectedModelSelection: ctxSelectedModelSelection,
       } = sendCtx;
+      const runtimeModeForTurn = resolveRuntimeModeForProviderDriver(
+        ctxSelectedProvider,
+        runtimeMode,
+      );
 
       // Same path-suffix bake as the normal composer send — plan follow-up
       // used to return before takeAttachedFilesForThread ran, so refine /
@@ -6313,7 +6326,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
-        runtimeMode,
+        runtimeMode: runtimeModeForTurn,
         interactionMode: nextInteractionMode,
       });
       let failure: AtomCommandResult<unknown, unknown> | null =
@@ -6339,7 +6352,7 @@ function ChatViewContent(props: ChatViewProps) {
             },
             modelSelection: ctxSelectedModelSelection,
             titleSeed: activeThread.title,
-            runtimeMode,
+            runtimeMode: runtimeModeForTurn,
             interactionMode: nextInteractionMode,
             ...(nextInteractionMode === "default" && activeProposedPlan
               ? {
@@ -6423,6 +6436,10 @@ function ChatViewContent(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
+    const runtimeModeForTurn = resolveRuntimeModeForProviderDriver(
+      ctxSelectedProvider,
+      runtimeMode,
+    );
 
     const createdAt = new Date().toISOString();
     const nextThreadId = newThreadId();
@@ -6463,7 +6480,7 @@ function ChatViewContent(props: ChatViewProps) {
         projectId: activeProject.id,
         title: nextThreadTitle,
         modelSelection: nextThreadModelSelection,
-        runtimeMode,
+        runtimeMode: runtimeModeForTurn,
         interactionMode: "default",
         branch: activeThreadBranch,
         worktreePath: activeThread.worktreePath,
@@ -6488,7 +6505,7 @@ function ChatViewContent(props: ChatViewProps) {
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: nextThreadTitle,
-          runtimeMode,
+          runtimeMode: runtimeModeForTurn,
           interactionMode: "default",
           sourceProposedPlan: {
             threadId: activeThread.id,

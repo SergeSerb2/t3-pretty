@@ -912,10 +912,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       providerOptionDescriptors,
     ],
   );
+  const displayedRuntimeMode = resolveRuntimeModeForProviderDriver(
+    currentModelOption?.providerDriver,
+    currentRuntimeMode,
+  );
   const settingsSummaryLabel = threadSettingsSummaryLabel({
     modelLabel,
     optionDescriptors: providerOptionDescriptors,
-    runtimeMode: currentRuntimeMode,
+    runtimeMode: displayedRuntimeMode,
     interactionMode: currentInteractionMode,
     providerDriver: currentModelOption?.providerDriver ?? null,
   });
@@ -926,9 +930,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         providerGroups: threadProviderGroups,
         selectedModel: currentModelSelection,
         optionDescriptors: providerOptionDescriptors,
-        runtimeMode: currentRuntimeMode,
+        runtimeMode: displayedRuntimeMode,
       }),
-    [threadProviderGroups, currentModelSelection, providerOptionDescriptors, currentRuntimeMode],
+    [threadProviderGroups, currentModelSelection, providerOptionDescriptors, displayedRuntimeMode],
   );
 
   const onUpdateModelSelection = props.onUpdateModelSelection;
@@ -971,7 +975,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       optionDescriptors: providerOptionDescriptors,
       onUpdateOptionSelections: (options) =>
         onUpdateModelSelection({ ...currentModelSelection, options }),
-      runtimeMode: currentRuntimeMode,
+      runtimeMode: displayedRuntimeMode,
       onUpdateRuntimeMode,
       initialPage: settingsSheetPageRef.current,
       checkpointsThreadRef: {
@@ -981,7 +985,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }),
     [
       currentModelSelection,
-      currentRuntimeMode,
+      displayedRuntimeMode,
       handleSelectModelOption,
       onUpdateModelSelection,
       onUpdateRuntimeMode,

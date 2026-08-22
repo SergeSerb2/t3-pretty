@@ -11,6 +11,12 @@ describe("runtimeModeOptionsForProvider", () => {
       "auto",
       "full-access",
     ]);
+    expect(runtimeModeOptionsForProvider(ProviderDriverKind.make("grok"))).toEqual([
+      "approval-required",
+      "auto-accept-edits",
+      "auto",
+      "full-access",
+    ]);
   });
 
   it("offers Yolo and Full access for Kimi in ascending order of access", () => {

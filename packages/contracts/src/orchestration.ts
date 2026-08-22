@@ -154,6 +154,19 @@ export function defaultRuntimeModeForProviderDriver(
 ): RuntimeMode {
   return providerDriver === "kimi" ? "yolo" : DEFAULT_RUNTIME_MODE;
 }
+
+// Compose the provider default with the Kimi-only yolo remap. Pass `null`
+// when the mode is still unset so Kimi inherits yolo; an explicit
+// "full-access" pick stays "full-access" even on Kimi.
+export function effectiveRuntimeModeForProviderDriver(
+  providerDriver: string | null | undefined,
+  runtimeMode: RuntimeMode | null | undefined,
+): RuntimeMode {
+  return resolveRuntimeModeForProviderDriver(
+    providerDriver,
+    runtimeMode ?? defaultRuntimeModeForProviderDriver(providerDriver),
+  );
+}
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
 export const DEFAULT_PROVIDER_INTERACTION_MODE: ProviderInteractionMode = "default";

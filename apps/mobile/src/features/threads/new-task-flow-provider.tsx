@@ -13,7 +13,7 @@ import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   MessageId,
-  defaultRuntimeModeForProviderDriver,
+  effectiveRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
   T3_PROJECT_FILE_NAME,
   ThreadId,
@@ -495,10 +495,12 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         option.selection.model === selectedModel.model,
     ) ?? null;
   // Untouched drafts inherit the provider's own default access mode: "yolo"
-  // for Kimi, the generic "full-access" everywhere else.
-  const runtimeMode =
-    selectedProjectDraft.runtimeMode ??
-    defaultRuntimeModeForProviderDriver(selectedModelOption?.providerDriver);
+  // for Kimi, the generic "full-access" everywhere else. Carried Kimi "yolo"
+  // remaps off Kimi so a Grok draft cannot show or send a mode Grok lacks.
+  const runtimeMode = effectiveRuntimeModeForProviderDriver(
+    selectedModelOption?.providerDriver,
+    selectedProjectDraft.runtimeMode,
+  );
   const selectedProviderSkills = useMemo(
     () =>
       selectedEnvironmentServerConfig?.providers.find(

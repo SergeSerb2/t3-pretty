@@ -20,6 +20,7 @@ import {
   OrchestrationThreadShell,
   ProjectCreateCommand,
   defaultRuntimeModeForProviderDriver,
+  effectiveRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
   ThreadMetaUpdatedPayload,
   ThreadTurnStartCommand,
@@ -1014,6 +1015,7 @@ it.effect("project favicon overrides accept only supported image files", () =>
 it("resolveRuntimeModeForProviderDriver maps yolo to full-access off Kimi", () => {
   assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "yolo"), "full-access");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("claudeAgent", "yolo"), "full-access");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
   assert.strictEqual(resolveRuntimeModeForProviderDriver(null, "yolo"), "full-access");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "full-access"), "full-access");
@@ -1026,8 +1028,17 @@ it("resolveRuntimeModeForProviderDriver maps yolo to full-access off Kimi", () =
 it("defaultRuntimeModeForProviderDriver defaults Kimi to yolo", () => {
   assert.strictEqual(defaultRuntimeModeForProviderDriver("kimi"), "yolo");
   assert.strictEqual(defaultRuntimeModeForProviderDriver("codex"), "full-access");
+  assert.strictEqual(defaultRuntimeModeForProviderDriver("grok"), "full-access");
   assert.strictEqual(defaultRuntimeModeForProviderDriver(null), "full-access");
   assert.strictEqual(defaultRuntimeModeForProviderDriver(undefined), "full-access");
+});
+
+it("effectiveRuntimeModeForProviderDriver remaps carried yolo off Kimi", () => {
+  assert.strictEqual(effectiveRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
+  assert.strictEqual(effectiveRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
+  assert.strictEqual(effectiveRuntimeModeForProviderDriver("kimi", null), "yolo");
+  assert.strictEqual(effectiveRuntimeModeForProviderDriver("grok", null), "full-access");
+  assert.strictEqual(effectiveRuntimeModeForProviderDriver("kimi", "full-access"), "full-access");
 });
 
 it("isProviderSendTurnSupportedImageMimeType accepts raster formats and rejects svg", () => {
