@@ -1016,7 +1016,8 @@ it("resolveRuntimeModeForProviderDriver maps yolo to full-access off Kimi", () =
   assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "yolo"), "full-access");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("claudeAgent", "yolo"), "full-access");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver(null, "yolo"), "full-access");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver(null, "yolo"), "yolo");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver(undefined, "yolo"), "yolo");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "full-access"), "full-access");
   assert.strictEqual(
@@ -1036,6 +1037,7 @@ it("defaultRuntimeModeForProviderDriver defaults Kimi to yolo", () => {
 it("effectiveRuntimeModeForProviderDriver remaps carried yolo off Kimi", () => {
   assert.strictEqual(effectiveRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
   assert.strictEqual(effectiveRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
+  assert.strictEqual(effectiveRuntimeModeForProviderDriver(null, "yolo"), "yolo");
   assert.strictEqual(effectiveRuntimeModeForProviderDriver("kimi", null), "yolo");
   assert.strictEqual(effectiveRuntimeModeForProviderDriver("grok", null), "full-access");
   assert.strictEqual(effectiveRuntimeModeForProviderDriver("kimi", "full-access"), "full-access");

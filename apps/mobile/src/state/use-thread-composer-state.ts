@@ -185,15 +185,7 @@ export function useThreadComposerState() {
     headQueuedMessageId !== null && retryingQueuedMessageIds[headQueuedMessageId] === true;
   const selectedThread = selectedThreadDetail ?? selectedThreadShell;
   const modelSelection = selectedDraft?.modelSelection ?? selectedThread?.modelSelection ?? null;
-  const providerDriver =
-    selectedEnvironmentRuntime?.serverConfig?.providers.find(
-      (provider) => provider.instanceId === modelSelection?.instanceId,
-    )?.driver ?? null;
-  const storedRuntimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
-  const runtimeMode =
-    storedRuntimeMode == null
-      ? null
-      : resolveRuntimeModeForProviderDriver(providerDriver, storedRuntimeMode);
+  const runtimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
   const interactionMode = selectedDraft?.interactionMode ?? selectedThread?.interactionMode ?? null;
 
   const selectedThreadSessionActivity = useMemo(() => {

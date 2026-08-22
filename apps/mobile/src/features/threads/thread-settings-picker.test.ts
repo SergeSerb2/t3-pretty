@@ -247,4 +247,18 @@ describe("buildThreadSettingsPickerModel", () => {
     expect(picker.runtimeChoices.map((choice) => choice.mode)).not.toContain("yolo");
     expect(picker.runtimeChoices.find((choice) => choice.selected)?.mode).toBe("full-access");
   });
+
+  it("does not remap carried yolo when the provider is unknown", () => {
+    const picker = buildThreadSettingsPickerModel({
+      providerGroups: [],
+      selectedModel: {
+        instanceId: ProviderInstanceId.make("kimi"),
+        model: "k2",
+      },
+      optionDescriptors: [],
+      runtimeMode: "yolo",
+    });
+
+    expect(picker.runtimeChoices.find((choice) => choice.selected)).toBeUndefined();
+  });
 });

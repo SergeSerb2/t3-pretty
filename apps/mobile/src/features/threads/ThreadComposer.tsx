@@ -912,9 +912,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       providerOptionDescriptors,
     ],
   );
-  const currentRuntimeMode = currentModelOption
-    ? resolveRuntimeModeForProviderDriver(currentModelOption.providerDriver, storedRuntimeMode)
-    : storedRuntimeMode;
+  const currentRuntimeMode = resolveRuntimeModeForProviderDriver(
+    currentModelOption?.providerDriver,
+    storedRuntimeMode,
+  );
   const settingsSummaryLabel = threadSettingsSummaryLabel({
     modelLabel,
     optionDescriptors: providerOptionDescriptors,
@@ -936,28 +937,23 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const onUpdateModelSelection = props.onUpdateModelSelection;
   const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
-  useEffect(() => {
-    if (!currentModelOption || currentRuntimeMode === storedRuntimeMode) {
-      return;
-    }
-    onUpdateRuntimeMode(currentRuntimeMode);
-  }, [currentModelOption, currentRuntimeMode, onUpdateRuntimeMode, storedRuntimeMode]);
   // A thread's stored mode is an explicit value, so a model pick only
   // normalizes: Kimi's "yolo" mode has no equivalent on other providers and
-  // falls back to the generic full-access mode in the same gesture. New
-  // threads pick up the provider's own default from the new-task flow.
+  // falls back to the generic full-access mode in the same gesture. Display
+  // remaps without writing back. New threads pick up the provider's own
+  // default from the new-task flow.
   const handleSelectModelOption = useCallback(
     (option: ModelOption) => {
       onUpdateModelSelection(option.selection);
       const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
         option.providerDriver,
-        currentRuntimeMode,
+        storedRuntimeMode,
       );
-      if (nextRuntimeMode !== currentRuntimeMode) {
+      if (nextRuntimeMode !== storedRuntimeMode) {
         onUpdateRuntimeMode(nextRuntimeMode);
       }
     },
-    [currentRuntimeMode, onUpdateModelSelection, onUpdateRuntimeMode],
+    [onUpdateModelSelection, onUpdateRuntimeMode, storedRuntimeMode],
   );
   const handleSelectPickerOption = useCallback(
     (id: string, value: string | boolean) => {

@@ -134,16 +134,19 @@ export type RuntimeMode = typeof RuntimeMode.Type;
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 
 // "yolo" is a Kimi-only mode that other providers never offer. When a
-// selection moves from Kimi to another provider, clients normalize the mode
-// with this helper so the Kimi-specific literal never reaches another
+// selection moves from Kimi to another known provider, clients normalize the
+// mode with this helper so the Kimi-specific literal never reaches another
 // provider's session config (where it would hit an unintended default
 // branch). "full-access" is the generic equivalent: same unrestricted
-// session, provider-native approval behavior.
+// session, provider-native approval behavior. A missing driver is not a
+// non-Kimi provider: leave yolo so a failed lookup cannot drop it.
 export function resolveRuntimeModeForProviderDriver(
   providerDriver: string | null | undefined,
   runtimeMode: RuntimeMode,
 ): RuntimeMode {
-  return runtimeMode === "yolo" && providerDriver !== "kimi" ? "full-access" : runtimeMode;
+  return runtimeMode === "yolo" && providerDriver != null && providerDriver !== "kimi"
+    ? "full-access"
+    : runtimeMode;
 }
 
 // Kimi's default access mode is "yolo": the same unrestricted session as
