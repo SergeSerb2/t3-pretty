@@ -118,7 +118,7 @@ All five framings independently landed here, which is a strong signal.
   about when the change happened. `[N8 V8 F8]`
 - Commit the native chrome at the covered moment too: Electron titlebar and
   `<meta name="theme-color">` flip in the same rAF as the occluded commit,
-  otherwise the frame _outside_ the web view is the visible tell no in-page
+  otherwise the frame *outside* the web view is the visible tell no in-page
   animation can hide. `[N7 V9 F8]`
 - Transcript opts out by construction: scope re-tint transitions to a curated
   chrome selector list and let transcript rows inherit color from one
@@ -142,16 +142,16 @@ All five framings independently landed here, which is a strong signal.
 ## Shortlist
 
 1. **★ Fog-covered swap (A)** — reuses the motion vocabulary users already
-   love, makes the un-interpolable palette swap _unobservable_ instead of
+   love, makes the un-interpolable palette swap *unobservable* instead of
    smooth, and can collapse the theme-swap/ink-override mutual exclusion into
    one cover primitive. The non-obvious part isn't the fog — it's that the
    commit happens off-camera, so the hardest rendering problem disappears.
 2. **Terminator sweep (B)** — the most cinematic option and the best fit for
-   a _landscape_ backdrop; higher platform risk (see below), so it's the
+   a *landscape* backdrop; higher platform risk (see below), so it's the
    stretch goal, not the base.
 3. **Layered clocks (C)** — the least code and the most honest fix for the
    stated complaint (lockstep at one wrong duration). Also the natural
-   _mobile_ answer, since RN has no View Transitions and mobile currently
+   *mobile* answer, since RN has no View Transitions and mobile currently
    hard-cuts.
 4. **Hygiene bundle (F)** — ships with any of the above; several items
    (mash escalation, native-chrome timing, transcript opt-out) fix harshness
@@ -173,7 +173,7 @@ overrides. In `useTheme.ts`, the animated branch calls `runUnderFog(commitTheme)
 instead of `startViewTransition(commitTheme)`: publish phase `fog`, gather
 ~250 ms, run `commitTheme()` + `syncBrowserChromeTheme()` in one rAF at peak
 density, publish `reveal`, clear ~600 ms keeping the existing near→far stagger
-ratios. Tint via the existing `data-fog` attribute using the _incoming_
+ratios. Tint via the existing `data-fog` attribute using the *incoming*
 appearance, with dusk/dawn variants. The exclusion problem gets simpler: the
 codebase already models "fog covers this, skip the view transition" as
 `sceneryArrivalCoversSwap()` (`sceneryArrivalLogic.ts:129-131`), so the ink
@@ -247,7 +247,7 @@ root, commit the palette synchronously, and let existing DOM layers tween on
 their own clocks. The wash needs no new machinery: the dark/light wash pair
 already crossfades on opacity vars (`scenery.css:126-133`) once the parking
 rules at `scenery.css:164-167` stop zeroing it — give it ~280–350 ms. Chrome
-and text re-tint without View Transitions because although the palette _vars_
+and text re-tint without View Transitions because although the palette *vars*
 can't interpolate, the computed `color`/`background-color`/`border-color` of
 elements consuming them can: `html[data-theme-flip]` enables ~180 ms tint
 transitions on a curated chrome selector list (never `*`, which would repaint
@@ -298,7 +298,7 @@ the layers can self-animate.
 ## Provocation
 
 The scenery knows what time it is. If the OS reports "system" scheme, the
-flip usually happens at sunrise/sunset — the one moment a _slow, ambient_
+flip usually happens at sunrise/sunset — the one moment a *slow, ambient*
 terminator crossing the landscape is not decoration but truth. What if the
 deliberate toggle stays fast and utilitarian, and the once-a-day automatic
 flip is the only place the cinematic version ever plays — an event rare
