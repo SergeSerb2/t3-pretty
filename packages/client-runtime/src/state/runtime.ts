@@ -304,8 +304,66 @@ export function mapAtomCommandResult<A, E, B>(
     : AsyncResult.failure(result.cause);
 }
 
+/**
+ * Effect squashes an interrupt-only cause to this exact message. RPC layers
+ * sometimes re-wrap it as a Fail/Die, so matching the text is what still sees
+ * a cancelled read after it has crossed the wire.
+ */
+const ATOM_INTERRUPT_MESSAGE = "all fibers interrupted without error";
+
+export function isAtomCauseInterrupted(cause: Cause.Cause<unknown>): boolean {
+  if (Cause.hasInterruptsOnly(cause)) {
+    return true;
+  }
+  const squashed = Cause.squash(cause);
+  const message =
+    typeof squashed === "string" ? squashed : squashed instanceof Error ? squashed.message : "";
+  return message.trim().toLowerCase() === ATOM_INTERRUPT_MESSAGE;
+}
+
 export function isAtomCommandInterrupted(result: AtomCommandResult<unknown, unknown>): boolean {
-  return result._tag === "Failure" && Cause.hasInterruptsOnly(result.cause);
+  return result._tag === "Failure" && isAtomCauseInterrupted(result.cause);
+}
+
+export function formatAtomQueryError(cause: Cause.Cause<unknown>): string {
+  if (isAtomCauseInterrupted(cause)) {
+    return "The environment request failed.";
+  }
+  const error = Cause.squash(cause);
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  // RPC defects can surface as plain values — an older server answers an
+  // unknown method with the string defect `Unknown request tag: <method>` —
+  // so show them instead of hiding behind the generic fallback.
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error;
+  }
+  return "The environment request failed.";
+}
+
+export function readAtomQueryResult<A, E>(
+  result: AsyncResult.AsyncResult<A, E>,
+): {
+  readonly data: A | null;
+  readonly error: string | null;
+  readonly isPending: boolean;
+} {
+  const data = Option.getOrNull(AsyncResult.value(result));
+  if (result._tag === "Failure" && isAtomCauseInterrupted(result.cause)) {
+    return {
+      data,
+      error: null,
+      // A cancelled read is not a failure the reader can act on. With no
+      // previous answer it is still in flight; with one, keep showing it.
+      isPending: result.waiting || data === null,
+    };
+  }
+  return {
+    data,
+    error: result._tag === "Failure" ? formatAtomQueryError(result.cause) : null,
+    isPending: result.waiting,
+  };
 }
 
 export function squashAtomCommandFailure(result: {

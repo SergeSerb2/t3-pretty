@@ -1,11 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
 import { createPullRequestEnvironmentAtoms } from "@t3tools/client-runtime/state/pull-requests";
+import { readAtomQueryResult } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   PullRequestListInput,
   PullRequestListStatsInput,
 } from "@t3tools/contracts";
-import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useMemo } from "react";
 
@@ -16,7 +16,6 @@ import {
   type EnvironmentPullRequestStat,
   type MergedPullRequestList,
 } from "../components/pullRequest/pullRequestList.logic";
-import { formatEnvironmentQueryError } from "./query";
 
 export const pullRequestEnvironment = createPullRequestEnvironmentAtoms(connectionAtomRuntime);
 
@@ -54,13 +53,12 @@ function createMergedEnvironmentQuery<Input, A>(
       let error: string | null = null;
       let isPending = false;
       for (const target of targets) {
-        const result = get(atomFor(target));
-        isPending ||= result.waiting;
-        if (result._tag === "Failure" && error === null) {
-          error = formatEnvironmentQueryError(result.cause);
+        const snapshot = readAtomQueryResult(get(atomFor(target)));
+        isPending ||= snapshot.isPending;
+        if (snapshot.error !== null && error === null) {
+          error = snapshot.error;
         }
-        const value = Option.getOrNull(AsyncResult.value(result));
-        if (value !== null) values.push([target.environmentId, value]);
+        if (snapshot.data !== null) values.push([target.environmentId, snapshot.data]);
       }
       return { values, error, isPending };
     }).pipe(Atom.withLabel(`${label}:${key}`)),

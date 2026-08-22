@@ -7,6 +7,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Latch from "effect/Latch";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
@@ -26,8 +27,11 @@ import {
   scheduleAtomCommandEffect,
   executeAtomCommand,
   executeAtomQuery,
+  isAtomCauseInterrupted,
   isAtomCommandInterrupted,
+  formatAtomQueryError,
   mapAtomCommandResult,
+  readAtomQueryResult,
   runAtomCommand,
   settleAsyncResult,
   settlePromise,
@@ -97,10 +101,49 @@ describe("atom command result helpers", () => {
   it("distinguishes interruption from other failures", () => {
     const interrupted = AsyncResult.failure(Cause.interrupt(1));
     const failed = AsyncResult.failure(Cause.fail("nope"));
+    const rewrapped = AsyncResult.failure(
+      Cause.fail(new Error("All fibers interrupted without error")),
+    );
 
     expect(isAtomCommandInterrupted(interrupted)).toBe(true);
     expect(isAtomCommandInterrupted(failed)).toBe(false);
+    expect(isAtomCauseInterrupted(rewrapped.cause)).toBe(true);
     expect(squashAtomCommandFailure(failed)).toBe("nope");
+  });
+
+  it("does not surface a cancelled query as a load error", () => {
+    const interrupted = AsyncResult.failure<string, never>(Cause.interrupt(1));
+    const rewrapped = AsyncResult.failure<string, Error>(
+      Cause.fail(new Error("All fibers interrupted without error")),
+    );
+    const failed = AsyncResult.failure<string, Error>(
+      Cause.fail(new Error("GitHub did not answer.")),
+    );
+    const previous = AsyncResult.failureWithPrevious<string, never>(Cause.interrupt(1), {
+      previous: Option.some(AsyncResult.success("cached")),
+    });
+
+    expect(readAtomQueryResult(interrupted)).toEqual({
+      data: null,
+      error: null,
+      isPending: true,
+    });
+    expect(readAtomQueryResult(rewrapped)).toEqual({
+      data: null,
+      error: null,
+      isPending: true,
+    });
+    expect(readAtomQueryResult(failed)).toEqual({
+      data: null,
+      error: "GitHub did not answer.",
+      isPending: false,
+    });
+    expect(readAtomQueryResult(previous)).toEqual({
+      data: "cached",
+      error: null,
+      isPending: false,
+    });
+    expect(formatAtomQueryError(interrupted.cause)).toBe("The environment request failed.");
   });
 
   it("settles raw promise boundaries as successes or defects", async () => {
