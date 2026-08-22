@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { contextMenuIcon } from "./contextMenuIcons";
 import { buildThreadActionMenuItems, type ThreadActionMenuState } from "./threadActionMenu.logic";
 
 const baseState: ThreadActionMenuState = {
@@ -139,6 +140,8 @@ describe("buildThreadActionMenuItems", () => {
       "copy-branch",
       "copy-thread-id",
     ]);
+    expect(copy?.children?.[0]).toMatchObject({ id: "copy-conversation", icon: "text-select" });
+    expect(contextMenuIcon("text-select")).not.toBeNull();
   });
 
   it("puts an icon on every top-level action", () => {

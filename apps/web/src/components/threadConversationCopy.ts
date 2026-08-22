@@ -33,23 +33,42 @@ function conversationFromMessages(
   return text.length > 0 ? text : null;
 }
 
+/** Copy waits this long for thread state before giving up. */
+const THREAD_CONVERSATION_LOAD_TIMEOUT_MS = 8_000;
+
 /**
  * Conversation text for a thread. Uses an already-loaded detail when one
  * exists; otherwise mounts the thread state atom until it leaves the initial
- * empty/synchronizing states.
+ * empty/synchronizing states, or until `timeoutMs`.
  */
 export function loadThreadConversationText(
   threadRef: ScopedThreadRef,
   title: string,
+  timeoutMs = THREAD_CONVERSATION_LOAD_TIMEOUT_MS,
 ): Promise<string | null> {
   const loaded = readThreadDetail(threadRef);
   if (loaded !== null) {
     return Promise.resolve(conversationFromMessages(title, loaded.messages));
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const atom = environmentThreads.stateAtom(threadRef.environmentId, threadRef.threadId);
-    const unsub = appAtomRegistry.subscribe(
+    let settled = false;
+    let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+    const finish = (text: string | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutId !== null) {
+        globalThis.clearTimeout(timeoutId);
+      }
+      unsubscribe();
+      resolve(text);
+    };
+
+    const unsubscribe = appAtomRegistry.subscribe(
       atom,
       (result) => {
         const state = Option.getOrElse(
@@ -62,11 +81,22 @@ export function loadThreadConversationText(
         ) {
           return;
         }
-        unsub();
         const thread = Option.getOrNull(state.data);
-        resolve(conversationFromMessages(title, thread?.messages ?? []));
+        finish(conversationFromMessages(title, thread?.messages ?? []));
       },
       { immediate: true },
     );
+
+    if (settled) {
+      return;
+    }
+    timeoutId = globalThis.setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      unsubscribe();
+      reject(new Error("Timed out loading conversation"));
+    }, timeoutMs);
   });
 }

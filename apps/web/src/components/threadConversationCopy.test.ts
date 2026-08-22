@@ -1,6 +1,18 @@
-import { describe, expect, it } from "vite-plus/test";
+import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/threads";
+import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { describe, expect, it, vi } from "vite-plus/test";
 
-import { formatThreadConversation } from "./threadConversationCopy";
+const { readThreadDetail, stateAtom } = vi.hoisted(() => ({
+  readThreadDetail: vi.fn(),
+  stateAtom: vi.fn(),
+}));
+
+vi.mock("../state/entities", () => ({ readThreadDetail }));
+vi.mock("../state/threads", () => ({
+  environmentThreads: { stateAtom },
+}));
+
+import { formatThreadConversation, loadThreadConversationText } from "./threadConversationCopy";
 
 describe("formatThreadConversation", () => {
   it("joins title with user and assistant turns", () => {
@@ -24,5 +36,20 @@ describe("formatThreadConversation", () => {
 
   it("returns an empty string when there is nothing to copy", () => {
     expect(formatThreadConversation("   ", [])).toBe("");
+  });
+});
+
+describe("loadThreadConversationText", () => {
+  it("rejects when thread state stays empty past the timeout", async () => {
+    readThreadDetail.mockReturnValue(null);
+    stateAtom.mockReturnValue(Atom.make(AsyncResult.success(EMPTY_ENVIRONMENT_THREAD_STATE)));
+
+    await expect(
+      loadThreadConversationText(
+        { environmentId: "env-1" as never, threadId: "thread-1" as never },
+        "Stuck thread",
+        20,
+      ),
+    ).rejects.toThrow("Timed out loading conversation");
   });
 });
