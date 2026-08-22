@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 
+import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
 import { HostProcessArguments } from "@t3tools/shared/hostProcess";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -37,20 +38,19 @@ export function detectCliRunner(entryPath: string): CliRunner | null {
 }
 
 /**
- * The `t3` package spec to suggest. The literal spec the user typed (e.g.
- * `t3@nightly`) is resolved away before our process starts, so re-derive it
- * from the running version: nightly builds re-suggest the nightly channel,
- * anything else suggests the bare package.
+ * The package spec to suggest. The literal spec the user typed is resolved
+ * away before our process starts, so re-derive the fork CLI tarball from the
+ * running version. Never suggest npm `t3` — that is upstream T3 Code.
  */
 export function suggestedPackageSpec(version: string): string {
-  return version.includes("-nightly.") ? "t3@nightly" : "t3";
+  return forkCliTarballUrl(version.trim() || undefined);
 }
 
 /**
  * Render a `t3 <subcommand>` suggestion that matches how this process was
- * launched, so copy/pasting it actually works: `npx t3 connect` suggests
- * `npx t3 serve`, a global install suggests `t3 serve`, and a nightly build
- * keeps the `@nightly` tag.
+ * launched, so copy/pasting it actually works: an npx tarball install
+ * suggests `npx --yes --package <tarball> t3 serve`, a global install
+ * suggests `t3 serve`.
  */
 export function formatCliCommand(input: {
   readonly subcommand: string;
@@ -61,7 +61,7 @@ export function formatCliCommand(input: {
   if (runner === null) {
     return `t3 ${input.subcommand}`;
   }
-  return `${runner} ${suggestedPackageSpec(input.version)} ${input.subcommand}`;
+  return `${runner} --yes --package ${suggestedPackageSpec(input.version)} t3 ${input.subcommand}`;
 }
 
 /** `formatCliCommand` against this process's real entry path and version. */

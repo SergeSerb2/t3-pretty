@@ -117,6 +117,16 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(desktopWorkflow, "workflow_dispatch:");
   });
 
+  it("publishes the headless CLI tarball from linux-small", () => {
+    assert.include(pipeline, "publish-cli.sh");
+    assert.include(pipeline, "key: publish-cli");
+    assert.include(pipeline, "CLI tarball");
+    const publishCli = NodeFS.readFileSync(NodePath.resolve(here, "publish-cli.sh"), "utf8");
+    assert.include(publishCli, "cli.ts pack");
+    assert.include(publishCli, "bash scripts/fork/ensure-linux-node.sh");
+    assert.notInclude(publishCli, ". scripts/fork/ensure-linux-node.sh");
+  });
+
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "iOS OTA + TestFlight");

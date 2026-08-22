@@ -10,12 +10,24 @@ At least one provider CLI, installed and authenticated. See [Providers](#provide
 
 ## Run Without Installing
 
+T3 Pretty's CLI is not `npx t3`. That command installs upstream T3 Code and talks
+to a different Surge Connect relay.
+
+Install the T3 Pretty server (Node.js 22.16+ or 24.10+):
+
 ```bash
-npx t3@latest
+curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
 ```
 
-This starts the T3 Code server on your machine and opens the local web app. Use
-`npx t3@latest --help` for the full CLI reference.
+Then start it:
+
+```bash
+t3 serve
+```
+
+Use `t3 --help` for the full CLI reference. On a machine that should stay
+reachable after logout, run `t3 service install` and pair from another device,
+then turn on **Surge Connect** under **Settings** → **Connections**.
 
 ## Desktop App
 

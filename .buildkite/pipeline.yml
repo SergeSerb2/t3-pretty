@@ -108,6 +108,19 @@ steps:
       queue: macos-release
     command: bash scripts/fork/run-trusted-origin-pr-ci.sh check
 
+  - label: ":npm: CLI tarball"
+    key: publish-cli
+    # Headless `npx t3` is upstream T3 Code. This job publishes this fork's
+    # server tarball to the public R2 feed so Linux hosts can `curl | sh`.
+    # Hosted linux-small: no signing, no packaging Mac. Scheduled sync skips.
+    if: build.branch == "main" && build.source != "schedule"
+    timeout_in_minutes: 40
+    agents:
+      queue: linux-small
+    env:
+      T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
+    command: bash scripts/fork/publish-cli.sh
+
   - label: ":windows: Windows NSIS"
     key: windows-nsis
     # Start with the importer, not after it. Desktop compile failures must

@@ -131,7 +131,10 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    upstream-sync dispatch still always run.
 9. The publisher creates an annotated Origin git tag and uploads the installers plus both
    `nightly` and `latest` update manifests to the generic `electron-updater` feed in
-   `T3CODE_DESKTOP_UPDATE_FEED_URL`. Origin has no GitHub-style release-asset API, so that feed
+   `T3CODE_DESKTOP_UPDATE_FEED_URL`. The same directory also receives the headless CLI tarball
+   (`t3.tgz`, `t3-<version>.tgz`) and `install.sh` from the native linux-small `publish-cli`
+   step — `npx t3` is upstream and must not be the remote-install path. Origin has no
+   GitHub-style release-asset API, so that feed
    is an S3-compatible bucket (Cloudflare R2 is the intended host; the relay already uses
    Cloudflare). Multi-range requests stay disabled. Already-installed GitHub-provider builds need
    one manual install of a release that contains this feed before later updates can be automatic.
