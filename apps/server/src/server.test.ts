@@ -8217,6 +8217,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 interactionMode: "default",
                 branch: "main",
                 worktreePath: null,
+                enabledSkillIds: [],
                 createdAt,
               },
               prepareWorktree: {

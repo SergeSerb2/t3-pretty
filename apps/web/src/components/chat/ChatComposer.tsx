@@ -566,6 +566,7 @@ export interface ChatComposerProps {
   activeProposedPlan: Thread["proposedPlans"][number] | null;
   activeTasksProgress: ComposerTasksProgress | null;
   activeTaskSteps: readonly ComposerTaskStep[] | null;
+  activeLatestTurnId: TurnId | null;
 
   // Mode
   runtimeMode: RuntimeMode;
@@ -671,6 +672,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProposedPlan,
     activeTasksProgress,
     activeTaskSteps,
+    activeLatestTurnId,
     runtimeMode,
     interactionMode,
     autoCreatePullRequest,
@@ -2542,7 +2544,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const toggleTasksDrawer = useCallback(() => {
     setIsTasksDrawerOpen((open) => !open);
   }, []);
-  const activeTasksTurnId = activeThread?.latestTurn?.turnId ?? null;
+  const activeTasksTurnId = activeLatestTurnId;
   const tasksDismissedForActiveTurn =
     activeTasksTurnId !== null && dismissedTasksTurnId === activeTasksTurnId;
   const visibleTasksProgress = tasksDismissedForActiveTurn ? null : activeTasksProgress;
@@ -3380,8 +3382,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     (image) =>
                       !composerPreviewAnnotations.some(
                         (annotation) => annotation.id === image.id,
-                      ) &&
-                      !composerCanvasSelections.some((selection) => selection.id === image.id),
+                      ) && !composerCanvasSelections.some((selection) => selection.id === image.id),
                   )) && (
                   <div className="mb-3 flex flex-wrap gap-2">
                     {Array.from({ length: compressingImageCount }, (_, index) => (
@@ -3401,9 +3402,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           !composerPreviewAnnotations.some(
                             (annotation) => annotation.id === image.id,
                           ) &&
-                          !composerCanvasSelections.some(
-                            (selection) => selection.id === image.id,
-                          ),
+                          !composerCanvasSelections.some((selection) => selection.id === image.id),
                       )
                       .map((image) => (
                         <div
@@ -3601,9 +3600,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     <ComposerOverflowMenu
                       provider={selectedProvider}
                       interactionMode={interactionMode}
-                      showInteractionModeToggle={
-                        composerProviderControls.showInteractionModeToggle
-                      }
+                      showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                       onToggleInteractionMode={toggleInteractionMode}
                       runtimeMode={runtimeMode}
                       showRuntimeModeSelect
@@ -3648,10 +3645,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         onToggleInteractionMode={toggleInteractionMode}
                         onRuntimeModeChange={handleRuntimeModeChange}
                       />
-                      <Separator
-                        orientation="vertical"
-                        className="mx-0.5 hidden h-4 sm:block"
-                      />
+                      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
                       <ComposerOverflowMenu
                         provider={selectedProvider}
                         interactionMode={interactionMode}

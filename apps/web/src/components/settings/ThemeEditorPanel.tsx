@@ -311,6 +311,7 @@ export function ThemeEditorPanel({
   const [error, setError] = useState<string | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [roleQuery, setRoleQuery] = useState("");
+  const [sidebarArtwork, setSidebarArtwork] = useState(false);
   const [isInspecting, setIsInspecting] = useState(false);
   const [selectedRole, setSelectedRole] = useState<ThemeColorRole | null>(null);
   const [usageCount, setUsageCount] = useState<number | null>(null);
@@ -393,6 +394,7 @@ export function ThemeEditorPanel({
       }
 
       setName(editingTheme?.label ?? seedName ?? "");
+      setSidebarArtwork(sourceTheme?.sidebarArtwork === true);
       setActiveAppearance(nextAppearance);
       // Themes saved by the guided editor carry the managed flag; anything
       // else (imports, hand-edited files, older saves) opens in advanced mode

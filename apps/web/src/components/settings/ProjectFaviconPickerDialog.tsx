@@ -4,9 +4,8 @@ import { isWindowsAbsolutePath } from "@t3tools/shared/path";
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
 
 import { primaryServerKeybindingsAtom } from "~/state/server";
-import { isMacPlatform, isWindowsPlatform } from "~/lib/utils";
+import { getLocalFileManagerName, isMacPlatform, isWindowsPlatform } from "~/lib/utils";
 import { useTheme } from "~/hooks/useTheme";
-import { getLocalFileManagerName, isWindowsPlatform } from "~/lib/utils";
 import { CommandPaletteContent } from "../CommandPaletteContent";
 import type { CommandPaletteActionItem } from "../CommandPalette.logic";
 import { CommandPaletteResults } from "../CommandPaletteResults";

@@ -11,6 +11,7 @@ vi.mock("react", async (importOriginal) => {
   return {
     ...actual,
     useMemo: reactHookHarness.useMemo,
+    useRef: reactHookHarness.useRef,
     useState: reactHookHarness.useState,
   };
 });
@@ -61,6 +62,7 @@ describe("ProjectFaviconPickerDialog", () => {
     const onOpenChange = vi.fn();
     const onPickExternal = vi.fn().mockResolvedValue("/Users/me/Pictures/icon.png");
     const onSelect = vi.fn();
+    const onSelectComputerFile = vi.fn();
     hooks.beginRender();
     const picker = ProjectFaviconPickerDialog({
       cwd: "/Users/me/project",
@@ -68,6 +70,7 @@ describe("ProjectFaviconPickerDialog", () => {
       onOpenChange,
       onPickExternal,
       onSelect,
+      onSelectComputerFile,
       open: true,
       projectName: "Project",
     } as Parameters<typeof ProjectFaviconPickerDialog>[0] & {
@@ -100,6 +103,7 @@ describe("ProjectFaviconPickerDialog", () => {
       onOpenChange,
       onPickExternal: vi.fn().mockRejectedValue(new Error("picker failed")),
       onSelect,
+      onSelectComputerFile: vi.fn(),
       open: true,
       projectName: "Project",
     } as Parameters<typeof ProjectFaviconPickerDialog>[0] & {

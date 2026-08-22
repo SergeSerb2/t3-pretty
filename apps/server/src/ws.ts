@@ -2027,23 +2027,22 @@ const makeWsRpcLayer = (
                   resource: input.resource,
                 });
               }
-              const grokSessionId = yield* providerSessionDirectory
-                .getBinding(input.resource.threadId)
-                .pipe(
-                  Effect.map((binding) => {
-                    if (Option.isNone(binding) || binding.value.provider !== "grok") {
-                      return undefined;
-                    }
-                    return grokSessionIdFromResumeCursor(binding.value.resumeCursor);
+              const threadId = input.resource.threadId;
+              const grokSessionId = yield* providerSessionDirectory.getBinding(threadId).pipe(
+                Effect.map((binding) => {
+                  if (Option.isNone(binding) || binding.value.provider !== "grok") {
+                    return undefined;
+                  }
+                  return grokSessionIdFromResumeCursor(binding.value.resumeCursor);
+                }),
+                Effect.tapError((cause) =>
+                  Effect.logWarning("Failed to read Grok session id for generated image.", {
+                    threadId,
+                    cause,
                   }),
-                  Effect.tapError((cause) =>
-                    Effect.logWarning("Failed to read Grok session id for generated image.", {
-                      threadId: input.resource.threadId,
-                      cause,
-                    }),
-                  ),
-                  Effect.orElseSucceed(() => undefined),
-                );
+                ),
+                Effect.orElseSucceed(() => undefined),
+              );
               const workspaceRoot = thread.value.worktreePath ?? project.value.workspaceRoot;
               const extraGrokWorkspaceRoots =
                 thread.value.worktreePath &&

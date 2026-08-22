@@ -1292,6 +1292,7 @@ describe("OrchestrationEngine", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        enabledSkillIds: [],
         createdAt,
       }),
     );
@@ -1357,6 +1358,7 @@ describe("OrchestrationEngine", () => {
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
+          enabledSkillIds: [],
           createdAt,
         }),
       );

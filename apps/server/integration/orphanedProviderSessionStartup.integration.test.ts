@@ -153,6 +153,7 @@ it.effect(
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
+          enabledSkillIds: [],
           createdAt,
         });
         yield* engine.dispatch({
@@ -205,6 +206,7 @@ it.effect(
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
+          enabledSkillIds: [],
           createdAt,
         });
         yield* engine.dispatch({

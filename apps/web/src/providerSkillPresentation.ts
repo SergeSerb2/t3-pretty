@@ -1,7 +1,5 @@
 import type { ServerProviderSkill } from "@t3tools/contracts";
 
-export type ProviderSkillSourceKind = "app" | "repo" | "project" | "personal" | "system" | "other";
-
 function titleCaseWords(value: string): string {
   const words: string[] = [];
   for (const segment of value.split(/[\s:_-]+/)) {
@@ -11,7 +9,7 @@ function titleCaseWords(value: string): string {
   return words.join(" ");
 }
 
-function normalizePathSeparators(pathValue: string): string {
+export function normalizeProviderSkillPath(pathValue: string): string {
   return pathValue.replaceAll("\\", "/");
 }
 
@@ -25,32 +23,31 @@ export function formatProviderSkillDisplayName(
   return titleCaseWords(skill.name);
 }
 
-export function resolveProviderSkillSourceKind(
+export function formatProviderSkillInstallSource(
   skill: Pick<ServerProviderSkill, "path" | "scope">,
-): ProviderSkillSourceKind {
-  const normalizedPath = normalizePathSeparators(skill.path);
+): string | null {
+  const normalizedPath = normalizeProviderSkillPath(skill.path);
   if (normalizedPath.includes("/.codex/plugins/") || normalizedPath.includes("/.agents/plugins/")) {
-    return "app";
+    return "App";
   }
 
   const normalizedScope = skill.scope?.trim().toLowerCase();
-  switch (normalizedScope) {
-    case "repo":
-    case "repository":
-      return "repo";
-    case "project":
-    case "workspace":
-    case "local":
-      return "project";
-    case "user":
-    case "personal":
-      return "personal";
-    case "system":
-      return "system";
-    case undefined:
-    case "":
-      return "other";
-    default:
-      return "other";
+  if (normalizedScope === "system") {
+    return "System";
   }
+  if (
+    normalizedScope === "project" ||
+    normalizedScope === "workspace" ||
+    normalizedScope === "local"
+  ) {
+    return "Project";
+  }
+  if (normalizedScope === "user" || normalizedScope === "personal") {
+    return "Personal";
+  }
+  if (normalizedScope) {
+    return titleCaseWords(normalizedScope);
+  }
+
+  return null;
 }

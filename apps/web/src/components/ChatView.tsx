@@ -305,6 +305,7 @@ import {
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
+import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import {
   resolveEffectiveEnvMode,
   resolveLocalCheckoutBranchMismatch,
@@ -6882,6 +6883,7 @@ function ChatViewContent(props: ChatViewProps) {
             ? "thread"
             : "page"
         }
+        chromeVariant="collapse"
         composerDraftTarget={composerDraftTarget}
         onStateChange={handlePullRequestTabStatusChange}
       />
@@ -7032,6 +7034,7 @@ function ChatViewContent(props: ChatViewProps) {
                 key={activeThread.id}
                 isWorking={isWorking}
                 workingStepLabel={workingStepLabel}
+                activeTurnInProgress={isWorking || !latestTurnSettled}
                 activeTurnStartedAt={activeWorkStartedAt}
                 listRef={legendListRef}
                 timelineEntries={timelineEntries}
@@ -7199,6 +7202,7 @@ function ChatViewContent(props: ChatViewProps) {
                             activeProposedPlan={activeProposedPlan}
                             activeTasksProgress={activeComposerTasksProgress}
                             activeTaskSteps={activeComposerTaskSteps}
+                            activeLatestTurnId={activeLatestTurn?.turnId ?? null}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
                             autoCreatePullRequest={autoCreatePullRequest}
