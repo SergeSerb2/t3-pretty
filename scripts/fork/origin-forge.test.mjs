@@ -1,4 +1,5 @@
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
@@ -18,6 +19,7 @@ import {
   isPullRequestMerged,
   originChildEnv,
   originUnknownOption,
+  usableGitCredentialStore,
   redactCommandArgs,
   pullRequestHeadName,
   pullRequestItems,
@@ -32,6 +34,25 @@ const here = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 function workflow(name) {
   return NodeFS.readFileSync(NodePath.resolve(here, `../../.github/workflows/${name}`), "utf8");
 }
+
+describe("usableGitCredentialStore", () => {
+  it("rejects missing and empty stores that make git fetch exit 128", () => {
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-git-store-"));
+    try {
+      const missing = NodePath.join(dir, "missing");
+      const empty = NodePath.join(dir, "empty");
+      const filled = NodePath.join(dir, "filled");
+      NodeFS.writeFileSync(empty, "");
+      NodeFS.writeFileSync(filled, "https://x-access-token:token@origin.cursor.com\n");
+      assert.equal(usableGitCredentialStore(""), false);
+      assert.equal(usableGitCredentialStore(missing), false);
+      assert.equal(usableGitCredentialStore(empty), false);
+      assert.equal(usableGitCredentialStore(filled), true);
+    } finally {
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("Origin CLI child environment", () => {
   it("drops NO_COLOR and turns off FORCE_COLOR so bun Origin does not 255", () => {
