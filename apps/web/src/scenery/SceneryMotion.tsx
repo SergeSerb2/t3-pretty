@@ -46,13 +46,25 @@ export function SceneryMotion() {
   // for this thread also seeds instead of animating — otherwise
   // `scenery-row-enter` with fill-mode `both` can leave the timeline at
   // opacity 0 if animationend never fires.
-  const silentUntilRef = useRef(0);
+  //
+  // Reset during render, not in an effect: leftover rows from the thread
+  // being left can mutate into the observer before a useEffect runs, and
+  // seeding against those would mark the new thread as already first-painted
+  // so its real rows animate in (translate + overflow-x-clip) after the
+  // silent window expires.
+  const silentUntilRef = useRef(
+    typeof performance !== "undefined" ? performance.now() + SILENT_WINDOW_MS : 0,
+  );
   const threadKeyRef = useRef(threadKey);
   const seededThreadKeyRef = useRef<string | null>(null);
-  threadKeyRef.current = threadKey;
-  useEffect(() => {
-    silentUntilRef.current = performance.now() + SILENT_WINDOW_MS;
-  }, [threadKey]);
+  const seenRowIdsRef = useRef(new Set<string>());
+  if (threadKeyRef.current !== threadKey) {
+    threadKeyRef.current = threadKey;
+    silentUntilRef.current =
+      typeof performance !== "undefined" ? performance.now() + SILENT_WINDOW_MS : 0;
+    seededThreadKeyRef.current = null;
+    seenRowIdsRef.current.clear();
+  }
 
   useEffect(() => {
     if (!enabled || typeof document === "undefined") {
@@ -60,7 +72,8 @@ export function SceneryMotion() {
     }
     document.documentElement.setAttribute("data-scenery-motion", "");
 
-    const seenRowIds = new Set<string>();
+    seenRowIdsRef.current = new Set<string>();
+    const seenRowIds = seenRowIdsRef.current;
     const enterCleanups = new Set<() => void>();
     let queued = false;
 

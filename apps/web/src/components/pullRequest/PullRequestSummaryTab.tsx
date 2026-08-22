@@ -249,12 +249,12 @@ function MetaRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2 py-1.5 text-xs">
-      <span className="flex w-24 shrink-0 items-center gap-1.5 text-muted-foreground">
+    <div className="grid min-h-8 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2 py-1.5 text-xs">
+      <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
         {icon}
         {label}
       </span>
-      <span className="min-w-0 flex-1 text-foreground">{children}</span>
+      <span className="min-w-0 text-foreground">{children}</span>
     </div>
   );
 }
@@ -306,9 +306,11 @@ function Section({
     >
       {/* The heading rides the top of the scroll box the way a diff's file header does, so a
           section can be collapsed from wherever its body has been read to rather than only from
-          where it started. Opaque, because the rows it covers scroll beneath it. */}
+          where it started. Opaque, because the rows it covers scroll beneath it. World Scenery
+          clears nested bg-background on the right panel; the data attr is the cover it restyles. */}
       <div
         ref={headingRef}
+        data-pull-request-summary-heading=""
         className="sticky top-0 z-10 flex w-full items-center border-t border-border/60 bg-background pr-4"
       >
         {/* Title first, chevron riding to its right, count last: the row reads as a heading

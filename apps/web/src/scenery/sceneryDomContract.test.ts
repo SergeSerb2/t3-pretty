@@ -13,6 +13,7 @@ import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
 import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import previewPanelShellSource from "../components/preview/PreviewPanelShell.tsx?raw";
+import pullRequestSummaryTabSource from "../components/pullRequest/PullRequestSummaryTab.tsx?raw";
 import threadTerminalDrawerSource from "../components/ThreadTerminalDrawer.tsx?raw";
 import sidebarSource from "../components/ui/sidebar.tsx?raw";
 import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
@@ -150,6 +151,14 @@ describe("glass contract with upstream chrome", () => {
     );
   });
 
+  it("sticky PR section headings keep a covering fill after nested bg-background is cleared", () => {
+    expect(pullRequestSummaryTabSource).toContain('data-pull-request-summary-heading=""');
+    expect(pullRequestSummaryTabSource).toContain("bg-background");
+    expect(sceneryCssSource).toMatch(
+      /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*background-color: var\(--sidebar\);/s,
+    );
+  });
+
   it("the bottom terminal drawer wears the same chrome glass plate as the sidebars", () => {
     expect(threadTerminalDrawerSource).toContain(
       'data-terminal-owner={isPanel ? "right-panel" : "drawer"}',
@@ -256,6 +265,20 @@ describe("scenery new-thread arrival contract", () => {
   it("docks the World Scenery composer with the longer scenery curve", () => {
     expect(chatViewSource).toContain("SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS");
     expect(chatViewSource).toContain("scenery-hero-headline-ghost");
+    expect(chatViewSource).toContain("shouldGlideDraftHeroHandoff");
+    expect(chatViewSource).toContain("shouldPopDraftHeroGlide");
+  });
+
+  it("does not keep a transform transition on settled hero chrome", () => {
+    const settledChrome =
+      /html\[data-scenery-arrival="settled"\] \[data-scenery-hero-chrome\]\s*\{[^}]+\}/.exec(
+        sceneryCssSource,
+      )?.[0];
+    expect(settledChrome, "missing settled chrome rule").toBeTruthy();
+    expect(settledChrome).not.toContain("transition");
+    expect(sceneryCssSource).not.toContain(
+      'html[data-scenery-arrival="settled"] [data-scenery-hero-chrome="composer"]',
+    );
   });
 
   it("holds fog until the wallpaper is decoded and primes it before navigation", () => {
@@ -338,6 +361,7 @@ describe("scenery light/dark appearance crossfade", () => {
     expect(sceneryLayerSource).toContain("runSceneryInkTransition");
     expect(sceneryLayerSource).toContain("flushSync(commit)");
     expect(sceneryLayerSource).toContain("appearanceCrossfadeRef.current");
+    expect(sceneryLayerSource).toContain("if (cancelled)");
   });
 
   it("crossfades wash by opacity instead of snapping rgb() channels", () => {
@@ -373,6 +397,7 @@ describe("scenery light/dark appearance crossfade", () => {
     expect(chatViewSource).toContain('data-chat-transcript-active="true"');
     expect(sceneryInkTransitionSource).toContain("document.hidden");
     expect(sceneryInkTransitionSource).toContain("pinActiveChatTranscript");
+    expect(sceneryInkTransitionSource).toContain("generation !== inkTransitionGeneration");
   });
 
   it("parks the CSS layers only when the view transition really animates", () => {

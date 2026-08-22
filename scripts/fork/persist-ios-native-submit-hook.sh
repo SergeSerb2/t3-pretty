@@ -16,7 +16,16 @@ refresh_macos_agent_hooks() {
   if [[ -f "$src/macos-origin-git.sh" && -f "$hooks/pre-checkout" ]] \
     && grep -q "helpers_ready" "$src/macos-origin-git.sh" \
     && grep -q "Origin git store helper" "$hooks/pre-checkout"; then
-    install -m 0755 "$src/macos-origin-git.sh" "$hooks/pre-checkout"
+    # Do not replace a CLI-helper-aware hook with an older file-store-only copy.
+    if grep -q "origin_cli_helper_ready" "$hooks/pre-checkout" \
+      && ! grep -q "origin_cli_helper_ready" "$src/macos-origin-git.sh"; then
+      :
+    else
+      install -m 0755 "$src/macos-origin-git.sh" "$hooks/pre-checkout"
+    fi
+  fi
+  if [[ -f "$src/macos-review-only-hook.sh" ]]; then
+    install -m 0755 "$src/macos-review-only-hook.sh" "$hooks/pre-command"
   fi
   if [[ -f "$src/persist-ios-native-submit-hook.sh" && -f "$hooks/post-checkout" ]] \
     && grep -q "refresh_macos_agent_hooks" "$src/persist-ios-native-submit-hook.sh" \

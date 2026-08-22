@@ -172,6 +172,47 @@ describe("runSceneryInkTransition", () => {
     expect(update).toHaveBeenCalledWith(false);
     expect(dataset).not.toHaveProperty("sceneryInkTransition");
   });
+
+  it("does not let a skipped first transition commit after a second flip", async () => {
+    const dataset: Record<string, string> = {};
+    let firstUpdate: (() => void) | undefined;
+    let finishFirst: ((reason?: unknown) => void) | undefined;
+    const firstFinished = new Promise<void>((_resolve, reject) => {
+      finishFirst = reject;
+    });
+    const startViewTransition = vi.fn((update: () => void | Promise<void>) => {
+      firstUpdate = () => void update();
+      return { finished: firstFinished };
+    });
+    vi.stubGlobal("document", {
+      documentElement: { dataset },
+      hidden: false,
+      startViewTransition,
+    });
+    vi.stubGlobal("window", {
+      matchMedia: () => ({ matches: false }),
+    });
+    const first = vi.fn();
+    const second = vi.fn();
+
+    runSceneryInkTransition(first);
+    expect(dataset.sceneryInkTransition).toBe("true");
+    expect(first).not.toHaveBeenCalled();
+
+    runSceneryInkTransition(second);
+    expect(startViewTransition).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledWith(false);
+
+    firstUpdate?.();
+    expect(first).not.toHaveBeenCalled();
+
+    finishFirst?.(new Error("skipped"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(first).not.toHaveBeenCalled();
+    expect(dataset).not.toHaveProperty("sceneryInkTransition");
+  });
 });
 
 describe("pinActiveChatTranscript", () => {

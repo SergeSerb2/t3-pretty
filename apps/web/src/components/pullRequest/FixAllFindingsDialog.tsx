@@ -134,6 +134,7 @@ export function FixAllFindingsDialog({
                     model,
                     models: entry.models,
                     modelOptions: undefined,
+                    planModeEnabled: settings.planModeEnabled,
                   });
                   setSelection(createModelSelection(instanceId, model, modelOptionsForDispatch));
                 }}
@@ -146,6 +147,7 @@ export function FixAllFindingsDialog({
                 onPromptChange={() => {}}
                 modelOptions={selection.options}
                 allowPromptInjectedEffort={false}
+                planModeEnabled={settings.planModeEnabled}
                 triggerVariant="outline"
                 triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
                 onModelOptionsChange={(nextOptions) => {

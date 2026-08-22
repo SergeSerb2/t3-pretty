@@ -70,6 +70,12 @@ describe("row arrival contract with the messages timeline", () => {
     );
   });
 
+  it("animates the row's inner box, not the overflow-x-clip wrapper", () => {
+    expect(messagesTimelineSource).toContain("overflow-x-clip");
+    expect(motionStylesSource).toContain("[data-timeline-root].scenery-row-enter > *");
+    expect(motionDriverSource).toContain("seenRowIdsRef.current.clear()");
+  });
+
   it("rows still expose id, kind and role attributes", () => {
     expect(messagesTimelineSource).toContain("data-timeline-row-id={row.id}");
     expect(messagesTimelineSource).toContain("data-timeline-row-kind={row.kind}");

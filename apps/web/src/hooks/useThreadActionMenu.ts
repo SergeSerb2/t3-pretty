@@ -334,5 +334,9 @@ export function useThreadActionMenu(input: {
     ],
   );
 
-  return { openMenu };
+  const closeMenu = useCallback(() => {
+    void readLocalApi()?.contextMenu.close();
+  }, []);
+
+  return { openMenu, closeMenu };
 }

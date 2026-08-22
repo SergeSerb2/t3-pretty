@@ -6,7 +6,10 @@
 #
 # Queues:
 #   linux-small    — Buildkite hosted Linux (importer + ubuntu-latest jobs)
-#   macos-release  — m1-dev / extra Macs (signed DMG + iOS OTA/TestFlight)
+#   macos-release  — Origin PR Review (m5-dev, REVIEW_ONLY=1) plus packaging
+#                    when a Mac without that flag is registered. Do not invent
+#                    a second queue until it exists in the Buildkite cluster;
+#                    an unknown queue fails pipeline upload for every PR.
 #   windows-release — serge-pc native NSIS (importer cannot run Windows jobs)
 #
 # Do not list cluster secrets on hosted steps. Hosted agents currently 500
@@ -39,7 +42,7 @@ steps:
     # Native DMG/NSIS/iOS/relay are the release. Do not red the whole build
     # when only the importer fails.
     # Scheduled builds exist only to run upstream sync. That job is native
-    # macos-release below: imported macos-release steps write $GITHUB_OUTPUT
+    # macos-release below: imported macos GHA steps write $GITHUB_OUTPUT
     # and die under set -u when the importer omits the file.
     soft_fail: true
     if: build.source != "schedule"
@@ -68,14 +71,14 @@ steps:
   - label: ":git: Upstream Sync"
     key: upstream-sync
     # The four-hour schedule is this job. Do not import
-    # fork-upstream-sync.yml: macos-release GHA steps need GITHUB_OUTPUT
+    # fork-upstream-sync.yml: macos GHA steps need GITHUB_OUTPUT
     # for discover, and the importer often leaves that file unset.
     if: 'build.branch == "main" && (build.source == "schedule" || build.source == "ui" || build.source == "api")'
     timeout_in_minutes: 120
     concurrency: 1
     concurrency_group: "t3-pretty/upstream-sync"
     # Ahead of Origin PR review so a feature-branch review cannot occupy
-    # m1-dev in front of a nightly that is already late.
+    # the packaging Mac in front of a nightly that is already late.
     priority: 30
     agents:
       queue: macos-release
@@ -135,7 +138,7 @@ steps:
     key: ios-mobile
     concurrency: 1
     concurrency_group: "t3-pretty/ios-mobile"
-    # Ahead of Origin PR review on the single macos-release agent so a
+    # Ahead of Origin PR review on the packaging Mac so a
     # feature-branch review cannot sit in front of TestFlight.
     priority: 20
     if: build.branch == "main" && build.source != "schedule"
@@ -154,7 +157,7 @@ steps:
   - label: ":cloud: Relay"
     key: deploy-relay
     # Hosted macos-latest GHA jobs do not have the Origin git store or the
-    # m1-dev file-store secrets. Keep production deploys on macos-release.
+    # packaging-Mac file-store secrets. Keep production deploys on macos-release.
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 20
     agents:

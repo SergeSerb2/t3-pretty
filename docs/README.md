@@ -44,6 +44,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Environment auth](./internals/environment-auth.md)
 - [T3 Connect](./internals/t3-connect.md)
 - [CI gates](./internals/ci.md)
+- [Engineering work artifacts](./internals/work-artifacts.md)
 
 ### Performance audits
 
@@ -54,6 +55,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 ### Brainstorms
 
 - [Feature brainstorm, ranked top ten (2026-08-22)](./internals/t3-pretty-feature-brainstorm-2026-08-22.md)
+- [World Scenery dark↔light transition (2026-08-21)](./internals/theme-transition-brainstorm-2026-08-21.md)
 
 ### Runbooks
 

@@ -17,7 +17,7 @@ mobile sync. The imported `fork-upstream-sync.yml` wrapper is not scheduled.
 
 `.buildkite/pipeline.yml` runs `scripts/fork/publish-mobile-release.sh` on
 every push to Origin `main` that is not the four-hour schedule. The job lives
-on `macos-release` (m1-dev), the same native queue as the signed DMG. It is
+on `macos-release`, the same native queue as the signed DMG. It is
 not imported GitHub Actions: the importer cannot load `EXPO_TOKEN` or Apple
 keys, so those jobs died in about two seconds and TestFlight never moved.
 
@@ -58,7 +58,7 @@ bot commit lands through a short-lived `automation/ios-fingerprint-*`
 Origin pull request that `scripts/fork/origin-forge.mjs` merges. Those
 files are outside every release path filter, so the record itself
 schedules no further release. The iOS step has a higher Buildkite priority
-than Origin PR review so a feature-branch review cannot occupy m1-dev in
+than Origin PR review so a feature-branch review cannot occupy the packaging Mac in
 front of TestFlight. Origin's `pipeline upload` rejects `interruptible` on
 command steps, so a later `main` push can still cancel an in-flight Xcode
 archive. Do not merge unrelated `main` PRs while that job is compiling.
@@ -87,7 +87,7 @@ The job fails early when required release credentials are missing instead
 of reporting a green release that shipped nothing. To activate:
 
 1. Keep `EXPO_TOKEN` on the macos-release agent (cluster secret or
-   `/Users/m1-dev/.config/t3-pretty/EXPO_TOKEN`). Installed TestFlight
+   `$HOME/.config/t3-pretty/EXPO_TOKEN`). Installed TestFlight
    binaries poll the fork Expo Updates URL baked into the IPA; eas-cli on
    this Mac publishes that channel. IPA compilation is local from
    `Xcode.app` or `Xcode-beta.app`. Do not import a GitHub Actions mobile

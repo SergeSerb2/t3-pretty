@@ -595,9 +595,9 @@ const makeWsRpcLayer = (
                       threadId: command.threadId,
                     }),
                   ),
-                  Effect.ignoreCause({ log: true }),
+                  Effect.as(true),
                 )
-              : Effect.void;
+              : Effect.succeed(false);
 
           const recordSetupScriptLaunchFailure = (input: {
             readonly error: ProjectSetupScriptRunner.ProjectSetupScriptRunnerError;
@@ -849,7 +849,27 @@ const makeWsRpcLayer = (
               if (Cause.hasInterruptsOnly(cause)) {
                 return Effect.fail(dispatchError);
               }
-              return cleanupCreatedThread().pipe(Effect.flatMap(() => Effect.fail(dispatchError)));
+              return Effect.uninterruptible(cleanupCreatedThread()).pipe(
+                Effect.matchCauseEffect({
+                  onFailure: (cleanupCause) =>
+                    Effect.logWarning("bootstrap thread cleanup failed", {
+                      threadId: command.threadId,
+                      detail: Cause.pretty(cleanupCause),
+                    }).pipe(Effect.flatMap(() => Effect.fail(dispatchError))),
+                  onSuccess: (threadDeleted) =>
+                    Effect.fail(
+                      threadDeleted
+                        ? new OrchestrationDispatchCommandError({
+                            message: dispatchError.message,
+                            ...(dispatchError.cause !== undefined
+                              ? { cause: dispatchError.cause }
+                              : {}),
+                            bootstrapThreadDisposition: "deleted",
+                          })
+                        : dispatchError,
+                    ),
+                }),
+              );
             }),
           );
         });
@@ -2007,23 +2027,22 @@ const makeWsRpcLayer = (
                   resource: input.resource,
                 });
               }
-              const grokSessionId = yield* providerSessionDirectory
-                .getBinding(input.resource.threadId)
-                .pipe(
-                  Effect.map((binding) => {
-                    if (Option.isNone(binding) || binding.value.provider !== "grok") {
-                      return undefined;
-                    }
-                    return grokSessionIdFromResumeCursor(binding.value.resumeCursor);
+              const threadId = input.resource.threadId;
+              const grokSessionId = yield* providerSessionDirectory.getBinding(threadId).pipe(
+                Effect.map((binding) => {
+                  if (Option.isNone(binding) || binding.value.provider !== "grok") {
+                    return undefined;
+                  }
+                  return grokSessionIdFromResumeCursor(binding.value.resumeCursor);
+                }),
+                Effect.tapError((cause) =>
+                  Effect.logWarning("Failed to read Grok session id for generated image.", {
+                    threadId,
+                    cause,
                   }),
-                  Effect.tapError((cause) =>
-                    Effect.logWarning("Failed to read Grok session id for generated image.", {
-                      threadId: input.resource.threadId,
-                      cause,
-                    }),
-                  ),
-                  Effect.orElseSucceed(() => undefined),
-                );
+                ),
+                Effect.orElseSucceed(() => undefined),
+              );
               const workspaceRoot = thread.value.worktreePath ?? project.value.workspaceRoot;
               const extraGrokWorkspaceRoots =
                 thread.value.worktreePath &&

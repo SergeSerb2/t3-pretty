@@ -220,6 +220,13 @@ export function HomeRouteScreen() {
           onUnpinThread={unpinThread}
           onMovePinnedThread={movePinnedThread}
           onRegenerateThreadTitle={regenerateThreadTitle}
+          onRenameThread={(thread) =>
+            navigation.navigate("ThreadRename", {
+              environmentId: String(thread.environmentId),
+              threadId: String(thread.id),
+              currentTitle: thread.title,
+            })
+          }
           onEnvironmentChange={setSelectedEnvironmentId}
           onProjectChange={setSelectedProjectKey}
           onOpenSettings={() =>
