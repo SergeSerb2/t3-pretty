@@ -118,15 +118,18 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    Linux cannot load `CURSOR_API_KEY`, and the importer cannot run the old
    review workflow on Origin pull-request events.
    `m1-dev` signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
-   push/UI builds of `main`, not the four-hour scheduled sync. iOS TestFlight IPAs and OTA
-   exports compile on `macos-release` through the native
+   push/UI builds of `main`, not the four-hour scheduled sync. Hosted `linux-small` builds the
+   Linux x64 AppImage (`scripts/fork/build-linux-appimage.sh`) on those same push/UI builds and
+   uploads `latest-linux.yml` to the public feed. That script never `git fetch origin`: Origin
+   HTTPS has no credentials there, and git waits forever on the username prompt. iOS TestFlight
+   IPAs and OTA exports compile on `macos-release` through the native
    `scripts/fork/publish-mobile-release.sh` step (not the GitHub Actions importer). Relay
    deploys from the native `macos-release` step. Only trusted `main` commits run desktop packaging
    and relay deploys on the self-hosted machines; Origin PR review is the other
    `macos-release` job on feature branches, running scripts from `origin/main`
    when they exist. Imported desktop preflight is skipped when the push cannot change the
    shipped desktop app (mobile-only, docs-only, marketing, or relay-only commits).
-   Native Mac and Windows packaging still run on every `main` push so the public
+   Native Mac, Windows, and Linux packaging still run on every `main` push so the public
    updater feed stays on the latest commit. `workflow_dispatch` and the
    upstream-sync dispatch still always run.
 9. The publisher creates an annotated Origin git tag and uploads the installers plus both
@@ -150,7 +153,8 @@ without pretending that a newer upstream tag was integrated before its sync pull
   Buildkite only run on Origin-hosted repositories, not inbound GitHub mirrors. After detach,
   Origin is the source of truth and pushes no longer flow to GitHub.
 - Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
-  the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux),
+  the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux: importer,
+  WSL node-pty, and the x64 AppImage),
   `macos-release` (m1-dev), and `windows-release` (serge-pc). Register the machines with
   `scripts/fork/setup-buildkite-macos-agent.sh` and
   `scripts/fork/setup-buildkite-windows-agent.ps1`. The Mac setup starts a
@@ -165,7 +169,8 @@ without pretending that a newer upstream tag was integrated before its sync pull
   them onto `macos-release`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
   The importer cannot run Windows jobs; `.buildkite/pipeline.yml` runs
   `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer
-  for push/UI builds of `main`, not the four-hour schedule. Imported Mac jobs
+  for push/UI builds of `main`, not the four-hour schedule. The Linux AppImage is the
+  same: a native `linux-small` step, not an imported job. Imported Mac jobs
   use `/bin/bash` 3.2 (no `mapfile`). `CURSOR_API_KEY` and `CLI_PROXY_API_KEY`
   also live as files under `/Users/m1-dev/.config/t3-pretty/` because in-job
   `secret get` from imported GHA steps often fails on macos-release.
@@ -232,6 +237,7 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 | --------------------------- | ------------------------------------- | ------------------------------------------- | ---------------------------------------------------- |
 | Changelog + version + smoke | m1-dev                                | 10 min (6.5 min model + 3 min install)      | `ubuntu-latest`                                      |
 | WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                       |
+| Linux x64 AppImage          | not shipped on the feed               | —                                           | hosted `linux-small` (`build-linux-appimage.sh`)     |
 | macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m1-dev (or a second Mac with the same labels)        |
 | Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                   |
 | Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `macos-release` (Origin CLI)                         |
