@@ -103,10 +103,10 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
   }, [scenery]);
 
   const photoSetId = scenery.photoSetId;
-  // Extra sets import lazily. The loaded photos stay tagged with the set they
-  // belong to so picks and assignment checks never run against a pool that
-  // does not match the active set; while an import is in flight the pool
-  // reads empty and picks/assignment writes simply wait for it.
+  // Extra sets import lazily. Prefer the in-memory cache on the same tick as a
+  // set change (world-scenery is always cached; extras after first load) so
+  // the pool is never [] just because seedState still names the previous set.
+  // An empty peek means this extra set has never been imported — wait.
   const [seedState, setSeedState] = useState<{
     readonly photoSetId: PhotoSetId;
     readonly photos: ReadonlyArray<SceneryPhoto>;
@@ -122,10 +122,9 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
       cancelled = true;
     };
   }, [photoSetId]);
-  const pool = useMemo(
-    () => (seedState.photoSetId === photoSetId ? getSceneryPool([], seedState.photos) : []),
-    [seedState, photoSetId],
-  );
+  const photos =
+    seedState.photoSetId === photoSetId ? seedState.photos : peekSeedPhotos(photoSetId);
+  const pool = useMemo(() => getSceneryPool([], photos), [photos]);
 
   const photoForThreadKey = useCallback(
     (threadKey: string): SceneryPhoto | null => {

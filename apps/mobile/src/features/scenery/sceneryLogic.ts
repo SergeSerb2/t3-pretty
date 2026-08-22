@@ -217,6 +217,7 @@ type SeedModule = {
   default?: SeedFile;
 };
 
+const EMPTY_SEED: ReadonlyArray<SceneryPhoto> = [];
 const seedCache = new Map<PhotoSetId, ReadonlyArray<SceneryPhoto>>();
 seedCache.set("world-scenery", (seedPoolJson as SeedFile).photos);
 
@@ -233,7 +234,7 @@ function photosFromModule(mod: SeedModule): ReadonlyArray<SceneryPhoto> {
 }
 
 export function peekSeedPhotos(photoSetId: PhotoSetId): ReadonlyArray<SceneryPhoto> {
-  return seedCache.get(photoSetId) ?? [];
+  return seedCache.get(photoSetId) ?? EMPTY_SEED;
 }
 
 export async function loadSeedPhotos(photoSetId: PhotoSetId): Promise<ReadonlyArray<SceneryPhoto>> {
