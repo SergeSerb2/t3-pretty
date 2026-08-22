@@ -177,6 +177,21 @@ export function resolveCarriedRuntimeMode(input: {
   return resolveRuntimeModeForProviderDriver(input.destinationProviderDriver, input.runtimeMode);
 }
 
+// The composer pick a new-thread carry should record. Only a carry with real
+// information becomes an explicit pick: a non-default mode, or "full-access"
+// that remapping yolo off Kimi produced. A plain carried "full-access" stays
+// unset on the composer so a new Kimi draft still inherits the yolo default.
+export function resolveCarriedComposerRuntimeMode(input: {
+  readonly runtimeMode: RuntimeMode | null;
+  readonly destinationProviderDriver: string | null | undefined;
+}): RuntimeMode | null {
+  const carried = resolveCarriedRuntimeMode(input);
+  if (carried === null) {
+    return null;
+  }
+  return carried !== DEFAULT_RUNTIME_MODE || carried !== input.runtimeMode ? carried : null;
+}
+
 export function buildLocalDraftThread(
   threadId: ThreadId,
   draftThread: DraftThreadState,

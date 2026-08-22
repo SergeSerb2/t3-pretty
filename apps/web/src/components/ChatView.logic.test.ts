@@ -31,6 +31,7 @@ import {
   resolveDraftPromotionNavigationTarget,
   resolveThreadMetadataUpdateForNextTurn,
   resolveCarriedRuntimeMode,
+  resolveCarriedComposerRuntimeMode,
   resolveComposerRuntimeMode,
   resolveSendEnvMode,
   resolveDraftHeroState,
@@ -1100,6 +1101,36 @@ describe("composer runtime mode", () => {
     ).toBe("yolo");
     expect(
       resolveCarriedRuntimeMode({
+        runtimeMode: null,
+        destinationProviderDriver: "grok",
+      }),
+    ).toBeNull();
+  });
+
+  it("records only real picks as the carried composer runtime mode", () => {
+    // Remapped yolo sticks as an explicit full-access pick.
+    expect(
+      resolveCarriedComposerRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "grok",
+      }),
+    ).toBe("full-access");
+    // Non-default modes carry as explicit picks.
+    expect(
+      resolveCarriedComposerRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "kimi",
+      }),
+    ).toBe("yolo");
+    // A plain carried full-access stays unset so Kimi inherits yolo.
+    expect(
+      resolveCarriedComposerRuntimeMode({
+        runtimeMode: "full-access",
+        destinationProviderDriver: "kimi",
+      }),
+    ).toBeNull();
+    expect(
+      resolveCarriedComposerRuntimeMode({
         runtimeMode: null,
         destinationProviderDriver: "grok",
       }),

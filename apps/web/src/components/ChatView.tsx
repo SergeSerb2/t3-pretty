@@ -5827,6 +5827,12 @@ function ChatViewContent(props: ChatViewProps) {
       } else {
         turnStartSucceeded = true;
         acknowledgeActiveThreadWoke();
+        // The turn went out with the remapped mode; sync a stored composer
+        // pick (carried yolo) to what was actually sent so a later provider
+        // switch cannot resurrect and re-persist the pre-send value.
+        if (composerRuntimeMode !== null && composerRuntimeMode !== runtimeModeForTurn) {
+          setComposerDraftRuntimeMode(composerDraftTarget, runtimeModeForTurn);
+        }
         if (backgroundThreadRef) {
           markPromotedDraftThreadByRef(backgroundThreadRef);
           try {
@@ -6333,6 +6339,14 @@ function ChatViewContent(props: ChatViewProps) {
           scopeThreadRef(activeThread.environmentId, threadIdForSend),
           nextInteractionMode,
         );
+        // Same sync as the composer send: the turn persisted the remapped
+        // mode, so a stored carried yolo must not outlive it.
+        if (composerRuntimeMode !== null && composerRuntimeMode !== runtimeModeForTurn) {
+          setComposerDraftRuntimeMode(
+            scopeThreadRef(activeThread.environmentId, threadIdForSend),
+            runtimeModeForTurn,
+          );
+        }
 
         const startResult = await startThreadTurn({
           environmentId,
