@@ -154,6 +154,27 @@ describe("toPickerSkills", () => {
     expect(html).toContain("aria-disabled");
   });
 
+  it("does not let the favorite star punch through a disabled non-locked row", () => {
+    const skill = toPickerSkills(installed, [], new Set(), claudeDefault)[0]!;
+    expect(skill.locked).toBe(false);
+    const html = renderToStaticMarkup(
+      createElement(
+        Menu,
+        null,
+        createElement(SkillPickerRow, {
+          skill,
+          isEnabled: false,
+          isFavorite: false,
+          disabled: true,
+          onToggle: () => {},
+          onToggleFavorite: () => {},
+        }),
+      ),
+    );
+    expect(html).not.toContain("pointer-events-auto");
+    expect(html).toContain("aria-disabled");
+  });
+
   it("pins favorites above origin groups and keeps them out of those groups", () => {
     const skills = toPickerSkills(installed, host, new Set(), claudeDefault);
     const groups = organizePickerSkills(skills, new Set(["host:agents:shared", "octo/skills:tdd"]));

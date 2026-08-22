@@ -303,7 +303,7 @@ export function SkillPickerRow(props: {
         <Button
           aria-label={props.isFavorite ? "Remove from favorites" : "Add to favorites"}
           className={cn(
-            "pointer-events-auto text-muted-foreground/70 opacity-70 hover:text-foreground hover:opacity-100",
+            "text-muted-foreground/70 opacity-70 hover:text-foreground hover:opacity-100",
             props.isFavorite && "text-foreground opacity-100",
           )}
           onClick={(event) => {
