@@ -1,3 +1,28 @@
+const MENU_ITEM_SELECTOR =
+  "[data-slot='menu-item'], [data-slot='menu-sub-trigger'], " +
+  "[data-slot='menu-checkbox-item'], [data-slot='menu-radio-item']";
+
+function elementFromEventNode(
+  node: EventTarget | null | undefined,
+): { closest(selector: string): Element | null } | null {
+  if (node == null || typeof node !== "object") return null;
+  if ("closest" in node && typeof node.closest === "function") {
+    return node as { closest(selector: string): Element | null };
+  }
+  if (typeof Node !== "undefined" && node instanceof Node) {
+    return node.parentElement;
+  }
+  return null;
+}
+
+function isEventOnMenuItem(event: Event | undefined): boolean {
+  if (event === undefined) return false;
+  const related = "relatedTarget" in event ? event.relatedTarget : null;
+  const target =
+    elementFromEventNode(event.target) ?? elementFromEventNode(related as EventTarget | null);
+  return target?.closest(MENU_ITEM_SELECTOR) != null;
+}
+
 /**
  * Standalone Menu.Root never copies its FloatingTree node id into the store
  * (Base UI 1.4–1.6). Opening a nested submenu then matches `null === null`
@@ -20,18 +45,43 @@ export function isSpuriousRootSiblingOpen(
   return trigger?.closest("[role='menubar']") == null;
 }
 
+/**
+ * Same missing tree id makes a click or focus move onto an item in the nested
+ * popup look like an outside dismiss. The item never receives the click, and
+ * the whole menu unmounts.
+ *
+ * Only item-targeted presses are cancelled: Base UI closes the menu itself
+ * once the item handles the click (item-press), so the menu cannot be left
+ * mounted by a cancelled dismiss. Presses on popup padding or separators
+ * carry no pending select, so they dismiss normally.
+ */
+export function isSpuriousNestedMenuDismiss(
+  open: boolean,
+  reason: unknown,
+  event?: Event,
+): boolean {
+  if (open !== false || (reason !== "outside-press" && reason !== "focus-out")) {
+    return false;
+  }
+  return isEventOnMenuItem(event);
+}
+
 export function handleRootMenuOpenChange<
   D extends {
     readonly reason: unknown;
     cancel: () => void;
     readonly trigger?: { closest(selector: string): Element | null } | undefined;
+    readonly event?: Event;
   },
 >(
   open: boolean,
   eventDetails: D,
   onOpenChange: ((open: boolean, eventDetails: D) => void) | undefined,
 ): void {
-  if (isSpuriousRootSiblingOpen(open, eventDetails.reason, eventDetails.trigger)) {
+  if (
+    isSpuriousRootSiblingOpen(open, eventDetails.reason, eventDetails.trigger) ||
+    isSpuriousNestedMenuDismiss(open, eventDetails.reason, eventDetails.event)
+  ) {
     eventDetails.cancel();
     return;
   }
