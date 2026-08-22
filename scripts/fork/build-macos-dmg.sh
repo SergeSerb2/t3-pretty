@@ -12,17 +12,13 @@ export T3CODE_CLERK_PUBLISHABLE_KEY="${T3CODE_CLERK_PUBLISHABLE_KEY:-pk_live_Y2x
 export APPLE_TEAM_ID="${APPLE_TEAM_ID:-78A5P57U23}"
 export T3CODE_APPLE_TEAM_ID="${T3CODE_APPLE_TEAM_ID:-$APPLE_TEAM_ID}"
 
-# Changelog-only commits already minted a version. Reuse it instead of
+# Automated notes commits already minted a version. Reuse it instead of
 # minting another desktop release, so a retry still produces a DMG.
 version=""
 subject="$(git log -1 --format=%s)"
-if [[ "$subject" == "docs(changelog):"* ]]; then
-  prefix="docs(changelog): add release notes through v"
-  if [[ "$subject" == "$prefix"* ]]; then
-    version="${subject#"$prefix"}"
-  else
-    version="$(node -e 'const src = require("node:fs").readFileSync("apps/web/src/changelog/changelogData.ts", "utf8"); const match = /^\s+version:\s*"([^"]+)",$/m.exec(src); if (!match) process.exit(1); process.stdout.write(match[1]);')"
-  fi
+changelog_prefix="docs(changelog): add release notes through v"
+if [[ "$subject" == "$changelog_prefix"* ]]; then
+  version="${subject#"$changelog_prefix"}"
   test -n "$version"
   echo "Changelog commit; packaging already-minted $version without reminting."
   feed_yml="${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/latest-mac.yml"
@@ -92,18 +88,19 @@ fi
 echo "Building macOS arm64 $version"
 
 # Bake What's New notes into this artifact, then push them to main when this
-# checkout is the tip. Changelog-commit retries already persisted notes, so
-# they pass --no-push and cannot mint a second docs(changelog) commit.
+# checkout is the tip. Changelog-commit retries already persisted notes; do
+# not regenerate them (model/fallback drift would rewrite the shipped file).
 # Hosted Linux preflight cannot load CLI_PROXY_API_KEY or push to Origin,
 # which is why notes froze after 2026-08-12.
 # Always keep at least --version in this array: Apple bash 3.2 with `set -u`
 # treats an empty `"${arr[@]}"` as unbound.
-changelog_args=(--version "$version")
-if [[ "$subject" == "docs(changelog):"* ]]; then
-  changelog_args+=(--no-push)
-fi
-if ! node scripts/fork/generate-changelog.mjs "${changelog_args[@]}"; then
-  echo "warning: changelog generation failed; continuing the macOS release"
+if [[ "$subject" == "$changelog_prefix"* ]]; then
+  echo "Changelog commit already has notes; skipping changelog generation."
+else
+  changelog_args=(--version "$version")
+  if ! node scripts/fork/generate-changelog.mjs "${changelog_args[@]}"; then
+    echo "warning: changelog generation failed; continuing the macOS release"
+  fi
 fi
 
 if ! command -v rustup >/dev/null; then

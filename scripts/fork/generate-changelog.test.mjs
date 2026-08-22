@@ -352,18 +352,20 @@ describe("release workflow wiring", () => {
     );
     assert.include(macos, "node scripts/fork/generate-changelog.mjs");
     assert.include(macos, '"${changelog_args[@]}"');
-    assert.include(macos, 'docs(changelog):"*');
+    assert.include(macos, "docs(changelog): add release notes through v");
     assert.include(macos, "already-minted");
     assert.include(macos, "latest-mac.yml");
-    assert.include(macos, "changelog_args+=(--no-push)");
+    assert.include(macos, "skipping changelog generation");
     assert.include(macos, 'changelog_args=(--version "$version")');
+    assert.notInclude(macos, "changelog_args+=(--no-push)");
     assert.notInclude(macos, "changelog_push=()");
     assert.notInclude(macos, "Changelog-only commit; skipping macOS packaging.");
     assert.include(windows, "generate-changelog.mjs");
     assert.include(windows, "--no-push");
-    assert.include(windows, "docs(changelog):*");
+    assert.include(windows, "docs(changelog): add release notes through v");
     assert.include(windows, "already-minted");
     assert.include(windows, "latest.yml");
+    assert.include(windows, "skipping changelog generation");
     assert.notInclude(windows, "Changelog-only commit; skipping Windows packaging.");
   });
 

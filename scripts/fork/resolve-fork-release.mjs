@@ -92,20 +92,9 @@ function reusedChangelogVersion() {
   } catch {
     return null;
   }
-  if (!subject.startsWith("docs(changelog):")) return null;
-  if (subject.startsWith(CHANGELOG_SUBJECT_PREFIX)) {
-    const version = subject.slice(CHANGELOG_SUBJECT_PREFIX.length).trim();
-    if (version) return version;
-  }
-  let source;
-  try {
-    source = NodeFS.readFileSync("apps/web/src/changelog/changelogData.ts", "utf8");
-  } catch {
-    throw new Error("Changelog commit has no reusable version");
-  }
-  const match = /^\s+version:\s*"([^"]+)",$/m.exec(source);
-  if (!match?.[1]) throw new Error("Changelog commit has no reusable version");
-  return match[1];
+  if (!subject.startsWith(CHANGELOG_SUBJECT_PREFIX)) return null;
+  const version = subject.slice(CHANGELOG_SUBJECT_PREFIX.length).trim();
+  return version || null;
 }
 
 function writeGitHubOutput(values) {

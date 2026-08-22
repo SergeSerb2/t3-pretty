@@ -10,18 +10,9 @@ Set-Location $root
 
 $changelogSubject = (git log -1 --format=%s | Out-String).Trim()
 $reusedVersion = $null
-if ($changelogSubject -like "docs(changelog):*") {
-  $prefix = "docs(changelog): add release notes through v"
-  if ($changelogSubject.StartsWith($prefix)) {
-    $reusedVersion = $changelogSubject.Substring($prefix.Length).Trim()
-  } else {
-    $reusedVersion = (
-      node -e 'const src = require("node:fs").readFileSync("apps/web/src/changelog/changelogData.ts", "utf8"); const match = /^\s+version:\s*"([^"]+)",$/m.exec(src); if (!match) process.exit(1); process.stdout.write(match[1]);'
-    ).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $reusedVersion) {
-      throw "Changelog commit has no reusable version"
-    }
-  }
+$changelogPrefix = "docs(changelog): add release notes through v"
+if ($changelogSubject.StartsWith($changelogPrefix)) {
+  $reusedVersion = $changelogSubject.Substring($changelogPrefix.Length).Trim()
   if (-not $reusedVersion) {
     throw "Changelog commit has no reusable version"
   }
@@ -86,21 +77,26 @@ if ($reusedVersion) {
 Write-Host "Building Windows NSIS $version"
 
 # Mac packager persists notes to main. Write locally so this installer still
-# ships them if the Mac job has not pushed yet.
-if (-not $env:CLI_PROXY_API_KEY) {
-  foreach ($candidate in @(
-    (Join-Path $env:USERPROFILE ".config\t3-pretty\CLI_PROXY_API_KEY"),
-    "C:\buildkite-agent\secrets\CLI_PROXY_API_KEY"
-  )) {
-    if (Test-Path $candidate) {
-      $env:CLI_PROXY_API_KEY = (Get-Content -Raw $candidate).Trim()
-      break
+# ships them if the Mac job has not pushed yet. Changelog-commit retries
+# already have those notes; do not regenerate them.
+if (-not $reusedVersion) {
+  if (-not $env:CLI_PROXY_API_KEY) {
+    foreach ($candidate in @(
+      (Join-Path $env:USERPROFILE ".config\t3-pretty\CLI_PROXY_API_KEY"),
+      "C:\buildkite-agent\secrets\CLI_PROXY_API_KEY"
+    )) {
+      if (Test-Path $candidate) {
+        $env:CLI_PROXY_API_KEY = (Get-Content -Raw $candidate).Trim()
+        break
+      }
     }
   }
-}
-node "$root\scripts\fork\generate-changelog.mjs" --version $version --no-push
-if ($LASTEXITCODE -ne 0) {
-  Write-Host "warning: changelog generation failed; continuing the Windows release"
+  node "$root\scripts\fork\generate-changelog.mjs" --version $version --no-push
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "warning: changelog generation failed; continuing the Windows release"
+  }
+} else {
+  Write-Host "Changelog commit already has notes; skipping changelog generation."
 }
 
 # Official Vite+ is vp.exe under VP_HOME. npm's global `vp` / `npx vp`
