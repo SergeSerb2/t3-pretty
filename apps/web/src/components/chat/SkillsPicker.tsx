@@ -7,7 +7,8 @@
  * global picks and per-thread picks. Rows that are already on regardless of
  * this thread render checked and disabled — library skills enabled globally,
  * and host skills the selected instance loads from its own home anyway; both
- * are only turned off from settings. Everything else toggles per thread:
+ * are only turned off from settings. The favorite star stays clickable on
+ * those locked rows. Everything else toggles per thread:
  *   - draft sessions write the composer draft store and ride
  *     `bootstrap.createThread.enabledSkillIds` on the first turn;
  *   - server threads dispatch `thread.skills.set` (full replacement) and the
@@ -72,7 +73,7 @@ export interface SkillsPickerProps {
   onOpenChange?: (open: boolean) => void;
 }
 
-interface PickerSkill {
+export interface PickerSkill {
   readonly id: SkillId;
   readonly name: string;
   readonly description: string | undefined;
@@ -274,6 +275,62 @@ export function organizePickerSkills(
   return favorites.length > 0 ? [[FAVORITES_GROUP, favorites], ...groups] : groups;
 }
 
+/** One picker row: locked skills keep the switch off-limits but the star works. */
+export function SkillPickerRow(props: {
+  skill: PickerSkill;
+  isEnabled: boolean;
+  isFavorite: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  onToggleFavorite: () => void;
+}) {
+  const { skill } = props;
+  return (
+    <MenuCheckboxItem
+      checked={props.isEnabled}
+      className={cn(
+        "min-h-6 gap-2 py-0.5 sm:min-h-6",
+        // Disabled items drop pointer events, which also blocked the star.
+        skill.locked &&
+          "data-disabled:pointer-events-auto data-disabled:opacity-100 [&>:last-child]:opacity-64",
+      )}
+      closeOnClick={false}
+      disabled={props.disabled}
+      onCheckedChange={props.onToggle}
+      variant="switch"
+    >
+      <span className="flex min-w-0 items-center gap-1">
+        <Button
+          aria-label={props.isFavorite ? "Remove from favorites" : "Add to favorites"}
+          className={cn(
+            "pointer-events-auto text-muted-foreground/70 opacity-70 hover:text-foreground hover:opacity-100",
+            props.isFavorite && "text-foreground opacity-100",
+          )}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            props.onToggleFavorite();
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+          }}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          size="icon-micro"
+          variant="ghost"
+        >
+          <StarIcon className={cn(props.isFavorite && "fill-current text-yellow-500")} />
+        </Button>
+        <span className="min-w-0 truncate">{skill.name}</span>
+        {skill.locked ? (
+          <span className="shrink-0 text-[10px] text-muted-foreground/80">Global</span>
+        ) : null}
+      </span>
+    </MenuCheckboxItem>
+  );
+}
+
 /**
  * `Skills ▸` row of the composer's `⋯` menu: the trigger carries the enabled
  * count, the submenu lists library and host skills as switches.
@@ -371,51 +428,17 @@ export const SkillsSubmenu = memo(function SkillsSubmenu(props: SkillsPickerProp
               groups.map(([group, groupSkills]) => (
                 <MenuGroup key={group}>
                   <MenuGroupLabel className="py-1">{group}</MenuGroupLabel>
-                  {groupSkills.map((skill) => {
-                    const isEnabled = skill.locked || state.perThreadIds.has(skill.id);
-                    const isFavorite = favoriteIds.has(skill.id);
-                    return (
-                      <MenuCheckboxItem
-                        key={skill.id}
-                        checked={isEnabled}
-                        className="min-h-6 gap-2 py-0.5 sm:min-h-6"
-                        closeOnClick={false}
-                        disabled={skill.locked || !state.togglesEnabled}
-                        onCheckedChange={() => state.toggleSkill(skill.id)}
-                        variant="switch"
-                      >
-                        <span className="flex min-w-0 items-center gap-1">
-                          <Button
-                            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-                            className={cn(
-                              "text-muted-foreground/70 opacity-70 hover:text-foreground hover:opacity-100",
-                              isFavorite && "text-foreground opacity-100",
-                            )}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              toggleFavorite(skill.id);
-                            }}
-                            onPointerDown={(event) => {
-                              event.stopPropagation();
-                            }}
-                            size="icon-micro"
-                            variant="ghost"
-                          >
-                            <StarIcon
-                              className={cn(isFavorite && "fill-current text-yellow-500")}
-                            />
-                          </Button>
-                          <span className="min-w-0 truncate">{skill.name}</span>
-                          {skill.locked ? (
-                            <span className="shrink-0 text-[10px] text-muted-foreground/80">
-                              Global
-                            </span>
-                          ) : null}
-                        </span>
-                      </MenuCheckboxItem>
-                    );
-                  })}
+                  {groupSkills.map((skill) => (
+                    <SkillPickerRow
+                      key={skill.id}
+                      skill={skill}
+                      isEnabled={skill.locked || state.perThreadIds.has(skill.id)}
+                      isFavorite={favoriteIds.has(skill.id)}
+                      disabled={skill.locked || !state.togglesEnabled}
+                      onToggle={() => state.toggleSkill(skill.id)}
+                      onToggleFavorite={() => toggleFavorite(skill.id)}
+                    />
+                  ))}
                 </MenuGroup>
               ))
             )}

@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 import {
   ProviderDriverKind,
@@ -6,7 +8,13 @@ import {
   type InstalledSkill,
 } from "@t3tools/contracts";
 
-import { toPickerSkills, organizePickerSkills, skillMatchesQuery } from "./SkillsPicker";
+import { Menu } from "../ui/menu";
+import {
+  toPickerSkills,
+  organizePickerSkills,
+  skillMatchesQuery,
+  SkillPickerRow,
+} from "./SkillsPicker";
 
 describe("toPickerSkills", () => {
   const claude = ProviderDriverKind.make("claudeAgent");
@@ -114,6 +122,36 @@ describe("toPickerSkills", () => {
   it("falls back to the host path when a skill has no description", () => {
     const skills = toPickerSkills([], host, new Set(), claudeDefault);
     expect(skills[0]?.description).toBe("~/.claude/skills/grill-me");
+  });
+
+  it("still pins a globally locked skill when it is favorited", () => {
+    const skills = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault);
+    expect(skills.find((skill) => skill.id === "octo/skills:tdd")?.locked).toBe(true);
+    const groups = organizePickerSkills(skills, new Set(["octo/skills:tdd"]));
+    expect(groups[0]?.[0]).toBe("Favorites");
+    expect(groups[0]?.[1].map((skill) => skill.id)).toEqual(["octo/skills:tdd"]);
+  });
+
+  it("keeps the favorite star clickable on a globally locked skill", () => {
+    const skill = toPickerSkills(installed, [], new Set(["octo/skills:tdd"]), claudeDefault)[0]!;
+    const html = renderToStaticMarkup(
+      createElement(
+        Menu,
+        null,
+        createElement(SkillPickerRow, {
+          skill,
+          isEnabled: true,
+          isFavorite: false,
+          disabled: true,
+          onToggle: () => {},
+          onToggleFavorite: () => {},
+        }),
+      ),
+    );
+    expect(html).toContain("pointer-events-auto");
+    expect(html).toContain("Add to favorites");
+    expect(html).toContain("Global");
+    expect(html).toContain("aria-disabled");
   });
 
   it("pins favorites above origin groups and keeps them out of those groups", () => {
