@@ -19,6 +19,7 @@ import { isBoringMobileTheme } from "../../lib/mobileTheme";
 import type { MobileSceneryPreferences } from "../../persistence/mobile-preferences";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { parsePhotoSetId, type PhotoSetId } from "./photoSets";
 import { useReduceTransparency } from "./useReduceTransparency";
 import {
   capAssignments,
@@ -30,7 +31,7 @@ import {
   DEFAULT_TRANSLUCENCY,
   fallbackPhoto,
   pickScenery,
-  SCENERY_POOL,
+  sceneryPoolForSet,
   type SceneryAssignment,
   type SceneryPhoto,
 } from "./sceneryLogic";
@@ -39,6 +40,7 @@ export interface ResolvedScenery {
   readonly enabled: boolean;
   readonly blur: number;
   readonly translucency: number;
+  readonly photoSetId: PhotoSetId;
   readonly assignments: Readonly<Record<string, SceneryAssignment>>;
 }
 
@@ -47,6 +49,7 @@ function resolveScenery(raw: MobileSceneryPreferences | null | undefined): Resol
     enabled: raw?.enabled ?? true,
     blur: clampBlur(raw?.blur ?? DEFAULT_BLUR),
     translucency: clampTranslucency(raw?.translucency ?? DEFAULT_TRANSLUCENCY),
+    photoSetId: parsePhotoSetId(raw?.photoSetId),
     assignments: raw?.assignments ?? {},
   };
 }
@@ -62,6 +65,7 @@ interface SceneryContextValue extends ResolvedScenery {
   readonly setEnabled: (value: boolean) => void;
   readonly setBlur: (value: number) => void;
   readonly setTranslucency: (value: number) => void;
+  readonly setPhotoSetId: (value: PhotoSetId) => void;
 }
 
 const SceneryContext = createContext<SceneryContextValue | null>(null);
@@ -87,7 +91,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     sceneryRef.current = scenery;
   }, [scenery]);
 
-  const pool = SCENERY_POOL;
+  const pool = sceneryPoolForSet(scenery.photoSetId);
 
   const photoForThreadKey = useCallback(
     (threadKey: string): SceneryPhoto | null => {
@@ -113,6 +117,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
           enabled: current.enabled,
           blur: current.blur,
           translucency: current.translucency,
+          photoSetId: current.photoSetId,
           assignments: current.assignments,
           ...patch,
         },
@@ -152,6 +157,10 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     (value: number) => persistScenery({ translucency: clampTranslucency(value) }),
     [persistScenery],
   );
+  const setPhotoSetId = useCallback(
+    (value: PhotoSetId) => persistScenery({ photoSetId: parsePhotoSetId(value) }),
+    [persistScenery],
+  );
 
   const value = useMemo(
     (): SceneryContextValue => ({
@@ -163,6 +172,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
       setEnabled,
       setBlur,
       setTranslucency,
+      setPhotoSetId,
     }),
     [
       scenery,
@@ -173,6 +183,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
       setEnabled,
       setBlur,
       setTranslucency,
+      setPhotoSetId,
     ],
   );
 

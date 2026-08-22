@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import webSeedPoolJson from "../../../../web/src/scenery/seedPool.json";
+import webDeepForestJson from "../../../../web/src/scenery/seeds/deep-forest.json";
+import webGrandBuildingsJson from "../../../../web/src/scenery/seeds/grand-buildings.json";
+import webNightCitiesJson from "../../../../web/src/scenery/seeds/night-cities.json";
+import webNightSkyJson from "../../../../web/src/scenery/seeds/night-sky.json";
+import { PHOTO_SET_IDS as WEB_PHOTO_SET_IDS } from "../../../../web/src/scenery/photoSets";
+import { PHOTO_SET_IDS, PHOTO_SETS } from "./photoSets";
 import mobileSeedPoolJson from "./seedPool.json";
+import mobileDeepForestJson from "./seeds/deep-forest.json";
+import mobileGrandBuildingsJson from "./seeds/grand-buildings.json";
+import mobileNightCitiesJson from "./seeds/night-cities.json";
+import mobileNightSkyJson from "./seeds/night-sky.json";
 import {
   capAssignments,
   chatWashBase,
@@ -19,7 +29,9 @@ import {
   layerStack,
   photoOpacity,
   pickScenery,
+  sceneryPoolForSet,
   SCENERY_POOL,
+  SEED_POOLS,
   sizedImageURL,
   stableIndex,
   wallpaperPixelWidth,
@@ -262,5 +274,16 @@ describe("seed pool", () => {
     const pool = getSceneryPool([extra]);
     expect(pool).toContainEqual(extra);
     expect(pool.length).toBe(SCENERY_POOL.length + 1);
+  });
+
+  it("ships the same extra photo sets as desktop", () => {
+    expect(PHOTO_SET_IDS).toEqual(WEB_PHOTO_SET_IDS);
+    expect(PHOTO_SETS.map((set) => set.id)).toEqual(PHOTO_SET_IDS);
+    expect(mobileNightCitiesJson).toEqual(webNightCitiesJson);
+    expect(mobileDeepForestJson).toEqual(webDeepForestJson);
+    expect(mobileNightSkyJson).toEqual(webNightSkyJson);
+    expect(mobileGrandBuildingsJson).toEqual(webGrandBuildingsJson);
+    expect(SEED_POOLS["night-cities"].length).toBeGreaterThan(100);
+    expect(sceneryPoolForSet("deep-forest").length).toBe(SEED_POOLS["deep-forest"].length);
   });
 });

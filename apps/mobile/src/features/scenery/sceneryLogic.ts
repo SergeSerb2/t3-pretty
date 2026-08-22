@@ -10,6 +10,11 @@
  * Unsplash refresh on this surface yet. The CDN still pre-blurs the wallpaper
  * render (imgix `blur` param), so the device does no gaussian work.
  */
+import { DEFAULT_PHOTO_SET_ID, type PhotoSetId } from "./photoSets";
+import deepForestSeedJson from "./seeds/deep-forest.json";
+import grandBuildingsSeedJson from "./seeds/grand-buildings.json";
+import nightCitiesSeedJson from "./seeds/night-cities.json";
+import nightSkySeedJson from "./seeds/night-sky.json";
 import seedPoolJson from "./seedPool.json";
 
 export interface Rgb {
@@ -202,7 +207,7 @@ export function layerStack(translucency: number, colorScheme: "light" | "dark"):
  * approximates that with a recency window, which converges to the same
  * behavior for the pool sizes involved (hundreds of photos).
  */
-const RECENT_EXCLUSION_WINDOW = 60;
+const RECENT_EXCLUSION_WINDOW = 120;
 
 /**
  * Thread routes come and go without a deletion signal reaching this store, so
@@ -211,17 +216,26 @@ const RECENT_EXCLUSION_WINDOW = 60;
  */
 const MAX_ASSIGNMENTS = 300;
 
-const SEED_POOL: ReadonlyArray<SceneryPhoto> = (
-  seedPoolJson as { photos: ReadonlyArray<SceneryPhoto> }
-).photos;
+type SeedFile = { readonly photos: ReadonlyArray<SceneryPhoto> };
+
+export const SEED_POOLS: Record<PhotoSetId, ReadonlyArray<SceneryPhoto>> = {
+  "world-scenery": (seedPoolJson as SeedFile).photos,
+  "night-cities": (nightCitiesSeedJson as SeedFile).photos,
+  "deep-forest": (deepForestSeedJson as SeedFile).photos,
+  "night-sky": (nightSkySeedJson as SeedFile).photos,
+  "grand-buildings": (grandBuildingsSeedJson as SeedFile).photos,
+};
 
 /**
  * The photo pool: the bundled seed merged with photos fetched at runtime
  * (none on mobile yet — the parameter keeps the web shape and testability).
  */
-export function getSceneryPool(fetchedPhotos: ReadonlyArray<SceneryPhoto>): SceneryPhoto[] {
+export function getSceneryPool(
+  fetchedPhotos: ReadonlyArray<SceneryPhoto>,
+  seedPhotos: ReadonlyArray<SceneryPhoto> = SEED_POOLS[DEFAULT_PHOTO_SET_ID],
+): SceneryPhoto[] {
   const byId = new Map<string, SceneryPhoto>();
-  for (const photo of SEED_POOL) {
+  for (const photo of seedPhotos) {
     byId.set(photo.id, photo);
   }
   for (const photo of fetchedPhotos) {
@@ -230,8 +244,12 @@ export function getSceneryPool(fetchedPhotos: ReadonlyArray<SceneryPhoto>): Scen
   return [...byId.values()];
 }
 
-/** The pool the app actually serves from on this surface. */
-export const SCENERY_POOL: ReadonlyArray<SceneryPhoto> = getSceneryPool([]);
+export function sceneryPoolForSet(photoSetId: PhotoSetId): ReadonlyArray<SceneryPhoto> {
+  return getSceneryPool([], SEED_POOLS[photoSetId]);
+}
+
+/** The World Scenery pool — the default set and the one golden tests pin. */
+export const SCENERY_POOL: ReadonlyArray<SceneryPhoto> = sceneryPoolForSet(DEFAULT_PHOTO_SET_ID);
 
 export function pickScenery(
   pool: ReadonlyArray<SceneryPhoto>,

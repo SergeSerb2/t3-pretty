@@ -8,10 +8,20 @@ Home screen uses the photo of the day.
 ## Turn it on or off
 
 World Scenery is T3 Pretty's default look. Open **Settings → Appearance** and use
-**Personalization** to choose **World Scenery** or **Boring**. Boring restores the original T3 Chat
-colors and turns the landscape photos off.
+**Personalization** to choose a photo theme:
 
-Open **Settings → Appearance** to choose **System**, **Light**, or **Dark**. While World Scenery is
+- **World Scenery** — landscapes from around the world
+- **Night Cities** — rain streets, neon, and skylines after dark
+- **Deep Forest** — moss, fog, and old-growth woods
+- **Night Sky** — auroras, the Milky Way, and dark-sky country
+- **Grand Buildings** — cathedrals, temples, and landmark architecture
+- **Boring** — the original T3 Chat colors, with photos off
+
+Each photo theme keeps the same frosted glass. Only the pictures change. A new thread picks a
+photo from the theme that's on; switching themes uses that theme's pool for threads that don't
+already have a matching picture.
+
+Open **Settings → Appearance** to choose **System**, **Light**, or **Dark**. While a photo theme is
 on:
 
 - A new thread opens in fog: a cloud bank gathers over the assigned place, the location
@@ -27,8 +37,8 @@ on:
   running-status dots still, and freezes the ultrathink composer spectrum. With the
   system reduce-motion setting on, those animations keep only their fade.
 
-On phone, open **Settings → Appearance**. **Personalization** chooses **World Scenery** or **Boring**.
-While World Scenery is selected, **Scenery photos** can still turn the landscape off without
+On phone, open **Settings → Appearance**. **Personalization** chooses a photo theme or **Boring**.
+While a photo theme is selected, **Scenery photos** can still turn the landscape off without
 leaving the alpine palette. While it is on you can also adjust **Photo blur** and **Photo
 presence**. Starting a new task uses the same photo of the day as Home, so the compose sheet
 sits on the landscape instead of a blank plate. The place name and photo credit sit above the

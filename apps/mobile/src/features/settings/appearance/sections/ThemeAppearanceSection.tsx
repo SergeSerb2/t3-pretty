@@ -6,21 +6,14 @@ import {
   DEFAULT_MOBILE_THEME_ID,
   getMobileThemeVariables,
   isBoringMobileTheme,
-  type MobileThemeId,
   type MobileThemeIds,
   type MobileThemeMode,
   type MobileThemeVariables,
 } from "../../../../lib/mobileTheme";
 import { useThemeColor } from "../../../../lib/useThemeColor";
+import { PHOTO_SETS, type PhotoSetId } from "../../../scenery/photoSets";
+import { useScenery } from "../../../scenery/SceneryProvider";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
-
-const PRODUCT_THEMES: ReadonlyArray<{
-  readonly id: MobileThemeId;
-  readonly label: string;
-}> = [
-  { id: DEFAULT_MOBILE_THEME_ID, label: "World Scenery" },
-  { id: BORING_MOBILE_THEME_ID, label: "Boring" },
-];
 
 const APPEARANCE_MODES: ReadonlyArray<{
   readonly id: MobileThemeMode;
@@ -172,27 +165,45 @@ function SectionLabel({ children }: { readonly children: string }) {
 export function ThemeAppearanceSection() {
   const { isReady, setThemeIdForBothAppearances, setThemeMode, themeId, themeIds, themeMode } =
     useAppearancePreferences();
+  const { photoSetId, setPhotoSetId } = useScenery();
   const boring = isBoringMobileTheme(themeId);
+
+  const selectPhotoSet = (next: PhotoSetId) => {
+    setPhotoSetId(next);
+    setThemeIdForBothAppearances(DEFAULT_MOBILE_THEME_ID);
+  };
 
   return (
     <View className="gap-6">
       <View className="gap-2">
         <SectionLabel>Personalization</SectionLabel>
         <Text className="px-2 text-sm text-foreground-muted">
-          Boring restores the original T3 Chat colors and turns landscape photos off.
+          Photo themes put a different kind of place behind the glass. Boring restores the original
+          T3 Chat colors and turns the photos off.
         </Text>
-        <View accessibilityRole="radiogroup" className="flex-row gap-2">
-          {PRODUCT_THEMES.map((product) => (
+        <View accessibilityRole="radiogroup" className="flex-row flex-wrap gap-2">
+          {PHOTO_SETS.map((product) => (
+            <View className="w-[48%]" key={product.id}>
+              <ModeCard
+                disabled={!isReady}
+                label={product.label}
+                mode={themeMode}
+                onPress={() => selectPhotoSet(product.id)}
+                selected={!boring && photoSetId === product.id}
+                themeIds={{ light: DEFAULT_MOBILE_THEME_ID, dark: DEFAULT_MOBILE_THEME_ID }}
+              />
+            </View>
+          ))}
+          <View className="w-[48%]">
             <ModeCard
               disabled={!isReady}
-              key={product.id}
-              label={product.label}
+              label="Boring"
               mode={themeMode}
-              onPress={() => setThemeIdForBothAppearances(product.id)}
-              selected={product.id === BORING_MOBILE_THEME_ID ? boring : !boring}
-              themeIds={{ light: product.id, dark: product.id }}
+              onPress={() => setThemeIdForBothAppearances(BORING_MOBILE_THEME_ID)}
+              selected={boring}
+              themeIds={{ light: BORING_MOBILE_THEME_ID, dark: BORING_MOBILE_THEME_ID }}
             />
-          ))}
+          </View>
         </View>
       </View>
       <View className="gap-2">

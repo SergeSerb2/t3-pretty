@@ -76,6 +76,36 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "appearance",
   },
   {
+    id: "world-scenery",
+    title: "World Scenery",
+    to: "/settings/appearance",
+    targetId: "appearance",
+  },
+  {
+    id: "night-cities",
+    title: "Night Cities",
+    to: "/settings/appearance",
+    targetId: "appearance",
+  },
+  {
+    id: "deep-forest",
+    title: "Deep Forest",
+    to: "/settings/appearance",
+    targetId: "appearance",
+  },
+  {
+    id: "night-sky",
+    title: "Night Sky",
+    to: "/settings/appearance",
+    targetId: "appearance",
+  },
+  {
+    id: "grand-buildings",
+    title: "Grand Buildings",
+    to: "/settings/appearance",
+    targetId: "appearance",
+  },
+  {
     id: "boring-mode",
     title: "Boring",
     to: "/settings/appearance",
