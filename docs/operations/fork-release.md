@@ -132,14 +132,16 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    Native Mac, Windows, and Linux packaging still run on every `main` push so the public
    updater feed stays on the latest commit. `workflow_dispatch` and the
    upstream-sync dispatch still always run.
-9. The publisher creates an annotated Origin git tag and uploads the installers plus both
-   `nightly` and `latest` update manifests to the generic `electron-updater` feed in
-   `T3CODE_DESKTOP_UPDATE_FEED_URL`. Origin has no GitHub-style release-asset API, so that feed
-   is an S3-compatible bucket (Cloudflare R2 is the intended host; the relay already uses
-   Cloudflare). Multi-range requests stay disabled. Already-installed GitHub-provider builds need
-   one manual install of a release that contains this feed before later updates can be automatic.
-   Windows ships even when Azure Trusted Signing is not configured; unsigned NSIS installers
-   still update from that feed, and SmartScreen will warn until ATS secrets are added.
+9. The publisher creates an annotated Origin git tag and uploads the Mac and Windows installers
+   plus their `nightly` and `latest` update manifests to the generic `electron-updater` feed in
+   `T3CODE_DESKTOP_UPDATE_FEED_URL`. Linux AppImage, `nightly-linux.yml`, and `latest-linux.yml`
+   come from hosted `linux-small`, not that Origin tag/upload job. Origin has no GitHub-style
+   release-asset API, so that feed is an S3-compatible bucket (Cloudflare R2 is the intended host;
+   the relay already uses Cloudflare). Multi-range requests stay disabled. Already-installed
+   GitHub-provider builds need one manual install of a release that contains this feed before later
+   updates can be automatic. Windows ships even when Azure Trusted Signing is not configured;
+   unsigned NSIS installers still update from that feed, and SmartScreen will warn until ATS secrets
+   are added.
 
 Fork versions retain the newest integrated upstream nightly prefix and append a monotonic fork
 build number. The resolver takes the larger of the current CI run slot and one past the highest
@@ -202,8 +204,9 @@ without pretending that a newer upstream tag was integrated before its sync pull
   `PLANETSCALE_API_TOKEN`, `AXIOM_TOKEN`, `CLERK_SECRET_KEY`, `APNS_PRIVATE_KEY`. Public
   relay IDs are literals in `.github/workflows/deploy-relay.yml`.
 - Variable `T3CODE_DESKTOP_UPDATE_FEED_URL`: public HTTPS directory that serves `nightly.yml`,
-  `latest.yml`, and the installers. Must not be a GitHub Releases URL. Uploads use that URL's
-  path as the S3 key prefix (so `…/t3-pretty/latest/` stores objects under `t3-pretty/latest/`).
+  `latest.yml`, `latest-mac.yml`, `latest-linux.yml`, and the installers. Must not be a GitHub
+  Releases URL. Uploads use that URL's path as the S3 key prefix (so `…/t3-pretty/latest/`
+  stores objects under `t3-pretty/latest/`).
 - Secrets `T3CODE_RELEASE_S3_BUCKET`, `T3CODE_RELEASE_S3_ACCESS_KEY_ID`,
   `T3CODE_RELEASE_S3_SECRET_ACCESS_KEY`, and optionally `T3CODE_RELEASE_S3_ENDPOINT` plus
   `T3CODE_RELEASE_S3_REGION`: S3-compatible upload target for that feed (R2 uses the account

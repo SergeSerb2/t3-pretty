@@ -126,7 +126,7 @@ Every merge to `main` publishes a desktop build. **[Latest release](https://curs
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🍎 **macOS** (Apple Silicon) | [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-arm64.dmg)              |
 | 🪟 **Windows** (x64)         | [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-x64.exe)               |
-| 🐧 **Linux** (x64)           | [AppImage](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-linux.yml)                                             |
+| 🐧 **Linux** (x64)           | [AppImage](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-x64.AppImage)      |
 | 📋 **Release notes**         | [Latest](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest) · [All](https://cursor.com/codebase/serbinenko/t3-pretty/releases) |
 
 The installer filenames still say `T3-Code-…` on purpose: internal package names stay compatible with T3 Code. The app you launch is **T3 Pretty (Alpha)**. After the first install, the desktop app updates itself from the same public feed.
