@@ -5,9 +5,11 @@
  * Skills → Installed) plus the skills each provider CLI keeps in its own home
  * folder (Settings → Skills → On this environment). Enablement is a union of
  * global picks and per-thread picks. Rows that are already on regardless of
- * this thread render checked and disabled — library skills enabled globally,
- * and host skills the selected instance loads from its own home anyway; both
- * are only turned off from settings. Everything else toggles per thread:
+ * this thread render checked with a dimmed switch — library skills enabled
+ * globally, and host skills the selected instance loads from its own home
+ * anyway; both are only turned off from settings. The row stays enabled so
+ * the favorite star works for mouse and keyboard. Everything else toggles
+ * per thread:
  *   - draft sessions write the composer draft store and ride
  *     `bootstrap.createThread.enabledSkillIds` on the first turn;
  *   - server threads dispatch `thread.skills.set` (full replacement) and the
@@ -72,7 +74,7 @@ export interface SkillsPickerProps {
   onOpenChange?: (open: boolean) => void;
 }
 
-interface PickerSkill {
+export interface PickerSkill {
   readonly id: SkillId;
   readonly name: string;
   readonly description: string | undefined;
@@ -274,6 +276,84 @@ export function organizePickerSkills(
   return favorites.length > 0 ? [[FAVORITES_GROUP, favorites], ...groups] : groups;
 }
 
+/** One picker row: locked skills keep the switch off-limits but the star works. */
+export function SkillPickerRow(props: {
+  skill: PickerSkill;
+  isEnabled: boolean;
+  isFavorite: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  onToggleFavorite: () => void;
+}) {
+  const { skill } = props;
+  return (
+    <MenuCheckboxItem
+      checked={props.isEnabled}
+      className={cn(
+        "min-h-6 gap-2 py-0.5 sm:min-h-6",
+        // Locked means the enable switch is off-limits, not the row. Keeping
+        // the item enabled leaves the star in the keyboard/AT order.
+        skill.locked && "[&>:last-child]:opacity-64",
+      )}
+      closeOnClick={false}
+      disabled={props.disabled}
+      // Locked rows stay enabled for the star. Omitting onCheckedChange still
+      // lets the menu primitive toggle data-state on click/Space/Enter — cancel
+      // the change and swallow the item click so only the star is interactive.
+      onCheckedChange={
+        skill.locked
+          ? (_checked, details) => {
+              details?.cancel?.();
+            }
+          : props.onToggle
+      }
+      onClick={
+        skill.locked
+          ? (event) => {
+              event.preventDefault();
+            }
+          : undefined
+      }
+      variant="switch"
+    >
+      <span className="flex min-w-0 items-center gap-1">
+        <Button
+          aria-label={props.isFavorite ? "Remove from favorites" : "Add to favorites"}
+          className={cn(
+            "text-muted-foreground/70 opacity-70 hover:text-foreground hover:opacity-100",
+            props.isFavorite && "text-foreground opacity-100",
+          )}
+          disabled={props.disabled}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (props.disabled) {
+              return;
+            }
+            props.onToggleFavorite();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === " " || event.key === "Enter") {
+              event.stopPropagation();
+            }
+          }}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          size="icon-micro"
+          variant="ghost"
+        >
+          <StarIcon className={cn(props.isFavorite && "fill-current text-yellow-500")} />
+        </Button>
+        <span className="min-w-0 truncate">{skill.name}</span>
+        {skill.locked ? (
+          <span className="shrink-0 text-[10px] text-muted-foreground/80">Global</span>
+        ) : null}
+      </span>
+    </MenuCheckboxItem>
+  );
+}
+
 /**
  * `Skills ▸` row of the composer's `⋯` menu: the trigger carries the enabled
  * count, the submenu lists library and host skills as switches.
@@ -371,51 +451,17 @@ export const SkillsSubmenu = memo(function SkillsSubmenu(props: SkillsPickerProp
               groups.map(([group, groupSkills]) => (
                 <MenuGroup key={group}>
                   <MenuGroupLabel className="py-1">{group}</MenuGroupLabel>
-                  {groupSkills.map((skill) => {
-                    const isEnabled = skill.locked || state.perThreadIds.has(skill.id);
-                    const isFavorite = favoriteIds.has(skill.id);
-                    return (
-                      <MenuCheckboxItem
-                        key={skill.id}
-                        checked={isEnabled}
-                        className="min-h-6 gap-2 py-0.5 sm:min-h-6"
-                        closeOnClick={false}
-                        disabled={skill.locked || !state.togglesEnabled}
-                        onCheckedChange={() => state.toggleSkill(skill.id)}
-                        variant="switch"
-                      >
-                        <span className="flex min-w-0 items-center gap-1">
-                          <Button
-                            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-                            className={cn(
-                              "text-muted-foreground/70 opacity-70 hover:text-foreground hover:opacity-100",
-                              isFavorite && "text-foreground opacity-100",
-                            )}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              toggleFavorite(skill.id);
-                            }}
-                            onPointerDown={(event) => {
-                              event.stopPropagation();
-                            }}
-                            size="icon-micro"
-                            variant="ghost"
-                          >
-                            <StarIcon
-                              className={cn(isFavorite && "fill-current text-yellow-500")}
-                            />
-                          </Button>
-                          <span className="min-w-0 truncate">{skill.name}</span>
-                          {skill.locked ? (
-                            <span className="shrink-0 text-[10px] text-muted-foreground/80">
-                              Global
-                            </span>
-                          ) : null}
-                        </span>
-                      </MenuCheckboxItem>
-                    );
-                  })}
+                  {groupSkills.map((skill) => (
+                    <SkillPickerRow
+                      key={skill.id}
+                      skill={skill}
+                      isEnabled={skill.locked || state.perThreadIds.has(skill.id)}
+                      isFavorite={favoriteIds.has(skill.id)}
+                      disabled={!state.togglesEnabled}
+                      onToggle={() => state.toggleSkill(skill.id)}
+                      onToggleFavorite={() => toggleFavorite(skill.id)}
+                    />
+                  ))}
                 </MenuGroup>
               ))
             )}
