@@ -16,6 +16,51 @@ export function hasVisibleToastAction(actionProps: unknown): boolean {
   return children != null && children !== false && children !== "";
 }
 
+/** Confirmation toasts always leave on their own. Loading / timeout:0 stay. */
+export const TOAST_AUTO_DISMISS_MS = {
+  success: 5_000,
+  info: 6_000,
+  warning: 8_000,
+  error: 10_000,
+} as const;
+
+export function resolveToastAutoDismissMs(input: {
+  type?: string | undefined;
+  timeout?: number | undefined;
+  dismissAfterVisibleMs?: number | undefined;
+}): number | undefined {
+  if (typeof input.dismissAfterVisibleMs === "number") {
+    return input.dismissAfterVisibleMs > 0 ? input.dismissAfterVisibleMs : undefined;
+  }
+  if (input.type === "loading") {
+    return undefined;
+  }
+  if (input.timeout === 0) {
+    return undefined;
+  }
+  if (typeof input.timeout === "number" && input.timeout > 0) {
+    return input.timeout;
+  }
+  if (input.type === "error") {
+    return TOAST_AUTO_DISMISS_MS.error;
+  }
+  if (input.type === "warning") {
+    return TOAST_AUTO_DISMISS_MS.warning;
+  }
+  if (input.type === "info") {
+    return TOAST_AUTO_DISMISS_MS.info;
+  }
+  return TOAST_AUTO_DISMISS_MS.success;
+}
+
+export function shouldRunToastAutoDismissTimer(
+  visibilityState: Document["visibilityState"],
+): boolean {
+  // Visible is enough. Native menus and Electron chrome steal document
+  // focus, which used to freeze Base UI's timer until a manual dismiss.
+  return visibilityState === "visible";
+}
+
 export function shouldHideCollapsedToastContent(
   visibleToastIndex: number,
   visibleToastCount: number,

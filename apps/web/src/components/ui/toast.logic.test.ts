@@ -3,8 +3,11 @@ import { assert, describe, it } from "vite-plus/test";
 import {
   buildVisibleToastLayout,
   hasVisibleToastAction,
+  resolveToastAutoDismissMs,
   shouldHideCollapsedToastContent,
   shouldRenderThreadScopedToast,
+  shouldRunToastAutoDismissTimer,
+  TOAST_AUTO_DISMISS_MS,
 } from "./toast.logic";
 
 describe("hasVisibleToastAction", () => {
@@ -16,6 +19,41 @@ describe("hasVisibleToastAction", () => {
     assert.equal(hasVisibleToastAction({ children: null }), false);
     assert.equal(hasVisibleToastAction({ children: "" }), false);
     assert.equal(hasVisibleToastAction(undefined), false);
+  });
+});
+
+describe("resolveToastAutoDismissMs", () => {
+  it("uses type defaults when the caller omitted a timeout", () => {
+    assert.equal(resolveToastAutoDismissMs({ type: "success" }), TOAST_AUTO_DISMISS_MS.success);
+    assert.equal(resolveToastAutoDismissMs({ type: "info" }), TOAST_AUTO_DISMISS_MS.info);
+    assert.equal(resolveToastAutoDismissMs({ type: "warning" }), TOAST_AUTO_DISMISS_MS.warning);
+    assert.equal(resolveToastAutoDismissMs({ type: "error" }), TOAST_AUTO_DISMISS_MS.error);
+    assert.equal(resolveToastAutoDismissMs({}), TOAST_AUTO_DISMISS_MS.success);
+  });
+
+  it("keeps loading and explicit persist toasts on screen", () => {
+    assert.equal(resolveToastAutoDismissMs({ type: "loading" }), undefined);
+    assert.equal(resolveToastAutoDismissMs({ type: "warning", timeout: 0 }), undefined);
+    assert.equal(resolveToastAutoDismissMs({ type: "success", timeout: 0 }), undefined);
+  });
+
+  it("honors an explicit timeout and visible-ms override", () => {
+    assert.equal(resolveToastAutoDismissMs({ type: "success", timeout: 5_000 }), 5_000);
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "error", timeout: 0, dismissAfterVisibleMs: 10_000 }),
+      10_000,
+    );
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "success", dismissAfterVisibleMs: 0 }),
+      undefined,
+    );
+  });
+});
+
+describe("shouldRunToastAutoDismissTimer", () => {
+  it("runs while the document is visible even without window focus", () => {
+    assert.equal(shouldRunToastAutoDismissTimer("visible"), true);
+    assert.equal(shouldRunToastAutoDismissTimer("hidden"), false);
   });
 });
 
