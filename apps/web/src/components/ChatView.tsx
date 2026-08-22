@@ -6842,8 +6842,12 @@ function ChatViewContent(props: ChatViewProps) {
                 onDismiss={() => setDismissedProviderStatusBannerKey(providerStatusBannerKey)}
               />
             </div>
-            {/* Messages Wrapper. data-chat-transcript is unique per ChatView. */}
-            <div className="relative flex min-h-0 flex-1 flex-col" data-chat-transcript="true">
+            {/* Messages Wrapper. data-chat-transcript-active is the ink view-transition group. */}
+            <div
+              className="relative flex min-h-0 flex-1 flex-col"
+              data-chat-transcript="true"
+              data-chat-transcript-active="true"
+            >
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               <MessagesTimeline
                 agentPanelModel={agentPanelModel}

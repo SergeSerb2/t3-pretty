@@ -26,7 +26,10 @@ import {
 } from "./AcpTerminalHost.ts";
 
 const sessionId = "mock-session-1";
-const sessionRoot = NodePath.resolve("/session/root");
+const posixPlatform = "linux" satisfies NodeJS.Platform;
+const windowsPlatform = "win32" satisfies NodeJS.Platform;
+const sessionRoot = NodePath.posix.resolve("/session/root");
+const windowsSessionRoot = NodePath.win32.resolve("C:\\Session\\Root");
 
 describe("resolveAcpTerminalSpawn", () => {
   it("spawns argv when args are present", () => {
@@ -64,23 +67,45 @@ describe("resolveAcpTerminalSpawn", () => {
 
 describe("resolveAcpTerminalCwd", () => {
   it("uses the session cwd when the request omits cwd", () => {
-    expect(resolveAcpTerminalCwd(undefined, sessionRoot)).toBe(sessionRoot);
-    expect(resolveAcpTerminalCwd("  ", sessionRoot)).toBe(sessionRoot);
+    expect(resolveAcpTerminalCwd(undefined, sessionRoot, posixPlatform)).toBe(sessionRoot);
+    expect(resolveAcpTerminalCwd("  ", sessionRoot, posixPlatform)).toBe(sessionRoot);
   });
 
   it("allows a subdirectory of the session cwd", () => {
-    expect(resolveAcpTerminalCwd(NodePath.join(sessionRoot, "src"), sessionRoot)).toBe(
-      NodePath.join(sessionRoot, "src"),
-    );
-    expect(resolveAcpTerminalCwd(NodePath.join("src", "pkg"), sessionRoot)).toBe(
-      NodePath.join(sessionRoot, "src", "pkg"),
-    );
+    expect(
+      resolveAcpTerminalCwd(NodePath.posix.join(sessionRoot, "src"), sessionRoot, posixPlatform),
+    ).toBe(NodePath.posix.join(sessionRoot, "src"));
+    expect(
+      resolveAcpTerminalCwd(NodePath.posix.join("src", "pkg"), sessionRoot, posixPlatform),
+    ).toBe(NodePath.posix.join(sessionRoot, "src", "pkg"));
   });
 
   it("rejects cwd that escapes the session cwd", () => {
-    expect(resolveAcpTerminalCwd("..", sessionRoot)).toBeUndefined();
-    expect(resolveAcpTerminalCwd(NodePath.resolve("/tmp"), sessionRoot)).toBeUndefined();
-    expect(resolveAcpTerminalCwd(`${sessionRoot}-evil`, sessionRoot)).toBeUndefined();
+    expect(resolveAcpTerminalCwd("..", sessionRoot, posixPlatform)).toBeUndefined();
+    expect(
+      resolveAcpTerminalCwd(NodePath.posix.resolve("/tmp"), sessionRoot, posixPlatform),
+    ).toBeUndefined();
+    expect(
+      resolveAcpTerminalCwd(`${sessionRoot}-evil`, sessionRoot, posixPlatform),
+    ).toBeUndefined();
+  });
+
+  it("treats mixed-case Windows paths as inside the session root", () => {
+    expect(resolveAcpTerminalCwd("Src", windowsSessionRoot, windowsPlatform)).toBe(
+      NodePath.win32.join(windowsSessionRoot, "Src"),
+    );
+    expect(
+      resolveAcpTerminalCwd("c:\\session\\root\\src", windowsSessionRoot, windowsPlatform),
+    ).toBe("c:\\session\\root\\src");
+  });
+
+  it("rejects mixed-case Windows paths that escape the session root", () => {
+    expect(
+      resolveAcpTerminalCwd("C:\\Session\\Root\\..\\Windows", windowsSessionRoot, windowsPlatform),
+    ).toBeUndefined();
+    expect(
+      resolveAcpTerminalCwd("C:\\Session\\Root-evil", windowsSessionRoot, windowsPlatform),
+    ).toBeUndefined();
   });
 });
 

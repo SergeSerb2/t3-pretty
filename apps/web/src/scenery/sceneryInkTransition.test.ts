@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { canAnimateSceneryInkTransition, runSceneryInkTransition } from "./sceneryInkTransition";
+import {
+  canAnimateSceneryInkTransition,
+  pinActiveChatTranscript,
+  runSceneryInkTransition,
+} from "./sceneryInkTransition";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -122,6 +126,33 @@ describe("runSceneryInkTransition", () => {
     expect(update).toHaveBeenCalledWith(false);
   });
 
+  it("pins the first transcript before and after the view-transition update", () => {
+    const first = { setAttribute: vi.fn(), removeAttribute: vi.fn() };
+    const second = { setAttribute: vi.fn(), removeAttribute: vi.fn() };
+    const querySelectorAll = vi.fn(() => [first, second]);
+    const startViewTransition = vi.fn((update: () => void | Promise<void>) => {
+      update();
+      return { finished: Promise.resolve() };
+    });
+    vi.stubGlobal("document", {
+      documentElement: { dataset: {} },
+      hidden: false,
+      querySelectorAll,
+      startViewTransition,
+    });
+    vi.stubGlobal("window", {
+      matchMedia: () => ({ matches: false }),
+    });
+
+    runSceneryInkTransition(() => undefined);
+
+    expect(querySelectorAll).toHaveBeenCalledTimes(2);
+    expect(first.setAttribute).toHaveBeenCalledTimes(2);
+    expect(first.setAttribute).toHaveBeenCalledWith("data-chat-transcript-active", "true");
+    expect(second.removeAttribute).toHaveBeenCalledTimes(2);
+    expect(second.removeAttribute).toHaveBeenCalledWith("data-chat-transcript-active");
+  });
+
   it("falls back to a direct update when startViewTransition throws", () => {
     const dataset: Record<string, string> = {};
     vi.stubGlobal("document", {
@@ -140,5 +171,18 @@ describe("runSceneryInkTransition", () => {
     expect(update).toHaveBeenCalledOnce();
     expect(update).toHaveBeenCalledWith(false);
     expect(dataset).not.toHaveProperty("sceneryInkTransition");
+  });
+});
+
+describe("pinActiveChatTranscript", () => {
+  it("keeps the name on the first transcript and clears cousins", () => {
+    const first = { setAttribute: vi.fn(), removeAttribute: vi.fn() };
+    const cousin = { setAttribute: vi.fn(), removeAttribute: vi.fn() };
+    pinActiveChatTranscript({
+      querySelectorAll: () => [first, cousin],
+    });
+    expect(first.setAttribute).toHaveBeenCalledWith("data-chat-transcript-active", "true");
+    expect(cousin.removeAttribute).toHaveBeenCalledWith("data-chat-transcript-active");
+    expect(cousin.setAttribute).not.toHaveBeenCalled();
   });
 });

@@ -56,6 +56,8 @@ describe("row arrival contract with the messages timeline", () => {
   it("the active chat column still exposes a unique transcript hook", () => {
     expect(chatViewSource).toContain('data-chat-transcript="true"');
     expect(chatViewSource.match(/data-chat-transcript="true"/g)?.length).toBe(1);
+    expect(chatViewSource).toContain('data-chat-transcript-active="true"');
+    expect(chatViewSource.match(/data-chat-transcript-active="true"/g)?.length).toBe(1);
     expect(messagesTimelineSource).not.toContain("data-chat-transcript");
   });
 

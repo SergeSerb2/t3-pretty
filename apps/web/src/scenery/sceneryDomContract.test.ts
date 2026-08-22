@@ -364,11 +364,15 @@ describe("scenery light/dark appearance crossfade", () => {
     );
     expect(sceneryCssSource).toContain("display: none");
     expect(sceneryCssSource).toContain(
-      "html[data-scenery-ink-transition] [data-chat-transcript] ~ [data-chat-transcript]",
+      "html[data-scenery-ink-transition] [data-chat-transcript-active]",
     );
-    expect(sceneryCssSource).toContain("view-transition-name: none");
+    expect(sceneryCssSource).not.toContain(
+      "html[data-scenery-ink-transition] [data-chat-transcript] {",
+    );
     expect(chatViewSource).toContain('data-chat-transcript="true"');
+    expect(chatViewSource).toContain('data-chat-transcript-active="true"');
     expect(sceneryInkTransitionSource).toContain("document.hidden");
+    expect(sceneryInkTransitionSource).toContain("pinActiveChatTranscript");
   });
 
   it("parks the CSS layers only when the view transition really animates", () => {

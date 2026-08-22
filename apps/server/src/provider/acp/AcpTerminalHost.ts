@@ -124,27 +124,33 @@ function decodeTerminalOutput(bytes: Uint8Array): string {
   return NodeBuffer.Buffer.from(bytes).toString("utf8");
 }
 
+function pathForPlatform(platform: NodeJS.Platform) {
+  return platform === "win32" ? NodePath.win32 : NodePath.posix;
+}
+
 function resolveAcpTerminalCandidate(
   requestCwd: string | null | undefined,
   sessionCwd: string,
+  platform: NodeJS.Platform,
 ): string {
-  const root = NodePath.resolve(sessionCwd);
+  const path = pathForPlatform(platform);
+  const root = path.resolve(sessionCwd);
   const requested = requestCwd?.trim();
   if (!requested) {
     return root;
   }
-  return NodePath.isAbsolute(requested)
-    ? NodePath.resolve(requested)
-    : NodePath.resolve(root, requested);
+  return path.isAbsolute(requested) ? path.resolve(requested) : path.resolve(root, requested);
 }
 
 export function resolveAcpTerminalCwd(
   requestCwd: string | null | undefined,
   sessionCwd: string,
+  platform: NodeJS.Platform,
 ): string | undefined {
-  const root = NodePath.resolve(sessionCwd);
-  const resolved = resolveAcpTerminalCandidate(requestCwd, sessionCwd);
-  return isPathInsideRoot(root, resolved) ? resolved : undefined;
+  const path = pathForPlatform(platform);
+  const root = path.resolve(sessionCwd);
+  const resolved = resolveAcpTerminalCandidate(requestCwd, sessionCwd, platform);
+  return isPathInsideRoot(root, resolved, platform) ? resolved : undefined;
 }
 
 function realpathOrUndefined(target: string): Effect.Effect<string | undefined> {
@@ -159,25 +165,34 @@ export const confineAcpTerminalCwd = (
   sessionCwd: string,
 ): Effect.Effect<string | undefined> =>
   Effect.gen(function* () {
-    const realRoot = yield* realpathOrUndefined(NodePath.resolve(sessionCwd));
+    const platform = yield* HostProcessPlatform;
+    const path = pathForPlatform(platform);
+    const realRoot = yield* realpathOrUndefined(path.resolve(sessionCwd));
     if (realRoot === undefined) {
       return undefined;
     }
-    const candidate = resolveAcpTerminalCandidate(requestCwd, realRoot);
+    const candidate = resolveAcpTerminalCandidate(requestCwd, realRoot, platform);
     const realCandidate = yield* realpathOrUndefined(candidate);
     if (realCandidate === undefined) {
       return undefined;
     }
-    return isPathInsideRoot(realRoot, realCandidate) ? realCandidate : undefined;
+    return isPathInsideRoot(realRoot, realCandidate, platform) ? realCandidate : undefined;
   });
 
-function isPathInsideRoot(root: string, candidate: string): boolean {
-  const relative = NodePath.relative(root, candidate);
+function normalizePathForCompare(target: string, platform: NodeJS.Platform): string {
+  const resolved = pathForPlatform(platform).resolve(target);
+  return platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function isPathInsideRoot(root: string, candidate: string, platform: NodeJS.Platform): boolean {
+  const path = pathForPlatform(platform);
+  const relative = path.relative(
+    normalizePathForCompare(root, platform),
+    normalizePathForCompare(candidate, platform),
+  );
   return (
     relative === "" ||
-    (relative !== ".." &&
-      !relative.startsWith(`..${NodePath.sep}`) &&
-      !NodePath.isAbsolute(relative))
+    (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
   );
 }
 
