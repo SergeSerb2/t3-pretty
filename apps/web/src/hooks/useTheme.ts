@@ -2,6 +2,7 @@ import type { DesktopBridge } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { canAnimateSceneryInkTransition } from "../scenery/sceneryInkTransition";
 import {
   applyThemePalette,
   CUSTOM_THEMES_STORAGE_KEY,
@@ -299,30 +300,86 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
     return;
   }
 
-  if (suppressTransitions) {
-    document.documentElement.classList.add("no-transitions");
-  }
-  const resolvedAppearance = resolveThemeAppearance(
-    theme,
-    systemDark,
-    followSystem,
-    appearanceMode,
-    themeHalves,
-  );
-  applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
-  const isDark = resolvedAppearance === "dark";
-  document.documentElement.classList.toggle("dark", isDark);
-  lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
-  syncBrowserChromeTheme();
-  syncDesktopTheme(theme, followSystem, appearanceMode);
-  if (suppressTransitions) {
+  const isFirstApply = lastAppliedTheme === null;
+  const commitTheme = () => {
+    const resolvedAppearance = resolveThemeAppearance(
+      theme,
+      systemDark,
+      followSystem,
+      appearanceMode,
+      themeHalves,
+    );
+    applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
+    const isDark = resolvedAppearance === "dark";
+    document.documentElement.classList.toggle("dark", isDark);
+    lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
+    syncBrowserChromeTheme();
+    syncDesktopTheme(theme, followSystem, appearanceMode);
+  };
+
+  const root = document.documentElement;
+  const releaseTransitions = () => {
     // Force a reflow so the no-transitions class takes effect before removal
     // oxlint-disable-next-line no-unused-expressions
-    document.documentElement.offsetHeight;
+    root.offsetHeight;
     requestAnimationFrame(() => {
-      document.documentElement.classList.remove("no-transitions");
+      root.classList.remove("no-transitions");
     });
+  };
+  const commitWithoutElementTweens = () => {
+    root.classList.add("no-transitions");
+    commitTheme();
+    releaseTransitions();
+  };
+
+  // Forced applies (cross-tab storage, refresh) hard-cut under no-transitions
+  // and never start a view transition.
+  if (suppressTransitions) {
+    commitWithoutElementTweens();
+    return;
   }
+
+  // Boot has nothing to dissolve from. Hidden documents and motion-gated
+  // sessions still suppress per-element color tweens so the palette does not
+  // tween field-by-field when the snapshot path is unavailable.
+  if (isFirstApply) {
+    commitTheme();
+    return;
+  }
+  if (document.hidden || !canAnimateThemeSwapTransition()) {
+    commitWithoutElementTweens();
+    return;
+  }
+
+  // The whole window dissolves from the old palette to the new one as one
+  // snapshot crossfade (see html[data-theme-swap] in index.css), with
+  // no-transitions still suppressing per-element color tweens underneath.
+  root.classList.add("no-transitions");
+  root.dataset.themeSwap = "true";
+  const finishSwap = () => {
+    delete root.dataset.themeSwap;
+    releaseTransitions();
+  };
+  try {
+    const transition = (
+      document as Document & {
+        startViewTransition: (update: () => void) => { finished: Promise<void> };
+      }
+    ).startViewTransition(commitTheme);
+    void transition.finished.then(finishSwap, finishSwap);
+  } catch {
+    commitTheme();
+    finishSwap();
+  }
+}
+
+// A theme swap crossfade is worth a view transition only when the scenery ink
+// transition is not already coordinating this flip (it runs its own), View
+// Transitions exist, the Motion toggle is on, and the OS allows motion — the
+// last three via the scenery helper's own gate.
+function canAnimateThemeSwapTransition(): boolean {
+  if (document.documentElement.dataset.sceneryInkTransition !== undefined) return false;
+  return canAnimateSceneryInkTransition();
 }
 
 export async function syncDesktopThemePreference(
@@ -407,7 +464,7 @@ function getServerSnapshot() {
 
 function handleSystemAppearanceChange() {
   const storedTheme = getStored();
-  if (readAppearanceModePreference(storedTheme) === "system") applyTheme(storedTheme, true);
+  if (readAppearanceModePreference(storedTheme) === "system") applyTheme(storedTheme);
   emitChange();
 }
 
@@ -511,7 +568,7 @@ export function useTheme() {
       });
       return false;
     }
-    applyTheme(next, true);
+    applyTheme(next);
     emitChange();
     return true;
   }, []);
@@ -536,7 +593,7 @@ export function useTheme() {
       return false;
     }
     themeStorageReadFailure = null;
-    applyTheme(getStored(), true);
+    applyTheme(getStored());
     emitChange();
     return true;
   }, []);
@@ -580,7 +637,7 @@ export function useTheme() {
         });
         return false;
       }
-      applyTheme(getStored(), true);
+      applyTheme(getStored());
       emitChange();
       return true;
     },
@@ -604,7 +661,7 @@ export function useTheme() {
       });
       return false;
     }
-    applyTheme(getStored(), true);
+    applyTheme(getStored());
     emitChange();
     return true;
   }, []);

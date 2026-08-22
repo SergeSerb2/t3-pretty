@@ -215,3 +215,45 @@
 - `apps/web/src/components/threadActionMenu.logic.ts` — separatorBefore fields on Rename, Copy, and Archive.. Reason: T3 Pretty's joinGroups function already creates the same section boundaries with explicit separator items; retaining the fields would risk duplicate separators in the glass menu.
 - `apps/web/src/components/threadActionMenu.logic.ts` — The refresh-cw icon for title regeneration and mail-open icon for mark-unread.. Reason: These conflict with T3 Pretty's explicit refresh and mail icon choices.
 - `apps/web/src/routes/_chat.index.tsx` — Upstream removal of the cn and COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS imports.. Reason: The retained T3 Pretty route presentation still consumes these imports; removing them would break the fork-specific UI and compilation.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.34-nightly.20260822.1155`
+- Previously integrated parent nightly: `v0.0.34-nightly.20260819.1133`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/ChatView.tsx` — Preserved the T3 Pretty WorkspacePageHeader abstraction and its existing header styling, native-control inset handling, motion behavior, and inline right-panel titlebar coordination.
+- `apps/web/src/components/ChatView.tsx` — Preserved the fork's component structure instead of regressing the closing element to the parent's raw header element.
+- `apps/web/src/components/chat/ChatComposer.tsx` — The composer top drawer remains independently gated by showComposerTopDrawer and the tasks-drawer/blocking-drawer rules, including T3 Pretty's expanded and collapsed mobile pending approval/input flows.
+- `apps/web/src/components/chat/ChatComposer.tsx` — T3 Pretty's split top-drawer/main-surface composer architecture and polished relative main frame remain intact instead of being replaced by the parent's older enclosing wrapper.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Canvas selections, preview annotations, review comments, element contexts, ordinary attachments, removal controls, and image expansion remain arranged in T3 Pretty's richer composer context-card flow.
+- `apps/web/src/components/chat/ChatComposer.tsx` — The existing contextual approval placeholder remains capable of showing activePendingApproval.detail, with the generic approval instruction retained as its fallback.
+- `apps/web/src/components/chat/ChatComposer.tsx` — The footer keeps T3 Pretty's wrapper, inline tasks/stash badges, compact overflow composition, mobile focus preservation, mobile send-while-running behavior, and plan/submission actions.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — T3 Pretty’s `chat-composer-banner-stack-cap` visual treatment, including its fork-specific background/theming behavior.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — T3 Pretty’s `rounded-t-2xl` stack-cap geometry.
+- `apps/web/src/index.css` — Preserved T3 Pretty's attachment-aware split glass surfaces for composer drawers, shoulder tabs, and explicitly attached states, including backdrop-filter fallbacks and shadow behavior.
+- `apps/web/src/index.css` — Preserved the mobile-collapsed attachment overlap minimum height.
+- `apps/web/src/index.css` — Preserved context-strip seam clipping for both the normal host outline and the split main-surface outline.
+- `apps/web/src/index.css` — Preserved T3 Pretty's light and dark specular top-edge treatment on the active composer outline.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/components/ChatView.tsx` — Integrated the Electron-only TitlebarLayoutControlsDragHole for the parked two-control cluster when the inline right panel does not own the titlebar.
+- `apps/web/src/components/ChatView.tsx` — Integrated the parent's condition and explanatory placement logic so parked titlebar controls remain interactive while the right panel is closed.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Added the parent's compositor-driven ultrathink rainbow ring to T3 Pretty's current main composer frame.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Added visible, accessible spinner tiles for images currently being compressed, including when no completed image attachment exists yet.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Forwarded isInterrupting to the active ComposerFooterPrimaryActions instance so the parent interruption-state behavior works with T3 Pretty's footer architecture.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — Removed the cap’s default `pointer-events-none`, allowing the button to receive pointer focus and activate the existing `group-focus-within` expansion behavior for improved accessibility.
+- `apps/web/src/index.css` — Integrated the upstream focus-within rim color and border-color transition, adapting it to the fork's split main-surface outline when the normal host outline is hidden.
+- `apps/web/src/index.css` — Integrated upstream reduced-motion handling for rim transitions on both normal and split composer surfaces.
+- `apps/web/src/index.css` — Integrated the compositor-only pointer-reactive specular highlight for fine hover pointers, including context-strip sizing and dark-mode styling.
+- `apps/web/src/index.css` — Integrated reduced-motion and World Scenery Motion-toggle gates that disable the pointer specular and its associated work.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/chat/ChatComposer.tsx` — Replace the approval-state prompt placeholder with the always-generic text “Resolve this approval request to continue”.. Reason: T3 Pretty retains the more informative activePendingApproval.detail when available and already uses that exact generic text as the fallback. Removing the detail would regress the fork's contextual approval UX.
+- `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned

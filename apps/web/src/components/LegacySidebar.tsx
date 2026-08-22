@@ -1514,7 +1514,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                             ? [`Environment: ${member.environmentLabel}`]
                             : []),
                           "This permanently clears conversation history for those threads.",
-                          "This removes only this project entry.",
+                          "This removes only the project entry, not the files on disk.",
                           "This action cannot be undone.",
                         ].join("\n")
                       : [
@@ -1523,7 +1523,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                           ...(member.environmentLabel
                             ? [`Environment: ${member.environmentLabel}`]
                             : []),
-                          "This removes only this project entry.",
+                          "This removes only the project entry, not the files on disk.",
                         ].join("\n"),
                     { variant: "destructive" },
                   );
@@ -1572,7 +1572,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         `Remove project "${member.title}"?`,
         `Path: ${member.workspaceRoot}`,
         ...(member.environmentLabel ? [`Environment: ${member.environmentLabel}`] : []),
-        "This removes only this project entry.",
+        "This removes only the project entry, not the files on disk.",
       ].join("\n");
       const confirmed = await api.dialogs.confirm(message, { variant: "destructive" });
       if (!confirmed) {

@@ -11,6 +11,15 @@ import * as IpcChannels from "./ipc/channels.ts";
 
 exposeClerkBridge({ passkeys: true });
 
+// Cache key-state before React subscribes. The main process seeds this on
+// did-finish-load, which can land before AppSidebarLayout's effect attaches.
+let lastWindowActiveState: boolean | undefined;
+ipcRenderer.on(IpcChannels.WINDOW_ACTIVE_STATE_CHANNEL, (_event, active) => {
+  if (typeof active === "boolean") {
+    lastWindowActiveState = active;
+  }
+});
+
 function unwrapEnsureSshEnvironmentResult(result: unknown) {
   if (
     typeof result === "object" &&
@@ -167,6 +176,32 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.WINDOW_FULLSCREEN_STATE_CHANNEL, wrappedListener);
     };
   },
+  onWindowActiveStateChange: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, active: unknown) => {
+      if (typeof active !== "boolean") return;
+      listener(active);
+    };
+
+    ipcRenderer.on(IpcChannels.WINDOW_ACTIVE_STATE_CHANNEL, wrappedListener);
+    if (lastWindowActiveState !== undefined) {
+      listener(lastWindowActiveState);
+    }
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.WINDOW_ACTIVE_STATE_CHANNEL, wrappedListener);
+    };
+  },
+  onWindowInteractingChange: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, interacting: unknown) => {
+      if (typeof interacting !== "boolean") return;
+      listener(interacting);
+    };
+
+    ipcRenderer.on(IpcChannels.WINDOW_INTERACTING_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.WINDOW_INTERACTING_CHANNEL, wrappedListener);
+    };
+  },
+  setDockAttention: (input) => ipcRenderer.invoke(IpcChannels.SET_DOCK_ATTENTION_CHANNEL, input),
   getUpdateState: () => ipcRenderer.invoke(IpcChannels.UPDATE_GET_STATE_CHANNEL),
   setUpdateChannel: (channel) =>
     ipcRenderer.invoke(IpcChannels.UPDATE_SET_CHANNEL_CHANNEL, channel),

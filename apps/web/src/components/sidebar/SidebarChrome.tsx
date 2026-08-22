@@ -97,7 +97,13 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       <img
         alt=""
         aria-hidden="true"
-        className="h-5 w-auto shrink-0 object-contain"
+        className={cn(
+          "h-5 w-auto shrink-0 object-contain",
+          // The mark is a pastel-mint cut-out: on plain chrome it washes out in
+          // light themes, so render it as a theme-tinted glyph in both slots —
+          // foreground on chrome, white over scenery backdrops.
+          onBackdrop ? "brightness-0 invert" : "brightness-0 dark:invert",
+        )}
         src="/t3-pretty-mark.png"
       />
       <span

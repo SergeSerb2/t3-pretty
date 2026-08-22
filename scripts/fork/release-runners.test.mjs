@@ -121,6 +121,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(pipeline, "iOS OTA + TestFlight");
     assert.include(pipeline, 'concurrency_group: "t3-pretty/ios-mobile"');
     assert.include(pipeline, "priority: 20");
+    assert.notInclude(pipeline, "interruptible:");
     assert.include(pipeline, "timeout_in_minutes: 30");
     assert.isBelow(
       mobileRelease.indexOf("checkout-origin.sh"),
@@ -173,9 +174,20 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
     assert.notInclude(mobileRelease, '"$MODE" == "build" || "$MODE" == "release"');
     assert.include(mobileRelease, ".t3-fork/ios-native-submit");
-    assert.include(mobileRelease, "xcode_is_store_supported");
+    assert.include(mobileRelease, "is_full_xcode");
+    assert.include(mobileRelease, "/Applications/Xcode-beta.app");
+    assert.include(mobileRelease, 'DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version');
     assert.include(mobileRelease, "This is not App Store review");
-    assert.include(mobileRelease, "Skipping a new IPA");
+    assert.include(mobileRelease, "ipa_via_cloud");
+    assert.include(mobileRelease, "--wait");
+    assert.include(mobileRelease, '--json > "$cloud_build_json"');
+    assert.include(mobileRelease, "eas build --json did not include a build id");
+    assert.include(mobileRelease, '--id "$build_id"');
+    assert.notInclude(mobileRelease, "--latest");
+    assert.include(mobileRelease, "Submitted TestFlight IPA via EAS cloud");
+    assert.include(mobileRelease, "No full Xcode on this Mac");
+    assert.notInclude(mobileRelease, "Skipping a new IPA");
+    assert.notInclude(mobileRelease, "xcode_is_store_supported");
     assert.notInclude(mobileRelease, "No native macos-release TestFlight submit recorded");
     assert.notInclude(mobileRelease, "t3_require_ota");
     assert.notInclude(mobileRelease, "t3-ota-present");
@@ -200,6 +212,11 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(persistHook, 'BUILDKITE_STEP_KEY:-}" == "ios-mobile"');
     assert.include(persistHook, ".cache/t3-pretty-release/ios-native-submit");
     assert.include(persistHook, "refresh_macos_agent_hooks");
+    assert.include(persistHook, 'grep -q "helpers_ready" "$src/macos-origin-git.sh"');
+    assert.include(
+      persistHook,
+      'grep -q "refresh_macos_agent_hooks" "$src/persist-ios-native-submit-hook.sh"',
+    );
     assert.isBelow(
       persistHook.indexOf("refresh_macos_agent_hooks"),
       persistHook.indexOf('BUILDKITE_STEP_KEY:-}" == "ios-mobile"'),

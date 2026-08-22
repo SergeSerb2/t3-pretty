@@ -9,8 +9,10 @@
 # is only compiled when the native fingerprint changed, or a maintainer set
 # T3CODE_FORCE_IOS / T3CODE_MOBILE_MODE=build. eas submit / Fastlane pilot
 # uploads that IPA as a TestFlight build through App Store Connect; it does
-# not submit the app for App Store review. App Store Connect rejects beta
-# SDKs, so Xcode-beta.app is not used for IPA upload.
+# not submit the app for App Store review. macos-release runs macOS 27
+# developer beta, so the compiler is Xcode-beta.app. TestFlight accepts the
+# current Xcode 27 beta (not every older beta). EAS cloud is only the
+# fallback when this Mac has no full Xcode at all.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -345,8 +347,7 @@ if [[ ! -f "$gate_file" ]]; then
   # Trust the recorded fingerprint, including one left by the old GitHub
   # Actions importer. Installed TestFlight binaries pick up JS via OTA.
   # Do not force an IPA upload just because this native job has never
-  # written .t3-fork/ios-native-submit: that path is App Store Connect
-  # (Fastlane pilot) and fails on Xcode beta.
+  # written .t3-fork/ios-native-submit.
   force_flag=false
   if [[ "$MODE" == "build" || "$FORCE_IOS" == "true" ]]; then
     force_flag=true
@@ -374,44 +375,39 @@ if [[ "$should_build" != "true" ]]; then
 fi
 
 is_full_xcode() {
-  [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]]
+  [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]] || return 1
+  # leftover Xcode.app on macOS 27 can exist without being runnable.
+  if DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "Skipping $1: xcodebuild -version failed." >&2
+  return 1
 }
 
-# App Store Connect (including TestFlight) rejects beta SDKs. m1-dev often
-# has only Xcode-beta.app. OTA already published JS to existing binaries.
-xcode_is_store_supported() {
-  local dir="$1" version
-  is_full_xcode "$dir" || return 1
-  case "$dir" in
-    *Xcode-beta.app*) return 1 ;;
-  esac
-  version="$(DEVELOPER_DIR="$dir" "$dir/usr/bin/xcodebuild" -version 2>/dev/null || true)"
-  case "$version" in
-    *[Bb]eta*) return 1 ;;
-  esac
-  [[ -n "$version" ]]
-}
-
+# Prefer a full Xcode.app, then Xcode-beta.app, if xcodebuild actually runs.
+# Command Line Tools cannot compile an IPA. TestFlight currently accepts
+# Xcode 27 beta 5 (27A5237l). This Mac is on macOS 27 developer beta so a
+# leftover Xcode.app often cannot run and Xcode-beta.app is the toolchain.
+# Origin's pipeline upload rejects `interruptible`, so a later main push
+# can still cancel this job. Do not merge unrelated main PRs during an IPA.
 developer_dir=""
-if xcode_is_store_supported "${DEVELOPER_DIR:-}"; then
+if is_full_xcode "${DEVELOPER_DIR:-}"; then
   developer_dir="$DEVELOPER_DIR"
 else
-  for app in /Applications/Xcode.app /Applications/Xcode*.app; do
-    if xcode_is_store_supported "$app/Contents/Developer"; then
+  for app in /Applications/Xcode.app /Applications/Xcode-beta.app /Applications/Xcode*.app; do
+    if is_full_xcode "$app/Contents/Developer"; then
       developer_dir="$app/Contents/Developer"
       break
     fi
   done
 fi
-if ! xcode_is_store_supported "$developer_dir"; then
-  if [[ "$MODE" == "build" || "$FORCE_IOS" == "true" ]]; then
-    echo "Cannot upload a TestFlight IPA from ${developer_dir:-no Xcode}. App Store Connect rejects beta SDKs even for TestFlight. Install the current Xcode RC/release as /Applications/Xcode.app." >&2
-    ls -ld /Applications/Xcode*.app 2>/dev/null || echo "No Xcode*.app under /Applications." >&2
-    xcode-select -p 2>/dev/null || true
-    exit 1
-  fi
-  annotate warning "OTA published for existing TestFlight binaries. Skipping a new IPA: this Mac has no store-supported Xcode (need Xcode.app RC/release, not Xcode-beta.app)."
-  exit 0
+
+ipa_via_cloud=false
+if ! is_full_xcode "$developer_dir"; then
+  ipa_via_cloud=true
+  ls -ld /Applications/Xcode*.app 2>/dev/null || echo "No Xcode*.app under /Applications."
+  xcode-select -p 2>/dev/null || true
+  annotate info "No full Xcode on this Mac (need Xcode.app or Xcode-beta.app, not Command Line Tools). Compiling the TestFlight IPA on EAS cloud."
 fi
 
 load_secret APPLE_API_KEY
@@ -449,67 +445,110 @@ eas.submit.production.ios = {
 fs.writeFileSync(easJsonPath, `${JSON.stringify(eas, null, 2)}\n`);
 NODE
 
-echo "Using store-supported Xcode at $developer_dir"
-export DEVELOPER_DIR="$developer_dir"
-selected="$(xcode-select -p 2>/dev/null || true)"
-if [[ "$selected" != "$developer_dir" ]]; then
-  if sudo -n xcode-select -s "$developer_dir" 2>/dev/null; then
-    echo "Switched xcode-select from ${selected:-none} to $developer_dir"
-  else
-    echo "xcode-select is ${selected:-unset}; could not switch without passwordless sudo." >&2
-    echo "On the runner once: sudo xcode-select -s $developer_dir" >&2
+if [[ "$ipa_via_cloud" == "true" ]]; then
+  cloud_build_json="$tmp/eas-cloud-build.json"
+  (
+    cd apps/mobile
+    eas build \
+      --platform ios \
+      --profile production \
+      --non-interactive \
+      --wait \
+      --json > "$cloud_build_json"
+  )
+  build_id="$(
+    node --input-type=module - "$cloud_build_json" <<'NODE'
+import fs from "node:fs";
+const raw = fs.readFileSync(process.argv[2], "utf8").trim();
+let data;
+try {
+  data = JSON.parse(raw);
+} catch {
+  const start = Math.max(raw.lastIndexOf("\n{") + 1, raw.lastIndexOf("{"));
+  data = JSON.parse(raw.slice(start));
+}
+const build = Array.isArray(data) ? data[data.length - 1] : data;
+const id = typeof build?.id === "string" ? build.id : "";
+if (!id) {
+  throw new Error("eas build --json did not include a build id");
+}
+process.stdout.write(`${id}\n`);
+NODE
+  )"
+  (
+    cd apps/mobile
+    eas submit \
+      --platform ios \
+      --profile production \
+      --id "$build_id" \
+      --non-interactive
+  )
+  record_local_native_submit "$commit"
+  annotate success "Submitted TestFlight IPA via EAS cloud"
+  restore_eas_json
+else
+  echo "Using Xcode at $developer_dir"
+  export DEVELOPER_DIR="$developer_dir"
+  selected="$(xcode-select -p 2>/dev/null || true)"
+  if [[ "$selected" != "$developer_dir" ]]; then
+    if sudo -n xcode-select -s "$developer_dir" 2>/dev/null; then
+      echo "Switched xcode-select from ${selected:-none} to $developer_dir"
+    else
+      echo "xcode-select is ${selected:-unset}; could not switch without passwordless sudo." >&2
+      echo "On the runner once: sudo xcode-select -s $developer_dir" >&2
+    fi
   fi
+  xcodebuild -version
+
+  mkdir -p "$HOME/.cache/t3-pretty-release/cocoapods"
+  export CP_HOME_DIR="$HOME/.cache/t3-pretty-release/cocoapods"
+  if ! command -v pod >/dev/null; then
+    brew install cocoapods
+  fi
+  pod --version
+  if ! command -v fastlane >/dev/null; then
+    brew install fastlane
+  fi
+  fastlane --version
+
+  security_wrap="$tmp/t3-security-wrap"
+  mkdir -p "$security_wrap"
+  cp "$root/scripts/fork/security-eas-local-keychain" "$security_wrap/security"
+  chmod +x "$security_wrap/security"
+  export PATH="$security_wrap:$PATH"
+
+  ipa_path="$tmp/t3-pretty.ipa"
+  export EAS_LOCAL_BUILD_ARTIFACTS_DIR="$tmp/eas-artifacts"
+  mkdir -p "$EAS_LOCAL_BUILD_ARTIFACTS_DIR"
+
+  (
+    cd apps/mobile
+    eas build \
+      --platform ios \
+      --profile production \
+      --local \
+      --output "$ipa_path" \
+      --non-interactive
+  )
+  if [[ ! -f "$ipa_path" ]]; then
+    ipa_path="$(find "$EAS_LOCAL_BUILD_ARTIFACTS_DIR" -name '*.ipa' -print -quit)"
+  fi
+  test -n "$ipa_path"
+  test -f "$ipa_path"
+
+  # Fastlane pilot uploads a TestFlight build. This is not App Store review.
+  (
+    cd apps/mobile
+    eas submit \
+      --platform ios \
+      --profile production \
+      --path "$ipa_path" \
+      --non-interactive
+  )
+  record_local_native_submit "$commit"
+  annotate success "Submitted TestFlight IPA $ipa_path"
+  restore_eas_json
 fi
-xcodebuild -version
-
-mkdir -p "$HOME/.cache/t3-pretty-release/cocoapods"
-export CP_HOME_DIR="$HOME/.cache/t3-pretty-release/cocoapods"
-if ! command -v pod >/dev/null; then
-  brew install cocoapods
-fi
-pod --version
-if ! command -v fastlane >/dev/null; then
-  brew install fastlane
-fi
-fastlane --version
-
-security_wrap="$tmp/t3-security-wrap"
-mkdir -p "$security_wrap"
-cp "$root/scripts/fork/security-eas-local-keychain" "$security_wrap/security"
-chmod +x "$security_wrap/security"
-export PATH="$security_wrap:$PATH"
-
-ipa_path="$tmp/t3-pretty.ipa"
-export EAS_LOCAL_BUILD_ARTIFACTS_DIR="$tmp/eas-artifacts"
-mkdir -p "$EAS_LOCAL_BUILD_ARTIFACTS_DIR"
-
-(
-  cd apps/mobile
-  eas build \
-    --platform ios \
-    --profile production \
-    --local \
-    --output "$ipa_path" \
-    --non-interactive
-)
-if [[ ! -f "$ipa_path" ]]; then
-  ipa_path="$(find "$EAS_LOCAL_BUILD_ARTIFACTS_DIR" -name '*.ipa' -print -quit)"
-fi
-test -n "$ipa_path"
-test -f "$ipa_path"
-
-# Fastlane pilot uploads a TestFlight build. This is not App Store review.
-(
-  cd apps/mobile
-  eas submit \
-    --platform ios \
-    --profile production \
-    --path "$ipa_path" \
-    --non-interactive
-)
-record_local_native_submit "$commit"
-annotate success "Submitted TestFlight IPA $ipa_path"
-restore_eas_json
 
 if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
   echo "Fingerprint was unknown at compile time; generating after TestFlight submit."

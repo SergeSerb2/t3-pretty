@@ -244,8 +244,62 @@ describe("KeybindingsSettings.logic", () => {
       keybindingConflictLabels(rows, {
         rowId: rows[0]?.id ?? "",
         key: "mod+n",
-        when: "",
+        when: "!terminalFocus",
       }),
     ).toEqual(["Chat: New Local"]);
+  });
+
+  it("ignores default bindings that a later rule only overrides in a narrower context", () => {
+    const rows = buildKeybindingRows(
+      [
+        {
+          command: "thread.jump.1",
+          shortcut: {
+            key: "1",
+            modKey: true,
+            metaKey: false,
+            ctrlKey: false,
+            altKey: false,
+            shiftKey: false,
+          },
+        },
+        {
+          command: "modelPicker.jump.1",
+          shortcut: {
+            key: "1",
+            modKey: true,
+            metaKey: false,
+            ctrlKey: false,
+            altKey: false,
+            shiftKey: false,
+          },
+          whenAst: { type: "identifier", name: "modelPickerOpen" },
+        },
+      ] satisfies ResolvedKeybindingsConfig,
+      "",
+    );
+
+    expect(rows.map((row) => row.conflicts)).toEqual([[], []]);
+  });
+
+  it("matches searches against the command label shown in the table", () => {
+    const rows = buildKeybindingRows(
+      [
+        {
+          command: "rightPanel.toggle",
+          shortcut: {
+            key: "b",
+            modKey: true,
+            metaKey: false,
+            ctrlKey: false,
+            altKey: false,
+            shiftKey: false,
+          },
+        },
+      ] satisfies ResolvedKeybindingsConfig,
+      "right panel",
+    );
+
+    expect(rows.map((row) => row.command)).toEqual(["rightPanel.toggle"]);
   });
 });

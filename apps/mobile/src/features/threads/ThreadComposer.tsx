@@ -342,8 +342,11 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
       exiting={FadeOutDown.duration(140)}
       pointerEvents="box-none"
     >
+      {/* Sync status is a label, not a retry affordance: retrying while
+          connected tears down the healthy socket the sync is running on. */}
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole={props.status.kind === "syncing" ? "text" : "button"}
+        disabled={props.status.kind === "syncing"}
         onPress={props.onPress}
         className="max-w-full flex-row items-center gap-2 rounded-full bg-card px-3 py-2 shadow-sm active:opacity-70"
       >
@@ -919,9 +922,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const onUpdateModelSelection = props.onUpdateModelSelection;
   const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
-  // Kimi's "yolo" mode has no equivalent on other providers; a model pick
-  // that crosses providers normalizes it to the generic full-access mode in
-  // the same gesture.
+  // A thread's stored mode is an explicit value, so a model pick only
+  // normalizes: Kimi's "yolo" mode has no equivalent on other providers and
+  // falls back to the generic full-access mode in the same gesture. New
+  // threads pick up the provider's own default from the new-task flow.
   const handleSelectModelOption = useCallback(
     (option: ModelOption) => {
       onUpdateModelSelection(option.selection);
@@ -1047,7 +1051,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         layout={composerLayoutTransition}
         style={{ maxWidth: props.contentMaxWidth }}
       >
-        {composerTrigger && composerMenuItems.length > 0 ? (
+        {composerTrigger &&
+        (composerMenuItems.length > 0 ||
+          (composerTrigger.kind === "path" && pathSearch.isPending)) ? (
           <View className="absolute inset-x-0 bottom-full z-10 mb-2">
             <ComposerCommandPopover
               items={composerMenuItems}
@@ -1138,9 +1144,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           {!isExpanded ? (
             <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(100)}>
               {showStopAction ? (
-                <ControlPill icon="stop.fill" variant="danger" onPress={props.onStopThread} />
+                <ControlPill
+                  accessibilityLabel="Stop"
+                  icon="stop.fill"
+                  variant="danger"
+                  onPress={props.onStopThread}
+                />
               ) : (
                 <ControlPill
+                  accessibilityLabel={isDispatching ? (dispatchStatus ?? "Sending") : sendLabel}
                   icon="arrow.up"
                   variant="primary"
                   disabled={!canSend && !isDispatching}

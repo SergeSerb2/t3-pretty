@@ -1,4 +1,5 @@
 import * as React from "react";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import {
@@ -496,6 +497,41 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
     return "monitoring";
   }
   return "ready";
+}
+
+type ThreadAttentionInput = ThreadStatusInput &
+  SidebarThreadStatusInput &
+  Pick<SidebarThreadSummary, "environmentId" | "id">;
+
+/**
+ * Threads that need the human right now: an agent blocked on an approval or a
+ * question, or a completion the user has not read yet. Drives the desktop dock
+ * badge. Callers pass inbox threads only (pinned + active) — settled and
+ * snoozed shelves are history, not a human request. Working/monitoring rows
+ * are ignored even when they still carry an unread completion: the sidebar
+ * labels those Working, not Done.
+ */
+export function countThreadsAwaitingUser(
+  threads: readonly ThreadAttentionInput[],
+  lastVisitedAtByThreadKey: Readonly<Record<string, string | undefined>>,
+): number {
+  let count = 0;
+  for (const thread of threads) {
+    const status = resolveSidebarThreadStatus(thread);
+    if (status === "approval" || status === "input") {
+      count += 1;
+      continue;
+    }
+    if (status === "working" || status === "monitoring") {
+      continue;
+    }
+    const lastVisitedAt =
+      lastVisitedAtByThreadKey[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))];
+    if (hasUnseenCompletion({ ...thread, lastVisitedAt })) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 /** NaN-safe Date.parse for sort comparators: a malformed timestamp must not

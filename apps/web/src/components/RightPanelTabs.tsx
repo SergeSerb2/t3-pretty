@@ -40,6 +40,7 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
+import { TitlebarLayoutControlsDragHole } from "./chat/PanelLayoutControls";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 
 interface RightPanelTabsProps {
@@ -776,7 +777,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           // the titlebar's height: a compact row re-centers the layout
           // controls a few pixels higher and the cluster jumps on open.
           props.mode === "inline" && !props.layoutControls ? "pr-28" : "pr-3",
-          ownsDesktopTitleBar && "wco:pr-[calc(var(--workspace-native-controls-inset)+6rem)]",
+          ownsDesktopTitleBar &&
+            "relative drag-region wco:pr-[calc(var(--workspace-native-controls-inset)+6rem)]",
           props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
         data-right-panel-tabbar
@@ -785,7 +787,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           ref={tabListRef}
           hideScrollbars
           scrollFade
-          className={cn("min-w-0 flex-1 rounded-none", ownsDesktopTitleBar && "drag-region")}
+          className="min-w-0 flex-1 rounded-none"
           data-right-panel-tab-list
         >
           <div className="flex h-full w-max min-w-full items-center gap-1">
@@ -873,6 +875,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                         <button
                           type="button"
                           className="cursor-pointer flex min-w-0 items-center"
+                          aria-current={active ? "true" : undefined}
                           onClick={() => props.onActivate(surface)}
                         >
                           <span className="truncate">{title}</span>
@@ -926,6 +929,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           </div>
         </ScrollArea>
         {props.layoutControls}
+        {ownsDesktopTitleBar ? <TitlebarLayoutControlsDragHole controlCount={3} /> : null}
       </div>
       <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
         {props.activeSurfaceId === null ? (

@@ -7,8 +7,12 @@ Home screen uses the photo of the day.
 
 ## Turn it on or off
 
-World Scenery is T3 Pretty's only theme. Open **Settings → Appearance** to choose **System**,
-**Light**, or **Dark**. While World Scenery is on:
+World Scenery is T3 Pretty's default look. Open **Settings → Appearance** and use
+**Personalization** to choose **World Scenery** or **Boring**. Boring restores the original T3 Chat
+colors and turns the landscape photos off.
+
+Open **Settings → Appearance** to choose **System**, **Light**, or **Dark**. While World Scenery is
+on:
 
 - A new thread opens in fog: a cloud bank gathers over the assigned place, the location
   name rises out of it, then the fog blows off to the side while the chat box comes up
@@ -23,10 +27,12 @@ World Scenery is T3 Pretty's only theme. Open **Settings → Appearance** to cho
   running-status dots still, and freezes the ultrathink composer spectrum. With the
   system reduce-motion setting on, those animations keep only their fade.
 
-On phone, open **Settings → Appearance** and use **Scenery photos**. While it is on you can also
-adjust **Photo blur** and **Photo presence**. Starting a new task uses the same photo of the
-day as Home, so the compose sheet sits on the landscape instead of a blank plate. The place
-name and photo credit sit above the chat box.
+On phone, open **Settings → Appearance**. **Personalization** chooses **World Scenery** or **Boring**.
+While World Scenery is selected, **Scenery photos** can still turn the landscape off without
+leaving the alpine palette. While it is on you can also adjust **Photo blur** and **Photo
+presence**. Starting a new task uses the same photo of the day as Home, so the compose sheet
+sits on the landscape instead of a blank plate. The place name and photo credit sit above the
+chat box.
 
 ## How the phone thread list looks
 
@@ -38,5 +44,6 @@ With scenery on, the Home list lets the photo show through:
 
 The list uses solid rows instead when:
 
+- **Boring** is on,
 - **Scenery photos** is off, or
 - iOS **Reduce Transparency** is on (**Settings → Accessibility → Display & Text Size**).

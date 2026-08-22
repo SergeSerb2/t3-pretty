@@ -210,6 +210,7 @@ export function ConnectionsNewRouteScreen({
       ) : (
         <NativeHeaderToolbar placement="right">
           <NativeHeaderToolbar.Button
+            accessibilityLabel={showScanner ? "Close scanner" : "Scan QR code"}
             icon={showScanner ? "xmark" : "qrcode.viewfinder"}
             onPress={() => {
               if (showScanner) {
@@ -225,6 +226,7 @@ export function ConnectionsNewRouteScreen({
       )}
 
       <ScrollView
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
         className="flex-1"
@@ -267,6 +269,7 @@ export function ConnectionsNewRouteScreen({
                   Host
                 </Text>
                 <TextInput
+                  accessibilityLabel="Host"
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="url"
@@ -282,6 +285,7 @@ export function ConnectionsNewRouteScreen({
                   Pairing code
                 </Text>
                 <TextInput
+                  accessibilityLabel="Pairing code"
                   autoCapitalize="none"
                   autoCorrect={false}
                   placeholder="abc-123-xyz"

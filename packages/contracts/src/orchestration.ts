@@ -145,6 +145,15 @@ export function resolveRuntimeModeForProviderDriver(
 ): RuntimeMode {
   return runtimeMode === "yolo" && providerDriver !== "kimi" ? "full-access" : runtimeMode;
 }
+
+// Kimi's default access mode is "yolo": the same unrestricted session as
+// "full-access", but Kimi can still stop to ask questions. Other providers
+// keep the generic "full-access" default.
+export function defaultRuntimeModeForProviderDriver(
+  providerDriver: string | null | undefined,
+): RuntimeMode {
+  return providerDriver === "kimi" ? "yolo" : DEFAULT_RUNTIME_MODE;
+}
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
 export const DEFAULT_PROVIDER_INTERACTION_MODE: ProviderInteractionMode = "default";

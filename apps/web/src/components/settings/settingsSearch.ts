@@ -1,5 +1,7 @@
 import { isElectron } from "~/env";
 
+import { WORLD_SCENERY_THEME_ID } from "../../scenery/worldSceneryTheme";
+
 export type SettingsPath =
   | "/settings/general"
   | "/settings/appearance"
@@ -23,6 +25,8 @@ export interface SettingsSearchItem {
   // Its row only renders in the desktop app, so a browser result would land on
   // an anchor that isn't there.
   readonly desktopOnly?: boolean;
+  // Its row only renders under the World Scenery theme, same anchor problem.
+  readonly sceneryOnly?: boolean;
 }
 
 /**
@@ -60,8 +64,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "appearance",
   },
   {
+    id: "personalization",
+    title: "Personalization",
+    to: "/settings/appearance",
+    targetId: "appearance",
+  },
+  {
     id: "theme",
     title: "World Scenery theme",
+    to: "/settings/appearance",
+    targetId: "appearance",
+  },
+  {
+    id: "boring-mode",
+    title: "Boring",
     to: "/settings/appearance",
     targetId: "appearance",
   },
@@ -75,21 +91,25 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "setting-photo-blur",
     title: "Photo blur",
     to: "/settings/appearance",
+    sceneryOnly: true,
   },
   {
     id: "setting-photo-presence",
     title: "Photo presence",
     to: "/settings/appearance",
+    sceneryOnly: true,
   },
   {
     id: "setting-scenery-motion",
     title: "Thread motion",
     to: "/settings/appearance",
+    sceneryOnly: true,
   },
   {
     id: "setting-scenery-text-color",
     title: "Scenery text color",
     to: "/settings/appearance",
+    sceneryOnly: true,
   },
   {
     id: "environment-identification",
@@ -392,9 +412,14 @@ export function searchSettings(
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
 
+  const sceneryActive =
+    typeof document !== "undefined" &&
+    document.documentElement.dataset.themeId === WORLD_SCENERY_THEME_ID;
+
   return items.filter(
     (item) =>
       (isElectron || item.desktopOnly !== true) &&
+      (sceneryActive || item.sceneryOnly !== true) &&
       normalizeSearchText(item.title).includes(normalizedQuery),
   );
 }

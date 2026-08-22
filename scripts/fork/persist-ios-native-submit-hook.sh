@@ -14,10 +14,12 @@ refresh_macos_agent_hooks() {
   hooks="/opt/homebrew/etc/buildkite-agent/hooks"
   [[ -d "$hooks" ]] || return 0
   if [[ -f "$src/macos-origin-git.sh" && -f "$hooks/pre-checkout" ]] \
+    && grep -q "helpers_ready" "$src/macos-origin-git.sh" \
     && grep -q "Origin git store helper" "$hooks/pre-checkout"; then
     install -m 0755 "$src/macos-origin-git.sh" "$hooks/pre-checkout"
   fi
   if [[ -f "$src/persist-ios-native-submit-hook.sh" && -f "$hooks/post-checkout" ]] \
+    && grep -q "refresh_macos_agent_hooks" "$src/persist-ios-native-submit-hook.sh" \
     && grep -q "ios-native-submit" "$hooks/post-checkout"; then
     install -m 0755 "$src/persist-ios-native-submit-hook.sh" "$hooks/post-checkout"
     install -m 0755 "$src/persist-ios-native-submit-hook.sh" "$hooks/pre-exit"

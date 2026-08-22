@@ -44,13 +44,13 @@ describe("runtimeModeChoicesForProvider", () => {
     }
   });
 
-  it("uses Kimi's CLI naming for Kimi models", () => {
+  it("offers Yolo and Full access for Kimi in ascending order of access", () => {
     expect(
       runtimeModeChoicesForProvider("kimi").map((choice) => [choice.mode, choice.label]),
     ).toEqual([
       ["approval-required", "Approve actions"],
-      ["full-access", "Auto"],
       ["yolo", "Yolo"],
+      ["full-access", "Full access"],
     ]);
   });
 

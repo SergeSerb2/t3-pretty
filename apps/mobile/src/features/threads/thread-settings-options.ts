@@ -43,8 +43,9 @@ export const RUNTIME_MODE_CHOICES: ReadonlyArray<{
   },
 ];
 
-// Kimi names its full-access modes after the CLI: "Auto" never stops to ask,
-// "Yolo" runs the same full-access session but can stop to ask questions.
+// Kimi runs both full-access modes in the same unrestricted session; they
+// differ only in whether Kimi can stop to ask questions. Listed in ascending
+// order of access: "Yolo" may ask, "Full access" never does.
 const KIMI_RUNTIME_MODE_CHOICES: typeof RUNTIME_MODE_CHOICES = [
   {
     mode: "approval-required",
@@ -53,16 +54,16 @@ const KIMI_RUNTIME_MODE_CHOICES: typeof RUNTIME_MODE_CHOICES = [
     description: "Ask before commands and file changes.",
   },
   {
-    mode: "full-access",
-    label: "Auto",
-    shortLabel: "Auto",
-    description: "Allow commands and edits without stopping to ask.",
-  },
-  {
     mode: "yolo",
     label: "Yolo",
     shortLabel: "Yolo",
     description: "Allow commands and edits, but may stop to ask questions.",
+  },
+  {
+    mode: "full-access",
+    label: "Full access",
+    shortLabel: "Full",
+    description: "Allow commands and edits without stopping to ask.",
   },
 ];
 

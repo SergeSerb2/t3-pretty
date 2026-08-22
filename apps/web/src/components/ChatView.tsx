@@ -17,8 +17,10 @@ import {
   type TurnId,
   type KeybindingCommand,
   OrchestrationThreadActivity,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderInteractionMode,
   ProviderDriverKind,
+  defaultRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
   RuntimeMode,
   TerminalOpenInput,
@@ -289,7 +291,11 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
 import { ChatHeader } from "./chat/ChatHeader";
-import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
+import {
+  PanelLayoutControls,
+  RightPanelMaximizeControl,
+  TitlebarLayoutControlsDragHole,
+} from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
@@ -316,6 +322,7 @@ import {
   threadChangeRequestSnapshotsAtom,
 } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { ComposerSpecular } from "./chat/ComposerSpecular";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -1753,7 +1760,6 @@ function ChatViewContent(props: ChatViewProps) {
   // session.lastError. Bump a tick so the banner hides immediately. Mirrors
   // the branch mismatch banner.
   const [, setThreadErrorBannerDismissTick] = useState(0);
-  const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   // Plan mode is legacy (Settings → Beta). With the flag off the effective
   // mode is forced to "default" — even for threads with a stored plan mode —
   // so nobody is trapped in plan mode while its toggle is hidden. The next
@@ -2438,6 +2444,21 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const selectedProvider: ProviderDriverKind =
     modelPickerLockedProvider ?? unlockedSelectedProvider;
+  // Kimi's default access mode is "yolo"; other providers default to
+  // "full-access". A composer pick always wins, and a server thread's stored
+  // mode is authoritative — even "full-access" on Kimi, which may be an
+  // explicit pick or the pre-Yolo default and must not be remapped. Only a
+  // draft whose mode still reads as the generic default (never picked, never
+  // carried from a non-default thread) inherits the provider's own default.
+  const storedRuntimeMode =
+    composerRuntimeMode ??
+    (isServerThread
+      ? (activeThread?.runtimeMode ?? null)
+      : activeThread?.runtimeMode !== DEFAULT_RUNTIME_MODE
+        ? (activeThread?.runtimeMode ?? null)
+        : null);
+  const runtimeMode: RuntimeMode =
+    storedRuntimeMode ?? defaultRuntimeModeForProviderDriver(selectedProvider);
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
@@ -3532,7 +3553,11 @@ function ChatViewContent(props: ChatViewProps) {
 
   const handleRuntimeModeChange = useCallback(
     (mode: RuntimeMode) => {
-      if (mode === runtimeMode) return;
+      // Skip only when the composer already records this exact pick. Picking
+      // the value currently shown because of a default must still write, or
+      // an explicit pick of the default would be indistinguishable from
+      // "never picked" and lost on the next provider switch.
+      if (composerRuntimeMode === mode) return;
       setComposerDraftRuntimeMode(composerDraftTarget, mode);
       if (isLocalDraftThread) {
         setDraftThreadContext(composerDraftTarget, { runtimeMode: mode });
@@ -3541,7 +3566,7 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [
       isLocalDraftThread,
-      runtimeMode,
+      composerRuntimeMode,
       scheduleComposerFocus,
       composerDraftTarget,
       setComposerDraftRuntimeMode,
@@ -5744,6 +5769,16 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     if (failure !== null) {
+      // The bubble must go even when the composer is busy: nothing else prunes
+      // it, so leaving it would claim a message that never reached the server.
+      setOptimisticUserMessages((existing) => {
+        const removed = existing.filter((message) => message.id === messageIdForSend);
+        for (const message of removed) {
+          revokeUserMessagePreviewUrls(message);
+        }
+        const next = existing.filter((message) => message.id !== messageIdForSend);
+        return next.length === existing.length ? existing : next;
+      });
       if (
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
@@ -5757,14 +5792,6 @@ function ChatViewContent(props: ChatViewProps) {
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
           .length ?? 0) === 0
       ) {
-        setOptimisticUserMessages((existing) => {
-          const removed = existing.filter((message) => message.id === messageIdForSend);
-          for (const message of removed) {
-            revokeUserMessagePreviewUrls(message);
-          }
-          const next = existing.filter((message) => message.id !== messageIdForSend);
-          return next.length === existing.length ? existing : next;
-        });
         promptRef.current = promptForSend;
         const retryComposerImages = composerImagesSnapshot.map(cloneComposerImageForRetry);
         composerImagesRef.current = retryComposerImages;
@@ -5785,6 +5812,31 @@ function ChatViewContent(props: ChatViewProps) {
           prompt: promptForSend,
           detectTrigger: true,
         });
+      } else {
+        // The composer already holds new content, so merge the failed
+        // message's text and images back in rather than silently destroying
+        // them.
+        if (promptForSend.length > 0) {
+          const merged =
+            promptRef.current.length > 0
+              ? `${promptForSend}\n\n${promptRef.current}`
+              : promptForSend;
+          promptRef.current = merged;
+          setComposerDraftPrompt(composerDraftTarget, merged);
+          composerRef.current?.resetCursorState({
+            cursor: collapseExpandedComposerCursor(merged, merged.length),
+            prompt: merged,
+            detectTrigger: true,
+          });
+        }
+        const imageCapacity = PROVIDER_SEND_TURN_MAX_ATTACHMENTS - composerImagesRef.current.length;
+        if (composerImagesSnapshot.length > 0 && imageCapacity > 0) {
+          const retryComposerImages = composerImagesSnapshot
+            .slice(0, imageCapacity)
+            .map(cloneComposerImageForRetry);
+          composerImagesRef.current = [...composerImagesRef.current, ...retryComposerImages];
+          addComposerDraftImages(composerDraftTarget, retryComposerImages);
+        }
       }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
@@ -5864,18 +5916,28 @@ function ChatViewContent(props: ChatViewProps) {
     threadDetailLoading,
   ]);
 
+  const [isInterrupting, setIsInterrupting] = useState(false);
+  useEffect(() => {
+    // The interrupt command resolving only means the request was accepted, so
+    // the pending state holds until the work stops; it never crosses threads.
+    setIsInterrupting(false);
+  }, [isWorking, activeThreadId]);
   const onInterrupt = async () => {
     if (!activeThread) return;
+    setIsInterrupting(true);
     const result = await interruptThreadTurn({
       environmentId,
       input: buildThreadTurnInterruptInput(activeThread),
     });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      setThreadError(
-        activeThread.id,
-        error instanceof Error ? error.message : "Failed to interrupt the current turn.",
-      );
+    if (result._tag === "Failure") {
+      setIsInterrupting(false);
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThread.id,
+          error instanceof Error ? error.message : "Failed to interrupt the current turn.",
+        );
+      }
     }
   };
 
@@ -6470,13 +6532,21 @@ function ChatViewContent(props: ChatViewProps) {
         nextModelSelection,
       );
       setStickyComposerModelSelection(nextModelSelection);
-      // Kimi's "yolo" mode has no equivalent on other providers; switching
-      // providers falls back to the generic full-access mode instead of
-      // leaking the Kimi-only literal into another provider's session config.
-      if (resolvedDriverKind !== "kimi") {
-        handleRuntimeModeChange(
-          resolveRuntimeModeForProviderDriver(resolvedDriverKind, runtimeMode),
+      // Only an explicit mode follows the switch across providers: Kimi's
+      // "yolo" has no equivalent elsewhere and normalizes to the generic
+      // full-access mode instead of leaking the Kimi-only literal into
+      // another provider's session config. An unset mode
+      // (storedRuntimeMode === null) keeps tracking the provider's own
+      // default, so an explicit Full access pick is never rewritten by a
+      // model switch.
+      if (storedRuntimeMode !== null) {
+        const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
+          resolvedDriverKind,
+          storedRuntimeMode,
         );
+        if (nextRuntimeMode !== runtimeMode) {
+          handleRuntimeModeChange(nextRuntimeMode);
+        }
       }
       scheduleComposerFocus();
     },
@@ -6487,6 +6557,7 @@ function ChatViewContent(props: ChatViewProps) {
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
       handleRuntimeModeChange,
+      storedRuntimeMode,
       runtimeMode,
       providerStatuses,
       settings,
@@ -6595,19 +6666,25 @@ function ChatViewContent(props: ChatViewProps) {
         // sidebar trigger. Remounting into the shrinking chat header made the
         // cluster jump to the panel seam on close, and the rest of the top bar
         // jittered against buttons that stayed put.
-        "absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
+        // pointer-events-none on the strip, auto on the buttons: same as the
+        // left sidebar trigger. A later sibling than the chat header, so the
+        // header's frost/drag-region cannot sit on top of the cluster.
+        "pointer-events-none absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
       )}
       data-workspace-titlebar-controls
     >
-      {rightPanelOpen && !shouldUseRightPanelSheet ? (
-        <RightPanelMaximizeControl
-          maximized={rightPanelMaximized}
-          onToggle={toggleRightPanelMaximized}
-        />
-      ) : null}
-      {panelToggleControls}
+      <div className="pointer-events-auto flex h-full items-center gap-1">
+        {rightPanelOpen && !shouldUseRightPanelSheet ? (
+          <RightPanelMaximizeControl
+            maximized={rightPanelMaximized}
+            onToggle={toggleRightPanelMaximized}
+          />
+        ) : null}
+        {panelToggleControls}
+      </div>
     </div>
   );
+  const parkTitlebarLayoutControls = !(shouldUseRightPanelSheet && rightPanelOpen);
   const rightPanelContent = activeThreadRef ? (
     selectedRightPanelSurface?.kind === "preview" ? (
       <Suspense fallback={null}>
@@ -6733,7 +6810,6 @@ function ChatViewContent(props: ChatViewProps) {
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-      {shouldUseRightPanelSheet && rightPanelOpen ? null : panelLayoutControls}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
@@ -6779,6 +6855,13 @@ function ChatViewContent(props: ChatViewProps) {
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
           />
+          {/* no-drag only punches descendants of a drag node. The parked
+              cluster sits on the workspace root; this header covers it while
+              the right panel is closed. The open inline panel's tab bar
+              mounts the matching hole. */}
+          {isElectron && parkTitlebarLayoutControls && !inlineRightPanelOwnsTitleBar ? (
+            <TitlebarLayoutControlsDragHole controlCount={2} />
+          ) : null}
         </WorkspacePageHeader>
 
         <ThreadErrorBanner
@@ -6949,6 +7032,7 @@ function ChatViewContent(props: ChatViewProps) {
                         showComposerContextStrip && "chat-composer-glass-shell-with-context",
                       )}
                     >
+                      <ComposerSpecular />
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
@@ -6977,6 +7061,7 @@ function ChatViewContent(props: ChatViewProps) {
                             phase={phase}
                             isConnecting={isConnecting}
                             isSendBusy={isSendBusy}
+                            isInterrupting={isInterrupting}
                             isOptimisticWorking={isOptimisticWorking}
                             sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
                             isPreparingWorktree={isPreparingWorktree}
@@ -7298,6 +7383,8 @@ function ChatViewContent(props: ChatViewProps) {
           </RightPanelTabs>
         </RightPanelSheet>
       ) : null}
+
+      {parkTitlebarLayoutControls ? panelLayoutControls : null}
 
       {expandedImage && (
         <ExpandedImageDialog

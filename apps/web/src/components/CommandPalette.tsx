@@ -65,7 +65,7 @@ import { openWhatsNewDialog } from "../changelog/whatsNewStore";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { useClientSettings } from "../hooks/useSettings";
+import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
 import { readLocalApi } from "../localApi";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
@@ -336,7 +336,7 @@ function buildAddProjectRemoteSourceReadiness(
 ): AddProjectRemoteSourceReadiness {
   const unavailable = {
     ready: false,
-    hint: "Provider status unavailable. Open Settings -> Source Control and rescan.",
+    hint: "Provider status unavailable. Open Settings → Source Control and rescan.",
   } as const;
   const defaultReadiness: AddProjectRemoteSourceReadiness = {
     url: { ready: true, hint: null },
@@ -373,7 +373,7 @@ function buildAddProjectRemoteSourceReadiness(
         ready: false,
         hint:
           Option.getOrNull(provider.auth.detail) ??
-          `${provider.label} is not authenticated. Open Settings -> Source Control for setup guidance.`,
+          `${provider.label} is not authenticated. Open Settings → Source Control for setup guidance.`,
       };
       continue;
     }
@@ -546,7 +546,10 @@ function CommandPaletteDialog(props: {
       data-palette-mode={props.mode}
       data-testid="command-palette"
       finalFocus={() => {
-        composerHandleRef?.current?.focusAtEnd();
+        const composer = composerHandleRef?.current;
+        // No composer mounted (Settings, Usage, PRs): let Base UI restore focus itself.
+        if (!composer) return true;
+        composer.focusAtEnd();
         return false;
       }}
       onBackdropPointerDown={() => {
@@ -582,6 +585,7 @@ function OpenCommandPaletteDialog(props: {
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const clientSettings = useClientSettings();
+  const legacySidebarEnabled = useLegacySidebarEnabled();
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
@@ -1311,7 +1315,7 @@ function OpenCommandPaletteDialog(props: {
                 }
               />
               <TooltipPopup align="end" side="left">
-                {disabledHint ?? "Open Settings -> Source Control to configure this provider."}
+                {disabledHint ?? "Open Settings → Source Control to configure this provider."}
               </TooltipPopup>
             </Tooltip>
           </span>
@@ -1499,6 +1503,10 @@ function OpenCommandPaletteDialog(props: {
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
   if (projects.length > 0) {
+    // `chat.new` only creates in the active project when there is no choice to
+    // make; otherwise it opens the picker (see routes/_chat.tsx), so the badge
+    // has to follow the same predicate or it advertises the wrong row.
+    const newThreadShortcutIsDirect = legacySidebarEnabled || projectGroups.length <= 1;
     const activeProjectTitle =
       projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
       (currentProjectId ? (projectTitleById.get(currentProjectId) ?? null) : null);
@@ -1514,7 +1522,7 @@ function OpenCommandPaletteDialog(props: {
           </>
         ),
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
-        shortcutCommand: "chat.new",
+        ...(newThreadShortcutIsDirect ? { shortcutCommand: "chat.new" as const } : {}),
         run: async () => {
           await startNewThreadFromContext({
             activeDraftThread,
@@ -1532,6 +1540,7 @@ function OpenCommandPaletteDialog(props: {
       searchTerms: ["new thread", "project", "pick", "choose", "select"],
       title: "New thread in...",
       icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
+      ...(newThreadShortcutIsDirect ? {} : { shortcutCommand: "chat.new" as const }),
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
@@ -1597,6 +1606,7 @@ function OpenCommandPaletteDialog(props: {
     ],
     title: "Add project",
     disabled: defaultAddProjectEnvironmentId === null,
+    description: defaultAddProjectEnvironmentId === null ? "No connected environment." : undefined,
     icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
     keepOpen: true,
     run: async () => {

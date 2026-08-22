@@ -8,15 +8,25 @@ same family in every release channel so upstream dev/nightly/prod artwork cannot
 identity during packaging. The checked-in `t3.json` also points to the master image, which makes the
 logo appear for this repository in T3 Pretty project rows instead of the folder fallback.
 
-The master application icon is the generated colorful T3 mark on a dark glass
-squircle. `t3-pretty-1024.png` is the macOS asset (824px body inset 100px, with
-a light contact shadow). `t3-pretty-ios-1024.png` is the full-bleed iOS asset.
+Earlier studies live in `pretty/logo-explorations/`. The shipping mark is the
+cut-out T3 from that lockup, recast in World Scenery sage.
+
+The master mark is the lockup T3 in pastel mint (`#8FCFA8`) on cream paper
+(`#E4DFCC`). Extra sizes and colorways live in `pretty/kit/`.
+The `| Pretty` wordmark (`pretty/t3-pretty-wordmark.png`) is for the README,
+DMG installer, and other large lockups. The in-app mark is that T3 with
+the paper knocked out.
+
+`t3-pretty-1024.png` is the macOS asset (824px frosted-glass body inset 100px,
+with a light contact shadow and a translucent plate). `t3-pretty-ios-1024.png`
+is the full-bleed iOS asset — the same glass look, flattened opaque because
+iOS home-screen icons cannot be transparent.
 The ICO, ICNS, favicon, and apple-touch files are derived from those masters.
 Desktop packaging copies them into `apps/desktop/resources`.
 
-`pretty/t3-pretty-mark.png` is the in-app lockup (web sidebar, mobile thread header). It is a
-cropped, transparent copy of the generated T3 Pretty mark, not the squircle application icon. The
-web and mobile copies (`apps/web/public/t3-pretty-mark.png`, `apps/mobile/assets/t3-pretty-mark.png`)
+`pretty/t3-pretty-mark.png` is the in-app T3 (web sidebar, mobile thread header):
+sage ink on a transparent ground, no plate. The web and mobile copies
+(`apps/web/public/t3-pretty-mark.png`, `apps/mobile/assets/t3-pretty-mark.png`)
 are produced by the same brand-asset copy step as the favicons.
 
 macOS disk-image artwork lives next to the vector templates in

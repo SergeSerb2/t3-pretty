@@ -109,16 +109,26 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
         )}
       >
         {showCollapsedStackCap && firstStackedItem ? (
-          <div
+          // Focus is the handler: the group-focus-within rules below open the
+          // stack, so the cap needs no onClick, and blurring closes it again.
+          // Without a focusable cap the stacked banners are unreachable
+          // whenever the front banner carries no control of its own.
+          <button
+            type="button"
             className={cn(
-              "pointer-events-none absolute inset-x-0 -top-3 z-0 mx-auto h-3 rounded-t-2xl",
+              "absolute inset-x-0 -top-3 z-0 mx-auto h-3 rounded-t-2xl",
               "chat-composer-banner-stack-cap border border-b-0 shadow-[0_6px_18px_rgba(0,0,0,0.06)]",
               stackCapBorderClass[firstStackedItem.variant],
               "transition-opacity duration-150 ease-out",
-              "group-hover/banner-stack:opacity-0 group-focus-within/banner-stack:opacity-0",
+              // Once the stack is revealed the faded cap must not keep
+              // intercepting clicks meant for the chat content behind it.
+              "group-hover/banner-stack:pointer-events-none group-hover/banner-stack:opacity-0",
+              "group-focus-within/banner-stack:pointer-events-none group-focus-within/banner-stack:opacity-0",
             )}
             style={{ width: "96%" }}
-            aria-hidden="true"
+            aria-label={`Show ${stackedItems.length} more ${
+              stackedItems.length === 1 ? "notice" : "notices"
+            }`}
           />
         ) : null}
         <div

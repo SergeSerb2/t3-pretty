@@ -8,6 +8,15 @@
 # file, and `set -u` then killed every scheduled sync in discover.
 set -euo pipefail
 
+# Buildkite sets FORCE_COLOR and NO_COLOR together. Origin's bun CLI then
+# prints assertion_error while loading tty colors and, on the macos-release
+# agent, can exit 255 from `git fetch` (credential helper) and `origin`.
+unset NO_COLOR || true
+export FORCE_COLOR="${FORCE_COLOR:-0}"
+if [[ "${FORCE_COLOR}" == "1" || "${FORCE_COLOR}" == "true" ]]; then
+  export FORCE_COLOR=0
+fi
+
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
@@ -24,14 +33,50 @@ export CLI_PROXY_API_URL="${CLI_PROXY_API_URL:-https://cli-proxy-api-production-
 export CLI_PROXY_MODEL="${CLI_PROXY_MODEL:-gpt-5.6-sol}"
 export CLI_PROXY_REASONING_EFFORT="${CLI_PROXY_REASONING_EFFORT:-xhigh}"
 export CLI_PROXY_SERVICE_TIER="${CLI_PROXY_SERVICE_TIER:-priority}"
+SYNC_FAIL_REASON=""
 
 CACHE_ROOT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 CACHE_ROOT="${CACHE_ROOT%/}"
 export SYNC_RESOLUTION_CACHE_DIR="${SYNC_RESOLUTION_CACHE_DIR:-${CACHE_ROOT}/sync-resolution-cache}"
 mkdir -p "$SYNC_RESOLUTION_CACHE_DIR"
 
+origin_git() {
+  local store="" candidate
+  for candidate in \
+    "${ORIGIN_GIT_CREDENTIALS:-}" \
+    "${HOME}/.git-credentials" \
+    /Users/m1-dev/.git-credentials \
+    /opt/homebrew/var/buildkite-agent/.git-credentials; do
+    if [[ -n "$candidate" && -f "$candidate" ]]; then
+      store="$candidate"
+      break
+    fi
+  done
+  if [[ -n "$store" ]]; then
+    git -c credential.helper= \
+      -c "credential.https://origin.cursor.com.helper=store --file=${store}" \
+      -c "credential.https://origin.cursor.com/git.helper=store --file=${store}" \
+      "$@"
+  else
+    git "$@"
+  fi
+}
+
+# macos-release reuses the workspace. A previous sync that died mid-merge
+# leaves MERGE_HEAD; `git checkout -B main` then fails in ~2s and every
+# later nightly opens another blocked PR instead of finishing the merge.
+abort_leftover_git_state() {
+  git merge --abort >/dev/null 2>&1 || true
+  git rebase --abort >/dev/null 2>&1 || true
+  git cherry-pick --abort >/dev/null 2>&1 || true
+  git am --abort >/dev/null 2>&1 || true
+  git reset --hard HEAD >/dev/null 2>&1 || true
+}
+
 git config user.name "t3-pretty-sync[bot]"
 git config user.email "t3-pretty-bot@users.noreply.cursor.com"
+
+abort_leftover_git_state
 
 # macos-release reuses the workspace. A previous sync leaves `upstream`
 # in .git/config, and `git remote add` then exits 1 before the merge
@@ -53,9 +98,9 @@ git config remote.upstream.partialclonefilter blob:none
 
 if git rev-parse --is-shallow-repository >/dev/null 2>&1 &&
   [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
-  git fetch --unshallow origin || git fetch --update-shallow origin main
+  origin_git fetch --unshallow origin || origin_git fetch --update-shallow origin main
 fi
-git fetch origin main
+origin_git fetch origin main
 git checkout --force -B main origin/main
 
 latest_tag="$({
@@ -103,7 +148,7 @@ checkpoint_resolutions() {
     echo "No completed resolutions to checkpoint."
     return 0
   fi
-  git fetch origin "refs/heads/$RESOLUTION_CACHE_BRANCH:refs/remotes/origin/$RESOLUTION_CACHE_BRANCH" 2>/dev/null || true
+  origin_git fetch origin "refs/heads/$RESOLUTION_CACHE_BRANCH:refs/remotes/origin/$RESOLUTION_CACHE_BRANCH" 2>/dev/null || true
   local index_file="${CACHE_ROOT}/sync-resolution-cache-index"
   rm -f "$index_file"
   local GIT_INDEX_FILE="$index_file"
@@ -121,20 +166,27 @@ checkpoint_resolutions() {
   local tree
   tree="$(git write-tree)"
   unset GIT_INDEX_FILE
-  if (( ${#parent_args[@]} > 0 )) &&
-    [[ "$(git rev-parse "origin/$RESOLUTION_CACHE_BRANCH^{tree}")" == "$tree" ]]; then
+  if (( ${#parent_args[@]} == 0 )); then
+    :
+  elif [[ "$(git rev-parse "origin/$RESOLUTION_CACHE_BRANCH^{tree}")" == "$tree" ]]; then
     echo "Resolution cache already holds these entries."
     return 0
   fi
   local commit
   commit="$(git commit-tree "$tree" ${parent_args[@]+"${parent_args[@]}"} -m "chore(sync): checkpoint conflict resolutions")"
-  git push origin "$commit:refs/heads/$RESOLUTION_CACHE_BRANCH"
+  origin_git push origin "$commit:refs/heads/$RESOLUTION_CACHE_BRANCH"
   echo "Checkpointed ${#entries[@]} resolution(s) to $RESOLUTION_CACHE_BRANCH."
 }
 
 report_blocked() {
+  local status="${1:-1}"
   node scripts/fork/origin-forge.mjs setup-ci
-  local body="The guarded four-hour T3 Pretty sync could not safely merge $UPSTREAM_TAG. Inspect the failed Origin-connected CI run for this commit."
+  local detail="${SYNC_FAIL_REASON:-The job exited ${status}.}"
+  local body="The guarded four-hour T3 Pretty sync could not safely merge $UPSTREAM_TAG.
+
+${detail}
+
+Inspect the failed Origin-connected CI run for this commit."
   node scripts/fork/origin-forge.mjs report-blocked \
     --upstream-tag "$UPSTREAM_TAG" \
     --title "Upstream sync blocked: $UPSTREAM_TAG" \
@@ -147,71 +199,157 @@ on_exit() {
   if [[ "$has_update" == 1 ]]; then
     checkpoint_resolutions || true
     if (( status != 0 )); then
-      report_blocked || true
+      report_blocked "$status" || true
     fi
   fi
   exit "$status"
 }
 trap on_exit EXIT
 
-if git fetch origin "refs/heads/$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH" 2>/dev/null &&
-  [[ "$(git show "origin/$SYNC_BRANCH:.t3-fork/upstream-nightly" 2>/dev/null | tr -d '[:space:]')" == "$UPSTREAM_TAG" ]] &&
-  git merge-base --is-ancestor "$UPSTREAM_TAG^{commit}" "origin/$SYNC_BRANCH" &&
-  [[ "$(git show "origin/$SYNC_BRANCH:.t3-fork/upstream-sync-report.md" 2>/dev/null | sed -n '1p')" == "# T3 Pretty upstream integration report" ]]; then
-  echo "Reusing the previously validated AI resolution for $UPSTREAM_TAG."
-  export REUSED_SYNC_RESOLUTION=true
-  git checkout -B "$SYNC_BRANCH" "origin/$SYNC_BRANCH"
-  set +e
-  git merge --no-edit origin/main
-  merge_status=$?
-  set -e
-else
-  git checkout -B "$SYNC_BRANCH" origin/main
-  set +e
-  git merge --no-ff --no-commit "$UPSTREAM_TAG"
-  merge_status=$?
-  set -e
-fi
+# Restore checkpointed per-file resolutions first: a run that failed
+# or timed out mid-merge reruns only the files that never finished.
+load_resolution_cache() {
+  if origin_git fetch origin "refs/heads/$RESOLUTION_CACHE_BRANCH:refs/remotes/origin/$RESOLUTION_CACHE_BRANCH" 2>/dev/null; then
+    git archive "origin/$RESOLUTION_CACHE_BRANCH" | tar -x -C "$SYNC_RESOLUTION_CACHE_DIR"
+  fi
+}
 
-# The fork owns its release and security automation. Keep those files
-# pinned to fork main instead of allowing an upstream tag to rewrite
-# workflows or requiring a broadly scoped personal token.
-git restore --source=origin/main --staged --worktree -- .github/workflows
-
-# bash 3.2 (/bin/bash on macos-release) has no `mapfile`.
-resolver_paths=()
-while IFS= read -r -d '' path; do
-  resolver_paths+=("$path")
-done < <(git diff --name-only --diff-filter=U -z)
-if (( ${#resolver_paths[@]} == 0 )) && (( merge_status != 0 )) &&
-  ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
-  echo "Merge failed without producing resolvable conflicts." >&2
-  exit "$merge_status"
-fi
 # Always write the durable integration report. Clean merges make no
 # model request; conflict merges use Sol/xhigh and record every
 # parent change intentionally omitted to protect T3 Pretty.
-# Restore checkpointed per-file resolutions first: a run that failed
-# or timed out mid-merge reruns only the files that never finished.
-if git fetch origin "refs/heads/$RESOLUTION_CACHE_BRANCH:refs/remotes/origin/$RESOLUTION_CACHE_BRANCH" 2>/dev/null; then
-  git archive "origin/$RESOLUTION_CACHE_BRANCH" | tar -x -C "$SYNC_RESOLUTION_CACHE_DIR"
-fi
-node scripts/fork/resolve-git-conflicts.mjs
+resolve_current_merge() {
+  local merge_status="$1"
+  local resolver_paths=()
+  local path
 
-# The resolver side-picks a conflicted generated lockfile instead of
-# AI-splicing it. Reconcile that copy with the merged package
-# manifests so the committed lockfile actually installs (the runner
-# sets CI=true, which would force a frozen lockfile, so opt out).
-if printf '%s\n' "${resolver_paths[@]}" | grep -qx "pnpm-lock.yaml"; then
-  corepack enable
-  corepack pnpm install --lockfile-only --no-frozen-lockfile
-  git add pnpm-lock.yaml
+  # The fork owns its release and security automation. Keep those files
+  # pinned to fork main instead of allowing an upstream tag to rewrite
+  # workflows or requiring a broadly scoped personal token.
+  git restore --source=origin/main --staged --worktree -- .github/workflows
+
+  # Keep the resolved nightly marker and report when merging a newer
+  # origin/main into a previously finished sync branch. The job rewrites
+  # both files after the newest tag is integrated.
+  for path in .t3-fork/upstream-nightly .t3-fork/upstream-sync-report.md; do
+    if git diff --name-only --diff-filter=U | grep -qx "$path"; then
+      git checkout --ours -- "$path"
+      git add -- "$path"
+    fi
+  done
+
+  # bash 3.2 (/bin/bash on macos-release) has no `mapfile`.
+  while IFS= read -r -d '' path; do
+    resolver_paths+=("$path")
+  done < <(git diff --name-only --diff-filter=U -z)
+  if (( ${#resolver_paths[@]} == 0 )) && (( merge_status != 0 )) &&
+    ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+    SYNC_FAIL_REASON="Merge failed without producing resolvable conflicts (exit ${merge_status})."
+    echo "$SYNC_FAIL_REASON" >&2
+    return "$merge_status"
+  fi
+  load_resolution_cache
+  node scripts/fork/resolve-git-conflicts.mjs
+
+  # The resolver side-picks a conflicted generated lockfile instead of
+  # AI-splicing it. Reconcile that copy with the merged package
+  # manifests so the committed lockfile actually installs (the runner
+  # sets CI=true, which would force a frozen lockfile, so opt out).
+  if printf '%s\n' "${resolver_paths[@]}" | grep -qx "pnpm-lock.yaml"; then
+    corepack enable
+    corepack pnpm install --lockfile-only --no-frozen-lockfile
+    git add pnpm-lock.yaml
+  fi
+
+  if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
+    SYNC_FAIL_REASON="Unresolved merge conflicts remain after the resolver finished."
+    echo "$SYNC_FAIL_REASON" >&2
+    return 1
+  fi
+}
+
+commit_sync() {
+  local message="$1"
+  if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+    git commit -m "$message"
+  elif ! git diff --cached --quiet; then
+    git commit -m "$message"
+  else
+    echo "Nothing changed for: $message"
+  fi
+}
+
+merge_ref() {
+  local ref="$1"
+  local message="$2"
+  local merge_status
+  if git merge-base --is-ancestor "$ref^{commit}" HEAD 2>/dev/null ||
+    git merge-base --is-ancestor "$ref" HEAD 2>/dev/null; then
+    echo "HEAD already contains $ref."
+    return 0
+  fi
+  set +e
+  git merge --no-ff --no-commit "$ref"
+  merge_status=$?
+  set -e
+  resolve_current_merge "$merge_status"
+  commit_sync "$message"
+}
+
+# A finished resolution of an older nightly is a better merge base than
+# origin/main: later nightlies used to start from scratch, re-pay every
+# conflict, and time out while the resolved branch went stale against main.
+reusable_sync_branch=""
+reusable_sync_tag=""
+
+# Nightly tags are not always one fast-forward line (retagged, rebuilt, or
+# parallel nightlies). Ancestry between two tags is only a staleness signal
+# when both commits sit on the same upstream first-parent line; otherwise
+# the tag-name sort below and the finished report check decide.
+same_first_parent_line() {
+  local a b
+  a="$(git rev-parse "$1")"
+  b="$(git rev-parse "$2")"
+  [[ "$a" == "$b" ]] && return 0
+  git rev-list --first-parent "$a" | grep -qx "$b" && return 0
+  git rev-list --first-parent "$b" | grep -qx "$a" && return 0
+  return 1
+}
+while IFS=$'\t' read -r _sha ref; do
+  [[ -n "$ref" ]] || continue
+  local_name="${ref#refs/heads/}"
+  case "$local_name" in
+    automation/upstream-*) ;;
+    *) continue ;;
+  esac
+  origin_git fetch origin "refs/heads/$local_name:refs/remotes/origin/$local_name" 2>/dev/null || continue
+  candidate_tag="$(git show "origin/$local_name:.t3-fork/upstream-nightly" 2>/dev/null | tr -d '[:space:]')"
+  [[ -n "$candidate_tag" ]] || continue
+  git rev-parse -q --verify "$candidate_tag^{commit}" >/dev/null 2>&1 ||
+    git fetch --no-tags upstream "refs/tags/$candidate_tag:refs/tags/$candidate_tag" 2>/dev/null ||
+    continue
+  git merge-base --is-ancestor "$candidate_tag^{commit}" "origin/$local_name" || continue
+  [[ "$(git show "origin/$local_name:.t3-fork/upstream-sync-report.md" 2>/dev/null | sed -n '1p')" == "# T3 Pretty upstream integration report" ]] || continue
+  if ! git merge-base --is-ancestor "$candidate_tag^{commit}" "$latest_tag^{commit}" &&
+    same_first_parent_line "$candidate_tag^{commit}" "$latest_tag^{commit}"; then
+    continue
+  fi
+  if [[ -z "$reusable_sync_tag" ]] ||
+    [[ "$(printf '%s\n%s\n' "$reusable_sync_tag" "$candidate_tag" | sort -V | tail -n 1)" == "$candidate_tag" ]]; then
+    reusable_sync_branch="$local_name"
+    reusable_sync_tag="$candidate_tag"
+  fi
+done < <(origin_git ls-remote --heads origin "refs/heads/automation/upstream-*" || true)
+
+if [[ -n "$reusable_sync_branch" ]]; then
+  echo "Reusing the previously validated AI resolution on $reusable_sync_branch ($reusable_sync_tag)."
+  export REUSED_SYNC_RESOLUTION=true
+  git checkout -B "$SYNC_BRANCH" "origin/$reusable_sync_branch"
+else
+  git checkout -B "$SYNC_BRANCH" origin/main
 fi
 
-if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
-  echo "Unresolved merge conflicts remain." >&2
-  exit 1
-fi
+merge_ref origin/main "chore(sync): merge origin/main before $UPSTREAM_TAG"
+merge_ref "$UPSTREAM_TAG" "chore(sync): merge upstream $UPSTREAM_TAG"
 
 mkdir -p .t3-fork
 printf '%s\n' "$UPSTREAM_TAG" > .t3-fork/upstream-nightly
@@ -222,21 +360,21 @@ git add .t3-fork/upstream-nightly
 # blank line at EOF after the entire merge succeeded, so it must
 # not gate either.
 git diff --check --cached -- .t3-fork/upstream-nightly
-
-if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
-  git commit -m "chore(sync): merge upstream $UPSTREAM_TAG"
-elif ! git diff --cached --quiet; then
+if ! git diff --cached --quiet; then
   git commit -m "chore(sync): record upstream $UPSTREAM_TAG"
-else
-  echo "Nothing changed after resolving $UPSTREAM_TAG."
 fi
 
-remote_head="$(git rev-parse -q --verify "origin/$SYNC_BRANCH" 2>/dev/null || true)"
-if [[ "$(git rev-parse HEAD)" == "$remote_head" ]]; then
-  echo "$SYNC_BRANCH is already current."
-else
-  git push --force-with-lease origin "HEAD:refs/heads/$SYNC_BRANCH"
-fi
+push_sync_branch() {
+  origin_git fetch origin "refs/heads/$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH" 2>/dev/null || true
+  remote_head="$(git rev-parse -q --verify "origin/$SYNC_BRANCH" 2>/dev/null || true)"
+  if [[ "$(git rev-parse HEAD)" == "$remote_head" ]]; then
+    echo "$SYNC_BRANCH is already current."
+  else
+    origin_git push --force-with-lease origin "HEAD:refs/heads/$SYNC_BRANCH"
+  fi
+}
+
+push_sync_branch
 
 node scripts/fork/origin-forge.mjs setup-ci
 pr_body_path="${CACHE_ROOT}/t3-pretty-upstream-sync.md"
@@ -264,8 +402,46 @@ if ! git diff --quiet origin/main...HEAD -- \
   mobile_release_needed=true
 fi
 
-head_sha="$(git rev-parse HEAD)"
-node scripts/fork/origin-forge.mjs merge-pr --head "$SYNC_BRANCH" --sha "$head_sha"
+land_sync_pr() {
+  local head_sha
+  head_sha="$(git rev-parse HEAD)"
+  node scripts/fork/origin-forge.mjs merge-pr --head "$SYNC_BRANCH" --sha "$head_sha"
+}
+
+if ! land_sync_pr; then
+  echo "Origin merge failed; merging origin/main and retrying once."
+  origin_git fetch origin main
+  # Treat the existing integration report as the base for this merge:
+  # without REUSED_SYNC_RESOLUTION the resolver formats a fresh report
+  # from the retry merge alone, so a clean (or marker-only) origin/main
+  # merge would replace the upstream integration record with "no text
+  # conflicts" and the landed PR body would misdescribe the tree.
+  export REUSED_SYNC_RESOLUTION=true
+  merge_ref origin/main "chore(sync): merge origin/main before landing $UPSTREAM_TAG"
+  printf '%s\n' "$UPSTREAM_TAG" > .t3-fork/upstream-nightly
+  git add .t3-fork/upstream-nightly
+  if ! git diff --cached --quiet; then
+    git commit -m "chore(sync): record upstream $UPSTREAM_TAG"
+  fi
+  push_sync_branch
+  {
+    printf '%s\n\n' \
+      'Automated four-hour integration of the newest parent T3 Code nightly into T3 Pretty.' \
+      'Clean merges are retained directly. Text conflicts are resolved through CLIProxyAPI with gpt-5.6-sol at xhigh reasoning under the T3 Pretty preservation contract.'
+    cat .t3-fork/upstream-sync-report.md
+  } > "$pr_body_path"
+  node scripts/fork/origin-forge.mjs ensure-pr \
+    --base main \
+    --head "$SYNC_BRANCH" \
+    --title "chore(sync): merge upstream $UPSTREAM_TAG" \
+    --body-file "$pr_body_path"
+  if ! land_sync_pr; then
+    SYNC_FAIL_REASON="Origin could not merge $SYNC_BRANCH into main after retrying with a refreshed origin/main."
+    echo "$SYNC_FAIL_REASON" >&2
+    exit 1
+  fi
+fi
+
 node scripts/fork/origin-forge.mjs delete-branch --head "$SYNC_BRANCH"
 
 # Dispatch desktop preflight if the merge push is missed. Mobile no

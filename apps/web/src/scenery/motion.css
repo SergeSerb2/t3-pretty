@@ -289,16 +289,22 @@ html[data-scenery-motion]
 }
 
 /* ------------------------------------------------------ press feedback -- */
-/* Send/stop already transition `scale` via their transition-all utility;
-   these only add the missing pressed state. */
+/* One press rule for the whole control family: every button, toggle and
+   select trigger dips under the finger and springs back on release. The
+   primitives already list `scale` in their transition (button.tsx et al), so
+   this only adds the pressed state — naturally interruptible, ~150ms of work
+   per press, nothing at rest. Small icon targets dip a larger ratio so they
+   travel the same number of pixels. */
 
-html[data-scenery-motion] button[aria-label="Send message"]:not(:disabled):active,
-html[data-scenery-motion] button[aria-label="Stop generation"]:active {
-  scale: 0.96;
+html[data-scenery-motion]
+  :is([data-slot="button"], [data-slot="toggle"], [data-slot="select-button"]):not(:disabled):not(
+    [data-disabled]
+  ):active {
+  scale: calc(1 - 0.035 * var(--sc-m));
 }
 
 /* The stop square replaces the send arrow the instant a turn starts; it
-   rides the button's own transition-all, only the start state is added. */
+   rides the button's own scale transition, only the start state is added. */
 html[data-scenery-motion] button[aria-label="Stop generation"] {
   @starting-style {
     scale: calc(1 - 0.25 * var(--sc-m));
@@ -525,8 +531,9 @@ html[data-scenery-motion] .dialog-glass[data-theme-editor-panel][role="dialog"] 
   }
 }
 
-/* Chrome-style "Hold ⌘Q to Quit" hint pops in instead of appearing. */
-html[data-scenery-motion] [role="status"].fixed.z-100 > div {
+/* Chrome-style "Hold ⌘Q to Quit" hint pops in instead of appearing. The pill
+   is the overlay's last child; the scrim before it keeps its own fade. */
+html[data-scenery-motion] [role="status"].fixed.z-100 > div:last-child {
   transition:
     opacity 160ms var(--sc-ease-out),
     scale 160ms var(--sc-ease-out);
@@ -550,6 +557,32 @@ html[data-scenery-motion] [data-slot="radio-indicator"]::before {
 html[data-scenery-motion] [data-slot="checkbox-indicator"][data-starting-style] svg,
 html[data-scenery-motion] [data-slot="radio-indicator"][data-starting-style]::before {
   scale: calc(1 - 0.5 * var(--sc-m));
+  opacity: 0;
+}
+
+/* Copy confirmation: the check mounts fresh when a copy affordance's state
+   flips, so @starting-style fires exactly once per copy — message copy, code
+   block copy, token copy, all of them. Scoped to a Button's direct child so
+   select/menu radio indicators are untouched. Reverting is instant. */
+html[data-scenery-motion] [data-slot="button"] > svg.lucide-check {
+  transition:
+    scale 160ms var(--sc-ease-out),
+    opacity 160ms var(--sc-ease-out);
+  @starting-style {
+    scale: calc(1 - 0.4 * var(--sc-m));
+    opacity: 0;
+  }
+}
+
+/* Collapsible: the panel animates height (collapsible.tsx); its content
+   fades on the same beat so text does not slide out from under the clip
+   edge. Opacity only, driven by Base UI's starting/ending styles. */
+html[data-scenery-motion] [data-slot="collapsible-panel"] > * {
+  transition: opacity 200ms var(--sc-ease-out);
+}
+
+html[data-scenery-motion] [data-slot="collapsible-panel"][data-starting-style] > *,
+html[data-scenery-motion] [data-slot="collapsible-panel"][data-ending-style] > * {
   opacity: 0;
 }
 

@@ -1513,7 +1513,9 @@ export function PullRequestDetailPanel({
                   <MenuItem disabled={handoff !== null} onClick={explainPullRequest}>
                     <BookOpenIcon className="mt-0.5 size-3.5 shrink-0 self-start" />
                     <span className="flex min-w-0 flex-col">
-                      <span>{handoff === "explain" ? "Opening..." : "Explain this PR"}</span>
+                      <span>
+                        {handoff === "explain" ? "Opening..." : "Explain this pull request"}
+                      </span>
                       <span className="text-xs text-muted-foreground">
                         A walk through the diff and what to read closely.
                       </span>

@@ -1,7 +1,8 @@
 /**
  * One-shot fog + "Entering…" sequence for a new World Scenery draft. The
- * overlay unmounts once the location name has handed off to the composer
- * slot; nothing here loops or keeps a filter live.
+ * banks keep a slow compositor-only roll for the overlay's whole life so the
+ * veil never freezes while the wallpaper decodes; the overlay unmounts once
+ * the location name has handed off to the composer slot.
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 

@@ -30,8 +30,14 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    is not scheduled: macos-release GHA steps often have no `GITHUB_OUTPUT`, and
    the old discover step died under `set -u` before the merge started. Each
    check finds the newest `pingdotgg/t3code` nightly tag. macos-release
-   reuses the workspace, so the job updates an existing `upstream` remote instead of
-   `git remote add`. Maintainers retry with Buildkite New Build on `main` (UI or
+   reuses the workspace, so the job aborts leftover merge/rebase state, unsets
+   Buildkite's `NO_COLOR`/`FORCE_COLOR` pair (that pair can make Origin's bun git
+   helper exit 255), and updates an existing `upstream` remote instead of
+   `git remote add`. If a previous run already resolved an older nightly onto
+   `automation/upstream-*`, the next job uses that branch as the merge base
+   instead of re-paying every conflict from `main`. After opening the Origin
+   pull request it merges immediately (`origin pr merge --merge`) and retries
+   once if `main` moved underneath the branch. Maintainers retry with Buildkite New Build on `main` (UI or
    API). Hosted desktop
    preflight often starts with no `.git`; it clones the triggering SHA from
    the parent Buildkite checkout when that path exists, and skips minting
@@ -80,7 +86,9 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    parent change intentionally omitted to protect T3 Pretty. Fork-owned parent workflow changes
    are enumerated as omissions too. The report is copied into the sync pull request and every
    T3 Pretty desktop release note, so an omission cannot exist only in a transient Actions log.
-5. The workflow merges the Origin pull request once Origin reports it mergeable. Parent CI is
+5. The workflow merges the Origin pull request once Origin reports it mergeable. It does not treat
+   merge-when-ready (`--auto`) as success: that flag can return before the change lands, after
+   which deleting the head branch strands an open pull request. Parent CI is
    disabled on this fork, so sync does not wait on Check, Test, Mobile Native Static Analysis, or
    Release Smoke. Unsafe, binary, oversized, or uncertain resolver results still stop and open an
    Origin pull request titled `Upstream sync blocked: <tag>` with the failure notes.

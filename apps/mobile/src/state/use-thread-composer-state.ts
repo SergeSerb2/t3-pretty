@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo } from "react";
+import { Alert } from "react-native";
 
 import {
   CommandId,
@@ -42,10 +43,7 @@ import {
   updateComposerDraftSettings,
   useComposerDraft,
 } from "./use-composer-drafts";
-import {
-  setPendingConnectionError,
-  useRemoteEnvironmentRuntime,
-} from "../state/use-remote-environment-registry";
+import { useRemoteEnvironmentRuntime } from "../state/use-remote-environment-registry";
 import { useSelectedThreadDetail } from "../state/use-thread-detail";
 import { useThreadSelection } from "../state/use-thread-selection";
 import {
@@ -281,7 +279,8 @@ export function useThreadComposerState() {
       // the user attached new ones while the write was in flight.
       void mergeComposerDraftContent(threadKey, { text, attachments: [] });
       appendComposerDraftAttachments(threadKey, attachments);
-      setPendingConnectionError(
+      Alert.alert(
+        "Could not queue message",
         error instanceof Error ? error.message : "Failed to save the queued message.",
       );
     });
@@ -318,7 +317,7 @@ export function useThreadComposerState() {
         appendComposerDraftAttachments(threadKey, result.images);
       }
       if (result.error) {
-        setPendingConnectionError(result.error);
+        Alert.alert("Could not attach image", result.error);
       }
     },
     [composerDrafts, selectedThreadShell],
@@ -340,7 +339,7 @@ export function useThreadComposerState() {
       appendComposerDraftText(threadKey, result.text);
     }
     if (result.error) {
-      setPendingConnectionError(result.error);
+      Alert.alert("Could not attach image", result.error);
     }
   }, [composerDrafts, selectedThreadShell]);
 

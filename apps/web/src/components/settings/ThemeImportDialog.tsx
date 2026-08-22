@@ -472,7 +472,7 @@ export function ThemeImportDialog({
               <input
                 ref={fileInputRef}
                 accept=".json,application/json"
-                className="sr-only"
+                hidden
                 onChange={handleFileChange}
                 multiple
                 type="file"

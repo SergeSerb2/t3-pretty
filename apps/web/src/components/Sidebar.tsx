@@ -18,6 +18,7 @@ import {
 import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  canSettle,
   canSnooze,
   changeRequestAutoSettles,
   effectiveSettled,
@@ -58,6 +59,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -122,6 +124,7 @@ import { cn } from "~/lib/utils";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   buildBulkTitleRegenerationContextMenuItem,
+  countThreadsAwaitingUser,
   formatWorkingDurationLabel,
   firstValidTimestampMs,
   hasUnseenCompletion,
@@ -185,6 +188,7 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
+import { useThreadDepartureStore } from "../threadDepartureStore";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -193,6 +197,8 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 // Keep the v2 key so existing preferences survive the v2-to-default rename.
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:snoozed-expanded";
+const PROJECT_SCOPE_KEY = "t3code:sidebar-v2:project-scope";
+const ProjectScopeKeySchema = Schema.NullOr(Schema.String);
 
 function compactSidebarTimeLabel(label: string): string {
   if (label === "just now") return "now";
@@ -800,6 +806,22 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
+  // Settle/snooze departure: the dispatch site marks the thread the moment
+  // the action fires, so the row slides out ahead of the server round trip.
+  // When the marker clears, the store raises a short-lived arrive marker that
+  // survives the source row's unmount, so the freshly mounted destination row
+  // replays the arrive half — at its new spot on success, in place on failure.
+  const departureKind = useThreadDepartureStore(
+    (state) => state.departingKindByKey[threadKey] ?? null,
+  );
+  const isArriving = useThreadDepartureStore((state) => state.arrivingByKey[threadKey] === true);
+  // A landed row already renders in its destination shelf while the marker
+  // still waits on the sidebar's clearing pass: suppress the exit animation
+  // there so only the arrive fade plays.
+  const hasLanded =
+    (departureKind === "settle" && variantAction === "unsettle") ||
+    (departureKind === "snooze" && variantAction === "unsnooze");
+  const isDeparting = departureKind !== null && !hasLanded;
   const openPrLink = useOpenPrLink();
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
@@ -1131,6 +1153,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       !props.isActive &&
       !isSelected &&
       "opacity-70 transition-opacity hover:opacity-100",
+    isDeparting && "sidebar-row-departing",
+    isArriving && "sidebar-row-arriving",
   );
 
   const title = isRenaming ? (
@@ -1939,7 +1963,11 @@ export default function Sidebar() {
 
   // Project scope: one menu above the list. Scoping filters the list without
   // making the header width depend on the number or length of project names.
-  const [projectScopeKey, setProjectScopeKey] = useState<string | null>(null);
+  const [projectScopeKey, setProjectScopeKey] = useLocalStorage(
+    PROJECT_SCOPE_KEY,
+    null as string | null,
+    ProjectScopeKeySchema,
+  );
   const scopedProjectGroup = useMemo(
     () =>
       projectScopeKey === null
@@ -1959,10 +1987,12 @@ export default function Sidebar() {
     [scopedProjectGroup],
   );
   useEffect(() => {
-    if (projectScopeKey !== null && scopedProjectGroup === null) {
+    // Wait for the first project payload: projects arrive over the websocket,
+    // so an empty list means "not loaded yet", not "scope is stale".
+    if (projectGroups.length > 0 && projectScopeKey !== null && scopedProjectGroup === null) {
       setProjectScopeKey(null);
     }
-  }, [projectScopeKey, scopedProjectGroup]);
+  }, [projectGroups.length, projectScopeKey, scopedProjectGroup, setProjectScopeKey]);
   // Count-only subscription: the parent needs "are there draft rows" for the
   // empty state, while SidebarDraftBlock owns the per-keystroke content
   // subscription. Selecting a number keeps typing in a draft composer from
@@ -2022,6 +2052,7 @@ export default function Sidebar() {
     activeThreads,
     snoozedThreads,
     settledThreads,
+    inboxThreadsForDock,
     snoozeNow,
   } = useMemo(() => {
     const now = `${nowMinute}:00.000Z`;
@@ -2031,17 +2062,13 @@ export default function Sidebar() {
     // memo exactly at the next wake boundary.
     void snoozeWakeTick;
     const preciseNow = new Date().toISOString();
-    const visible = threads.filter(
-      (thread) =>
-        thread.archivedAt === null &&
-        (scopedProjectKeys === null ||
-          scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
-    );
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
     const snoozed: EnvironmentThreadShell[] = [];
     const settled: EnvironmentThreadShell[] = [];
-    for (const thread of visible) {
+    const inboxForDock: EnvironmentThreadShell[] = [];
+    for (const thread of threads) {
+      if (thread.archivedAt !== null) continue;
       // Threads on servers without the settlement capability (old server,
       // or descriptor not loaded yet) never classify as settled: the user
       // could neither un-settle nor pin them, so auto-settling them would
@@ -2062,14 +2089,15 @@ export default function Sidebar() {
       // its exact slot in the pinned block. (For unpinned threads
       // this is also the snooze-beats-auto-settle rule: the wake time is a
       // stronger statement about when the thread matters again.)
+      let shelf: "snoozed" | "pinned" | "settled" | "active";
       if (supportsSnooze && effectiveSnoozed(thread, { now: preciseNow })) {
-        snoozed.push(thread);
+        shelf = "snoozed";
         // A pin otherwise overrides the lifecycle: pinned threads never
         // auto-settle out of sight. (The decider clears settled state on
         // pin and the pin on settle, so pin-vs-settled conflicts only
         // arise from stale or raced writes.)
       } else if (thread.pinnedAt != null) {
-        pinned.push(thread);
+        shelf = "pinned";
       } else if (
         supportsSettlement &&
         effectiveSettled(thread, {
@@ -2079,6 +2107,27 @@ export default function Sidebar() {
           changeRequest,
         })
       ) {
+        shelf = "settled";
+      } else {
+        shelf = "active";
+      }
+      // Dock is OS-level, so it counts every environment/project — not just
+      // the scoped sidebar — but only inbox rows. Settled/snoozed unread
+      // completions are history, not a request.
+      if (shelf === "pinned" || shelf === "active") {
+        inboxForDock.push(thread);
+      }
+      if (
+        scopedProjectKeys !== null &&
+        !scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)
+      ) {
+        continue;
+      }
+      if (shelf === "snoozed") {
+        snoozed.push(thread);
+      } else if (shelf === "pinned") {
+        pinned.push(thread);
+      } else if (shelf === "settled") {
         settled.push(thread);
       } else {
         active.push(thread);
@@ -2108,6 +2157,7 @@ export default function Sidebar() {
           firstValidTimestampMs(right.snoozedUntil ?? null),
       ),
       settledThreads: sortSettledThreadsForSidebar(settled),
+      inboxThreadsForDock: inboxForDock,
       snoozeNow: preciseNow,
     };
   }, [
@@ -2119,6 +2169,20 @@ export default function Sidebar() {
     snoozeWakeTick,
     threads,
   ]);
+
+  // Desktop dock badge + one informational bounce. Counted from the same
+  // inbox partition the sidebar uses, minus project scope, so a parked
+  // unread completion cannot keep a red badge on an empty inbox.
+  const threadLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
+  const threadsAwaitingUser = useMemo(
+    () => countThreadsAwaitingUser(inboxThreadsForDock, threadLastVisitedAtById),
+    [inboxThreadsForDock, threadLastVisitedAtById],
+  );
+  useEffect(() => {
+    void window.desktopBridge
+      ?.setDockAttention?.({ count: threadsAwaitingUser })
+      ?.catch(() => undefined);
+  }, [threadsAwaitingUser]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
@@ -2301,6 +2365,47 @@ export default function Sidebar() {
   );
   const snoozedThreadKeysRef = useRef(snoozedThreadKeys);
   snoozedThreadKeysRef.current = snoozedThreadKeys;
+
+  // A departure ends when the canonical classification lands: the row is by
+  // then rendering in its destination shelf, so clearing the marker here
+  // hands off from the slide-out to the arrive fade. This runs as a layout
+  // effect so the arrive marker is set before the destination row's first
+  // paint — otherwise the row would paint a frame at full opacity before the
+  // fade starts. Failures clear at the dispatch site (useThreadActions);
+  // anything else falls to the store TTL.
+  //
+  // Only a membership CHANGE completes a departure. Re-settling/re-snoozing
+  // a thread already on the destination shelf (the guards allow it, e.g. via
+  // multi-select) marks departing while the classification already matches;
+  // treating that as "landed" would skip the exit and flash the arrive fade
+  // in place. The baseline recorded when a marker first appears tells the
+  // two apart: pre-existing membership clears silently instead.
+  const departingKindByKey = useThreadDepartureStore((state) => state.departingKindByKey);
+  const departureBaselineByKeyRef = useRef(new Map<string, boolean>());
+  useLayoutEffect(() => {
+    const baselineByKey = departureBaselineByKeyRef.current;
+    for (const [threadKey, kind] of Object.entries(departingKindByKey)) {
+      const landed =
+        kind === "settle" ? settledThreadKeys.has(threadKey) : snoozedThreadKeys.has(threadKey);
+      const baseline = baselineByKey.get(threadKey);
+      if (baseline === undefined) {
+        baselineByKey.set(threadKey, landed);
+        if (landed) {
+          useThreadDepartureStore.getState().clearDeparting(threadKey, { raiseArrive: false });
+        }
+        continue;
+      }
+      if (landed && !baseline) {
+        baselineByKey.delete(threadKey);
+        useThreadDepartureStore.getState().clearDeparting(threadKey);
+      }
+    }
+    // Markers that left without landing here (failure, TTL) drop their
+    // baseline with them.
+    for (const threadKey of baselineByKey.keys()) {
+      if (!(threadKey in departingKindByKey)) baselineByKey.delete(threadKey);
+    }
+  }, [departingKindByKey, settledThreadKeys, snoozedThreadKeys]);
 
   const jumpLabelByKey = useMemo(() => {
     const mapping = new Map<string, string>();
@@ -2841,6 +2946,18 @@ export default function Sidebar() {
           serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true &&
           canSnooze(thread, { now: selectionNow.toISOString() }),
       );
+      // Settle differs from snooze: a mixed selection settles the actionable
+      // subset (the label carries the real count) instead of hiding the item,
+      // matching the per-row settle button and the idempotent decider.
+      const settleableThreadKeys = threadKeys.filter((threadKey) => {
+        const thread = threadByKeyRef.current.get(threadKey);
+        return (
+          thread !== undefined &&
+          serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSettlement ===
+            true &&
+          canSettle(thread, { now: selectionNow.toISOString() })
+        );
+      });
       const titleRegenerationThreads = selectedThreads.filter(
         (thread) =>
           serverConfigs.get(thread.environmentId)?.environment.capabilities
@@ -2857,7 +2974,9 @@ export default function Sidebar() {
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
-            { id: "settle", label: `Settle (${count})` },
+            ...(settleableThreadKeys.length > 0
+              ? [{ id: "settle", label: `Settle (${settleableThreadKeys.length})` }]
+              : []),
             ...(canSnoozeSelection
               ? [
                   {
@@ -2967,7 +3086,7 @@ export default function Sidebar() {
         // valid mixed selection. Pinned rows ARE included: the decider
         // clears the pin as part of settling, so they park like the rest.
         const coSettlingKeys = new Set(threadKeys);
-        for (const threadKey of threadKeys) {
+        for (const threadKey of settleableThreadKeys) {
           const thread = threadByKeyRef.current.get(threadKey);
           if (!thread || thread.settledOverride === "settled") continue;
           attemptSettle(scopeThreadRef(thread.environmentId, thread.id), { coSettlingKeys });
@@ -3344,7 +3463,9 @@ export default function Sidebar() {
 
   const attachListAutoAnimateRef = useCallback((node: HTMLUListElement | null) => {
     if (!node) return;
-    autoAnimate(node, { duration: 150, easing: "ease-out" });
+    // 200ms so a settled/snoozed row's slide to its shelf reads as a motion,
+    // not a snap — this list's dominant move is exactly that lifecycle trip.
+    autoAnimate(node, { duration: 200, easing: "ease-out" });
   }, []);
 
   // New thread defaults to the project you're in (active thread's project,
@@ -3638,7 +3759,9 @@ export default function Sidebar() {
                 role="status"
                 className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
               >
-                No threads found
+                {scopedProjectGroup
+                  ? `No threads found in ${scopedProjectGroup.displayName}`
+                  : "No threads found"}
               </p>
             )
           ) : null}
