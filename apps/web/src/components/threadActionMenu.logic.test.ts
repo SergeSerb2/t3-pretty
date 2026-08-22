@@ -76,6 +76,7 @@ describe("buildThreadActionMenuItems", () => {
       (item) => item.id === "copy",
     );
     expect(copy?.children?.map((child) => child.id)).toEqual([
+      "copy-conversation",
       "copy-path",
       "copy-branch",
       "copy-thread-id",
@@ -84,7 +85,7 @@ describe("buildThreadActionMenuItems", () => {
       buildThreadActionMenuItems(baseState)
         .find((item) => item.id === "copy")
         ?.children?.map((child) => child.id),
-    ).toEqual(["copy-path", "copy-thread-id"]);
+    ).toEqual(["copy-conversation", "copy-path", "copy-thread-id"]);
   });
 
   it("shortens the new-thread label so the branch name does not stretch the menu", () => {
@@ -127,12 +128,17 @@ describe("buildThreadActionMenuItems", () => {
     expect(item).toMatchObject({ label: "Regenerating…", disabled: true });
   });
 
-  it("nests copy children without icons", () => {
+  it("copies conversation on the Copy row, with other targets in the flyout", () => {
     const copy = buildThreadActionMenuItems({ ...baseState, branch: "main" }).find(
       (item) => item.id === "copy",
     );
-    expect(copy?.icon).toBe("copy");
-    expect(copy?.children?.every((child) => child.icon === undefined)).toBe(true);
+    expect(copy).toMatchObject({ icon: "copy", activateOnClick: true });
+    expect(copy?.children?.map((child) => child.id)).toEqual([
+      "copy-conversation",
+      "copy-path",
+      "copy-branch",
+      "copy-thread-id",
+    ]);
   });
 
   it("puts an icon on every top-level action", () => {
@@ -151,9 +157,9 @@ describe("buildThreadActionMenuItems", () => {
   it("offers archive as a non-destructive action right before delete", () => {
     const items = buildThreadActionMenuItems(baseState);
     const archiveItem = items.at(-2);
+    expect(items.at(-3)?.separator).toBe(true);
     expect(archiveItem?.id).toBe("archive");
     expect(archiveItem?.icon).toBe("archive");
-    expect(archiveItem?.separatorBefore).toBe(true);
     expect(archiveItem?.destructive).toBeFalsy();
     expect(items.at(-1)?.id).toBe("delete");
   });

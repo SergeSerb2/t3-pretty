@@ -344,6 +344,27 @@ describe("showContextMenuFallback", () => {
     await expect(selectionPromise).resolves.toBe("copy:branch");
     expect(invoker.focused).toBe(true);
   });
+
+  it("selects a parent with activateOnClick instead of only opening the submenu", async () => {
+    const selectionPromise = showContextMenuFallback([
+      {
+        id: "copy",
+        label: "Copy",
+        activateOnClick: true,
+        children: [
+          { id: "copy-conversation", label: "Conversation" },
+          { id: "copy-path", label: "Path" },
+        ],
+      },
+    ]);
+
+    const parentButton = findButton("Copy");
+    parentButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    expect(findButton("Path")).toBeTruthy();
+
+    parentButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await expect(selectionPromise).resolves.toBe("copy");
+  });
 });
 
 describe("dismissContextMenu", () => {

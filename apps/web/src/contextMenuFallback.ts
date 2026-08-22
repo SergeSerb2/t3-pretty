@@ -31,6 +31,13 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "rect", attrs: { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2" } },
     { tag: "path", attrs: { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" } },
   ],
+  "text-select": [
+    { tag: "path", attrs: { d: "M5 8h14" } },
+    { tag: "path", attrs: { d: "M5 12h10" } },
+    { tag: "path", attrs: { d: "M5 16h6" } },
+    { tag: "path", attrs: { d: "m13 13 5 5" } },
+    { tag: "path", attrs: { d: "M18 13v5h-5" } },
+  ],
   folder: [
     {
       tag: "path",
@@ -409,7 +416,9 @@ export function showContextMenuFallback<T extends string>(
           if (hasChildren) {
             const openSubmenu = (focusFirstItem = false) => {
               const rect = button.getBoundingClientRect();
-              const nextLeft = rect.right + 4;
+              // Overlap the parent so the pointer never crosses a gap that
+              // the document treats as an outside click.
+              const nextLeft = rect.right - 4;
               const nextTop = rect.top;
               openMenu(item.children!, nextLeft, nextTop, level + 1, button);
               button.setAttribute("aria-expanded", "true");
@@ -433,6 +442,10 @@ export function showContextMenuFallback<T extends string>(
             });
             button.addEventListener("click", (event) => {
               event.preventDefault();
+              if (item.activateOnClick === true) {
+                if (canDismissFromPointer) cleanup(item.id);
+                return;
+              }
               openSubmenu(true);
             });
           } else {

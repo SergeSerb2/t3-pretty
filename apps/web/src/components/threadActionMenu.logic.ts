@@ -19,6 +19,7 @@ export type ThreadActionMenuId =
   | "regenerate-title"
   | "mark-unread"
   | "copy"
+  | "copy-conversation"
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
@@ -146,7 +147,9 @@ export function buildThreadActionMenuItems(
     id: "copy",
     label: "Copy",
     icon: "copy",
+    activateOnClick: true,
     children: [
+      { id: "copy-conversation", label: "Conversation", icon: "text-select" },
       { id: "copy-path", label: "Path", icon: "folder" },
       ...(state.branch
         ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]

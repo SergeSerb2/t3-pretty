@@ -49,7 +49,19 @@ function ContextMenuEntries(props: {
     if (hasChildren) {
       return (
         <MenuSub key={item.id}>
-          <MenuSubTrigger disabled={item.disabled === true}>
+          <MenuSubTrigger
+            closeDelay={150}
+            delay={0}
+            disabled={item.disabled === true}
+            onClick={
+              item.activateOnClick === true
+                ? (event) => {
+                    event.preventDefault();
+                    props.onSelect(item.id);
+                  }
+                : undefined
+            }
+          >
             <ContextMenuIcon name={item.icon} />
             <span className="min-w-0 flex-1 truncate">{item.label}</span>
           </MenuSubTrigger>
@@ -115,7 +127,9 @@ export function ContextMenuHost() {
 
   return (
     <Menu
-      modal
+      // Nested flyouts portal outside this root. Modal mode inerts the rest of
+      // the document, so those popups look open but swallow no clicks.
+      modal={false}
       open={state.status === "open"}
       onOpenChange={(open) => {
         if (!open) dismissHostedContextMenu();
