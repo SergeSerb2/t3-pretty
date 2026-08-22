@@ -9,9 +9,37 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $root
 
 $changelogSubject = (git log -1 --format=%s | Out-String).Trim()
+$reusedVersion = $null
 if ($changelogSubject -like "docs(changelog):*") {
-  Write-Host "Changelog-only commit; skipping Windows packaging."
-  exit 0
+  $prefix = "docs(changelog): add release notes through v"
+  if ($changelogSubject.StartsWith($prefix)) {
+    $reusedVersion = $changelogSubject.Substring($prefix.Length).Trim()
+  } else {
+    $reusedVersion = (
+      node -e 'const src = require("node:fs").readFileSync("apps/web/src/changelog/changelogData.ts", "utf8"); const match = /^\s+version:\s*"([^"]+)",$/m.exec(src); if (!match) process.exit(1); process.stdout.write(match[1]);'
+    ).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $reusedVersion) {
+      throw "Changelog commit has no reusable version"
+    }
+  }
+  if (-not $reusedVersion) {
+    throw "Changelog commit has no reusable version"
+  }
+  Write-Host "Changelog commit; packaging already-minted $reusedVersion without reminting."
+  $feedUrl = if ($env:T3CODE_DESKTOP_UPDATE_FEED_URL) {
+    $env:T3CODE_DESKTOP_UPDATE_FEED_URL.TrimEnd("/")
+  } else {
+    "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest"
+  }
+  try {
+    $manifest = (Invoke-WebRequest -UseBasicParsing -Uri "$feedUrl/latest.yml").Content
+    if ($manifest -match ("(?m)^version: " + [regex]::Escape($reusedVersion) + "\s*$")) {
+      Write-Host "Feed already has $reusedVersion; skipping Windows packaging."
+      exit 0
+    }
+  } catch {
+    Write-Host "warning: could not read the Windows updater feed; continuing the Windows release"
+  }
 }
 
 & "$root\scripts\fork\ensure-windows-release-toolchain.ps1" -CheckOnly
@@ -35,7 +63,7 @@ if (Get-Command rustup -ErrorAction SilentlyContinue) {
   throw "rustup is required on the windows-release agent."
 }
 
-if (-not $env:GITHUB_RUN_NUMBER) {
+if (-not $reusedVersion -and -not $env:GITHUB_RUN_NUMBER) {
   if (-not $env:BUILDKITE_BUILD_NUMBER) {
     throw "BUILDKITE_BUILD_NUMBER is required to mint a fork version."
   }
@@ -49,8 +77,12 @@ if ((@(git remote) -contains "upstream")) {
 }
 git fetch --force --tags upstream
 
-$resolved = node "$root\scripts\fork\resolve-fork-release.mjs" | ConvertFrom-Json
-$version = $resolved.version
+if ($reusedVersion) {
+  $version = $reusedVersion
+} else {
+  $resolved = node "$root\scripts\fork\resolve-fork-release.mjs" | ConvertFrom-Json
+  $version = $resolved.version
+}
 Write-Host "Building Windows NSIS $version"
 
 # Mac packager persists notes to main. Write locally so this installer still

@@ -6,16 +6,31 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
 
-if [[ "$(git log -1 --format=%s)" == "docs(changelog):"* ]]; then
-  echo "Changelog-only commit; skipping macOS packaging."
-  exit 0
-fi
-
 export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.cargo/bin:${HOME}/.local/bin:${PATH}"
 export T3CODE_DESKTOP_UPDATE_FEED_URL="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"
 export T3CODE_CLERK_PUBLISHABLE_KEY="${T3CODE_CLERK_PUBLISHABLE_KEY:-pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ}"
 export APPLE_TEAM_ID="${APPLE_TEAM_ID:-78A5P57U23}"
 export T3CODE_APPLE_TEAM_ID="${T3CODE_APPLE_TEAM_ID:-$APPLE_TEAM_ID}"
+
+# Changelog-only commits already minted a version. Reuse it instead of
+# minting another desktop release, so a retry still produces a DMG.
+version=""
+subject="$(git log -1 --format=%s)"
+if [[ "$subject" == "docs(changelog):"* ]]; then
+  prefix="docs(changelog): add release notes through v"
+  if [[ "$subject" == "$prefix"* ]]; then
+    version="${subject#"$prefix"}"
+  else
+    version="$(node -e 'const src = require("node:fs").readFileSync("apps/web/src/changelog/changelogData.ts", "utf8"); const match = /^\s+version:\s*"([^"]+)",$/m.exec(src); if (!match) process.exit(1); process.stdout.write(match[1]);')"
+  fi
+  test -n "$version"
+  echo "Changelog commit; packaging already-minted $version without reminting."
+  feed_yml="${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/latest-mac.yml"
+  if curl -fsSL "$feed_yml" 2>/dev/null | grep -Fxq "version: ${version}"; then
+    echo "Feed already has $version; skipping macOS packaging."
+    exit 0
+  fi
+fi
 
 load_secret() {
   local name="$1"
@@ -55,7 +70,7 @@ if [[ -z "${VITE_SCENERY_UNSPLASH_KEY:-}" ]]; then
 fi
 load_secret CLI_PROXY_API_KEY || true
 
-if [[ -z "${GITHUB_RUN_NUMBER:-}" ]]; then
+if [[ -z "$version" && -z "${GITHUB_RUN_NUMBER:-}" ]]; then
   test -n "${BUILDKITE_BUILD_NUMBER:-}"
   export GITHUB_RUN_NUMBER="$BUILDKITE_BUILD_NUMBER"
 fi
@@ -69,9 +84,11 @@ fi
 git fetch --force --tags origin || echo "warning: could not fetch Origin tags"
 git fetch --force --tags upstream
 
-# Node, not python3: macos-release PATH may not include Apple's CLT python.
-version="$(node scripts/fork/resolve-fork-release.mjs --print version)"
-test -n "$version"
+if [[ -z "$version" ]]; then
+  # Node, not python3: macos-release PATH may not include Apple's CLT python.
+  version="$(node scripts/fork/resolve-fork-release.mjs --print version)"
+  test -n "$version"
+fi
 echo "Building macOS arm64 $version"
 
 # Bake What's New notes into this artifact, then push them to main when this

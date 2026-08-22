@@ -237,12 +237,18 @@ describe("resolveWhatsNewDecision", () => {
 });
 
 describe("omitMaintenanceOnlyReleases", () => {
+  const stub: ChangelogRelease = {
+    version: "0.0.34-nightly.1",
+    date: "2026-08-12",
+    items: [{ kind: "improved", title: "Under-the-hood stability and maintenance" }],
+  };
+
   it("keeps stubs when they are the only entries", () => {
-    const stub: ChangelogRelease = {
-      version: "0.0.34-nightly.1",
-      date: "2026-08-12",
-      items: [{ kind: "improved", title: "Under-the-hood stability and maintenance" }],
-    };
     expect(omitMaintenanceOnlyReleases([stub])).toEqual([stub]);
+  });
+
+  it("drops stubs when a user-facing entry is also in the list", () => {
+    const visible = omitMaintenanceOnlyReleases([release("0.0.34-nightly.2"), stub]);
+    expect(visible.map((entry) => entry.version)).toEqual(["0.0.34-nightly.2"]);
   });
 });

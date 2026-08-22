@@ -133,7 +133,9 @@ function isMaintenanceOnlyRelease(release: ChangelogRelease): boolean {
   return release.items.length === 1 && release.items[0]?.title === MAINTENANCE_ONLY_TITLE;
 }
 
-/** Drop stub-only nightly entries when a list also has user-facing notes. */
+/** Drop stub-only nightly entries from a consecutive unseen window when that
+    window also has user-facing notes. Settings / manual What's New keeps the
+    complete history so operators can inspect maintenance builds. */
 export function omitMaintenanceOnlyReleases(
   releases: readonly ChangelogRelease[],
 ): ChangelogRelease[] {

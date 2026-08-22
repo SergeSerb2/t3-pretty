@@ -4,7 +4,6 @@ import { APP_VERSION } from "../branding";
 import {
   advanceLastSeenChangelogVersion,
   hasExistingInstallData,
-  omitMaintenanceOnlyReleases,
   readLastSeenChangelogVersion,
   resolveWhatsNewDecision,
   writeLastSeenChangelogVersion,
@@ -49,10 +48,7 @@ export function WhatsNewHost() {
 
   useEffect(() => {
     if (manuallyOpened && CHANGELOG_RELEASES.length > 0) {
-      setPresentation({
-        releases: omitMaintenanceOnlyReleases(CHANGELOG_RELEASES),
-        announceUpdate: false,
-      });
+      setPresentation({ releases: CHANGELOG_RELEASES, announceUpdate: false });
       setOpen(true);
     }
   }, [manuallyOpened]);

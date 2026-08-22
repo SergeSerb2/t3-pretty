@@ -89,4 +89,4 @@ something user-facing to show. Dismissing the dialog marks those releases as see
 reappear until the next update.
 
 To browse the changelog at any time, open Settings → General → What's new, or run "What's new"
-from the command palette.
+from the command palette. That list includes every release, including maintenance-only builds.
