@@ -21,7 +21,10 @@ if [[ "$subject" == "$changelog_prefix"* ]]; then
   version="${subject#"$changelog_prefix"}"
   test -n "$version"
   echo "Changelog commit; packaging already-minted $version without reminting."
-  feed_yml="${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/latest-mac.yml"
+  # Default here, not only at the earlier export: this block must stay
+  # set -u safe if it is ever moved above that export (Apple bash 3.2).
+  feed_base="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"
+  feed_yml="${feed_base%/}/latest-mac.yml"
   if curl -fsSL "$feed_yml" 2>/dev/null | grep -Fxq "version: ${version}"; then
     echo "Feed already has $version; skipping macOS packaging."
     exit 0

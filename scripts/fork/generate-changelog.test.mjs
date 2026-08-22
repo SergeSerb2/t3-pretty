@@ -493,6 +493,25 @@ describe("release workflow wiring", () => {
     assert.include(macos, "docs(changelog): add release notes through v");
     assert.include(macos, "already-minted");
     assert.include(macos, "latest-mac.yml");
+    assert.include(
+      macos,
+      'feed_base="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"',
+    );
+    const feedStart = macos.indexOf(
+      'feed_base="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"',
+    );
+    const feedEnd = macos.indexOf("\n", macos.indexOf("latest-mac.yml", feedStart));
+    const feedSnippet = [
+      "set -euo pipefail",
+      "unset T3CODE_DESKTOP_UPDATE_FEED_URL || true",
+      macos.slice(feedStart, feedEnd).replace(/^\s+/gm, ""),
+      'printf "%s" "$feed_yml"',
+    ].join("\n");
+    const feedYml = NodeChildProcess.execFileSync("/bin/bash", ["-c", feedSnippet], {
+      encoding: "utf8",
+    });
+    assert.include(feedYml, "latest-mac.yml");
+    assert.equal(feedYml.startsWith("https://"), true);
     assert.include(macos, "skipping changelog generation");
     assert.include(macos, 'changelog_args=(--version "$version" --no-push)');
     // The notes push happens after the feed publish so the build it triggers
