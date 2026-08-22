@@ -40,7 +40,7 @@ env:
 
 # Versions stay monotonic, so desktop releases still queue one at a time.
 # Preflight and the WSL node-pty compile run on hosted ubuntu-latest and do
-# not occupy m1-dev. Packaging stays on the native Mac and Windows agents.
+# not occupy the packaging Mac. Packaging stays on the native Mac and Windows agents.
 concurrency:
   group: fork-release
   cancel-in-progress: false
@@ -413,7 +413,7 @@ jobs:
         run: |
           set -euo pipefail
           # Native linux/amd64: the previous Mac job compiled this inside
-          # qemu/rosetta Docker and serialized with the DMG on m1-dev.
+          # qemu/rosetta Docker and serialized with the DMG on the packaging Mac.
           sudo apt-get update
           # `file` is not on Buildkite hosted linux-small. The ELF check
           # below is how we refuse a Darwin/QEMU binary.

@@ -150,7 +150,7 @@ describe("T3 Pretty release runner placement", () => {
       pipeline.indexOf("build-macos-dmg.sh"),
       pipeline.indexOf("publish-mobile-release.sh"),
     );
-    assert.include(mobileRelease, "macos-release (m1-dev)");
+    assert.include(mobileRelease, "macos-release (m5-dev)");
     assert.include(mobileRelease, "load_secret EXPO_TOKEN");
     assert.include(mobileRelease, "EXPO_TOKEN is required to publish OTA");
     assert.include(mobileRelease, "eas update");

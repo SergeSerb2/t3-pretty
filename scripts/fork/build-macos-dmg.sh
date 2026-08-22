@@ -41,7 +41,6 @@ load_secret() {
   if [[ -z "$value" ]]; then
     for candidate in \
       "${HOME}/.config/t3-pretty/${name}" \
-      "/Users/m1-dev/.config/t3-pretty/${name}" \
       "/opt/homebrew/var/buildkite-agent/secrets/${name}"; do
       if [[ -f "$candidate" ]]; then
         value="$(tr -d '\r' < "$candidate")"

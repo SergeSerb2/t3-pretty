@@ -177,8 +177,8 @@ without pretending that a newer upstream tag was integrated before its sync pull
 - Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
   the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux: importer,
   WSL node-pty, and the x64 AppImage),
-  `macos-release` (Origin PR Review on m5-dev with `REVIEW_ONLY=1`; packaging
-  when a Mac without that flag is registered), and `windows-release` (serge-pc).
+  `macos-release` (m5-dev: packaging and Origin PR Review on the same queue;
+  m1-dev is now Linux and cannot build macOS or iOS), and `windows-release` (serge-pc).
   Do not add a second Mac queue until it exists in the cluster — unknown queues
   fail pipeline upload for every PR. Register the machines with
   `scripts/fork/setup-buildkite-macos-agent.sh` and
@@ -199,8 +199,7 @@ without pretending that a newer upstream tag was integrated before its sync pull
   for push/UI builds of `main`, not the four-hour schedule. The Linux AppImage is the
   same: a native `linux-small` step, not an imported job. Imported Mac jobs
   use `/bin/bash` 3.2 (no `mapfile`). `CURSOR_API_KEY` and `CLI_PROXY_API_KEY`
-  also live as files under `$HOME/.config/t3-pretty/` (and still
-  `/Users/m1-dev/.config/t3-pretty/` if that host is a packaging Mac) because in-job
+  also live as files under `$HOME/.config/t3-pretty/` because in-job
   `secret get` from imported GHA steps often fails on the Mac agents.
   That script installs official Vite+ (`vp.exe`) under `C:\buildkite-agent\vite-plus`
   and refuses the npm `vp` stub. Mac-only desktop publishes are still allowed if
@@ -269,7 +268,7 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 | Changelog + version + smoke | m1-dev                                | 10 min (6.5 min model + 3 min install)      | `ubuntu-latest`                                      |
 | WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                       |
 | Linux x64 AppImage          | not shipped on the feed               | —                                           | hosted `linux-small` (`build-linux-appimage.sh`)     |
-| macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m1-dev (or a second Mac with the same labels)        |
+| macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m5-dev (`macos-release`)                             |
 | Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                   |
 | Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `macos-release` (Origin CLI)                         |
 | Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | native `macos-release` (`publish-mobile-release.sh`) |
@@ -277,23 +276,23 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 
 A desktop release that used to sit 25–40 minutes in the m1-dev queue and then take ~30 minutes of Mac occupancy should now occupy the Mac for only the ~8 minute signed DMG. Changelog, WSL, and publish no longer wait for — or block — iOS.
 
-### Adding m5-dev
+### m5-dev is the packaging Mac
 
 This machine is an M5 Pro (18 cores, 48 GB) daily driver. m1-dev was the dedicated
-Mac runner and is being converted to Linux. Origin PR Review runs here on
-`macos-release` with `REVIEW_ONLY=1` and 10 spawned workers, so up to 10 PRs
-review at once. The pre-command hook refuses DMG/iOS/relay
-jobs: there is no full Xcode.app, and release jobs would share CPU with
-interactive use. A later packaging Mac should register with `REVIEW_ONLY=0` on
-the same queue. Never give either runner `pull_request` labels.
+Mac runner and is now a Linux server, so packaging moved here: `macos-release`
+with `REVIEW_ONLY=0` (Xcode-beta.app installed) and a companion worker, so a DMG
+can run while a local IPA occupies the first. Origin PR Review jobs land on the
+same two workers instead of the old 10 spawned review workers. Never give the
+runner `pull_request` labels.
 
 ## Runner recovery
 
-Origin PR Review is a Buildkite agent on this Mac (`m5-dev-t3code-fork`) on
-the `macos-release` queue, registered with
-`scripts/fork/setup-buildkite-macos-agent.sh`. The previous Mac runner lived at
+The packaging agent is a Buildkite agent on this Mac (`m5-dev-t3code-fork`, plus
+the companion `m5-dev-t3code-fork-2`) on the `macos-release` queue, registered with
+`scripts/fork/setup-buildkite-macos-agent.sh` (`REVIEW_ONLY=0`). The previous Mac
+runner lived at
 `/Users/m1-dev/actions-runner-t3code-fork` (`m1-dev-t3code-fork` and
-`m1-dev-t3code-fork-2`). Do not give the review agent pull-request queues.
+`m1-dev-t3code-fork-2`) before that host moved to Linux. Do not give the agent pull-request queues.
 
 The Windows runner lives at `C:\actions-runner-t3code-fork`. The checked-in
 `scripts/fork/setup-windows-runner.ps1` can still recreate a GitHub Actions runner for rollback.

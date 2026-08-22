@@ -63,11 +63,12 @@ front of TestFlight. Origin's `pipeline upload` rejects `interruptible` on
 command steps, so a later `main` push can still cancel an in-flight Xcode
 archive. Do not merge unrelated `main` PRs while that job is compiling.
 
-iOS store binaries cannot be compiled on the Windows runner. Registering a
-second Mac (for example m5-dev) with the same `self-hosted`, `macOS`,
-`ARM64`, `t3code-fork`, `release-only` labels lets GitHub run a desktop
-DMG and an iOS compile in parallel. Use `scripts/fork/setup-macos-runner.sh`
-and install a full Xcode.app first — Command Line Tools cannot produce an
+iOS store binaries cannot be compiled on the Windows runner. The packaging
+Mac is m5-dev (m1-dev is now Linux); its companion worker lets a desktop DMG
+and an iOS compile run in parallel. `scripts/fork/setup-macos-runner.sh` can
+attach a second Mac with the same `self-hosted`, `macOS`,
+`ARM64`, `t3code-fork`, `release-only` labels if compile latency matters.
+Use a full Xcode.app there — Command Line Tools cannot produce an
 IPA. An M5 Pro (18-core, 48 GB) should compile the current IPA in roughly
 7–10 minutes versus ~13 minutes on m1-dev; the larger win is that the two
 Macs stop taking turns.

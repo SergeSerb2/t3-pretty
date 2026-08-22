@@ -78,7 +78,6 @@ export function originGitConfigArgs() {
   const stores = [
     process.env.ORIGIN_GIT_CREDENTIALS,
     NodePath.join(NodeOS.homedir(), ".git-credentials"),
-    "/Users/m1-dev/.git-credentials",
     "/opt/homebrew/var/buildkite-agent/.git-credentials",
   ].filter(Boolean);
   const store = stores.find((path) => usableGitCredentialStore(path));

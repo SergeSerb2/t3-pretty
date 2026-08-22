@@ -55,7 +55,7 @@ release workflow reads the relay URL and Clerk client configuration from the exi
 GitHub Actions environment before building desktop, CLI, or hosted web artifacts.
 
 The deploy job runs on GitHub-hosted `ubuntu-latest`. This repository is public, so those
-minutes are free, and the job no longer queues behind desktop or iOS releases on m1-dev.
+minutes are free, and the job no longer queues behind desktop or iOS releases on the packaging Mac.
 
 Required repository variables shared by relay deployments:
 

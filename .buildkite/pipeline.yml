@@ -6,10 +6,11 @@
 #
 # Queues:
 #   linux-small    — Buildkite hosted Linux (importer + ubuntu-latest jobs + AppImage)
-#   macos-release  — Origin PR Review (m5-dev, REVIEW_ONLY=1) plus packaging
-#                    when a Mac without that flag is registered. Do not invent
-#                    a second queue until it exists in the Buildkite cluster;
-#                    an unknown queue fails pipeline upload for every PR.
+#   macos-release  — m5-dev: packaging (DMG, iOS, relay, sync) plus Origin PR
+#                    Review on the same workers. m1-dev is now Linux and
+#                    cannot run these. Do not invent a second queue until it
+#                    exists in the Buildkite cluster; an unknown queue fails
+#                    pipeline upload for every PR.
 #   windows-release — serge-pc native NSIS (importer cannot run Windows jobs)
 #
 # Do not list cluster secrets on hosted steps. Hosted agents currently 500
@@ -172,7 +173,7 @@ steps:
       T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
     command: bash scripts/fork/build-macos-dmg.sh
 
-  # Native m1-dev OTA + TestFlight. Do not import a GitHub Actions mobile
+  # Native m5-dev OTA + TestFlight. Do not import a GitHub Actions mobile
   # workflow: the importer cannot load EXPO_TOKEN / Apple keys and the job
   # dies in ~2s before eas update runs. Installed TestFlight binaries then
   # stay on the last JS bundle that actually published.
