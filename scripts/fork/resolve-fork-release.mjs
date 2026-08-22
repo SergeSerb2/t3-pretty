@@ -130,7 +130,7 @@ function main() {
     emit(
       {
         minted: "true",
-        upstream_tag: "",
+        upstream_tag: findNewestIntegratedNightly() ?? "",
         version: reused,
         tag: `v${reused}.fork`,
         name: `T3 Pretty ${reused}`,

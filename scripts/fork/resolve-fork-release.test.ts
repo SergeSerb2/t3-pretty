@@ -139,11 +139,17 @@ it("reuses the version already recorded on a changelog commit", () => {
           GITHUB_OUTPUT: "",
         },
       }),
-    ) as { readonly minted: string; readonly version: string; readonly tag: string };
+    ) as {
+      readonly minted: string;
+      readonly version: string;
+      readonly tag: string;
+      readonly upstream_tag: string;
+    };
 
     assert.equal(reused.minted, "true");
     assert.equal(reused.version, "0.0.33-nightly.20260809.1043000015");
     assert.equal(reused.tag, "v0.0.33-nightly.20260809.1043000015.fork");
+    assert.equal(reused.upstream_tag, "v0.0.33-nightly.20260809.1043");
 
     const orphanRoot = NodeFS.mkdtempSync(
       NodePath.join(NodeOS.tmpdir(), "t3-fork-changelog-orphan-"),

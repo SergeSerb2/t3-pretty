@@ -1,4 +1,6 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
@@ -6,6 +8,7 @@ import { assert, describe, it } from "vite-plus/test";
 
 import {
   buildChangelogPrompt,
+  commitSubjects,
   compareVersions,
   extractChangelogVersions,
   fallbackReleaseEntry,
@@ -289,6 +292,64 @@ describe("fallbackReleaseEntry", () => {
   });
 });
 
+describe("commitSubjects", () => {
+  it("walks first-parent and expands PR merges without importing upstream", () => {
+    const fixtureRoot = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-fork-changelog-walk-"),
+    );
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: fixtureRoot, encoding: "utf8" }).trim();
+
+    try {
+      git("init");
+      git("config", "user.name", "T3 Fork Changelog Test");
+      git("config", "user.email", "t3-fork-changelog-test@example.invalid");
+      NodeFS.writeFileSync(NodePath.join(fixtureRoot, "app.txt"), "base\n");
+      git("add", "app.txt");
+      git("commit", "-m", "chore: start");
+      const start = git("rev-parse", "HEAD");
+      const main = git("rev-parse", "--abbrev-ref", "HEAD");
+
+      NodeFS.writeFileSync(NodePath.join(fixtureRoot, "app.txt"), "pretty\n");
+      git("add", "app.txt");
+      git("commit", "-m", "feat(web): keep the pretty change");
+
+      git("checkout", "-b", "upstream");
+      for (let index = 0; index < 45; index++) {
+        NodeFS.writeFileSync(NodePath.join(fixtureRoot, "upstream.txt"), `u${index}\n`);
+        git("add", "upstream.txt");
+        git("commit", "-m", `feat(server): upstream change ${index}`);
+      }
+      git("checkout", main);
+      git("merge", "--no-ff", "-m", "chore(sync): merge upstream v1", "upstream");
+
+      git("checkout", "-b", "pr");
+      NodeFS.writeFileSync(NodePath.join(fixtureRoot, "pr.txt"), "pr\n");
+      git("add", "pr.txt");
+      git("commit", "-m", "feat(web): add from the pull request");
+      git("checkout", main);
+      git("merge", "--no-ff", "-m", "Merge pull request #9 from user/pr", "pr");
+
+      const previous = process.cwd();
+      try {
+        process.chdir(fixtureRoot);
+        const subjects = commitSubjects([`${start}..HEAD`]);
+        assert.include(subjects, "feat(web): add from the pull request");
+        assert.include(subjects, "feat(web): keep the pretty change");
+        assert.notInclude(subjects, "Merge pull request #9 from user/pr");
+        assert.equal(
+          subjects.some((subject) => subject.startsWith("feat(server): upstream change")),
+          false,
+        );
+      } finally {
+        process.chdir(previous);
+      }
+    } finally {
+      NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("release workflow wiring", () => {
   it("generates the changelog during preflight and releases the changelog commit", () => {
     const workflow = NodeFS.readFileSync(releaseWorkflowPath, "utf8");
@@ -328,7 +389,8 @@ describe("release workflow wiring", () => {
     assert.include(changelog, "--no-push");
     assert.include(changelog, "--dry-run");
     assert.include(changelog, "writing changelog entries from commit subjects");
-    assert.notInclude(changelog, '"--first-parent"');
+    assert.include(changelog, '"--first-parent"');
+    assert.include(changelog, "Merge pull request ");
     const dryRunGuard = changelog.indexOf("if (dryRun)");
     const writeCall = changelog.indexOf("NodeFS.writeFileSync(CHANGELOG_PATH");
     assert.isAtLeast(dryRunGuard, 0);

@@ -409,13 +409,44 @@ function nightlyTagAt(ref) {
   }
 }
 
-function commitSubjects(rangeArgs) {
-  // --no-merges, not --first-parent: Origin merge commits are
-  // "Merge pull request #N from …" and hide the actual feat/fix subjects.
-  return git(["log", "--no-merges", "--format=%s", ...rangeArgs])
+function skipChangelogSubject(subject) {
+  return subject === "" || subject.startsWith(COMMIT_SUBJECT_PREFIX);
+}
+
+function pushSubjects(subjects, extra) {
+  for (const subject of extra) {
+    if (skipChangelogSubject(subject)) continue;
+    subjects.push(subject);
+    if (subjects.length >= MAX_FORK_COMMITS) return true;
+  }
+  return false;
+}
+
+/** First-parent subjects for a fork window. Expands `Merge pull request`
+    commits so Origin/GitHub merge subjects don't hide feat/fix lines, but
+    does not walk a nightly/sync merge's second parent (that DAG belongs in
+    the upstream window). */
+export function commitSubjects(rangeArgs) {
+  const entries = git(["log", "--first-parent", "--format=%H%x00%P%x00%s", ...rangeArgs])
     .split("\n")
-    .filter((line) => line !== "" && !line.startsWith(COMMIT_SUBJECT_PREFIX))
-    .slice(0, MAX_FORK_COMMITS);
+    .filter(Boolean);
+  const subjects = [];
+  for (const entry of entries) {
+    const [hash, parents, subject] = entry.split("\0");
+    if (!hash || subject == null) continue;
+    const isMerge = parents.split(" ").filter(Boolean).length > 1;
+    if (isMerge && subject.startsWith("Merge ")) {
+      if (subject.startsWith("Merge pull request ")) {
+        const prSubjects = git(["log", "--no-merges", "--format=%s", `${hash}^1..${hash}`]).split(
+          "\n",
+        );
+        if (pushSubjects(subjects, prSubjects)) return subjects;
+      }
+      continue;
+    }
+    if (pushSubjects(subjects, [subject])) return subjects;
+  }
+  return subjects;
 }
 
 function upstreamSubjects(fromTag, toTag) {
