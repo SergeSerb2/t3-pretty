@@ -17,6 +17,8 @@ class FakeDomEvent {
   preventDefault() {
     this.defaultPrevented = true;
   }
+
+  stopPropagation() {}
 }
 
 class FakeElement {
@@ -362,7 +364,7 @@ describe("showContextMenuFallback", () => {
     parentButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     expect(findButton("Path")).toBeTruthy();
 
-    parentButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    parentButton?.dispatchEvent(new FakeDomEvent("click", { bubbles: true }));
     await expect(selectionPromise).resolves.toBe("copy");
   });
 });

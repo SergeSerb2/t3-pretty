@@ -443,6 +443,7 @@ export function showContextMenuFallback<T extends string>(
             button.addEventListener("click", (event) => {
               event.preventDefault();
               if (item.activateOnClick === true) {
+                event.stopPropagation();
                 if (canDismissFromPointer) cleanup(item.id);
                 return;
               }

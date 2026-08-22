@@ -56,6 +56,8 @@ export function loadThreadConversationText(
     let settled = false;
     let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
 
+    // immediate: true runs the listener during subscribe(), before it returns.
+    let unsubscribe = () => {};
     const finish = (text: string | null) => {
       if (settled) {
         return;
@@ -68,7 +70,7 @@ export function loadThreadConversationText(
       resolve(text);
     };
 
-    const unsubscribe = appAtomRegistry.subscribe(
+    unsubscribe = appAtomRegistry.subscribe(
       atom,
       (result) => {
         const state = Option.getOrElse(
@@ -88,6 +90,7 @@ export function loadThreadConversationText(
     );
 
     if (settled) {
+      unsubscribe();
       return;
     }
     timeoutId = globalThis.setTimeout(() => {

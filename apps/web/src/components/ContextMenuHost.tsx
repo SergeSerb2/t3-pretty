@@ -57,6 +57,7 @@ function ContextMenuEntries(props: {
               item.activateOnClick === true
                 ? (event) => {
                     event.preventDefault();
+                    event.stopPropagation();
                     props.onSelect(item.id);
                   }
                 : undefined
