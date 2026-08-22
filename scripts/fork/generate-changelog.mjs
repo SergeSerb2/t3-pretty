@@ -26,7 +26,8 @@ const MAX_FORK_COMMITS = 40;
 const MAX_UPSTREAM_COMMITS = 60;
 const PRINT_WIDTH = 100;
 const MAINTENANCE_TITLE = "Under-the-hood stability and maintenance";
-const INTERNAL_COMMIT = /^(?:chore|ci|docs|test|build|style)(?:\(|:|!)|\w+\((?:ci|release|sync)\)/u;
+const INTERNAL_COMMIT =
+  /^(?:(?:chore|ci|docs|test|build|style)(?:\(|:|!)|\w+\((?:ci|release|sync)\))/u;
 // Model calls must stay comfortably below the 15-minute preflight deadline:
 // each request times out on its own, and an overall budget stops further
 // chunk requests so the fallback path always runs before GitHub kills the job.
@@ -518,7 +519,7 @@ function warn(message) {
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
-  const noPush = args.includes("--no-push");
+  const noPush = dryRun || args.includes("--no-push");
   const versionArgIndex = args.indexOf("--version");
   const currentVersion = (
     versionArgIndex === -1 ? process.env.RELEASE_VERSION : args[versionArgIndex + 1]
@@ -561,11 +562,17 @@ async function main() {
       .join(", ")}\n`,
   );
   if (dryRun) {
-    for (const context of contexts) {
-      process.stdout.write(`${JSON.stringify(context, null, 2)}\n`);
+    const entries = contexts.map((context) => fallbackReleaseEntry(context));
+    process.stdout.write(
+      `[fork-changelog] dry-run; generated ${entries.length} release note(s) without writing ${CHANGELOG_PATH}\n`,
+    );
+    for (const entry of entries) {
+      process.stdout.write(`${serializeReleaseEntry(entry)}\n`);
     }
+    writeGitHubOutput({ ref: baseSha, entries: entries.length });
     return;
   }
+
   if (!token) {
     warn("CLI_PROXY_API_KEY is not set; writing changelog entries from commit subjects.");
   }
@@ -576,6 +583,7 @@ async function main() {
     text: serializeReleaseEntry(entry),
   }));
   const nextSource = mergeChangelogEntries(source, newEntries);
+
   NodeFS.writeFileSync(CHANGELOG_PATH, nextSource);
   process.stdout.write(
     `[fork-changelog] wrote ${entries.length} release note(s) to ${CHANGELOG_PATH}\n`,

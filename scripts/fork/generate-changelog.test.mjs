@@ -270,6 +270,23 @@ describe("fallbackReleaseEntry", () => {
       { kind: "fixed", title: "restore clicks on titlebar panel toggles", description: "" },
     ]);
   });
+
+  it("does not skip a user-facing subject that mentions ci or release mid-title", () => {
+    const entry = fallbackReleaseEntry({
+      version: "0.0.34-nightly.20260812.1077000102",
+      date: "2026-08-12",
+      forkCommits: [
+        "feat(web): add foo(ci) helper to the composer",
+        "fix(server): handle bar(release) timeout",
+        "fix(ci): stop hosted OTA from SIGKILL",
+      ],
+      upstream: null,
+    });
+    assert.deepEqual(entry.items, [
+      { kind: "new", title: "add foo(ci) helper to the composer", description: "" },
+      { kind: "fixed", title: "handle bar(release) timeout", description: "" },
+    ]);
+  });
 });
 
 describe("release workflow wiring", () => {
@@ -309,8 +326,13 @@ describe("release workflow wiring", () => {
     assert.include(changelog, "process.exitCode = 1");
     assert.include(changelog, "--no-merges");
     assert.include(changelog, "--no-push");
+    assert.include(changelog, "--dry-run");
     assert.include(changelog, "writing changelog entries from commit subjects");
     assert.notInclude(changelog, '"--first-parent"');
+    const dryRunGuard = changelog.indexOf("if (dryRun)");
+    const writeCall = changelog.indexOf("NodeFS.writeFileSync(CHANGELOG_PATH");
+    assert.isAtLeast(dryRunGuard, 0);
+    assert.isBelow(dryRunGuard, writeCall);
   });
 
   it("writes notes from the native packagers that actually ship the app", () => {
