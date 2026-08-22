@@ -1,4 +1,11 @@
-import { ChevronDownIcon, ChevronUpIcon, MousePointer2Icon, PlusIcon, XIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  MousePointer2Icon,
+  PaintbrushIcon,
+  PlusIcon,
+  XIcon,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -1262,7 +1269,7 @@ export function ThemeEditorPanel({
                 </>
               ) : (
                 <>
-                  <PlusIcon />
+                  <PaintbrushIcon />
                   Create theme
                 </>
               )}

@@ -151,8 +151,7 @@ export function ThemeLibrary({
                 selected={selected}
               />
             );
-          })}
-        </div>
+          })}        </div>
       </div>
 
       <div className="space-y-3">

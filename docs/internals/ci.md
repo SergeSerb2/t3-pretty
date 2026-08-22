@@ -2,10 +2,10 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) defines four jobs. T3 Pretty does not
-run them automatically: fork-only types fail Check, and the jobs do not gate releases. Dispatch
-the workflow manually if a one-off run is needed. On the parent repo the same jobs run on
-pushes to `main`:
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) defines these quality gates. T3 Pretty
+does not run them automatically: fork-only types fail Check, and the jobs do not gate releases.
+Dispatch the workflow manually if a one-off run is needed. In the parent repository, the quality
+gates run on pull requests and pushes to `main`:
 
 - **Check**: `vp check` (format and lint; this repo sets `typeCheck: false` in its lint options),
   then `vpr typecheck` for the workspace type check. The same job
@@ -13,7 +13,13 @@ pushes to `main`:
   still exports its expected symbols.
 - **Test**: `vp run test` across the workspace.
 - **Mobile Native Static Analysis**: `vp run lint:mobile` on macOS, wrapping
-  `scripts/mobile-native-static-check.ts`.
+  `scripts/mobile-native-static-check.ts`. A cheap Linux **Mobile Native Changes** job gates it:
+  the macOS runner only boots when the diff touches `apps/mobile` Swift/Kotlin sources, the
+  SwiftLint/detekt/ktlint configuration, the `Brewfile`, the check script, the root `package.json`
+  that defines `lint:mobile`, or `ci.yml`. Otherwise the job is skipped, which GitHub reports as
+  success for the required check. Renames are matched on both their old and new path. The gate fails
+  open in every other case: if the changed-file list cannot be resolved, GitHub truncates it, or the
+  gate job itself fails, the lint runs.
 - **Release Smoke**: exercises release-only workflow steps through `scripts/release-smoke.ts`, so
   release breakage surfaces on PRs rather than at tag time.
 
