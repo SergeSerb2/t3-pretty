@@ -107,14 +107,18 @@ export interface RankedSearchTerms {
  * fall back to the legacy substring search for those.
  */
 export function rankedSearchTerms(query: string): RankedSearchTerms | null {
-  const tokens = [...new Set(tokenize(query))];
-  if (tokens.length === 0) {
+  const rawTokens = tokenize(query);
+  if (rawTokens.length === 0) {
     return null;
   }
-  const last = tokens[tokens.length - 1]!;
+  // The last typed token is the typeahead prefix; classify it from the raw
+  // token stream. Dedupe keeps first occurrences, so a Set alone would pin
+  // the prefix to an earlier word ("error type error" -> "type").
+  const last = rawTokens[rawTokens.length - 1]!;
+  const rest = [...new Set(rawTokens)].filter((token) => token !== last);
   const exact: Array<string> = [];
   const optional: Array<string> = [];
-  for (const token of tokens.slice(0, -1)) {
+  for (const token of rest) {
     if (STOPWORDS.has(token)) {
       optional.push(token);
     } else {

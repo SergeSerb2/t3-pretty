@@ -57,6 +57,19 @@ it("dedupes repeated query tokens", () => {
   });
 });
 
+it("classifies the prefix from the last typed token, not the first occurrence", () => {
+  assert.deepEqual(rankedSearchTerms("error type error"), {
+    exact: ["type"],
+    optional: [],
+    prefix: "error",
+  });
+  assert.deepEqual(rankedSearchTerms("type error type"), {
+    exact: ["error"],
+    optional: [],
+    prefix: "type",
+  });
+});
+
 it("keeps stopwords optional instead of exact AND terms", () => {
   assert.deepEqual(rankedSearchTerms("fix the TypeError"), {
     exact: ["fix"],
