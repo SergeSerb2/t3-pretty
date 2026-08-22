@@ -37,6 +37,7 @@ import {
   shouldHideCollapsedToastContent,
   shouldRenderThreadScopedToast,
   shouldRunToastAutoDismissTimer,
+  stripToastTimeout,
 } from "./toast.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 
@@ -77,7 +78,17 @@ export type ThreadToastData = {
     | "secondary";
 };
 
-const toastManager = Toast.createToastManager<ThreadToastData>();
+function createThreadToastManager() {
+  const manager = Toast.createToastManager<ThreadToastData>();
+  return {
+    ...manager,
+    add: (options: Parameters<typeof manager.add>[0]) => manager.add(stripToastTimeout(options)),
+    update: (toastId: string, options: Parameters<typeof manager.update>[1]) =>
+      manager.update(toastId, stripToastTimeout(options)),
+  };
+}
+
+const toastManager = createThreadToastManager();
 const anchoredToastManager = Toast.createToastManager<ThreadToastData>();
 type ToastId = ReturnType<typeof toastManager.add>;
 const threadToastVisibleTimeoutRemainingMs = new Map<ToastId, number>();

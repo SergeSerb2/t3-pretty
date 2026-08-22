@@ -7,6 +7,7 @@ import {
   shouldHideCollapsedToastContent,
   shouldRenderThreadScopedToast,
   shouldRunToastAutoDismissTimer,
+  stripToastTimeout,
   TOAST_AUTO_DISMISS_MS,
 } from "./toast.logic";
 
@@ -46,6 +47,32 @@ describe("resolveToastAutoDismissMs", () => {
     assert.equal(
       resolveToastAutoDismissMs({ type: "success", dismissAfterVisibleMs: 0 }),
       undefined,
+    );
+  });
+});
+
+describe("stripToastTimeout", () => {
+  it("moves an explicit timeout onto dismissAfterVisibleMs", () => {
+    const options: {
+      title: string;
+      timeout?: number;
+      data?: { dismissAfterVisibleMs?: number };
+    } = { title: "Snoozed", timeout: 5_000 };
+    assert.deepEqual(stripToastTimeout(options), {
+      title: "Snoozed",
+      timeout: 0,
+      data: { dismissAfterVisibleMs: 5_000 },
+    });
+  });
+
+  it("leaves persistent toasts and existing visible-ms overrides alone", () => {
+    const persistent: { title: string; timeout?: number } = { title: "Working", timeout: 0 };
+    assert.equal(stripToastTimeout(persistent), persistent);
+    const missing: { title: string; timeout?: number } = { title: "Copied" };
+    assert.equal(stripToastTimeout(missing), missing);
+    assert.deepEqual(
+      stripToastTimeout({ timeout: 5_000, data: { dismissAfterVisibleMs: 3_000 } }),
+      { timeout: 0, data: { dismissAfterVisibleMs: 3_000 } },
     );
   });
 });

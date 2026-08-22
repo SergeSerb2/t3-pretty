@@ -61,6 +61,30 @@ export function shouldRunToastAutoDismissTimer(
   return visibilityState === "visible";
 }
 
+/**
+ * Base UI runs its own dismiss timer for any per-toast `timeout` and pauses it
+ * on blur / native menus. Move explicit timeouts onto `dismissAfterVisibleMs`
+ * so ThreadToastVisibleAutoDismiss owns every clock.
+ */
+export function stripToastTimeout<
+  TOptions extends {
+    timeout?: number | undefined;
+    data?: { dismissAfterVisibleMs?: number | undefined } | undefined;
+  },
+>(options: TOptions): TOptions {
+  if (typeof options.timeout !== "number" || options.timeout <= 0) {
+    return options;
+  }
+  return {
+    ...options,
+    timeout: 0,
+    data: {
+      ...options.data,
+      dismissAfterVisibleMs: options.data?.dismissAfterVisibleMs ?? options.timeout,
+    },
+  };
+}
+
 export function shouldHideCollapsedToastContent(
   visibleToastIndex: number,
   visibleToastCount: number,
