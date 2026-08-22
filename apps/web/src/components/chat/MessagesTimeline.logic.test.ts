@@ -800,7 +800,6 @@ describe("deriveMessagesTimelineRows", () => {
 
     expect(rows.some((row) => row.kind === "turn-fold")).toBe(false);
     expect(rows.map((row) => row.id)).toEqual([
-      "working-indicator-row",
       "assistant-thought-entry",
       "work-live:work-entry-1",
     ]);
@@ -867,7 +866,7 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(["working", "work-live"]);
+    expect(rows.map((row) => row.kind)).toEqual(["work-live"]);
     expect(rows.find((row) => row.kind === "work-live")).toMatchObject({
       entry: { id: "running-command" },
       groupedEntries: [
@@ -938,7 +937,7 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(["working", "work-toggle", "message", "work-live"]);
+    expect(rows.map((row) => row.kind)).toEqual(["work-toggle", "message", "work-live"]);
     expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
       hiddenCount: 1,
       summary: "Ran 1 command",
@@ -1005,7 +1004,7 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(["working", "work-live", "message", "work-live"]);
+    expect(rows.map((row) => row.kind)).toEqual(["work-live", "message", "work-live"]);
     expect(rows.filter((row) => row.kind === "work-live").map((row) => row.entry.id)).toEqual([
       "first-running",
       "second-running",
@@ -1149,7 +1148,7 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(["working", "work-live"]);
+    expect(rows.map((row) => row.kind)).toEqual(["work-live"]);
     expect(rows.find((row) => row.kind === "work-live")).toMatchObject({
       entry: { id: "latest-command" },
       groupedEntries: [{ id: "latest-command" }],
