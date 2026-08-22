@@ -157,6 +157,7 @@ const REASONING_EFFORT_OPTION_LABELS: Readonly<Record<string, string>> = {
   medium: "Medium effort",
   high: "High effort",
   xhigh: "Extra high effort",
+  extrahigh: "Extra high effort",
   max: "Max effort",
   ultra: "Ultra effort",
   ultrathink: "Ultrathink",
@@ -169,7 +170,9 @@ const REASONING_EFFORT_OPTION_LABELS: Readonly<Record<string, string>> = {
  * label; a "<Level> effort" label is synthesized only as a last resort.
  */
 export function reasoningEffortOptionLabel(optionId: string, fallbackLabel?: string): string {
-  const id = optionId.trim().toLowerCase();
+  // Fold punctuation the same way select ids are folded, so "x-high" and
+  // "extra_high" hit the same canonical entries as "xhigh".
+  const id = optionId.trim().toLowerCase().replace(/[-_ ]/g, "");
   if (!id) {
     return fallbackLabel ?? optionId;
   }

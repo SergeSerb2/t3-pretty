@@ -120,6 +120,8 @@ describe("descriptor helpers", () => {
     ).toEqual(["Low effort", "High effort", "Max effort"]);
 
     expect(reasoningEffortOptionLabel("xhigh")).toBe("Extra high effort");
+    expect(reasoningEffortOptionLabel("x-high")).toBe("Extra high effort");
+    expect(reasoningEffortOptionLabel("extra_high")).toBe("Extra high effort");
     expect(reasoningEffortOptionLabel("none")).toBe("None");
     expect(reasoningEffortOptionLabel("superhigh")).toBe("Superhigh effort");
     expect(reasoningEffortOptionLabel("auto", "Auto")).toBe("Auto");
