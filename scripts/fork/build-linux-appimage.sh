@@ -61,35 +61,44 @@ fi
 git fetch --force --tags upstream
 
 # No Origin fork tags are reachable here (see header), so the monotonic floor
-# comes from the version already live on the public Linux update feed. 404 is
-# a first publish (no floor); any other fetch/parse failure must fail the job
-# or resolve-fork-release can mint below the already-shipped Linux slot.
-feed_file="$(mktemp)"
-feed_code="$(curl -sSL --max-time 30 -o "$feed_file" -w '%{http_code}' "${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/latest-linux.yml" || true)"
-feed_version=""
-if [[ "$feed_code" == "404" ]]; then
-  : # first Linux publish, nothing live to floor against
-elif [[ "$feed_code" =~ ^2 ]]; then
+# comes from the versions already live on the public desktop update feeds.
+# Floor against the whole feed family (Linux + macOS + Windows) so a first
+# Linux publish cannot mint below the Mac/Windows slot from the same main
+# build. 404 means that feed has never published (no floor from it); any
+# other fetch/parse failure must fail the job or resolve-fork-release can
+# mint below an already-shipped slot.
+build_floor=""
+for manifest in latest-linux.yml latest-mac.yml latest.yml; do
+  feed_file="$(mktemp)"
+  feed_code="$(curl -sSL --max-time 30 -o "$feed_file" -w '%{http_code}' "${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/${manifest}" || true)"
+  if [[ "$feed_code" == "404" ]]; then
+    rm -f "$feed_file"
+    continue # never published, nothing live to floor against
+  fi
+  if [[ ! "$feed_code" =~ ^2 ]]; then
+    rm -f "$feed_file"
+    echo "Cannot read live update manifest ${manifest} (HTTP $feed_code); refusing to mint a version below the shipped slot." >&2
+    exit 1
+  fi
   feed_version="$(sed -n 's/^version: *//p' "$feed_file" | head -n 1)"
+  rm -f "$feed_file"
+  feed_version="${feed_version%$'\r'}"
+  feed_version="${feed_version#\"}"
+  feed_version="${feed_version%\"}"
   if [[ -z "$feed_version" ]]; then
-    echo "Live Linux update manifest has no version field; refusing to mint a version below the shipped slot." >&2
+    echo "Live update manifest ${manifest} has no version field; refusing to mint a version below the shipped slot." >&2
     exit 1
   fi
-else
-  echo "Cannot read live Linux update manifest (HTTP $feed_code); refusing to mint a version below the shipped slot." >&2
-  exit 1
-fi
-rm -f "$feed_file"
-feed_version="${feed_version%$'\r'}"
-feed_version="${feed_version#\"}"
-feed_version="${feed_version%\"}"
-if [[ -n "$feed_version" ]]; then
-  if [[ "$feed_version" =~ -nightly\.[0-9]{8}\.([0-9]+)$ ]]; then
-    export T3_FORK_BUILD_FLOOR="${BASH_REMATCH[1]}"
-  else
-    echo "Live Linux update manifest version '$feed_version' is not a nightly build id; refusing to mint a version below the shipped slot." >&2
+  if [[ ! "$feed_version" =~ -nightly\.[0-9]{8}\.([0-9]+)$ ]]; then
+    echo "Live update manifest ${manifest} version '$feed_version' is not a nightly build id; refusing to mint a version below the shipped slot." >&2
     exit 1
   fi
+  if [[ -z "$build_floor" ]] || (( 10#${BASH_REMATCH[1]} > 10#${build_floor} )); then
+    build_floor="${BASH_REMATCH[1]}"
+  fi
+done
+if [[ -n "$build_floor" ]]; then
+  export T3_FORK_BUILD_FLOOR="$build_floor"
 fi
 
 bash scripts/fork/ensure-linux-node.sh
@@ -173,6 +182,9 @@ appimage="$(find "$publish" -maxdepth 1 -type f -name '*.AppImage' -print -quit)
 test -n "$appimage"
 file "$appimage" | tee /dev/stderr | grep -Eq 'x86[-_]64'
 test -f "$publish/nightly-linux.yml" || test -f "$publish/latest-linux.yml"
+# Unversioned name for the README download link; the versioned file stays
+# canonical for electron-updater via latest-linux.yml.
+cp "$appimage" "$publish/T3-Code-x64.AppImage"
 
 if command -v buildkite-agent >/dev/null; then
   (cd "$publish" && buildkite-agent artifact upload '*')
