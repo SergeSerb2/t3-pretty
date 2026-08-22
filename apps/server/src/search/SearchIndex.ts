@@ -33,8 +33,8 @@ export interface SearchIndexShape {
   /**
    * Re-derive one message's index entry from current projection state:
    * indexes indexable messages, removes entries for messages that are gone or
-   * no longer indexable. Mid-stream messages are left alone; their final
-   * message-sent event re-triggers this.
+   * no longer indexable. Mid-stream messages drop any existing entry; their
+   * final message-sent event re-triggers this.
    */
   readonly reindexMessage: (input: {
     readonly messageId: MessageId;
@@ -154,8 +154,11 @@ const makeSearchIndex = Effect.gen(function* () {
 
   const reindexRow = (message: MessageRow) =>
     Effect.gen(function* () {
-      // Mid-stream text is indexed when the final message-sent event lands.
+      // Mid-stream text is not searchable. Drop a previously indexed final
+      // version so a rewrite-as-streaming or turn-diff during stream cannot
+      // leave stale postings.
       if (message.isStreaming !== 0) {
+        yield* removeMessage(message.messageId);
         return;
       }
       if (message.role === "user") {

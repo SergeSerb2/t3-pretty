@@ -523,6 +523,54 @@ it.layer(makeTestLayer("t3-thread-search-streaming-"))("ThreadSearch", (it) => {
       assert.strictEqual(result.matches[0]?.source, "assistant");
     }),
   );
+
+  it.effect("drops stale postings when a previously indexed message is streaming again", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+
+      yield* appendProject("project-stale");
+      yield* appendThread("thread-stale", "project-stale");
+      yield* appendMessage({
+        eventId: "evt-stale-m1",
+        threadId: "thread-stale",
+        messageId: "message-stale",
+        role: "assistant",
+        text: "oldcanonical streamzebra",
+        turnId: "turn-stale",
+      });
+      yield* appendTurnDiffCompleted({
+        eventId: "evt-stale-d1",
+        threadId: "thread-stale",
+        turnId: "turn-stale",
+        checkpointTurnCount: 1,
+        assistantMessageId: "message-stale",
+      });
+      yield* projectionPipeline.bootstrap;
+      assert.equal((yield* search("streamzebra")).matches.length, 1);
+
+      yield* appendMessage({
+        eventId: "evt-stale-m2",
+        threadId: "thread-stale",
+        messageId: "message-stale",
+        role: "assistant",
+        text: "newcanonical otherterm",
+        turnId: "turn-stale",
+        streaming: true,
+        createdAt: LATER,
+      });
+      yield* appendTurnDiffCompleted({
+        eventId: "evt-stale-d2",
+        threadId: "thread-stale",
+        turnId: "turn-stale",
+        checkpointTurnCount: 1,
+        assistantMessageId: "message-stale",
+      });
+      yield* projectionPipeline.bootstrap;
+
+      assert.equal((yield* search("streamzebra")).matches.length, 0);
+      assert.equal((yield* search("otherterm")).matches.length, 0);
+    }),
+  );
 });
 
 it.layer(makeTestLayer("t3-thread-search-stopwords-"))("ThreadSearch", (it) => {

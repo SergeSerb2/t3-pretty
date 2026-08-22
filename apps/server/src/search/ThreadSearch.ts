@@ -186,7 +186,7 @@ const makeThreadSearch = Effect.gen(function* () {
   }) =>
     Effect.gen(function* () {
       const { request, terms } = input;
-      const limit = request.limit ?? 50;
+      const limit = Math.min(request.limit ?? 50, 50);
 
       const groups: Array<ScoringGroup> = [];
       const optionalTerms: Array<{ readonly term: string; readonly df: number }> = [];
