@@ -45,11 +45,22 @@ describe("canSweepTerminatorFront", () => {
   it("opts into clip-path on Blink and Gecko", () => {
     expect(canSweepTerminatorFront("Chrome/120.0.0.0 Safari/537.36")).toBe(true);
     expect(canSweepTerminatorFront("Firefox/121.0")).toBe(true);
+    expect(canSweepTerminatorFront("Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0")).toBe(true);
   });
 
-  it("keeps WebKit on the dissolve, including iOS Chrome", () => {
+  it("keeps WebKit on the dissolve, including iOS branded browsers", () => {
     expect(canSweepTerminatorFront("Version/17.0 Safari/605.1.15")).toBe(false);
     expect(canSweepTerminatorFront("CriOS/120.0.0.0 Mobile/15E148 Safari/604.1")).toBe(false);
+    expect(
+      canSweepTerminatorFront(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/123.0.2420.70 Version/17.0 Mobile/15E148 Safari/604.1",
+      ),
+    ).toBe(false);
+    expect(
+      canSweepTerminatorFront(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/114.0 Mobile/15E148 Safari/604.1",
+      ),
+    ).toBe(false);
   });
 });
 
@@ -90,5 +101,16 @@ describe("theme swap wiring", () => {
     expect(css).toContain("html[data-theme-sweep]::view-transition-new(root)");
     expect(css).toContain("animation-duration: 250ms");
     expect(useThemeSource).toContain("canSweepTerminatorFront");
+  });
+
+  it("hides the live sweep veil; only the view-transition new snapshot reveals it", () => {
+    const css = NodeFS.readFileSync(new URL("../index.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\.theme-sweep-veil\s*\{[^}]*opacity:\s*0/s);
+    expect(css).toMatch(
+      /html\[data-theme-sweep\]::view-transition-new\(theme-sweep-veil\)\s*\{[^}]*theme-sweep-veil-fade/s,
+    );
+    expect(css).toMatch(
+      /html\[data-theme-sweep\]::view-transition-new\(theme-sweep-veil\)\s*\{[^}]*--app-chrome-background/s,
+    );
   });
 });

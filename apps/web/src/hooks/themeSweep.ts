@@ -41,13 +41,15 @@ export function shouldMashCut(now: number): boolean {
 
 /**
  * Clip-path on a full-viewport snapshot is compositor-cheap on Blink/Gecko.
- * WebKit (Safari, iOS Chrome) can re-clip every frame for 600–1200ms — keep
- * those on the 250ms dissolve by not setting data-theme-sweep.
+ * WebKit (Safari and every iOS browser) can re-clip every frame for
+ * 600–1200ms — keep those on the 250ms dissolve by not setting
+ * data-theme-sweep. Brand tokens must be rejected before the allowlist:
+ * EdgiOS matches /Edg/.
  */
 export function canSweepTerminatorFront(
   userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent,
 ): boolean {
-  if (/CriOS/i.test(userAgent)) return false;
+  if (/iPhone|iPad|iPod|CriOS|EdgiOS|FxiOS/i.test(userAgent)) return false;
   return /Chrome|Chromium|Edg|Firefox/i.test(userAgent);
 }
 
@@ -76,10 +78,9 @@ export function resetMashGuard(): void {
 }
 
 /**
- * Mount the feather band that rides the terminator front. Must be called in
- * the same task as startViewTransition: the element then reaches the old
- * capture without ever painting live, and its own view-transition-name keeps
- * it out of the root snapshot pair.
+ * Mount the feather band that rides the terminator front. Author CSS keeps
+ * the live node at opacity 0; only ::view-transition-new(theme-sweep-veil)
+ * reveals it. Own view-transition-name keeps it out of the root snapshot pair.
  */
 export function mountSweepVeil(): () => void {
   const veil = document.createElement("div");

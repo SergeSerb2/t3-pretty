@@ -1520,31 +1520,17 @@ html[data-theme-sweep="dawn"]::view-transition-new(root) {
 
 /* Feather band riding the terminator front: a faint smear of the incoming
    chrome tone plus grain, so the clip edge reads as thin atmosphere instead
-   of a hard wipe. Mounted by useTheme only for the duration of the sweep; its
-   own view-transition-name keeps it out of the root snapshot pair, and only
-   its new-state snapshot shows (painted once, then translated). */
+   of a hard wipe. The live node is only a named box (opacity 0): VT capture
+   bakes opacity into the snapshot, so the gradient/grain paint on
+   ::view-transition-new instead — that also means a skipped VT cannot flash
+   a 56vh chrome band. */
 .theme-sweep-veil {
   position: fixed;
   inset: 0 0 auto 0;
   height: 56vh;
   pointer-events: none;
   view-transition-name: theme-sweep-veil;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    color-mix(in oklab, var(--app-chrome-background) 30%, transparent),
-    transparent
-  );
-}
-
-.theme-sweep-veil::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: var(--surface-grain);
-  background-repeat: repeat;
-  background-size: var(--surface-grain-size);
-  mask-image: linear-gradient(to bottom, transparent, black, transparent);
+  opacity: 0;
 }
 
 html[data-theme-sweep]::view-transition-old(theme-sweep-veil) {
@@ -1561,6 +1547,16 @@ html[data-theme-sweep="dawn"]::view-transition-group(theme-sweep-veil) {
 
 html[data-theme-sweep]::view-transition-new(theme-sweep-veil) {
   animation: var(--theme-sweep-ms) linear both theme-sweep-veil-fade;
+  background:
+    var(--surface-grain) repeat,
+    linear-gradient(
+      to bottom,
+      transparent,
+      color-mix(in oklab, var(--app-chrome-background) 30%, transparent),
+      transparent
+    );
+  background-size: var(--surface-grain-size), auto;
+  mask-image: linear-gradient(to bottom, transparent, black, transparent);
 }
 
 /* The veil tracks the clip front with its band centered on the edge; the
