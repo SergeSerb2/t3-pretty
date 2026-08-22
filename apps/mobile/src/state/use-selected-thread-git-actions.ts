@@ -21,6 +21,7 @@ import { threadEnvironment } from "../state/threads";
 import { vcsActionManager, vcsEnvironment } from "../state/vcs";
 import { uuidv4 } from "../lib/uuid";
 import { appAtomRegistry } from "./atom-registry";
+import { shouldStopSessionOnWorktreeMove } from "./thread-worktree-move";
 import { setPendingConnectionError } from "./use-remote-environment-registry";
 import { useAtomCommand } from "./use-atom-command";
 import { showGitActionResult } from "./use-vcs-action-state";
@@ -312,11 +313,14 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
           // provider session first — the running session is bound to the old
           // workspace. Awaited (like delete in useThreadListActions) so the
           // metadata sync below cannot rebind the thread under a live session;
-          // stop failures never block the sync, same as delete.
+          // stop failures never block the sync, same as delete. Both paths
+          // must be known: an unloaded current path is not a move.
           if (
-            thread.session &&
-            thread.session.status !== "stopped" &&
-            result.value.worktree.path !== selectedThreadWorktreePath
+            shouldStopSessionOnWorktreeMove({
+              sessionStatus: thread.session?.status,
+              currentWorktreePath: selectedThreadWorktreePath,
+              nextWorktreePath: result.value.worktree.path,
+            })
           ) {
             await stopThreadSession({
               environmentId: thread.environmentId,

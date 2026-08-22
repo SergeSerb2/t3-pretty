@@ -151,7 +151,8 @@ function useThreadActionExecutor(
         // Web delete parity (useThreadActions.deleteThread): stop the
         // provider session, then close the terminal with its history, before
         // the delete dispatch. Prep failures never block the delete — web
-        // treats them the same way.
+        // treats them the same way. Shared by Home, the iPad sidebar, and
+        // archive via this executor.
         if (action === "delete") {
           if (thread.session && thread.session.status !== "stopped") {
             await stopSessionMutation({
