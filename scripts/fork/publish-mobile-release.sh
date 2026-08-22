@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Native macos-release iOS OTA + TestFlight. Same machine as the signed DMG
-# (m1-dev). The GitHub Actions importer cannot load cluster secrets or keep
-# PATH across steps, so imported Expo/EAS jobs die in seconds and TestFlight
+# (m5-dev; m1-dev is now Linux). The GitHub Actions importer cannot load
+# cluster secrets or keep PATH across steps, so imported Expo/EAS jobs die
+# in seconds and TestFlight
 # never sees the update.
 #
 # Installed TestFlight binaries already poll the fork Expo Updates URL baked
@@ -42,7 +43,7 @@ esac
 commit="${BUILDKITE_COMMIT:-${GITHUB_SHA:-$(git rev-parse HEAD)}}"
 update_message="${T3CODE_MOBILE_UPDATE_MESSAGE:-Production OTA (${commit})}"
 
-echo "T3 Pretty mobile release on macos-release (m1-dev) mode=${MODE} platform=${PLATFORM} force_ios=${FORCE_IOS}"
+echo "T3 Pretty mobile release on macos-release (m5-dev) mode=${MODE} platform=${PLATFORM} force_ios=${FORCE_IOS}"
 
 load_secret() {
   local name="$1"
@@ -55,7 +56,6 @@ load_secret() {
   if [[ -z "$value" ]]; then
     for candidate in \
       "${HOME}/.config/t3-pretty/${name}" \
-      "/Users/m1-dev/.config/t3-pretty/${name}" \
       "/opt/homebrew/var/buildkite-agent/secrets/${name}"; do
       if [[ -f "$candidate" ]]; then
         value="$(tr -d '\r' < "$candidate")"

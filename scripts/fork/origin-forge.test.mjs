@@ -268,7 +268,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(sync, "mapfile ");
     assert.include(sync, "Prepare macOS runner PATH");
     assert.include(sync, "checkout-origin.sh");
-    assert.include(mobile, "macos-release (m1-dev)");
+    assert.include(mobile, "macos-release (m5-dev)");
     assert.notInclude(mobile, "keeping importer tree");
     assert.notInclude(mobile, "t3_require_ota");
     assert.include(desktop, "ensure-linux-node.sh");

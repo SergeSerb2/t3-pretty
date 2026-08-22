@@ -45,7 +45,6 @@ origin_git() {
   for candidate in \
     "${ORIGIN_GIT_CREDENTIALS:-}" \
     "${HOME}/.git-credentials" \
-    /Users/m1-dev/.git-credentials \
     /opt/homebrew/var/buildkite-agent/.git-credentials; do
     if [[ -n "$candidate" && -s "$candidate" ]]; then
       store="$candidate"
