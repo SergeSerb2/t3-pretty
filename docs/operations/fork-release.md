@@ -50,8 +50,8 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    `minted=false` and exits 0. That mint step is not continue-on-error:
    invalid-tag, git, and monotonic failures still fail the job. `should_release`
    stays false unless the mint step succeeded and produced a real version, so
-   changelog and WSL do not consume `-` placeholders. Preflight
-   `ref` is the changelog commit when hosted Linux managed to write one, `github.sha`, or `BUILDKITE_COMMIT` — never
+   the WSL job does not consume `-` placeholders. Preflight
+   `ref` is `github.sha` or `BUILDKITE_COMMIT` — never
    the empty-output placeholder `-`. The WSL node-pty job checks out that SHA,
    treating a leftover `-` as missing and recovering from
    `GITHUB_SHA`/`BUILDKITE_COMMIT`, and fails instead of compiling an empty
@@ -101,11 +101,18 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    install. The script lists non-merge commit subjects (Origin merge commits are
    `Merge pull request #N` and hide the real feat/fix titles), asks the Railway CLIProxyAPI
    model (`gpt-5.6-sol`) when `CLI_PROXY_API_KEY` is available, and always falls back to those
-   subjects so a missing key cannot skip the file. Hosted Linux preflight still runs the
-   script with `--no-push`: that agent has no Origin HTTPS credentials and mapping
-   `${{ env.CLI_PROXY_API_KEY }}` would blank a real secret. macos-release commits and pushes
-   `changelogData.ts` when HEAD is still the `main` tip. A retry whose HEAD is
-   already `docs(changelog):` passes `--no-push` so it cannot mint another
+   subjects so a missing key cannot skip the file. Hosted Linux preflight does
+   not run the generator: it cannot push to Origin and no imported job
+   consumes the file, so a pass there would only spend the model budget.
+   macos-release generates with `--no-push` (baking the notes into the DMG)
+   and runs `--publish` only after the artifacts and update feed are live,
+   committing and pushing `changelogData.ts` when HEAD is still the `main`
+   tip; the build that push triggers sees the version in the feed and skips
+   packaging instead of publishing it twice. windows-release first reuses the
+   notes commit from `origin/main` when it covers the same version, so both
+   installers ship the same What's New text, and generates locally only as a
+   fallback. A retry whose HEAD is
+   already `docs(changelog):` skips generation so it cannot mint another
    notes commit. Hosted Linux preflight reuses that already-minted version
    instead of minting another, so imported jobs (WSL node-pty) still run when
    a retry lands after the notes push. Native packagers reuse the same version

@@ -49,13 +49,10 @@ jobs:
   preflight:
     name: Resolve T3 Pretty release
     continue-on-error: true
-    # contents: write so the changelog step can push the generated release
-    # notes commit. The GITHUB_TOKEN push does not retrigger this workflow.
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    # Headroom above the changelog generator's 10-minute model budget so a
-    # stalled CLIProxy request can never get the preflight hard-killed.
+    # Bound the importer so a stalled hosted job cannot run for hours.
     timeout-minutes: 15
     outputs:
       # Mint can no-op (no ancestor) and write minted=false. Real mint
@@ -70,7 +67,9 @@ jobs:
       name: ${{ steps.release.outputs.name || '-' }}
       upstream_tag: ${{ steps.release.outputs.upstream_tag || '-' }}
       # ref is a commit-ish. Never default it to the empty placeholder '-'.
-      ref: ${{ steps.changelog.outputs.ref || github.sha || env.BUILDKITE_COMMIT }}
+      # Hosted preflight writes and pushes nothing; the native Mac packager
+      # bakes the What's New notes and pushes them after the feed is live.
+      ref: ${{ github.sha || env.BUILDKITE_COMMIT }}
     steps:
       - id: checkout
         name: Use the importer checkout
@@ -344,31 +343,6 @@ jobs:
         env:
           T3_SKIP_UNRESOLVABLE_MINT: "1"
         run: node scripts/fork/resolve-fork-release.mjs
-
-      - id: changelog
-        name: Generate What's New changelog entries
-        # main only: a manual dispatch of another ref must not push its
-        # history to main.
-        if: >-
-          steps.checkout.outputs.ready == 'true' &&
-          steps.paths.outputs.relevant == 'true' &&
-          steps.tags.outputs.can_mint == 'true' &&
-          steps.existing.outputs.should_release == 'true' &&
-          steps.signing.outputs.configured == 'true' &&
-          steps.release.outcome == 'success' &&
-          steps.release.outputs.minted == 'true' &&
-          steps.release.outputs.version != '' &&
-          steps.release.outputs.version != '-' &&
-          github.ref == 'refs/heads/main'
-        continue-on-error: true
-        env:
-          # Do not map `${{ env.CLI_PROXY_API_KEY }}`: that overwrites a
-          # real agent secret with empty GHA context. Hosted linux-small
-          # still usually has no key; native packagers persist notes.
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        # Best-effort on hosted Linux. Do not push: Origin HTTPS has no
-        # credentials here. macos-release writes and pushes the same notes.
-        run: node scripts/fork/generate-changelog.mjs --no-push
 
   # Only GHA job that needs preflight. Native DMG/NSIS/relay mint versions
   # themselves in .buildkite/pipeline.yml and do not read these outputs.

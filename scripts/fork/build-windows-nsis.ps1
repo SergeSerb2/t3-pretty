@@ -76,24 +76,39 @@ if ($reusedVersion) {
 }
 Write-Host "Building Windows NSIS $version"
 
-# Mac packager persists notes to main. Write locally so this installer still
-# ships them if the Mac job has not pushed yet. Changelog-commit retries
+# Mac packager persists notes to main. When main already carries this
+# version's notes commit, ship that exact file so both installers show the
+# same What's New text; otherwise generate locally so this installer still
+# ships notes if the Mac job has not pushed yet. Changelog-commit retries
 # already have those notes; do not regenerate them.
 if (-not $reusedVersion) {
-  if (-not $env:CLI_PROXY_API_KEY) {
-    foreach ($candidate in @(
-      (Join-Path $env:USERPROFILE ".config\t3-pretty\CLI_PROXY_API_KEY"),
-      "C:\buildkite-agent\secrets\CLI_PROXY_API_KEY"
-    )) {
-      if (Test-Path $candidate) {
-        $env:CLI_PROXY_API_KEY = (Get-Content -Raw $candidate).Trim()
-        break
-      }
+  $notesFromMain = $false
+  git fetch --quiet origin main
+  if ($LASTEXITCODE -eq 0) {
+    $mainTipSubject = (git log -1 --format=%s origin/main | Out-String).Trim()
+    if ($mainTipSubject -eq ($changelogPrefix + $version)) {
+      git checkout --quiet origin/main -- apps/web/src/changelog/changelogData.ts
+      $notesFromMain = $LASTEXITCODE -eq 0
     }
   }
-  node "$root\scripts\fork\generate-changelog.mjs" --version $version --no-push
-  if ($LASTEXITCODE -ne 0) {
-    Write-Host "warning: changelog generation failed; continuing the Windows release"
+  if ($notesFromMain) {
+    Write-Host "Reusing the What's New notes the Mac packager pushed to main."
+  } else {
+    if (-not $env:CLI_PROXY_API_KEY) {
+      foreach ($candidate in @(
+        (Join-Path $env:USERPROFILE ".config\t3-pretty\CLI_PROXY_API_KEY"),
+        "C:\buildkite-agent\secrets\CLI_PROXY_API_KEY"
+      )) {
+        if (Test-Path $candidate) {
+          $env:CLI_PROXY_API_KEY = (Get-Content -Raw $candidate).Trim()
+          break
+        }
+      }
+    }
+    node "$root\scripts\fork\generate-changelog.mjs" --version $version --no-push
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host "warning: changelog generation failed; continuing the Windows release"
+    }
   }
 } else {
   Write-Host "Changelog commit already has notes; skipping changelog generation."

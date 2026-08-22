@@ -442,32 +442,16 @@ describe("publishPendingNotes", () => {
 });
 
 describe("release workflow wiring", () => {
-  it("generates the changelog during preflight and releases the changelog commit", () => {
+  it("keeps changelog generation off hosted preflight", () => {
     const workflow = NodeFS.readFileSync(releaseWorkflowPath, "utf8");
 
-    assert.include(workflow, "node scripts/fork/generate-changelog.mjs --no-push");
-    assert.notInclude(
-      workflow.slice(
-        workflow.indexOf("id: changelog"),
-        workflow.indexOf("run: node scripts/fork/generate-changelog.mjs --no-push"),
-      ),
-      "CLI_PROXY_API_KEY: ${{ env.CLI_PROXY_API_KEY }}",
-    );
-    assert.include(workflow, "RELEASE_VERSION: ${{ steps.release.outputs.version }}");
-    const changelogStep = workflow.slice(
-      workflow.indexOf("id: changelog"),
-      workflow.indexOf("run: node scripts/fork/generate-changelog.mjs"),
-    );
-    assert.include(changelogStep, "steps.release.outcome == 'success'");
-    assert.include(changelogStep, "steps.release.outputs.minted == 'true'");
-    assert.include(changelogStep, "steps.release.outputs.version != ''");
-    assert.include(changelogStep, "steps.release.outputs.version != '-'");
-    assert.include(
-      workflow,
-      "ref: ${{ steps.changelog.outputs.ref || github.sha || env.BUILDKITE_COMMIT }}",
-    );
+    // Hosted linux-small cannot push to Origin and no imported job consumes
+    // the generated file, so preflight must not spend its deadline running
+    // the generator. Native packagers bake and publish the notes instead.
+    assert.notInclude(workflow, "generate-changelog.mjs");
+    assert.notInclude(workflow, "CLI_PROXY_API_KEY");
+    assert.include(workflow, "ref: ${{ github.sha || env.BUILDKITE_COMMIT }}");
     assert.notInclude(workflow, "github.sha || '-'");
-    assert.include(workflow, "continue-on-error: true");
     const changelog = NodeFS.readFileSync(
       NodePath.resolve(
         NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -479,6 +463,7 @@ describe("release workflow wiring", () => {
     assert.include(changelog, "--no-merges");
     assert.include(changelog, "--no-push");
     assert.include(changelog, "--dry-run");
+    assert.include(changelog, "--publish");
     assert.include(changelog, "writing changelog entries from commit subjects");
     assert.include(changelog, '"--first-parent"');
     assert.include(changelog, "Merge pull request ");
@@ -528,13 +513,30 @@ describe("release workflow wiring", () => {
     assert.include(windows, "already-minted");
     assert.include(windows, "latest.yml");
     assert.include(windows, "skipping changelog generation");
+    // Windows reuses the notes commit the Mac packager pushed to main so both
+    // installers ship the same What's New text; generation is the fallback.
+    assert.include(windows, "origin/main -- apps/web/src/changelog/changelogData.ts");
+    assert.isBelow(
+      windows.indexOf("origin/main -- apps/web/src/changelog/changelogData.ts"),
+      windows.indexOf("generate-changelog.mjs"),
+    );
     assert.notInclude(windows, "Changelog-only commit; skipping Windows packaging.");
   });
 
-  it("restricts the changelog push to runs triggered by main", () => {
-    const workflow = NodeFS.readFileSync(releaseWorkflowPath, "utf8");
+  it("restricts the notes push to the origin/main tip", () => {
+    // The main-only restriction lives in the publisher now that hosted
+    // preflight no longer runs the generator: a manual dispatch of another
+    // ref must not fast-forward main to unreviewed history.
+    const changelog = NodeFS.readFileSync(
+      NodePath.resolve(
+        NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+        "generate-changelog.mjs",
+      ),
+      "utf8",
+    );
 
-    assert.include(workflow, "github.ref == 'refs/heads/main'");
+    assert.include(changelog, 'git(["rev-parse", "origin/main"])');
+    assert.include(changelog, "HEAD is not the origin/main tip");
   });
 
   it("recognizes a tagged changelog child when skipping already released commits", () => {
