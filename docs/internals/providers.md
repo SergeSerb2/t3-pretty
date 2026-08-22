@@ -23,6 +23,11 @@ adapter in a child scope. Adapter implementations live beside them in
 [`ProviderAdapter.ts`][adapter]. Read the driver plus its adapter to see how a specific agent's
 transport, config, and event shapes are mapped.
 
+ACP clients (Cursor, Grok, Kimi) share [`AcpSessionRuntime.ts`][acp-runtime]. Kimi opts into
+`clientCapabilities.terminal` so Kimi 0.37+ can run shell, glob, and grep through
+[`AcpTerminalHost.ts`][acp-terminal] in the session working directory. Other ACP drivers leave the
+capability off unless they pass `clientCapabilities.terminal: true`.
+
 ## Registry and routing
 
 Two registries separate configuration from live processes:
@@ -81,6 +86,8 @@ when a request opens (approval) or user input is requested, via
 [cursor]: ../../apps/server/src/provider/Drivers/CursorDriver.ts
 [grok]: ../../apps/server/src/provider/Drivers/GrokDriver.ts
 [kimi]: ../../apps/server/src/provider/Drivers/KimiDriver.ts
+[acp-runtime]: ../../apps/server/src/provider/acp/AcpSessionRuntime.ts
+[acp-terminal]: ../../apps/server/src/provider/acp/AcpTerminalHost.ts
 [adapter]: ../../apps/server/src/provider/Services/ProviderAdapter.ts
 [instances]: ../../apps/server/src/provider/Services/ProviderInstanceRegistry.ts
 [registry]: ../../apps/server/src/provider/Services/ProviderAdapterRegistry.ts

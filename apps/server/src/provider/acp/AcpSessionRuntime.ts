@@ -20,6 +20,7 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { makeAcpTerminalHost } from "./AcpTerminalHost.ts";
 
 import {
   collectSessionConfigOptionValues,
@@ -367,6 +368,17 @@ export const make = (
     ).pipe(Effect.provideService(Scope.Scope, runtimeScope));
 
     const acp = yield* Effect.service(EffectAcpClient.AcpClient).pipe(Effect.provide(acpContext));
+    const advertiseTerminal = options.clientCapabilities?.terminal === true;
+    if (advertiseTerminal) {
+      const terminalHost = yield* makeAcpTerminalHost({ cwd: options.cwd }).pipe(
+        Effect.provideService(Scope.Scope, runtimeScope),
+      );
+      yield* acp.handleCreateTerminal(terminalHost.create);
+      yield* acp.handleTerminalOutput(terminalHost.output);
+      yield* acp.handleTerminalWaitForExit(terminalHost.waitForExit);
+      yield* acp.handleTerminalKill(terminalHost.kill);
+      yield* acp.handleTerminalRelease(terminalHost.release);
+    }
 
     yield* acp.handleSessionUpdate((notification) =>
       Effect.gen(function* () {
@@ -410,6 +422,8 @@ export const make = (
         writeTextFile: false,
         ...options.clientCapabilities?.fs,
       },
+      // Off unless the driver opts in. Kimi sets terminal: true so 0.37+
+      // can route Bash/Glob/Grep through the handlers above.
       terminal: options.clientCapabilities?.terminal ?? false,
       ...(options.clientCapabilities?.auth ? { auth: options.clientCapabilities.auth } : {}),
       ...(options.clientCapabilities?.elicitation
