@@ -354,6 +354,7 @@ describe("release workflow wiring", () => {
     assert.include(macos, 'docs(changelog):"*');
     assert.include(macos, "already-minted");
     assert.include(macos, "latest-mac.yml");
+    assert.include(macos, "changelog_push=(--no-push)");
     assert.notInclude(macos, "Changelog-only commit; skipping macOS packaging.");
     assert.include(windows, "generate-changelog.mjs");
     assert.include(windows, "--no-push");

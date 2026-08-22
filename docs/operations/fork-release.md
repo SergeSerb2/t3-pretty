@@ -104,12 +104,14 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    subjects so a missing key cannot skip the file. Hosted Linux preflight still runs the
    script with `--no-push`: that agent has no Origin HTTPS credentials and mapping
    `${{ env.CLI_PROXY_API_KEY }}` would blank a real secret. macos-release commits and pushes
-   `changelogData.ts` when HEAD is still the `main` tip. Hosted Linux preflight
-   skips minting on `docs(changelog):` commits. Native packagers reuse the
-   already-minted version from that commit instead of minting another, and skip
-   packaging only when the public feed already lists it, so a retry after a
-   changelog push still produces a DMG/NSIS. Generation failures warn and
-   the release continues; the next run fills whatever is still missing.
+   `changelogData.ts` when HEAD is still the `main` tip. A retry whose HEAD is
+   already `docs(changelog):` passes `--no-push` so it cannot mint another
+   notes commit. Hosted Linux preflight skips minting on `docs(changelog):`
+   commits. Native packagers reuse the already-minted version from that commit
+   instead of minting another, and skip packaging only when the public feed
+   already lists it, so a retry after a changelog push still produces a
+   DMG/NSIS. Generation failures warn and the release continues; the next run
+   fills whatever is still missing.
 8. Origin-connected Linux CI (Depot or Buildkite, `ubuntu-latest` in the workflow YAML) resolves
    the version. What's New notes are written by the native Mac and Windows packagers. It does not call GitHub Actions
    (`uses:`) — the importer resolves every action from api.github.com at parse

@@ -92,9 +92,15 @@ fi
 echo "Building macOS arm64 $version"
 
 # Bake What's New notes into this artifact, then push them to main when this
-# checkout is the tip. Hosted Linux preflight cannot load CLI_PROXY_API_KEY
-# or push to Origin, which is why notes froze after 2026-08-12.
-if ! node scripts/fork/generate-changelog.mjs --version "$version"; then
+# checkout is the tip. Changelog-commit retries already persisted notes, so
+# they pass --no-push and cannot mint a second docs(changelog) commit.
+# Hosted Linux preflight cannot load CLI_PROXY_API_KEY or push to Origin,
+# which is why notes froze after 2026-08-12.
+changelog_push=()
+if [[ "$subject" == "docs(changelog):"* ]]; then
+  changelog_push=(--no-push)
+fi
+if ! node scripts/fork/generate-changelog.mjs --version "$version" "${changelog_push[@]}"; then
   echo "warning: changelog generation failed; continuing the macOS release"
 fi
 
