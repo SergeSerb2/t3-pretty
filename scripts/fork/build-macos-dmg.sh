@@ -87,19 +87,25 @@ if [[ -z "$version" ]]; then
 fi
 echo "Building macOS arm64 $version"
 
-# Bake What's New notes into this artifact, then push them to main when this
-# checkout is the tip. Changelog-commit retries already persisted notes; do
-# not regenerate them (model/fallback drift would rewrite the shipped file).
-# Hosted Linux preflight cannot load CLI_PROXY_API_KEY or push to Origin,
-# which is why notes froze after 2026-08-12.
+# Bake What's New notes into this artifact. They are pushed to main only
+# after the artifacts and update feed are live (end of this script), so the
+# build that push triggers sees the version in the feed and skips packaging
+# instead of publishing the same version twice. Changelog-commit retries
+# already persisted notes; do not regenerate them (model/fallback drift would
+# rewrite the shipped file). Hosted Linux preflight cannot load
+# CLI_PROXY_API_KEY or push to Origin, which is why notes froze after
+# 2026-08-12.
 # Always keep at least --version in this array: Apple bash 3.2 with `set -u`
 # treats an empty `"${arr[@]}"` as unbound.
+notes_pending=0
 if [[ "$subject" == "$changelog_prefix"* ]]; then
   echo "Changelog commit already has notes; skipping changelog generation."
 else
-  changelog_args=(--version "$version")
+  changelog_args=(--version "$version" --no-push)
   if ! node scripts/fork/generate-changelog.mjs "${changelog_args[@]}"; then
     echo "warning: changelog generation failed; continuing the macOS release"
+  elif [[ -n "$(git status --porcelain -- apps/web/src/changelog/changelogData.ts)" ]]; then
+    notes_pending=1
   fi
 fi
 
@@ -202,5 +208,15 @@ for file in "$publish"/*.{dmg,zip,blockmap,yml}; do
 done
 (( ${#assets[@]} > 0 ))
 node scripts/fork/origin-forge.mjs upload-assets "${assets[@]}"
+
+# Push the baked notes only now that the feed lists this version: the build
+# this push triggers reads the feed and skips packaging instead of racing
+# this release.
+if [[ "$notes_pending" == "1" ]]; then
+  if ! node scripts/fork/generate-changelog.mjs --publish; then
+    echo "warning: release notes ship with $version but could not be pushed to main"
+  fi
+fi
+
 echo "Published macOS arm64 $version to $T3CODE_DESKTOP_UPDATE_FEED_URL"
 echo "dmg=$(find "$publish" -name '*.dmg' -print -quit)"

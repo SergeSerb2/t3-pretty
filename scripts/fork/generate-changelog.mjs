@@ -547,8 +547,102 @@ function warn(message) {
   process.stdout.write(`::warning::${message}\n`);
 }
 
+/** Commit the working-tree notes and push them to main. Only a run sitting
+    exactly on the origin/main tip may publish: a manual dispatch of another
+    ref must not fast-forward main to unreviewed history, and a moved tip
+    means this run already lost the race. `entries` is only reported back to
+    the GHA step outputs. */
+function publishNotes({ baseSha, newest, entries }) {
+  try {
+    git(["fetch", "origin", "main"]);
+  } catch (error) {
+    warn(
+      `Could not fetch origin/main; leaving ${CHANGELOG_PATH} in the working tree. ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    writeGitHubOutput({ ref: baseSha, entries });
+    return;
+  }
+  const mainTip = git(["rev-parse", "origin/main"]);
+  if (mainTip !== baseSha) {
+    // A retry of a run that already pushed its notes finds its own untagged
+    // changelog commit as the main tip; reuse it so the release still ships
+    // the notes instead of publishing the bare triggering commit.
+    const tipSubject = git(["log", "-1", "--format=%s", mainTip]);
+    const tipFirstParent = git(["log", "-1", "--format=%P", mainTip]).split(" ")[0];
+    if (tipFirstParent === baseSha && tipSubject.startsWith(COMMIT_SUBJECT_PREFIX)) {
+      process.stdout.write(
+        `[fork-changelog] reusing the changelog commit ${mainTip.slice(0, 12)} already on main\n`,
+      );
+      writeGitHubOutput({ ref: mainTip, entries: 0 });
+      return;
+    }
+    warn("HEAD is not the origin/main tip; leaving changelog entries in the working tree.");
+    writeGitHubOutput({ ref: baseSha, entries });
+    return;
+  }
+
+  git(["add", "--", CHANGELOG_PATH]);
+  git([
+    "-c",
+    "user.name=t3-pretty-release[bot]",
+    "-c",
+    "user.email=t3-pretty-bot@users.noreply.cursor.com",
+    "commit",
+    "-m",
+    `docs(changelog): add release notes through v${newest}`,
+  ]);
+
+  try {
+    git(["push", "origin", "HEAD:main"]);
+  } catch (error) {
+    // A rejected push means origin/main moved since this run started. Never
+    // rebase onto it: the release must stay pinned to the triggering commit
+    // its version was computed from. Keep the notes in the working tree so
+    // this build still ships them.
+    warn(
+      `Could not push the changelog commit; keeping notes in the working tree. ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    const pending = NodeFS.readFileSync(CHANGELOG_PATH, "utf8");
+    git(["reset", "--soft", baseSha]);
+    git(["reset", "HEAD", "--", CHANGELOG_PATH]);
+    NodeFS.writeFileSync(CHANGELOG_PATH, pending);
+    writeGitHubOutput({ ref: baseSha, entries });
+    return;
+  }
+
+  const sha = git(["rev-parse", "HEAD"]);
+  process.stdout.write(
+    `[fork-changelog] committed and pushed release notes through v${newest} as ${sha.slice(0, 12)}\n`,
+  );
+  writeGitHubOutput({ ref: sha, entries });
+}
+
+/** Publish notes an earlier `--no-push` run left in the working tree.
+    Packagers call this only after their artifacts and update feed are live,
+    so the build the push triggers sees the version in the feed and skips
+    packaging instead of publishing the same version twice. */
+export function publishPendingNotes({ baseSha }) {
+  if (git(["status", "--porcelain", "--", CHANGELOG_PATH]) === "") {
+    process.stdout.write("[fork-changelog] no pending release notes to publish\n");
+    writeGitHubOutput({ ref: baseSha, entries: 0 });
+    return;
+  }
+  const source = NodeFS.readFileSync(CHANGELOG_PATH, "utf8");
+  const newest = extractChangelogVersions(source)[0] ?? "unknown";
+  publishNotes({ baseSha, newest, entries: 0 });
+}
+
 async function main() {
   const args = process.argv.slice(2);
+  const baseSha = git(["rev-parse", "HEAD"]);
+  if (args.includes("--publish")) {
+    publishPendingNotes({ baseSha });
+    return;
+  }
   const dryRun = args.includes("--dry-run");
   const noPush = dryRun || args.includes("--no-push");
   const versionArgIndex = args.indexOf("--version");
@@ -556,7 +650,6 @@ async function main() {
     versionArgIndex === -1 ? process.env.RELEASE_VERSION : args[versionArgIndex + 1]
   )?.trim();
   const token = readCliProxyToken();
-  const baseSha = git(["rev-parse", "HEAD"]);
   const forkReleases = listForkReleases();
 
   if (forkReleases.length === 0 && !currentVersion) {
@@ -625,78 +718,11 @@ async function main() {
     return;
   }
 
-  // Only a run sitting exactly on the origin/main tip may publish notes to
-  // main: a manual dispatch of another ref must not fast-forward main to
-  // unreviewed history, and a moved tip means this run already lost the race.
-  try {
-    git(["fetch", "origin", "main"]);
-  } catch (error) {
-    warn(
-      `Could not fetch origin/main; leaving ${CHANGELOG_PATH} in the working tree. ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-    writeGitHubOutput({ ref: baseSha, entries: entries.length });
-    return;
-  }
-  const mainTip = git(["rev-parse", "origin/main"]);
-  if (mainTip !== baseSha) {
-    // A retry of a run that already pushed its notes finds its own untagged
-    // changelog commit as the main tip; reuse it so the release still ships
-    // the notes instead of publishing the bare triggering commit.
-    const tipSubject = git(["log", "-1", "--format=%s", mainTip]);
-    const tipFirstParent = git(["log", "-1", "--format=%P", mainTip]).split(" ")[0];
-    if (tipFirstParent === baseSha && tipSubject.startsWith(COMMIT_SUBJECT_PREFIX)) {
-      process.stdout.write(
-        `[fork-changelog] reusing the changelog commit ${mainTip.slice(0, 12)} already on main\n`,
-      );
-      writeGitHubOutput({ ref: mainTip, entries: 0 });
-      return;
-    }
-    warn("HEAD is not the origin/main tip; leaving changelog entries in the working tree.");
-    writeGitHubOutput({ ref: baseSha, entries: entries.length });
-    return;
-  }
-
   const newest =
     newEntries.map((entry) => entry.version).sort((a, b) => -(compareVersions(a, b) ?? 0))[0] ??
     currentVersion ??
     "unknown";
-  git(["add", "--", CHANGELOG_PATH]);
-  git([
-    "-c",
-    "user.name=t3-pretty-release[bot]",
-    "-c",
-    "user.email=t3-pretty-bot@users.noreply.cursor.com",
-    "commit",
-    "-m",
-    `docs(changelog): add release notes through v${newest}`,
-  ]);
-
-  try {
-    git(["push", "origin", "HEAD:main"]);
-  } catch (error) {
-    // A rejected push means origin/main moved since this run started. Never
-    // rebase onto it: the release must stay pinned to the triggering commit
-    // its version was computed from. Keep the notes in the working tree so
-    // this build still ships them.
-    warn(
-      `Could not push the changelog commit; keeping notes in the working tree. ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-    git(["reset", "--soft", baseSha]);
-    git(["reset", "HEAD", "--", CHANGELOG_PATH]);
-    NodeFS.writeFileSync(CHANGELOG_PATH, nextSource);
-    writeGitHubOutput({ ref: baseSha, entries: entries.length });
-    return;
-  }
-
-  const sha = git(["rev-parse", "HEAD"]);
-  process.stdout.write(
-    `[fork-changelog] committed and pushed ${entries.length} release note(s) as ${sha.slice(0, 12)}\n`,
-  );
-  writeGitHubOutput({ ref: sha, entries: entries.length });
+  publishNotes({ baseSha, newest, entries: entries.length });
 }
 
 function writeGitHubOutput(values) {

@@ -15,6 +15,7 @@ import {
   mergeChangelogEntries,
   parseVersionSegments,
   planReleases,
+  publishPendingNotes,
   serializeReleaseEntry,
 } from "./generate-changelog.mjs";
 
@@ -350,6 +351,96 @@ describe("commitSubjects", () => {
   });
 });
 
+describe("publishPendingNotes", () => {
+  it("pushes working-tree notes to main and no-ops on a clean tree", () => {
+    const fixtureRoot = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-fork-changelog-publish-"),
+    );
+    const originPath = NodePath.join(fixtureRoot, "origin.git");
+    const workPath = NodePath.join(fixtureRoot, "work");
+    const git = (cwd, ...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+
+    try {
+      git(fixtureRoot, "init", "--bare", "-b", "main", originPath);
+      git(fixtureRoot, "clone", "--quiet", originPath, workPath);
+      git(workPath, "config", "user.name", "T3 Fork Changelog Test");
+      git(workPath, "config", "user.email", "t3-fork-changelog-test@example.invalid");
+      const changelogPath = NodePath.join(
+        workPath,
+        "apps",
+        "web",
+        "src",
+        "changelog",
+        "changelogData.ts",
+      );
+      NodeFS.mkdirSync(NodePath.dirname(changelogPath), { recursive: true });
+      NodeFS.writeFileSync(
+        changelogPath,
+        [
+          "export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [",
+          "  {",
+          '    version: "0.0.34-nightly.1",',
+          '    date: "2026-08-20",',
+          "    items: [",
+          "      {",
+          '        kind: "improved",',
+          '        title: "Older notes",',
+          '        description: "",',
+          "      },",
+          "    ],",
+          "  },",
+          "];",
+          "",
+        ].join("\n"),
+      );
+      git(workPath, "add", ".");
+      git(workPath, "commit", "--quiet", "-m", "feat(web): ship a thing");
+      git(workPath, "push", "--quiet", "origin", "HEAD:main");
+      const baseSha = git(workPath, "rev-parse", "HEAD");
+
+      const previous = process.cwd();
+      try {
+        process.chdir(workPath);
+
+        // Nothing generated yet: no commit, no push.
+        publishPendingNotes({ baseSha });
+        assert.equal(git(originPath, "rev-parse", "main"), baseSha);
+
+        // Simulate the packager's --no-push generation leaving notes behind.
+        const source = NodeFS.readFileSync(changelogPath, "utf8");
+        const next = mergeChangelogEntries(source, [
+          {
+            version: "0.0.35-nightly.2",
+            text: serializeReleaseEntry({
+              version: "0.0.35-nightly.2",
+              date: "2026-08-21",
+              headline: "",
+              items: [{ kind: "new", title: "Shiny thing", description: "" }],
+            }),
+          },
+        ]);
+        NodeFS.writeFileSync(changelogPath, next);
+
+        publishPendingNotes({ baseSha });
+        assert.equal(
+          git(originPath, "log", "-1", "--format=%s", "main"),
+          "docs(changelog): add release notes through v0.0.35-nightly.2",
+        );
+        assert.equal(
+          git(originPath, "show", "main:apps/web/src/changelog/changelogData.ts"),
+          next.trim(),
+        );
+        assert.equal(git(workPath, "status", "--porcelain"), "");
+      } finally {
+        process.chdir(previous);
+      }
+    } finally {
+      NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("release workflow wiring", () => {
   it("generates the changelog during preflight and releases the changelog commit", () => {
     const workflow = NodeFS.readFileSync(releaseWorkflowPath, "utf8");
@@ -392,7 +483,7 @@ describe("release workflow wiring", () => {
     assert.include(changelog, '"--first-parent"');
     assert.include(changelog, "Merge pull request ");
     const dryRunGuard = changelog.indexOf("if (dryRun)");
-    const writeCall = changelog.indexOf("NodeFS.writeFileSync(CHANGELOG_PATH");
+    const writeCall = changelog.indexOf("NodeFS.writeFileSync(CHANGELOG_PATH, nextSource)");
     assert.isAtLeast(dryRunGuard, 0);
     assert.isBelow(dryRunGuard, writeCall);
   });
@@ -418,9 +509,18 @@ describe("release workflow wiring", () => {
     assert.include(macos, "already-minted");
     assert.include(macos, "latest-mac.yml");
     assert.include(macos, "skipping changelog generation");
-    assert.include(macos, 'changelog_args=(--version "$version")');
-    assert.notInclude(macos, "changelog_args+=(--no-push)");
-    assert.notInclude(macos, "changelog_push=()");
+    assert.include(macos, 'changelog_args=(--version "$version" --no-push)');
+    // The notes push happens after the feed publish so the build it triggers
+    // sees the version in latest-mac.yml and skips packaging.
+    assert.include(macos, "node scripts/fork/generate-changelog.mjs --publish");
+    assert.isBelow(
+      macos.indexOf("origin-forge.mjs upload-assets"),
+      macos.indexOf("generate-changelog.mjs --publish"),
+    );
+    assert.isBelow(
+      macos.indexOf('generate-changelog.mjs "${changelog_args[@]}"'),
+      macos.indexOf("build-desktop-artifact.ts"),
+    );
     assert.notInclude(macos, "Changelog-only commit; skipping macOS packaging.");
     assert.include(windows, "generate-changelog.mjs");
     assert.include(windows, "--no-push");
