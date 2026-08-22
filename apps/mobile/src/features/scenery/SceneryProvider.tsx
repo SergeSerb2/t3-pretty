@@ -43,7 +43,6 @@ import {
   loadSeedPhotos,
   peekSeedPhotos,
   pickScenery,
-  sceneryPoolForSet,
   type SceneryAssignment,
   type SceneryPhoto,
 } from "./sceneryLogic";
@@ -105,12 +104,13 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
 
   const photoSetId = scenery.photoSetId;
   const cachedSeeds = peekSeedPhotos(photoSetId);
+  const seedsReady = cachedSeeds.length > 0;
   // Extra sets import lazily. Serve the in-memory cache on the same tick as a
   // set change (world-scenery is always cached; extras after first load). On
   // the first switch to an uncached extra, keep the previous pool so the
   // wallpaper never drops to [] while the JSON import resolves.
   const [heldSeeds, setHeldSeeds] = useState(() =>
-    cachedSeeds.length > 0 ? cachedSeeds : peekSeedPhotos(DEFAULT_PHOTO_SET_ID),
+    seedsReady ? cachedSeeds : peekSeedPhotos(DEFAULT_PHOTO_SET_ID),
   );
   useEffect(() => {
     let cancelled = false;
@@ -123,7 +123,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
       cancelled = true;
     };
   }, [photoSetId]);
-  const photos = cachedSeeds.length > 0 ? cachedSeeds : heldSeeds;
+  const photos = seedsReady ? cachedSeeds : heldSeeds;
   const pool = useMemo(() => getSceneryPool([], photos), [photos]);
 
   const photoForThreadKey = useCallback(
@@ -162,21 +162,23 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
 
   const ensureThreadAssignment = useCallback(
     (threadKey: string) => {
-      const current = sceneryRef.current;
-      const livePool = sceneryPoolForSet(current.photoSetId);
-      if (livePool.length === 0) {
+      // Extra sets keep the previous wallpaper until seeds load. Peek-only
+      // assignment sees [] and never retries; wait until this set's seeds
+      // are the render pool, then pick from that same pool.
+      if (!seedsReady || pool.length === 0) {
         return;
       }
+      const current = sceneryRef.current;
       const existing = current.assignments[threadKey];
       const boundSet = existing?.photoSetId ?? DEFAULT_PHOTO_SET_ID;
       if (
         existing !== undefined &&
         boundSet === current.photoSetId &&
-        livePool.some((entry) => entry.id === existing.photoId)
+        pool.some((entry) => entry.id === existing.photoId)
       ) {
         return;
       }
-      const pick = pickScenery(livePool, current.assignments);
+      const pick = pickScenery(pool, current.assignments);
       if (pick === null) {
         return;
       }
@@ -192,7 +194,7 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
         }),
       });
     },
-    [persistScenery, pool],
+    [persistScenery, pool, seedsReady],
   );
 
   const setEnabled = useCallback(
