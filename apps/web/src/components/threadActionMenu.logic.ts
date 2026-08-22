@@ -149,7 +149,7 @@ export function buildThreadActionMenuItems(
     icon: "copy",
     activateOnClick: true,
     children: [
-      { id: "copy-conversation", label: "Conversation", icon: "text-select" },
+      { id: "copy-conversation", label: "Conversation", icon: "copy" },
       { id: "copy-path", label: "Path", icon: "folder" },
       ...(state.branch
         ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
@@ -164,7 +164,13 @@ export function buildThreadActionMenuItems(
     // (stays visible in the Settled shelf) and Delete (clears history for
     // good), so it sits beside Delete without borrowing its destructive
     // styling.
-    { id: "archive", label: "Archive thread", icon: "archive", disabled: state.isRunning },
+    {
+      id: "archive",
+      label: "Archive thread",
+      icon: "archive",
+      disabled: state.isRunning,
+      separatorBefore: true,
+    },
     { id: "delete", label: "Delete", destructive: true, icon: "trash" },
   ];
 

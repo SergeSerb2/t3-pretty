@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { contextMenuIcon } from "./contextMenuIcons";
 import { buildThreadActionMenuItems, type ThreadActionMenuState } from "./threadActionMenu.logic";
 
 const baseState: ThreadActionMenuState = {
@@ -140,8 +139,7 @@ describe("buildThreadActionMenuItems", () => {
       "copy-branch",
       "copy-thread-id",
     ]);
-    expect(copy?.children?.[0]).toMatchObject({ id: "copy-conversation", icon: "text-select" });
-    expect(contextMenuIcon("text-select")).not.toBeNull();
+    expect(copy?.children?.[0]).toMatchObject({ id: "copy-conversation", icon: "copy" });
   });
 
   it("puts an icon on every top-level action", () => {
@@ -160,9 +158,9 @@ describe("buildThreadActionMenuItems", () => {
   it("offers archive as a non-destructive action right before delete", () => {
     const items = buildThreadActionMenuItems(baseState);
     const archiveItem = items.at(-2);
-    expect(items.at(-3)?.separator).toBe(true);
     expect(archiveItem?.id).toBe("archive");
     expect(archiveItem?.icon).toBe("archive");
+    expect(archiveItem?.separatorBefore).toBe(true);
     expect(archiveItem?.destructive).toBeFalsy();
     expect(items.at(-1)?.id).toBe("delete");
   });

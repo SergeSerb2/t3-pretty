@@ -31,13 +31,6 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "rect", attrs: { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2" } },
     { tag: "path", attrs: { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" } },
   ],
-  "text-select": [
-    { tag: "path", attrs: { d: "M5 8h14" } },
-    { tag: "path", attrs: { d: "M5 12h10" } },
-    { tag: "path", attrs: { d: "M5 16h6" } },
-    { tag: "path", attrs: { d: "m13 13 5 5" } },
-    { tag: "path", attrs: { d: "M18 13v5h-5" } },
-  ],
   folder: [
     {
       tag: "path",
@@ -308,12 +301,15 @@ export function showContextMenuFallback<T extends string>(
         }
 
         if (item.separatorBefore === true && inner.children.length > 0) {
-          const separator = document.createElement("div");
-          separator.className = "mx-2 my-1 h-px bg-border";
-          separator.style.cssText = "height:1px;margin:0.25rem 0.5rem;background:var(--border);";
-          separator.dataset.contextMenuSeparator = "true";
-          separator.setAttribute("role", "separator");
-          inner.appendChild(separator);
+          const previous = inner.children[inner.children.length - 1] as HTMLElement | undefined;
+          if (previous?.dataset?.contextMenuSeparator !== "true") {
+            const separator = document.createElement("div");
+            separator.className = "mx-2 my-1 h-px bg-border";
+            separator.style.cssText = "height:1px;margin:0.25rem 0.5rem;background:var(--border);";
+            separator.dataset.contextMenuSeparator = "true";
+            separator.setAttribute("role", "separator");
+            inner.appendChild(separator);
+          }
         }
 
         if (item.header === true) {

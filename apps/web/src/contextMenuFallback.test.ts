@@ -239,6 +239,21 @@ describe("showContextMenuFallback", () => {
     await expect(selectionPromise).resolves.toBeNull();
   });
 
+  it("does not double a separatorBefore after an explicit separator item", async () => {
+    const selectionPromise = showContextMenuFallback([
+      { id: "copy", label: "Copy" },
+      { id: "sep", label: "", separator: true },
+      { id: "archive", label: "Archive", separatorBefore: true },
+    ]);
+    const separators = (document as unknown as FakeDocument)
+      .querySelectorAll("div")
+      .filter((element) => element.dataset.contextMenuSeparator === "true");
+
+    expect(separators).toHaveLength(1);
+    dismissContextMenu();
+    await expect(selectionPromise).resolves.toBeNull();
+  });
+
   it("renders one separator between menu sections", async () => {
     const selectionPromise = showContextMenuFallback([
       { id: "rename", label: "Rename" },
