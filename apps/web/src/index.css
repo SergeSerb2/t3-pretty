@@ -1453,14 +1453,13 @@ html[data-window-inactive]
   animation-duration: 0s !important;
 }
 
-/* Theme swap terminator sweep: while useTheme runs the palette change inside
-   a view transition, the new palette's snapshot clips in across the held old
-   one as a moving front — dusk settles downward, dawn rises from the bottom —
-   with a feather veil riding the edge (.theme-sweep-veil below).
+/* Theme swap: default is the 250ms snapshot dissolve (compositor-cheap on
+   every engine). When useTheme sets data-theme-sweep, the new snapshot clips
+   in as a terminator front — dusk settles downward, dawn rises — with a
+   feather veil riding the edge (.theme-sweep-veil below). WebKit stays on
+   the dissolve: full-viewport clip-path can re-raster every frame there.
    no-transitions stays applied underneath so no element runs its own color
-   tween during the sweep. One-shot, user/OS-triggered; the clip animates on a
-   static snapshot texture and the veil only translates, so nothing repaints
-   per frame. */
+   tween during the swap. */
 html[data-theme-swap] {
   --theme-sweep-ms: 600ms;
   --theme-sweep-ease: cubic-bezier(0.32, 0.72, 0, 1);
@@ -1472,20 +1471,29 @@ html[data-theme-swap="system"] {
 }
 
 html[data-theme-swap]::view-transition-group(root) {
-  animation: none;
+  animation-duration: 250ms;
 }
 
-html[data-theme-swap]::view-transition-old(root) {
-  animation: none;
-  /* Held at full opacity under the advancing front; plus-lighter flashes a
-     bright frame between a light and dark snapshot. */
-  opacity: 1;
-  mix-blend-mode: normal;
-}
-
+html[data-theme-swap]::view-transition-old(root),
 html[data-theme-swap]::view-transition-new(root) {
-  animation: var(--theme-sweep-ms) var(--theme-sweep-ease) both theme-sweep-dusk;
+  animation-duration: 250ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  /* plus-lighter flashes a bright frame between a light and dark snapshot. */
   mix-blend-mode: normal;
+}
+
+html[data-theme-sweep]::view-transition-group(root) {
+  animation: none;
+}
+
+html[data-theme-sweep]::view-transition-old(root) {
+  animation: none;
+  /* Held at full opacity under the advancing front. */
+  opacity: 1;
+}
+
+html[data-theme-sweep]::view-transition-new(root) {
+  animation: var(--theme-sweep-ms) var(--theme-sweep-ease) both theme-sweep-dusk;
 }
 
 html[data-theme-sweep="dawn"]::view-transition-new(root) {
@@ -1539,11 +1547,11 @@ html[data-theme-sweep="dawn"]::view-transition-new(root) {
   mask-image: linear-gradient(to bottom, transparent, black, transparent);
 }
 
-html[data-theme-swap]::view-transition-old(theme-sweep-veil) {
+html[data-theme-sweep]::view-transition-old(theme-sweep-veil) {
   display: none;
 }
 
-html[data-theme-swap]::view-transition-group(theme-sweep-veil) {
+html[data-theme-sweep]::view-transition-group(theme-sweep-veil) {
   animation: var(--theme-sweep-ms) var(--theme-sweep-ease) both theme-sweep-veil-dusk;
 }
 
@@ -1551,7 +1559,7 @@ html[data-theme-sweep="dawn"]::view-transition-group(theme-sweep-veil) {
   animation-name: theme-sweep-veil-dawn;
 }
 
-html[data-theme-swap]::view-transition-new(theme-sweep-veil) {
+html[data-theme-sweep]::view-transition-new(theme-sweep-veil) {
   animation: var(--theme-sweep-ms) linear both theme-sweep-veil-fade;
 }
 

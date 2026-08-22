@@ -3,7 +3,15 @@ import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { canAnimateSceneryInkTransition } from "../scenery/sceneryInkTransition";
-import { mountSweepVeil, shouldMashCut, sweepDirection, type ThemeSwapSource } from "./themeSweep";
+import {
+  canSweepTerminatorFront,
+  cutActiveThemeSwap,
+  mountSweepVeil,
+  retainActiveThemeSwap,
+  shouldMashCut,
+  sweepDirection,
+  type ThemeSwapSource,
+} from "./themeSweep";
 import {
   applyThemePalette,
   CUSTOM_THEMES_STORAGE_KEY,
@@ -336,6 +344,7 @@ function applyTheme(theme: Theme, suppressTransitions = false, source: ThemeSwap
   // Forced applies (cross-tab storage, refresh) hard-cut under no-transitions
   // and never start a view transition.
   if (suppressTransitions) {
+    cutActiveThemeSwap();
     commitWithoutElementTweens();
     return;
   }
@@ -348,28 +357,37 @@ function applyTheme(theme: Theme, suppressTransitions = false, source: ThemeSwap
     return;
   }
   if (document.hidden || !canAnimateThemeSwapTransition()) {
+    cutActiveThemeSwap();
     commitWithoutElementTweens();
     return;
   }
 
   // A second toggle mid-sweep or a rapid A/B burst wants the comparison, not
-  // the choreography: commit instantly. An in-flight sweep keeps rendering
-  // the updated palette through its live new-state snapshot.
+  // the choreography: skip the in-flight view transition and commit instantly.
   if (root.dataset.themeSwap !== undefined || shouldMashCut(Date.now())) {
+    cutActiveThemeSwap();
     commitWithoutElementTweens();
     return;
   }
 
   // The new palette sweeps across the held old snapshot as a terminator
   // front — dusk settles downward, dawn rises — with a feather veil riding
-  // the edge (see html[data-theme-swap] in index.css). no-transitions still
-  // suppresses per-element color tweens underneath, and a system flip runs
-  // slower than a deliberate toggle.
+  // the edge (see html[data-theme-sweep] in index.css). WebKit stays on the
+  // 250ms dissolve. no-transitions still suppresses per-element color tweens
+  // underneath, and a system flip runs slower than a deliberate toggle.
   root.classList.add("no-transitions");
   root.dataset.themeSwap = source;
-  root.dataset.themeSweep = sweepDirection(resolvedAppearance === "dark");
-  const removeVeil = mountSweepVeil();
+  const sweeping = canSweepTerminatorFront();
+  if (sweeping) {
+    root.dataset.themeSweep = sweepDirection(resolvedAppearance === "dark");
+  }
+  const removeVeil = sweeping ? mountSweepVeil() : () => {};
+  let finishedSwap = false;
+  let releaseSwap = () => {};
   const finishSwap = () => {
+    if (finishedSwap) return;
+    finishedSwap = true;
+    releaseSwap();
     removeVeil();
     delete root.dataset.themeSwap;
     delete root.dataset.themeSweep;
@@ -378,9 +396,18 @@ function applyTheme(theme: Theme, suppressTransitions = false, source: ThemeSwap
   try {
     const transition = (
       document as Document & {
-        startViewTransition: (update: () => void) => { finished: Promise<void> };
+        startViewTransition: (update: () => void) => {
+          finished: Promise<void>;
+          skipTransition: () => void;
+        };
       }
     ).startViewTransition(commitTheme);
+    releaseSwap = retainActiveThemeSwap({
+      skipTransition: () => {
+        transition.skipTransition();
+      },
+      finish: finishSwap,
+    });
     void transition.finished.then(finishSwap, finishSwap);
   } catch {
     commitTheme();

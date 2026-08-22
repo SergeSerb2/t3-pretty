@@ -4,11 +4,16 @@
  * a moving front — dusk settles downward, dawn rises from the bottom — with
  * a feather veil riding the edge. useTheme drives it; the direction and
  * tempo land as data attributes on <html> that select the keyframes in
- * index.css (see html[data-theme-swap]).
+ * index.css (see html[data-theme-swap] / html[data-theme-sweep]).
  */
 
 export type SweepDirection = "dusk" | "dawn";
 export type ThemeSwapSource = "user" | "system";
+
+export type ActiveThemeSwap = {
+  skipTransition: () => void;
+  finish: () => void;
+};
 
 /** Going dark, night falls from the top; going light, dawn rises. */
 export function sweepDirection(incomingDark: boolean): SweepDirection {
@@ -19,6 +24,7 @@ const MASH_WINDOW_MS = 1000;
 const MASH_LIMIT = 2;
 
 let recentSweeps: number[] = [];
+let activeThemeSwap: ActiveThemeSwap | null = null;
 
 /**
  * Rapid re-toggles are comparison, not choreography: after two animated
@@ -33,8 +39,40 @@ export function shouldMashCut(now: number): boolean {
   return false;
 }
 
+/**
+ * Clip-path on a full-viewport snapshot is compositor-cheap on Blink/Gecko.
+ * WebKit (Safari, iOS Chrome) can re-clip every frame for 600–1200ms — keep
+ * those on the 250ms dissolve by not setting data-theme-sweep.
+ */
+export function canSweepTerminatorFront(
+  userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent,
+): boolean {
+  if (/CriOS/i.test(userAgent)) return false;
+  return /Chrome|Chromium|Edg|Firefox/i.test(userAgent);
+}
+
+export function retainActiveThemeSwap(swap: ActiveThemeSwap): () => void {
+  activeThemeSwap = swap;
+  return () => {
+    if (activeThemeSwap === swap) activeThemeSwap = null;
+  };
+}
+
+/** Skip the in-flight View Transition and finish it so a hard-cut is instant. */
+export function cutActiveThemeSwap(): void {
+  const swap = activeThemeSwap;
+  activeThemeSwap = null;
+  try {
+    swap?.skipTransition();
+  } catch {
+    // Already finished or not skippable.
+  }
+  swap?.finish();
+}
+
 export function resetMashGuard(): void {
   recentSweeps = [];
+  activeThemeSwap = null;
 }
 
 /**

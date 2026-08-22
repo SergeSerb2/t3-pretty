@@ -1,6 +1,16 @@
-import { afterEach, describe, expect, it } from "vite-plus/test";
+// @effect-diagnostics nodeBuiltinImport:off - stylesheet contract reads index.css from disk.
+import * as NodeFS from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { resetMashGuard, shouldMashCut, sweepDirection } from "./themeSweep";
+import useThemeSource from "./useTheme.ts?raw";
+import {
+  canSweepTerminatorFront,
+  cutActiveThemeSwap,
+  resetMashGuard,
+  retainActiveThemeSwap,
+  shouldMashCut,
+  sweepDirection,
+} from "./themeSweep";
 
 afterEach(() => {
   resetMashGuard();
@@ -28,5 +38,57 @@ describe("shouldMashCut", () => {
     expect(shouldMashCut(0)).toBe(false);
     expect(shouldMashCut(1100)).toBe(false);
     expect(shouldMashCut(2200)).toBe(false);
+  });
+});
+
+describe("canSweepTerminatorFront", () => {
+  it("opts into clip-path on Blink and Gecko", () => {
+    expect(canSweepTerminatorFront("Chrome/120.0.0.0 Safari/537.36")).toBe(true);
+    expect(canSweepTerminatorFront("Firefox/121.0")).toBe(true);
+  });
+
+  it("keeps WebKit on the dissolve, including iOS Chrome", () => {
+    expect(canSweepTerminatorFront("Version/17.0 Safari/605.1.15")).toBe(false);
+    expect(canSweepTerminatorFront("CriOS/120.0.0.0 Mobile/15E148 Safari/604.1")).toBe(false);
+  });
+});
+
+describe("cutActiveThemeSwap", () => {
+  it("skips the in-flight view transition then finishes the swap", () => {
+    const skipTransition = vi.fn();
+    const finish = vi.fn();
+    retainActiveThemeSwap({ skipTransition, finish });
+    cutActiveThemeSwap();
+    expect(skipTransition).toHaveBeenCalledOnce();
+    expect(finish).toHaveBeenCalledOnce();
+    cutActiveThemeSwap();
+    expect(skipTransition).toHaveBeenCalledOnce();
+    expect(finish).toHaveBeenCalledOnce();
+  });
+
+  it("still finishes when skipTransition throws", () => {
+    const finish = vi.fn();
+    retainActiveThemeSwap({
+      skipTransition: () => {
+        throw new Error("already finished");
+      },
+      finish,
+    });
+    cutActiveThemeSwap();
+    expect(finish).toHaveBeenCalledOnce();
+  });
+});
+
+describe("theme swap wiring", () => {
+  it("hard-cut paths skip the in-flight view transition", () => {
+    expect(useThemeSource).toContain("cutActiveThemeSwap");
+    expect(useThemeSource).toContain("skipTransition");
+  });
+
+  it("keeps clip-path sweep behind data-theme-sweep so WebKit stays on the dissolve", () => {
+    const css = NodeFS.readFileSync(new URL("../index.css", import.meta.url), "utf8");
+    expect(css).toContain("html[data-theme-sweep]::view-transition-new(root)");
+    expect(css).toContain("animation-duration: 250ms");
+    expect(useThemeSource).toContain("canSweepTerminatorFront");
   });
 });
