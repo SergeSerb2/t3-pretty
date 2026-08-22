@@ -6,7 +6,11 @@
 #
 # Queues:
 #   linux-small    — Buildkite hosted Linux (importer + ubuntu-latest jobs)
-#   macos-release  — m1-dev / extra Macs (signed DMG + iOS OTA/TestFlight)
+#   macos-release  — Origin PR Review Mac (m5-dev / this daily driver).
+#                    Existing feature-branch pipelines already target this
+#                    queue, so reviews keep matching while m1-dev is down.
+#   macos-package  — signed DMG, iOS OTA/TestFlight, relay, upstream sync.
+#                    Empty while no packaging Mac is registered.
 #   windows-release — serge-pc native NSIS (importer cannot run Windows jobs)
 #
 # Do not list cluster secrets on hosted steps. Hosted agents currently 500
@@ -39,7 +43,7 @@ steps:
     # Native DMG/NSIS/iOS/relay are the release. Do not red the whole build
     # when only the importer fails.
     # Scheduled builds exist only to run upstream sync. That job is native
-    # macos-release below: imported macos-release steps write $GITHUB_OUTPUT
+    # macos-package below: imported macos GHA steps write $GITHUB_OUTPUT
     # and die under set -u when the importer omits the file.
     soft_fail: true
     if: build.source != "schedule"
@@ -56,11 +60,11 @@ steps:
             - runs-on: ubuntu-latest
               queue: linux-small
             - runs-on: macos-latest
-              queue: macos-release
+              queue: macos-package
             - runs-on: macos-15
-              queue: macos-release
+              queue: macos-package
             - runs-on: macos-14
-              queue: macos-release
+              queue: macos-package
 
   # Hosted linux-small cannot load CURSOR_API_KEY. macos-release has
   # the secret files. Run review scripts from origin/main when present
@@ -68,17 +72,17 @@ steps:
   - label: ":git: Upstream Sync"
     key: upstream-sync
     # The four-hour schedule is this job. Do not import
-    # fork-upstream-sync.yml: macos-release GHA steps need GITHUB_OUTPUT
+    # fork-upstream-sync.yml: macos GHA steps need GITHUB_OUTPUT
     # for discover, and the importer often leaves that file unset.
     if: 'build.branch == "main" && (build.source == "schedule" || build.source == "ui" || build.source == "api")'
     timeout_in_minutes: 120
     concurrency: 1
     concurrency_group: "t3-pretty/upstream-sync"
     # Ahead of Origin PR review so a feature-branch review cannot occupy
-    # m1-dev in front of a nightly that is already late.
+    # the packaging Mac in front of a nightly that is already late.
     priority: 30
     agents:
-      queue: macos-release
+      queue: macos-package
     command: bash scripts/fork/run-upstream-sync.sh
 
   - label: ":mag: Origin PR Review"
@@ -122,7 +126,7 @@ steps:
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 60
     agents:
-      queue: macos-release
+      queue: macos-package
     env:
       T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
     command: bash scripts/fork/build-macos-dmg.sh
@@ -135,13 +139,13 @@ steps:
     key: ios-mobile
     concurrency: 1
     concurrency_group: "t3-pretty/ios-mobile"
-    # Ahead of Origin PR review on the single macos-release agent so a
+    # Ahead of Origin PR review on the packaging Mac so a
     # feature-branch review cannot sit in front of TestFlight.
     priority: 20
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
     agents:
-      queue: macos-release
+      queue: macos-package
     env:
       APP_VARIANT: production
       NODE_OPTIONS: "--max-old-space-size=8192"
@@ -154,11 +158,11 @@ steps:
   - label: ":cloud: Relay"
     key: deploy-relay
     # Hosted macos-latest GHA jobs do not have the Origin git store or the
-    # m1-dev file-store secrets. Keep production deploys on macos-release.
+    # packaging-Mac file-store secrets. Keep production deploys on macos-package.
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 20
     agents:
-      queue: macos-release
+      queue: macos-package
     env:
       CLOUDFLARE_ACCOUNT_ID: a6f705b8c6459d937d32d31555f9fbf6
       PLANETSCALE_ORGANIZATION: serge-serbinenko

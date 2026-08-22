@@ -1,3 +1,4 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
@@ -204,6 +205,10 @@ describe("T3 Pretty release runner placement", () => {
     );
     assert.include(macosAgent, "COMPANION_NAME");
     assert.include(macosAgent, "${AGENT_NAME}-2");
+    assert.include(macosAgent, "REVIEW_ONLY");
+    assert.include(macosAgent, "macos-review-only-hook.sh");
+    assert.include(macosAgent, "T3_PRETTY_REVIEW_ONLY");
+    assert.include(macosAgent, "GIT_CONFIG_GLOBAL");
     assert.include(macosAgent, "persist-ios-native-submit-hook.sh");
     const persistHook = NodeFS.readFileSync(
       NodePath.resolve(here, "persist-ios-native-submit-hook.sh"),
@@ -213,6 +218,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(persistHook, ".cache/t3-pretty-release/ios-native-submit");
     assert.include(persistHook, "refresh_macos_agent_hooks");
     assert.include(persistHook, 'grep -q "helpers_ready" "$src/macos-origin-git.sh"');
+    assert.include(persistHook, "origin_cli_helper_ready");
+    assert.include(persistHook, "macos-review-only-hook.sh");
     assert.include(
       persistHook,
       'grep -q "refresh_macos_agent_hooks" "$src/persist-ios-native-submit-hook.sh"',
@@ -248,5 +255,34 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(relayWorkflow, "relay.sergeserbinenko.com");
     assert.include(relayWorkflow, "load-buildkite-secrets.sh");
     assert.include(relayWorkflow, "Require relay deploy credentials");
+  });
+});
+
+describe("macos review-only pre-command hook", () => {
+  const hook = NodePath.resolve(here, "macos-review-only-hook.sh");
+
+  function run(env) {
+    return NodeChildProcess.spawnSync("bash", [hook], {
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, ...env },
+    });
+  }
+
+  it("no-ops without T3_PRETTY_REVIEW_ONLY", () => {
+    assert.equal(run({ BUILDKITE_STEP_KEY: "macos-dmg" }).status, 0);
+  });
+
+  it("allows Origin PR review steps and refuses packaging", () => {
+    assert.equal(
+      run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "origin-pr-review" }).status,
+      0,
+    );
+    assert.equal(
+      run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "origin-pr-comments" }).status,
+      0,
+    );
+    const refused = run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "macos-dmg" });
+    assert.equal(refused.status, 1);
+    assert.include(refused.stderr, "review-only");
   });
 });
