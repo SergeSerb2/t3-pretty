@@ -1,0 +1,2 @@
+# Runtime for `vp run icons:pretty` (`scripts/generate-pretty-icons.py`).
+pillow==11.3.0

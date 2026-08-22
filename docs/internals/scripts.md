@@ -61,6 +61,13 @@ authenticated.
 - `vp run typecheck`: Strict TypeScript checks for all packages.
 - `vp run test`: Runs workspace tests.
 - `vp run lint:mobile`: Mobile native static analysis (`scripts/mobile-native-static-check.ts`).
+- `vp run icons:pretty`: Regenerates the T3 Pretty fork icon family from
+  `assets/pretty/kit/mark-sage.png`. Requires Python 3 and Pillow
+  (`python3 -m pip install -r scripts/requirements-pretty-icons.txt`). ICNS is
+  written as PNG-in-ICNS, so the command is not macOS-only.
+- `vp run icons:export` / `icons:check`: Export or verify Icon Composer assets
+  on macOS. Fork-owned `assets/pretty/` files are skipped; regenerate those with
+  `icons:pretty`.
 - `node apps/server/scripts/t3-sqlite-state.ts <query|exec> --base-dir <path> ...`: Inspects or seeds
   an isolated T3 SQLite database; writes create a private backup first.
 

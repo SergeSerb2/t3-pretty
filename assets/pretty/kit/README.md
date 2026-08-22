@@ -45,4 +45,5 @@ same frost field full-bleed, since iOS applies the squircle mask itself.
 | `icon.ico`                            | Windows (iOS art)                 |
 
 Live copies used by the app live in `assets/pretty/t3-pretty-*`. Regenerate the
-family with `vp run icons:pretty` (`scripts/generate-pretty-icons.py`).
+family with `vp run icons:pretty` (`scripts/generate-pretty-icons.py`; needs
+Python 3 and Pillow from `scripts/requirements-pretty-icons.txt`).

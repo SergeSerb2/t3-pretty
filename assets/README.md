@@ -26,15 +26,17 @@ glyph reads at the same scale on the Dock, home screen, and browser chrome.
 The ICO, ICNS, favicon, apple-touch, and Android adaptive foreground files are
 derived from those masters. Desktop packaging copies them into `apps/desktop/resources`.
 
-Run `vp run icons:pretty` (python3 + Pillow) to regenerate the family from
-`pretty/kit/mark-sage.png` via `scripts/generate-pretty-icons.py`, then refresh
-the web public copies with
-`node scripts/apply-web-brand-assets.ts --brand development --target-directory apps/web/public`.
+Run `vp run icons:pretty` to regenerate the family from
+`pretty/kit/mark-sage.png` via `scripts/generate-pretty-icons.py`. That command
+needs Python 3 and Pillow (`python3 -m pip install -r scripts/requirements-pretty-icons.txt`).
+It writes a portable ICNS (no macOS `iconutil`), the in-app mark copies, and the
+web public favicons, so the tracked family cannot split across machines.
 
 `pretty/t3-pretty-mark.png` is the in-app T3 (web sidebar, mobile thread header):
-sage ink on a transparent ground, no plate. The web and mobile copies
-(`apps/web/public/t3-pretty-mark.png`, `apps/mobile/assets/t3-pretty-mark.png`)
-are produced by the same brand-asset copy step as the favicons.
+sage ink on a transparent ground, no plate. `icons:pretty` copies it to
+`apps/web/public/t3-pretty-mark.png` and `apps/mobile/assets/t3-pretty-mark.png`.
+Hosted and desktop packaging still copy those tracked files into dist via
+`scripts/apply-web-brand-assets.ts`.
 
 macOS disk-image artwork lives next to the vector templates in
 `apps/desktop/resources/dmg/`: `dmg-background-*-art.jpg` is the generated T3 Pretty installer

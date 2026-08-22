@@ -9,26 +9,48 @@ One spec, every surface: the cut-out T3 sits at 62% of the visible icon area
 - iOS master: full-bleed frost, glyph 635px wide (62% of 1024).
 - Android adaptive foreground: glyph at 62% of the inner 66/108 safe zone,
   on transparent (background `#DFEFE3` comes from app.config).
-- Derived: icns/ico/favicons/apple-touch/kit squares/desktop resources.
+- Derived: icns/ico/favicons/apple-touch/kit squares/desktop resources,
+  plus the in-app mark copies.
 
-Requires Pillow. Regenerates in place; run from the repo root:
+Requires Python 3 and Pillow. Install the pin, then run from the repo root:
 
+    python3 -m pip install -r scripts/requirements-pretty-icons.txt
     python3 scripts/generate-pretty-icons.py
 """
 
+import io
 import math
 import shutil
-import subprocess
-import tempfile
+import struct
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+try:
+    from PIL import Image, ImageDraw, ImageFilter
+except ImportError:
+    raise SystemExit(
+        "Pillow is required to regenerate T3 Pretty icons. "
+        "Install it with: python3 -m pip install -r scripts/requirements-pretty-icons.txt"
+    )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRETTY = REPO_ROOT / "assets" / "pretty"
 KIT = PRETTY / "kit"
 DESKTOP_RESOURCES = REPO_ROOT / "apps" / "desktop" / "resources"
 MOBILE_ASSETS = REPO_ROOT / "apps" / "mobile" / "assets"
+WEB_PUBLIC = REPO_ROOT / "apps" / "web" / "public"
+
+# PNG-in-ICNS types used by modern macOS. Duplicate pixel sizes share one PNG
+# (1x and @2x aliases). This is portable; iconutil is macOS-only.
+ICNS_PNG_TYPES = (
+    (b"ic11", 32),
+    (b"ic12", 64),
+    (b"ic07", 128),
+    (b"ic08", 256),
+    (b"ic13", 256),
+    (b"ic09", 512),
+    (b"ic14", 512),
+    (b"ic10", 1024),
+)
 
 FROST = (223, 239, 227, 255)  # #DFEFE3 sage-frost plate / iOS background
 CANVAS = 1024
@@ -118,23 +140,29 @@ def downscale(icon: Image.Image, size: int) -> Image.Image:
     return icon.resize((size, size), Image.LANCZOS)
 
 
+def png_bytes(image: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def encode_icns(macos_master: Image.Image) -> bytes:
+    pngs: dict[int, bytes] = {}
+    for _ostype, size in ICNS_PNG_TYPES:
+        if size not in pngs:
+            pngs[size] = png_bytes(downscale(macos_master, size))
+    chunks = []
+    for ostype, size in ICNS_PNG_TYPES:
+        data = pngs[size]
+        chunks.append(ostype + struct.pack(">I", 8 + len(data)) + data)
+    payload = b"".join(chunks)
+    return b"icns" + struct.pack(">I", 8 + len(payload)) + payload
+
+
 def write_icns(macos_master: Image.Image, targets: list[Path]) -> None:
-    # iconutil ships with macOS only; skip the .icns outputs elsewhere so the
-    # rest of the family can still be rebuilt on any machine.
-    if shutil.which("iconutil") is None:
-        print("Skipping .icns export: iconutil is only available on macOS.")
-        return
-    with tempfile.TemporaryDirectory(prefix="t3-pretty-iconset-") as tmp:
-        iconset = Path(tmp) / "icon.iconset"
-        iconset.mkdir()
-        for size in (16, 32, 128, 256, 512):
-            downscale(macos_master, size).save(iconset / f"icon_{size}x{size}.png")
-            downscale(macos_master, size * 2).save(iconset / f"icon_{size}x{size}@2x.png")
-        for target in targets:
-            subprocess.run(
-                ["iconutil", "-c", "icns", str(iconset), "-o", str(target)],
-                check=True,
-            )
+    contents = encode_icns(macos_master)
+    for target in targets:
+        target.write_bytes(contents)
 
 
 def write_ico(ios_master: Image.Image, targets: list[Path]) -> None:
@@ -144,6 +172,27 @@ def write_ico(ios_master: Image.Image, targets: list[Path]) -> None:
             format="ICO",
             sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
         )
+
+
+def write_mark_copies() -> None:
+    # Same cut-out T3 the plates use, no frost field. Keep the kit source's
+    # 480x351 canvas (including transparent padding) so the mobile lockup's
+    # 480/351 aspect ratio stays valid.
+    source = KIT / "mark-sage.png"
+    mark = PRETTY / "t3-pretty-mark.png"
+    shutil.copyfile(source, mark)
+    shutil.copyfile(mark, WEB_PUBLIC / "t3-pretty-mark.png")
+    shutil.copyfile(mark, MOBILE_ASSETS / "t3-pretty-mark.png")
+
+
+def write_web_public_icons() -> None:
+    shutil.copyfile(PRETTY / "t3-pretty.ico", WEB_PUBLIC / "favicon.ico")
+    shutil.copyfile(PRETTY / "t3-pretty-favicon-16x16.png", WEB_PUBLIC / "favicon-16x16.png")
+    shutil.copyfile(PRETTY / "t3-pretty-favicon-32x32.png", WEB_PUBLIC / "favicon-32x32.png")
+    shutil.copyfile(
+        PRETTY / "t3-pretty-apple-touch-180.png",
+        WEB_PUBLIC / "apple-touch-icon.png",
+    )
 
 
 def main() -> None:
@@ -179,6 +228,9 @@ def main() -> None:
     for size in (16, 32, 64, 128, 180, 256, 512):
         downscale(ios, size).save(KIT / f"icon-{size}.png")
     write_ico(ios, [KIT / "icon.ico"])
+
+    write_mark_copies()
+    write_web_public_icons()
 
     print("Regenerated T3 Pretty icon family (glyph at 62% of the visible icon area).")
 
