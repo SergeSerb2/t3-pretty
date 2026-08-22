@@ -368,14 +368,17 @@ export const make = (
     ).pipe(Effect.provideService(Scope.Scope, runtimeScope));
 
     const acp = yield* Effect.service(EffectAcpClient.AcpClient).pipe(Effect.provide(acpContext));
-    const terminalHost = yield* makeAcpTerminalHost({ cwd: options.cwd }).pipe(
-      Effect.provideService(Scope.Scope, runtimeScope),
-    );
-    yield* acp.handleCreateTerminal(terminalHost.create);
-    yield* acp.handleTerminalOutput(terminalHost.output);
-    yield* acp.handleTerminalWaitForExit(terminalHost.waitForExit);
-    yield* acp.handleTerminalKill(terminalHost.kill);
-    yield* acp.handleTerminalRelease(terminalHost.release);
+    const advertiseTerminal = options.clientCapabilities?.terminal === true;
+    if (advertiseTerminal) {
+      const terminalHost = yield* makeAcpTerminalHost({ cwd: options.cwd }).pipe(
+        Effect.provideService(Scope.Scope, runtimeScope),
+      );
+      yield* acp.handleCreateTerminal(terminalHost.create);
+      yield* acp.handleTerminalOutput(terminalHost.output);
+      yield* acp.handleTerminalWaitForExit(terminalHost.waitForExit);
+      yield* acp.handleTerminalKill(terminalHost.kill);
+      yield* acp.handleTerminalRelease(terminalHost.release);
+    }
 
     yield* acp.handleSessionUpdate((notification) =>
       Effect.gen(function* () {
@@ -419,9 +422,9 @@ export const make = (
         writeTextFile: false,
         ...options.clientCapabilities?.fs,
       },
-      // Kimi 0.37+ refuses Bash/Glob/Grep unless this is true and the
-      // terminal/* handlers above are registered.
-      terminal: options.clientCapabilities?.terminal ?? true,
+      // Off unless the driver opts in. Kimi sets terminal: true so 0.37+
+      // can route Bash/Glob/Grep through the handlers above.
+      terminal: options.clientCapabilities?.terminal ?? false,
       ...(options.clientCapabilities?.auth ? { auth: options.clientCapabilities.auth } : {}),
       ...(options.clientCapabilities?.elicitation
         ? { elicitation: options.clientCapabilities.elicitation }

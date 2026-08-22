@@ -5,6 +5,7 @@
  */
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeBuffer from "node:buffer";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import * as Crypto from "effect/Crypto";
@@ -76,16 +77,26 @@ export function resolveAcpTerminalSpawn(input: {
   return { command: "/bin/bash", args: ["-c", input.command] };
 }
 
+/** Kept when the agent omits `outputByteLimit`. Smaller requested limits still win. */
+export const DEFAULT_ACP_TERMINAL_OUTPUT_BYTE_LIMIT = 1024 * 1024;
+
+export function resolveAcpTerminalOutputByteLimit(requested: number | null | undefined): number {
+  if (requested == null || !Number.isFinite(requested) || requested < 0) {
+    return DEFAULT_ACP_TERMINAL_OUTPUT_BYTE_LIMIT;
+  }
+  return Math.min(Math.floor(requested), DEFAULT_ACP_TERMINAL_OUTPUT_BYTE_LIMIT);
+}
+
 export function appendTerminalOutput(
   current: TerminalOutputBuffer,
   chunk: Uint8Array,
-  maxBytes: number | undefined,
+  maxBytes: number,
 ): TerminalOutputBuffer {
   if (chunk.byteLength === 0) {
     return current;
   }
   const combined = concatBytes(current.bytes, chunk);
-  if (maxBytes === undefined || combined.byteLength <= maxBytes) {
+  if (combined.byteLength <= maxBytes) {
     return { bytes: combined, truncated: current.truncated };
   }
   return { bytes: keepUtf8Tail(combined, maxBytes), truncated: true };
@@ -113,19 +124,52 @@ function decodeTerminalOutput(bytes: Uint8Array): string {
   return NodeBuffer.Buffer.from(bytes).toString("utf8");
 }
 
+function resolveAcpTerminalCandidate(
+  requestCwd: string | null | undefined,
+  sessionCwd: string,
+): string {
+  const root = NodePath.resolve(sessionCwd);
+  const requested = requestCwd?.trim();
+  if (!requested) {
+    return root;
+  }
+  return NodePath.isAbsolute(requested)
+    ? NodePath.resolve(requested)
+    : NodePath.resolve(root, requested);
+}
+
 export function resolveAcpTerminalCwd(
   requestCwd: string | null | undefined,
   sessionCwd: string,
 ): string | undefined {
   const root = NodePath.resolve(sessionCwd);
-  const requested = requestCwd?.trim();
-  const resolved = !requested
-    ? root
-    : NodePath.isAbsolute(requested)
-      ? NodePath.resolve(requested)
-      : NodePath.resolve(root, requested);
+  const resolved = resolveAcpTerminalCandidate(requestCwd, sessionCwd);
   return isPathInsideRoot(root, resolved) ? resolved : undefined;
 }
+
+function realpathOrUndefined(target: string): Effect.Effect<string | undefined> {
+  return Effect.tryPromise({
+    try: () => NodeFSP.realpath(target),
+    catch: () => new Error("realpath failed"),
+  }).pipe(Effect.catch(() => Effect.succeed<string | undefined>(undefined)));
+}
+
+export const confineAcpTerminalCwd = (
+  requestCwd: string | null | undefined,
+  sessionCwd: string,
+): Effect.Effect<string | undefined> =>
+  Effect.gen(function* () {
+    const realRoot = yield* realpathOrUndefined(NodePath.resolve(sessionCwd));
+    if (realRoot === undefined) {
+      return undefined;
+    }
+    const candidate = resolveAcpTerminalCandidate(requestCwd, realRoot);
+    const realCandidate = yield* realpathOrUndefined(candidate);
+    if (realCandidate === undefined) {
+      return undefined;
+    }
+    return isPathInsideRoot(realRoot, realCandidate) ? realCandidate : undefined;
+  });
 
 function isPathInsideRoot(root: string, candidate: string): boolean {
   const relative = NodePath.relative(root, candidate);
@@ -226,7 +270,7 @@ export const makeAcpTerminalHost = (options: { readonly cwd: string }) =>
             "ACP terminal command cannot be empty.",
           );
         }
-        const cwd = resolveAcpTerminalCwd(request.cwd, options.cwd);
+        const cwd = yield* confineAcpTerminalCwd(request.cwd, options.cwd);
         if (!cwd) {
           return yield* EffectAcpErrors.AcpRequestError.invalidParams(
             "ACP terminal cwd must stay inside the session working directory.",
@@ -274,10 +318,7 @@ export const makeAcpTerminalHost = (options: { readonly cwd: string }) =>
         );
         const exit = yield* Deferred.make<EffectAcpSchema.WaitForTerminalExitResponse>();
         const drained = yield* Deferred.make<void>();
-        const maxBytes =
-          request.outputByteLimit === null || request.outputByteLimit === undefined
-            ? undefined
-            : request.outputByteLimit;
+        const maxBytes = resolveAcpTerminalOutputByteLimit(request.outputByteLimit);
 
         yield* child.all.pipe(
           Stream.runForEach((chunk) =>

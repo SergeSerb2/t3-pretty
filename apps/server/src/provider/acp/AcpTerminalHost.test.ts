@@ -4,6 +4,8 @@ import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import { describe, expect } from "vite-plus/test";
 import {
   HostProcessExecutablePath,
@@ -13,8 +15,11 @@ import {
 
 import {
   appendTerminalOutput,
+  confineAcpTerminalCwd,
+  DEFAULT_ACP_TERMINAL_OUTPUT_BYTE_LIMIT,
   makeAcpTerminalHost,
   resolveAcpTerminalCwd,
+  resolveAcpTerminalOutputByteLimit,
   resolveAcpTerminalSpawn,
   terminalExitFromCode,
   terminalExitFromFailure,
@@ -79,6 +84,47 @@ describe("resolveAcpTerminalCwd", () => {
   });
 });
 
+describe("confineAcpTerminalCwd", () => {
+  it.effect("realpaths the session cwd when the request omits cwd", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const realRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "acp-term-real-" });
+      const parent = yield* fileSystem.makeTempDirectoryScoped({ prefix: "acp-term-alias-" });
+      const alias = path.join(parent, "alias");
+      yield* fileSystem.symlink(realRoot, alias);
+      const confined = yield* confineAcpTerminalCwd(undefined, alias);
+      expect(confined).toBe(yield* fileSystem.realPath(realRoot));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects a cwd symlink that points outside the session root", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const sessionRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "acp-term-root-" });
+      const outside = yield* fileSystem.makeTempDirectoryScoped({ prefix: "acp-term-out-" });
+      const escapeLink = path.join(sessionRoot, "escape");
+      yield* fileSystem.symlink(outside, escapeLink);
+      const confined = yield* confineAcpTerminalCwd(escapeLink, sessionRoot);
+      expect(confined).toBeUndefined();
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects cwd when realpath fails", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const sessionRoot = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "acp-term-missing-",
+      });
+      const missing = path.join(sessionRoot, "does-not-exist");
+      const confined = yield* confineAcpTerminalCwd(missing, sessionRoot);
+      expect(confined).toBeUndefined();
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+});
+
 describe("terminalExitFromCode", () => {
   it("maps null and non-integer codes to a non-zero status", () => {
     expect(terminalExitFromCode(null)).toEqual({ exitCode: 1 });
@@ -107,6 +153,19 @@ describe("terminalExitFromFailure", () => {
   });
 });
 
+describe("resolveAcpTerminalOutputByteLimit", () => {
+  it("defaults when the agent omits a limit and honors a smaller request", () => {
+    expect(resolveAcpTerminalOutputByteLimit(undefined)).toBe(
+      DEFAULT_ACP_TERMINAL_OUTPUT_BYTE_LIMIT,
+    );
+    expect(resolveAcpTerminalOutputByteLimit(null)).toBe(DEFAULT_ACP_TERMINAL_OUTPUT_BYTE_LIMIT);
+    expect(resolveAcpTerminalOutputByteLimit(16)).toBe(16);
+    expect(resolveAcpTerminalOutputByteLimit(DEFAULT_ACP_TERMINAL_OUTPUT_BYTE_LIMIT + 8)).toBe(
+      DEFAULT_ACP_TERMINAL_OUTPUT_BYTE_LIMIT,
+    );
+  });
+});
+
 describe("appendTerminalOutput", () => {
   it("keeps the UTF-8 tail when the byte limit is exceeded", () => {
     const first = appendTerminalOutput(
@@ -117,6 +176,18 @@ describe("appendTerminalOutput", () => {
     const next = appendTerminalOutput(first, new TextEncoder().encode("bbcc"), 4);
     expect(new TextDecoder().decode(next.bytes)).toBe("bbcc");
     expect(next.truncated).toBe(true);
+  });
+
+  it("applies the default cap when the omitted-limit resolver is used", () => {
+    const over = new Uint8Array(DEFAULT_ACP_TERMINAL_OUTPUT_BYTE_LIMIT + 8);
+    over.fill(97);
+    const next = appendTerminalOutput(
+      { bytes: new Uint8Array(0), truncated: false },
+      over,
+      resolveAcpTerminalOutputByteLimit(undefined),
+    );
+    expect(next.truncated).toBe(true);
+    expect(next.bytes.byteLength).toBeLessThanOrEqual(DEFAULT_ACP_TERMINAL_OUTPUT_BYTE_LIMIT);
   });
 });
 
@@ -225,6 +296,50 @@ describe("AcpTerminalHost", () => {
           command: execPath,
           args: ["-e", "process.exit(0)"],
           cwd: outside,
+        })
+        .pipe(Effect.flip);
+      expect(error._tag).toBe("AcpRequestError");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("truncates output to the requested byte limit", () =>
+    Effect.gen(function* () {
+      const cwd = yield* HostProcessWorkingDirectory;
+      const execPath = yield* HostProcessExecutablePath;
+      const host = yield* makeAcpTerminalHost({ cwd });
+      const created = yield* host.create({
+        sessionId,
+        command: execPath,
+        args: ["-e", "process.stdout.write('abcdef')"],
+        outputByteLimit: 4,
+      });
+      yield* host.waitForExit({ sessionId, terminalId: created.terminalId });
+      const output = yield* host.output({
+        sessionId,
+        terminalId: created.terminalId,
+      });
+      expect(output.truncated).toBe(true);
+      expect(output.output).toBe("cdef");
+      yield* host.release({ sessionId, terminalId: created.terminalId });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects a cwd symlink that escapes the session working directory", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const sessionRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "acp-term-host-" });
+      const outside = yield* fileSystem.makeTempDirectoryScoped({ prefix: "acp-term-host-out-" });
+      const escapeLink = path.join(sessionRoot, "escape");
+      yield* fileSystem.symlink(outside, escapeLink);
+      const execPath = yield* HostProcessExecutablePath;
+      const host = yield* makeAcpTerminalHost({ cwd: sessionRoot });
+      const error = yield* host
+        .create({
+          sessionId,
+          command: execPath,
+          args: ["-e", "process.exit(0)"],
+          cwd: escapeLink,
         })
         .pipe(Effect.flip);
       expect(error._tag).toBe("AcpRequestError");

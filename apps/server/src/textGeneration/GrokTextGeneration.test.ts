@@ -112,7 +112,7 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
             requests.find((request) => request.method === "initialize")?.params?.clientCapabilities,
           ).toMatchObject({
             fs: { readTextFile: false, writeTextFile: false },
-            terminal: true,
+            terminal: false,
           });
           expect(
             requests.some(

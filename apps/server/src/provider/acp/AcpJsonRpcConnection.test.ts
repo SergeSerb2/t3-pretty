@@ -35,7 +35,7 @@ describe("AcpSessionRuntime", () => {
         protocolVersion: 1,
         clientCapabilities: {
           fs: { readTextFile: false, writeTextFile: false },
-          terminal: true,
+          terminal: false,
           _meta: { parameterizedModelPicker: true },
         },
       });
@@ -51,6 +51,45 @@ describe("AcpSessionRuntime", () => {
             _meta: {
               parameterizedModelPicker: true,
             },
+          },
+          clientInfo: { name: "t3-test", version: "0.0.0" },
+          authMethodId: "test",
+          requestLogger: (event) =>
+            Effect.sync(() => {
+              requestEvents.push(event);
+            }),
+        }),
+      ),
+      Effect.scoped,
+      Effect.provide(NodeServices.layer),
+    );
+  });
+
+  it.effect("advertises terminals when the driver opts in", () => {
+    const requestEvents: Array<AcpSessionRuntime.AcpSessionRequestLogEvent> = [];
+    return Effect.gen(function* () {
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+      yield* runtime.start();
+
+      const initializeStarted = requestEvents.find(
+        (event) => event.method === "initialize" && event.status === "started",
+      );
+      expect(initializeStarted?.payload).toMatchObject({
+        protocolVersion: 1,
+        clientCapabilities: {
+          terminal: true,
+        },
+      });
+    }).pipe(
+      Effect.provide(
+        AcpSessionRuntime.layer({
+          spawn: {
+            command: mockAgentCommand,
+            args: mockAgentArgs,
+          },
+          cwd: process.cwd(),
+          clientCapabilities: {
+            terminal: true,
           },
           clientInfo: { name: "t3-test", version: "0.0.0" },
           authMethodId: "test",
