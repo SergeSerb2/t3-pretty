@@ -18,7 +18,10 @@ import { OrchestrationEventStoreLive } from "../persistence/Layers/Orchestration
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEventStore.ts";
 import { ServerConfig } from "../config.ts";
-import { OrchestrationProjectionPipelineLive } from "../orchestration/Layers/ProjectionPipeline.ts";
+import {
+  ORCHESTRATION_PROJECTOR_NAMES,
+  OrchestrationProjectionPipelineLive,
+} from "../orchestration/Layers/ProjectionPipeline.ts";
 import { OrchestrationProjectionPipeline } from "../orchestration/Services/ProjectionPipeline.ts";
 import { PER_TERM_POSTINGS_LIMIT, ThreadSearch, ThreadSearchLive } from "./ThreadSearch.ts";
 import { rankedSearchTerms } from "./tokenizer.ts";
@@ -60,7 +63,7 @@ const appendProject = (projectId: string) =>
     });
   });
 
-const appendThread = (threadId: string, projectId: string) =>
+const appendThread = (threadId: string, projectId: string, at: string = NOW) =>
   Effect.gen(function* () {
     const eventStore = yield* OrchestrationEventStore;
     yield* eventStore.append({
@@ -68,7 +71,7 @@ const appendThread = (threadId: string, projectId: string) =>
       eventId: EventId.make(`evt-thread-${threadId}`),
       aggregateKind: "thread",
       aggregateId: ThreadId.make(threadId),
-      occurredAt: NOW,
+      occurredAt: at,
       commandId: CommandId.make(`cmd-thread-${threadId}`),
       causationEventId: null,
       correlationId: CommandId.make(`cmd-thread-${threadId}`),
@@ -84,8 +87,8 @@ const appendThread = (threadId: string, projectId: string) =>
         runtimeMode: "full-access",
         branch: null,
         worktreePath: null,
-        createdAt: NOW,
-        updatedAt: NOW,
+        createdAt: at,
+        updatedAt: at,
       },
     });
   });
@@ -158,14 +161,17 @@ const appendTurnDiffCompleted = (input: {
     });
   });
 
-const search = (query: string) =>
+const search = (query: string, limit?: number) =>
   Effect.gen(function* () {
     const threadSearch = yield* ThreadSearch;
     const terms = rankedSearchTerms(query);
     if (terms === null) {
       throw new Error(`test query produced no search terms: ${query}`);
     }
-    return yield* threadSearch.searchThreads({ request: { query }, terms });
+    return yield* threadSearch.searchThreads({
+      request: limit === undefined ? { query } : { query, limit },
+      terms,
+    });
   });
 
 it.layer(makeTestLayer("t3-thread-search-ranked-"))("ThreadSearch", (it) => {
@@ -499,6 +505,130 @@ it.layer(makeTestLayer("t3-thread-search-truncated-"))("ThreadSearch", (it) => {
       const result = yield* search("commonterm rarexyz");
       assert.equal(result.matches.length, 1);
       assert.strictEqual(result.matches[0]?.threadId, "thread-match");
+    }),
+  );
+});
+
+it.layer(makeTestLayer("t3-thread-search-backfill-"))("ThreadSearch", (it) => {
+  it.effect("backfills the search index when the projector cursor is already at the log head", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* appendProject("project-1");
+      yield* appendThread("thread-1", "project-1");
+      yield* appendMessage({
+        eventId: "evt-m1",
+        threadId: "thread-1",
+        messageId: "message-1",
+        role: "user",
+        text: "backfillzebra from history",
+      });
+      yield* projectionPipeline.bootstrap;
+      assert.equal((yield* search("backfillzebra")).matches.length, 1);
+
+      yield* sql`DELETE FROM search_index_postings`;
+      yield* sql`DELETE FROM search_index_terms`;
+      yield* sql`DELETE FROM search_index_docs`;
+      assert.equal((yield* search("backfillzebra")).matches.length, 0);
+
+      yield* projectionPipeline.bootstrap;
+
+      const result = yield* search("backfillzebra");
+      assert.equal(result.matches.length, 1);
+      assert.strictEqual(result.matches[0]?.threadId, "thread-1");
+
+      const searchIndexState = yield* sql<{ readonly lastAppliedSequence: number }>`
+        SELECT last_applied_sequence AS "lastAppliedSequence"
+        FROM projection_state
+        WHERE projector = ${ORCHESTRATION_PROJECTOR_NAMES.searchIndex}
+      `;
+      const otherState = yield* sql<{ readonly lastAppliedSequence: number }>`
+        SELECT last_applied_sequence AS "lastAppliedSequence"
+        FROM projection_state
+        WHERE projector = ${ORCHESTRATION_PROJECTOR_NAMES.threadMessages}
+      `;
+      assert.equal(searchIndexState[0]?.lastAppliedSequence, otherState[0]?.lastAppliedSequence);
+    }),
+  );
+});
+
+it.layer(makeTestLayer("t3-thread-search-supersede-"))("ThreadSearch", (it) => {
+  it.effect("deindexes a superseded canonical assistant on turn completion", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+
+      yield* appendProject("project-1");
+      yield* appendThread("thread-1", "project-1");
+      yield* appendMessage({
+        eventId: "evt-m-old",
+        threadId: "thread-1",
+        messageId: "message-old",
+        role: "assistant",
+        text: "oldcanonical zebraold",
+        turnId: "turn-1",
+      });
+      yield* appendTurnDiffCompleted({
+        eventId: "evt-d-old",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        checkpointTurnCount: 1,
+        assistantMessageId: "message-old",
+      });
+      yield* projectionPipeline.bootstrap;
+      assert.equal((yield* search("zebraold")).matches.length, 1);
+
+      yield* appendMessage({
+        eventId: "evt-m-new",
+        threadId: "thread-1",
+        messageId: "message-new",
+        role: "assistant",
+        text: "newcanonical zebranew",
+        turnId: "turn-1",
+        createdAt: LATER,
+      });
+      yield* appendTurnDiffCompleted({
+        eventId: "evt-d-new",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        checkpointTurnCount: 1,
+        assistantMessageId: "message-new",
+      });
+      yield* projectionPipeline.bootstrap;
+
+      assert.equal((yield* search("zebraold")).matches.length, 0);
+      const result = yield* search("zebranew");
+      assert.equal(result.matches.length, 1);
+      assert.strictEqual(result.matches[0]?.source, "assistant");
+    }),
+  );
+});
+
+it.layer(makeTestLayer("t3-thread-search-limit-recency-"))("ThreadSearch", (it) => {
+  it.effect("keeps the most recently updated threads when BM25 scores tie at the limit", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+
+      yield* appendProject("project-1");
+      for (let index = 0; index < 5; index += 1) {
+        const at = `2026-01-01T00:00:0${String(index)}.000Z`;
+        yield* appendThread(`thread-${String(index)}`, "project-1", at);
+        yield* appendMessage({
+          eventId: `evt-m-${String(index)}`,
+          threadId: `thread-${String(index)}`,
+          messageId: `message-${String(index)}`,
+          role: "user",
+          text: "sharedterm appears here",
+          createdAt: at,
+        });
+      }
+      yield* projectionPipeline.bootstrap;
+
+      const result = yield* search("sharedterm", 2);
+      assert.deepEqual(
+        result.matches.map((match) => match.threadId),
+        ["thread-4", "thread-3"],
+      );
     }),
   );
 });

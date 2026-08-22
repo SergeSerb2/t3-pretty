@@ -365,9 +365,42 @@ const makeThreadSearch = Effect.gen(function* () {
         }
       }
 
-      const winners = [...bestByThread.values()]
-        .toSorted((left, right) => right.score - left.score)
-        .slice(0, limit);
+      // Rank before slicing so recency-tied threads are not dropped when more
+      // than `limit` threads share a BM25 score. The final sort below uses
+      // the same keys after fetching snippets.
+      const rankedThreads = [...bestByThread.entries()];
+      const threadTimeRows =
+        rankedThreads.length === 0
+          ? []
+          : yield* sql<{ readonly threadId: string; readonly threadUpdatedAt: string }>`
+              SELECT thread_id AS "threadId", updated_at AS "threadUpdatedAt"
+              FROM projection_threads
+              WHERE ${sql.in(
+                "thread_id",
+                rankedThreads.map(([threadId]) => threadId),
+              )}
+            `;
+      const threadUpdatedAt = new Map(
+        threadTimeRows.map((row) => [row.threadId, row.threadUpdatedAt] as const),
+      );
+      const compareThreadRank = (
+        left: { readonly threadId: string; readonly score: number },
+        right: { readonly threadId: string; readonly score: number },
+      ) =>
+        right.score - left.score ||
+        (threadUpdatedAt.get(right.threadId) ?? "").localeCompare(
+          threadUpdatedAt.get(left.threadId) ?? "",
+        ) ||
+        left.threadId.localeCompare(right.threadId);
+      const winners = rankedThreads
+        .toSorted((left, right) =>
+          compareThreadRank(
+            { threadId: left[0], score: left[1].score },
+            { threadId: right[0], score: right[1].score },
+          ),
+        )
+        .slice(0, limit)
+        .map(([, winner]) => winner);
 
       const matchRows = yield* Effect.forEach(
         winners,

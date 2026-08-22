@@ -1643,10 +1643,13 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
         case "thread.turn-diff-completed": {
           // Turn completion can make an assistant message canonical (its turn
-          // row gains assistant_message_id), which makes it searchable.
-          if (event.payload.assistantMessageId !== null) {
-            yield* searchIndex.reindexMessage({ messageId: event.payload.assistantMessageId });
-          }
+          // row gains assistant_message_id). Re-index the new id and any
+          // previously indexed assistants for this thread so a superseded
+          // canonical message is dropped, not left searchable.
+          yield* searchIndex.reindexCanonicalAssistants({
+            threadId: event.payload.threadId,
+            assistantMessageId: event.payload.assistantMessageId,
+          });
           return;
         }
 
@@ -1920,6 +1923,45 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           ),
         );
 
+    // First boot (no cursor) or empty index with existing messages: index
+    // from current projection tables, then adopt the other projectors' head.
+    // Event-log replay is capped at 1000 events; a later live event then
+    // advances every projector cursor and would skip the rest of history.
+    const bootstrapSearchIndexProjector = (projector: ProjectorDefinition) =>
+      Effect.gen(function* () {
+        const stateRow = yield* projectionStateRepository.getByProjector({
+          projector: projector.name,
+        });
+        const docRows = yield* sql<{ readonly docCount: number }>`
+          SELECT COUNT(*) AS "docCount" FROM search_index_docs
+        `;
+        const messageRows = yield* sql<{ readonly messageCount: number }>`
+          SELECT COUNT(*) AS "messageCount" FROM projection_thread_messages
+        `;
+        const missingCursor = Option.isNone(stateRow);
+        const indexEmpty = (docRows[0]?.docCount ?? 0) === 0;
+        const hasMessages = (messageRows[0]?.messageCount ?? 0) > 0;
+        if ((missingCursor || indexEmpty) && hasMessages) {
+          yield* searchIndex.backfillFromProjection();
+          const states = yield* projectionStateRepository.listAll();
+          const others = states.filter(
+            (row) => row.projector !== ORCHESTRATION_PROJECTOR_NAMES.searchIndex,
+          );
+          if (others.length > 0) {
+            const head = others.reduce(
+              (max, row) => (row.lastAppliedSequence > max.lastAppliedSequence ? row : max),
+              others[0]!,
+            );
+            yield* projectionStateRepository.upsert({
+              projector: ORCHESTRATION_PROJECTOR_NAMES.searchIndex,
+              lastAppliedSequence: head.lastAppliedSequence,
+              updatedAt: head.updatedAt,
+            });
+          }
+        }
+        yield* bootstrapProjector(projector);
+      });
+
     const projectEvent: OrchestrationProjectionPipelineShape["projectEvent"] = (event) =>
       runProjectorsForEvent(event).pipe(
         Effect.provideService(FileSystem.FileSystem, fileSystem),
@@ -1933,7 +1975,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const bootstrap: OrchestrationProjectionPipelineShape["bootstrap"] = Effect.forEach(
       projectors,
-      bootstrapProjector,
+      (projector) =>
+        projector.name === ORCHESTRATION_PROJECTOR_NAMES.searchIndex
+          ? bootstrapSearchIndexProjector(projector)
+          : bootstrapProjector(projector),
       { concurrency: 1 },
     ).pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),

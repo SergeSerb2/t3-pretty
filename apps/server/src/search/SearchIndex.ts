@@ -4,7 +4,8 @@
  * Maintains `search_index_docs` / `search_index_terms` /
  * `search_index_postings` (migration 049) from projected message and turn
  * state. Fed by the `projection.search-index` projector in
- * ProjectionPipeline; read by ThreadSearch.
+ * ProjectionPipeline, including a first-boot backfill from current
+ * projection tables; read by ThreadSearch.
  *
  * Only the two sources the search contract exposes are indexed: user
  * messages (reduced to their visible text, auto-PR instruction block
@@ -13,7 +14,7 @@
  *
  * @module SearchIndex
  */
-import type { MessageId, ThreadId } from "@t3tools/contracts";
+import { MessageId, ThreadId } from "@t3tools/contracts";
 import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -44,6 +45,24 @@ export interface SearchIndexShape {
    */
   readonly reindexThread: (input: {
     readonly threadId: ThreadId;
+  }) => Effect.Effect<void, ProjectionRepositoryError>;
+
+  /**
+   * Re-index every thread from current projection tables. First boot of
+   * `projection.search-index` uses this so historical messages are searchable
+   * without replaying the event log (bootstrap replay is capped, then a live
+   * event advances every projector cursor and skips the rest).
+   */
+  readonly backfillFromProjection: () => Effect.Effect<void, ProjectionRepositoryError>;
+
+  /**
+   * After a turn's canonical assistant changes: re-index the new id and every
+   * assistant already in the index for this thread, so a superseded
+   * `assistant_message_id` is dropped instead of staying searchable.
+   */
+  readonly reindexCanonicalAssistants: (input: {
+    readonly threadId: ThreadId;
+    readonly assistantMessageId: MessageId | null;
   }) => Effect.Effect<void, ProjectionRepositoryError>;
 }
 
@@ -228,9 +247,56 @@ const makeSearchIndex = Effect.gen(function* () {
       ),
     );
 
+  const backfillFromProjection: SearchIndexShape["backfillFromProjection"] = () =>
+    Effect.gen(function* () {
+      const threadRows = yield* sql<{ readonly threadId: string }>`
+        SELECT DISTINCT thread_id AS "threadId" FROM projection_thread_messages
+      `;
+      yield* Effect.forEach(
+        threadRows,
+        (row) => reindexThread({ threadId: ThreadId.make(row.threadId) }),
+        { concurrency: 1, discard: true },
+      );
+    }).pipe(
+      Effect.mapError((error) =>
+        isPersistenceError(error)
+          ? error
+          : toPersistenceSqlError("SearchIndex.backfillFromProjection:query")(error),
+      ),
+    );
+
+  const reindexCanonicalAssistants: SearchIndexShape["reindexCanonicalAssistants"] = ({
+    threadId,
+    assistantMessageId,
+  }) =>
+    Effect.gen(function* () {
+      const indexedRows = yield* sql<{ readonly messageId: string }>`
+        SELECT message_id AS "messageId"
+        FROM search_index_docs
+        WHERE thread_id = ${threadId} AND role = 'assistant'
+      `;
+      const messageIds = new Set(indexedRows.map((row) => row.messageId));
+      if (assistantMessageId !== null) {
+        messageIds.add(assistantMessageId);
+      }
+      yield* Effect.forEach(
+        messageIds,
+        (messageId) => reindexMessage({ messageId: MessageId.make(messageId) }),
+        { concurrency: 1, discard: true },
+      );
+    }).pipe(
+      Effect.mapError((error) =>
+        isPersistenceError(error)
+          ? error
+          : toPersistenceSqlError("SearchIndex.reindexCanonicalAssistants:query")(error),
+      ),
+    );
+
   return {
     reindexMessage,
     reindexThread,
+    backfillFromProjection,
+    reindexCanonicalAssistants,
   } satisfies SearchIndexShape;
 });
 
