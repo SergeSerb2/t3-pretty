@@ -13,6 +13,7 @@ import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
 import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import previewPanelShellSource from "../components/preview/PreviewPanelShell.tsx?raw";
+import pullRequestSummaryTabSource from "../components/pullRequest/PullRequestSummaryTab.tsx?raw";
 import threadTerminalDrawerSource from "../components/ThreadTerminalDrawer.tsx?raw";
 import sidebarSource from "../components/ui/sidebar.tsx?raw";
 import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
@@ -147,6 +148,14 @@ describe("glass contract with upstream chrome", () => {
     expect(sceneryCssSource).toContain('[data-right-panel="embedded"]');
     expect(sceneryCssSource).toMatch(
       /\[data-right-panel=""\]\s+\.bg-background\s*\{[^}]*background-color: transparent;/s,
+    );
+  });
+
+  it("sticky PR section headings keep a covering fill after nested bg-background is cleared", () => {
+    expect(pullRequestSummaryTabSource).toContain('data-pull-request-summary-heading=""');
+    expect(pullRequestSummaryTabSource).toContain("bg-background");
+    expect(sceneryCssSource).toMatch(
+      /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*background-color: var\(--sidebar\);/s,
     );
   });
 

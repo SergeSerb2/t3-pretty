@@ -111,18 +111,18 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    the version and writes What's New notes. It does not call GitHub Actions
    (`uses:`) — the importer resolves every action from api.github.com at parse
    time, and a burst of main merges then fails the workflow with a GitHub rate
-   limit before any job starts. Publish and Origin CLI work stay on
+   limit before any job starts. Publish and Origin CLI packaging stay on
    `macos-release` because hosted Linux cannot resolve `CURSOR_API_KEY`.
    `T3 Pretty Origin PR Review` is a native
    `macos-release` step that prefers review scripts from `origin/main`: hosted
    Linux cannot load `CURSOR_API_KEY`, and the importer cannot run the old
    review workflow on Origin pull-request events.
-   `m1-dev` signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
+   A packaging Mac signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
    push/UI builds of `main`, not the four-hour scheduled sync. iOS TestFlight IPAs and OTA
    exports compile on `macos-release` through the native
    `scripts/fork/publish-mobile-release.sh` step (not the GitHub Actions importer). Relay
    deploys from the native `macos-release` step. Only trusted `main` commits run desktop packaging
-   and relay deploys on the self-hosted machines; Origin PR review is the other
+   and relay deploys on the self-hosted machines; Origin PR review is the
    `macos-release` job on feature branches, running scripts from `origin/main`
    when they exist. Imported desktop preflight is skipped when the push cannot change the
    shipped desktop app (mobile-only, docs-only, marketing, or relay-only commits).
@@ -151,12 +151,16 @@ without pretending that a newer upstream tag was integrated before its sync pull
   Origin is the source of truth and pushes no longer flow to GitHub.
 - Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
   the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux),
-  `macos-release` (m1-dev), and `windows-release` (serge-pc). Register the machines with
+  `macos-release` (Origin PR Review on m5-dev with `REVIEW_ONLY=1`; packaging
+  when a Mac without that flag is registered), and `windows-release` (serge-pc).
+  Do not add a second Mac queue until it exists in the cluster — unknown queues
+  fail pipeline upload for every PR. Register the machines with
   `scripts/fork/setup-buildkite-macos-agent.sh` and
-  `scripts/fork/setup-buildkite-windows-agent.ps1`. The Mac setup starts a
-  second agent (`m1-dev-t3code-fork-2`) on the same queue so Origin PR review
-  and the signed DMG can run while a local IPA occupies the first worker.
-  Those two workers share `$HOME`, so the pre-checkout hook skips rewriting
+  `scripts/fork/setup-buildkite-windows-agent.ps1`. A Mac without Xcode.app
+  defaults to `REVIEW_ONLY=1`: one worker on `macos-release`, and a
+  pre-command hook that refuses packaging jobs. A packaging Mac uses
+  `REVIEW_ONLY=0` and starts a second worker so a DMG can run while a local IPA
+  occupies the first. Those two workers share `$HOME`, so the pre-checkout hook skips rewriting
   `~/.gitconfig` when the Origin credential helper is already set; concurrent
   writes used to fail with `could not lock config file`. After checkout the
   post-checkout hook copies hook scripts from the repo onto the agent.
@@ -167,13 +171,15 @@ without pretending that a newer upstream tag was integrated before its sync pull
   `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer
   for push/UI builds of `main`, not the four-hour schedule. Imported Mac jobs
   use `/bin/bash` 3.2 (no `mapfile`). `CURSOR_API_KEY` and `CLI_PROXY_API_KEY`
-  also live as files under `/Users/m1-dev/.config/t3-pretty/` because in-job
-  `secret get` from imported GHA steps often fails on macos-release.
+  also live as files under `$HOME/.config/t3-pretty/` (and still
+  `/Users/m1-dev/.config/t3-pretty/` if that host is a packaging Mac) because in-job
+  `secret get` from imported GHA steps often fails on the Mac agents.
   That script installs official Vite+ (`vp.exe`) under `C:\buildkite-agent\vite-plus`
   and refuses the npm `vp` stub. Mac-only desktop publishes are still allowed if
   that step is skipped. Depot can take Linux jobs but has no macOS/Windows sandboxes.
-  Hosted Linux cannot resolve `CURSOR_API_KEY`. Origin CLI work (publish and
-  upstream sync) therefore runs on `macos-release`. Hosted preflight must not
+  Hosted Linux cannot resolve `CURSOR_API_KEY`. Origin CLI work for reviews
+  runs on `macos-release`; publish and upstream sync use the same queue.
+  Hosted preflight must not
   mention that secret or the Mac signing certificate names. The Windows agent
   runs as LocalSystem; Origin HTTPS checkout uses
   `C:\buildkite-agent\.git-credentials` plus
@@ -182,8 +188,8 @@ without pretending that a newer upstream tag was integrated before its sync pull
   Buildkite GHA on macOS sets `RUNNER_TEMP` to `/var/folders/.../T`, which is
   not an actions-runner tree; the Mac externals-repair step skips there.
   The importer's checkout adapter cannot prompt for Origin HTTPS on
-  macos-release, so Mac jobs clone through `scripts/fork/checkout-origin.sh`
-  and `$HOME/.git-credentials`.
+  Mac agents, so Mac jobs clone through `scripts/fork/checkout-origin.sh`
+  and `$HOME/.git-credentials` or `origin credential-helper`.
 - Secret `CURSOR_API_KEY`: Cursor API key for the Origin CLI (`origin auth login --api-key`).
   Used to open, merge, and tag on Origin.
 - Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used by the trusted scheduled
@@ -242,16 +248,20 @@ A desktop release that used to sit 25–40 minutes in the m1-dev queue and then 
 
 ### Adding m5-dev
 
-This machine is an M5 Pro (18 cores, 48 GB). m1-dev is the existing dedicated Mac runner. Xcode on M1 recently spent 13 minutes compiling and submitting an IPA; the same compile on an M5 Pro should land around 7–10 minutes. Vite + electron-builder is less parallel, so the DMG itself only drops a minute or two. The real win is overlap: one Mac can sign the DMG while the other compiles iOS.
-
-`scripts/fork/setup-macos-runner.sh` registers a LaunchAgent runner with the same labels as m1-dev. It refuses to register if Xcode.app is missing (Command Line Tools cannot build an IPA). Do not register a daily driver until you are willing to share CPU with release jobs, and never give the runner `pull_request` labels.
+This machine is an M5 Pro (18 cores, 48 GB) daily driver. m1-dev was the dedicated
+Mac runner and is being converted to Linux. Origin PR Review runs here on
+`macos-release` with `REVIEW_ONLY=1`. The pre-command hook refuses DMG/iOS/relay
+jobs: there is no full Xcode.app, and release jobs would share CPU with
+interactive use. A later packaging Mac should register with `REVIEW_ONLY=0` on
+the same queue. Never give either runner `pull_request` labels.
 
 ## Runner recovery
 
-The macOS runner lives at `/Users/m1-dev/actions-runner-t3code-fork`. After the Origin cutover
-it should be a Buildkite agent on the `macos-release` queue, registered with
-`scripts/fork/setup-buildkite-macos-agent.sh` (two workers: `m1-dev-t3code-fork`
-and `m1-dev-t3code-fork-2`). Do not give it pull-request queues.
+Origin PR Review is a Buildkite agent on this Mac (`m5-dev-t3code-fork`) on
+the `macos-release` queue, registered with
+`scripts/fork/setup-buildkite-macos-agent.sh`. The previous Mac runner lived at
+`/Users/m1-dev/actions-runner-t3code-fork` (`m1-dev-t3code-fork` and
+`m1-dev-t3code-fork-2`). Do not give the review agent pull-request queues.
 
 The Windows runner lives at `C:\actions-runner-t3code-fork`. The checked-in
 `scripts/fork/setup-windows-runner.ps1` can still recreate a GitHub Actions runner for rollback.

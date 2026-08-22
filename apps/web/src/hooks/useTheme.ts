@@ -4,6 +4,15 @@ import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { canAnimateSceneryInkTransition } from "../scenery/sceneryInkTransition";
 import {
+  canSweepTerminatorFront,
+  cutActiveThemeSwap,
+  mountSweepVeil,
+  retainActiveThemeSwap,
+  shouldMashCut,
+  sweepDirection,
+  type ThemeSwapSource,
+} from "./themeSweep";
+import {
   applyThemePalette,
   CUSTOM_THEMES_STORAGE_KEY,
   invalidateCustomThemes,
@@ -283,7 +292,7 @@ export function syncBrowserChromeTheme() {
   }
 }
 
-function applyTheme(theme: Theme, suppressTransitions = false) {
+function applyTheme(theme: Theme, suppressTransitions = false, source: ThemeSwapSource = "user") {
   if (typeof document === "undefined" || typeof window === "undefined") return;
   const appearanceMode = readAppearanceModePreference(theme);
   const followSystem = appearanceMode === "system";
@@ -301,14 +310,14 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
   }
 
   const isFirstApply = lastAppliedTheme === null;
+  const resolvedAppearance = resolveThemeAppearance(
+    theme,
+    systemDark,
+    followSystem,
+    appearanceMode,
+    themeHalves,
+  );
   const commitTheme = () => {
-    const resolvedAppearance = resolveThemeAppearance(
-      theme,
-      systemDark,
-      followSystem,
-      appearanceMode,
-      themeHalves,
-    );
     applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
     const isDark = resolvedAppearance === "dark";
     document.documentElement.classList.toggle("dark", isDark);
@@ -335,6 +344,7 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
   // Forced applies (cross-tab storage, refresh) hard-cut under no-transitions
   // and never start a view transition.
   if (suppressTransitions) {
+    cutActiveThemeSwap();
     commitWithoutElementTweens();
     return;
   }
@@ -347,25 +357,57 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
     return;
   }
   if (document.hidden || !canAnimateThemeSwapTransition()) {
+    cutActiveThemeSwap();
     commitWithoutElementTweens();
     return;
   }
 
-  // The whole window dissolves from the old palette to the new one as one
-  // snapshot crossfade (see html[data-theme-swap] in index.css), with
-  // no-transitions still suppressing per-element color tweens underneath.
+  // A second toggle mid-sweep or a rapid A/B burst wants the comparison, not
+  // the choreography: skip the in-flight view transition and commit instantly.
+  if (root.dataset.themeSwap !== undefined || shouldMashCut(Date.now())) {
+    cutActiveThemeSwap();
+    commitWithoutElementTweens();
+    return;
+  }
+
+  // The new palette sweeps across the held old snapshot as a terminator
+  // front — dusk settles downward, dawn rises — with a feather veil riding
+  // the edge (see html[data-theme-sweep] in index.css). WebKit stays on the
+  // dissolve (250ms user, 1200ms system). no-transitions still suppresses
+  // per-element color tweens underneath.
   root.classList.add("no-transitions");
-  root.dataset.themeSwap = "true";
+  root.dataset.themeSwap = source;
+  const sweeping = canSweepTerminatorFront();
+  if (sweeping) {
+    root.dataset.themeSweep = sweepDirection(resolvedAppearance === "dark");
+  }
+  const removeVeil = sweeping ? mountSweepVeil() : () => {};
+  let finishedSwap = false;
+  let releaseSwap = () => {};
   const finishSwap = () => {
+    if (finishedSwap) return;
+    finishedSwap = true;
+    releaseSwap();
+    removeVeil();
     delete root.dataset.themeSwap;
+    delete root.dataset.themeSweep;
     releaseTransitions();
   };
   try {
     const transition = (
       document as Document & {
-        startViewTransition: (update: () => void) => { finished: Promise<void> };
+        startViewTransition: (update: () => void) => {
+          finished: Promise<void>;
+          skipTransition: () => void;
+        };
       }
     ).startViewTransition(commitTheme);
+    releaseSwap = retainActiveThemeSwap({
+      skipTransition: () => {
+        transition.skipTransition();
+      },
+      finish: finishSwap,
+    });
     void transition.finished.then(finishSwap, finishSwap);
   } catch {
     commitTheme();
@@ -373,7 +415,7 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
   }
 }
 
-// A theme swap crossfade is worth a view transition only when the scenery ink
+// A theme swap sweep is worth a view transition only when the scenery ink
 // transition is not already coordinating this flip (it runs its own), View
 // Transitions exist, the Motion toggle is on, and the OS allows motion — the
 // last three via the scenery helper's own gate.
@@ -464,7 +506,9 @@ function getServerSnapshot() {
 
 function handleSystemAppearanceChange() {
   const storedTheme = getStored();
-  if (readAppearanceModePreference(storedTheme) === "system") applyTheme(storedTheme);
+  if (readAppearanceModePreference(storedTheme) === "system") {
+    applyTheme(storedTheme, false, "system");
+  }
   emitChange();
 }
 
