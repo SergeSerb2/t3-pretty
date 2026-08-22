@@ -355,21 +355,16 @@ const makeThreadSearch = Effect.gen(function* () {
       const docCount = Math.max(statsRows[0]?.docCount ?? 0, 1);
       const avgTokenCount = Math.max(statsRows[0]?.avgTokenCount ?? 0, 1);
 
-      const candidateDocs = yield* Effect.forEach(
-        candidates,
-        (messageId) =>
-          sql<CandidateDoc>`
-            SELECT
-              message_id AS "messageId",
-              thread_id AS "threadId",
-              role,
-              token_count AS "tokenCount",
-              created_at AS "createdAt"
-            FROM search_index_docs
-            WHERE message_id = ${messageId}
-          `,
-        { concurrency: 1 },
-      );
+      const candidateDocs = yield* sql<CandidateDoc>`
+        SELECT
+          message_id AS "messageId",
+          thread_id AS "threadId",
+          role,
+          token_count AS "tokenCount",
+          created_at AS "createdAt"
+        FROM search_index_docs
+        WHERE ${sql.in("message_id", candidates)}
+      `;
 
       const idf = (df: number) => {
         const clampedDf = Math.min(df, docCount);
@@ -392,11 +387,7 @@ const makeThreadSearch = Effect.gen(function* () {
       // One match per thread: best-scoring message wins; ties prefer user
       // messages (the legacy match_rank), then recency.
       const bestByThread = new Map<string, { doc: CandidateDoc; score: number }>();
-      for (const rows of candidateDocs) {
-        const doc = rows[0];
-        if (doc === undefined) {
-          continue;
-        }
+      for (const doc of candidateDocs) {
         const score = scoreOf(doc);
         const existing = bestByThread.get(doc.threadId);
         const isBetter =

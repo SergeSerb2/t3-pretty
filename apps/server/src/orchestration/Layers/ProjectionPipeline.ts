@@ -1632,11 +1632,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     )(function* (event, _attachmentSideEffects) {
       switch (event.type) {
         case "thread.message-sent": {
-          // Streaming deltas only append text; the final message-sent event
-          // indexes the finished message.
-          if (event.payload.streaming) {
-            return;
-          }
+          // reindexRow drops streaming rows and indexes finished ones.
           yield* searchIndex.reindexMessage({ messageId: event.payload.messageId });
           return;
         }

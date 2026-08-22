@@ -558,6 +558,10 @@ it.layer(makeTestLayer("t3-thread-search-streaming-"))("ThreadSearch", (it) => {
         streaming: true,
         createdAt: LATER,
       });
+      yield* projectionPipeline.bootstrap;
+      assert.equal((yield* search("streamzebra")).matches.length, 0);
+      assert.equal((yield* search("otherterm")).matches.length, 0);
+
       yield* appendTurnDiffCompleted({
         eventId: "evt-stale-d2",
         threadId: "thread-stale",

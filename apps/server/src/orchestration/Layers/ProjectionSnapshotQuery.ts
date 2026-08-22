@@ -2548,7 +2548,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   )(function* (input) {
     // Ranked index search for tokenizable queries; the legacy substring scan
     // stays for queries with no indexable terms (single characters,
-    // punctuation) and as the behavior of servers without an index.
+    // punctuation). Bootstrap backfills the index before the engine serves.
     const terms = rankedSearchTerms(input.query);
     if (terms !== null) {
       return yield* threadSearch.searchThreads({ request: input, terms });
