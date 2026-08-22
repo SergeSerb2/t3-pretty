@@ -117,6 +117,8 @@ export interface ContextMenuItem<T extends string = string> {
   icon?: string;
   /** Inserts a visual section divider immediately before this item. */
   separatorBefore?: boolean;
+  /** Clicking the parent row selects this item. Hover still opens children. */
+  activateOnClick?: boolean;
   children?: readonly ContextMenuItem<T>[];
 }
 

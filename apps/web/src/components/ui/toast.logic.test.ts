@@ -3,8 +3,12 @@ import { assert, describe, it } from "vite-plus/test";
 import {
   buildVisibleToastLayout,
   hasVisibleToastAction,
+  resolveToastAutoDismissMs,
   shouldHideCollapsedToastContent,
   shouldRenderThreadScopedToast,
+  shouldRunToastAutoDismissTimer,
+  stripToastTimeout,
+  TOAST_AUTO_DISMISS_MS,
 } from "./toast.logic";
 
 describe("hasVisibleToastAction", () => {
@@ -16,6 +20,112 @@ describe("hasVisibleToastAction", () => {
     assert.equal(hasVisibleToastAction({ children: null }), false);
     assert.equal(hasVisibleToastAction({ children: "" }), false);
     assert.equal(hasVisibleToastAction(undefined), false);
+  });
+});
+
+describe("resolveToastAutoDismissMs", () => {
+  it("uses type defaults when the caller omitted a timeout", () => {
+    assert.equal(resolveToastAutoDismissMs({ type: "success" }), TOAST_AUTO_DISMISS_MS.success);
+    assert.equal(resolveToastAutoDismissMs({ type: "info" }), TOAST_AUTO_DISMISS_MS.info);
+    assert.equal(resolveToastAutoDismissMs({ type: "warning" }), TOAST_AUTO_DISMISS_MS.warning);
+    assert.equal(resolveToastAutoDismissMs({ type: "error" }), TOAST_AUTO_DISMISS_MS.error);
+    assert.equal(resolveToastAutoDismissMs({}), TOAST_AUTO_DISMISS_MS.success);
+  });
+
+  it("keeps loading and explicit persist toasts on screen", () => {
+    assert.equal(resolveToastAutoDismissMs({ type: "loading" }), undefined);
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "loading", timeout: 5_000, dismissAfterVisibleMs: 5_000 }),
+      undefined,
+    );
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "success", dismissAfterVisibleMs: 0 }),
+      undefined,
+    );
+  });
+
+  it("does not treat provider timeout 0 as persist", () => {
+    assert.equal(resolveToastAutoDismissMs({ type: "success", timeout: 0 }), 5_000);
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "info", timeout: 0 }),
+      TOAST_AUTO_DISMISS_MS.info,
+    );
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "warning", timeout: 0 }),
+      TOAST_AUTO_DISMISS_MS.warning,
+    );
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "error", timeout: 0 }),
+      TOAST_AUTO_DISMISS_MS.error,
+    );
+  });
+
+  it("honors an explicit timeout and visible-ms override", () => {
+    assert.equal(resolveToastAutoDismissMs({ type: "success", timeout: 5_000 }), 5_000);
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "error", timeout: 0, dismissAfterVisibleMs: 10_000 }),
+      10_000,
+    );
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "success", dismissAfterVisibleMs: 0 }),
+      undefined,
+    );
+  });
+});
+
+describe("stripToastTimeout", () => {
+  it("moves an explicit timeout onto dismissAfterVisibleMs", () => {
+    const options: {
+      title: string;
+      timeout?: number;
+      data?: { dismissAfterVisibleMs?: number };
+    } = { title: "Snoozed", timeout: 5_000 };
+    assert.deepEqual(stripToastTimeout(options), {
+      title: "Snoozed",
+      timeout: 0,
+      data: { dismissAfterVisibleMs: 5_000 },
+    });
+  });
+
+  it("marks explicit timeout 0 as persist without clobbering a visible-ms override", () => {
+    const options: {
+      title: string;
+      timeout?: number;
+      data?: { dismissAfterVisibleMs?: number };
+    } = { title: "Working", timeout: 0 };
+    assert.deepEqual(stripToastTimeout(options), {
+      title: "Working",
+      timeout: 0,
+      data: { dismissAfterVisibleMs: 0 },
+    });
+    const missing: { title: string; timeout?: number } = { title: "Copied" };
+    assert.equal(stripToastTimeout(missing), missing);
+    assert.deepEqual(stripToastTimeout({ timeout: 0, data: { dismissAfterVisibleMs: 10_000 } }), {
+      timeout: 0,
+      data: { dismissAfterVisibleMs: 10_000 },
+    });
+    assert.deepEqual(
+      stripToastTimeout({ timeout: 5_000, data: { dismissAfterVisibleMs: 3_000 } }),
+      { timeout: 0, data: { dismissAfterVisibleMs: 3_000 } },
+    );
+  });
+
+  it("does not turn a loading or persist timeout into a dismiss duration", () => {
+    assert.deepEqual(stripToastTimeout({ type: "loading", timeout: 5_000 }), {
+      type: "loading",
+      timeout: 0,
+    });
+    assert.deepEqual(
+      stripToastTimeout({ type: "warning", timeout: 5_000, data: { dismissAfterVisibleMs: 0 } }),
+      { type: "warning", timeout: 0, data: { dismissAfterVisibleMs: 0 } },
+    );
+  });
+});
+
+describe("shouldRunToastAutoDismissTimer", () => {
+  it("runs while the document is visible even without window focus", () => {
+    assert.equal(shouldRunToastAutoDismissTimer("visible"), true);
+    assert.equal(shouldRunToastAutoDismissTimer("hidden"), false);
   });
 });
 

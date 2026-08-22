@@ -17,6 +17,8 @@ class FakeDomEvent {
   preventDefault() {
     this.defaultPrevented = true;
   }
+
+  stopPropagation() {}
 }
 
 class FakeElement {
@@ -237,6 +239,21 @@ describe("showContextMenuFallback", () => {
     await expect(selectionPromise).resolves.toBeNull();
   });
 
+  it("does not double a separatorBefore after an explicit separator item", async () => {
+    const selectionPromise = showContextMenuFallback([
+      { id: "copy", label: "Copy" },
+      { id: "sep", label: "", separator: true },
+      { id: "archive", label: "Archive", separatorBefore: true },
+    ]);
+    const separators = (document as unknown as FakeDocument)
+      .querySelectorAll("div")
+      .filter((element) => element.dataset.contextMenuSeparator === "true");
+
+    expect(separators).toHaveLength(1);
+    dismissContextMenu();
+    await expect(selectionPromise).resolves.toBeNull();
+  });
+
   it("renders one separator between menu sections", async () => {
     const selectionPromise = showContextMenuFallback([
       { id: "rename", label: "Rename" },
@@ -343,6 +360,27 @@ describe("showContextMenuFallback", () => {
 
     await expect(selectionPromise).resolves.toBe("copy:branch");
     expect(invoker.focused).toBe(true);
+  });
+
+  it("selects a parent with activateOnClick instead of only opening the submenu", async () => {
+    const selectionPromise = showContextMenuFallback([
+      {
+        id: "copy",
+        label: "Copy",
+        activateOnClick: true,
+        children: [
+          { id: "copy-conversation", label: "Conversation" },
+          { id: "copy-path", label: "Path" },
+        ],
+      },
+    ]);
+
+    const parentButton = findButton("Copy");
+    parentButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    expect(findButton("Path")).toBeTruthy();
+
+    parentButton?.dispatchEvent(new FakeDomEvent("click", { bubbles: true }));
+    await expect(selectionPromise).resolves.toBe("copy");
   });
 });
 

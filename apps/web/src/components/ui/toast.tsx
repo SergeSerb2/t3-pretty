@@ -33,8 +33,11 @@ import { resolveThreadRouteTarget } from "~/threadRoutes";
 import {
   buildVisibleToastLayout,
   hasVisibleToastAction,
+  resolveToastAutoDismissMs,
   shouldHideCollapsedToastContent,
   shouldRenderThreadScopedToast,
+  shouldRunToastAutoDismissTimer,
+  stripToastTimeout,
 } from "./toast.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 
@@ -75,7 +78,17 @@ export type ThreadToastData = {
     | "secondary";
 };
 
-const toastManager = Toast.createToastManager<ThreadToastData>();
+function createThreadToastManager() {
+  const manager = Toast.createToastManager<ThreadToastData>();
+  return {
+    ...manager,
+    add: (options: Parameters<typeof manager.add>[0]) => manager.add(stripToastTimeout(options)),
+    update: (toastId: string, options: Parameters<typeof manager.update>[1]) =>
+      manager.update(toastId, stripToastTimeout(options)),
+  };
+}
+
+const toastManager = createThreadToastManager();
 const anchoredToastManager = Toast.createToastManager<ThreadToastData>();
 type ToastId = ReturnType<typeof toastManager.add>;
 const threadToastVisibleTimeoutRemainingMs = new Map<ToastId, number>();
@@ -423,7 +436,9 @@ type ToastPosition =
   | "bottom-center"
   | "bottom-right";
 
-interface ToastProviderProps extends Toast.Provider.Props {
+// `timeout` is omitted so callers cannot re-enable Base UI's hover/focus-paused
+// clock; type-based auto-dismiss lives on ThreadToastVisibleAutoDismiss.
+interface ToastProviderProps extends Omit<Toast.Provider.Props, "timeout"> {
   position?: ToastPosition;
 }
 
@@ -503,8 +518,7 @@ function ThreadToastVisibleAutoDismiss({
     };
 
     const syncTimer = () => {
-      const shouldRun = document.visibilityState === "visible" && document.hasFocus();
-      if (shouldRun) {
+      if (shouldRunToastAutoDismissTimer(document.visibilityState)) {
         start();
         return;
       }
@@ -513,13 +527,9 @@ function ThreadToastVisibleAutoDismiss({
 
     syncTimer();
     document.addEventListener("visibilitychange", syncTimer);
-    window.addEventListener("focus", syncTimer);
-    window.addEventListener("blur", syncTimer);
 
     return () => {
       document.removeEventListener("visibilitychange", syncTimer);
-      window.removeEventListener("focus", syncTimer);
-      window.removeEventListener("blur", syncTimer);
       pause();
       clearTimer();
     };
@@ -530,7 +540,7 @@ function ThreadToastVisibleAutoDismiss({
 
 function ToastProvider({ children, position = "top-right", ...props }: ToastProviderProps) {
   return (
-    <Toast.Provider toastManager={toastManager} {...props}>
+    <Toast.Provider toastManager={toastManager} {...props} timeout={0}>
       {children}
       <Toasts position={position} />
     </Toast.Provider>
@@ -587,7 +597,7 @@ function Toasts({ position }: { position: ToastPosition }) {
           return (
             <Toast.Root
               className={cn(
-                "dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full overflow-visible select-none rounded-lg text-popover-foreground shadow-xl shadow-black/25 [transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s]",
+                "dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full overflow-visible select-none rounded-lg text-popover-foreground shadow-xl shadow-black/25 [transition:transform_.4s_cubic-bezier(.23,1,.32,1),opacity_.35s_cubic-bezier(.23,1,.32,1),height_.15s_cubic-bezier(.23,1,.32,1)] data-ending-style:pointer-events-none data-ending-style:[transition:transform_.32s_cubic-bezier(.23,1,.32,1),opacity_.28s_cubic-bezier(.23,1,.32,1)] motion-reduce:transition-opacity motion-reduce:data-starting-style:transform-none motion-reduce:data-ending-style:transform-none",
                 // Buried cards flatten: only the frontmost toast pays for blur
                 // (a real GPU saving), and the stack reads as depth. Expanding
                 // fans them out over real page content, so glass comes back.
@@ -631,9 +641,11 @@ function Toasts({ position }: { position: ToastPosition }) {
                 "data-[position*=bottom]:data-starting-style:transform-[translateY(calc(100%+var(--toast-inset)))]",
                 "data-[position*=top]:data-[position*=right]:data-starting-style:transform-[translateX(calc(100%+var(--toast-inset)))_translateY(var(--toast-calc-offset-y))]",
                 "data-ending-style:opacity-0",
-                // Ending animations (direction-aware)
-                "data-ending-style:not-data-limited:not-data-swipe-direction:transform-[translateY(calc(100%+var(--toast-inset)))]",
-                "data-[position*=top]:data-[position*=right]:data-ending-style:not-data-limited:not-data-swipe-direction:transform-[translateX(calc(100%+var(--toast-inset)))_translateY(var(--toast-calc-offset-y))]",
+                // Auto-dismiss / close: leave the same edge the toast entered from.
+                "data-[position*=top]:data-ending-style:not-data-limited:not-data-swipe-direction:transform-[translateY(calc(-100%-var(--toast-inset)))_scale(.98)]",
+                "data-[position*=bottom]:data-ending-style:not-data-limited:not-data-swipe-direction:transform-[translateY(calc(100%+var(--toast-inset)))_scale(.98)]",
+                "data-[position*=top]:data-[position*=right]:data-ending-style:not-data-limited:not-data-swipe-direction:transform-[translateX(calc(100%+var(--toast-inset)))_translateY(var(--toast-calc-offset-y))_scale(.98)]",
+                "data-[position*=top]:data-[position*=left]:data-ending-style:not-data-limited:not-data-swipe-direction:transform-[translateX(calc(-100%-var(--toast-inset)))_translateY(var(--toast-calc-offset-y))_scale(.98)]",
                 "data-ending-style:data-[swipe-direction=left]:transform-[translateX(calc(var(--toast-swipe-movement-x)-100%-var(--toast-inset)))_translateY(var(--toast-calc-offset-y))]",
                 "data-ending-style:data-[swipe-direction=right]:transform-[translateX(calc(var(--toast-swipe-movement-x)+100%+var(--toast-inset)))_translateY(var(--toast-calc-offset-y))]",
                 "data-ending-style:data-[swipe-direction=up]:transform-[translateY(calc(var(--toast-swipe-movement-y)-100%-var(--toast-inset)))]",
@@ -662,7 +674,11 @@ function Toasts({ position }: { position: ToastPosition }) {
               toast={toast}
             >
               <ThreadToastVisibleAutoDismiss
-                dismissAfterVisibleMs={toast.data?.dismissAfterVisibleMs}
+                dismissAfterVisibleMs={resolveToastAutoDismissMs({
+                  type: toast.type,
+                  timeout: toast.timeout,
+                  dismissAfterVisibleMs: toast.data?.dismissAfterVisibleMs,
+                })}
                 toastId={toast.id}
               />
               <div className={toastCornerDismissClass}>
@@ -744,7 +760,7 @@ function AnchoredToasts() {
               >
                 <Toast.Root
                   className={cn(
-                    "dropdown-glass relative overflow-visible text-balance text-popover-foreground text-xs shadow-xl shadow-black/25 transition-[scale,opacity] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
+                    "dropdown-glass relative overflow-visible text-balance text-popover-foreground text-xs shadow-xl shadow-black/25 transition-[scale,opacity] duration-200 ease-[cubic-bezier(.23,1,.32,1)] data-ending-style:pointer-events-none data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-ending-style:duration-180 motion-reduce:transition-opacity motion-reduce:data-starting-style:scale-100 motion-reduce:data-ending-style:scale-100",
                     tooltipStyle ? "rounded-md" : "rounded-lg",
                   )}
                   data-slot="toast-popup"

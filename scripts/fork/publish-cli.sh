@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 # Pack the T3 Pretty headless CLI and upload t3.tgz / t3-<version>.tgz / install.sh
-# to the public R2 feed. Native linux-small (and a packaging Mac) can run this.
+# to the public R2 feed. Native linux-small. Do not git fetch origin: hosted
+# linux-small has no Origin HTTPS credentials and git waits forever on the
+# username prompt.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
 
 export PATH="${HOME}/.vite-plus/bin:${HOME}/.local/bin:${HOME}/.local/t3-pretty-node24/bin:${PATH}"
+export T3CODE_DESKTOP_UPDATE_FEED_URL="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"
+export T3CODE_CLERK_PUBLISHABLE_KEY="${T3CODE_CLERK_PUBLISHABLE_KEY:-pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ}"
+export GIT_TERMINAL_PROMPT=0
+export GIT_ASKPASS="${GIT_ASKPASS:-/bin/true}"
 
 # Hosted linux-small often has no Node. Do not source ensure-linux-node.sh:
 # it `exit 0`s when Node is already present and would stop this script.
@@ -21,23 +27,79 @@ fi
   T3CODE_RELEASE_S3_ACCESS_KEY_ID \
   T3CODE_RELEASE_S3_SECRET_ACCESS_KEY
 
-export T3CODE_DESKTOP_UPDATE_FEED_URL="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"
-export T3CODE_RELEASE_S3_BUCKET="${T3CODE_RELEASE_S3_BUCKET:-t3-pretty-releases}"
-export T3CODE_RELEASE_S3_ENDPOINT="${T3CODE_RELEASE_S3_ENDPOINT:-https://a6f705b8c6459d937d32d31555f9fbf6.r2.cloudflarestorage.com}"
-export T3CODE_RELEASE_S3_REGION="${T3CODE_RELEASE_S3_REGION:-auto}"
-export T3CODE_CLERK_PUBLISHABLE_KEY="${T3CODE_CLERK_PUBLISHABLE_KEY:-pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ}"
-
-if ! command -v vp >/dev/null; then
-  echo "vp is required to pack the CLI." >&2
-  exit 1
+if [[ "${T3_PRETTY_CLI_SKIP_UPLOAD:-}" != "1" ]]; then
+  if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]] &&
+    { [[ -z "${T3CODE_RELEASE_S3_ACCESS_KEY_ID:-}" ]] || [[ -z "${T3CODE_RELEASE_S3_SECRET_ACCESS_KEY:-}" ]]; }; then
+    echo "Need CLOUDFLARE_API_TOKEN or T3CODE_RELEASE_S3_ACCESS_KEY_ID+SECRET from cluster secrets." >&2
+    exit 1
+  fi
+  if [[ -z "${T3CODE_RELEASE_S3_BUCKET:-}" || -z "${T3CODE_RELEASE_S3_ENDPOINT:-}" ]]; then
+    echo "T3CODE_RELEASE_S3_BUCKET and T3CODE_RELEASE_S3_ENDPOINT must come from pipeline env." >&2
+    exit 1
+  fi
 fi
 
 if [[ -z "${GITHUB_RUN_NUMBER:-}" && -n "${BUILDKITE_BUILD_NUMBER:-}" ]]; then
   export GITHUB_RUN_NUMBER="$BUILDKITE_BUILD_NUMBER"
 fi
 
-git fetch --force --tags origin || echo "warning: could not fetch Origin tags"
-git fetch --force --tags upstream || echo "warning: could not fetch upstream tags"
+if git remote get-url upstream >/dev/null 2>&1; then
+  git remote set-url upstream https://github.com/pingdotgg/t3code.git
+else
+  git remote add upstream https://github.com/pingdotgg/t3code.git
+fi
+git fetch --force --tags upstream
+
+build_floor=""
+for manifest in latest-linux.yml latest-mac.yml latest.yml; do
+  feed_file="$(mktemp)"
+  feed_code="$(curl -sSL --max-time 30 -o "$feed_file" -w '%{http_code}' "${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/${manifest}" || true)"
+  if [[ "$feed_code" == "404" ]]; then
+    rm -f "$feed_file"
+    continue
+  fi
+  if [[ ! "$feed_code" =~ ^2 ]]; then
+    rm -f "$feed_file"
+    echo "Cannot read live update manifest ${manifest} (HTTP $feed_code)." >&2
+    exit 1
+  fi
+  feed_version="$(sed -n 's/^version: *//p' "$feed_file" | head -n 1)"
+  rm -f "$feed_file"
+  feed_version="${feed_version%$'\r'}"
+  feed_version="${feed_version#\"}"
+  feed_version="${feed_version%\"}"
+  if [[ -z "$feed_version" ]]; then
+    echo "Live update manifest ${manifest} has no version field." >&2
+    exit 1
+  fi
+  if [[ ! "$feed_version" =~ -nightly\.[0-9]{8}\.([0-9]+)$ ]]; then
+    echo "Live update manifest ${manifest} version '$feed_version' is not a nightly build id." >&2
+    exit 1
+  fi
+  if [[ -z "$build_floor" ]] || (( 10#${BASH_REMATCH[1]} > 10#${build_floor} )); then
+    build_floor="${BASH_REMATCH[1]}"
+  fi
+done
+if [[ -n "$build_floor" ]]; then
+  export T3_FORK_BUILD_FLOOR="$build_floor"
+fi
+
+vp_is_official() {
+  command -v vp >/dev/null || return 1
+  local out
+  out="$(vp --version 2>&1 || true)"
+  [[ "$out" != *"npx vp"* ]]
+}
+
+if ! vp_is_official; then
+  export CI=true
+  curl -fsSL https://vite.plus | bash
+  export PATH="${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
+fi
+if ! vp_is_official; then
+  echo "vp is required to pack the CLI." >&2
+  exit 1
+fi
 
 version="$(node scripts/fork/resolve-fork-release.mjs --print version)"
 test -n "$version"
