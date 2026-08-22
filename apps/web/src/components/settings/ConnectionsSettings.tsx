@@ -2228,6 +2228,7 @@ export function ConnectionsSettings() {
       const relayManaged = environments.some(
         (environment) => environment.environmentId === environmentId && environment.relayManaged,
       );
+      let unlinkedFromRelay = false;
       if (relayManaged && relaySession !== null) {
         const unlinked = await deregisterRelayEnvironment({
           accountId: relaySession.accountId,
@@ -2249,11 +2250,20 @@ export function ConnectionsSettings() {
           }
           return;
         }
+        unlinkedFromRelay = true;
       }
-      const result = await removeEnvironment(environmentId);
-      if (relayManaged) {
+      let result = await removeEnvironment(environmentId);
+      if (result._tag === "Failure" && unlinkedFromRelay) {
+        // The relay account no longer lists this environment, so mesh cannot
+        // resurrect it; retry the local delete once before surfacing so the
+        // row does not get stuck without an add path.
+        result = await removeEnvironment(environmentId);
+      }
+      if (unlinkedFromRelay) {
         // Drop the unlinked environment from discovery state so it stops
-        // rendering as an available device everywhere immediately.
+        // rendering as an available device everywhere immediately. Skip this
+        // on the signed-out path: without a successful unlink the relay still
+        // lists the environment and discovery would re-source it.
         void refreshRelayCatalog();
       }
       setRemovingSavedEnvironmentId(null);
