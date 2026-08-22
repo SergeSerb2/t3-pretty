@@ -297,9 +297,23 @@ export function SkillPickerRow(props: {
       )}
       closeOnClick={false}
       disabled={props.disabled}
-      // Locked rows stay enabled for the star, so unwire the toggle itself:
-      // the switch is dimmed and a click or keypress must not reach onToggle.
-      onCheckedChange={skill.locked ? undefined : props.onToggle}
+      // Locked rows stay enabled for the star. Omitting onCheckedChange still
+      // lets the menu primitive toggle data-state on click/Space/Enter — cancel
+      // the change and swallow the item click so only the star is interactive.
+      onCheckedChange={
+        skill.locked
+          ? (_checked, details) => {
+              details.cancel();
+            }
+          : props.onToggle
+      }
+      onClick={
+        skill.locked
+          ? (event) => {
+              event.preventDefault();
+            }
+          : undefined
+      }
       variant="switch"
     >
       <span className="flex min-w-0 items-center gap-1">

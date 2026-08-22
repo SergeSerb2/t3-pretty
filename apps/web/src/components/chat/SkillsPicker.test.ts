@@ -203,7 +203,7 @@ describe("toPickerSkills", () => {
     expect(html).toContain("aria-disabled");
   });
 
-  it("unwires the locked row's toggle while the star still fires its handler", () => {
+  it("swallows row activation on a locked skill and still lets the star fire", () => {
     const skill = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault).find(
       (row) => row.id === "octo/skills:tdd",
     )!;
@@ -218,10 +218,17 @@ describe("toPickerSkills", () => {
       onToggle,
       onToggleFavorite,
     }) as ReactElement<{
-      onCheckedChange?: () => void;
+      onCheckedChange: (checked: boolean, details: { cancel: () => void }) => void;
+      onClick: (event: { preventDefault: () => void }) => void;
       children: ReactElement<{ children: ReactNode }>;
     }>;
-    expect(row.props.onCheckedChange).toBeUndefined();
+    const cancel = vi.fn();
+    row.props.onCheckedChange(false, { cancel });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    const preventDefault = vi.fn();
+    row.props.onClick({ preventDefault });
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(onToggle).not.toHaveBeenCalled();
     const star = Children.toArray(row.props.children.props.children).find(
       (child): child is ReactElement<{ onClick: (event: unknown) => void }> =>
         isValidElement<{ "aria-label"?: string }>(child) &&
