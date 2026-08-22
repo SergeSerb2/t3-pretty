@@ -72,10 +72,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(preflight, "steps.release.outputs.version != ''");
     assert.include(preflight, "steps.release.outputs.version != '-'");
     assert.include(preflight, "continue-on-error: true");
-    const releaseStep = preflight.slice(
-      preflight.indexOf("id: release"),
-      preflight.indexOf("id: changelog"),
-    );
+    const releaseStep = preflight.slice(preflight.indexOf("id: release"));
     assert.include(releaseStep, "T3_SKIP_UNRESOLVABLE_MINT");
     assert.notInclude(releaseStep, "continue-on-error:");
     assert.include(preflight, "ensure-linux-node.sh");
@@ -93,10 +90,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(wsl, "ensure-linux-node.sh");
     assert.include(wsl, "needs.preflight.result == 'success'");
     assert.include(wsl, "needs.preflight.outputs.should_release == 'true'");
-    assert.include(
-      preflight,
-      "ref: ${{ steps.changelog.outputs.ref || github.sha || env.BUILDKITE_COMMIT }}",
-    );
+    assert.include(preflight, "ref: ${{ github.sha || env.BUILDKITE_COMMIT }}");
     assert.notInclude(preflight, "github.sha || '-'");
     assert.include(wsl, 'ref="${PREFLIGHT_REF:-${GITHUB_SHA:-${BUILDKITE_COMMIT:-}}}"');
     assert.include(wsl, "WSL prebuild needs a commit SHA; preflight ref is missing.");
@@ -110,6 +104,10 @@ describe("T3 Pretty release runner placement", () => {
   it("does not rebuild desktop for mobile-only or docs-only commits", () => {
     // Buildkite rejects on.push.paths, so the skip lives in the preflight job.
     assert.include(desktopWorkflow, "Skip desktop-irrelevant pushes");
+    assert.notInclude(desktopWorkflow, "Changelog-only commit; skipping imported preflight.");
+    // Hosted preflight cannot push notes and nothing there consumes them;
+    // generation belongs to the native packagers.
+    assert.notInclude(desktopWorkflow, "generate-changelog.mjs");
     assert.include(desktopWorkflow, "apps/desktop");
     assert.include(desktopWorkflow, "apps/web");
     assert.notInclude(desktopWorkflow, "apps/mobile");
