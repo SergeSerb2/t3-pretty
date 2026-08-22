@@ -227,6 +227,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(macosAgent, "T3_PRETTY_REVIEW_ONLY");
     assert.include(macosAgent, "GIT_CONFIG_GLOBAL");
     assert.include(macosAgent, "persist-ios-native-submit-hook.sh");
+    assert.include(macosAgent, "refresh-origin-git-credentials.sh");
     const persistHook = NodeFS.readFileSync(
       NodePath.resolve(here, "persist-ios-native-submit-hook.sh"),
       "utf8",
