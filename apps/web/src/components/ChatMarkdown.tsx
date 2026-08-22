@@ -932,10 +932,7 @@ export function extractMarkdownFileLinkCandidates(text: string): {
   const hrefs: string[] = [];
   const inlineCodeSpans: string[] = [];
   const collectHrefs = (segment: string) => {
-    for (const match of segment.matchAll(MARKDOWN_LINK_HREF_PATTERN)) {
-      const href = match[1]?.trim();
-      if (href) hrefs.push(href);
-    }
+    hrefs.push(...extractMarkdownLinkHrefs(segment));
   };
   const collectInlineCodeSpans = (segment: string) => {
     for (const match of segment.matchAll(INLINE_CODE_SPAN_PATTERN)) {
