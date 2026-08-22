@@ -1,12 +1,16 @@
 import {
+  DEFAULT_RUNTIME_MODE,
   type EnvironmentId,
+  effectiveRuntimeModeForProviderDriver,
   isProviderDriverKind,
   ProjectId,
   type ModelSelection,
   type ProviderDriverKind,
+  type RuntimeMode,
   type ServerProvider,
   type ScopedProjectRef,
   type ScopedThreadRef,
+  resolveRuntimeModeForProviderDriver,
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
@@ -118,6 +122,74 @@ export function resolveThreadMetadataUpdateForNextTurn(input: {
     ...(modelSelectionChanged ? { modelSelection: nextModelSelection } : {}),
     ...(branchChanged ? { branch: input.nextBranch, worktreePath: null } : {}),
   };
+}
+
+// Composer pick wins, including an explicit "full-access" that a carry or
+// picker wrote there. A server thread's stored mode is authoritative — even
+// "full-access" on Kimi, which may be an explicit pick or the pre-Yolo
+// default. A draft whose thread mode still reads as the generic default
+// (never picked, never recorded on the composer) inherits the provider's
+// own default. Remapped carries must land in composerRuntimeMode so they
+// are not treated as unset.
+export function storedComposerRuntimeMode(input: {
+  readonly composerRuntimeMode: RuntimeMode | null;
+  readonly threadRuntimeMode: RuntimeMode | null | undefined;
+  readonly isServerThread: boolean;
+}): RuntimeMode | null {
+  return (
+    input.composerRuntimeMode ??
+    (input.isServerThread
+      ? (input.threadRuntimeMode ?? null)
+      : input.threadRuntimeMode !== DEFAULT_RUNTIME_MODE
+        ? (input.threadRuntimeMode ?? null)
+        : null)
+  );
+}
+
+// Apply the provider default, then remap Kimi-only "yolo" off Kimi so the
+// composer never offers a mode the current provider does not have.
+export function resolveComposerRuntimeMode(input: {
+  readonly providerDriver: string | null | undefined;
+  readonly composerRuntimeMode: RuntimeMode | null;
+  readonly threadRuntimeMode: RuntimeMode | null | undefined;
+  readonly isServerThread: boolean;
+}): RuntimeMode {
+  return effectiveRuntimeModeForProviderDriver(
+    input.providerDriver,
+    storedComposerRuntimeMode(input),
+  );
+}
+
+// New threads copy the viewed thread's access mode. When the destination
+// provider is known and is not Kimi, Kimi-only "yolo" becomes generic
+// full-access so it cannot land on Grok/Codex/Claude. Unknown destination
+// keeps the carried value; the composer remaps at display/send time.
+export function resolveCarriedRuntimeMode(input: {
+  readonly runtimeMode: RuntimeMode | null;
+  readonly destinationProviderDriver: string | null | undefined;
+}): RuntimeMode | null {
+  if (input.runtimeMode == null) {
+    return null;
+  }
+  if (input.destinationProviderDriver == null) {
+    return input.runtimeMode;
+  }
+  return resolveRuntimeModeForProviderDriver(input.destinationProviderDriver, input.runtimeMode);
+}
+
+// The composer pick a new-thread carry should record. Only a carry with real
+// information becomes an explicit pick: a non-default mode, or "full-access"
+// that remapping yolo off Kimi produced. A plain carried "full-access" stays
+// unset on the composer so a new Kimi draft still inherits the yolo default.
+export function resolveCarriedComposerRuntimeMode(input: {
+  readonly runtimeMode: RuntimeMode | null;
+  readonly destinationProviderDriver: string | null | undefined;
+}): RuntimeMode | null {
+  const carried = resolveCarriedRuntimeMode(input);
+  if (carried === null) {
+    return null;
+  }
+  return carried !== DEFAULT_RUNTIME_MODE || carried !== input.runtimeMode ? carried : null;
 }
 
 export function buildLocalDraftThread(

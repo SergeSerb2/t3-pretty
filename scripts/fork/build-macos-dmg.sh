@@ -12,6 +12,25 @@ export T3CODE_CLERK_PUBLISHABLE_KEY="${T3CODE_CLERK_PUBLISHABLE_KEY:-pk_live_Y2x
 export APPLE_TEAM_ID="${APPLE_TEAM_ID:-78A5P57U23}"
 export T3CODE_APPLE_TEAM_ID="${T3CODE_APPLE_TEAM_ID:-$APPLE_TEAM_ID}"
 
+# Automated notes commits already minted a version. Reuse it instead of
+# minting another desktop release, so a retry still produces a DMG.
+version=""
+subject="$(git log -1 --format=%s)"
+changelog_prefix="docs(changelog): add release notes through v"
+if [[ "$subject" == "$changelog_prefix"* ]]; then
+  version="${subject#"$changelog_prefix"}"
+  test -n "$version"
+  echo "Changelog commit; packaging already-minted $version without reminting."
+  # Default here, not only at the earlier export: this block must stay
+  # set -u safe if it is ever moved above that export (Apple bash 3.2).
+  feed_base="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"
+  feed_yml="${feed_base%/}/latest-mac.yml"
+  if curl -fsSL "$feed_yml" 2>/dev/null | grep -Fxq "version: ${version}"; then
+    echo "Feed already has $version; skipping macOS packaging."
+    exit 0
+  fi
+fi
+
 load_secret() {
   local name="$1"
   local value="${!name:-}"
@@ -48,8 +67,9 @@ load_secret CLOUDFLARE_API_TOKEN
 if [[ -z "${VITE_SCENERY_UNSPLASH_KEY:-}" ]]; then
   load_secret VITE_SCENERY_UNSPLASH_KEY || true
 fi
+load_secret CLI_PROXY_API_KEY || true
 
-if [[ -z "${GITHUB_RUN_NUMBER:-}" ]]; then
+if [[ -z "$version" && -z "${GITHUB_RUN_NUMBER:-}" ]]; then
   test -n "${BUILDKITE_BUILD_NUMBER:-}"
   export GITHUB_RUN_NUMBER="$BUILDKITE_BUILD_NUMBER"
 fi
@@ -63,10 +83,34 @@ fi
 git fetch --force --tags origin || echo "warning: could not fetch Origin tags"
 git fetch --force --tags upstream
 
-# Node, not python3: macos-release PATH may not include Apple's CLT python.
-version="$(node scripts/fork/resolve-fork-release.mjs --print version)"
-test -n "$version"
+if [[ -z "$version" ]]; then
+  # Node, not python3: macos-release PATH may not include Apple's CLT python.
+  version="$(node scripts/fork/resolve-fork-release.mjs --print version)"
+  test -n "$version"
+fi
 echo "Building macOS arm64 $version"
+
+# Bake What's New notes into this artifact. They are pushed to main only
+# after the artifacts and update feed are live (end of this script), so the
+# build that push triggers sees the version in the feed and skips packaging
+# instead of publishing the same version twice. Changelog-commit retries
+# already persisted notes; do not regenerate them (model/fallback drift would
+# rewrite the shipped file). Hosted Linux preflight cannot load
+# CLI_PROXY_API_KEY or push to Origin, which is why notes froze after
+# 2026-08-12.
+# Always keep at least --version in this array: Apple bash 3.2 with `set -u`
+# treats an empty `"${arr[@]}"` as unbound.
+notes_pending=0
+if [[ "$subject" == "$changelog_prefix"* ]]; then
+  echo "Changelog commit already has notes; skipping changelog generation."
+else
+  changelog_args=(--version "$version" --no-push)
+  if ! node scripts/fork/generate-changelog.mjs "${changelog_args[@]}"; then
+    echo "warning: changelog generation failed; continuing the macOS release"
+  elif [[ -n "$(git status --porcelain -- apps/web/src/changelog/changelogData.ts)" ]]; then
+    notes_pending=1
+  fi
+fi
 
 if ! command -v rustup >/dev/null; then
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
@@ -167,5 +211,15 @@ for file in "$publish"/*.{dmg,zip,blockmap,yml}; do
 done
 (( ${#assets[@]} > 0 ))
 node scripts/fork/origin-forge.mjs upload-assets "${assets[@]}"
+
+# Push the baked notes only now that the feed lists this version: the build
+# this push triggers reads the feed and skips packaging instead of racing
+# this release.
+if [[ "$notes_pending" == "1" ]]; then
+  if ! node scripts/fork/generate-changelog.mjs --publish; then
+    echo "warning: release notes ship with $version but could not be pushed to main"
+  fi
+fi
+
 echo "Published macOS arm64 $version to $T3CODE_DESKTOP_UPDATE_FEED_URL"
 echo "dmg=$(find "$publish" -name '*.dmg' -print -quit)"

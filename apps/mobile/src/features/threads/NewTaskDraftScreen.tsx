@@ -29,7 +29,7 @@ import { useThemeColor } from "../../lib/useThemeColor";
 import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { useFontFamily } from "../../lib/useFontFamily";
 
-import { MessageId, ThreadId } from "@t3tools/contracts";
+import { MessageId, resolveRuntimeModeForProviderDriver, ThreadId } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -832,7 +832,12 @@ export function NewTaskDraftScreen(props: {
     let selectedBranchName = draft.workspaceSelection?.branch ?? flow.selectedBranchName;
     let selectedWorktreePath = draft.workspaceSelection?.worktreePath ?? flow.selectedWorktreePath;
     let startFromOrigin = draft.workspaceSelection?.startFromOrigin ?? flow.startFromOrigin;
-    const runtimeMode = draft.runtimeMode ?? flow.runtimeMode;
+    const runtimeMode = resolveRuntimeModeForProviderDriver(
+      selectedEnvironmentServerConfig?.providers.find(
+        (provider) => provider.instanceId === modelSelection?.instanceId,
+      )?.driver,
+      draft.runtimeMode ?? flow.runtimeMode,
+    );
     const interactionMode = flow.planModeEnabled
       ? (draft.interactionMode ?? flow.interactionMode)
       : "default";

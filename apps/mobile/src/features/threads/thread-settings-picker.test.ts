@@ -228,4 +228,37 @@ describe("buildThreadSettingsPickerModel", () => {
 
     expect(picker.runtimeChoices.find((choice) => choice.selected)?.shortLabel).toBe("Full");
   });
+
+  it("treats carried Kimi yolo as Full access on Grok", () => {
+    const grokModels = [
+      modelOption("grok-4.6", {
+        providerKey: "grok",
+        providerLabel: "Grok",
+        providerDriver: "grok",
+      }),
+    ];
+    const picker = buildThreadSettingsPickerModel({
+      providerGroups: [group(grokModels)],
+      selectedModel: grokModels[0]?.selection ?? null,
+      optionDescriptors: [],
+      runtimeMode: "yolo",
+    });
+
+    expect(picker.runtimeChoices.map((choice) => choice.mode)).not.toContain("yolo");
+    expect(picker.runtimeChoices.find((choice) => choice.selected)?.mode).toBe("full-access");
+  });
+
+  it("does not remap carried yolo when the provider is unknown", () => {
+    const picker = buildThreadSettingsPickerModel({
+      providerGroups: [],
+      selectedModel: {
+        instanceId: ProviderInstanceId.make("kimi"),
+        model: "k2",
+      },
+      optionDescriptors: [],
+      runtimeMode: "yolo",
+    });
+
+    expect(picker.runtimeChoices.find((choice) => choice.selected)).toBeUndefined();
+  });
 });

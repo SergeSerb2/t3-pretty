@@ -68,7 +68,19 @@ function findHighestForkBuild() {
 
 function resolveForkBuild(upstreamBuildRaw, runNumber) {
   const candidate = BigInt(upstreamBuildRaw) * RUN_MULTIPLIER + runNumber;
-  const highest = findHighestForkBuild();
+  let highest = findHighestForkBuild();
+  // Hosted linux-small cannot fetch Origin fork tags, so the native AppImage
+  // packager passes the build slot already live on the public update feed.
+  // Without it a fresh checkout can mint below the version clients have.
+  const floorRaw = process.env.T3_FORK_BUILD_FLOOR;
+  if (floorRaw) {
+    try {
+      const floor = BigInt(floorRaw);
+      if (floor > highest) highest = floor;
+    } catch {
+      // not an integer
+    }
+  }
   // electron-updater compares the numeric nightly build slot. A later CI run
   // with a small Buildkite number must not publish below an earlier
   // millisecond-fallback or already-shipped feed version.
@@ -83,6 +95,20 @@ function printField(argv) {
   return field;
 }
 
+const CHANGELOG_SUBJECT_PREFIX = "docs(changelog): add release notes through v";
+
+function reusedChangelogVersion() {
+  let subject;
+  try {
+    subject = git("log", "-1", "--format=%s");
+  } catch {
+    return null;
+  }
+  if (!subject.startsWith(CHANGELOG_SUBJECT_PREFIX)) return null;
+  const version = subject.slice(CHANGELOG_SUBJECT_PREFIX.length).trim();
+  return version || null;
+}
+
 function writeGitHubOutput(values) {
   const outputPath = process.env.GITHUB_OUTPUT;
   if (!outputPath) return false;
@@ -95,8 +121,37 @@ function writeGitHubOutput(values) {
   return true;
 }
 
+function emit(values, field) {
+  if (field) {
+    const value = values[field];
+    if (value == null) throw new Error(`Unknown --print field: ${field}`);
+    process.stdout.write(`${value}\n`);
+    return;
+  }
+  if (!writeGitHubOutput(values)) {
+    process.stdout.write(`${JSON.stringify(values, null, 2)}\n`);
+  }
+}
+
 function main() {
   const field = printField(process.argv.slice(2));
+  const reused = reusedChangelogVersion();
+  if (reused) {
+    // Changelog-commit retries already minted a version. Reuse it so hosted
+    // preflight can still run imported jobs without minting another release.
+    emit(
+      {
+        minted: "true",
+        upstream_tag: findNewestIntegratedNightly() ?? "",
+        version: reused,
+        tag: `v${reused}.fork`,
+        name: `T3 Pretty ${reused}`,
+        short_sha: git("rev-parse", "--short=9", "HEAD"),
+      },
+      field,
+    );
+    return;
+  }
   const runNumber = resolveRunNumber();
 
   const upstreamTag = findNewestIntegratedNightly();
@@ -124,25 +179,17 @@ function main() {
   // configured prerelease channel. Keep the fork marker as a prerelease
   // identifier so the tag remains both fork-specific and semver-valid.
   const tag = `v${version}.fork`;
-  const values = {
-    minted: "true",
-    upstream_tag: upstreamTag,
-    version,
-    tag,
-    name: `T3 Pretty ${version}`,
-    short_sha: git("rev-parse", "--short=9", "HEAD"),
-  };
-
-  if (field) {
-    const value = values[field];
-    if (value == null) throw new Error(`Unknown --print field: ${field}`);
-    process.stdout.write(`${value}\n`);
-    return;
-  }
-
-  if (!writeGitHubOutput(values)) {
-    process.stdout.write(`${JSON.stringify(values, null, 2)}\n`);
-  }
+  emit(
+    {
+      minted: "true",
+      upstream_tag: upstreamTag,
+      version,
+      tag,
+      name: `T3 Pretty ${version}`,
+      short_sha: git("rev-parse", "--short=9", "HEAD"),
+    },
+    field,
+  );
 }
 
 main();

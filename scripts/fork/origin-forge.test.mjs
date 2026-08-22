@@ -350,13 +350,21 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "deploy-relay-ci.sh");
     assert.notInclude(pipeline, "deploy-relay.yml");
     assert.include(pipeline, "queue: macos-release");
+    assert.notInclude(pipeline, "queue: macos-package");
     assert.include(pipeline, "queue: windows-release");
     assert.include(pipeline, "queue: linux-small");
+    const dmgStep = pipeline.slice(pipeline.indexOf(":mac: macOS arm64 DMG"));
+    assert.include(dmgStep.slice(0, 900), "queue: macos-release");
+    const linuxStep = pipeline.slice(pipeline.indexOf(":linux: Linux x64 AppImage"));
+    assert.include(linuxStep.slice(0, 900), "queue: linux-small");
+    const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
+    assert.include(reviewStep.slice(0, 800), "queue: macos-release");
     assert.include(pipeline, "github-actions#v0.13.0");
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");
     assert.include(pipeline, "build-macos-dmg.sh");
+    assert.include(pipeline, "build-linux-appimage.sh");
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, 'build.source != "schedule"');
     assert.notInclude(pipeline, "depends_on: origin-workflows");
@@ -380,6 +388,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(source, 'case "upload-assets"');
     assert.include(source, "originGitConfigArgs");
     assert.include(source, "credential.https://origin.cursor.com.helper");
+    assert.include(source, "maxBuffer");
   });
 
   it("reads the baked updater feed from T3CODE_DESKTOP_UPDATE_FEED_URL", () => {

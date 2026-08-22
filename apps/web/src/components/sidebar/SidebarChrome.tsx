@@ -99,10 +99,9 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
         aria-hidden="true"
         className={cn(
           "h-5 w-auto shrink-0 object-contain",
-          // The mark is a pastel-mint cut-out: on plain chrome it washes out in
-          // light themes, so render it as a theme-tinted glyph in both slots —
-          // foreground on chrome, white over scenery backdrops.
-          onBackdrop ? "brightness-0 invert" : "brightness-0 dark:invert",
+          // The sage mark carries the brand on plain chrome in both themes. Over
+          // scenery photo backdrops it washes out, so fall back to a white glyph.
+          onBackdrop && "brightness-0 invert",
         )}
         src="/t3-pretty-mark.png"
       />

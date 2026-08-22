@@ -6,6 +6,7 @@ import type {
   RuntimeMode,
   ScopedThreadRef,
 } from "@t3tools/contracts";
+import { displayRuntimeModeForProviderDriver } from "@t3tools/contracts";
 import type { LegendListRenderItemProps } from "@legendapp/list/react-native";
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import { HeaderHeightContext } from "@react-navigation/elements";
@@ -107,7 +108,8 @@ export function threadSettingsSummaryLabel(input: {
     optionDescriptors: input.optionDescriptors,
   });
   const runtime = runtimeModeChoicesForProvider(input.providerDriver).find(
-    (choice) => choice.mode === input.runtimeMode,
+    (choice) =>
+      choice.mode === displayRuntimeModeForProviderDriver(input.providerDriver, input.runtimeMode),
   );
   return [
     identity.summary,

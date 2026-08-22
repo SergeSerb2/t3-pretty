@@ -26,6 +26,12 @@ const pointAnchor = (position: ContextMenuPosition) => ({
     DOMRect.fromRect({ x: position.x, y: position.y, width: 0, height: 0 }),
 });
 
+// Any non-empty `children` at the top level renders a flyout; deeper nesting
+// implies a top-level parent with children, so one level is enough.
+function hasSubmenuFlyout(items: readonly ContextMenuItem[]): boolean {
+  return items.some((item) => (item.children?.length ?? 0) > 0);
+}
+
 function ContextMenuIcon(props: { readonly name: string | undefined }) {
   const Icon = contextMenuIcon(props.name);
   if (Icon === null) return null;
@@ -49,7 +55,20 @@ function ContextMenuEntries(props: {
     if (hasChildren) {
       return (
         <MenuSub key={item.id}>
-          <MenuSubTrigger disabled={item.disabled === true}>
+          <MenuSubTrigger
+            closeDelay={150}
+            delay={0}
+            disabled={item.disabled === true}
+            onClick={
+              item.activateOnClick === true
+                ? (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    props.onSelect(item.id);
+                  }
+                : undefined
+            }
+          >
             <ContextMenuIcon name={item.icon} />
             <span className="min-w-0 flex-1 truncate">{item.label}</span>
           </MenuSubTrigger>
@@ -115,7 +134,11 @@ export function ContextMenuHost() {
 
   return (
     <Menu
-      modal
+      // Nested flyouts portal outside this root. Modal mode inerts the rest of
+      // the document, so those popups look open but swallow no clicks. Only
+      // menus that actually have flyouts pay for that; plain menus keep modal
+      // so the page underneath stays inert while they are open.
+      modal={!(state.status === "open" && hasSubmenuFlyout(state.items))}
       open={state.status === "open"}
       onOpenChange={(open) => {
         if (!open) dismissHostedContextMenu();

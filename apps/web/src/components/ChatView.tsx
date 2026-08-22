@@ -20,7 +20,6 @@ import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderInteractionMode,
   ProviderDriverKind,
-  defaultRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
   RuntimeMode,
   TerminalOpenInput,
@@ -339,8 +338,14 @@ import {
   MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
   SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS,
   SCENERY_DRAFT_HERO_TRANSITION_EASING,
+  type DraftHeroHandoff,
+  draftHeroGlideHasTravel,
+  draftHeroGlideKeyframes,
+  isDraftHeroAnimationPlaying,
   recordDraftHeroHandoff,
   runMobileComposerTransition,
+  shouldGlideDraftHeroHandoff,
+  shouldPopDraftHeroGlide,
   takeDraftHeroHandoff,
 } from "./chat/draftHeroTransition";
 import { useMotionStore } from "../scenery/motionStore";
@@ -377,6 +382,7 @@ import {
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftHeroState,
   resolveThreadMetadataUpdateForNextTurn,
+  resolveComposerRuntimeMode,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
@@ -427,10 +433,12 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
   // undefined until the first layout pass takes (or declines) the handoff;
   // held until its glide finishes so StrictMode's second pass replays it
   // instead of finding it consumed.
-  const handoffRectRef = useRef<Pick<DOMRect, "left" | "top"> | null | undefined>(undefined);
+  const handoffRef = useRef<DraftHeroHandoff | null | undefined>(undefined);
   const animationRef = useRef<Animation | null>(null);
   const sceneryDockRef = useRef(sceneryDock);
   sceneryDockRef.current = sceneryDock;
+  const isDraftHeroStateRef = useRef(isDraftHeroState);
+  isDraftHeroStateRef.current = isDraftHeroState;
   const attachTransitionGroupRef = (element: HTMLDivElement | null) => {
     transitionGroupRef.current = element;
   };
@@ -450,6 +458,10 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
       recordDraftHeroHandoff(
         composerAnchorRef.current?.getBoundingClientRect() ?? null,
         performance.now(),
+        {
+          isDraftHero: isDraftHeroStateRef.current,
+          gliding: isDraftHeroAnimationPlaying(animationRef.current),
+        },
       );
     },
     [],
@@ -458,32 +470,42 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
   useLayoutEffect(() => {
     const transitionGroup = transitionGroupRef.current;
     const nextComposerRect = composerAnchorRef.current?.getBoundingClientRect() ?? null;
-    if (handoffRectRef.current === undefined) {
-      handoffRectRef.current = takeDraftHeroHandoff(performance.now());
+    if (handoffRef.current === undefined) {
+      handoffRef.current = takeDraftHeroHandoff(performance.now());
     }
-    const handoffRect = handoffRectRef.current;
+    const handoff = handoffRef.current ?? null;
     const stateChangedInPlace = previousStateRef.current !== isDraftHeroState;
-    const stateChanged = stateChangedInPlace || handoffRect !== null;
+    const shouldGlideHandoff = shouldGlideDraftHeroHandoff({
+      isDraftHero: isDraftHeroState,
+      handoff,
+    });
+    const stateChanged = stateChangedInPlace || shouldGlideHandoff;
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const mobileComposerTransitionActive =
       typeof document !== "undefined" &&
       document.documentElement.dataset.mobileComposerRouteTransition === "true";
+    // Fog already hides the route swap; a FLIP under it finishes during the
+    // hold and then the chrome-in 14px rise reads as a second bounce.
+    const sceneryFogCoversSwap =
+      typeof document !== "undefined" && document.documentElement.dataset.sceneryArrival === "fog";
 
     animationRef.current?.cancel();
     animationRef.current = null;
 
     // An in-place hero↔docked switch glides from the rect captured before it;
-    // a fresh mount glides from the rect the outgoing ChatView handed off.
+    // a fresh mount glides from the rect the outgoing ChatView handed off,
+    // but only when placement actually changed or a glide was still running.
     const previousComposerRect = stateChangedInPlace
       ? previousComposerRectRef.current
-      : handoffRect;
+      : (handoff?.rect ?? null);
     let handoffGlideStarted = false;
     if (
       stateChanged &&
       !prefersReducedMotion &&
       !mobileComposerTransitionActive &&
+      !sceneryFogCoversSwap &&
       transitionGroup &&
       previousComposerRect &&
       nextComposerRect &&
@@ -491,18 +513,15 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
     ) {
       const translateX = previousComposerRect.left - nextComposerRect.left;
       const translateY = previousComposerRect.top - nextComposerRect.top;
-      if (Math.abs(translateX) >= 0.5 || Math.abs(translateY) >= 0.5) {
+      if (draftHeroGlideHasTravel(translateX, translateY)) {
         const sceneryDockMotion = sceneryDockRef.current;
+        const pop = shouldPopDraftHeroGlide({
+          sceneryDock: sceneryDockMotion,
+          inPlace: stateChangedInPlace,
+          translateY,
+        });
         const animation = transitionGroup.animate(
-          sceneryDockMotion
-            ? [
-                { transform: `translate3d(${translateX}px, ${translateY}px, 0) scale(1.02)` },
-                { transform: "translate3d(0, 0, 0) scale(1)" },
-              ]
-            : [
-                { transform: `translate3d(${translateX}px, ${translateY}px, 0)` },
-                { transform: "translate3d(0, 0, 0)" },
-              ],
+          draftHeroGlideKeyframes(translateX, translateY, pop),
           {
             duration: sceneryDockMotion
               ? SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS
@@ -510,6 +529,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
             easing: sceneryDockMotion
               ? SCENERY_DRAFT_HERO_TRANSITION_EASING
               : DRAFT_HERO_TRANSITION_EASING,
+            fill: "backwards",
           },
         );
         animation.id = DRAFT_HERO_TRANSITION_ANIMATION_ID;
@@ -523,13 +543,13 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
             }
             animationRef.current = null;
             if (!stateChangedInPlace) {
-              handoffRectRef.current = null;
+              handoffRef.current = null;
             }
           });
       }
     }
     if (!stateChangedInPlace && !handoffGlideStarted) {
-      handoffRectRef.current = null;
+      handoffRef.current = null;
     }
 
     previousStateRef.current = isDraftHeroState;
@@ -2476,16 +2496,15 @@ function ChatViewContent(props: ChatViewProps) {
   // mode is authoritative — even "full-access" on Kimi, which may be an
   // explicit pick or the pre-Yolo default and must not be remapped. Only a
   // draft whose mode still reads as the generic default (never picked, never
-  // carried from a non-default thread) inherits the provider's own default.
-  const storedRuntimeMode =
-    composerRuntimeMode ??
-    (isServerThread
-      ? (activeThread?.runtimeMode ?? null)
-      : activeThread?.runtimeMode !== DEFAULT_RUNTIME_MODE
-        ? (activeThread?.runtimeMode ?? null)
-        : null);
-  const runtimeMode: RuntimeMode =
-    storedRuntimeMode ?? defaultRuntimeModeForProviderDriver(selectedProvider);
+  // recorded on the composer) inherits the provider's own default.
+  // Carried Kimi "yolo" is remapped off Kimi so a Grok new thread cannot
+  // show or send a mode Grok does not offer.
+  const runtimeMode: RuntimeMode = resolveComposerRuntimeMode({
+    providerDriver: selectedProvider,
+    composerRuntimeMode,
+    threadRuntimeMode: activeThread?.runtimeMode,
+    isServerThread,
+  });
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
@@ -5407,6 +5426,10 @@ function ChatViewContent(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
+    const runtimeModeForTurn = resolveRuntimeModeForProviderDriver(
+      ctxSelectedProvider,
+      runtimeMode,
+    );
     const composerImages =
       directAnnotation?.image &&
       !sendContextImages.some((image) => image.id === directAnnotation.image?.id)
@@ -5740,7 +5763,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
-        runtimeMode,
+        runtimeMode: runtimeModeForTurn,
         interactionMode,
       });
       if (settingsResult._tag === "Failure") {
@@ -5764,7 +5787,7 @@ function ChatViewContent(props: ChatViewProps) {
                       projectId: activeProject.id,
                       title,
                       modelSelection: threadCreateModelSelection,
-                      runtimeMode,
+                      runtimeMode: runtimeModeForTurn,
                       interactionMode,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
@@ -5810,7 +5833,7 @@ function ChatViewContent(props: ChatViewProps) {
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: title,
-          runtimeMode,
+          runtimeMode: runtimeModeForTurn,
           interactionMode,
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
@@ -5824,6 +5847,18 @@ function ChatViewContent(props: ChatViewProps) {
       } else {
         turnStartSucceeded = true;
         acknowledgeActiveThreadWoke();
+        // The turn went out with the remapped mode; sync a stored composer
+        // pick (carried yolo) to what was actually sent so a later provider
+        // switch cannot resurrect and re-persist the pre-send value. Skip
+        // when the send driver is unknown: remapping that case would wipe
+        // Kimi yolo after a stale provider lookup.
+        if (
+          ctxSelectedProvider !== "unconfigured" &&
+          composerRuntimeMode !== null &&
+          composerRuntimeMode !== runtimeModeForTurn
+        ) {
+          setComposerDraftRuntimeMode(composerDraftTarget, runtimeModeForTurn);
+        }
         if (backgroundThreadRef) {
           markPromotedDraftThreadByRef(backgroundThreadRef);
           try {
@@ -6257,6 +6292,10 @@ function ChatViewContent(props: ChatViewProps) {
         selectedPromptEffort: ctxSelectedPromptEffort,
         selectedModelSelection: ctxSelectedModelSelection,
       } = sendCtx;
+      const runtimeModeForTurn = resolveRuntimeModeForProviderDriver(
+        ctxSelectedProvider,
+        runtimeMode,
+      );
 
       // Same path-suffix bake as the normal composer send — plan follow-up
       // used to return before takeAttachedFilesForThread ran, so refine /
@@ -6313,7 +6352,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
-        runtimeMode,
+        runtimeMode: runtimeModeForTurn,
         interactionMode: nextInteractionMode,
       });
       let failure: AtomCommandResult<unknown, unknown> | null =
@@ -6326,6 +6365,19 @@ function ChatViewContent(props: ChatViewProps) {
           scopeThreadRef(activeThread.environmentId, threadIdForSend),
           nextInteractionMode,
         );
+        // Same sync as the composer send: the turn persisted the remapped
+        // mode, so a stored carried yolo must not outlive it. Unknown send
+        // driver keeps the stored pick.
+        if (
+          ctxSelectedProvider !== "unconfigured" &&
+          composerRuntimeMode !== null &&
+          composerRuntimeMode !== runtimeModeForTurn
+        ) {
+          setComposerDraftRuntimeMode(
+            scopeThreadRef(activeThread.environmentId, threadIdForSend),
+            runtimeModeForTurn,
+          );
+        }
 
         const startResult = await startThreadTurn({
           environmentId,
@@ -6339,7 +6391,7 @@ function ChatViewContent(props: ChatViewProps) {
             },
             modelSelection: ctxSelectedModelSelection,
             titleSeed: activeThread.title,
-            runtimeMode,
+            runtimeMode: runtimeModeForTurn,
             interactionMode: nextInteractionMode,
             ...(nextInteractionMode === "default" && activeProposedPlan
               ? {
@@ -6423,6 +6475,10 @@ function ChatViewContent(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
+    const runtimeModeForTurn = resolveRuntimeModeForProviderDriver(
+      ctxSelectedProvider,
+      runtimeMode,
+    );
 
     const createdAt = new Date().toISOString();
     const nextThreadId = newThreadId();
@@ -6463,7 +6519,7 @@ function ChatViewContent(props: ChatViewProps) {
         projectId: activeProject.id,
         title: nextThreadTitle,
         modelSelection: nextThreadModelSelection,
-        runtimeMode,
+        runtimeMode: runtimeModeForTurn,
         interactionMode: "default",
         branch: activeThreadBranch,
         worktreePath: activeThread.worktreePath,
@@ -6488,7 +6544,7 @@ function ChatViewContent(props: ChatViewProps) {
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: nextThreadTitle,
-          runtimeMode,
+          runtimeMode: runtimeModeForTurn,
           interactionMode: "default",
           sourceProposedPlan: {
             threadId: activeThread.id,
@@ -6652,22 +6708,9 @@ function ChatViewContent(props: ChatViewProps) {
         nextModelSelection,
       );
       setStickyComposerModelSelection(nextModelSelection);
-      // Only an explicit mode follows the switch across providers: Kimi's
-      // "yolo" has no equivalent elsewhere and normalizes to the generic
-      // full-access mode instead of leaking the Kimi-only literal into
-      // another provider's session config. An unset mode
-      // (storedRuntimeMode === null) keeps tracking the provider's own
-      // default, so an explicit Full access pick is never rewritten by a
-      // model switch.
-      if (storedRuntimeMode !== null) {
-        const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
-          resolvedDriverKind,
-          storedRuntimeMode,
-        );
-        if (nextRuntimeMode !== runtimeMode) {
-          handleRuntimeModeChange(nextRuntimeMode);
-        }
-      }
+      // Display and send remap Kimi-only "yolo" off other providers. Do not
+      // write the remapped mode back: an unset mode keeps tracking the
+      // provider default, and a stored Yolo can still show on Kimi.
       scheduleComposerFocus();
     },
     [
@@ -6676,9 +6719,6 @@ function ChatViewContent(props: ChatViewProps) {
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
-      handleRuntimeModeChange,
-      storedRuntimeMode,
-      runtimeMode,
       providerStatuses,
       settings,
       supportsProviderHandoff,
