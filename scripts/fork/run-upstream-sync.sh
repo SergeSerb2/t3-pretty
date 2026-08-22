@@ -87,14 +87,18 @@ else
   git remote add upstream "$UPSTREAM_URL"
 fi
 # Parent history stays on GitHub. The fork remote is Origin.
-# The checkout is a blob:none partial clone, and some blobs the
-# merge needs (e.g. .repos/ subtrees bumped by a nightly) exist
-# only in the upstream repo; the fork promisor answers "not our
-# ref" for those and the merge dies before it starts. Registering
-# upstream as a second promisor remote lets git backfill missing
-# objects from the remote that actually has them.
-git config remote.upstream.promisor true
-git config remote.upstream.partialclonefilter blob:none
+# The checkout is a blob:none partial clone of the fork remote, so
+# upstream-side objects must be fetched eagerly with --no-filter:
+# lazy backfill asks the fork promisor first, it answers "not our
+# ref" for upstream-only objects, and one unfetchable object fails
+# the whole backfill batch ("could not fetch ... from promisor
+# remote", merge exit 128) instead of falling through to upstream.
+# Do not register upstream as a promisor: that also makes every
+# upstream fetch inherit the blob:none filter, recreating the
+# missing-blob state this fetch strategy exists to avoid. Earlier
+# runs did register it on this reused workspace, so unset it here.
+git config --unset remote.upstream.promisor || true
+git config --unset remote.upstream.partialclonefilter || true
 
 if git rev-parse --is-shallow-repository >/dev/null 2>&1 &&
   [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
@@ -114,7 +118,7 @@ if [[ -z "$latest_tag" ]]; then
   exit 1
 fi
 
-git fetch --no-tags upstream "refs/tags/$latest_tag:refs/tags/$latest_tag"
+git fetch --no-tags --no-filter --force upstream "refs/tags/$latest_tag:refs/tags/$latest_tag"
 current_tag=""
 if [[ -f .t3-fork/upstream-nightly ]]; then
   current_tag="$(tr -d '[:space:]' < .t3-fork/upstream-nightly)"
@@ -123,7 +127,7 @@ fi
 # intent for conflicted paths. Fresh clones do not have the
 # previous tag ref even though its commit is in main's history.
 if [[ -n "$current_tag" && "$current_tag" != "$latest_tag" ]]; then
-  git fetch --no-tags upstream "refs/tags/$current_tag:refs/tags/$current_tag"
+  git fetch --no-tags --no-filter --force upstream "refs/tags/$current_tag:refs/tags/$current_tag"
 fi
 
 export UPSTREAM_TAG="$latest_tag"
@@ -281,6 +285,8 @@ commit_sync() {
 merge_ref() {
   local ref="$1"
   local message="$2"
+  local refresh_remote="${3:-}"
+  local refresh_refspec="${4:-}"
   local merge_status
   if git merge-base --is-ancestor "$ref^{commit}" HEAD 2>/dev/null ||
     git merge-base --is-ancestor "$ref" HEAD 2>/dev/null; then
@@ -291,6 +297,23 @@ merge_ref() {
   git merge --no-ff --no-commit "$ref"
   merge_status=$?
   set -e
+  # A merge that dies before producing conflicts (exit > 1) is an object
+  # problem, not a text problem: a promisor backfill answered "not our
+  # ref" for an object one side references. Re-fetch the merge input
+  # with full objects and retry once before declaring the run blocked.
+  if (( merge_status > 1 )) && [[ -n "$refresh_remote" ]]; then
+    echo "Merge of $ref exited $merge_status before producing conflicts; re-fetching full objects and retrying once."
+    git merge --abort >/dev/null 2>&1 || git reset --hard HEAD >/dev/null 2>&1 || true
+    if [[ "$refresh_remote" == "origin" ]]; then
+      origin_git fetch --no-filter origin "$refresh_refspec"
+    else
+      git fetch --no-tags --no-filter --force upstream "$refresh_refspec"
+    fi
+    set +e
+    git merge --no-ff --no-commit "$ref"
+    merge_status=$?
+    set -e
+  fi
   resolve_current_merge "$merge_status"
   commit_sync "$message"
 }
@@ -325,7 +348,7 @@ while IFS=$'\t' read -r _sha ref; do
   candidate_tag="$(git show "origin/$local_name:.t3-fork/upstream-nightly" 2>/dev/null | tr -d '[:space:]')"
   [[ -n "$candidate_tag" ]] || continue
   git rev-parse -q --verify "$candidate_tag^{commit}" >/dev/null 2>&1 ||
-    git fetch --no-tags upstream "refs/tags/$candidate_tag:refs/tags/$candidate_tag" 2>/dev/null ||
+    git fetch --no-tags --no-filter --force upstream "refs/tags/$candidate_tag:refs/tags/$candidate_tag" 2>/dev/null ||
     continue
   git merge-base --is-ancestor "$candidate_tag^{commit}" "origin/$local_name" || continue
   [[ "$(git show "origin/$local_name:.t3-fork/upstream-sync-report.md" 2>/dev/null | sed -n '1p')" == "# T3 Pretty upstream integration report" ]] || continue
@@ -348,8 +371,9 @@ else
   git checkout -B "$SYNC_BRANCH" origin/main
 fi
 
-merge_ref origin/main "chore(sync): merge origin/main before $UPSTREAM_TAG"
-merge_ref "$UPSTREAM_TAG" "chore(sync): merge upstream $UPSTREAM_TAG"
+merge_ref origin/main "chore(sync): merge origin/main before $UPSTREAM_TAG" origin main
+merge_ref "$UPSTREAM_TAG" "chore(sync): merge upstream $UPSTREAM_TAG" \
+  upstream "refs/tags/$UPSTREAM_TAG:refs/tags/$UPSTREAM_TAG"
 
 mkdir -p .t3-fork
 printf '%s\n' "$UPSTREAM_TAG" > .t3-fork/upstream-nightly
@@ -417,7 +441,7 @@ if ! land_sync_pr; then
   # merge would replace the upstream integration record with "no text
   # conflicts" and the landed PR body would misdescribe the tree.
   export REUSED_SYNC_RESOLUTION=true
-  merge_ref origin/main "chore(sync): merge origin/main before landing $UPSTREAM_TAG"
+  merge_ref origin/main "chore(sync): merge origin/main before landing $UPSTREAM_TAG" origin main
   printf '%s\n' "$UPSTREAM_TAG" > .t3-fork/upstream-nightly
   git add .t3-fork/upstream-nightly
   if ! git diff --cached --quiet; then
