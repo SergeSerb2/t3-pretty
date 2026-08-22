@@ -552,4 +552,17 @@ describe("release workflow wiring", () => {
     assert.include(workflow, '"$tag^{commit}~1"');
     assert.include(workflow, '"docs(changelog):"*');
   });
+
+  it("skips hosted mint and imported jobs on automated notes commits", () => {
+    const workflow = NodeFS.readFileSync(releaseWorkflowPath, "utf8");
+    const existingStep = workflow.slice(
+      workflow.indexOf("id: existing"),
+      workflow.indexOf("id: release"),
+    );
+
+    // The version a docs(changelog) commit names already shipped from its
+    // parent; hosted preflight must not mint or start WSL for it.
+    assert.include(existingStep, '"docs(changelog): add release notes through v"*');
+    assert.include(existingStep, "should_release=false");
+  });
 });

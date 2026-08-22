@@ -115,10 +115,9 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    still gets exactly one notes commit when one packager never ran or died
    mid-release; the later publisher reuses the commit already on main. A retry whose HEAD is
    already `docs(changelog):` skips generation so it cannot mint another
-   notes commit. Hosted Linux preflight reads that already-minted version
-   from the commit subject instead of minting another; when a fork tag
-   covers the notes commit, the already-released check skips the imported
-   jobs (WSL node-pty) instead. Native packagers reuse the same version
+   notes commit. Hosted Linux preflight recognizes the notes commit by
+   subject and skips minting and the imported jobs (WSL node-pty): the
+   version already shipped from the parent commit. Native packagers reuse the same version
    and skip packaging only when the public feed already lists it, so a retry
    after a changelog push still produces a DMG/NSIS. Generation failures warn
    and the release continues; the next run fills whatever is still missing.
