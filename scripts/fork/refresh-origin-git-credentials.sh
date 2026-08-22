@@ -6,6 +6,7 @@
 # re-minted well inside the JWT lifetime. Installed as a launchd periodic
 # job by setup-buildkite-macos-agent.sh; can also be run by hand.
 set -euo pipefail
+umask 077
 
 cred="$(printf 'protocol=https\nhost=origin.cursor.com\n\n' | "$HOME/.local/bin/origin" credential-helper get)"
 user="$(printf '%s\n' "$cred" | sed -n 's/^username=//p')"
@@ -16,8 +17,14 @@ if [[ -z "$user" || -z "$pass" ]]; then
 fi
 
 # Atomic replace: concurrent agent fetches must never see a partial file.
-tmp="$HOME/.git-credentials.refresh-tmp"
-printf 'https://%s:%s@origin.cursor.com\n' "$user" "$pass" > "$tmp"
-chmod 600 "$tmp"
+# Mint through `git credential approve` against a private store so the
+# on-disk line carries git's own userinfo percent-encoding (raw userinfo
+# breaks the store on ':' or '@' in the JWT), then move it into place.
+# mktemp keeps overlapping launchd runs from sharing one tmp path.
+tmp="$(mktemp "$HOME/.git-credentials.refresh-tmp.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+rm -f "$tmp"
+printf 'protocol=https\nhost=origin.cursor.com\nusername=%s\npassword=%s\n\n' "$user" "$pass" \
+  | git -c credential.helper= -c credential.helper="store --file=$tmp" credential approve
 mv "$tmp" "$HOME/.git-credentials"
 echo "$(date): refreshed Origin git credential store"
