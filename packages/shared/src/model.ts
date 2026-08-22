@@ -143,6 +143,54 @@ function withDescriptorCurrentValue(
   };
 }
 
+const REASONING_EFFORT_SELECT_IDS: ReadonlySet<string> = new Set([
+  "effort",
+  "reasoningEffort",
+  "reasoning",
+  "thinking",
+]);
+
+const REASONING_EFFORT_OPTION_LABELS: Readonly<Record<string, string>> = {
+  none: "None",
+  minimal: "Minimal effort",
+  low: "Low effort",
+  medium: "Medium effort",
+  high: "High effort",
+  xhigh: "Extra high effort",
+  max: "Max effort",
+  ultra: "Ultra effort",
+  ultrathink: "Ultrathink",
+};
+
+/**
+ * Providers name the same reasoning levels differently ("Thinking High",
+ * "Extra High", "high effort"). Display standardizes on "<Level> effort",
+ * keyed by the canonical option id rather than the provider-supplied label.
+ */
+export function reasoningEffortOptionLabel(optionId: string): string {
+  const id = optionId.trim().toLowerCase();
+  const known = REASONING_EFFORT_OPTION_LABELS[id];
+  if (known) {
+    return known;
+  }
+  return `${id.charAt(0).toUpperCase()}${id.slice(1)} effort`;
+}
+
+function withStandardizedEffortLabels(
+  descriptor: ProviderOptionDescriptor,
+): ProviderOptionDescriptor {
+  if (descriptor.type !== "select" || !REASONING_EFFORT_SELECT_IDS.has(descriptor.id)) {
+    return descriptor;
+  }
+  return {
+    ...descriptor,
+    options: descriptor.options.map((option) => ({
+      ...option,
+      label: reasoningEffortOptionLabel(option.id),
+    })),
+  };
+}
+
 export function getProviderOptionDescriptors(input: {
   caps: ModelCapabilities;
   selections?: ReadonlyArray<ProviderOptionSelection> | null | undefined;
@@ -151,9 +199,11 @@ export function getProviderOptionDescriptors(input: {
   const baseDescriptors = (caps.optionDescriptors ?? []).map(cloneDescriptor);
 
   return baseDescriptors.map((descriptor) =>
-    withDescriptorCurrentValue(
-      descriptor,
-      getRawSelectionValueById(selections, descriptor.id) ?? descriptor.currentValue,
+    withStandardizedEffortLabels(
+      withDescriptorCurrentValue(
+        descriptor,
+        getRawSelectionValueById(selections, descriptor.id) ?? descriptor.currentValue,
+      ),
     ),
   );
 }

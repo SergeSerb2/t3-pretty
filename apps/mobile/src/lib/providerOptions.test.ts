@@ -40,7 +40,7 @@ describe("mobile provider options", () => {
       selections: undefined,
     });
 
-    expect(providerOptionValueLabels(descriptors)).toEqual(["Medium", "Standard"]);
+    expect(providerOptionValueLabels(descriptors)).toEqual(["Medium effort", "Standard"]);
   });
 
   it("updates generic select options without knowing provider-specific ids", () => {
