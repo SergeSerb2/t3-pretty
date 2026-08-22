@@ -30,9 +30,10 @@ export type RelayEnvironmentAvailability = "checking" | "online" | "offline" | "
 // on every foreground, and each wakeup-triggered refresh costs 1 + N relay
 // requests (list plus a status probe per environment, each billed Worker CPU).
 // Explicit refreshes (pull-to-refresh, screen mounts, catalog polls, sign-in)
-// are never throttled; only wakeup- and connectivity-driven ones coalesce. A
-// successful full refresh also claims the window, since it just ran the same
-// list+N probe fan-out an auto refresh would repeat.
+// are never throttled and do not claim the window. Wakeup-driven refreshes
+// coalesce to at most one per minute. Going offline forgets the window so
+// connectivity restore always lists (state.offline, stale status probes); the
+// restore claim still coalesces a racing wakeup.
 const AUTO_REFRESH_MIN_INTERVAL_MS = 60_000;
 
 export interface RelayDiscoveredEnvironment {
@@ -128,9 +129,6 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
   const activeAccountId = yield* Ref.make<Option.Option<string>>(Option.none());
   const refreshGeneration = yield* Ref.make(0);
   const offlineReportFingerprints = yield* Ref.make<ReadonlyMap<string, string>>(new Map());
-  // Seeded so the first wakeup-driven refresh always runs; only repeats inside
-  // the window coalesce. (Tests start on a TestClock at time 0.)
-  const lastAutoRefreshStartedAt = yield* Ref.make(-AUTO_REFRESH_MIN_INTERVAL_MS);
 
   const clearOfflineReport = Effect.fn("RelayEnvironmentDiscovery.clearOfflineReport")(function* (
     environmentId: string,
@@ -327,12 +325,6 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
           ...current,
           refreshing: false,
         }));
-        if (refreshStatuses) {
-          // A full refresh just paid the list+N probes, so wakeup- and
-          // connectivity-driven paths skip until the window elapses. Explicit
-          // refreshes never read this timestamp and stay unblocked.
-          yield* Ref.set(lastAutoRefreshStartedAt, yield* Clock.currentTimeMillis);
-        }
       }).pipe(
         Effect.catch((error) =>
           Effect.gen(function* () {
@@ -355,7 +347,13 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
   const refresh = refreshDiscovery(true);
   const refreshCatalog = refreshDiscovery(false);
 
+  // Seeded so the first wakeup-driven refresh always runs; only repeats inside
+  // the window coalesce. (Tests start on a TestClock at time 0.)
+  const lastAutoRefreshStartedAt = yield* Ref.make(-AUTO_REFRESH_MIN_INTERVAL_MS);
   const refreshAutoThrottled = Effect.gen(function* () {
+    if ((yield* connectivity.status) === "offline") {
+      return;
+    }
     const now = yield* Clock.currentTimeMillis;
     // Claim the window atomically so overlapping wakeup and connectivity
     // forks cannot both observe a stale timestamp and both hit the Worker.
@@ -375,11 +373,16 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
     Stream.changes,
     Stream.runForEach((networkStatus) =>
       networkStatus === "offline"
-        ? SubscriptionRef.update(state, (current) => ({
-            ...current,
-            refreshing: false,
-            offline: true,
-          }))
+        ? Effect.gen(function* () {
+            yield* SubscriptionRef.update(state, (current) => ({
+              ...current,
+              refreshing: false,
+              offline: true,
+            }));
+            // Probes are now stale and state.offline is set; forget the window
+            // so the online transition lists even if a wakeup just claimed it.
+            yield* Ref.set(lastAutoRefreshStartedAt, -AUTO_REFRESH_MIN_INTERVAL_MS);
+          })
         : Ref.get(hasRefreshed).pipe(
             Effect.flatMap((shouldRefresh) => (shouldRefresh ? refreshAutoThrottled : Effect.void)),
           ),
