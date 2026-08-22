@@ -1,4 +1,6 @@
-const MENU_SURFACE_SELECTOR = "[data-slot='menu-popup'], [data-slot='menu-positioner']";
+const MENU_ITEM_SELECTOR =
+  "[data-slot='menu-item'], [data-slot='menu-sub-trigger'], " +
+  "[data-slot='menu-checkbox-item'], [data-slot='menu-radio-item']";
 
 function elementFromEventNode(
   node: EventTarget | null | undefined,
@@ -13,12 +15,12 @@ function elementFromEventNode(
   return null;
 }
 
-function isEventInsideMenuSurface(event: Event | undefined): boolean {
+function isEventOnMenuItem(event: Event | undefined): boolean {
   if (event === undefined) return false;
   const related = "relatedTarget" in event ? event.relatedTarget : null;
   const target =
     elementFromEventNode(event.target) ?? elementFromEventNode(related as EventTarget | null);
-  return target?.closest(MENU_SURFACE_SELECTOR) != null;
+  return target?.closest(MENU_ITEM_SELECTOR) != null;
 }
 
 /**
@@ -44,9 +46,14 @@ export function isSpuriousRootSiblingOpen(
 }
 
 /**
- * Same missing tree id makes a click or focus move into the nested popup look
- * like an outside dismiss. The item never receives the click, and the whole
- * menu unmounts.
+ * Same missing tree id makes a click or focus move onto an item in the nested
+ * popup look like an outside dismiss. The item never receives the click, and
+ * the whole menu unmounts.
+ *
+ * Only item-targeted presses are cancelled: Base UI closes the menu itself
+ * once the item handles the click (item-press), so the menu cannot be left
+ * mounted by a cancelled dismiss. Presses on popup padding or separators
+ * carry no pending select, so they dismiss normally.
  */
 export function isSpuriousNestedMenuDismiss(
   open: boolean,
@@ -56,7 +63,7 @@ export function isSpuriousNestedMenuDismiss(
   if (open !== false || (reason !== "outside-press" && reason !== "focus-out")) {
     return false;
   }
-  return isEventInsideMenuSurface(event);
+  return isEventOnMenuItem(event);
 }
 
 export function handleRootMenuOpenChange<

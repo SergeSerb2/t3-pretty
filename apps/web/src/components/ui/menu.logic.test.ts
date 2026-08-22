@@ -66,14 +66,14 @@ describe("isSpuriousRootSiblingOpen", () => {
 });
 
 describe("isSpuriousNestedMenuDismiss", () => {
-  const menuTarget = {
-    closest: (selector: string) => (selector.includes("menu-popup") ? ({} as Element) : null),
+  const itemTarget = {
+    closest: (selector: string) => (selector.includes("menu-item") ? ({} as Element) : null),
   };
 
-  it("keeps the root open when the press lands in a nested popup", () => {
+  it("keeps the root open when the press lands on an item in a nested popup", () => {
     expect(
       isSpuriousNestedMenuDismiss(false, "outside-press", {
-        target: menuTarget,
+        target: itemTarget,
       } as unknown as Event),
     ).toBe(true);
     const cancel = vi.fn();
@@ -81,11 +81,22 @@ describe("isSpuriousNestedMenuDismiss", () => {
     const details = {
       reason: "outside-press" as const,
       cancel,
-      event: { target: menuTarget } as unknown as Event,
+      event: { target: itemTarget } as unknown as Event,
     };
     handleRootMenuOpenChange(false, details, onOpenChange);
     expect(cancel).toHaveBeenCalledOnce();
     expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("still dismisses a press on popup padding that selects nothing", () => {
+    const popupPadding = {
+      closest: (selector: string) => (selector.includes("menu-popup") ? ({} as Element) : null),
+    };
+    expect(
+      isSpuriousNestedMenuDismiss(false, "outside-press", {
+        target: popupPadding,
+      } as unknown as Event),
+    ).toBe(false);
   });
 
   it("still dismisses a press outside any menu popup", () => {

@@ -99,6 +99,18 @@ describe("loadThreadConversationText", () => {
     ).rejects.toThrow("WebSocket disconnected");
   });
 
+  it("rejects immediately when the thread atom fails instead of waiting out the timeout", async () => {
+    readThreadDetail.mockReturnValue(null);
+    stateAtom.mockReturnValue(Atom.make(AsyncResult.fail(new Error("Stream exploded"))));
+
+    await expect(
+      loadThreadConversationText(
+        { environmentId: "env-1" as never, threadId: "thread-1" as never },
+        "Failed thread",
+      ),
+    ).rejects.toThrow("Stream exploded");
+  });
+
   it("copies and unsubscribes when the atom is already live", async () => {
     readThreadDetail.mockReturnValue(null);
     const live = AsyncResult.success({

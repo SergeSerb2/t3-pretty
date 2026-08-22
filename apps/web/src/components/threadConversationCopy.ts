@@ -1,5 +1,6 @@
 import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/threads";
 import type { OrchestrationMessage, ScopedThreadRef } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
 
@@ -75,6 +76,13 @@ export function loadThreadConversationText(
     unsubscribe = appAtomRegistry.subscribe(
       atom,
       (result) => {
+        // A failed atom may hold no value at all; without this check the
+        // EMPTY fallback below would wait out the full timeout instead.
+        if (AsyncResult.isFailure(result)) {
+          const error = Cause.squash(result.cause);
+          fail(error instanceof Error ? error : new Error("Failed to load conversation"));
+          return;
+        }
         const state = Option.getOrElse(
           AsyncResult.value(result),
           () => EMPTY_ENVIRONMENT_THREAD_STATE,
