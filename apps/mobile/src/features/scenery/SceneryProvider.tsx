@@ -103,20 +103,29 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
   }, [scenery]);
 
   const photoSetId = scenery.photoSetId;
-  const [seedPhotos, setSeedPhotos] = useState(() => peekSeedPhotos(photoSetId));
+  // Extra sets import lazily. The loaded photos stay tagged with the set they
+  // belong to so picks and assignment checks never run against a pool that
+  // does not match the active set; while an import is in flight the pool
+  // reads empty and picks/assignment writes simply wait for it.
+  const [seedState, setSeedState] = useState<{
+    readonly photoSetId: PhotoSetId;
+    readonly photos: ReadonlyArray<SceneryPhoto>;
+  }>(() => ({ photoSetId, photos: peekSeedPhotos(photoSetId) }));
   useEffect(() => {
-    setSeedPhotos(peekSeedPhotos(photoSetId));
     let cancelled = false;
     void loadSeedPhotos(photoSetId).then((photos) => {
       if (!cancelled) {
-        setSeedPhotos(photos);
+        setSeedState({ photoSetId, photos });
       }
     });
     return () => {
       cancelled = true;
     };
   }, [photoSetId]);
-  const pool = useMemo(() => getSceneryPool([], seedPhotos), [seedPhotos]);
+  const pool = useMemo(
+    () => (seedState.photoSetId === photoSetId ? getSceneryPool([], seedState.photos) : []),
+    [seedState, photoSetId],
+  );
 
   const photoForThreadKey = useCallback(
     (threadKey: string): SceneryPhoto | null => {
@@ -137,15 +146,15 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
   const persistScenery = useCallback(
     (patch: Partial<MobileSceneryPreferences>) => {
       const current = sceneryRef.current;
-      const next = {
+      const next = resolveScenery({
         enabled: current.enabled,
         blur: current.blur,
         translucency: current.translucency,
         photoSetId: current.photoSetId,
         assignments: current.assignments,
         ...patch,
-      };
-      sceneryRef.current = resolveScenery(next);
+      });
+      sceneryRef.current = next;
       savePreferences({ scenery: next });
     },
     [savePreferences],
