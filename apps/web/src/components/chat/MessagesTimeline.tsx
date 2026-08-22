@@ -36,7 +36,7 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { FileDiff } from "@pierre/diffs/react";
 import {
   deriveTimelineEntries,
-  workEntryIndicatesToolFailure,
+  workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workLogEntryIsToolLike,
 } from "../../session-logic";
@@ -59,10 +59,11 @@ import {
   HammerIcon,
   ImageIcon,
   MessageCircleIcon,
+  MinusIcon,
   MousePointerClickIcon,
   PackageIcon,
   PaintbrushIcon,
-  MinusIcon,
+  SearchIcon,
   SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
@@ -75,6 +76,7 @@ import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImage
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
+import { keepTimelineEndVisibleAfterOverlayGrowth } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
 import {
   computeStableMessagesTimelineRows,
@@ -89,6 +91,8 @@ import {
   resolveTimelineMinimapInteractiveWidth,
   resolveTimelineMinimapTopPercent,
   shouldPreserveAssistantLineBreaks,
+  toolGroupAction,
+  workEntryIsVisibleInGroup,
   type StableMessagesTimelineRowsState,
   type MessagesTimelineRow,
   TIMELINE_MINIMAP_MIN_ITEMS,
@@ -315,6 +319,17 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const disclosureAnchorKeyRef = useRef<string | null>(null);
   const disclosureSettleFrameRef = useRef<number | null>(null);
   const disclosureSettleSecondFrameRef = useRef<number | null>(null);
+  const previousContentInsetEndAdjustmentRef = useRef(contentInsetEndAdjustment);
+
+  useLayoutEffect(() => {
+    keepTimelineEndVisibleAfterOverlayGrowth({
+      timeline: listRef.current,
+      previousOverlayHeight: previousContentInsetEndAdjustmentRef.current,
+      overlayHeight: contentInsetEndAdjustment,
+      followingEnd: liveFollowEnabled && anchorMessageId === null,
+    });
+    previousContentInsetEndAdjustmentRef.current = contentInsetEndAdjustment;
+  }, [anchorMessageId, contentInsetEndAdjustment, listRef, liveFollowEnabled]);
 
   useEffect(() => {
     return () => {
@@ -970,17 +985,34 @@ type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["grouped
 type TimelineRow = MessagesTimelineRow;
 
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
+  const isExpandedToolGroupEntry = row.kind === "work" && row.isExpandedToolGroupEntry;
+  const isLastExpandedToolGroupEntry = row.kind === "work" && row.isLastExpandedToolGroupEntry;
+  const isExpandedToolGroupHeader =
+    (row.kind === "work-toggle" && row.summary !== null && row.onlyToolEntries && row.expanded) ||
+    (row.kind === "work-live" && row.expanded);
+
   return (
     <div
       className={cn(
         // Commentary (non-terminal assistant) rows carry no metadata row, so
         // they sit closer to the work that follows them.
-        (row.kind === "message" && row.message.role === "assistant" && !row.showAssistantMeta) ||
-          row.kind === "work" ||
-          row.kind === "work-toggle" ||
-          row.kind === "turn-plan"
-          ? "pb-2"
-          : "pb-4",
+        isExpandedToolGroupEntry
+          ? isLastExpandedToolGroupEntry
+            ? "pb-1"
+            : "pb-0"
+          : isExpandedToolGroupHeader
+            ? "pb-0"
+            : row.kind === "turn-fold" || row.kind === "working"
+              ? "pb-1.5"
+              : (row.kind === "message" &&
+                    row.message.role === "assistant" &&
+                    !row.showAssistantMeta) ||
+                  row.kind === "work" ||
+                  row.kind === "work-live" ||
+                  row.kind === "work-toggle" ||
+                  row.kind === "turn-plan"
+                ? "pb-2"
+                : "pb-4",
         row.kind === "message" && row.message.role === "assistant" ? "group/assistant" : null,
       )}
       data-timeline-row-id={row.id}
@@ -988,7 +1020,13 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       data-message-id={row.kind === "message" ? row.message.id : undefined}
       data-message-role={row.kind === "message" ? row.message.role : undefined}
     >
-      {row.kind === "work" ? <WorkGroupSection groupedEntries={row.groupedEntries} /> : null}
+      {row.kind === "work" ? (
+        <WorkGroupSection
+          groupedEntries={row.groupedEntries}
+          isExpandedToolGroupEntry={row.isExpandedToolGroupEntry}
+        />
+      ) : null}
+      {row.kind === "work-live" ? <LiveWorkEntryTimelineRow row={row} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
@@ -1385,7 +1423,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
         </span>
-        <span className="shrink-0">
+        <div className="shrink-0">
           {row.createdAt ? (
             <>
               Working for <WorkingTimer createdAt={row.createdAt} />
@@ -1393,11 +1431,16 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
           ) : (
             "Working..."
           )}
-        </span>
-        {workingStepLabel ? (
-          <span className="min-w-0 truncate text-muted-foreground/55">· {workingStepLabel}</span>
-        ) : null}
+          {workingStepLabel ? (
+            <span className="ml-2 text-muted-foreground/55">· {workingStepLabel}</span>
+          ) : null}
+        </div>
       </div>
+      {row.showThinking ? (
+        <div className="mt-1">
+          <ThinkingActivityRow />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1438,13 +1481,16 @@ function WorkingTimer({ createdAt }: { createdAt: string }) {
 /** Renders one or more already-derived work log rows. Overflow expansion is modeled as LegendList data. */
 const WorkGroupSection = memo(function WorkGroupSection({
   groupedEntries,
+  isExpandedToolGroupEntry,
 }: {
   groupedEntries: Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"];
+  isExpandedToolGroupEntry: boolean;
 }) {
   const { workspaceRoot } = use(TimelineRowCtx);
   const nonEmptyEntries = useMemo(
-    () => groupedEntries.filter((entry) => !workEntryIndicatesToolNeutralStatus(entry)),
-    [groupedEntries],
+    () =>
+      groupedEntries.filter((entry) => workEntryIsVisibleInGroup(entry, isExpandedToolGroupEntry)),
+    [groupedEntries, isExpandedToolGroupEntry],
   );
   const onlyToolEntries = nonEmptyEntries.every((entry) => workLogEntryIsToolLike(entry));
   const groupLabel = onlyToolEntries
@@ -1452,11 +1498,15 @@ const WorkGroupSection = memo(function WorkGroupSection({
       ? "1 tool call"
       : `${nonEmptyEntries.length} tool calls`
     : "Work Log";
+  const GroupContainer = isExpandedToolGroupEntry ? "div" : "section";
 
   if (nonEmptyEntries.length === 0) return null;
 
   return (
-    <section className="-mx-1 space-y-0.5 px-1 py-0.5" aria-label={groupLabel}>
+    <GroupContainer
+      className={cn("-mx-1 px-1", isExpandedToolGroupEntry ? "py-0" : "space-y-0.5 py-0.5")}
+      aria-label={isExpandedToolGroupEntry ? undefined : groupLabel}
+    >
       {!onlyToolEntries && (
         <p className="px-0.5 pb-0.5 font-medium text-secondary-label text-[11px]">{groupLabel}</p>
       )}
@@ -1466,12 +1516,137 @@ const WorkGroupSection = memo(function WorkGroupSection({
             key={workEntry.id}
             workEntry={workEntry}
             workspaceRoot={workspaceRoot}
+            isExpandedToolGroupEntry={isExpandedToolGroupEntry}
           />
         ))}
       </div>
-    </section>
+    </GroupContainer>
   );
 });
+
+function LiveActivityRow({
+  label,
+  iconName,
+  failed = false,
+}: {
+  label: string;
+  iconName?: WorkEntryIconName;
+  failed?: boolean;
+}) {
+  return (
+    <div className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed">
+      <LiveActivityContent
+        label={label}
+        iconName={iconName}
+        failed={failed}
+        announceFailure={failed}
+      />
+      <div
+        aria-hidden
+        className="live-activity-focus pointer-events-none absolute inset-y-0 select-none"
+      >
+        <div className="live-activity-focus-counter">
+          <div className="live-activity-focus-aligned">
+            <LiveActivityContent label={label} iconName={iconName} failed={failed} highlighted />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ThinkingActivityRow() {
+  return <LiveActivityRow label="Thinking" />;
+}
+
+function LiveActivityContent({
+  label,
+  iconName,
+  failed = false,
+  announceFailure = false,
+  highlighted = false,
+}: {
+  label: string;
+  iconName: WorkEntryIconName | undefined;
+  failed?: boolean;
+  announceFailure?: boolean;
+  highlighted?: boolean;
+}) {
+  const resolvedIconName = failed ? "x" : iconName;
+
+  return (
+    <div
+      className={cn(
+        "flex min-h-6 min-w-0 items-center gap-1.5 py-0.5",
+        resolvedIconName ? "px-0.5" : "px-1",
+        highlighted ? "text-foreground" : "text-secondary-label",
+      )}
+    >
+      {resolvedIconName ? (
+        <span
+          className={cn(
+            "flex size-6 shrink-0 items-center justify-center",
+            failed ? "text-destructive" : highlighted ? "text-foreground" : "text-icon-muted",
+          )}
+          role={announceFailure ? "img" : undefined}
+          aria-label={announceFailure ? "Tool call failed" : undefined}
+        >
+          <WorkEntryIconSvg
+            name={resolvedIconName}
+            className={cn("block size-4 shrink-0 stroke-[1.8]", !highlighted && "opacity-70")}
+          />
+        </span>
+      ) : null}
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </div>
+  );
+}
+
+function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "work-live" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot);
+  const failed = workEntryDisplayIndicatesToolFailure(row.entry);
+
+  return (
+    <button
+      type="button"
+      className="group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+      aria-label={failed ? `${label}, tool call failed` : undefined}
+      aria-expanded={row.expanded}
+      onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
+    >
+      <LiveActivityRow label={label} iconName={workEntryIconName(row.entry)} failed={failed} />
+    </button>
+  );
+}
+
+function toolGroupSummaryIconName(
+  kind: Extract<TimelineRow, { kind: "work-toggle" }>["summaryKind"],
+): WorkEntryIconName {
+  switch (kind) {
+    case "read":
+      return "eye";
+    case "edit":
+      return "square-pen";
+    case "command":
+      return "terminal";
+    case "search":
+      return "globe";
+    case "code-search":
+      return "search";
+    case "other":
+      return "wrench";
+    case "dynamic-tool":
+      return "hammer";
+    case "agent-tool":
+      return "bot";
+    case "tone-tool":
+      return "zap";
+    case "mixed":
+    case null:
+      return "hammer";
+  }
+}
 
 function WorkGroupToggleTimelineRow({
   row,
@@ -1479,6 +1654,32 @@ function WorkGroupToggleTimelineRow({
   row: Extract<TimelineRow, { kind: "work-toggle" }>;
 }) {
   const ctx = use(TimelineRowCtx);
+  if (row.onlyToolEntries && row.summary) {
+    return (
+      <button
+        type="button"
+        className="group/tool-group flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-sm leading-relaxed transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        aria-label={row.hasFailure ? `${row.summary}, tool call failed` : undefined}
+        aria-expanded={row.expanded}
+        onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
+      >
+        <span
+          className={cn(
+            "flex size-6 shrink-0 items-center justify-center",
+            row.hasFailure ? "text-destructive" : "text-icon-muted",
+          )}
+          role={row.hasFailure ? "img" : undefined}
+          aria-label={row.hasFailure ? "Tool call failed" : undefined}
+        >
+          <WorkEntryIconSvg
+            name={row.hasFailure ? "x" : toolGroupSummaryIconName(row.summaryKind)}
+            className="size-4 shrink-0 stroke-[1.8] opacity-70"
+          />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-secondary-label">{row.summary}</span>
+      </button>
+    );
+  }
   const labelNoun = row.onlyToolEntries
     ? row.hiddenCount === 1
       ? "tool call"
@@ -1486,6 +1687,7 @@ function WorkGroupToggleTimelineRow({
     : row.hiddenCount === 1
       ? "log entry"
       : "log entries";
+  const showHiddenFailure = row.hasFailure && !row.expanded;
 
   return (
     <button
@@ -1494,13 +1696,24 @@ function WorkGroupToggleTimelineRow({
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
-      <span className="flex size-4 shrink-0 items-center justify-center text-icon-muted">
-        <ChevronDownIcon
-          className={cn(
-            "size-3.5 shrink-0 opacity-70 transition-transform duration-180 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover/toggle:opacity-100 motion-reduce:transition-none",
-            row.expanded && "rotate-180",
-          )}
-        />
+      <span
+        className={cn(
+          "flex size-4 shrink-0 items-center justify-center",
+          showHiddenFailure ? "text-destructive" : "text-icon-muted",
+        )}
+        role={showHiddenFailure ? "img" : undefined}
+        aria-label={showHiddenFailure ? "Hidden work includes a failure" : undefined}
+      >
+        {showHiddenFailure ? (
+          <WorkEntryIconSvg name="x" className="size-4 shrink-0 stroke-[1.8] opacity-70" />
+        ) : (
+          <ChevronDownIcon
+            className={cn(
+              "size-3.5 shrink-0 opacity-70 transition-transform duration-180 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover/toggle:opacity-100 motion-reduce:transition-none",
+              row.expanded && "rotate-180",
+            )}
+          />
+        )}
       </span>
       <span className="font-medium">
         {row.expanded
@@ -2100,6 +2313,7 @@ type WorkEntryIconName =
   | "image"
   | "message-circle"
   | "package"
+  | "search"
   | "square-pen"
   | "terminal"
   | "wrench"
@@ -2126,6 +2340,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <MessageCircleIcon className={className} aria-hidden />;
     case "package":
       return <PackageIcon className={className} aria-hidden />;
+    case "search":
+      return <SearchIcon className={className} aria-hidden />;
     case "square-pen":
       return <SquarePenIcon className={className} aria-hidden />;
     case "terminal":
@@ -2182,6 +2398,192 @@ function workEntryPreview(
     : `${displayPath} +${workEntry.changedFiles!.length - 1} more`;
 }
 
+type CommandWrapper = "env" | "sudo";
+
+const COMMAND_WRAPPER_OPTIONS_WITH_VALUE: Record<CommandWrapper, ReadonlySet<string>> = {
+  env: new Set(["-C", "--chdir", "-S", "--split-string", "-u", "--unset"]),
+  sudo: new Set(["-C", "--close-from", "-D", "--chdir", "-g", "--group", "-u", "--user"]),
+};
+
+const COMMAND_WRAPPER_FLAGS: Record<CommandWrapper, ReadonlySet<string>> = {
+  env: new Set(["-0", "--null", "-i", "--ignore-environment", "--debug", "-v"]),
+  sudo: new Set(["-A", "--askpass", "-b", "--background", "-E", "-H", "-i", "-n", "-S"]),
+};
+
+function tokenizeShellCommand(command: string): string[] | null {
+  const input = command.trim();
+  const tokens: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | null = null;
+  let escaping = false;
+  let substitutionDepth = 0;
+  let tokenStarted = false;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index]!;
+    if (escaping) {
+      current += character;
+      escaping = false;
+      tokenStarted = true;
+      continue;
+    }
+    if (character === "\\" && quote !== "'") {
+      const nextCharacter = input[index + 1];
+      const isWindowsDrivePath = quote === null && /^[A-Za-z]:/.test(current);
+      if (
+        (quote === '"' || isWindowsDrivePath) &&
+        nextCharacter !== undefined &&
+        nextCharacter !== '"' &&
+        nextCharacter !== "\\" &&
+        nextCharacter !== "$" &&
+        nextCharacter !== "`" &&
+        nextCharacter !== "\n"
+      ) {
+        current += character;
+        tokenStarted = true;
+        continue;
+      }
+      escaping = true;
+      tokenStarted = true;
+      continue;
+    }
+    if (quote !== null) {
+      if (character === quote) {
+        quote = null;
+      } else {
+        current += character;
+      }
+      tokenStarted = true;
+      continue;
+    }
+    if (character === "$" && input[index + 1] === "(") {
+      current += "$(";
+      substitutionDepth += 1;
+      tokenStarted = true;
+      index += 1;
+      continue;
+    }
+    if (character === ")" && substitutionDepth > 0) {
+      current += character;
+      substitutionDepth -= 1;
+      tokenStarted = true;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      tokenStarted = true;
+      continue;
+    }
+    if (/\s/u.test(character)) {
+      if (substitutionDepth > 0) {
+        current += character;
+        tokenStarted = true;
+        continue;
+      }
+      if (tokenStarted) {
+        tokens.push(current);
+        current = "";
+        tokenStarted = false;
+      }
+      continue;
+    }
+    current += character;
+    tokenStarted = true;
+  }
+
+  if (quote !== null || escaping || substitutionDepth > 0) return null;
+  if (tokenStarted) tokens.push(current);
+  return tokens;
+}
+
+function commandProgramName(command: string, depth = 0): string | null {
+  if (depth >= 8) return null;
+  const tokens = tokenizeShellCommand(command);
+  if (tokens === null) return null;
+  let index = 0;
+  let wrapper: CommandWrapper | null = null;
+
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (!token) return null;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+      index += 1;
+      continue;
+    }
+    const tokenProgram = token.split(/[\\/]/).at(-1);
+    if (tokenProgram === "env" || tokenProgram === "sudo") {
+      wrapper = tokenProgram;
+      index += 1;
+      continue;
+    }
+    if (wrapper !== null && token === "--") {
+      wrapper = null;
+      index += 1;
+      continue;
+    }
+    if (wrapper !== null && token.startsWith("-")) {
+      if (wrapper === "env" && (token === "-S" || token === "--split-string")) {
+        const splitCommand = tokens[index + 1];
+        return splitCommand ? commandProgramName(splitCommand, depth + 1) : null;
+      }
+      if (wrapper === "env" && token.startsWith("--split-string=")) {
+        return commandProgramName(token.slice("--split-string=".length), depth + 1);
+      }
+      if (COMMAND_WRAPPER_OPTIONS_WITH_VALUE[wrapper].has(token)) {
+        if (tokens[index + 1] === undefined) return null;
+        index += 2;
+        continue;
+      }
+      if (COMMAND_WRAPPER_FLAGS[wrapper].has(token)) {
+        index += 1;
+        continue;
+      }
+      const equalsIndex = token.indexOf("=");
+      if (token.startsWith("--") && equalsIndex > 2) {
+        if (!COMMAND_WRAPPER_OPTIONS_WITH_VALUE[wrapper].has(token.slice(0, equalsIndex))) {
+          return null;
+        }
+        index += 1;
+        continue;
+      }
+      if (/^-[A-Za-z].+/.test(token) && !token.startsWith("--")) {
+        let consumesNextToken = false;
+        for (const [optionIndex, option] of token.slice(1).split("").entries()) {
+          const shortOption = `-${option}`;
+          if (COMMAND_WRAPPER_OPTIONS_WITH_VALUE[wrapper].has(shortOption)) {
+            consumesNextToken = optionIndex === token.length - 2;
+            break;
+          }
+          if (!COMMAND_WRAPPER_FLAGS[wrapper].has(shortOption)) return null;
+        }
+        if (consumesNextToken && tokens[index + 1] === undefined) return null;
+        index += consumesNextToken ? 2 : 1;
+        continue;
+      }
+      return null;
+    }
+    return token.split(/[\\/]/).at(-1) || null;
+  }
+
+  return null;
+}
+
+function liveWorkEntryLabel(
+  workEntry: TimelineWorkEntry,
+  workspaceRoot: string | undefined,
+): string {
+  const command = workEntry.command?.trim();
+  if (command) {
+    // This row describes the active parent turn, not the command lifecycle.
+    // Keep its live "Running" copy until the turn or contiguous tool run settles.
+    const program = commandProgramName(command);
+    if (program) return `Running ${program}`;
+    return "Running command";
+  }
+
+  return workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
+}
+
 function workEntryDisplaySections(workEntry: TimelineWorkEntry, workspaceRoot: string | undefined) {
   const changedFiles = workEntry.changedFiles ?? [];
   return buildWorkEntryDisplaySections({
@@ -2205,6 +2607,11 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
+  if (workEntry.itemType === "image_generation") return "image";
+
+  const action = toolGroupAction(workEntry);
+  if (action !== "other") return toolGroupSummaryIconName(action);
+
   if (workEntry.requestKind === "command") return "terminal";
   if (workEntry.requestKind === "file-read") return "eye";
   if (workEntry.requestKind === "file-change") return "square-pen";
@@ -2217,7 +2624,6 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   }
   if (workEntry.itemType === "web_search") return "globe";
   if (workEntry.itemType === "image_view") return "eye";
-  if (workEntry.itemType === "image_generation") return "image";
 
   switch (workEntry.itemType) {
     case "mcp_tool_call":
@@ -2328,7 +2734,7 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
     <button
       type="button"
       onClick={onOpenAgents}
-      className="-mx-1 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[13px] transition hover:bg-accent/50"
+      className="flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[13px] transition hover:bg-accent/50"
     >
       <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dotClass)} />
       <WorkEntryIconSvg name="bot" className="size-3.5 shrink-0 text-muted-foreground" />
@@ -2350,20 +2756,28 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
+  isExpandedToolGroupEntry: boolean;
 }) {
-  const { workEntry, workspaceRoot } = props;
+  const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
   // Before any hooks: spawn CTA rows render their own component.
   if (workEntry.agentSpawn) {
     return <AgentSpawnCtaRow workEntry={workEntry} />;
   }
-  return <PlainWorkEntryRow workEntry={workEntry} workspaceRoot={workspaceRoot} />;
+  return (
+    <PlainWorkEntryRow
+      workEntry={workEntry}
+      workspaceRoot={workspaceRoot}
+      isExpandedToolGroupEntry={isExpandedToolGroupEntry}
+    />
+  );
 });
 
 const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
+  isExpandedToolGroupEntry: boolean;
 }) {
-  const { workEntry, workspaceRoot } = props;
+  const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
   const ctx = use(TimelineRowCtx);
   const activity = use(TimelineRowActivityCtx);
   const generatedImagePath = generatedImageWorkEntryPath(workEntry);
@@ -2410,7 +2824,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const canExpand =
     displaySections.length > 0 &&
     (!bodyRepeatsPreview || previewClipped || workEntryDisplayAddsStructure(displaySections));
-  const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
+  const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntry.sourceActivityKind === "runtime.error" || !workLogEntryIsToolLike(workEntry));
@@ -2431,12 +2845,16 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   // (neutral, mid-turn) rows carry a marker so the exception stands out.
   const showNeutralIndicator =
     activity.activeTurnInProgress && workEntryIndicatesToolNeutralStatus(workEntry);
+  const showEntryIcon = !isExpandedToolGroupEntry || showWarningIndicator || showFailedIndicator;
+  const accessibleDisplayText = showFailedIndicator
+    ? `${displayText}, tool call failed`
+    : displayText;
   const headerToggleProps = canExpand
     ? {
         role: "button" as const,
         tabIndex: 0 as const,
         "aria-expanded": expanded,
-        "aria-label": displayText,
+        "aria-label": accessibleDisplayText,
         onClick: () => setExpanded((v) => !v),
         onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -2458,7 +2876,12 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         data-state={expanded ? "open" : "closed"}
         {...headerToggleProps}
       >
-        <span className={iconWrapperClass}>
+        <span
+          className={cn(iconWrapperClass, !showEntryIcon && "invisible")}
+          role={showFailedIndicator ? "img" : undefined}
+          aria-label={showFailedIndicator ? "Tool call failed" : undefined}
+          aria-hidden={!showEntryIcon}
+        >
           <WorkEntryIconSvg
             name={entryIconName}
             className="block size-3.5 shrink-0 stroke-[1.75]"

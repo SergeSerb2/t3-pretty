@@ -33,6 +33,7 @@ import {
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
 import { applyAppearanceFontVariables } from "~/appearanceFonts";
 import { useClientSettings } from "../hooks/useSettings";
+import { PlanAgentSelectionHeal } from "../planAgentSelectionHeal";
 import {
   deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKeyFromPath,
@@ -143,6 +144,7 @@ function RootRouteView() {
         <SlowRpcRequestToastCoordinator />
         <HostedStaticEnvironmentBootstrap />
         {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
+        {primaryEnvironmentAuthenticated ? <PlanAgentSelectionHeal /> : null}
         {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
         {/* World Scenery fork: full-window photo layer, painted before (and
             therefore under) the app shell. */}

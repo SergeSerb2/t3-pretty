@@ -119,6 +119,7 @@ export function AgentsSettingsPanel() {
                           onPromptChange={() => {}}
                           modelOptions={child.options}
                           allowPromptInjectedEffort={false}
+                          planModeEnabled={settings.planModeEnabled}
                           triggerVariant="outline"
                           triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
                           onModelOptionsChange={(nextOptions) => {

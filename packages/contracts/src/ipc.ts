@@ -115,6 +115,8 @@ export interface ContextMenuItem<T extends string = string> {
   separator?: boolean;
   /** Icon keyword resolved by the in-app menu. */
   icon?: string;
+  /** Inserts a visual section divider immediately before this item. */
+  separatorBefore?: boolean;
   children?: readonly ContextMenuItem<T>[];
 }
 
@@ -126,6 +128,7 @@ export interface ContextMenuItemSchemaType {
   readonly header?: boolean;
   readonly separator?: boolean;
   readonly icon?: string;
+  readonly separatorBefore?: boolean;
   readonly children?: readonly ContextMenuItemSchemaType[];
 }
 
@@ -137,6 +140,7 @@ export const ContextMenuItemSchema: Schema.Codec<ContextMenuItemSchemaType> = Sc
   header: Schema.optionalKey(Schema.Boolean),
   separator: Schema.optionalKey(Schema.Boolean),
   icon: Schema.optionalKey(Schema.String),
+  separatorBefore: Schema.optionalKey(Schema.Boolean),
   children: Schema.optionalKey(
     Schema.Array(
       Schema.suspend((): Schema.Codec<ContextMenuItemSchemaType> => ContextMenuItemSchema),
@@ -1133,6 +1137,8 @@ export interface DesktopBridge {
   setWslDistro: (distro: string | null) => Promise<DesktopWslState>;
   setWslOnly: (enabled: boolean) => Promise<DesktopWslState>;
   pickFolder: (options?: PickFolderOptions) => Promise<string | null>;
+  /** Optional while older desktop shells can host a newer web client. */
+  pickProjectFavicon?: (initialPath?: string) => Promise<string | null>;
   /**
    * Absolute filesystem path for a user-picked File, via Electron
    * `webUtils.getPathForFile`. Optional on older desktop builds and absent on

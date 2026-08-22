@@ -2034,6 +2034,7 @@ export const make = Effect.gen(function* () {
       {
         branch: input.branch,
         upstreamRef: localBranch.upstreamRef,
+        defaultBranch: null,
         isDefaultBranch: false,
       },
       // A persisted thread can outlive both its local and hosted branch refs.
