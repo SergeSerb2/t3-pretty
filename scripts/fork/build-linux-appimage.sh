@@ -10,6 +10,12 @@ cd "$root"
 export PATH="${HOME}/.vite-plus/bin:${HOME}/.local/t3-pretty-node24/bin:${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
 export T3CODE_DESKTOP_UPDATE_FEED_URL="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"
 export T3CODE_CLERK_PUBLISHABLE_KEY="${T3CODE_CLERK_PUBLISHABLE_KEY:-pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ}"
+# Public feed location — same literals as .buildkite/pipeline.yml env. Not cluster
+# secrets. Native linux-small inherits pipeline env; keep defaults if a job
+# starts without it so origin-forge upload-assets still has a bucket.
+export T3CODE_RELEASE_S3_BUCKET="${T3CODE_RELEASE_S3_BUCKET:-t3-pretty-releases}"
+export T3CODE_RELEASE_S3_ENDPOINT="${T3CODE_RELEASE_S3_ENDPOINT:-https://a6f705b8c6459d937d32d31555f9fbf6.r2.cloudflarestorage.com}"
+export T3CODE_RELEASE_S3_REGION="${T3CODE_RELEASE_S3_REGION:-auto}"
 export GIT_TERMINAL_PROMPT=0
 export GIT_ASKPASS="${GIT_ASKPASS:-/bin/true}"
 export APPIMAGE_EXTRACT_AND_RUN=1
@@ -30,12 +36,22 @@ if [[ -z "${GITHUB_RUN_NUMBER:-}" ]]; then
   export GITHUB_RUN_NUMBER="$BUILDKITE_BUILD_NUMBER"
 fi
 
+# Cluster secrets after checkout: hosted YAML `secrets:` 500s. The helper
+# calls `buildkite-agent secret get` (works on hosted linux-small) then
+# file-store fallbacks that only exist on self-hosted Macs/Windows.
 # shellcheck source=load-buildkite-secrets.sh
 . "${root}/scripts/fork/load-buildkite-secrets.sh" \
   CLOUDFLARE_API_TOKEN \
   T3CODE_RELEASE_S3_ACCESS_KEY_ID \
   T3CODE_RELEASE_S3_SECRET_ACCESS_KEY \
   VITE_SCENERY_UNSPLASH_KEY
+
+if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]] &&
+  { [[ -z "${T3CODE_RELEASE_S3_ACCESS_KEY_ID:-}" ]] || [[ -z "${T3CODE_RELEASE_S3_SECRET_ACCESS_KEY:-}" ]]; }; then
+  echo "Need CLOUDFLARE_API_TOKEN or T3CODE_RELEASE_S3_ACCESS_KEY_ID+SECRET from cluster secrets (buildkite-agent secret get). Hosted linux-small has no file-store fallback." >&2
+  exit 1
+fi
+test -n "${T3CODE_RELEASE_S3_BUCKET:-}"
 
 if git remote get-url upstream >/dev/null 2>&1; then
   git remote set-url upstream https://github.com/pingdotgg/t3code.git
@@ -126,12 +142,6 @@ test -f "$publish/nightly-linux.yml" || test -f "$publish/latest-linux.yml"
 
 if command -v buildkite-agent >/dev/null; then
   (cd "$publish" && buildkite-agent artifact upload '*')
-fi
-
-if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]] &&
-  { [[ -z "${T3CODE_RELEASE_S3_ACCESS_KEY_ID:-}" ]] || [[ -z "${T3CODE_RELEASE_S3_SECRET_ACCESS_KEY:-}" ]]; }; then
-  echo "CLOUDFLARE_API_TOKEN or T3CODE_RELEASE_S3_* keys are required to publish Linux updater assets." >&2
-  exit 1
 fi
 
 assets=()

@@ -269,6 +269,15 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(linux, "https://vite.plus");
     assert.include(linux, "npx vp");
     assert.include(linux, "load-buildkite-secrets.sh");
+    assert.include(linux, "buildkite-agent secret get");
+    assert.include(linux, "Hosted linux-small has no file-store fallback");
+    assert.include(linux, "T3CODE_RELEASE_S3_BUCKET");
+    assert.include(linux, "T3CODE_RELEASE_S3_ENDPOINT");
+    assert.include(linux, "T3CODE_RELEASE_S3_REGION");
+    assert.isBelow(
+      linux.indexOf("Hosted linux-small has no file-store fallback"),
+      linux.indexOf("rustup toolchain install"),
+    );
     assert.notInclude(linux, "checkout-origin.sh");
     assert.notInclude(linux, "CURSOR_API_KEY");
     assert.notInclude(pipeline, "\n    secrets:");
