@@ -1101,6 +1101,12 @@ describe("composer runtime mode", () => {
     ).toBe("yolo");
     expect(
       resolveCarriedRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "unconfigured",
+      }),
+    ).toBe("yolo");
+    expect(
+      resolveCarriedRuntimeMode({
         runtimeMode: null,
         destinationProviderDriver: "grok",
       }),

@@ -1013,12 +1013,13 @@ it.effect("project favicon overrides accept only supported image files", () =>
   }),
 );
 
-it("resolveRuntimeModeForProviderDriver maps yolo to full-access unless the driver is kimi", () => {
+it("resolveRuntimeModeForProviderDriver maps yolo to full-access unless the driver is kimi or unknown", () => {
   assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "yolo"), "full-access");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("claudeAgent", "yolo"), "full-access");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver(null, "yolo"), "full-access");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver(undefined, "yolo"), "full-access");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver(null, "yolo"), "yolo");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver(undefined, "yolo"), "yolo");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver("unconfigured", "yolo"), "yolo");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "full-access"), "full-access");
   assert.strictEqual(
@@ -1030,6 +1031,7 @@ it("resolveRuntimeModeForProviderDriver maps yolo to full-access unless the driv
 it("displayRuntimeModeForProviderDriver keeps yolo when the driver is unknown", () => {
   assert.strictEqual(displayRuntimeModeForProviderDriver(null, "yolo"), "yolo");
   assert.strictEqual(displayRuntimeModeForProviderDriver(undefined, "yolo"), "yolo");
+  assert.strictEqual(displayRuntimeModeForProviderDriver("unconfigured", "yolo"), "yolo");
   assert.strictEqual(displayRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
   assert.strictEqual(displayRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
 });
