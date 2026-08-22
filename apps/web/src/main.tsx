@@ -98,3 +98,18 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     )}
   </React.StrictMode>,
 );
+
+// Dissolve the boot logo over the app once the first commit has painted (the
+// double rAF): index.html transitions #boot-shell out on data-booted, and the
+// node is removed when the fade ends (timeout in case transitionend is
+// skipped, e.g. a hidden window).
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    document.documentElement.dataset.booted = "true";
+    const bootShell = document.getElementById("boot-shell");
+    if (!bootShell) return;
+    const removeBootShell = () => bootShell.remove();
+    bootShell.addEventListener("transitionend", removeBootShell, { once: true });
+    window.setTimeout(removeBootShell, 600);
+  });
+});

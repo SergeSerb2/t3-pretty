@@ -15,14 +15,16 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type { ThreadSceneryAssignment, ThreadSceneryPhoto } from "@t3tools/contracts";
 
 import { createDebouncedStorage } from "../lib/storage";
-import { WORLD_SCENERY_CATALOG } from "./catalog";
+import { PHOTO_SET_CATALOGS } from "./catalog";
 import { clampTranslucency, DEFAULT_TRANSLUCENCY } from "./glass";
 import { stableIndex } from "./palette";
-import seedPoolJson from "./seedPool.json";
+import { DEFAULT_PHOTO_SET_ID, type PhotoSetId } from "./photoSets";
+import { usePhotoSetStore } from "./photoSetStore";
+import { peekSeedPhotos } from "./scenerySeeds";
 import { makeUnsplashClient, type SceneryPhoto } from "./unsplash";
 
 const SCENERY_STORAGE_KEY = "t3code:scenery:v1";
-const SCENERY_STORAGE_VERSION = 1;
+const SCENERY_STORAGE_VERSION = 2;
 
 /** CDN pre-blur (imgix `blur`), 0–100. 50 is the SurgeCode mobile bake. */
 export const BLUR_RANGE = { lowerBound: 0, upperBound: 100 } as const;
@@ -48,11 +50,10 @@ const INK_MODES: ReadonlySet<SceneryInkMode> = new Set(["auto", "light", "dark",
 
 /**
  * How many of the most recent assignments a random pick avoids repeating.
- * SurgeCode excluded photos bound to open/unsettled threads; the web port
- * approximates that with a recency window, which converges to the same
- * behavior for the pool sizes involved (hundreds of photos).
+ * Capped at half the pool so extra themes (~100+ photos) still have
+ * candidates; World Scenery (~950) keeps the full 120.
  */
-const RECENT_EXCLUSION_WINDOW = 60;
+const RECENT_EXCLUSION_WINDOW = 120;
 
 /**
  * Thread routes come and go without a deletion signal reaching this store, so
@@ -67,9 +68,10 @@ const POOL_STALE_MS = 14 * 24 * 60 * 60 * 1000;
 /** Locations fetched per refresh run — safe under the 50 req/hour demo cap. */
 const REFRESH_BATCH_LOCATIONS = 24;
 
-const SEED_POOL: ReadonlyArray<SceneryPhoto> = (
-  seedPoolJson as { photos: ReadonlyArray<SceneryPhoto> }
-).photos;
+/** Photos pulled per location during a refresh (Unsplash search page 1). */
+const REFRESH_PHOTOS_PER_LOCATION = 8;
+
+const EMPTY_PHOTOS: ReadonlyArray<SceneryPhoto> = [];
 
 export interface SceneryAssignment {
   readonly photoId: string;
@@ -80,11 +82,14 @@ export interface SceneryAssignment {
 
 interface SceneryStoreState {
   assignments: Record<string, SceneryAssignment>;
-  /** Photos fetched at runtime; merged over the bundled seed pool. */
-  fetchedPhotos: SceneryPhoto[];
-  fetchedAt: number | null;
-  /** Next catalog index a refresh run continues from. */
-  refreshCursor: number;
+  /**
+   * Runtime Unsplash hits keyed by photo set. Merged over that set's bundled
+   * seed. Legacy `fetchedPhotos` migrates into the World Scenery bucket.
+   */
+  fetchedBySet: Partial<Record<PhotoSetId, SceneryPhoto[]>>;
+  fetchedAtBySet: Partial<Record<PhotoSetId, number | null>>;
+  /** Next catalog index a refresh run continues from, per photo set. */
+  refreshCursorBySet: Partial<Record<PhotoSetId, number>>;
   /** Photo ids whose download_location ping succeeded (Unsplash guideline). */
   registeredDownloads: string[];
   /** Window glass 0.5–1.0; how much of the window the app paints over the photo. */
@@ -102,15 +107,29 @@ interface SceneryStoreState {
   removeThread: (threadKey: string) => void;
 }
 
-export function getSceneryPool(fetchedPhotos: ReadonlyArray<SceneryPhoto>): SceneryPhoto[] {
+export function activePhotoSetId(): PhotoSetId {
+  return usePhotoSetStore.getState().photoSetId;
+}
+
+export function getSceneryPool(
+  fetchedPhotos: ReadonlyArray<SceneryPhoto>,
+  seedPhotos: ReadonlyArray<SceneryPhoto> = peekSeedPhotos(DEFAULT_PHOTO_SET_ID),
+): SceneryPhoto[] {
   const byId = new Map<string, SceneryPhoto>();
-  for (const photo of SEED_POOL) {
+  for (const photo of seedPhotos) {
     byId.set(photo.id, photo);
   }
   for (const photo of fetchedPhotos) {
     byId.set(photo.id, photo);
   }
   return [...byId.values()];
+}
+
+function poolForActiveSet(state: {
+  fetchedBySet: Partial<Record<PhotoSetId, SceneryPhoto[]>>;
+}): SceneryPhoto[] {
+  const photoSetId = activePhotoSetId();
+  return getSceneryPool(state.fetchedBySet[photoSetId] ?? EMPTY_PHOTOS, peekSeedPhotos(photoSetId));
 }
 
 /**
@@ -156,7 +175,7 @@ export function pickScenery(
   }
   const recent = Object.values(assignments)
     .sort((left, right) => right.assignedAt - left.assignedAt)
-    .slice(0, RECENT_EXCLUSION_WINDOW);
+    .slice(0, Math.min(RECENT_EXCLUSION_WINDOW, Math.floor(pool.length / 2)));
   const occupied = new Set(recent.map((assignment) => assignment.photoId));
   const available = pool.filter((photo) => !occupied.has(photo.id));
   const candidates = available.length > 0 ? available : pool;
@@ -197,19 +216,20 @@ export const useSceneryStore = create<SceneryStoreState>()(
   persist(
     (set, get) => ({
       assignments: {},
-      fetchedPhotos: [],
-      fetchedAt: null,
-      refreshCursor: 0,
+      fetchedBySet: {},
+      fetchedAtBySet: {},
+      refreshCursorBySet: {},
       registeredDownloads: [],
       translucency: DEFAULT_TRANSLUCENCY,
       blur: DEFAULT_BLUR,
       inkMode: "auto",
       ensureAssignment: (threadKey) =>
         set((state) => {
-          if (state.assignments[threadKey]) {
+          const pool = poolForActiveSet(state);
+          const existing = state.assignments[threadKey];
+          if (existing && pool.some((entry) => entry.id === existing.photoId)) {
             return state;
           }
-          const pool = getSceneryPool(state.fetchedPhotos);
           const pick = pickScenery(pool, state.assignments);
           if (!pick) {
             return state;
@@ -231,8 +251,7 @@ export const useSceneryStore = create<SceneryStoreState>()(
         // even for a server-synced assignment this device's pool lacks.
         const downloadLocationURL =
           photo.downloadLocationURL ??
-          getSceneryPool(state.fetchedPhotos).find((entry) => entry.id === photo.id)
-            ?.downloadLocationURL;
+          poolForActiveSet(state).find((entry) => entry.id === photo.id)?.downloadLocationURL;
         if (!client || !downloadLocationURL) {
           // No key or no registration URL: leave the id unclaimed so the
           // ping happens once a key is available.
@@ -258,32 +277,35 @@ export const useSceneryStore = create<SceneryStoreState>()(
           });
       },
       refreshPoolIfStale: async () => {
+        const photoSetId = activePhotoSetId();
+        const catalog = PHOTO_SET_CATALOGS[photoSetId];
         const state = get();
-        const pool = getSceneryPool(state.fetchedPhotos);
-        if (pool.length >= 50 && state.fetchedAt === null) {
+        const pool = poolForActiveSet(state);
+        const fetchedAt = state.fetchedAtBySet[photoSetId] ?? null;
+        if (pool.length >= 50 && fetchedAt === null) {
           // Seeded install: start the staleness clock; the first network
           // refresh happens once the seed is POOL_STALE_MS old.
-          set(() => ({ fetchedAt: Date.now() }));
+          set(() => ({ fetchedAtBySet: { ...get().fetchedAtBySet, [photoSetId]: Date.now() } }));
           return;
         }
-        const fresh = state.fetchedAt !== null && Date.now() - state.fetchedAt < POOL_STALE_MS;
+        const fresh = fetchedAt !== null && Date.now() - fetchedAt < POOL_STALE_MS;
         if (pool.length >= 50 && fresh) {
           return;
         }
         const client = makeUnsplashClient();
-        if (!client || refreshInFlight) {
+        if (!client || refreshInFlight || catalog.length === 0) {
           return;
         }
         refreshInFlight = true;
         try {
-          const start = get().refreshCursor % WORLD_SCENERY_CATALOG.length;
+          const start = (get().refreshCursorBySet[photoSetId] ?? 0) % catalog.length;
           const batch = Array.from(
-            { length: Math.min(REFRESH_BATCH_LOCATIONS, WORLD_SCENERY_CATALOG.length) },
-            (_, index) => WORLD_SCENERY_CATALOG[(start + index) % WORLD_SCENERY_CATALOG.length]!,
+            { length: Math.min(REFRESH_BATCH_LOCATIONS, catalog.length) },
+            (_, index) => catalog[(start + index) % catalog.length]!,
           );
           const results = await Promise.allSettled(
             batch.map(async (location) => {
-              const photos = await client.searchPhotos(location.query, 2);
+              const photos = await client.searchPhotos(location.query, REFRESH_PHOTOS_PER_LOCATION);
               // The curated name is the display name — never the Unsplash
               // caption, which is machine prose.
               return photos.map((photo) => ({ ...photo, name: location.name }));
@@ -293,14 +315,18 @@ export const useSceneryStore = create<SceneryStoreState>()(
             result.status === "fulfilled" ? result.value : [],
           );
           set((current) => {
-            const byId = new Map(current.fetchedPhotos.map((photo) => [photo.id, photo]));
+            const existing = current.fetchedBySet[photoSetId] ?? [];
+            const byId = new Map(existing.map((photo) => [photo.id, photo]));
             for (const photo of fetched) {
               byId.set(photo.id, photo);
             }
             return {
-              fetchedPhotos: [...byId.values()],
-              fetchedAt: Date.now(),
-              refreshCursor: (start + REFRESH_BATCH_LOCATIONS) % WORLD_SCENERY_CATALOG.length,
+              fetchedBySet: { ...current.fetchedBySet, [photoSetId]: [...byId.values()] },
+              fetchedAtBySet: { ...current.fetchedAtBySet, [photoSetId]: Date.now() },
+              refreshCursorBySet: {
+                ...current.refreshCursorBySet,
+                [photoSetId]: (start + REFRESH_BATCH_LOCATIONS) % catalog.length,
+              },
             };
           });
         } finally {
@@ -330,17 +356,36 @@ export const useSceneryStore = create<SceneryStoreState>()(
       ),
       partialize: (state) => ({
         assignments: state.assignments,
-        fetchedPhotos: state.fetchedPhotos,
-        fetchedAt: state.fetchedAt,
-        refreshCursor: state.refreshCursor,
+        fetchedBySet: state.fetchedBySet,
+        fetchedAtBySet: state.fetchedAtBySet,
+        refreshCursorBySet: state.refreshCursorBySet,
         registeredDownloads: state.registeredDownloads,
         translucency: state.translucency,
         blur: state.blur,
         inkMode: state.inkMode,
       }),
-      // Placeholder so a future version bump migrates instead of silently
-      // discarding every persisted assignment.
-      migrate: (persisted) => persisted as SceneryStoreState,
+      migrate: (persisted, version) => {
+        const state = persisted as SceneryStoreState & {
+          fetchedPhotos?: SceneryPhoto[];
+          fetchedAt?: number | null;
+          refreshCursor?: number;
+        };
+        if (version >= SCENERY_STORAGE_VERSION) {
+          return state;
+        }
+        return {
+          ...state,
+          fetchedBySet: state.fetchedBySet ?? {
+            [DEFAULT_PHOTO_SET_ID]: state.fetchedPhotos ?? [],
+          },
+          fetchedAtBySet: state.fetchedAtBySet ?? {
+            [DEFAULT_PHOTO_SET_ID]: state.fetchedAt ?? null,
+          },
+          refreshCursorBySet: state.refreshCursorBySet ?? {
+            [DEFAULT_PHOTO_SET_ID]: state.refreshCursor ?? 0,
+          },
+        };
+      },
     },
   ),
 );

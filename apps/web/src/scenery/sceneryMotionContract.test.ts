@@ -22,6 +22,7 @@ import expandedImageSource from "../components/chat/ExpandedImageDialog.tsx?raw"
 import messagesTimelineSource from "../components/chat/MessagesTimeline.tsx?raw";
 import providerBannerSource from "../components/chat/ProviderStatusBanner.tsx?raw";
 import threadSyncPillSource from "../components/chat/ThreadSyncStatusPill.tsx?raw";
+import toolCallExpandedBodySource from "../components/chat/ToolCallExpandedBody.tsx?raw";
 import gitActionsSource from "../components/GitActionsControl.tsx?raw";
 import noActiveThreadSource from "../components/NoActiveThreadState.tsx?raw";
 import quitHoldSource from "../components/QuitHoldOverlay.tsx?raw";
@@ -52,6 +53,14 @@ describe("row arrival contract with the messages timeline", () => {
     expect(messagesTimelineSource).toContain('data-timeline-root="true"');
   });
 
+  it("the active chat column still exposes a unique transcript hook", () => {
+    expect(chatViewSource).toContain('data-chat-transcript="true"');
+    expect(chatViewSource.match(/data-chat-transcript="true"/g)?.length).toBe(1);
+    expect(chatViewSource).toContain('data-chat-transcript-active="true"');
+    expect(chatViewSource.match(/data-chat-transcript-active="true"/g)?.length).toBe(1);
+    expect(messagesTimelineSource).not.toContain("data-chat-transcript");
+  });
+
   it("seeds the first paint of a thread instead of racing the load window", () => {
     expect(motionDriverSource).toContain("shouldDeferThreadSeed");
     expect(motionDriverSource).toContain("firstPaintForThread");
@@ -59,6 +68,12 @@ describe("row arrival contract with the messages timeline", () => {
     expect(motionStylesSource).toContain(
       "animation: scenery-row-rise 340ms var(--sc-ease-out) both",
     );
+  });
+
+  it("animates the row's inner box, not the overflow-x-clip wrapper", () => {
+    expect(messagesTimelineSource).toContain("overflow-x-clip");
+    expect(motionStylesSource).toContain("[data-timeline-root].scenery-row-enter > *");
+    expect(motionDriverSource).toContain("seenRowIdsRef.current.clear()");
   });
 
   it("rows still expose id, kind and role attributes", () => {
@@ -101,7 +116,8 @@ describe("composer attach mutation contract", () => {
 
 describe("tool card disclosure contract", () => {
   it("the expanded body still mounts under the ms-7 indent wrapper", () => {
-    expect(messagesTimelineSource).toContain("mb-1 ms-7 mt-0.5");
+    // The wrapper moved from MessagesTimeline into ToolCallExpandedBody.
+    expect(toolCallExpandedBodySource).toContain("mb-1 ms-7 mt-0.5");
   });
 
   it("status verdict icons still live in the gap-1 indicator cluster, wrapped in a span", () => {

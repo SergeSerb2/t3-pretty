@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vite-plus/test";
+import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vite-plus/test";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
@@ -6,7 +8,13 @@ import {
   type InstalledSkill,
 } from "@t3tools/contracts";
 
-import { toPickerSkills, organizePickerSkills, skillMatchesQuery } from "./SkillsPicker";
+import { Menu } from "../ui/menu";
+import {
+  toPickerSkills,
+  organizePickerSkills,
+  skillMatchesQuery,
+  SkillPickerRow,
+} from "./SkillsPicker";
 
 describe("toPickerSkills", () => {
   const claude = ProviderDriverKind.make("claudeAgent");
@@ -114,6 +122,174 @@ describe("toPickerSkills", () => {
   it("falls back to the host path when a skill has no description", () => {
     const skills = toPickerSkills([], host, new Set(), claudeDefault);
     expect(skills[0]?.description).toBe("~/.claude/skills/grill-me");
+  });
+
+  it("still pins a globally locked skill when it is favorited", () => {
+    const skills = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault);
+    expect(skills.find((skill) => skill.id === "octo/skills:tdd")?.locked).toBe(true);
+    const groups = organizePickerSkills(skills, new Set(["octo/skills:tdd"]));
+    expect(groups[0]?.[0]).toBe("Favorites");
+    expect(groups[0]?.[1].map((skill) => skill.id)).toEqual(["octo/skills:tdd"]);
+  });
+
+  it("keeps the favorite star clickable on a globally locked skill", () => {
+    const skill = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault).find(
+      (row) => row.id === "octo/skills:tdd",
+    )!;
+    expect(skill.locked).toBe(true);
+    const html = renderToStaticMarkup(
+      createElement(
+        Menu,
+        null,
+        createElement(SkillPickerRow, {
+          skill,
+          isEnabled: true,
+          isFavorite: false,
+          disabled: false,
+          onToggle: () => {},
+          onToggleFavorite: () => {},
+        }),
+      ),
+    );
+    expect(html).toContain("Add to favorites");
+    expect(html).toContain("Global");
+    expect(html).not.toContain("aria-disabled");
+    expect(html).not.toContain("pointer-events-auto");
+  });
+
+  it("does not let a locked skill's star punch through a disabled picker", () => {
+    const skill = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault).find(
+      (row) => row.id === "octo/skills:tdd",
+    )!;
+    expect(skill.locked).toBe(true);
+    const onToggleFavorite = vi.fn();
+    const html = renderToStaticMarkup(
+      createElement(
+        Menu,
+        null,
+        createElement(SkillPickerRow, {
+          skill,
+          isEnabled: true,
+          isFavorite: false,
+          disabled: true,
+          onToggle: () => {},
+          onToggleFavorite,
+        }),
+      ),
+    );
+    expect(html).toContain("aria-disabled");
+    expect(html).not.toContain("pointer-events-auto");
+    const row = SkillPickerRow({
+      skill,
+      isEnabled: true,
+      isFavorite: false,
+      disabled: true,
+      onToggle: () => {},
+      onToggleFavorite,
+    }) as ReactElement<{ children: ReactElement<{ children: ReactNode }> }>;
+    const star = Children.toArray(row.props.children.props.children).find(
+      (
+        child,
+      ): child is ReactElement<{
+        disabled?: boolean;
+        onClick: (event: { preventDefault: () => void; stopPropagation: () => void }) => void;
+      }> =>
+        isValidElement<{ "aria-label"?: string }>(child) &&
+        String(child.props["aria-label"]).includes("favorites"),
+    )!;
+    expect(star.props.disabled).toBe(true);
+    star.props.onClick({ preventDefault: () => {}, stopPropagation: () => {} });
+    expect(onToggleFavorite).not.toHaveBeenCalled();
+  });
+
+  it("does not let the favorite star punch through a disabled non-locked row", () => {
+    const skill = toPickerSkills(installed, [], new Set(), claudeDefault).find(
+      (row) => row.id === "octo/skills:tdd",
+    )!;
+    expect(skill.locked).toBe(false);
+    const html = renderToStaticMarkup(
+      createElement(
+        Menu,
+        null,
+        createElement(SkillPickerRow, {
+          skill,
+          isEnabled: false,
+          isFavorite: false,
+          disabled: true,
+          onToggle: () => {},
+          onToggleFavorite: () => {},
+        }),
+      ),
+    );
+    expect(html).not.toContain("pointer-events-auto");
+    expect(html).toContain("aria-disabled");
+  });
+
+  it("swallows row activation on a locked skill and still lets the star fire", () => {
+    const skill = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault).find(
+      (row) => row.id === "octo/skills:tdd",
+    )!;
+    expect(skill.locked).toBe(true);
+    const onToggle = vi.fn();
+    const onToggleFavorite = vi.fn();
+    const row = SkillPickerRow({
+      skill,
+      isEnabled: true,
+      isFavorite: false,
+      disabled: false,
+      onToggle,
+      onToggleFavorite,
+    }) as ReactElement<{
+      onCheckedChange: (checked: boolean, details: { cancel: () => void }) => void;
+      onClick: (event: { preventDefault: () => void }) => void;
+      children: ReactElement<{ children: ReactNode }>;
+    }>;
+    const cancel = vi.fn();
+    row.props.onCheckedChange(false, { cancel });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    const preventDefault = vi.fn();
+    row.props.onClick({ preventDefault });
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(onToggle).not.toHaveBeenCalled();
+    const star = Children.toArray(row.props.children.props.children).find(
+      (
+        child,
+      ): child is ReactElement<{
+        onClick: (event: unknown) => void;
+        onKeyDown: (event: { key: string; stopPropagation: () => void }) => void;
+      }> =>
+        isValidElement<{ "aria-label"?: string }>(child) &&
+        String(child.props["aria-label"]).includes("favorites"),
+    )!;
+    star.props.onClick({ preventDefault: () => {}, stopPropagation: () => {} });
+    expect(onToggleFavorite).toHaveBeenCalledTimes(1);
+    expect(onToggle).not.toHaveBeenCalled();
+    const stopSpace = vi.fn();
+    star.props.onKeyDown({ key: " ", stopPropagation: stopSpace });
+    expect(stopSpace).toHaveBeenCalledTimes(1);
+    const stopEnter = vi.fn();
+    star.props.onKeyDown({ key: "Enter", stopPropagation: stopEnter });
+    expect(stopEnter).toHaveBeenCalledTimes(1);
+    const stopArrow = vi.fn();
+    star.props.onKeyDown({ key: "ArrowDown", stopPropagation: stopArrow });
+    expect(stopArrow).not.toHaveBeenCalled();
+  });
+
+  it("wires the toggle on an unlocked row", () => {
+    const skill = toPickerSkills(installed, [], new Set(), claudeDefault).find(
+      (row) => row.id === "octo/skills:tdd",
+    )!;
+    expect(skill.locked).toBe(false);
+    const onToggle = vi.fn();
+    const row = SkillPickerRow({
+      skill,
+      isEnabled: false,
+      isFavorite: false,
+      disabled: false,
+      onToggle,
+      onToggleFavorite: () => {},
+    }) as ReactElement<{ onCheckedChange?: () => void }>;
+    expect(row.props.onCheckedChange).toBe(onToggle);
   });
 
   it("pins favorites above origin groups and keeps them out of those groups", () => {

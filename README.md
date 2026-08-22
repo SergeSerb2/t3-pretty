@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/pretty/t3-pretty-1024.png" alt="T3 Pretty" width="160" />
+  <img src="./assets/pretty/t3-pretty-wordmark.png" alt="T3 Pretty" width="280" />
 </p>
 
 <h1 align="center">T3 Pretty</h1>
@@ -43,15 +43,17 @@ Visual changes are not allowed to trade away capability or existing state.
 > [!IMPORTANT]
 > `npx t3@latest`, Homebrew `t3-code`, and winget `T3Tools.T3Code` install **upstream T3 Code**,
 > not this fork. T3 Pretty is this repository. Grab a desktop build from
-> [Latest release](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest), or run from
-> source (below).
+> [Latest release](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest), run from
+> source (below), or install the headless server with
+> `curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh`.
 
 ---
 
 ## Why it's Pretty 🌄
 
-World Scenery is T3 Pretty's only theme. Light, dark, or system — the palette is alpine moss and
-sage. Chrome is glass over a photo, not a solid slab.
+World Scenery is T3 Pretty's default theme. Light, dark, or system — the palette is alpine moss and
+sage. Chrome is glass over a photo, not a solid slab. **Settings → Appearance → Personalization**
+has **Boring** for people who want the original T3 Chat colors and no landscape photos.
 
 |                            | What you get                                                                                     |
 | -------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -61,7 +63,8 @@ sage. Chrome is glass over a photo, not a solid slab.
 | 🎚️ **Your density**        | Photo blur, photo presence, glass opacity, scenery text color, thread motion, fonts.             |
 | 🧘 **Still when you want** | Thread motion off, or the system reduce-motion setting, parks fades and keeps status dots still. |
 
-Open **Settings → Appearance**. On a phone, the same controls live under **Scenery photos**.
+Open **Settings → Appearance**. On a phone, Personalization and **Scenery photos** live in the
+same Appearance screen.
 
 The product should feel calm during a long day, candid about what is running, and confident
 without becoming ornamental. Motion is a fade or a press — not a GPU hobby.
@@ -105,7 +108,7 @@ and let the agent open a pull request when it finishes.
 
 Everything you would expect from T3 Code is still here:
 
-- Permission modes (Supervised, Auto-accept edits, Auto, Full access — Kimi uses Auto / Yolo)
+- Permission modes (Supervised, Auto-accept edits, Auto, Full access — Kimi offers Supervised / Yolo / Full access, defaulting to Yolo)
 - Worktrees, checkpoints, diffs, and a Ghostty-backed terminal
 - Source control for GitHub, GitLab, Bitbucket, Azure DevOps, and [Origin](https://origin.cursor.com)
 - Automatic pull requests, usage, storage cleanup, project icons
@@ -120,15 +123,16 @@ behavior at conflict boundaries. See [docs/operations/fork-release.md](./docs/op
 
 Every merge to `main` publishes a desktop build. **[Latest release](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest)** always points at the current Origin tag. **[All releases](https://cursor.com/codebase/serbinenko/t3-pretty/releases)** lists the rest.
 
-| Platform | Installer |
-| --- | --- |
-| 🍎 **macOS** (Apple Silicon) | [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-arm64.dmg) |
-| 🪟 **Windows** (x64) | [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-x64.exe) |
-| 📋 **Release notes** | [Latest](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest) · [All](https://cursor.com/codebase/serbinenko/t3-pretty/releases) |
+| Platform                     | Installer                                                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🍎 **macOS** (Apple Silicon) | [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-arm64.dmg)              |
+| 🪟 **Windows** (x64)         | [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-x64.exe)               |
+| 🐧 **Linux** (x64)           | [AppImage](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-x64.AppImage)                                         |
+| 📋 **Release notes**         | [Latest](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest) · [All](https://cursor.com/codebase/serbinenko/t3-pretty/releases) |
 
 The installer filenames still say `T3-Code-…` on purpose: internal package names stay compatible with T3 Code. The app you launch is **T3 Pretty (Alpha)**. After the first install, the desktop app updates itself from the same public feed.
 
-The feed always lists whatever is current: [macOS manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml) · [Windows manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml). Linux AppImages are not on that feed yet — build one with `vp run dist:desktop:linux`. Mobile is source-only for now: [apps/mobile/README.md](./apps/mobile/README.md).
+The feed always lists whatever is current: [macOS manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml) · [Windows manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml) · [Linux manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-linux.yml). Mobile is source-only for now: [apps/mobile/README.md](./apps/mobile/README.md).
 
 ---
 

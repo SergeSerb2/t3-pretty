@@ -1,3 +1,4 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
@@ -71,10 +72,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(preflight, "steps.release.outputs.version != ''");
     assert.include(preflight, "steps.release.outputs.version != '-'");
     assert.include(preflight, "continue-on-error: true");
-    const releaseStep = preflight.slice(
-      preflight.indexOf("id: release"),
-      preflight.indexOf("id: changelog"),
-    );
+    const releaseStep = preflight.slice(preflight.indexOf("id: release"));
     assert.include(releaseStep, "T3_SKIP_UNRESOLVABLE_MINT");
     assert.notInclude(releaseStep, "continue-on-error:");
     assert.include(preflight, "ensure-linux-node.sh");
@@ -92,10 +90,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(wsl, "ensure-linux-node.sh");
     assert.include(wsl, "needs.preflight.result == 'success'");
     assert.include(wsl, "needs.preflight.outputs.should_release == 'true'");
-    assert.include(
-      preflight,
-      "ref: ${{ steps.changelog.outputs.ref || github.sha || env.BUILDKITE_COMMIT }}",
-    );
+    assert.include(preflight, "ref: ${{ github.sha || env.BUILDKITE_COMMIT }}");
     assert.notInclude(preflight, "github.sha || '-'");
     assert.include(wsl, 'ref="${PREFLIGHT_REF:-${GITHUB_SHA:-${BUILDKITE_COMMIT:-}}}"');
     assert.include(wsl, "WSL prebuild needs a commit SHA; preflight ref is missing.");
@@ -109,6 +104,10 @@ describe("T3 Pretty release runner placement", () => {
   it("does not rebuild desktop for mobile-only or docs-only commits", () => {
     // Buildkite rejects on.push.paths, so the skip lives in the preflight job.
     assert.include(desktopWorkflow, "Skip desktop-irrelevant pushes");
+    assert.notInclude(desktopWorkflow, "Changelog-only commit; skipping imported preflight.");
+    // Hosted preflight cannot push notes and nothing there consumes them;
+    // generation belongs to the native packagers.
+    assert.notInclude(desktopWorkflow, "generate-changelog.mjs");
     assert.include(desktopWorkflow, "apps/desktop");
     assert.include(desktopWorkflow, "apps/web");
     assert.notInclude(desktopWorkflow, "apps/mobile");
@@ -116,11 +115,39 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(desktopWorkflow, "workflow_dispatch:");
   });
 
+  it("publishes the headless CLI tarball from linux-small", () => {
+    assert.include(pipeline, "publish-cli.sh");
+    assert.include(pipeline, "key: publish-cli");
+    assert.include(pipeline, "CLI tarball");
+    assert.include(pipeline, "depends_on: macos-dmg");
+    const publishCli = NodeFS.readFileSync(NodePath.resolve(here, "publish-cli.sh"), "utf8");
+    assert.include(publishCli, "cli.ts pack");
+    assert.include(publishCli, "bash scripts/fork/ensure-linux-node.sh");
+    assert.notInclude(publishCli, ". scripts/fork/ensure-linux-node.sh");
+    assert.include(publishCli, "Do not git fetch origin");
+    assert.notInclude(publishCli, "git fetch --force --tags origin");
+    assert.include(publishCli, "GIT_TERMINAL_PROMPT=0");
+    assert.notInclude(publishCli, "git fetch --force --tags upstream");
+    assert.notInclude(publishCli, "T3_FORK_BUILD_FLOOR");
+    assert.notInclude(publishCli, "resolve-fork-release.mjs");
+    assert.include(publishCli, "latest-mac.yml");
+    assert.include(publishCli, "https://vite.plus");
+  });
+
+  it("pins macos-release packaging steps to os=macos agents", () => {
+    // m1-linux-t3code-fork shares the macos-release queue as a review-only
+    // agent; DMG/iOS/relay/sync must never be assigned to a Linux box.
+    // upstream-sync, macos-dmg, ios-mobile, deploy-relay — reviews stay
+    // queue-wide.
+    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 4);
+  });
+
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "iOS OTA + TestFlight");
     assert.include(pipeline, 'concurrency_group: "t3-pretty/ios-mobile"');
     assert.include(pipeline, "priority: 20");
+    assert.notInclude(pipeline, "interruptible:");
     assert.include(pipeline, "timeout_in_minutes: 30");
     assert.isBelow(
       mobileRelease.indexOf("checkout-origin.sh"),
@@ -131,7 +158,7 @@ describe("T3 Pretty release runner placement", () => {
       pipeline.indexOf("build-macos-dmg.sh"),
       pipeline.indexOf("publish-mobile-release.sh"),
     );
-    assert.include(mobileRelease, "macos-release (m1-dev)");
+    assert.include(mobileRelease, "macos-release (m5-dev)");
     assert.include(mobileRelease, "load_secret EXPO_TOKEN");
     assert.include(mobileRelease, "EXPO_TOKEN is required to publish OTA");
     assert.include(mobileRelease, "eas update");
@@ -173,9 +200,20 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
     assert.notInclude(mobileRelease, '"$MODE" == "build" || "$MODE" == "release"');
     assert.include(mobileRelease, ".t3-fork/ios-native-submit");
-    assert.include(mobileRelease, "xcode_is_store_supported");
+    assert.include(mobileRelease, "is_full_xcode");
+    assert.include(mobileRelease, "/Applications/Xcode-beta.app");
+    assert.include(mobileRelease, 'DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version');
     assert.include(mobileRelease, "This is not App Store review");
-    assert.include(mobileRelease, "Skipping a new IPA");
+    assert.include(mobileRelease, "ipa_via_cloud");
+    assert.include(mobileRelease, "--wait");
+    assert.include(mobileRelease, '--json > "$cloud_build_json"');
+    assert.include(mobileRelease, "eas build --json did not include a build id");
+    assert.include(mobileRelease, '--id "$build_id"');
+    assert.notInclude(mobileRelease, "--latest");
+    assert.include(mobileRelease, "Submitted TestFlight IPA via EAS cloud");
+    assert.include(mobileRelease, "No full Xcode on this Mac");
+    assert.notInclude(mobileRelease, "Skipping a new IPA");
+    assert.notInclude(mobileRelease, "xcode_is_store_supported");
     assert.notInclude(mobileRelease, "No native macos-release TestFlight submit recorded");
     assert.notInclude(mobileRelease, "t3_require_ota");
     assert.notInclude(mobileRelease, "t3-ota-present");
@@ -192,7 +230,12 @@ describe("T3 Pretty release runner placement", () => {
     );
     assert.include(macosAgent, "COMPANION_NAME");
     assert.include(macosAgent, "${AGENT_NAME}-2");
+    assert.include(macosAgent, "REVIEW_ONLY");
+    assert.include(macosAgent, "macos-review-only-hook.sh");
+    assert.include(macosAgent, "T3_PRETTY_REVIEW_ONLY");
+    assert.include(macosAgent, "GIT_CONFIG_GLOBAL");
     assert.include(macosAgent, "persist-ios-native-submit-hook.sh");
+    assert.include(macosAgent, "refresh-origin-git-credentials.sh");
     const persistHook = NodeFS.readFileSync(
       NodePath.resolve(here, "persist-ios-native-submit-hook.sh"),
       "utf8",
@@ -200,6 +243,13 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(persistHook, 'BUILDKITE_STEP_KEY:-}" == "ios-mobile"');
     assert.include(persistHook, ".cache/t3-pretty-release/ios-native-submit");
     assert.include(persistHook, "refresh_macos_agent_hooks");
+    assert.include(persistHook, 'grep -q "helpers_ready" "$src/macos-origin-git.sh"');
+    assert.include(persistHook, "origin_cli_helper_ready");
+    assert.include(persistHook, "macos-review-only-hook.sh");
+    assert.include(
+      persistHook,
+      'grep -q "refresh_macos_agent_hooks" "$src/persist-ios-native-submit-hook.sh"',
+    );
     assert.isBelow(
       persistHook.indexOf("refresh_macos_agent_hooks"),
       persistHook.indexOf('BUILDKITE_STEP_KEY:-}" == "ios-mobile"'),
@@ -214,6 +264,53 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(dmg, "process.stdin.on");
     assert.include(dmg, "git fetch --force --tags origin");
     assert.include(dmg, "resolve-fork-release.mjs --print version");
+  });
+
+  it("packages a Linux x64 AppImage on linux-small without fetching Origin", () => {
+    assert.include(pipeline, "build-linux-appimage.sh");
+    assert.include(pipeline, "Linux x64 AppImage");
+    assert.include(pipeline, "key: linux-appimage");
+    assert.isBelow(
+      pipeline.indexOf("build-windows-nsis.ps1"),
+      pipeline.indexOf("build-linux-appimage.sh"),
+    );
+    assert.isBelow(
+      pipeline.indexOf("build-linux-appimage.sh"),
+      pipeline.indexOf("build-macos-dmg.sh"),
+    );
+    const linux = NodeFS.readFileSync(NodePath.resolve(here, "build-linux-appimage.sh"), "utf8");
+    assert.include(linux, "Do not git fetch origin");
+    assert.notInclude(linux, "git fetch --force --tags origin");
+    assert.notInclude(linux, "git fetch --unshallow");
+    assert.include(linux, "GIT_TERMINAL_PROMPT=0");
+    assert.include(linux, 'GIT_ASKPASS="${GIT_ASKPASS:-/bin/true}"');
+    assert.include(linux, "git fetch --force --tags upstream");
+    assert.include(linux, "ensure-linux-node.sh");
+    assert.include(linux, "x86_64-unknown-linux-gnu");
+    assert.include(linux, "--platform linux --target AppImage --arch x64");
+    assert.include(linux, "upload-assets");
+    assert.include(linux, "T3_FORK_BUILD_FLOOR");
+    assert.include(linux, "latest-linux.yml");
+    assert.include(linux, "nightly-linux.yml");
+    assert.include(linux, "-name '*-linux.yml'");
+    assert.notInclude(linux, "-o -name '*.yml'");
+    assert.notInclude(linux, '"$publish"/nightly*.yml');
+    assert.include(linux, "imagemagick");
+    assert.include(linux, "https://vite.plus");
+    assert.include(linux, "npx vp");
+    assert.include(linux, "load-buildkite-secrets.sh");
+    assert.include(linux, "buildkite-agent secret get");
+    assert.include(linux, "Hosted linux-small has no file-store fallback");
+    assert.include(linux, "T3CODE_RELEASE_S3_BUCKET");
+    assert.include(linux, "T3CODE_RELEASE_S3_ENDPOINT");
+    assert.include(linux, "refusing to guess an upload target");
+    assert.isBelow(
+      linux.indexOf("Hosted linux-small has no file-store fallback"),
+      linux.indexOf("rustup toolchain install"),
+    );
+    assert.notInclude(linux, "checkout-origin.sh");
+    assert.notInclude(linux, "CURSOR_API_KEY");
+    assert.notInclude(pipeline, "\n    secrets:");
   });
 
   it("deploys the relay on macos-release with baked public IDs", () => {
@@ -231,5 +328,34 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(relayWorkflow, "relay.sergeserbinenko.com");
     assert.include(relayWorkflow, "load-buildkite-secrets.sh");
     assert.include(relayWorkflow, "Require relay deploy credentials");
+  });
+});
+
+describe("macos review-only pre-command hook", () => {
+  const hook = NodePath.resolve(here, "macos-review-only-hook.sh");
+
+  function run(env) {
+    return NodeChildProcess.spawnSync("bash", [hook], {
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, ...env },
+    });
+  }
+
+  it("no-ops without T3_PRETTY_REVIEW_ONLY", () => {
+    assert.equal(run({ BUILDKITE_STEP_KEY: "macos-dmg" }).status, 0);
+  });
+
+  it("allows Origin PR review steps and refuses packaging", () => {
+    assert.equal(
+      run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "origin-pr-review" }).status,
+      0,
+    );
+    assert.equal(
+      run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "origin-pr-comments" }).status,
+      0,
+    );
+    const refused = run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "macos-dmg" });
+    assert.equal(refused.status, 1);
+    assert.include(refused.stderr, "review-only");
   });
 });

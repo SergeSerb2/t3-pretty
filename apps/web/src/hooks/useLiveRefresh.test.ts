@@ -78,6 +78,8 @@ describe("shouldRefreshOnArrival", () => {
   });
 
   it("reads a view that was read earlier in the session and returned to", () => {
+    // Focus and visibility use this. A remount does not: the query atom already
+    // revalidates, and a second refresh here cancelled that read.
     expect(shouldRefreshOnArrival({ visible: true, now: 90_000, lastRefreshedAt: 0 })).toBe(true);
   });
 

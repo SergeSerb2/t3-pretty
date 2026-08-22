@@ -1,12 +1,16 @@
 import {
+  DEFAULT_RUNTIME_MODE,
   type EnvironmentId,
+  effectiveRuntimeModeForProviderDriver,
   isProviderDriverKind,
   ProjectId,
   type ModelSelection,
   type ProviderDriverKind,
+  type RuntimeMode,
   type ServerProvider,
   type ScopedProjectRef,
   type ScopedThreadRef,
+  resolveRuntimeModeForProviderDriver,
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
@@ -21,6 +25,7 @@ import {
   type TerminalContextDraft,
 } from "../lib/terminalContext";
 import type { DraftThreadEnvMode } from "../composerDraftStore";
+import type { ComposerSubmissionIntent } from "../composer-logic";
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 3;
@@ -28,6 +33,47 @@ export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
 export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
+
+export function shouldDockDraftHeroForSubmission(input: {
+  isDraftHeroState: boolean;
+  activeThreadKey: string | null;
+  submissionIntent: ComposerSubmissionIntent;
+}): boolean {
+  return (
+    input.submissionIntent === "foreground" &&
+    input.isDraftHeroState &&
+    input.activeThreadKey !== null
+  );
+}
+
+export function resolveDraftHeroState(input: {
+  isLocalDraftThread: boolean;
+  hasTimelineEntries: boolean;
+  isWorking: boolean;
+  draftHeroDockRequested: boolean;
+  backgroundSubmissionPending: boolean;
+}): boolean {
+  if (input.backgroundSubmissionPending) {
+    return true;
+  }
+  return (
+    input.isLocalDraftThread &&
+    !input.hasTimelineEntries &&
+    !input.isWorking &&
+    !input.draftHeroDockRequested
+  );
+}
+
+export function resolveDraftPromotionNavigationTarget(input: {
+  serverThreadRef: ScopedThreadRef | null;
+  serverThreadStarted: boolean;
+  backgroundSubmissionPending: boolean;
+}): ScopedThreadRef | null {
+  if (input.backgroundSubmissionPending) {
+    return null;
+  }
+  return input.serverThreadStarted ? input.serverThreadRef : null;
+}
 
 export function scheduleEnvironmentReconnectWarning(showWarning: () => void): () => void {
   const timeoutId = globalThis.setTimeout(showWarning, ENVIRONMENT_RECONNECT_WARNING_GRACE_MS);
@@ -76,6 +122,74 @@ export function resolveThreadMetadataUpdateForNextTurn(input: {
     ...(modelSelectionChanged ? { modelSelection: nextModelSelection } : {}),
     ...(branchChanged ? { branch: input.nextBranch, worktreePath: null } : {}),
   };
+}
+
+// Composer pick wins, including an explicit "full-access" that a carry or
+// picker wrote there. A server thread's stored mode is authoritative — even
+// "full-access" on Kimi, which may be an explicit pick or the pre-Yolo
+// default. A draft whose thread mode still reads as the generic default
+// (never picked, never recorded on the composer) inherits the provider's
+// own default. Remapped carries must land in composerRuntimeMode so they
+// are not treated as unset.
+export function storedComposerRuntimeMode(input: {
+  readonly composerRuntimeMode: RuntimeMode | null;
+  readonly threadRuntimeMode: RuntimeMode | null | undefined;
+  readonly isServerThread: boolean;
+}): RuntimeMode | null {
+  return (
+    input.composerRuntimeMode ??
+    (input.isServerThread
+      ? (input.threadRuntimeMode ?? null)
+      : input.threadRuntimeMode !== DEFAULT_RUNTIME_MODE
+        ? (input.threadRuntimeMode ?? null)
+        : null)
+  );
+}
+
+// Apply the provider default, then remap Kimi-only "yolo" off Kimi so the
+// composer never offers a mode the current provider does not have.
+export function resolveComposerRuntimeMode(input: {
+  readonly providerDriver: string | null | undefined;
+  readonly composerRuntimeMode: RuntimeMode | null;
+  readonly threadRuntimeMode: RuntimeMode | null | undefined;
+  readonly isServerThread: boolean;
+}): RuntimeMode {
+  return effectiveRuntimeModeForProviderDriver(
+    input.providerDriver,
+    storedComposerRuntimeMode(input),
+  );
+}
+
+// New threads copy the viewed thread's access mode. When the destination
+// provider is known and is not Kimi, Kimi-only "yolo" becomes generic
+// full-access so it cannot land on Grok/Codex/Claude. Unknown destination
+// keeps the carried value; the composer remaps at display/send time.
+export function resolveCarriedRuntimeMode(input: {
+  readonly runtimeMode: RuntimeMode | null;
+  readonly destinationProviderDriver: string | null | undefined;
+}): RuntimeMode | null {
+  if (input.runtimeMode == null) {
+    return null;
+  }
+  if (input.destinationProviderDriver == null) {
+    return input.runtimeMode;
+  }
+  return resolveRuntimeModeForProviderDriver(input.destinationProviderDriver, input.runtimeMode);
+}
+
+// The composer pick a new-thread carry should record. Only a carry with real
+// information becomes an explicit pick: a non-default mode, or "full-access"
+// that remapping yolo off Kimi produced. A plain carried "full-access" stays
+// unset on the composer so a new Kimi draft still inherits the yolo default.
+export function resolveCarriedComposerRuntimeMode(input: {
+  readonly runtimeMode: RuntimeMode | null;
+  readonly destinationProviderDriver: string | null | undefined;
+}): RuntimeMode | null {
+  const carried = resolveCarriedRuntimeMode(input);
+  if (carried === null) {
+    return null;
+  }
+  return carried !== DEFAULT_RUNTIME_MODE || carried !== input.runtimeMode ? carried : null;
 }
 
 export function buildLocalDraftThread(
@@ -257,6 +371,24 @@ export function resolveSendEnvMode(input: {
   isGitRepo: boolean;
 }): DraftThreadEnvMode {
   return input.isGitRepo ? input.requestedEnvMode : "local";
+}
+
+export function resolveBackgroundDraftWorkspaceOptions(input: {
+  envMode: DraftThreadEnvMode;
+  branch: string | null;
+  startFromOrigin: boolean;
+}): {
+  envMode: DraftThreadEnvMode;
+  branch: string | null;
+  worktreePath: null;
+  startFromOrigin: boolean;
+} {
+  return {
+    envMode: input.envMode,
+    branch: input.branch,
+    worktreePath: null,
+    startFromOrigin: input.envMode === "worktree" && input.startFromOrigin,
+  };
 }
 
 export function cloneComposerImageForRetry(
@@ -518,6 +650,7 @@ export async function waitForStartedServerThread(
 export interface LocalDispatchSnapshot {
   startedAt: string;
   preparingWorktree: boolean;
+  submissionIntent: ComposerSubmissionIntent;
   latestUserMessageId: ChatMessage["id"] | null;
   latestTurnTurnId: TurnId | null;
   latestTurnRequestedAt: string | null;
@@ -529,7 +662,10 @@ export interface LocalDispatchSnapshot {
 
 export function createLocalDispatchSnapshot(
   activeThread: Thread | undefined,
-  options?: { preparingWorktree?: boolean },
+  options?: {
+    preparingWorktree?: boolean;
+    submissionIntent?: ComposerSubmissionIntent;
+  },
 ): LocalDispatchSnapshot {
   const latestTurn = activeThread?.latestTurn ?? null;
   const session = activeThread?.session ?? null;
@@ -537,6 +673,7 @@ export function createLocalDispatchSnapshot(
   return {
     startedAt: new Date().toISOString(),
     preparingWorktree: Boolean(options?.preparingWorktree),
+    submissionIntent: options?.submissionIntent ?? "foreground",
     latestUserMessageId: latestUserMessage?.id ?? null,
     latestTurnTurnId: latestTurn?.turnId ?? null,
     latestTurnRequestedAt: latestTurn?.requestedAt ?? null,

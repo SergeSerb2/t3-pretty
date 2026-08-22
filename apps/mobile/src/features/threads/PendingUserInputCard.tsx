@@ -324,7 +324,14 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         }
         onPress={() => void props.onSubmit()}
       >
-        <Text className="font-t3-extrabold text-sm text-white">Submit answers</Text>
+        <Text
+          className={cn(
+            "font-t3-extrabold text-sm",
+            props.answers ? "text-white" : "text-neutral-500 dark:text-neutral-400",
+          )}
+        >
+          Submit answers
+        </Text>
       </Pressable>
     </Animated.View>
   ) : null;

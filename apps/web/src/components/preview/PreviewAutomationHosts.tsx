@@ -101,9 +101,10 @@ const waitForDesktopOverlay = async (
       operation,
       requestId,
     });
-    if (state.desktopByTabId[tabId] && previewBridge) {
+    const bridge = previewBridge;
+    if (state.desktopByTabId[tabId] && bridge) {
       const ready = await previewAutomationDesktopStatusReady(() =>
-        previewBridge.automation.status(runtimeTabId),
+        bridge.automation.status(runtimeTabId),
       );
       if (ready) return;
     }

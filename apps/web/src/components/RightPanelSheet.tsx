@@ -18,6 +18,7 @@ export function RightPanelSheet(props: {
       }}
     >
       <SheetPopup
+        aria-label="Right panel"
         side="right"
         showCloseButton={false}
         keepMounted

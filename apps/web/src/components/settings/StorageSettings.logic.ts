@@ -1,8 +1,75 @@
 import type {
+  EnvironmentId,
   StorageInventory,
   StorageOrphanEntry,
   StorageWorktreeEntry,
 } from "@t3tools/contracts";
+
+export interface StorageEnvironmentOptionLike {
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
+}
+
+/**
+ * Device picker order: this device first, then alphabetical. Catalog order is
+ * insertion order, which can surface remote connections ahead of the system
+ * the user is actually sitting at.
+ */
+export function sortStorageEnvironments<T extends StorageEnvironmentOptionLike>(
+  environments: ReadonlyArray<T>,
+  primaryEnvironmentId: EnvironmentId | null,
+): ReadonlyArray<T> {
+  return environments.toSorted((left, right) => {
+    const leftIsPrimary = left.environmentId === primaryEnvironmentId;
+    const rightIsPrimary = right.environmentId === primaryEnvironmentId;
+    if (leftIsPrimary !== rightIsPrimary) {
+      return leftIsPrimary ? -1 : 1;
+    }
+    return (
+      left.label.localeCompare(right.label) ||
+      String(left.environmentId).localeCompare(String(right.environmentId))
+    );
+  });
+}
+
+/**
+ * Raw user intent wins while the picked environment is still listed; otherwise
+ * fall back to this device, then the first listed device. Keeping the raw pick
+ * means a device that briefly drops out restores the selection when it returns.
+ */
+export function resolveSelectedStorageEnvironmentId(
+  environments: ReadonlyArray<StorageEnvironmentOptionLike>,
+  selectedEnvironmentId: EnvironmentId | null,
+  primaryEnvironmentId: EnvironmentId | null,
+): EnvironmentId | null {
+  if (
+    selectedEnvironmentId !== null &&
+    environments.some((environment) => environment.environmentId === selectedEnvironmentId)
+  ) {
+    return selectedEnvironmentId;
+  }
+  if (
+    primaryEnvironmentId !== null &&
+    environments.some((environment) => environment.environmentId === primaryEnvironmentId)
+  ) {
+    return primaryEnvironmentId;
+  }
+  return environments[0]?.environmentId ?? null;
+}
+
+/** Device picker subtitle: measured bytes once known, otherwise the environment's state. */
+export function storageDeviceStatusText(environment: {
+  readonly unsupported: boolean;
+  readonly error: string | null;
+  readonly inventory: Pick<StorageInventory, "totalBytes"> | null;
+}): string {
+  if (environment.inventory !== null) {
+    return formatStorageBytes(environment.inventory.totalBytes);
+  }
+  if (environment.unsupported) return "Server update needed";
+  if (environment.error !== null) return "Unavailable";
+  return "Measuring…";
+}
 
 export function formatStorageBytes(value: number): string {
   if (value < 1024) return `${value} B`;

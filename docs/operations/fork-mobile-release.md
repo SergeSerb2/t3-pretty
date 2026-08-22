@@ -10,14 +10,14 @@ local build delivery.
 hours at 00:00, 04:00, 08:00, 12:00, 16:00, and 20:00 UTC on `macos-release`.
 The job merges the newest upstream nightly tag (AI-resolving conflicts via
 `scripts/fork/resolve-git-conflicts.mjs`) and lands it on Origin `main` through
-an auto-merged pull request. Mobile code rides along — there is no separate
+an immediately merged pull request. Mobile code rides along — there is no separate
 mobile sync. The imported `fork-upstream-sync.yml` wrapper is not scheduled.
 
 ## Merge-driven releases
 
 `.buildkite/pipeline.yml` runs `scripts/fork/publish-mobile-release.sh` on
 every push to Origin `main` that is not the four-hour schedule. The job lives
-on `macos-release` (m1-dev), the same native queue as the signed DMG. It is
+on `macos-release`, the same native queue as the signed DMG. It is
 not imported GitHub Actions: the importer cannot load `EXPO_TOKEN` or Apple
 keys, so those jobs died in about two seconds and TestFlight never moved.
 
@@ -31,11 +31,13 @@ URL. A new IPA is compiled and uploaded with Fastlane pilot (TestFlight on
 App Store Connect, not App Store review) only when the native fingerprint
 changed. A GitHub Actions-era `.t3-fork/ios-production-fingerprint` is
 enough to skip Xcode. The job does not force an IPA just because
-`.t3-fork/ios-native-submit` is missing. App Store Connect rejects beta
-SDKs, so a Mac that only has `Xcode-beta.app` publishes OTA and skips the
-IPA. Set `T3CODE_FORCE_IOS=1` (or `T3CODE_MOBILE_MODE=build`) on a
-Buildkite rebuild to compile and submit even when the fingerprint matches;
-that path still requires a store-supported `Xcode.app`. The runner writes
+`.t3-fork/ios-native-submit` is missing. macos-release runs macOS 27
+developer beta, so the IPA is compiled with `Xcode-beta.app`. TestFlight
+accepts the current Xcode 27 beta; an older beta is rejected. If the Mac
+has no full Xcode at all, the job compiles on EAS cloud (`eas build --wait --json`,
+then `eas submit --id` of that build). Set `T3CODE_FORCE_IOS=1` (or
+`T3CODE_MOBILE_MODE=build`) on a Buildkite rebuild to compile and submit
+even when the fingerprint matches. The runner writes
 `~/.cache/t3-pretty-release/ios-native-submit` after a successful IPA
 upload, and later jobs treat `origin/main`'s copy of the git marker as
 enough so queued jobs do not each compile another IPA while the marker
@@ -56,14 +58,17 @@ bot commit lands through a short-lived `automation/ios-fingerprint-*`
 Origin pull request that `scripts/fork/origin-forge.mjs` merges. Those
 files are outside every release path filter, so the record itself
 schedules no further release. The iOS step has a higher Buildkite priority
-than Origin PR review so a feature-branch review cannot occupy m1-dev in
-front of TestFlight.
+than Origin PR review so a feature-branch review cannot occupy the packaging Mac in
+front of TestFlight. Origin's `pipeline upload` rejects `interruptible` on
+command steps, so a later `main` push can still cancel an in-flight Xcode
+archive. Do not merge unrelated `main` PRs while that job is compiling.
 
-iOS store binaries cannot be compiled on the Windows runner. Registering a
-second Mac (for example m5-dev) with the same `self-hosted`, `macOS`,
-`ARM64`, `t3code-fork`, `release-only` labels lets GitHub run a desktop
-DMG and an iOS compile in parallel. Use `scripts/fork/setup-macos-runner.sh`
-and install a full Xcode.app first — Command Line Tools cannot produce an
+iOS store binaries cannot be compiled on the Windows runner. The packaging
+Mac is m5-dev (m1-dev is now Linux); its companion worker lets a desktop DMG
+and an iOS compile run in parallel. `scripts/fork/setup-macos-runner.sh` can
+attach a second Mac with the same `self-hosted`, `macOS`,
+`ARM64`, `t3code-fork`, `release-only` labels if compile latency matters.
+Use a full Xcode.app there — Command Line Tools cannot produce an
 IPA. An M5 Pro (18-core, 48 GB) should compile the current IPA in roughly
 7–10 minutes versus ~13 minutes on m1-dev; the larger win is that the two
 Macs stop taking turns.
@@ -83,10 +88,11 @@ The job fails early when required release credentials are missing instead
 of reporting a green release that shipped nothing. To activate:
 
 1. Keep `EXPO_TOKEN` on the macos-release agent (cluster secret or
-   `/Users/m1-dev/.config/t3-pretty/EXPO_TOKEN`). Installed TestFlight
+   `$HOME/.config/t3-pretty/EXPO_TOKEN`). Installed TestFlight
    binaries poll the fork Expo Updates URL baked into the IPA; eas-cli on
-   this Mac publishes that channel. IPA compilation is local. Do not import
-   a GitHub Actions mobile workflow for this.
+   this Mac publishes that channel. IPA compilation is local from
+   `Xcode.app` or `Xcode-beta.app`. Do not import a GitHub Actions mobile
+   workflow for this.
 2. Set `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` from a Team
    App Store Connect API key with the Admin role and **Access to Certificates,
    Identifiers & Profiles** enabled, plus `APPLE_TEAM_ID`. The
@@ -101,12 +107,14 @@ of reporting a green release that shipped nothing. To activate:
    normal mobile releases are fully non-interactive. Do not use a cloud
    `eas build` for this bootstrap unless you intend to spend an Expo iOS
    build credit.
-5. On the Mac runner: a store-supported `Xcode.app` (current RC or release,
-   not `Xcode-beta.app`) if you want new TestFlight IPAs, plus CocoaPods and
-   Fastlane. OTA still publishes when only Xcode beta is installed. Command
-   Line Tools cannot compile an IPA; if `xcode-select -p` still points at
-   them, run once:
-   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+5. On the Mac runner: a full `Xcode.app` or `Xcode-beta.app`. This machine
+   is on the macOS developer beta, so `Xcode-beta.app` is the one that
+   runs. The script probes `xcodebuild -version` and skips a leftover
+   `Xcode.app` that cannot run. Keep it on the Xcode 27 beta that App
+   Store Connect currently accepts for TestFlight (today that is beta 5).
+   Command Line Tools cannot compile an IPA; if `xcode-select -p` still
+   points at them, run once:
+   `sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer`.
    The script retries that switch with passwordless sudo during the job.
    Local EAS on macOS 26 / Xcode 27 also needs the `security` PATH shim in
    `scripts/fork/security-eas-local-keychain` so Prepare credentials does not

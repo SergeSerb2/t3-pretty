@@ -1,6 +1,7 @@
 import * as NodeCrypto from "node:crypto";
 
 import type { DesktopSshEnvironmentTarget, DesktopUpdateChannel } from "@t3tools/contracts";
+import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -15,8 +16,6 @@ import { buildSshChildEnvironment, type SshAuthOptions } from "./auth.ts";
 import { SshCommandError, SshInvalidTargetError } from "./errors.ts";
 
 const PUBLISHABLE_T3_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
-const COMPOSITE_FORK_NIGHTLY_PATTERN = /^(\d+\.\d+\.\d+-nightly\.\d{8}\.)(\d+)$/u;
-const FORK_BUILD_MULTIPLIER = 1_000_000n;
 const DEFAULT_SSH_COMMAND_TIMEOUT_MS = 60_000;
 const MAX_SSH_ERROR_OUTPUT_LENGTH = 4_000;
 
@@ -372,30 +371,12 @@ export function resolveRemoteT3CliPackageSpec(input: {
   readonly isDevelopment?: boolean;
 }): string {
   const appVersion = input.appVersion.trim();
+  // This fork publishes one CLI feed. Desktop still passes updateChannel;
+  // nightly and latest remotes both install from that tarball, never npm `t3`.
+  void input.updateChannel;
   if (!input.isDevelopment && PUBLISHABLE_T3_VERSION_PATTERN.test(appVersion)) {
-    const forkNightly = COMPOSITE_FORK_NIGHTLY_PATTERN.exec(appVersion);
-    if (forkNightly) {
-      const versionPrefix = forkNightly[1];
-      const compositeBuildRaw = forkNightly[2];
-      if (versionPrefix === undefined || compositeBuildRaw === undefined) {
-        return `t3@${appVersion}`;
-      }
-      // Fork releases append their workflow run to the upstream nightly build
-      // using a 1,000,000 multiplier. The remote CLI is published only under
-      // the upstream version, so decode the composite before provisioning.
-      const compositeBuild = BigInt(compositeBuildRaw);
-      const upstreamBuild = compositeBuild / FORK_BUILD_MULTIPLIER;
-      const forkRun = compositeBuild % FORK_BUILD_MULTIPLIER;
-      if (upstreamBuild > 0n && forkRun > 0n) {
-        return `t3@${versionPrefix}${upstreamBuild}`;
-      }
-    }
-    return `t3@${appVersion}`;
+    return forkCliTarballUrl(appVersion);
   }
 
-  if (input.isDevelopment) {
-    return "t3@nightly";
-  }
-
-  return input.updateChannel === "nightly" ? "t3@nightly" : "t3@latest";
+  return forkCliTarballUrl();
 }

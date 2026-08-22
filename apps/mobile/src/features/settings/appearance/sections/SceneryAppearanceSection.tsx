@@ -4,11 +4,13 @@
  * presence). Text color (ink) modes stay desktop-only for now — the mobile
  * wash follows the system appearance.
  */
+import { isBoringMobileTheme } from "../../../../lib/mobileTheme";
 import { BLUR_RANGE, TRANSLUCENCY_RANGE } from "../../../scenery/sceneryLogic";
 import { useScenery } from "../../../scenery/SceneryProvider";
 import { SettingsSection } from "../../components/SettingsSection";
 import { SettingsSwitchRow } from "../../components/SettingsSwitchRow";
 import { FontSizeSliderRow } from "../components/FontSizeSliderRow";
+import { useAppearancePreferences } from "../AppearancePreferencesProvider";
 
 /** Slider scale for "how much photo shows through": 0% ⇔ translucency 1
  *  (fully covered), 100% ⇔ translucency 0.5 (the glass end). */
@@ -28,8 +30,13 @@ function presenceToTranslucency(presence: number): number {
 }
 
 export function SceneryAppearanceSection() {
+  const { themeId } = useAppearancePreferences();
   const { isReady, enabled, blur, translucency, setEnabled, setBlur, setTranslucency } =
     useScenery();
+
+  if (isBoringMobileTheme(themeId)) {
+    return null;
+  }
 
   return (
     <SettingsSection card title="World Scenery">

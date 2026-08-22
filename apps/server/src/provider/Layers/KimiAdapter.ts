@@ -13,6 +13,8 @@ import {
   type ProviderInteractionMode,
   type ProviderRuntimeEvent,
   type ProviderSession,
+  type ProviderUserInputAnswers,
+  type UserInputQuestion,
   ProviderDriverKind,
   ProviderInstanceId,
   RuntimeRequestId,
@@ -48,7 +50,7 @@ import {
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
 } from "../Errors.ts";
-import { acpPermissionOutcome, mapAcpToAdapterError } from "../acp/AcpAdapterSupport.ts";
+import { mapAcpToAdapterError } from "../acp/AcpAdapterSupport.ts";
 import type * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
 import {
   makeAcpAssistantItemEvent,
@@ -113,6 +115,14 @@ interface PendingApproval {
   readonly kind: string | "unknown";
 }
 
+type PendingUserInputResolution =
+  | { readonly _tag: "answered"; readonly answers: ProviderUserInputAnswers }
+  | { readonly _tag: "cancelled" };
+
+interface PendingUserInput {
+  readonly resolution: Deferred.Deferred<PendingUserInputResolution>;
+}
+
 interface KimiSessionContext {
   readonly threadId: ThreadId;
   session: ProviderSession;
@@ -120,6 +130,7 @@ interface KimiSessionContext {
   readonly acp: AcpSessionRuntime.AcpSessionRuntime["Service"];
   notificationFiber: Fiber.Fiber<void, never> | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
+  readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   readonly turns: Array<{ id: TurnId; items: Array<unknown> }>;
   lastPlanFingerprint: string | undefined;
   activeTurnId: TurnId | undefined;
@@ -141,6 +152,103 @@ function settlePendingApprovalsAsCancelled(
       discard: true,
     },
   );
+}
+
+function settlePendingUserInputsAsCancelled(
+  pendingUserInputs: ReadonlyMap<ApprovalRequestId, PendingUserInput>,
+): Effect.Effect<void> {
+  return Effect.forEach(
+    Array.from(pendingUserInputs.values()),
+    (pending) => Deferred.succeed(pending.resolution, { _tag: "cancelled" }).pipe(Effect.ignore),
+    { discard: true },
+  );
+}
+
+// The Kimi CLI bridges its AskUserQuestion tool through
+// `session/request_permission` (ACP has no stable question method): the
+// tool call title is "AskUserQuestion", the question text rides in the tool
+// call content, and answers are namespaced option ids `q<n>_opt_<i>` with a
+// trailing `q<n>_skip` escape. Selecting anything else (e.g. a generic
+// approval option id) makes the CLI resolve the tool as "user dismissed".
+const KIMI_ASK_USER_QUESTION_TITLE = "AskUserQuestion";
+const KIMI_QUESTION_OPTION_ID_PATTERN = /^q(\d+)_opt_(\d+)$/;
+
+interface KimiQuestionPermissionBridge {
+  readonly questionText: string;
+  readonly options: ReadonlyArray<{ readonly optionId: string; readonly label: string }>;
+  readonly skipOptionId: string | undefined;
+}
+
+function kimiQuestionTextFromToolCall(
+  toolCall: EffectAcpSchema.RequestPermissionRequest["toolCall"],
+): string | undefined {
+  for (const entry of toolCall.content ?? []) {
+    if (entry.type !== "content") continue;
+    const block = entry.content;
+    if (block.type === "text" && block.text.trim()) {
+      return block.text.trim();
+    }
+  }
+  return undefined;
+}
+
+function parseKimiQuestionPermissionBridge(
+  request: EffectAcpSchema.RequestPermissionRequest,
+): KimiQuestionPermissionBridge | undefined {
+  if (request.toolCall.title !== KIMI_ASK_USER_QUESTION_TITLE) {
+    return undefined;
+  }
+  // The CLI bridges one question per request (multi-question degrades to the
+  // first). Group by the embedded question index anyway and answer only the
+  // first group: the wire response carries a single optionId, so any group a
+  // future CLI might mix in is unanswerable here.
+  const optionsByQuestion = new Map<
+    number,
+    Array<{ readonly optionId: string; readonly label: string; readonly index: number }>
+  >();
+  for (const option of request.options) {
+    const match = KIMI_QUESTION_OPTION_ID_PATTERN.exec(option.optionId);
+    if (!match) continue;
+    const questionIndex = Number(match[1]);
+    const group = optionsByQuestion.get(questionIndex) ?? [];
+    group.push({ optionId: option.optionId, label: option.name, index: Number(match[2]) });
+    optionsByQuestion.set(questionIndex, group);
+  }
+  const questionIndex = Math.min(...optionsByQuestion.keys());
+  const options = optionsByQuestion.get(questionIndex);
+  if (!options || options.length === 0) {
+    return undefined;
+  }
+  options.sort((left, right) => left.index - right.index);
+  return {
+    questionText: kimiQuestionTextFromToolCall(request.toolCall) ?? KIMI_ASK_USER_QUESTION_TITLE,
+    options,
+    skipOptionId: request.options.find((option) => option.optionId === `q${questionIndex}_skip`)
+      ?.optionId,
+  };
+}
+
+function kimiQuestionPermissionOutcome(
+  bridge: KimiQuestionPermissionBridge,
+  resolution: PendingUserInputResolution,
+): EffectAcpSchema.RequestPermissionResponse["outcome"] {
+  if (resolution._tag === "answered") {
+    const answer = resolution.answers[bridge.questionText];
+    const label =
+      typeof answer === "string" ? answer : Array.isArray(answer) ? answer[0] : undefined;
+    const option = bridge.options.find((entry) => entry.label === label);
+    if (option) {
+      return { outcome: "selected", optionId: option.optionId };
+    }
+  }
+  // Dismissal — cancel, interrupt, or a free-text answer the bridge cannot
+  // carry — resolves through the offered skip option. The CLI maps skip and
+  // a cancelled outcome to the same "user dismissed" branch; skip is the
+  // bridge's canonical spelling of it.
+  if (bridge.skipOptionId) {
+    return { outcome: "selected", optionId: bridge.skipOptionId };
+  }
+  return { outcome: "cancelled" };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -266,6 +374,20 @@ function applyRequestedSessionConfiguration<E>(input: {
       ),
     );
   });
+}
+
+function selectPermissionOptionId(
+  request: EffectAcpSchema.RequestPermissionRequest,
+  decision: Exclude<ProviderApprovalDecision, "cancel">,
+): string | undefined {
+  const kind =
+    decision === "acceptForSession"
+      ? "allow_always"
+      : decision === "accept"
+        ? "allow_once"
+        : "reject_once";
+  const option = request.options.find((entry) => entry.kind === kind);
+  return option?.optionId.trim() || undefined;
 }
 
 function selectAutoApprovedPermissionOption(
@@ -432,6 +554,7 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
         if (ctx.stopped) return;
         ctx.stopped = true;
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
+        yield* settlePendingUserInputsAsCancelled(ctx.pendingUserInputs);
         if (ctx.notificationFiber) {
           yield* Fiber.interrupt(ctx.notificationFiber);
         }
@@ -474,6 +597,7 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
           }
 
           const pendingApprovals = new Map<ApprovalRequestId, PendingApproval>();
+          const pendingUserInputs = new Map<ApprovalRequestId, PendingUserInput>();
           const sessionScope = yield* Scope.make("sequential");
           let sessionScopeTransferred = false;
           yield* Effect.addFinalizer(() =>
@@ -547,6 +671,60 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
                     params,
                     "acp.jsonrpc",
                   );
+                  // AskUserQuestion is not an approval: route it through the
+                  // user-input channel in every mode (full-access included)
+                  // and answer with the bridged `q<n>_opt_<i>` option id.
+                  const questionBridge = parseKimiQuestionPermissionBridge(params);
+                  if (questionBridge) {
+                    const requestId = ApprovalRequestId.make(yield* randomUUIDv4);
+                    const runtimeRequestId = RuntimeRequestId.make(requestId);
+                    const resolution = yield* Deferred.make<PendingUserInputResolution>();
+                    pendingUserInputs.set(requestId, { resolution });
+                    const questions: ReadonlyArray<UserInputQuestion> = [
+                      {
+                        id: questionBridge.questionText,
+                        header: "Question",
+                        question: questionBridge.questionText,
+                        options: questionBridge.options.map((option) => ({
+                          label: option.label,
+                          description: "",
+                        })),
+                        multiSelect: false,
+                      },
+                    ];
+                    yield* offerRuntimeEvent({
+                      type: "user-input.requested",
+                      ...(yield* makeEventStamp()),
+                      provider: PROVIDER,
+                      threadId: input.threadId,
+                      turnId: ctx?.activeTurnId,
+                      requestId: runtimeRequestId,
+                      payload: { questions },
+                      raw: {
+                        source: "acp.jsonrpc",
+                        method: "session/request_permission",
+                        payload: params,
+                      },
+                    });
+                    const resolved = yield* Deferred.await(resolution);
+                    pendingUserInputs.delete(requestId);
+                    const answers = resolved._tag === "answered" ? resolved.answers : {};
+                    yield* offerRuntimeEvent({
+                      type: "user-input.resolved",
+                      ...(yield* makeEventStamp()),
+                      provider: PROVIDER,
+                      threadId: input.threadId,
+                      turnId: ctx?.activeTurnId,
+                      requestId: runtimeRequestId,
+                      payload: { answers },
+                      raw: {
+                        source: "acp.jsonrpc",
+                        method: "session/request_permission",
+                        payload: { answers },
+                      },
+                    });
+                    return { outcome: kimiQuestionPermissionOutcome(questionBridge, resolved) };
+                  }
                   // "full-access" (Kimi's "Auto") never asks; "yolo" runs the
                   // same full-access session mode but lets the user answer.
                   if (input.runtimeMode === "full-access") {
@@ -599,14 +777,17 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
                       decision: resolved,
                     }),
                   );
+                  // Echo one of the option ids the CLI actually offered —
+                  // Kimi resolves unknown option ids as a rejection.
+                  const selectedOptionId =
+                    resolved === "cancel" ? undefined : selectPermissionOptionId(params, resolved);
                   return {
-                    outcome:
-                      resolved === "cancel"
-                        ? ({ outcome: "cancelled" } as const)
-                        : {
-                            outcome: "selected" as const,
-                            optionId: acpPermissionOutcome(resolved),
-                          },
+                    outcome: selectedOptionId
+                      ? {
+                          outcome: "selected" as const,
+                          optionId: selectedOptionId,
+                        }
+                      : ({ outcome: "cancelled" } as const),
                   };
                 }),
               ),
@@ -651,6 +832,7 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
             acp,
             notificationFiber: undefined,
             pendingApprovals,
+            pendingUserInputs,
             turns: [],
             lastPlanFingerprint: undefined,
             activeTurnId: undefined,
@@ -939,6 +1121,7 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
+        yield* settlePendingUserInputsAsCancelled(ctx.pendingUserInputs);
         yield* Effect.ignore(
           ctx.acp.cancel.pipe(
             Effect.mapError((error) =>
@@ -969,18 +1152,25 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
     const respondToUserInput: KimiAdapterShape["respondToUserInput"] = (
       threadId,
       requestId,
-      _answers,
+      answers,
     ) =>
-      requireSession(threadId).pipe(
-        Effect.flatMap(
-          () =>
-            new ProviderAdapterRequestError({
-              provider: PROVIDER,
-              method: "session/elicitation",
-              detail: `Unknown pending user-input request: ${requestId}`,
-            }),
-        ),
-      );
+      Effect.gen(function* () {
+        const ctx = yield* requireSession(threadId);
+        const pending = ctx.pendingUserInputs.get(requestId);
+        if (!pending) {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "session/request_permission",
+            detail: `Unknown pending user-input request: ${requestId}`,
+          });
+        }
+        ctx.pendingUserInputs.delete(requestId);
+        // Interrupt/stop may have already settled this request as cancelled;
+        // a late answer must not fail the call.
+        yield* Deferred.succeed(pending.resolution, { _tag: "answered", answers }).pipe(
+          Effect.ignore,
+        );
+      });
 
     const readThread: KimiAdapterShape["readThread"] = (threadId) =>
       Effect.gen(function* () {

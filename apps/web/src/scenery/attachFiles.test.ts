@@ -1,3 +1,4 @@
+import type { DesktopBridge } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
@@ -37,7 +38,7 @@ function stubGetPathForFile(impl: ((file: object) => string) | undefined): void 
   }
   testWindow().desktopBridge = {
     getPathForFile: impl,
-  } as typeof window.desktopBridge;
+  } as DesktopBridge;
 }
 
 beforeEach(() => {

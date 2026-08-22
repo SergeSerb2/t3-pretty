@@ -1,14 +1,20 @@
 import {
   ArchiveIcon,
   CheckCircle2Icon,
+  CloudIcon,
   FolderOpenIcon,
   HelpCircleIcon,
   HardDriveIcon,
+  LaptopIcon,
   LoaderIcon,
+  MonitorIcon,
   RefreshCwIcon,
+  TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
+import type { ConnectionTarget } from "@t3tools/client-runtime/connection";
+import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { useCallback, useMemo, useState } from "react";
 import type { EnvironmentId, StorageInventory, StorageWorktreeEntry } from "@t3tools/contracts";
 import {
@@ -17,9 +23,12 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 
+import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { resolveAndPersistPreferredEditor } from "../../editorPreferences";
+import { cn } from "../../lib/utils";
 import { formatWorktreePathForDisplay } from "../../worktreeCleanup";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { usePrimaryEnvironmentId } from "../../state/environments";
 import { primaryServerAvailableEditorsAtom, serverEnvironment } from "../../state/server";
 import { shellEnvironment } from "../../state/shell";
 import { threadEnvironment } from "../../state/threads";
@@ -39,6 +48,11 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "../ui/alert-dialog";
+import {
+  ConnectionStatusDot,
+  connectionPhaseDotClassName,
+  connectionPhasePingClassName,
+} from "../ConnectionStatusDot";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
@@ -52,7 +66,10 @@ import {
   isStorageScanInProgress,
   orphanDetail,
   pendingActionCopy,
+  resolveSelectedStorageEnvironmentId,
   settledWorktrees,
+  sortStorageEnvironments,
+  storageDeviceStatusText,
   summaryCaption,
   type StoragePendingAction,
   worktreeRowDescription,
@@ -123,12 +140,19 @@ function StorageUsageBar({ inventory }: { readonly inventory: StorageInventory }
     >
       {total > 0
         ? segments.map((segment) => (
-            <div
-              key={segment.key}
-              className={segment.className}
-              style={{ flexGrow: segment.bytes, flexBasis: 0 }}
-              title={`${segment.label} · ${formatStorageBytes(segment.bytes)}`}
-            />
+            <Tooltip key={segment.key}>
+              <TooltipTrigger
+                render={
+                  <div
+                    className={segment.className}
+                    style={{ flexGrow: segment.bytes, flexBasis: 0 }}
+                  />
+                }
+              />
+              <TooltipPopup side="top">
+                {`${segment.label} · ${formatStorageBytes(segment.bytes)}`}
+              </TooltipPopup>
+            </Tooltip>
           ))
         : null}
     </div>
@@ -166,8 +190,70 @@ function DirtyIcon({ isDirty }: { readonly isDirty: boolean | null }) {
   return <HelpCircleIcon className="size-3.5 text-amber-500" />;
 }
 
+function storageEnvironmentIcon(target: ConnectionTarget) {
+  if (target._tag === "PrimaryConnectionTarget") return MonitorIcon;
+  if (target._tag === "RelayConnectionTarget") return CloudIcon;
+  if (target._tag === "SshConnectionTarget") return TerminalIcon;
+  if (isDesktopLocalConnectionTarget(target)) return LaptopIcon;
+  return CloudIcon;
+}
+
+function storageEnvironmentDetail(target: ConnectionTarget): string {
+  if (target._tag === "PrimaryConnectionTarget") return "This device";
+  if (target._tag === "RelayConnectionTarget") return SURGE_CONNECT_NAME;
+  if (target._tag === "SshConnectionTarget") return "SSH";
+  if (isDesktopLocalConnectionTarget(target)) return "Local device";
+  return "Remote device";
+}
+
+function StorageDeviceCard({
+  environment,
+  selected,
+  onSelect,
+}: {
+  readonly environment: EnvironmentStorageStatus;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+}) {
+  const Icon = storageEnvironmentIcon(environment.target);
+  const statusText = storageDeviceStatusText(environment);
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      className={cn(
+        "flex min-w-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors sm:px-4",
+        selected ? "bg-primary/8 ring-1 ring-primary/25 dark:bg-primary/12" : "hover:bg-muted/40",
+      )}
+      onClick={onSelect}
+    >
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-muted-foreground">
+        <Icon className="size-4" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <ConnectionStatusDot
+            tooltipText={statusText}
+            dotClassName={connectionPhaseDotClassName(environment.connectionPhase)}
+            pingClassName={connectionPhasePingClassName(environment.connectionPhase)}
+          />
+          <span className="truncate text-sm font-medium text-foreground">{environment.label}</span>
+        </span>
+        <span className="block truncate pl-[18px] text-xs text-muted-foreground">
+          {storageEnvironmentDetail(environment.target)} · {statusText}
+        </span>
+      </span>
+    </button>
+  );
+}
+
 export function StorageSettingsPanel() {
-  const { environments, refresh } = useStorageInventories();
+  const { environments } = useStorageInventories();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const sortedEnvironments = useMemo(
+    () => sortStorageEnvironments(environments, primaryEnvironmentId),
+    [environments, primaryEnvironmentId],
+  );
   const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
@@ -177,6 +263,21 @@ export function StorageSettingsPanel() {
   const [pending, setPending] = useState<PendingDialog | null>(null);
   const [isOperating, setIsOperating] = useState(false);
   const [openingFolderFor, setOpeningFolderFor] = useState<EnvironmentId | null>(null);
+  // Raw user intent; the effective selection is re-derived every render so a
+  // device that drops out of the catalog falls back without erasing the pick —
+  // if it reappears (e.g. after a reconnect) the selection is restored.
+  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
+    primaryEnvironmentId,
+  );
+  const effectiveEnvironmentId = resolveSelectedStorageEnvironmentId(
+    sortedEnvironments,
+    selectedEnvironmentId,
+    primaryEnvironmentId,
+  );
+  const selectedEnvironment =
+    sortedEnvironments.find(
+      (environment) => environment.environmentId === effectiveEnvironmentId,
+    ) ?? null;
 
   const dialogCopy = useMemo(
     () => (pending === null ? null : pendingActionCopy(pending.action)),
@@ -321,7 +422,7 @@ export function StorageSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      {environments.length === 0 ? (
+      {sortedEnvironments.length === 0 ? (
         <SettingsSection id={searchableSetting("storage-disk-use").id} title="Disk use">
           <SettingsRow
             title={
@@ -334,25 +435,38 @@ export function StorageSettingsPanel() {
           />
         </SettingsSection>
       ) : (
-        environments.map((environment, index) => (
-          <EnvironmentStorage
-            key={environment.environmentId}
-            environment={environment}
-            showLabel={environments.length > 1}
-            isFirst={index === 0}
-            isOperating={isOperating}
-            isOpeningFolder={openingFolderFor === environment.environmentId}
-            onRefresh={refresh}
-            onOpenFolder={openManagedFolder}
-            onPending={(action, inventory) =>
-              setPending({
-                environmentId: environment.environmentId,
-                inventory,
-                action,
-              })
-            }
-          />
-        ))
+        <>
+          {sortedEnvironments.length > 1 ? (
+            <SettingsSection title="Devices">
+              <div className="grid gap-1 sm:grid-cols-2">
+                {sortedEnvironments.map((environment) => (
+                  <StorageDeviceCard
+                    key={environment.environmentId}
+                    environment={environment}
+                    selected={environment.environmentId === effectiveEnvironmentId}
+                    onSelect={() => setSelectedEnvironmentId(environment.environmentId)}
+                  />
+                ))}
+              </div>
+            </SettingsSection>
+          ) : null}
+          {selectedEnvironment !== null ? (
+            <EnvironmentStorage
+              key={selectedEnvironment.environmentId}
+              environment={selectedEnvironment}
+              isOperating={isOperating}
+              isOpeningFolder={openingFolderFor === selectedEnvironment.environmentId}
+              onOpenFolder={openManagedFolder}
+              onPending={(action, inventory) =>
+                setPending({
+                  environmentId: selectedEnvironment.environmentId,
+                  inventory,
+                  action,
+                })
+              }
+            />
+          ) : null}
+        </>
       )}
 
       <AlertDialog
@@ -389,20 +503,14 @@ export function StorageSettingsPanel() {
 
 function EnvironmentStorage({
   environment,
-  showLabel,
-  isFirst,
   isOperating,
   isOpeningFolder,
-  onRefresh,
   onOpenFolder,
   onPending,
 }: {
   readonly environment: EnvironmentStorageStatus;
-  readonly showLabel: boolean;
-  readonly isFirst: boolean;
   readonly isOperating: boolean;
   readonly isOpeningFolder: boolean;
-  readonly onRefresh: () => void;
   readonly onOpenFolder: (environmentId: EnvironmentId, folderPath: string) => void;
   readonly onPending: (action: StoragePendingAction, inventory: StorageInventory) => void;
 }) {
@@ -411,12 +519,16 @@ function EnvironmentStorage({
   const actionsDisabled = isOperating || scanning;
   const cleanSettled = inventory ? cleanSettledWorktrees(inventory) : [];
   const allSettled = inventory ? settledWorktrees(inventory) : [];
+  const onRefresh = useCallback(
+    () => refreshStorageInventory(environment.environmentId),
+    [environment.environmentId],
+  );
 
   if (environment.unsupported) {
     return (
       <SettingsSection
-        id={isFirst ? searchableSetting("storage-disk-use").id : undefined}
-        title={showLabel ? environment.label : searchableSetting("storage-disk-use").title}
+        id={searchableSetting("storage-disk-use").id}
+        title={searchableSetting("storage-disk-use").title}
       >
         <SettingsRow
           title="Storage inventory needs a server update"
@@ -429,8 +541,8 @@ function EnvironmentStorage({
   if (environment.error !== null && inventory === null) {
     return (
       <SettingsSection
-        id={isFirst ? searchableSetting("storage-disk-use").id : undefined}
-        title={showLabel ? environment.label : searchableSetting("storage-disk-use").title}
+        id={searchableSetting("storage-disk-use").id}
+        title={searchableSetting("storage-disk-use").title}
       >
         <SettingsRow title="Could not measure storage" description={environment.error} />
       </SettingsSection>
@@ -440,8 +552,8 @@ function EnvironmentStorage({
   if (inventory === null) {
     return (
       <SettingsSection
-        id={isFirst ? searchableSetting("storage-disk-use").id : undefined}
-        title={showLabel ? environment.label : searchableSetting("storage-disk-use").title}
+        id={searchableSetting("storage-disk-use").id}
+        title={searchableSetting("storage-disk-use").title}
         headerAction={
           <StorageRefreshButton isPending={environment.isPending} onRefresh={onRefresh} />
         }
@@ -463,14 +575,8 @@ function EnvironmentStorage({
 
   return (
     <>
-      {showLabel ? (
-        <h2 className="px-3 text-sm font-medium text-muted-foreground sm:px-4">
-          {environment.label}
-        </h2>
-      ) : null}
-
       <SettingsSection
-        id={isFirst ? searchableSetting("storage-disk-use").id : undefined}
+        id={searchableSetting("storage-disk-use").id}
         title={searchableSetting("storage-disk-use").title}
         headerAction={<StorageRefreshButton isPending={scanning} onRefresh={onRefresh} />}
       >
@@ -514,10 +620,7 @@ function EnvironmentStorage({
         </div>
       </SettingsSection>
 
-      <SettingsSection
-        id={isFirst ? searchableSetting("storage-cleanup").id : undefined}
-        title="Cleanup"
-      >
+      <SettingsSection id={searchableSetting("storage-cleanup").id} title="Cleanup">
         <SettingsRow
           title="Remove clean settled worktrees"
           description={cleanupDetail(
@@ -584,7 +687,7 @@ function EnvironmentStorage({
       </SettingsSection>
 
       <WorktreeListSection
-        {...(isFirst ? { id: searchableSetting("storage-active-worktrees").id } : {})}
+        id={searchableSetting("storage-active-worktrees").id}
         title={searchableSetting("storage-active-worktrees").title}
         entries={inventory.activeWorktrees}
         emptyLabel="No active threads own a worktree right now."
@@ -594,7 +697,7 @@ function EnvironmentStorage({
       />
 
       <WorktreeListSection
-        {...(isFirst ? { id: searchableSetting("storage-archived-worktrees").id } : {})}
+        id={searchableSetting("storage-archived-worktrees").id}
         title={searchableSetting("storage-archived-worktrees").title}
         entries={inventory.archivedWorktrees}
         emptyLabel="No archived threads currently keep a worktree on disk."
@@ -605,7 +708,7 @@ function EnvironmentStorage({
       />
 
       <SettingsSection
-        id={isFirst ? searchableSetting("storage-residual").id : undefined}
+        id={searchableSetting("storage-residual").id}
         title={searchableSetting("storage-residual").title}
       >
         {inventory.orphanWorktrees.length === 0 ? (

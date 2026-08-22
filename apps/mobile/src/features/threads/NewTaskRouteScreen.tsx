@@ -28,7 +28,7 @@ type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
 };
 
-function deriveProjectEmptyState(catalogState: WorkspaceState): {
+export function deriveProjectEmptyState(catalogState: WorkspaceState): {
   readonly title: string;
   readonly detail: string;
   readonly loading: boolean;
@@ -220,6 +220,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             ) : null}
             {catalogState.hasReadyEnvironment ? (
               <NativeHeaderToolbar.Button
+                accessibilityLabel="Add project"
                 icon="plus"
                 onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
                 separateBackground

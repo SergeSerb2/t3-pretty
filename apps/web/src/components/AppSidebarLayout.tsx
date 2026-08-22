@@ -196,6 +196,31 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [isMacosDesktop]);
 
+  // Window chrome state lands on <html> as plain attributes rather than React
+  // state: only CSS reads it, so a re-render of the whole app would be pure
+  // waste. `data-window-inactive` follows the AppKit convention of dimming an
+  // unfocused window; `data-window-interacting` lets expensive effects (glass
+  // blur) drop out for the duration of a drag or resize.
+  useEffect(() => {
+    const bridge = window.desktopBridge;
+    if (!bridge) return;
+    const { onWindowActiveStateChange, onWindowInteractingChange } = bridge;
+    const root = document.documentElement;
+    const unsubscribeActive = onWindowActiveStateChange?.((active) => {
+      root.toggleAttribute("data-window-inactive", !active);
+    });
+    const unsubscribeInteracting = onWindowInteractingChange?.((interacting) => {
+      root.toggleAttribute("data-window-interacting", interacting);
+    });
+
+    return () => {
+      unsubscribeActive?.();
+      unsubscribeInteracting?.();
+      root.removeAttribute("data-window-inactive");
+      root.removeAttribute("data-window-interacting");
+    };
+  }, []);
+
   useEffect(() => {
     const onMenuAction = window.desktopBridge?.onMenuAction;
     if (typeof onMenuAction !== "function") {

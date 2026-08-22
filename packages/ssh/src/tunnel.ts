@@ -2,6 +2,7 @@ import type {
   DesktopSshEnvironmentBootstrap,
   DesktopSshEnvironmentTarget,
 } from "@t3tools/contracts";
+import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
 import {
   describeReadinessCause,
   waitForHttpReady as waitForHttpReadyShared,
@@ -1167,7 +1168,7 @@ try {
 `;
 
 export function buildRemoteT3RunnerScript(input?: RemoteT3RunnerOptions): string {
-  const packageSpec = shellSingleQuote(input?.packageSpec?.trim() || "t3@latest");
+  const packageSpec = shellSingleQuote(input?.packageSpec?.trim() || forkCliTarballUrl());
   const nodeScriptPath = input?.nodeScriptPath?.trim() || "";
   return stripTrailingNewlines(
     applyScriptPlaceholders(REMOTE_RUNNER_SCRIPT, {
@@ -1228,7 +1229,7 @@ function buildRemoteLogTailScript(target: DesktopSshEnvironmentTarget): string {
 
 function buildRemoteWindowsRunnerHelpers(input?: RemoteT3RunnerOptions): string {
   return applyScriptPlaceholders(REMOTE_WINDOWS_RUNNER_HELPERS, {
-    T3_PACKAGE_SPEC_JSON: JSON.stringify(input?.packageSpec?.trim() || "t3@latest"),
+    T3_PACKAGE_SPEC_JSON: JSON.stringify(input?.packageSpec?.trim() || forkCliTarballUrl()),
     T3_NODE_SCRIPT_PATH_JSON: JSON.stringify(input?.nodeScriptPath?.trim() || ""),
     T3_NODE_ENGINE_RANGE_JSON: JSON.stringify(input?.nodeEngineRange?.trim() || ""),
     T3_PUBLIC_ENVIRONMENT_JSON: JSON.stringify(normalizeRemotePublicEnvironment(input)),

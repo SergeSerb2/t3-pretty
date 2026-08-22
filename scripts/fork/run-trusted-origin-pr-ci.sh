@@ -25,10 +25,20 @@ FILES=(
 copy_from_main() {
   local dir="$1"
   local name
-  git -C "$ROOT" fetch --depth=1 origin refs/heads/main:refs/remotes/origin/main || return 1
+  # The macos-release workspace is reused and often already shallow. Fetching
+  # main at --depth=1 replaces origin/main with a root commit, so
+  # `git diff origin/main...HEAD` has no merge-base and exits 128. Deepen
+  # instead; Origin PR Review and comments-resolved both die on that 128.
+  if [[ "$(git -C "$ROOT" rev-parse --is-shallow-repository)" == "true" ]]; then
+    git -C "$ROOT" fetch --deepen=200 origin refs/heads/main:refs/remotes/origin/main \
+      || git -C "$ROOT" fetch origin refs/heads/main:refs/remotes/origin/main \
+      || return 1
+  else
+    git -C "$ROOT" fetch origin refs/heads/main:refs/remotes/origin/main || return 1
+  fi
   git -C "$ROOT" cat-file -e origin/main:scripts/fork/review-origin-pr-ci.sh || return 1
   for name in "${FILES[@]}"; do
-    git -C "$ROOT" show "origin/main:scripts/fork/${name}" > "${dir}/${name}"
+    git -C "$ROOT" show "origin/main:scripts/fork/${name}" > "${dir}/${name}" || return 1
   done
   chmod +x "${dir}/review-origin-pr-ci.sh"
 }

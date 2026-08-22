@@ -5,14 +5,26 @@ import {
 } from "@t3tools/shared/searchRanking";
 
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
+import { scoreProviderSkill } from "../../providerSkillSearch";
 
-type SlashCommandItem = Extract<
+type SlashSearchItem = Extract<
   ComposerCommandItem,
-  { type: "slash-command" | "provider-slash-command" | "runtime-mode" }
+  { type: "slash-command" | "provider-slash-command" | "skill" | "runtime-mode" }
 >;
 
-function scoreSlashCommandItem(item: SlashCommandItem, query: string): number | null {
-  const primaryValue = item.label.replace(/^\//, "").toLowerCase();
+function scoreSlashCommandItem(item: SlashSearchItem, query: string): number | null {
+  if (item.type === "skill") {
+    const skillQuery =
+      query === "skill" ? "" : query.startsWith("skill:") ? query.slice("skill:".length) : query;
+    return skillQuery ? scoreProviderSkill(item.skill, skillQuery) : 0;
+  }
+
+  const primaryValue =
+    item.type === "slash-command"
+      ? item.command.toLowerCase()
+      : item.type === "provider-slash-command"
+        ? item.command.name.toLowerCase()
+        : item.label.replace(/^\//, "").toLowerCase();
   const description = item.description.toLowerCase();
 
   const scores = [
@@ -44,16 +56,16 @@ function scoreSlashCommandItem(item: SlashCommandItem, query: string): number | 
 }
 
 export function searchSlashCommandItems(
-  items: ReadonlyArray<SlashCommandItem>,
+  items: ReadonlyArray<SlashSearchItem>,
   query: string,
-): Array<SlashCommandItem> {
+): SlashSearchItem[] {
   const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: /^\/+/ });
   if (!normalizedQuery) {
     return [...items];
   }
 
   const ranked: Array<{
-    item: SlashCommandItem;
+    item: SlashSearchItem;
     score: number;
     tieBreaker: string;
   }> = [];
@@ -70,9 +82,13 @@ export function searchSlashCommandItems(
         item,
         score,
         tieBreaker:
-          item.type === "provider-slash-command"
-            ? `1\u0000${item.command.name}\u0000${item.provider}`
-            : `0\u0000${item.label}`,
+          item.type === "slash-command"
+            ? `0\u0000${item.command}`
+            : item.type === "provider-slash-command"
+              ? `1\u0000${item.command.name}\u0000${item.provider}`
+              : item.type === "skill"
+                ? `2\u0000${item.skill.name}\u0000${item.provider}`
+                : `0\u0000${item.label}`,
       },
       Number.POSITIVE_INFINITY,
     );

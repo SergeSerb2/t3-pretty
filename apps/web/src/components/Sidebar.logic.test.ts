@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit/sortable";
 import {
+  animatePinnedLayoutChanges,
   archiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
   buildMultiSelectThreadContextMenuItems,
+  countThreadsAwaitingUser,
   createThreadJumpHintVisibilityController,
   getSidebarThreadIdsToPrewarm,
   getVisibleSidebarThreadIds,
@@ -36,6 +39,7 @@ import {
   shouldCreateNewThreadInCurrentProject,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
 } from "./Sidebar.logic";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   EnvironmentId,
   OrchestrationLatestTurn,
@@ -52,6 +56,32 @@ import {
 } from "../types";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
+
+describe("animatePinnedLayoutChanges", () => {
+  const baseArgs: Parameters<AnimateLayoutChanges>[0] = {
+    active: null,
+    containerId: "pinned-threads",
+    isDragging: false,
+    isSorting: false,
+    id: "thread-a",
+    index: 1,
+    items: ["thread-b", "thread-a"],
+    newIndex: 0,
+    previousItems: ["thread-a", "thread-b"],
+    previousContainerId: "pinned-threads",
+    transition: { duration: 200, easing: "ease" },
+    wasDragging: true,
+  };
+
+  it("does not replay layout movement after the pointer is released", () => {
+    expect(defaultAnimateLayoutChanges(baseArgs)).toBe(true);
+    expect(animatePinnedLayoutChanges(baseArgs)).toBe(false);
+  });
+
+  it("keeps layout movement while the user is sorting", () => {
+    expect(animatePinnedLayoutChanges({ ...baseArgs, isSorting: true })).toBe(true);
+  });
+});
 
 describe("shouldNavigateAfterProjectRemoval", () => {
   const projectThreads = [{ environmentId: "environment-local", id: "thread-1" }];
@@ -287,6 +317,102 @@ describe("hasUnseenCompletion", () => {
         session: null,
       }),
     ).toBe(false);
+  });
+});
+
+describe("countThreadsAwaitingUser", () => {
+  const base = {
+    environmentId: localEnvironmentId,
+    hasActionableProposedPlan: false,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    interactionMode: "default" as const,
+    latestTurn: null,
+    session: null,
+  };
+  const threadKey = (id: string) =>
+    scopedThreadKey(scopeThreadRef(localEnvironmentId, ThreadId.make(id)));
+
+  it("counts approvals, questions, and unread completions exactly once each", () => {
+    const count = countThreadsAwaitingUser(
+      [
+        { ...base, id: ThreadId.make("approval"), hasPendingApprovals: true },
+        { ...base, id: ThreadId.make("input"), hasPendingUserInput: true },
+        { ...base, id: ThreadId.make("unread"), latestTurn: makeLatestTurn() },
+        // Both actionable and unread: still one thread needing the user.
+        {
+          ...base,
+          id: ThreadId.make("both"),
+          hasPendingApprovals: true,
+          latestTurn: makeLatestTurn(),
+        },
+      ],
+      {
+        [threadKey("unread")]: "2026-03-09T10:04:00.000Z",
+        [threadKey("both")]: "2026-03-09T10:04:00.000Z",
+      },
+    );
+    expect(count).toBe(4);
+  });
+
+  it("ignores threads that are merely working, read, or never visited", () => {
+    expect(
+      countThreadsAwaitingUser(
+        [
+          {
+            ...base,
+            id: ThreadId.make("working"),
+            session: {
+              threadId: ThreadId.make("working"),
+              status: "running" as const,
+              providerName: "Codex",
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              runtimeMode: DEFAULT_RUNTIME_MODE,
+              activeTurnId: "turn-1" as never,
+              lastError: null,
+              updatedAt: "2026-03-09T10:00:00.000Z",
+            },
+          },
+          { ...base, id: ThreadId.make("read"), latestTurn: makeLatestTurn() },
+          { ...base, id: ThreadId.make("never-visited"), latestTurn: makeLatestTurn() },
+        ],
+        { [threadKey("read")]: "2026-03-09T10:06:00.000Z" },
+      ),
+    ).toBe(0);
+  });
+
+  it("does not count unread completions on working or monitoring threads", () => {
+    expect(
+      countThreadsAwaitingUser(
+        [
+          {
+            ...base,
+            id: ThreadId.make("working-unread"),
+            latestTurn: makeLatestTurn(),
+            session: {
+              threadId: ThreadId.make("working-unread"),
+              status: "running" as const,
+              providerName: "Codex",
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              runtimeMode: DEFAULT_RUNTIME_MODE,
+              activeTurnId: "turn-1" as never,
+              lastError: null,
+              updatedAt: "2026-03-09T10:00:00.000Z",
+            },
+          },
+          {
+            ...base,
+            id: ThreadId.make("monitoring-unread"),
+            latestTurn: makeLatestTurn(),
+            backgroundLiveness: "monitoring",
+          },
+        ],
+        {
+          [threadKey("working-unread")]: "2026-03-09T10:04:00.000Z",
+          [threadKey("monitoring-unread")]: "2026-03-09T10:04:00.000Z",
+        },
+      ),
+    ).toBe(0);
   });
 });
 

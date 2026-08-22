@@ -83,8 +83,13 @@ function OverlayContent(props: { readonly progress: GitActionProgress }) {
             {progress.label}
           </Text>
         ) : null}
+        {/* Running descriptions stream a line at a time and must not resize the
+            overlay; a failure reason is the one thing worth wrapping. */}
         {progress.description ? (
-          <Text className="text-2xs text-foreground-muted" numberOfLines={1}>
+          <Text
+            className="text-2xs text-foreground-muted"
+            numberOfLines={progress.phase === "error" ? 3 : 1}
+          >
             {progress.description}
           </Text>
         ) : null}
