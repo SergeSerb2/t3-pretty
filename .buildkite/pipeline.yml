@@ -93,6 +93,13 @@ steps:
       build.branch != "main" && build.source != "schedule" &&
       !(build.branch =~ /^automation\//)
     timeout_in_minutes: 20
+    # Many PRs review in parallel (review-only Macs spawn 10 workers), but
+    # never two reviewers on the same PR: the per-branch group serializes a
+    # branch's review and comments-check jobs across builds. A step supports
+    # one concurrency group, so the 10-reviewer bound comes from the worker
+    # count, not a second group.
+    concurrency: 1
+    concurrency_group: "t3-pretty/origin-pr-review/$BUILDKITE_BRANCH"
     agents:
       queue: macos-release
     command: bash scripts/fork/run-trusted-origin-pr-ci.sh
@@ -105,6 +112,10 @@ steps:
       build.branch != "main" && build.source != "schedule" &&
       !(build.branch =~ /^automation\//)
     timeout_in_minutes: 10
+    # Same per-branch group as origin-pr-review so a comments check never
+    # overlaps another build's review of the same PR.
+    concurrency: 1
+    concurrency_group: "t3-pretty/origin-pr-review/$BUILDKITE_BRANCH"
     agents:
       queue: macos-release
     command: bash scripts/fork/run-trusted-origin-pr-ci.sh check

@@ -23,7 +23,10 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    carries the SHA marker. A follow-up `Origin PR comments resolved` step fails
    while any of those finding threads is still open. Older findings that were
    posted as reviews (no thread) pass only after a later comment names the
-   title and says it is fixed.
+   title and says it is fixed. Review-only Macs spawn 10 workers, so up to 10
+   PRs review in parallel; a per-branch Buildkite concurrency group
+   (`t3-pretty/origin-pr-review/$BUILDKITE_BRANCH`, limit 1) keeps a second
+   reviewer for the same PR waiting instead of duplicating the review.
 2. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
    and 20:00 UTC as a native `macos-release` Buildkite step
    (`scripts/fork/run-upstream-sync.sh`). The imported GitHub Actions wrapper
@@ -177,7 +180,8 @@ without pretending that a newer upstream tag was integrated before its sync pull
   fail pipeline upload for every PR. Register the machines with
   `scripts/fork/setup-buildkite-macos-agent.sh` and
   `scripts/fork/setup-buildkite-windows-agent.ps1`. A Mac without Xcode.app
-  defaults to `REVIEW_ONLY=1`: one worker on `macos-release`, and a
+  defaults to `REVIEW_ONLY=1`: one agent process spawning `REVIEW_WORKERS`
+  (default 10) workers on `macos-release` for parallel PR reviews, and a
   pre-command hook that refuses packaging jobs. A packaging Mac uses
   `REVIEW_ONLY=0` and starts a second worker so a DMG can run while a local IPA
   occupies the first. Those two workers share `$HOME`, so the pre-checkout hook skips rewriting
@@ -274,7 +278,8 @@ A desktop release that used to sit 25–40 minutes in the m1-dev queue and then 
 
 This machine is an M5 Pro (18 cores, 48 GB) daily driver. m1-dev was the dedicated
 Mac runner and is being converted to Linux. Origin PR Review runs here on
-`macos-release` with `REVIEW_ONLY=1`. The pre-command hook refuses DMG/iOS/relay
+`macos-release` with `REVIEW_ONLY=1` and 10 spawned workers, so up to 10 PRs
+review at once. The pre-command hook refuses DMG/iOS/relay
 jobs: there is no full Xcode.app, and release jobs would share CPU with
 interactive use. A later packaging Mac should register with `REVIEW_ONLY=0` on
 the same queue. Never give either runner `pull_request` labels.
