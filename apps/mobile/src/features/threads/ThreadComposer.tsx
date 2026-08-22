@@ -515,7 +515,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       ? "Queue"
       : "Send";
   const currentModelSelection = props.selectedThread.modelSelection;
-  const currentRuntimeMode = props.selectedThread.runtimeMode;
+  const storedRuntimeMode = props.selectedThread.runtimeMode;
   const currentInteractionMode = props.selectedThread.interactionMode ?? "default";
   const connectionStatus = composerConnectionStatus({
     connectionError: props.connectionError,
@@ -912,14 +912,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       providerOptionDescriptors,
     ],
   );
-  const displayedRuntimeMode = resolveRuntimeModeForProviderDriver(
-    currentModelOption?.providerDriver,
-    currentRuntimeMode,
-  );
+  const currentRuntimeMode = currentModelOption
+    ? resolveRuntimeModeForProviderDriver(currentModelOption.providerDriver, storedRuntimeMode)
+    : storedRuntimeMode;
   const settingsSummaryLabel = threadSettingsSummaryLabel({
     modelLabel,
     optionDescriptors: providerOptionDescriptors,
-    runtimeMode: displayedRuntimeMode,
+    runtimeMode: currentRuntimeMode,
     interactionMode: currentInteractionMode,
     providerDriver: currentModelOption?.providerDriver ?? null,
   });
@@ -930,13 +929,19 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         providerGroups: threadProviderGroups,
         selectedModel: currentModelSelection,
         optionDescriptors: providerOptionDescriptors,
-        runtimeMode: displayedRuntimeMode,
+        runtimeMode: currentRuntimeMode,
       }),
-    [threadProviderGroups, currentModelSelection, providerOptionDescriptors, displayedRuntimeMode],
+    [threadProviderGroups, currentModelSelection, providerOptionDescriptors, currentRuntimeMode],
   );
 
   const onUpdateModelSelection = props.onUpdateModelSelection;
   const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
+  useEffect(() => {
+    if (!currentModelOption || currentRuntimeMode === storedRuntimeMode) {
+      return;
+    }
+    onUpdateRuntimeMode(currentRuntimeMode);
+  }, [currentModelOption, currentRuntimeMode, onUpdateRuntimeMode, storedRuntimeMode]);
   // A thread's stored mode is an explicit value, so a model pick only
   // normalizes: Kimi's "yolo" mode has no equivalent on other providers and
   // falls back to the generic full-access mode in the same gesture. New
@@ -975,7 +980,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       optionDescriptors: providerOptionDescriptors,
       onUpdateOptionSelections: (options) =>
         onUpdateModelSelection({ ...currentModelSelection, options }),
-      runtimeMode: displayedRuntimeMode,
+      runtimeMode: currentRuntimeMode,
       onUpdateRuntimeMode,
       initialPage: settingsSheetPageRef.current,
       checkpointsThreadRef: {
@@ -985,7 +990,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }),
     [
       currentModelSelection,
-      displayedRuntimeMode,
+      currentRuntimeMode,
       handleSelectModelOption,
       onUpdateModelSelection,
       onUpdateRuntimeMode,

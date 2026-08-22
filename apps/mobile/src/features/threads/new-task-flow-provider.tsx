@@ -962,7 +962,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         }),
         attachments: draft.attachments,
         modelSelection: draftModelSelection,
-        runtimeMode: draft.runtimeMode ?? runtimeMode,
+        runtimeMode: resolveRuntimeModeForProviderDriver(
+          selectedModelOption?.providerDriver,
+          draft.runtimeMode ?? runtimeMode,
+        ),
         interactionMode: resolvePendingTaskInteractionMode({
           preferenceLoaded: planModePreferenceLoaded,
           planModeEnabled,
@@ -998,6 +1001,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       projectConfirmedNotGitRepo,
       selectedEnvironmentServerConfig,
       selectedModel,
+      selectedModelOption,
       selectedProject,
       selectedProjectDraftKey,
       planModeEnabled,

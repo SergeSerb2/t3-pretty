@@ -9,6 +9,7 @@ import {
   type ModelSelection,
   type OrchestrationThreadActivity,
   type ProviderInteractionMode,
+  resolveRuntimeModeForProviderDriver,
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -184,7 +185,15 @@ export function useThreadComposerState() {
     headQueuedMessageId !== null && retryingQueuedMessageIds[headQueuedMessageId] === true;
   const selectedThread = selectedThreadDetail ?? selectedThreadShell;
   const modelSelection = selectedDraft?.modelSelection ?? selectedThread?.modelSelection ?? null;
-  const runtimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
+  const providerDriver =
+    selectedEnvironmentRuntime?.serverConfig?.providers.find(
+      (provider) => provider.instanceId === modelSelection?.instanceId,
+    )?.driver ?? null;
+  const storedRuntimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
+  const runtimeMode =
+    storedRuntimeMode == null
+      ? null
+      : resolveRuntimeModeForProviderDriver(providerDriver, storedRuntimeMode);
   const interactionMode = selectedDraft?.interactionMode ?? selectedThread?.interactionMode ?? null;
 
   const selectedThreadSessionActivity = useMemo(() => {
@@ -259,6 +268,11 @@ export function useThreadComposerState() {
     // the tap frame instead of after file I/O. If the write fails the message
     // is rolled out of the queue and the content is merged back into the
     // draft, preserving anything typed since.
+    const sendModelSelection = draft.modelSelection ?? thread.modelSelection;
+    const sendProviderDriver =
+      selectedEnvironmentRuntime?.serverConfig?.providers.find(
+        (provider) => provider.instanceId === sendModelSelection.instanceId,
+      )?.driver ?? null;
     const enqueuePromise = enqueueThreadOutboxMessage({
       environmentId: selectedThreadShell.environmentId,
       threadId: selectedThreadShell.id,
@@ -266,8 +280,11 @@ export function useThreadComposerState() {
       commandId: CommandId.make(metadata.commandId),
       text,
       attachments,
-      modelSelection: draft.modelSelection ?? thread.modelSelection,
-      runtimeMode: draft.runtimeMode ?? thread.runtimeMode,
+      modelSelection: sendModelSelection,
+      runtimeMode: resolveRuntimeModeForProviderDriver(
+        sendProviderDriver,
+        draft.runtimeMode ?? thread.runtimeMode,
+      ),
       interactionMode: draft.interactionMode ?? thread.interactionMode,
       createdAt: metadata.createdAt,
     });
@@ -285,7 +302,7 @@ export function useThreadComposerState() {
       );
     });
     return messageId;
-  }, [selectedThreadDetail, selectedThreadShell]);
+  }, [selectedEnvironmentRuntime?.serverConfig, selectedThreadDetail, selectedThreadShell]);
 
   const onChangeDraftMessage = useCallback(
     (value: string) => {
