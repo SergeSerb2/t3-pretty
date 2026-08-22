@@ -48,9 +48,10 @@ export function suggestedPackageSpec(version: string): string {
 
 /**
  * Render a `t3 <subcommand>` suggestion that matches how this process was
- * launched, so copy/pasting it actually works: an npx tarball install
- * suggests `npx --yes --package <tarball> t3 serve`, a global install
- * suggests `t3 serve`.
+ * launched, so copy/pasting it actually works: npx suggests
+ * `npx --yes --package <tarball> t3 serve`; bunx, pnpm dlx, and global
+ * installs suggest `t3 serve` (those runners cannot install an https
+ * tarball with npm's `--package` flag).
  */
 export function formatCliCommand(input: {
   readonly subcommand: string;
@@ -58,10 +59,10 @@ export function formatCliCommand(input: {
   readonly version: string;
 }): string {
   const runner = detectCliRunner(input.entryPath);
-  if (runner === null) {
-    return `t3 ${input.subcommand}`;
+  if (runner === "npx") {
+    return `npx --yes --package ${suggestedPackageSpec(input.version)} t3 ${input.subcommand}`;
   }
-  return `${runner} --yes --package ${suggestedPackageSpec(input.version)} t3 ${input.subcommand}`;
+  return `t3 ${input.subcommand}`;
 }
 
 /** `formatCliCommand` against this process's real entry path and version. */

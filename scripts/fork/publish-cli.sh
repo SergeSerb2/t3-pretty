@@ -39,19 +39,11 @@ if [[ "${T3_PRETTY_CLI_SKIP_UPLOAD:-}" != "1" ]]; then
   fi
 fi
 
-if [[ -z "${GITHUB_RUN_NUMBER:-}" && -n "${BUILDKITE_BUILD_NUMBER:-}" ]]; then
-  export GITHUB_RUN_NUMBER="$BUILDKITE_BUILD_NUMBER"
-fi
-
-if git remote get-url upstream >/dev/null 2>&1; then
-  git remote set-url upstream https://github.com/pingdotgg/t3code.git
-else
-  git remote add upstream https://github.com/pingdotgg/t3code.git
-fi
-git fetch --force --tags upstream
-
-build_floor=""
-for manifest in latest-linux.yml latest-mac.yml latest.yml; do
+# Remotes install t3-<desktopVersion>.tgz. Pack the version macos-dmg just
+# published. Do not remint: flooring against that live slot yields highest+1
+# and SSH/pinned-runtime 404.
+version=""
+for manifest in latest-mac.yml latest-linux.yml latest.yml; do
   feed_file="$(mktemp)"
   feed_code="$(curl -sSL --max-time 30 -o "$feed_file" -w '%{http_code}' "${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/${manifest}" || true)"
   if [[ "$feed_code" == "404" ]]; then
@@ -68,20 +60,14 @@ for manifest in latest-linux.yml latest-mac.yml latest.yml; do
   feed_version="${feed_version%$'\r'}"
   feed_version="${feed_version#\"}"
   feed_version="${feed_version%\"}"
-  if [[ -z "$feed_version" ]]; then
-    echo "Live update manifest ${manifest} has no version field." >&2
-    exit 1
-  fi
-  if [[ ! "$feed_version" =~ -nightly\.[0-9]{8}\.([0-9]+)$ ]]; then
-    echo "Live update manifest ${manifest} version '$feed_version' is not a nightly build id." >&2
-    exit 1
-  fi
-  if [[ -z "$build_floor" ]] || (( 10#${BASH_REMATCH[1]} > 10#${build_floor} )); then
-    build_floor="${BASH_REMATCH[1]}"
+  if [[ -n "$feed_version" ]]; then
+    version="$feed_version"
+    break
   fi
 done
-if [[ -n "$build_floor" ]]; then
-  export T3_FORK_BUILD_FLOOR="$build_floor"
+if [[ -z "$version" ]]; then
+  echo "Desktop feed has no version; refusing to publish a CLI tarball remotes will not find." >&2
+  exit 1
 fi
 
 vp_is_official() {
@@ -101,8 +87,6 @@ if ! vp_is_official; then
   exit 1
 fi
 
-version="$(node scripts/fork/resolve-fork-release.mjs --print version)"
-test -n "$version"
 echo "Packing T3 Pretty CLI $version"
 
 vp i --filter=t3... --filter=@t3tools/web... --filter=@t3tools/scripts...

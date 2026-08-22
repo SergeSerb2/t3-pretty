@@ -122,10 +122,12 @@ steps:
 
   - label: ":npm: CLI tarball"
     key: publish-cli
-    # Headless `npx t3` is upstream T3 Code. This job publishes this fork's
-    # server tarball to the public R2 feed so Linux hosts can `curl | sh`.
-    # Hosted linux-small: no signing, no packaging Mac. Scheduled sync skips.
-    if: build.branch == "main" && build.source != "schedule"
+    depends_on: macos-dmg
+    # Headless `npx t3` is upstream T3 Code. Pack the version macos-dmg just
+    # stamped — remotes fetch t3-<appVersion>.tgz, so reminting 404s.
+    # Skipped when DMG skips (PRs, scheduled sync). Do not promote t3.tgz
+    # from a failed or non-desktop revision.
+    if: build.branch == "main"
     timeout_in_minutes: 40
     agents:
       queue: linux-small
