@@ -84,7 +84,12 @@ describe("stripToastTimeout", () => {
   });
 
   it("marks explicit timeout 0 as persist without clobbering a visible-ms override", () => {
-    assert.deepEqual(stripToastTimeout({ title: "Working", timeout: 0 }), {
+    const options: {
+      title: string;
+      timeout?: number;
+      data?: { dismissAfterVisibleMs?: number };
+    } = { title: "Working", timeout: 0 };
+    assert.deepEqual(stripToastTimeout(options), {
       title: "Working",
       timeout: 0,
       data: { dismissAfterVisibleMs: 0 },

@@ -436,7 +436,9 @@ type ToastPosition =
   | "bottom-center"
   | "bottom-right";
 
-interface ToastProviderProps extends Toast.Provider.Props {
+// `timeout` is omitted so callers cannot re-enable Base UI's hover/focus-paused
+// clock; type-based auto-dismiss lives on ThreadToastVisibleAutoDismiss.
+interface ToastProviderProps extends Omit<Toast.Provider.Props, "timeout"> {
   position?: ToastPosition;
 }
 
@@ -536,15 +538,9 @@ function ThreadToastVisibleAutoDismiss({
   return null;
 }
 
-function ToastProvider({
-  children,
-  position = "top-right",
-  // Type-based auto-dismiss lives on ThreadToastVisibleAutoDismiss, not Base UI.
-  timeout = 0,
-  ...props
-}: ToastProviderProps) {
+function ToastProvider({ children, position = "top-right", ...props }: ToastProviderProps) {
   return (
-    <Toast.Provider toastManager={toastManager} timeout={timeout} {...props}>
+    <Toast.Provider toastManager={toastManager} {...props} timeout={0}>
       {children}
       <Toasts position={position} />
     </Toast.Provider>
