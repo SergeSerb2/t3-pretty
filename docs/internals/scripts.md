@@ -64,7 +64,8 @@ authenticated.
 - `vp run icons:pretty`: Regenerates the T3 Pretty fork icon family from
   `assets/pretty/kit/mark-sage.png`. Requires Python 3 and Pillow
   (`python3 -m pip install -r scripts/requirements-pretty-icons.txt`). ICNS is
-  written as PNG-in-ICNS, so the command is not macOS-only.
+  written portably (16px ARGB plus PNG for larger slots), so the command is not
+  macOS-only.
 - `vp run icons:export` / `icons:check`: Export or verify Icon Composer assets
   on macOS. Fork-owned `assets/pretty/` files are skipped; regenerate those with
   `icons:pretty`.

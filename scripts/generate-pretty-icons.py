@@ -40,10 +40,10 @@ MOBILE_ASSETS = REPO_ROOT / "apps" / "mobile" / "assets"
 WEB_PUBLIC = REPO_ROOT / "apps" / "web" / "public"
 
 # PNG-in-ICNS types used by modern macOS. Duplicate pixel sizes share one PNG
-# (1x and @2x aliases). icp4 is the 16px slot Finder list view and menu extras
-# read; without it those targets scale the 32px PNG. Portable; no iconutil.
+# (1x and @2x aliases). 16px is written separately as ic04 ARGB: icp4 is a
+# legacy RGB/ARGB slot, and a PNG there is ignored by Finder list view and
+# menu extras (they would scale the 32px PNG). Portable; no iconutil.
 ICNS_PNG_TYPES = (
-    (b"icp4", 16),
     (b"ic11", 32),
     (b"ic12", 64),
     (b"ic07", 128),
@@ -144,15 +144,75 @@ def png_bytes(image: Image.Image) -> bytes:
     return buf.getvalue()
 
 
+def pack_icns_channel(data: bytes) -> bytes:
+    """Apple ICNS PackBits: literals 1–128, repeats 3–130."""
+    out = bytearray()
+    literal = bytearray()
+    i = 0
+    n = len(data)
+
+    def flush_literal() -> None:
+        offset = 0
+        while offset < len(literal):
+            chunk = literal[offset : offset + 128]
+            out.append(len(chunk) - 1)
+            out.extend(chunk)
+            offset += 128
+        literal.clear()
+
+    while i < n:
+        run = 1
+        while i + run < n and data[i + run] == data[i] and run < 130:
+            run += 1
+        if run >= 3:
+            flush_literal()
+            out.append(run + 0x7D)
+            out.append(data[i])
+            i += run
+        else:
+            literal.append(data[i])
+            i += 1
+            if len(literal) == 128:
+                flush_literal()
+    flush_literal()
+    return bytes(out)
+
+
+def unpack_icns_channel(data: bytes) -> bytes:
+    out = bytearray()
+    i = 0
+    n = len(data)
+    while i < n:
+        op = data[i]
+        if op < 0x80:
+            count = op + 1
+            out.extend(data[i + 1 : i + 1 + count])
+            i += 1 + count
+        else:
+            out.extend([data[i + 1]] * (op - 0x7D))
+            i += 2
+    return bytes(out)
+
+
+def encode_argb(image: Image.Image) -> bytes:
+    red, green, blue, alpha = image.convert("RGBA").split()
+    return b"ARGB" + b"".join(
+        pack_icns_channel(channel.tobytes()) for channel in (alpha, red, green, blue)
+    )
+
+
+def icns_chunk(ostype: bytes, data: bytes) -> bytes:
+    return ostype + struct.pack(">I", 8 + len(data)) + data
+
+
 def encode_icns(macos_master: Image.Image) -> bytes:
     pngs: dict[int, bytes] = {}
     for _ostype, size in ICNS_PNG_TYPES:
         if size not in pngs:
             pngs[size] = png_bytes(downscale(macos_master, size))
-    chunks = []
+    chunks = [icns_chunk(b"ic04", encode_argb(downscale(macos_master, 16)))]
     for ostype, size in ICNS_PNG_TYPES:
-        data = pngs[size]
-        chunks.append(ostype + struct.pack(">I", 8 + len(data)) + data)
+        chunks.append(icns_chunk(ostype, pngs[size]))
     payload = b"".join(chunks)
     return b"icns" + struct.pack(">I", 8 + len(payload)) + payload
 
@@ -233,5 +293,25 @@ def main() -> None:
     print("Regenerated T3 Pretty icon family (glyph at 62% of the visible icon area).")
 
 
+def _selfcheck() -> None:
+    raw = bytes(range(256)) + b"\x00" * 20 + b"\xff" * 200
+    if unpack_icns_channel(pack_icns_channel(raw)) != raw:
+        raise SystemExit("ICNS channel pack/unpack mismatch")
+    sample = Image.new("RGBA", (16, 16), (143, 207, 168, 255))
+    encoded = encode_icns(sample)
+    offset = 8
+    types: dict[bytes, bytes] = {}
+    while offset + 8 <= len(encoded):
+        ostype = encoded[offset : offset + 4]
+        size = struct.unpack(">I", encoded[offset + 4 : offset + 8])[0]
+        types[ostype] = encoded[offset + 8 : offset + size]
+        offset += size
+    if types.get(b"ic04", b"")[:4] != b"ARGB":
+        raise SystemExit("16px ICNS slot must be ic04 ARGB")
+    if b"icp4" in types:
+        raise SystemExit("icp4 is not a PNG-in-ICNS type")
+
+
 if __name__ == "__main__":
+    _selfcheck()
     main()
