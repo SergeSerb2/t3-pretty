@@ -133,17 +133,28 @@ export const RuntimeMode = Schema.Literals([
 export type RuntimeMode = typeof RuntimeMode.Type;
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 
-// "yolo" is a Kimi-only mode that other providers never offer. When a
-// selection moves from Kimi to another provider, clients normalize the mode
-// with this helper so the Kimi-specific literal never reaches another
-// provider's session config (where it would hit an unintended default
-// branch). "full-access" is the generic equivalent: same unrestricted
-// session, provider-native approval behavior.
+// "yolo" is a Kimi-only mode that other providers never offer. Remap it to
+// generic "full-access" when the destination provider is known and is not
+// Kimi. A missing driver keeps the stored mode: guessing "not kimi" would
+// wipe Kimi yolo after a stale lookup, and guessing "kimi" would leak yolo
+// onto Grok.
 export function resolveRuntimeModeForProviderDriver(
   providerDriver: string | null | undefined,
   runtimeMode: RuntimeMode,
 ): RuntimeMode {
-  return runtimeMode === "yolo" && providerDriver !== "kimi" ? "full-access" : runtimeMode;
+  return runtimeMode === "yolo" &&
+    providerDriver != null &&
+    providerDriver !== "unconfigured" &&
+    providerDriver !== "kimi"
+    ? "full-access"
+    : runtimeMode;
+}
+
+export function displayRuntimeModeForProviderDriver(
+  providerDriver: string | null | undefined,
+  runtimeMode: RuntimeMode,
+): RuntimeMode {
+  return resolveRuntimeModeForProviderDriver(providerDriver, runtimeMode);
 }
 
 // Kimi's default access mode is "yolo": the same unrestricted session as
@@ -153,6 +164,19 @@ export function defaultRuntimeModeForProviderDriver(
   providerDriver: string | null | undefined,
 ): RuntimeMode {
   return providerDriver === "kimi" ? "yolo" : DEFAULT_RUNTIME_MODE;
+}
+
+// Compose the provider default with the Kimi-only yolo remap. Pass `null`
+// when the mode is still unset so Kimi inherits yolo; an explicit
+// "full-access" pick stays "full-access" even on Kimi.
+export function effectiveRuntimeModeForProviderDriver(
+  providerDriver: string | null | undefined,
+  runtimeMode: RuntimeMode | null | undefined,
+): RuntimeMode {
+  return displayRuntimeModeForProviderDriver(
+    providerDriver,
+    runtimeMode ?? defaultRuntimeModeForProviderDriver(providerDriver),
+  );
 }
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;

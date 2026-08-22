@@ -20,7 +20,6 @@ import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderInteractionMode,
   ProviderDriverKind,
-  defaultRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
   RuntimeMode,
   TerminalOpenInput,
@@ -383,6 +382,7 @@ import {
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftHeroState,
   resolveThreadMetadataUpdateForNextTurn,
+  resolveComposerRuntimeMode,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
@@ -2496,16 +2496,15 @@ function ChatViewContent(props: ChatViewProps) {
   // mode is authoritative — even "full-access" on Kimi, which may be an
   // explicit pick or the pre-Yolo default and must not be remapped. Only a
   // draft whose mode still reads as the generic default (never picked, never
-  // carried from a non-default thread) inherits the provider's own default.
-  const storedRuntimeMode =
-    composerRuntimeMode ??
-    (isServerThread
-      ? (activeThread?.runtimeMode ?? null)
-      : activeThread?.runtimeMode !== DEFAULT_RUNTIME_MODE
-        ? (activeThread?.runtimeMode ?? null)
-        : null);
-  const runtimeMode: RuntimeMode =
-    storedRuntimeMode ?? defaultRuntimeModeForProviderDriver(selectedProvider);
+  // recorded on the composer) inherits the provider's own default.
+  // Carried Kimi "yolo" is remapped off Kimi so a Grok new thread cannot
+  // show or send a mode Grok does not offer.
+  const runtimeMode: RuntimeMode = resolveComposerRuntimeMode({
+    providerDriver: selectedProvider,
+    composerRuntimeMode,
+    threadRuntimeMode: activeThread?.runtimeMode,
+    isServerThread,
+  });
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
@@ -5427,6 +5426,10 @@ function ChatViewContent(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
+    const runtimeModeForTurn = resolveRuntimeModeForProviderDriver(
+      ctxSelectedProvider,
+      runtimeMode,
+    );
     const composerImages =
       directAnnotation?.image &&
       !sendContextImages.some((image) => image.id === directAnnotation.image?.id)
@@ -5760,7 +5763,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
-        runtimeMode,
+        runtimeMode: runtimeModeForTurn,
         interactionMode,
       });
       if (settingsResult._tag === "Failure") {
@@ -5784,7 +5787,7 @@ function ChatViewContent(props: ChatViewProps) {
                       projectId: activeProject.id,
                       title,
                       modelSelection: threadCreateModelSelection,
-                      runtimeMode,
+                      runtimeMode: runtimeModeForTurn,
                       interactionMode,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
@@ -5830,7 +5833,7 @@ function ChatViewContent(props: ChatViewProps) {
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: title,
-          runtimeMode,
+          runtimeMode: runtimeModeForTurn,
           interactionMode,
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
@@ -5844,6 +5847,18 @@ function ChatViewContent(props: ChatViewProps) {
       } else {
         turnStartSucceeded = true;
         acknowledgeActiveThreadWoke();
+        // The turn went out with the remapped mode; sync a stored composer
+        // pick (carried yolo) to what was actually sent so a later provider
+        // switch cannot resurrect and re-persist the pre-send value. Skip
+        // when the send driver is unknown: remapping that case would wipe
+        // Kimi yolo after a stale provider lookup.
+        if (
+          ctxSelectedProvider !== "unconfigured" &&
+          composerRuntimeMode !== null &&
+          composerRuntimeMode !== runtimeModeForTurn
+        ) {
+          setComposerDraftRuntimeMode(composerDraftTarget, runtimeModeForTurn);
+        }
         if (backgroundThreadRef) {
           markPromotedDraftThreadByRef(backgroundThreadRef);
           try {
@@ -6277,6 +6292,10 @@ function ChatViewContent(props: ChatViewProps) {
         selectedPromptEffort: ctxSelectedPromptEffort,
         selectedModelSelection: ctxSelectedModelSelection,
       } = sendCtx;
+      const runtimeModeForTurn = resolveRuntimeModeForProviderDriver(
+        ctxSelectedProvider,
+        runtimeMode,
+      );
 
       // Same path-suffix bake as the normal composer send — plan follow-up
       // used to return before takeAttachedFilesForThread ran, so refine /
@@ -6333,7 +6352,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
-        runtimeMode,
+        runtimeMode: runtimeModeForTurn,
         interactionMode: nextInteractionMode,
       });
       let failure: AtomCommandResult<unknown, unknown> | null =
@@ -6346,6 +6365,19 @@ function ChatViewContent(props: ChatViewProps) {
           scopeThreadRef(activeThread.environmentId, threadIdForSend),
           nextInteractionMode,
         );
+        // Same sync as the composer send: the turn persisted the remapped
+        // mode, so a stored carried yolo must not outlive it. Unknown send
+        // driver keeps the stored pick.
+        if (
+          ctxSelectedProvider !== "unconfigured" &&
+          composerRuntimeMode !== null &&
+          composerRuntimeMode !== runtimeModeForTurn
+        ) {
+          setComposerDraftRuntimeMode(
+            scopeThreadRef(activeThread.environmentId, threadIdForSend),
+            runtimeModeForTurn,
+          );
+        }
 
         const startResult = await startThreadTurn({
           environmentId,
@@ -6359,7 +6391,7 @@ function ChatViewContent(props: ChatViewProps) {
             },
             modelSelection: ctxSelectedModelSelection,
             titleSeed: activeThread.title,
-            runtimeMode,
+            runtimeMode: runtimeModeForTurn,
             interactionMode: nextInteractionMode,
             ...(nextInteractionMode === "default" && activeProposedPlan
               ? {
@@ -6443,6 +6475,10 @@ function ChatViewContent(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
+    const runtimeModeForTurn = resolveRuntimeModeForProviderDriver(
+      ctxSelectedProvider,
+      runtimeMode,
+    );
 
     const createdAt = new Date().toISOString();
     const nextThreadId = newThreadId();
@@ -6483,7 +6519,7 @@ function ChatViewContent(props: ChatViewProps) {
         projectId: activeProject.id,
         title: nextThreadTitle,
         modelSelection: nextThreadModelSelection,
-        runtimeMode,
+        runtimeMode: runtimeModeForTurn,
         interactionMode: "default",
         branch: activeThreadBranch,
         worktreePath: activeThread.worktreePath,
@@ -6508,7 +6544,7 @@ function ChatViewContent(props: ChatViewProps) {
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: nextThreadTitle,
-          runtimeMode,
+          runtimeMode: runtimeModeForTurn,
           interactionMode: "default",
           sourceProposedPlan: {
             threadId: activeThread.id,
@@ -6672,22 +6708,9 @@ function ChatViewContent(props: ChatViewProps) {
         nextModelSelection,
       );
       setStickyComposerModelSelection(nextModelSelection);
-      // Only an explicit mode follows the switch across providers: Kimi's
-      // "yolo" has no equivalent elsewhere and normalizes to the generic
-      // full-access mode instead of leaking the Kimi-only literal into
-      // another provider's session config. An unset mode
-      // (storedRuntimeMode === null) keeps tracking the provider's own
-      // default, so an explicit Full access pick is never rewritten by a
-      // model switch.
-      if (storedRuntimeMode !== null) {
-        const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
-          resolvedDriverKind,
-          storedRuntimeMode,
-        );
-        if (nextRuntimeMode !== runtimeMode) {
-          handleRuntimeModeChange(nextRuntimeMode);
-        }
-      }
+      // Display and send remap Kimi-only "yolo" off other providers. Do not
+      // write the remapped mode back: an unset mode keeps tracking the
+      // provider default, and a stored Yolo can still show on Kimi.
       scheduleComposerFocus();
     },
     [
@@ -6696,9 +6719,6 @@ function ChatViewContent(props: ChatViewProps) {
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
-      handleRuntimeModeChange,
-      storedRuntimeMode,
-      runtimeMode,
       providerStatuses,
       settings,
       supportsProviderHandoff,
