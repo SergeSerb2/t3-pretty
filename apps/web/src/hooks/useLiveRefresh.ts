@@ -9,9 +9,10 @@
  * arriving together still cost one read.
  *
  * Every read here shells out to a host's API from the server, so the policy is written to spend as
- * little as it can get away with: the very first arrival at a view spends nothing, because the
- * view's own first read is already on its way, and the interval stops as soon as the reader stops
- * reading.
+ * little as it can get away with: mounting a view spends nothing, because the view's own first
+ * read is already on its way — a second refresh here would cancel that fiber — and the interval
+ * stops as soon as the reader stops reading. Coming back to the window, or sitting on it, still
+ * reads.
  */
 import { useEffect, useId, useRef } from "react";
 
@@ -49,7 +50,9 @@ export function shouldLiveRefresh(input: {
 /**
  * Whether arriving at a view should read it. A view nobody has read this session is left alone:
  * mounting it starts its own read, and refreshing on top of that cancels the request in flight
- * and pays for the same answer twice. Every later arrival is an ordinary refresh.
+ * and pays for the same answer twice. Remounting is the same situation — the query atom
+ * revalidates on mount — so the hook does not call this on mount. Focus and visibility
+ * changes are ordinary arrivals.
  */
 export function shouldRefreshOnArrival(input: {
   readonly visible: boolean;
@@ -195,7 +198,11 @@ export function useLiveRefresh(
     };
 
     const stopWatchingInteraction = watchInteraction();
-    onArrival();
+    // Mount (and remount) already start the view's own read. Calling onArrival here
+    // interrupted that fiber and left the panel on "All fibers interrupted without error".
+    if (lastRefreshedAtByView.get(viewId) === undefined) {
+      lastRefreshedAtByView.set(viewId, Date.now());
+    }
     syncTimer();
     window.addEventListener("focus", onArrival);
     document.addEventListener("visibilitychange", onVisibilityChange);

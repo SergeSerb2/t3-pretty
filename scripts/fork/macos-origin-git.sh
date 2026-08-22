@@ -8,18 +8,37 @@
 # Mac jobs clone through scripts/fork/checkout-origin.sh.
 set -euo pipefail
 
+origin_hosts=(
+  "https://origin.cursor.com"
+  "https://origin.cursor.com/git"
+)
+
+origin_cli_helper_ready() {
+  local hostName current
+  if [[ ! -x "${HOME}/.local/bin/origin" ]] && ! command -v origin >/dev/null; then
+    return 1
+  fi
+  for hostName in "${origin_hosts[@]}"; do
+    current="$(git config --global --get-all "credential.${hostName}.helper" 2>/dev/null || true)"
+    printf '%s\n' "$current" | grep -Fq "origin credential-helper" || return 1
+  done
+  return 0
+}
+
 store="${ORIGIN_GIT_CREDENTIALS:-$HOME/.git-credentials}"
 if [[ ! -f "$store" ]]; then
+  # Interactive/dev machines can clone via `origin auth setup-git`. Buildkite
+  # sets FORCE_COLOR+NO_COLOR, which makes that helper exit 255, so CI still
+  # needs the file store below when the file exists.
+  if origin_cli_helper_ready; then
+    echo "Origin git CLI helper ready"
+    exit 0
+  fi
   echo "Missing $store. Write an Origin HTTPS store (x-access-token JWT) first." >&2
   exit 1
 fi
 
 chmod 600 "$store"
-
-origin_hosts=(
-  "https://origin.cursor.com"
-  "https://origin.cursor.com/git"
-)
 write_lock=""
 
 cleanup() {

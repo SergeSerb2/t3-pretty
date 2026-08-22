@@ -350,8 +350,15 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "deploy-relay-ci.sh");
     assert.notInclude(pipeline, "deploy-relay.yml");
     assert.include(pipeline, "queue: macos-release");
+    assert.include(pipeline, "queue: macos-package");
     assert.include(pipeline, "queue: windows-release");
     assert.include(pipeline, "queue: linux-small");
+    const dmgStep = pipeline.slice(pipeline.indexOf(":mac: macOS arm64 DMG"));
+    assert.include(dmgStep.slice(0, 900), "queue: macos-package");
+    const linuxStep = pipeline.slice(pipeline.indexOf(":linux: Linux x64 AppImage"));
+    assert.include(linuxStep.slice(0, 900), "queue: linux-small");
+    const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
+    assert.include(reviewStep.slice(0, 800), "queue: macos-release");
     assert.include(pipeline, "github-actions#v0.13.0");
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");

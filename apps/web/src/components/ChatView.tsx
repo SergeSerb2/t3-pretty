@@ -339,8 +339,14 @@ import {
   MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
   SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS,
   SCENERY_DRAFT_HERO_TRANSITION_EASING,
+  type DraftHeroHandoff,
+  draftHeroGlideHasTravel,
+  draftHeroGlideKeyframes,
+  isDraftHeroAnimationPlaying,
   recordDraftHeroHandoff,
   runMobileComposerTransition,
+  shouldGlideDraftHeroHandoff,
+  shouldPopDraftHeroGlide,
   takeDraftHeroHandoff,
 } from "./chat/draftHeroTransition";
 import { useMotionStore } from "../scenery/motionStore";
@@ -427,10 +433,12 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
   // undefined until the first layout pass takes (or declines) the handoff;
   // held until its glide finishes so StrictMode's second pass replays it
   // instead of finding it consumed.
-  const handoffRectRef = useRef<Pick<DOMRect, "left" | "top"> | null | undefined>(undefined);
+  const handoffRef = useRef<DraftHeroHandoff | null | undefined>(undefined);
   const animationRef = useRef<Animation | null>(null);
   const sceneryDockRef = useRef(sceneryDock);
   sceneryDockRef.current = sceneryDock;
+  const isDraftHeroStateRef = useRef(isDraftHeroState);
+  isDraftHeroStateRef.current = isDraftHeroState;
   const attachTransitionGroupRef = (element: HTMLDivElement | null) => {
     transitionGroupRef.current = element;
   };
@@ -450,6 +458,10 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
       recordDraftHeroHandoff(
         composerAnchorRef.current?.getBoundingClientRect() ?? null,
         performance.now(),
+        {
+          isDraftHero: isDraftHeroStateRef.current,
+          gliding: isDraftHeroAnimationPlaying(animationRef.current),
+        },
       );
     },
     [],
@@ -458,32 +470,42 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
   useLayoutEffect(() => {
     const transitionGroup = transitionGroupRef.current;
     const nextComposerRect = composerAnchorRef.current?.getBoundingClientRect() ?? null;
-    if (handoffRectRef.current === undefined) {
-      handoffRectRef.current = takeDraftHeroHandoff(performance.now());
+    if (handoffRef.current === undefined) {
+      handoffRef.current = takeDraftHeroHandoff(performance.now());
     }
-    const handoffRect = handoffRectRef.current;
+    const handoff = handoffRef.current ?? null;
     const stateChangedInPlace = previousStateRef.current !== isDraftHeroState;
-    const stateChanged = stateChangedInPlace || handoffRect !== null;
+    const shouldGlideHandoff = shouldGlideDraftHeroHandoff({
+      isDraftHero: isDraftHeroState,
+      handoff,
+    });
+    const stateChanged = stateChangedInPlace || shouldGlideHandoff;
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const mobileComposerTransitionActive =
       typeof document !== "undefined" &&
       document.documentElement.dataset.mobileComposerRouteTransition === "true";
+    // Fog already hides the route swap; a FLIP under it finishes during the
+    // hold and then the chrome-in 14px rise reads as a second bounce.
+    const sceneryFogCoversSwap =
+      typeof document !== "undefined" && document.documentElement.dataset.sceneryArrival === "fog";
 
     animationRef.current?.cancel();
     animationRef.current = null;
 
     // An in-place hero↔docked switch glides from the rect captured before it;
-    // a fresh mount glides from the rect the outgoing ChatView handed off.
+    // a fresh mount glides from the rect the outgoing ChatView handed off,
+    // but only when placement actually changed or a glide was still running.
     const previousComposerRect = stateChangedInPlace
       ? previousComposerRectRef.current
-      : handoffRect;
+      : (handoff?.rect ?? null);
     let handoffGlideStarted = false;
     if (
       stateChanged &&
       !prefersReducedMotion &&
       !mobileComposerTransitionActive &&
+      !sceneryFogCoversSwap &&
       transitionGroup &&
       previousComposerRect &&
       nextComposerRect &&
@@ -491,18 +513,15 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
     ) {
       const translateX = previousComposerRect.left - nextComposerRect.left;
       const translateY = previousComposerRect.top - nextComposerRect.top;
-      if (Math.abs(translateX) >= 0.5 || Math.abs(translateY) >= 0.5) {
+      if (draftHeroGlideHasTravel(translateX, translateY)) {
         const sceneryDockMotion = sceneryDockRef.current;
+        const pop = shouldPopDraftHeroGlide({
+          sceneryDock: sceneryDockMotion,
+          inPlace: stateChangedInPlace,
+          translateY,
+        });
         const animation = transitionGroup.animate(
-          sceneryDockMotion
-            ? [
-                { transform: `translate3d(${translateX}px, ${translateY}px, 0) scale(1.02)` },
-                { transform: "translate3d(0, 0, 0) scale(1)" },
-              ]
-            : [
-                { transform: `translate3d(${translateX}px, ${translateY}px, 0)` },
-                { transform: "translate3d(0, 0, 0)" },
-              ],
+          draftHeroGlideKeyframes(translateX, translateY, pop),
           {
             duration: sceneryDockMotion
               ? SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS
@@ -510,6 +529,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
             easing: sceneryDockMotion
               ? SCENERY_DRAFT_HERO_TRANSITION_EASING
               : DRAFT_HERO_TRANSITION_EASING,
+            fill: "backwards",
           },
         );
         animation.id = DRAFT_HERO_TRANSITION_ANIMATION_ID;
@@ -523,13 +543,13 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
             }
             animationRef.current = null;
             if (!stateChangedInPlace) {
-              handoffRectRef.current = null;
+              handoffRef.current = null;
             }
           });
       }
     }
     if (!stateChangedInPlace && !handoffGlideStarted) {
-      handoffRectRef.current = null;
+      handoffRef.current = null;
     }
 
     previousStateRef.current = isDraftHeroState;

@@ -7,7 +7,7 @@ local build delivery.
 ## Upstream ingestion (shared with desktop)
 
 `.buildkite/pipeline.yml` runs `scripts/fork/run-upstream-sync.sh` every four
-hours at 00:00, 04:00, 08:00, 12:00, 16:00, and 20:00 UTC on `macos-release`.
+hours at 00:00, 04:00, 08:00, 12:00, 16:00, and 20:00 UTC on `macos-package`.
 The job merges the newest upstream nightly tag (AI-resolving conflicts via
 `scripts/fork/resolve-git-conflicts.mjs`) and lands it on Origin `main` through
 an immediately merged pull request. Mobile code rides along — there is no separate
@@ -17,12 +17,12 @@ mobile sync. The imported `fork-upstream-sync.yml` wrapper is not scheduled.
 
 `.buildkite/pipeline.yml` runs `scripts/fork/publish-mobile-release.sh` on
 every push to Origin `main` that is not the four-hour schedule. The job lives
-on `macos-release` (m1-dev), the same native queue as the signed DMG. It is
+on `macos-package`, the same native queue as the signed DMG. It is
 not imported GitHub Actions: the importer cannot load `EXPO_TOKEN` or Apple
 keys, so those jobs died in about two seconds and TestFlight never moved.
 
 The script skips when the commit does not touch mobile-relevant paths. That
-check diffs `HEAD` against `HEAD~1`, so the reused macos-release checkout
+check diffs `HEAD` against `HEAD~1`, so the reused macos-package checkout
 fetches 50 commits of the release SHA and `origin/main`. A later depth-1
 fetch would drop the parent and fail the job instead of skipping. A
 release publishes an OTA update on the production channel. That is the
@@ -58,7 +58,7 @@ bot commit lands through a short-lived `automation/ios-fingerprint-*`
 Origin pull request that `scripts/fork/origin-forge.mjs` merges. Those
 files are outside every release path filter, so the record itself
 schedules no further release. The iOS step has a higher Buildkite priority
-than Origin PR review so a feature-branch review cannot occupy m1-dev in
+than Origin PR review so a feature-branch review cannot occupy the packaging Mac in
 front of TestFlight. Origin's `pipeline upload` rejects `interruptible` on
 command steps, so a later `main` push can still cancel an in-flight Xcode
 archive. Do not merge unrelated `main` PRs while that job is compiling.
@@ -75,7 +75,7 @@ Macs stop taking turns.
 The four-hour upstream job uses the same whole-repository merge and
 gpt-5.6-sol/xhigh conflict resolver as desktop. After the Origin merge, if
 that integration changed mobile-relevant paths, the sync job runs
-`publish-mobile-release.sh` on macos-release so a missed merge push still
+`publish-mobile-release.sh` on macos-package so a missed merge push still
 publishes OTA. The script takes `/tmp/t3-pretty-ios-mobile.lock`, so a
 follow-up native `ios-mobile` job cannot overlap eas update or a local IPA.
 A leftover lock from a killed job is removed when no publisher process is
@@ -86,8 +86,8 @@ Server/web-only parent changes do not publish OTA or compile an IPA.
 The job fails early when required release credentials are missing instead
 of reporting a green release that shipped nothing. To activate:
 
-1. Keep `EXPO_TOKEN` on the macos-release agent (cluster secret or
-   `/Users/m1-dev/.config/t3-pretty/EXPO_TOKEN`). Installed TestFlight
+1. Keep `EXPO_TOKEN` on the macos-package agent (cluster secret or
+   `$HOME/.config/t3-pretty/EXPO_TOKEN`). Installed TestFlight
    binaries poll the fork Expo Updates URL baked into the IPA; eas-cli on
    this Mac publishes that channel. IPA compilation is local from
    `Xcode.app` or `Xcode-beta.app`. Do not import a GitHub Actions mobile

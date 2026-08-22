@@ -46,6 +46,89 @@ function helpers(home, store) {
 }
 
 describe("macos-origin-git pre-checkout hook", () => {
+  it("writes the file store even when origin credential-helper is already set", () => {
+    const { home, store } = makeHome();
+    try {
+      const bin = NodePath.join(home, ".local", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(bin, "origin"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      const env = envFor(home, store);
+      env.PATH = `${bin}${NodePath.delimiter}${env.PATH}`;
+      NodeChildProcess.execFileSync(
+        "git",
+        [
+          "config",
+          "--global",
+          "credential.https://origin.cursor.com.helper",
+          "!origin credential-helper",
+        ],
+        { env, stdio: "ignore" },
+      );
+      NodeChildProcess.execFileSync(
+        "git",
+        [
+          "config",
+          "--global",
+          "credential.https://origin.cursor.com/git.helper",
+          "!origin credential-helper",
+        ],
+        { env, stdio: "ignore" },
+      );
+      const out = NodeChildProcess.execFileSync("bash", [script], {
+        encoding: "utf8",
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      assert.include(out, "Origin git store helper ready");
+      assert.include(helpers(home, store), `store --file=${store}`);
+    } finally {
+      NodeFS.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts origin credential-helper without a git-credentials file", () => {
+    const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-origin-git-cli-"));
+    try {
+      const bin = NodePath.join(home, ".local", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(bin, "origin"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      const env = {
+        PATH: `${bin}${NodePath.delimiter}${process.env.PATH}`,
+        HOME: home,
+        GIT_CONFIG_NOSYSTEM: "1",
+      };
+      NodeChildProcess.execFileSync(
+        "git",
+        [
+          "config",
+          "--global",
+          "credential.https://origin.cursor.com.helper",
+          "!origin credential-helper",
+        ],
+        { env, stdio: "ignore" },
+      );
+      NodeChildProcess.execFileSync(
+        "git",
+        [
+          "config",
+          "--global",
+          "credential.https://origin.cursor.com/git.helper",
+          "!origin credential-helper",
+        ],
+        { env, stdio: "ignore" },
+      );
+      const out = NodeChildProcess.execFileSync("bash", [script], {
+        encoding: "utf8",
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      assert.include(out, "Origin git CLI helper ready");
+      assert.isFalse(NodeFS.existsSync(NodePath.join(home, ".git-credentials")));
+    } finally {
+      NodeFS.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it("writes the Origin store helper and skips later writes", () => {
     const { home, store } = makeHome();
     try {
