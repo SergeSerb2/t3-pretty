@@ -209,7 +209,10 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
       if (next === sceneryRef.current.photoSetId) {
         return;
       }
-      persistScenery({ photoSetId: next, assignments: {} });
+      // Keep the old assignment map until this set's seed is cached.
+      // ensureThreadAssignment re-picks once seedsReady and the old photo
+      // is not in the new pool; wiping here races the extra-set import.
+      persistScenery({ photoSetId: next });
     },
     [persistScenery],
   );
