@@ -5,10 +5,11 @@
  * Skills → Installed) plus the skills each provider CLI keeps in its own home
  * folder (Settings → Skills → On this environment). Enablement is a union of
  * global picks and per-thread picks. Rows that are already on regardless of
- * this thread render checked and disabled — library skills enabled globally,
- * and host skills the selected instance loads from its own home anyway; both
- * are only turned off from settings. The favorite star stays clickable on
- * those locked rows. Everything else toggles per thread:
+ * this thread render checked with a dimmed switch — library skills enabled
+ * globally, and host skills the selected instance loads from its own home
+ * anyway; both are only turned off from settings. The row stays enabled so
+ * the favorite star works for mouse and keyboard. Everything else toggles
+ * per thread:
  *   - draft sessions write the composer draft store and ride
  *     `bootstrap.createThread.enabledSkillIds` on the first turn;
  *   - server threads dispatch `thread.skills.set` (full replacement) and the
@@ -290,9 +291,9 @@ export function SkillPickerRow(props: {
       checked={props.isEnabled}
       className={cn(
         "min-h-6 gap-2 py-0.5 sm:min-h-6",
-        // Keep the disabled row inert so the switch cannot be clicked.
-        // The star punches through with pointer-events-auto below.
-        skill.locked && "data-disabled:opacity-100 [&>:last-child]:opacity-64",
+        // Locked means the enable switch is off-limits, not the row. Keeping
+        // the item enabled leaves the star in the keyboard/AT order.
+        skill.locked && "[&>:last-child]:opacity-64",
       )}
       closeOnClick={false}
       disabled={props.disabled}
@@ -304,7 +305,6 @@ export function SkillPickerRow(props: {
           aria-label={props.isFavorite ? "Remove from favorites" : "Add to favorites"}
           className={cn(
             "text-muted-foreground/70 opacity-70 hover:text-foreground hover:opacity-100",
-            skill.locked && "pointer-events-auto",
             props.isFavorite && "text-foreground opacity-100",
           )}
           onClick={(event) => {
@@ -435,7 +435,7 @@ export const SkillsSubmenu = memo(function SkillsSubmenu(props: SkillsPickerProp
                       skill={skill}
                       isEnabled={skill.locked || state.perThreadIds.has(skill.id)}
                       isFavorite={favoriteIds.has(skill.id)}
-                      disabled={skill.locked || !state.togglesEnabled}
+                      disabled={!state.togglesEnabled}
                       onToggle={() => state.toggleSkill(skill.id)}
                       onToggleFavorite={() => toggleFavorite(skill.id)}
                     />

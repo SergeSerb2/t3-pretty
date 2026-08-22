@@ -133,7 +133,35 @@ describe("toPickerSkills", () => {
   });
 
   it("keeps the favorite star clickable on a globally locked skill", () => {
-    const skill = toPickerSkills(installed, [], new Set(["octo/skills:tdd"]), claudeDefault)[0]!;
+    const skill = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault).find(
+      (row) => row.id === "octo/skills:tdd",
+    )!;
+    expect(skill.locked).toBe(true);
+    const html = renderToStaticMarkup(
+      createElement(
+        Menu,
+        null,
+        createElement(SkillPickerRow, {
+          skill,
+          isEnabled: true,
+          isFavorite: false,
+          disabled: false,
+          onToggle: () => {},
+          onToggleFavorite: () => {},
+        }),
+      ),
+    );
+    expect(html).toContain("Add to favorites");
+    expect(html).toContain("Global");
+    expect(html).not.toContain("aria-disabled");
+    expect(html).not.toContain("pointer-events-auto");
+  });
+
+  it("does not let a locked skill's star punch through a disabled picker", () => {
+    const skill = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault).find(
+      (row) => row.id === "octo/skills:tdd",
+    )!;
+    expect(skill.locked).toBe(true);
     const html = renderToStaticMarkup(
       createElement(
         Menu,
@@ -148,15 +176,14 @@ describe("toPickerSkills", () => {
         }),
       ),
     );
-    expect(html).toContain("pointer-events-auto");
-    expect(html).not.toContain("data-disabled:pointer-events-auto");
-    expect(html).toContain("Add to favorites");
-    expect(html).toContain("Global");
     expect(html).toContain("aria-disabled");
+    expect(html).not.toContain("pointer-events-auto");
   });
 
   it("does not let the favorite star punch through a disabled non-locked row", () => {
-    const skill = toPickerSkills(installed, [], new Set(), claudeDefault)[0]!;
+    const skill = toPickerSkills(installed, [], new Set(), claudeDefault).find(
+      (row) => row.id === "octo/skills:tdd",
+    )!;
     expect(skill.locked).toBe(false);
     const html = renderToStaticMarkup(
       createElement(
