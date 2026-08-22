@@ -80,8 +80,16 @@ else
   exit 1
 fi
 rm -f "$feed_file"
-if [[ "$feed_version" =~ -nightly\.[0-9]{8}\.([0-9]+)$ ]]; then
-  export T3_FORK_BUILD_FLOOR="${BASH_REMATCH[1]}"
+feed_version="${feed_version%$'\r'}"
+feed_version="${feed_version#\"}"
+feed_version="${feed_version%\"}"
+if [[ -n "$feed_version" ]]; then
+  if [[ "$feed_version" =~ -nightly\.[0-9]{8}\.([0-9]+)$ ]]; then
+    export T3_FORK_BUILD_FLOOR="${BASH_REMATCH[1]}"
+  else
+    echo "Live Linux update manifest version '$feed_version' is not a nightly build id; refusing to mint a version below the shipped slot." >&2
+    exit 1
+  fi
 fi
 
 bash scripts/fork/ensure-linux-node.sh
