@@ -1,8 +1,20 @@
+import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+
 /**
  * Guard and copy rules for reverting a thread to a checkpoint. Mirrors web's
  * ChatView.onRevertToTurnCount: the environment must be connected, and a
  * running turn must be interrupted first.
+ *
+ * Local/on-device threads have no remote runtime, so `connectionState` is
+ * null — treat those as available, matching ThreadRouteScreen's
+ * `?? "available"` fallback. A known remote is available only when connected.
  */
+export function checkpointEnvironmentAvailable(
+  remoteConnectionState: EnvironmentConnectionPhase | null,
+): boolean {
+  return remoteConnectionState === null || remoteConnectionState === "connected";
+}
+
 export function checkpointRevertBlockReason(input: {
   readonly environmentAvailable: boolean;
   readonly environmentLabel: string | null;

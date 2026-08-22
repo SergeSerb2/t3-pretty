@@ -310,9 +310,15 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
           // Web parity (BranchToolbarBranchSelector.setThreadBranch): a branch
           // change that moves the thread into a different worktree stops the
           // provider session first — the running session is bound to the old
-          // workspace.
-          if (thread.session && result.value.worktree.path !== selectedThreadWorktreePath) {
-            void stopThreadSession({
+          // workspace. Awaited (like delete in useThreadListActions) so the
+          // metadata sync below cannot rebind the thread under a live session;
+          // stop failures never block the sync, same as delete.
+          if (
+            thread.session &&
+            thread.session.status !== "stopped" &&
+            result.value.worktree.path !== selectedThreadWorktreePath
+          ) {
+            await stopThreadSession({
               environmentId: thread.environmentId,
               input: { threadId: thread.id },
             });

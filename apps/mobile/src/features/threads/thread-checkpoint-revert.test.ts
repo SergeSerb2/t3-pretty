@@ -1,9 +1,28 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  checkpointEnvironmentAvailable,
   checkpointRevertBlockReason,
   checkpointRevertConfirmation,
 } from "./thread-checkpoint-revert";
+
+describe("checkpointEnvironmentAvailable", () => {
+  it("treats a missing remote runtime as available (local/on-device)", () => {
+    expect(checkpointEnvironmentAvailable(null)).toBe(true);
+  });
+
+  it("allows a connected remote", () => {
+    expect(checkpointEnvironmentAvailable("connected")).toBe(true);
+  });
+
+  it("blocks remotes that are not connected", () => {
+    expect(checkpointEnvironmentAvailable("available")).toBe(false);
+    expect(checkpointEnvironmentAvailable("offline")).toBe(false);
+    expect(checkpointEnvironmentAvailable("connecting")).toBe(false);
+    expect(checkpointEnvironmentAvailable("reconnecting")).toBe(false);
+    expect(checkpointEnvironmentAvailable("error")).toBe(false);
+  });
+});
 
 describe("checkpointRevertBlockReason", () => {
   it("allows the revert when the environment is connected and no turn is running", () => {
