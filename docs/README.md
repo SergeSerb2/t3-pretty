@@ -54,6 +54,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 ### Brainstorms
 
 - [Feature brainstorm, ranked top ten (2026-08-22)](./internals/t3-pretty-feature-brainstorm-2026-08-22.md)
+- [World Scenery dark↔light transition (2026-08-21)](./internals/theme-transition-brainstorm-2026-08-21.md)
 
 ### Runbooks
 
