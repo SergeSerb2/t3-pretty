@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260822.1162000626",
+    date: "2026-08-22",
+    items: [
+      {
+        kind: "fixed",
+        title: "prevent markdown link parsing crash",
+      },
+      {
+        kind: "new",
+        title: "expand world photos and add four photo themes",
+      },
+      {
+        kind: "new",
+        title: "ship a headless T3 Pretty CLI for Surge Connect",
+      },
+      {
+        kind: "fixed",
+        title: 'standardize reasoning effort labels to "<level> effort"',
+      },
+      {
+        kind: "fixed",
+        title: "globally enabled skills can still be favorited",
+      },
+      {
+        kind: "fixed",
+        title: "auto-dismiss in-app toasts after 5–10s",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260822.1162000621",
     date: "2026-08-22",
     items: [
