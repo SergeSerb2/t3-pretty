@@ -87,6 +87,8 @@ export function originGitConfigArgs() {
 export function runCommand(command, args, options = {}) {
   const result = NodeChildProcess.spawnSync(command, args, {
     encoding: "utf8",
+    // origin pr diff of seed JSON exceeds Node's 1 MiB default and returns status null.
+    maxBuffer: options.maxBuffer ?? 32 * 1024 * 1024,
     stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
     env: { ...originChildEnv(process.env), ...options.env },
     cwd: options.cwd,

@@ -34,9 +34,9 @@ T3 Pretty desktop and mobile releases are documented in
 [fork-mobile-release.md](../operations/fork-mobile-release.md). Imported
 preflight and WSL `node-pty` run on hosted Linux. Native `linux-small`
 builds the x64 AppImage onto the same updater feed. Native `macos-release`
-(m5-dev) runs Origin PR Review. Native `macos-package` signs the DMG,
-publishes iOS OTA, submits TestFlight IPAs, and deploys the relay once a
-packaging Mac is registered (m1-dev is Linux). Windows NSIS is native
-`windows-release`.
+(m5-dev, `REVIEW_ONLY=1`) runs Origin PR Review and refuses packaging.
+A packaging Mac on the same queue without that flag signs the DMG,
+publishes iOS OTA, submits TestFlight IPAs, and deploys the relay (m1-dev
+is Linux). Windows NSIS is native `windows-release`.
 
 See [Release Checklist](../operations/release.md) for the full release/signing setup checklist.

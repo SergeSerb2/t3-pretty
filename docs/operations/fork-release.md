@@ -112,7 +112,7 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    (`uses:`) — the importer resolves every action from api.github.com at parse
    time, and a burst of main merges then fails the workflow with a GitHub rate
    limit before any job starts. Publish and Origin CLI packaging stay on
-   `macos-package` because hosted Linux cannot resolve `CURSOR_API_KEY`.
+   `macos-release` because hosted Linux cannot resolve `CURSOR_API_KEY`.
    `T3 Pretty Origin PR Review` is a native
    `macos-release` step that prefers review scripts from `origin/main`: hosted
    Linux cannot load `CURSOR_API_KEY`, and the importer cannot run the old
@@ -122,9 +122,9 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    Linux x64 AppImage (`scripts/fork/build-linux-appimage.sh`) on those same push/UI builds and
    uploads `latest-linux.yml` to the public feed. That script never `git fetch origin`: Origin
    HTTPS has no credentials there, and git waits forever on the username prompt. iOS TestFlight
-   IPAs and OTA exports compile on `macos-package` through the native
+   IPAs and OTA exports compile on `macos-release` through the native
    `scripts/fork/publish-mobile-release.sh` step (not the GitHub Actions importer). Relay
-   deploys from the native `macos-package` step. Only trusted `main` commits run desktop packaging
+   deploys from the native `macos-release` step. Only trusted `main` commits run desktop packaging
    and relay deploys on the self-hosted machines; Origin PR review is the
    `macos-release` job on feature branches, running scripts from `origin/main`
    when they exist. Imported desktop preflight is skipped when the push cannot change the
@@ -155,24 +155,24 @@ without pretending that a newer upstream tag was integrated before its sync pull
   Buildkite only run on Origin-hosted repositories, not inbound GitHub mirrors. After detach,
   Origin is the source of truth and pushes no longer flow to GitHub.
 - Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
-  the fork workflows. Create four agent queues: `linux-small` (Buildkite hosted Linux: importer,
+  the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux: importer,
   WSL node-pty, and the x64 AppImage),
-  `macos-release` (Origin PR Review; currently the m5-dev daily driver),
-  `macos-package` (signed DMG, iOS, relay, upstream sync; empty while m1-dev is
-  Linux), and `windows-release` (serge-pc). Register the machines with
+  `macos-release` (Origin PR Review on m5-dev with `REVIEW_ONLY=1`; packaging
+  when a Mac without that flag is registered), and `windows-release` (serge-pc).
+  Do not add a second Mac queue until it exists in the cluster — unknown queues
+  fail pipeline upload for every PR. Register the machines with
   `scripts/fork/setup-buildkite-macos-agent.sh` and
   `scripts/fork/setup-buildkite-windows-agent.ps1`. A Mac without Xcode.app
   defaults to `REVIEW_ONLY=1`: one worker on `macos-release`, and a
-  pre-command hook that refuses packaging jobs still aimed at that queue by
-  older pipeline.yml files. A packaging Mac uses `QUEUES=macos-package
-REVIEW_ONLY=0` and starts a second worker so a DMG can run while a local IPA
+  pre-command hook that refuses packaging jobs. A packaging Mac uses
+  `REVIEW_ONLY=0` and starts a second worker so a DMG can run while a local IPA
   occupies the first. Those two workers share `$HOME`, so the pre-checkout hook skips rewriting
   `~/.gitconfig` when the Origin credential helper is already set; concurrent
   writes used to fail with `could not lock config file`. After checkout the
   post-checkout hook copies hook scripts from the repo onto the agent.
   Schedule the pipeline at `0 */4 * * *`
-  so the native `macos-package` upstream-sync step still runs. Imported Mac jobs use `macos-latest` so the plugin can map
-  them onto `macos-package`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
+  so the native `macos-release` upstream-sync step still runs. Imported Mac jobs use `macos-latest` so the plugin can map
+  them onto `macos-release`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
   The importer cannot run Windows jobs; `.buildkite/pipeline.yml` runs
   `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer
   for push/UI builds of `main`, not the four-hour schedule. The Linux AppImage is the
@@ -185,7 +185,7 @@ REVIEW_ONLY=0` and starts a second worker so a DMG can run while a local IPA
   and refuses the npm `vp` stub. Mac-only desktop publishes are still allowed if
   that step is skipped. Depot can take Linux jobs but has no macOS/Windows sandboxes.
   Hosted Linux cannot resolve `CURSOR_API_KEY`. Origin CLI work for reviews
-  runs on `macos-release`; publish and upstream sync run on `macos-package`.
+  runs on `macos-release`; publish and upstream sync use the same queue.
   Hosted preflight must not
   mention that secret or the Mac signing certificate names. The Windows agent
   runs as LocalSystem; Origin HTTPS checkout uses
@@ -249,21 +249,20 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 | Linux x64 AppImage          | not shipped on the feed               | —                                           | hosted `linux-small` (`build-linux-appimage.sh`)     |
 | macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m1-dev (or a second Mac with the same labels)        |
 | Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                   |
-| Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `macos-package` (Origin CLI)                         |
-| Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | native `macos-package` (`publish-mobile-release.sh`) |
-| Relay production deploy     | m1-dev                                | queued behind releases                      | native `macos-package` step (`deploy-relay-ci.sh`)   |
+| Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `macos-release` (Origin CLI)                         |
+| Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | native `macos-release` (`publish-mobile-release.sh`) |
+| Relay production deploy     | m1-dev                                | queued behind releases                      | native `macos-release` step (`deploy-relay-ci.sh`)   |
 
 A desktop release that used to sit 25–40 minutes in the m1-dev queue and then take ~30 minutes of Mac occupancy should now occupy the Mac for only the ~8 minute signed DMG. Changelog, WSL, and publish no longer wait for — or block — iOS.
 
 ### Adding m5-dev
 
 This machine is an M5 Pro (18 cores, 48 GB) daily driver. m1-dev was the dedicated
-Mac runner and is being converted to Linux, so it cannot take `macos-release` or
-`macos-package` jobs. Origin PR Review runs here on `macos-release` with
-`REVIEW_ONLY=1`. Do not point `macos-package` at this host: there is no full
-Xcode.app, and release jobs would share CPU with interactive use. A later
-packaging Mac should register with `QUEUES=macos-package REVIEW_ONLY=0`. Never
-give either runner `pull_request` labels.
+Mac runner and is being converted to Linux. Origin PR Review runs here on
+`macos-release` with `REVIEW_ONLY=1`. The pre-command hook refuses DMG/iOS/relay
+jobs: there is no full Xcode.app, and release jobs would share CPU with
+interactive use. A later packaging Mac should register with `REVIEW_ONLY=0` on
+the same queue. Never give either runner `pull_request` labels.
 
 ## Runner recovery
 

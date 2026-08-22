@@ -6,11 +6,10 @@
 #
 # Queues:
 #   linux-small    — Buildkite hosted Linux (importer + ubuntu-latest jobs + AppImage)
-#   macos-release  — Origin PR Review Mac (m5-dev / this daily driver).
-#                    Existing feature-branch pipelines already target this
-#                    queue, so reviews keep matching while m1-dev is down.
-#   macos-package  — signed DMG, iOS OTA/TestFlight, relay, upstream sync.
-#                    Empty while no packaging Mac is registered.
+#   macos-release  — Origin PR Review (m5-dev, REVIEW_ONLY=1) plus packaging
+#                    when a Mac without that flag is registered. Do not invent
+#                    a second queue until it exists in the Buildkite cluster;
+#                    an unknown queue fails pipeline upload for every PR.
 #   windows-release — serge-pc native NSIS (importer cannot run Windows jobs)
 #
 # Do not list cluster secrets on hosted steps. Hosted agents currently 500
@@ -43,7 +42,7 @@ steps:
     # Native DMG/NSIS/AppImage/iOS/relay are the release. Do not red the whole
     # build when only the importer fails.
     # Scheduled builds exist only to run upstream sync. That job is native
-    # macos-package below: imported macos GHA steps write $GITHUB_OUTPUT
+    # macos-release below: imported macos GHA steps write $GITHUB_OUTPUT
     # and die under set -u when the importer omits the file.
     soft_fail: true
     if: build.source != "schedule"
@@ -61,11 +60,11 @@ steps:
             - runs-on: ubuntu-latest
               queue: linux-small
             - runs-on: macos-latest
-              queue: macos-package
+              queue: macos-release
             - runs-on: macos-15
-              queue: macos-package
+              queue: macos-release
             - runs-on: macos-14
-              queue: macos-package
+              queue: macos-release
 
   # Hosted linux-small cannot load CURSOR_API_KEY. macos-release has
   # the secret files. Run review scripts from origin/main when present
@@ -83,7 +82,7 @@ steps:
     # the packaging Mac in front of a nightly that is already late.
     priority: 30
     agents:
-      queue: macos-package
+      queue: macos-release
     command: bash scripts/fork/run-upstream-sync.sh
 
   - label: ":mag: Origin PR Review"
@@ -125,7 +124,7 @@ steps:
   - label: ":linux: Linux x64 AppImage"
     key: linux-appimage
     # Hosted linux-small already compiles WSL node-pty. Package the AppImage
-    # there too so the public feed gets Linux without occupying macos-package.
+    # there too so the public feed gets Linux without occupying macos-release.
     # Do not list cluster secrets: hosted YAML secrets: currently 500.
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
@@ -142,7 +141,7 @@ steps:
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 60
     agents:
-      queue: macos-package
+      queue: macos-release
     env:
       T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
     command: bash scripts/fork/build-macos-dmg.sh
@@ -161,7 +160,7 @@ steps:
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
     agents:
-      queue: macos-package
+      queue: macos-release
     env:
       APP_VARIANT: production
       NODE_OPTIONS: "--max-old-space-size=8192"
@@ -174,11 +173,11 @@ steps:
   - label: ":cloud: Relay"
     key: deploy-relay
     # Hosted macos-latest GHA jobs do not have the Origin git store or the
-    # packaging-Mac file-store secrets. Keep production deploys on macos-package.
+    # packaging-Mac file-store secrets. Keep production deploys on macos-release.
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 20
     agents:
-      queue: macos-package
+      queue: macos-release
     env:
       CLOUDFLARE_ACCOUNT_ID: a6f705b8c6459d937d32d31555f9fbf6
       PLANETSCALE_ORGANIZATION: serge-serbinenko
