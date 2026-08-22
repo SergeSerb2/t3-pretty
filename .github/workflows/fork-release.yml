@@ -136,6 +136,11 @@ jobs:
             gha_out "relevant=false"
             exit 0
           fi
+          if [[ "$(git log -1 --format=%s)" == "docs(changelog):"* ]]; then
+            echo "Changelog-only commit; skipping imported preflight."
+            gha_out "relevant=false"
+            exit 0
+          fi
           if [[ "${GITHUB_EVENT_NAME}" != "push" ]] || ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
             gha_out "relevant=true"
             exit 0
@@ -359,14 +364,13 @@ jobs:
           github.ref == 'refs/heads/main'
         continue-on-error: true
         env:
-          CLI_PROXY_API_KEY: ${{ env.CLI_PROXY_API_KEY }}
+          # Do not map `${{ env.CLI_PROXY_API_KEY }}`: that overwrites a
+          # real agent secret with empty GHA context. Hosted linux-small
+          # still usually has no key; native packagers persist notes.
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        # Writes one What's New entry per shipped fork build — the fork's own
-        # changes plus the integrated parent nightly — for every build missing
-        # an entry, then commits and pushes so this release ships its own
-        # notes. Failures downgrade to warnings and never block the release;
-        # the next run regenerates whatever is missing.
-        run: node scripts/fork/generate-changelog.mjs
+        # Best-effort on hosted Linux. Do not push: Origin HTTPS has no
+        # credentials here. macos-release writes and pushes the same notes.
+        run: node scripts/fork/generate-changelog.mjs --no-push
 
   # Only GHA job that needs preflight. Native DMG/NSIS/relay mint versions
   # themselves in .buildkite/pipeline.yml and do not read these outputs.

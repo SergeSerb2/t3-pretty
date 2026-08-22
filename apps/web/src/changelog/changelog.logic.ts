@@ -10,6 +10,8 @@ export const CHANGELOG_LAST_SEEN_STORAGE_KEY = "t3code:changelog-last-seen:v1";
     baseline and catch up on the releases after it. */
 export const CHANGELOG_ROLLOUT_BASELINE_VERSION = "0.0.30";
 
+const MAINTENANCE_ONLY_TITLE = "Under-the-hood stability and maintenance";
+
 const ChangelogLastSeenSchema = Schema.Struct({
   version: Schema.String,
 });
@@ -105,21 +107,38 @@ export function resolveWhatsNewDecision({
     return { releases: [], acknowledgeVersion: null };
   }
 
-  const unseen = releases
-    .filter((release) => {
-      const aboveLastSeen = compareAppVersions(release.version, effectiveLastSeen);
-      const withinCurrent = compareAppVersions(release.version, currentVersion);
-      return (
-        aboveLastSeen !== null && aboveLastSeen > 0 && withinCurrent !== null && withinCurrent <= 0
-      );
-    })
-    .toSorted((a, b) => -(compareAppVersions(a.version, b.version) ?? 0));
+  const unseen = omitMaintenanceOnlyReleases(
+    releases
+      .filter((release) => {
+        const aboveLastSeen = compareAppVersions(release.version, effectiveLastSeen);
+        const withinCurrent = compareAppVersions(release.version, currentVersion);
+        return (
+          aboveLastSeen !== null &&
+          aboveLastSeen > 0 &&
+          withinCurrent !== null &&
+          withinCurrent <= 0
+        );
+      })
+      .toSorted((a, b) => -(compareAppVersions(a.version, b.version) ?? 0)),
+  );
 
   if (unseen.length === 0) {
     return { releases: [], acknowledgeVersion: currentVersion };
   }
 
   return { releases: unseen, acknowledgeVersion: null };
+}
+
+function isMaintenanceOnlyRelease(release: ChangelogRelease): boolean {
+  return release.items.length === 1 && release.items[0]?.title === MAINTENANCE_ONLY_TITLE;
+}
+
+/** Drop stub-only nightly entries when a list also has user-facing notes. */
+export function omitMaintenanceOnlyReleases(
+  releases: readonly ChangelogRelease[],
+): ChangelogRelease[] {
+  const visible = releases.filter((release) => !isMaintenanceOnlyRelease(release));
+  return visible.length > 0 ? visible : [...releases];
 }
 
 /** Whether this browser profile holds app state written before the changelog

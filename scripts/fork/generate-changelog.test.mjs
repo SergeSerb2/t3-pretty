@@ -243,14 +243,47 @@ describe("fallbackReleaseEntry", () => {
       { kind: "improved", title: "Under-the-hood stability and maintenance", description: "" },
     ]);
   });
+
+  it("skips merge commits and internal types so Origin PR merges still yield notes", () => {
+    const entry = fallbackReleaseEntry({
+      version: "0.0.34-nightly.20260812.1077000102",
+      date: "2026-08-12",
+      forkCommits: [
+        "Merge pull request #91 from SergeSerb2/t3code/redesign-settled-snoozed-ui",
+        "chore(ci): bump the release runners",
+        "fix(ci): stop hosted OTA from SIGKILL",
+        "fix(release): publish Windows NSIS artifacts",
+        "fix(sync): resume leftover merges",
+        "docs(changelog): add release notes through v0.0.34",
+        "feat(web): add Boring personalization that restores T3 Chat",
+        "fix(web): restore clicks on titlebar panel toggles",
+        "fix(web): restore clicks on titlebar panel toggles",
+      ],
+      upstream: null,
+    });
+    assert.deepEqual(entry.items, [
+      {
+        kind: "new",
+        title: "add Boring personalization that restores T3 Chat",
+        description: "",
+      },
+      { kind: "fixed", title: "restore clicks on titlebar panel toggles", description: "" },
+    ]);
+  });
 });
 
 describe("release workflow wiring", () => {
   it("generates the changelog during preflight and releases the changelog commit", () => {
     const workflow = NodeFS.readFileSync(releaseWorkflowPath, "utf8");
 
-    assert.include(workflow, "node scripts/fork/generate-changelog.mjs");
-    assert.include(workflow, "CLI_PROXY_API_KEY");
+    assert.include(workflow, "node scripts/fork/generate-changelog.mjs --no-push");
+    assert.notInclude(
+      workflow.slice(
+        workflow.indexOf("id: changelog"),
+        workflow.indexOf("run: node scripts/fork/generate-changelog.mjs --no-push"),
+      ),
+      "CLI_PROXY_API_KEY: ${{ env.CLI_PROXY_API_KEY }}",
+    );
     assert.include(workflow, "RELEASE_VERSION: ${{ steps.release.outputs.version }}");
     const changelogStep = workflow.slice(
       workflow.indexOf("id: changelog"),
@@ -274,6 +307,32 @@ describe("release workflow wiring", () => {
       "utf8",
     );
     assert.include(changelog, "process.exitCode = 1");
+    assert.include(changelog, "--no-merges");
+    assert.include(changelog, "--no-push");
+    assert.include(changelog, "writing changelog entries from commit subjects");
+    assert.notInclude(changelog, '"--first-parent"');
+  });
+
+  it("writes notes from the native packagers that actually ship the app", () => {
+    const macos = NodeFS.readFileSync(
+      NodePath.resolve(
+        NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+        "build-macos-dmg.sh",
+      ),
+      "utf8",
+    );
+    const windows = NodeFS.readFileSync(
+      NodePath.resolve(
+        NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+        "build-windows-nsis.ps1",
+      ),
+      "utf8",
+    );
+    assert.include(macos, "node scripts/fork/generate-changelog.mjs --version");
+    assert.include(macos, 'docs(changelog):"*');
+    assert.include(windows, "generate-changelog.mjs");
+    assert.include(windows, "--no-push");
+    assert.include(windows, "docs(changelog):*");
   });
 
   it("restricts the changelog push to runs triggered by main", () => {

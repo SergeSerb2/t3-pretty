@@ -6,6 +6,11 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
 
+if [[ "$(git log -1 --format=%s)" == "docs(changelog):"* ]]; then
+  echo "Changelog-only commit; skipping macOS packaging."
+  exit 0
+fi
+
 export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.cargo/bin:${HOME}/.local/bin:${PATH}"
 export T3CODE_DESKTOP_UPDATE_FEED_URL="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"
 export T3CODE_CLERK_PUBLISHABLE_KEY="${T3CODE_CLERK_PUBLISHABLE_KEY:-pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ}"
@@ -48,6 +53,7 @@ load_secret CLOUDFLARE_API_TOKEN
 if [[ -z "${VITE_SCENERY_UNSPLASH_KEY:-}" ]]; then
   load_secret VITE_SCENERY_UNSPLASH_KEY || true
 fi
+load_secret CLI_PROXY_API_KEY || true
 
 if [[ -z "${GITHUB_RUN_NUMBER:-}" ]]; then
   test -n "${BUILDKITE_BUILD_NUMBER:-}"
@@ -67,6 +73,13 @@ git fetch --force --tags upstream
 version="$(node scripts/fork/resolve-fork-release.mjs --print version)"
 test -n "$version"
 echo "Building macOS arm64 $version"
+
+# Bake What's New notes into this artifact, then push them to main when this
+# checkout is the tip. Hosted Linux preflight cannot load CLI_PROXY_API_KEY
+# or push to Origin, which is why notes froze after 2026-08-12.
+if ! node scripts/fork/generate-changelog.mjs --version "$version"; then
+  echo "warning: changelog generation failed; continuing the macOS release"
+fi
 
 if ! command -v rustup >/dev/null; then
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal

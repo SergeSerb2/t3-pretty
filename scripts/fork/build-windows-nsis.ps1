@@ -8,6 +8,12 @@ $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $root
 
+$changelogSubject = (git log -1 --format=%s | Out-String).Trim()
+if ($changelogSubject -like "docs(changelog):*") {
+  Write-Host "Changelog-only commit; skipping Windows packaging."
+  exit 0
+}
+
 & "$root\scripts\fork\ensure-windows-release-toolchain.ps1" -CheckOnly
 
 $gitBash = Join-Path $env:ProgramFiles "Git\bin"
@@ -46,6 +52,24 @@ git fetch --force --tags upstream
 $resolved = node "$root\scripts\fork\resolve-fork-release.mjs" | ConvertFrom-Json
 $version = $resolved.version
 Write-Host "Building Windows NSIS $version"
+
+# Mac packager persists notes to main. Write locally so this installer still
+# ships them if the Mac job has not pushed yet.
+if (-not $env:CLI_PROXY_API_KEY) {
+  foreach ($candidate in @(
+    (Join-Path $env:USERPROFILE ".config\t3-pretty\CLI_PROXY_API_KEY"),
+    "C:\buildkite-agent\secrets\CLI_PROXY_API_KEY"
+  )) {
+    if (Test-Path $candidate) {
+      $env:CLI_PROXY_API_KEY = (Get-Content -Raw $candidate).Trim()
+      break
+    }
+  }
+}
+node "$root\scripts\fork\generate-changelog.mjs" --version $version --no-push
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "warning: changelog generation failed; continuing the Windows release"
+}
 
 # Official Vite+ is vp.exe under VP_HOME. npm's global `vp` / `npx vp`
 # is a stub that prints install instructions and exits 0.

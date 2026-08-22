@@ -17,16 +17,24 @@ const CHANGELOG_PATH = "apps/web/src/changelog/changelogData.ts";
 const CHANGELOG_MARKER = "export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [";
 const COMMIT_SUBJECT_PREFIX = "docs(changelog):";
 const FORK_TAG_PATTERN = /^v(\d+\.\d+\.\d+-nightly\.\d+\.\d+)\.fork$/u;
-const MAX_RELEASES_PER_RUN = 60;
+const MAX_RELEASES_PER_RUN = Number.parseInt(
+  process.env.CLI_PROXY_CHANGELOG_MAX_RELEASES ?? "150",
+  10,
+);
 const MAX_VERSIONS_PER_REQUEST = 4;
 const MAX_FORK_COMMITS = 40;
 const MAX_UPSTREAM_COMMITS = 60;
 const PRINT_WIDTH = 100;
+const MAINTENANCE_TITLE = "Under-the-hood stability and maintenance";
+const INTERNAL_COMMIT = /^(?:chore|ci|docs|test|build|style)(?:\(|:|!)|\w+\((?:ci|release|sync)\)/u;
 // Model calls must stay comfortably below the 15-minute preflight deadline:
 // each request times out on its own, and an overall budget stops further
 // chunk requests so the fallback path always runs before GitHub kills the job.
 const REQUEST_TIMEOUT_MS = 150_000;
-const MODEL_TIME_BUDGET_MS = 600_000;
+const MODEL_TIME_BUDGET_MS = Number.parseInt(
+  process.env.CLI_PROXY_CHANGELOG_BUDGET_MS ?? "600000",
+  10,
+);
 
 function git(args, options = {}) {
   return NodeChildProcess.execFileSync("git", args, {
@@ -319,12 +327,19 @@ export function fallbackReleaseEntry({ version, date, forkCommits, upstream }) {
   const subjects = [...forkCommits, ...(upstream?.commits ?? [])];
   const items = [];
   for (const subject of subjects) {
+    if (INTERNAL_COMMIT.test(subject)) {
+      continue;
+    }
     const match = subject.match(/^(\w+)(?:\([^)]*\))?!?:\s*(.+)$/u);
     if (!match) {
       continue;
     }
+    const title = match[2].trim();
+    if (items.some((item) => item.title === title)) {
+      continue;
+    }
     const kind = match[1] === "fix" ? "fixed" : match[1] === "feat" ? "new" : "improved";
-    items.push({ kind, title: match[2].trim(), description: "" });
+    items.push({ kind, title, description: "" });
     if (items.length >= 6) {
       break;
     }
@@ -339,11 +354,34 @@ export function fallbackReleaseEntry({ version, date, forkCommits, upstream }) {
         : [
             {
               kind: "improved",
-              title: "Under-the-hood stability and maintenance",
+              title: MAINTENANCE_TITLE,
               description: "",
             },
           ],
   };
+}
+
+function readCliProxyToken() {
+  const fromEnv = process.env.CLI_PROXY_API_KEY?.trim() ?? "";
+  if (fromEnv) {
+    return fromEnv;
+  }
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  const candidates = [
+    home ? NodePath.join(home, ".config", "t3-pretty", "CLI_PROXY_API_KEY") : "",
+    "/Users/m1-dev/.config/t3-pretty/CLI_PROXY_API_KEY",
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      const value = NodeFS.readFileSync(candidate, "utf8").replace(/\r/g, "").trim();
+      if (value) {
+        return value;
+      }
+    } catch {
+      // File-backed secrets are optional; fallback entries still ship.
+    }
+  }
+  return "";
 }
 
 function listForkReleases() {
@@ -371,7 +409,9 @@ function nightlyTagAt(ref) {
 }
 
 function commitSubjects(rangeArgs) {
-  return git(["log", "--first-parent", "--format=%s", ...rangeArgs])
+  // --no-merges, not --first-parent: Origin merge commits are
+  // "Merge pull request #N from …" and hide the actual feat/fix subjects.
+  return git(["log", "--no-merges", "--format=%s", ...rangeArgs])
     .split("\n")
     .filter((line) => line !== "" && !line.startsWith(COMMIT_SUBJECT_PREFIX))
     .slice(0, MAX_FORK_COMMITS);
@@ -428,11 +468,13 @@ async function generateEntries({ contexts, token, warn }) {
   for (let start = 0; start < contexts.length; start += MAX_VERSIONS_PER_REQUEST) {
     const chunk = contexts.slice(start, start + MAX_VERSIONS_PER_REQUEST);
     let modelReleases = [];
+    let calledModel = false;
     if (token && Date.now() < deadline) {
       const prompt = buildChangelogPrompt({ releases: chunk });
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
           modelReleases = await callChangelogModel({ prompt, token });
+          calledModel = true;
           break;
         } catch (error) {
           if (attempt === 2 || Date.now() >= deadline) {
@@ -447,12 +489,6 @@ async function generateEntries({ contexts, token, warn }) {
           }
         }
       }
-    } else if (token) {
-      warn(
-        `Changelog model time budget exhausted; using commit subjects for ${chunk
-          .map((release) => release.version)
-          .join(", ")}.`,
-      );
     }
     for (const context of chunk) {
       const modelRelease = modelReleases.find((release) => release.version === context.version);
@@ -465,7 +501,7 @@ async function generateEntries({ contexts, token, warn }) {
           items,
         });
       } else {
-        if (token && !modelRelease) {
+        if (calledModel && !modelRelease) {
           warn(`CLIProxyAPI omitted v${context.version}; falling back to commit subjects.`);
         }
         entries.push(fallbackReleaseEntry(context));
@@ -482,11 +518,12 @@ function warn(message) {
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
+  const noPush = args.includes("--no-push");
   const versionArgIndex = args.indexOf("--version");
   const currentVersion = (
     versionArgIndex === -1 ? process.env.RELEASE_VERSION : args[versionArgIndex + 1]
   )?.trim();
-  const token = process.env.CLI_PROXY_API_KEY?.trim() ?? "";
+  const token = readCliProxyToken();
   const baseSha = git(["rev-parse", "HEAD"]);
   const forkReleases = listForkReleases();
 
@@ -530,8 +567,22 @@ async function main() {
     return;
   }
   if (!token) {
-    warn("CLI_PROXY_API_KEY is not set; shipping without new changelog entries.");
-    writeGitHubOutput({ ref: baseSha, entries: 0 });
+    warn("CLI_PROXY_API_KEY is not set; writing changelog entries from commit subjects.");
+  }
+
+  const entries = await generateEntries({ contexts, token, warn });
+  const newEntries = entries.map((entry) => ({
+    version: entry.version,
+    text: serializeReleaseEntry(entry),
+  }));
+  const nextSource = mergeChangelogEntries(source, newEntries);
+  NodeFS.writeFileSync(CHANGELOG_PATH, nextSource);
+  process.stdout.write(
+    `[fork-changelog] wrote ${entries.length} release note(s) to ${CHANGELOG_PATH}\n`,
+  );
+
+  if (noPush) {
+    writeGitHubOutput({ ref: baseSha, entries: entries.length });
     return;
   }
 
@@ -542,11 +593,11 @@ async function main() {
     git(["fetch", "origin", "main"]);
   } catch (error) {
     warn(
-      `Could not fetch origin/main; shipping without new changelog entries. ${
+      `Could not fetch origin/main; leaving ${CHANGELOG_PATH} in the working tree. ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
-    writeGitHubOutput({ ref: baseSha, entries: 0 });
+    writeGitHubOutput({ ref: baseSha, entries: entries.length });
     return;
   }
   const mainTip = git(["rev-parse", "origin/main"]);
@@ -563,17 +614,10 @@ async function main() {
       writeGitHubOutput({ ref: mainTip, entries: 0 });
       return;
     }
-    warn("HEAD is not the origin/main tip; skipping the changelog push.");
-    writeGitHubOutput({ ref: baseSha, entries: 0 });
+    warn("HEAD is not the origin/main tip; leaving changelog entries in the working tree.");
+    writeGitHubOutput({ ref: baseSha, entries: entries.length });
     return;
   }
-
-  const entries = await generateEntries({ contexts, token, warn });
-  const newEntries = entries.map((entry) => ({
-    version: entry.version,
-    text: serializeReleaseEntry(entry),
-  }));
-  NodeFS.writeFileSync(CHANGELOG_PATH, mergeChangelogEntries(source, newEntries));
 
   const newest =
     newEntries.map((entry) => entry.version).sort((a, b) => -(compareVersions(a, b) ?? 0))[0] ??
@@ -595,15 +639,17 @@ async function main() {
   } catch (error) {
     // A rejected push means origin/main moved since this run started. Never
     // rebase onto it: the release must stay pinned to the triggering commit
-    // its version was computed from, and the moved commit's own queued run
-    // regenerates any entries this run leaves behind.
+    // its version was computed from. Keep the notes in the working tree so
+    // this build still ships them.
     warn(
-      `Could not push the changelog commit; releasing ${baseSha.slice(0, 12)} without it. ${
+      `Could not push the changelog commit; keeping notes in the working tree. ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
-    git(["reset", "--hard", baseSha]);
-    writeGitHubOutput({ ref: baseSha, entries: 0 });
+    git(["reset", "--soft", baseSha]);
+    git(["reset", "HEAD", "--", CHANGELOG_PATH]);
+    NodeFS.writeFileSync(CHANGELOG_PATH, nextSource);
+    writeGitHubOutput({ ref: baseSha, entries: entries.length });
     return;
   }
 

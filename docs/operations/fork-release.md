@@ -51,7 +51,7 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    invalid-tag, git, and monotonic failures still fail the job. `should_release`
    stays false unless the mint step succeeded and produced a real version, so
    changelog and WSL do not consume `-` placeholders. Preflight
-   `ref` is the changelog commit, `github.sha`, or `BUILDKITE_COMMIT` — never
+   `ref` is the changelog commit when hosted Linux managed to write one, `github.sha`, or `BUILDKITE_COMMIT` — never
    the empty-output placeholder `-`. The WSL node-pty job checks out that SHA,
    treating a leftover `-` as missing and recovering from
    `GITHUB_SHA`/`BUILDKITE_COMMIT`, and fails instead of compiling an empty
@@ -96,19 +96,19 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    starts its own `T3 Pretty Desktop Release`. Release runs are not collapsed through a workflow
    concurrency group: the dedicated runners queue every main commit, and the CI run number
    makes each fork version unique even when multiple releases overlap.
-7. Before building, the release preflight runs `scripts/fork/generate-changelog.mjs`, which asks
-   the Railway CLIProxyAPI model (`gpt-5.6-sol`, `high` reasoning by default) to write one What's
-   New entry per shipped fork build — the fork's own commits plus the parent nightly window —
-   for every build still missing an entry, then commits and pushes `changelogData.ts`. That push
-   only happens for runs triggered by `main` itself and only when the triggering commit is still
-   the `main` tip, so a manual dispatch of another ref cannot move `main`, and it does not
-   retrigger the workflow. The build and publish jobs check out the pushed changelog commit, so
-   each release ships its own notes; the already-released skip check recognizes the tagged
-   changelog child of the triggering commit, so re-running a completed run stays a no-op.
-   Generation failures downgrade to warnings: the release ships without new entries and the next
-   run regenerates everything missing.
+7. Native macOS and Windows packagers run `scripts/fork/generate-changelog.mjs` after minting
+   the fork version and before compiling, so What's New notes land in the artifact users
+   install. The script lists non-merge commit subjects (Origin merge commits are
+   `Merge pull request #N` and hide the real feat/fix titles), asks the Railway CLIProxyAPI
+   model (`gpt-5.6-sol`) when `CLI_PROXY_API_KEY` is available, and always falls back to those
+   subjects so a missing key cannot skip the file. Hosted Linux preflight still runs the
+   script with `--no-push`: that agent has no Origin HTTPS credentials and mapping
+   `${{ env.CLI_PROXY_API_KEY }}` would blank a real secret. macos-release commits and pushes
+   `changelogData.ts` when HEAD is still the `main` tip. Packagers skip `docs(changelog):`
+   commits so that push does not mint another desktop release. Generation failures warn and
+   the release continues; the next run fills whatever is still missing.
 8. Origin-connected Linux CI (Depot or Buildkite, `ubuntu-latest` in the workflow YAML) resolves
-   the version and writes What's New notes. It does not call GitHub Actions
+   the version. What's New notes are written by the native Mac and Windows packagers. It does not call GitHub Actions
    (`uses:`) — the importer resolves every action from api.github.com at parse
    time, and a burst of main merges then fails the workflow with a GitHub rate
    limit before any job starts. Publish and Origin CLI work stay on
@@ -187,12 +187,13 @@ without pretending that a newer upstream tag was integrated before its sync pull
 - Secret `CURSOR_API_KEY`: Cursor API key for the Origin CLI (`origin auth login --api-key`).
   Used to open, merge, and tag on Origin.
 - Secret `CLI_PROXY_API_KEY`: Railway CLIProxyAPI bearer token used by the trusted scheduled
-  sync workflow for conflict resolution, the release preflight for What's New changelog
+  sync workflow for conflict resolution, native Mac/Windows packagers for What's New changelog
   generation, and Origin pull-request review (`grok-4.6` via
   `https://cli-proxy-api-production-1615.up.railway.app/v1`). Store it as a Buildkite cluster
-  secret, not a GitHub Actions `secrets.*` mapping. `CLI_PROXY_CHANGELOG_EFFORT` optionally
-  overrides the changelog reasoning effort (default `high`). `CLI_PROXY_REVIEW_MODEL`
-  defaults to `grok-4.6`. Do not add an xAI / Grok API key for reviews.
+  secret or a file under `~/.config/t3-pretty/`, not a GitHub Actions `secrets.*` mapping.
+  `CLI_PROXY_CHANGELOG_EFFORT` optionally overrides the changelog reasoning effort (default
+  `high`). `CLI_PROXY_REVIEW_MODEL` defaults to `grok-4.6`. Do not add an xAI / Grok API key
+  for reviews.
 - Relay secrets on the same cluster: `CLOUDFLARE_API_TOKEN`, `PLANETSCALE_API_TOKEN_ID`,
   `PLANETSCALE_API_TOKEN`, `AXIOM_TOKEN`, `CLERK_SECRET_KEY`, `APNS_PRIVATE_KEY`. Public
   relay IDs are literals in `.github/workflows/deploy-relay.yml`.
