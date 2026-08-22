@@ -163,6 +163,9 @@ export function SceneryLayer({
         // The view-transition callback must mutate the DOM before it
         // returns, so React's photo + ink state have to flush together.
         runSceneryInkTransition((animating) => {
+          if (cancelled) {
+            return;
+          }
           inkAnimating = animating;
           flushSync(commit);
         });

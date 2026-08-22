@@ -30,9 +30,13 @@ html[data-scenery-motion] {
 /* SceneryMotion tags a timeline row wrapper with scenery-row-enter the
    first time its row id is seen (never on virtualization re-mounts or
    thread switches), staggering bursts via --sc-enter-delay. `both` keeps
-   delayed rows invisible until their turn. */
+   delayed rows invisible until their turn. Animate the inner box, not the
+   wrapper: the wrapper is `overflow-x-clip`, and translating a clipped
+   text box is the Chromium path that double-rasters glyphs after a thread
+   remount. animationend bubbles, so the driver can still listen on the
+   wrapper. */
 
-html[data-scenery-motion] [data-timeline-root].scenery-row-enter {
+html[data-scenery-motion] [data-timeline-root].scenery-row-enter > * {
   animation: scenery-row-rise 340ms var(--sc-ease-out) both;
   animation-delay: var(--sc-enter-delay, 0ms);
 }
@@ -655,7 +659,7 @@ html[data-scenery-motion] [data-slot="empty-header"].max-w-none {
     --sc-m: 0;
   }
 
-  html[data-scenery-motion] [data-timeline-root].scenery-row-enter {
+  html[data-scenery-motion] [data-timeline-root].scenery-row-enter > * {
     animation: scenery-row-fade 150ms ease-out both;
   }
 

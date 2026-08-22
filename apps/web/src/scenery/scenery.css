@@ -157,10 +157,11 @@ html[data-theme-id="world-scenery"] {
   opacity: var(--scenery-wash-light-opacity, 0);
 }
 
-/* Light↔dark ink flip: the view transition crossfades the whole snapshot,
+/* Light↔dark ink flip: the view transition crossfades the scenery snapshot,
    so the CSS photo fade and wash opacity tween would double-animate. The
    default plus-lighter blend also flashes a bright frame between a light
-   and a dark snapshot — normal blend is the dissolve we actually want. */
+   and a dark snapshot — normal blend is the dissolve we actually want.
+   Chat text is a named group that cuts instead of dissolving (below). */
 html[data-scenery-ink-transition] .scenery-layer__group,
 html[data-scenery-ink-transition] .scenery-layer__wash,
 html[data-scenery-ink-transition] .scenery-layer__edges {

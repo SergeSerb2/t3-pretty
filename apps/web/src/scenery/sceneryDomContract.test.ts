@@ -338,6 +338,7 @@ describe("scenery light/dark appearance crossfade", () => {
     expect(sceneryLayerSource).toContain("runSceneryInkTransition");
     expect(sceneryLayerSource).toContain("flushSync(commit)");
     expect(sceneryLayerSource).toContain("appearanceCrossfadeRef.current");
+    expect(sceneryLayerSource).toContain("if (cancelled)");
   });
 
   it("crossfades wash by opacity instead of snapping rgb() channels", () => {
@@ -373,6 +374,7 @@ describe("scenery light/dark appearance crossfade", () => {
     expect(chatViewSource).toContain('data-chat-transcript-active="true"');
     expect(sceneryInkTransitionSource).toContain("document.hidden");
     expect(sceneryInkTransitionSource).toContain("pinActiveChatTranscript");
+    expect(sceneryInkTransitionSource).toContain("generation !== inkTransitionGeneration");
   });
 
   it("parks the CSS layers only when the view transition really animates", () => {
