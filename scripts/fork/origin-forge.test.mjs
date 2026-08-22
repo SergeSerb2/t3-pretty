@@ -385,6 +385,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(source, 'case "upload-assets"');
     assert.include(source, "originGitConfigArgs");
     assert.include(source, "credential.https://origin.cursor.com.helper");
+    assert.include(source, "maxBuffer");
   });
 
   it("reads the baked updater feed from T3CODE_DESKTOP_UPDATE_FEED_URL", () => {
