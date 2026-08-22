@@ -29,9 +29,11 @@ import {
   executeAtomQuery,
   isAtomCauseInterrupted,
   isAtomCommandInterrupted,
+  isSettledAtomQueryInterrupt,
   formatAtomQueryError,
   mapAtomCommandResult,
   readAtomQueryResult,
+  claimAtomQueryInterruptRetry,
   runAtomCommand,
   settleAsyncResult,
   settlePromise,
@@ -144,6 +146,21 @@ describe("atom command result helpers", () => {
       isPending: false,
     });
     expect(formatAtomQueryError(interrupted.cause)).toBe("The environment request failed.");
+    expect(isSettledAtomQueryInterrupt(interrupted)).toBe(true);
+    expect(isSettledAtomQueryInterrupt(rewrapped)).toBe(true);
+    expect(isSettledAtomQueryInterrupt(failed)).toBe(false);
+    expect(isSettledAtomQueryInterrupt(AsyncResult.success("cached"))).toBe(false);
+    expect(
+      isSettledAtomQueryInterrupt(AsyncResult.failure(Cause.interrupt(1), { waiting: true })),
+    ).toBe(false);
+  });
+
+  it("claims one interrupt retry per generation", () => {
+    const claimed = { current: undefined as unknown };
+    expect(claimAtomQueryInterruptRetry(claimed, "list")).toBe(true);
+    expect(claimAtomQueryInterruptRetry(claimed, "list")).toBe(false);
+    expect(claimAtomQueryInterruptRetry(claimed, "stats")).toBe(true);
+    expect(claimAtomQueryInterruptRetry(claimed, "list")).toBe(true);
   });
 
   it("settles raw promise boundaries as successes or defects", async () => {

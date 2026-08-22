@@ -1,11 +1,12 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
+  claimAtomQueryInterruptRetry,
   formatAtomQueryError,
-  isAtomCauseInterrupted,
+  isSettledAtomQueryInterrupt,
   readAtomQueryResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 const EMPTY_ASYNC_RESULT_ATOM = Atom.make(AsyncResult.initial<never, never>(false)).pipe(
   Atom.withLabel("web-environment-query:empty"),
@@ -20,6 +21,19 @@ export interface EnvironmentQueryView<A> {
 
 export const formatEnvironmentQueryError = formatAtomQueryError;
 
+export function useRetryInterruptedQuery(
+  shouldRetry: boolean,
+  refresh: () => void,
+  generation: unknown,
+): void {
+  const claimedGeneration = useRef<unknown>(undefined);
+  useEffect(() => {
+    if (!shouldRetry) return;
+    if (!claimAtomQueryInterruptRetry(claimedGeneration, generation)) return;
+    refresh();
+  }, [generation, refresh, shouldRetry]);
+}
+
 export function useEnvironmentQuery<A, E>(
   atom: Atom.Atom<AsyncResult.AsyncResult<A, E>> | null,
 ): EnvironmentQueryView<A> {
@@ -27,16 +41,7 @@ export function useEnvironmentQuery<A, E>(
   const result = useAtomValue(selectedAtom);
   const refresh = useAtomRefresh(selectedAtom);
   const snapshot = readAtomQueryResult(result);
-  const shouldRetryInterrupt =
-    atom !== null &&
-    result._tag === "Failure" &&
-    !result.waiting &&
-    isAtomCauseInterrupted(result.cause);
-
-  useEffect(() => {
-    if (!shouldRetryInterrupt) return;
-    refresh();
-  }, [refresh, shouldRetryInterrupt]);
+  useRetryInterruptedQuery(atom !== null && isSettledAtomQueryInterrupt(result), refresh, atom);
 
   return {
     data: snapshot.data,

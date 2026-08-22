@@ -342,6 +342,10 @@ export function formatAtomQueryError(cause: Cause.Cause<unknown>): string {
   return "The environment request failed.";
 }
 
+export function isSettledAtomQueryInterrupt<A, E>(result: AsyncResult.AsyncResult<A, E>): boolean {
+  return result._tag === "Failure" && !result.waiting && isAtomCauseInterrupted(result.cause);
+}
+
 export function readAtomQueryResult<A, E>(
   result: AsyncResult.AsyncResult<A, E>,
 ): {
@@ -364,6 +368,18 @@ export function readAtomQueryResult<A, E>(
     error: result._tag === "Failure" ? formatAtomQueryError(result.cause) : null,
     isPending: result.waiting,
   };
+}
+
+/** One auto-retry per generation. The same cancelled query cannot spin refresh(). */
+export function claimAtomQueryInterruptRetry(
+  claimedGeneration: { current: unknown },
+  generation: unknown,
+): boolean {
+  if (Object.is(claimedGeneration.current, generation)) {
+    return false;
+  }
+  claimedGeneration.current = generation;
+  return true;
 }
 
 export function squashAtomCommandFailure(result: {
