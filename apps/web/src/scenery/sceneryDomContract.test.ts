@@ -256,6 +256,20 @@ describe("scenery new-thread arrival contract", () => {
   it("docks the World Scenery composer with the longer scenery curve", () => {
     expect(chatViewSource).toContain("SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS");
     expect(chatViewSource).toContain("scenery-hero-headline-ghost");
+    expect(chatViewSource).toContain("shouldGlideDraftHeroHandoff");
+    expect(chatViewSource).toContain("shouldPopDraftHeroGlide");
+  });
+
+  it("does not keep a transform transition on settled hero chrome", () => {
+    const settledChrome =
+      /html\[data-scenery-arrival="settled"\] \[data-scenery-hero-chrome\]\s*\{[^}]+\}/.exec(
+        sceneryCssSource,
+      )?.[0];
+    expect(settledChrome, "missing settled chrome rule").toBeTruthy();
+    expect(settledChrome).not.toContain("transition");
+    expect(sceneryCssSource).not.toContain(
+      'html[data-scenery-arrival="settled"] [data-scenery-hero-chrome="composer"]',
+    );
   });
 
   it("holds fog until the wallpaper is decoded and primes it before navigation", () => {

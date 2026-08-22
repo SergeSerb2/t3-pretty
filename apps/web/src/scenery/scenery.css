@@ -693,9 +693,10 @@ html[data-scenery-arrival="fog"] [data-scenery-hero-chrome] {
 
 /* Chrome comes up through the thinning bank: headline first, composer a
    beat behind, so the hero reads as one gesture instead of a cut
-   (chromeInMs). */
-html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome],
-html[data-scenery-arrival="settled"] [data-scenery-hero-chrome] {
+   (chromeInMs). Settled must not keep a transform transition — it would
+   still be on the composer after arrival, and a later remount or FLIP
+   would replay as a delayed bounce. */
+html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome] {
   opacity: 1;
   transform: none;
   transition:
@@ -703,9 +704,13 @@ html[data-scenery-arrival="settled"] [data-scenery-hero-chrome] {
     transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome="composer"],
-html[data-scenery-arrival="settled"] [data-scenery-hero-chrome="composer"] {
+html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome="composer"] {
   transition-delay: 70ms;
+}
+
+html[data-scenery-arrival="settled"] [data-scenery-hero-chrome] {
+  opacity: 1;
+  transform: none;
 }
 
 /* An ink flip that lands mid-arrival is crossfaded by its view transition;
