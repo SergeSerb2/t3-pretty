@@ -61,12 +61,6 @@ export class ThreadSearch extends Context.Service<ThreadSearch, ThreadSearchShap
   "t3/search/ThreadSearch",
 ) {}
 
-// Same ASCII-only fold the legacy snippet builder uses; duplicated so this
-// module stays decoupled from the 3000-line snapshot query.
-function foldAsciiCase(value: string): string {
-  return value.replace(/[A-Z]/g, (character) => character.toLowerCase());
-}
-
 /** Snippet window centered on the earliest matched term, mirroring the
  * legacy builder's 240-char shape. */
 function buildRankedSnippet(text: string, terms: RankedSearchTerms, rawQuery: string): string {
@@ -75,16 +69,19 @@ function buildRankedSnippet(text: string, terms: RankedSearchTerms, rawQuery: st
     return normalizedText;
   }
 
-  const foldedText = foldAsciiCase(normalizedText);
+  // Fold with toLowerCase like the tokenizer, so Unicode terms ("cédric")
+  // locate their window instead of falling back to the message start. Exact
+  // and prefix terms are tokenizer output, already lowercased.
+  const foldedText = normalizedText.toLowerCase();
   let matchIndex = -1;
   for (const term of [...terms.exact, terms.prefix]) {
-    const index = foldedText.indexOf(foldAsciiCase(term));
+    const index = foldedText.indexOf(term);
     if (index !== -1 && (matchIndex === -1 || index < matchIndex)) {
       matchIndex = index;
     }
   }
   if (matchIndex === -1) {
-    matchIndex = foldedText.indexOf(foldAsciiCase(rawQuery.replace(/\s+/g, " ").trim()));
+    matchIndex = foldedText.indexOf(rawQuery.replace(/\s+/g, " ").trim().toLowerCase());
   }
   if (matchIndex === -1) {
     matchIndex = 0;
@@ -228,75 +225,81 @@ const makeThreadSearch = Effect.gen(function* () {
       // Tokenizer output is alphanumeric, so the GLOB pattern needs no escaping.
       // Common-first: the 25-term sample is only an IDF estimate. AND never
       // intersects those terms when they are the only group (typeahead).
-      const expansionLimitRows = yield* sql<{ readonly term: string; readonly df: number }>`
-        SELECT term, doc_freq AS "df"
-        FROM search_index_terms
-        WHERE term GLOB ${`${terms.prefix}*`}
-        ORDER BY doc_freq DESC
-        LIMIT ${PREFIX_EXPANSION_LIMIT}
-      `;
-      let expansionRows = [...expansionLimitRows];
-      if (!expansionRows.some((row) => row.term === terms.prefix)) {
-        const exactPrefixRows = yield* sql<{ readonly term: string; readonly df: number }>`
+      // Skipped when the prefix is already a required exact term (a trailing
+      // stopword falls back to the last content term) — a second group for
+      // the same term would double-count its tf and re-AND it.
+      let prefixAsRequired = true;
+      let prefixDfLowerBound = 0;
+      if (!terms.exact.includes(terms.prefix)) {
+        const expansionLimitRows = yield* sql<{ readonly term: string; readonly df: number }>`
           SELECT term, doc_freq AS "df"
           FROM search_index_terms
-          WHERE term = ${terms.prefix}
+          WHERE term GLOB ${`${terms.prefix}*`}
+          ORDER BY doc_freq DESC
+          LIMIT ${PREFIX_EXPANSION_LIMIT}
         `;
-        const exactPrefix = exactPrefixRows[0];
-        if (exactPrefix !== undefined) {
-          expansionRows = [exactPrefix, ...expansionRows];
+        let expansionRows = [...expansionLimitRows];
+        if (!expansionRows.some((row) => row.term === terms.prefix)) {
+          const exactPrefixRows = yield* sql<{ readonly term: string; readonly df: number }>`
+            SELECT term, doc_freq AS "df"
+            FROM search_index_terms
+            WHERE term = ${terms.prefix}
+          `;
+          const exactPrefix = exactPrefixRows[0];
+          if (exactPrefix !== undefined) {
+            expansionRows = [exactPrefix, ...expansionRows];
+          }
         }
-      }
-      if (expansionRows.length === 0) {
-        return { matches: [] } as const;
-      }
-      const prefixTermListTruncated = expansionLimitRows.length === PREFIX_EXPANSION_LIMIT;
-      const prefixDfLowerBound = Math.max(...expansionRows.map((row) => row.df));
-      let prefixAsRequired = true;
-
-      if (groups.length === 0) {
-        const prefixRows = yield* fetchPrefixPostings(terms.prefix, PER_TERM_POSTINGS_LIMIT + 1);
-        if (prefixRows.length === 0) {
+        if (expansionRows.length === 0) {
           return { matches: [] } as const;
         }
-        const globTruncated = prefixRows.length > PER_TERM_POSTINGS_LIMIT;
-        const prefixPostings = postingMap(
-          globTruncated ? prefixRows.slice(0, PER_TERM_POSTINGS_LIMIT) : prefixRows,
-        );
-        groups.push({
-          df:
-            globTruncated || prefixTermListTruncated
-              ? Math.max(prefixPostings.size, prefixDfLowerBound)
-              : prefixPostings.size,
-          postings: prefixPostings,
-        });
-      } else if (prefixTermListTruncated) {
-        prefixAsRequired = false;
-      } else {
-        const prefixPostings = new Map<string, number>();
-        let prefixPostingsTruncated = false;
-        for (const expansion of expansionRows) {
-          const postingRows = yield* fetchPostings(
-            expansion.term,
-            PER_EXPANSION_POSTINGS_LIMIT + 1,
-          );
-          const truncated = postingRows.length > PER_EXPANSION_POSTINGS_LIMIT;
-          if (truncated) {
-            prefixPostingsTruncated = true;
-          }
-          const expansionPostings = truncated
-            ? postingRows.slice(0, PER_EXPANSION_POSTINGS_LIMIT)
-            : postingRows;
-          for (const row of expansionPostings) {
-            prefixPostings.set(row.messageId, (prefixPostings.get(row.messageId) ?? 0) + row.tf);
-          }
-        }
-        prefixAsRequired = !prefixPostingsTruncated;
-        if (prefixAsRequired) {
-          if (prefixPostings.size === 0) {
+        const prefixTermListTruncated = expansionLimitRows.length === PREFIX_EXPANSION_LIMIT;
+        prefixDfLowerBound = Math.max(...expansionRows.map((row) => row.df));
+
+        if (groups.length === 0) {
+          const prefixRows = yield* fetchPrefixPostings(terms.prefix, PER_TERM_POSTINGS_LIMIT + 1);
+          if (prefixRows.length === 0) {
             return { matches: [] } as const;
           }
-          groups.push({ df: prefixPostings.size, postings: prefixPostings });
+          const globTruncated = prefixRows.length > PER_TERM_POSTINGS_LIMIT;
+          const prefixPostings = postingMap(
+            globTruncated ? prefixRows.slice(0, PER_TERM_POSTINGS_LIMIT) : prefixRows,
+          );
+          groups.push({
+            df:
+              globTruncated || prefixTermListTruncated
+                ? Math.max(prefixPostings.size, prefixDfLowerBound)
+                : prefixPostings.size,
+            postings: prefixPostings,
+          });
+        } else if (prefixTermListTruncated) {
+          prefixAsRequired = false;
+        } else {
+          const prefixPostings = new Map<string, number>();
+          let prefixPostingsTruncated = false;
+          for (const expansion of expansionRows) {
+            const postingRows = yield* fetchPostings(
+              expansion.term,
+              PER_EXPANSION_POSTINGS_LIMIT + 1,
+            );
+            const truncated = postingRows.length > PER_EXPANSION_POSTINGS_LIMIT;
+            if (truncated) {
+              prefixPostingsTruncated = true;
+            }
+            const expansionPostings = truncated
+              ? postingRows.slice(0, PER_EXPANSION_POSTINGS_LIMIT)
+              : postingRows;
+            for (const row of expansionPostings) {
+              prefixPostings.set(row.messageId, (prefixPostings.get(row.messageId) ?? 0) + row.tf);
+            }
+          }
+          prefixAsRequired = !prefixPostingsTruncated;
+          if (prefixAsRequired) {
+            if (prefixPostings.size === 0) {
+              return { matches: [] } as const;
+            }
+            groups.push({ df: prefixPostings.size, postings: prefixPostings });
+          }
         }
       }
 

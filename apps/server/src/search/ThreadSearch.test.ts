@@ -931,3 +931,52 @@ it.layer(makeTestLayer("t3-thread-search-orphan-"))("ThreadSearch", (it) => {
     }),
   );
 });
+
+it.layer(makeTestLayer("t3-thread-search-stopword-"))("ThreadSearch", (it) => {
+  it.effect("a trailing stopword does not double-count the last exact term", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+
+      yield* appendProject("project-1");
+      yield* appendThread("thread-1", "project-1");
+      yield* appendMessage({
+        eventId: "evt-m1",
+        threadId: "thread-1",
+        messageId: "message-1",
+        role: "user",
+        text: "fix projector latency",
+      });
+      yield* projectionPipeline.bootstrap;
+
+      // "fix the" classifies as exact ["fix"] with prefix falling back to
+      // "fix". Scored once, it must equal the single-term query's score.
+      const exactOnly = yield* search("fix");
+      const trailingStopword = yield* search("fix the");
+      assert.equal(trailingStopword.matches.length, 1);
+      assert.strictEqual(trailingStopword.matches[0]?.score, exactOnly.matches[0]?.score);
+    }),
+  );
+});
+
+it.layer(makeTestLayer("t3-thread-search-unicode-"))("ThreadSearch", (it) => {
+  it.effect("centers the snippet on a Unicode term", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+
+      yield* appendProject("project-1");
+      yield* appendThread("thread-1", "project-1");
+      yield* appendMessage({
+        eventId: "evt-m1",
+        threadId: "thread-1",
+        messageId: "message-1",
+        role: "user",
+        text: `${"lorem ipsum dolor sit amet ".repeat(12)}CÉDRIC ${"consectetur adipiscing elit ".repeat(12)}`,
+      });
+      yield* projectionPipeline.bootstrap;
+
+      const result = yield* search("cédric");
+      assert.equal(result.matches.length, 1);
+      assert.ok(result.matches[0]?.snippet.includes("CÉDRIC"));
+    }),
+  );
+});
