@@ -81,6 +81,8 @@ interface SceneryContextValue extends ResolvedScenery {
 
 const SceneryContext = createContext<SceneryContextValue | null>(null);
 
+const EMPTY_SEEDS: ReadonlyArray<SceneryPhoto> = [];
+
 export function SceneryProvider(props: { readonly children: ReactNode }) {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
@@ -106,19 +108,29 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
   const cachedSeeds = peekSeedPhotos(photoSetId);
   const seedsReady = cachedSeeds.length > 0;
   // Extra sets import lazily. Serve the in-memory cache on the same tick as a
-  // set change (world-scenery is always cached; extras after first load). On
-  // the first switch to an uncached extra, keep the previous pool so the
-  // wallpaper never drops to [] while the JSON import resolves.
-  const [heldSeeds, setHeldSeeds] = useState(() =>
-    seedsReady ? cachedSeeds : peekSeedPhotos(DEFAULT_PHOTO_SET_ID),
-  );
+  // set change (world-scenery is always cached; extras after first load).
+  // During a switch to an uncached extra, keep the previous pool so the
+  // wallpaper never drops to [] while the JSON import resolves. On cold start
+  // there is no previous pool — render [] rather than standing in the default
+  // catalog, which would flash World Scenery under a persisted extra set.
+  const [heldSeeds, setHeldSeeds] = useState(() => cachedSeeds);
   useEffect(() => {
     let cancelled = false;
-    void loadSeedPhotos(photoSetId).then((photos) => {
-      if (!cancelled && photos.length > 0) {
-        setHeldSeeds(photos);
-      }
-    });
+    loadSeedPhotos(photoSetId)
+      .then((photos) => {
+        if (cancelled) {
+          return;
+        }
+        // Blank over wrong theme: a failed or empty load drops the held pool
+        // so the wallpaper clears instead of rendering the previous set under
+        // the new photoSetId. Re-selecting the set retries the import.
+        setHeldSeeds(photos.length > 0 ? photos : EMPTY_SEEDS);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHeldSeeds(EMPTY_SEEDS);
+        }
+      });
     return () => {
       cancelled = true;
     };

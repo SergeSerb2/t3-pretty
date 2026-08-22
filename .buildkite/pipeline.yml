@@ -89,9 +89,6 @@ steps:
     key: origin-pr-review
     # Origin does not reliably start a second Buildkite build when a PR opens.
     # Let the push build run; the review script briefly waits for the PR.
-    # A crashed or timed-out Grok review must not red the whole build.
-    # Posted findings still gate via origin-pr-comments.
-    soft_fail: true
     if: >-
       build.branch != "main" && build.source != "schedule" &&
       !(build.branch =~ /^automation\//)
@@ -110,9 +107,6 @@ steps:
   - label: ":white_check_mark: Origin PR comments resolved"
     key: origin-pr-comments
     depends_on: origin-pr-review
-    # Re-queries Origin for unresolved Grok threads. No artifact from the
-    # review job. Must still run after review crash/timeout: review is
-    # soft_fail, and this step allows a failed dependency.
     allow_dependency_failure: true
     if: >-
       build.branch != "main" && build.source != "schedule" &&
@@ -125,6 +119,21 @@ steps:
     agents:
       queue: macos-release
     command: bash scripts/fork/run-trusted-origin-pr-ci.sh check
+
+  - label: ":npm: CLI tarball"
+    key: publish-cli
+    depends_on: macos-dmg
+    # Headless `npx t3` is upstream T3 Code. Pack the version macos-dmg just
+    # stamped — remotes fetch t3-<appVersion>.tgz, so reminting 404s.
+    # Skipped when DMG skips (PRs, scheduled sync). Do not promote t3.tgz
+    # from a failed or non-desktop revision.
+    if: build.branch == "main"
+    timeout_in_minutes: 40
+    agents:
+      queue: linux-small
+    env:
+      T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
+    command: bash scripts/fork/publish-cli.sh
 
   - label: ":windows: Windows NSIS"
     key: windows-nsis
