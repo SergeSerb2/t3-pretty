@@ -234,3 +234,41 @@ PLIST
   launchctl bootstrap "gui/$(id -u)" "$companion_plist"
   echo "Registered companion Buildkite agent $COMPANION_NAME on queues $QUEUES"
 fi
+
+# Origin git JWTs live about an hour. A 401 makes git erase the credential
+# store, which then fails every later checkout, so re-mint the store file on
+# a 15-minute launchd timer.
+install -m 0755 "$here/refresh-origin-git-credentials.sh" "$HOME/.local/bin/refresh-origin-git-credentials.sh"
+refresh_plist="$plist_dir/com.t3-pretty.origin-credential-refresh.plist"
+cat > "$refresh_plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.t3-pretty.origin-credential-refresh</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$HOME/.local/bin/refresh-origin-git-credentials.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>$HOME</string>
+    <key>PATH</key>
+    <string>${agent_path}</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>900</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>$HOME/Library/Logs/t3-origin-credential-refresh.log</string>
+  <key>StandardErrorPath</key>
+  <string>$HOME/Library/Logs/t3-origin-credential-refresh.err.log</string>
+</dict>
+</plist>
+PLIST
+launchctl bootout "gui/$(id -u)" "$refresh_plist" >/dev/null 2>&1 || true
+launchctl bootstrap "gui/$(id -u)" "$refresh_plist"
+echo "Registered Origin git credential refresh on a 15-minute timer"
