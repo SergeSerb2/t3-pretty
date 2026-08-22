@@ -17,17 +17,26 @@ The `| Pretty` wordmark (`pretty/t3-pretty-wordmark.png`) is for the README,
 DMG installer, and other large lockups. The in-app mark is that T3 with
 the paper knocked out.
 
-`t3-pretty-1024.png` is the macOS asset (824px frosted-glass body inset 100px,
-with a light contact shadow and a translucent plate). `t3-pretty-ios-1024.png`
-is the full-bleed iOS asset — the same glass look, flattened opaque because
-iOS home-screen icons cannot be transparent.
-The ICO, ICNS, favicon, and apple-touch files are derived from those masters.
-Desktop packaging copies them into `apps/desktop/resources`.
+`t3-pretty-1024.png` is the macOS asset — an opaque 824px superellipse plate in
+sage frost (`#DFEFE3`), inset 100px, with a soft contact shadow.
+`t3-pretty-ios-1024.png` is the full-bleed iOS asset — the same frost field edge
+to edge, since iOS applies the mask itself. Every icon in the family follows one
+spec: the cut-out T3 at 62% of the visible icon area, sage on frost, so the
+glyph reads at the same scale on the Dock, home screen, and browser chrome.
+The ICO, ICNS, favicon, apple-touch, and Android adaptive foreground files are
+derived from those masters. Desktop packaging copies them into `apps/desktop/resources`.
+
+Run `vp run icons:pretty` to regenerate the family from
+`pretty/kit/mark-sage.png` via `scripts/generate-pretty-icons.py`. That command
+needs Python 3 and Pillow (`python3 -m pip install -r scripts/requirements-pretty-icons.txt`).
+It writes a portable ICNS (no macOS `iconutil`), the in-app mark copies, and the
+web public favicons, so the tracked family cannot split across machines.
 
 `pretty/t3-pretty-mark.png` is the in-app T3 (web sidebar, mobile thread header):
-sage ink on a transparent ground, no plate. The web and mobile copies
-(`apps/web/public/t3-pretty-mark.png`, `apps/mobile/assets/t3-pretty-mark.png`)
-are produced by the same brand-asset copy step as the favicons.
+sage ink on a transparent ground, no plate. `icons:pretty` copies it to
+`apps/web/public/t3-pretty-mark.png` and `apps/mobile/assets/t3-pretty-mark.png`.
+Hosted and desktop packaging still copy those tracked files into dist via
+`scripts/apply-web-brand-assets.ts`.
 
 macOS disk-image artwork lives next to the vector templates in
 `apps/desktop/resources/dmg/`: `dmg-background-*-art.jpg` is the generated T3 Pretty installer
