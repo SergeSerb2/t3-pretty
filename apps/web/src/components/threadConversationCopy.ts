@@ -58,7 +58,7 @@ export function loadThreadConversationText(
 
     // immediate: true runs the listener during subscribe(), before it returns.
     let unsubscribe = () => {};
-    const finish = (text: string | null) => {
+    const settle = (callback: () => void) => {
       if (settled) {
         return;
       }
@@ -67,8 +67,10 @@ export function loadThreadConversationText(
         globalThis.clearTimeout(timeoutId);
       }
       unsubscribe();
-      resolve(text);
+      callback();
     };
+    const finish = (text: string | null) => settle(() => resolve(text));
+    const fail = (error: Error) => settle(() => reject(error));
 
     unsubscribe = appAtomRegistry.subscribe(
       atom,
@@ -77,6 +79,10 @@ export function loadThreadConversationText(
           AsyncResult.value(result),
           () => EMPTY_ENVIRONMENT_THREAD_STATE,
         );
+        if (Option.isSome(state.error)) {
+          fail(new Error(state.error.value));
+          return;
+        }
         if (
           state.status === "empty" ||
           (state.status === "synchronizing" && Option.isNone(state.error))
@@ -94,12 +100,7 @@ export function loadThreadConversationText(
       return;
     }
     timeoutId = globalThis.setTimeout(() => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      unsubscribe();
-      reject(new Error("Timed out loading conversation"));
+      fail(new Error("Timed out loading conversation"));
     }, timeoutMs);
   });
 }

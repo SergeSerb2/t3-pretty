@@ -56,6 +56,27 @@ describe("loadThreadConversationText", () => {
     ).rejects.toThrow("Timed out loading conversation");
   });
 
+  it("rejects with the thread state error instead of copying an empty conversation", async () => {
+    readThreadDetail.mockReturnValue(null);
+    stateAtom.mockReturnValue(
+      Atom.make(
+        AsyncResult.success({
+          data: Option.none(),
+          status: "empty" as const,
+          error: Option.some("WebSocket disconnected"),
+          page: Option.none(),
+        }),
+      ),
+    );
+
+    await expect(
+      loadThreadConversationText(
+        { environmentId: "env-1" as never, threadId: "thread-1" as never },
+        "Broken thread",
+      ),
+    ).rejects.toThrow("WebSocket disconnected");
+  });
+
   it("copies and unsubscribes when the atom is already live", async () => {
     readThreadDetail.mockReturnValue(null);
     const live = AsyncResult.success({

@@ -113,7 +113,7 @@ export function draftHeroGlideKeyframes(
   translateX: number,
   translateY: number,
   pop: boolean,
-): ReadonlyArray<{ transform: string }> {
+): { transform: string }[] {
   if (pop) {
     return [
       { transform: `translate3d(${translateX}px, ${translateY}px, 0) scale(1.02)` },
