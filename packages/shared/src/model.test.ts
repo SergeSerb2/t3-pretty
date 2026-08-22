@@ -122,7 +122,26 @@ describe("descriptor helpers", () => {
     expect(reasoningEffortOptionLabel("xhigh")).toBe("Extra high effort");
     expect(reasoningEffortOptionLabel("none")).toBe("None");
     expect(reasoningEffortOptionLabel("superhigh")).toBe("Superhigh effort");
+    expect(reasoningEffortOptionLabel("auto", "Auto")).toBe("Auto");
     expect(reasoningEffortOptionLabel("", "Custom")).toBe("Custom");
+  });
+
+  it("standardizes labels for hyphenated reasoning effort select ids", () => {
+    const caps: ModelCapabilities = createModelCapabilities({
+      optionDescriptors: [
+        {
+          id: "reasoning-effort",
+          label: "Reasoning Effort",
+          type: "select",
+          options: [{ id: "high", label: "Thinking High" }],
+        },
+      ],
+    });
+
+    const [descriptor] = getProviderOptionDescriptors({ caps });
+    expect(
+      descriptor?.type === "select" && descriptor.options.map((option) => option.label),
+    ).toEqual(["High effort"]);
   });
 
   it("standardizes labels for mixed-case reasoning effort select ids", () => {

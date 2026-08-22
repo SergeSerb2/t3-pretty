@@ -165,7 +165,8 @@ const REASONING_EFFORT_OPTION_LABELS: Readonly<Record<string, string>> = {
 /**
  * Providers name the same reasoning levels differently ("Thinking High",
  * "Extra High", "high effort"). Display standardizes on "<Level> effort",
- * keyed by the canonical option id rather than the provider-supplied label.
+ * keyed by the canonical option id. Unknown ids keep the provider-supplied
+ * label; a "<Level> effort" label is synthesized only as a last resort.
  */
 export function reasoningEffortOptionLabel(optionId: string, fallbackLabel?: string): string {
   const id = optionId.trim().toLowerCase();
@@ -176,13 +177,13 @@ export function reasoningEffortOptionLabel(optionId: string, fallbackLabel?: str
   if (known) {
     return known;
   }
-  return `${id.charAt(0).toUpperCase()}${id.slice(1)} effort`;
+  return fallbackLabel ?? `${id.charAt(0).toUpperCase()}${id.slice(1)} effort`;
 }
 
 function withStandardizedEffortLabels(
   descriptor: ProviderOptionDescriptor,
 ): ProviderOptionDescriptor {
-  const selectId = descriptor.id.trim().toLowerCase();
+  const selectId = descriptor.id.trim().toLowerCase().replace(/[-_ ]/g, "");
   if (descriptor.type !== "select" || !REASONING_EFFORT_SELECT_IDS.has(selectId)) {
     return descriptor;
   }
