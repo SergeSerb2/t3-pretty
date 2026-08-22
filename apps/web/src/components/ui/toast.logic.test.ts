@@ -34,8 +34,26 @@ describe("resolveToastAutoDismissMs", () => {
 
   it("keeps loading and explicit persist toasts on screen", () => {
     assert.equal(resolveToastAutoDismissMs({ type: "loading" }), undefined);
-    assert.equal(resolveToastAutoDismissMs({ type: "warning", timeout: 0 }), undefined);
-    assert.equal(resolveToastAutoDismissMs({ type: "success", timeout: 0 }), undefined);
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "success", dismissAfterVisibleMs: 0 }),
+      undefined,
+    );
+  });
+
+  it("does not treat provider timeout 0 as persist", () => {
+    assert.equal(resolveToastAutoDismissMs({ type: "success", timeout: 0 }), 5_000);
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "info", timeout: 0 }),
+      TOAST_AUTO_DISMISS_MS.info,
+    );
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "warning", timeout: 0 }),
+      TOAST_AUTO_DISMISS_MS.warning,
+    );
+    assert.equal(
+      resolveToastAutoDismissMs({ type: "error", timeout: 0 }),
+      TOAST_AUTO_DISMISS_MS.error,
+    );
   });
 
   it("honors an explicit timeout and visible-ms override", () => {
@@ -65,11 +83,18 @@ describe("stripToastTimeout", () => {
     });
   });
 
-  it("leaves persistent toasts and existing visible-ms overrides alone", () => {
-    const persistent: { title: string; timeout?: number } = { title: "Working", timeout: 0 };
-    assert.equal(stripToastTimeout(persistent), persistent);
+  it("marks explicit timeout 0 as persist without clobbering a visible-ms override", () => {
+    assert.deepEqual(stripToastTimeout({ title: "Working", timeout: 0 }), {
+      title: "Working",
+      timeout: 0,
+      data: { dismissAfterVisibleMs: 0 },
+    });
     const missing: { title: string; timeout?: number } = { title: "Copied" };
     assert.equal(stripToastTimeout(missing), missing);
+    assert.deepEqual(stripToastTimeout({ timeout: 0, data: { dismissAfterVisibleMs: 10_000 } }), {
+      timeout: 0,
+      data: { dismissAfterVisibleMs: 10_000 },
+    });
     assert.deepEqual(
       stripToastTimeout({ timeout: 5_000, data: { dismissAfterVisibleMs: 3_000 } }),
       { timeout: 0, data: { dismissAfterVisibleMs: 3_000 } },

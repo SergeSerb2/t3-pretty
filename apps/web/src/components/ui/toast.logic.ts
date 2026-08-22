@@ -16,7 +16,7 @@ export function hasVisibleToastAction(actionProps: unknown): boolean {
   return children != null && children !== false && children !== "";
 }
 
-/** Confirmation toasts always leave on their own. Loading / timeout:0 stay. */
+/** Confirmation toasts always leave on their own. Loading / dismissAfterVisibleMs:0 stay. */
 export const TOAST_AUTO_DISMISS_MS = {
   success: 5_000,
   info: 6_000,
@@ -35,9 +35,8 @@ export function resolveToastAutoDismissMs(input: {
   if (input.type === "loading") {
     return undefined;
   }
-  if (input.timeout === 0) {
-    return undefined;
-  }
+  // Provider timeout is always 0; that is not persist. Only a positive
+  // per-toast timeout (before stripToastTimeout) is a duration.
   if (typeof input.timeout === "number" && input.timeout > 0) {
     return input.timeout;
   }
@@ -63,8 +62,8 @@ export function shouldRunToastAutoDismissTimer(
 
 /**
  * Base UI runs its own dismiss timer for any per-toast `timeout` and pauses it
- * on blur / native menus. Move explicit timeouts onto `dismissAfterVisibleMs`
- * so ThreadToastVisibleAutoDismiss owns every clock.
+ * on blur / native menus. Move explicit durations onto `dismissAfterVisibleMs`
+ * (and `timeout: 0` onto persist) so ThreadToastVisibleAutoDismiss owns every clock.
  */
 export function stripToastTimeout<
   TOptions extends {
@@ -72,8 +71,20 @@ export function stripToastTimeout<
     data?: { dismissAfterVisibleMs?: number | undefined } | undefined;
   },
 >(options: TOptions): TOptions {
-  if (typeof options.timeout !== "number" || options.timeout <= 0) {
+  if (typeof options.timeout !== "number") {
     return options;
+  }
+  if (options.timeout <= 0) {
+    if (options.data?.dismissAfterVisibleMs !== undefined) {
+      return options;
+    }
+    return {
+      ...options,
+      data: {
+        ...options.data,
+        dismissAfterVisibleMs: 0,
+      },
+    };
   }
   return {
     ...options,
