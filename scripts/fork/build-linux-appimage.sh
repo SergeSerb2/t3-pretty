@@ -61,8 +61,25 @@ fi
 git fetch --force --tags upstream
 
 # No Origin fork tags are reachable here (see header), so the monotonic floor
-# comes from the version already live on the public Linux update feed.
-feed_version="$(curl -fsSL --max-time 30 "${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/latest-linux.yml" 2>/dev/null | sed -n 's/^version: *//p' | head -n 1 || true)"
+# comes from the version already live on the public Linux update feed. 404 is
+# a first publish (no floor); any other fetch/parse failure must fail the job
+# or resolve-fork-release can mint below the already-shipped Linux slot.
+feed_file="$(mktemp)"
+feed_code="$(curl -sSL --max-time 30 -o "$feed_file" -w '%{http_code}' "${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/latest-linux.yml" || true)"
+feed_version=""
+if [[ "$feed_code" == "404" ]]; then
+  : # first Linux publish, nothing live to floor against
+elif [[ "$feed_code" =~ ^2 ]]; then
+  feed_version="$(sed -n 's/^version: *//p' "$feed_file" | head -n 1)"
+  if [[ -z "$feed_version" ]]; then
+    echo "Live Linux update manifest has no version field; refusing to mint a version below the shipped slot." >&2
+    exit 1
+  fi
+else
+  echo "Cannot read live Linux update manifest (HTTP $feed_code); refusing to mint a version below the shipped slot." >&2
+  exit 1
+fi
+rm -f "$feed_file"
 if [[ "$feed_version" =~ -nightly\.[0-9]{8}\.([0-9]+)$ ]]; then
   export T3_FORK_BUILD_FLOOR="${BASH_REMATCH[1]}"
 fi
@@ -123,8 +140,9 @@ fi
 vp i --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
 node scripts/update-release-package-versions.ts "$version"
 
-mkdir -p "$HOME/.cache/t3-pretty-release/cargo" "$HOME/.cache/t3-pretty-release/target-linux-x64"
-export CARGO_HOME="$HOME/.cache/t3-pretty-release/cargo"
+mkdir -p "$HOME/.cache/t3-pretty-release/target-linux-x64"
+# CARGO_HOME stays at rustup's default ~/.cargo; overriding it here would hide
+# the toolchain installed above. Only the target dir moves to the cache.
 export CARGO_TARGET_DIR="$HOME/.cache/t3-pretty-release/target-linux-x64"
 
 node scripts/build-desktop-artifact.ts \
