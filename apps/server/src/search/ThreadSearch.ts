@@ -1,10 +1,12 @@
 /**
  * ThreadSearch - ranked thread search over the inverted index.
  *
- * Query side of migration 049's plain-table index: exact terms intersect
- * (AND semantics), the query's final token prefix-matches (typeahead), and
- * candidates are scored with BM25 in JS. Runs on plain tables because the
- * production SQLite driver (node:sqlite) ships without FTS5.
+ * Query side of migration 049's plain-table index: content terms intersect
+ * (AND semantics) from complete posting lists, stopwords and truncated
+ * common terms rank without filtering, the query's final token
+ * prefix-matches (typeahead), and candidates are scored with BM25 in JS.
+ * Runs on plain tables because the production SQLite driver (node:sqlite)
+ * ships without FTS5.
  *
  * Result shape and bounds match the legacy substring search: one match per
  * thread, active threads/projects only, `request.limit` (≤ 50) rows out.
@@ -32,8 +34,9 @@ import type { RankedSearchTerms } from "./tokenizer.ts";
 
 /** Fetches per exact term / expansion term, and the pre-scoring candidate
  * cap. The SQLite client is synchronous and single-connection; every read
- * here is bounded so a search cannot monopolize it. */
-const PER_TERM_POSTINGS_LIMIT = 2_000;
+ * here is bounded so a search cannot monopolize it. Truncated lists are
+ * ranking-only: AND uses complete lists, or a candidate-scoped lookup. */
+export const PER_TERM_POSTINGS_LIMIT = 2_000;
 const PREFIX_EXPANSION_LIMIT = 25;
 const PER_EXPANSION_POSTINGS_LIMIT = 1_000;
 const MAX_CANDIDATES = 500;
@@ -134,6 +137,26 @@ const makeThreadSearch = Effect.gen(function* () {
       LIMIT ${limit}
     `;
 
+  const fetchPostingsForCandidates = (term: string, messageIds: ReadonlyArray<string>) =>
+    sql<PostingRow>`
+      SELECT message_id AS "messageId", tf
+      FROM search_index_postings
+      WHERE term = ${term}
+        AND ${sql.in("message_id", messageIds)}
+    `;
+
+  const fetchPrefixPostingsForCandidates = (prefix: string, messageIds: ReadonlyArray<string>) =>
+    sql<PostingRow>`
+      SELECT message_id AS "messageId", SUM(tf) AS "tf"
+      FROM search_index_postings
+      WHERE term GLOB ${`${prefix}*`}
+        AND ${sql.in("message_id", messageIds)}
+      GROUP BY message_id
+    `;
+
+  const postingMap = (rows: ReadonlyArray<PostingRow>) =>
+    new Map(rows.map((row) => [row.messageId, row.tf] as const));
+
   const searchThreadsRanked = (input: {
     readonly request: OrchestrationSearchThreadsInput;
     readonly terms: RankedSearchTerms;
@@ -142,8 +165,13 @@ const makeThreadSearch = Effect.gen(function* () {
       const { request, terms } = input;
       const limit = request.limit ?? 50;
 
-      // Exact groups first; AND semantics mean any missing term ends the search.
       const groups: Array<ScoringGroup> = [];
+      const optionalTerms: Array<{ readonly term: string; readonly df: number }> = [];
+
+      // Exact content terms: complete posting lists AND, truncated lists rank
+      // only. A LIMIT without ORDER BY is an arbitrary sample — intersecting
+      // it drops true hits for any term that appears in more than `limit`
+      // active messages.
       for (const term of terms.exact) {
         const dfRows = yield* sql<{ readonly df: number }>`
           SELECT doc_freq AS "df" FROM search_index_terms WHERE term = ${term}
@@ -152,43 +180,86 @@ const makeThreadSearch = Effect.gen(function* () {
         if (df === undefined) {
           return { matches: [] } as const;
         }
-        const postingRows = yield* fetchPostings(term, PER_TERM_POSTINGS_LIMIT);
+        const postingRows = yield* fetchPostings(term, PER_TERM_POSTINGS_LIMIT + 1);
         if (postingRows.length === 0) {
           return { matches: [] } as const;
         }
-        groups.push({
-          df,
-          postings: new Map(postingRows.map((row) => [row.messageId, row.tf] as const)),
-        });
+        if (postingRows.length > PER_TERM_POSTINGS_LIMIT) {
+          optionalTerms.push({ term, df });
+        } else {
+          groups.push({ df, postings: postingMap(postingRows) });
+        }
+      }
+
+      for (const term of terms.optional) {
+        const dfRows = yield* sql<{ readonly df: number }>`
+          SELECT doc_freq AS "df" FROM search_index_terms WHERE term = ${term}
+        `;
+        const df = dfRows[0]?.df;
+        if (df !== undefined) {
+          optionalTerms.push({ term, df });
+        }
       }
 
       // Prefix group: the query's final token matches any term it prefixes.
       // Tokenizer output is alphanumeric, so the GLOB pattern needs no escaping.
-      const expansionRows = yield* sql<{ readonly term: string; readonly df: number }>`
+      const expansionLimitRows = yield* sql<{ readonly term: string; readonly df: number }>`
         SELECT term, doc_freq AS "df"
         FROM search_index_terms
         WHERE term GLOB ${`${terms.prefix}*`}
         ORDER BY doc_freq ASC
         LIMIT ${PREFIX_EXPANSION_LIMIT}
       `;
+      let expansionRows = [...expansionLimitRows];
+      if (!expansionRows.some((row) => row.term === terms.prefix)) {
+        const exactPrefixRows = yield* sql<{ readonly term: string; readonly df: number }>`
+          SELECT term, doc_freq AS "df"
+          FROM search_index_terms
+          WHERE term = ${terms.prefix}
+        `;
+        const exactPrefix = exactPrefixRows[0];
+        if (exactPrefix !== undefined) {
+          expansionRows = [exactPrefix, ...expansionRows];
+        }
+      }
       if (expansionRows.length === 0) {
         return { matches: [] } as const;
       }
       const prefixPostings = new Map<string, number>();
-      let prefixDf = 0;
+      let prefixTruncated = expansionLimitRows.length === PREFIX_EXPANSION_LIMIT;
       for (const expansion of expansionRows) {
-        prefixDf += expansion.df;
-        const postingRows = yield* fetchPostings(expansion.term, PER_EXPANSION_POSTINGS_LIMIT);
-        for (const row of postingRows) {
+        const postingRows = yield* fetchPostings(expansion.term, PER_EXPANSION_POSTINGS_LIMIT + 1);
+        const truncated = postingRows.length > PER_EXPANSION_POSTINGS_LIMIT;
+        if (truncated) {
+          prefixTruncated = true;
+        }
+        const expansionPostings = truncated
+          ? postingRows.slice(0, PER_EXPANSION_POSTINGS_LIMIT)
+          : postingRows;
+        for (const row of expansionPostings) {
           prefixPostings.set(row.messageId, (prefixPostings.get(row.messageId) ?? 0) + row.tf);
         }
       }
-      if (prefixPostings.size === 0) {
+      // Unique matching docs, not the sum of expansion DFs: overlapping
+      // expansions (sear/search/searching) would otherwise inflate df and
+      // collapse prefix IDF. When the union is truncated, max expansion df
+      // is the better lower bound on collection DF.
+      const prefixDf = prefixTruncated
+        ? Math.max(prefixPostings.size, ...expansionRows.map((row) => row.df))
+        : prefixPostings.size;
+      const prefixAsRequired = !prefixTruncated || groups.length === 0;
+      if (prefixAsRequired) {
+        if (prefixPostings.size === 0) {
+          return { matches: [] } as const;
+        }
+        groups.push({ df: prefixDf, postings: prefixPostings });
+      }
+
+      if (groups.length === 0) {
         return { matches: [] } as const;
       }
-      groups.push({ df: prefixDf, postings: prefixPostings });
 
-      // Intersect all groups, rarest first so the working set shrinks early.
+      // Intersect required groups, rarest first so the working set shrinks early.
       const sortedGroups = [...groups].toSorted(
         (left, right) => left.postings.size - right.postings.size,
       );
@@ -200,6 +271,17 @@ const makeThreadSearch = Effect.gen(function* () {
         }
       }
 
+      // Truncated prefix still has to match, but against the required-term
+      // candidate set rather than an arbitrary posting sample.
+      if (!prefixAsRequired) {
+        const prefixRows = yield* fetchPrefixPostingsForCandidates(terms.prefix, [...candidateIds]);
+        if (prefixRows.length === 0) {
+          return { matches: [] } as const;
+        }
+        groups.push({ df: prefixDf, postings: postingMap(prefixRows) });
+        candidateIds = new Set(prefixRows.map((row) => row.messageId));
+      }
+
       // Bound the scoring set when a common term matched broadly.
       let candidates = [...candidateIds];
       if (candidates.length > MAX_CANDIDATES) {
@@ -208,6 +290,14 @@ const makeThreadSearch = Effect.gen(function* () {
         candidates = candidates
           .toSorted((left, right) => tfOf(right) - tfOf(left))
           .slice(0, MAX_CANDIDATES);
+      }
+
+      for (const { term, df } of optionalTerms) {
+        const postingRows = yield* fetchPostingsForCandidates(term, candidates);
+        if (postingRows.length === 0) {
+          continue;
+        }
+        groups.push({ df, postings: postingMap(postingRows) });
       }
 
       const statsRows = yield* sql<{ readonly docCount: number; readonly avgTokenCount: number }>`

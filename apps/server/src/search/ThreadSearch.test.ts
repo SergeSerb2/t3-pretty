@@ -12,6 +12,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { OrchestrationEventStoreLive } from "../persistence/Layers/OrchestrationEventStore.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
@@ -19,7 +20,7 @@ import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEv
 import { ServerConfig } from "../config.ts";
 import { OrchestrationProjectionPipelineLive } from "../orchestration/Layers/ProjectionPipeline.ts";
 import { OrchestrationProjectionPipeline } from "../orchestration/Services/ProjectionPipeline.ts";
-import { ThreadSearch, ThreadSearchLive } from "./ThreadSearch.ts";
+import { PER_TERM_POSTINGS_LIMIT, ThreadSearch, ThreadSearchLive } from "./ThreadSearch.ts";
 import { rankedSearchTerms } from "./tokenizer.ts";
 
 const makeTestLayer = (prefix: string) =>
@@ -428,6 +429,76 @@ it.layer(makeTestLayer("t3-thread-search-streaming-"))("ThreadSearch", (it) => {
       const result = yield* search("diffzebra");
       assert.equal(result.matches.length, 1);
       assert.strictEqual(result.matches[0]?.source, "assistant");
+    }),
+  );
+});
+
+it.layer(makeTestLayer("t3-thread-search-stopwords-"))("ThreadSearch", (it) => {
+  it.effect("does not require stopwords as AND filters", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+
+      yield* appendProject("project-1");
+      yield* appendThread("thread-1", "project-1");
+      yield* appendMessage({
+        eventId: "evt-m1",
+        threadId: "thread-1",
+        messageId: "message-1",
+        role: "user",
+        text: "please fix the TypeError in login",
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const result = yield* search("fix the TypeError");
+      assert.equal(result.matches.length, 1);
+      assert.strictEqual(result.matches[0]?.threadId, "thread-1");
+    }),
+  );
+});
+
+it.layer(makeTestLayer("t3-thread-search-truncated-"))("ThreadSearch", (it) => {
+  it.effect("does not AND truncated posting lists", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* appendProject("project-1");
+      yield* appendThread("thread-match", "project-1");
+      yield* appendThread("thread-dummy", "project-1");
+      yield* appendMessage({
+        eventId: "evt-m1",
+        threadId: "thread-match",
+        messageId: "message-match",
+        role: "user",
+        text: "commonterm rarexyz",
+      });
+      yield* projectionPipeline.bootstrap;
+
+      const dummyCount = PER_TERM_POSTINGS_LIMIT + 1;
+      const dummyDocs = Array.from({ length: dummyCount }, (_, index) => ({
+        message_id: `a${String(index).padStart(4, "0")}`,
+        thread_id: "thread-dummy",
+        role: "user",
+        token_count: 1,
+        created_at: NOW,
+      }));
+      const dummyPostings = dummyDocs.map((doc) => ({
+        term: "commonterm",
+        message_id: doc.message_id,
+        tf: 1,
+      }));
+
+      for (let offset = 0; offset < dummyCount; offset += 100) {
+        yield* sql`INSERT INTO search_index_docs ${sql.insert(dummyDocs.slice(offset, offset + 100))}`;
+        yield* sql`INSERT INTO search_index_postings ${sql.insert(
+          dummyPostings.slice(offset, offset + 100),
+        )}`;
+      }
+
+      const result = yield* search("commonterm rarexyz");
+      assert.equal(result.matches.length, 1);
+      assert.strictEqual(result.matches[0]?.threadId, "thread-match");
     }),
   );
 });

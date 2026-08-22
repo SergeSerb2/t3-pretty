@@ -40,16 +40,29 @@ it("counts term frequencies", () => {
 it("classifies the final query token as the prefix", () => {
   assert.deepEqual(rankedSearchTerms("ranked search"), {
     exact: ["ranked"],
+    optional: [],
     prefix: "search",
   });
 });
 
 it("treats a single-token query as all prefix", () => {
-  assert.deepEqual(rankedSearchTerms("search"), { exact: [], prefix: "search" });
+  assert.deepEqual(rankedSearchTerms("search"), { exact: [], optional: [], prefix: "search" });
 });
 
 it("dedupes repeated query tokens", () => {
-  assert.deepEqual(rankedSearchTerms("search search"), { exact: [], prefix: "search" });
+  assert.deepEqual(rankedSearchTerms("search search"), {
+    exact: [],
+    optional: [],
+    prefix: "search",
+  });
+});
+
+it("keeps stopwords optional instead of exact AND terms", () => {
+  assert.deepEqual(rankedSearchTerms("fix the TypeError"), {
+    exact: ["fix"],
+    optional: ["the"],
+    prefix: "typeerror",
+  });
 });
 
 it("returns null when the query has no indexable tokens", () => {

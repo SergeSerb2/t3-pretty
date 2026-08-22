@@ -48,7 +48,7 @@ A user-visible log item attached to a thread. In [the contracts][1], activities 
 
 #### Search index
 
-The plain-table inverted index behind `orchestration.searchThreads`: `search_index_docs` / `search_index_terms` / `search_index_postings` (migration 049), maintained by the `projection.search-index` projector in [ProjectionPipeline.ts][11] and read with BM25 ranking in `apps/server/src/search/ThreadSearch.ts`. It indexes user messages (visible text only, auto-PR instruction block stripped) and canonical assistant messages (turn-final `assistant_message_id` rows). Plain tables because the production SQLite driver (`node:sqlite`) ships without FTS5; query semantics are exact-term AND with prefix matching on the final query token.
+The plain-table inverted index behind `orchestration.searchThreads`: `search_index_docs` / `search_index_terms` / `search_index_postings` (migration 049), maintained by the `projection.search-index` projector in [ProjectionPipeline.ts][11] and read with BM25 ranking in `apps/server/src/search/ThreadSearch.ts`. It indexes user messages (visible text only, auto-PR instruction block stripped) and canonical assistant messages (turn-final `assistant_message_id` rows). Plain tables because the production SQLite driver (`node:sqlite`) ships without FTS5; query semantics are AND of content tokens (stopwords and truncated common terms rank without filtering) with prefix matching on the final query token.
 
 ### Orchestration
 

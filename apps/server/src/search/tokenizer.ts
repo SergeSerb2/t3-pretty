@@ -14,6 +14,46 @@ export const MAX_TERM_LENGTH = 64;
 const MAX_TOKENS_PER_DOCUMENT = 20_000;
 
 /**
+ * Function words kept in the index for ranking, but dropped from exact AND
+ * filters. Legacy search was a substring scan, so requiring "the"/"in" as
+ * hard matches is a recall regression once posting lists are bounded.
+ */
+const STOPWORDS = new Set([
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "but",
+  "by",
+  "for",
+  "from",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "no",
+  "not",
+  "of",
+  "on",
+  "or",
+  "that",
+  "the",
+  "their",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "to",
+  "was",
+  "will",
+  "with",
+]);
+
+/**
  * Lowercase Unicode letter/number tokens of length ≥ 2. No stemming: the
  * query side prefix-matches the final token, which covers typeahead without a
  * language-specific stemmer.
@@ -45,8 +85,14 @@ export function termFrequencies(text: string): Map<string, number> {
 }
 
 export interface RankedSearchTerms {
-  /** Terms a document must contain (AND semantics). */
+  /** Content terms a document must contain (AND semantics). */
   readonly exact: ReadonlyArray<string>;
+  /**
+   * Stopwords from the query. They contribute to BM25 when present but are
+   * never required AND filters — posting lists for "the"/"in" are too common
+   * to intersect safely.
+   */
+  readonly optional: ReadonlyArray<string>;
   /**
    * The query's final token, matched as a prefix so results refine while
    * typing. Always set: a single-token query is all prefix.
@@ -65,5 +111,14 @@ export function rankedSearchTerms(query: string): RankedSearchTerms | null {
     return null;
   }
   const prefix = tokens[tokens.length - 1]!;
-  return { exact: tokens.slice(0, -1), prefix };
+  const exact: Array<string> = [];
+  const optional: Array<string> = [];
+  for (const token of tokens.slice(0, -1)) {
+    if (STOPWORDS.has(token)) {
+      optional.push(token);
+    } else {
+      exact.push(token);
+    }
+  }
+  return { exact, optional, prefix };
 }
