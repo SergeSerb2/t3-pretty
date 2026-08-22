@@ -33,11 +33,13 @@ T3 Pretty desktop and mobile releases are documented in
 [fork-release.md](../operations/fork-release.md) and
 [fork-mobile-release.md](../operations/fork-mobile-release.md). Imported
 preflight and WSL `node-pty` run on hosted Linux. Native `linux-small`
-builds the x64 AppImage onto the same updater feed. Native `macos-release`
-runs on m5-dev (`REVIEW_ONLY=0`, two workers): it signs the DMG, publishes
-iOS OTA, submits TestFlight IPAs, deploys the relay, and runs Origin PR
-Review (one reviewer per PR branch via a Buildkite concurrency group).
-m1-dev, the previous packaging Mac, is now Linux. Windows NSIS is native
-`windows-release`.
+builds the x64 AppImage onto the same updater feed. On the shared
+`macos-release` queue, packaging steps select `os: macos` so they only run
+on m5-dev (`REVIEW_ONLY=0`, two workers): signing the DMG, publishing iOS
+OTA, submitting TestFlight IPAs, deploying the relay, and upstream sync.
+Origin PR Review stays queue-wide (one reviewer per PR branch via a
+Buildkite concurrency group) so the review-only Linux agent
+`m1-linux-t3code-fork` — the previous packaging Mac, now a Linux server —
+can take it. Windows NSIS is native `windows-release`.
 
 See [Release Checklist](../operations/release.md) for the full release/signing setup checklist.

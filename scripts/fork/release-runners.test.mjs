@@ -134,6 +134,14 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publishCli, "https://vite.plus");
   });
 
+  it("pins macos-release packaging steps to os=macos agents", () => {
+    // m1-linux-t3code-fork shares the macos-release queue as a review-only
+    // agent; DMG/iOS/relay/sync must never be assigned to a Linux box.
+    // upstream-sync, macos-dmg, ios-mobile, deploy-relay — reviews stay
+    // queue-wide.
+    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 4);
+  });
+
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "iOS OTA + TestFlight");

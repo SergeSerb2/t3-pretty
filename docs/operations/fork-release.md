@@ -177,8 +177,10 @@ without pretending that a newer upstream tag was integrated before its sync pull
 - Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
   the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux: importer,
   WSL node-pty, and the x64 AppImage),
-  `macos-release` (m5-dev: packaging and Origin PR Review on the same queue;
-  m1-dev is now Linux and cannot build macOS or iOS), and `windows-release` (serge-pc).
+  `macos-release` (shared Mac queue: packaging steps select `os: macos` so
+  they only run on m5-dev, while Origin PR Review stays queue-wide so the
+  review-only Linux agent `m1-linux-t3code-fork` can take it), and
+  `windows-release` (serge-pc).
   Do not add a second Mac queue until it exists in the cluster — unknown queues
   fail pipeline upload for every PR. Register the machines with
   `scripts/fork/setup-buildkite-macos-agent.sh` and
@@ -281,9 +283,10 @@ A desktop release that used to sit 25–40 minutes in the m1-dev queue and then 
 This machine is an M5 Pro (18 cores, 48 GB) daily driver. m1-dev was the dedicated
 Mac runner and is now a Linux server, so packaging moved here: `macos-release`
 with `REVIEW_ONLY=0` (Xcode-beta.app installed) and a companion worker, so a DMG
-can run while a local IPA occupies the first. Origin PR Review jobs land on the
-same two workers instead of the old 10 spawned review workers. Never give the
-runner `pull_request` labels.
+can run while a local IPA occupies the first. Packaging steps select `os: macos`,
+so they never land on the Linux box. Origin PR Review stays queue-wide: the
+review-only `m1-linux-t3code-fork` agent takes most of it, and either m5 worker
+can pick up the rest. Never give the runner `pull_request` labels.
 
 ## Runner recovery
 
