@@ -10,7 +10,16 @@
  * pick-at-creation. Evicted/missing assignments re-resolve through the
  * deterministic FNV-1a fallback, so a thread never loses its scenery.
  */
-import { createContext, use, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import {
+  createContext,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -30,8 +39,10 @@ import {
   DEFAULT_BLUR,
   DEFAULT_TRANSLUCENCY,
   fallbackPhoto,
+  getSceneryPool,
+  loadSeedPhotos,
+  peekSeedPhotos,
   pickScenery,
-  sceneryPoolForSet,
   type SceneryAssignment,
   type SceneryPhoto,
 } from "./sceneryLogic";
@@ -91,7 +102,21 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     sceneryRef.current = scenery;
   }, [scenery]);
 
-  const pool = sceneryPoolForSet(scenery.photoSetId);
+  const photoSetId = scenery.photoSetId;
+  const [seedPhotos, setSeedPhotos] = useState(() => peekSeedPhotos(photoSetId));
+  useEffect(() => {
+    setSeedPhotos(peekSeedPhotos(photoSetId));
+    let cancelled = false;
+    void loadSeedPhotos(photoSetId).then((photos) => {
+      if (!cancelled) {
+        setSeedPhotos(photos);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [photoSetId]);
+  const pool = useMemo(() => getSceneryPool([], seedPhotos), [seedPhotos]);
 
   const photoForThreadKey = useCallback(
     (threadKey: string): SceneryPhoto | null => {
@@ -112,16 +137,16 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
   const persistScenery = useCallback(
     (patch: Partial<MobileSceneryPreferences>) => {
       const current = sceneryRef.current;
-      savePreferences({
-        scenery: {
-          enabled: current.enabled,
-          blur: current.blur,
-          translucency: current.translucency,
-          photoSetId: current.photoSetId,
-          assignments: current.assignments,
-          ...patch,
-        },
-      });
+      const next = {
+        enabled: current.enabled,
+        blur: current.blur,
+        translucency: current.translucency,
+        photoSetId: current.photoSetId,
+        assignments: current.assignments,
+        ...patch,
+      };
+      sceneryRef.current = resolveScenery(next);
+      savePreferences({ scenery: next });
     },
     [savePreferences],
   );
@@ -129,7 +154,8 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
   const ensureThreadAssignment = useCallback(
     (threadKey: string) => {
       const current = sceneryRef.current;
-      if (current.assignments[threadKey] !== undefined) {
+      const existing = current.assignments[threadKey];
+      if (existing !== undefined && pool.some((entry) => entry.id === existing.photoId)) {
         return;
       }
       const pick = pickScenery(pool, current.assignments);
@@ -158,7 +184,13 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     [persistScenery],
   );
   const setPhotoSetId = useCallback(
-    (value: PhotoSetId) => persistScenery({ photoSetId: parsePhotoSetId(value) }),
+    (value: PhotoSetId) => {
+      const next = parsePhotoSetId(value);
+      if (next === sceneryRef.current.photoSetId) {
+        return;
+      }
+      persistScenery({ photoSetId: next, assignments: {} });
+    },
     [persistScenery],
   );
 

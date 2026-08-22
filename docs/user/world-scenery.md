@@ -18,8 +18,7 @@ World Scenery is T3 Pretty's default look. Open **Settings → Appearance** and 
 - **Boring** — the original T3 Chat colors, with photos off
 
 Each photo theme keeps the same frosted glass. Only the pictures change. A new thread picks a
-photo from the theme that's on; switching themes uses that theme's pool for threads that don't
-already have a matching picture.
+photo from the theme that's on. Switching themes draws from that theme's pool.
 
 Open **Settings → Appearance** to choose **System**, **Light**, or **Dark**. While a photo theme is
 on:

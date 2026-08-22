@@ -11,10 +11,6 @@
  * render (imgix `blur` param), so the device does no gaussian work.
  */
 import { DEFAULT_PHOTO_SET_ID, type PhotoSetId } from "./photoSets";
-import deepForestSeedJson from "./seeds/deep-forest.json";
-import grandBuildingsSeedJson from "./seeds/grand-buildings.json";
-import nightCitiesSeedJson from "./seeds/night-cities.json";
-import nightSkySeedJson from "./seeds/night-sky.json";
 import seedPoolJson from "./seedPool.json";
 
 export interface Rgb {
@@ -203,9 +199,8 @@ export function layerStack(translucency: number, colorScheme: "light" | "dark"):
 
 /**
  * How many of the most recent assignments a random pick avoids repeating.
- * SurgeCode excluded photos bound to open/unsettled threads; the port
- * approximates that with a recency window, which converges to the same
- * behavior for the pool sizes involved (hundreds of photos).
+ * Capped at half the pool so extra themes (~100+ photos) still have
+ * candidates; World Scenery (~950) keeps the full 120.
  */
 const RECENT_EXCLUSION_WINDOW = 120;
 
@@ -217,14 +212,39 @@ const RECENT_EXCLUSION_WINDOW = 120;
 const MAX_ASSIGNMENTS = 300;
 
 type SeedFile = { readonly photos: ReadonlyArray<SceneryPhoto> };
-
-export const SEED_POOLS: Record<PhotoSetId, ReadonlyArray<SceneryPhoto>> = {
-  "world-scenery": (seedPoolJson as SeedFile).photos,
-  "night-cities": (nightCitiesSeedJson as SeedFile).photos,
-  "deep-forest": (deepForestSeedJson as SeedFile).photos,
-  "night-sky": (nightSkySeedJson as SeedFile).photos,
-  "grand-buildings": (grandBuildingsSeedJson as SeedFile).photos,
+type SeedModule = {
+  photos?: ReadonlyArray<SceneryPhoto>;
+  default?: SeedFile;
 };
+
+const seedCache = new Map<PhotoSetId, ReadonlyArray<SceneryPhoto>>();
+seedCache.set("world-scenery", (seedPoolJson as SeedFile).photos);
+
+const seedLoaders: Record<PhotoSetId, () => Promise<SeedModule>> = {
+  "world-scenery": () => Promise.resolve(seedPoolJson as SeedFile),
+  "night-cities": () => import("./seeds/night-cities.json"),
+  "deep-forest": () => import("./seeds/deep-forest.json"),
+  "night-sky": () => import("./seeds/night-sky.json"),
+  "grand-buildings": () => import("./seeds/grand-buildings.json"),
+};
+
+function photosFromModule(mod: SeedModule): ReadonlyArray<SceneryPhoto> {
+  return mod.photos ?? mod.default?.photos ?? [];
+}
+
+export function peekSeedPhotos(photoSetId: PhotoSetId): ReadonlyArray<SceneryPhoto> {
+  return seedCache.get(photoSetId) ?? [];
+}
+
+export async function loadSeedPhotos(photoSetId: PhotoSetId): Promise<ReadonlyArray<SceneryPhoto>> {
+  const hit = seedCache.get(photoSetId);
+  if (hit && (photoSetId === "world-scenery" || hit.length > 0)) {
+    return hit;
+  }
+  const loaded = photosFromModule(await seedLoaders[photoSetId]());
+  seedCache.set(photoSetId, loaded);
+  return loaded;
+}
 
 /**
  * The photo pool: the bundled seed merged with photos fetched at runtime
@@ -232,7 +252,7 @@ export const SEED_POOLS: Record<PhotoSetId, ReadonlyArray<SceneryPhoto>> = {
  */
 export function getSceneryPool(
   fetchedPhotos: ReadonlyArray<SceneryPhoto>,
-  seedPhotos: ReadonlyArray<SceneryPhoto> = SEED_POOLS[DEFAULT_PHOTO_SET_ID],
+  seedPhotos: ReadonlyArray<SceneryPhoto> = peekSeedPhotos(DEFAULT_PHOTO_SET_ID),
 ): SceneryPhoto[] {
   const byId = new Map<string, SceneryPhoto>();
   for (const photo of seedPhotos) {
@@ -245,7 +265,7 @@ export function getSceneryPool(
 }
 
 export function sceneryPoolForSet(photoSetId: PhotoSetId): ReadonlyArray<SceneryPhoto> {
-  return getSceneryPool([], SEED_POOLS[photoSetId]);
+  return getSceneryPool([], peekSeedPhotos(photoSetId));
 }
 
 /** The World Scenery pool — the default set and the one golden tests pin. */
@@ -260,7 +280,7 @@ export function pickScenery(
   }
   const recent = Object.values(assignments)
     .sort((left, right) => right.assignedAt - left.assignedAt)
-    .slice(0, RECENT_EXCLUSION_WINDOW);
+    .slice(0, Math.min(RECENT_EXCLUSION_WINDOW, Math.floor(pool.length / 2)));
   const occupied = new Set(recent.map((assignment) => assignment.photoId));
   const available = pool.filter((photo) => !occupied.has(photo.id));
   const candidates = available.length > 0 ? available : pool;

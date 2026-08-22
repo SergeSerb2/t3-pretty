@@ -50,9 +50,8 @@ const INK_MODES: ReadonlySet<SceneryInkMode> = new Set(["auto", "light", "dark",
 
 /**
  * How many of the most recent assignments a random pick avoids repeating.
- * SurgeCode excluded photos bound to open/unsettled threads; the web port
- * approximates that with a recency window, which converges to the same
- * behavior for the pool sizes involved (hundreds of photos).
+ * Capped at half the pool so extra themes (~100+ photos) still have
+ * candidates; World Scenery (~950) keeps the full 120.
  */
 const RECENT_EXCLUSION_WINDOW = 120;
 
@@ -176,7 +175,7 @@ export function pickScenery(
   }
   const recent = Object.values(assignments)
     .sort((left, right) => right.assignedAt - left.assignedAt)
-    .slice(0, RECENT_EXCLUSION_WINDOW);
+    .slice(0, Math.min(RECENT_EXCLUSION_WINDOW, Math.floor(pool.length / 2)));
   const occupied = new Set(recent.map((assignment) => assignment.photoId));
   const available = pool.filter((photo) => !occupied.has(photo.id));
   const candidates = available.length > 0 ? available : pool;
@@ -226,10 +225,11 @@ export const useSceneryStore = create<SceneryStoreState>()(
       inkMode: "auto",
       ensureAssignment: (threadKey) =>
         set((state) => {
-          if (state.assignments[threadKey]) {
+          const pool = poolForActiveSet(state);
+          const existing = state.assignments[threadKey];
+          if (existing && pool.some((entry) => entry.id === existing.photoId)) {
             return state;
           }
-          const pool = poolForActiveSet(state);
           const pick = pickScenery(pool, state.assignments);
           if (!pick) {
             return state;

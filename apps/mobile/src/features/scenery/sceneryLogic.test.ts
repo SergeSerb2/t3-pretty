@@ -27,11 +27,12 @@ import {
   getSceneryPool,
   gradientPair,
   layerStack,
+  loadSeedPhotos,
+  peekSeedPhotos,
   photoOpacity,
   pickScenery,
   sceneryPoolForSet,
   SCENERY_POOL,
-  SEED_POOLS,
   sizedImageURL,
   stableIndex,
   wallpaperPixelWidth,
@@ -129,9 +130,10 @@ describe("pickScenery", () => {
   });
 
   it("avoids photos assigned within the recent window", () => {
+    // Window is min(120, floor(80/2)) = 40.
     const assignments = Object.fromEntries(
       pool
-        .slice(0, 60)
+        .slice(0, 40)
         .map((photo, index) => [
           `thread-${index}`,
           { photoId: photo.id, name: photo.name, assignedAt: index + 1 },
@@ -140,7 +142,23 @@ describe("pickScenery", () => {
     for (let attempt = 0; attempt < 25; attempt += 1) {
       const pick = pickScenery(pool, assignments);
       expect(pick).not.toBeNull();
-      expect(Number(pick!.id.replace("photo-", ""))).toBeGreaterThanOrEqual(60);
+      expect(Number(pick!.id.replace("photo-", ""))).toBeGreaterThanOrEqual(40);
+    }
+  });
+
+  it("keeps candidates in extra-sized pools instead of excluding the whole set", () => {
+    const extraPool = Array.from({ length: 110 }, (_, index) => makePhoto(`extra-${index}`));
+    const assignments = Object.fromEntries(
+      extraPool.map((photo, index) => [
+        `thread-${index}`,
+        { photoId: photo.id, name: photo.name, assignedAt: index + 1 },
+      ]),
+    );
+    // Window is min(120, floor(110/2)) = 55, so the oldest 55 stay available.
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const pick = pickScenery(extraPool, assignments);
+      expect(pick).not.toBeNull();
+      expect(Number(pick!.id.replace("extra-", ""))).toBeLessThan(55);
     }
   });
 
@@ -276,14 +294,17 @@ describe("seed pool", () => {
     expect(pool.length).toBe(SCENERY_POOL.length + 1);
   });
 
-  it("ships the same extra photo sets as desktop", () => {
+  it("ships the same extra photo sets as desktop", async () => {
     expect(PHOTO_SET_IDS).toEqual(WEB_PHOTO_SET_IDS);
     expect(PHOTO_SETS.map((set) => set.id)).toEqual(PHOTO_SET_IDS);
     expect(mobileNightCitiesJson).toEqual(webNightCitiesJson);
     expect(mobileDeepForestJson).toEqual(webDeepForestJson);
     expect(mobileNightSkyJson).toEqual(webNightSkyJson);
     expect(mobileGrandBuildingsJson).toEqual(webGrandBuildingsJson);
-    expect(SEED_POOLS["night-cities"].length).toBeGreaterThan(100);
-    expect(sceneryPoolForSet("deep-forest").length).toBe(SEED_POOLS["deep-forest"].length);
+    expect(peekSeedPhotos("world-scenery").length).toBeGreaterThan(800);
+    const cities = await loadSeedPhotos("night-cities");
+    expect(cities.length).toBeGreaterThan(100);
+    const forest = await loadSeedPhotos("deep-forest");
+    expect(sceneryPoolForSet("deep-forest").length).toBe(forest.length);
   });
 });
