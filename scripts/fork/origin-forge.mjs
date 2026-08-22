@@ -72,7 +72,15 @@ export function originGitConfigArgs() {
     "/Users/m1-dev/.git-credentials",
     "/opt/homebrew/var/buildkite-agent/.git-credentials",
   ].filter(Boolean);
-  const store = stores.find((path) => NodeFS.existsSync(path));
+  // An empty store is the same as a missing one: git reads no credentials
+  // from it and every Origin fetch fails with 128. Skip zero-byte files.
+  const store = stores.find((path) => {
+    try {
+      return NodeFS.statSync(path).size > 0;
+    } catch {
+      return false;
+    }
+  });
   if (!store) return [];
   return [
     "-c",

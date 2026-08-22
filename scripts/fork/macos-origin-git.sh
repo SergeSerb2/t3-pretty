@@ -26,7 +26,9 @@ origin_cli_helper_ready() {
 }
 
 store="${ORIGIN_GIT_CREDENTIALS:-$HOME/.git-credentials}"
-if [[ ! -f "$store" ]]; then
+# An empty store is the same as a missing one: git reads no credentials from
+# it and every Origin fetch fails with 128.
+if [[ ! -s "$store" ]]; then
   # Interactive/dev machines can clone via `origin auth setup-git`. Buildkite
   # sets FORCE_COLOR+NO_COLOR, which makes that helper exit 255, so CI still
   # needs the file store below when the file exists.

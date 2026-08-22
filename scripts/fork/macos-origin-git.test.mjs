@@ -129,6 +129,34 @@ describe("macos-origin-git pre-checkout hook", () => {
     }
   });
 
+  it("treats an empty git-credentials file as missing", () => {
+    const { home, store } = makeHome();
+    try {
+      NodeFS.writeFileSync(store, "");
+      const bin = NodePath.join(home, ".local", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(bin, "origin"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      const env = envFor(home, store);
+      env.PATH = `${bin}${NodePath.delimiter}${env.PATH}`;
+      for (const host of ["https://origin.cursor.com", "https://origin.cursor.com/git"]) {
+        NodeChildProcess.execFileSync(
+          "git",
+          ["config", "--global", `credential.${host}.helper`, "!origin credential-helper"],
+          { env, stdio: "ignore" },
+        );
+      }
+      const out = NodeChildProcess.execFileSync("bash", [script], {
+        encoding: "utf8",
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      assert.include(out, "Origin git CLI helper ready");
+      assert.notInclude(helpers(home, store), `store --file=${store}`);
+    } finally {
+      NodeFS.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it("writes the Origin store helper and skips later writes", () => {
     const { home, store } = makeHome();
     try {
