@@ -5,6 +5,7 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 import {
   applyKimiAcpModelSelection,
   buildKimiAcpSpawnInput,
+  KIMI_ACP_CLIENT_CAPABILITIES,
   resolveKimiAcpBaseModelId,
 } from "./KimiAcpSupport.ts";
 
@@ -35,6 +36,10 @@ const configOptions = [
 ] satisfies ReadonlyArray<EffectAcpSchema.SessionConfigOption>;
 
 describe("Kimi ACP support", () => {
+  it("opts into ACP terminals", () => {
+    expect(KIMI_ACP_CLIENT_CAPABILITIES).toEqual({ terminal: true });
+  });
+
   it("spawns the official stdio ACP entry point", () => {
     expect(
       buildKimiAcpSpawnInput({ binaryPath: "/opt/kimi/bin/kimi" }, "/repo", {

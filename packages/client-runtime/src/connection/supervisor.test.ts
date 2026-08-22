@@ -376,7 +376,7 @@ describe("EnvironmentSupervisor", () => {
     }),
   );
 
-  it.effect("retries forever with exponential backoff capped at sixteen seconds", () =>
+  it.effect("retries forever with exponential backoff capped at five minutes", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
         prepare: () => Effect.fail(transient()),
@@ -391,7 +391,9 @@ describe("EnvironmentSupervisor", () => {
       );
       expect(yield* Ref.get(harness.prepareCount)).toBe(1);
 
-      for (const [index, delay] of [3_000, 4_000, 8_000, 16_000, 16_000, 16_000].entries()) {
+      for (const [index, delay] of [
+        3_000, 4_000, 8_000, 16_000, 32_000, 60_000, 120_000, 300_000, 300_000,
+      ].entries()) {
         yield* TestClock.adjust(delay);
         yield* eventuallyState(
           supervisor.state,
@@ -399,7 +401,7 @@ describe("EnvironmentSupervisor", () => {
         );
       }
 
-      expect(yield* Ref.get(harness.prepareCount)).toBe(7);
+      expect(yield* Ref.get(harness.prepareCount)).toBe(10);
     }).pipe(Effect.provide(TestClock.layer())),
   );
 

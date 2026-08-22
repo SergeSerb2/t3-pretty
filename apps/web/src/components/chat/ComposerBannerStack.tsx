@@ -99,7 +99,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
 
   return (
     <div
-      className={cn("group/banner-stack chat-composer-drawer-slot", className)}
+      className={cn("mount-rise-in group/banner-stack chat-composer-drawer-slot", className)}
       data-composer-banner-drawer="true"
     >
       <div

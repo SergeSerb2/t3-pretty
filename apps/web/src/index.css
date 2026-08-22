@@ -1260,6 +1260,19 @@ html[data-window-inactive]
 
   .chat-composer-glass-host {
     box-shadow: 0 12px 28px -18px rgb(0 0 0 / 40%);
+    transition: box-shadow 260ms cubic-bezier(0.32, 0.72, 0, 1);
+
+    @variant dark {
+      box-shadow: none;
+    }
+  }
+
+  /* The resting drop shadow deepens and stretches on hover so the composer
+     lifts toward the pointer. Dark mode stays flat: there the rim and the
+     specular carry the hover state. One 260ms shadow transition per hover
+     change on a single small element — not a per-frame repaint. */
+  .chat-composer-glass-shell:hover .chat-composer-glass-host {
+    box-shadow: 0 18px 40px -18px rgb(0 0 0 / 46%);
 
     @variant dark {
       box-shadow: none;
@@ -1348,7 +1361,19 @@ html[data-window-inactive]
   }
 
   /* The composer wakes when engaged: the rim picks up the focus ring color.
-     One border-color transition per focus change on a 1px pseudo-element. */
+     One border-color transition per focus change on a 1px pseudo-element.
+     Hover gets a quieter half-step of the same brightening — declared first
+     so focus-within wins the tie when both apply. */
+  .chat-composer-glass-shell:hover .chat-composer-glass-host::after,
+  .chat-composer-glass-shell:is(
+      .chat-composer-glass-shell-attached,
+      :has(:is(.chat-composer-top-drawer, .chat-composer-shoulder-tab))
+    ):hover
+    .chat-composer-glass-host
+    [data-chat-composer-main-surface="true"]::after {
+    border-color: color-mix(in srgb, var(--ring) 16%, var(--chat-composer-outline));
+  }
+
   .chat-composer-glass-shell:focus-within .chat-composer-glass-host::after,
   .chat-composer-glass-shell:is(
       .chat-composer-glass-shell-attached,
@@ -1360,6 +1385,7 @@ html[data-window-inactive]
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .chat-composer-glass-host,
     .chat-composer-glass-host::after,
     .chat-composer-glass-shell:is(
         .chat-composer-glass-shell-attached,
@@ -1374,7 +1400,13 @@ html[data-window-inactive]
   /* Pointer-reactive specular: a fixed-size radial highlight rasterized once
      and moved with `translate` only, so every pointer update is a compositor
      transform on an existing layer. The listener (ComposerSpecular) only runs
-     while the pointer moves inside the composer; a still pointer is zero work. */
+     while the pointer moves inside the composer; a still pointer is zero work.
+     The layer spans the whole glass shell — context strip included — clipped
+     to the same joined silhouette as the shell's glass, so the glow follows
+     the pointer down into the strip instead of cutting off at the composer
+     lip. A wider halo (::after) sits under the core and blooms from 72% to
+     full size on hover; `scale` transitions independently of the per-frame
+     `translate` updates, so tracking stays instant while the bloom settles. */
   @media (hover: hover) and (pointer: fine) {
     .chat-composer-specular {
       position: absolute;
@@ -1388,7 +1420,30 @@ html[data-window-inactive]
     }
 
     .chat-composer-glass-shell-with-context .chat-composer-specular {
-      inset-block-end: var(--chat-composer-context-extension);
+      border-radius: 0;
+      /* Same joined silhouette as .chat-composer-glass-shell-with-context::before. */
+      clip-path: shape(
+        from 0 22px,
+        curve to 22px 0 with 0 9.85px / 9.85px 0,
+        line to calc(100% - 22px) 0,
+        curve to 100% 22px with calc(100% - 9.85px) 0 / 100% 9.85px,
+        line to 100% calc(100% - var(--chat-composer-context-extension) - 1.375rem),
+        curve to calc(100% - 1.375rem) calc(100% - var(--chat-composer-context-extension)) with 100%
+          calc(100% - var(--chat-composer-context-extension) - 0.6156rem) / calc(100% - 0.6156rem)
+          calc(100% - var(--chat-composer-context-extension)),
+        line to calc(100% - 1.375rem) calc(100% - 16px),
+        curve to calc(100% - 1.375rem - 16px) 100% with calc(100% - 1.375rem) calc(100% - 7.16px) /
+          calc(100% - 1.375rem - 7.16px) 100%,
+        line to calc(1.375rem + 16px) 100%,
+        curve to 1.375rem calc(100% - 16px) with calc(1.375rem + 7.16px) 100% / 1.375rem
+          calc(100% - 7.16px),
+        line to 1.375rem calc(100% - var(--chat-composer-context-extension)),
+        curve to 0 calc(100% - var(--chat-composer-context-extension) - 1.375rem) with 0.6156rem
+          calc(100% - var(--chat-composer-context-extension)) / 0
+          calc(100% - var(--chat-composer-context-extension) - 0.6156rem),
+        line to 0 22px,
+        close
+      );
     }
 
     .chat-composer-glass-shell:hover .chat-composer-specular {
@@ -1414,6 +1469,33 @@ html[data-window-inactive]
       @variant dark {
         background: radial-gradient(circle closest-side, rgb(255 255 255 / 5%), transparent);
       }
+    }
+
+    .chat-composer-specular::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 560px;
+      height: 560px;
+      margin: -280px 0 0 -280px;
+      background: radial-gradient(
+        circle closest-side,
+        color-mix(in srgb, var(--foreground) 3.5%, transparent),
+        transparent
+      );
+      translate: var(--spec-x, -560px) var(--spec-y, -560px);
+      scale: 0.72;
+      will-change: translate;
+      transition: scale 420ms cubic-bezier(0.22, 1, 0.36, 1);
+
+      @variant dark {
+        background: radial-gradient(circle closest-side, rgb(255 255 255 / 2.5%), transparent);
+      }
+    }
+
+    .chat-composer-glass-shell:hover .chat-composer-specular::after {
+      scale: 1;
     }
   }
 
@@ -1518,6 +1600,14 @@ html[data-window-inactive]
       clip-path: none;
     }
 
+    /* Without the joined silhouette the glow cannot follow into the strip;
+       keep it clipped to the composer body as before. */
+    .chat-composer-glass-shell-with-context .chat-composer-specular {
+      inset-block-end: var(--chat-composer-context-extension);
+      border-radius: 22px;
+      clip-path: none;
+    }
+
     .chat-composer-context-strip::before {
       background: color-mix(
         in srgb,
@@ -1542,6 +1632,48 @@ html[data-window-inactive]
             color-mix(in srgb, var(--chat-composer-glass-surface) var(--glass-opacity), transparent);
         }
       }
+    }
+  }
+
+  /* The context strip tucks out from under the composer when it first
+     appears. One-shot on mount, transform+opacity only; then it stays put. */
+  .chat-composer-context-strip {
+    animation: composer-strip-enter 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @keyframes composer-strip-enter {
+    from {
+      opacity: 0;
+      translate: 0 -6px;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+
+  /* Surfaces that mount conditionally over the chat view (scroll-to-end and
+     sync-status pills, the draft hero headline) rise and fade in once on
+     mount; unmount stays instant. */
+  .mount-rise-in {
+    animation: mount-rise-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @keyframes mount-rise-in {
+    from {
+      opacity: 0;
+      translate: 0 6px;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chat-composer-context-strip,
+    .mount-rise-in {
+      animation: none;
     }
   }
 

@@ -136,6 +136,8 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGeneration", (it) => {
           expect(
             requests.find((request) => request.method === "initialize")?.params?.clientCapabilities,
           ).toMatchObject({
+            fs: { readTextFile: false, writeTextFile: false },
+            terminal: false,
             _meta: {
               parameterizedModelPicker: true,
             },
