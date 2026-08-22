@@ -238,6 +238,53 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(dmg, "resolve-fork-release.mjs --print version");
   });
 
+  it("packages a Linux x64 AppImage on linux-small without fetching Origin", () => {
+    assert.include(pipeline, "build-linux-appimage.sh");
+    assert.include(pipeline, "Linux x64 AppImage");
+    assert.include(pipeline, "key: linux-appimage");
+    assert.isBelow(
+      pipeline.indexOf("build-windows-nsis.ps1"),
+      pipeline.indexOf("build-linux-appimage.sh"),
+    );
+    assert.isBelow(
+      pipeline.indexOf("build-linux-appimage.sh"),
+      pipeline.indexOf("build-macos-dmg.sh"),
+    );
+    const linux = NodeFS.readFileSync(NodePath.resolve(here, "build-linux-appimage.sh"), "utf8");
+    assert.include(linux, "Do not git fetch origin");
+    assert.notInclude(linux, "git fetch --force --tags origin");
+    assert.notInclude(linux, "git fetch --unshallow");
+    assert.include(linux, "GIT_TERMINAL_PROMPT=0");
+    assert.include(linux, 'GIT_ASKPASS="${GIT_ASKPASS:-/bin/true}"');
+    assert.include(linux, "git fetch --force --tags upstream");
+    assert.include(linux, "ensure-linux-node.sh");
+    assert.include(linux, "x86_64-unknown-linux-gnu");
+    assert.include(linux, "--platform linux --target AppImage --arch x64");
+    assert.include(linux, "upload-assets");
+    assert.include(linux, "T3_FORK_BUILD_FLOOR");
+    assert.include(linux, "latest-linux.yml");
+    assert.include(linux, "nightly-linux.yml");
+    assert.include(linux, "-name '*-linux.yml'");
+    assert.notInclude(linux, "-o -name '*.yml'");
+    assert.notInclude(linux, '"$publish"/nightly*.yml');
+    assert.include(linux, "imagemagick");
+    assert.include(linux, "https://vite.plus");
+    assert.include(linux, "npx vp");
+    assert.include(linux, "load-buildkite-secrets.sh");
+    assert.include(linux, "buildkite-agent secret get");
+    assert.include(linux, "Hosted linux-small has no file-store fallback");
+    assert.include(linux, "T3CODE_RELEASE_S3_BUCKET");
+    assert.include(linux, "T3CODE_RELEASE_S3_ENDPOINT");
+    assert.include(linux, "refusing to guess an upload target");
+    assert.isBelow(
+      linux.indexOf("Hosted linux-small has no file-store fallback"),
+      linux.indexOf("rustup toolchain install"),
+    );
+    assert.notInclude(linux, "checkout-origin.sh");
+    assert.notInclude(linux, "CURSOR_API_KEY");
+    assert.notInclude(pipeline, "\n    secrets:");
+  });
+
   it("deploys the relay on macos-release with baked public IDs", () => {
     const relay = jobBlock(relayWorkflow, "deploy_relay");
     assert.include(relay, "runs-on: macos-latest");

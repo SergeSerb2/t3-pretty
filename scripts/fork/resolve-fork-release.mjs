@@ -68,7 +68,19 @@ function findHighestForkBuild() {
 
 function resolveForkBuild(upstreamBuildRaw, runNumber) {
   const candidate = BigInt(upstreamBuildRaw) * RUN_MULTIPLIER + runNumber;
-  const highest = findHighestForkBuild();
+  let highest = findHighestForkBuild();
+  // Hosted linux-small cannot fetch Origin fork tags, so the native AppImage
+  // packager passes the build slot already live on the public update feed.
+  // Without it a fresh checkout can mint below the version clients have.
+  const floorRaw = process.env.T3_FORK_BUILD_FLOOR;
+  if (floorRaw) {
+    try {
+      const floor = BigInt(floorRaw);
+      if (floor > highest) highest = floor;
+    } catch {
+      // not an integer
+    }
+  }
   // electron-updater compares the numeric nightly build slot. A later CI run
   // with a small Buildkite number must not publish below an earlier
   // millisecond-fallback or already-shipped feed version.

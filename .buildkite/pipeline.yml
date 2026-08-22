@@ -5,7 +5,7 @@
 # workflows themselves skip no-op desktop/mobile work.
 #
 # Queues:
-#   linux-small    — Buildkite hosted Linux (importer + ubuntu-latest jobs)
+#   linux-small    — Buildkite hosted Linux (importer + ubuntu-latest jobs + AppImage)
 #   macos-release  — Origin PR Review (m5-dev, REVIEW_ONLY=1) plus packaging
 #                    when a Mac without that flag is registered. Do not invent
 #                    a second queue until it exists in the Buildkite cluster;
@@ -39,15 +39,16 @@ steps:
   - label: ":github: T3 Pretty Origin workflows"
     key: origin-workflows
     # Imported GHA jobs (desktop preflight) still die in ~2s on the importer.
-    # Native DMG/NSIS/iOS/relay are the release. Do not red the whole build
-    # when only the importer fails.
+    # Native DMG/NSIS/AppImage/iOS/relay are the release. Do not red the whole
+    # build when only the importer fails.
     # Scheduled builds exist only to run upstream sync. That job is native
     # macos-release below: imported macos GHA steps write $GITHUB_OUTPUT
     # and die under set -u when the importer omits the file.
     soft_fail: true
     if: build.source != "schedule"
     # Bound the importer so a hung GHA child cannot leave this step running
-    # for hours on linux-small. Native Mac/Windows steps do not depend on it.
+    # for hours on linux-small. Native Mac/Windows/Linux steps do not depend
+    # on it.
     timeout_in_minutes: 30
     agents:
       queue: linux-small
@@ -119,6 +120,21 @@ steps:
     agents:
       queue: windows-release
     command: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fork/build-windows-nsis.ps1
+
+  - label: ":linux: Linux x64 AppImage"
+    key: linux-appimage
+    # Hosted linux-small already compiles WSL node-pty. Package the AppImage
+    # there too so the public feed gets Linux without occupying macos-release.
+    # Do not list cluster secrets: hosted YAML secrets: currently 500.
+    if: build.branch == "main" && build.source != "schedule"
+    timeout_in_minutes: 90
+    agents:
+      queue: linux-small
+    env:
+      T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
+      GIT_TERMINAL_PROMPT: "0"
+      GIT_ASKPASS: "/bin/true"
+    command: bash scripts/fork/build-linux-appimage.sh
 
   - label: ":mac: macOS arm64 DMG"
     key: macos-dmg

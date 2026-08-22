@@ -355,6 +355,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "queue: linux-small");
     const dmgStep = pipeline.slice(pipeline.indexOf(":mac: macOS arm64 DMG"));
     assert.include(dmgStep.slice(0, 900), "queue: macos-release");
+    const linuxStep = pipeline.slice(pipeline.indexOf(":linux: Linux x64 AppImage"));
+    assert.include(linuxStep.slice(0, 900), "queue: linux-small");
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
     assert.include(reviewStep.slice(0, 800), "queue: macos-release");
     assert.include(pipeline, "github-actions#v0.13.0");
@@ -362,6 +364,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");
     assert.include(pipeline, "build-macos-dmg.sh");
+    assert.include(pipeline, "build-linux-appimage.sh");
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, 'build.source != "schedule"');
     assert.notInclude(pipeline, "depends_on: origin-workflows");

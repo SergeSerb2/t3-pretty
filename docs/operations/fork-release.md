@@ -132,25 +132,30 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    Linux cannot load `CURSOR_API_KEY`, and the importer cannot run the old
    review workflow on Origin pull-request events.
    A packaging Mac signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
-   push/UI builds of `main`, not the four-hour scheduled sync. iOS TestFlight IPAs and OTA
-   exports compile on `macos-release` through the native
+   push/UI builds of `main`, not the four-hour scheduled sync. Hosted `linux-small` builds the
+   Linux x64 AppImage (`scripts/fork/build-linux-appimage.sh`) on those same push/UI builds and
+   uploads `latest-linux.yml` to the public feed. That script never `git fetch origin`: Origin
+   HTTPS has no credentials there, and git waits forever on the username prompt. iOS TestFlight
+   IPAs and OTA exports compile on `macos-release` through the native
    `scripts/fork/publish-mobile-release.sh` step (not the GitHub Actions importer). Relay
    deploys from the native `macos-release` step. Only trusted `main` commits run desktop packaging
    and relay deploys on the self-hosted machines; Origin PR review is the
    `macos-release` job on feature branches, running scripts from `origin/main`
    when they exist. Imported desktop preflight is skipped when the push cannot change the
    shipped desktop app (mobile-only, docs-only, marketing, or relay-only commits).
-   Native Mac and Windows packaging still run on every `main` push so the public
+   Native Mac, Windows, and Linux packaging still run on every `main` push so the public
    updater feed stays on the latest commit. `workflow_dispatch` and the
    upstream-sync dispatch still always run.
-9. The publisher creates an annotated Origin git tag and uploads the installers plus both
-   `nightly` and `latest` update manifests to the generic `electron-updater` feed in
-   `T3CODE_DESKTOP_UPDATE_FEED_URL`. Origin has no GitHub-style release-asset API, so that feed
-   is an S3-compatible bucket (Cloudflare R2 is the intended host; the relay already uses
-   Cloudflare). Multi-range requests stay disabled. Already-installed GitHub-provider builds need
-   one manual install of a release that contains this feed before later updates can be automatic.
-   Windows ships even when Azure Trusted Signing is not configured; unsigned NSIS installers
-   still update from that feed, and SmartScreen will warn until ATS secrets are added.
+9. The publisher creates an annotated Origin git tag and uploads the Mac and Windows installers
+   plus their `nightly` and `latest` update manifests to the generic `electron-updater` feed in
+   `T3CODE_DESKTOP_UPDATE_FEED_URL`. Linux AppImage, `nightly-linux.yml`, and `latest-linux.yml`
+   come from hosted `linux-small`, not that Origin tag/upload job. Origin has no GitHub-style
+   release-asset API, so that feed is an S3-compatible bucket (Cloudflare R2 is the intended host;
+   the relay already uses Cloudflare). Multi-range requests stay disabled. Already-installed
+   GitHub-provider builds need one manual install of a release that contains this feed before later
+   updates can be automatic. Windows ships even when Azure Trusted Signing is not configured;
+   unsigned NSIS installers still update from that feed, and SmartScreen will warn until ATS secrets
+   are added.
 
 Fork versions retain the newest integrated upstream nightly prefix and append a monotonic fork
 build number. The resolver takes the larger of the current CI run slot and one past the highest
@@ -164,7 +169,8 @@ without pretending that a newer upstream tag was integrated before its sync pull
   Buildkite only run on Origin-hosted repositories, not inbound GitHub mirrors. After detach,
   Origin is the source of truth and pushes no longer flow to GitHub.
 - Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
-  the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux),
+  the fork workflows. Create three agent queues: `linux-small` (Buildkite hosted Linux: importer,
+  WSL node-pty, and the x64 AppImage),
   `macos-release` (Origin PR Review on m5-dev with `REVIEW_ONLY=1`; packaging
   when a Mac without that flag is registered), and `windows-release` (serge-pc).
   Do not add a second Mac queue until it exists in the cluster — unknown queues
@@ -183,7 +189,8 @@ without pretending that a newer upstream tag was integrated before its sync pull
   them onto `macos-release`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
   The importer cannot run Windows jobs; `.buildkite/pipeline.yml` runs
   `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer
-  for push/UI builds of `main`, not the four-hour schedule. Imported Mac jobs
+  for push/UI builds of `main`, not the four-hour schedule. The Linux AppImage is the
+  same: a native `linux-small` step, not an imported job. Imported Mac jobs
   use `/bin/bash` 3.2 (no `mapfile`). `CURSOR_API_KEY` and `CLI_PROXY_API_KEY`
   also live as files under `$HOME/.config/t3-pretty/` (and still
   `/Users/m1-dev/.config/t3-pretty/` if that host is a packaging Mac) because in-job
@@ -218,8 +225,9 @@ without pretending that a newer upstream tag was integrated before its sync pull
   `PLANETSCALE_API_TOKEN`, `AXIOM_TOKEN`, `CLERK_SECRET_KEY`, `APNS_PRIVATE_KEY`. Public
   relay IDs are literals in `.github/workflows/deploy-relay.yml`.
 - Variable `T3CODE_DESKTOP_UPDATE_FEED_URL`: public HTTPS directory that serves `nightly.yml`,
-  `latest.yml`, and the installers. Must not be a GitHub Releases URL. Uploads use that URL's
-  path as the S3 key prefix (so `…/t3-pretty/latest/` stores objects under `t3-pretty/latest/`).
+  `latest.yml`, `latest-mac.yml`, `latest-linux.yml`, and the installers. Must not be a GitHub
+  Releases URL. Uploads use that URL's path as the S3 key prefix (so `…/t3-pretty/latest/`
+  stores objects under `t3-pretty/latest/`).
 - Secrets `T3CODE_RELEASE_S3_BUCKET`, `T3CODE_RELEASE_S3_ACCESS_KEY_ID`,
   `T3CODE_RELEASE_S3_SECRET_ACCESS_KEY`, and optionally `T3CODE_RELEASE_S3_ENDPOINT` plus
   `T3CODE_RELEASE_S3_REGION`: S3-compatible upload target for that feed (R2 uses the account
@@ -253,6 +261,7 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 | --------------------------- | ------------------------------------- | ------------------------------------------- | ---------------------------------------------------- |
 | Changelog + version + smoke | m1-dev                                | 10 min (6.5 min model + 3 min install)      | `ubuntu-latest`                                      |
 | WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                       |
+| Linux x64 AppImage          | not shipped on the feed               | —                                           | hosted `linux-small` (`build-linux-appimage.sh`)     |
 | macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | m1-dev (or a second Mac with the same labels)        |
 | Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                   |
 | Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | `macos-release` (Origin CLI)                         |
