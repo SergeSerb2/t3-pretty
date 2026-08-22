@@ -3,6 +3,7 @@ import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { canAnimateSceneryInkTransition } from "../scenery/sceneryInkTransition";
+import { mountSweepVeil, shouldMashCut, sweepDirection, type ThemeSwapSource } from "./themeSweep";
 import {
   applyThemePalette,
   CUSTOM_THEMES_STORAGE_KEY,
@@ -283,7 +284,7 @@ export function syncBrowserChromeTheme() {
   }
 }
 
-function applyTheme(theme: Theme, suppressTransitions = false) {
+function applyTheme(theme: Theme, suppressTransitions = false, source: ThemeSwapSource = "user") {
   if (typeof document === "undefined" || typeof window === "undefined") return;
   const appearanceMode = readAppearanceModePreference(theme);
   const followSystem = appearanceMode === "system";
@@ -301,14 +302,14 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
   }
 
   const isFirstApply = lastAppliedTheme === null;
+  const resolvedAppearance = resolveThemeAppearance(
+    theme,
+    systemDark,
+    followSystem,
+    appearanceMode,
+    themeHalves,
+  );
   const commitTheme = () => {
-    const resolvedAppearance = resolveThemeAppearance(
-      theme,
-      systemDark,
-      followSystem,
-      appearanceMode,
-      themeHalves,
-    );
     applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
     const isDark = resolvedAppearance === "dark";
     document.documentElement.classList.toggle("dark", isDark);
@@ -351,13 +352,27 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
     return;
   }
 
-  // The whole window dissolves from the old palette to the new one as one
-  // snapshot crossfade (see html[data-theme-swap] in index.css), with
-  // no-transitions still suppressing per-element color tweens underneath.
+  // A second toggle mid-sweep or a rapid A/B burst wants the comparison, not
+  // the choreography: commit instantly. An in-flight sweep keeps rendering
+  // the updated palette through its live new-state snapshot.
+  if (root.dataset.themeSwap !== undefined || shouldMashCut(Date.now())) {
+    commitWithoutElementTweens();
+    return;
+  }
+
+  // The new palette sweeps across the held old snapshot as a terminator
+  // front — dusk settles downward, dawn rises — with a feather veil riding
+  // the edge (see html[data-theme-swap] in index.css). no-transitions still
+  // suppresses per-element color tweens underneath, and a system flip runs
+  // slower than a deliberate toggle.
   root.classList.add("no-transitions");
-  root.dataset.themeSwap = "true";
+  root.dataset.themeSwap = source;
+  root.dataset.themeSweep = sweepDirection(resolvedAppearance === "dark");
+  const removeVeil = mountSweepVeil();
   const finishSwap = () => {
+    removeVeil();
     delete root.dataset.themeSwap;
+    delete root.dataset.themeSweep;
     releaseTransitions();
   };
   try {
@@ -373,7 +388,7 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
   }
 }
 
-// A theme swap crossfade is worth a view transition only when the scenery ink
+// A theme swap sweep is worth a view transition only when the scenery ink
 // transition is not already coordinating this flip (it runs its own), View
 // Transitions exist, the Motion toggle is on, and the OS allows motion — the
 // last three via the scenery helper's own gate.
@@ -464,7 +479,9 @@ function getServerSnapshot() {
 
 function handleSystemAppearanceChange() {
   const storedTheme = getStored();
-  if (readAppearanceModePreference(storedTheme) === "system") applyTheme(storedTheme);
+  if (readAppearanceModePreference(storedTheme) === "system") {
+    applyTheme(storedTheme, false, "system");
+  }
   emitChange();
 }
 

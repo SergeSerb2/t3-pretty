@@ -1453,20 +1453,137 @@ html[data-window-inactive]
   animation-duration: 0s !important;
 }
 
-/* Theme swap dissolve: while useTheme runs the palette change inside a view
-   transition, the whole window cross-fades from the old palette to the new one
-   as one image. no-transitions stays applied underneath so no element runs its
-   own color tween during the snapshot crossfade. One-shot, user/OS-triggered. */
-html[data-theme-swap]::view-transition-group(root) {
-  animation-duration: 250ms;
+/* Theme swap terminator sweep: while useTheme runs the palette change inside
+   a view transition, the new palette's snapshot clips in across the held old
+   one as a moving front — dusk settles downward, dawn rises from the bottom —
+   with a feather veil riding the edge (.theme-sweep-veil below).
+   no-transitions stays applied underneath so no element runs its own color
+   tween during the sweep. One-shot, user/OS-triggered; the clip animates on a
+   static snapshot texture and the veil only translates, so nothing repaints
+   per frame. */
+html[data-theme-swap] {
+  --theme-sweep-ms: 600ms;
+  --theme-sweep-ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-html[data-theme-swap]::view-transition-old(root),
-html[data-theme-swap]::view-transition-new(root) {
-  animation-duration: 250ms;
-  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
-  /* plus-lighter flashes a bright frame between a light and dark snapshot. */
+/* A system flip is weather, not a switch: let it cross the window slowly. */
+html[data-theme-swap="system"] {
+  --theme-sweep-ms: 1200ms;
+}
+
+html[data-theme-swap]::view-transition-group(root) {
+  animation: none;
+}
+
+html[data-theme-swap]::view-transition-old(root) {
+  animation: none;
+  /* Held at full opacity under the advancing front; plus-lighter flashes a
+     bright frame between a light and dark snapshot. */
+  opacity: 1;
   mix-blend-mode: normal;
+}
+
+html[data-theme-swap]::view-transition-new(root) {
+  animation: var(--theme-sweep-ms) var(--theme-sweep-ease) both theme-sweep-dusk;
+  mix-blend-mode: normal;
+}
+
+html[data-theme-sweep="dawn"]::view-transition-new(root) {
+  animation-name: theme-sweep-dawn;
+}
+
+@keyframes theme-sweep-dusk {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes theme-sweep-dawn {
+  from {
+    clip-path: inset(100% 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* Feather band riding the terminator front: a faint smear of the incoming
+   chrome tone plus grain, so the clip edge reads as thin atmosphere instead
+   of a hard wipe. Mounted by useTheme only for the duration of the sweep; its
+   own view-transition-name keeps it out of the root snapshot pair, and only
+   its new-state snapshot shows (painted once, then translated). */
+.theme-sweep-veil {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 56vh;
+  pointer-events: none;
+  view-transition-name: theme-sweep-veil;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in oklab, var(--app-chrome-background) 30%, transparent),
+    transparent
+  );
+}
+
+.theme-sweep-veil::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--surface-grain);
+  background-repeat: repeat;
+  background-size: var(--surface-grain-size);
+  mask-image: linear-gradient(to bottom, transparent, black, transparent);
+}
+
+html[data-theme-swap]::view-transition-old(theme-sweep-veil) {
+  display: none;
+}
+
+html[data-theme-swap]::view-transition-group(theme-sweep-veil) {
+  animation: var(--theme-sweep-ms) var(--theme-sweep-ease) both theme-sweep-veil-dusk;
+}
+
+html[data-theme-sweep="dawn"]::view-transition-group(theme-sweep-veil) {
+  animation-name: theme-sweep-veil-dawn;
+}
+
+html[data-theme-swap]::view-transition-new(theme-sweep-veil) {
+  animation: var(--theme-sweep-ms) linear both theme-sweep-veil-fade;
+}
+
+/* The veil tracks the clip front with its band centered on the edge; the
+   fade at the extremes hides it entering and leaving the window. */
+@keyframes theme-sweep-veil-dusk {
+  from {
+    transform: translateY(-28vh);
+  }
+  to {
+    transform: translateY(72vh);
+  }
+}
+
+@keyframes theme-sweep-veil-dawn {
+  from {
+    transform: translateY(72vh);
+  }
+  to {
+    transform: translateY(-28vh);
+  }
+}
+
+@keyframes theme-sweep-veil-fade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  18%,
+  82% {
+    opacity: 1;
+  }
 }
 
 /* One-shot rejection shake: set imperatively when a send fails preflight and
