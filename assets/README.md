@@ -17,12 +17,19 @@ The `| Pretty` wordmark (`pretty/t3-pretty-wordmark.png`) is for the README,
 DMG installer, and other large lockups. The in-app mark is that T3 with
 the paper knocked out.
 
-`t3-pretty-1024.png` is the macOS asset (824px frosted-glass body inset 100px,
-with a light contact shadow and a translucent plate). `t3-pretty-ios-1024.png`
-is the full-bleed iOS asset — the same glass look, flattened opaque because
-iOS home-screen icons cannot be transparent.
-The ICO, ICNS, favicon, and apple-touch files are derived from those masters.
-Desktop packaging copies them into `apps/desktop/resources`.
+`t3-pretty-1024.png` is the macOS asset — an opaque 824px superellipse plate in
+sage frost (`#DFEFE3`), inset 100px, with a soft contact shadow.
+`t3-pretty-ios-1024.png` is the full-bleed iOS asset — the same frost field edge
+to edge, since iOS applies the mask itself. Every icon in the family follows one
+spec: the cut-out T3 at 62% of the visible icon area, sage on frost, so the
+glyph reads at the same scale on the Dock, home screen, and browser chrome.
+The ICO, ICNS, favicon, apple-touch, and Android adaptive foreground files are
+derived from those masters. Desktop packaging copies them into `apps/desktop/resources`.
+
+Run `vp run icons:pretty` (python3 + Pillow) to regenerate the family from
+`pretty/kit/mark-sage.png` via `scripts/generate-pretty-icons.py`, then refresh
+the web public copies with
+`node scripts/apply-web-brand-assets.ts --brand development --target-directory apps/web/public`.
 
 `pretty/t3-pretty-mark.png` is the in-app T3 (web sidebar, mobile thread header):
 sage ink on a transparent ground, no plate. The web and mobile copies

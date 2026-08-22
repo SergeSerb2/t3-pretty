@@ -28,20 +28,21 @@ Use for the README, git project row, DMG, and other wide lockups.
 
 ## App icon
 
-Live macOS icon is a **translucent frosted-glass** squircle (sage frost, specular
-highlight, real alpha so the Dock wallpaper shows through). iOS cannot ship a
-see-through icon — Apple flattens alpha — so the iOS 1024 is the same glass
-look, fully opaque.
+One spec on every surface: the cut-out T3 at **62% of the visible icon area**,
+sage `#8FCFA8` on sage-frost `#DFEFE3`. The live macOS icon is an opaque
+superellipse plate (824px body inset 100px, soft contact shadow). iOS is the
+same frost field full-bleed, since iOS applies the squircle mask itself.
 
-| File                                  | Size                            |
-| ------------------------------------- | ------------------------------- |
-| `icon-macos-1024.png`                 | Glass, 824 body + shadow        |
-| `icon-glass-macos-1024.png`           | Same as live macOS              |
-| `icon-ios-1024.png`                   | Opaque glass, 1024 full-bleed   |
-| `icon-glass-ios-1024.png`             | Same as live iOS                |
-| `icon-frost-macos-1024.png`           | Opaque sage-frost plate variant |
-| `icon-forest-macos-1024.png`          | Forest plate variant            |
-| `icon-{16,32,64,128,180,256,512}.png` | Square exports                  |
-| `icon.ico`                            | Windows (opaque glass)          |
+| File                                  | Use                               |
+| ------------------------------------- | --------------------------------- |
+| `icon-macos-1024.png`                 | Live macOS (frost plate + shadow) |
+| `icon-frost-macos-1024.png`           | Same as live macOS                |
+| `icon-ios-1024.png`                   | Live iOS, 1024 full-bleed         |
+| `icon-glass-macos-1024.png`           | Translucent glass variant         |
+| `icon-glass-ios-1024.png`             | Glass variant, flattened for iOS  |
+| `icon-forest-macos-1024.png`          | Forest plate variant              |
+| `icon-{16,32,64,128,180,256,512}.png` | Square exports of the iOS art     |
+| `icon.ico`                            | Windows (iOS art)                 |
 
-Live copies used by the app live in `assets/pretty/t3-pretty-*`.
+Live copies used by the app live in `assets/pretty/t3-pretty-*`. Regenerate the
+family with `vp run icons:pretty` (`scripts/generate-pretty-icons.py`).
