@@ -2,9 +2,9 @@
 # Register a trusted macOS Buildkite agent for T3 Pretty Origin CI.
 #
 # Default queue is macos-release (Origin PR Review). Packaging (DMG, iOS,
-# relay, upstream sync) is macos-package — pass QUEUES=macos-package on a
-# Mac that should take those jobs. Registers two workers unless REVIEW_ONLY=1
-# so review and a DMG can run while a local IPA occupies the first.
+# relay, upstream sync) uses the same queue; REVIEW_ONLY=1 refuses those jobs.
+# Registers two workers unless REVIEW_ONLY=1 so review and a DMG can run while
+# a local IPA occupies the first.
 # Never add pull-request queues. Requires a cluster agent token from the
 # Origin-connected Buildkite org (Agents → Agent tokens).
 #

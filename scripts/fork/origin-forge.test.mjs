@@ -350,11 +350,11 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "deploy-relay-ci.sh");
     assert.notInclude(pipeline, "deploy-relay.yml");
     assert.include(pipeline, "queue: macos-release");
-    assert.include(pipeline, "queue: macos-package");
+    assert.notInclude(pipeline, "queue: macos-package");
     assert.include(pipeline, "queue: windows-release");
     assert.include(pipeline, "queue: linux-small");
     const dmgStep = pipeline.slice(pipeline.indexOf(":mac: macOS arm64 DMG"));
-    assert.include(dmgStep.slice(0, 900), "queue: macos-package");
+    assert.include(dmgStep.slice(0, 900), "queue: macos-release");
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
     assert.include(reviewStep.slice(0, 800), "queue: macos-release");
     assert.include(pipeline, "github-actions#v0.13.0");
@@ -385,6 +385,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(source, 'case "upload-assets"');
     assert.include(source, "originGitConfigArgs");
     assert.include(source, "credential.https://origin.cursor.com.helper");
+    assert.include(source, "maxBuffer");
   });
 
   it("reads the baked updater feed from T3CODE_DESKTOP_UPDATE_FEED_URL", () => {
