@@ -145,7 +145,7 @@ function withDescriptorCurrentValue(
 
 const REASONING_EFFORT_SELECT_IDS: ReadonlySet<string> = new Set([
   "effort",
-  "reasoningEffort",
+  "reasoningeffort",
   "reasoning",
   "thinking",
 ]);
@@ -167,8 +167,11 @@ const REASONING_EFFORT_OPTION_LABELS: Readonly<Record<string, string>> = {
  * "Extra High", "high effort"). Display standardizes on "<Level> effort",
  * keyed by the canonical option id rather than the provider-supplied label.
  */
-export function reasoningEffortOptionLabel(optionId: string): string {
+export function reasoningEffortOptionLabel(optionId: string, fallbackLabel?: string): string {
   const id = optionId.trim().toLowerCase();
+  if (!id) {
+    return fallbackLabel ?? optionId;
+  }
   const known = REASONING_EFFORT_OPTION_LABELS[id];
   if (known) {
     return known;
@@ -179,14 +182,15 @@ export function reasoningEffortOptionLabel(optionId: string): string {
 function withStandardizedEffortLabels(
   descriptor: ProviderOptionDescriptor,
 ): ProviderOptionDescriptor {
-  if (descriptor.type !== "select" || !REASONING_EFFORT_SELECT_IDS.has(descriptor.id)) {
+  const selectId = descriptor.id.trim().toLowerCase();
+  if (descriptor.type !== "select" || !REASONING_EFFORT_SELECT_IDS.has(selectId)) {
     return descriptor;
   }
   return {
     ...descriptor,
     options: descriptor.options.map((option) => ({
       ...option,
-      label: reasoningEffortOptionLabel(option.id),
+      label: reasoningEffortOptionLabel(option.id, option.label),
     })),
   };
 }

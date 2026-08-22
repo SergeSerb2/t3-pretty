@@ -122,6 +122,28 @@ describe("descriptor helpers", () => {
     expect(reasoningEffortOptionLabel("xhigh")).toBe("Extra high effort");
     expect(reasoningEffortOptionLabel("none")).toBe("None");
     expect(reasoningEffortOptionLabel("superhigh")).toBe("Superhigh effort");
+    expect(reasoningEffortOptionLabel("", "Custom")).toBe("Custom");
+  });
+
+  it("standardizes labels for mixed-case reasoning effort select ids", () => {
+    const caps: ModelCapabilities = createModelCapabilities({
+      optionDescriptors: [
+        {
+          id: "ReasoningEffort",
+          label: "Reasoning Effort",
+          type: "select",
+          options: [
+            { id: "low", label: "Low" },
+            { id: "", label: "Provider default" },
+          ],
+        },
+      ],
+    });
+
+    const [descriptor] = getProviderOptionDescriptors({ caps });
+    expect(
+      descriptor?.type === "select" && descriptor.options.map((option) => option.label),
+    ).toEqual(["Low effort", "Provider default"]);
   });
 
   it("builds wire-format option selections from descriptors", () => {
