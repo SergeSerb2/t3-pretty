@@ -60,6 +60,13 @@ else
 fi
 git fetch --force --tags upstream
 
+# No Origin fork tags are reachable here (see header), so the monotonic floor
+# comes from the version already live on the public Linux update feed.
+feed_version="$(curl -fsSL --max-time 30 "${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/latest-linux.yml" 2>/dev/null | sed -n 's/^version: *//p' | head -n 1 || true)"
+if [[ "$feed_version" =~ -nightly\.[0-9]{8}\.([0-9]+)$ ]]; then
+  export T3_FORK_BUILD_FLOOR="${BASH_REMATCH[1]}"
+fi
+
 bash scripts/fork/ensure-linux-node.sh
 if [[ -d "${HOME}/.local/t3-pretty-node24/bin" ]]; then
   export PATH="${HOME}/.local/t3-pretty-node24/bin:${PATH}"
@@ -127,13 +134,14 @@ node scripts/build-desktop-artifact.ts \
 publish="$root/release-publish"
 rm -rf "$publish"
 mkdir -p "$publish"
+# Linux objects only. A generic nightly.yml/latest.yml here would land on the
+# shared R2 prefix and overwrite the Windows NSIS manifest.
 find release -maxdepth 1 -type f \( \
-  -name '*.AppImage' -o -name '*.blockmap' -o -name '*.yml' \
+  -name '*.AppImage' -o -name '*.AppImage.blockmap' -o -name '*-linux.yml' \
 \) -exec cp {} "$publish"/ \;
-for nightly in "$publish"/nightly*.yml; do
-  [[ -f "$nightly" ]] || continue
-  cp "$nightly" "${nightly/nightly/latest}"
-done
+if [[ -f "$publish/nightly-linux.yml" ]]; then
+  cp "$publish/nightly-linux.yml" "$publish/latest-linux.yml"
+fi
 
 appimage="$(find "$publish" -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
 test -n "$appimage"

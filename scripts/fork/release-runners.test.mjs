@@ -263,8 +263,12 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(linux, "x86_64-unknown-linux-gnu");
     assert.include(linux, "--platform linux --target AppImage --arch x64");
     assert.include(linux, "upload-assets");
-    assert.include(linux, "nightly-linux.yml");
+    assert.include(linux, "T3_FORK_BUILD_FLOOR");
     assert.include(linux, "latest-linux.yml");
+    assert.include(linux, "nightly-linux.yml");
+    assert.include(linux, "-name '*-linux.yml'");
+    assert.notInclude(linux, "-o -name '*.yml'");
+    assert.notInclude(linux, '"$publish"/nightly*.yml');
     assert.include(linux, "imagemagick");
     assert.include(linux, "https://vite.plus");
     assert.include(linux, "npx vp");

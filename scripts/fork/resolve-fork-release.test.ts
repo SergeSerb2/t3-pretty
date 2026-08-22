@@ -181,3 +181,51 @@ it("keeps a later CI run newer than an already-shipped fork tag", () => {
     NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
   }
 });
+
+it("stays above the update-feed floor when no fork tags are visible", () => {
+  const fixtureRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fork-release-floor-"));
+
+  try {
+    git(fixtureRoot, "init");
+    git(fixtureRoot, "config", "user.name", "T3 Fork Release Test");
+    git(fixtureRoot, "config", "user.email", "t3-fork-release-test@example.invalid");
+    NodeFS.writeFileSync(NodePath.join(fixtureRoot, "fixture.txt"), "fixture\n");
+    git(fixtureRoot, "add", "fixture.txt");
+    git(fixtureRoot, "commit", "-m", "test fixture");
+    git(fixtureRoot, "tag", "v0.0.33-nightly.20260809.1043");
+
+    const floored = JSON.parse(
+      NodeChildProcess.execFileSync(process.execPath, [scriptPath], {
+        cwd: fixtureRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_RUN_NUMBER: "0",
+          BUILDKITE_BUILD_NUMBER: "87",
+          T3_FORK_BUILD_FLOOR: "1043367814",
+          GITHUB_OUTPUT: "",
+        },
+      }),
+    ) as { readonly version: string };
+
+    assert.equal(floored.version, "0.0.33-nightly.20260809.1043367815");
+
+    const belowFloor = JSON.parse(
+      NodeChildProcess.execFileSync(process.execPath, [scriptPath], {
+        cwd: fixtureRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_RUN_NUMBER: "0",
+          BUILDKITE_BUILD_NUMBER: "87",
+          T3_FORK_BUILD_FLOOR: "12",
+          GITHUB_OUTPUT: "",
+        },
+      }),
+    ) as { readonly version: string };
+
+    assert.equal(belowFloor.version, "0.0.33-nightly.20260809.1043000087");
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
