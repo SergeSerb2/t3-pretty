@@ -10,7 +10,16 @@
  * pick-at-creation. Evicted/missing assignments re-resolve through the
  * deterministic FNV-1a fallback, so a thread never loses its scenery.
  */
-import { createContext, use, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import {
+  createContext,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -30,6 +39,9 @@ import {
   DEFAULT_BLUR,
   DEFAULT_TRANSLUCENCY,
   fallbackPhoto,
+  getSceneryPool,
+  loadSeedPhotos,
+  peekSeedPhotos,
   pickScenery,
   sceneryPoolForSet,
   type SceneryAssignment,
@@ -91,7 +103,28 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     sceneryRef.current = scenery;
   }, [scenery]);
 
-  const pool = sceneryPoolForSet(scenery.photoSetId);
+  const photoSetId = scenery.photoSetId;
+  const cachedSeeds = peekSeedPhotos(photoSetId);
+  // Extra sets import lazily. Serve the in-memory cache on the same tick as a
+  // set change (world-scenery is always cached; extras after first load). On
+  // the first switch to an uncached extra, keep the previous pool so the
+  // wallpaper never drops to [] while the JSON import resolves.
+  const [heldSeeds, setHeldSeeds] = useState(() =>
+    cachedSeeds.length > 0 ? cachedSeeds : peekSeedPhotos(DEFAULT_PHOTO_SET_ID),
+  );
+  useEffect(() => {
+    let cancelled = false;
+    void loadSeedPhotos(photoSetId).then((photos) => {
+      if (!cancelled && photos.length > 0) {
+        setHeldSeeds(photos);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [photoSetId]);
+  const photos = cachedSeeds.length > 0 ? cachedSeeds : heldSeeds;
+  const pool = useMemo(() => getSceneryPool([], photos), [photos]);
 
   const photoForThreadKey = useCallback(
     (threadKey: string): SceneryPhoto | null => {
@@ -130,29 +163,34 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
   const ensureThreadAssignment = useCallback(
     (threadKey: string) => {
       const current = sceneryRef.current;
+      const livePool = sceneryPoolForSet(current.photoSetId);
+      if (livePool.length === 0) {
+        return;
+      }
       const existing = current.assignments[threadKey];
       const boundSet = existing?.photoSetId ?? DEFAULT_PHOTO_SET_ID;
       if (
         existing !== undefined &&
         boundSet === current.photoSetId &&
-        pool.some((entry) => entry.id === existing.photoId)
+        livePool.some((entry) => entry.id === existing.photoId)
       ) {
         return;
       }
-      const pick = pickScenery(pool, current.assignments);
+      const pick = pickScenery(livePool, current.assignments);
       if (pick === null) {
         return;
       }
-      const assignments = capAssignments({
-        ...current.assignments,
-        [threadKey]: {
-          photoId: pick.id,
-          name: pick.name,
-          assignedAt: Date.now(),
-          photoSetId: current.photoSetId,
-        },
+      persistScenery({
+        assignments: capAssignments({
+          ...current.assignments,
+          [threadKey]: {
+            photoId: pick.id,
+            name: pick.name,
+            assignedAt: Date.now(),
+            photoSetId: current.photoSetId,
+          },
+        }),
       });
-      persistScenery({ assignments });
     },
     [persistScenery, pool],
   );

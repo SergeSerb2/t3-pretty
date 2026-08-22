@@ -27,7 +27,10 @@ import {
   getSceneryPool,
   gradientPair,
   layerStack,
+  loadSeedPhotos,
+  peekSeedPhotos,
   photoOpacity,
+  photosFromSeedModule,
   pickScenery,
   sceneryPoolForSet,
   SCENERY_POOL,
@@ -299,8 +302,27 @@ describe("seed pool", () => {
     expect(mobileDeepForestJson).toEqual(webDeepForestJson);
     expect(mobileNightSkyJson).toEqual(webNightSkyJson);
     expect(mobileGrandBuildingsJson).toEqual(webGrandBuildingsJson);
+    expect(peekSeedPhotos("world-scenery").length).toBeGreaterThan(800);
+    expect(peekSeedPhotos("night-cities").length).toBe(0);
+    expect(peekSeedPhotos("deep-forest").length).toBe(0);
+    expect(peekSeedPhotos("night-sky").length).toBe(0);
+    expect(peekSeedPhotos("grand-buildings").length).toBe(0);
+    for (const id of ["night-cities", "deep-forest", "night-sky", "grand-buildings"] as const) {
+      const loaded = await loadSeedPhotos(id);
+      expect(loaded.length, id).toBeGreaterThan(100);
+      expect(peekSeedPhotos(id).length).toBe(loaded.length);
+      expect(sceneryPoolForSet(id).length).toBe(loaded.length);
+    }
     expect(sceneryPoolForSet("world-scenery").length).toBeGreaterThan(800);
-    expect(sceneryPoolForSet("night-cities").length).toBeGreaterThan(100);
-    expect(sceneryPoolForSet("deep-forest").length).toBeGreaterThan(100);
+  });
+
+  it("reads JSON seed modules in Metro, Vite, and array shapes", () => {
+    const photos = [makePhoto("a")];
+    expect(photosFromSeedModule({ photos })).toEqual(photos);
+    expect(photosFromSeedModule({ default: { photos } })).toEqual(photos);
+    expect(photosFromSeedModule(photos)).toEqual(photos);
+    expect(photosFromSeedModule({ default: photos })).toEqual(photos);
+    expect(photosFromSeedModule({})).toEqual([]);
+    expect(photosFromSeedModule(null)).toEqual([]);
   });
 });
