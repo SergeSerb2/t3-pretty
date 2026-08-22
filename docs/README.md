@@ -51,6 +51,10 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [macOS and iOS performance audit (2026-08-12)](./internals/t3-pretty-macos-ios-performance-audit-2026-08-12.md)
 - [CPU performance audit (2026-08-11)](./internals/t3-pretty-performance-audit.md)
 
+### Brainstorms
+
+- [Feature brainstorm, ranked top ten (2026-08-22)](./internals/t3-pretty-feature-brainstorm-2026-08-22.md)
+
 ### Runbooks
 
 - [Release](./operations/release.md)

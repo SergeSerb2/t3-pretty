@@ -28,8 +28,44 @@ type InkViewTransitionDocument = Document & {
 
 let inkTransitionGeneration = 0;
 
+const CHAT_TRANSCRIPT_SELECTOR = "[data-chat-transcript]";
+const CHAT_TRANSCRIPT_ACTIVE_ATTR = "data-chat-transcript-active";
+
+type TranscriptPinNode = {
+  setAttribute: (name: string, value: string) => void;
+  removeAttribute: (name: string) => void;
+};
+
+type TranscriptPinDocument = {
+  querySelectorAll?: (selector: string) => ArrayLike<TranscriptPinNode>;
+};
+
+/** Keep the ink view-transition name on one transcript even across cousin trees. */
+export function pinActiveChatTranscript(doc: TranscriptPinDocument = document): void {
+  const nodes = doc.querySelectorAll?.(CHAT_TRANSCRIPT_SELECTOR);
+  if (nodes === undefined || nodes.length === 0) {
+    return;
+  }
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index];
+    if (node === undefined) {
+      continue;
+    }
+    if (index === 0) {
+      node.setAttribute(CHAT_TRANSCRIPT_ACTIVE_ATTR, "true");
+    } else {
+      node.removeAttribute(CHAT_TRANSCRIPT_ACTIVE_ATTR);
+    }
+  }
+}
+
 export function canAnimateSceneryInkTransition(): boolean {
   if (typeof document === "undefined" || typeof window === "undefined") {
+    return false;
+  }
+  // Background tabs throttle rAF; a snapshot taken here can stick as a
+  // garbled overlay until the tab is focused again.
+  if (document.hidden) {
     return false;
   }
   // While useTheme's swap dissolve is mid-flight, a second startViewTransition
@@ -75,6 +111,7 @@ export function runSceneryInkTransition(update: (animating: boolean) => void): v
   };
 
   root.dataset.sceneryInkTransition = "true";
+  pinActiveChatTranscript(transitionDocument);
   const clear = () => {
     if (generation !== inkTransitionGeneration) {
       return;
@@ -83,7 +120,10 @@ export function runSceneryInkTransition(update: (animating: boolean) => void): v
   };
 
   try {
-    const transition = transitionDocument.startViewTransition!(() => runUpdate(true));
+    const transition = transitionDocument.startViewTransition!(() => {
+      runUpdate(true);
+      pinActiveChatTranscript(transitionDocument);
+    });
     void transition.finished.then(clear, () => {
       runUpdate(false);
       clear();

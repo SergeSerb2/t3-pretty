@@ -6842,8 +6842,12 @@ function ChatViewContent(props: ChatViewProps) {
                 onDismiss={() => setDismissedProviderStatusBannerKey(providerStatusBannerKey)}
               />
             </div>
-            {/* Messages Wrapper */}
-            <div className="relative flex min-h-0 flex-1 flex-col">
+            {/* Messages Wrapper. data-chat-transcript-active is the ink view-transition group. */}
+            <div
+              className="relative flex min-h-0 flex-1 flex-col"
+              data-chat-transcript="true"
+              data-chat-transcript-active="true"
+            >
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               <MessagesTimeline
                 agentPanelModel={agentPanelModel}
@@ -6888,7 +6892,7 @@ function ChatViewContent(props: ChatViewProps) {
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
               {showScrollToBottom && (
                 <div
-                  className="pointer-events-none absolute left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5"
+                  className="mount-rise-in pointer-events-none absolute left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5"
                   style={{ bottom: composerOverlayHeight + 4 }}
                 >
                   <Button
@@ -6932,7 +6936,7 @@ function ChatViewContent(props: ChatViewProps) {
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
                         ref={draftHeroHeadlineRef}
-                        className="pb-8"
+                        className="mount-rise-in pb-8"
                         data-scenery-hero-chrome="headline"
                         style={
                           forceExpandedMobileComposer
