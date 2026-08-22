@@ -40,8 +40,10 @@ MOBILE_ASSETS = REPO_ROOT / "apps" / "mobile" / "assets"
 WEB_PUBLIC = REPO_ROOT / "apps" / "web" / "public"
 
 # PNG-in-ICNS types used by modern macOS. Duplicate pixel sizes share one PNG
-# (1x and @2x aliases). This is portable; iconutil is macOS-only.
+# (1x and @2x aliases). icp4 is the 16px slot Finder list view and menu extras
+# read; without it those targets scale the 32px PNG. Portable; no iconutil.
 ICNS_PNG_TYPES = (
+    (b"icp4", 16),
     (b"ic11", 32),
     (b"ic12", 64),
     (b"ic07", 128),
@@ -88,22 +90,18 @@ def superellipse_mask(size: int, exponent: float = 5.0) -> Image.Image:
     draw = ImageDraw.Draw(mask)
     half = s / 2
     n = exponent
-    # Trace the superellipse |x/a|^n + |y/b|^n = 1 as a polygon. Each mirrored
-    # quadrant starts where the previous arc ended, so the outline is one
-    # continuous winding with no chords across the plate.
-    points = []
-    steps = s // 2
-    for i in range(steps + 1):
-        t = (i / steps) * (math.pi / 2)
-        x = half * math.cos(t) ** (2 / n)
-        y = half * math.sin(t) ** (2 / n)
-        points.append((half + x, half + y))
-    polygon = (
-        points
-        + [(2 * half - x, y) for x, y in reversed(points)]
-        + [(2 * half - x, 2 * half - y) for x, y in points]
-        + [(x, 2 * half - y) for x, y in reversed(points)]
-    )
+    # |x/a|^n + |y/b|^n = 1, walked once around 0..2π. Fractional powers of
+    # negative cos/sin are not real; abs + copysign keeps every quadrant on
+    # the same winding without stitching mirrored copies.
+    steps = s * 2
+    polygon = []
+    for i in range(steps):
+        t = (i / steps) * 2 * math.pi
+        cos_t = math.cos(t)
+        sin_t = math.sin(t)
+        x = math.copysign(abs(cos_t) ** (2 / n), cos_t)
+        y = math.copysign(abs(sin_t) ** (2 / n), sin_t)
+        polygon.append((half + half * x, half + half * y))
     draw.polygon(polygon, fill=255)
     return mask.resize((size, size), Image.LANCZOS)
 
