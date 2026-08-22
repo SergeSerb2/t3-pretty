@@ -47,7 +47,7 @@ origin_git() {
     "${HOME}/.git-credentials" \
     /Users/m1-dev/.git-credentials \
     /opt/homebrew/var/buildkite-agent/.git-credentials; do
-    if [[ -n "$candidate" && -f "$candidate" ]]; then
+    if [[ -n "$candidate" && -s "$candidate" ]]; then
       store="$candidate"
       break
     fi

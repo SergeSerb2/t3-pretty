@@ -65,6 +65,15 @@ export function redactCommandArgs(args) {
   return redacted;
 }
 
+export function usableGitCredentialStore(path) {
+  if (!path) return false;
+  try {
+    return NodeFS.statSync(path).size > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function originGitConfigArgs() {
   const stores = [
     process.env.ORIGIN_GIT_CREDENTIALS,
@@ -72,15 +81,7 @@ export function originGitConfigArgs() {
     "/Users/m1-dev/.git-credentials",
     "/opt/homebrew/var/buildkite-agent/.git-credentials",
   ].filter(Boolean);
-  // An empty store is the same as a missing one: git reads no credentials
-  // from it and every Origin fetch fails with 128. Skip zero-byte files.
-  const store = stores.find((path) => {
-    try {
-      return NodeFS.statSync(path).size > 0;
-    } catch {
-      return false;
-    }
-  });
+  const store = stores.find((path) => usableGitCredentialStore(path));
   if (!store) return [];
   return [
     "-c",
