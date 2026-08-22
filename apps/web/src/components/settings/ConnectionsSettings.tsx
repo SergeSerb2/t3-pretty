@@ -23,6 +23,7 @@ import {
   type EnvironmentId,
 } from "@t3tools/contracts";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
+import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import {
   isAtomCommandInterrupted,
@@ -104,6 +105,8 @@ import {
   resolveServerSelfUpdateCapability,
 } from "~/versionSkew";
 import { useCloudUiEnabled } from "~/cloud/clerkGate";
+import { deregisterManagedRelayEnvironmentCommand } from "~/cloud/managedRelayState";
+import { relayEnvironmentDiscovery } from "~/state/relay";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { authEnvironment } from "~/state/auth";
@@ -1715,6 +1718,13 @@ export function ConnectionsSettings() {
   });
   const removeEnvironment = useAtomCommand(environmentCatalog.remove, { reportFailure: false });
   const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
+  const relaySession = useAtomValue(managedRelaySessionAtom);
+  const deregisterRelayEnvironment = useAtomCommand(deregisterManagedRelayEnvironmentCommand, {
+    reportFailure: false,
+  });
+  const refreshRelayCatalog = useAtomCommand(relayEnvironmentDiscovery.refreshCatalog, {
+    reportFailure: false,
+  });
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   const primarySessionState = usePrimarySessionState();
   const currentSessionScopes = desktopBridge
@@ -2210,7 +2220,42 @@ export function ConnectionsSettings() {
     async (environmentId: EnvironmentId) => {
       setRemovingSavedEnvironmentId(environmentId);
       setSavedBackendError(null);
+      // A Surge Connect environment is re-registered by mesh reconciliation for
+      // as long as the relay account still lists it, so a local remove alone
+      // resurrects within a minute (and keeps billing Worker retries). Unlink it
+      // from the account first; if the relay refuses, keep the row and say so
+      // rather than pretend it was removed.
+      const relayManaged = environments.some(
+        (environment) => environment.environmentId === environmentId && environment.relayManaged,
+      );
+      if (relayManaged && relaySession !== null) {
+        const unlinked = await deregisterRelayEnvironment({
+          accountId: relaySession.accountId,
+          environmentId,
+        });
+        if (unlinked._tag === "Failure") {
+          setRemovingSavedEnvironmentId(null);
+          if (!isAtomCommandInterrupted(unlinked)) {
+            const error = squashAtomCommandFailure(unlinked);
+            const message = error instanceof Error ? error.message : "Failed to remove backend.";
+            setSavedBackendError(message);
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Could not remove backend",
+                description: message,
+              }),
+            );
+          }
+          return;
+        }
+      }
       const result = await removeEnvironment(environmentId);
+      if (relayManaged) {
+        // Drop the unlinked environment from discovery state so it stops
+        // rendering as an available device everywhere immediately.
+        void refreshRelayCatalog();
+      }
       setRemovingSavedEnvironmentId(null);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
@@ -2225,7 +2270,13 @@ export function ConnectionsSettings() {
         );
       }
     },
-    [removeEnvironment],
+    [
+      deregisterRelayEnvironment,
+      environments,
+      refreshRelayCatalog,
+      relaySession,
+      removeEnvironment,
+    ],
   );
 
   const handleConnectSshHost = useCallback(
