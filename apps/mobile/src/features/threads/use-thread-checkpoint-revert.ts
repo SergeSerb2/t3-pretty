@@ -14,6 +14,7 @@ import {
 } from "../../state/use-remote-environment-registry";
 import {
   checkpointEnvironmentAvailable,
+  checkpointRemoteConnectionState,
   checkpointRevertBlockReason,
   checkpointRevertConfirmation,
 } from "./thread-checkpoint-revert";
@@ -36,7 +37,9 @@ export function useThreadCheckpointRevert(threadRef: ScopedThreadRef | null): {
   const runtime = useRemoteEnvironmentRuntime(threadRef?.environmentId ?? null);
   const connection = useSavedRemoteConnection(threadRef?.environmentId ?? null);
   const [revertingTurnCount, setRevertingTurnCount] = useState<number | null>(null);
-  const environmentAvailable = checkpointEnvironmentAvailable(runtime?.connectionState ?? null);
+  const environmentAvailable = checkpointEnvironmentAvailable(
+    checkpointRemoteConnectionState(runtime?.connectionState, connection != null),
+  );
 
   const revertToCheckpoint = useCallback(
     async (turnCount: number) => {

@@ -8,7 +8,15 @@ import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connect
  * Local/on-device threads have no remote runtime, so `connectionState` is
  * null — treat those as available, matching ThreadRouteScreen's
  * `?? "available"` fallback. A known remote is available only when connected.
+ * A saved remote whose runtime has not loaded yet is "connecting", not local.
  */
+export function checkpointRemoteConnectionState(
+  runtimeConnectionState: EnvironmentConnectionPhase | undefined,
+  savedRemotePresent: boolean,
+): EnvironmentConnectionPhase | null {
+  return runtimeConnectionState ?? (savedRemotePresent ? "connecting" : null);
+}
+
 export function checkpointEnvironmentAvailable(
   remoteConnectionState: EnvironmentConnectionPhase | null,
 ): boolean {

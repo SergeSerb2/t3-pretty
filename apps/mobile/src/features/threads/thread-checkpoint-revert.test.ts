@@ -2,13 +2,38 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   checkpointEnvironmentAvailable,
+  checkpointRemoteConnectionState,
   checkpointRevertBlockReason,
   checkpointRevertConfirmation,
 } from "./thread-checkpoint-revert";
 
+describe("checkpointRemoteConnectionState", () => {
+  it("treats a missing runtime with no saved remote as local", () => {
+    expect(checkpointRemoteConnectionState(undefined, false)).toBeNull();
+  });
+
+  it("treats a missing runtime with a saved remote as still connecting", () => {
+    expect(checkpointRemoteConnectionState(undefined, true)).toBe("connecting");
+  });
+
+  it("keeps the live runtime phase when it has resolved", () => {
+    expect(checkpointRemoteConnectionState("connected", true)).toBe("connected");
+    expect(checkpointRemoteConnectionState("offline", true)).toBe("offline");
+  });
+});
+
 describe("checkpointEnvironmentAvailable", () => {
   it("treats a missing remote runtime as available (local/on-device)", () => {
     expect(checkpointEnvironmentAvailable(null)).toBe(true);
+    expect(checkpointEnvironmentAvailable(checkpointRemoteConnectionState(undefined, false))).toBe(
+      true,
+    );
+  });
+
+  it("blocks a saved remote whose runtime has not resolved yet", () => {
+    expect(checkpointEnvironmentAvailable(checkpointRemoteConnectionState(undefined, true))).toBe(
+      false,
+    );
   });
 
   it("allows a connected remote", () => {

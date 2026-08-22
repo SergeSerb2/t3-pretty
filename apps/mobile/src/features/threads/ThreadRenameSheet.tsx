@@ -2,7 +2,7 @@ import { useNavigation, type StaticScreenProps } from "@react-navigation/native"
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Haptics from "expo-haptics";
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useState } from "react";
 import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -22,11 +22,17 @@ type ThreadRenameSheetProps = StaticScreenProps<{
 export function ThreadRenameSheet(props: ThreadRenameSheetProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { currentTitle, environmentId, threadId } = props.route.params;
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
-  const [title, setTitle] = useState(props.route.params.currentTitle);
+  const [title, setTitle] = useState(currentTitle);
   const [busy, setBusy] = useState(false);
+
+  useLayoutEffect(() => {
+    setTitle(currentTitle);
+    setBusy(false);
+  }, [currentTitle, environmentId, threadId]);
 
   const normalizedTitle = normalizeThreadTitleInput(title);
   const submit = useCallback(() => {
@@ -34,8 +40,8 @@ export function ThreadRenameSheet(props: ThreadRenameSheetProps) {
     setBusy(true);
     void Haptics.selectionAsync();
     void updateThreadMetadata({
-      environmentId: EnvironmentId.make(props.route.params.environmentId),
-      input: { threadId: ThreadId.make(props.route.params.threadId), title: normalizedTitle },
+      environmentId: EnvironmentId.make(environmentId),
+      input: { threadId: ThreadId.make(threadId), title: normalizedTitle },
     }).then((result) => {
       setBusy(false);
       if (result._tag === "Failure") {
@@ -50,7 +56,7 @@ export function ThreadRenameSheet(props: ThreadRenameSheetProps) {
       }
       navigation.goBack();
     });
-  }, [busy, navigation, normalizedTitle, props.route.params, updateThreadMetadata]);
+  }, [busy, environmentId, navigation, normalizedTitle, threadId, updateThreadMetadata]);
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
