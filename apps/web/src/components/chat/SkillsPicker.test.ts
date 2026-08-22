@@ -252,13 +252,27 @@ describe("toPickerSkills", () => {
     expect(preventDefault).toHaveBeenCalledTimes(1);
     expect(onToggle).not.toHaveBeenCalled();
     const star = Children.toArray(row.props.children.props.children).find(
-      (child): child is ReactElement<{ onClick: (event: unknown) => void }> =>
+      (
+        child,
+      ): child is ReactElement<{
+        onClick: (event: unknown) => void;
+        onKeyDown: (event: { key: string; stopPropagation: () => void }) => void;
+      }> =>
         isValidElement<{ "aria-label"?: string }>(child) &&
         String(child.props["aria-label"]).includes("favorites"),
     )!;
     star.props.onClick({ preventDefault: () => {}, stopPropagation: () => {} });
     expect(onToggleFavorite).toHaveBeenCalledTimes(1);
     expect(onToggle).not.toHaveBeenCalled();
+    const stopSpace = vi.fn();
+    star.props.onKeyDown({ key: " ", stopPropagation: stopSpace });
+    expect(stopSpace).toHaveBeenCalledTimes(1);
+    const stopEnter = vi.fn();
+    star.props.onKeyDown({ key: "Enter", stopPropagation: stopEnter });
+    expect(stopEnter).toHaveBeenCalledTimes(1);
+    const stopArrow = vi.fn();
+    star.props.onKeyDown({ key: "ArrowDown", stopPropagation: stopArrow });
+    expect(stopArrow).not.toHaveBeenCalled();
   });
 
   it("wires the toggle on an unlocked row", () => {

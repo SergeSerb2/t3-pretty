@@ -333,7 +333,9 @@ export function SkillPickerRow(props: {
             props.onToggleFavorite();
           }}
           onKeyDown={(event) => {
-            event.stopPropagation();
+            if (event.key === " " || event.key === "Enter") {
+              event.stopPropagation();
+            }
           }}
           onPointerDown={(event) => {
             event.stopPropagation();
