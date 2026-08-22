@@ -38,8 +38,8 @@ const THREAD_CONVERSATION_LOAD_TIMEOUT_MS = 8_000;
 
 /**
  * Conversation text for a thread. Uses an already-loaded detail when one
- * exists; otherwise mounts the thread state atom until it leaves the initial
- * empty/synchronizing states, or until `timeoutMs`.
+ * exists; otherwise mounts the thread state atom until thread data arrives or
+ * a terminal error lands, or until `timeoutMs`.
  */
 export function loadThreadConversationText(
   threadRef: ScopedThreadRef,
@@ -83,14 +83,12 @@ export function loadThreadConversationText(
           fail(new Error(state.error.value));
           return;
         }
-        if (
-          state.status === "empty" ||
-          (state.status === "synchronizing" && Option.isNone(state.error))
-        ) {
+        if (Option.isNone(state.data)) {
+          // A live/success state can still lack data; keep waiting so an
+          // unloaded thread never resolves as an empty conversation.
           return;
         }
-        const thread = Option.getOrNull(state.data);
-        finish(conversationFromMessages(title, thread?.messages ?? []));
+        finish(conversationFromMessages(title, state.data.value.messages));
       },
       { immediate: true },
     );

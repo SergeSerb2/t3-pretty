@@ -56,6 +56,28 @@ describe("loadThreadConversationText", () => {
     ).rejects.toThrow("Timed out loading conversation");
   });
 
+  it("keeps waiting when a live state has no thread data yet", async () => {
+    readThreadDetail.mockReturnValue(null);
+    stateAtom.mockReturnValue(
+      Atom.make(
+        AsyncResult.success({
+          data: Option.none(),
+          status: "live" as const,
+          error: Option.none(),
+          page: Option.none(),
+        }),
+      ),
+    );
+
+    await expect(
+      loadThreadConversationText(
+        { environmentId: "env-1" as never, threadId: "thread-1" as never },
+        "Unloaded thread",
+        20,
+      ),
+    ).rejects.toThrow("Timed out loading conversation");
+  });
+
   it("rejects with the thread state error instead of copying an empty conversation", async () => {
     readThreadDetail.mockReturnValue(null);
     stateAtom.mockReturnValue(
