@@ -149,6 +149,7 @@ describe("toPickerSkills", () => {
       ),
     );
     expect(html).toContain("pointer-events-auto");
+    expect(html).not.toContain("data-disabled:pointer-events-auto");
     expect(html).toContain("Add to favorites");
     expect(html).toContain("Global");
     expect(html).toContain("aria-disabled");

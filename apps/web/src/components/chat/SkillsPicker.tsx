@@ -290,9 +290,9 @@ export function SkillPickerRow(props: {
       checked={props.isEnabled}
       className={cn(
         "min-h-6 gap-2 py-0.5 sm:min-h-6",
-        // Disabled items drop pointer events, which also blocked the star.
-        skill.locked &&
-          "data-disabled:pointer-events-auto data-disabled:opacity-100 [&>:last-child]:opacity-64",
+        // Keep the disabled row inert so the switch cannot be clicked.
+        // The star punches through with pointer-events-auto below.
+        skill.locked && "data-disabled:opacity-100 [&>:last-child]:opacity-64",
       )}
       closeOnClick={false}
       disabled={props.disabled}
@@ -304,6 +304,7 @@ export function SkillPickerRow(props: {
           aria-label={props.isFavorite ? "Remove from favorites" : "Add to favorites"}
           className={cn(
             "text-muted-foreground/70 opacity-70 hover:text-foreground hover:opacity-100",
+            skill.locked && "pointer-events-auto",
             props.isFavorite && "text-foreground opacity-100",
           )}
           onClick={(event) => {
