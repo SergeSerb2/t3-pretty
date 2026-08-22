@@ -758,11 +758,24 @@ export const exportBrandIcons = Effect.fn("exportBrandIcons")(function* (checkOn
 
   const path = yield* Path.Path;
   for (const override of DEVELOPMENT_PUBLIC_ICON_OVERRIDES) {
-    const sourceContents =
-      generated.get(override.sourceRelativePath) ??
-      // Public-copy sources are plain tracked files in the fork layout (the
-      // pretty favicons and mark), not Icon Composer renders.
-      (yield* fs.readFile(path.join(repositoryRoot, override.sourceRelativePath)).pipe(
+    const generatedContents = generated.get(override.sourceRelativePath);
+    if (generatedContents !== undefined) {
+      generated.set(override.targetRelativePath, generatedContents);
+      continue;
+    }
+
+    // Fork-owned pretty sources are skipped above and live on disk. Anything
+    // else is an Icon Composer output: missing from `generated` is a failed
+    // or omitted render, not a signal to trust the existing public copy.
+    if (!override.sourceRelativePath.startsWith(forkOwnedPrefix)) {
+      return yield* Effect.die(
+        new Error(`Generated development web icon is missing: ${override.sourceRelativePath}`),
+      );
+    }
+
+    const sourceContents = yield* fs
+      .readFile(path.join(repositoryRoot, override.sourceRelativePath))
+      .pipe(
         Effect.map((contents) => Buffer.from(contents)),
         Effect.mapError(
           (cause) =>
@@ -772,7 +785,7 @@ export const exportBrandIcons = Effect.fn("exportBrandIcons")(function* (checkOn
               cause,
             }),
         ),
-      ));
+      );
     generated.set(override.targetRelativePath, sourceContents);
   }
 

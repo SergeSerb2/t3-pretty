@@ -7,8 +7,8 @@ One spec, every surface: the cut-out T3 sits at 62% of the visible icon area
 - macOS master: opaque 824px superellipse plate inset 100px, soft contact
   shadow, glyph 510px wide. Transparent corners so the Dock mask reads.
 - iOS master: full-bleed frost, glyph 635px wide (62% of 1024).
-- Android adaptive foreground: iOS glyph on transparent (background color
-  `#DFEFE3` comes from app.config).
+- Android adaptive foreground: glyph at 62% of the inner 66/108 safe zone,
+  on transparent (background `#DFEFE3` comes from app.config).
 - Derived: icns/ico/favicons/apple-touch/kit squares/desktop resources.
 
 Requires Pillow. Regenerates in place; run from the repo root:
@@ -33,6 +33,8 @@ MOBILE_ASSETS = REPO_ROOT / "apps" / "mobile" / "assets"
 FROST = (223, 239, 227, 255)  # #DFEFE3 sage-frost plate / iOS background
 CANVAS = 1024
 MACOS_BODY = 824  # classic macOS safe area: opaque body inset 100px
+# Adaptive icons are 108dp; the inner 66dp is never clipped by the OEM mask.
+ANDROID_ADAPTIVE_SAFE_ZONE = 66 / 108
 GLYPH_RATIO = 0.62  # glyph width as a fraction of the visible icon area
 
 
@@ -158,10 +160,11 @@ def main() -> None:
     downscale(ios, 32).save(PRETTY / "t3-pretty-favicon-32x32.png")
     downscale(ios, 180).save(PRETTY / "t3-pretty-apple-touch-180.png")
 
-    # Android adaptive foreground: same glyph scale on transparent; the frost
-    # background comes from the adaptive background color in app.config.
+    # Android adaptive foreground: 62% of the 66/108 safe-zone diameter, not
+    # 62% of the full 108dp layer, or the launcher mask crops the T3.
     foreground = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
-    paste_centered(foreground, scaled_glyph(glyph, round(CANVAS * GLYPH_RATIO)), CANVAS // 2)
+    android_visible = round(CANVAS * ANDROID_ADAPTIVE_SAFE_ZONE)
+    paste_centered(foreground, scaled_glyph(glyph, round(android_visible * GLYPH_RATIO)), CANVAS // 2)
     foreground.save(MOBILE_ASSETS / "android-icon-mark.png")
 
     # Desktop resources + packaged icns/ico.
