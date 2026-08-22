@@ -17,6 +17,7 @@ Requires Pillow. Regenerates in place; run from the repo root:
 """
 
 import math
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -63,7 +64,9 @@ def superellipse_mask(size: int, exponent: float = 5.0) -> Image.Image:
     draw = ImageDraw.Draw(mask)
     half = s / 2
     n = exponent
-    # Trace the superellipse |x/a|^n + |y/b|^n = 1 as a polygon.
+    # Trace the superellipse |x/a|^n + |y/b|^n = 1 as a polygon. Each mirrored
+    # quadrant starts where the previous arc ended, so the outline is one
+    # continuous winding with no chords across the plate.
     points = []
     steps = s // 2
     for i in range(steps + 1):
@@ -74,8 +77,8 @@ def superellipse_mask(size: int, exponent: float = 5.0) -> Image.Image:
     polygon = (
         points
         + [(2 * half - x, y) for x, y in reversed(points)]
-        + [(x, 2 * half - y) for x, y in points]
-        + [(2 * half - x, 2 * half - y) for x, y in reversed(points)]
+        + [(2 * half - x, 2 * half - y) for x, y in points]
+        + [(x, 2 * half - y) for x, y in reversed(points)]
     )
     draw.polygon(polygon, fill=255)
     return mask.resize((size, size), Image.LANCZOS)
@@ -114,6 +117,11 @@ def downscale(icon: Image.Image, size: int) -> Image.Image:
 
 
 def write_icns(macos_master: Image.Image, targets: list[Path]) -> None:
+    # iconutil ships with macOS only; skip the .icns outputs elsewhere so the
+    # rest of the family can still be rebuilt on any machine.
+    if shutil.which("iconutil") is None:
+        print("Skipping .icns export: iconutil is only available on macOS.")
+        return
     with tempfile.TemporaryDirectory(prefix="t3-pretty-iconset-") as tmp:
         iconset = Path(tmp) / "icon.iconset"
         iconset.mkdir()
