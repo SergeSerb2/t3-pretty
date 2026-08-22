@@ -95,7 +95,8 @@ export interface RankedSearchTerms {
   readonly optional: ReadonlyArray<string>;
   /**
    * The query's final token, matched as a prefix so results refine while
-   * typing. Always set: a single-token query is all prefix.
+   * typing. Always set: a single-token query is all prefix, and a query
+   * ending on a stopword falls back to its last content term.
    */
   readonly prefix: string;
 }
@@ -110,7 +111,7 @@ export function rankedSearchTerms(query: string): RankedSearchTerms | null {
   if (tokens.length === 0) {
     return null;
   }
-  const prefix = tokens[tokens.length - 1]!;
+  const last = tokens[tokens.length - 1]!;
   const exact: Array<string> = [];
   const optional: Array<string> = [];
   for (const token of tokens.slice(0, -1)) {
@@ -120,5 +121,14 @@ export function rankedSearchTerms(query: string): RankedSearchTerms | null {
       exact.push(token);
     }
   }
-  return { exact, optional, prefix };
+  // A trailing stopword is not a typeahead token: "fix the" must not require
+  // a the* posting. With content terms present, the last content term takes
+  // the prefix slot (already required, so nothing narrows) and the stopword
+  // ranks optionally. Stopword-only queries keep the stopword as the prefix
+  // so they still search.
+  if (STOPWORDS.has(last) && exact.length > 0) {
+    optional.push(last);
+    return { exact, optional, prefix: exact[exact.length - 1]! };
+  }
+  return { exact, optional, prefix: last };
 }

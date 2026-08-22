@@ -65,6 +65,28 @@ it("keeps stopwords optional instead of exact AND terms", () => {
   });
 });
 
+it("treats a trailing stopword as optional, not a required prefix", () => {
+  assert.deepEqual(rankedSearchTerms("TypeError in"), {
+    exact: ["typeerror"],
+    optional: ["in"],
+    prefix: "typeerror",
+  });
+  assert.deepEqual(rankedSearchTerms("fix the"), {
+    exact: ["fix"],
+    optional: ["the"],
+    prefix: "fix",
+  });
+});
+
+it("keeps the stopword as prefix for stopword-only queries", () => {
+  assert.deepEqual(rankedSearchTerms("the"), { exact: [], optional: [], prefix: "the" });
+  assert.deepEqual(rankedSearchTerms("the of"), {
+    exact: [],
+    optional: ["the"],
+    prefix: "of",
+  });
+});
+
 it("returns null when the query has no indexable tokens", () => {
   assert.strictEqual(rankedSearchTerms("? !!"), null);
   assert.strictEqual(rankedSearchTerms("a b"), null);
