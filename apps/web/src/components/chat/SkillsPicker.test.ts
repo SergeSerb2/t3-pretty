@@ -1,6 +1,6 @@
-import { createElement } from "react";
+import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
@@ -201,6 +201,52 @@ describe("toPickerSkills", () => {
     );
     expect(html).not.toContain("pointer-events-auto");
     expect(html).toContain("aria-disabled");
+  });
+
+  it("unwires the locked row's toggle while the star still fires its handler", () => {
+    const skill = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault).find(
+      (row) => row.id === "octo/skills:tdd",
+    )!;
+    expect(skill.locked).toBe(true);
+    const onToggle = vi.fn();
+    const onToggleFavorite = vi.fn();
+    const row = SkillPickerRow({
+      skill,
+      isEnabled: true,
+      isFavorite: false,
+      disabled: false,
+      onToggle,
+      onToggleFavorite,
+    }) as ReactElement<{
+      onCheckedChange?: () => void;
+      children: ReactElement<{ children: ReactNode }>;
+    }>;
+    expect(row.props.onCheckedChange).toBeUndefined();
+    const star = Children.toArray(row.props.children.props.children).find(
+      (child): child is ReactElement<{ onClick: (event: unknown) => void }> =>
+        isValidElement<{ "aria-label"?: string }>(child) &&
+        String(child.props["aria-label"]).includes("favorites"),
+    )!;
+    star.props.onClick({ preventDefault: () => {}, stopPropagation: () => {} });
+    expect(onToggleFavorite).toHaveBeenCalledTimes(1);
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it("wires the toggle on an unlocked row", () => {
+    const skill = toPickerSkills(installed, [], new Set(), claudeDefault).find(
+      (row) => row.id === "octo/skills:tdd",
+    )!;
+    expect(skill.locked).toBe(false);
+    const onToggle = vi.fn();
+    const row = SkillPickerRow({
+      skill,
+      isEnabled: false,
+      isFavorite: false,
+      disabled: false,
+      onToggle,
+      onToggleFavorite: () => {},
+    }) as ReactElement<{ onCheckedChange?: () => void }>;
+    expect(row.props.onCheckedChange).toBe(onToggle);
   });
 
   it("pins favorites above origin groups and keeps them out of those groups", () => {

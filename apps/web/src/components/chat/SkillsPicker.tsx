@@ -297,7 +297,9 @@ export function SkillPickerRow(props: {
       )}
       closeOnClick={false}
       disabled={props.disabled}
-      onCheckedChange={props.onToggle}
+      // Locked rows stay enabled for the star, so unwire the toggle itself:
+      // the switch is dimmed and a click or keypress must not reach onToggle.
+      onCheckedChange={skill.locked ? undefined : props.onToggle}
       variant="switch"
     >
       <span className="flex min-w-0 items-center gap-1">
