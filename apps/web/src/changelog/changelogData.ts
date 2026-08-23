@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260823.1170000834",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260823.1170000830",
     date: "2026-08-23",
     items: [
