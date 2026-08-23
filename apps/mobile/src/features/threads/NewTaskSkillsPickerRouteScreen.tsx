@@ -127,6 +127,7 @@ function SkillPickerRow(props: {
   readonly environmentId: EnvironmentId;
   readonly isLast: boolean;
   readonly onToggle: (row: SkillRow) => void;
+  readonly onUninstalled: (skillId: SkillId) => void;
   readonly row: SkillRow;
 }) {
   const iconColor = useThemeColor("--color-icon-muted");
@@ -191,7 +192,12 @@ function SkillPickerRow(props: {
                 void uninstallHostSkill({
                   environmentId: props.environmentId,
                   input: { skillId: skill.id },
-                }).then((result) => reportFailure("Could not uninstall skill", result));
+                }).then((result) => {
+                  if (result._tag !== "Failure") {
+                    props.onUninstalled(skill.id);
+                  }
+                  reportFailure("Could not uninstall skill", result);
+                });
               },
             },
           ],
@@ -200,6 +206,7 @@ function SkillPickerRow(props: {
     },
     [
       props.environmentId,
+      props.onUninstalled,
       props.row.hostSkill,
       reportFailure,
       setHostSkillEnabled,
@@ -213,48 +220,55 @@ function SkillPickerRow(props: {
     .join(" · ");
 
   return (
-    <Pressable
-      accessibilityLabel={[props.row.name, subtitle].filter(Boolean).join(", ")}
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: props.checked, disabled: props.row.locked }}
+    <View
       className={cn(
-        "min-h-14 flex-row items-center gap-3 bg-card px-4 py-3 active:bg-subtle",
+        "min-h-14 flex-row items-center bg-card",
         !props.isLast && "border-b border-border-subtle",
       )}
-      disabled={props.row.locked}
-      onPress={onPress}
       style={{ opacity: props.row.locked ? 0.65 : 1 }}
     >
-      <View className="min-w-0 flex-1 gap-0.5">
-        <Text className="text-base font-t3-medium text-foreground" numberOfLines={1}>
-          {props.row.name}
-        </Text>
-        {subtitle.length > 0 ? (
-          <Text className="text-xs text-foreground-muted" numberOfLines={1}>
-            {subtitle}
+      <Pressable
+        accessibilityLabel={[props.row.name, subtitle].filter(Boolean).join(", ")}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: props.checked, disabled: props.row.locked }}
+        className={cn(
+          "min-h-14 min-w-0 flex-1 flex-row items-center gap-3 py-3 pl-4 active:bg-subtle",
+          managementActions === null ? "pr-4" : "pr-3",
+        )}
+        disabled={props.row.locked}
+        onPress={onPress}
+      >
+        <View className="min-w-0 flex-1 gap-0.5">
+          <Text className="text-base font-t3-medium text-foreground" numberOfLines={1}>
+            {props.row.name}
           </Text>
+          {subtitle.length > 0 ? (
+            <Text className="text-xs text-foreground-muted" numberOfLines={1}>
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
+        {props.checked ? (
+          <SymbolView
+            name="checkmark"
+            size={16}
+            tintColor={checkmarkColor}
+            type="monochrome"
+            weight="semibold"
+          />
         ) : null}
-      </View>
-      {props.checked ? (
-        <SymbolView
-          name="checkmark"
-          size={16}
-          tintColor={checkmarkColor}
-          type="monochrome"
-          weight="semibold"
-        />
-      ) : null}
+      </Pressable>
       {managementActions !== null ? (
         <AnchoredMenu actions={managementActions} onPressAction={onPressManagementAction}>
           <View
             accessibilityLabel={`Manage ${props.row.name}`}
-            className="-mr-1 items-center justify-center p-1"
+            className="items-center justify-center py-3 pr-4 pl-1"
           >
             <SymbolView name="ellipsis" size={16} tintColor={iconColor} type="monochrome" />
           </View>
         </AnchoredMenu>
       ) : null}
-    </Pressable>
+    </View>
   );
 }
 
@@ -306,6 +320,14 @@ export function NewTaskSkillsPickerRouteScreen() {
       }
       void Haptics.selectionAsync();
       flow.toggleSkill(row.id);
+    },
+    [flow],
+  );
+  const dropSkillFromDraft = useCallback(
+    (skillId: SkillId) => {
+      if (flow.selectedSkillIds.includes(skillId)) {
+        flow.toggleSkill(skillId);
+      }
     },
     [flow],
   );
@@ -375,6 +397,7 @@ export function NewTaskSkillsPickerRouteScreen() {
                       environmentId={environmentId}
                       isLast={index === section.rows.length - 1}
                       onToggle={toggleRow}
+                      onUninstalled={dropSkillFromDraft}
                       row={row}
                     />
                   ))}
