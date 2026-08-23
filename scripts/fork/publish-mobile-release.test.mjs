@@ -217,6 +217,8 @@ describe("iOS publish OTA catch-up base", () => {
     // A skip must not exit before the native fingerprint gate, or a cancelled
     // build would strand a due TestFlight IPA with the OTA it did publish.
     assert.include(mobileRelease, "skipping eas update");
+    // A single fingerprint flake must not decide the native gate either way.
+    assert.include(mobileRelease, "retrying once");
     assert.isBelow(
       mobileRelease.indexOf("skipping eas update"),
       mobileRelease.indexOf("fingerprint:generate"),

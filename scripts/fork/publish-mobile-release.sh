@@ -394,21 +394,29 @@ fingerprint=""
 
 (
   cd apps/mobile
-  if ! eas fingerprint:generate \
+  # One retry before a flake gets to decide a 50-minute compile (or skip a
+  # due one). Two failures in a row are environmental, not network.
+  fingerprint_attempts=0
+  while ! eas fingerprint:generate \
     --platform ios \
     --build-profile production \
     --json \
-    --non-interactive > "$fingerprint_file"; then
-    if [[ "$mobile_changed" == "true" ]]; then
-      echo "Could not generate the iOS fingerprint; building a native binary to be safe."
-      printf 'placeholder\n' > "$fingerprint_file"
-      printf 'should_build=true\nfingerprint=unknown\n' > "$gate_file"
-    else
-      echo "Could not generate the iOS fingerprint, and mobile content is already published; not building."
-      printf 'should_build=false\nfingerprint=unknown\n' > "$gate_file"
+    --non-interactive > "$fingerprint_file"; do
+    fingerprint_attempts=$((fingerprint_attempts + 1))
+    if (( fingerprint_attempts >= 2 )); then
+      if [[ "$mobile_changed" == "true" ]]; then
+        echo "Could not generate the iOS fingerprint; building a native binary to be safe."
+        printf 'placeholder\n' > "$fingerprint_file"
+        printf 'should_build=true\nfingerprint=unknown\n' > "$gate_file"
+      else
+        echo "Could not generate the iOS fingerprint, and mobile content is already published; not building."
+        printf 'should_build=false\nfingerprint=unknown\n' > "$gate_file"
+      fi
+      exit 0
     fi
-    exit 0
-  fi
+    echo "iOS fingerprint generation flaked; retrying once."
+    sleep 10
+  done
   if ! eas build:list \
     --platform ios \
     --build-profile production \
