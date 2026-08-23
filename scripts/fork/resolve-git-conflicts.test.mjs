@@ -359,10 +359,18 @@ ${">".repeat(7)} theirs
     // Only the workflow's own metadata file is whitespace-checked. Resolver
     // output is model-composed content; a blank line at EOF must not fail an
     // otherwise complete merge after all conflicts resolved.
-    assert.include(script, "resolver_paths+=(");
+    assert.include(script, "lockfile_conflicted=true");
+    assert.notInclude(script, "resolver_paths");
     assert.include(script, "git diff --check --cached -- .t3-fork/upstream-nightly");
-    assert.notInclude(script, '"${resolver_paths[@]}" \\');
     assert.notInclude(script, "          git diff --check --cached\n");
+  });
+
+  it("keeps Origin pull request bodies bounded while retaining the durable report", () => {
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
+
+    assert.include(script, "write_sync_pr_body");
+    assert.include(script, "The complete conflict-resolution audit");
+    assert.notInclude(script, "cat .t3-fork/upstream-sync-report.md");
   });
 
   it("refuses to reuse a legacy resolution branch without its durable report", () => {
@@ -454,7 +462,7 @@ ${">".repeat(7)} theirs
     assert.include(resolver, 'git(["checkout", "--ours", "--", path])');
 
     const script = NodeFS.readFileSync(syncScriptPath, "utf8");
-    assert.include(script, 'grep -qx "pnpm-lock.yaml"');
+    assert.include(script, '[[ "$lockfile_conflicted" == "true" ]]');
     assert.include(script, "corepack pnpm install --lockfile-only --no-frozen-lockfile");
     assert.include(script, "git add pnpm-lock.yaml");
   });
