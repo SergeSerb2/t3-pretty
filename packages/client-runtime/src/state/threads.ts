@@ -120,9 +120,21 @@ interface WarmThreadState {
 }
 
 // ponytail: fixed-size LRU of full thread objects; make it byte-aware if
-// giant threads ever show up in memory profiles. Delete tombstones are just
-// keys and sit outside the LRU so a late finalizer cannot resurrect them.
-const WARM_THREAD_STATE_CAPACITY = 8;
+// giant threads ever show up in memory profiles. Tombstones live in their
+// own LRU so live blobs cannot evict a delete, and deletes cannot grow
+// without bound.
+export const WARM_THREAD_STATE_CAPACITY = 32;
+
+function lruSet<V>(map: Map<string, V>, key: string, value: V, capacity: number) {
+  map.delete(key);
+  map.set(key, value);
+  for (const oldest of map.keys()) {
+    if (map.size <= capacity) {
+      break;
+    }
+    map.delete(oldest);
+  }
+}
 
 interface WarmThreadStateRegistry {
   /** Copy without removing so overlapping machines can all restore. */
@@ -138,7 +150,7 @@ interface WarmThreadStateRegistry {
 
 export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
   const entries = new Map<string, WarmThreadState>();
-  const deleted = new Set<string>();
+  const deleted = new Map<string, true>();
   let generation = 0;
   return {
     nextGeneration: () => {
@@ -159,18 +171,11 @@ export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
           return;
         }
       }
-      entries.delete(key);
-      entries.set(key, entry);
-      for (const oldest of entries.keys()) {
-        if (entries.size <= WARM_THREAD_STATE_CAPACITY) {
-          break;
-        }
-        entries.delete(oldest);
-      }
+      lruSet(entries, key, entry, WARM_THREAD_STATE_CAPACITY);
     },
     remove: (key) => {
       entries.delete(key);
-      deleted.add(key);
+      lruSet(deleted, key, true, WARM_THREAD_STATE_CAPACITY);
     },
   };
 }
@@ -237,10 +242,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   // don't take: overlapping machines (Strict Mode remount, environment swap
   // before the old finalizer) must all see the same blob.
   const warm = warmStates.get(stateKey);
-  // pending is one-shot: the first warm subscribe may request HTTP catch-up
-  // if afterSequence fails before any live item. Later socket errors resume
-  // from lastSequence like a normal cached machine.
-  const warmResume = { failed: false, pending: warm !== null };
   const cached =
     warm !== null
       ? Option.none<OrchestrationThreadDetailSnapshot>()
@@ -363,18 +364,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         })),
       ),
     );
-  const setStreamError = (cause: Cause.Cause<unknown>) =>
-    publishStreamError(cause).pipe(
-      Effect.andThen(
-        Effect.sync(() => {
-          if (warmResume.pending) {
-            warmResume.failed = true;
-            warmResume.pending = false;
-          }
-        }),
-      ),
-    );
-
   const setThread = Effect.fn("EnvironmentThreadState.setThread")(function* (
     thread: OrchestrationThread,
     // "keep" preserves the current page state (live events touch only loaded
@@ -776,8 +765,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           yield* SubscriptionRef.set(lastSequence, 0);
           current = yield* SubscriptionRef.get(state);
         }
-        const shouldLoadHttpSnapshot =
-          current.status !== "deleted" && (Option.isNone(current.data) || warmResume.failed);
+        const shouldLoadHttpSnapshot = current.status !== "deleted" && Option.isNone(current.data);
         if (shouldLoadHttpSnapshot) {
           const prepared = yield* SubscriptionRef.get(supervisor.prepared).pipe(
             Effect.flatMap(
@@ -798,8 +786,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             threadId,
             supportsPagination ? { turnLimit: INITIAL_THREAD_USER_TURN_LIMIT } : undefined,
           );
-          warmResume.failed = false;
-          warmResume.pending = false;
           if (Option.isSome(httpSnapshot)) {
             yield* applyChunk([{ kind: "snapshot", snapshot: httpSnapshot.value }]);
             current = yield* SubscriptionRef.get(state);
@@ -827,17 +813,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         };
       }),
       {
-        onExpectedFailure: setStreamError,
+        onExpectedFailure: publishStreamError,
         retryExpectedFailureAfter: "250 millis",
       },
-    ).pipe(
-      Stream.tap(() =>
-        Effect.sync(() => {
-          warmResume.pending = false;
-        }),
-      ),
-      Stream.runForEach((item) => Queue.offer(streamItems, item)),
-    ),
+    ).pipe(Stream.runForEach((item) => Queue.offer(streamItems, item))),
   );
 
   // Expose loadOlderTurns to UI actions through the request registry.

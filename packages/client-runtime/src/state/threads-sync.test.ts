@@ -35,6 +35,7 @@ import {
   makeEnvironmentThreadState,
   makeWarmThreadStateRegistry,
   ThreadSnapshotLoader,
+  WARM_THREAD_STATE_CAPACITY,
   WarmThreadStates,
   type EnvironmentThreadState,
 } from "./threads.ts";
@@ -490,6 +491,16 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it("keeps more than eight recent warm threads", () => {
+    const warmStates = makeWarmThreadStateRegistry();
+    for (let index = 0; index < 9; index += 1) {
+      warmStates.set(`environment-1:thread-${index}`, warmBlob(`Thread ${index}`, 1, 1));
+    }
+
+    expect(warmStates.get("environment-1:thread-0")?.thread.title).toBe("Thread 0");
+    expect(warmStates.get("environment-1:thread-8")?.thread.title).toBe("Thread 8");
+  });
+
   it("keeps the newer warm snapshot when an older write arrives later", () => {
     const warmStates = makeWarmThreadStateRegistry();
     const key = "environment-1:thread-1";
@@ -522,12 +533,29 @@ describe("EnvironmentThreads", () => {
     const key = "environment-1:thread-1";
     warmStates.set(key, warmBlob("Live", 5, 1));
     warmStates.remove(key);
-    for (let index = 0; index < 16; index += 1) {
+    for (let index = 0; index < WARM_THREAD_STATE_CAPACITY * 2; index += 1) {
       warmStates.set(`environment-1:thread-other-${index}`, warmBlob(`Other ${index}`, 1, 1));
     }
     warmStates.set(key, warmBlob("Resurrected", 99, 99));
 
     expect(warmStates.get(key)).toBeNull();
+  });
+
+  it("evicts the oldest delete tombstone past capacity", () => {
+    const warmStates = makeWarmThreadStateRegistry();
+    const first = "environment-1:thread-deleted-0";
+    for (let index = 0; index < WARM_THREAD_STATE_CAPACITY; index += 1) {
+      const key = `environment-1:thread-deleted-${index}`;
+      warmStates.set(key, warmBlob(`Deleted ${index}`, 1, 1));
+      warmStates.remove(key);
+    }
+    const overflow = "environment-1:thread-deleted-overflow";
+    warmStates.set(overflow, warmBlob("Overflow", 1, 1));
+    warmStates.remove(overflow);
+    warmStates.set(first, warmBlob("Resurrected", 99, 99));
+
+    expect(warmStates.get(first)?.thread.title).toBe("Resurrected");
+    expect(warmStates.get(overflow)).toBeNull();
   });
 
   it.effect("keeps a successor's same-sequence updates when a predecessor finalizes later", () =>
@@ -616,7 +644,7 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
-  it.effect("reloads over HTTP when a warm resume cannot catch up", () =>
+  it.effect("does not reload over HTTP when a warm subscribe errors before the first item", () =>
     Effect.gen(function* () {
       const warmStates = makeWarmThreadStateRegistry();
       yield* Effect.scoped(
@@ -630,10 +658,12 @@ describe("EnvironmentThreads", () => {
         }),
       );
 
-      const httpThread: OrchestrationThread = { ...ACTIVE_THREAD, title: "HTTP catch-up" };
       const successor = yield* makeHarness({
         warmStates,
-        httpSnapshot: Option.some({ snapshotSequence: 9, thread: httpThread }),
+        httpSnapshot: Option.some({
+          snapshotSequence: 9,
+          thread: { ...ACTIVE_THREAD, title: "HTTP catch-up" },
+        }),
       });
       yield* awaitThreadState(
         successor.observed,
@@ -641,7 +671,7 @@ describe("EnvironmentThreads", () => {
       );
       expect(yield* Ref.get(successor.loaderCalls)).toBe(0);
 
-      yield* Queue.offer(successor.inputs, new Error("resume gap too large"));
+      yield* Queue.offer(successor.inputs, new Error("socket dropped before first item"));
       yield* awaitThreadState(successor.observed, (value) => Option.isSome(value.error));
 
       yield* TestClock.adjust("250 millis");
@@ -652,14 +682,8 @@ describe("EnvironmentThreads", () => {
         yield* Effect.yieldNow;
       }
 
-      const state = yield* awaitThreadState(
-        successor.observed,
-        (value) => Option.isSome(value.data) && value.data.value.title === "HTTP catch-up",
-      );
-
-      expect(yield* Ref.get(successor.loaderCalls)).toBeGreaterThanOrEqual(1);
-      expect(Option.getOrThrow(state.data).title).toBe("HTTP catch-up");
-      expect(yield* Ref.get(successor.lastSubscribeAfterSequence)).toBe(9);
+      expect(yield* Ref.get(successor.loaderCalls)).toBe(0);
+      expect(yield* Ref.get(successor.lastSubscribeAfterSequence)).toBe(1);
     }),
   );
 
