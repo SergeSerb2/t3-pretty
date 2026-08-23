@@ -97,6 +97,12 @@ function menu(overrides: Partial<Parameters<typeof PullRequestFiltersMenu>[0]>) 
 }
 
 describe("pull request filters menu", () => {
+  it("does not inert the page while nested filter flyouts are open", () => {
+    const view = menu({});
+    expect(isValidElement(view)).toBe(true);
+    expect((view as ReactElement<{ modal?: boolean }>).props.modal).toBe(false);
+  });
+
   it("does not emit a change when the selected state is chosen again", () => {
     const onState = vi.fn();
     const group = findValueChange(findLabeledGroup(menu({ onState }), "State"));
