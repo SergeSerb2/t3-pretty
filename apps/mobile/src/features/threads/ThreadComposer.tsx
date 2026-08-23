@@ -338,10 +338,12 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
 
   return (
     <Animated.View
+      key={props.status.kind}
       className="absolute inset-x-0 bottom-full items-center pb-2"
       // Sync pills wait a beat before appearing: a cached thread finishes
       // syncing inside the delay, so fast thread switches never flash a
       // "Loading messages..." pill. Connection problems still show instantly.
+      // Keyed on kind so a syncing → error swap remounts without the delay.
       entering={
         props.status.kind === "syncing"
           ? FadeInDown.delay(300).duration(180)

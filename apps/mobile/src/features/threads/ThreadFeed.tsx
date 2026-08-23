@@ -1027,7 +1027,17 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   return (
     <Markdown
       options={{ gfm: true }}
-      renderers={props.markdownStyles.renderers}
+      renderers={{
+        ...props.markdownStyles.renderers,
+        image: ({ node }) =>
+          node.href
+            ? (props.renderImage({
+                href: node.href,
+                alt: node.alt ?? null,
+                title: node.title ?? null,
+              }) ?? undefined)
+            : undefined,
+      }}
       styles={props.markdownStyles.styles}
       theme={props.markdownStyles.theme}
     >
@@ -1986,6 +1996,22 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     feedLength: props.feed.length,
     listReady: listReadyForCurrentMount,
   });
+  // One host for loading and empty: they are mutually exclusive, and a
+  // second enter delay after the loading view unmounts leaves a blank gap.
+  const feedPlaceholder = showLoadingOverlay
+    ? {
+        title: "Loading messages",
+        detail: "The conversation will appear here once it finishes loading.",
+      }
+    : props.feed.length === 0 &&
+        props.activeWorkStartedAt === null &&
+        props.contentPresentation.kind === "ready"
+      ? {
+          title: "No conversation yet",
+          detail:
+            "Ask the agent to inspect the repo, run a command, or continue the active thread.",
+        }
+      : null;
   // LegendList holds row opacity at 0 until onLoad, then reveals everything in
   // one frame. Fading the container instead turns that reveal (and the
   // overlay handoff) into a crossfade.
@@ -2433,7 +2459,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             }}
           />
         </Animated.View>
-        {showLoadingOverlay ? (
+        {feedPlaceholder ? (
           <Animated.View
             entering={FEED_PLACEHOLDER_ENTER}
             exiting={FEED_PLACEHOLDER_EXIT}
@@ -2441,25 +2467,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             style={StyleSheet.absoluteFill}
           >
             <ThreadFeedPlaceholder
-              title="Loading messages"
-              detail="The conversation will appear here once it finishes loading."
-              topInset={topContentInset}
-              bottomInset={bottomContentInset}
-              horizontalPadding={horizontalPadding}
-            />
-          </Animated.View>
-        ) : props.feed.length === 0 &&
-          props.activeWorkStartedAt === null &&
-          props.contentPresentation.kind === "ready" ? (
-          <Animated.View
-            entering={FEED_PLACEHOLDER_ENTER}
-            exiting={FEED_PLACEHOLDER_EXIT}
-            pointerEvents="none"
-            style={StyleSheet.absoluteFill}
-          >
-            <ThreadFeedPlaceholder
-              title="No conversation yet"
-              detail="Ask the agent to inspect the repo, run a command, or continue the active thread."
+              title={feedPlaceholder.title}
+              detail={feedPlaceholder.detail}
               topInset={topContentInset}
               bottomInset={bottomContentInset}
               horizontalPadding={horizontalPadding}
