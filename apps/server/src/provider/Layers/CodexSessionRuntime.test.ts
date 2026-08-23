@@ -817,6 +817,43 @@ describe("CodexSessionRuntime sendTurn steering", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+  it.live("never steers a mid-turn send whose delivery is queue", () =>
+    Effect.gen(function* () {
+      const peer = makeSteerPeer({ rejectSteer: false });
+      yield* Effect.addFinalizer(() => Effect.sync(peer.cleanup));
+
+      const runtime = yield* makeCodexSessionRuntime({
+        threadId: ThreadId.make("thread-codex-queue-no-steer"),
+        binaryPath: peer.binaryPath,
+        cwd: "/tmp",
+        runtimeMode: "full-access",
+        environment: peer.environment,
+      });
+
+      const turnStartedFiber = yield* runtime.events.pipe(
+        Stream.filter((event) => event.method === "turn/started"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+
+      yield* runtime.start();
+      yield* runtime.sendTurn({ input: "keep working" });
+      const started = yield* Fiber.join(turnStartedFiber).pipe(Effect.timeoutOption("15 seconds"));
+      NodeAssert.equal(started._tag, "Some", "turn/started never arrived");
+
+      // The runtime still reports the turn as running (ingest lag from the
+      // orchestrator's point of view); an explicit queue must not be injected
+      // into that turn.
+      const second = yield* runtime.sendTurn({ input: "after the turn", delivery: "queue" });
+
+      NodeAssert.deepStrictEqual(turnMethods(peer), ["turn/start", "turn/start"]);
+      NodeAssert.equal(second.turnId, SECOND_TURN_ID);
+
+      yield* runtime.close;
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.live("falls back to turn/start when Codex rejects the steer", () =>
     Effect.gen(function* () {
       const peer = makeSteerPeer({ rejectSteer: true });

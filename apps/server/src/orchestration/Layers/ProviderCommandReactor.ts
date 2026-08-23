@@ -1166,6 +1166,7 @@ const make = Effect.gen(function* () {
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
     readonly interactionMode?: "default" | "plan";
+    readonly delivery?: "steer" | "queue";
     readonly createdAt: string;
   }) {
     const thread = yield* resolveThread(input.threadId);
@@ -1266,6 +1267,7 @@ const make = Effect.gen(function* () {
         ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
         ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
         ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
+        ...(input.delivery !== undefined ? { delivery: input.delivery } : {}),
       },
       // Runs once the provider accepted the turn: persists the handoff and the
       // Skill rows for the documents this turn carried.
@@ -1675,6 +1677,7 @@ const make = Effect.gen(function* () {
         ? { modelSelection: event.payload.modelSelection }
         : {}),
       interactionMode: event.payload.interactionMode,
+      ...(event.payload.delivery !== undefined ? { delivery: event.payload.delivery } : {}),
       createdAt: event.payload.createdAt,
     }).pipe(
       Effect.map(Option.some),
@@ -1963,7 +1966,12 @@ const make = Effect.gen(function* () {
         event.type === "thread.approval-response-requested" ||
         event.type === "thread.user-input-response-requested" ||
         event.type === "thread.session-stop-requested" ||
-        event.type === "thread.session-set"
+        // Session-set only matters here as a flush trigger, so skip the worker
+        // round-trip unless this thread actually holds queued starts. A
+        // session-set that races ahead of its queued turn-start is harmless:
+        // the hold check reads the already-updated projection and sends
+        // immediately instead of holding.
+        (event.type === "thread.session-set" && queuedTurnStarts.has(event.payload.threadId))
       ) {
         return yield* worker.enqueue(event);
       }

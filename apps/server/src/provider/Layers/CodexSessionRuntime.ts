@@ -123,6 +123,8 @@ export interface CodexSessionRuntimeSendTurnInput {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort | undefined;
   readonly interactionMode?: ProviderInteractionMode;
+  /** "queue" never steers, even if Codex still reports the turn as running. */
+  readonly delivery?: "steer" | "queue";
 }
 
 export interface CodexThreadTurnSnapshot {
@@ -1839,8 +1841,14 @@ export const makeCodexSessionRuntime = (
           // the active turn instead of letting Codex queue a follow-up turn.
           // Any rejection (turn just completed, activeTurnNotSteerable for
           // review/compact turns) falls back to the plain turn/start below.
+          // An explicit "queue" delivery never steers: the orchestrator only
+          // releases it at a turn boundary, so a session still reporting
+          // running here is ingest lag, and steering would inject the message
+          // into the very turn the user chose to wait out.
           const steerTurnId =
-            sessionAtSend.status === "running" ? sessionAtSend.activeTurnId : undefined;
+            input.delivery !== "queue" && sessionAtSend.status === "running"
+              ? sessionAtSend.activeTurnId
+              : undefined;
           if (steerTurnId) {
             const steered = yield* client.raw
               .request("turn/steer", {

@@ -18,8 +18,9 @@ behaves the same way:
   is delivered into the work in progress as soon as the agent can accept it.
 - **Queue for next turn** (the menu next to the send button, or **Option+Enter** /
   **Alt+Enter**) holds the message until the current turn finishes, then starts a new turn
-  with it. Queued messages are held by the server, so they send even if you close the app.
-  Several queued messages start one turn each, in order.
+  with it. Queued messages are held by the server, so they still send if you close the app
+  or disconnect; restarting the server clears the queue. Several queued messages start one
+  turn each, in order.
 
 On mobile, tap send to steer, or long-press it to queue.
 
