@@ -10,9 +10,10 @@ If a server is already running on this machine, mint a fresh pairing token and Q
 t3 pair
 ```
 
-`t3 pair` finds the running server (the public `~/.t3-pretty` install, the internal `~/.t3`
-install, or the current worktree's dev server when run inside one), issues a one-time pairing token,
-and prints the pairing URL as a QR code you can scan from your phone.
+`t3 pair` finds the running server for that CLI flavor: public builds check `~/.t3-pretty`,
+internal builds check `~/.t3`, and a command run inside a worktree checks its dev server. It issues
+a one-time pairing token and prints the pairing URL as a QR code you can scan from your phone. Use
+`--base-dir` when you intentionally need to target another state directory.
 
 If the server is only bound to loopback, the printed URL is not reachable from another device. Pair over your tailnet instead:
 

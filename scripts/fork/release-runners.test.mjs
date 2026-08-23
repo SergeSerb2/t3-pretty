@@ -369,6 +369,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publicPages, "actions/download-artifact@v8");
     assert.include(publicPages, "actions/configure-pages@v5");
     assert.include(publicPages, "actions/upload-pages-artifact@v5");
+    assert.include(publicReleaseWorkflow, "needs.wsl_node_pty.result == 'success'");
+    assert.include(publicReleaseWorkflow, "--latest");
     assert.equal(
       (publicReleaseWorkflow.match(/github\.repository == 'SergeSerb2\/t3-pretty'/gu) || []).length,
       8,

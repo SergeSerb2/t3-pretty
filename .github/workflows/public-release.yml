@@ -32,7 +32,8 @@ concurrency:
 
 env:
   T3CODE_BUILD_FLAVOR: public
-  # The mirror pushes Git tags, not GitHub Releases; this workflow alone advances GitHub latest.
+  # Electron needs mutable latest metadata. This guarded workflow alone marks a public-v release
+  # latest; exact-version CLI commands use the immutable public-v tag instead.
   T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/SergeSerb2/t3-pretty/releases/latest/download/
   CI: true
 
@@ -112,7 +113,8 @@ jobs:
     if: >-
       github.repository == 'SergeSerb2/t3-pretty' &&
       !cancelled() &&
-      needs.preflight.result == 'success'
+      needs.preflight.result == 'success' &&
+      needs.wsl_node_pty.result == 'success'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
@@ -389,4 +391,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "T3 Pretty ${VERSION}" \
-            --generate-notes
+            --generate-notes \
+            --latest
