@@ -1,8 +1,15 @@
+// @effect-diagnostics nodeBuiltinImport:off
 import * as NodeAssert from "node:assert/strict";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { describe } from "vite-plus/test";
 import { DEFAULT_MODEL, ThreadId } from "@t3tools/contracts";
 import * as CodexErrors from "effect-codex-app-server/errors";
@@ -19,6 +26,7 @@ import {
   buildTurnStartParams,
   hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
+  makeCodexSessionRuntime,
   makeMemoryConsolidationNotificationFilter,
   openCodexThread,
 } from "./CodexSessionRuntime.ts";
@@ -645,5 +653,205 @@ describe("openCodexThread", () => {
       NodeAssert.ok(isCodexAppServerRequestError(error));
       NodeAssert.equal(error.errorMessage, "timed out waiting for server");
     }),
+  );
+});
+
+/**
+ * Mid-turn sends must steer the running turn instead of queueing a new one.
+ * The only way to observe that is the wire, so these tests boot the real
+ * runtime against a throwaway app-server peer that logs every request it
+ * receives and can be told to reject `turn/steer` the way Codex does for
+ * non-steerable turns.
+ */
+const FIXTURE_PATH = NodePath.join(import.meta.dirname, "../testFixtures/codexMultiAgentWire.json");
+const FIRST_TURN_ID = "019fe3e8-f908-7f31-8d51-283f4a47897a";
+const SECOND_TURN_ID = "019fe3eb-8faf-7de3-a85b-ac64c7f9c8c3";
+
+// Holds the first turn open (no turn/completed) so the session still looks
+// "running" when the second send lands, and announces turn/started only for
+// that first turn — Codex does not start a turn it merely queued.
+const STEER_PEER_SOURCE = `#!/usr/bin/env node
+import * as NodeFS from "node:fs";
+import * as NodeReadline from "node:readline";
+
+const fixture = JSON.parse(NodeFS.readFileSync(process.env.T3_STEER_FIXTURE, "utf8"));
+const logPath = process.env.T3_STEER_LOG;
+const rejectSteer = process.env.T3_STEER_REJECT === "1";
+const turnIds = JSON.parse(process.env.T3_STEER_TURN_IDS);
+let turnStarts = 0;
+
+const write = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+NodeReadline.createInterface({ input: process.stdin }).on("line", (line) => {
+  let message;
+  try {
+    message = JSON.parse(line);
+  } catch {
+    return;
+  }
+  const { id, method, params } = message;
+  if (method === undefined) return;
+  NodeFS.appendFileSync(logPath, JSON.stringify({ method, params }) + "\\n");
+  if (method === "initialize") {
+    write({
+      id,
+      result: {
+        userAgent: "t3-steer-mock/0.0.0",
+        codexHome: "/tmp",
+        platformFamily: "unix",
+        platformOs: "linux",
+      },
+    });
+    return;
+  }
+  if (method === "thread/start" || method === "thread/resume") {
+    write({ id, result: fixture.responses.threadStart });
+    return;
+  }
+  if (method === "turn/start") {
+    const turn = { ...fixture.responses.turnStart.turn, id: turnIds[turnStarts] };
+    turnStarts += 1;
+    write({ id, result: { ...fixture.responses.turnStart, turn } });
+    if (turnStarts === 1) {
+      write({
+        jsonrpc: "2.0",
+        method: "turn/started",
+        params: { threadId: fixture.rootThreadId, turn },
+      });
+    }
+    return;
+  }
+  if (method === "turn/steer") {
+    if (rejectSteer) {
+      write({ id, error: { code: -32000, message: "activeTurnNotSteerable" } });
+      return;
+    }
+    write({ id, result: {} });
+    return;
+  }
+  if (id !== undefined) write({ id, result: {} });
+});
+`;
+
+interface SteerPeer {
+  readonly binaryPath: string;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly requests: () => ReadonlyArray<{ readonly method: string; readonly params?: unknown }>;
+  readonly cleanup: () => void;
+}
+
+function makeSteerPeer(options: { readonly rejectSteer: boolean }): SteerPeer {
+  const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "codex-steer-"));
+  const binaryPath = NodePath.join(dir, "peer.mjs");
+  const logPath = NodePath.join(dir, "requests.jsonl");
+  NodeFS.writeFileSync(binaryPath, STEER_PEER_SOURCE, { encoding: "utf8", mode: 0o755 });
+  NodeFS.writeFileSync(logPath, "", "utf8");
+  return {
+    binaryPath,
+    environment: {
+      ...process.env,
+      T3_STEER_FIXTURE: FIXTURE_PATH,
+      T3_STEER_LOG: logPath,
+      T3_STEER_REJECT: options.rejectSteer ? "1" : "0",
+      T3_STEER_TURN_IDS: JSON.stringify([FIRST_TURN_ID, SECOND_TURN_ID]),
+    },
+    requests: () =>
+      NodeFS.readFileSync(logPath, "utf8")
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .map((line) => JSON.parse(line) as { method: string; params?: unknown }),
+    cleanup: () => NodeFS.rmSync(dir, { recursive: true, force: true }),
+  };
+}
+
+const turnMethods = (peer: SteerPeer) =>
+  peer
+    .requests()
+    .map((request) => request.method)
+    .filter((method) => method.startsWith("turn/"));
+
+// it.live: the runtime drives a real child process, and it.effect's TestClock
+// freezes the transport's own timers.
+describe("CodexSessionRuntime sendTurn steering", () => {
+  it.live("steers the active turn instead of starting a second one mid-turn", () =>
+    Effect.gen(function* () {
+      const peer = makeSteerPeer({ rejectSteer: false });
+      yield* Effect.addFinalizer(() => Effect.sync(peer.cleanup));
+
+      const runtime = yield* makeCodexSessionRuntime({
+        threadId: ThreadId.make("thread-codex-steer"),
+        binaryPath: peer.binaryPath,
+        cwd: "/tmp",
+        runtimeMode: "full-access",
+        environment: peer.environment,
+      });
+
+      const turnStartedFiber = yield* runtime.events.pipe(
+        Stream.filter((event) => event.method === "turn/started"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+
+      yield* runtime.start();
+      const first = yield* runtime.sendTurn({ input: "keep working" });
+      NodeAssert.equal(first.turnId, FIRST_TURN_ID);
+      // An idle send must be a plain turn/start — no steer before a turn runs.
+      NodeAssert.deepStrictEqual(turnMethods(peer), ["turn/start"]);
+
+      const started = yield* Fiber.join(turnStartedFiber).pipe(Effect.timeoutOption("15 seconds"));
+      NodeAssert.equal(started._tag, "Some", "turn/started never arrived");
+
+      const second = yield* runtime.sendTurn({ input: "also fix the tests" });
+
+      NodeAssert.deepStrictEqual(turnMethods(peer), ["turn/start", "turn/steer"]);
+      NodeAssert.equal(second.turnId, FIRST_TURN_ID);
+      const steer = peer.requests().find((request) => request.method === "turn/steer");
+      NodeAssert.deepStrictEqual(steer?.params, {
+        threadId: "019fcfd6-17bb-72f0-ae12-a1f2dee6e3e5",
+        expectedTurnId: FIRST_TURN_ID,
+        input: [{ type: "text", text: "also fix the tests" }],
+      });
+
+      yield* runtime.close;
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("falls back to turn/start when Codex rejects the steer", () =>
+    Effect.gen(function* () {
+      const peer = makeSteerPeer({ rejectSteer: true });
+      yield* Effect.addFinalizer(() => Effect.sync(peer.cleanup));
+
+      const runtime = yield* makeCodexSessionRuntime({
+        threadId: ThreadId.make("thread-codex-steer-rejected"),
+        binaryPath: peer.binaryPath,
+        cwd: "/tmp",
+        runtimeMode: "full-access",
+        environment: peer.environment,
+      });
+
+      const turnStartedFiber = yield* runtime.events.pipe(
+        Stream.filter((event) => event.method === "turn/started"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+
+      yield* runtime.start();
+      yield* runtime.sendTurn({ input: "review this" });
+      const started = yield* Fiber.join(turnStartedFiber).pipe(Effect.timeoutOption("15 seconds"));
+      NodeAssert.equal(started._tag, "Some", "turn/started never arrived");
+
+      const second = yield* runtime.sendTurn({ input: "and then some" });
+
+      NodeAssert.deepStrictEqual(turnMethods(peer), ["turn/start", "turn/steer", "turn/start"]);
+      NodeAssert.equal(second.turnId, SECOND_TURN_ID);
+      // Codex queued the follow-up: the turn that is actually running — and
+      // the only one turn/interrupt accepts — stays pinned.
+      const session = yield* runtime.getSession;
+      NodeAssert.equal(session.activeTurnId, FIRST_TURN_ID);
+
+      yield* runtime.close;
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

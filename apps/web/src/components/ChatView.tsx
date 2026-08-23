@@ -14,6 +14,7 @@ import {
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
+  type TurnDeliveryMode,
   type TurnId,
   type KeybindingCommand,
   OrchestrationThreadActivity,
@@ -5364,12 +5365,16 @@ function ChatViewContent(props: ChatViewProps) {
   const onSend = async (
     e?: { preventDefault: () => void },
     submissionIntent: ComposerSubmissionIntent = "foreground",
-    directAnnotation?: {
-      annotation: PreviewAnnotationPayload;
-      image: ComposerImageAttachment | null;
+    options?: {
+      annotation?: PreviewAnnotationPayload;
+      image?: ComposerImageAttachment | null;
+      delivery?: TurnDeliveryMode;
     },
   ) => {
     e?.preventDefault();
+    const directAnnotation = options?.annotation
+      ? { annotation: options.annotation, image: options.image ?? null }
+      : undefined;
     const notifyDirectAnnotationAttached = () => {
       if (!directAnnotation) return;
       toastManager.add(
@@ -5839,6 +5844,7 @@ function ChatViewContent(props: ChatViewProps) {
           titleSeed: title,
           runtimeMode: runtimeModeForTurn,
           interactionMode,
+          ...(options?.delivery ? { delivery: options.delivery } : {}),
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
         },

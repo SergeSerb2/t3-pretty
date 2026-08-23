@@ -254,6 +254,7 @@ export function useThreadOutboxDrain(): void {
           runtimeMode: settings.runtimeMode,
           interactionMode: settings.interactionMode,
           createdAt: queuedMessage.createdAt,
+          ...(queuedMessage.delivery ? { delivery: queuedMessage.delivery } : {}),
         },
       });
       return completeDelivery(deliveryResult);

@@ -80,7 +80,8 @@ type ProviderIntentEvent = Extract<
       | "thread.turn-interrupt-requested"
       | "thread.approval-response-requested"
       | "thread.user-input-response-requested"
-      | "thread.session-stop-requested";
+      | "thread.session-stop-requested"
+      | "thread.session-set";
   }
 >;
 
@@ -421,6 +422,17 @@ const make = Effect.gen(function* () {
     );
 
   const threadModelSelections = new Map<string, ModelSelection>();
+
+  // Turn starts sent with delivery "queue" while the thread's turn is running.
+  // Held here until the session leaves "running", then dispatched one per
+  // turn boundary in arrival order.
+  // ponytail: in-memory, lost on restart — same durability as the hot domain
+  // event stream this reactor consumes; persist alongside pending turn starts
+  // if restart-surviving queues become a requirement.
+  const queuedTurnStarts = new Map<
+    string,
+    Array<Extract<ProviderIntentEvent, { type: "thread.turn-start-requested" }>>
+  >();
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -1545,16 +1557,27 @@ const make = Effect.gen(function* () {
     processThreadTitleRegenerationSafely,
   );
 
-  const processTurnStartRequested = Effect.fn("processTurnStartRequested")(function* (
+  const dispatchTurnStart = Effect.fn("dispatchTurnStart")(function* (
     event: Extract<ProviderIntentEvent, { type: "thread.turn-start-requested" }>,
   ) {
-    const key = turnStartKeyForEvent(event);
-    if (yield* hasHandledTurnStartRecently(key)) {
+    const thread = yield* resolveThread(event.payload.threadId);
+    if (!thread) {
       return;
     }
 
-    const thread = yield* resolveThread(event.payload.threadId);
-    if (!thread) {
+    // "starting" holds too: a flushed predecessor moves the session through
+    // starting before its turn runs, and a queued message must not jump in
+    // ahead of it.
+    if (
+      event.payload.delivery === "queue" &&
+      (thread.session?.status === "running" || thread.session?.status === "starting")
+    ) {
+      const queue = queuedTurnStarts.get(event.payload.threadId);
+      if (queue) {
+        queue.push(event);
+      } else {
+        queuedTurnStarts.set(event.payload.threadId, [event]);
+      }
       return;
     }
 
@@ -1662,6 +1685,31 @@ const make = Effect.gen(function* () {
       Effect.catchCause(recoverTurnStartFailure),
       Effect.forkScoped,
     );
+  });
+
+  const processTurnStartRequested = Effect.fn("processTurnStartRequested")(function* (
+    event: Extract<ProviderIntentEvent, { type: "thread.turn-start-requested" }>,
+  ) {
+    const key = turnStartKeyForEvent(event);
+    if (yield* hasHandledTurnStartRecently(key)) {
+      return;
+    }
+    yield* dispatchTurnStart(event);
+  });
+
+  // A queued start is dispatched only when the session leaves "running"; the
+  // dispatch re-checks the session, so a race that restarts the turn first
+  // simply re-queues the event until the next boundary.
+  const flushQueuedTurnStarts = Effect.fn("flushQueuedTurnStarts")(function* (threadId: string) {
+    const queue = queuedTurnStarts.get(threadId);
+    const next = queue?.shift();
+    if (!queue || !next) {
+      return;
+    }
+    if (queue.length === 0) {
+      queuedTurnStarts.delete(threadId);
+    }
+    yield* dispatchTurnStart(next);
   });
 
   const processTurnInterruptRequested = Effect.fn("processTurnInterruptRequested")(function* (
@@ -1849,6 +1897,14 @@ const make = Effect.gen(function* () {
       case "thread.session-stop-requested":
         yield* processSessionStopRequested(event);
         return;
+      case "thread.session-set":
+        if (
+          event.payload.session.status !== "running" &&
+          event.payload.session.status !== "starting"
+        ) {
+          yield* flushQueuedTurnStarts(event.payload.threadId);
+        }
+        return;
     }
   });
 
@@ -1887,7 +1943,8 @@ const make = Effect.gen(function* () {
         event.type === "thread.turn-interrupt-requested" ||
         event.type === "thread.approval-response-requested" ||
         event.type === "thread.user-input-response-requested" ||
-        event.type === "thread.session-stop-requested"
+        event.type === "thread.session-stop-requested" ||
+        event.type === "thread.session-set"
       ) {
         return yield* worker.enqueue(event);
       }
