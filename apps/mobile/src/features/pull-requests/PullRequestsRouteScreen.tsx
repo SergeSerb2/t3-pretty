@@ -18,6 +18,7 @@ import {
   nextPullRequestEnvironmentId,
   readPersistedPullRequestListFilters,
   restorePullRequestListFilters,
+  shouldAbandonNamedSaveWait,
   shouldRetryPullRequestListRestore,
   writePersistedPullRequestListFilters,
 } from "./pullRequestListFiltersPersistence";
@@ -120,7 +121,13 @@ export function PullRequestsRouteScreen() {
       setSelectedHost(restored.host);
       return;
     }
-    if (awaitingEmptyNamedSave) return;
+    if (
+      shouldAbandonNamedSaveWait(savedFilters.environmentId, environments, awaitingEmptyNamedSave)
+    ) {
+      setAwaitingEmptyNamedSave(false);
+    } else if (awaitingEmptyNamedSave) {
+      return;
+    }
     const next = nextPullRequestEnvironmentId(
       selectedEnvironmentId,
       preferredEnvironmentId,

@@ -65,6 +65,20 @@ export function shouldRetryPullRequestListRestore(
   );
 }
 
+/** A different server hydrated: the named save is not coming. Fall back. */
+export function shouldAbandonNamedSaveWait(
+  savedEnvironmentId: EnvironmentId | null,
+  environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
+  awaitingEmptyNamedSave: boolean,
+): boolean {
+  return (
+    awaitingEmptyNamedSave &&
+    savedEnvironmentId !== null &&
+    environments.length > 0 &&
+    !environments.some((environment) => environment.environmentId === savedEnvironmentId)
+  );
+}
+
 /**
  * After saved connections have settled: keep project/host only when the saved server is still
  * present. A missing server (including an empty list) falls back to `preferred` without them.

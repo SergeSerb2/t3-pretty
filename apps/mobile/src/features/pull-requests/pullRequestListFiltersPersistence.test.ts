@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   nextPullRequestEnvironmentId,
   restorePullRequestListFilters,
+  shouldAbandonNamedSaveWait,
   shouldRetryPullRequestListRestore,
   type PersistedPullRequestListFilters,
 } from "./pullRequestListFiltersPersistence";
@@ -66,6 +67,19 @@ describe("shouldRetryPullRequestListRestore", () => {
       false,
     );
     expect(shouldRetryPullRequestListRestore(null, [env("env-1")], true)).toBe(false);
+  });
+});
+
+describe("shouldAbandonNamedSaveWait", () => {
+  it("abandons when a different server hydrates instead of the named save", () => {
+    expect(shouldAbandonNamedSaveWait("env-1" as EnvironmentId, [], true)).toBe(false);
+    expect(shouldAbandonNamedSaveWait("env-1" as EnvironmentId, [env("env-1")], true)).toBe(false);
+    expect(shouldAbandonNamedSaveWait("env-1" as EnvironmentId, [env("env-2")], true)).toBe(true);
+  });
+
+  it("does not abandon after a committed restore or when nothing was saved", () => {
+    expect(shouldAbandonNamedSaveWait("env-1" as EnvironmentId, [env("env-2")], false)).toBe(false);
+    expect(shouldAbandonNamedSaveWait(null, [env("env-2")], true)).toBe(false);
   });
 });
 
