@@ -5,7 +5,9 @@ pushes only Origin `main` and tags matching `GITHUB_MIRROR_TAG_PATTERN` to the
 configured GitHub repository. It never mirrors branches back.
 
 GitHub-only `public-v*` release tags are intentionally retained and never
-mirrored back to Origin or pruned by the Origin tag pass.
+mirrored back to Origin or pruned by the Origin tag pass. Mirroring a git tag
+does not create or promote a GitHub Release; only the manual public workflow
+marks `releases/latest`.
 
 The first run preserves the old GitHub `main` tip in
 `archive/pre-origin-migration-2026-08-23` before replacing `main`. Once that

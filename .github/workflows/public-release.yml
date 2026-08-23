@@ -32,8 +32,9 @@ concurrency:
 
 env:
   T3CODE_BUILD_FLAVOR: public
-  # Electron needs mutable latest metadata. This guarded workflow alone marks a public-v release
-  # latest; exact-version CLI commands use the immutable public-v tag instead.
+  # Electron needs mutable latest metadata. The mirror only pushes git refs, which cannot create or
+  # promote a GitHub Release; this guarded workflow alone marks a public-v release latest.
+  # Exact-version CLI commands use the immutable public-v tag instead.
   T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/SergeSerb2/t3-pretty/releases/latest/download/
   CI: true
 
