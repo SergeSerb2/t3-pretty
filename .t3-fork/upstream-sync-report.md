@@ -446,3 +446,46 @@
 
 - `apps/mobile/src/state/use-thread-composer-state.ts` — Report queued-message persistence failures through setPendingConnectionError.. Reason: That presentation conflicts with T3 Pretty's authoritative native mobile Alert behavior and would produce competing error surfaces; draft and attachment restoration is still preserved in full.
 - `apps/mobile/src/state/use-thread-composer-state.ts` — Determine the feedback provider solely from thread.modelSelection.. Reason: T3 Pretty supports draft-level model/provider selection, so using the persisted thread model can intercept a feedback-looking command for the wrong outbound provider. The resolution uses the effective send model and retains upstream's session.providerName fallback.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.34-nightly.20260823.1169`
+- Previously integrated parent nightly: `v0.0.34-nightly.20260823.1166`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Preserved T3 Pretty's thread rename action in the slim-row context menu.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Pinned threads remain in the pinned card block when a stale settled override is still present; they land on the settled shelf only after persistence unpins them.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Pull-request merges do not automatically settle or unpin T3 Pretty threads, including pinned threads.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Inactivity does not silently demote a pinned thread to the settled shelf.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Pinned settle transitions retain the fork's card/slim partition and landing behavior, preventing premature shelf departures.
+- `apps/web/src/components/ChatView.tsx` — Preserved the `liveHeadline={liveTurnHeadline}` timeline input that powers T3 Pretty's generated live activity headlines.
+- `apps/web/src/components/Sidebar.tsx` — T3 Pretty’s single-shelf classification remains intact, allowing dock attention to be calculated across all projects before applying the visible project scope.
+- `apps/web/src/components/Sidebar.tsx` — Snoozed threads remain excluded from the inbox/dock count and are placed on the snoozed shelf only once.
+- `apps/web/src/components/Sidebar.tsx` — A snoozed pin retains its pin and pinOrderKey so it returns to its exact pinned position after waking.
+- `apps/web/src/components/Sidebar.tsx` — Outside the snooze interval, pinning continues to override settlement, preventing stale or raced settlement state from hiding a pinned thread.
+- `scripts/build-desktop-artifact.ts` — Preserved the exported resolveCargoTargetDir helper, including support for trimmed CARGO_TARGET_DIR values, repo-relative resolution, and the in-tree resource-monitor target fallback.
+- `scripts/build-desktop-artifact.ts` — Preserved T3 Pretty's release-build compatibility with custom or cached Cargo target directories.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Integrated the parent behavior that exposes pin lifecycle and pin-reordering actions for pinned slim rows.
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Integrated the parent memo dependencies on pinMenuItem and thread.pinnedAt so slim-row actions update correctly when pin state or ordering capabilities change.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Added upstream's pinned merged-thread regression scenario, including verification that the stored pinnedAt value remains intact, adapted to T3 Pretty's no-auto-settle policy.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Added upstream's inactive pinned-thread fixture as regression coverage, adapted to assert the fork's pin-first partitioning.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Integrated upstream's explicit autoSettleOnMerge: false API coverage and its pinned-card expectations.
+- `apps/web/src/components/ChatView.tsx` — Adopted `activeRunningTurnId` for `MessagesTimeline` instead of deriving the running turn ID directly from `activeThread.session`, preserving the parent's refactor and any centralized running-turn semantics.
+- `apps/web/src/components/Sidebar.tsx` — Integrated the parent clarification that snooze outranks both settlement and pinning until the thread wakes.
+- `apps/web/src/components/Sidebar.tsx` — Adapted the parent snoozed-row handling to assign the fork’s `snoozed` shelf rather than directly mutating the scoped list, preserving the parent-visible behavior within Pretty’s partition architecture.
+- `scripts/build-desktop-artifact.ts` — Exported stageResourceMonitor as introduced by the parent nightly, while retaining the fork's target-directory helper used by its implementation.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Treat a thread with both pinnedAt and settled state as unpinned and place it on the settled shelf immediately.. Reason: This conflicts with T3 Pretty's pinned-settle landing contract: the pin wins until persistence clears pinnedAt, avoiding a premature shelf transition.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Automatically move a pinned thread to the settled shelf when its pull request merges under the default list policy.. Reason: T3 Pretty explicitly stopped auto-settling threads on pull-request merge; retaining the pin and active card is authoritative fork behavior.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Automatically move an inactive pinned thread to the settled shelf while its persisted pinnedAt remains set.. Reason: T3 Pretty gives persisted pins precedence and requires an actual unpin before a pinned thread departs for the settled shelf.
+- `apps/web/src/components/Sidebar.tsx` — THEIRS removes the pre-settlement pinned-thread branch, which would make settlement take precedence when a thread is simultaneously pinned and settled.. Reason: That precedence conflicts with T3 Pretty’s documented lifecycle safeguard: pins must remain visible and must not auto-settle out of sight. Simultaneous state is expected only from stale or raced writes, so retaining pin-before-settlement prevents a fork behavior regression while omitting only the incompatible precedence change.
+- `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
