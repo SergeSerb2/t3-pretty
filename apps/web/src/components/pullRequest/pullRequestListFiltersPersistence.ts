@@ -158,8 +158,8 @@ function hasPersistableListFilter(raw: Record<string, unknown>): boolean {
 
 /**
  * Persist the validated list. Null while a bare/default URL is still the in-memory restore,
- * and when a selection URL carries no user list keys — validateSearch fills all/open there,
- * and a deep link's state=all is only so the selected PR is in the list.
+ * and when a selection URL carries no user list keys. A deep link's state=all only keeps
+ * the selected PR in the list — persist open/closed/merged, otherwise keep the last list state.
  */
 export function pullRequestListFiltersToPersist(
   raw: Record<string, unknown>,
@@ -168,7 +168,14 @@ export function pullRequestListFiltersToPersist(
 ): PersistedPullRequestListFilters | null {
   if (restoreReplacePending && shouldRestorePersistedListFilters(raw)) return null;
   if (hasNamedSelection(raw) && !hasPersistableListFilter(raw)) return null;
-  return persistedFiltersFromSearch(search);
+  const next = persistedFiltersFromSearch(search);
+  if (hasNamedSelection(raw) && next.state === "all") {
+    return persistedFiltersFromSearch({
+      ...next,
+      state: readPersistedPullRequestListFilters().state,
+    });
+  }
+  return next;
 }
 
 export function readPersistedPullRequestListFilters(): PersistedPullRequestListFilters {

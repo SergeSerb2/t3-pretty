@@ -139,6 +139,26 @@ describe("persisted pull request list filters", () => {
         false,
       ),
     ).toEqual({ involvement: "authored", state: "open" });
+    writePersistedPullRequestListFilters({ involvement: "reviewing", state: "closed" });
+    expect(
+      pullRequestListFiltersToPersist(
+        {
+          repository: "acme/web",
+          number: "12",
+          state: "all",
+          involvement: "authored",
+        },
+        { involvement: "authored", state: "all" },
+        false,
+      ),
+    ).toEqual({ involvement: "authored", state: "closed" });
+    expect(
+      pullRequestListFiltersToPersist(
+        { repository: "acme/web", state: "merged", draft: "hide" },
+        { involvement: "all", state: "merged", draft: "hide" },
+        false,
+      ),
+    ).toEqual({ involvement: "all", state: "merged", draft: "hide" });
   });
 
   it("does not treat a default-named URL as a write of the defaults", () => {
