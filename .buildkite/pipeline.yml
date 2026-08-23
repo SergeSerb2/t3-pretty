@@ -42,6 +42,8 @@ env:
 steps:
   - label: ":github: Mirror Origin main and release tags"
     key: github-mirror
+    # Hard-fail on purpose: silent drift violates the required Origin -> GitHub mirror.
+    # This independent step does not gate the internal packaging steps below.
     if: 'build.branch == "main" && build.source != "schedule"'
     agents:
       queue: macos-release

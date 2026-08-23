@@ -74,7 +74,8 @@ const INTERNAL_RELEASE_ASSETS = {
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.internalIosIconPng),
   androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.internalAndroidAdaptiveForegroundPng),
   androidAdaptiveBackgroundColor: "#14261B",
-  androidMonochromeIcon: "./assets/android-icon-mark.png",
+  androidMonochromeIcon: "./assets/t3-pretty-internal-android-icon-mark.png",
+  // Android notifications require a neutral white alpha mask; the forest color comes from below.
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#14261B",
 } as const;
