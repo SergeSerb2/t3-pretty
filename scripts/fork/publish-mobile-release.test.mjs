@@ -163,6 +163,80 @@ function selectDeveloperDir({ apps, env = {} }) {
   );
 }
 
+function extractOtaBaseFns() {
+  const line = mobileRelease.match(/native_submit_line\(\) \{\n[\s\S]*?\n\}/);
+  const base = mobileRelease.match(/mobile_release_base\(\) \{\n[\s\S]*?\n\}/);
+  assert.ok(line, "native_submit_line missing");
+  assert.ok(base, "mobile_release_base missing");
+  return `${line[0]}\n${base[0]}`;
+}
+
+function makeOtaBaseRepo() {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-ota-base-"));
+  const work = NodePath.join(root, "work");
+  NodeFS.mkdirSync(work);
+  git(work, "init", "-b", "main");
+  git(work, "config", "user.email", "t3-ios-ota-base-test@example.invalid");
+  git(work, "config", "user.name", "T3 iOS OTA Base Test");
+  NodeFS.writeFileSync(NodePath.join(work, "apps-mobile.txt"), "one\n");
+  git(work, "add", "apps-mobile.txt");
+  git(work, "commit", "-m", "mobile one");
+  const parent = git(work, "rev-parse", "HEAD");
+  NodeFS.writeFileSync(NodePath.join(work, "apps-mobile.txt"), "two\n");
+  git(work, "add", "apps-mobile.txt");
+  git(work, "commit", "-m", "mobile two");
+  const head = git(work, "rev-parse", "HEAD");
+  return { root, work, parent, head };
+}
+
+function resolveOtaBase({ work, commit, markContent }) {
+  const mark = NodePath.join(work, "ota-mark");
+  if (markContent === undefined) NodeFS.rmSync(mark, { force: true });
+  else NodeFS.writeFileSync(mark, `${markContent}\n`);
+  return NodeChildProcess.execFileSync(
+    "bash",
+    [
+      "-c",
+      `${extractOtaBaseFns()}
+LOCAL_OTA_MARK="$1"
+commit="$2"
+mobile_release_base`,
+      "ota-base",
+      mark,
+      commit,
+    ],
+    { cwd: work, encoding: "utf8" },
+  ).trim();
+}
+
+describe("iOS publish OTA catch-up base", () => {
+  it("diffs against the runner's last published OTA commit instead of always HEAD~1", () => {
+    assert.include(mobileRelease, "ios-ota-publish");
+    assert.include(mobileRelease, "record_local_ota_publish");
+    assert.notInclude(mobileRelease, "Push does not change mobile-relevant paths");
+    // A skip must not exit before the native fingerprint gate, or a cancelled
+    // build would strand a due TestFlight IPA with the OTA it did publish.
+    assert.include(mobileRelease, "skipping eas update");
+    assert.isBelow(
+      mobileRelease.indexOf("skipping eas update"),
+      mobileRelease.indexOf("fingerprint:generate"),
+    );
+  });
+
+  it("resolves covered/ancestor/missing/unknown marks", () => {
+    const { root, work, parent, head } = makeOtaBaseRepo();
+    try {
+      assert.equal(resolveOtaBase({ work, commit: head, markContent: head }), "covered");
+      assert.equal(resolveOtaBase({ work, commit: head, markContent: parent }), parent);
+      assert.equal(resolveOtaBase({ work, commit: head }), "HEAD~1");
+      assert.equal(resolveOtaBase({ work, commit: head, markContent: "1".repeat(40) }), "changed");
+      assert.equal(resolveOtaBase({ work, commit: head, markContent: "bogus" }), "changed");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("iOS publish Xcode selection", () => {
   it("probes xcodebuild -version inside is_full_xcode before accepting a path", () => {
     const fn = extractIsFullXcode();

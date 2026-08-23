@@ -14,6 +14,14 @@
 # developer beta, so the compiler is Xcode-beta.app. TestFlight accepts the
 # current Xcode 27 beta (not every older beta). EAS cloud is only the
 # fallback when this Mac has no full Xcode at all.
+#
+# Buildkite cancels intermediate main builds when pushes land in quick
+# succession, so a release can die mid-flight and a later push would skip on
+# its own empty HEAD~1 diff. The runner records each published OTA commit in
+# ~/.cache/t3-pretty-release/ios-ota-publish and diffs against it instead, so
+# the next uncancelled build re-releases everything stranded. A skip only
+# silences the OTA; the native fingerprint gate always runs, so a due IPA
+# still compiles even when the JS bundle is unchanged.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -36,6 +44,12 @@ PLATFORM="${T3CODE_MOBILE_PLATFORM:-all}"
 FORCE_IOS=false
 NATIVE_SUBMIT_MARK=".t3-fork/ios-native-submit"
 LOCAL_SUBMIT_MARK="${HOME}/.cache/t3-pretty-release/ios-native-submit"
+# Runner-local record of the last commit whose OTA actually published.
+# Buildkite cancels intermediate main builds, so a release can die
+# mid-flight; the next push then used to skip on its own empty HEAD~1
+# diff and strand the release for good. Diffing against this mark lets a
+# later build re-release everything since the last publish.
+LOCAL_OTA_MARK="${HOME}/.cache/t3-pretty-release/ios-ota-publish"
 case "${T3CODE_FORCE_IOS:-}" in
   true | TRUE | 1 | yes | YES) FORCE_IOS=true ;;
 esac
@@ -125,9 +139,33 @@ native_submit_line() {
   head -n 1 "$file" 2>/dev/null | tr -d '[:space:]'
 }
 
+# Diff base for the mobile path filter. Prints "covered" when the recorded
+# OTA already matches this commit, the recorded commit when it is an ancestor
+# of HEAD, "HEAD~1" when the runner has no record yet, and "changed" when the
+# record fell off the shallow boundary (too many pushes to prove coverage, so
+# treat the release as due).
+mobile_release_base() {
+  local mark
+  mark="$(native_submit_line "$LOCAL_OTA_MARK" || true)"
+  if [[ "$mark" == "$commit" ]]; then
+    printf 'covered\n'
+  elif [[ "$mark" =~ ^[0-9a-f]{40}$ ]] && git merge-base --is-ancestor "$mark" HEAD 2>/dev/null; then
+    printf '%s\n' "$mark"
+  elif [[ -z "$mark" ]]; then
+    printf 'HEAD~1\n'
+  else
+    printf 'changed\n'
+  fi
+}
+
 record_local_native_submit() {
   mkdir -p "$(dirname "$LOCAL_SUBMIT_MARK")"
   printf '%s\n' "macos-release" "${1:-${commit:-unknown}}" > "$LOCAL_SUBMIT_MARK"
+}
+
+record_local_ota_publish() {
+  mkdir -p "$(dirname "$LOCAL_OTA_MARK")"
+  printf '%s\n' "${1:-$commit}" > "$LOCAL_OTA_MARK"
 }
 
 # One successful macos-release TestFlight submit is enough. The git marker
@@ -190,10 +228,10 @@ fi
 # Do not unshallow this checkout. The workspace is reused across jobs and
 # downloading the whole Origin history occupies the only macos-release agent.
 # checkout-origin --full still respects an existing shallow boundary, so fetch
-# 50 commits of this SHA and origin/main: the path filter needs HEAD~1, and
-# native_submit_recorded reads the marker from origin/main. Never fetch
-# --depth=1 afterward. That shortens the clone back to one commit and the
-# path filter then fails closed on every main push.
+# 50 commits of this SHA and origin/main: the path filter needs HEAD~1 and
+# the recorded OTA commit, and native_submit_recorded reads the marker from
+# origin/main. Never fetch --depth=1 afterward. That shortens the clone back
+# to one commit and the path filter then fails closed on every main push.
 git fetch --depth=50 origin "${commit}" main ||
   git fetch --depth=50 origin main ||
   git fetch --deepen=50 origin "${commit}" ||
@@ -201,22 +239,38 @@ git fetch --depth=50 origin "${commit}" main ||
   true
 git checkout -- apps/mobile/eas.json 2>/dev/null || true
 
+# A skip only silences the OTA; the native fingerprint gate below still runs,
+# so an IPA that a cancelled build never compiled is not stranded with it.
+mobile_changed=true
 if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" && "$MODE" != "build" && "$FORCE_IOS" != "true" ]]; then
-  if ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
-    echo "No parent commit after history fetch; refusing to publish OTA without a path diff." >&2
-    exit 1
-  fi
-  if git diff --quiet HEAD~1 HEAD -- \
-    apps/mobile \
-    packages \
-    patches \
-    pnpm-lock.yaml \
-    scripts/fork/publish-mobile-release.sh \
-    scripts/fork/resolve-ios-native-build.mjs \
-    scripts/fork/security-eas-local-keychain; then
-    echo "Push does not change mobile-relevant paths; skipping OTA and TestFlight."
-    exit 0
-  fi
+  base="$(mobile_release_base)"
+  case "$base" in
+    covered)
+      mobile_changed=false
+      ;;
+    changed)
+      ;;
+    *)
+      if ! git rev-parse --verify --quiet "$base" >/dev/null; then
+        echo "No parent commit after history fetch; refusing to publish OTA without a path diff." >&2
+        exit 1
+      fi
+      if git diff --quiet "$base" HEAD -- \
+        apps/mobile \
+        packages \
+        patches \
+        pnpm-lock.yaml \
+        scripts/fork/publish-mobile-release.sh \
+        scripts/fork/resolve-ios-native-build.mjs \
+        scripts/fork/security-eas-local-keychain; then
+        mobile_changed=false
+        # HEAD's mobile content now provably matches a published commit.
+        # Advance the mark so the next push diffs against something recent.
+        # The HEAD~1 fallback proves nothing about coverage; leave the mark.
+        [[ "$base" == "HEAD~1" ]] || record_local_ota_publish
+      fi
+      ;;
+  esac
 fi
 
 lockdir="/tmp/t3-pretty-ios-mobile.lock"
@@ -290,20 +344,25 @@ restore_eas_json() {
 }
 
 if [[ "$MODE" == "update" || "$MODE" == "release" ]]; then
-  update_platform="$PLATFORM"
-  if [[ "$MODE" == "release" ]]; then
-    update_platform=all
+  if [[ "$mobile_changed" == "true" ]]; then
+    update_platform="$PLATFORM"
+    if [[ "$MODE" == "release" ]]; then
+      update_platform=all
+    fi
+    (
+      cd apps/mobile
+      eas update \
+        --channel production \
+        --environment production \
+        --platform "$update_platform" \
+        --message "$update_message" \
+        --non-interactive
+    )
+    echo "Published production OTA for ${update_platform}."
+    record_local_ota_publish
+  else
+    echo "Production OTA already covers mobile content at ${commit}; skipping eas update."
   fi
-  (
-    cd apps/mobile
-    eas update \
-      --channel production \
-      --environment production \
-      --platform "$update_platform" \
-      --message "$update_message" \
-      --non-interactive
-  )
-  echo "Published production OTA for ${update_platform}."
 fi
 
 if [[ "$MODE" != "build" && "$MODE" != "release" ]]; then
@@ -323,9 +382,14 @@ fingerprint=""
     --build-profile production \
     --json \
     --non-interactive > "$fingerprint_file"; then
-    echo "Could not generate the iOS fingerprint; building a native binary to be safe."
-    printf 'placeholder\n' > "$fingerprint_file"
-    printf 'should_build=true\nfingerprint=unknown\n' > "$gate_file"
+    if [[ "$mobile_changed" == "true" ]]; then
+      echo "Could not generate the iOS fingerprint; building a native binary to be safe."
+      printf 'placeholder\n' > "$fingerprint_file"
+      printf 'should_build=true\nfingerprint=unknown\n' > "$gate_file"
+    else
+      echo "Could not generate the iOS fingerprint, and mobile content is already published; not building."
+      printf 'should_build=false\nfingerprint=unknown\n' > "$gate_file"
+    fi
     exit 0
   fi
   if ! eas build:list \

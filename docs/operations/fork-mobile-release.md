@@ -21,11 +21,19 @@ on `macos-release`, the same native queue as the signed DMG. It is
 not imported GitHub Actions: the importer cannot load `EXPO_TOKEN` or Apple
 keys, so those jobs died in about two seconds and TestFlight never moved.
 
-The script skips when the commit does not touch mobile-relevant paths. That
-check diffs `HEAD` against `HEAD~1`, so the reused macos-release checkout
-fetches 50 commits of the release SHA and `origin/main`. A later depth-1
-fetch would drop the parent and fail the job instead of skipping. A
-release publishes an OTA update on the production channel. That is the
+The script skips the OTA when the push does not touch mobile-relevant
+paths. Buildkite cancels intermediate main builds when pushes land in quick
+succession, so a release can die mid-flight; the runner therefore records
+each published OTA commit in `~/.cache/t3-pretty-release/ios-ota-publish`
+and diffs against that commit instead of `HEAD` against `HEAD~1`, letting
+the next uncancelled build re-release everything stranded. With no record
+(fresh runner), the filter falls back to the `HEAD~1` diff, and the reused
+macos-release checkout still fetches 50 commits of the release SHA and
+`origin/main`. A later depth-1 fetch would drop the parent and fail the job
+instead of skipping. A skip only silences the OTA: the native fingerprint
+gate still runs, so an IPA that a cancelled build never compiled is not
+stranded with the JS bundle it did publish. A release publishes an OTA
+update on the production channel. That is the
 TestFlight deploy: installed binaries already poll the fork Expo Updates
 URL. A new IPA is compiled and uploaded with Fastlane pilot (TestFlight on
 App Store Connect, not App Store review) only when the native fingerprint
