@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260823.1170000817",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260823.1170000814",
     date: "2026-08-23",
     items: [
@@ -846,6 +876,36 @@ export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
       {
         kind: "fixed",
         title: "make the iOS Live Activity glanceable",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260817.1119000228",
+    date: "2026-08-17",
+    items: [
+      {
+        kind: "new",
+        title: "make review verdicts legible in the pull request detail (#7077)",
+      },
+      {
+        kind: "fixed",
+        title: "put World Scenery behind the new-task sheet",
+      },
+      {
+        kind: "fixed",
+        title: "make the iOS Live Activity glanceable",
+      },
+      {
+        kind: "new",
+        title: "redesign pull request menu and conversation",
+      },
+      {
+        kind: "new",
+        title: "start new threads immediately and show thinking",
+      },
+      {
+        kind: "new",
+        title: "settle, snooze, and PR in the thread header",
       },
     ],
   },
