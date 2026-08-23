@@ -111,6 +111,20 @@ export function selectedPickerModel(input: {
   return null;
 }
 
+/** Headers only when more than one provider actually contributed rows. */
+function withListProviderHeaders(
+  entries: ReadonlyArray<Omit<ThreadSettingsPickerModelListEntry, "showProviderHeader">>,
+): ThreadSettingsPickerModelListEntry[] {
+  const providerKeys = new Set(entries.map((entry) => entry.option.providerKey));
+  const seen = new Set<string>();
+  return entries.map((entry) => {
+    const key = entry.option.providerKey;
+    const first = !seen.has(key);
+    seen.add(key);
+    return { ...entry, showProviderHeader: providerKeys.size > 1 && first };
+  });
+}
+
 /**
  * Searchable list rows in provider-group order. Headers only make sense when
  * more than one provider contributed rows, so single-provider lists stay flat.
@@ -119,18 +133,18 @@ function buildModelListEntries(input: {
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
   readonly selectedModel: ModelSelection | null;
 }): ThreadSettingsPickerModelListEntry[] {
-  const multiProvider = input.providerGroups.length > 1;
-  return input.providerGroups.flatMap((group) => {
-    const visible = group.models.filter(
-      (option) => !option.isLegacy || isSelectedModel(option, input.selectedModel),
-    );
-    return visible.map((option, index) => ({
-      option,
-      selected: isSelectedModel(option, input.selectedModel),
-      providerLabel: group.providerLabel,
-      showProviderHeader: multiProvider && index === 0,
-    }));
-  });
+  return withListProviderHeaders(
+    input.providerGroups.flatMap((group) => {
+      const visible = group.models.filter(
+        (option) => !option.isLegacy || isSelectedModel(option, input.selectedModel),
+      );
+      return visible.map((option) => ({
+        option,
+        selected: isSelectedModel(option, input.selectedModel),
+        providerLabel: group.providerLabel,
+      }));
+    }),
+  );
 }
 
 /** Panel search: match model or provider name, then re-derive the headers. */
@@ -142,19 +156,13 @@ export function filterPickerModelList(
   if (normalized.length === 0) {
     return list;
   }
-  const matched = list.filter(
-    (entry) =>
-      entry.option.label.toLowerCase().includes(normalized) ||
-      (entry.providerLabel?.toLowerCase().includes(normalized) ?? false),
+  return withListProviderHeaders(
+    list.filter(
+      (entry) =>
+        entry.option.label.toLowerCase().includes(normalized) ||
+        (entry.providerLabel?.toLowerCase().includes(normalized) ?? false),
+    ),
   );
-  const providerKeys = new Set(matched.map((entry) => entry.option.providerKey));
-  const seen = new Set<string>();
-  return matched.map((entry) => {
-    const key = entry.option.providerKey;
-    const first = !seen.has(key);
-    seen.add(key);
-    return { ...entry, showProviderHeader: providerKeys.size > 1 && first };
-  });
 }
 
 /** Everyday composer panel: current model, then effort/tier/runtime — never the full catalog. */

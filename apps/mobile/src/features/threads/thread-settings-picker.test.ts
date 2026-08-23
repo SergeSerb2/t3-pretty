@@ -303,6 +303,35 @@ describe("buildThreadSettingsPickerModel modelList", () => {
     expect(picker.modelList?.map((entry) => entry.showProviderHeader)).toEqual([true, true]);
     expect(picker.modelList?.map((entry) => entry.providerLabel)).toEqual(["Codex", "Claude"]);
   });
+
+  it("does not header a lone remaining provider when another group is hidden", () => {
+    const cursor = Array.from({ length: 20 }, (_, index) =>
+      modelOption(`cursor-${index}`, {
+        providerKey: "cursor",
+        providerLabel: "Cursor",
+        providerDriver: "cursor",
+      }),
+    );
+    const grokLegacy = [
+      modelOption("grok-old", {
+        isLegacy: true,
+        providerKey: "grok",
+        providerLabel: "Grok",
+        providerDriver: "grok",
+      }),
+    ];
+    const picker = buildThreadSettingsPickerModel({
+      providerGroups: [group(cursor), group(grokLegacy)],
+      selectedModel: cursor[0]?.selection ?? null,
+      optionDescriptors: [],
+      runtimeMode: "auto",
+    });
+
+    expect(picker.modelList?.map((entry) => entry.option.label)).toEqual(
+      cursor.map((model) => model.label),
+    );
+    expect(picker.modelList?.every((entry) => !entry.showProviderHeader)).toBe(true);
+  });
 });
 
 describe("filterPickerModelList", () => {

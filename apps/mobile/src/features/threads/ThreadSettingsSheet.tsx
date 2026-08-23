@@ -363,7 +363,13 @@ const ExistingThreadSettingsRouteContext =
 export function ExistingThreadSettingsRouteProvider(props: { readonly children: ReactNode }) {
   const [session, setSession] = useState<ExistingThreadSettingsRouteSession | null>(null);
   const present = useCallback((nextSession: ExistingThreadSettingsRouteSession) => {
-    setSession(nextSession);
+    setSession((current) =>
+      // Composer re-presents on model/options updates. Keep the page this
+      // owner opened with so a catalog first-page isn't reset to home.
+      current?.ownerId === nextSession.ownerId
+        ? { ...nextSession, initialPage: current.initialPage }
+        : nextSession,
+    );
   }, []);
   const clear = useCallback((ownerId: string) => {
     setSession((current) => (current?.ownerId === ownerId ? null : current));
