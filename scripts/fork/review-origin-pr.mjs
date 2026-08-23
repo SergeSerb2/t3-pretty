@@ -21,6 +21,8 @@ export const MAX_ISSUES = 12;
 const PR_LOOKUP_ATTEMPTS = 25;
 const PR_LOOKUP_DELAY_MS = 5_000;
 const REQUEST_TIMEOUT_MS = 480_000;
+const PROXY_ATTEMPTS = 2;
+const TRANSIENT_PROXY_STATUSES = new Set([429, 502, 503, 504]);
 const SEVERITIES = new Set(["bug", "suggestion", "nit"]);
 
 const REVIEW_SCHEMA = {
@@ -268,38 +270,51 @@ export async function callGrokReview({
   apiKey,
   apiUrl = cliProxyApiUrl(),
   model = grokModel(),
-}) {
+  fetchImpl = fetch,
+  attempts = PROXY_ATTEMPTS,
+  wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+} = {}) {
   if (!apiKey) {
     throw new Error("CLI_PROXY_API_KEY is required for Grok 4.6 Origin PR reviews.");
   }
-  const response = await fetch(`${apiUrl}/responses`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    body: JSON.stringify({
-      model,
-      reasoning: { effort: process.env.CLI_PROXY_REVIEW_EFFORT ?? "high" },
-      service_tier: process.env.CLI_PROXY_SERVICE_TIER ?? "priority",
-      input: prompt,
-      text: {
-        format: {
-          type: "json_schema",
-          name: "origin_pr_review",
-          strict: true,
-          schema: REVIEW_SCHEMA,
-        },
+  const limit = Math.max(1, attempts);
+  let lastError;
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await fetchImpl(`${apiUrl}/responses`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
-    }),
-  });
-  if (!response.ok) {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      body: JSON.stringify({
+        model,
+        reasoning: { effort: process.env.CLI_PROXY_REVIEW_EFFORT ?? "high" },
+        service_tier: process.env.CLI_PROXY_SERVICE_TIER ?? "priority",
+        input: prompt,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "origin_pr_review",
+            strict: true,
+            schema: REVIEW_SCHEMA,
+          },
+        },
+      }),
+    });
+    if (response.ok) {
+      const payload = await response.json();
+      return parseReviewResponse(extractResponseText(payload));
+    }
     const body = await response.text().catch(() => "");
-    throw new Error(`CLIProxyAPI request failed with ${response.status}: ${body.slice(0, 500)}`);
+    lastError = new Error(
+      `CLIProxyAPI request failed with ${response.status}: ${body.slice(0, 500)}`,
+    );
+    if (attempt >= limit || !TRANSIENT_PROXY_STATUSES.has(response.status)) {
+      throw lastError;
+    }
+    await wait(PR_LOOKUP_DELAY_MS);
   }
-  const payload = await response.json();
-  return parseReviewResponse(extractResponseText(payload));
 }
 
 export function viewPullRequest(target, { repo } = {}) {

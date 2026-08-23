@@ -13,6 +13,9 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    does not import `fork-pr-review.yml`. A native `macos-release` step runs
    `scripts/fork/run-trusted-origin-pr-ci.sh` instead, which prefers the review
    scripts on `origin/main` so a feature branch cannot swap the secret loader.
+   A 429/502/503/504 from CLIProxyAPI is retried once (Buildkite #793). The
+   checkout overlays `review-origin-pr.mjs` so that retry runs before the
+   change lands on `main`.
    Hosted `linux-small` cannot load `CURSOR_API_KEY`. The step runs on every
    non-`main`, non-`automation/*` branch (Buildkite New Build is the manual
    path). Push builds briefly wait for PR creation because Origin does not
