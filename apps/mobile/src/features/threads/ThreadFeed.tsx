@@ -1009,6 +1009,7 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   readonly markdownStyles: MarkdownStyleSet;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly onLinkPress: (href: string) => void;
+  readonly renderImage: MarkdownImageRenderer;
 }) {
   if (hasNativeSelectableMarkdownText()) {
     return (
@@ -1018,6 +1019,7 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
         textStyle={props.markdownStyles.nativeTextStyle}
         highlightCodeEnabled={!props.streaming}
         onLinkPress={props.onLinkPress}
+        renderImage={props.renderImage}
       />
     );
   }
@@ -1039,6 +1041,7 @@ const CadencedAssistantMarkdown = memo(function CadencedAssistantMarkdown(props:
   readonly markdownStyles: MarkdownStyleSet;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly onLinkPress: (href: string) => void;
+  readonly renderImage: MarkdownImageRenderer;
 }) {
   const displayedText = useCadencedStreamingText(props.text, props.streaming);
   return (
@@ -1048,6 +1051,7 @@ const CadencedAssistantMarkdown = memo(function CadencedAssistantMarkdown(props:
       markdownStyles={props.markdownStyles}
       skills={props.skills}
       onLinkPress={props.onLinkPress}
+      renderImage={props.renderImage}
     />
   );
 });
@@ -1237,6 +1241,7 @@ function renderFeedEntry(
             markdownStyles={styles}
             skills={props.skills}
             onLinkPress={props.onMarkdownLinkPress}
+            renderImage={props.renderMarkdownImage}
           />
         ) : null}
         {attachments.map((attachment) => {
