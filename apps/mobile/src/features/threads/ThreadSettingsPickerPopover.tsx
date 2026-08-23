@@ -105,6 +105,12 @@ export function ThreadSettingsPickerPopover(props: {
     setAnchor(null);
   }, []);
 
+  useEffect(() => {
+    if (props.disabled) {
+      close();
+    }
+  }, [close, props.disabled]);
+
   const remeasureAnchor = useCallback(() => {
     anchorRef.current?.measureInWindow((x, y, width, height) => {
       setAnchor({ x, y, width, height });
@@ -266,7 +272,9 @@ export function ThreadSettingsPickerPopover(props: {
                       </View>
                       {modelListEntries?.length === 0 ? (
                         <Text className="px-3.5 pb-2.5 pt-1 text-sm text-foreground-muted">
-                          No models match.
+                          {modelQuery.trim().length > 0
+                            ? "No models match."
+                            : "No models available."}
                         </Text>
                       ) : (
                         modelListEntries?.map((entry) => (
