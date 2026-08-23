@@ -164,8 +164,8 @@ function progressForPhase(
 // timer. Only the materialized running turn carries a trustworthy start;
 // sessions running without one (background fleets, pre-checkpoint turns)
 // would pin the timer to a stale prior turn, so they get no startedAt.
-// Starting shells have no running turn yet; use updatedAt so the timer
-// matches the local Connecting placeholder's nowIso.
+// Starting shells have no running turn yet; pin to the session stamp so
+// later thread-shell touches do not reset the on-screen elapsed timer.
 function startedAtForPhase(
   phase: AgentAwarenessPhase,
   thread: ProjectThreadAwarenessInput["thread"],
@@ -178,7 +178,7 @@ function startedAtForPhase(
     return turn.startedAt ?? turn.requestedAt;
   }
   if (phase === "starting") {
-    return thread.updatedAt;
+    return thread.session?.updatedAt;
   }
   return undefined;
 }

@@ -151,11 +151,13 @@ describe("projectThreadAwareness", () => {
     expect(sessionOnly?.startedAt).toBeUndefined();
   });
 
-  it("uses the thread's updatedAt while the session is starting so the elapsed timer can tick", () => {
+  it("pins the starting timer to the session stamp, not later thread.updatedAt", () => {
+    const sessionStartedAt = "2026-05-22T11:59:30.000Z";
     const state = projectThreadAwareness({
       environmentId: "env-1" as EnvironmentId,
       project,
       thread: thread({
+        updatedAt: NOW,
         session: {
           threadId: "thread-1" as ThreadId,
           status: "starting",
@@ -163,16 +165,17 @@ describe("projectThreadAwareness", () => {
           runtimeMode: "full-access",
           activeTurnId: null,
           lastError: null,
-          updatedAt: NOW,
+          updatedAt: sessionStartedAt,
         },
       }),
     });
 
     expect(state?.phase).toBe("starting");
-    expect(state?.startedAt).toBe(NOW);
+    expect(state?.startedAt).toBe(sessionStartedAt);
   });
 
   it("does not pin a starting session's timer to a settled prior turn", () => {
+    const sessionStartedAt = "2026-05-22T11:50:00.000Z";
     const state = projectThreadAwareness({
       environmentId: "env-1" as EnvironmentId,
       project,
@@ -193,13 +196,13 @@ describe("projectThreadAwareness", () => {
           runtimeMode: "full-access",
           activeTurnId: null,
           lastError: null,
-          updatedAt: NOW,
+          updatedAt: sessionStartedAt,
         },
       }),
     });
 
     expect(state?.phase).toBe("starting");
-    expect(state?.startedAt).toBe(NOW);
+    expect(state?.startedAt).toBe(sessionStartedAt);
   });
 
   it("surfaces the current plan step as the running detail", () => {

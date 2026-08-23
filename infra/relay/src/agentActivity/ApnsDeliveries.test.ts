@@ -1690,6 +1690,27 @@ describe("aggregate shape changes", () => {
     ).toBe(false);
   });
 
+  it("treats startedAt appearing or changing as a shape change", () => {
+    const withStartedAt = {
+      ...aggregate,
+      activities: aggregate.activities.map((row) => ({
+        ...row,
+        startedAt: "2026-05-22T12:00:00.000Z",
+      })),
+    };
+    expect(ApnsDeliveries.aggregateShapeChanged(aggregate, withStartedAt)).toBe(true);
+    expect(
+      ApnsDeliveries.aggregateShapeChanged(withStartedAt, {
+        ...withStartedAt,
+        activities: withStartedAt.activities.map((row) => ({
+          ...row,
+          startedAt: "2026-05-22T12:00:05.000Z",
+        })),
+      }),
+    ).toBe(true);
+    expect(ApnsDeliveries.aggregateShapeChanged(withStartedAt, withStartedAt)).toBe(false);
+  });
+
   it("treats a same-threadId swap across environments as a shape change", () => {
     expect(
       ApnsDeliveries.aggregateShapeChanged(aggregate, {
