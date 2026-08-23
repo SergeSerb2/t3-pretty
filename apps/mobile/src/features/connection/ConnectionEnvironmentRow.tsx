@@ -5,9 +5,18 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
-import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useThemeColor } from "../../lib/useThemeColor";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
@@ -63,6 +72,20 @@ export function ConnectionEnvironmentRow(props: {
     );
   }, [label, url, props]);
 
+  // The chevron turns with the same 250ms curve the row body uses to expand,
+  // instead of teleporting 180°.
+  const chevronRotation = useSharedValue(props.expanded ? 180 : 0);
+  useEffect(() => {
+    chevronRotation.value = withTiming(props.expanded ? 180 : 0, {
+      duration: 250,
+      easing: Easing.inOut(Easing.cubic),
+      reduceMotion: ReduceMotion.System,
+    });
+  }, [chevronRotation, props.expanded]);
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${chevronRotation.value}deg` }],
+  }));
+
   return (
     <Animated.View layout={LinearTransition.duration(250)} className="bg-card">
       <Pressable
@@ -115,15 +138,9 @@ export function ConnectionEnvironmentRow(props: {
           ) : null}
         </View>
 
-        <SymbolView
-          name="chevron.down"
-          size={12}
-          tintColor={mutedColor}
-          type="monochrome"
-          style={{
-            transform: [{ rotate: props.expanded ? "180deg" : "0deg" }],
-          }}
-        />
+        <Animated.View style={chevronStyle}>
+          <SymbolView name="chevron.down" size={12} tintColor={mutedColor} type="monochrome" />
+        </Animated.View>
       </Pressable>
 
       {props.expanded ? (
