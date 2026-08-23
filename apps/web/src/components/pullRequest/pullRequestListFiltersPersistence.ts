@@ -143,9 +143,23 @@ export function restoredListSearchToReplaceUrl(
   };
 }
 
+function hasNamedSelection(raw: Record<string, unknown>): boolean {
+  return SELECTION_KEYS.some((key) => raw[key] !== undefined);
+}
+
+function hasPersistableListFilter(raw: Record<string, unknown>): boolean {
+  const named = stripDefaultListFilterParams(raw);
+  return LIST_FILTER_KEYS.some((key) => {
+    if (named[key] === undefined) return false;
+    // Deep links set state=all so the selected PR is in the list; that is not a user filter.
+    return !(key === "state" && named.state === "all");
+  });
+}
+
 /**
- * Persist the validated list, including history and deep links. Null while a bare/default URL
- * is still the in-memory restore, so that replace is not treated as a user filter change.
+ * Persist the validated list. Null while a bare/default URL is still the in-memory restore,
+ * and when a selection URL carries no user list keys — validateSearch fills all/open there,
+ * and a deep link's state=all is only so the selected PR is in the list.
  */
 export function pullRequestListFiltersToPersist(
   raw: Record<string, unknown>,
@@ -153,6 +167,7 @@ export function pullRequestListFiltersToPersist(
   restoreReplacePending: boolean,
 ): PersistedPullRequestListFilters | null {
   if (restoreReplacePending && shouldRestorePersistedListFilters(raw)) return null;
+  if (hasNamedSelection(raw) && !hasPersistableListFilter(raw)) return null;
   return persistedFiltersFromSearch(search);
 }
 

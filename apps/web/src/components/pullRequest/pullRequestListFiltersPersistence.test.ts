@@ -99,6 +99,48 @@ describe("persisted pull request list filters", () => {
     ).toEqual(restored);
   });
 
+  it("does not persist defaults from a selection-only or selected-PR URL", () => {
+    expect(
+      pullRequestListFiltersToPersist(
+        { repository: "acme/web", number: "12" },
+        { involvement: "all", state: "open" },
+        false,
+      ),
+    ).toBe(null);
+    expect(
+      pullRequestListFiltersToPersist(
+        {
+          involvement: "all",
+          state: "open",
+          selectedProjectId: "project-1",
+          selectedEnvironmentId: "env-1",
+        },
+        { involvement: "all", state: "open" },
+        false,
+      ),
+    ).toBe(null);
+    expect(
+      pullRequestListFiltersToPersist(
+        {
+          involvement: "all",
+          state: "all",
+          repository: "acme/web",
+          number: "12",
+          selectedProjectId: "project-1",
+        },
+        { involvement: "all", state: "all" },
+        false,
+      ),
+    ).toBe(null);
+    expect(
+      pullRequestListFiltersToPersist(
+        { repository: "acme/web", involvement: "authored" },
+        { involvement: "authored", state: "open" },
+        false,
+      ),
+    ).toEqual({ involvement: "authored", state: "open" });
+  });
+
   it("does not treat a default-named URL as a write of the defaults", () => {
     writePersistedPullRequestListFilters({ involvement: "authored", state: "closed" });
     expect(shouldRestorePersistedListFilters({ involvement: "all", state: "open" })).toBe(true);
