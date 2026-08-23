@@ -504,8 +504,13 @@ function PullRequestsRouteView() {
       // Hide the old selection while retaining peer PR tabs for parallel reviews.
       useRightPanelStore.getState().close(rightPanelRef);
     }
-    writePersistedPullRequestListFilters(persistedFiltersFromSearch({ ...search, ...patch }));
-    updateSearch({ ...patch, ...clearedSelection });
+    updateSearch({
+      ...patch,
+      ...clearedSelection,
+      ...(patch.state === undefined && search.state === "all"
+        ? { state: readPersistedPullRequestListFilters().state }
+        : {}),
+    });
   };
 
   // Searching asks the hosts, which takes a round trip, so the text is held for a moment before
