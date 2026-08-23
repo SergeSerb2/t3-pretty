@@ -12,7 +12,7 @@ function findClear(node: ReactNode): ReactElement<{ readonly onClick: () => void
       readonly children?: ReactNode;
       readonly onClick?: () => void;
     };
-    if (typeof props.onClick === "function" && containsText(props.children, "Clear filters")) {
+    if (typeof props.onClick === "function" && containsText(props.children, "Reset filters")) {
       return child as ReactElement<{ readonly onClick: () => void }>;
     }
     const nested = findClear(props.children);
@@ -92,7 +92,6 @@ function menu(overrides: Partial<Parameters<typeof PullRequestFiltersMenu>[0]>) 
     projectEnvironmentId: undefined,
     unavailable: new Map(),
     onProject: () => undefined,
-    onClear: () => undefined,
     ...overrides,
   });
 }
@@ -192,19 +191,19 @@ describe("pull request filters menu", () => {
     expect(onProject).toHaveBeenCalledWith(projectId, "env-2");
   });
 
-  it("offers a clear action only when a filter is off its default", () => {
-    const onClear = vi.fn();
-    expect(findClear(menu({}))).toBeUndefined();
+  it("offers a reset action only when a filter is off its default", () => {
+    const onReset = vi.fn();
+    expect(findClear(menu({ onReset }))).toBeUndefined();
 
     const item = findClear(
       menu({
         involvement: "authored",
-        onClear,
+        onReset,
       }),
     );
     expect(item).toBeDefined();
     item?.props.onClick();
-    expect(onClear).toHaveBeenCalledOnce();
+    expect(onReset).toHaveBeenCalledOnce();
   });
 
   it("does not collide when environment and project ids contain spaces", () => {

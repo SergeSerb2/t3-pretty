@@ -53,10 +53,10 @@ import {
 import {
   ExistingThreadSettingsRouteProvider,
   ExistingThreadSettingsRouteScreen,
-  NewTaskThreadSettingsRouteScreen,
 } from "./features/threads/ThreadSettingsSheet";
 import { NewTaskFlowProvider } from "./features/threads/new-task-flow-provider";
 import { NewTaskRouteScreen } from "./features/threads/NewTaskRouteScreen";
+import { NewTaskSkillsPickerRouteScreen } from "./features/threads/NewTaskSkillsPickerRouteScreen";
 import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppearanceRouteScreen";
 import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsClientStorageRouteScreen";
 import { SettingsEnvironmentStorageRouteScreen } from "./features/settings/SettingsEnvironmentStorageRouteScreen";
@@ -332,7 +332,11 @@ const NewTaskSheetStack = createNativeStackNavigator({
     }),
     NewTaskDraft: createNativeStackScreen({
       screen: NewTaskDraftRouteScreen,
-      linking: "draft",
+      linking: {
+        path: "draft",
+        // Pre-picker sheet URL. The model panel is inline on the draft now.
+        alias: ["draft/settings"],
+      },
       options: {
         headerBackVisible: false,
         title: "",
@@ -352,19 +356,11 @@ const NewTaskSheetStack = createNativeStackNavigator({
         title: "Branch",
       },
     }),
-    ThreadSettings: createNativeStackScreen({
-      screen: NewTaskThreadSettingsRouteScreen,
-      linking: "draft/settings",
+    NewTaskSkills: createNativeStackScreen({
+      screen: NewTaskSkillsPickerRouteScreen,
+      linking: "draft/skills",
       options: {
-        gestureEnabled: true,
-        headerShown: false,
-        ...(Platform.OS === "android"
-          ? { presentation: "card" as const }
-          : {
-              ...FORM_SHEET_PRESENTATION_OPTIONS,
-              sheetAllowedDetents: [1],
-              sheetGrabberVisible: true,
-            }),
+        title: "Skills",
       },
     }),
     AddProject: createNativeStackScreen({

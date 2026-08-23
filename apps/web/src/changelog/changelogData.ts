@@ -26,6 +26,306 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260823.1166000761",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+      {
+        kind: "fixed",
+        title: "smooth thread loading, switching, and streaming animations",
+      },
+      {
+        kind: "new",
+        title: "rewrite the live activity line with generated headlines",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1166000754",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+      {
+        kind: "fixed",
+        title: "smooth thread loading, switching, and streaming animations",
+      },
+      {
+        kind: "new",
+        title: "rewrite the live activity line with generated headlines",
+      },
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1166000749",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+      {
+        kind: "fixed",
+        title: "smooth thread loading, switching, and streaming animations",
+      },
+      {
+        kind: "new",
+        title: "rewrite the live activity line with generated headlines",
+      },
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1166000741",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+      {
+        kind: "fixed",
+        title: "smooth thread loading, switching, and streaming animations",
+      },
+      {
+        kind: "new",
+        title: "rewrite the live activity line with generated headlines",
+      },
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000734",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+      {
+        kind: "fixed",
+        title: "smooth thread loading, switching, and streaming animations",
+      },
+      {
+        kind: "new",
+        title: "rewrite the live activity line with generated headlines",
+      },
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000729",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "smooth thread loading, switching, and streaming animations",
+      },
+      {
+        kind: "new",
+        title: "rewrite the live activity line with generated headlines",
+      },
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000722",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "rewrite the live activity line with generated headlines",
+      },
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+      {
+        kind: "fixed",
+        title: "prevent loading fallback timer from resetting",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000704",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+      {
+        kind: "fixed",
+        title: "prevent loading fallback timer from resetting",
+      },
+      {
+        kind: "new",
+        title: "standard queue/steer controls for messages sent while the agent is running",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000691",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+      {
+        kind: "fixed",
+        title: "prevent loading fallback timer from resetting",
+      },
+      {
+        kind: "new",
+        title: "standard queue/steer controls for messages sent while the agent is running",
+      },
+      {
+        kind: "fixed",
+        title: "removing a Surge Connect environment now deletes it for good",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000677",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+      {
+        kind: "fixed",
+        title: "prevent loading fallback timer from resetting",
+      },
+      {
+        kind: "new",
+        title: "standard queue/steer controls for messages sent while the agent is running",
+      },
+      {
+        kind: "fixed",
+        title: "removing a Surge Connect environment now deletes it for good",
+      },
+      {
+        kind: "fixed",
+        title: "remove duplicate thinking indicator in the thread",
+      },
+      {
+        kind: "fixed",
+        title: "prevent markdown link parsing crash",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260823.1164000669",
     date: "2026-08-23",
     items: [

@@ -626,22 +626,20 @@ export const make = Effect.gen(function* () {
       }),
     );
 
+  /**
+   * The project a reference points at, resolved by id alone. The repository the client also
+   * sends is a copy of this project's identity from whenever the client last heard it — a
+   * surface persisted before a remote change carries the old spelling forever, and refusing
+   * on that mismatch would strand the read. Nothing downstream takes the client's spelling:
+   * every provider call is scoped by the project's own current identity, so a stale one can
+   * never steer a query to another repository.
+   */
   const requireProject = (ref: PullRequestRef): Effect.Effect<SupportedProject, PullRequestError> =>
     listWorkspaceProjects({ projectId: ref.projectId }).pipe(
       Effect.flatMap(({ supported }): Effect.Effect<SupportedProject, PullRequestError> => {
         const match = supported[0];
         if (!match) {
           return Effect.fail(new PullRequestUnavailableError({ reason: "provider-unsupported" }));
-        }
-        // The repository travels through the client, so it is checked against the project's
-        // own remote rather than being handed to a provider verbatim.
-        if (match.repository.toLowerCase() !== ref.repository.trim().toLowerCase()) {
-          return Effect.fail(
-            new PullRequestOperationError({
-              operation: "resolveRepository",
-              detail: "The change request does not belong to the selected project.",
-            }),
-          );
         }
         return Effect.succeed(match);
       }),

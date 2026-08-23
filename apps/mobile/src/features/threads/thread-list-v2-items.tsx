@@ -9,9 +9,26 @@ import {
   type ChangeRequestSettleSource,
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { MenuAction } from "@react-native-menu/menu";
-import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type ComponentProps,
+} from "react";
 import { Alert, Platform, Pressable, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
+import Animated, {
+  cancelAnimation,
+  Easing,
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
@@ -24,6 +41,12 @@ import { relativeTime } from "../../lib/time";
 import { useThemeColor } from "../../lib/useThemeColor";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useThreadPr } from "../../state/use-thread-pr";
+import {
+  clearThreadDeparting,
+  getThreadDepartureSnapshot,
+  subscribeThreadDeparture,
+  threadDepartureHasLanded,
+} from "../home/thread-departure-store";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
@@ -95,6 +118,102 @@ const LEGACY_MENU_ACTIONS: MenuAction[] = [
 
 /** Rounded-row radius shared with the v1 sidebar rows. */
 const SIDEBAR_V2_ROW_RADIUS = 12;
+
+// Settle/snooze departure, ported from web's sidebar-row-depart/arrive
+// keyframes: the row slides out the moment the action fires, then the same
+// row (FlatList keeps its key across the shelf move) fades back in at its
+// destination — or in place when the command failed.
+const DEPART_DURATION_MS = 240;
+const ARRIVE_DURATION_MS = 200;
+
+/**
+ * Drives the optimistic settle/snooze exit and the arrive fade for one row.
+ * Landing is kind-gated: settle completes only on a settled row, snooze
+ * only on a snoozed row. Crossing the other shelf must not clear the
+ * marker, or the 240ms depart never plays.
+ */
+function useThreadDepartureAnimation(
+  threadKey: string,
+  shelf: { readonly snoozed: boolean; readonly settled: boolean },
+) {
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => subscribeThreadDeparture(threadKey, onStoreChange),
+    [threadKey],
+  );
+  const getSnapshot = useCallback(() => getThreadDepartureSnapshot(threadKey), [threadKey]);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot);
+  const departing = snapshot.departingKind !== null;
+  const arriving = snapshot.arriving;
+  const landed = threadDepartureHasLanded(snapshot.departingKind, shelf);
+
+  useEffect(() => {
+    if (departing && landed) clearThreadDeparting(threadKey);
+  }, [departing, landed, threadKey]);
+
+  // FlatList may remount the same key on the destination shelf. Shared values
+  // reset to their initials, so departing+landed (and arriving) must start
+  // hidden — the landing effect only clears after paint.
+  const startHidden = (departing && landed) || arriving;
+  const opacity = useSharedValue(startHidden ? 0 : 1);
+  const translateY = useSharedValue(departing && landed ? 12 : arriving ? 6 : 0);
+  const scale = useSharedValue(departing && landed ? 0.98 : 1);
+
+  useLayoutEffect(() => {
+    cancelAnimation(opacity);
+    cancelAnimation(translateY);
+    cancelAnimation(scale);
+
+    if (departing) {
+      if (landed) {
+        opacity.value = 0;
+        translateY.value = 12;
+        scale.value = 0.98;
+      } else {
+        // LegendList recycleItems can bind a new threadKey to this instance
+        // with the same departing/arriving flags, inheriting mid-flight values.
+        opacity.value = 1;
+        translateY.value = 0;
+        scale.value = 1;
+        const config = {
+          duration: DEPART_DURATION_MS,
+          easing: Easing.bezier(0.3, 0, 0.8, 0.15),
+          reduceMotion: ReduceMotion.System,
+        };
+        opacity.value = withTiming(0, config);
+        translateY.value = withTiming(12, config);
+        scale.value = withTiming(0.98, config);
+      }
+    } else if (arriving) {
+      opacity.value = 0;
+      translateY.value = 6;
+      scale.value = 1;
+      const config = {
+        duration: ARRIVE_DURATION_MS,
+        easing: Easing.bezier(0.05, 0.7, 0.1, 1),
+        reduceMotion: ReduceMotion.System,
+      };
+      opacity.value = withTiming(1, config);
+      translateY.value = withTiming(0, config);
+    } else {
+      opacity.value = 1;
+      translateY.value = 0;
+      scale.value = 1;
+    }
+
+    return () => {
+      cancelAnimation(opacity);
+      cancelAnimation(translateY);
+      cancelAnimation(scale);
+    };
+  }, [arriving, departing, landed, opacity, scale, threadKey, translateY]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateY: translateY.value }, { scale: scale.value }],
+  }));
+
+  return { style, departing };
+}
 
 /** Section label + rule: the only structure in an otherwise flat list. */
 export const ThreadListV2SectionDivider = memo(function ThreadListV2SectionDivider(props: {
@@ -355,6 +474,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly variant: "card" | "slim";
   /** Snoozed-shelf row: shows its wake time and offers Wake. */
   readonly snoozed?: boolean;
+  /** Settled-shelf row. Completes a pending settle departure. */
+  readonly settled?: boolean;
   /** Pinned-block row: shows the pin glyph and offers Unpin. */
   readonly pinned?: boolean;
   /** Preformatted against the parent minute tick so this memoized row's
@@ -460,6 +581,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       prState === null ? null : { state: prState, updatedAt: prUpdatedAt },
     );
   }, [onChangeRequestState, prState, prUpdatedAt, threadKey]);
+
+  const departure = useThreadDepartureAnimation(threadKey, {
+    snoozed: snoozedRow,
+    settled: props.settled === true,
+  });
 
   const screenColor = useThemeColor("--color-screen");
   const drawerColor = useThemeColor("--color-drawer");
@@ -1002,7 +1128,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     );
 
   return (
-    <>
+    <Animated.View pointerEvents={departure.departing ? "none" : "auto"} style={departure.style}>
       <ThreadSwipeable
         backgroundColor={sidebarPane ? drawerColor : sceneryChrome ? "transparent" : screenColor}
         compactActions={variant === "slim"}
@@ -1043,6 +1169,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           </ControlPillMenu>
         )}
       </ThreadSwipeable>
-    </>
+    </Animated.View>
   );
 });

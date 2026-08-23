@@ -297,6 +297,10 @@ function createTextGeneration(
       Effect.succeed({
         title: "Update workflow",
       }),
+    generateActivityHeadline: () =>
+      Effect.succeed({
+        headline: "",
+      }),
     generateProjectIcon: () =>
       Effect.succeed({
         path: "/tmp/icon.png",
@@ -344,6 +348,17 @@ function createTextGeneration(
           (cause) =>
             new TextGenerationError({
               operation: "generateThreadTitle",
+              detail: "fake text generation failed",
+              ...(cause !== undefined ? { cause } : {}),
+            }),
+        ),
+      ),
+    generateActivityHeadline: (input) =>
+      implementation.generateActivityHeadline(input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({
+              operation: "generateActivityHeadline",
               detail: "fake text generation failed",
               ...(cause !== undefined ? { cause } : {}),
             }),

@@ -58,17 +58,6 @@ export const DEFAULT_PULL_REQUEST_LIST_FILTERS: PersistedPullRequestListFilters 
   state: "open",
 };
 
-export const CLEARED_PULL_REQUEST_LIST_SEARCH = {
-  involvement: "all",
-  state: "open",
-  environmentId: undefined,
-  projectId: undefined,
-  host: undefined,
-  draft: undefined,
-  review: undefined,
-  checks: undefined,
-} as const;
-
 export function persistedFiltersFromSearch(search: {
   readonly involvement?: PullRequestInvolvement | undefined;
   readonly state?: PullRequestListState | undefined;

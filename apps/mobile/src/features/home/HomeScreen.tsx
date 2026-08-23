@@ -820,6 +820,7 @@ export function HomeScreen(props: HomeScreenProps) {
           thread={thread}
           variant={item.item.variant}
           snoozed={item.item.snoozed}
+          settled={item.item.settled}
           pinned={item.item.pinned}
           sceneryChrome={sceneryChrome}
           snoozePresetMinute={nowMinute}

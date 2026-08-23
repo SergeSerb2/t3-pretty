@@ -46,9 +46,14 @@ function statusDotTone(state: ConnectionStatusDotState): {
 
 function usePulseAnimation(pulse: boolean) {
   const pulseProgress = useSharedValue(0);
+  const pulseActive = useSharedValue(pulse ? 1 : 0);
 
   useEffect(() => {
     if (pulse) {
+      pulseActive.value = withTiming(1, {
+        duration: 180,
+        easing: Easing.out(Easing.quad),
+      });
       pulseProgress.value = withRepeat(
         withTiming(1, {
           duration: 1100,
@@ -64,13 +69,17 @@ function usePulseAnimation(pulse: boolean) {
     }
 
     cancelAnimation(pulseProgress);
+    pulseActive.value = withTiming(0, {
+      duration: 180,
+      easing: Easing.out(Easing.quad),
+    });
     pulseProgress.value = withTiming(0, {
       duration: 180,
       easing: Easing.out(Easing.quad),
     });
-  }, [pulse, pulseProgress]);
+  }, [pulse, pulseActive, pulseProgress]);
 
-  return pulseProgress;
+  return { pulseProgress, pulseActive };
 }
 
 export function ConnectionStatusDot(props: {
@@ -78,14 +87,15 @@ export function ConnectionStatusDot(props: {
   readonly pulse: boolean;
   readonly size?: number;
 }) {
-  const pulseProgress = usePulseAnimation(props.pulse);
+  const { pulseProgress, pulseActive } = usePulseAnimation(props.pulse);
   const tone = statusDotTone(props.state);
   const dotSize = props.size ?? 10;
   const haloSize = dotSize + 4;
   const containerSize = haloSize + 4;
 
+  // Worklet reads shared values only, so parent re-renders don't rebuild it.
   const haloStyle = useAnimatedStyle(() => ({
-    opacity: props.pulse ? 0.14 + (1 - pulseProgress.value) * 0.3 : 0,
+    opacity: pulseActive.value * (0.14 + (1 - pulseProgress.value) * 0.3),
     transform: [{ scale: 0.78 + pulseProgress.value * 1.16 }],
   }));
 

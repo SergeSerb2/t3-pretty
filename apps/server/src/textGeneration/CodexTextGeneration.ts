@@ -22,6 +22,7 @@ import { expandHomePath } from "../pathExpansion.ts";
 import { codexExecLaunchArgs, resolveCodexLaunchArgs } from "../provider/Layers/codexLaunchArgs.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
+  buildActivityHeadlinePrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
@@ -30,6 +31,7 @@ import {
 } from "./TextGenerationPrompts.ts";
 import {
   normalizeCliError,
+  sanitizeActivityHeadline,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -103,6 +105,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generatePrContent"
       | "generateBranchName"
       | "generateThreadTitle"
+      | "generateActivityHeadline"
       | "generateProjectIcon",
     value: unknown,
   ): Effect.Effect<string, TextGenerationError> =>
@@ -123,6 +126,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generatePrContent"
       | "generateBranchName"
       | "generateThreadTitle"
+      | "generateActivityHeadline"
       | "generateProjectIcon",
     attachments: TextGeneration.BranchNameGenerationInput["attachments"],
   ): Effect.fn.Return<MaterializedImageAttachments, TextGenerationError> {
@@ -167,6 +171,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generatePrContent"
       | "generateBranchName"
       | "generateThreadTitle"
+      | "generateActivityHeadline"
       | "generateProjectIcon";
     cwd: string;
     prompt: string;
@@ -411,6 +416,27 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
+  const generateActivityHeadline: TextGeneration.TextGeneration["Service"]["generateActivityHeadline"] =
+    Effect.fn("CodexTextGeneration.generateActivityHeadline")(function* (input) {
+      const { prompt, outputSchema } = buildActivityHeadlinePrompt({
+        summary: input.summary,
+        command: input.command,
+        detail: input.detail,
+      });
+
+      const generated = yield* runCodexJson({
+        operation: "generateActivityHeadline",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return {
+        headline: sanitizeActivityHeadline(generated.headline),
+      } satisfies TextGeneration.ActivityHeadlineGenerationResult;
+    });
+
   const generateProjectIcon: TextGeneration.TextGeneration["Service"]["generateProjectIcon"] =
     Effect.fn("CodexTextGeneration.generateProjectIcon")(function* (input) {
       const { prompt, outputSchema } = buildProjectIconPrompt({
@@ -435,6 +461,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateActivityHeadline,
     generateProjectIcon,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

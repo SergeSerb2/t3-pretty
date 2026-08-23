@@ -145,6 +145,24 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
     ),
   );
 
+  it.effect("decodes a structured activity headline", () =>
+    withFakeAcpGrok(
+      {
+        T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({ headline: "Running the lint job." }),
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateActivityHeadline({
+            cwd: process.cwd(),
+            summary: "bun run lint",
+            command: "bun run lint",
+            modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-build"),
+          });
+          expect(generated.headline).toBe("Running the lint job");
+        }),
+    ),
+  );
+
   it.effect("surfaces ACP request failures as text generation errors", () =>
     withFakeAcpGrok(
       {

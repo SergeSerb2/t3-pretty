@@ -340,8 +340,17 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
 
   return (
     <Animated.View
+      key={props.status.kind}
       className="absolute inset-x-0 bottom-full items-center pb-2"
-      entering={FadeInDown.duration(180)}
+      // Sync pills wait a beat before appearing: a cached thread finishes
+      // syncing inside the delay, so fast thread switches never flash a
+      // "Loading messages..." pill. Connection problems still show instantly.
+      // Keyed on kind so a syncing → error swap remounts without the delay.
+      entering={
+        props.status.kind === "syncing"
+          ? FadeInDown.delay(300).duration(180)
+          : FadeInDown.duration(180)
+      }
       exiting={FadeOutDown.duration(140)}
       pointerEvents="box-none"
     >
@@ -992,7 +1001,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   );
 
   const settingsOwnerId = scopedThreadKey(props.environmentId, props.selectedThread.id);
-  const settingsSheetPageRef = useRef<"home" | "catalog">("home");
   const settingsRouteSession = useMemo<ExistingThreadSettingsRouteSession>(
     () => ({
       ownerId: settingsOwnerId,
@@ -1004,7 +1012,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         onUpdateModelSelection({ ...currentModelSelection, options }),
       runtimeMode: currentRuntimeMode,
       onUpdateRuntimeMode,
-      initialPage: settingsSheetPageRef.current,
+      initialPage: "home" as const,
       checkpointsThreadRef: {
         environmentId: props.environmentId,
         threadId: props.selectedThread.id,
@@ -1023,21 +1031,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       threadProviderGroups,
     ],
   );
-  const openSettings = useCallback(
-    (page: "home" | "catalog" = "home") => {
-      settingsSheetPageRef.current = page;
-      settingsRoutePresentation.present({ ...settingsRouteSession, initialPage: page });
-      settingsSheetPresentation.open();
-    },
-    [settingsRoutePresentation.present, settingsRouteSession, settingsSheetPresentation.open],
-  );
+  const openSettings = useCallback(() => {
+    settingsRoutePresentation.present(settingsRouteSession);
+    settingsSheetPresentation.open();
+  }, [settingsRoutePresentation.present, settingsRouteSession, settingsSheetPresentation.open]);
 
   useEffect(() => {
     if (settingsSheetPresentation.isActive) {
-      settingsRoutePresentation.present({
-        ...settingsRouteSession,
-        initialPage: settingsSheetPageRef.current,
-      });
+      settingsRoutePresentation.present(settingsRouteSession, { preservePage: true });
     }
   }, [settingsRoutePresentation.present, settingsRouteSession, settingsSheetPresentation.isActive]);
 
@@ -1216,8 +1217,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           <ThreadModelIdentityCaption
             identity={modelIdentity}
             picker={settingsPicker}
-            onBrowseModels={() => openSettings("catalog")}
-            onPressFallback={() => openSettings("home")}
+            onOpenAdvanced={openSettings}
+            onPressFallback={openSettings}
             onSelectModel={handleSelectModelOption}
             onSelectOption={handleSelectPickerOption}
             onSelectRuntime={onUpdateRuntimeMode}
@@ -1243,7 +1244,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 <ThreadSettingsPickerPopover
                   accessibilityLabel="Model and reasoning settings"
                   model={settingsPicker}
-                  onBrowseModels={() => openSettings("catalog")}
+                  onOpenAdvanced={openSettings}
                   onSelectModel={handleSelectModelOption}
                   onSelectOption={handleSelectPickerOption}
                   onSelectRuntime={onUpdateRuntimeMode}
