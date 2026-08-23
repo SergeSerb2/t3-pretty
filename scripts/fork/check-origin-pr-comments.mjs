@@ -20,12 +20,6 @@ import {
 
 const FIXED_REPLY = /\b(?:fixed|addressed|resolved)\b/iu;
 
-/** Inline so overlaying this file onto origin/main's scripts still loads. */
-function reviewShaFromBody(body) {
-  const match = String(body ?? "").match(/<!-- t3-pretty-grok-review sha=([0-9a-f]+) -->/u);
-  return match?.[1] ?? "";
-}
-
 export function isFixedReply(body) {
   return typeof body === "string" && FIXED_REPLY.test(body);
 }
@@ -84,12 +78,7 @@ export function hasFixedReply(finding, payload) {
   return false;
 }
 
-export function unresolvedActionableFindings({
-  threads = [],
-  reviews = [],
-  comments = [],
-  ignoreSha = "",
-} = {}) {
+export function unresolvedActionableFindings({ threads = [], reviews = [], comments = [] } = {}) {
   const payload = { threads, reviews, comments };
   const fromThreads = [];
   const threadTitles = new Set();
@@ -108,11 +97,9 @@ export function unresolvedActionableFindings({
 
   const unresolved = [];
   for (const finding of fromThreads) {
-    if (ignoreSha && reviewShaFromBody(finding.body) === ignoreSha) continue;
     if (!finding.resolved) unresolved.push(finding);
   }
   for (const finding of fromReviews) {
-    if (ignoreSha && reviewShaFromBody(finding.body) === ignoreSha) continue;
     if (!hasFixedReply(finding, payload)) unresolved.push(finding);
   }
   return unresolved;
@@ -209,12 +196,10 @@ export function checkOriginPrComments({
     return { skipped: message };
   }
   const threads = listed.length > 0 ? listed : viewed.threads;
-  const ignoreSha = (env.BUILDKITE_COMMIT || env.GITHUB_SHA || "").trim();
   const unresolved = unresolvedActionableFindings({
     threads,
     reviews: viewed.reviews,
     comments: viewed.comments,
-    ignoreSha,
   });
   const report = formatUnresolvedReport(unresolved);
   process.stdout.write(`${report}\n`);

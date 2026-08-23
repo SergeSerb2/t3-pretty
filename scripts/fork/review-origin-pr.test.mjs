@@ -8,8 +8,6 @@ import {
   DEFAULT_CLI_PROXY_API_URL,
   DEFAULT_MODEL,
   alreadyReviewed,
-  reviewShaFromBody,
-  callGrokReview,
   cliProxyApiKey,
   cliProxyApiUrl,
   formatIssueBody,
@@ -69,47 +67,6 @@ describe("Origin Grok PR review", () => {
     );
   });
 
-  it("retries a 502 CLIProxyAPI response once", async () => {
-    let calls = 0;
-    const fetchImpl = async () => {
-      calls += 1;
-      if (calls === 1) {
-        return { ok: false, status: 502, text: async () => "upstream error" };
-      }
-      return {
-        ok: true,
-        json: async () => ({
-          output_text: JSON.stringify({ summary: "Looks safe.", issues: [] }),
-        }),
-      };
-    };
-    const result = await callGrokReview({
-      prompt: "review",
-      apiKey: "clip_test",
-      fetchImpl,
-      wait: async () => {},
-    });
-    assert.equal(calls, 2);
-    assert.equal(result.summary, "Looks safe.");
-  });
-
-  it("does not retry a 401 CLIProxyAPI response", async () => {
-    let calls = 0;
-    const fetchImpl = async () => {
-      calls += 1;
-      return { ok: false, status: 401, text: async () => "unauthorized" };
-    };
-    await expect(
-      callGrokReview({
-        prompt: "review",
-        apiKey: "clip_test",
-        fetchImpl,
-        wait: async () => {},
-      }),
-    ).rejects.toThrow(/401/);
-    assert.equal(calls, 1);
-  });
-
   it("parses Grok JSON even when wrapped in a fence", () => {
     const parsed = parseReviewResponse(`
 here you go
@@ -131,8 +88,6 @@ here you go
     const sha = "abc123";
     assert.equal(alreadyReviewed([{ body: `hello\n${reviewMarker(sha)}\n` }], sha), true);
     assert.equal(alreadyReviewed([{ body: "other" }], sha), false);
-    assert.equal(reviewShaFromBody(reviewMarker(sha)), sha);
-    assert.equal(reviewShaFromBody("no marker"), "");
   });
 
   it("waits for a pull request created just after its branch push", async () => {
@@ -248,7 +203,6 @@ describe("Origin Grok review workflow wiring", () => {
     assert.notInclude(reviewStep, "build.pull_request");
     assert.include(reviewStep, "briefly waits for the PR");
     assert.include(reviewCi, "review-origin-pr.mjs");
-    assert.include(trusted, "Using checkout Origin PR review");
     assert.include(reviewCi, "grok-4.6");
     assert.include(reviewCi, "CLI_PROXY_API_KEY");
     assert.include(reviewCi, "cli-proxy-api-production-1615.up.railway.app");

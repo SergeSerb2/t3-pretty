@@ -43,16 +43,6 @@ copy_from_main() {
 DIR="$(mktemp -d)"
 if copy_from_main "$DIR"; then
   echo "Running Origin PR review scripts from origin/main"
-  # Same-build comment checks must see this checkout's ignore-current-SHA rule.
-  # Review retries live in this checkout's review-origin-pr.mjs; origin/main
-  # does not have them yet. Secret loading still comes from origin/main.
-  if [[ "${1:-}" == "check" ]]; then
-    cp "${ROOT}/scripts/fork/check-origin-pr-comments.mjs" "${DIR}/check-origin-pr-comments.mjs"
-    echo "Using checkout comment-resolution check"
-  else
-    cp "${ROOT}/scripts/fork/review-origin-pr.mjs" "${DIR}/review-origin-pr.mjs"
-    echo "Using checkout Origin PR review"
-  fi
   bash "${DIR}/review-origin-pr-ci.sh" "$@"
 else
   echo "origin/main has no review scripts yet; using this checkout"
