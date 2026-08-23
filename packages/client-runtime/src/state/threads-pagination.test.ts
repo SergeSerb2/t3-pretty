@@ -35,8 +35,10 @@ import type { ThreadSnapshotWindow } from "./threadSnapshotHttp.ts";
 import {
   INITIAL_THREAD_USER_TURN_LIMIT,
   makeEnvironmentThreadState,
+  makeWarmThreadStateRegistry,
   requestOlderThreadTurns,
   ThreadSnapshotLoader,
+  WarmThreadStates,
   type EnvironmentThreadState,
 } from "./threads.ts";
 
@@ -212,6 +214,7 @@ const makeHarness = Effect.fn("TestThreadPagination.makeHarness")(function* (opt
     Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
     Effect.provideService(Persistence.EnvironmentCacheStore, cache),
     Effect.provideService(ThreadSnapshotLoader, snapshotLoader),
+    Effect.provideService(WarmThreadStates, makeWarmThreadStateRegistry()),
   );
   yield* SubscriptionRef.changes(threadState).pipe(
     Stream.runForEach((state) => Queue.offer(observed, state)),

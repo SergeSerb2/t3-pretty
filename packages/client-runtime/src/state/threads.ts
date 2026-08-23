@@ -105,6 +105,65 @@ function makeThreadOlderTurnRequestRegistry(): ThreadOlderTurnRequestRegistry {
 const defaultOlderTurnRequestRegistry = makeThreadOlderTurnRequestRegistry();
 
 /**
+ * Last-known state a closing thread machine leaves behind for its successor.
+ * Unlike the persisted cache, this covers running threads too: reopening a
+ * thread whose agent is mid-turn re-renders the already-loaded conversation
+ * instantly and catches up via `afterSequence` instead of re-downloading.
+ */
+interface WarmThreadState {
+  readonly thread: OrchestrationThread;
+  readonly page: Option.Option<EnvironmentThreadPageState>;
+  readonly lastSequence: number;
+}
+
+// ponytail: fixed-size LRU of full thread objects; make it byte-aware if
+// giant threads ever show up in memory profiles.
+const WARM_THREAD_STATE_CAPACITY = 8;
+
+interface WarmThreadStateRegistry {
+  /** Removes and returns the entry so a live machine is its only owner. */
+  readonly take: (key: string) => WarmThreadState | null;
+  readonly set: (key: string, entry: WarmThreadState) => void;
+  readonly remove: (key: string) => void;
+}
+
+export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
+  const entries = new Map<string, WarmThreadState>();
+  return {
+    take: (key) => {
+      const entry = entries.get(key) ?? null;
+      entries.delete(key);
+      return entry;
+    },
+    set: (key, entry) => {
+      entries.delete(key);
+      entries.set(key, entry);
+      for (const oldest of entries.keys()) {
+        if (entries.size <= WARM_THREAD_STATE_CAPACITY) {
+          break;
+        }
+        entries.delete(oldest);
+      }
+    },
+    remove: (key) => {
+      entries.delete(key);
+    },
+  };
+}
+
+const defaultWarmThreadStateRegistry = makeWarmThreadStateRegistry();
+
+/**
+ * Process-wide handoff between successive per-thread state machines
+ * (overridable in tests). Written on scope close, consumed on the next
+ * machine's startup for the same thread.
+ */
+export class WarmThreadStates extends Context.Reference<WarmThreadStateRegistry>(
+  "@t3tools/client-runtime/state/threads/WarmThreadStates",
+  { defaultValue: () => defaultWarmThreadStateRegistry },
+) {}
+
+/**
  * Channel from UI actions to the live per-thread state machines. The machines
  * resolve it from the Effect environment (overridable in tests); the default
  * instance is shared with the sync `requestOlderThreadTurns` entry point so
@@ -147,31 +206,46 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const cache = yield* EnvironmentCacheStore;
   const snapshotLoader = yield* ThreadSnapshotLoader;
   const environmentId = supervisor.target.environmentId;
-  const cached = yield* cache.loadThread(environmentId, threadId).pipe(
-    Effect.catch((error) =>
-      Effect.logWarning("Could not load cached thread.").pipe(
-        Effect.annotateLogs({
-          environmentId,
-          threadId,
-          error: error.message,
-        }),
-        Effect.as(Option.none<OrchestrationThreadDetailSnapshot>()),
-      ),
-    ),
-  );
-  const cachedThread = Option.map(cached, (snapshot) => snapshot.thread);
+  const warmStates = yield* WarmThreadStates;
+  const stateKey = threadKey({ environmentId, threadId });
+  // A predecessor machine's in-memory state beats the persisted cache: it is
+  // newer and exists for running threads the cache deliberately skips.
+  const warm = warmStates.take(stateKey);
+  const cached =
+    warm !== null
+      ? Option.none<OrchestrationThreadDetailSnapshot>()
+      : yield* cache.loadThread(environmentId, threadId).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("Could not load cached thread.").pipe(
+              Effect.annotateLogs({
+                environmentId,
+                threadId,
+                error: error.message,
+              }),
+              Effect.as(Option.none<OrchestrationThreadDetailSnapshot>()),
+            ),
+          ),
+        );
+  const cachedThread =
+    warm !== null ? Option.some(warm.thread) : Option.map(cached, (snapshot) => snapshot.thread);
   const state = yield* SubscriptionRef.make<EnvironmentThreadState>({
     data: cachedThread,
     status: statusWithoutLiveData(cachedThread),
     error: Option.none(),
     // A cached windowed snapshot restores its page cursor so "load earlier"
     // works while rendering from cache; a cached full snapshot has no page.
-    page: Option.flatMap(cached, (snapshot) => pageStateFromSnapshot(snapshot.page)),
+    // An older-page fetch in flight died with the predecessor's scope.
+    page:
+      warm !== null
+        ? Option.map(warm.page, (page) => ({ ...page, loadingOlder: false }))
+        : Option.flatMap(cached, (snapshot) => pageStateFromSnapshot(snapshot.page)),
   });
   // Seed the resume cursor from the cached snapshot so a warm cache can catch up
   // via `afterSequence` instead of re-downloading the full thread body.
   const lastSequence = yield* SubscriptionRef.make(
-    Option.match(cached, { onNone: () => 0, onSome: (snapshot) => snapshot.snapshotSequence }),
+    warm !== null
+      ? warm.lastSequence
+      : Option.match(cached, { onNone: () => 0, onSome: (snapshot) => snapshot.snapshotSequence }),
   );
   const awaitingCompletion = yield* Ref.make(false);
   // Bumped whenever loaded history may have been rewritten out from under an
@@ -300,6 +374,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   });
 
   const setDeleted = Effect.fn("EnvironmentThreadState.setDeleted")(function* () {
+    warmStates.remove(stateKey);
     yield* Ref.set(awaitingCompletion, false);
     yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
     yield* SubscriptionRef.set(state, {
@@ -728,8 +803,16 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       Effect.flatMap(([current, snapshotSequence]) =>
         Option.match(current.data, {
           onNone: () => Effect.void,
-          onSome: (thread) =>
-            shouldPersistThread(thread)
+          onSome: (thread) => {
+            // Hand the loaded state to the next machine for this thread even
+            // when the persisted cache skips it (running threads): reopening
+            // renders instantly and resumes via afterSequence.
+            warmStates.set(stateKey, {
+              thread,
+              page: current.page,
+              lastSequence: snapshotSequence,
+            });
+            return shouldPersistThread(thread)
               ? persist({
                   snapshotSequence,
                   thread,
@@ -745,7 +828,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                       }) as const,
                   }),
                 })
-              : Effect.void,
+              : Effect.void;
+          },
         }),
       ),
     ),

@@ -33,7 +33,9 @@ import * as RpcSession from "../rpc/session.ts";
 import {
   EMPTY_ENVIRONMENT_THREAD_STATE,
   makeEnvironmentThreadState,
+  makeWarmThreadStateRegistry,
   ThreadSnapshotLoader,
+  WarmThreadStates,
   type EnvironmentThreadState,
 } from "./threads.ts";
 
@@ -148,6 +150,7 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   readonly cached?: OrchestrationThread;
   readonly httpSnapshot?: Option.Option<OrchestrationThreadDetailSnapshot>;
   readonly completionMarker?: boolean;
+  readonly warmStates?: ReturnType<typeof makeWarmThreadStateRegistry>;
 }) {
   const inputs = yield* Queue.unbounded<TestThreadInput>();
   const observed = yield* Queue.unbounded<EnvironmentThreadState>();
@@ -240,6 +243,7 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
     Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
     Effect.provideService(Persistence.EnvironmentCacheStore, cache),
     Effect.provideService(ThreadSnapshotLoader, snapshotLoader),
+    Effect.provideService(WarmThreadStates, options?.warmStates ?? makeWarmThreadStateRegistry()),
     Effect.provideService(
       ConnectionWakeups.ConnectionWakeups,
       ConnectionWakeups.ConnectionWakeups.of({ changes: Stream.fromQueue(wakeups) }),
@@ -435,6 +439,38 @@ describe("EnvironmentThreads", () => {
       );
 
       expect(yield* Ref.get(savedThreads)).toEqual([]);
+    }),
+  );
+
+  it.effect("hands running-thread state to a successor machine without cache or HTTP", () =>
+    Effect.gen(function* () {
+      const warmStates = makeWarmThreadStateRegistry();
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const harness = yield* makeHarness({ warmStates });
+          yield* Queue.offer(harness.inputs, snapshot(ACTIVE_THREAD));
+          yield* awaitThreadState(
+            harness.observed,
+            (value) => Option.isSome(value.data) && value.data.value.session?.status === "running",
+          );
+        }),
+      );
+
+      // The successor renders the handed-off running thread immediately and
+      // catches up over the socket from the handoff's sequence.
+      const successor = yield* makeHarness({ warmStates });
+      yield* Queue.offer(successor.inputs, titleUpdated("Warm title", 2));
+      const state = yield* awaitThreadState(
+        successor.observed,
+        (value) =>
+          value.status === "live" &&
+          Option.isSome(value.data) &&
+          value.data.value.title === "Warm title",
+      );
+
+      expect(Option.getOrThrow(state.data).session?.status).toBe("running");
+      expect(yield* Ref.get(successor.loaderCalls)).toBe(0);
+      expect(yield* Ref.get(successor.lastSubscribeAfterSequence)).toBe(1);
     }),
   );
 
