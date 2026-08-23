@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260823.1164000734",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+      {
+        kind: "fixed",
+        title: "smooth thread loading, switching, and streaming animations",
+      },
+      {
+        kind: "new",
+        title: "rewrite the live activity line with generated headlines",
+      },
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260823.1164000729",
     date: "2026-08-23",
     items: [
