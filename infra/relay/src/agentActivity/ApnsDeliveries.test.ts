@@ -1660,6 +1660,82 @@ describe("ApnsDeliveries", () => {
   });
 });
 
+describe("aggregate shape changes", () => {
+  it("marks a missing baseline, count changes, and phase changes urgent", () => {
+    expect(ApnsDeliveries.aggregateShapeChanged(null, aggregate)).toBe(true);
+    expect(ApnsDeliveries.aggregateShapeChanged(aggregate, { ...aggregate, activeCount: 2 })).toBe(
+      true,
+    );
+    expect(
+      ApnsDeliveries.aggregateShapeChanged(aggregate, {
+        ...aggregate,
+        activities: aggregate.activities.map((row) => ({
+          ...row,
+          phase: "waiting_for_approval" as const,
+        })),
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps content-only ticks non-urgent", () => {
+    expect(
+      ApnsDeliveries.aggregateShapeChanged(aggregate, {
+        ...aggregate,
+        activities: aggregate.activities.map((row) => ({
+          ...row,
+          status: "Editing ApnsDeliveries.ts",
+          progress: 0.5,
+        })),
+      }),
+    ).toBe(false);
+  });
+
+  it("treats a thread title change as a shape change", () => {
+    expect(
+      ApnsDeliveries.aggregateShapeChanged(aggregate, {
+        ...aggregate,
+        activities: aggregate.activities.map((row) => ({
+          ...row,
+          threadTitle: "Renamed thread",
+        })),
+      }),
+    ).toBe(true);
+  });
+
+  it("treats startedAt appearing or changing as a shape change", () => {
+    const withStartedAt = {
+      ...aggregate,
+      activities: aggregate.activities.map((row) => ({
+        ...row,
+        startedAt: "2026-05-22T12:00:00.000Z",
+      })),
+    };
+    expect(ApnsDeliveries.aggregateShapeChanged(aggregate, withStartedAt)).toBe(true);
+    expect(
+      ApnsDeliveries.aggregateShapeChanged(withStartedAt, {
+        ...withStartedAt,
+        activities: withStartedAt.activities.map((row) => ({
+          ...row,
+          startedAt: "2026-05-22T12:00:05.000Z",
+        })),
+      }),
+    ).toBe(true);
+    expect(ApnsDeliveries.aggregateShapeChanged(withStartedAt, withStartedAt)).toBe(false);
+  });
+
+  it("treats a same-threadId swap across environments as a shape change", () => {
+    expect(
+      ApnsDeliveries.aggregateShapeChanged(aggregate, {
+        ...aggregate,
+        activities: aggregate.activities.map((row) => ({
+          ...row,
+          environmentId: "env-other" as RelayAgentActivityState["environmentId"],
+        })),
+      }),
+    ).toBe(true);
+  });
+});
+
 describe("live activity alert decisions", () => {
   const preferences = {
     liveActivitiesEnabled: true,

@@ -568,6 +568,7 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
           phase: "starting",
           status: "Connecting",
           updatedAt: nowIso,
+          startedAt: nowIso,
           deepLink: "/",
         },
       ],

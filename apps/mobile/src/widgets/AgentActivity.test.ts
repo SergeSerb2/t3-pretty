@@ -34,6 +34,27 @@ import {
   type AgentActivityRowProps,
 } from "./AgentActivity";
 
+function textColorFor(node: unknown, includes: string): string | undefined {
+  if (node == null || typeof node !== "object") {
+    return undefined;
+  }
+  const element = node as { type?: unknown; props?: { children?: unknown; modifiers?: unknown[] } };
+  const children = element.props?.children;
+  if (element.type === "Text" && typeof children === "string" && children.includes(includes)) {
+    return element.props?.modifiers?.find(
+      (modifier): modifier is string => typeof modifier === "string",
+    );
+  }
+  const nested = Array.isArray(children) ? children : children != null ? [children] : [];
+  for (const child of nested) {
+    const color = textColorFor(child, includes);
+    if (color !== undefined) {
+      return color;
+    }
+  }
+  return undefined;
+}
+
 function makeRow(overrides: Partial<AgentActivityRowProps>): AgentActivityRowProps {
   return {
     environmentId: "env-1",
@@ -80,9 +101,8 @@ describe("AgentActivity widget layout", () => {
       },
       environment as never,
     );
-    const banner = JSON.stringify(layout.banner);
-    expect(banner).toContain("#7dd3fc"); // sky-300: running
-    expect(banner).toContain("#fcd34d"); // amber-300: waiting_for_approval
+    expect(textColorFor(layout.banner, "1 working")).toBe("#7dd3fc"); // sky-300: running
+    expect(textColorFor(layout.banner, "1 approval")).toBe("#fcd34d"); // amber-300: waiting_for_approval
   });
 
   it("lets the system paint Liquid Glass instead of an opaque Live Activity fill", () => {
@@ -111,6 +131,23 @@ describe("AgentActivity widget layout", () => {
     expect(banner).toContain('"progressViewStyle":"linear"');
     expect(banner).toContain('"value":0.4');
     expect(banner).toContain("Editing AgentActivity.tsx");
+    expect(JSON.stringify(layout.expandedBottom)).toContain('"progressViewStyle":"linear"');
+  });
+
+  it("does not hang the hero plan bar under a multi-row list", () => {
+    const layout = AgentActivity(
+      {
+        ...props,
+        activeCount: 2,
+        activities: [
+          makeRow({ progress: 0.4, threadTitle: "Hero working" }),
+          makeRow({ threadId: "thread-2", threadTitle: "Other working" }),
+        ],
+      },
+      environment as never,
+    );
+    expect(JSON.stringify(layout.banner)).not.toContain('"progressViewStyle":"linear"');
+    expect(JSON.stringify(layout.expandedBottom)).not.toContain('"progressViewStyle":"linear"');
   });
 
   it("keeps the simplified glass presentation to one glance line", () => {
@@ -132,7 +169,7 @@ describe("AgentActivity widget layout", () => {
     );
     const banner = JSON.stringify(layout.banner);
     expect(banner).toContain("1 approval");
-    expect(banner).not.toContain("1 working");
+    expect(banner).toContain(" · 1 working");
     expect(banner).not.toContain("Working thread");
     expect(banner).not.toContain("Blocked thread");
   });
@@ -151,14 +188,14 @@ describe("AgentActivity widget layout", () => {
       },
       lightEnvironment as never,
     );
+    expect(textColorFor(layout.banner, "1 working")).toBe("#0284c7"); // sky-600: running
+    expect(textColorFor(layout.banner, "1 approval")).toBe("#d97706"); // amber-600: waiting_for_approval
     const banner = JSON.stringify(layout.banner);
-    expect(banner).toContain("#0284c7"); // sky-600: running
-    expect(banner).toContain("#d97706"); // amber-600: waiting_for_approval
     expect(banner).not.toContain("#7dd3fc");
     expect(banner).not.toContain("#fcd34d");
   });
 
-  it("leads the banner with attention, then working, and never lists thread titles", () => {
+  it("leads the header with attention, then working, and lists the thread rows", () => {
     const layout = AgentActivity(
       {
         ...props,
@@ -183,10 +220,62 @@ describe("AgentActivity widget layout", () => {
     expect(banner).toContain("1 approval");
     expect(banner).toContain("2 working");
     expect(banner.indexOf("1 approval")).toBeLessThan(banner.indexOf("2 working"));
-    expect(banner).not.toContain("Working thread");
-    expect(banner).not.toContain("Blocked thread");
-    expect(banner).not.toContain("Another working thread");
-    expect(banner).not.toContain("Project");
+    // The rows themselves, attention first.
+    expect(banner).toContain("Blocked thread");
+    expect(banner).toContain("Working thread");
+    expect(banner).toContain("Another working thread");
+    expect(banner.indexOf("Blocked thread")).toBeLessThan(banner.indexOf("Working thread"));
+  });
+
+  it("ticks a live elapsed timer for in-flight rows that carry a turn start", () => {
+    const layout = AgentActivity(
+      {
+        ...props,
+        activeCount: 2,
+        activities: [
+          makeRow({ startedAt: "2026-05-25T13:01:30.000Z" }),
+          makeRow({ threadId: "thread-2" }),
+        ],
+      },
+      environment as never,
+    );
+    const banner = JSON.stringify(layout.banner);
+    expect(banner).toContain('"dateStyle":"timer"');
+    expect(banner).toContain("2026-05-25T13:01:30.000Z");
+  });
+
+  it("shows the solo running thread's elapsed timer in the compact island", () => {
+    const layout = AgentActivity(
+      { ...props, activities: [makeRow({ startedAt: "2026-05-25T13:01:30.000Z" })] },
+      environment as never,
+    );
+    const trailing = JSON.stringify(layout.compactTrailing);
+    expect(trailing).toContain('"dateStyle":"timer"');
+    expect(trailing).toContain("2026-05-25T13:01:30.000Z");
+  });
+
+  it("ticks the island timer for a solo starting thread the same way as banner rows", () => {
+    const layout = AgentActivity(
+      {
+        ...props,
+        activities: [
+          makeRow({
+            phase: "starting",
+            status: "Connecting",
+            startedAt: "2026-05-25T13:01:30.000Z",
+          }),
+        ],
+      },
+      environment as never,
+    );
+    const compact = JSON.stringify(layout.compactTrailing);
+    const expanded = JSON.stringify(layout.expandedTrailing);
+    const banner = JSON.stringify(layout.banner);
+    expect(compact).toContain('"dateStyle":"timer"');
+    expect(compact).toContain("2026-05-25T13:01:30.000Z");
+    expect(expanded).toContain('"dateStyle":"timer"');
+    expect(expanded).toContain("2026-05-25T13:01:30.000Z");
+    expect(banner).toContain('"dateStyle":"timer"');
   });
 
   it("names mixed attention as need you", () => {
@@ -326,7 +415,9 @@ describe("AgentActivity widget layout", () => {
     );
     const banner = JSON.stringify(layout.banner);
     expect(banner).toContain("Failed");
-    expect(banner).not.toContain("Done");
+    // The header outcome reads Failed; the completed row may still list its
+    // own Done status below, but never ahead of the failure.
+    expect(banner.indexOf("Failed")).toBeLessThan(banner.indexOf("Done"));
     expect(banner).not.toContain("Agent work completed");
     expect(banner).toContain("#fca5a5"); // red-300 header tint
     expect(JSON.stringify(layout.compactTrailing)).toContain("Failed");
@@ -350,11 +441,12 @@ describe("AgentActivity widget layout", () => {
     const banner = JSON.stringify(layout.banner);
     expect(banner).toContain("2 working");
     expect(banner).toContain("1 failed");
-    expect(banner).not.toContain("Failed");
+    expect(textColorFor(layout.banner, "2 working")).toBe("#7dd3fc");
+    expect(textColorFor(layout.banner, "1 failed")).toBe("#fca5a5");
     expect(JSON.stringify(layout.compactTrailing)).toContain("2");
   });
 
-  it("summarizes many working threads as a count instead of listing titles", () => {
+  it("lists the first rows and collapses the rest into an overflow count", () => {
     const layout = AgentActivity(
       {
         ...props,
@@ -367,11 +459,46 @@ describe("AgentActivity widget layout", () => {
     );
     const banner = JSON.stringify(layout.banner);
     expect(banner).toContain("6 working");
-    for (const n of [1, 2, 3, 4, 5, 6]) {
-      expect(banner).not.toContain(`Thread ${n}`);
-    }
-    expect(JSON.stringify(layout.expandedBottom)).toContain("6 working");
-    expect(JSON.stringify(layout.expandedBottom)).not.toContain("Thread 1");
+    expect(banner).toContain("Thread 1");
+    expect(banner).toContain("Thread 3");
+    expect(banner).not.toContain("Thread 4");
+    expect(banner).toContain("+3 more");
+    expect(JSON.stringify(layout.expandedBottom)).toContain("Thread 1");
+    expect(JSON.stringify(layout.expandedBottom)).toContain("+3 more");
     expect(JSON.stringify(layout.compactTrailing)).toContain("6");
+  });
+
+  it("does not count finished rows in the overflow", () => {
+    const layout = AgentActivity(
+      {
+        ...props,
+        activeCount: 3,
+        activities: [
+          makeRow({ threadId: "t1", threadTitle: "Working 1" }),
+          makeRow({ threadId: "t2", threadTitle: "Working 2" }),
+          makeRow({ threadId: "t3", threadTitle: "Working 3" }),
+          makeRow({
+            threadId: "t4",
+            threadTitle: "Done 1",
+            phase: "completed",
+            status: "Done",
+          }),
+          makeRow({
+            threadId: "t5",
+            threadTitle: "Done 2",
+            phase: "completed",
+            status: "Done",
+          }),
+        ],
+      },
+      environment as never,
+    );
+    const banner = JSON.stringify(layout.banner);
+    expect(banner).toContain("3 working");
+    expect(banner).toContain("Working 1");
+    expect(banner).toContain("Working 3");
+    expect(banner).not.toContain("Done 1");
+    expect(banner).not.toContain("+2 more");
+    expect(banner).not.toContain("+1 more");
   });
 });
