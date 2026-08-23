@@ -1689,6 +1689,18 @@ describe("aggregate shape changes", () => {
       }),
     ).toBe(false);
   });
+
+  it("treats a same-threadId swap across environments as a shape change", () => {
+    expect(
+      ApnsDeliveries.aggregateShapeChanged(aggregate, {
+        ...aggregate,
+        activities: aggregate.activities.map((row) => ({
+          ...row,
+          environmentId: "env-other" as RelayAgentActivityState["environmentId"],
+        })),
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("live activity alert decisions", () => {

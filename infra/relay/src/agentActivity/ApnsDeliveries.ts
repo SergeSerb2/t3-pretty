@@ -158,10 +158,15 @@ function attentionChanged(
     return nextAggregate.activities.some((row) => isAttentionPhase(row.phase));
   }
   const previouslyAttention = new Map(
-    previousAggregate.activities.map((row) => [row.threadId, isAttentionPhase(row.phase)]),
+    previousAggregate.activities.map((row) => [
+      `${row.environmentId}\u0000${row.threadId}`,
+      isAttentionPhase(row.phase),
+    ]),
   );
   return nextAggregate.activities.some(
-    (row) => isAttentionPhase(row.phase) !== (previouslyAttention.get(row.threadId) ?? false),
+    (row) =>
+      isAttentionPhase(row.phase) !==
+      (previouslyAttention.get(`${row.environmentId}\u0000${row.threadId}`) ?? false),
   );
 }
 
@@ -185,9 +190,14 @@ export function aggregateShapeChanged(
     return true;
   }
   const previousPhases = new Map(
-    previousAggregate.activities.map((row) => [row.threadId, row.phase]),
+    previousAggregate.activities.map((row) => [
+      `${row.environmentId}\u0000${row.threadId}`,
+      row.phase,
+    ]),
   );
-  return nextAggregate.activities.some((row) => previousPhases.get(row.threadId) !== row.phase);
+  return nextAggregate.activities.some(
+    (row) => previousPhases.get(`${row.environmentId}\u0000${row.threadId}`) !== row.phase,
+  );
 }
 
 // Honors the same per-event notification switches the push channel uses; a

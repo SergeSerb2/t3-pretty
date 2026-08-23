@@ -151,6 +151,57 @@ describe("projectThreadAwareness", () => {
     expect(sessionOnly?.startedAt).toBeUndefined();
   });
 
+  it("uses the thread's updatedAt while the session is starting so the elapsed timer can tick", () => {
+    const state = projectThreadAwareness({
+      environmentId: "env-1" as EnvironmentId,
+      project,
+      thread: thread({
+        session: {
+          threadId: "thread-1" as ThreadId,
+          status: "starting",
+          providerName: "Codex",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: NOW,
+        },
+      }),
+    });
+
+    expect(state?.phase).toBe("starting");
+    expect(state?.startedAt).toBe(NOW);
+  });
+
+  it("does not pin a starting session's timer to a settled prior turn", () => {
+    const state = projectThreadAwareness({
+      environmentId: "env-1" as EnvironmentId,
+      project,
+      thread: thread({
+        updatedAt: NOW,
+        latestTurn: {
+          turnId: "turn-1" as TurnId,
+          state: "completed",
+          requestedAt: "2026-05-22T11:00:00.000Z",
+          startedAt: "2026-05-22T11:00:01.000Z",
+          completedAt: "2026-05-22T11:02:00.000Z",
+          assistantMessageId: null,
+        },
+        session: {
+          threadId: "thread-1" as ThreadId,
+          status: "starting",
+          providerName: "Codex",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: NOW,
+        },
+      }),
+    });
+
+    expect(state?.phase).toBe("starting");
+    expect(state?.startedAt).toBe(NOW);
+  });
+
   it("surfaces the current plan step as the running detail", () => {
     const state = projectThreadAwareness({
       environmentId: "env-1" as EnvironmentId,
