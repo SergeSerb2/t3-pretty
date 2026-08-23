@@ -84,10 +84,10 @@ describe("row arrival contract with the messages timeline", () => {
 });
 
 describe("working-row thinking indicator contract", () => {
-  it("the working row still renders the original pulse-dot cluster", () => {
+  it("the working row renders the shimmer Thinking indicator, not the pulse dots", () => {
     expect(messagesTimelineSource).toContain('"working"');
-    expect(messagesTimelineSource).toContain("inline-flex items-center gap-[3px]");
-    expect(messagesTimelineSource).toContain("status-pulse-wave");
+    expect(messagesTimelineSource).toContain("<ThinkingActivityRow />");
+    expect(messagesTimelineSource).not.toContain("status-pulse-wave");
   });
 
   it("does not overlay thinking orbs on the working row, scroll pill, or hero", () => {

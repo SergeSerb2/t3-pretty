@@ -910,7 +910,6 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Working for");
     expect(markup).toContain("Running pnpm");
     expect(markup).toContain("live-activity-focus");
   });
@@ -1009,7 +1008,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("tool call failed");
   });
 
-  it("aligns the iconless Thinking row with the working timer", () => {
+  it("shows only the Thinking row while working with no visible activity", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -1019,7 +1018,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Working for");
+    expect(markup).not.toContain("Working for");
     expect(markup).toContain("Thinking");
     expect(markup).toContain("gap-1.5 py-0.5 px-1");
   });
