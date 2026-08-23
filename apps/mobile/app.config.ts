@@ -1,7 +1,11 @@
 import type { ExpoConfig } from "expo/config";
 
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
-import { loadRepoEnv, readReleaseTrainVersion } from "../../scripts/lib/public-config.ts";
+import {
+  loadRepoEnv,
+  readReleaseTrainVersion,
+  type T3CodeBuildFlavor,
+} from "../../scripts/lib/public-config.ts";
 
 type AppVariant = "development" | "preview" | "production";
 
@@ -82,20 +86,30 @@ const INTERNAL_RELEASE_ASSETS = {
 
 // Clerk hosts the passkey relying party + universal links. Derive it from the
 // selected publishable key so changing build flavors cannot leave stale domains.
-const FORK_RELYING_PARTY = "clerk.sergeserbinenko.com";
+const RELYING_PARTY_FALLBACK = {
+  public: "clerk.t3.codes",
+  internal: "clerk.sergeserbinenko.com",
+} satisfies Record<T3CodeBuildFlavor, string>;
 
-function resolveRelyingParty(publishableKey: string | undefined): string {
-  if (!publishableKey) return FORK_RELYING_PARTY;
+export function resolveRelyingParty(
+  publishableKey: string | undefined,
+  buildFlavor: T3CodeBuildFlavor,
+): string {
+  const fallback = RELYING_PARTY_FALLBACK[buildFlavor];
+  if (!publishableKey) return fallback;
   const encoded = publishableKey.replace(/^pk_(?:live|test)_/, "");
   try {
     const decoded = Buffer.from(encoded, "base64").toString("utf8");
-    return decoded.endsWith("$") ? decoded.slice(0, -1) : FORK_RELYING_PARTY;
+    return decoded.endsWith("$") ? decoded.slice(0, -1) : fallback;
   } catch {
-    return FORK_RELYING_PARTY;
+    return fallback;
   }
 }
 
-const relyingParty = resolveRelyingParty(repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY);
+const relyingParty = resolveRelyingParty(
+  repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY,
+  isInternalBuild ? "internal" : "public",
+);
 
 // Schemes stay `t3code*` on purpose: pairing QR codes and hosted pair links
 // encode the upstream scheme, and both services keep technical identifiers

@@ -45,6 +45,11 @@ The internal and public production mobile apps have different app IDs and can be
 installed side by side, but both register the `t3code://` URL scheme. Installing
 the last one changes which app receives that scheme.
 
+Pre-split T3 Pretty releases belong to the internal lineage. T3 Pretty Internal
+keeps their `~/.t3`, `T3 Code (Alpha)`, and `t3code.service` identities. The new
+public build deliberately starts from its separate identities instead of
+adopting that state, which keeps public and internal installations independent.
+
 The workflow does not sign installers, maintain a separate updater feed, submit
 mobile binaries to stores, or change the internal Buildkite release path.
 
