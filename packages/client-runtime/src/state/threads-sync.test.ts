@@ -491,6 +491,34 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it.effect("hands off the last published thread with its matching sequence", () =>
+    Effect.gen(function* () {
+      const warmStates = makeWarmThreadStateRegistry();
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const harness = yield* makeHarness({ warmStates });
+          yield* Queue.offer(harness.inputs, snapshot(ACTIVE_THREAD));
+          yield* Queue.offer(harness.inputs, titleUpdated("First live", 2));
+          yield* Queue.offer(harness.inputs, titleUpdated("Second live", 3));
+          yield* awaitThreadState(
+            harness.observed,
+            (value) => Option.isSome(value.data) && value.data.value.title === "Second live",
+          );
+        }),
+      );
+
+      const successor = yield* makeHarness({ warmStates });
+      const state = yield* awaitThreadState(
+        successor.observed,
+        (value) => Option.isSome(value.data) && value.data.value.title === "Second live",
+      );
+
+      expect(Option.getOrThrow(state.data).title).toBe("Second live");
+      expect(yield* Ref.get(successor.lastSubscribeAfterSequence)).toBe(3);
+      expect(yield* Ref.get(successor.loaderCalls)).toBe(0);
+    }),
+  );
+
   it("keeps more than eight recent warm threads", () => {
     const warmStates = makeWarmThreadStateRegistry();
     for (let index = 0; index < 9; index += 1) {

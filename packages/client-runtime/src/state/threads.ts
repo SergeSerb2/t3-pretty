@@ -317,6 +317,47 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       ? warm.lastSequence
       : Option.match(cached, { onNone: () => 0, onSome: (snapshot) => snapshot.snapshotSequence }),
   );
+  type WarmHandoff =
+    | { readonly kind: "deleted" }
+    | {
+        readonly kind: "ready";
+        readonly thread: OrchestrationThread;
+        readonly page: Option.Option<EnvironmentThreadPageState>;
+        readonly lastSequence: number;
+      };
+  // Thread, page, and sequence as one snapshot. The two SubscriptionRefs can
+  // tear across a yield; successors must not resume from a mismatched pair.
+  let handoff: WarmHandoff | null = warmDeleted
+    ? { kind: "deleted" }
+    : warm !== null
+      ? {
+          kind: "ready",
+          thread: warm.thread,
+          page: Option.map(warm.page, (page) => ({ ...page, loadingOlder: false })),
+          lastSequence: warm.lastSequence,
+        }
+      : Option.match(cached, {
+          onNone: () => null,
+          onSome: (snapshot) => ({
+            kind: "ready",
+            thread: snapshot.thread,
+            page: pageStateFromSnapshot(snapshot.page),
+            lastSequence: snapshot.snapshotSequence,
+          }),
+        });
+  const publishHandoff = (next: WarmHandoff) => {
+    handoff = next;
+    if (next.kind === "deleted") {
+      warmStates.remove(stateKey);
+      return;
+    }
+    warmStates.set(stateKey, {
+      thread: next.thread,
+      page: next.page,
+      lastSequence: next.lastSequence,
+      generation: warmGeneration,
+    });
+  };
   const awaitingCompletion = yield* Ref.make(false);
   // Bumped whenever loaded history may have been rewritten out from under an
   // in-flight older-page fetch (snapshot replacement, revert, deletion). A
@@ -419,24 +460,26 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     // "keep" preserves the current page state (live events touch only loaded
     // recent turns); a snapshot or merged page passes its own page state.
     page: Option.Option<EnvironmentThreadPageState> | "keep",
+    snapshotSequence: number,
   ) {
+    const handoffPage =
+      page === "keep" ? (handoff?.kind === "ready" ? handoff.page : Option.none()) : page;
+    // Write the consistent pair before any yield so a finalizer cannot observe
+    // a thread body from one turn and a sequence from the next.
+    publishHandoff({
+      kind: "ready",
+      thread,
+      page: Option.map(handoffPage, (value) => ({ ...value, loadingOlder: false })),
+      lastSequence: snapshotSequence,
+    });
     const waiting = yield* Ref.get(awaitingCompletion);
+    yield* SubscriptionRef.set(lastSequence, snapshotSequence);
     yield* SubscriptionRef.update(state, (current) => ({
       data: Option.some(thread),
       status: waiting ? ("synchronizing" as const) : ("live" as const),
       error: Option.none(),
       page: page === "keep" ? current.page : page,
     }));
-    const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
-    const currentPage = page === "keep" ? (yield* SubscriptionRef.get(state)).page : page;
-    // Keep a live copy so an overlapping successor can peek before this
-    // scope finalizes (React remount, Strict Mode, environment swap).
-    warmStates.set(stateKey, {
-      thread,
-      page: currentPage,
-      lastSequence: snapshotSequence,
-      generation: warmGeneration,
-    });
     // Active threads can update many times per second and retain large tool
     // payloads. The server remains the source of truth while a turn is active;
     // persist once it settles so cache encoding stays off the streaming path.
@@ -446,7 +489,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         thread,
         // Persist the window boundary with the window's content so a cache
         // restore can keep paging from where the loaded history ends.
-        ...Option.match(currentPage, {
+        ...Option.match(handoffPage, {
           onNone: () => ({}),
           onSome: (value) =>
             ({
@@ -462,7 +505,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   });
 
   const setDeleted = Effect.fn("EnvironmentThreadState.setDeleted")(function* () {
-    warmStates.remove(stateKey);
+    publishHandoff({ kind: "deleted" });
     yield* Ref.set(awaitingCompletion, false);
     yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
     yield* SubscriptionRef.set(state, {
@@ -502,9 +545,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     items: ReadonlyArray<OrchestrationThreadStreamItem>,
   ) {
     const fold: EventFold = { working: null, fresh: false, dirty: false };
+    let sequence = yield* SubscriptionRef.get(lastSequence);
     const flushEventRun = Effect.fn("EnvironmentThreadState.flushEventRun")(function* () {
       if (fold.dirty && fold.working !== null) {
-        yield* setThread(fold.working, "keep");
+        yield* setThread(fold.working, "keep", sequence);
       }
       fold.dirty = false;
       // The run may have advanced the live state past a parked page's
@@ -533,8 +577,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         // in the preserved history with no event left to remove it. The
         // epoch bump discards any older-page fetch racing this snapshot.
         yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
-        yield* SubscriptionRef.set(lastSequence, item.snapshot.snapshotSequence);
-        yield* setThread(item.snapshot.thread, pageStateFromSnapshot(item.snapshot.page));
+        sequence = item.snapshot.snapshotSequence;
+        yield* setThread(item.snapshot.thread, pageStateFromSnapshot(item.snapshot.page), sequence);
         continue;
       }
 
@@ -548,11 +592,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       // Ephemeral items (live-only tool progress) have no sequence position:
       // apply them to the working copy without touching the resume cursor.
       if (item.ephemeral !== true) {
-        const sequence = yield* SubscriptionRef.get(lastSequence);
         if (item.event.sequence <= sequence) {
           continue;
         }
-        yield* SubscriptionRef.set(lastSequence, item.event.sequence);
+        sequence = item.event.sequence;
       }
 
       if (fold.working === null) {
@@ -682,13 +725,22 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     // Persist the widened window under the *loaded* watermark: the merged
     // content is only known consistent with the state it merged into, not
     // with the page's own (possibly newer) sequence.
-    if (merged !== null && shouldPersistThread(merged)) {
-      const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
-      yield* Queue.offer(persistence, {
-        snapshotSequence,
+    if (merged !== null) {
+      const snapshotSequence =
+        handoff?.kind === "ready" ? handoff.lastSequence : yield* SubscriptionRef.get(lastSequence);
+      publishHandoff({
+        kind: "ready",
         thread: merged,
-        ...(snapshot.page === undefined ? {} : { page: { ...snapshot.page, snapshotSequence } }),
+        page: pageStateFromSnapshot(snapshot.page),
+        lastSequence: snapshotSequence,
       });
+      if (shouldPersistThread(merged)) {
+        yield* Queue.offer(persistence, {
+          snapshotSequence,
+          thread: merged,
+          ...(snapshot.page === undefined ? {} : { page: { ...snapshot.page, snapshotSequence } }),
+        });
+      }
     }
   });
 
@@ -813,6 +865,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             page: Option.none(),
           }));
           yield* SubscriptionRef.set(lastSequence, 0);
+          handoff = null;
           current = yield* SubscriptionRef.get(state);
         }
         const shouldLoadHttpSnapshot =
@@ -897,47 +950,35 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   );
   yield* Effect.addFinalizer(() => Effect.sync(deregister));
 
-  yield* Effect.addFinalizer(() =>
-    Effect.all([SubscriptionRef.get(state), SubscriptionRef.get(lastSequence)]).pipe(
-      Effect.flatMap(([current, snapshotSequence]) => {
-        if (current.status === "deleted") {
-          warmStates.remove(stateKey);
-          return Effect.void;
-        }
-        return Option.match(current.data, {
-          onNone: () => Effect.void,
-          onSome: (thread) => {
-            // Hand the loaded state to the next machine for this thread even
-            // when the persisted cache skips it (running threads): reopening
-            // renders instantly and resumes via afterSequence.
-            warmStates.set(stateKey, {
-              thread,
-              page: current.page,
-              lastSequence: snapshotSequence,
-              generation: warmGeneration,
-            });
-            return shouldPersistThread(thread)
-              ? persist({
-                  snapshotSequence,
-                  thread,
-                  ...Option.match(current.page, {
-                    onNone: () => ({}),
-                    onSome: (page) =>
-                      ({
-                        page: {
-                          beforeCursor: page.beforeCursor,
-                          hasMore: page.hasMore,
-                          snapshotSequence,
-                        },
-                      }) as const,
-                  }),
-                })
-              : Effect.void;
-          },
-        });
-      }),
-    ),
-  );
+  yield* Effect.addFinalizer(() => {
+    const snapshot = handoff;
+    if (snapshot === null) {
+      return Effect.void;
+    }
+    publishHandoff(snapshot);
+    if (snapshot.kind === "deleted") {
+      return Effect.void;
+    }
+    // Seed-only machines never called setThread; overlapping successors still
+    // need this pair, and it is already consistent.
+    return shouldPersistThread(snapshot.thread)
+      ? persist({
+          snapshotSequence: snapshot.lastSequence,
+          thread: snapshot.thread,
+          ...Option.match(snapshot.page, {
+            onNone: () => ({}),
+            onSome: (page) =>
+              ({
+                page: {
+                  beforeCursor: page.beforeCursor,
+                  hasMore: page.hasMore,
+                  snapshotSequence: snapshot.lastSequence,
+                },
+              }) as const,
+          }),
+        })
+      : Effect.void;
+  });
 
   return state;
 });
