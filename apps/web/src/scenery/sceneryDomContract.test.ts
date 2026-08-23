@@ -100,7 +100,13 @@ describe("scenery structural contract with upstream markup", () => {
     expect(threadRouteViewSource).not.toContain("strict: false");
     expect(threadRouteViewSource).toContain('from: "/_chat/draft/$draftId"');
     expect(threadRouteViewSource).toContain('from: "/_chat/$environmentId/$threadId"');
-    expect(threadRouteViewSource).not.toContain(
+  });
+
+  it("the server branch still gates ChatView on renderState", () => {
+    // Direct visits to missing/not-ready threads must not mount ChatView.
+    // Promotion still renders: the draft route already has ChatView, and the
+    // replace lands with a shell so this gate stays true.
+    expect(threadRouteViewSource).toContain(
       'renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)',
     );
   });

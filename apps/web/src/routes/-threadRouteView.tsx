@@ -179,7 +179,8 @@ export function ThreadRouteView() {
         routeKind="draft"
         forceExpandedMobileComposer
       />
-    ) : routeThreadRef !== null ? (
+    ) : routeThreadRef !== null &&
+      (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) ? (
       <ChatView
         environmentId={routeThreadRef.environmentId}
         threadId={routeThreadRef.threadId}
@@ -188,7 +189,9 @@ export function ThreadRouteView() {
       />
     ) : null;
 
-  if (chatView === null) {
+  // Draft-without-session returns null. Server missing/not-ready still paints
+  // an empty inset so the redirect effect can fire without mounting ChatView.
+  if (chatView === null && routeThreadRef === null) {
     return null;
   }
 
