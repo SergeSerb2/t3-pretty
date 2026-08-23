@@ -101,6 +101,11 @@ export function shouldRestorePersistedListFilters(raw: Record<string, unknown>):
   return [...LIST_FILTER_KEYS, ...SELECTION_KEYS].every((key) => raw[key] === undefined);
 }
 
+/** Persist when the URL named a list filter, not a selection-only or empty link. */
+export function shouldPersistPullRequestListFiltersFromUrl(raw: Record<string, unknown>): boolean {
+  return LIST_FILTER_KEYS.some((key) => raw[key] !== undefined);
+}
+
 export function readPersistedPullRequestListFilters(): PersistedPullRequestListFilters {
   try {
     const stored = getLocalStorageItem(

@@ -69,6 +69,7 @@ import {
   persistedFiltersFromSearch,
   readPersistedPullRequestListFilters,
   searchFromPersistedFilters,
+  shouldPersistPullRequestListFiltersFromUrl,
   shouldRestorePersistedListFilters,
   writePersistedPullRequestListFilters,
 } from "../components/pullRequest/pullRequestListFiltersPersistence";
@@ -195,7 +196,7 @@ export const Route = createFileRoute("/_chat/pull-requests")({
     const source = shouldRestorePersistedListFilters(raw)
       ? { ...searchFromPersistedFilters(readPersistedPullRequestListFilters()), ...raw }
       : raw;
-    return {
+    const search: PullRequestsSearch = {
       involvement:
         source.involvement === "reviewing" || source.involvement === "authored"
           ? source.involvement
@@ -237,6 +238,10 @@ export const Route = createFileRoute("/_chat/pull-requests")({
         ? { checks: source.checks }
         : {}),
     };
+    if (shouldPersistPullRequestListFiltersFromUrl(raw)) {
+      writePersistedPullRequestListFilters(persistedFiltersFromSearch(search));
+    }
+    return search;
   },
   component: PullRequestsRouteView,
 });
@@ -472,7 +477,6 @@ function PullRequestsRouteView() {
       // Hide the old selection while retaining peer PR tabs for parallel reviews.
       useRightPanelStore.getState().close(rightPanelRef);
     }
-    writePersistedPullRequestListFilters(persistedFiltersFromSearch({ ...search, ...patch }));
     updateSearch({ ...patch, ...clearedSelection });
   };
 

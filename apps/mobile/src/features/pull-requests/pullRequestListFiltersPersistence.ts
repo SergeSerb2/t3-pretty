@@ -34,13 +34,17 @@ export function writePersistedPullRequestListFilters(
   persisted = filters;
 }
 
-/** Keep restored project/host only when the saved environment is still connected. */
-export function shouldKeepRestoredPullRequestScope(
-  restoredEnvironmentId: EnvironmentId | null,
+/** Fall back when the selected server is missing. An empty list yields `preferred`. */
+export function nextPullRequestEnvironmentId(
+  selectedEnvironmentId: EnvironmentId | null,
+  preferredEnvironmentId: EnvironmentId | null,
   environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
-): boolean {
-  return (
-    restoredEnvironmentId !== null &&
-    environments.some((environment) => environment.environmentId === restoredEnvironmentId)
-  );
+): EnvironmentId | null {
+  if (
+    selectedEnvironmentId !== null &&
+    environments.some((environment) => environment.environmentId === selectedEnvironmentId)
+  ) {
+    return selectedEnvironmentId;
+  }
+  return preferredEnvironmentId;
 }

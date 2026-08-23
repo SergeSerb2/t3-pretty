@@ -8,6 +8,7 @@ import {
   persistedFiltersFromSearch,
   persistedPullRequestListSearch,
   readPersistedPullRequestListFilters,
+  shouldPersistPullRequestListFiltersFromUrl,
   shouldRestorePersistedListFilters,
   writePersistedPullRequestListFilters,
 } from "./pullRequestListFiltersPersistence";
@@ -43,6 +44,17 @@ describe("persisted pull request list filters", () => {
     expect(shouldRestorePersistedListFilters({ involvement: "all", state: "open" })).toBe(false);
     expect(shouldRestorePersistedListFilters({ draft: "hide" })).toBe(false);
     expect(shouldRestorePersistedListFilters({ repository: "acme/web", number: 12 })).toBe(false);
+  });
+
+  it("persists from a URL that named a list, not a selection-only or empty link", () => {
+    expect(shouldPersistPullRequestListFiltersFromUrl({})).toBe(false);
+    expect(shouldPersistPullRequestListFiltersFromUrl({ q: "fix" })).toBe(false);
+    expect(shouldPersistPullRequestListFiltersFromUrl({ repository: "acme/web", number: 12 })).toBe(
+      false,
+    );
+    expect(shouldPersistPullRequestListFiltersFromUrl({ involvement: "authored" })).toBe(true);
+    expect(shouldPersistPullRequestListFiltersFromUrl({ environmentId: "env-1" })).toBe(true);
+    expect(shouldPersistPullRequestListFiltersFromUrl({ draft: "hide" })).toBe(true);
   });
 
   it("round-trips the last chosen filters and falls back to the defaults", () => {

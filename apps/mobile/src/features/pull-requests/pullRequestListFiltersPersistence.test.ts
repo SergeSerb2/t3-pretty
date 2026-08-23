@@ -1,22 +1,35 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { shouldKeepRestoredPullRequestScope } from "./pullRequestListFiltersPersistence";
+import { nextPullRequestEnvironmentId } from "./pullRequestListFiltersPersistence";
 
 const env = (id: string) => ({ environmentId: id as EnvironmentId });
 
-describe("shouldKeepRestoredPullRequestScope", () => {
-  it("keeps project/host when the restored environment is still connected", () => {
+describe("nextPullRequestEnvironmentId", () => {
+  it("keeps the selected environment when it is still connected", () => {
     expect(
-      shouldKeepRestoredPullRequestScope("env-1" as EnvironmentId, [env("env-1"), env("env-2")]),
-    ).toBe(true);
+      nextPullRequestEnvironmentId("env-1" as EnvironmentId, "env-2" as EnvironmentId, [
+        env("env-1"),
+        env("env-2"),
+      ]),
+    ).toBe("env-1");
   });
 
-  it("drops project/host when falling back because the restored environment is gone", () => {
-    expect(shouldKeepRestoredPullRequestScope("gone" as EnvironmentId, [env("env-1")])).toBe(false);
+  it("falls back to preferred when the selected environment is gone", () => {
+    expect(
+      nextPullRequestEnvironmentId("gone" as EnvironmentId, "env-1" as EnvironmentId, [
+        env("env-1"),
+      ]),
+    ).toBe("env-1");
   });
 
-  it("drops project/host when nothing was restored", () => {
-    expect(shouldKeepRestoredPullRequestScope(null, [env("env-1")])).toBe(false);
+  it("falls back to preferred when every server is gone", () => {
+    expect(nextPullRequestEnvironmentId("gone" as EnvironmentId, null, [])).toBe(null);
+  });
+
+  it("uses preferred when nothing was selected", () => {
+    expect(nextPullRequestEnvironmentId(null, "env-1" as EnvironmentId, [env("env-1")])).toBe(
+      "env-1",
+    );
   });
 });

@@ -15,8 +15,8 @@ import { useWorkspaceState } from "../../state/workspace";
 import { useHomeListOptions } from "../home/home-list-options";
 import { PullRequestsScreen, type PullRequestListEnvironment } from "./PullRequestsScreen";
 import {
+  nextPullRequestEnvironmentId,
   readPersistedPullRequestListFilters,
-  shouldKeepRestoredPullRequestScope,
   writePersistedPullRequestListFilters,
 } from "./pullRequestListFiltersPersistence";
 import { usePullRequestList } from "./usePullRequestList";
@@ -25,7 +25,7 @@ export function PullRequestsRouteScreen() {
   const navigation = useNavigation();
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
-  const { savedConnectionsById } = useSavedRemoteConnections();
+  const { savedConnectionsById, isLoadingSavedConnection } = useSavedRemoteConnections();
   const { environments: workspaceEnvironments } = useWorkspaceState();
   const savedFilters = readPersistedPullRequestListFilters();
   const [searchQuery, setSearchQuery] = useState("");
@@ -78,41 +78,23 @@ export function PullRequestsRouteScreen() {
     savedFilters.environmentId ?? preferredEnvironmentId,
   );
   useEffect(() => {
-    if (environments.length === 0) return;
-    if (
-      selectedEnvironmentId === null ||
-      !environments.some((environment) => environment.environmentId === selectedEnvironmentId)
-    ) {
-      setSelectedEnvironmentId(preferredEnvironmentId);
+    if (isLoadingSavedConnection) return;
+    const next = nextPullRequestEnvironmentId(
+      selectedEnvironmentId,
+      preferredEnvironmentId,
+      environments,
+    );
+    if (next !== selectedEnvironmentId) {
+      setSelectedEnvironmentId(next);
     }
-  }, [environments, preferredEnvironmentId, selectedEnvironmentId]);
+  }, [environments, isLoadingSavedConnection, preferredEnvironmentId, selectedEnvironmentId]);
   const previousEnvironmentId = useRef(selectedEnvironmentId);
-  const committedEnvironment = useRef(false);
   useEffect(() => {
-    if (
-      selectedEnvironmentId !== null &&
-      environments.some((environment) => environment.environmentId === selectedEnvironmentId)
-    ) {
-      if (!committedEnvironment.current) {
-        committedEnvironment.current = true;
-        const keepScope = shouldKeepRestoredPullRequestScope(
-          previousEnvironmentId.current,
-          environments,
-        );
-        previousEnvironmentId.current = selectedEnvironmentId;
-        if (!keepScope) {
-          setSelectedProjectId(undefined);
-          setSelectedHost(undefined);
-        }
-        return;
-      }
-    }
     if (previousEnvironmentId.current === selectedEnvironmentId) return;
     previousEnvironmentId.current = selectedEnvironmentId;
-    if (!committedEnvironment.current) return;
     setSelectedProjectId(undefined);
     setSelectedHost(undefined);
-  }, [environments, selectedEnvironmentId]);
+  }, [selectedEnvironmentId]);
   useEffect(() => {
     writePersistedPullRequestListFilters({
       involvement,
