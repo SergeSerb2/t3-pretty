@@ -361,6 +361,7 @@ describe("buildThreadListV2Items", () => {
 
     expect(layout.items.map((item) => item.thread.id)).toEqual(["pinned-settled", "active"]);
     expect(layout.items.map((item) => item.pinned)).toEqual([true, false]);
+    expect(layout.items.map((item) => item.settled)).toEqual([false, false]);
     expect(layout.settledCount).toBe(0);
   });
 
@@ -458,6 +459,7 @@ describe("buildThreadListV2Items", () => {
       "settled",
     ]);
     expect(layout.items.map((item) => item.snoozed)).toEqual([false, true, true, false]);
+    expect(layout.items.map((item) => item.settled)).toEqual([false, false, false, true]);
     expect(layout.snoozedShelfHeaderIndex).toBe(1);
     expect(layout.snoozedCount).toBe(2);
   });
@@ -551,10 +553,10 @@ describe("buildThreadListV2Items", () => {
       now: NOW,
     });
 
-    expect(layout.items.map((item) => [item.thread.id, item.variant])).toEqual([
-      ["active", "card"],
-      ["settled", "slim"],
-      ["settled-2", "slim"],
+    expect(layout.items.map((item) => [item.thread.id, item.variant, item.settled])).toEqual([
+      ["active", "card", false],
+      ["settled", "slim", true],
+      ["settled-2", "slim", true],
     ]);
     expect(layout.items.map((item) => item.isLast)).toEqual([false, false, true]);
     expect(layout.settledCount).toBe(2);

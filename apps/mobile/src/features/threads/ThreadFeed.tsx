@@ -1325,14 +1325,14 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly ac
 
   return (
     <View className="mb-4 px-1.5 py-1">
-      <Text className="font-t3-medium text-xs text-neutral-600 dark:text-neutral-400">
-        Thinking
-      </Text>
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, highlightStyle]}>
-        <View className="px-1.5 py-1">
+      <View>
+        <Text className="font-t3-medium text-xs text-neutral-600 dark:text-neutral-400">
+          Thinking
+        </Text>
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, highlightStyle]}>
           <Text className="font-t3-medium text-xs text-foreground">Thinking</Text>
-        </View>
-      </Animated.View>
+        </Animated.View>
+      </View>
     </View>
   );
 });
