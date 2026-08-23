@@ -4,9 +4,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   nextPullRequestEnvironmentId,
   restorePullRequestListFilters,
-  shouldAbandonNamedSaveWait,
-  shouldDeferNamedSaveRestore,
-  shouldRetryPullRequestListRestore,
   type PersistedPullRequestListFilters,
 } from "./pullRequestListFiltersPersistence";
 
@@ -49,46 +46,6 @@ describe("nextPullRequestEnvironmentId", () => {
     expect(nextPullRequestEnvironmentId(null, "env-1" as EnvironmentId, [env("env-1")])).toBe(
       "env-1",
     );
-  });
-});
-
-describe("shouldDeferNamedSaveRestore", () => {
-  it("waits on an empty list only when a named server was saved", () => {
-    expect(shouldDeferNamedSaveRestore("env-1" as EnvironmentId, [])).toBe(true);
-    expect(shouldDeferNamedSaveRestore("env-1" as EnvironmentId, [env("env-2")])).toBe(false);
-    expect(shouldDeferNamedSaveRestore(null, [])).toBe(false);
-  });
-});
-
-describe("shouldRetryPullRequestListRestore", () => {
-  it("retries a named save only when that saved server appears", () => {
-    expect(shouldRetryPullRequestListRestore("env-1" as EnvironmentId, [], true)).toBe(false);
-    expect(shouldRetryPullRequestListRestore("env-1" as EnvironmentId, [env("env-2")], true)).toBe(
-      false,
-    );
-    expect(shouldRetryPullRequestListRestore("env-1" as EnvironmentId, [env("env-1")], true)).toBe(
-      true,
-    );
-  });
-
-  it("does not retry after a committed restore or when nothing was saved", () => {
-    expect(shouldRetryPullRequestListRestore("env-1" as EnvironmentId, [env("env-1")], false)).toBe(
-      false,
-    );
-    expect(shouldRetryPullRequestListRestore(null, [env("env-1")], true)).toBe(false);
-  });
-});
-
-describe("shouldAbandonNamedSaveWait", () => {
-  it("abandons when a different server hydrates instead of the named save", () => {
-    expect(shouldAbandonNamedSaveWait("env-1" as EnvironmentId, [], true)).toBe(false);
-    expect(shouldAbandonNamedSaveWait("env-1" as EnvironmentId, [env("env-1")], true)).toBe(false);
-    expect(shouldAbandonNamedSaveWait("env-1" as EnvironmentId, [env("env-2")], true)).toBe(true);
-  });
-
-  it("does not abandon after a committed restore or when nothing was saved", () => {
-    expect(shouldAbandonNamedSaveWait("env-1" as EnvironmentId, [env("env-2")], false)).toBe(false);
-    expect(shouldAbandonNamedSaveWait(null, [env("env-2")], true)).toBe(false);
   });
 });
 
