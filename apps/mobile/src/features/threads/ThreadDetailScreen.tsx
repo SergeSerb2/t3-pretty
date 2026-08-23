@@ -16,6 +16,7 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
   ThreadId,
+  TurnDeliveryMode,
   UserInputQuestion,
 } from "@t3tools/contracts";
 import * as Haptics from "expo-haptics";
@@ -85,6 +86,7 @@ import {
 import { ThreadFeed } from "./ThreadFeed";
 import { resolveThreadFeedEndOffset } from "./thread-feed-end-scroll";
 import type { ThreadContentPresentation } from "./threadContentPresentation";
+import { resolveThreadFeedSubmissionAnchor } from "./thread-feed-live-follow";
 
 // KeyboardStickyView memos its animated style against `style` identity.
 // An inline object here would rebuild that style on every thread-stream
@@ -139,7 +141,7 @@ export interface ThreadDetailScreenProps {
   readonly onNativePasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
-  readonly onSendMessage: () => Promise<MessageId | null>;
+  readonly onSendMessage: (delivery?: TurnDeliveryMode) => Promise<MessageId | null>;
   readonly onReconnectEnvironment: () => void;
   readonly onUpdateThreadModelSelection: (modelSelection: ModelSelection) => void;
   readonly onUpdateThreadRuntimeMode: (runtimeMode: RuntimeMode) => void;
@@ -292,9 +294,10 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const listRef = useRef<LegendListRef>(null);
   const feedTouchStartRef = useRef<{ pageX: number; pageY: number } | null>(null);
   const selectedThreadKeyRef = useRef(selectedThreadKey);
-  const lastScrolledAnchorMessageIdRef = useRef<MessageId | null>(null);
+  const lastScrolledSubmittedMessageIdRef = useRef<MessageId | null>(null);
   const [composerExpanded, setComposerExpanded] = useState(false);
   const [anchorMessageId, setAnchorMessageId] = useState<MessageId | null>(null);
+  const [submittedMessageId, setSubmittedMessageId] = useState<MessageId | null>(null);
   const [endFollowEnabled, setEndFollowEnabled] = useState(true);
   // Android keys the safe-area padding on keyboard visibility (#5988): the
   // back gesture closes the keyboard while the editor stays focused, and a
@@ -526,7 +529,8 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
 
   useEffect(() => {
     setAnchorMessageId(null);
-    lastScrolledAnchorMessageIdRef.current = null;
+    setSubmittedMessageId(null);
+    lastScrolledSubmittedMessageIdRef.current = null;
     setEndFollowEnabled(true);
     freeze.set(false);
   }, [freeze, selectedThreadKey]);
@@ -581,10 +585,12 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
 
   useEffect(() => {
     if (
-      anchorMessageId === null ||
-      lastScrolledAnchorMessageIdRef.current === anchorMessageId ||
+      submittedMessageId === null ||
+      lastScrolledSubmittedMessageIdRef.current === submittedMessageId ||
       contentPresentationKind !== "ready" ||
-      !selectedThreadFeed.some((entry) => entry.type === "message" && entry.id === anchorMessageId)
+      !selectedThreadFeed.some(
+        (entry) => entry.type === "message" && entry.id === submittedMessageId,
+      )
     ) {
       return;
     }
@@ -594,7 +600,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
       if (selectedThreadKeyRef.current !== targetThreadKey) {
         return;
       }
-      lastScrolledAnchorMessageIdRef.current = anchorMessageId;
+      lastScrolledSubmittedMessageIdRef.current = submittedMessageId;
       // Wait for the keyboard dismissal (started by blur() on send) to finish
       // before scrolling: scrollMessageToEnd freezes keyboard-driven inset
       // updates while it runs, and a close event swallowed by that freeze
@@ -604,7 +610,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
         .then(() => {
           if (
             selectedThreadKeyRef.current !== targetThreadKey ||
-            lastScrolledAnchorMessageIdRef.current !== anchorMessageId
+            lastScrolledSubmittedMessageIdRef.current !== submittedMessageId
           ) {
             return;
           }
@@ -613,17 +619,17 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
         .catch(() => {
           if (
             selectedThreadKeyRef.current !== targetThreadKey ||
-            lastScrolledAnchorMessageIdRef.current !== anchorMessageId
+            lastScrolledSubmittedMessageIdRef.current !== submittedMessageId
           ) {
             return;
           }
-          lastScrolledAnchorMessageIdRef.current = null;
+          lastScrolledSubmittedMessageIdRef.current = null;
           freeze.set(false);
         });
     });
     return () => cancelAnimationFrame(frame);
   }, [
-    anchorMessageId,
+    submittedMessageId,
     freeze,
     contentPresentationKind,
     selectedThreadFeed,
@@ -631,17 +637,39 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     selectedThreadKey,
   ]);
 
-  const handleSendMessage = useCallback(async () => {
-    const targetThreadKey = selectedThreadKey;
-    const messageId = await props.onSendMessage();
-    if (messageId === null || selectedThreadKeyRef.current !== targetThreadKey) {
-      return messageId;
-    }
+  const handleSendMessage = useCallback(
+    async (delivery?: TurnDeliveryMode) => {
+      const targetThreadKey = selectedThreadKey;
+      const hasUserMessage = selectedThreadFeed.some(
+        (entry) => entry.type === "message" && entry.message.role === "user",
+      );
+      const messageId = await props.onSendMessage(delivery);
+      if (messageId === null || selectedThreadKeyRef.current !== targetThreadKey) {
+        return messageId;
+      }
 
-    setAnchorMessageId(messageId);
-    composerEditorRef.current?.blur();
-    return messageId;
-  }, [props.onSendMessage, selectedThreadKey]);
+      setSubmittedMessageId(messageId);
+      setAnchorMessageId(
+        resolveThreadFeedSubmissionAnchor({
+          currentAnchorMessageId: anchorMessageId,
+          submittedMessageId: messageId,
+          hasStartedTurn: props.selectedThread.latestTurn !== null,
+          hasUserMessage,
+          queuedMessageCount: props.selectedThreadQueueCount,
+        }),
+      );
+      composerEditorRef.current?.blur();
+      return messageId;
+    },
+    [
+      anchorMessageId,
+      props.onSendMessage,
+      props.selectedThread.latestTurn,
+      props.selectedThreadQueueCount,
+      selectedThreadFeed,
+      selectedThreadKey,
+    ],
+  );
 
   const collapseComposer = useCallback(() => {
     composerEditorRef.current?.blur();
@@ -711,6 +739,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             listRef={listRef}
             freeze={freeze}
             anchorMessageId={anchorMessageId}
+            submittedMessageId={submittedMessageId}
             contentInsetEndAdjustment={combinedContentInsetEndAdjustment}
             contentTopInset={0}
             contentBottomInset={composerOverlayHeight}

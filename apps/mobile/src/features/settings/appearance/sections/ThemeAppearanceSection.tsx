@@ -2,12 +2,17 @@ import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../../../components/AppText";
 import {
+  BORING_MOBILE_THEME_ID,
+  DEFAULT_MOBILE_THEME_ID,
   getMobileThemeVariables,
+  isBoringMobileTheme,
   type MobileThemeIds,
   type MobileThemeMode,
   type MobileThemeVariables,
 } from "../../../../lib/mobileTheme";
 import { useThemeColor } from "../../../../lib/useThemeColor";
+import { PHOTO_SETS, type PhotoSetId } from "../../../scenery/photoSets";
+import { useScenery } from "../../../scenery/SceneryProvider";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
 
 const APPEARANCE_MODES: ReadonlyArray<{
@@ -158,10 +163,49 @@ function SectionLabel({ children }: { readonly children: string }) {
 }
 
 export function ThemeAppearanceSection() {
-  const { isReady, setThemeMode, themeIds, themeMode } = useAppearancePreferences();
+  const { isReady, setThemeIdForBothAppearances, setThemeMode, themeId, themeIds, themeMode } =
+    useAppearancePreferences();
+  const { photoSetId, setPhotoSetId } = useScenery();
+  const boring = isBoringMobileTheme(themeId);
+
+  const selectPhotoSet = (next: PhotoSetId) => {
+    setPhotoSetId(next);
+    setThemeIdForBothAppearances(DEFAULT_MOBILE_THEME_ID);
+  };
 
   return (
     <View className="gap-6">
+      <View className="gap-2">
+        <SectionLabel>Personalization</SectionLabel>
+        <Text className="px-2 text-sm text-foreground-muted">
+          Photo themes put a different kind of place behind the glass. Boring restores the original
+          T3 Chat colors and turns the photos off.
+        </Text>
+        <View accessibilityRole="radiogroup" className="flex-row flex-wrap gap-2">
+          {PHOTO_SETS.map((product) => (
+            <View className="w-[48%]" key={product.id}>
+              <ModeCard
+                disabled={!isReady}
+                label={product.label}
+                mode={themeMode}
+                onPress={() => selectPhotoSet(product.id)}
+                selected={!boring && photoSetId === product.id}
+                themeIds={{ light: DEFAULT_MOBILE_THEME_ID, dark: DEFAULT_MOBILE_THEME_ID }}
+              />
+            </View>
+          ))}
+          <View className="w-[48%]">
+            <ModeCard
+              disabled={!isReady}
+              label="Boring"
+              mode={themeMode}
+              onPress={() => setThemeIdForBothAppearances(BORING_MOBILE_THEME_ID)}
+              selected={boring}
+              themeIds={{ light: BORING_MOBILE_THEME_ID, dark: BORING_MOBILE_THEME_ID }}
+            />
+          </View>
+        </View>
+      </View>
       <View className="gap-2">
         <SectionLabel>Color scheme</SectionLabel>
         <View accessibilityRole="radiogroup" className="flex-row gap-2">

@@ -14,9 +14,8 @@ fi
 store=""
 for candidate in \
   "${HOME}/.git-credentials" \
-  /Users/m1-dev/.git-credentials \
   /opt/homebrew/var/buildkite-agent/.git-credentials; do
-  if [[ -f "$candidate" ]]; then
+  if [[ -s "$candidate" ]]; then
     store="$candidate"
     break
   fi

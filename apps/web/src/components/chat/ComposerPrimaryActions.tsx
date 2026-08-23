@@ -22,15 +22,18 @@ interface ComposerPrimaryActionsProps {
   showPlanFollowUpPrompt: boolean;
   promptHasText: boolean;
   isSendBusy: boolean;
+  /** An interrupt was requested and the turn has not stopped yet. */
+  isInterrupting?: boolean;
   sendDisabledReason: string | null;
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
-  /** Enter-to-send is disabled on mobile viewports, where stop would otherwise
-   * be the only primary action and a running turn could not be steered. */
-  showSendWhileRunning?: boolean;
+  /** Queue the draft for the next turn instead of steering the running one.
+   * When set, a running turn renders the send button as a split control with
+   * a "Queue for next turn" menu next to stop. */
+  onQueueSend?: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -65,13 +68,14 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   showPlanFollowUpPrompt,
   promptHasText,
   isSendBusy,
+  isInterrupting = false,
   sendDisabledReason,
   isConnecting,
   isEnvironmentUnavailable,
   isPreparingWorktree,
   hasSendableContent,
   preserveComposerFocusOnPointerDown = false,
-  showSendWhileRunning = false,
+  onQueueSend,
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
@@ -92,17 +96,25 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         "flex cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-[0_1px_--theme(--color-white/16%)] transition-all duration-150 hover:bg-destructive hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none",
         insidePendingAction
           ? "size-8 sm:size-7"
-          : showSendWhileRunning && hasSendableContent
+          : hasSendableContent
             ? "size-9 sm:size-8"
             : "size-8 sm:h-8 sm:w-8",
       )}
       {...pointerFocusProps}
       onClick={onInterrupt}
+      // Never disabled while interrupting: a turn that does not settle must not
+      // leave the only stop affordance dead. The label stays put because the
+      // scenery press feedback keys on it.
+      aria-busy={isInterrupting}
       aria-label="Stop generation"
     >
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-        <rect x="2" y="2" width="8" height="8" rx="1.5" />
-      </svg>
+      {isInterrupting ? (
+        <Spinner className="size-3.5" aria-hidden="true" />
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+          <rect x="2" y="2" width="8" height="8" rx="1.5" />
+        </svg>
+      )}
     </button>
   );
 
@@ -218,11 +230,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
-  const sendButton = (
+  const renderSendButton = (shape: "round" | "split") => (
     <button
       type="submit"
       className={cn(
-        "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-[0_1px_--theme(--color-white/16%)] hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none disabled:pointer-events-none disabled:opacity-30 disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8",
+        "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-[0_1px_--theme(--color-white/16%)] hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none disabled:pointer-events-none disabled:opacity-30 disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8",
+        shape === "split" ? "rounded-l-full rounded-r-none hover:scale-100" : "rounded-full",
         stageBackdropVariant
           ? "bg-transparent text-white enabled:shadow-black/24 enabled:hover:brightness-110"
           : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover",
@@ -246,7 +259,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                 ? "Preparing worktree"
                 : isSendBusy
                   ? "Sending"
-                  : "Send message"
+                  : isRunning
+                    ? "Send now"
+                    : "Send message"
       }
     >
       {stageBackdropVariant ? (
@@ -271,13 +286,49 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   );
 
   if (!isRunning) {
-    return sendButton;
+    return renderSendButton("round");
   }
 
+  // While a turn runs, send is always available beside stop: submit steers the
+  // running turn, and the menu queues the draft for the next turn instead.
+  const sendActionsDisabled =
+    isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable;
   return (
     <>
       {renderStopGenerationButton(false)}
-      {showSendWhileRunning && hasSendableContent ? sendButton : null}
+      {hasSendableContent ? (
+        onQueueSend ? (
+          <div className="flex items-center" data-chat-composer-send-while-running="true">
+            {renderSendButton("split")}
+            <Menu>
+              <MenuTrigger
+                render={
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex h-9 w-5 items-center justify-center overflow-hidden rounded-l-none rounded-r-full border-l shadow-xs transition-all duration-150 enabled:cursor-pointer disabled:pointer-events-none disabled:opacity-30 disabled:shadow-none sm:h-8",
+                      "border-l-message-action-foreground/20 bg-message-action text-message-action-foreground hover:bg-message-action-hover",
+                    )}
+                    aria-label="Send options"
+                    {...pointerFocusProps}
+                    disabled={sendActionsDisabled}
+                  />
+                }
+              >
+                <ChevronDownIcon className="size-3.5" />
+              </MenuTrigger>
+              <MenuPopup align="end" side="top">
+                <MenuItem disabled={sendActionsDisabled} onClick={() => onQueueSend()}>
+                  Queue for next turn
+                  <span className="text-muted-foreground ml-auto pl-3 text-xs">⌥⏎</span>
+                </MenuItem>
+              </MenuPopup>
+            </Menu>
+          </div>
+        ) : (
+          renderSendButton("round")
+        )
+      ) : null}
     </>
   );
 });

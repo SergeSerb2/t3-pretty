@@ -327,6 +327,8 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
 /** Per-activity work-log derivation; null for rows the work log drops. */
 function deriveWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry | null {
   if (activity.kind === "tool.started") return null;
+  // Generated live-status headlines feed the web work-live row, never the log.
+  if (activity.kind === "turn.headline") return null;
   if (activity.kind === "task.started") return null;
   // Terminal bypassed updates pass: Codex children's only terminal signal.
   if (activity.kind === "task.updated" && !isTerminalBypassUpdate(activity)) return null;
@@ -1177,9 +1179,13 @@ function deriveThreadFeedTurnFolds(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestTurn: ThreadFeedLatestTurn | null,
 ): ReadonlyMap<string, ThreadFeedTurnFold> {
+  const firstAssistantMessageIdByTurn = new Map<TurnId, string>();
   const terminalAssistantMessageIdByTurn = new Map<TurnId, string>();
   for (const entry of feed) {
     if (entry.type === "message" && entry.message.role === "assistant" && entry.message.turnId) {
+      if (!firstAssistantMessageIdByTurn.has(entry.message.turnId)) {
+        firstAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);
+      }
       terminalAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);
     }
   }
@@ -1227,17 +1233,24 @@ function deriveThreadFeedTurnFolds(
       continue;
     }
 
+    const firstAssistantMessageId = firstAssistantMessageIdByTurn.get(turnId);
     const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);
     const hiddenEntryIds = new Set(
-      entries.filter((entry) => entry.id !== terminalAssistantMessageId).map((entry) => entry.id),
+      entries
+        .filter(
+          (entry) =>
+            entry.id !== firstAssistantMessageId && entry.id !== terminalAssistantMessageId,
+        )
+        .map((entry) => entry.id),
     );
     if (hiddenEntryIds.size === 0) {
       continue;
     }
 
     const firstEntry = entries[0];
+    const firstHiddenEntry = entries.find((entry) => hiddenEntryIds.has(entry.id));
     const lastEntry = entries.at(-1);
-    if (!firstEntry || !lastEntry) {
+    if (!firstEntry || !firstHiddenEntry || !lastEntry) {
       continue;
     }
     const terminalEntry = terminalAssistantMessageId
@@ -1266,9 +1279,9 @@ function deriveThreadFeedTurnFolds(
         ? `Worked for ${duration}`
         : "Worked";
 
-    foldsByAnchorId.set(firstEntry.id, {
+    foldsByAnchorId.set(firstHiddenEntry.id, {
       turnId,
-      createdAt: firstEntry.createdAt,
+      createdAt: firstHiddenEntry.createdAt,
       hiddenEntryIds,
       label,
     });
@@ -1307,10 +1320,56 @@ export function deriveThreadFeedPresentation(
       appendPresentedFeedEntry(result, entry, expandedWorkGroupIds);
     }
   }
-  if (activeWorkStartedAt !== null) {
+  if (
+    activeWorkStartedAt !== null &&
+    (!feedTailSignalsActivity(result) || feedHasFilteredLiveTools(sourceFeed, collapsedEntryIds))
+  ) {
     result.push(presentedWorkingEntry(activeWorkStartedAt));
   }
   return result;
+}
+
+/**
+ * Web parity for the working row (MessagesTimeline's appendWorkingRow): hide
+ * "Thinking" while streaming assistant text is its own activity signal.
+ * Unlike web, in-progress tool activities are filtered from this feed rather
+ * than shown as a live row, so the working row stays up while tools run —
+ * dropping it would leave the turn with no liveness signal at all. Only the
+ * last presented row counts: earlier streaming text above a tool group is
+ * not enough liveness once work has moved on. A filtered live tool still
+ * counts as activity even when the presented tail is that streaming text.
+ */
+function feedTailSignalsActivity(entries: ReadonlyArray<ThreadFeedEntry>): boolean {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    if (entry.type === "work-toggle" || entry.type === "turn-fold") continue;
+    return (
+      entry.type === "message" &&
+      entry.message.role === "assistant" &&
+      entry.message.streaming &&
+      entry.message.text.trim().length > 0
+    );
+  }
+  return false;
+}
+
+function feedHasFilteredLiveTools(
+  entries: ReadonlyArray<ThreadFeedEntry>,
+  collapsedEntryIds: ReadonlySet<string>,
+): boolean {
+  // Stop at the latest user message so leftover earlier-turn live tools don't count.
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    if (entry.type === "message" && entry.message.role === "user") return false;
+    if (collapsedEntryIds.has(entry.id) || entry.type !== "activity-group") continue;
+    if (
+      entry.activities.length > 0 &&
+      entry.activities.every((activity) => activity.toolLike && activity.status === "neutral")
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Presented rows are minted per call below, but LegendList re-runs row bodies

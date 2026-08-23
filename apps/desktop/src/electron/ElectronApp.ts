@@ -72,6 +72,15 @@ export class ElectronApp extends Context.Service<
     ) => Effect.Effect<boolean>;
     readonly setDesktopName: (desktopName: string) => Effect.Effect<void>;
     readonly setDockIcon: (iconPath: string) => Effect.Effect<void>;
+    /** Dock badge text; `""` clears it. No-op off macOS (`app.dock` is undefined). */
+    readonly setDockBadge: (label: string) => Effect.Effect<void>;
+    /**
+     * One informational dock bounce, returning the id needed to cancel it (or
+     * `-1` where there is no dock). Informational bounces stop on their own,
+     * so cancelling is only about not nagging a user who already came back.
+     */
+    readonly bounceDock: Effect.Effect<number>;
+    readonly cancelDockBounce: (id: number) => Effect.Effect<void>;
     readonly startLocalCrashReporter: (
       globalExtra: Readonly<Record<string, string>>,
     ) => Effect.Effect<void>;
@@ -187,6 +196,16 @@ export const make = ElectronApp.of({
   setDockIcon: (iconPath) =>
     Effect.sync(() => {
       Electron.app.dock?.setIcon(iconPath);
+    }),
+  setDockBadge: (label) =>
+    Effect.sync(() => {
+      Electron.app.dock?.setBadge(label);
+    }),
+  bounceDock: Effect.sync(() => Electron.app.dock?.bounce("informational") ?? -1),
+  cancelDockBounce: (id) =>
+    Effect.sync(() => {
+      if (id < 0) return;
+      Electron.app.dock?.cancelBounce(id);
     }),
   startLocalCrashReporter: (globalExtra) =>
     Effect.sync(() => {

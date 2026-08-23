@@ -105,6 +105,7 @@ type MakeLiveActivityRequestInput =
       readonly event: "start" | "update";
       readonly state: RelayAgentActivityAggregateState;
       readonly alert?: ApnsLiveActivityAlert | null;
+      readonly urgent?: boolean;
     });
 
 // An alert dict on an update/end makes it an "alerting" update: iOS wakes the
@@ -156,9 +157,10 @@ function makeLiveActivityRequest(input: MakeLiveActivityRequestInput): ApnsLiveA
   return {
     token: input.token,
     event: input.event,
-    // Alerting updates must land immediately; routine redraws stay at the
-    // budget-friendly low priority.
-    priority: input.event === "update" && !input.alert ? "5" : "10",
+    // Alerting and shape-changing updates (phase transitions, rows coming or
+    // going) must land immediately; routine content redraws stay at the
+    // budget-friendly low priority so iOS never throttles the activity.
+    priority: input.event === "update" && !input.alert && !input.urgent ? "5" : "10",
     payload: {
       aps: {
         timestamp,

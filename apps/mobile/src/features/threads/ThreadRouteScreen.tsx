@@ -18,7 +18,7 @@ import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
 } from "@t3tools/client-runtime/state/threads";
-import { Platform, ScrollView, View } from "react-native";
+import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
 import { useEnvironmentQuery } from "../../state/query";
@@ -570,10 +570,28 @@ function ThreadRouteContent(
     selectedThread !== null && canSettle(selectedThread, { now: threadLifecycleNow });
   const canSnoozeThread =
     selectedThread !== null && canSnooze(selectedThread, { now: threadLifecycleNow });
+  // Settle and snooze both park the thread you're done with, so a successful
+  // park dismisses the detail view back to the threads list — the same Home
+  // escape deep links use when no back history exists.
+  const dismissToThreadList = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.dispatch(StackActions.replace("Home"));
+    }
+  }, [navigation]);
   const handleSettleThread = useCallback(() => {
     if (selectedThread === null) return;
-    void settleThread(selectedThread);
-  }, [selectedThread, settleThread]);
+    void (async () => {
+      try {
+        if (await settleThread(selectedThread)) dismissToThreadList();
+      } catch {
+        // Handled failures alert inside settleThread; an unexpected rejection
+        // must not surface as an unhandled promise.
+        Alert.alert("Could not settle thread", "The thread could not be settled.");
+      }
+    })();
+  }, [selectedThread, settleThread, dismissToThreadList]);
   const handleUnsettleThread = useCallback(() => {
     if (selectedThread === null) return;
     void unsettleThread(selectedThread);
@@ -581,9 +599,17 @@ function ThreadRouteContent(
   const handleSnoozeThread = useCallback(
     (snoozedUntil: string) => {
       if (selectedThread === null) return;
-      void snoozeThread(selectedThread, snoozedUntil);
+      void (async () => {
+        try {
+          if (await snoozeThread(selectedThread, snoozedUntil)) dismissToThreadList();
+        } catch {
+          // Handled failures alert inside snoozeThread; an unexpected rejection
+          // must not surface as an unhandled promise.
+          Alert.alert("Could not snooze thread", "The thread could not be snoozed.");
+        }
+      })();
     },
-    [selectedThread, snoozeThread],
+    [selectedThread, snoozeThread, dismissToThreadList],
   );
   const handleUnsnoozeThread = useCallback(() => {
     if (selectedThread === null) return;

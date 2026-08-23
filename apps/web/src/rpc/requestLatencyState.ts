@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { WS_METHODS } from "@t3tools/contracts";
+import { type EnvironmentId, WS_METHODS } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
 import { appAtomRegistry } from "./atomRegistry";
@@ -20,6 +20,7 @@ export interface SlowRpcAckRequest {
   readonly startedAtMs: number;
   readonly tag: string;
   readonly thresholdMs: number;
+  readonly environmentId?: EnvironmentId;
 }
 
 interface PendingRpcAckRequest {
@@ -71,7 +72,12 @@ export function getSlowRpcAckRequests(): ReadonlyArray<SlowRpcAckRequest> {
  * bare WS method (used to decide whether and how long to wait); `tag` is the
  * human-readable label shown in the toast, which defaults to the method.
  */
-export function trackRpcRequestSent(requestId: string, method: string, tag = method): void {
+export function trackRpcRequestSent(
+  requestId: string,
+  method: string,
+  tag = method,
+  environmentId?: EnvironmentId,
+): void {
   if (!shouldTrackRpcAck(method)) {
     return;
   }
@@ -87,6 +93,7 @@ export function trackRpcRequestSent(requestId: string, method: string, tag = met
     startedAtMs,
     tag,
     thresholdMs,
+    ...(environmentId !== undefined ? { environmentId } : {}),
   };
   const timeoutId = setTimeout(() => {
     pendingRpcAckRequests.delete(requestId);

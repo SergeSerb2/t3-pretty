@@ -76,6 +76,10 @@ export const ApnsDeliveryJobPayload = Schema.Struct({
   notification: Schema.NullOr(ApnsNotificationPayload),
   // Optional so jobs queued by older relay builds still decode.
   alert: Schema.optional(Schema.NullOr(ApnsLiveActivityAlert)),
+  // Phase/count/row-set changes ship at APNs priority 10 so the card moves
+  // the moment work transitions; cosmetic status ticks stay at the
+  // budget-friendly low priority. Optional for jobs from older relay builds.
+  urgent: Schema.optional(Schema.Boolean),
   createdAt: Schema.String,
   expiresAt: Schema.String,
 });
@@ -253,6 +257,7 @@ export function makeApnsDeliveryJobPayload(input: {
   readonly aggregate: ApnsDeliveryJobPayload["aggregate"];
   readonly notification?: ApnsNotificationPayload | null;
   readonly alert?: ApnsLiveActivityAlert | null | undefined;
+  readonly urgent?: boolean | undefined;
   readonly createdAt: string;
   readonly expiresAt: string;
   readonly jobId: string;
@@ -273,6 +278,7 @@ export function makeApnsDeliveryJobPayload(input: {
     // Omitted (not null) when absent so signatures stay identical to jobs from
     // relay builds that predate the field.
     ...(input.alert ? { alert: input.alert } : {}),
+    ...(input.urgent ? { urgent: true } : {}),
     createdAt: input.createdAt,
     expiresAt: input.expiresAt,
   };

@@ -18,6 +18,10 @@ export interface GitActionResultNotification {
 }
 
 const RESULT_DISMISS_MS = 5_000;
+// Failures carry the git output the user has to read, and the overlay is the
+// only place it lands — give it time, but still expire it: the atom is global,
+// so a sticky error would follow the user into every other thread.
+const ERROR_DISMISS_MS = 20_000;
 
 const gitActionResultAtom = Atom.make<GitActionResultNotification | null>(null).pipe(
   Atom.keepAlive,
@@ -32,10 +36,13 @@ function broadcast(result: GitActionResultNotification | null): void {
 export function showGitActionResult(result: GitActionResultNotification): void {
   if (dismissTimer) clearTimeout(dismissTimer);
   broadcast(result);
-  dismissTimer = setTimeout(() => {
-    dismissTimer = null;
-    broadcast(null);
-  }, RESULT_DISMISS_MS);
+  dismissTimer = setTimeout(
+    () => {
+      dismissTimer = null;
+      broadcast(null);
+    },
+    result.type === "error" ? ERROR_DISMISS_MS : RESULT_DISMISS_MS,
+  );
 }
 
 export function dismissGitActionResult(): void {

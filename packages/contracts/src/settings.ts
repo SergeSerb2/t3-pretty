@@ -78,6 +78,14 @@ export const GlassOpacity = Schema.Int.check(
 );
 export type GlassOpacity = typeof GlassOpacity.Type;
 export const DEFAULT_GLASS_OPACITY: GlassOpacity = 80;
+
+export const MIN_APPEARANCE_CONTRAST = 50;
+export const MAX_APPEARANCE_CONTRAST = 200;
+export const AppearanceContrast = Schema.Int.check(
+  Schema.isBetween({ minimum: MIN_APPEARANCE_CONTRAST, maximum: MAX_APPEARANCE_CONTRAST }),
+);
+export type AppearanceContrast = typeof AppearanceContrast.Type;
+export const DEFAULT_APPEARANCE_CONTRAST: AppearanceContrast = 100;
 /**
  * Font size preferences, in CSS pixels. The ranges are deliberately narrow:
  * the interface size scales every rem-based dimension in the app, so the
@@ -136,6 +144,9 @@ export const DEFAULT_BROWSER_VIEWPORT: PreviewViewportSetting = FILL_PREVIEW_VIE
 export const DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW = true;
 
 export const ClientSettingsSchema = Schema.Struct({
+  appearanceContrast: AppearanceContrast.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_APPEARANCE_CONTRAST)),
+  ),
   browserDefaultViewport: PreviewViewportSetting.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_VIEWPORT)),
   ),
@@ -413,10 +424,9 @@ export type ClaudeSettings = typeof ClaudeSettings.Type;
 
 export const CursorSettings = makeProviderSettingsSchema(
   {
-    // Off by default (like Grok): the binding is not yet
-    // stable enough to probe on every install. Users opt in from Settings.
+    // Enabled by default alongside Codex and Claude Agent.
     enabled: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
     binaryPath: makeBinaryPathSetting("cursor-agent").pipe(
@@ -450,8 +460,8 @@ export type CursorSettings = typeof CursorSettings.Type;
 
 export const GrokSettings = makeProviderSettingsSchema(
   {
-    // Off by default (like Cursor): the binding is not yet
-    // stable enough to probe on every install. Users opt in from Settings.
+    // Off by default: the binding is not yet stable enough to probe on every
+    // install. Users opt in from Settings.
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(false)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
@@ -602,6 +612,13 @@ export const ServerSettings = Schema.Struct({
    * uses the user's Grok/Codex subscription and is skipped for other providers.
    */
   autoGenerateProjectIcons: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * When on, the text generation model rewrites the live activity line of a
+   * running turn into a short human-readable headline ("Updating contract
+   * tests") instead of raw tool summaries and error text. Generation uses the
+   * user's text generation provider subscription.
+   */
+  generateActivityHeadlines: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   backgroundActivity: BackgroundActivitySettings,
   // Legacy flat fields retained for old settings files and old clients. New
   // consumers should resolve `backgroundActivity` instead.
@@ -815,6 +832,7 @@ export const ServerSettingsPatch = Schema.Struct({
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   autoGenerateProjectIcons: Schema.optionalKey(Schema.Boolean),
+  generateActivityHeadlines: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),
@@ -878,6 +896,7 @@ export const ServerSettingsPatch = Schema.Struct({
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
 export const ClientSettingsPatch = Schema.Struct({
+  appearanceContrast: Schema.optionalKey(AppearanceContrast),
   browserDefaultViewport: Schema.optionalKey(PreviewViewportSetting),
   browserDefaultZoomFactor: Schema.optionalKey(PreviewZoomFactor),
   browserDefaultAppearance: Schema.optionalKey(PreviewAppearancePreference),

@@ -1,3 +1,4 @@
+import type { DesktopBridge } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 // isElectron is read at module load, so the desktop bridge has to exist before
@@ -7,7 +8,7 @@ function stubDesktopWindow(storedFlag?: string): void {
   if (globalThis.window === undefined) {
     Object.defineProperty(globalThis, "window", { value: target, configurable: true });
   }
-  target.desktopBridge = {} as typeof window.desktopBridge;
+  target.desktopBridge = {} as DesktopBridge;
   const store = new Map<string, string>();
   if (storedFlag !== undefined) store.set("t3code:desktop-clerk-enabled:v1", storedFlag);
   Object.defineProperty(target, "localStorage", {

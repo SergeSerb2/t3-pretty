@@ -54,6 +54,17 @@ describe("assetResponseHeaders", () => {
     });
   });
 
+  it("declares utf-8 for HTML assets so non-ASCII content renders correctly", () => {
+    expect(assetResponseHeaders("/workspace/page.html")).toHaveProperty(
+      "Content-Type",
+      "text/html; charset=utf-8",
+    );
+    expect(assetResponseHeaders("/workspace/PAGE.HTM")).toHaveProperty(
+      "Content-Type",
+      "text/html; charset=utf-8",
+    );
+  });
+
   it("caches attachment bytes immutably and allows cross-origin reads", () => {
     expect(assetResponseHeaders("/attachments/user-image.png", "attachment")).toEqual({
       "Cache-Control": "private, max-age=31536000, immutable",

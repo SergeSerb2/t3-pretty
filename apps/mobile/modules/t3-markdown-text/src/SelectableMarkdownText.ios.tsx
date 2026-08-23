@@ -8,7 +8,7 @@ import {
   nativeMarkdownDocumentRuns,
   nativeMarkdownWithPreservedSoftBreaks,
 } from "./nativeMarkdownText";
-import { NativeMarkdownBlock } from "./NativeMarkdownBlock.ios";
+import { MarkdownImageRendererContext, NativeMarkdownBlock } from "./NativeMarkdownBlock.ios";
 import {
   MarkdownLinkCallbacksContext,
   NativeMarkdownSelectableText,
@@ -23,6 +23,8 @@ const EMPTY_SKILLS: ReadonlyArray<SelectableMarkdownSkill> = [];
 export type {
   MarkdownCodeHighlighter,
   MarkdownHighlightedToken,
+  MarkdownImageRenderer,
+  MarkdownImageRequest,
   NativeMarkdownTextStyle,
   SelectableMarkdownSkill,
   SelectableMarkdownTextProps,
@@ -41,6 +43,7 @@ export function SelectableMarkdownText({
   preserveSoftBreaks = false,
   onLinkPress,
   onLinkLongPress,
+  renderImage,
   marginTop = 0,
   marginBottom = 0,
 }: SelectableMarkdownTextProps) {
@@ -69,42 +72,44 @@ export function SelectableMarkdownText({
   );
 
   return (
-    // A percentage width here creates a cyclic intrinsic measurement inside
-    // shrink-to-fit containers such as user-message bubbles. Yoga then gives
-    // the native text node an unbounded second pass and the parent only clips
-    // the resulting single-line width instead of reflowing it.
-    <View style={{ flexShrink: 1, minWidth: 0, marginTop, marginBottom }}>
-      <MarkdownLinkCallbacksContext.Provider value={linkCallbacks}>
-        {chunks.map((chunk, index) => {
-          const content =
-            chunk.kind === "rich" ? (
-              <NativeMarkdownBlock
-                node={chunk.node}
-                skills={skills}
-                textStyle={textStyle}
-                highlightCode={highlightCode}
-                highlightCodeEnabled={highlightCodeEnabled}
-                onLinkPress={onLinkPress}
-              />
-            ) : (
-              <NativeMarkdownSelectableText
-                runs={chunk.runs}
-                textStyle={textStyle}
-                onLinkPress={onLinkPress}
-                onLinkLongPress={onLinkLongPress}
-              />
-            );
+    <MarkdownImageRendererContext.Provider value={renderImage ?? null}>
+      {/* A percentage width here creates a cyclic intrinsic measurement inside
+          shrink-to-fit containers such as user-message bubbles. Yoga then gives
+          the native text node an unbounded second pass and the parent only clips
+          the resulting single-line width instead of reflowing it. */}
+      <View style={{ flexShrink: 1, minWidth: 0, marginTop, marginBottom }}>
+        <MarkdownLinkCallbacksContext.Provider value={linkCallbacks}>
+          {chunks.map((chunk, index) => {
+            const content =
+              chunk.kind === "rich" ? (
+                <NativeMarkdownBlock
+                  node={chunk.node}
+                  skills={skills}
+                  textStyle={textStyle}
+                  highlightCode={highlightCode}
+                  highlightCodeEnabled={highlightCodeEnabled}
+                  onLinkPress={onLinkPress}
+                />
+              ) : (
+                <NativeMarkdownSelectableText
+                  runs={chunk.runs}
+                  textStyle={textStyle}
+                  onLinkPress={onLinkPress}
+                  onLinkLongPress={onLinkLongPress}
+                />
+              );
 
-          return (
-            <View
-              key={chunk.key}
-              style={{ paddingTop: nativeMarkdownChunkSpacing(chunks[index - 1], chunk) }}
-            >
-              {content}
-            </View>
-          );
-        })}
-      </MarkdownLinkCallbacksContext.Provider>
-    </View>
+            return (
+              <View
+                key={chunk.key}
+                style={{ paddingTop: nativeMarkdownChunkSpacing(chunks[index - 1], chunk) }}
+              >
+                {content}
+              </View>
+            );
+          })}
+        </MarkdownLinkCallbacksContext.Provider>
+      </View>
+    </MarkdownImageRendererContext.Provider>
   );
 }

@@ -22,7 +22,9 @@ import {
   EDIT_CONTEXT_MENU_CHANNEL,
   MENU_ACTION_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
+  WINDOW_ACTIVE_STATE_CHANNEL,
   WINDOW_FULLSCREEN_STATE_CHANNEL,
+  WINDOW_INTERACTING_CHANNEL,
 } from "../ipc/channels.ts";
 import {
   buildEditContextMenuItems,
@@ -115,6 +117,10 @@ export class DesktopWindow extends Context.Service<
     // guest page instead of the app UI. The menu routes here to always target
     // the main window.
     readonly zoomMain: (direction: MainWindowZoomDirection) => Effect.Effect<void>;
+    // How many threads are waiting on the human right now. Drives the dock
+    // badge, plus a single informational bounce whenever that total grows
+    // while the window is in the background.
+    readonly setDockAttention: (count: number) => Effect.Effect<void>;
     readonly syncAppearance: Effect.Effect<void>;
   }
 >()("@t3tools/desktop/window/DesktopWindow") {}
@@ -186,6 +192,18 @@ function buildConnectingSplashDataUrl(shouldUseDarkColors: boolean): string {
   const accent = shouldUseDarkColors ? "#f8fafc" : "#1f2937";
   const track = shouldUseDarkColors ? "rgba(248,250,252,0.18)" : "rgba(31,41,55,0.18)";
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.spinner{width:26px;height:26px;border:3px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}.label{font-size:13px}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="spinner"></div><div class="label">Connecting to WSL…</div></body></html>`;
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
+// Painted when renderer crash recovery gives up, so the window is never left
+// blank. Same inlined data URL as the connecting splash: no asset, no backend,
+// and nothing to load from a renderer that keeps dying.
+function buildRendererCrashDataUrl(shouldUseDarkColors: boolean, displayName: string): string {
+  const safeDisplayName = displayName.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
+  const background = getInitialWindowBackgroundColor(shouldUseDarkColors);
+  const label = shouldUseDarkColors ? "#9ca3af" : "#6b7280";
+  const accent = shouldUseDarkColors ? "#f8fafc" : "#1f2937";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:0 32px;text-align:center;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.title{font-size:15px;font-weight:600;color:${accent}}.label{font-size:13px;max-width:34em;line-height:1.5}</style></head><body><div class="title">${safeDisplayName} stopped responding</div><div class="label">Quit and reopen the app to get back to work. Your agents keep running in the background, so nothing is lost.</div></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
@@ -304,6 +322,16 @@ export const make = Effect.gen(function* () {
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
   let flushMainWindowBounds: Effect.Effect<void> = Effect.void;
+  // Dock attention state. `mainWindowFocused` is the main process's view of
+  // window key state — the renderer's own focus is not a substitute, since
+  // focus moving into an embedded preview blurs it while the window stays key.
+  let mainWindowFocused = false;
+  let dockAttentionCount = 0;
+  // Growth is only news after the user has seen the window. Empty first
+  // counts (sidebar mounts at 0 before threads hydrate) and backlog that
+  // arrives during splash/reveal are a baseline, not a bounce.
+  let dockAttentionSeeded = false;
+  let dockBounceId = -1;
 
   const dismissConnectingSplash = Effect.gen(function* () {
     const splash = yield* Ref.getAndSet(splashWindowRef, Option.none());
@@ -651,6 +679,58 @@ export const make = Effect.gen(function* () {
       });
     }
 
+    const sendWindowState = (channel: string, value: boolean) => {
+      if (window.isDestroyed()) return;
+      window.webContents.send(channel, value);
+    };
+
+    // Key-state pushes come from the window, not the renderer: focus moving
+    // into an embedded preview WebContentsView blurs the renderer while the
+    // window is still key, which would falsely dim the whole app chrome.
+    // Seed from the window's current state — the focus event for an
+    // already-key window fired before these listeners existed, and an
+    // unseeded false would let the first badge push bounce the Dock at a
+    // user who is looking straight at the app. Push that seed to the
+    // renderer too: focus/blur only fire on later transitions, so an
+    // already-unfocused window would never get `data-window-inactive`.
+    mainWindowFocused = window.isFocused();
+    if (mainWindowFocused) dockAttentionSeeded = true;
+    window.on("focus", () => {
+      mainWindowFocused = true;
+      dockAttentionSeeded = true;
+      sendWindowState(WINDOW_ACTIVE_STATE_CHANNEL, true);
+      const bounceId = dockBounceId;
+      dockBounceId = -1;
+      runFork(electronApp.cancelDockBounce(bounceId));
+    });
+    window.on("blur", () => {
+      mainWindowFocused = false;
+      sendWindowState(WINDOW_ACTIVE_STATE_CHANNEL, false);
+    });
+    sendWindowState(WINDOW_ACTIVE_STATE_CHANNEL, mainWindowFocused);
+    // Glass blur is expensive to recomposite every frame of a drag or resize.
+    // `will-resize`/`will-move` fire on every frame of the gesture while
+    // `resized`/`moved` fire once at its end, so dedupe to exactly one IPC
+    // push per edge instead of one per frame.
+    let windowInteracting = false;
+    const sendWindowInteracting = (value: boolean) => {
+      if (windowInteracting === value) return;
+      windowInteracting = value;
+      sendWindowState(WINDOW_INTERACTING_CHANNEL, value);
+    };
+    window.on("will-resize", () => {
+      sendWindowInteracting(true);
+    });
+    window.on("will-move", () => {
+      sendWindowInteracting(true);
+    });
+    window.on("resized", () => {
+      sendWindowInteracting(false);
+    });
+    window.on("moved", () => {
+      sendWindowInteracting(false);
+    });
+
     let developmentLoadRetryIndex = 0;
     let developmentLoadRetryFiber: Fiber.Fiber<void, never> | undefined;
     let rendererRecoveryTimestamps: number[] = [];
@@ -707,6 +787,10 @@ export const make = Effect.gen(function* () {
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
       window.setTitle(environment.displayName);
+      // Listener-attach seed is dropped if the renderer is not live yet.
+      // Re-push so a first load (or crash-recovery reload) still gets the
+      // current key state.
+      sendWindowState(WINDOW_ACTIVE_STATE_CHANNEL, mainWindowFocused);
     });
     window.webContents.on(
       "did-fail-load",
@@ -758,6 +842,11 @@ export const make = Effect.gen(function* () {
             recovering: shouldRecover,
           });
           if (!shouldRecover) {
+            if (recoverable && !window.isDestroyed()) {
+              void window
+                .loadURL(buildRendererCrashDataUrl(shouldUseDarkColors, environment.displayName))
+                .catch(() => undefined);
+            }
             return;
           }
           rendererRecoveryTimestamps.push(now);
@@ -951,6 +1040,21 @@ export const make = Effect.gen(function* () {
       // the previewed page along with the app UI. The preview browser keeps its
       // own zoom, so put each guest back where the preview left it.
       yield* previewManager.reapplyZoom();
+    }),
+    setDockAttention: Effect.fn("desktop.window.setDockAttention")(function* (count) {
+      const previousCount = dockAttentionCount;
+      const seeded = dockAttentionSeeded;
+      dockAttentionCount = count;
+      yield* electronApp.setDockBadge(count === 0 ? "" : String(count));
+      // Only a *growing* backlog is news — never splash hydration, never the
+      // first count before the window has been key — and only while the user
+      // is looking elsewhere; bouncing at someone who is already in the app
+      // is nagging.
+      if (!seeded || count <= previousCount || mainWindowFocused) return;
+      // A bounce may still be in flight from the last growth; cancel it so
+      // the id we keep is always the one focus needs to cancel.
+      if (dockBounceId >= 0) yield* electronApp.cancelDockBounce(dockBounceId);
+      dockBounceId = yield* electronApp.bounceDock;
     }),
     syncAppearance: Effect.gen(function* () {
       const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;

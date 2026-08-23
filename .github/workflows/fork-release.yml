@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 # Buildkite's GitHub Actions importer does not copy pipeline `env:` into
 # imported jobs. Public feed values have to live here as literals.
@@ -40,7 +40,7 @@ env:
 
 # Versions stay monotonic, so desktop releases still queue one at a time.
 # Preflight and the WSL node-pty compile run on hosted ubuntu-latest and do
-# not occupy m1-dev. Packaging stays on the native Mac and Windows agents.
+# not occupy the packaging Mac. Packaging stays on the native Mac and Windows agents.
 concurrency:
   group: fork-release
   cancel-in-progress: false
@@ -49,13 +49,10 @@ jobs:
   preflight:
     name: Resolve T3 Pretty release
     continue-on-error: true
-    # contents: write so the changelog step can push the generated release
-    # notes commit. The GITHUB_TOKEN push does not retrigger this workflow.
     permissions:
-      contents: write
+      contents: read
     runs-on: ubuntu-latest
-    # Headroom above the changelog generator's 10-minute model budget so a
-    # stalled CLIProxy request can never get the preflight hard-killed.
+    # Bound the importer so a stalled hosted job cannot run for hours.
     timeout-minutes: 15
     outputs:
       # Mint can no-op (no ancestor) and write minted=false. Real mint
@@ -70,7 +67,9 @@ jobs:
       name: ${{ steps.release.outputs.name || '-' }}
       upstream_tag: ${{ steps.release.outputs.upstream_tag || '-' }}
       # ref is a commit-ish. Never default it to the empty placeholder '-'.
-      ref: ${{ steps.changelog.outputs.ref || github.sha || env.BUILDKITE_COMMIT }}
+      # Hosted preflight writes and pushes nothing; the native Mac packager
+      # bakes the What's New notes and pushes them after the feed is live.
+      ref: ${{ github.sha || env.BUILDKITE_COMMIT }}
     steps:
       - id: checkout
         name: Use the importer checkout
@@ -136,6 +135,10 @@ jobs:
             gha_out "relevant=false"
             exit 0
           fi
+          # docs(changelog) still changes apps/web, so notes pushes stay
+          # relevant. The already-released check skips them by subject: the
+          # version shipped from the parent commit and the native packagers
+          # feed-gate any rebuild.
           if [[ "${GITHUB_EVENT_NAME}" != "push" ]] || ! git rev-parse --verify --quiet HEAD~1 >/dev/null; then
             gha_out "relevant=true"
             exit 0
@@ -208,6 +211,14 @@ jobs:
         if: steps.checkout.outputs.ready == 'true' && steps.paths.outputs.relevant == 'true' && steps.tags.outputs.can_mint == 'true'
         shell: bash
         run: |
+          # An automated notes commit means its parent already shipped this
+          # version: the native packagers feed-gate any rebuild, so hosted
+          # preflight must not mint or start imported jobs for it either.
+          if [[ "$(git log -1 --format=%s)" == "docs(changelog): add release notes through v"* ]]; then
+            echo "Automated notes commit; the release already shipped from its parent."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           existing_tag="$(
             git tag --points-at HEAD \
               --list 'fork-v*' \
@@ -342,32 +353,6 @@ jobs:
           T3_SKIP_UNRESOLVABLE_MINT: "1"
         run: node scripts/fork/resolve-fork-release.mjs
 
-      - id: changelog
-        name: Generate What's New changelog entries
-        # main only: a manual dispatch of another ref must not push its
-        # history to main.
-        if: >-
-          steps.checkout.outputs.ready == 'true' &&
-          steps.paths.outputs.relevant == 'true' &&
-          steps.tags.outputs.can_mint == 'true' &&
-          steps.existing.outputs.should_release == 'true' &&
-          steps.signing.outputs.configured == 'true' &&
-          steps.release.outcome == 'success' &&
-          steps.release.outputs.minted == 'true' &&
-          steps.release.outputs.version != '' &&
-          steps.release.outputs.version != '-' &&
-          github.ref == 'refs/heads/main'
-        continue-on-error: true
-        env:
-          CLI_PROXY_API_KEY: ${{ env.CLI_PROXY_API_KEY }}
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        # Writes one What's New entry per shipped fork build — the fork's own
-        # changes plus the integrated parent nightly — for every build missing
-        # an entry, then commits and pushes so this release ships its own
-        # notes. Failures downgrade to warnings and never block the release;
-        # the next run regenerates whatever is missing.
-        run: node scripts/fork/generate-changelog.mjs
-
   # Only GHA job that needs preflight. Native DMG/NSIS/relay mint versions
   # themselves in .buildkite/pipeline.yml and do not read these outputs.
   build_wsl_node_pty:
@@ -428,7 +413,7 @@ jobs:
         run: |
           set -euo pipefail
           # Native linux/amd64: the previous Mac job compiled this inside
-          # qemu/rosetta Docker and serialized with the DMG on m1-dev.
+          # qemu/rosetta Docker and serialized with the DMG on the packaging Mac.
           sudo apt-get update
           # `file` is not on Buildkite hosted linux-small. The ELF check
           # below is how we refuse a Darwin/QEMU binary.

@@ -3,6 +3,33 @@ import type { ModelSelection, ProviderOptionDescriptor } from "@t3tools/contract
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { selectableChoices } from "./thread-settings-options";
 
+export type ThreadSettingsSheetPage = "home" | "catalog";
+
+/** Map the inner picker route to the page we re-present after a live session update. */
+export function threadSettingsSheetPageForRoute(routeName: string): ThreadSettingsSheetPage | null {
+  if (routeName === "ThreadSettingsCatalog") {
+    return "catalog";
+  }
+  if (routeName === "ThreadSettingsHome") {
+    return "home";
+  }
+  return null;
+}
+
+/** Keep the in-sheet page only for a live re-present of the same open owner. */
+export function presentedSettingsSheetPage(input: {
+  readonly preservePage: boolean;
+  readonly currentOwnerId: string | undefined;
+  readonly nextOwnerId: string;
+  readonly currentPage: ThreadSettingsSheetPage | undefined;
+  readonly requestedPage: ThreadSettingsSheetPage | undefined;
+}): ThreadSettingsSheetPage | undefined {
+  if (input.preservePage && input.currentOwnerId === input.nextOwnerId) {
+    return input.currentPage;
+  }
+  return input.requestedPage;
+}
+
 /** Match the terms a user can actually see or recognize in the model picker. */
 export function modelMatchesCatalogQuery(input: {
   readonly model: ModelOption;

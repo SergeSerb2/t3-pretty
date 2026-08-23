@@ -1,11 +1,14 @@
 import { useAtomValue } from "@effect/atom-react";
 import { createPullRequestEnvironmentAtoms } from "@t3tools/client-runtime/state/pull-requests";
+import {
+  isSettledAtomQueryInterrupt,
+  readAtomQueryResult,
+} from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   PullRequestListInput,
   PullRequestListStatsInput,
 } from "@t3tools/contracts";
-import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useMemo } from "react";
 
@@ -16,7 +19,7 @@ import {
   type EnvironmentPullRequestStat,
   type MergedPullRequestList,
 } from "../components/pullRequest/pullRequestList.logic";
-import { formatEnvironmentQueryError } from "./query";
+import { useRetryInterruptedQuery } from "./query";
 
 export const pullRequestEnvironment = createPullRequestEnvironmentAtoms(connectionAtomRuntime);
 
@@ -25,12 +28,13 @@ export interface EnvironmentQueryTarget<Input> {
   readonly input: Input;
 }
 
-interface MergedEnvironmentQueryView<A> {
+interface MergedEnvironmentQueryView<A, Input> {
   /** One entry per environment that has answered, in the order the targets were given. */
   readonly values: ReadonlyArray<readonly [EnvironmentId, A]>;
   /** The first environment that failed. Others may still have answered — this is not fatal. */
   readonly error: string | null;
   readonly isPending: boolean;
+  readonly retryTargets: ReadonlyArray<EnvironmentQueryTarget<Input>>;
 }
 
 /**
@@ -48,27 +52,30 @@ function createMergedEnvironmentQuery<Input, A>(
   ) => Atom.Atom<AsyncResult.AsyncResult<A, unknown>>,
 ) {
   const family = Atom.family((key: string) =>
-    Atom.make((get): MergedEnvironmentQueryView<A> => {
+    Atom.make((get): MergedEnvironmentQueryView<A, Input> => {
       const targets = JSON.parse(key) as ReadonlyArray<EnvironmentQueryTarget<Input>>;
       const values: Array<readonly [EnvironmentId, A]> = [];
+      const retryTargets: Array<EnvironmentQueryTarget<Input>> = [];
       let error: string | null = null;
       let isPending = false;
       for (const target of targets) {
         const result = get(atomFor(target));
-        isPending ||= result.waiting;
-        if (result._tag === "Failure" && error === null) {
-          error = formatEnvironmentQueryError(result.cause);
+        const snapshot = readAtomQueryResult(result);
+        isPending ||= snapshot.isPending;
+        if (snapshot.error !== null && error === null) {
+          error = snapshot.error;
         }
-        const value = Option.getOrNull(AsyncResult.value(result));
-        if (value !== null) values.push([target.environmentId, value]);
+        if (snapshot.data !== null) values.push([target.environmentId, snapshot.data]);
+        if (isSettledAtomQueryInterrupt(result)) retryTargets.push(target);
       }
-      return { values, error, isPending };
+      return { values, error, isPending, retryTargets };
     }).pipe(Atom.withLabel(`${label}:${key}`)),
   );
-  const empty = Atom.make<MergedEnvironmentQueryView<A>>({
+  const empty = Atom.make<MergedEnvironmentQueryView<A, Input>>({
     values: [],
     error: null,
     isPending: false,
+    retryTargets: [],
   }).pipe(Atom.withLabel(`${label}:empty`));
   return function useMergedQuery(targets: ReadonlyArray<EnvironmentQueryTarget<Input>>) {
     const key = JSON.stringify(targets);
@@ -78,7 +85,13 @@ function createMergedEnvironmentQuery<Input, A>(
         appAtomRegistry.refresh(atomFor(target));
       }
     }, [key]);
-    return { ...view, refresh };
+    useRetryInterruptedQuery(view.retryTargets.length > 0, refresh, key);
+    return {
+      values: view.values,
+      error: view.error,
+      isPending: view.isPending,
+      refresh,
+    };
   };
 }
 

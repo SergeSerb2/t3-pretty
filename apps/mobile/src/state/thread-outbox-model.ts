@@ -9,11 +9,14 @@ import {
   ProjectId,
   ProviderInteractionMode,
   RuntimeMode,
+  SkillId,
   ThreadId,
+  TurnDeliveryMode,
   type ModelSelection as ModelSelectionType,
   type ProjectId as ProjectIdType,
   type ProviderInteractionMode as ProviderInteractionModeType,
   type RuntimeMode as RuntimeModeType,
+  type SkillId as SkillIdType,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
@@ -34,6 +37,7 @@ const QueuedThreadCreationSchema = Schema.Struct({
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
   startFromOrigin: Schema.optional(Schema.Boolean),
+  enabledSkillIds: Schema.optional(Schema.Array(SkillId)),
 });
 
 export const QueuedThreadMessageSchema = Schema.Struct({
@@ -47,6 +51,10 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
+  // How the server should land this message on a running turn: "steer" feeds
+  // it into the turn, "queue" holds it until the turn ends. Omitted means the
+  // server default (steer).
+  delivery: Schema.optional(TurnDeliveryMode),
   // Present when the queued item creates a brand-new thread (pending task)
   // instead of appending a turn to an existing one.
   creation: Schema.optional(QueuedThreadCreationSchema),
@@ -64,6 +72,7 @@ export interface QueuedThreadCreation {
   readonly branch: string | null;
   readonly worktreePath: string | null;
   readonly startFromOrigin?: boolean;
+  readonly enabledSkillIds?: ReadonlyArray<SkillIdType>;
 }
 
 export interface QueuedThreadMessage {
@@ -76,6 +85,7 @@ export interface QueuedThreadMessage {
   readonly modelSelection?: ModelSelectionType;
   readonly runtimeMode?: RuntimeModeType;
   readonly interactionMode?: ProviderInteractionModeType;
+  readonly delivery?: TurnDeliveryMode;
   readonly creation?: QueuedThreadCreation;
   readonly createdAt: string;
 }

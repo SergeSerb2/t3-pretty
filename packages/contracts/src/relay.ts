@@ -110,6 +110,10 @@ export const RelayAgentActivityState = Schema.Struct({
   // Plan completion ratio for running work, so remote card updates carry the
   // same progress bar the phone paints from its own thread shells.
   progress: Schema.optional(RelayAgentActivityProgress),
+  // When the in-flight turn started, so the Live Activity can render a
+  // ticking elapsed timer that stays live between pushes. Absent for
+  // waiting/terminal rows and for payloads from older servers.
+  startedAt: Schema.optional(TrimmedNonEmptyString),
 });
 export type RelayAgentActivityState = typeof RelayAgentActivityState.Type;
 
@@ -124,6 +128,7 @@ export const RelayAgentActivityAggregateRow = Schema.Struct({
   updatedAt: TrimmedNonEmptyString,
   deepLink: TrimmedNonEmptyString,
   progress: Schema.optional(RelayAgentActivityProgress),
+  startedAt: Schema.optional(TrimmedNonEmptyString),
 });
 export type RelayAgentActivityAggregateRow = typeof RelayAgentActivityAggregateRow.Type;
 

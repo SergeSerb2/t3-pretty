@@ -274,7 +274,7 @@ function getPublishProviderReadiness(input: {
   if (!discovered) {
     return {
       ready: false,
-      hint: "Provider status unavailable. Open Settings -> Source Control and rescan.",
+      hint: "Provider status unavailable. Open Settings → Source Control and rescan.",
     };
   }
   if (discovered.status !== "available") {
@@ -285,7 +285,7 @@ function getPublishProviderReadiness(input: {
       ready: false,
       hint:
         Option.getOrNull(discovered.auth.detail) ??
-        `${discovered.label} is not authenticated. Open Settings -> Source Control for setup guidance.`,
+        `${discovered.label} is not authenticated. Open Settings → Source Control for setup guidance.`,
     };
   }
   return { ready: true, hint: null };
@@ -342,7 +342,7 @@ function getMenuActionDisabledReason({
 
   if (item.id === "push") {
     if (!hasBranch) {
-      return "Detached HEAD: checkout a refName before pushing.";
+      return "Detached HEAD: check out a branch before pushing.";
     }
     if (hasChanges) {
       return "Commit or stash local changes before pushing.";
@@ -363,7 +363,7 @@ function getMenuActionDisabledReason({
     return `View ${terminology.singular} is currently unavailable.`;
   }
   if (!hasBranch) {
-    return `Detached HEAD: checkout a refName before creating a ${terminology.singular}.`;
+    return `Detached HEAD: check out a branch before creating a ${terminology.singular}.`;
   }
   if (hasChanges) {
     return `Commit local changes before creating a ${terminology.singular}.`;
@@ -711,7 +711,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                             />
                             <TooltipPopup side="top" align="end" className="max-w-72">
                               {readiness.hint ??
-                                "Open Settings -> Source Control to configure this provider."}
+                                "Open Settings → Source Control to configure this provider."}
                             </TooltipPopup>
                           </Tooltip>
                         </div>
@@ -1313,7 +1313,7 @@ export default function GitActionsControl({
     if (!api) {
       toastManager.add({
         type: "error",
-        title: "Link opening is unavailable.",
+        title: "Link opening is unavailable",
         data: threadToastData,
       });
       return;
@@ -1322,7 +1322,7 @@ export default function GitActionsControl({
     if (!prUrl) {
       toastManager.add({
         type: "error",
-        title: "No open pull request found.",
+        title: "No open pull request found",
         data: threadToastData,
       });
       return;
@@ -1721,7 +1721,7 @@ export default function GitActionsControl({
       if (!gitCwd) {
         toastManager.add({
           type: "error",
-          title: "Editor opening is unavailable.",
+          title: "Editor opening is unavailable",
           data: threadToastData,
         });
         return;
@@ -1898,7 +1898,7 @@ export default function GitActionsControl({
               ) : null}
               {gitStatusForActions?.refName === null && (
                 <p className="px-2 py-1.5 text-xs text-warning">
-                  Detached HEAD: create and checkout a refName to enable push and pull request
+                  Detached HEAD: create or check out a branch to enable push and pull request
                   actions.
                 </p>
               )}
@@ -1953,6 +1953,7 @@ export default function GitActionsControl({
                   <div className="flex items-center gap-2">
                     {isEditingFiles && allFiles.length > 0 && (
                       <Checkbox
+                        aria-label="Select all changed files"
                         checked={allSelected}
                         indeterminate={!allSelected && !noneSelected}
                         onCheckedChange={() => {
@@ -1994,6 +1995,7 @@ export default function GitActionsControl({
                             >
                               {isEditingFiles && (
                                 <Checkbox
+                                  aria-label={file.path}
                                   checked={!excludedFiles.has(file.path)}
                                   onCheckedChange={() => {
                                     setExcludedFiles((prev) => {

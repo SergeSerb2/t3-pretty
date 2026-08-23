@@ -1,3 +1,5 @@
+import { randomUUID } from "../lib/utils";
+
 /**
  * Classification and send-time payload for the fork's composer attach button.
  *
@@ -149,7 +151,7 @@ export function resolvePickedFilePath(file: File): string | null {
 
 export function createAttachedFileRef(
   file: File,
-  id: string = crypto.randomUUID(),
+  id: string = randomUUID(),
 ): AttachedFileRef | null {
   const path = resolvePickedFilePath(file);
   if (!path) {

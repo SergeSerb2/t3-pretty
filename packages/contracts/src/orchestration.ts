@@ -8,6 +8,7 @@ import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import {
   ApprovalRequestId,
   CheckpointRef,
+  ClientSurface,
   CommandId,
   EventId,
   IsoDateTime,
@@ -133,17 +134,50 @@ export const RuntimeMode = Schema.Literals([
 export type RuntimeMode = typeof RuntimeMode.Type;
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 
-// "yolo" is a Kimi-only mode that other providers never offer. When a
-// selection moves from Kimi to another provider, clients normalize the mode
-// with this helper so the Kimi-specific literal never reaches another
-// provider's session config (where it would hit an unintended default
-// branch). "full-access" is the generic equivalent: same unrestricted
-// session, provider-native approval behavior.
+// "yolo" is a Kimi-only mode that other providers never offer. Remap it to
+// generic "full-access" when the destination provider is known and is not
+// Kimi. A missing driver keeps the stored mode: guessing "not kimi" would
+// wipe Kimi yolo after a stale lookup, and guessing "kimi" would leak yolo
+// onto Grok.
 export function resolveRuntimeModeForProviderDriver(
   providerDriver: string | null | undefined,
   runtimeMode: RuntimeMode,
 ): RuntimeMode {
-  return runtimeMode === "yolo" && providerDriver !== "kimi" ? "full-access" : runtimeMode;
+  return runtimeMode === "yolo" &&
+    providerDriver != null &&
+    providerDriver !== "unconfigured" &&
+    providerDriver !== "kimi"
+    ? "full-access"
+    : runtimeMode;
+}
+
+export function displayRuntimeModeForProviderDriver(
+  providerDriver: string | null | undefined,
+  runtimeMode: RuntimeMode,
+): RuntimeMode {
+  return resolveRuntimeModeForProviderDriver(providerDriver, runtimeMode);
+}
+
+// Kimi's default access mode is "yolo": the same unrestricted session as
+// "full-access", but Kimi can still stop to ask questions. Other providers
+// keep the generic "full-access" default.
+export function defaultRuntimeModeForProviderDriver(
+  providerDriver: string | null | undefined,
+): RuntimeMode {
+  return providerDriver === "kimi" ? "yolo" : DEFAULT_RUNTIME_MODE;
+}
+
+// Compose the provider default with the Kimi-only yolo remap. Pass `null`
+// when the mode is still unset so Kimi inherits yolo; an explicit
+// "full-access" pick stays "full-access" even on Kimi.
+export function effectiveRuntimeModeForProviderDriver(
+  providerDriver: string | null | undefined,
+  runtimeMode: RuntimeMode | null | undefined,
+): RuntimeMode {
+  return displayRuntimeModeForProviderDriver(
+    providerDriver,
+    runtimeMode ?? defaultRuntimeModeForProviderDriver(providerDriver),
+  );
 }
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
@@ -960,6 +994,12 @@ const ThreadTurnStartBootstrap = Schema.Struct({
 
 export type ThreadTurnStartBootstrap = typeof ThreadTurnStartBootstrap.Type;
 
+/** How a message sent while a turn is running reaches the agent. `steer`
+ * (default) delivers into the running turn as soon as the provider can accept
+ * it; `queue` holds the turn start server-side until the running turn ends. */
+export const TurnDeliveryMode = Schema.Literals(["steer", "queue"]);
+export type TurnDeliveryMode = typeof TurnDeliveryMode.Type;
+
 export const ThreadTurnStartCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.start"),
   commandId: CommandId,
@@ -970,6 +1010,7 @@ export const ThreadTurnStartCommand = Schema.Struct({
     text: Schema.String,
     attachments: Schema.Array(ChatAttachment),
   }),
+  delivery: Schema.optional(TurnDeliveryMode),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
@@ -991,6 +1032,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
     text: Schema.String,
     attachments: Schema.Array(UploadChatAttachment),
   }),
+  delivery: Schema.optional(TurnDeliveryMode),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode,
@@ -1418,6 +1460,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
+  delivery: Schema.optional(TurnDeliveryMode),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
@@ -1490,12 +1533,25 @@ export const ThreadActivityAppendedPayload = Schema.Struct({
   activity: OrchestrationThreadActivity,
 });
 
+/**
+ * Which client connection dispatched the command that produced an event.
+ * Stamped by the orchestration engine on client-dispatched commands; absent on
+ * provider/server-originated events and on commands from clients too old to
+ * report it.
+ */
+export const OrchestrationClientOrigin = Schema.Struct({
+  surface: Schema.optional(ClientSurface),
+  appVersion: Schema.optional(TrimmedNonEmptyString),
+});
+export type OrchestrationClientOrigin = typeof OrchestrationClientOrigin.Type;
+
 export const OrchestrationEventMetadata = Schema.Struct({
   providerTurnId: Schema.optional(TrimmedNonEmptyString),
   providerItemId: Schema.optional(ProviderItemId),
   adapterKey: Schema.optional(TrimmedNonEmptyString),
   requestId: Schema.optional(ApprovalRequestId),
   ingestedAt: Schema.optional(IsoDateTime),
+  origin: Schema.optional(OrchestrationClientOrigin),
 });
 export type OrchestrationEventMetadata = typeof OrchestrationEventMetadata.Type;
 
@@ -1799,6 +1855,10 @@ export const OrchestrationThreadSearchMatch = Schema.Struct({
   source: OrchestrationThreadSearchSource,
   snippet: Schema.String.check(Schema.isMaxLength(240)),
   messageCreatedAt: Schema.NullOr(IsoDateTime),
+  // BM25 relevance of the winning message. Absent on legacy substring matches
+  // (queries that yield no indexable terms) and from servers predating ranked
+  // search; older clients simply ignore the field.
+  score: Schema.optionalKey(Schema.Number),
 });
 export type OrchestrationThreadSearchMatch = typeof OrchestrationThreadSearchMatch.Type;
 
@@ -1903,6 +1963,7 @@ export class OrchestrationDispatchCommandError extends Schema.TaggedErrorClass<O
   {
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect()),
+    bootstrapThreadDisposition: Schema.optional(Schema.Literal("deleted")),
   },
 ) {}
 

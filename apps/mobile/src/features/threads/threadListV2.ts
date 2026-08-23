@@ -27,7 +27,13 @@ export { snoozeWakeLabel };
  * (approval), "in motion" (working), and "broken" (failed). Ready is the
  * unlabeled resting state.
  */
-export type ThreadListV2Status = "approval" | "input" | "working" | "failed" | "ready";
+export type ThreadListV2Status =
+  | "approval"
+  | "input"
+  | "working"
+  | "monitoring"
+  | "failed"
+  | "ready";
 export type ThreadListV2SwipeAction = "archive" | "settle" | "unsettle" | "snooze" | "unsnooze";
 
 export function resolveThreadListV2SnoozeMenuSelection(input: {
@@ -126,7 +132,10 @@ export function resolveThreadListV2Enabled(input: {
 }
 
 export function resolveThreadListV2Status(
-  thread: Pick<EnvironmentThreadShell, "hasPendingApprovals" | "hasPendingUserInput" | "session">,
+  thread: Pick<
+    EnvironmentThreadShell,
+    "hasPendingApprovals" | "hasPendingUserInput" | "session" | "backgroundLiveness"
+  >,
 ): ThreadListV2Status {
   if (thread.hasPendingApprovals) {
     return "approval";
@@ -137,8 +146,18 @@ export function resolveThreadListV2Status(
   if (thread.session?.status === "running" || thread.session?.status === "starting") {
     return "working";
   }
+  // A failed session outranks lingering background liveness: the user must
+  // see the failure, not a stale Working.
   if (thread.session?.status === "error") {
     return "failed";
+  }
+  // Background work outlives the turn: fleets read as working; monitoring
+  // only when watch loops are the sole live work.
+  if (thread.backgroundLiveness === "working") {
+    return "working";
+  }
+  if (thread.backgroundLiveness === "monitoring") {
+    return "monitoring";
   }
   return "ready";
 }
@@ -184,6 +203,10 @@ export interface ThreadListV2Item {
   readonly variant: "card" | "slim";
   /** Snoozed-shelf row: shows the wake countdown and offers Wake. */
   readonly snoozed: boolean;
+  /** Settled-shelf row. With `snoozed`, tells a departing row it landed.
+      Pin wins the partition, so pinned cards stay false: settling a pin
+      also unpins, and the row lands once it is on this shelf. */
+  readonly settled: boolean;
   /** Pinned-block row: renders the pin glyph and offers Unpin. */
   readonly pinned: boolean;
   readonly isLast: boolean;
@@ -455,6 +478,7 @@ export function buildThreadListV2Items(input: {
       thread,
       variant: "card",
       snoozed: false,
+      settled: false,
       pinned: true,
       isLast: false,
     });
@@ -464,6 +488,7 @@ export function buildThreadListV2Items(input: {
       thread,
       variant: "card",
       snoozed: false,
+      settled: false,
       pinned: false,
       isLast: false,
     });
@@ -474,6 +499,7 @@ export function buildThreadListV2Items(input: {
       thread,
       variant: "slim",
       snoozed: true,
+      settled: false,
       pinned: false,
       isLast: false,
     });
@@ -484,6 +510,7 @@ export function buildThreadListV2Items(input: {
       thread,
       variant: "slim",
       snoozed: false,
+      settled: true,
       pinned: false,
       isLast: false,
     });

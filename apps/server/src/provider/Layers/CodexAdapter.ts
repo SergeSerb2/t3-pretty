@@ -489,7 +489,9 @@ function mapItemLifecycle(
     lifecycle === "item.started"
       ? "inProgress"
       : lifecycle === "item.completed"
-        ? "completed"
+        ? "status" in item && (item.status === "failed" || item.status === "declined")
+          ? item.status
+          : "completed"
         : undefined;
 
   return {
@@ -597,14 +599,9 @@ function mapCollabAgentEvent(
           },
         ];
       }
-      // interacted → the child is (again) actively driven.
-      return [
-        {
-          ...base,
-          type: "task.updated",
-          payload: { taskId, status: "running", ...statusLinkage },
-        },
-      ];
+      // Reading a child's result also emits "interacted" after its turn is idle.
+      // Only the child's turn or thread lifecycle can prove it resumed work.
+      return [];
     }
     case "collabAgent/turnStarted":
       return [
@@ -1840,6 +1837,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         ...(serviceTier ? { serviceTier } : {}),
         ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
         ...(codexAttachments.length > 0 ? { attachments: codexAttachments } : {}),
+        ...(input.delivery !== undefined ? { delivery: input.delivery } : {}),
       })
       .pipe(Effect.mapError((cause) => mapCodexRuntimeError(input.threadId, "turn/start", cause)));
   });

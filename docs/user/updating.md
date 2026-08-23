@@ -32,7 +32,8 @@ The available action depends on how that server was started. T3 Code does not up
 servers silently in the background.
 
 An older background-service launcher may ask you to run the exact
-`npx t3@<version> service update` command on the server machine. That one local update installs the
+`npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-<version>.tgz t3 service update`
+command on the server machine. That one local update installs the
 rollback support needed for later remote updates, including versions that change the database.
 
 After selecting **Update**, the notice becomes a live status line: **Downloading…** while the new
@@ -40,19 +41,20 @@ version is fetched and verified, then **Restarting…** while the server restart
 status appears in the conversation and in Connections, so navigating between them does not lose the
 update. A failure remains visible with its error and an option to retry.
 
-**Copy update command** gives you `npx t3@<client-version>`, which relaunches the server directly
-at the matching version. Add whatever startup options you normally use.
+**Copy update command** gives you an `npx --yes --package <tarball> t3` command for this fork,
+which relaunches the server directly at the matching version. Do not use `npx t3@<version>` — that
+installs upstream T3 Code. Add whatever startup options you normally use.
 
-If the server instead runs as the T3 Code background service, update the service on the host and
+If the server instead runs as the T3 Pretty background service, update the service on the host and
 pin the same version:
 
 ```sh
-npx t3@<client-version> service update
+npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-<client-version>.tgz t3 service update
 ```
 
-`service update` installs the version of the CLI that invoked it, so `npx t3@latest service update`
-only resolves the skew when your client happens to be on the latest release. The exact version from
-the warning always works.
+`service update` installs the version of the CLI that invoked it, so updating from `t3.tgz`
+(latest) only resolves the skew when your client happens to be on the latest release. The exact
+version from the warning always works.
 
 See [Running T3 Code in the Background](./background-service.md) for install, status, and removal
 commands.
@@ -67,8 +69,8 @@ If a step fails:
 
 1. Retry the offered action once.
 2. Make sure you updated the machine named in the warning, not only the device you are using.
-3. For a command-line server, relaunch it with `npx t3@<client-version>`, replacing
-   `<client-version>` with the client version shown in the warning.
+3. For a command-line server, relaunch it with the copied `npx --yes --package <tarball> t3`
+   command, using the client version shown in the warning.
 
 ## The Mobile App
 
@@ -83,9 +85,10 @@ For remote connection setup and access troubleshooting, see [Remote Access](./re
 ## What's New Dialog
 
 After an update, the app shows a What's New dialog the next time it opens, listing the changes in
-the releases you skipped. Every shipped build gets its own entry, covering both T3 Pretty features
-and the parent T3 Code changes integrated with it. Dismissing it marks those releases as seen; it
-will not reappear until the next update.
+the releases you skipped. Entries cover T3 Pretty features and the parent T3 Code changes
+integrated with them. Builds that only contained internal maintenance are omitted when there is
+something user-facing to show. Dismissing the dialog marks those releases as seen; it will not
+reappear until the next update.
 
 To browse the changelog at any time, open Settings → General → What's new, or run "What's new"
-from the command palette.
+from the command palette. That list includes every release, including maintenance-only builds.

@@ -148,6 +148,7 @@ interface ThreadNavigationSidebarProps {
   readonly onNewThreadInProject: (project: EnvironmentProject) => void;
   readonly onSearchQueryChange: (query: string) => void;
   readonly onSelectThread: (thread: EnvironmentThreadShell) => void;
+  readonly onRenameThread: (thread: EnvironmentThreadShell) => void;
   readonly onRequestVisibility: () => void;
   readonly searchQuery: string;
 }
@@ -939,6 +940,7 @@ function ThreadNavigationSidebarPane(
               thread={thread}
               variant={item.item.variant}
               snoozed={item.item.snoozed}
+              settled={item.item.settled}
               pinned={item.item.pinned}
               snoozePresetMinute={nowMinute}
               snoozeWakeLabelText={item.snoozeWakeLabelText}
@@ -974,6 +976,7 @@ function ThreadNavigationSidebarPane(
               onDeleteThread={confirmDeleteThread}
               onArchiveThread={archiveThread}
               onRegenerateThreadTitle={regenerateThreadTitle}
+              onRenameThread={props.onRenameThread}
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
               settlementSupported={settlementEnvironmentIds.has(thread.environmentId)}
               onSettleThread={settleThread}
@@ -1093,6 +1096,7 @@ function ThreadNavigationSidebarPane(
               onArchiveThread={archiveThread}
               onDeleteThread={confirmDeleteThread}
               onRegenerateThreadTitle={regenerateThreadTitle}
+              onRenameThread={props.onRenameThread}
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
               onSelectThread={handleSelectThread}
               onSwipeableClose={handleSwipeableClose}
@@ -1132,6 +1136,7 @@ function ThreadNavigationSidebarPane(
       projectTitleByProjectKey,
       regenerateThreadTitle,
       props.onNewThreadInProject,
+      props.onRenameThread,
       props.searchQuery,
       props.selectedThreadKey,
       props.width,
@@ -1297,7 +1302,7 @@ function ThreadNavigationSidebarPane(
         borderRightWidth: StyleSheet.hairlineWidth,
       }}
     >
-      <View className="flex-1" style={{ paddingBottom: insets.bottom }}>
+      <View className="flex-1">
         <SwipeableScrollGateProvider enabled={swipeEnabled}>
           <GestureDetector gesture={sidebarScrollGesture}>
             <LegendList

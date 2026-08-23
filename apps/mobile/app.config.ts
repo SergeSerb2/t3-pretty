@@ -37,6 +37,10 @@ const DEVELOPMENT_ASSETS = {
   androidNotificationColor: "#00639B",
 } as const;
 
+// The nightly*/production* PNG keys in BRAND_ASSET_PATHS all resolve to the
+// assets/pretty family (see scripts/lib/brand-assets.ts), so splash and
+// adaptive foregrounds track the same glass/sage art as iosIcon in every
+// channel — the sage plate below is not behind leftover candy art.
 const PREVIEW_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   // The T3 Pretty icon ships as a plain PNG, not an Icon Composer project, so
@@ -44,10 +48,10 @@ const PREVIEW_ASSETS = {
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.prettyIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.nightlyLinuxIconPng),
-  androidAdaptiveBackgroundColor: "#111533",
+  androidAdaptiveBackgroundColor: "#DFEFE3",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#7565C7",
+  androidNotificationColor: "#8FCFA8",
 } as const;
 
 const RELEASE_ASSETS = {
@@ -55,10 +59,10 @@ const RELEASE_ASSETS = {
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.prettyIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidAdaptiveForeground: "./assets/android-icon-mark.png",
-  androidAdaptiveBackgroundColor: "#000000",
+  androidAdaptiveBackgroundColor: "#DFEFE3",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#FFFFFF",
+  androidNotificationColor: "#8FCFA8",
 } as const;
 
 // The fork's Clerk instance hosts the passkey relying party + universal links.

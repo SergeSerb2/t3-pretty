@@ -136,6 +136,8 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGeneration", (it) => {
           expect(
             requests.find((request) => request.method === "initialize")?.params?.clientCapabilities,
           ).toMatchObject({
+            fs: { readTextFile: false, writeTextFile: false },
+            terminal: false,
             _meta: {
               parameterizedModelPicker: true,
             },
@@ -232,6 +234,30 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGeneration", (it) => {
           });
 
           expect(generated.title).toBe("Trim reconnect spinner status after resume.");
+        }),
+    ),
+  );
+
+  it.effect("generates activity headlines through Cursor ACP text generation", () =>
+    withFakeAcpAgent(
+      {
+        T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
+          headline: "Running the test suite.",
+        }),
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateActivityHeadline({
+            cwd: process.cwd(),
+            summary: "bun test",
+            command: "bun test",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("cursor"),
+              model: "composer-2",
+            },
+          });
+
+          expect(generated.headline).toBe("Running the test suite");
         }),
     ),
   );

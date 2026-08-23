@@ -64,6 +64,12 @@ import {
   type PullRequestExpectedHost,
   type PullRequestFilterOption,
 } from "../components/pullRequest/PullRequestListFilters";
+import {
+  applyPullRequestsSearchPatch,
+  resetPullRequestsListSearch,
+  type PullRequestsSearch,
+  type PullRequestsSearchPatch,
+} from "../components/pullRequest/pullRequestsSearch";
 import { PullRequestListEmptyState } from "../components/pullRequest/PullRequestListEmptyState";
 import { PullRequestListGhost } from "../components/pullRequest/PullRequestGhosts";
 import { PullRequestRow } from "../components/pullRequest/PullRequestRow";
@@ -104,39 +110,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { cn } from "~/lib/utils";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 
-export interface PullRequestsSearch {
-  readonly involvement: PullRequestInvolvement;
-  readonly state: PullRequestListState;
-  /**
-   * Narrows the list to one server. Absent means every connected one, which is the default the
-   * page has now — so a link written before servers could be chosen still opens the whole list.
-   */
-  readonly environmentId?: EnvironmentId;
-  /** Scopes the list. Separate from the selection so one cannot silently change the other. */
-  readonly projectId?: ProjectId;
-  /**
-   * Narrows the list to one host, named as the host itself: two GitHub installs are two
-   * accounts, and their shared provider kind cannot tell them apart. Absent means every host.
-   */
-  readonly host?: string;
-  readonly repository?: string;
-  readonly number?: number;
-  readonly selectedProjectId?: ProjectId;
-  /**
-   * Which server the selected pull request was read from. A project id only names a project on
-   * its own server, so this is what tells two servers holding one project apart. Optional: a
-   * link without it still opens, resolved by project id alone where that is unambiguous.
-   */
-  readonly selectedEnvironmentId?: EnvironmentId;
-  readonly q?: string;
-  /**
-   * The narrowings beyond state and involvement, each absent when that group is unfiltered. Flat
-   * in the URL because a link is read and edited by hand; folded into one record for the listing.
-   */
-  readonly draft?: "only" | "hide";
-  readonly review?: NonNullable<PullRequestListFilters["review"]>;
-  readonly checks?: NonNullable<PullRequestListFilters["checks"]>;
-}
+export type { PullRequestsSearch };
 
 // The state filters wear the same glyphs the rows do, so the two read as one vocabulary.
 const INVOLVEMENT_TABS = [
@@ -405,32 +379,9 @@ function PullRequestsRouteView() {
   );
 
   const updateSearch = useCallback(
-    (patch: {
-      [Key in keyof PullRequestsSearch]?: PullRequestsSearch[Key] | undefined;
-    }) =>
+    (patch: PullRequestsSearchPatch) =>
       void navigate({
-        // Rebuilt rather than spread so a cleared field leaves the URL instead of
-        // lingering as an explicit `undefined`.
-        search: (previous: PullRequestsSearch): PullRequestsSearch => {
-          const next = { ...previous, ...patch };
-          return {
-            involvement: next.involvement ?? previous.involvement,
-            state: next.state ?? previous.state,
-            ...(next.repository ? { repository: next.repository } : {}),
-            ...(next.number ? { number: next.number } : {}),
-            ...(next.projectId ? { projectId: next.projectId } : {}),
-            ...(next.environmentId ? { environmentId: next.environmentId } : {}),
-            ...(next.host ? { host: next.host } : {}),
-            ...(next.selectedProjectId ? { selectedProjectId: next.selectedProjectId } : {}),
-            ...(next.selectedEnvironmentId
-              ? { selectedEnvironmentId: next.selectedEnvironmentId }
-              : {}),
-            ...(next.q ? { q: next.q } : {}),
-            ...(next.draft ? { draft: next.draft } : {}),
-            ...(next.review ? { review: next.review } : {}),
-            ...(next.checks ? { checks: next.checks } : {}),
-          };
-        },
+        search: (previous: PullRequestsSearch) => applyPullRequestsSearchPatch(previous, patch),
         replace: true,
       }),
     [navigate],
@@ -444,13 +395,14 @@ function PullRequestsRouteView() {
     selectedProjectId: undefined,
     selectedEnvironmentId: undefined,
   };
-  const updateListScope = (patch: {
-    [Key in keyof PullRequestsSearch]?: PullRequestsSearch[Key] | undefined;
-  }) => {
+  const closeListSelection = () => {
     if (rightPanelRef !== null) {
       // Hide the old selection while retaining peer PR tabs for parallel reviews.
       useRightPanelStore.getState().close(rightPanelRef);
     }
+  };
+  const updateListScope = (patch: PullRequestsSearchPatch) => {
+    closeListSelection();
     updateSearch({ ...patch, ...clearedSelection });
   };
 
@@ -1479,6 +1431,13 @@ function PullRequestsRouteView() {
       onProject={(projectId, environmentId) =>
         updateListScope(environmentId === undefined ? { projectId } : { projectId, environmentId })
       }
+      onReset={() => {
+        closeListSelection();
+        void navigate({
+          search: resetPullRequestsListSearch,
+          replace: true,
+        });
+      }}
     />
   );
   const columnProps = {
@@ -1607,6 +1566,7 @@ function PullRequestsRouteView() {
                 reviewingQuery.refresh();
               }}
               onStateChange={handlePullRequestTabStatusChange}
+              chromeVariant="collapse"
             />
           </RightPanelTabs>
         ) : null}
@@ -1834,13 +1794,18 @@ function PullRequestsColumn({
   }, [condensed]);
 
   return (
-    // Painted flat like the chat column: the inset underneath carries the chrome grain, and a
-    // content surface that lets it show reads as a different background than every thread.
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+    // Painted flat like the chat column outside scenery: the inset underneath carries the
+    // chrome grain. In world-scenery the attribute hook lets the photo carry through instead
+    // (scenery.css), and the content panel below frosts its own plate for readability.
+    <div data-pull-requests-column className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
       {/* A closed right panel leaves this column full-width, so the shared header
           reserves native window controls. While the panel is open, the column ends
           at the panel and the absolute controls strip owns the top-right corner. */}
-      <WorkspacePageHeader electron={isElectron} reserveNativeControls={!rightPanelOpen}>
+      <WorkspacePageHeader
+        data-pull-requests-header
+        electron={isElectron}
+        reserveNativeControls={!rightPanelOpen}
+      >
         {condensed ? (
           <WorkspaceBreadcrumb ariaLabel="Pull request scope">
             {/* The page name remains the foreground anchor in both states; the live filters are
@@ -1907,19 +1872,23 @@ function PullRequestsColumn({
             settings page makes: at rest the controls sit fully below the mask, and only
             content actually passing under the chrome fades. */}
         <WorkspacePageContainer className="gap-4">
-          <div className="flex flex-col gap-3">
-            <div ref={inFlowSearchRef} className="flex items-center gap-2">
-              {searchInput}
-              {filtersMenu}
-              {!condensed ? (
-                <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-              ) : null}
+          {/* Controls and list ride as one surface; in world-scenery this becomes the
+              page's frosted plate (scenery.css), outside it stays unstyled flow. */}
+          <div data-pull-requests-panel className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
+              <div ref={inFlowSearchRef} className="flex items-center gap-2">
+                {searchInput}
+                {filtersMenu}
+                {!condensed ? (
+                  <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                ) : null}
+              </div>
+              {/* Scrolled past this marker, the controls are gone and the title takes over. */}
+              <div ref={markerRef} aria-hidden className="-mt-3 h-px w-full" />
             </div>
-            {/* Scrolled past this marker, the controls are gone and the title takes over. */}
-            <div ref={markerRef} aria-hidden className="-mt-3 h-px w-full" />
-          </div>
 
-          {listBody}
+            {listBody}
+          </div>
         </WorkspacePageContainer>
       </div>
     </div>

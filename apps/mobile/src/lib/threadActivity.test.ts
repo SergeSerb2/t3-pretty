@@ -751,7 +751,7 @@ describe("buildThreadFeed", () => {
     expect(serializedToolOutputs).toBe(1);
   });
 
-  it("folds settled turn work while leaving the terminal answer visible", () => {
+  it("keeps the first and terminal assistant messages visible around settled work", () => {
     const turnId = TurnId.make("turn-1");
     const thread = makeThread({
       id: ThreadId.make("thread-3"),
@@ -767,9 +767,9 @@ describe("buildThreadFeed", () => {
       },
       messages: [
         {
-          id: MessageId.make("assistant-commentary"),
+          id: MessageId.make("assistant-first"),
           role: "assistant",
-          text: "I am checking.",
+          text: "Synthetic deployment checklist\n1. Confirm the deployment is ready.",
           turnId,
           streaming: false,
           createdAt: "2026-04-01T00:00:02.000Z",
@@ -804,8 +804,12 @@ describe("buildThreadFeed", () => {
 
     const feed = buildThreadFeed(thread);
     const collapsed = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set());
-    expect(collapsed.map((entry) => entry.id)).toEqual(["turn-fold:turn-1", "assistant-final"]);
-    expect(collapsed[0]).toMatchObject({
+    expect(collapsed.map((entry) => entry.id)).toEqual([
+      "assistant-first",
+      "turn-fold:turn-1",
+      "assistant-final",
+    ]);
+    expect(collapsed[1]).toMatchObject({
       type: "turn-fold",
       label: "Worked for 17s",
       expanded: false,
@@ -813,9 +817,64 @@ describe("buildThreadFeed", () => {
 
     const expanded = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set([turnId]));
     expect(expanded.map((entry) => entry.id)).toEqual([
+      "assistant-first",
       "turn-fold:turn-1",
-      "assistant-commentary",
       "tool-completed",
+      "assistant-final",
+    ]);
+  });
+
+  it("folds assistant messages between the first and terminal messages", () => {
+    const turnId = TurnId.make("turn-1");
+    const thread = makeThread({
+      id: ThreadId.make("thread-middle-message"),
+      projectId: ProjectId.make("project-1"),
+      title: "Bounded narration",
+      latestTurn: {
+        turnId,
+        state: "completed",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt: "2026-04-01T00:00:01.000Z",
+        completedAt: "2026-04-01T00:00:06.000Z",
+        assistantMessageId: MessageId.make("assistant-final"),
+      },
+      messages: [
+        {
+          id: MessageId.make("assistant-first"),
+          role: "assistant",
+          text: "The main result is ready.",
+          turnId,
+          streaming: false,
+          createdAt: "2026-04-01T00:00:01.000Z",
+          updatedAt: "2026-04-01T00:00:02.000Z",
+        },
+        {
+          id: MessageId.make("assistant-middle"),
+          role: "assistant",
+          text: "I am checking one more detail.",
+          turnId,
+          streaming: false,
+          createdAt: "2026-04-01T00:00:03.000Z",
+          updatedAt: "2026-04-01T00:00:04.000Z",
+        },
+        {
+          id: MessageId.make("assistant-final"),
+          role: "assistant",
+          text: "Verification finished.",
+          turnId,
+          streaming: false,
+          createdAt: "2026-04-01T00:00:05.000Z",
+          updatedAt: "2026-04-01T00:00:06.000Z",
+        },
+      ],
+    });
+
+    const feed = buildThreadFeed(thread);
+    const rows = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set());
+
+    expect(rows.map((entry) => entry.id)).toEqual([
+      "assistant-first",
+      "turn-fold:turn-1",
       "assistant-final",
     ]);
   });
@@ -950,6 +1009,261 @@ describe("buildThreadFeed", () => {
       },
     ]);
     expect(deriveThreadFeedPresentation(presented, null, new Set())).toEqual([]);
+  });
+
+  it("suppresses the working row while assistant commentary signals activity", () => {
+    const startedAt = "2026-04-01T00:00:01.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "message",
+        id: "assistant-1",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        message: makeMessage({
+          id: MessageId.make("assistant-1"),
+          text: "Looking into it",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          streaming: true,
+        }),
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.map((entry) => entry.type)).toEqual(["message"]);
+  });
+
+  it("keeps the working row while a tool call is in progress (the live tool is hidden here)", () => {
+    const startedAt = "2026-04-01T00:00:01.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "activity-group",
+        id: "work-group-live",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        turnId: null,
+        activities: [
+          {
+            id: "activity-live",
+            createdAt: "2026-04-01T00:00:02.000Z",
+            turnId: null,
+            summary: "Run command",
+            detail: null,
+            canExpand: false,
+            getFullDetail: () => null,
+            getCopyText: () => "Run command",
+            icon: "command",
+            toolLike: true,
+            status: "neutral",
+          },
+        ],
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.some((entry) => entry.type === "working")).toBe(true);
+  });
+
+  it("keeps the working row when streaming text is followed by a filtered live tool", () => {
+    const startedAt = "2026-04-01T00:00:01.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "message",
+        id: "assistant-1",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        message: makeMessage({
+          id: MessageId.make("assistant-1"),
+          text: "I'll check that",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          streaming: true,
+        }),
+      },
+      {
+        type: "activity-group",
+        id: "work-group-live",
+        createdAt: "2026-04-01T00:00:03.000Z",
+        turnId: null,
+        activities: [
+          {
+            id: "activity-live",
+            createdAt: "2026-04-01T00:00:03.000Z",
+            turnId: null,
+            summary: "Run command",
+            detail: null,
+            canExpand: false,
+            getFullDetail: () => null,
+            getCopyText: () => "Run command",
+            icon: "command",
+            toolLike: true,
+            status: "neutral",
+          },
+        ],
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.map((entry) => entry.type)).toEqual(["message", "working"]);
+  });
+
+  it("keeps the working row when a filtered live tool sits above later streaming text", () => {
+    const startedAt = "2026-04-01T00:00:01.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "activity-group",
+        id: "work-group-live",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        turnId: null,
+        activities: [
+          {
+            id: "activity-live",
+            createdAt: "2026-04-01T00:00:02.000Z",
+            turnId: null,
+            summary: "Run command",
+            detail: null,
+            canExpand: false,
+            getFullDetail: () => null,
+            getCopyText: () => "Run command",
+            icon: "command",
+            toolLike: true,
+            status: "neutral",
+          },
+        ],
+      },
+      {
+        type: "message",
+        id: "assistant-1",
+        createdAt: "2026-04-01T00:00:03.000Z",
+        message: makeMessage({
+          id: MessageId.make("assistant-1"),
+          text: "Still working",
+          createdAt: "2026-04-01T00:00:03.000Z",
+          streaming: true,
+        }),
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.map((entry) => entry.type)).toEqual(["message", "working"]);
+  });
+
+  it("ignores leftover live tools from before the latest user message", () => {
+    const startedAt = "2026-04-01T00:00:05.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "activity-group",
+        id: "work-group-old",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        turnId: null,
+        activities: [
+          {
+            id: "activity-old",
+            createdAt: "2026-04-01T00:00:02.000Z",
+            turnId: null,
+            summary: "Run command",
+            detail: null,
+            canExpand: false,
+            getFullDetail: () => null,
+            getCopyText: () => "Run command",
+            icon: "command",
+            toolLike: true,
+            status: "neutral",
+          },
+        ],
+      },
+      {
+        type: "message",
+        id: "user-2",
+        createdAt: "2026-04-01T00:00:04.000Z",
+        message: makeMessage({
+          id: MessageId.make("user-2"),
+          role: "user",
+          text: "Next task",
+          createdAt: "2026-04-01T00:00:04.000Z",
+        }),
+      },
+      {
+        type: "message",
+        id: "assistant-2",
+        createdAt: "2026-04-01T00:00:06.000Z",
+        message: makeMessage({
+          id: MessageId.make("assistant-2"),
+          text: "On it",
+          createdAt: "2026-04-01T00:00:06.000Z",
+          streaming: true,
+        }),
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.map((entry) => entry.type)).toEqual(["message", "message"]);
+  });
+
+  it("keeps the working row when streaming text sits above a later tool group", () => {
+    const startedAt = "2026-04-01T00:00:01.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "message",
+        id: "assistant-1",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        message: makeMessage({
+          id: MessageId.make("assistant-1"),
+          text: "I'll check that",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          streaming: true,
+        }),
+      },
+      {
+        type: "activity-group",
+        id: "work-group-after-text",
+        createdAt: "2026-04-01T00:00:03.000Z",
+        turnId: null,
+        activities: [
+          {
+            id: "activity-live",
+            createdAt: "2026-04-01T00:00:03.000Z",
+            turnId: null,
+            summary: "Run command",
+            detail: null,
+            canExpand: false,
+            getFullDetail: () => null,
+            getCopyText: () => "Run command",
+            icon: "command",
+            toolLike: true,
+            status: "success",
+          },
+        ],
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.map((entry) => entry.type)).toEqual(["message", "activity-group", "working"]);
+  });
+
+  it("shows the working row again after a fresh user message", () => {
+    const startedAt = "2026-04-01T00:00:05.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "message",
+        id: "assistant-1",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        message: makeMessage({
+          id: MessageId.make("assistant-1"),
+          text: "Done with the last request",
+          createdAt: "2026-04-01T00:00:02.000Z",
+        }),
+      },
+      {
+        type: "message",
+        id: "user-2",
+        createdAt: "2026-04-01T00:00:04.000Z",
+        message: makeMessage({
+          id: MessageId.make("user-2"),
+          role: "user",
+          text: "Next task",
+          createdAt: "2026-04-01T00:00:04.000Z",
+        }),
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.at(-1)).toMatchObject({ type: "working" });
   });
 
   it("models work-log overflow as list rows", () => {
@@ -1400,6 +1714,15 @@ describe("buildThreadFeed", () => {
           updatedAt: "2026-04-01T00:00:02.000Z",
         },
         {
+          id: MessageId.make("assistant-fold-middle"),
+          role: "assistant",
+          text: "Still working.",
+          turnId,
+          streaming: false,
+          createdAt: "2026-04-01T00:00:03.000Z",
+          updatedAt: "2026-04-01T00:00:03.000Z",
+        },
+        {
           id: MessageId.make("assistant-fold-final"),
           role: "assistant",
           text: "Done.",
@@ -1413,17 +1736,18 @@ describe("buildThreadFeed", () => {
     const feed = buildThreadFeed(thread);
 
     const first = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set());
-    expect(first[0]?.type).toBe("turn-fold");
+    const foldIndex = first.findIndex((entry) => entry.type === "turn-fold");
+    expect(foldIndex).toBeGreaterThanOrEqual(0);
     const second = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set());
     expect(second).toEqual(first);
     first.forEach((entry, index) => expect(second[index]).toBe(entry));
 
     // Toggling the fold reuses the matching expanded/collapsed variant.
     const expanded = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set([turnId]));
-    expect(expanded[0]).toMatchObject({ type: "turn-fold", expanded: true });
-    expect(expanded[0]).not.toBe(first[0]);
+    expect(expanded[foldIndex]).toMatchObject({ type: "turn-fold", expanded: true });
+    expect(expanded[foldIndex]).not.toBe(first[foldIndex]);
     const collapsedAgain = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set());
-    expect(collapsedAgain[0]).toBe(first[0]);
+    expect(collapsedAgain[foldIndex]).toBe(first[foldIndex]);
 
     const withWorking = deriveThreadFeedPresentation(
       feed,

@@ -21,6 +21,7 @@ import { threadEnvironment } from "../state/threads";
 import { vcsActionManager, vcsEnvironment } from "../state/vcs";
 import { uuidv4 } from "../lib/uuid";
 import { appAtomRegistry } from "./atom-registry";
+import { shouldStopSessionOnWorktreeMove } from "./thread-worktree-move";
 import { setPendingConnectionError } from "./use-remote-environment-registry";
 import { useAtomCommand } from "./use-atom-command";
 import { showGitActionResult } from "./use-vcs-action-state";
@@ -30,6 +31,9 @@ import { useSelectedThreadWorktree } from "./use-selected-thread-worktree";
 export function useSelectedThreadGitActions(options?: { readonly loadInitialState?: boolean }) {
   const loadInitialState = options?.loadInitialState ?? true;
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
+  const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, {
     reportFailure: false,
   });
   const refreshStatus = useAtomCommand(vcsEnvironment.refreshStatus, { reportFailure: false });
@@ -304,6 +308,25 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
           if (AsyncResult.isFailure(result)) {
             return result;
           }
+          // Web parity (BranchToolbarBranchSelector.setThreadBranch): a branch
+          // change that moves the thread into a different worktree stops the
+          // provider session first — the running session is bound to the old
+          // workspace. Awaited (like delete in useThreadListActions) so the
+          // metadata sync below cannot rebind the thread under a live session;
+          // stop failures never block the sync, same as delete. Both paths
+          // must be known: an unloaded current path is not a move.
+          if (
+            shouldStopSessionOnWorktreeMove({
+              sessionStatus: thread.session?.status,
+              currentWorktreePath: selectedThreadWorktreePath,
+              nextWorktreePath: result.value.worktree.path,
+            })
+          ) {
+            await stopThreadSession({
+              environmentId: thread.environmentId,
+              input: { threadId: thread.id },
+            });
+          }
           const syncResult = await syncSelectedThreadBranchState({
             thread,
             cwd: result.value.worktree.path,
@@ -316,7 +339,13 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
         },
       );
     },
-    [createWorktree, runSelectedThreadGitMutation, syncSelectedThreadBranchState],
+    [
+      createWorktree,
+      runSelectedThreadGitMutation,
+      selectedThreadWorktreePath,
+      stopThreadSession,
+      syncSelectedThreadBranchState,
+    ],
   );
 
   const onPullSelectedThreadBranch = useCallback(async () => {

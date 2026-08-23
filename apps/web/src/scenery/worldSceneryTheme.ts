@@ -8,7 +8,9 @@
  * Installed as a *custom* theme (localStorage) rather than a built-in so the
  * fork's diff against upstream stays confined to the scenery module: custom
  * themes need no registration in themePalette.ts, index.html boot palettes,
- * or the Settings maintainer list, and they survive app updates.
+ * or the Settings maintainer list, and they survive app updates. Boring mode
+ * keeps the upstream T3 Chat built-in and leaves this entry installed so
+ * switching back does not have to re-seed the palette.
  */
 import {
   getCustomThemes,
@@ -161,8 +163,8 @@ export const WORLD_SCENERY_THEME: ThemeDefinition = {
 
 /**
  * Install the theme into the user's theme library (or refresh it after a
- * palette bump). Runs on every boot. World Scenery is the only supported
- * palette: a missing entry is reinstalled rather than treated as a deletion.
+ * palette bump). Runs on every boot. World Scenery is the default palette: a
+ * missing entry is reinstalled rather than treated as a deletion.
  */
 export function ensureWorldSceneryThemeInstalled(): void {
   if (typeof window === "undefined") {

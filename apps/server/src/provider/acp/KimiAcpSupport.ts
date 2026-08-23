@@ -26,6 +26,10 @@ export interface KimiAcpModelSelectionErrorContext {
   readonly configId?: string;
 }
 
+export const KIMI_ACP_CLIENT_CAPABILITIES = {
+  terminal: true,
+} satisfies NonNullable<EffectAcpSchema.InitializeRequest["clientCapabilities"]>;
+
 export function buildKimiAcpSpawnInput(
   kimiSettings: KimiAcpRuntimeSettings | null | undefined,
   cwd: string,
@@ -52,6 +56,11 @@ export const makeKimiAcpRuntime = (
         ...input,
         spawn: buildKimiAcpSpawnInput(input.kimiSettings, input.cwd, input.environment),
         authMethodId: "login",
+        clientCapabilities: {
+          ...KIMI_ACP_CLIENT_CAPABILITIES,
+          ...input.clientCapabilities,
+          terminal: input.clientCapabilities?.terminal ?? true,
+        },
       }).pipe(
         Layer.provide(
           Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.childProcessSpawner),

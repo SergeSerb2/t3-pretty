@@ -15,8 +15,11 @@
 import { Image } from "expo-image";
 import { useEffect, useMemo } from "react";
 import { PixelRatio, StyleSheet, useColorScheme, useWindowDimensions, View } from "react-native";
+import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
+import { isBoringMobileTheme } from "../../lib/mobileTheme";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import {
   dailySeed,
   gradientPair,
@@ -73,16 +76,18 @@ export function SceneryBackdrop(props: {
 }) {
   const { enabled, blur, translucency, dailyPhoto, photoForThreadKey, ensureThreadAssignment } =
     useScenery();
+  const { themeId } = useAppearancePreferences();
   const colorScheme = useColorScheme() === "light" ? "light" : "dark";
   const reduceTransparency = useReduceTransparency();
   const { width: windowWidth } = useWindowDimensions();
+  const photosActive = enabled && !isBoringMobileTheme(themeId);
 
   const threadKey = props.threadKey;
   useEffect(() => {
-    if (enabled && threadKey !== null) {
+    if (photosActive && threadKey !== null) {
       ensureThreadAssignment(threadKey);
     }
-  }, [enabled, ensureThreadAssignment, threadKey]);
+  }, [photosActive, ensureThreadAssignment, threadKey]);
 
   const photo: SceneryPhoto | null = threadKey !== null ? photoForThreadKey(threadKey) : dailyPhoto;
   const renderWidth = wallpaperPixelWidth(windowWidth * PixelRatio.get());
@@ -91,7 +96,7 @@ export function SceneryBackdrop(props: {
     [photo, blur, renderWidth],
   );
 
-  if (!enabled || reduceTransparency) {
+  if (!photosActive || reduceTransparency) {
     return null;
   }
 
@@ -104,7 +109,17 @@ export function SceneryBackdrop(props: {
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <View style={[StyleSheet.absoluteFill, { opacity: stack.photoOpacity }]}>
-        <SceneryGradient seed={gradientSeed} />
+        {/* Keyed crossfade: the wallpaper Image already fades over 250ms on
+            thread switch, so the gradient underneath matches it instead of
+            snapping to the new seed. */}
+        <Animated.View
+          key={gradientSeed}
+          entering={FadeIn.duration(250).reduceMotion(ReduceMotion.System)}
+          exiting={FadeOut.duration(250).reduceMotion(ReduceMotion.System)}
+          style={StyleSheet.absoluteFill}
+        >
+          <SceneryGradient seed={gradientSeed} />
+        </Animated.View>
         {imageSource !== null ? (
           <Image
             source={{ uri: imageSource }}

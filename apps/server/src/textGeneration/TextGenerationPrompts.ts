@@ -317,6 +317,48 @@ export function buildThreadTitlePrompt(input: ThreadTitlePromptInput) {
   return { prompt, outputSchema };
 }
 
+// ---------------------------------------------------------------------------
+// Activity headline
+// ---------------------------------------------------------------------------
+
+export interface ActivityHeadlinePromptInput {
+  summary: string;
+  command?: string | undefined;
+  detail?: string | undefined;
+}
+
+const ACTIVITY_HEADLINE_PROMPT = `You write the live status line shown while a coding agent works, like "Updating contract tests" or "Searching for config usages".
+Return JSON with exactly one key: headline.
+
+Editorial rules:
+- 2-6 words, fewer than 48 characters, present progressive.
+- Describe the intent of the current action in plain language.
+- Summarize commands by what they accomplish, never by their flags or full text.
+- Name the concrete subject (file, feature, tool) when it is clear.
+- For errors, say what the agent is dealing with ("Retrying a stale file edit"), never raw error text.
+- No quotes, no code, no paths longer than one file name, no trailing punctuation.`;
+
+export function buildActivityHeadlinePrompt(input: ActivityHeadlinePromptInput) {
+  const sections = [
+    ACTIVITY_HEADLINE_PROMPT,
+    "",
+    "Current activity:",
+    limitSection(input.summary, 400),
+  ];
+  const command = input.command?.trim();
+  if (command) {
+    sections.push("", "Command:", limitSection(command, 1_200));
+  }
+  const detail = input.detail?.trim();
+  if (detail) {
+    sections.push("", "Detail:", limitSection(detail, 1_200));
+  }
+  const outputSchema = Schema.Struct({
+    headline: Schema.String,
+  });
+  return { prompt: sections.join("\n"), outputSchema };
+}
+
 export function buildProjectIconPrompt(input: {
   readonly projectTitle: string;
   readonly outputPath: string;

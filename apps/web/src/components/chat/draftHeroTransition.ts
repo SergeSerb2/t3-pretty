@@ -5,34 +5,125 @@ export const SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS = 420;
 export const SCENERY_DRAFT_HERO_TRANSITION_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
 export const MOBILE_COMPOSER_VIEW_TRANSITION_NAME = "t3-mobile-composer";
 export const MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME = "t3-mobile-draft-headline";
+/** Ignore sub-pixel layout noise; anything smaller is already at rest. */
+export const DRAFT_HERO_GLIDE_MIN_PX = 0.5;
+/**
+ * The 2% scale pop is a landing cue for a real hero↔docked travel, not a
+ * correction. Draft→thread promotion remounts often differ by a few pixels
+ * once the context strip or credit lands; scaling those makes the composer
+ * bounce after it has already settled.
+ */
+export const DRAFT_HERO_POP_MIN_TRAVEL_PX = 120;
 
 /**
  * Composer rect handed across a ChatView remount. Thread and draft routes are
  * different route components, so "New thread" from a thread (docked → hero)
  * and opening a thread from a draft (hero → docked) both unmount and remount
  * ChatView. The outgoing view records where its composer was; a view that
- * mounts within {@link DRAFT_HERO_HANDOFF_MAX_AGE_MS} glides in from there,
- * with the same FLIP the in-place hero↔docked switch already runs. Anything
- * older is a stale record from an unrelated navigation and is ignored.
+ * mounts within {@link DRAFT_HERO_HANDOFF_MAX_AGE_MS} glides in from there
+ * when placement actually changed, or when a glide was still running. A
+ * settled docked→docked remount (draft promotion after the in-place dock)
+ * must not replay that FLIP — a 2% scale on a few leftover pixels is the
+ * bounce after the composer has already landed. Anything older is a stale
+ * record from an unrelated navigation and is ignored.
  */
 export const DRAFT_HERO_HANDOFF_MAX_AGE_MS = 400;
 
 type ComposerRect = Pick<DOMRect, "left" | "top">;
 
-let draftHeroHandoff: { readonly rect: ComposerRect; readonly at: number } | null = null;
+export type DraftHeroHandoff = {
+  readonly rect: ComposerRect;
+  readonly isDraftHero: boolean;
+  readonly gliding: boolean;
+};
 
-export function recordDraftHeroHandoff(rect: ComposerRect | null, now: number): void {
-  draftHeroHandoff = rect ? { rect: { left: rect.left, top: rect.top }, at: now } : null;
+export type DraftHeroHandoffExtras = {
+  readonly isDraftHero: boolean;
+  readonly gliding: boolean;
+};
+
+let draftHeroHandoff: (DraftHeroHandoff & { readonly at: number }) | null = null;
+
+export function recordDraftHeroHandoff(
+  rect: ComposerRect | null,
+  now: number,
+  extras: DraftHeroHandoffExtras = { isDraftHero: false, gliding: false },
+): void {
+  draftHeroHandoff = rect
+    ? {
+        rect: { left: rect.left, top: rect.top },
+        isDraftHero: extras.isDraftHero,
+        gliding: extras.gliding,
+        at: now,
+      }
+    : null;
 }
 
 /** Consumes the record: a handoff glides exactly one mount, never a later one. */
-export function takeDraftHeroHandoff(now: number): ComposerRect | null {
+export function takeDraftHeroHandoff(now: number): DraftHeroHandoff | null {
   const handoff = draftHeroHandoff;
   draftHeroHandoff = null;
   if (!handoff || now - handoff.at > DRAFT_HERO_HANDOFF_MAX_AGE_MS) {
     return null;
   }
-  return handoff.rect;
+  return {
+    rect: handoff.rect,
+    isDraftHero: handoff.isDraftHero,
+    gliding: handoff.gliding,
+  };
+}
+
+export function isDraftHeroAnimationPlaying(animation: Animation | null): boolean {
+  return animation?.playState === "running" || animation?.playState === "paused";
+}
+
+/**
+ * A remount glides only when placement crossed hero↔docked, or when the
+ * outgoing view was still mid-glide so the motion can finish on the incoming
+ * ChatView. In-place hero↔docked is decided by the caller.
+ */
+export function shouldGlideDraftHeroHandoff(input: {
+  readonly isDraftHero: boolean;
+  readonly handoff: DraftHeroHandoff | null;
+}): boolean {
+  if (input.handoff === null) {
+    return false;
+  }
+  return input.handoff.isDraftHero !== input.isDraftHero || input.handoff.gliding;
+}
+
+export function shouldPopDraftHeroGlide(input: {
+  readonly sceneryDock: boolean;
+  readonly inPlace: boolean;
+  readonly translateY: number;
+}): boolean {
+  return (
+    input.sceneryDock && input.inPlace && Math.abs(input.translateY) >= DRAFT_HERO_POP_MIN_TRAVEL_PX
+  );
+}
+
+export function draftHeroGlideHasTravel(translateX: number, translateY: number): boolean {
+  return (
+    Math.abs(translateX) >= DRAFT_HERO_GLIDE_MIN_PX ||
+    Math.abs(translateY) >= DRAFT_HERO_GLIDE_MIN_PX
+  );
+}
+
+export function draftHeroGlideKeyframes(
+  translateX: number,
+  translateY: number,
+  pop: boolean,
+): ReadonlyArray<{ transform: string }> {
+  if (pop) {
+    return [
+      { transform: `translate3d(${translateX}px, ${translateY}px, 0) scale(1.02)` },
+      { transform: "translate3d(0, 0, 0) scale(1)" },
+    ];
+  }
+  return [
+    { transform: `translate3d(${translateX}px, ${translateY}px, 0)` },
+    { transform: "translate3d(0, 0, 0)" },
+  ];
 }
 
 type ComposerViewTransition = {

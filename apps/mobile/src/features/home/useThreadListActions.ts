@@ -6,6 +6,7 @@ import { useCallback, useRef } from "react";
 import { Alert } from "react-native";
 
 import { showConfirmDialog } from "../../components/ConfirmDialogHost";
+import { clearThreadDeparting, markThreadDeparting } from "./thread-departure-store";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { refreshArchivedThreadsForEnvironment } from "../archive/useArchivedThreadSnapshots";
 import {
@@ -15,6 +16,7 @@ import {
 } from "@t3tools/client-runtime/state/thread-sort";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentServerConfigsAtom } from "../../state/server";
+import { terminalEnvironment } from "../../state/terminal";
 import { environmentThreadShells, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 
@@ -94,6 +96,12 @@ function useThreadActionExecutor(
   const archiveMutation = useAtomCommand(threadEnvironment.archive, { reportFailure: false });
   const unarchiveMutation = useAtomCommand(threadEnvironment.unarchive, { reportFailure: false });
   const deleteMutation = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
+  const stopSessionMutation = useAtomCommand(threadEnvironment.stopSession, {
+    reportFailure: false,
+  });
+  const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, {
+    reportFailure: false,
+  });
   const settleMutation = useAtomCommand(threadEnvironment.settle, { reportFailure: false });
   const unsettleMutation = useAtomCommand(threadEnvironment.unsettle, { reportFailure: false });
   const inFlightThreadKeys = useRef(new Set<string>());
@@ -141,6 +149,27 @@ function useThreadActionExecutor(
           );
           return false;
         }
+        // Web delete parity (useThreadActions.deleteThread): stop the
+        // provider session, then close the terminal with its history, before
+        // the delete dispatch. Prep failures never block the delete — web
+        // treats them the same way. Shared by Home, the iPad sidebar, and
+        // archive via this executor.
+        if (action === "delete") {
+          if (thread.session && thread.session.status !== "stopped") {
+            await stopSessionMutation({
+              environmentId: thread.environmentId,
+              input: { threadId: thread.id },
+            });
+          }
+          await closeTerminalMutation({
+            environmentId: thread.environmentId,
+            input: { threadId: thread.id, deleteHistory: true },
+          });
+        }
+        // Web parity: settling starts a visible departure ahead of the server
+        // round trip. Marked after the guards so a refused settle never hides
+        // the row; cleared on failure so it fades back in place.
+        if (action === "settle") markThreadDeparting(key, "settle");
         const result =
           action === "unsettle"
             ? // reason "user" pins the thread active: auto-settle stays
@@ -162,6 +191,7 @@ function useThreadActionExecutor(
                 input: { threadId: thread.id },
               });
         if (result._tag === "Failure") {
+          if (action === "settle") clearThreadDeparting(key);
           Alert.alert(actionFailureTitle(action), actionFailureMessage(action, result.cause));
           return false;
         }
@@ -178,9 +208,11 @@ function useThreadActionExecutor(
     },
     [
       archiveMutation,
+      closeTerminalMutation,
       deleteMutation,
       onCompleted,
       settleMutation,
+      stopSessionMutation,
       unarchiveMutation,
       unsettleMutation,
     ],
@@ -285,6 +317,9 @@ export function useThreadListActions(): {
         }
 
         selectionHaptic();
+        // Web parity: the row starts its departure before the round trip;
+        // cleared on failure so it fades back in place.
+        markThreadDeparting(key, "snooze");
         const result = await snoozeMutation({
           environmentId: thread.environmentId,
           input: {
@@ -293,6 +328,7 @@ export function useThreadListActions(): {
           },
         });
         if (result._tag === "Failure") {
+          clearThreadDeparting(key);
           const error = Cause.squash(result.cause);
           Alert.alert(
             "Could not snooze thread",

@@ -24,4 +24,11 @@ describe("formatEnvironmentQueryError", () => {
       "The environment request failed.",
     );
   });
+
+  it("does not leak Effect's interrupt-only squash as a load error", () => {
+    expect(formatEnvironmentQueryError(Cause.interrupt(1))).toBe("The environment request failed.");
+    expect(
+      formatEnvironmentQueryError(Cause.fail(new Error("All fibers interrupted without error"))),
+    ).toBe("The environment request failed.");
+  });
 });

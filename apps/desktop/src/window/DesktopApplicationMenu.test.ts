@@ -45,6 +45,9 @@ const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
   setAsDefaultProtocolClient: () => Effect.succeed(true),
   setDesktopName: () => Effect.void,
   setDockIcon: () => Effect.void,
+  setDockBadge: () => Effect.void,
+  bounceDock: Effect.succeed(-1),
+  cancelDockBounce: () => Effect.void,
   startLocalCrashReporter: () => Effect.void,
   appendCommandLineSwitch: () => Effect.void,
   onBeforeQuitForUpdate: () => Effect.void,
@@ -84,6 +87,7 @@ const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
     dispatchMenuAction: (action) => Deferred.succeed(selectedAction, action).pipe(Effect.asVoid),
     zoomMain: (direction) =>
       Deferred.succeed(selectedAction, `zoom-${direction}`).pipe(Effect.asVoid),
+    setDockAttention: () => Effect.void,
     syncAppearance: Effect.void,
   } satisfies DesktopWindow.DesktopWindow["Service"]);
 

@@ -36,6 +36,7 @@ import { RootStack } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
 import { OverlayPortalHost } from "./components/OverlayPortal";
 import { appBlurTargetRef } from "./lib/appBlurTarget";
+import { isBoringMobileTheme } from "./lib/mobileTheme";
 import { useThemeColor } from "./lib/useThemeColor";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 
@@ -88,12 +89,15 @@ export default function App() {
 }
 
 function AppContent() {
-  const { themeAppearance } = useAppearancePreferences();
+  const { themeAppearance, themeId } = useAppearancePreferences();
   const statusBarBg = useThemeColor("--color-status-bar");
   const baseNavigationTheme = useMobileNavigationTheme(themeAppearance);
   const sceneryNavigationTheme = themeAppearance === "dark" ? SCENERY_NAV_DARK : SCENERY_NAV_LIGHT;
-  const navigationTheme = useMemo(
-    () => ({
+  const navigationTheme = useMemo(() => {
+    if (isBoringMobileTheme(themeId)) {
+      return baseNavigationTheme;
+    }
+    return {
       ...baseNavigationTheme,
       colors: {
         ...baseNavigationTheme.colors,
@@ -101,9 +105,8 @@ function AppContent() {
         card: sceneryNavigationTheme.colors.card,
         primary: sceneryNavigationTheme.colors.primary,
       },
-    }),
-    [baseNavigationTheme, sceneryNavigationTheme],
-  );
+    };
+  }, [baseNavigationTheme, sceneryNavigationTheme, themeId]);
 
   return (
     <>

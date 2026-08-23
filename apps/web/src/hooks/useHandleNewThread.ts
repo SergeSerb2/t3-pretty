@@ -6,6 +6,10 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { DEFAULT_RUNTIME_MODE, type ScopedProjectRef, type ThreadId } from "@t3tools/contracts";
+import {
+  resolveCarriedComposerRuntimeMode,
+  resolveCarriedRuntimeMode,
+} from "../components/ChatView.logic";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import {
@@ -113,13 +117,16 @@ export function useNewThreadHandler() {
         setDraftThreadContext,
         setLogicalProjectDraftThreadId,
         setModelSelection,
+        setRuntimeMode,
+        stickyActiveProvider,
       } = useComposerDraftStore.getState();
       const currentRouteTarget = getCurrentRouteTarget();
       // A new thread carries the user's *working mode* from the thread being
       // viewed: model (including options like reasoning effort and context
       // window), permission mode, and interaction mode. Branch, worktree, and
       // env mode never carry implicitly — those come from the configured
-      // defaults unless the caller passes them explicitly.
+      // defaults unless the caller passes them explicitly. Kimi-only "yolo"
+      // is remapped when the destination model is a different provider.
       const carrySourceShell =
         currentRouteTarget?.kind === "server"
           ? readThreadShell(currentRouteTarget.threadRef)
@@ -141,11 +148,26 @@ export function useNewThreadHandler() {
         : null;
       const carryModelSelection =
         composerModelSelection ?? carrySourceShell?.modelSelection ?? null;
-      const carryRuntimeMode =
-        carrySourceComposer?.runtimeMode ??
-        carrySourceShell?.runtimeMode ??
-        carrySourceDraft?.runtimeMode ??
-        null;
+      const destinationInstanceId = carryModelSelection?.instanceId ?? stickyActiveProvider ?? null;
+      const destinationProviderDriver =
+        environments
+          .find((environment) => environment.environmentId === projectRef.environmentId)
+          ?.serverConfig?.providers.find(
+            (provider) => provider.instanceId === destinationInstanceId,
+          )?.driver ?? null;
+      const carryRuntimeModeInput = {
+        runtimeMode:
+          carrySourceComposer?.runtimeMode ??
+          carrySourceShell?.runtimeMode ??
+          carrySourceDraft?.runtimeMode ??
+          null,
+        destinationProviderDriver,
+      };
+      const carryRuntimeMode = resolveCarriedRuntimeMode(carryRuntimeModeInput);
+      // Composer pick only when the carry is a real pick: a non-default mode,
+      // or "full-access" remapped from yolo. A plain carried "full-access"
+      // keeps unset semantics so a new Kimi draft still inherits yolo.
+      const carryComposerRuntimeMode = resolveCarriedComposerRuntimeMode(carryRuntimeModeInput);
       const carryInteractionMode =
         carrySourceComposer?.interactionMode ??
         carrySourceShell?.interactionMode ??
@@ -211,9 +233,12 @@ export function useNewThreadHandler() {
         ? scopeThreadRef(storedDraftThread.environmentId, storedDraftThread.threadId)
         : null;
       const reusableStoredDraftThread =
-        storedDraftThreadRef && readThreadShell(storedDraftThreadRef) !== null
-          ? null
-          : storedDraftThread;
+        storedDraftThread !== null &&
+        storedDraftThread.promotedTo == null &&
+        storedDraftThreadRef !== null &&
+        readThreadShell(storedDraftThreadRef) === null
+          ? storedDraftThread
+          : null;
       if (storedDraftThreadRef && reusableStoredDraftThread === null) {
         markPromotedDraftThreadByRef(storedDraftThreadRef);
       }
@@ -312,6 +337,12 @@ export function useNewThreadHandler() {
               setModelSelection(emptyStoredDraftThread.draftId, carryModelSelection, {
                 replaceOptions: true,
               });
+            }
+            // Record the carried mode on the composer only when it is a real
+            // pick (non-default, or remapped from yolo) — stamping a plain
+            // carried "full-access" would block the Kimi yolo default.
+            if (carryComposerRuntimeMode) {
+              setRuntimeMode(emptyStoredDraftThread.draftId, carryComposerRuntimeMode);
             }
           } else if (emptyStoredDraftThread.startSurface !== startSurface) {
             setDraftThreadContext(emptyStoredDraftThread.draftId, { startSurface });
@@ -469,6 +500,9 @@ export function useNewThreadHandler() {
           // whatever sticky state just wrote".
           setModelSelection(draftId, carryModelSelection, { replaceOptions: true });
         }
+        if (carryComposerRuntimeMode) {
+          setRuntimeMode(draftId, carryComposerRuntimeMode);
+        }
         carryComposerContentTo(draftId);
 
         await router.navigate({
@@ -481,6 +515,7 @@ export function useNewThreadHandler() {
     },
     [
       environmentConnectedById,
+      environments,
       getCurrentRouteTarget,
       primaryServerSettings,
       projectGroupingSettings,

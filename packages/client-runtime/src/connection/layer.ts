@@ -11,6 +11,7 @@ import * as RelayEnvironmentDiscovery from "../relay/discovery.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as RpcSession from "../rpc/session.ts";
 import { threadLifecycleOutboxLayer } from "../state/threadLifecycleOutbox.ts";
+import { warmThreadStatesLayer } from "../state/threads.ts";
 
 const resolverLayer = ConnectionResolver.layer.pipe(
   Layer.provide(RemoteEnvironmentAuthorization.layer),
@@ -45,4 +46,5 @@ const connectionStartupLayer = Layer.effectDiscard(
 export const layer = connectionStartupLayer.pipe(
   Layer.provideMerge(connectionServicesLayer),
   Layer.provideMerge(threadLifecycleOutboxLayer),
+  Layer.provideMerge(warmThreadStatesLayer),
 );

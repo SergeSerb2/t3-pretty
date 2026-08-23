@@ -20,6 +20,7 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { TextGenerationError } from "@t3tools/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
+  buildActivityHeadlinePrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
@@ -27,6 +28,7 @@ import {
 } from "./TextGenerationPrompts.ts";
 import {
   normalizeCliError,
+  sanitizeActivityHeadline,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -85,7 +87,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle",
+      | "generateThreadTitle"
+      | "generateActivityHeadline",
     value: unknown,
     detail: string,
   ): Effect.Effect<string, TextGenerationError> =>
@@ -115,7 +118,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateActivityHeadline";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -359,11 +363,33 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       };
     });
 
+  const generateActivityHeadline: TextGeneration.TextGeneration["Service"]["generateActivityHeadline"] =
+    Effect.fn("ClaudeTextGeneration.generateActivityHeadline")(function* (input) {
+      const { prompt, outputSchema } = buildActivityHeadlinePrompt({
+        summary: input.summary,
+        command: input.command,
+        detail: input.detail,
+      });
+
+      const generated = yield* runClaudeJson({
+        operation: "generateActivityHeadline",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return {
+        headline: sanitizeActivityHeadline(generated.headline),
+      };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateActivityHeadline,
     generateProjectIcon: TextGeneration.unsupportedProjectIconGeneration("Claude"),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

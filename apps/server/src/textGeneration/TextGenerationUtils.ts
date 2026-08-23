@@ -63,6 +63,29 @@ export function sanitizeThreadTitle(raw: string): string {
   return `${normalized.slice(0, 47).trimEnd()}...`;
 }
 
+/**
+ * Normalise a raw activity headline to one compact status-line label.
+ * Returns "" when nothing usable remains; callers skip publishing then.
+ */
+export function sanitizeActivityHeadline(raw: string): string {
+  const normalized = raw
+    .trim()
+    .split(/\r?\n/g)[0]
+    ?.trim()
+    .replace(/^['"`]+|['"`]+$/g, "")
+    .replace(/[.]+$/g, "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.length <= 60) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 57).trimEnd()}...`;
+}
+
 /** CLI name to human-readable label, e.g. "codex" → "Codex CLI (`codex`)" */
 function cliLabel(cliName: string): string {
   const capitalized = cliName.charAt(0).toUpperCase() + cliName.slice(1);

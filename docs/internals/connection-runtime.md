@@ -48,8 +48,11 @@ The supervisor is the only retry owner.
    waits for a signal without consuming retry attempts or running a timer.
 3. When online, it asks the driver for one prepared connection and one RPC
    session.
-4. Transient failures retry forever with exponential backoff capped at 16
-   seconds (`RETRY_DELAYS_MS`). A connection stable for 30 seconds resets
+4. Transient failures retry forever with exponential backoff that grows to a
+   five-minute cap (`RETRY_DELAYS_MS`). The long tail keeps a permanently
+   offline environment at a few hundred connection attempts per day instead of
+   several thousand, which matters for relay targets where every attempt is a
+   billed relay Worker request. A connection stable for 30 seconds resets
    accumulated backoff, and when such a connection drops the first reconnect
    starts immediately instead of sleeping the first rung (a suspended phone
    whose socket an idle proxy closed, a laptop waking up); only a failure of

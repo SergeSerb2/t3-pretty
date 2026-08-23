@@ -10,6 +10,8 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+import { MOTION_TIMING } from "../lib/motion";
+
 const INDICATOR_WIDTH_FRACTION = 0.3;
 const MIN_INDICATOR_WIDTH = 48;
 
@@ -77,19 +79,38 @@ function IndeterminateLoadingStrip() {
   );
 }
 
+function DeterminateLoadingStrip(props: { readonly progress: number }) {
+  const containerWidth = useSharedValue(0);
+  const clampedProgress = Math.min(1, Math.max(0, props.progress));
+  const progress = useSharedValue(clampedProgress);
+
+  useEffect(() => {
+    progress.value = withTiming(clampedProgress, MOTION_TIMING);
+  }, [progress, clampedProgress]);
+
+  const indicatorStyle = useAnimatedStyle(() => {
+    const width = containerWidth.value;
+    return {
+      opacity: width > 0 ? 1 : 0,
+      transform: [{ translateX: (progress.value - 1) * width }],
+    };
+  });
+
+  return (
+    <LoadingStripFrame
+      onLayout={(width) => {
+        containerWidth.value = width;
+      }}
+    >
+      <Animated.View className="h-full w-full rounded-r-full bg-primary" style={indicatorStyle} />
+    </LoadingStripFrame>
+  );
+}
+
 export function LoadingStrip(props: { readonly progress?: number }) {
   if (props.progress === undefined) {
     return <IndeterminateLoadingStrip />;
   }
 
-  const clampedProgress = Math.min(1, Math.max(0, props.progress));
-
-  return (
-    <LoadingStripFrame>
-      <View
-        className="h-full rounded-r-full bg-primary"
-        style={{ width: `${clampedProgress * 100}%` }}
-      />
-    </LoadingStripFrame>
-  );
+  return <DeterminateLoadingStrip progress={props.progress} />;
 }

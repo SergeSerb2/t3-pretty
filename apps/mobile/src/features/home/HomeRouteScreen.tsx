@@ -2,7 +2,9 @@ import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useState } from "react";
+import { View } from "react-native";
 
+import { EmptyState } from "../../components/EmptyState";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { useProjects } from "../../state/entities";
 import { usePresentedThreadShells } from "../../state/optimistic-thread-send";
@@ -126,9 +128,28 @@ export function HomeRouteScreen() {
             />,
           ]}
         />
-        <WorkspaceEmptyDetail
-          onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
-        />
+        {/* With no environment saved there is nothing to select, so the detail
+            pane carries onboarding instead of the thread-picker copy. */}
+        {!catalogState.isLoadingConnections && !catalogState.hasConnections ? (
+          <View className="flex-1 items-center justify-center bg-screen px-8">
+            <EmptyState
+              title="No environments connected"
+              detail="Add an environment to load projects and start coding sessions."
+              actionLabel="Add environment"
+              onAction={() =>
+                navigation.navigate("SettingsSheet", {
+                  screen: "SettingsContent",
+                  params: { screen: "SettingsEnvironmentNew" },
+                })
+              }
+              variant="plain"
+            />
+          </View>
+        ) : (
+          <WorkspaceEmptyDetail
+            onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
+          />
+        )}
       </>
     );
   }
@@ -199,6 +220,13 @@ export function HomeRouteScreen() {
           onUnpinThread={unpinThread}
           onMovePinnedThread={movePinnedThread}
           onRegenerateThreadTitle={regenerateThreadTitle}
+          onRenameThread={(thread) =>
+            navigation.navigate("ThreadRename", {
+              environmentId: String(thread.environmentId),
+              threadId: String(thread.id),
+              currentTitle: thread.title,
+            })
+          }
           onEnvironmentChange={setSelectedEnvironmentId}
           onProjectChange={setSelectedProjectKey}
           onOpenSettings={() =>
