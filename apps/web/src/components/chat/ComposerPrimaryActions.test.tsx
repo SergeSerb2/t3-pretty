@@ -66,7 +66,7 @@ function renderStandaloneStop(isInterrupting = false) {
   );
 }
 
-function renderRunningActions(showSendWhileRunning: boolean, hasSendableContent: boolean) {
+function renderRunningActions(withQueueMenu: boolean, hasSendableContent: boolean) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
@@ -80,7 +80,7 @@ function renderRunningActions(showSendWhileRunning: boolean, hasSendableContent:
       isEnvironmentUnavailable: false,
       isPreparingWorktree: false,
       hasSendableContent,
-      showSendWhileRunning,
+      ...(withQueueMenu ? { onQueueSend: () => {} } : {}),
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
@@ -248,26 +248,28 @@ describe("ComposerPrimaryActions", () => {
     expect(markup).toContain("bg-message-action text-message-action-foreground");
   });
 
-  it("only renders stop while running when Enter-to-send is available", () => {
+  it("renders send-now alongside stop while running", () => {
     const markup = renderRunningActions(false, true);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).not.toContain('aria-label="Send message"');
+    expect(markup).toContain('aria-label="Send now"');
+    expect(markup).toContain('type="submit"');
+    expect(markup).toContain("size-9 sm:size-8");
+    expect(markup).not.toContain('aria-label="Send options"');
   });
 
-  it("renders send alongside stop while running when Enter-to-send is unavailable", () => {
+  it("renders the queue menu next to send-now while running when queueing is available", () => {
     const markup = renderRunningActions(true, true);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).toContain('aria-label="Send message"');
-    expect(markup).toContain('type="submit"');
-    expect(markup).toContain("size-9 sm:size-8");
+    expect(markup).toContain('aria-label="Send now"');
+    expect(markup).toContain('aria-label="Send options"');
   });
 
   it("keeps stop as the only action while running with an empty composer", () => {
     const markup = renderRunningActions(true, false);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).not.toContain('aria-label="Send message"');
+    expect(markup).not.toContain('aria-label="Send now"');
   });
 });

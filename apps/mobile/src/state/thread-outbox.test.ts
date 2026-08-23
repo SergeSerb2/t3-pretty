@@ -122,6 +122,44 @@ describe("thread outbox", () => {
     });
   });
 
+  it("carries the per-message delivery mode from enqueue to the drain", async () => {
+    const steering = queuedMessage({
+      messageId: "message-1",
+      createdAt: "2026-06-08T10:00:01.000Z",
+    });
+    const queued = {
+      ...queuedMessage({ messageId: "message-2", createdAt: "2026-06-08T10:00:02.000Z" }),
+      delivery: "queue",
+    } satisfies QueuedThreadMessage;
+
+    expect(decodeQueuedThreadMessage(encodeQueuedThreadMessage(queued))).toEqual(queued);
+    // Omitted stays omitted: the server steers the running turn by default.
+    expect(decodeQueuedThreadMessage(encodeQueuedThreadMessage(steering))).not.toHaveProperty(
+      "delivery",
+    );
+
+    const registry = AtomRegistry.make();
+    const written: QueuedThreadMessage[] = [];
+    const manager = createThreadOutboxManager({
+      registry,
+      storage: {
+        load: async () => [],
+        write: async (message) => {
+          written.push(message);
+        },
+        remove: async () => undefined,
+      },
+    });
+
+    await manager.enqueue(queued);
+    // The drain reads the queue atom to build its startTurn input.
+    expect(registry.get(manager.queuedMessagesByThreadKeyAtom)["environment-1:thread-1"]).toEqual([
+      queued,
+    ]);
+    expect(written).toEqual([queued]);
+    registry.dispose();
+  });
+
   it("compares model options as part of the queued settings change", () => {
     const base = {
       instanceId: ProviderInstanceId.make("codex"),

@@ -10,6 +10,7 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
   ThreadId,
+  TurnDeliveryMode,
   type ModelSelection as ModelSelectionType,
   type ProjectId as ProjectIdType,
   type ProviderInteractionMode as ProviderInteractionModeType,
@@ -47,6 +48,10 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
+  // How the server should land this message on a running turn: "steer" feeds
+  // it into the turn, "queue" holds it until the turn ends. Omitted means the
+  // server default (steer).
+  delivery: Schema.optional(TurnDeliveryMode),
   // Present when the queued item creates a brand-new thread (pending task)
   // instead of appending a turn to an existing one.
   creation: Schema.optional(QueuedThreadCreationSchema),
@@ -76,6 +81,7 @@ export interface QueuedThreadMessage {
   readonly modelSelection?: ModelSelectionType;
   readonly runtimeMode?: RuntimeModeType;
   readonly interactionMode?: ProviderInteractionModeType;
+  readonly delivery?: TurnDeliveryMode;
   readonly creation?: QueuedThreadCreation;
   readonly createdAt: string;
 }

@@ -3850,4 +3850,189 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.providerInstanceId).toBe(ProviderInstanceId.make("codex_work"));
     expect(thread?.session?.activeTurnId).toBeNull();
   });
+
+  const runningSessionFor = (updatedAt: string) =>
+    ({
+      threadId: ThreadId.make("thread-1"),
+      status: "running",
+      providerName: "codex",
+      runtimeMode: "approval-required",
+      activeTurnId: asTurnId("turn-1"),
+      lastError: null,
+      updatedAt,
+    }) as const;
+
+  it("holds a queued turn start until the running turn ends, then sends it", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const later = "2026-01-01T00:01:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-running-for-queue"),
+        threadId: ThreadId.make("thread-1"),
+        session: runningSessionFor(now),
+        createdAt: now,
+      }),
+    );
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-queued"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-queued"),
+          role: "user",
+          text: "queued follow-up",
+          attachments: [],
+        },
+        delivery: "queue",
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    // Drain, not a sleep: the reactor is done with the queued start and
+    // deliberately did nothing with it.
+    await harness.drain();
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-ready-for-queue"),
+        threadId: ThreadId.make("thread-1"),
+        session: {
+          ...runningSessionFor(later),
+          status: "ready",
+          activeTurnId: null,
+        },
+        createdAt: later,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toEqual(
+      expect.stringMatching(/queued follow-up$/),
+    );
+  });
+
+  it("does not flush a second queued start on a stale ready session-set", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const later = "2026-01-01T00:01:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-running-for-stale-ready"),
+        threadId: ThreadId.make("thread-1"),
+        session: runningSessionFor(now),
+        createdAt: now,
+      }),
+    );
+
+    for (const [commandId, messageId, text] of [
+      ["cmd-turn-start-queued-a", "user-message-queued-a", "queued first"] as const,
+      ["cmd-turn-start-queued-b", "user-message-queued-b", "queued second"] as const,
+    ]) {
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(commandId),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId(messageId),
+            role: "user",
+            text,
+            attachments: [],
+          },
+          delivery: "queue",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: now,
+        }),
+      );
+    }
+
+    await harness.drain();
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+
+    // Two ready commands commit before the reactor drains either session-set.
+    // The first flush marks the session starting; the second ready event must
+    // see that live status and leave the second queued start alone.
+    await harness.runEffect(
+      Effect.gen(function* () {
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-session-set-ready-stale-1"),
+          threadId: ThreadId.make("thread-1"),
+          session: {
+            ...runningSessionFor(later),
+            status: "ready",
+            activeTurnId: null,
+          },
+          createdAt: later,
+        });
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-session-set-ready-stale-2"),
+          threadId: ThreadId.make("thread-1"),
+          session: {
+            ...runningSessionFor(later),
+            status: "ready",
+            activeTurnId: null,
+          },
+          createdAt: later,
+        });
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await harness.drain();
+    expect(harness.sendTurn.mock.calls.length).toBe(1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toEqual(
+      expect.stringMatching(/queued first$/),
+    );
+  });
+
+  it("sends a mid-turn start immediately when delivery is left at the steer default", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-running-for-steer"),
+        threadId: ThreadId.make("thread-1"),
+        session: runningSessionFor(now),
+        createdAt: now,
+      }),
+    );
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-steered"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-steered"),
+          role: "user",
+          text: "steer mid-turn",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toEqual(
+      expect.stringMatching(/steer mid-turn$/),
+    );
+  });
 });
