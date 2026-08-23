@@ -65,6 +65,8 @@ import {
   type PullRequestFilterOption,
 } from "../components/pullRequest/PullRequestListFilters";
 import {
+  DEFAULT_PULL_REQUEST_LIST_FILTERS,
+  livePullRequestListFilters,
   persistedFiltersFromSearch,
   pullRequestListFiltersToPersist,
   readPersistedPullRequestListFilters,
@@ -420,24 +422,40 @@ function PullRequestsRouteView() {
     const raw = Object.fromEntries(
       new URLSearchParams(searchStr.startsWith("?") ? searchStr.slice(1) : searchStr),
     );
+    const scoped = livePullRequestListFilters(
+      persistedFiltersFromSearch(search),
+      environments.map((environment) => environment.environmentId),
+      projectsKnown ? allProjects.map((project) => project.id) : undefined,
+    );
+    const scopePatch = {
+      environmentId: scoped.environmentId,
+      projectId: scoped.projectId,
+      host: scoped.host,
+    };
     if (!replacedRestoreUrl.current) {
-      const next = restoredListSearchToReplaceUrl(raw, persistedFiltersFromSearch(search));
+      const next = restoredListSearchToReplaceUrl(raw, scoped);
       if (next !== null) {
         replacedRestoreUrl.current = true;
-        updateSearch(next);
+        updateSearch({ ...next, ...scopePatch });
         return;
       }
     }
-    const persistable = pullRequestListFiltersToPersist(
-      raw,
-      persistedFiltersFromSearch(search),
-      !replacedRestoreUrl.current,
-    );
+    const persistable = pullRequestListFiltersToPersist(raw, scoped, !replacedRestoreUrl.current);
     replacedRestoreUrl.current = true;
+    if (
+      scoped.environmentId !== search.environmentId ||
+      scoped.projectId !== search.projectId ||
+      scoped.host !== search.host
+    ) {
+      const next = persistable ?? pullRequestListFiltersToPersist(raw, scoped, false);
+      if (next !== null) writePersistedPullRequestListFilters(next);
+      updateSearch(scopePatch);
+      return;
+    }
     if (persistable !== null) {
       writePersistedPullRequestListFilters(persistable);
     }
-  }, [search, searchStr, updateSearch]);
+  }, [allProjects, environments, projectsKnown, search, searchStr, updateSearch]);
 
   // Changing what the list contains must not leave a selection from the previous view open.
   // The project filter is untouched: it is the user's scope, not part of the selection.
@@ -1491,6 +1509,7 @@ function PullRequestsRouteView() {
       }
       onReset={() => {
         closeListSelection();
+        writePersistedPullRequestListFilters(DEFAULT_PULL_REQUEST_LIST_FILTERS);
         void navigate({
           search: resetPullRequestsListSearch,
           replace: true,

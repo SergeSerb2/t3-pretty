@@ -86,6 +86,26 @@ export function searchFromPersistedFilters(
   return persistedFiltersFromSearch(filters);
 }
 
+/**
+ * Keep environment/project/host only while those ids still exist. An empty environment list is
+ * "not loaded yet", not "every server is gone" — do not wipe a named save during hydrate.
+ */
+export function livePullRequestListFilters(
+  filters: PersistedPullRequestListFilters,
+  environmentIds: ReadonlyArray<EnvironmentId>,
+  projectIds?: ReadonlyArray<ProjectId>,
+): PersistedPullRequestListFilters {
+  if (environmentIds.length === 0) return persistedFiltersFromSearch(filters);
+  const keepEnvironment =
+    filters.environmentId === undefined || environmentIds.includes(filters.environmentId);
+  const next = keepEnvironment
+    ? filters
+    : { ...filters, environmentId: undefined, projectId: undefined, host: undefined };
+  const keepProject =
+    next.projectId === undefined || projectIds === undefined || projectIds.includes(next.projectId);
+  return persistedFiltersFromSearch(keepProject ? next : { ...next, projectId: undefined });
+}
+
 function stripDefaultListFilterParams(raw: Record<string, unknown>): Record<string, unknown> {
   const next = { ...raw };
   if (next.involvement === "all") delete next.involvement;
@@ -194,6 +214,8 @@ export function writePersistedPullRequestListFilters(
   }
 }
 
-export function persistedPullRequestListSearch(): PersistedPullRequestListFilters {
-  return searchFromPersistedFilters(readPersistedPullRequestListFilters());
+export function persistedPullRequestListSearch(
+  environmentIds: ReadonlyArray<EnvironmentId> = [],
+): PersistedPullRequestListFilters {
+  return livePullRequestListFilters(readPersistedPullRequestListFilters(), environmentIds);
 }

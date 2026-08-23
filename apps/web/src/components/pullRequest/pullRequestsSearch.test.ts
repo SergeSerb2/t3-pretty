@@ -53,6 +53,10 @@ describe("pull request list search", () => {
       state: "open",
       q: "auth",
     });
+    expect(pullRequestsRouteSource).toContain(
+      "writePersistedPullRequestListFilters(DEFAULT_PULL_REQUEST_LIST_FILTERS)",
+    );
     expect(pullRequestsRouteSource).toContain("search: resetPullRequestsListSearch");
+    expect(pullRequestsRouteSource).toContain("livePullRequestListFilters(");
   });
 });

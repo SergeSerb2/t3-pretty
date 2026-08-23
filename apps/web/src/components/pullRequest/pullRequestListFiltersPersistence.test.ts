@@ -5,6 +5,7 @@ import { removeLocalStorageItem } from "../../hooks/useLocalStorage";
 import {
   DEFAULT_PULL_REQUEST_LIST_FILTERS,
   PULL_REQUEST_LIST_FILTERS_STORAGE_KEY,
+  livePullRequestListFilters,
   persistedFiltersFromSearch,
   persistedPullRequestListSearch,
   pullRequestListFiltersToPersist,
@@ -165,6 +166,58 @@ describe("persisted pull request list filters", () => {
     writePersistedPullRequestListFilters({ involvement: "authored", state: "closed" });
     expect(shouldRestorePersistedListFilters({ involvement: "all", state: "open" })).toBe(true);
     expect(readPersistedPullRequestListFilters()).toEqual({
+      involvement: "authored",
+      state: "closed",
+    });
+  });
+
+  it("clearing to defaults first means a default-named URL restores defaults", () => {
+    writePersistedPullRequestListFilters({ involvement: "authored", state: "closed" });
+    writePersistedPullRequestListFilters(DEFAULT_PULL_REQUEST_LIST_FILTERS);
+    expect(shouldRestorePersistedListFilters({ involvement: "all", state: "open" })).toBe(true);
+    expect(readPersistedPullRequestListFilters()).toEqual(DEFAULT_PULL_REQUEST_LIST_FILTERS);
+    expect(
+      restoredListSearchToReplaceUrl(
+        { involvement: "all", state: "open" },
+        readPersistedPullRequestListFilters(),
+      ),
+    ).toBe(null);
+  });
+
+  it("drops restored environment, project, and host when that server is gone", () => {
+    const saved = {
+      involvement: "authored" as const,
+      state: "closed" as const,
+      environmentId: "gone" as EnvironmentId,
+      projectId: "project-1" as ProjectId,
+      host: "github.com",
+    };
+    expect(livePullRequestListFilters(saved, [])).toEqual(saved);
+    expect(livePullRequestListFilters(saved, ["env-1" as EnvironmentId])).toEqual({
+      involvement: "authored",
+      state: "closed",
+    });
+    expect(
+      livePullRequestListFilters(saved, ["gone" as EnvironmentId], ["project-2" as ProjectId]),
+    ).toEqual({
+      involvement: "authored",
+      state: "closed",
+      environmentId: "gone",
+      host: "github.com",
+    });
+    expect(
+      livePullRequestListFilters({ ...saved, environmentId: "env-1" as EnvironmentId }, [
+        "env-1" as EnvironmentId,
+      ]),
+    ).toEqual({
+      involvement: "authored",
+      state: "closed",
+      environmentId: "env-1",
+      projectId: "project-1",
+      host: "github.com",
+    });
+    writePersistedPullRequestListFilters(saved);
+    expect(persistedPullRequestListSearch(["env-1" as EnvironmentId])).toEqual({
       involvement: "authored",
       state: "closed",
     });

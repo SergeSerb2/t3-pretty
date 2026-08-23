@@ -11,7 +11,10 @@ import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-ro
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
-import { persistedPullRequestListSearch } from "../pullRequest/pullRequestListFiltersPersistence";
+import {
+  persistedPullRequestListSearch,
+  writePersistedPullRequestListFilters,
+} from "../pullRequest/pullRequestListFiltersPersistence";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -170,8 +173,12 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   }, [isMobile, setOpenMobile]);
   const handlePullRequestsClick = useCallback(() => {
     closeMobileSidebar();
-    void navigate({ to: "/pull-requests", search: persistedPullRequestListSearch() });
-  }, [closeMobileSidebar, navigate]);
+    const search = persistedPullRequestListSearch(
+      environments.map((environment) => environment.environmentId),
+    );
+    writePersistedPullRequestListFilters(search);
+    void navigate({ to: "/pull-requests", search });
+  }, [closeMobileSidebar, environments, navigate]);
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
