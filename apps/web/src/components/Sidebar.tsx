@@ -2302,14 +2302,23 @@ export default function Sidebar() {
   }, [routeThreadKey, settledShelfExpanded, visibleSettledThreads]);
 
   // Clear settled: archive the whole settled tail (the full scoped list, not
-  // just the rendered page) in one confirmed action. Archive is the existing
-  // reversible "remove from sidebar" — the toast offers Undo and archived
-  // threads stay reachable from the project's archived list.
+  // just the rendered page) in one confirmed action. Skip the open thread so
+  // Clear cannot yank the conversation out from under the user — same as
+  // auto-archive. Archive is the existing reversible "remove from sidebar" —
+  // the toast offers Undo and archived threads stay reachable from the
+  // project's archived list.
+  const clearableSettledThreads = useMemo(() => {
+    if (routeThreadKey === null) return settledThreads;
+    return settledThreads.filter(
+      (thread) =>
+        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) !== routeThreadKey,
+    );
+  }, [routeThreadKey, settledThreads]);
   const [clearingSettled, setClearingSettled] = useState(false);
   const clearSettledThreads = useCallback(async () => {
     const api = readLocalApi();
-    if (!api || settledThreads.length === 0 || clearingSettled) return;
-    const count = settledThreads.length;
+    if (!api || clearableSettledThreads.length === 0 || clearingSettled) return;
+    const count = clearableSettledThreads.length;
     const confirmed = await settlePromise(() =>
       api.dialogs.confirm(
         `Archive ${count === 1 ? "1 settled thread" : `all ${count} settled threads`}?`,
@@ -2318,13 +2327,13 @@ export default function Sidebar() {
     if (confirmed._tag === "Failure" || !confirmed.value) return;
     setClearingSettled(true);
     try {
-      const entries = settledThreads.map((thread) => {
+      const entries = clearableSettledThreads.map((thread) => {
         const threadRef = scopeThreadRef(thread.environmentId, thread.id);
         return { threadKey: scopedThreadKey(threadRef), threadRef };
       });
       const outcome = await archiveSelectedThreadEntries({
         entries,
-        archive: (entry, onArchived) => archiveThread(entry.threadRef, { onArchived }),
+        archive: (entry) => archiveThread(entry.threadRef),
       });
       const archivedRefs = entries
         .filter((entry) => outcome.archivedThreadKeys.includes(entry.threadKey))
@@ -2360,13 +2369,14 @@ export default function Sidebar() {
     } finally {
       setClearingSettled(false);
     }
-  }, [archiveThread, clearingSettled, settledThreads, unarchiveThread]);
+  }, [archiveThread, clearableSettledThreads, clearingSettled, unarchiveThread]);
 
   // Auto-archive: settled threads past the configured age leave the sidebar
   // on their own. Candidates come from the scoped partition on the minute
   // clock; a scoped-out project's tail sweeps next time it is in view.
-  // Attempted keys are remembered so a thread that refuses to archive isn't
-  // retried every minute; the set resets with the app, which is retry enough.
+  // Attempted keys are remembered so a successful archive isn't retried
+  // every minute while the projection still lists the thread. Failures are
+  // dropped so a transient error can retry on the next tick.
   const autoArchiveAttemptedRef = useRef(new Set<string>());
   useEffect(() => {
     if (autoArchiveSettledAfterDays === null) return;
@@ -2382,7 +2392,11 @@ export default function Sidebar() {
       if (threadKey === routeThreadKey) continue;
       if (autoArchiveAttemptedRef.current.has(threadKey)) continue;
       autoArchiveAttemptedRef.current.add(threadKey);
-      void archiveThread(threadRef);
+      void archiveThread(threadRef).then((result) => {
+        if (result._tag === "Failure") {
+          autoArchiveAttemptedRef.current.delete(threadKey);
+        }
+      });
     }
   }, [archiveThread, autoArchiveSettledAfterDays, nowMinute, routeThreadKey, settledThreads]);
 
@@ -4139,22 +4153,24 @@ export default function Sidebar() {
                               )}
                             />
                           </button>
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={
-                                <button
-                                  type="button"
-                                  onClick={() => void clearSettledThreads()}
-                                  disabled={clearingSettled}
-                                  data-testid="sidebar-settled-clear"
-                                  className="cursor-pointer text-xs font-medium text-muted-foreground/50 transition-colors hover:text-sidebar-foreground disabled:cursor-default disabled:opacity-50"
-                                />
-                              }
-                            >
-                              {clearingSettled ? "Clearing…" : "Clear"}
-                            </TooltipTrigger>
-                            <TooltipPopup>Archive all settled threads</TooltipPopup>
-                          </Tooltip>
+                          {clearableSettledThreads.length > 0 ? (
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={
+                                  <button
+                                    type="button"
+                                    onClick={() => void clearSettledThreads()}
+                                    disabled={clearingSettled}
+                                    data-testid="sidebar-settled-clear"
+                                    className="cursor-pointer text-xs font-medium text-muted-foreground/50 transition-colors hover:text-sidebar-foreground disabled:cursor-default disabled:opacity-50"
+                                  />
+                                }
+                              >
+                                {clearingSettled ? "Clearing…" : "Clear"}
+                              </TooltipTrigger>
+                              <TooltipPopup>Archive settled threads</TooltipPopup>
+                            </Tooltip>
+                          ) : null}
                         </div>
                       </li>,
                     );

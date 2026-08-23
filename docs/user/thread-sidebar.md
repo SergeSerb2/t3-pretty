@@ -21,8 +21,9 @@ is on.
 ## Clearing settled threads
 
 The **Settled** section header has a **Clear** action that archives every settled thread at once,
-after a confirmation. Archiving removes threads from the sidebar without deleting anything; they
-remain in each project's archived list, and the toast offers **Undo**.
+after a confirmation. The thread you currently have open is left in the list. Archiving removes
+threads from the sidebar without deleting anything; they remain in each project's archived list,
+and the toast offers **Undo**.
 
 To keep the settled list from growing forever, enable **Auto-archive settled threads** in Settings
 under General. Threads that have been settled longer than the number of days you choose are

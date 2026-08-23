@@ -155,6 +155,19 @@ describe("archiveSelectedThreadEntries", () => {
     });
   });
 
+  it("records success when the archive callback skips onArchived", async () => {
+    const outcome = await archiveSelectedThreadEntries({
+      entries,
+      archive: async () => success,
+    });
+
+    expect(outcome).toEqual({
+      archivedThreadKeys: ["one", "two", "three"],
+      mutationFailure: null,
+      followupFailures: [],
+    });
+  });
+
   it("stops at a mutation failure and retains prior successes", async () => {
     const archive = vi.fn(async (entry: (typeof entries)[number], onArchived: () => void) => {
       if (entry.threadKey === "two") return failure;
