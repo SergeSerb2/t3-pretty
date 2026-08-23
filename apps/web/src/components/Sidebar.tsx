@@ -126,6 +126,7 @@ import { cn } from "~/lib/utils";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   animatePinnedLayoutChanges,
+  archiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
   countThreadsAwaitingUser,
   formatWorkingDurationLabel,
@@ -136,6 +137,7 @@ import {
   orderItemsByPreferredIds,
   planPinnedReorder,
   resolveAdjacentThreadId,
+  isSettledThreadPastArchiveAge,
   resolveSettledTimestamp,
   resolveSidebarThreadStatus,
   searchSidebarThreadsByTitle,
@@ -1764,6 +1766,9 @@ export default function Sidebar() {
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
+  const autoArchiveSettledAfterDays = useClientSettings(
+    (s) => s.sidebarAutoArchiveSettledAfterDays,
+  );
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
@@ -1778,6 +1783,7 @@ export default function Sidebar() {
     unpinThread,
     reorderPinnedThread,
     archiveThread,
+    unarchiveThread,
     deleteThread,
   } = useThreadActions();
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
@@ -2294,6 +2300,91 @@ export default function Sidebar() {
     );
     return routeThread === undefined ? [] : [routeThread];
   }, [routeThreadKey, settledShelfExpanded, visibleSettledThreads]);
+
+  // Clear settled: archive the whole settled tail (the full scoped list, not
+  // just the rendered page) in one confirmed action. Archive is the existing
+  // reversible "remove from sidebar" — the toast offers Undo and archived
+  // threads stay reachable from the project's archived list.
+  const [clearingSettled, setClearingSettled] = useState(false);
+  const clearSettledThreads = useCallback(async () => {
+    const api = readLocalApi();
+    if (!api || settledThreads.length === 0 || clearingSettled) return;
+    const count = settledThreads.length;
+    const confirmed = await settlePromise(() =>
+      api.dialogs.confirm(
+        `Archive ${count === 1 ? "1 settled thread" : `all ${count} settled threads`}?`,
+      ),
+    );
+    if (confirmed._tag === "Failure" || !confirmed.value) return;
+    setClearingSettled(true);
+    try {
+      const entries = settledThreads.map((thread) => {
+        const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+        return { threadKey: scopedThreadKey(threadRef), threadRef };
+      });
+      const outcome = await archiveSelectedThreadEntries({
+        entries,
+        archive: (entry, onArchived) => archiveThread(entry.threadRef, { onArchived }),
+      });
+      const archivedRefs = entries
+        .filter((entry) => outcome.archivedThreadKeys.includes(entry.threadKey))
+        .map((entry) => entry.threadRef);
+      if (outcome.mutationFailure !== null && !isAtomCommandInterrupted(outcome.mutationFailure)) {
+        const error = squashAtomCommandFailure(outcome.mutationFailure);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title:
+              archivedRefs.length > 0
+                ? `Archived ${archivedRefs.length} of ${count} settled threads`
+                : "Failed to clear settled threads",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+        return;
+      }
+      if (archivedRefs.length === 0) return;
+      toastManager.add(
+        stackedThreadToast({
+          type: "success",
+          title: `Archived ${archivedRefs.length} settled thread${archivedRefs.length === 1 ? "" : "s"}`,
+          timeout: 5_000,
+          actionProps: {
+            children: "Undo",
+            onClick: () => {
+              for (const threadRef of archivedRefs) void unarchiveThread(threadRef);
+            },
+          },
+        }),
+      );
+    } finally {
+      setClearingSettled(false);
+    }
+  }, [archiveThread, clearingSettled, settledThreads, unarchiveThread]);
+
+  // Auto-archive: settled threads past the configured age leave the sidebar
+  // on their own. Candidates come from the scoped partition on the minute
+  // clock; a scoped-out project's tail sweeps next time it is in view.
+  // Attempted keys are remembered so a thread that refuses to archive isn't
+  // retried every minute; the set resets with the app, which is retry enough.
+  const autoArchiveAttemptedRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (autoArchiveSettledAfterDays === null) return;
+    const nowMs = Date.parse(`${nowMinute}:00.000Z`);
+    if (Number.isNaN(nowMs)) return;
+    for (const thread of settledThreads) {
+      if (!isSettledThreadPastArchiveAge(thread, { nowMs, afterDays: autoArchiveSettledAfterDays }))
+        continue;
+      const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+      const threadKey = scopedThreadKey(threadRef);
+      // Never yank the open thread out from under the user; it archives
+      // after they navigate away.
+      if (threadKey === routeThreadKey) continue;
+      if (autoArchiveAttemptedRef.current.has(threadKey)) continue;
+      autoArchiveAttemptedRef.current.add(threadKey);
+      void archiveThread(threadRef);
+    }
+  }, [archiveThread, autoArchiveSettledAfterDays, nowMinute, routeThreadKey, settledThreads]);
 
   // The snoozed shelf is collapsed by default: out of the way, never gone.
   // Collapsed threads don't render (and so don't participate in jump
@@ -4025,28 +4116,46 @@ export default function Sidebar() {
                         data-thread-selection-safe
                         className="list-none"
                       >
-                        <button
-                          type="button"
-                          onClick={toggleSettledShelf}
-                          aria-expanded={settledShelfExpanded}
-                          data-testid="sidebar-settled-shelf-toggle"
-                          className="mb-1 mt-3 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left"
-                        >
-                          <span className="text-xs font-medium text-muted-foreground/50">
-                            Settled
-                          </span>
-                          <span className="h-px flex-1 bg-sidebar-border/60" />
-                          <span className="text-xs font-medium tabular-nums text-muted-foreground/50">
-                            {settledThreads.length}
-                          </span>
-                          <ChevronDownIcon
-                            aria-hidden
-                            className={cn(
-                              "size-3 text-muted-foreground/50 transition-transform",
-                              settledShelfExpanded && "rotate-180",
-                            )}
-                          />
-                        </button>
+                        <div className="mb-1 mt-3 flex w-full items-center gap-2 px-2.5">
+                          <button
+                            type="button"
+                            onClick={toggleSettledShelf}
+                            aria-expanded={settledShelfExpanded}
+                            data-testid="sidebar-settled-shelf-toggle"
+                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                          >
+                            <span className="text-xs font-medium text-muted-foreground/50">
+                              Settled
+                            </span>
+                            <span className="h-px flex-1 bg-sidebar-border/60" />
+                            <span className="text-xs font-medium tabular-nums text-muted-foreground/50">
+                              {settledThreads.length}
+                            </span>
+                            <ChevronDownIcon
+                              aria-hidden
+                              className={cn(
+                                "size-3 text-muted-foreground/50 transition-transform",
+                                settledShelfExpanded && "rotate-180",
+                              )}
+                            />
+                          </button>
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <button
+                                  type="button"
+                                  onClick={() => void clearSettledThreads()}
+                                  disabled={clearingSettled}
+                                  data-testid="sidebar-settled-clear"
+                                  className="cursor-pointer text-xs font-medium text-muted-foreground/50 transition-colors hover:text-sidebar-foreground disabled:cursor-default disabled:opacity-50"
+                                />
+                              }
+                            >
+                              {clearingSettled ? "Clearing…" : "Clear"}
+                            </TooltipTrigger>
+                            <TooltipPopup>Archive all settled threads</TooltipPopup>
+                          </Tooltip>
+                        </div>
                       </li>,
                     );
                   }

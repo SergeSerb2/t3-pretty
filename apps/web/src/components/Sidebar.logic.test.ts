@@ -22,6 +22,7 @@ import {
   resolveSidebarStageBadgeLabel,
   resolveThreadRowClassName,
   resolveSidebarThreadStatus,
+  isSettledThreadPastArchiveAge,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   searchSidebarThreadsByTitle,
@@ -1102,6 +1103,47 @@ describe("sortSettledThreadsForSidebar", () => {
     ]);
 
     expect(sorted.map((thread) => thread.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("isSettledThreadPastArchiveAge", () => {
+  const nowMs = Date.parse("2026-03-30T12:00:00.000Z");
+  const thread = (input: { settledAt?: string | null; latestUserMessageAt?: string | null }) => ({
+    settledAt: input.settledAt ?? null,
+    latestUserMessageAt: input.latestUserMessageAt ?? null,
+    latestTurn: null,
+    updatedAt: "",
+  });
+
+  it("archives a thread settled at least the configured days ago", () => {
+    expect(
+      isSettledThreadPastArchiveAge(thread({ settledAt: "2026-02-01T00:00:00.000Z" }), {
+        nowMs,
+        afterDays: 30,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a thread settled more recently than the window", () => {
+    expect(
+      isSettledThreadPastArchiveAge(thread({ settledAt: "2026-03-15T00:00:00.000Z" }), {
+        nowMs,
+        afterDays: 30,
+      }),
+    ).toBe(false);
+  });
+
+  it("uses last activity for auto-settled threads without a settledAt stamp", () => {
+    expect(
+      isSettledThreadPastArchiveAge(thread({ latestUserMessageAt: "2026-01-01T00:00:00.000Z" }), {
+        nowMs,
+        afterDays: 30,
+      }),
+    ).toBe(true);
+  });
+
+  it("never archives a thread with no resolvable timestamp", () => {
+    expect(isSettledThreadPastArchiveAge(thread({}), { nowMs, afterDays: 30 })).toBe(false);
   });
 });
 

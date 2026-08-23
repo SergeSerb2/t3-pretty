@@ -18,6 +18,16 @@ On phone, [World Scenery](./world-scenery.md) draws the Home list as frosted car
 the landscape photo. Solid rows return if Boring is on, scenery is off, or iOS Reduce Transparency
 is on.
 
+## Clearing settled threads
+
+The **Settled** section header has a **Clear** action that archives every settled thread at once,
+after a confirmation. Archiving removes threads from the sidebar without deleting anything; they
+remain in each project's archived list, and the toast offers **Undo**.
+
+To keep the settled list from growing forever, enable **Auto-archive settled threads** in Settings
+under General. Threads that have been settled longer than the number of days you choose are
+archived automatically. The thread you currently have open is never archived out from under you.
+
 ## Dock badge on macOS
 
 The desktop app's Dock icon shows how many inbox threads are waiting on you — an agent blocked on

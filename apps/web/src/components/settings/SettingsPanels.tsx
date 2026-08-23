@@ -539,6 +539,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
         ? ["Auto-settle inactive threads"]
         : []),
+      ...(settings.sidebarAutoArchiveSettledAfterDays !==
+      DEFAULT_UNIFIED_SETTINGS.sidebarAutoArchiveSettledAfterDays
+        ? ["Auto-archive settled threads"]
+        : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
       ...getChangedTypographySettingLabels(settings),
       ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
@@ -612,6 +616,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.enableLegacyTokenStreaming,
       settings.enableProviderUpdateChecks,
       settings.sidebarAutoSettleAfterDays,
+      settings.sidebarAutoArchiveSettledAfterDays,
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
       settings.timestampFormat,
@@ -694,6 +699,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
+      sidebarAutoArchiveSettledAfterDays:
+        DEFAULT_UNIFIED_SETTINGS.sidebarAutoArchiveSettledAfterDays,
       enableLegacyTokenStreaming: DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
@@ -1718,13 +1725,16 @@ function FontFamilySettingsRow({
 }
 
 const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
+const AUTO_ARCHIVE_DEFAULT_DAYS = 30;
 
 function AutoSettleDaysInput({
   value,
   onCommit,
+  ariaLabel = "Days of inactivity before auto-settle",
 }: {
   value: number;
   onCommit: (days: number) => void;
+  ariaLabel?: string;
 }) {
   // Local draft so the field can be emptied mid-edit; the setting only moves
   // on valid input and snaps back to the persisted value on blur.
@@ -1755,7 +1765,7 @@ function AutoSettleDaysInput({
         }
       }}
       onBlur={() => setDraft(String(value))}
-      aria-label="Days of inactivity before auto-settle"
+      aria-label={ariaLabel}
     />
   );
 }
@@ -2041,6 +2051,49 @@ export function GeneralSettingsPanel() {
               <AutoSettleDaysInput
                 value={settings.sidebarAutoSettleAfterDays}
                 onCommit={(days) => updateSettings({ sidebarAutoSettleAfterDays: days })}
+              />
+            }
+          />
+        ) : null}
+
+        <SettingsRow
+          {...searchableSetting("auto-archive-settled-threads")}
+          description="Threads settled longer than this are archived automatically, so the settled list doesn't grow forever."
+          resetAction={
+            settings.sidebarAutoArchiveSettledAfterDays !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarAutoArchiveSettledAfterDays ? (
+              <SettingResetButton
+                label="auto-archive"
+                onClick={() =>
+                  updateSettings({
+                    sidebarAutoArchiveSettledAfterDays:
+                      DEFAULT_UNIFIED_SETTINGS.sidebarAutoArchiveSettledAfterDays,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarAutoArchiveSettledAfterDays !== null}
+              onCheckedChange={(checked) =>
+                updateSettings({
+                  sidebarAutoArchiveSettledAfterDays: checked ? AUTO_ARCHIVE_DEFAULT_DAYS : null,
+                })
+              }
+              aria-label="Auto-archive settled threads"
+            />
+          }
+        />
+        {settings.sidebarAutoArchiveSettledAfterDays !== null ? (
+          <SettingsRow
+            title="Days settled before auto-archive"
+            description="Archived threads stay available in each project's archived list."
+            control={
+              <AutoSettleDaysInput
+                value={settings.sidebarAutoArchiveSettledAfterDays}
+                onCommit={(days) => updateSettings({ sidebarAutoArchiveSettledAfterDays: days })}
+                ariaLabel="Days settled before auto-archive"
               />
             }
           />

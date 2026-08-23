@@ -642,6 +642,21 @@ export function resolveSettledTimestamp(thread: SettledTimestampInput): string |
   return latest ?? firstValidTimestamp(thread.updatedAt);
 }
 
+/** Whether a settled thread has been settled (or quiet, for auto-settled
+    threads with no settledAt stamp) long enough to auto-archive. Uses the
+    same timestamp the settled tail sorts and labels by, so a row never
+    archives before the age its label shows. A thread with no resolvable
+    timestamp never auto-archives. */
+export function isSettledThreadPastArchiveAge(
+  thread: SettledTimestampInput,
+  input: { nowMs: number; afterDays: number },
+): boolean {
+  const timestamp = resolveSettledTimestamp(thread);
+  if (timestamp === null) return false;
+  const parsed = Date.parse(timestamp);
+  return !Number.isNaN(parsed) && parsed <= input.nowMs - input.afterDays * 24 * 60 * 60 * 1000;
+}
+
 // Settled rows are history, so they order by when the work ENDED, not when
 // the thread was created or last touched.
 export function sortSettledThreadsForSidebar<
