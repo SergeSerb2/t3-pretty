@@ -54,12 +54,11 @@ const ElectronClerkRoot = React.lazy(async () => {
 });
 
 // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
-const history =
-  isElectron || import.meta.env.VITE_STATIC_HOSTED_APP
-    ? createHashHistory()
-    : createBrowserHistory();
+// Hosted web keeps real paths for OAuth callbacks and pairing links; its static host serves the
+// built 404.html fallback for direct route loads.
+const history = isElectron ? createHashHistory() : createBrowserHistory();
 
-const router = getRouter(history);
+const router = getRouter(history, import.meta.env.BASE_URL);
 
 if (isElectron) {
   syncDocumentElectronPlatformClasses(navigator.platform);

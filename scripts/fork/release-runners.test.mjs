@@ -356,6 +356,10 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(publicReleaseWorkflow, "\n  schedule:");
     assert.include(publicReleaseWorkflow, "T3CODE_BUILD_FLAVOR: public");
     assert.include(publicReleaseWorkflow, "T3CODE_WEB_BASE_PATH: /t3-pretty/");
+    assert.include(
+      publicReleaseWorkflow,
+      "VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/",
+    );
     assert.include(publicReleaseWorkflow, '[[ "$REF" == "refs/heads/main" ]]');
     assert.include(publicReleaseWorkflow, "name: wsl-node-pty-x64");
     assert.include(publicReleaseWorkflow, "pattern: public-*");
@@ -371,6 +375,21 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publicPages, "actions/upload-pages-artifact@v5");
     assert.include(publicReleaseWorkflow, "needs.wsl_node_pty.result == 'success'");
     assert.include(publicReleaseWorkflow, "--latest");
+    assert.include(publicReleaseWorkflow, "latest_public_version");
+    assert.include(publicReleaseWorkflow, "version $VERSION is older than latest public release");
+    assert.include(publicReleaseWorkflow, "cp apps/web/dist/index.html apps/web/dist/404.html");
+    for (const asset of [
+      "latest-mac.yml",
+      "latest-linux.yml",
+      "latest.yml",
+      "t3.tgz",
+      "install.sh",
+      "*.dmg",
+      "*.AppImage",
+      "*.exe",
+    ]) {
+      assert.include(publicReleaseWorkflow, asset);
+    }
     assert.equal(
       (publicReleaseWorkflow.match(/github\.repository == 'SergeSerb2\/t3-pretty'/gu) || []).length,
       8,

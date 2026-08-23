@@ -32,6 +32,7 @@ concurrency:
 
 env:
   T3CODE_BUILD_FLAVOR: public
+  VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/
   # Electron needs mutable latest metadata. This guarded workflow alone marks a public-v release
   # latest; exact-version CLI commands use the immutable public-v tag instead.
   T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/SergeSerb2/t3-pretty/releases/latest/download/
@@ -66,6 +67,19 @@ jobs:
              gh release view "public-v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "public-v${VERSION} already exists" >&2
             exit 1
+          fi
+          if [[ "$PUBLISH_RELEASE" == "true" ]]; then
+            latest_public_version="$(
+              gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName' |
+                sed -n 's/^public-v\([0-9]\+\.[0-9]\+\.[0-9]\+\)$/\1/p' |
+                sort -V |
+                tail -n 1
+            )"
+            if [[ -n "$latest_public_version" &&
+                  "$(printf '%s\n%s\n' "$latest_public_version" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]]; then
+              echo "version $VERSION is older than latest public release $latest_public_version" >&2
+              exit 1
+            fi
           fi
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -306,7 +320,6 @@ jobs:
       APP_VERSION: ${{ needs.preflight.outputs.version }}
       T3CODE_WEB_BASE_PATH: /t3-pretty/
       VITE_HOSTED_APP_CHANNEL: latest
-      VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/
       VITE_STATIC_HOSTED_APP: "1"
     steps:
       - uses: actions/checkout@v6
@@ -323,6 +336,8 @@ jobs:
             args:
               - --filter=@t3tools/web...
       - run: vp run --filter @t3tools/web build
+      - name: Add GitHub Pages route fallback
+        run: cp apps/web/dist/index.html apps/web/dist/404.html
       - name: Archive hosted web build
         run: tar -czf "public-web-${{ needs.preflight.outputs.version }}.tar.gz" -C apps/web/dist .
       - uses: actions/upload-artifact@v7
@@ -385,6 +400,19 @@ jobs:
           VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           set -euo pipefail
+          for asset in latest-mac.yml latest-linux.yml latest.yml t3.tgz install.sh \
+            "public-mobile-${VERSION}.tar.gz" "public-web-${VERSION}.tar.gz"; do
+            test -f "public-release-assets/${asset}" || {
+              echo "missing required public release asset: ${asset}" >&2
+              exit 1
+            }
+          done
+          for pattern in '*.dmg' '*.AppImage' '*.exe'; do
+            compgen -G "public-release-assets/${pattern}" >/dev/null || {
+              echo "missing required public release asset matching ${pattern}" >&2
+              exit 1
+            }
+          done
           mapfile -d '' assets < <(find public-release-assets -type f -print0)
           ((${#assets[@]} > 0))
           gh release create "public-v${VERSION}" "${assets[@]}" \

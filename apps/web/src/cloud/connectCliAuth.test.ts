@@ -48,6 +48,21 @@ describe("connectCliAuth", () => {
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
   });
 
+  it("keeps the project-site base path in the Clerk callback", () => {
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", TEST_PUBLISHABLE_KEY);
+    vi.stubEnv("VITE_CLERK_CLI_OAUTH_CLIENT_ID", "oauthapp_123");
+    vi.stubEnv("VITE_HOSTED_APP_URL", "https://sergeserb2.github.io/t3-pretty/");
+
+    const authorizeUrl = buildConnectCliClerkAuthorizeUrl({
+      state: "state-1",
+      challenge: "challenge-1",
+    });
+
+    expect(new URL(authorizeUrl!).searchParams.get("redirect_uri")).toBe(
+      "https://sergeserb2.github.io/t3-pretty/connect/callback",
+    );
+  });
+
   it("redirects straight to the CLI's loopback listener when the request carries a port", () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", TEST_PUBLISHABLE_KEY);
     vi.stubEnv("VITE_CLERK_CLI_OAUTH_CLIENT_ID", "oauthapp_123");

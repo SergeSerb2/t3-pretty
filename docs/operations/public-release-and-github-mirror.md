@@ -19,13 +19,19 @@ ruleset. Do not use a personal token.
 Linux AppImage artifacts, packs the CLI tarball, exports the mobile bundle, and
 builds a Pages-ready hosted web artifact. The required `version` input is a
 numeric semver. Set `publish_release` to attach the artifacts to a GitHub
-Release tagged `public-v<version>`; otherwise they remain workflow artifacts.
+Release tagged `public-v<version>`; duplicate or older public versions are
+rejected. Otherwise, the files remain workflow artifacts.
 Desktop updater metadata uses the GitHub `releases/latest/download` feed, while
 exact-version CLI assets are attached to the immutable release tag.
 
-Set `deploy_pages` to publish the hosted web build to GitHub Pages. Set
-`queue_mobile_builds` to queue public iOS and Android builds on EAS. That option
-requires the repository Actions variables
+Set `deploy_pages` to publish the hosted web build to
+`https://sergeserb2.github.io/t3-pretty/`. The build includes a `404.html` copy
+of the app entry point so direct browser-history pairing and Connect callback
+routes load under the `/t3-pretty/` project path. This is the manual T3 Pretty
+public target; `https://app.t3.codes` remains the upstream T3 Code deployment.
+
+Set `queue_mobile_builds` to queue public iOS and Android builds on EAS. That
+option requires the repository Actions variables
 `T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID`, `T3CODE_PUBLIC_MOBILE_EXPO_OWNER`, and
 `T3CODE_PUBLIC_MOBILE_EXPO_SLUG`, plus the `EXPO_TOKEN` Actions secret. The
 workflow does not submit mobile binaries to stores or publish OTA updates.
