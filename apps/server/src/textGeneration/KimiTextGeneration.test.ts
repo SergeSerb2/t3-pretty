@@ -23,6 +23,12 @@ const PromptResponseJson = Schema.fromJsonString(
   }),
 );
 const encodePromptResponse = Schema.encodeSync(PromptResponseJson);
+const HeadlineResponseJson = Schema.fromJsonString(
+  Schema.Struct({
+    headline: Schema.String,
+  }),
+);
+const encodeHeadlineResponse = Schema.encodeSync(HeadlineResponseJson);
 const RequestLogEntryJson = Schema.fromJsonString(
   Schema.Struct({
     method: Schema.optional(Schema.String),
@@ -140,6 +146,35 @@ it.layer(testLayer)("KimiTextGeneration", (it) => {
         )
         .find((request) => request.method === "initialize");
       expect(initialize?.params?.clientCapabilities?.terminal).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("generates activity headlines and sanitizes them to one status line", () =>
+    Effect.gen(function* () {
+      const directory = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "t3code-kimi-headline-acp-"),
+      );
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
+      );
+      const binaryPath = makeKimiWrapper(directory, {
+        T3_ACP_PROMPT_RESPONSE_TEXT: encodeHeadlineResponse({
+          headline: '  "Updating contract tests."  \nignored line',
+        }),
+      });
+      const textGeneration = yield* makeKimiTextGeneration(decodeKimiSettings({ binaryPath }));
+
+      const generated = yield* textGeneration.generateActivityHeadline({
+        cwd: process.cwd(),
+        summary: "Shell",
+        command: "vp test run apps/web/src/scenery",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("kimi"),
+          model: "kimi-code/k3-256k",
+          options: [],
+        },
+      });
+      expect(generated).toEqual({ headline: "Updating contract tests" });
     }).pipe(Effect.scoped),
   );
 });

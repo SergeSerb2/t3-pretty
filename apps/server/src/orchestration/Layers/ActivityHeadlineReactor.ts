@@ -152,7 +152,10 @@ const make = Effect.gen(function* () {
     if (lastRunByThread.size >= LAST_RUN_MAX_THREADS && !lastRunByThread.has(threadId)) {
       lastRunByThread.clear();
     }
-    lastRunByThread.set(threadId, { atMs: now, inputKey });
+    // Stamp the time now so failing generations stay throttled, but keep the
+    // previous dedupe key until this input yields a usable headline — a
+    // transient failure must not permanently pin its input as "done".
+    lastRunByThread.set(threadId, { atMs: now, inputKey: last?.inputKey ?? "" });
     const generated = yield* textGeneration
       .generateActivityHeadline({
         cwd,
@@ -172,6 +175,7 @@ const make = Effect.gen(function* () {
     if (!generated || generated.headline.length === 0) {
       return;
     }
+    lastRunByThread.set(threadId, { atMs: now, inputKey });
 
     // The turn may have settled while the model ran; a late headline for a
     // finished turn is never rendered but would still bump the thread.

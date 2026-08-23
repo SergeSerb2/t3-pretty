@@ -421,6 +421,28 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
     ),
   );
 
+  it.effect("generates activity headlines and sanitizes them to one status line", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({
+          headline: '  "Updating contract tests."\nignored line',
+        }),
+        stdinMustContain: "Current activity:",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateActivityHeadline({
+            cwd: process.cwd(),
+            summary: "Shell",
+            command: "vp test run apps/web/src/scenery",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+
+          expect(generated.headline).toBe("Updating contract tests");
+        }),
+    ),
+  );
+
   it.effect("runs project icon generation with a writable sandbox", () =>
     withFakeCodexEnv(
       {
