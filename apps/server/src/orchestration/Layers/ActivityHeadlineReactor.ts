@@ -91,6 +91,9 @@ const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const crypto = yield* Crypto.Crypto;
 
+  // ponytail: cleared wholesale past the cap instead of per-thread LRU;
+  // losing throttle state only costs one extra generation per active thread.
+  const LAST_RUN_MAX_THREADS = 512;
   const lastRunByThread = new Map<ThreadId, { atMs: number; inputKey: string }>();
 
   const processThread = Effect.fn("ActivityHeadlineReactor.processThread")(function* (
@@ -146,6 +149,9 @@ const make = Effect.gen(function* () {
         projects: Option.isSome(projectOption) ? [projectOption.value] : [],
       }) ?? process.cwd();
 
+    if (lastRunByThread.size >= LAST_RUN_MAX_THREADS && !lastRunByThread.has(threadId)) {
+      lastRunByThread.clear();
+    }
     lastRunByThread.set(threadId, { atMs: now, inputKey });
     const generated = yield* textGeneration
       .generateActivityHeadline({
