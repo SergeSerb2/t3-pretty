@@ -23,6 +23,7 @@ import {
   resolveThreadRowClassName,
   resolveSidebarThreadStatus,
   isSettledThreadPastArchiveAge,
+  retainSettledAutoArchiveAttempts,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   searchSidebarThreadsByTitle,
@@ -1157,6 +1158,17 @@ describe("isSettledThreadPastArchiveAge", () => {
 
   it("never archives a thread with no resolvable timestamp", () => {
     expect(isSettledThreadPastArchiveAge(thread({}), { nowMs, afterDays: 30 })).toBe(false);
+  });
+});
+
+describe("retainSettledAutoArchiveAttempts", () => {
+  it("keeps keys still in the settled tail and drops keys that left so undo can retry", () => {
+    expect(
+      retainSettledAutoArchiveAttempts(
+        new Set(["lagging", "unarchived"]),
+        new Set(["lagging", "other"]),
+      ),
+    ).toEqual(new Set(["lagging"]));
   });
 });
 

@@ -138,6 +138,7 @@ import {
   planPinnedReorder,
   resolveAdjacentThreadId,
   isSettledThreadPastArchiveAge,
+  retainSettledAutoArchiveAttempts,
   resolveSettledTimestamp,
   resolveSidebarThreadStatus,
   searchSidebarThreadsByTitle,
@@ -2333,11 +2334,31 @@ export default function Sidebar() {
       });
       const outcome = await archiveSelectedThreadEntries({
         entries,
-        archive: (entry) => archiveThread(entry.threadRef),
+        archive: (entry, onArchived) => archiveThread(entry.threadRef, { onArchived }),
       });
       const archivedRefs = entries
         .filter((entry) => outcome.archivedThreadKeys.includes(entry.threadKey))
         .map((entry) => entry.threadRef);
+      const undoAction =
+        archivedRefs.length > 0
+          ? {
+              children: "Undo",
+              onClick: () => {
+                for (const threadRef of archivedRefs) void unarchiveThread(threadRef);
+              },
+            }
+          : undefined;
+      for (const failure of outcome.followupFailures) {
+        if (isAtomCommandInterrupted(failure)) continue;
+        const error = squashAtomCommandFailure(failure);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Thread archived, but navigation failed",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+      }
       if (outcome.mutationFailure !== null && !isAtomCommandInterrupted(outcome.mutationFailure)) {
         const error = squashAtomCommandFailure(outcome.mutationFailure);
         toastManager.add(
@@ -2348,22 +2369,18 @@ export default function Sidebar() {
                 ? `Archived ${archivedRefs.length} of ${count} settled threads`
                 : "Failed to clear settled threads",
             description: error instanceof Error ? error.message : "An error occurred.",
+            ...(undoAction === undefined ? {} : { timeout: 5_000, actionProps: undoAction }),
           }),
         );
         return;
       }
-      if (archivedRefs.length === 0) return;
+      if (undoAction === undefined) return;
       toastManager.add(
         stackedThreadToast({
           type: "success",
           title: `Archived ${archivedRefs.length} settled thread${archivedRefs.length === 1 ? "" : "s"}`,
           timeout: 5_000,
-          actionProps: {
-            children: "Undo",
-            onClick: () => {
-              for (const threadRef of archivedRefs) void unarchiveThread(threadRef);
-            },
-          },
+          actionProps: undoAction,
         }),
       );
     } finally {
@@ -2375,13 +2392,23 @@ export default function Sidebar() {
   // on their own. Candidates come from the scoped partition on the minute
   // clock; a scoped-out project's tail sweeps next time it is in view.
   // Attempted keys are remembered so a successful archive isn't retried
-  // every minute while the projection still lists the thread. Failures are
-  // dropped so a transient error can retry on the next tick.
+  // every minute while the projection still lists the thread. Keys that
+  // leave the tail are dropped so an unarchive can be attempted again.
+  // Failures are dropped so a transient error can retry on the next tick.
   const autoArchiveAttemptedRef = useRef(new Set<string>());
   useEffect(() => {
     if (autoArchiveSettledAfterDays === null) return;
     const nowMs = Date.parse(`${nowMinute}:00.000Z`);
     if (Number.isNaN(nowMs)) return;
+    const settledKeys = new Set(
+      settledThreads.map((thread) =>
+        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+      ),
+    );
+    autoArchiveAttemptedRef.current = retainSettledAutoArchiveAttempts(
+      autoArchiveAttemptedRef.current,
+      settledKeys,
+    );
     for (const thread of settledThreads) {
       if (!isSettledThreadPastArchiveAge(thread, { nowMs, afterDays: autoArchiveSettledAfterDays }))
         continue;

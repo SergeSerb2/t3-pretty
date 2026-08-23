@@ -657,6 +657,20 @@ export function isSettledThreadPastArchiveAge(
   return !Number.isNaN(parsed) && parsed <= input.nowMs - input.afterDays * 24 * 60 * 60 * 1000;
 }
 
+/** Drop auto-archive attempts that have left the settled tail so a later
+    unarchive (Clear undo, archived list) can be attempted again. Keys still
+    in the tail stay, covering projection lag after a successful archive. */
+export function retainSettledAutoArchiveAttempts(
+  attemptedKeys: ReadonlySet<string>,
+  settledThreadKeys: ReadonlySet<string>,
+): Set<string> {
+  const retained = new Set<string>();
+  for (const key of attemptedKeys) {
+    if (settledThreadKeys.has(key)) retained.add(key);
+  }
+  return retained;
+}
+
 // Settled rows are history, so they order by when the work ENDED, not when
 // the thread was created or last touched.
 export function sortSettledThreadsForSidebar<
