@@ -1559,6 +1559,7 @@ const make = Effect.gen(function* () {
 
   const dispatchTurnStart = Effect.fn("dispatchTurnStart")(function* (
     event: Extract<ProviderIntentEvent, { type: "thread.turn-start-requested" }>,
+    placement: "tail" | "head" = "tail",
   ) {
     const thread = yield* resolveThread(event.payload.threadId);
     if (!thread) {
@@ -1567,16 +1568,20 @@ const make = Effect.gen(function* () {
 
     // "starting" holds too: a flushed predecessor moves the session through
     // starting before its turn runs, and a queued message must not jump in
-    // ahead of it.
+    // ahead of it. A flush re-entry that lands here (stale duplicate
+    // session-set snapshot) goes back to the HEAD so the queue keeps arrival
+    // order; only fresh arrivals append.
     if (
       event.payload.delivery === "queue" &&
       (thread.session?.status === "running" || thread.session?.status === "starting")
     ) {
       const queue = queuedTurnStarts.get(event.payload.threadId);
-      if (queue) {
-        queue.push(event);
-      } else {
+      if (!queue) {
         queuedTurnStarts.set(event.payload.threadId, [event]);
+      } else if (placement === "head") {
+        queue.unshift(event);
+      } else {
+        queue.push(event);
       }
       return;
     }
@@ -1697,19 +1702,30 @@ const make = Effect.gen(function* () {
     yield* dispatchTurnStart(event);
   });
 
-  // A queued start is dispatched only when the session leaves "running"; the
-  // dispatch re-checks the session, so a race that restarts the turn first
-  // simply re-queues the event until the next boundary.
-  const flushQueuedTurnStarts = Effect.fn("flushQueuedTurnStarts")(function* (threadId: string) {
-    const queue = queuedTurnStarts.get(threadId);
-    const next = queue?.shift();
-    if (!queue || !next) {
-      return;
+  // Drain while the live session is idle. One-at-a-time: after a successful
+  // dispatch, ensureSession has marked the session starting/running, so the
+  // next iteration stops. Re-read live status each pass — a stale
+  // session-set(ready) still sitting on this worker must not shift the next
+  // queued start just because its payload says ready.
+  const flushQueuedTurnStarts = Effect.fn("flushQueuedTurnStarts")(function* (threadId: ThreadId) {
+    while (true) {
+      const thread = yield* resolveThread(threadId);
+      if (thread?.session?.status === "running" || thread?.session?.status === "starting") {
+        return;
+      }
+      const queue = queuedTurnStarts.get(threadId);
+      const next = queue?.shift();
+      if (queue === undefined || next === undefined) {
+        queuedTurnStarts.delete(threadId);
+        return;
+      }
+      if (queue.length === 0) {
+        queuedTurnStarts.delete(threadId);
+      }
+      // "head": if a concurrent status write re-holds this event mid-dispatch,
+      // it must go back in front of its younger siblings, not behind them.
+      yield* dispatchTurnStart(next, "head");
     }
-    if (queue.length === 0) {
-      queuedTurnStarts.delete(threadId);
-    }
-    yield* dispatchTurnStart(next);
   });
 
   const processTurnInterruptRequested = Effect.fn("processTurnInterruptRequested")(function* (
@@ -1897,14 +1913,17 @@ const make = Effect.gen(function* () {
       case "thread.session-stop-requested":
         yield* processSessionStopRequested(event);
         return;
-      case "thread.session-set":
-        if (
-          event.payload.session.status !== "running" &&
-          event.payload.session.status !== "starting"
-        ) {
+      case "thread.session-set": {
+        // Use the projected session, not the event payload: a ready event that
+        // was queued before a flushed turn marked the session starting must
+        // not start the next queued message.
+        const thread = yield* resolveThread(event.payload.threadId);
+        const status = thread?.session?.status;
+        if (status !== "running" && status !== "starting") {
           yield* flushQueuedTurnStarts(event.payload.threadId);
         }
         return;
+      }
     }
   });
 
