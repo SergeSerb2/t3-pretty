@@ -1329,7 +1329,12 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly ac
         <Text className="font-t3-medium text-xs text-neutral-600 dark:text-neutral-400">
           Thinking
         </Text>
-        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, highlightStyle]}>
+        <Animated.View
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, highlightStyle]}
+        >
           <Text className="font-t3-medium text-xs text-foreground">Thinking</Text>
         </Animated.View>
       </View>

@@ -21,6 +21,7 @@ import {
 import { Alert, Platform, Pressable, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import Animated, {
+  cancelAnimation,
   Easing,
   ReduceMotion,
   useAnimatedStyle,
@@ -150,8 +151,11 @@ function useThreadDepartureAnimation(
   const scale = useSharedValue(1);
 
   useEffect(() => {
-    if (departing && landed) return; // the clear above re-runs this as arriving
-    if (departing) {
+    cancelAnimation(opacity);
+    cancelAnimation(translateY);
+    cancelAnimation(scale);
+
+    if (departing && !landed) {
       const config = {
         duration: DEPART_DURATION_MS,
         easing: Easing.bezier(0.3, 0, 0.8, 0.15),
@@ -160,9 +164,7 @@ function useThreadDepartureAnimation(
       opacity.value = withTiming(0, config);
       translateY.value = withTiming(12, config);
       scale.value = withTiming(0.98, config);
-      return;
-    }
-    if (arriving) {
+    } else if (!departing && arriving) {
       opacity.value = 0;
       translateY.value = 6;
       scale.value = 1;
@@ -173,11 +175,17 @@ function useThreadDepartureAnimation(
       };
       opacity.value = withTiming(1, config);
       translateY.value = withTiming(0, config);
-      return;
+    } else if (!departing) {
+      opacity.value = 1;
+      translateY.value = 0;
+      scale.value = 1;
     }
-    opacity.value = 1;
-    translateY.value = 0;
-    scale.value = 1;
+
+    return () => {
+      cancelAnimation(opacity);
+      cancelAnimation(translateY);
+      cancelAnimation(scale);
+    };
   }, [arriving, departing, landed, opacity, scale, translateY]);
 
   const style = useAnimatedStyle(() => ({
