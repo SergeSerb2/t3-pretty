@@ -460,6 +460,7 @@ export function ThreadWorkGroupToggle(props: {
         <Animated.View
           key={props.expanded ? "expanded" : "collapsed"}
           entering={FadeIn.duration(140)}
+          exiting={FadeOut.duration(140)}
         >
           <Text className="font-t3-medium text-xs text-foreground opacity-80">
             {props.expanded ? expandedLabel : `+${props.hiddenCount} previous ${noun}`}

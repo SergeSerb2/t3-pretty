@@ -54,6 +54,7 @@ import Animated, {
   FadeOut,
   ReduceMotion,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withDelay,
   withRepeat,
@@ -1328,18 +1329,19 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly st
 });
 
 // Staggered opacity pulse for the working indicator. Opacity-only on the UI
-// thread, runs solely while the row is active (agent working + screen
-// focused), and defers to the system reduce-motion setting.
+// thread, and only while the row is active. Reduce Motion parks the dots at
+// rest — never ReduceMotion.System inside withRepeat(-1), which busy-loops.
 const WorkingDot = memo(function WorkingDot(props: {
   readonly index: number;
   readonly active: boolean;
 }) {
+  const reduceMotion = useReducedMotion();
   const dotOpacity = useSharedValue(0.55);
 
   useEffect(() => {
-    if (!props.active) {
+    if (!props.active || reduceMotion) {
       cancelAnimation(dotOpacity);
-      dotOpacity.value = withTiming(0.55, { duration: 180 });
+      dotOpacity.value = reduceMotion ? 0.55 : withTiming(0.55, { duration: 180 });
       return;
     }
     dotOpacity.value = withDelay(
@@ -1349,12 +1351,10 @@ const WorkingDot = memo(function WorkingDot(props: {
           withTiming(1, {
             duration: 430,
             easing: Easing.inOut(Easing.quad),
-            reduceMotion: ReduceMotion.System,
           }),
           withTiming(0.3, {
             duration: 430,
             easing: Easing.inOut(Easing.quad),
-            reduceMotion: ReduceMotion.System,
           }),
         ),
         -1,
@@ -1364,7 +1364,7 @@ const WorkingDot = memo(function WorkingDot(props: {
     return () => {
       cancelAnimation(dotOpacity);
     };
-  }, [dotOpacity, props.active, props.index]);
+  }, [dotOpacity, props.active, props.index, reduceMotion]);
 
   const dotStyle = useAnimatedStyle(() => ({ opacity: dotOpacity.value }));
 

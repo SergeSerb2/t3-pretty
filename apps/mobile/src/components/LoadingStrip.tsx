@@ -90,15 +90,16 @@ function DeterminateLoadingStrip(props: { readonly progress: number }) {
 
   const indicatorStyle = useAnimatedStyle(
     () => ({
-      transform: [{ translateX: (progress.value - 1) * containerWidth }],
-      width: containerWidth,
+      width: progress.value * containerWidth,
     }),
     [containerWidth],
   );
 
   return (
     <LoadingStripFrame onLayout={setContainerWidth}>
-      <Animated.View className="h-full rounded-r-full bg-primary" style={indicatorStyle} />
+      {containerWidth > 0 ? (
+        <Animated.View className="h-full rounded-r-full bg-primary" style={indicatorStyle} />
+      ) : null}
     </LoadingStripFrame>
   );
 }
