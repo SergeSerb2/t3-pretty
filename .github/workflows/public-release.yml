@@ -323,6 +323,7 @@ jobs:
       VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/
       VITE_HOSTED_APP_CHANNEL: latest
       VITE_STATIC_HOSTED_APP: "1"
+      VITE_CONNECT_CLI_AUTH_ENABLED: "0"
     steps:
       - uses: actions/checkout@v6
         with:

@@ -362,6 +362,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publicReleaseWorkflow, "T3CODE_WEB_BASE_PATH: /t3-pretty/");
     assert.include(publicDesktop, "VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/");
     assert.include(publicWeb, "VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/");
+    assert.include(publicWeb, 'VITE_CONNECT_CLI_AUTH_ENABLED: "0"');
     assert.notInclude(publicCli, "VITE_HOSTED_APP_URL");
     assert.include(publicReleaseWorkflow, '[[ "$REF" == "refs/heads/main" ]]');
     assert.include(publicReleaseWorkflow, "name: wsl-node-pty-x64");
