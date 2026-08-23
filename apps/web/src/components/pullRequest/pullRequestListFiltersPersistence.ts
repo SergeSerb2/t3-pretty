@@ -128,14 +128,19 @@ function isDefaultPersistedPullRequestListFilters(
 /**
  * List params to write over a bare/default URL after restore. Null when the URL already names
  * filters, or the restored list is itself the defaults (so `/pull-requests` already matches).
+ * `q` is not a list filter; keep it so a search on a bare URL is not wiped by the replace.
  */
 export function restoredListSearchToReplaceUrl(
   raw: Record<string, unknown>,
   restored: PersistedPullRequestListFilters,
-): PersistedPullRequestListFilters | null {
+): (PersistedPullRequestListFilters & { readonly q?: string }) | null {
   if (!shouldRestorePersistedListFilters(raw)) return null;
   const search = searchFromPersistedFilters(restored);
-  return isDefaultPersistedPullRequestListFilters(search) ? null : search;
+  if (isDefaultPersistedPullRequestListFilters(search)) return null;
+  return {
+    ...search,
+    ...(typeof raw.q === "string" && raw.q ? { q: raw.q.slice(0, 200) } : {}),
+  };
 }
 
 export function readPersistedPullRequestListFilters(): PersistedPullRequestListFilters {

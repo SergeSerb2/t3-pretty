@@ -63,7 +63,10 @@ describe("persisted pull request list filters", () => {
     expect(restoredListSearchToReplaceUrl({ involvement: "all", state: "open" }, restored)).toEqual(
       restored,
     );
-    expect(restoredListSearchToReplaceUrl({ q: "fix" }, restored)).toEqual(restored);
+    expect(restoredListSearchToReplaceUrl({ q: "fix" }, restored)).toEqual({
+      ...restored,
+      q: "fix",
+    });
     expect(restoredListSearchToReplaceUrl({ involvement: "reviewing" }, restored)).toBe(null);
     expect(restoredListSearchToReplaceUrl({ repository: "acme/web" }, restored)).toBe(null);
     expect(restoredListSearchToReplaceUrl({}, DEFAULT_PULL_REQUEST_LIST_FILTERS)).toBe(null);

@@ -51,13 +51,13 @@ describe("nextPullRequestEnvironmentId", () => {
 });
 
 describe("canCommitPullRequestListRestore", () => {
-  it("waits while the saved environment is missing from a partial list", () => {
-    expect(canCommitPullRequestListRestore(saved(), [env("env-2")])).toBe(false);
+  it("waits while a named save has an empty list", () => {
     expect(canCommitPullRequestListRestore(saved(), [])).toBe(false);
   });
 
-  it("commits when the saved environment is present, or nothing was saved", () => {
+  it("commits a settled list, including when the saved server is gone", () => {
     expect(canCommitPullRequestListRestore(saved(), [env("env-1"), env("env-2")])).toBe(true);
+    expect(canCommitPullRequestListRestore(saved(), [env("env-2")])).toBe(true);
     expect(canCommitPullRequestListRestore(saved({ environmentId: null }), [env("env-2")])).toBe(
       true,
     );

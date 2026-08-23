@@ -93,7 +93,6 @@ export function PullRequestsRouteScreen() {
       setSelectedEnvironmentId(restored.environmentId);
       setSelectedProjectId(restored.projectId);
       setSelectedHost(restored.host);
-      // A non-empty partial list can still omit the saved server; do not lock or persist that.
       if (canCommitPullRequestListRestore(savedFilters, environments)) {
         setScopeRestored(true);
       }

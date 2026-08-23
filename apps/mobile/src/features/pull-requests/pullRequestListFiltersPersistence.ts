@@ -50,17 +50,14 @@ export function nextPullRequestEnvironmentId(
 }
 
 /**
- * A missing saved server on a non-empty list can still be a hydrate flash. Commit only when there
- * is nothing to wait for, or the saved id is actually present.
+ * Wait only while a named save could still arrive (empty list). A non-empty list has settled:
+ * keep the saved id if it is there, otherwise commit the preferred fallback.
  */
 export function canCommitPullRequestListRestore(
   saved: PersistedPullRequestListFilters,
   environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
 ): boolean {
-  return (
-    saved.environmentId === null ||
-    environments.some((environment) => environment.environmentId === saved.environmentId)
-  );
+  return saved.environmentId === null || environments.length > 0;
 }
 
 /**
