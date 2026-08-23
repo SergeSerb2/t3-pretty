@@ -1929,13 +1929,17 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.listRef.current?.reportContentInset({ bottom });
     }
   }, [listMountKey, props.contentInsetEndAdjustment, props.listRef]);
+  // Arm the fallback once per non-empty mount. Depending on the raw feed
+  // length re-arms it on every streamed entry, so a busy turn pushes the
+  // timer out forever and the loading overlay never clears.
+  const isFeedEmpty = props.feed.length === 0;
   useEffect(() => {
-    if (listReadyForCurrentMount || props.feed.length === 0) {
+    if (listReadyForCurrentMount || isFeedEmpty) {
       return;
     }
     const timeout = setTimeout(markListReady, THREAD_FEED_LIST_READY_FALLBACK_MS);
     return () => clearTimeout(timeout);
-  }, [listReadyForCurrentMount, markListReady, props.feed.length]);
+  }, [listReadyForCurrentMount, markListReady, isFeedEmpty]);
   const showLoadingOverlay = shouldShowThreadFeedLoadingOverlay({
     contentPresentationKind: props.contentPresentation.kind,
     feedLength: props.feed.length,
