@@ -176,6 +176,7 @@ function PullRequestsRouteView() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const searchStr = useLocation({ select: (location) => location.searchStr });
+  const skipNextListPersist = useRef(false);
   const { environments } = useEnvironments();
   // Every connected environment that has said it can list pull requests. Sorted, so the query
   // keys, the scope key and the stored snapshot all read the same whichever order the
@@ -371,6 +372,10 @@ function PullRequestsRouteView() {
     const raw = Object.fromEntries(
       new URLSearchParams(searchStr.startsWith("?") ? searchStr.slice(1) : searchStr),
     );
+    if (skipNextListPersist.current) {
+      skipNextListPersist.current = false;
+      return;
+    }
     const restoring = shouldRestorePersistedListFilters(raw);
     const current = restoring
       ? readPersistedPullRequestListFilters()
@@ -390,9 +395,9 @@ function PullRequestsRouteView() {
       scoped.projectId !== current.projectId ||
       scoped.host !== current.host;
     if (restoring) {
-      if (scopeChanged) writePersistedPullRequestListFilters(scoped);
       const next = restoredListSearchToReplaceUrl(raw, scoped);
       if (next !== null) {
+        skipNextListPersist.current = scopeChanged;
         updateSearch({ ...next, ...scopePatch });
       }
       return;
@@ -403,7 +408,7 @@ function PullRequestsRouteView() {
       scoped.projectId !== search.projectId ||
       scoped.host !== search.host
     ) {
-      if (persistable !== null) writePersistedPullRequestListFilters(persistable);
+      skipNextListPersist.current = true;
       updateSearch(scopePatch);
       return;
     }
