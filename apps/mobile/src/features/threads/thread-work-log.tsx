@@ -428,6 +428,7 @@ export function ThreadWorkGroupToggle(props: {
   const expandedLabel = props.onlyToolActivities
     ? "Show fewer tool calls"
     : "Show fewer log entries";
+  const visibleLabel = props.expanded ? expandedLabel : `+${props.hiddenCount} previous ${noun}`;
 
   return (
     <View className="-mx-1 mb-1 px-1 py-0">
@@ -457,15 +458,15 @@ export function ThreadWorkGroupToggle(props: {
             type="monochrome"
           />
         </View>
-        <View className="h-[18px] flex-1 justify-center">
+        <View className="h-[18px] min-w-0 flex-1 justify-center overflow-hidden">
           <Animated.View
             key={props.expanded ? "expanded" : "collapsed"}
             entering={FadeIn.duration(140)}
             exiting={FadeOut.duration(140)}
-            className="absolute inset-y-0 left-0 justify-center"
+            className="absolute inset-0 justify-center"
           >
-            <Text className="font-t3-medium text-xs text-foreground opacity-80">
-              {props.expanded ? expandedLabel : `+${props.hiddenCount} previous ${noun}`}
+            <Text className="font-t3-medium text-xs text-foreground opacity-80" numberOfLines={1}>
+              {visibleLabel}
             </Text>
           </Animated.View>
         </View>

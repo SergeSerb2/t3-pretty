@@ -80,7 +80,7 @@ function IndeterminateLoadingStrip() {
 }
 
 function DeterminateLoadingStrip(props: { readonly progress: number }) {
-  const [containerWidth, setContainerWidth] = useState(0);
+  const containerWidth = useSharedValue(0);
   const clampedProgress = Math.min(1, Math.max(0, props.progress));
   const progress = useSharedValue(clampedProgress);
 
@@ -88,18 +88,21 @@ function DeterminateLoadingStrip(props: { readonly progress: number }) {
     progress.value = withTiming(clampedProgress, MOTION_TIMING);
   }, [progress, clampedProgress]);
 
-  const indicatorStyle = useAnimatedStyle(
-    () => ({
-      width: progress.value * containerWidth,
-    }),
-    [containerWidth],
-  );
+  const indicatorStyle = useAnimatedStyle(() => {
+    const width = containerWidth.value;
+    return {
+      opacity: width > 0 ? 1 : 0,
+      transform: [{ translateX: (progress.value - 1) * width }],
+    };
+  });
 
   return (
-    <LoadingStripFrame onLayout={setContainerWidth}>
-      {containerWidth > 0 ? (
-        <Animated.View className="h-full rounded-r-full bg-primary" style={indicatorStyle} />
-      ) : null}
+    <LoadingStripFrame
+      onLayout={(width) => {
+        containerWidth.value = width;
+      }}
+    >
+      <Animated.View className="h-full w-full rounded-r-full bg-primary" style={indicatorStyle} />
     </LoadingStripFrame>
   );
 }
