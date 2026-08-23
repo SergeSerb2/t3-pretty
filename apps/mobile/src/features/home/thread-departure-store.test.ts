@@ -6,6 +6,7 @@ import {
   getThreadDepartureSnapshot,
   markThreadDeparting,
   subscribeThreadDeparture,
+  threadDepartureHasLanded,
 } from "./thread-departure-store";
 
 const KEY = "env1:thread1";
@@ -55,6 +56,17 @@ describe("thread-departure-store", () => {
     expect(listener).toHaveBeenCalledTimes(3);
     clearThreadDeparting(KEY);
     clearThreadArriving(KEY);
+  });
+
+  it("lands only on the shelf matching the departure kind", () => {
+    const snoozed = { snoozed: true, settled: false };
+    const settled = { snoozed: false, settled: true };
+    expect(threadDepartureHasLanded("settle", settled)).toBe(true);
+    expect(threadDepartureHasLanded("settle", snoozed)).toBe(false);
+    expect(threadDepartureHasLanded("snooze", snoozed)).toBe(true);
+    expect(threadDepartureHasLanded("snooze", settled)).toBe(false);
+    expect(threadDepartureHasLanded(null, snoozed)).toBe(false);
+    expect(threadDepartureHasLanded(null, settled)).toBe(false);
   });
 
   it("clearing an unmarked thread is a no-op", () => {

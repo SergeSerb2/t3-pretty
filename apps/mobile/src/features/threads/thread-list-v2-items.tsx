@@ -43,6 +43,7 @@ import {
   clearThreadDeparting,
   getThreadDepartureSnapshot,
   subscribeThreadDeparture,
+  threadDepartureHasLanded,
 } from "../home/thread-departure-store";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
@@ -125,15 +126,20 @@ const ARRIVE_DURATION_MS = 200;
 
 /**
  * Drives the optimistic settle/snooze exit and the arrive fade for one row.
- * `landed` is the canonical classification signal: once the row renders on
- * the shelf its departure targeted, the exit hands off to the arrive fade.
+ * Landing is kind-gated: settle completes only on a settled row, snooze
+ * only on a snoozed row. Crossing the other shelf must not clear the
+ * marker, or the 240ms depart never plays.
  */
-function useThreadDepartureAnimation(threadKey: string, landed: boolean) {
+function useThreadDepartureAnimation(
+  threadKey: string,
+  shelf: { readonly snoozed: boolean; readonly settled: boolean },
+) {
   const snapshot = useSyncExternalStore(subscribeThreadDeparture, () =>
     getThreadDepartureSnapshot(threadKey),
   );
   const departing = snapshot.departingKind !== null;
   const arriving = snapshot.arriving;
+  const landed = threadDepartureHasLanded(snapshot.departingKind, shelf);
 
   useEffect(() => {
     if (departing && landed) clearThreadDeparting(threadKey);
@@ -441,7 +447,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly variant: "card" | "slim";
   /** Snoozed-shelf row: shows its wake time and offers Wake. */
   readonly snoozed?: boolean;
-  /** Settled-shelf row: with `snoozed`, completes a pending departure. */
+  /** Settled-shelf row. Completes a pending settle departure. */
   readonly settled?: boolean;
   /** Pinned-block row: shows the pin glyph and offers Unpin. */
   readonly pinned?: boolean;
@@ -549,10 +555,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     );
   }, [onChangeRequestState, prState, prUpdatedAt, threadKey]);
 
-  const departure = useThreadDepartureAnimation(
-    threadKey,
-    props.snoozed === true || props.settled === true,
-  );
+  const departure = useThreadDepartureAnimation(threadKey, {
+    snoozed: snoozedRow,
+    settled: props.settled === true,
+  });
 
   const screenColor = useThemeColor("--color-screen");
   const drawerColor = useThemeColor("--color-drawer");

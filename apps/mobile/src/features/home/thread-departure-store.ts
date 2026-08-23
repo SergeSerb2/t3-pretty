@@ -1,5 +1,14 @@
 export type ThreadDepartureKind = "settle" | "snooze";
 
+/** True when the row is already on the shelf this departure targeted.
+    Snoozed vs settled must not complete each other's exit. */
+export function threadDepartureHasLanded(
+  kind: ThreadDepartureKind | null,
+  shelf: { readonly snoozed: boolean; readonly settled: boolean },
+): boolean {
+  return (kind === "settle" && shelf.settled) || (kind === "snooze" && shelf.snoozed);
+}
+
 /** Backstop for markers whose confirmation path never lands (the command
     succeeded but no matching reclassification event arrived, e.g. the thread
     woke again in the same instant): the row fades back rather than staying
