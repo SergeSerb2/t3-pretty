@@ -40,6 +40,7 @@ export interface ProjectThreadAwarenessInput {
     | "session"
     | "latestTurn"
     | "updatedAt"
+    | "latestUserMessageAt"
     | "hasPendingApprovals"
     | "hasPendingUserInput"
     | "backgroundLiveness"
@@ -164,8 +165,10 @@ function progressForPhase(
 // timer. Only the materialized running turn carries a trustworthy start;
 // sessions running without one (background fleets, pre-checkpoint turns)
 // would pin the timer to a stale prior turn, so they get no startedAt.
-// Starting shells have no running turn yet; pin to the session stamp so
-// later thread-shell touches do not reset the on-screen elapsed timer.
+// Starting shells have no running turn yet. Pin to the prompt that opened
+// this connecting window so later session.updatedAt writes (lifecycle
+// heartbeats) do not reset the on-screen elapsed timer. Fall back to the
+// session stamp when there is no newer prompt.
 function startedAtForPhase(
   phase: AgentAwarenessPhase,
   thread: ProjectThreadAwarenessInput["thread"],
@@ -178,6 +181,11 @@ function startedAtForPhase(
     return turn.startedAt ?? turn.requestedAt;
   }
   if (phase === "starting") {
+    const messageAt = thread.latestUserMessageAt;
+    const priorDone = turn?.completedAt;
+    if (messageAt && (priorDone == null || messageAt >= priorDone)) {
+      return messageAt;
+    }
     return thread.session?.updatedAt;
   }
   return undefined;

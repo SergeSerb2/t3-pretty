@@ -27,6 +27,7 @@ function thread(
   | "session"
   | "latestTurn"
   | "updatedAt"
+  | "latestUserMessageAt"
   | "hasPendingApprovals"
   | "hasPendingUserInput"
   | "backgroundLiveness"
@@ -39,6 +40,7 @@ function thread(
     session: null,
     latestTurn: null,
     updatedAt: NOW,
+    latestUserMessageAt: null,
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     ...overrides,
@@ -151,13 +153,14 @@ describe("projectThreadAwareness", () => {
     expect(sessionOnly?.startedAt).toBeUndefined();
   });
 
-  it("pins the starting timer to the session stamp, not later thread.updatedAt", () => {
-    const sessionStartedAt = "2026-05-22T11:59:30.000Z";
+  it("pins the starting timer to the prompt stamp, not later session.updatedAt", () => {
+    const promptAt = "2026-05-22T11:59:30.000Z";
     const state = projectThreadAwareness({
       environmentId: "env-1" as EnvironmentId,
       project,
       thread: thread({
         updatedAt: NOW,
+        latestUserMessageAt: promptAt,
         session: {
           threadId: "thread-1" as ThreadId,
           status: "starting",
@@ -165,22 +168,55 @@ describe("projectThreadAwareness", () => {
           runtimeMode: "full-access",
           activeTurnId: null,
           lastError: null,
-          updatedAt: sessionStartedAt,
+          updatedAt: NOW,
         },
       }),
     });
 
     expect(state?.phase).toBe("starting");
-    expect(state?.startedAt).toBe(sessionStartedAt);
+    expect(state?.startedAt).toBe(promptAt);
   });
 
   it("does not pin a starting session's timer to a settled prior turn", () => {
+    const promptAt = "2026-05-22T11:50:00.000Z";
+    const state = projectThreadAwareness({
+      environmentId: "env-1" as EnvironmentId,
+      project,
+      thread: thread({
+        updatedAt: NOW,
+        latestUserMessageAt: promptAt,
+        latestTurn: {
+          turnId: "turn-1" as TurnId,
+          state: "completed",
+          requestedAt: "2026-05-22T11:00:00.000Z",
+          startedAt: "2026-05-22T11:00:01.000Z",
+          completedAt: "2026-05-22T11:02:00.000Z",
+          assistantMessageId: null,
+        },
+        session: {
+          threadId: "thread-1" as ThreadId,
+          status: "starting",
+          providerName: "Codex",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: NOW,
+        },
+      }),
+    });
+
+    expect(state?.phase).toBe("starting");
+    expect(state?.startedAt).toBe(promptAt);
+  });
+
+  it("falls back to the session stamp when starting has no newer prompt", () => {
     const sessionStartedAt = "2026-05-22T11:50:00.000Z";
     const state = projectThreadAwareness({
       environmentId: "env-1" as EnvironmentId,
       project,
       thread: thread({
         updatedAt: NOW,
+        latestUserMessageAt: "2026-05-22T11:00:00.000Z",
         latestTurn: {
           turnId: "turn-1" as TurnId,
           state: "completed",
