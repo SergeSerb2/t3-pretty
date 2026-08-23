@@ -2384,6 +2384,7 @@ export default function Sidebar() {
   // every minute while the projection still lists the thread. Keys that
   // leave the tail are dropped so an unarchive can be attempted again.
   // Failures are dropped so a transient error can retry on the next tick.
+  // One archive at a time so a long tail cannot open a mutation per row.
   const autoArchiveAttemptedRef = useRef(new Set<string>());
   useEffect(() => {
     if (autoArchiveSettledAfterDays === null) return;
@@ -2398,22 +2399,29 @@ export default function Sidebar() {
       autoArchiveAttemptedRef.current,
       settledKeys,
     );
-    for (const thread of settledThreads) {
+    const entries = settledThreads.flatMap((thread) => {
       if (!isSettledThreadPastArchiveAge(thread, { nowMs, afterDays: autoArchiveSettledAfterDays }))
-        continue;
+        return [];
       const threadRef = scopeThreadRef(thread.environmentId, thread.id);
       const threadKey = scopedThreadKey(threadRef);
       // Never yank the open thread out from under the user; it archives
       // after they navigate away.
-      if (threadKey === routeThreadKey) continue;
-      if (autoArchiveAttemptedRef.current.has(threadKey)) continue;
-      autoArchiveAttemptedRef.current.add(threadKey);
-      void archiveThread(threadRef).then((result) => {
+      if (threadKey === routeThreadKey) return [];
+      if (autoArchiveAttemptedRef.current.has(threadKey)) return [];
+      return [{ threadKey, threadRef }];
+    });
+    if (entries.length === 0) return;
+    // Mark the whole batch before the first await so a re-run cannot start
+    // a second sweep of the same rows while this one is in flight.
+    for (const entry of entries) autoArchiveAttemptedRef.current.add(entry.threadKey);
+    void (async () => {
+      for (const entry of entries) {
+        const result = await archiveThread(entry.threadRef);
         if (result._tag === "Failure") {
-          autoArchiveAttemptedRef.current.delete(threadKey);
+          autoArchiveAttemptedRef.current.delete(entry.threadKey);
         }
-      });
-    }
+      }
+    })();
   }, [archiveThread, autoArchiveSettledAfterDays, nowMinute, routeThreadKey, settledThreads]);
 
   // The snoozed shelf is collapsed by default: out of the way, never gone.

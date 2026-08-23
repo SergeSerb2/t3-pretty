@@ -18,6 +18,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
+  DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS,
   DEFAULT_UNIFIED_SETTINGS,
   type EnvironmentIdentificationMode,
   MAX_APPEARANCE_CONTRAST,
@@ -1725,7 +1726,6 @@ function FontFamilySettingsRow({
 }
 
 const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
-const AUTO_ARCHIVE_DEFAULT_DAYS = 30;
 
 function AutoSettleDaysInput({
   value,
@@ -2078,7 +2078,9 @@ export function GeneralSettingsPanel() {
               checked={settings.sidebarAutoArchiveSettledAfterDays !== null}
               onCheckedChange={(checked) =>
                 updateSettings({
-                  sidebarAutoArchiveSettledAfterDays: checked ? AUTO_ARCHIVE_DEFAULT_DAYS : null,
+                  sidebarAutoArchiveSettledAfterDays: checked
+                    ? DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS
+                    : null,
                 })
               }
               aria-label="Auto-archive settled threads"
