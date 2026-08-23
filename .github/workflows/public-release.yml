@@ -146,6 +146,7 @@ jobs:
           - label: macOS arm64
             runner: macos-latest
             platform: mac
+            # The artifact builder expands dmg to electron-builder's [dmg, zip] mac targets.
             target: dmg
             arch: arm64
             rust_target: aarch64-apple-darwin
@@ -218,6 +219,8 @@ jobs:
           path: public-desktop/*
           if-no-files-found: error
 
+  # The CLI deliberately keeps DEFAULT_HOSTED_APP_URL: upstream owns its registered OAuth callback,
+  # while `t3 pair` emits a direct server URL rather than a hosted-app URL.
   cli:
     name: Public CLI
     needs: preflight
