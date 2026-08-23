@@ -1000,6 +1000,7 @@ export function NewTaskDraftScreen(props: {
       interactionMode,
       branch: creationBranch,
       worktreePath: workspaceMode === "worktree" ? null : selectedWorktreePath,
+      enabledSkillIds: draft.enabledSkillIds,
       createdAt: turnMetadata.createdAt,
       sendStartedAt: new Date().toISOString(),
       message: {
@@ -1038,6 +1039,7 @@ export function NewTaskDraftScreen(props: {
       startFromOrigin,
       runtimeMode,
       interactionMode,
+      enabledSkillIds: draft.enabledSkillIds ?? [],
       initialMessageText: initialMessageTextForSend,
       initialAttachments: draft.attachments,
       turnMetadata,
@@ -1190,7 +1192,9 @@ export function NewTaskDraftScreen(props: {
     void KeyboardController.dismiss({ animated: true });
     navigation.dispatch(StackActions.push("NewTask", { incomingShareId: props.incomingShareId }));
   };
-  const openContextPicker = (routeName: "NewTaskBranch" | "NewTaskEnvironment") => {
+  const openContextPicker = (
+    routeName: "NewTaskBranch" | "NewTaskEnvironment" | "NewTaskSkills",
+  ) => {
     if (composerSelectorsLocked) {
       return;
     }
@@ -1294,6 +1298,22 @@ export function NewTaskDraftScreen(props: {
         label={showBranchLoading ? "Loading branches…" : selectedBranchLabel}
         maxWidth={190}
         onPress={() => openContextPicker("NewTaskBranch")}
+      />
+
+      <ComposerInlineControl
+        accessibilityLabel={
+          flow.selectedSkillIds.length > 0
+            ? `Skills: ${flow.selectedSkillIds.length} selected`
+            : "Skills"
+        }
+        chevronDirection="right"
+        disabled={composerSelectorsLocked}
+        icon={{ ios: "sparkles", android: "auto_awesome" }}
+        label={
+          flow.selectedSkillIds.length > 0 ? `Skills · ${flow.selectedSkillIds.length}` : "Skills"
+        }
+        maxWidth={120}
+        onPress={() => openContextPicker("NewTaskSkills")}
       />
     </View>
   );

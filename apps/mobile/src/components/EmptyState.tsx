@@ -1,6 +1,8 @@
-import { Pressable, View } from "react-native";
+import { Pressable } from "react-native";
+import Animated from "react-native-reanimated";
 
 import { AppText as Text } from "./AppText";
+import { enterFade } from "../lib/motion";
 
 export function EmptyState(props: {
   readonly title: string;
@@ -11,7 +13,7 @@ export function EmptyState(props: {
 }) {
   if (props.variant === "plain") {
     return (
-      <View className="items-center px-8 py-8">
+      <Animated.View entering={enterFade} className="items-center px-8 py-8">
         <Text className="text-center text-xl font-t3-bold text-foreground">{props.title}</Text>
         <Text className="mt-2 text-center font-sans text-base leading-normal text-foreground-muted">
           {props.detail}
@@ -26,12 +28,12 @@ export function EmptyState(props: {
             </Text>
           </Pressable>
         ) : null}
-      </View>
+      </Animated.View>
     );
   }
 
   return (
-    <View className="rounded-[22px] border border-border bg-card p-5">
+    <Animated.View entering={enterFade} className="rounded-[22px] border border-border bg-card p-5">
       <Text className="font-t3-bold text-lg text-foreground">{props.title}</Text>
       <Text className="mt-2 font-sans text-sm leading-relaxed text-foreground-muted">
         {props.detail}
@@ -44,6 +46,6 @@ export function EmptyState(props: {
           <Text className="text-sm font-t3-bold text-primary-foreground">{props.actionLabel}</Text>
         </Pressable>
       ) : null}
-    </View>
+    </Animated.View>
   );
 }

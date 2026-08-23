@@ -123,6 +123,8 @@ export interface CodexSessionRuntimeSendTurnInput {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort | undefined;
   readonly interactionMode?: ProviderInteractionMode;
+  /** "queue" never steers, even if Codex still reports the turn as running. */
+  readonly delivery?: "steer" | "queue";
 }
 
 export interface CodexThreadTurnSnapshot {
@@ -1819,9 +1821,8 @@ export const makeCodexSessionRuntime = (
               ),
             );
           }
-          const normalizedModel = normalizeCodexModelSlug(
-            input.model ?? (yield* Ref.get(sessionRef)).model,
-          );
+          const sessionAtSend = yield* Ref.get(sessionRef);
+          const normalizedModel = normalizeCodexModelSlug(input.model ?? sessionAtSend.model);
           const params = yield* buildTurnStartParams({
             threadId: providerThreadId,
             runtimeMode: options.runtimeMode,
@@ -1836,6 +1837,51 @@ export const makeCodexSessionRuntime = (
             // has even if the setting changed after the session started.
             browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs, "t3-code"),
           });
+          // A send that lands while a turn is running is a steer: inject into
+          // the active turn instead of letting Codex queue a follow-up turn.
+          // Any rejection (turn just completed, activeTurnNotSteerable for
+          // review/compact turns) falls back to the plain turn/start below.
+          // An explicit "queue" delivery never steers: the orchestrator only
+          // releases it at a turn boundary, so a session still reporting
+          // running here is ingest lag, and steering would inject the message
+          // into the very turn the user chose to wait out.
+          const steerTurnId =
+            input.delivery !== "queue" && sessionAtSend.status === "running"
+              ? sessionAtSend.activeTurnId
+              : undefined;
+          if (steerTurnId) {
+            // Fall back only when Codex itself answered with a JSON-RPC error
+            // (activeTurnNotSteerable, expectedTurnId mismatch) — that steer
+            // was definitively not applied. A transport or protocol failure is
+            // ambiguous: the steer may have landed, and a turn/start retry
+            // would deliver the same message twice.
+            const steered = yield* client.raw
+              .request("turn/steer", {
+                threadId: providerThreadId,
+                expectedTurnId: steerTurnId,
+                input: params.input,
+              })
+              .pipe(
+                Effect.as(true),
+                Effect.catchIf(
+                  (cause) => cause._tag === "CodexAppServerRequestError",
+                  (cause) =>
+                    Effect.logDebug("Codex turn/steer rejected; falling back to turn/start.", {
+                      cause,
+                    }).pipe(Effect.as(false)),
+                ),
+              );
+            if (steered) {
+              const steerProviderThreadId = currentProviderThreadId(yield* Ref.get(sessionRef));
+              return {
+                threadId: options.threadId,
+                turnId: steerTurnId,
+                ...(steerProviderThreadId
+                  ? { resumeCursor: { threadId: steerProviderThreadId } }
+                  : {}),
+              } satisfies ProviderTurnStartResult;
+            }
+          }
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(
             Effect.mapError((error) =>

@@ -896,8 +896,11 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   background-color: transparent;
 }
 
-/* Chat header: frosted chrome band over the photo (SurgeCode .toolbar). */
-html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-header] {
+/* Chat header: frosted chrome band over the photo (SurgeCode .toolbar). The
+   Pull Requests page header wears the same band, so both pages meet the photo
+   with the same chrome. */
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  :is([data-chat-header], [data-pull-requests-header]) {
   background-color: color-mix(in srgb, var(--toolbar-background) 42%, transparent);
   -webkit-backdrop-filter: blur(24px) saturate(1.35);
   backdrop-filter: blur(24px) saturate(1.35);
@@ -1006,6 +1009,30 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   background-image: none;
 }
 
+/* Pull Requests page: the column joins the transparent inset so the photo
+   carries through, and its controls + list ride one frosted plate — the same
+   chrome material as the sidebar, so the rows keep their contrast over any
+   photo. The radius is --radius-xl's value; the theme-inline token is not
+   emitted as a runtime variable, so raw CSS cannot reference it. */
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-pull-requests-column] {
+  background-color: transparent;
+  background-image: none;
+}
+
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-pull-requests-panel] {
+  background-color: var(--scenery-chrome-fill);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  backdrop-filter: blur(14px) saturate(1.1);
+  border: 1px solid color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
+  border-radius: 0.875rem;
+  padding: 0.75rem;
+}
+
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on].dark
+  [data-pull-requests-panel] {
+  border-color: color-mix(in srgb, var(--color-white) 9%, transparent);
+}
+
 /* Chrome seams: glass layers meet without a 1px divider. Resize handles
    still light up on hover; that is the only remaining edge cue. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-app-sidebar],
@@ -1084,7 +1111,8 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
 /* No backdrop-filter support: chrome must go near-opaque or it is unreadable
    over an arbitrary photo. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-header] {
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+    :is([data-chat-header], [data-pull-requests-header]) {
     background-color: color-mix(in srgb, var(--toolbar-background) 92%, transparent);
   }
 
@@ -1103,6 +1131,10 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
 
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
     [data-terminal-owner="drawer"] {
+    background-color: var(--scenery-chrome-fill-solid);
+  }
+
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-pull-requests-panel] {
     background-color: var(--scenery-chrome-fill-solid);
   }
 

@@ -26,6 +26,306 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260823.1164000729",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "smooth thread loading, switching, and streaming animations",
+      },
+      {
+        kind: "new",
+        title: "rewrite the live activity line with generated headlines",
+      },
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000722",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "rewrite the live activity line with generated headlines",
+      },
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+      {
+        kind: "fixed",
+        title: "prevent loading fallback timer from resetting",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000704",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+      {
+        kind: "fixed",
+        title: "prevent loading fallback timer from resetting",
+      },
+      {
+        kind: "new",
+        title: "standard queue/steer controls for messages sent while the agent is running",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000691",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+      {
+        kind: "fixed",
+        title: "prevent loading fallback timer from resetting",
+      },
+      {
+        kind: "new",
+        title: "standard queue/steer controls for messages sent while the agent is running",
+      },
+      {
+        kind: "fixed",
+        title: "removing a Surge Connect environment now deletes it for good",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000677",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+      {
+        kind: "fixed",
+        title: "prevent loading fallback timer from resetting",
+      },
+      {
+        kind: "new",
+        title: "standard queue/steer controls for messages sent while the agent is running",
+      },
+      {
+        kind: "fixed",
+        title: "removing a Surge Connect environment now deletes it for good",
+      },
+      {
+        kind: "fixed",
+        title: "remove duplicate thinking indicator in the thread",
+      },
+      {
+        kind: "fixed",
+        title: "prevent markdown link parsing crash",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000669",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "prevent loading fallback timer from resetting",
+      },
+      {
+        kind: "new",
+        title: "standard queue/steer controls for messages sent while the agent is running",
+      },
+      {
+        kind: "fixed",
+        title: "removing a Surge Connect environment now deletes it for good",
+      },
+      {
+        kind: "fixed",
+        title: "remove duplicate thinking indicator in the thread",
+      },
+      {
+        kind: "fixed",
+        title: "prevent markdown link parsing crash",
+      },
+      {
+        kind: "new",
+        title: "expand world photos and add four photo themes",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000666",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "standard queue/steer controls for messages sent while the agent is running",
+      },
+      {
+        kind: "fixed",
+        title: "removing a Surge Connect environment now deletes it for good",
+      },
+      {
+        kind: "fixed",
+        title: "remove duplicate thinking indicator in the thread",
+      },
+      {
+        kind: "fixed",
+        title: "prevent markdown link parsing crash",
+      },
+      {
+        kind: "new",
+        title: "expand world photos and add four photo themes",
+      },
+      {
+        kind: "new",
+        title: "ship a headless T3 Pretty CLI for Surge Connect",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000664",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "standard queue/steer controls for messages sent while the agent is running",
+      },
+      {
+        kind: "fixed",
+        title: "removing a Surge Connect environment now deletes it for good",
+      },
+      {
+        kind: "fixed",
+        title: "remove duplicate thinking indicator in the thread",
+      },
+      {
+        kind: "fixed",
+        title: "prevent markdown link parsing crash",
+      },
+      {
+        kind: "new",
+        title: "expand world photos and add four photo themes",
+      },
+      {
+        kind: "new",
+        title: "ship a headless T3 Pretty CLI for Surge Connect",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000661",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "removing a Surge Connect environment now deletes it for good",
+      },
+      {
+        kind: "fixed",
+        title: "remove duplicate thinking indicator in the thread",
+      },
+      {
+        kind: "fixed",
+        title: "prevent markdown link parsing crash",
+      },
+      {
+        kind: "new",
+        title: "expand world photos and add four photo themes",
+      },
+      {
+        kind: "new",
+        title: "ship a headless T3 Pretty CLI for Surge Connect",
+      },
+      {
+        kind: "fixed",
+        title: 'standardize reasoning effort labels to "<level> effort"',
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260822.1162000644",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "removing a Surge Connect environment now deletes it for good",
+      },
+      {
+        kind: "fixed",
+        title: "remove duplicate thinking indicator in the thread",
+      },
+      {
+        kind: "fixed",
+        title: "prevent markdown link parsing crash",
+      },
+      {
+        kind: "new",
+        title: "expand world photos and add four photo themes",
+      },
+      {
+        kind: "new",
+        title: "ship a headless T3 Pretty CLI for Surge Connect",
+      },
+      {
+        kind: "fixed",
+        title: 'standardize reasoning effort labels to "<level> effort"',
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260822.1162000641",
     date: "2026-08-23",
     items: [

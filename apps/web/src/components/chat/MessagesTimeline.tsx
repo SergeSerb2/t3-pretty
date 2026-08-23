@@ -179,6 +179,13 @@ interface TimelineRowActivityState {
   isRevertingCheckpoint: boolean;
   activeTurnInProgress: boolean;
   latestTurnId: TurnId | null;
+  /**
+   * Generated status headline for the running turn; overrides raw live
+   * labels. Deliberately on TimelineRowActivityState, not
+   * TimelineRowSharedState: only the live rows read it, so a headline swap
+   * must not re-render every timeline row through the shared context.
+   */
+  liveHeadline: string | null;
 }
 
 const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);
@@ -238,6 +245,8 @@ interface MessagesTimelineProps {
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
   latestTurn: TimelineLatestTurn | null;
   runningTurnId: TurnId | null;
+  /** Generated status headline for the running turn, from `turn.headline`. */
+  liveHeadline?: string | null;
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
   routeThreadKey: string;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
@@ -282,6 +291,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   listRef,
   timelineEntries,
   latestTurn,
+  liveHeadline = null,
   runningTurnId,
   turnDiffSummaryByAssistantMessageId,
   routeThreadKey,
@@ -588,8 +598,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       isRevertingCheckpoint,
       activeTurnInProgress,
       latestTurnId: latestTurn?.turnId ?? null,
+      liveHeadline,
     }),
-    [activeTurnInProgress, isRevertingCheckpoint, isWorking, latestTurn?.turnId],
+    [activeTurnInProgress, isRevertingCheckpoint, isWorking, latestTurn?.turnId, liveHeadline],
   );
 
   // Stable renderItem — no closure deps. Row components read shared state
@@ -1488,7 +1499,8 @@ function LiveActivityRow({
 }
 
 function ThinkingActivityRow() {
-  return <LiveActivityRow label="Thinking" />;
+  const activity = use(TimelineRowActivityCtx);
+  return <LiveActivityRow label={activity.liveHeadline ?? "Thinking"} />;
 }
 
 function LiveActivityContent({
@@ -1536,7 +1548,8 @@ function LiveActivityContent({
 
 function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "work-live" }> }) {
   const ctx = use(TimelineRowCtx);
-  const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot);
+  const activity = use(TimelineRowActivityCtx);
+  const label = activity.liveHeadline ?? liveWorkEntryLabel(row.entry, ctx.workspaceRoot);
   const failed = workEntryDisplayIndicatesToolFailure(row.entry);
 
   return (

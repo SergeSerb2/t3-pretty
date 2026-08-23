@@ -28,6 +28,7 @@ import {
   type PartialMarkdownTheme,
 } from "react-native-nitro-markdown";
 import {
+  ActivityIndicator,
   Image,
   Platform,
   type LayoutChangeEvent,
@@ -40,6 +41,7 @@ import {
   type ColorValue,
   useWindowDimensions,
   View,
+  type ViewStyle,
 } from "react-native";
 import { TouchableOpacity } from "react-native-gesture-handler";
 import ImageViewing from "react-native-image-viewing";
@@ -49,14 +51,18 @@ import Animated, {
   Easing,
   FadeIn,
   FadeInUp,
+  FadeOut,
+  ReduceMotion,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withDelay,
   withRepeat,
   withSequence,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
+import { MOTION_TIMING } from "../../lib/motion";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { useFontFamily } from "../../lib/useFontFamily";
@@ -128,6 +134,7 @@ import { useAssetUrl, useAssetUrlState } from "../../state/assets";
 import { useOutgoingMessagePreviewUris } from "../../state/outgoing-message-previews";
 import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
 import { resolveUserMessageImageSources, type UserMessageImageSource } from "./userMessageImages";
+import { MARKDOWN_IMAGE_MAX_WIDTH, resolveMarkdownImageDisplaySize } from "./markdownImageSize";
 
 const WIDE_MARKDOWN_BLOCK_OPTIONS = {
   includeOrderedLists: Platform.OS === "android",
@@ -178,6 +185,17 @@ function isFreshTimestamp(input: string): boolean {
   const timestamp = Date.parse(input);
   return Number.isFinite(timestamp) && Date.now() - timestamp < FRESH_ENTRY_WINDOW_MS;
 }
+
+// The loading placeholder enters only after a beat: a cached thread resolves
+// well inside the delay, so fast switches never flash "Loading messages".
+// Empty copy has no delay so a loading→empty handoff can crossfade instead
+// of stacking another wait.
+const FEED_PLACEHOLDER_ENTER_DELAY_MS = 220;
+const FEED_PLACEHOLDER_ENTER = FadeIn.delay(FEED_PLACEHOLDER_ENTER_DELAY_MS)
+  .duration(200)
+  .reduceMotion(ReduceMotion.System);
+const FEED_PLACEHOLDER_SWAP = FadeIn.duration(200).reduceMotion(ReduceMotion.System);
+const FEED_PLACEHOLDER_EXIT = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 
 export interface ThreadFeedProps {
   readonly environmentId: EnvironmentId;
@@ -272,31 +290,50 @@ function MessageAttachmentImage(props: {
   );
 }
 
-/** Markdown image whose src is a workspace file — loads through a signed asset URL. */
-function ThreadMarkdownImage(props: {
-  readonly environmentId: EnvironmentId;
-  readonly threadId: ThreadId;
-  readonly path: string;
+function ThreadMarkdownImageView(props: {
+  readonly uri: string | null;
+  readonly sourceKey: string;
+  readonly unavailable: boolean;
   readonly alt: string | null;
   readonly onPressImage: (uri: string) => void;
 }) {
   const codeBackground = useThemeColor("--color-md-code-bg");
+  const [availableWidth, setAvailableWidth] = useState(0);
+  const [sourceSize, setSourceSize] = useState<{ width: number; height: number } | null>(null);
   const [failedUri, setFailedUri] = useState<string | null>(null);
-  const assetUrl = useAssetUrlState(props.environmentId, {
-    _tag: "workspace-file",
-    threadId: props.threadId,
-    path: props.path,
-  });
-  const uri = assetUrl._tag === "Success" ? assetUrl.url : null;
-  const failed = assetUrl._tag === "Failure" || (uri !== null && failedUri === uri);
+  const activeUriRef = useRef(props.uri);
+  activeUriRef.current = props.uri;
+
+  useEffect(() => {
+    setSourceSize(null);
+  }, [props.sourceKey]);
+
+  useEffect(() => {
+    setFailedUri(null);
+  }, [props.uri]);
+
+  const displaySize =
+    sourceSize === null
+      ? null
+      : resolveMarkdownImageDisplaySize({
+          sourceWidth: sourceSize.width,
+          sourceHeight: sourceSize.height,
+          availableWidth,
+        });
+  const failed = props.unavailable || (props.uri !== null && failedUri === props.uri);
+  const placeholderWidth: ViewStyle["width"] =
+    availableWidth > 0 ? Math.min(availableWidth, MARKDOWN_IMAGE_MAX_WIDTH) : "100%";
+  const frameStyle: ViewStyle = displaySize ?? { width: placeholderWidth, aspectRatio: 16 / 9 };
 
   return (
-    <View style={{ gap: 6 }}>
-      {uri === null || failed ? (
+    <View
+      onLayout={(event) => setAvailableWidth(event.nativeEvent.layout.width)}
+      style={{ alignSelf: "stretch", gap: 6 }}
+    >
+      {props.uri === null || failed ? (
         <View
           style={{
-            width: "100%",
-            aspectRatio: 16 / 9,
+            ...frameStyle,
             borderRadius: 10,
             backgroundColor: codeBackground,
             alignItems: "center",
@@ -314,20 +351,37 @@ function ThreadMarkdownImage(props: {
           accessibilityRole="imagebutton"
           accessibilityLabel={props.alt ?? "Markdown image"}
           activeOpacity={0.7}
-          onPress={() => props.onPressImage(uri)}
+          onPress={() => props.onPressImage(props.uri!)}
+          style={{ alignSelf: "flex-start" }}
         >
-          <Image
-            source={{ uri }}
-            resizeMode="contain"
-            accessible={false}
-            onError={() => setFailedUri(uri)}
+          <View
             style={{
-              width: "100%",
-              aspectRatio: 16 / 9,
+              ...frameStyle,
               borderRadius: 10,
               backgroundColor: codeBackground,
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
             }}
-          />
+          >
+            <Image
+              source={{ uri: props.uri }}
+              resizeMode="contain"
+              accessible={false}
+              onLoad={(event) => {
+                if (activeUriRef.current !== props.uri) return;
+                const { width, height } = event.nativeEvent.source;
+                setSourceSize({ width, height });
+              }}
+              onError={() => setFailedUri(props.uri)}
+              style={{
+                width: "100%",
+                height: "100%",
+                opacity: displaySize === null ? 0 : 1,
+              }}
+            />
+            {displaySize === null ? <ActivityIndicator style={StyleSheet.absoluteFill} /> : null}
+          </View>
         </TouchableOpacity>
       )}
       {props.alt ? (
@@ -339,28 +393,40 @@ function ThreadMarkdownImage(props: {
   );
 }
 
-function ThreadMarkdownImageUnavailable(props: { readonly alt: string | null }) {
-  const codeBackground = useThemeColor("--color-md-code-bg");
+/** Markdown image whose src is a workspace file — loads through a signed asset URL. */
+function ThreadMarkdownImage(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly path: string;
+  readonly alt: string | null;
+  readonly onPressImage: (uri: string) => void;
+}) {
+  const assetUrl = useAssetUrlState(props.environmentId, {
+    _tag: "workspace-file",
+    threadId: props.threadId,
+    path: props.path,
+  });
+
   return (
-    <View style={{ gap: 6 }}>
-      <View
-        style={{
-          width: "100%",
-          aspectRatio: 16 / 9,
-          borderRadius: 10,
-          backgroundColor: codeBackground,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Text className="text-xs text-foreground-muted">Image unavailable</Text>
-      </View>
-      {props.alt ? (
-        <Text selectable className="text-xs text-foreground-muted">
-          {props.alt}
-        </Text>
-      ) : null}
-    </View>
+    <ThreadMarkdownImageView
+      uri={assetUrl._tag === "Success" ? assetUrl.url : null}
+      sourceKey={props.path}
+      unavailable={assetUrl._tag === "Failure"}
+      alt={props.alt}
+      onPressImage={props.onPressImage}
+    />
+  );
+}
+
+function ThreadMarkdownImageUnavailable(props: { readonly alt: string | null }) {
+  return (
+    <ThreadMarkdownImageView
+      uri={null}
+      sourceKey="unavailable"
+      unavailable
+      alt={props.alt}
+      onPressImage={() => undefined}
+    />
   );
 }
 
@@ -999,6 +1065,7 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   readonly markdownStyles: MarkdownStyleSet;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly onLinkPress: (href: string) => void;
+  readonly renderImage: MarkdownImageRenderer;
 }) {
   if (hasNativeSelectableMarkdownText()) {
     return (
@@ -1008,13 +1075,24 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
         textStyle={props.markdownStyles.nativeTextStyle}
         highlightCodeEnabled={!props.streaming}
         onLinkPress={props.onLinkPress}
+        renderImage={props.renderImage}
       />
     );
   }
   return (
     <Markdown
       options={{ gfm: true }}
-      renderers={props.markdownStyles.renderers}
+      renderers={{
+        ...props.markdownStyles.renderers,
+        image: ({ node }) =>
+          node.href
+            ? (props.renderImage({
+                href: node.href,
+                alt: node.alt ?? null,
+                title: node.title ?? null,
+              }) ?? undefined)
+            : undefined,
+      }}
       styles={props.markdownStyles.styles}
       theme={props.markdownStyles.theme}
     >
@@ -1029,6 +1107,7 @@ const CadencedAssistantMarkdown = memo(function CadencedAssistantMarkdown(props:
   readonly markdownStyles: MarkdownStyleSet;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly onLinkPress: (href: string) => void;
+  readonly renderImage: MarkdownImageRenderer;
 }) {
   const displayedText = useCadencedStreamingText(props.text, props.streaming);
   return (
@@ -1038,6 +1117,7 @@ const CadencedAssistantMarkdown = memo(function CadencedAssistantMarkdown(props:
       markdownStyles={props.markdownStyles}
       skills={props.skills}
       onLinkPress={props.onLinkPress}
+      renderImage={props.renderImage}
     />
   );
 });
@@ -1067,14 +1147,13 @@ function renderFeedEntry(
     readonly reviewCommentBubbleWidth: number;
     readonly userBubbleMaxWidth: number;
     readonly localPreviewUrisByMessageId: Readonly<Record<string, ReadonlyArray<string>>>;
-    readonly active: boolean;
   },
 ) {
   const entry = info.item;
   const { markdownStyles, iconSubtleColor, userBubbleColor } = props;
 
   if (entry.type === "working") {
-    return <WorkingTimelineRow active={props.active} />;
+    return <WorkingTimelineRow />;
   }
 
   if (entry.type === "turn-fold") {
@@ -1216,25 +1295,20 @@ function renderFeedEntry(
         {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
       >
         {message.text.trim().length > 0 ? (
-          message.streaming ? (
-            <CadencedAssistantMarkdown
-              key={message.id}
-              text={message.text}
-              streaming
-              markdownStyles={styles}
-              skills={props.skills}
-              onLinkPress={props.onMarkdownLinkPress}
-              renderImage={props.renderMarkdownImage}
-            />
-          ) : (
-            <AssistantMarkdownContent
-              markdown={message.text}
-              streaming={false}
-              markdownStyles={styles}
-              skills={props.skills}
-              onLinkPress={props.onMarkdownLinkPress}
-            />
-          )
+          // One element type for streaming and settled text: swapping
+          // components at settle tears down and rebuilds every native
+          // markdown view in the message at the exact moment the user is
+          // reading it. CadencedAssistantMarkdown passes settled text
+          // through untouched.
+          <CadencedAssistantMarkdown
+            key={message.id}
+            text={message.text}
+            streaming={message.streaming === true}
+            markdownStyles={styles}
+            skills={props.skills}
+            onLinkPress={props.onMarkdownLinkPress}
+            renderImage={props.renderMarkdownImage}
+          />
         ) : null}
         {attachments.map((attachment) => {
           return (
@@ -1292,12 +1366,16 @@ function renderFeedEntry(
 // opacity-only so it stays on the compositor.
 const THINKING_SHIMMER_PERIOD_MS = 2_200;
 
-const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly active: boolean }) {
+const WorkingTimelineRow = memo(function WorkingTimelineRow() {
+  // Focus is read here rather than threaded through renderItem: a renderItem
+  // identity change re-renders every visible row, and focus flips exactly
+  // during navigation transitions — the worst moment to repaint the feed.
+  const active = useIsFocused();
   const highlight = useSharedValue(0);
   const reduceMotion = useReducedMotion();
 
   useEffect(() => {
-    if (!props.active || reduceMotion) {
+    if (!active || reduceMotion) {
       highlight.value = 0;
       return;
     }
@@ -1319,7 +1397,7 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly ac
       cancelAnimation(highlight);
       highlight.value = 0;
     };
-  }, [highlight, props.active, reduceMotion]);
+  }, [highlight, active, reduceMotion]);
 
   const highlightStyle = useAnimatedStyle(() => ({ opacity: highlight.value }));
 
@@ -1619,7 +1697,6 @@ function ThreadFeedPlaceholder(props: {
 export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const navigation = useNavigation();
   const openChangeRequestLink = useOpenChangeRequestLink(props.environmentId);
-  const isFocused = useIsFocused();
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const foldSettleFrameRef = useRef<number | null>(null);
   const foldSettleSecondFrameRef = useRef<number | null>(null);
@@ -1749,7 +1826,15 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     (image) => {
       const imageSource = classifyMarkdownImageSource(image.href, props.workspaceRoot ?? null);
       if (imageSource._tag === "Direct") {
-        return null;
+        return (
+          <ThreadMarkdownImageView
+            uri={imageSource.uri}
+            sourceKey={imageSource.uri}
+            unavailable={false}
+            alt={image.alt}
+            onPressImage={(uri) => setExpandedImage({ uri })}
+          />
+        );
       }
       if (imageSource._tag === "Blocked") {
         return <ThreadMarkdownImageUnavailable alt={image.alt} />;
@@ -1769,29 +1854,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const markdownStyles = useMarkdownStyles(onMarkdownLinkPress, renderMarkdownImage);
   const reviewCommentColors = useReviewCommentColors();
   // LegendList does not invalidate visible rows when only the renderItem closure changes.
-  // Keep row-local interaction props in extraData so disclosures and copy feedback repaint.
-  const listAppearanceData = useMemo(
-    () => ({
-      copiedRowId,
-      expandedWorkRows,
-      iconSubtleColor,
-      markdownStyles,
-      reviewCommentColors,
-      userBubbleColor,
-      viewportWidth,
-      localPreviewUrisByMessageId,
-    }),
-    [
-      copiedRowId,
-      expandedWorkRows,
-      iconSubtleColor,
-      markdownStyles,
-      reviewCommentColors,
-      userBubbleColor,
-      viewportWidth,
-      localPreviewUrisByMessageId,
-    ],
-  );
   const reportHeaderMaterialVisibility = useCallback(
     (visible: boolean) => {
       if (headerMaterialVisibleRef.current === visible) {
@@ -1964,18 +2026,48 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.listRef.current?.reportContentInset({ bottom });
     }
   }, [listMountKey, props.contentInsetEndAdjustment, props.listRef]);
+  // Arm the fallback once per non-empty mount. Depending on the raw feed
+  // length re-arms it on every streamed entry, so a busy turn pushes the
+  // timer out forever and the loading overlay never clears.
+  const isFeedEmpty = props.feed.length === 0;
   useEffect(() => {
-    if (listReadyForCurrentMount || props.feed.length === 0) {
+    if (listReadyForCurrentMount || isFeedEmpty) {
       return;
     }
     const timeout = setTimeout(markListReady, THREAD_FEED_LIST_READY_FALLBACK_MS);
     return () => clearTimeout(timeout);
-  }, [listReadyForCurrentMount, markListReady, props.feed.length]);
+  }, [listReadyForCurrentMount, markListReady, isFeedEmpty]);
   const showLoadingOverlay = shouldShowThreadFeedLoadingOverlay({
     contentPresentationKind: props.contentPresentation.kind,
     feedLength: props.feed.length,
     listReady: listReadyForCurrentMount,
   });
+  const feedPlaceholder = showLoadingOverlay
+    ? {
+        title: "Loading messages",
+        detail: "The conversation will appear here once it finishes loading.",
+      }
+    : props.feed.length === 0 &&
+        props.activeWorkStartedAt === null &&
+        props.contentPresentation.kind === "ready"
+      ? {
+          title: "No conversation yet",
+          detail:
+            "Ask the agent to inspect the repo, run a command, or continue the active thread.",
+        }
+      : null;
+  // LegendList holds row opacity at 0 until onLoad, then reveals everything in
+  // one frame. Fading the container instead turns that reveal (and the overlay
+  // handoff) into a crossfade. Keep rows at full opacity until the delayed
+  // loading placeholder actually enters, so a one-frame overlay gate does not
+  // blank cached content.
+  const feedOpacity = useSharedValue(1);
+  useEffect(() => {
+    feedOpacity.value = showLoadingOverlay
+      ? withDelay(FEED_PLACEHOLDER_ENTER_DELAY_MS, withTiming(0, MOTION_TIMING))
+      : withTiming(1, MOTION_TIMING);
+  }, [feedOpacity, showLoadingOverlay]);
+  const feedContainerStyle = useAnimatedStyle(() => ({ opacity: feedOpacity.value }));
 
   const anchoredEndSpace = useMemo(
     () =>
@@ -2001,6 +2093,40 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     (props.latestTurn.completedAt === null || props.latestTurn.state === "running")
       ? props.latestTurn.turnId
       : null;
+
+  // Keep row-local interaction props in extraData so disclosures and copy
+  // feedback repaint. LegendList memoizes rows on [itemKey, itemData,
+  // extraData] only — renderItem-closure changes do not invalidate rows — so
+  // everything renderFeedEntry reads that can change without the entry object
+  // changing must ride along here. unsettledTurnId and
+  // terminalAssistantMessageIds gate showAssistantMeta: without them the
+  // timestamp/copy row would not appear when a turn settles.
+  const listAppearanceData = useMemo(
+    () => ({
+      copiedRowId,
+      expandedWorkRows,
+      iconSubtleColor,
+      markdownStyles,
+      reviewCommentColors,
+      userBubbleColor,
+      viewportWidth,
+      localPreviewUrisByMessageId,
+      terminalAssistantMessageIds,
+      unsettledTurnId,
+    }),
+    [
+      copiedRowId,
+      expandedWorkRows,
+      iconSubtleColor,
+      markdownStyles,
+      reviewCommentColors,
+      userBubbleColor,
+      viewportWidth,
+      localPreviewUrisByMessageId,
+      terminalAssistantMessageIds,
+      unsettledTurnId,
+    ],
+  );
 
   useEffect(() => {
     const previous = previousLatestTurnRef.current;
@@ -2197,7 +2323,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         userBubbleMaxWidth,
         localPreviewUrisByMessageId,
         skills: props.skills,
-        active: isFocused,
       }),
     [
       copiedRowId,
@@ -2221,7 +2346,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.skills,
       props.threadId,
       props.workspaceRoot,
-      isFocused,
       renderMarkdownImage,
     ],
   );
@@ -2241,7 +2365,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   return (
     <>
       <View className="flex-1" onLayout={handleViewportLayout}>
-        <View className="flex-1">
+        <Animated.View className="flex-1" style={feedContainerStyle}>
           <KeyboardAwareLegendList
             ref={props.listRef}
             // The empty↔filled key remounts the list when messages first
@@ -2378,29 +2502,23 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               paddingHorizontal: contentHorizontalPadding,
             }}
           />
-        </View>
-        {showLoadingOverlay ? (
-          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        </Animated.View>
+        {feedPlaceholder ? (
+          <Animated.View
+            key={showLoadingOverlay ? "loading" : "empty"}
+            entering={showLoadingOverlay ? FEED_PLACEHOLDER_ENTER : FEED_PLACEHOLDER_SWAP}
+            exiting={FEED_PLACEHOLDER_EXIT}
+            pointerEvents="none"
+            style={StyleSheet.absoluteFill}
+          >
             <ThreadFeedPlaceholder
-              title="Loading messages"
-              detail="The conversation will appear here once it finishes loading."
+              title={feedPlaceholder.title}
+              detail={feedPlaceholder.detail}
               topInset={topContentInset}
               bottomInset={bottomContentInset}
               horizontalPadding={horizontalPadding}
             />
-          </View>
-        ) : props.feed.length === 0 &&
-          props.activeWorkStartedAt === null &&
-          props.contentPresentation.kind === "ready" ? (
-          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            <ThreadFeedPlaceholder
-              title="No conversation yet"
-              detail="Ask the agent to inspect the repo, run a command, or continue the active thread."
-              topInset={topContentInset}
-              bottomInset={bottomContentInset}
-              horizontalPadding={horizontalPadding}
-            />
-          </View>
+          </Animated.View>
         ) : null}
       </View>
 

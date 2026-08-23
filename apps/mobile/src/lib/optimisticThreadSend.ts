@@ -7,6 +7,7 @@ import type {
   ProjectId,
   ProviderInteractionMode,
   RuntimeMode,
+  SkillId,
   ThreadId,
 } from "@t3tools/contracts";
 
@@ -23,6 +24,7 @@ export interface OptimisticStartingThread {
   readonly interactionMode: ProviderInteractionMode;
   readonly branch: string | null;
   readonly worktreePath: string | null;
+  readonly enabledSkillIds?: ReadonlyArray<SkillId>;
   readonly createdAt: string;
   readonly sendStartedAt: string;
   readonly message: {
@@ -49,7 +51,7 @@ export function optimisticStartingThreadToShell(
     modelSelection: thread.modelSelection,
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,
-    enabledSkillIds: [],
+    enabledSkillIds: thread.enabledSkillIds ?? [],
     branch: thread.branch,
     worktreePath: thread.worktreePath,
     latestTurn: null,

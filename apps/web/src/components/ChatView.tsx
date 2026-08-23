@@ -14,6 +14,7 @@ import {
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
+  type TurnDeliveryMode,
   type TurnId,
   type KeybindingCommand,
   OrchestrationThreadActivity,
@@ -98,6 +99,7 @@ import {
   deriveActivePlanState,
   deriveTurnPlans,
   findLatestProposedPlan,
+  deriveLiveTurnHeadline,
   deriveWorkLogEntries,
   hasActionableProposedPlan,
   isLatestTurnSettled,
@@ -2508,6 +2510,12 @@ function ChatViewContent(props: ChatViewProps) {
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
+  const sessionRunningTurnId =
+    activeThread?.session?.status === "running" ? activeThread.session.activeTurnId : null;
+  const liveTurnHeadline = useMemo(
+    () => deriveLiveTurnHeadline(threadActivities, sessionRunningTurnId),
+    [threadActivities, sessionRunningTurnId],
+  );
   const turnPlans = useMemo(() => deriveTurnPlans(threadActivities), [threadActivities]);
   // Native subagent fold: memoized by activity-list identity, shared by the
   // Agents surface, live strip, and workflow cards. v2Projection is null
@@ -5349,12 +5357,16 @@ function ChatViewContent(props: ChatViewProps) {
   const onSend = async (
     e?: { preventDefault: () => void },
     submissionIntent: ComposerSubmissionIntent = "foreground",
-    directAnnotation?: {
-      annotation: PreviewAnnotationPayload;
-      image: ComposerImageAttachment | null;
+    options?: {
+      annotation?: PreviewAnnotationPayload;
+      image?: ComposerImageAttachment | null;
+      delivery?: TurnDeliveryMode;
     },
   ) => {
     e?.preventDefault();
+    const directAnnotation = options?.annotation
+      ? { annotation: options.annotation, image: options.image ?? null }
+      : undefined;
     const notifyDirectAnnotationAttached = () => {
       if (!directAnnotation) return;
       toastManager.add(
@@ -5824,6 +5836,7 @@ function ChatViewContent(props: ChatViewProps) {
           titleSeed: title,
           runtimeMode: runtimeModeForTurn,
           interactionMode,
+          ...(options?.delivery ? { delivery: options.delivery } : {}),
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
         },
@@ -7060,6 +7073,7 @@ function ChatViewContent(props: ChatViewProps) {
                 listRef={legendListRef}
                 timelineEntries={timelineEntries}
                 latestTurn={activeLatestTurn}
+                liveHeadline={liveTurnHeadline}
                 runningTurnId={
                   activeThread.session?.status === "running"
                     ? activeThread.session.activeTurnId

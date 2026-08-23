@@ -107,7 +107,9 @@ export function ComposerSendIconSlot(props: {
   }
 
   return (
-    <Animated.View exiting={COMPOSER_SEND_ICON_EXIT}>
+    // Matched entering so the loading↔idle swap fades both ways instead of
+    // the icon popping back after the spinner's exit fade.
+    <Animated.View entering={ENTER} exiting={COMPOSER_SEND_ICON_EXIT}>
       <View className="h-4 w-4 items-center justify-center">{props.children}</View>
     </Animated.View>
   );

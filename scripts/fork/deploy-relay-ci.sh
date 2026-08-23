@@ -26,6 +26,7 @@ load_secret() {
   fi
   if [[ -z "$value" ]]; then
     echo "Missing relay secret: $name" >&2
+    echo "Create the Buildkite cluster secret '$name' or write the value to ~/.config/t3-pretty/$name on every macos-release agent." >&2
     return 1
   fi
   printf -v "$name" '%s' "$value"
