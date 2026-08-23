@@ -138,7 +138,7 @@ function lruSet<V>(map: Map<string, V>, key: string, value: V, capacity: number)
 
 function copyWarmState(entry: WarmThreadState): WarmThreadState {
   return {
-    thread: { ...entry.thread },
+    thread: structuredClone(entry.thread),
     page: Option.map(entry.page, (page) => ({ ...page })),
     lastSequence: entry.lastSequence,
     generation: entry.generation,
@@ -148,14 +148,16 @@ function copyWarmState(entry: WarmThreadState): WarmThreadState {
 interface WarmThreadStateRegistry {
   /**
    * Peek without removing so overlapping machines can all restore. Marks the
-   * key recently used and returns a shallow copy so callers cannot mutate
-   * the stored blob.
+   * key recently used and returns a cloned snapshot so callers cannot mutate
+   * the stored blob. Null means a miss; a tombstone is `isDeleted`.
    */
   readonly get: (key: string) => WarmThreadState | null;
+  /** True while `remove` has tombstoned this key. */
+  readonly isDeleted: (key: string) => boolean;
   /**
    * Publish a handoff blob. A lower lastSequence, an equal lastSequence with
    * an older-or-equal generation, or a tombstoned key is ignored. Stores a
-   * shallow copy so later in-place updates cannot rewind a successor.
+   * cloned snapshot so later in-place updates cannot rewind a successor.
    */
   readonly set: (key: string, entry: WarmThreadState) => void;
   /**
@@ -177,6 +179,7 @@ export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
       generation += 1;
       return generation;
     },
+    isDeleted: (key) => deleted.has(key),
     get: (key) => {
       if (deleted.has(key)) {
         return null;
@@ -271,13 +274,15 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   // A predecessor machine's in-memory state beats the persisted cache: it is
   // newer and exists for running threads the cache deliberately skips. Peek,
   // don't take: overlapping machines (Strict Mode remount, environment swap
-  // before the old finalizer) must all see the same blob.
-  const warm = warmStates.get(stateKey);
+  // before the old finalizer) must all see the same blob. A tombstone is not
+  // a miss: skip cache (and HTTP) so a deleted thread cannot come back.
+  const warmDeleted = warmStates.isDeleted(stateKey);
+  const warm = warmDeleted ? null : warmStates.get(stateKey);
   // One-shot: the first warm subscribe may HTTP-catch-up if afterSequence
   // fails before any live item. Later socket errors resume from lastSequence.
   const warmResume = { failed: false, pending: warm !== null };
   const cached =
-    warm !== null
+    warmDeleted || warm !== null
       ? Option.none<OrchestrationThreadDetailSnapshot>()
       : yield* cache.loadThread(environmentId, threadId).pipe(
           Effect.catch((error) =>
@@ -295,7 +300,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     warm !== null ? Option.some(warm.thread) : Option.map(cached, (snapshot) => snapshot.thread);
   const state = yield* SubscriptionRef.make<EnvironmentThreadState>({
     data: cachedThread,
-    status: statusWithoutLiveData(cachedThread),
+    status: warmDeleted ? "deleted" : statusWithoutLiveData(cachedThread),
     error: Option.none(),
     // A cached windowed snapshot restores its page cursor so "load earlier"
     // works while rendering from cache; a cached full snapshot has no page.

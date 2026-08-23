@@ -519,17 +519,41 @@ describe("EnvironmentThreads", () => {
     const warmStates = makeWarmThreadStateRegistry();
     const key = "environment-1:thread-1";
     const page = { beforeCursor: "c", hasMore: true, loadingOlder: false };
-    const blob = { ...warmBlob("Live", 5, 1), page: Option.some(page) };
+    const payload = { itemType: "command_execution", detail: "original" };
+    const base = warmBlob("Live", 5, 1);
+    const blob = {
+      ...base,
+      page: Option.some(page),
+      thread: {
+        ...base.thread,
+        activities: [
+          {
+            id: EventId.make("call-1:progress"),
+            tone: "tool",
+            kind: "tool.updated",
+            summary: "Run",
+            payload,
+            turnId: null,
+            createdAt: "2026-04-01T01:00:00.000Z",
+          },
+        ],
+      },
+    };
     warmStates.set(key, blob);
     blob.thread.title = "Mutated input";
+    payload.detail = "mutated input";
     page.loadingOlder = true;
 
     const restored = warmStates.get(key)!;
     expect(restored.thread.title).toBe("Live");
+    expect(toolProgressDetail(restored.thread)).toBe("original");
     expect(Option.getOrThrow(restored.page).loadingOlder).toBe(false);
     restored.thread.title = "Mutated restore";
+    const restoredPayload = restored.thread.activities[0]?.payload as { detail: string };
+    restoredPayload.detail = "mutated restore";
     Option.getOrThrow(restored.page).loadingOlder = true;
     expect(warmStates.get(key)?.thread.title).toBe("Live");
+    expect(toolProgressDetail(warmStates.get(key)!.thread)).toBe("original");
     expect(Option.getOrThrow(warmStates.get(key)!.page).loadingOlder).toBe(false);
   });
 
@@ -558,6 +582,7 @@ describe("EnvironmentThreads", () => {
     warmStates.set(key, warmBlob("Resurrected newer generation", 6, 2));
 
     expect(warmStates.get(key)).toBeNull();
+    expect(warmStates.isDeleted(key)).toBe(true);
   });
 
   it("keeps delete tombstones after other keys fill the LRU", () => {
@@ -638,13 +663,21 @@ describe("EnvironmentThreads", () => {
         }),
       );
 
-      const successor = yield* makeHarness({ warmStates });
+      const successor = yield* makeHarness({
+        warmStates,
+        cached: { ...BASE_THREAD, title: "Stale cached thread" },
+        httpSnapshot: Option.some({
+          snapshotSequence: CACHED_SNAPSHOT_SEQUENCE,
+          thread: { ...BASE_THREAD, title: "HTTP resurrected thread" },
+        }),
+      });
       const state = yield* awaitThreadState(
         successor.observed,
-        (value) => value.status === "empty" || value.status === "deleted",
+        (value) => value.status === "deleted",
       );
 
       expect(Option.isNone(state.data)).toBe(true);
+      expect(yield* Ref.get(successor.loaderCalls)).toBe(0);
     }),
   );
 
