@@ -155,14 +155,18 @@ export function ThreadSettingsPickerPopover(props: {
     void Haptics.selectionAsync();
     props.onSelectRuntime(mode);
   };
-  const pickModel = (option: ModelOption) => {
+  const pickModel = (option: ModelOption, selected: boolean) => {
+    if (selected) {
+      return;
+    }
     void Haptics.selectionAsync();
     props.onSelectModel(option);
   };
   // Listed catalogs stay open so effort/access remain one extra tap, same as chips.
-  const pickListedModel = (option: ModelOption) => {
+  // Re-tapping the current row must not reapply catalog option defaults.
+  const pickListedModel = (option: ModelOption, selected: boolean) => {
     Keyboard.dismiss();
-    pickModel(option);
+    pickModel(option, selected);
   };
   const openAdvanced = () => {
     close();
@@ -231,7 +235,7 @@ export function ThreadSettingsPickerPopover(props: {
                           key={entry.option.key}
                           label={entry.option.label}
                           selected={entry.selected}
-                          onPress={() => pickModel(entry.option)}
+                          onPress={() => pickModel(entry.option, entry.selected)}
                         />
                       ))}
                     </ChoiceChipRow>
@@ -277,7 +281,7 @@ export function ThreadSettingsPickerPopover(props: {
                               accessibilityRole="radio"
                               accessibilityState={{ selected: entry.selected }}
                               className="min-h-10 flex-row items-center gap-2.5 px-3.5 py-2 active:opacity-70"
-                              onPress={() => pickListedModel(entry.option)}
+                              onPress={() => pickListedModel(entry.option, entry.selected)}
                             >
                               <ProviderIcon provider={entry.option.providerDriver} size={16} />
                               <Text
