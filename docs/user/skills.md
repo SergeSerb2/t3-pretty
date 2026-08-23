@@ -64,5 +64,8 @@ the copies stay inside the thread's worktree; in local mode they are refreshed a
 Per-thread picks from a provider CLI's home folder are copied the same way, so a skill that
 lives in `~/.codex/skills` can be turned on for a Claude thread and vice versa.
 
-On mobile there is no skills picker yet; threads started from mobile get your globally enabled
-skills automatically.
+On mobile, the new-task view has the same per-thread picker: tap **Skills** above the
+composer to search and toggle the skills on the connected machine. Rows marked **Global**
+are already on everywhere. From a provider CLI skill's `⋯` menu you can also enable or
+disable it for all threads, or uninstall it from that machine. Threads started from mobile
+get your globally enabled skills either way.
