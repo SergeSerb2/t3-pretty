@@ -11,7 +11,7 @@ import type {
   PullRequestListState,
   SourceControlProviderKind,
 } from "@t3tools/contracts";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ChevronDownIcon,
   EyeIcon,
@@ -68,6 +68,7 @@ import {
   CLEARED_PULL_REQUEST_LIST_SEARCH,
   persistedFiltersFromSearch,
   readPersistedPullRequestListFilters,
+  restoredListSearchToReplaceUrl,
   searchFromPersistedFilters,
   shouldRestorePersistedListFilters,
   writePersistedPullRequestListFilters,
@@ -248,6 +249,8 @@ export const Route = createFileRoute("/_chat/pull-requests")({
 function PullRequestsRouteView() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
+  const searchStr = useLocation({ select: (location) => location.searchStr });
+  const replacedRestoreUrl = useRef(false);
   const { environments } = useEnvironments();
   // Every connected environment that has said it can list pull requests. Sorted, so the query
   // keys, the scope key and the stored snapshot all read the same whichever order the
@@ -460,6 +463,18 @@ function PullRequestsRouteView() {
       }),
     [navigate],
   );
+
+  // validateSearch restores in memory; replace so the address bar matches without a persist write.
+  useEffect(() => {
+    if (replacedRestoreUrl.current) return;
+    const raw = Object.fromEntries(
+      new URLSearchParams(searchStr.startsWith("?") ? searchStr.slice(1) : searchStr),
+    );
+    const next = restoredListSearchToReplaceUrl(raw, persistedFiltersFromSearch(search));
+    if (next === null) return;
+    replacedRestoreUrl.current = true;
+    updateSearch(next);
+  }, [search, searchStr, updateSearch]);
 
   // Changing what the list contains must not leave a selection from the previous view open.
   // The project filter is untouched: it is the user's scope, not part of the selection.

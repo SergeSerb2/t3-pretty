@@ -2,6 +2,7 @@ import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  canCommitPullRequestListRestore,
   nextPullRequestEnvironmentId,
   restorePullRequestListFilters,
   type PersistedPullRequestListFilters,
@@ -46,6 +47,21 @@ describe("nextPullRequestEnvironmentId", () => {
     expect(nextPullRequestEnvironmentId(null, "env-1" as EnvironmentId, [env("env-1")])).toBe(
       "env-1",
     );
+  });
+});
+
+describe("canCommitPullRequestListRestore", () => {
+  it("waits while the saved environment is missing from a partial list", () => {
+    expect(canCommitPullRequestListRestore(saved(), [env("env-2")])).toBe(false);
+    expect(canCommitPullRequestListRestore(saved(), [])).toBe(false);
+  });
+
+  it("commits when the saved environment is present, or nothing was saved", () => {
+    expect(canCommitPullRequestListRestore(saved(), [env("env-1"), env("env-2")])).toBe(true);
+    expect(canCommitPullRequestListRestore(saved({ environmentId: null }), [env("env-2")])).toBe(
+      true,
+    );
+    expect(canCommitPullRequestListRestore(saved({ environmentId: null }), [])).toBe(true);
   });
 });
 

@@ -50,6 +50,20 @@ export function nextPullRequestEnvironmentId(
 }
 
 /**
+ * A missing saved server on a non-empty list can still be a hydrate flash. Commit only when there
+ * is nothing to wait for, or the saved id is actually present.
+ */
+export function canCommitPullRequestListRestore(
+  saved: PersistedPullRequestListFilters,
+  environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
+): boolean {
+  return (
+    saved.environmentId === null ||
+    environments.some((environment) => environment.environmentId === saved.environmentId)
+  );
+}
+
+/**
  * After the environment list has settled: keep project/host only when the saved server is still
  * present. A missing server (including an empty list) falls back to `preferred` without them.
  */

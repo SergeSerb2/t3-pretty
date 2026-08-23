@@ -15,6 +15,7 @@ import { useWorkspaceState } from "../../state/workspace";
 import { useHomeListOptions } from "../home/home-list-options";
 import { PullRequestsScreen, type PullRequestListEnvironment } from "./PullRequestsScreen";
 import {
+  canCommitPullRequestListRestore,
   nextPullRequestEnvironmentId,
   readPersistedPullRequestListFilters,
   restorePullRequestListFilters,
@@ -83,16 +84,19 @@ export function PullRequestsRouteScreen() {
     if (isLoadingSavedConnection) return;
     if (!scopeRestored) {
       // Empty can still be a hydrate flash; wait for a real list before committing.
-      if (environments.length === 0) return;
+      if (savedFilters.environmentId !== null && environments.length === 0) return;
       const restored = restorePullRequestListFilters(
         savedFilters,
         preferredEnvironmentId,
         environments,
       );
-      setScopeRestored(true);
       setSelectedEnvironmentId(restored.environmentId);
       setSelectedProjectId(restored.projectId);
       setSelectedHost(restored.host);
+      // A non-empty partial list can still omit the saved server; do not lock or persist that.
+      if (canCommitPullRequestListRestore(savedFilters, environments)) {
+        setScopeRestored(true);
+      }
       return;
     }
     const next = nextPullRequestEnvironmentId(
@@ -180,14 +184,21 @@ export function PullRequestsRouteScreen() {
         })
       }
       onEnvironmentChange={(environmentId) => {
+        setScopeRestored(true);
         setSelectedEnvironmentId(environmentId);
         setSelectedProjectId(undefined);
         setSelectedHost(undefined);
       }}
-      onHostChange={setSelectedHost}
+      onHostChange={(host) => {
+        setScopeRestored(true);
+        setSelectedHost(host);
+      }}
       onInvolvementChange={setInvolvement}
       onLoadMore={list.loadMore}
-      onProjectChange={setSelectedProjectId}
+      onProjectChange={(projectId) => {
+        setScopeRestored(true);
+        setSelectedProjectId(projectId);
+      }}
       onRefresh={() => void list.refreshFromHost()}
       onSearchQueryChange={setSearchQuery}
       onSelect={(entry) => {
@@ -201,6 +212,7 @@ export function PullRequestsRouteScreen() {
       }}
       onStateChange={setState}
       onClearFilters={() => {
+        setScopeRestored(true);
         setInvolvement("all");
         setState("open");
         setSelectedEnvironmentId(

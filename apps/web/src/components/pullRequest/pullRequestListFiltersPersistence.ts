@@ -110,6 +110,34 @@ export function shouldRestorePersistedListFilters(raw: Record<string, unknown>):
   return [...LIST_FILTER_KEYS, ...SELECTION_KEYS].every((key) => named[key] === undefined);
 }
 
+function isDefaultPersistedPullRequestListFilters(
+  filters: PersistedPullRequestListFilters,
+): boolean {
+  return (
+    filters.involvement === DEFAULT_PULL_REQUEST_LIST_FILTERS.involvement &&
+    filters.state === DEFAULT_PULL_REQUEST_LIST_FILTERS.state &&
+    filters.environmentId === undefined &&
+    filters.projectId === undefined &&
+    filters.host === undefined &&
+    filters.draft === undefined &&
+    filters.review === undefined &&
+    filters.checks === undefined
+  );
+}
+
+/**
+ * List params to write over a bare/default URL after restore. Null when the URL already names
+ * filters, or the restored list is itself the defaults (so `/pull-requests` already matches).
+ */
+export function restoredListSearchToReplaceUrl(
+  raw: Record<string, unknown>,
+  restored: PersistedPullRequestListFilters,
+): PersistedPullRequestListFilters | null {
+  if (!shouldRestorePersistedListFilters(raw)) return null;
+  const search = searchFromPersistedFilters(restored);
+  return isDefaultPersistedPullRequestListFilters(search) ? null : search;
+}
+
 export function readPersistedPullRequestListFilters(): PersistedPullRequestListFilters {
   try {
     const stored = getLocalStorageItem(

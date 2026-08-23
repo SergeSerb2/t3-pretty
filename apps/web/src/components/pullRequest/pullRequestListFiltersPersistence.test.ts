@@ -8,6 +8,7 @@ import {
   persistedFiltersFromSearch,
   persistedPullRequestListSearch,
   readPersistedPullRequestListFilters,
+  restoredListSearchToReplaceUrl,
   shouldRestorePersistedListFilters,
   writePersistedPullRequestListFilters,
 } from "./pullRequestListFiltersPersistence";
@@ -49,6 +50,23 @@ describe("persisted pull request list filters", () => {
     expect(shouldRestorePersistedListFilters({ draft: "hide" })).toBe(false);
     expect(shouldRestorePersistedListFilters({ environmentId: "env-1" })).toBe(false);
     expect(shouldRestorePersistedListFilters({ repository: "acme/web", number: 12 })).toBe(false);
+  });
+
+  it("replaces a bare URL with restored list params, not defaults or an already-named URL", () => {
+    const restored = {
+      involvement: "authored" as const,
+      state: "closed" as const,
+      environmentId: "env-1" as EnvironmentId,
+      host: "github.com",
+    };
+    expect(restoredListSearchToReplaceUrl({}, restored)).toEqual(restored);
+    expect(restoredListSearchToReplaceUrl({ involvement: "all", state: "open" }, restored)).toEqual(
+      restored,
+    );
+    expect(restoredListSearchToReplaceUrl({ q: "fix" }, restored)).toEqual(restored);
+    expect(restoredListSearchToReplaceUrl({ involvement: "reviewing" }, restored)).toBe(null);
+    expect(restoredListSearchToReplaceUrl({ repository: "acme/web" }, restored)).toBe(null);
+    expect(restoredListSearchToReplaceUrl({}, DEFAULT_PULL_REQUEST_LIST_FILTERS)).toBe(null);
   });
 
   it("does not treat a default-named URL as a write of the defaults", () => {
