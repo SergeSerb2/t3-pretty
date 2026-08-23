@@ -6,7 +6,6 @@ import type { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contra
 import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
 import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
-import { formatElapsed } from "@t3tools/shared/orchestrationTiming";
 import { SymbolView } from "../../components/AppSymbol";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
@@ -1154,7 +1153,7 @@ function renderFeedEntry(
   const { markdownStyles, iconSubtleColor, userBubbleColor } = props;
 
   if (entry.type === "working") {
-    return <WorkingTimelineRow startedAt={entry.createdAt} />;
+    return <WorkingTimelineRow />;
   }
 
   if (entry.type === "turn-fold") {
@@ -1360,85 +1359,65 @@ function renderFeedEntry(
   );
 }
 
-const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly startedAt: string }) {
+// Web parity: the timeline's live indicator is the shimmering "Thinking"
+// label (elapsed time surfaces later in the turn fold's "Worked for …").
+// Without CSS gradient masks, a highlighted copy of the label breathing over
+// the muted base stands in for web's sweeping focus band — same 2.2s period,
+// opacity-only so it stays on the compositor.
+const THINKING_SHIMMER_PERIOD_MS = 2_200;
+
+const WorkingTimelineRow = memo(function WorkingTimelineRow() {
   // Focus is read here rather than threaded through renderItem: a renderItem
   // identity change re-renders every visible row, and focus flips exactly
   // during navigation transitions — the worst moment to repaint the feed.
   const active = useIsFocused();
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!active) {
-      return;
-    }
-    setNowMs(Date.now());
-    const intervalId = setInterval(() => {
-      setNowMs(Date.now());
-    }, 1_000);
-    return () => clearInterval(intervalId);
-  }, [active, props.startedAt]);
-
-  const durationLabel = formatElapsed(props.startedAt, new Date(nowMs).toISOString()) ?? "0s";
-
-  return (
-    <View className="mb-4 flex-row items-center gap-2 px-1.5 py-1">
-      <View className="flex-row items-center gap-1">
-        <WorkingDot index={0} active={active} />
-        <WorkingDot index={1} active={active} />
-        <WorkingDot index={2} active={active} />
-      </View>
-      <Text className="font-t3-medium text-xs tabular-nums text-neutral-600 dark:text-neutral-400">
-        Working for {durationLabel}
-      </Text>
-    </View>
-  );
-});
-
-// Staggered opacity pulse for the working indicator. Opacity-only on the UI
-// thread, and only while the row is active. Reduce Motion parks the dots at
-// rest — never ReduceMotion.System inside withRepeat(-1), which busy-loops.
-const WorkingDot = memo(function WorkingDot(props: {
-  readonly index: number;
-  readonly active: boolean;
-}) {
+  const highlight = useSharedValue(0);
   const reduceMotion = useReducedMotion();
-  const dotOpacity = useSharedValue(0.55);
 
   useEffect(() => {
-    if (!props.active || reduceMotion) {
-      cancelAnimation(dotOpacity);
-      dotOpacity.value = reduceMotion ? 0.55 : withTiming(0.55, { duration: 180 });
+    if (!active || reduceMotion) {
+      cancelAnimation(highlight);
+      highlight.value = 0;
       return;
     }
-    dotOpacity.value = withDelay(
-      props.index * 170,
-      withRepeat(
-        withSequence(
-          withTiming(1, {
-            duration: 430,
-            easing: Easing.inOut(Easing.quad),
-          }),
-          withTiming(0.3, {
-            duration: 430,
-            easing: Easing.inOut(Easing.quad),
-          }),
-        ),
-        -1,
-        false,
+    highlight.value = withRepeat(
+      withSequence(
+        withTiming(1, {
+          duration: THINKING_SHIMMER_PERIOD_MS / 2,
+          easing: Easing.inOut(Easing.quad),
+        }),
+        withTiming(0, {
+          duration: THINKING_SHIMMER_PERIOD_MS / 2,
+          easing: Easing.inOut(Easing.quad),
+        }),
       ),
+      -1,
+      false,
     );
     return () => {
-      cancelAnimation(dotOpacity);
+      cancelAnimation(highlight);
+      highlight.value = 0;
     };
-  }, [dotOpacity, props.active, props.index, reduceMotion]);
+  }, [highlight, active, reduceMotion]);
 
-  const dotStyle = useAnimatedStyle(() => ({ opacity: dotOpacity.value }));
+  const highlightStyle = useAnimatedStyle(() => ({ opacity: highlight.value }));
 
   return (
-    <Animated.View
-      style={dotStyle}
-      className="h-1 w-1 rounded-full bg-neutral-400 dark:bg-neutral-500"
-    />
+    <View className="mb-4 px-1.5 py-1">
+      <View>
+        <Text className="font-t3-medium text-xs text-neutral-600 dark:text-neutral-400">
+          Thinking
+        </Text>
+        <Animated.View
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, highlightStyle]}
+        >
+          <Text className="font-t3-medium text-xs text-foreground">Thinking</Text>
+        </Animated.View>
+      </View>
+    </View>
   );
 });
 
