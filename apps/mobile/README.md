@@ -14,6 +14,9 @@ This app has three variants:
 - `preview`: persistent internal preview build, installable side-by-side as `T3 Pretty Preview`
 - `production`: public `T3 Pretty` or internal `T3 Pretty Internal` release build
 
+Development and preview are shared maintainer-only identities across build flavors. Only production
+supports installing the public and internal apps side by side.
+
 Run commands from `apps/mobile`.
 
 T3 Connect is optional. Public builds use `.env.example`; internal builds select the compatible

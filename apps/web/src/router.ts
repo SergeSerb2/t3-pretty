@@ -1,4 +1,4 @@
-import { createRouter, type RouterHistory } from "@tanstack/react-router";
+import { createRouter, trimPathRight, type RouterHistory } from "@tanstack/react-router";
 
 import { routeTree } from "./routeTree.gen";
 
@@ -6,7 +6,7 @@ export function getRouter(history: RouterHistory, basepath = "/") {
   return createRouter({
     routeTree,
     history,
-    basepath,
+    basepath: trimPathRight(basepath),
     context: {},
   });
 }
