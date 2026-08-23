@@ -68,6 +68,7 @@ describe("DesktopEarlyElectronStartup", () => {
   it("resolves the early linux Electron switches", () => {
     const options = resolveEarlyLinuxElectronOptions({
       env: {
+        T3CODE_BUILD_FLAVOR: "internal",
         T3CODE_HOME: "/home/user/.t3-test",
         XDG_CURRENT_DESKTOP: "niri",
         VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
@@ -89,6 +90,7 @@ describe("DesktopEarlyElectronStartup", () => {
   it("keeps implicit development state under ~/.t3/dev when T3CODE_HOME is unset", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
       env: {
+        T3CODE_BUILD_FLAVOR: "internal",
         VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
       },
       homeDirectory: "/home/user",
@@ -105,6 +107,7 @@ describe("DesktopEarlyElectronStartup", () => {
   it("treats whitespace-only T3CODE_HOME as unconfigured in development", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
       env: {
+        T3CODE_BUILD_FLAVOR: "internal",
         T3CODE_HOME: "   ",
         VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
       },
@@ -117,5 +120,19 @@ describe("DesktopEarlyElectronStartup", () => {
     });
 
     assert.equal(preference, "gnome-libsecret");
+  });
+
+  it("keeps implicit public settings and Linux identity separate", () => {
+    const options = resolveEarlyLinuxElectronOptions({
+      env: { T3CODE_BUILD_FLAVOR: "public" },
+      homeDirectory: "/home/user",
+      joinPath,
+      readFileString: (path) => {
+        assert.equal(path, "/home/user/.t3-pretty/userdata/desktop-settings.json");
+        return JSON.stringify({ linuxPasswordStore: "auto" });
+      },
+    });
+
+    assert.equal(options.linuxWmClass, "t3pretty");
   });
 });

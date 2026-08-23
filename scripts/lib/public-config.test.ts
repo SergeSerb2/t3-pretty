@@ -39,9 +39,12 @@ describe("loadRepoEnv", () => {
     expect(env.VITE_RELAY_OTLP_TRACES_URL).toBeUndefined();
     expect(env.VITE_RELAY_OTLP_TRACES_DATASET).toBeUndefined();
     expect(env.VITE_RELAY_OTLP_TRACES_TOKEN).toBeUndefined();
+    expect(env.T3CODE_BUILD_FLAVOR).toBe("public");
+    expect(env.VITE_T3CODE_BUILD_FLAVOR).toBe("public");
+    expect(env.EXPO_PUBLIC_T3CODE_BUILD_FLAVOR).toBe("public");
   });
 
-  it("projects the Surge Connect public defaults for fork builds", () => {
+  it("projects the public T3 Connect defaults", () => {
     const repoRoot = makeTemporaryDirectory();
     NodeFS.writeFileSync(
       NodePath.join(repoRoot, ".env.example"),
@@ -60,6 +63,29 @@ describe("loadRepoEnv", () => {
       T3CODE_RELAY_URL: "https://relay.fork.example.test",
       VITE_T3CODE_RELAY_URL: "https://relay.fork.example.test",
     });
+  });
+
+  it("selects internal defaults while preserving explicit overrides", () => {
+    const repoRoot = makeTemporaryDirectory();
+    NodeFS.writeFileSync(
+      NodePath.join(repoRoot, ".env.internal.example"),
+      "T3CODE_RELAY_URL=https://surge.example.test\nT3CODE_CLERK_PUBLISHABLE_KEY=pk_surge\n",
+    );
+    expect(loadRepoEnv({ baseEnv: { T3CODE_BUILD_FLAVOR: "internal" }, repoRoot })).toMatchObject({
+      T3CODE_BUILD_FLAVOR: "internal",
+      VITE_T3CODE_BUILD_FLAVOR: "internal",
+      EXPO_PUBLIC_T3CODE_BUILD_FLAVOR: "internal",
+      T3CODE_RELAY_URL: "https://surge.example.test",
+    });
+    expect(
+      loadRepoEnv({
+        baseEnv: {
+          T3CODE_BUILD_FLAVOR: "internal",
+          T3CODE_RELAY_URL: "https://override.example.test",
+        },
+        repoRoot,
+      }).T3CODE_RELAY_URL,
+    ).toBe("https://override.example.test");
   });
 
   it("applies process, root local, and root precedence in that order", () => {
@@ -115,6 +141,7 @@ describe("loadRepoEnv", () => {
         EXPO_PUBLIC_OTLP_TRACES_TOKEN: "mobile-token",
       }),
     ).toEqual({
+      buildFlavor: "public",
       clerkPublishableKey: "pk_legacy",
       clerkJwtTemplate: "template_legacy",
       clerkCliOAuthClientId: "oauth_canonical",
@@ -145,6 +172,9 @@ describe("loadRepoEnv", () => {
       VITE_RELAY_OTLP_TRACES_URL: "https://api.axiom.co/v1/traces",
       VITE_RELAY_OTLP_TRACES_DATASET: "relay-client-traces",
       VITE_RELAY_OTLP_TRACES_TOKEN: "relay-client-token",
+      T3CODE_BUILD_FLAVOR: "public",
+      VITE_T3CODE_BUILD_FLAVOR: "public",
+      EXPO_PUBLIC_T3CODE_BUILD_FLAVOR: "public",
     });
   });
 
@@ -160,6 +190,9 @@ describe("loadRepoEnv", () => {
         repoRoot: makeTemporaryDirectory(),
       }),
     ).toEqual({
+      T3CODE_BUILD_FLAVOR: "public",
+      VITE_T3CODE_BUILD_FLAVOR: "public",
+      EXPO_PUBLIC_T3CODE_BUILD_FLAVOR: "public",
       T3CODE_RELAY_URL: "https://relay.example.test",
       VITE_T3CODE_RELAY_URL: "https://relay.example.test",
       T3CODE_MOBILE_OTLP_TRACES_URL: "https://api.axiom.co/v1/traces",

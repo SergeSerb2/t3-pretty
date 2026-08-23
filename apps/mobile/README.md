@@ -12,14 +12,13 @@ This app has three variants:
 
 - `development`: Expo dev client, installable side-by-side as `T3 Pretty Dev`
 - `preview`: persistent internal preview build, installable side-by-side as `T3 Pretty Preview`
-- `production`: store/release build as `T3 Pretty`
+- `production`: public `T3 Pretty` or internal `T3 Pretty Internal` release build
 
 Run commands from `apps/mobile`.
 
-Surge Connect is optional. T3 Pretty source builds use the fork's checked-in public client
-configuration, while other clones can remove those defaults to disable it. Overrides belong in the
-repository-root `.env` or `.env.local`, not an `apps/mobile/.env` file. See
-[`../../.env.example`](../../.env.example).
+T3 Connect is optional. Public builds use `.env.example`; internal builds select the compatible
+Surge Connect defaults with `T3CODE_BUILD_FLAVOR=internal`. Overrides belong in the repository-root
+`.env` or `.env.local`, not an `apps/mobile/.env` file.
 
 ## Development
 

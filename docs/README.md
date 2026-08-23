@@ -15,7 +15,7 @@
 - [Customize a project icon](./user/project-settings.md)
 - [Mobile appearance](./user/mobile-appearance.md)
 - [Remote access](./user/remote-access.md)
-- [Surge Connect mesh](./user/remote-access.md#surge-connect)
+- [T3 Connect mesh](./user/remote-access.md#t3-connect)
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Automatic pull requests](./user/auto-pull-requests.md)

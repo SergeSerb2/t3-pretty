@@ -8,7 +8,7 @@ keeping a terminal open.
 Install the T3 Pretty CLI first (not `npx t3`, which is upstream T3 Code):
 
 ```sh
-curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
+curl -fsSL https://github.com/SergeSerb2/t3-pretty/releases/latest/download/install.sh | sh
 ```
 
 Then install the service:
@@ -26,7 +26,7 @@ t3 service status
 Update or repair it:
 
 ```sh
-npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz t3 service update
+npx --yes --package https://github.com/SergeSerb2/t3-pretty/releases/latest/download/t3.tgz t3 service update
 ```
 
 Stop it and remove it from startup:
@@ -46,10 +46,11 @@ updates roll back with the server version. An older launcher may require one loc
 
 ## Platform Support
 
-**Linux** uses a systemd user unit at `~/.config/systemd/user/t3code.service`. The service starts
+**Linux** uses a systemd user unit at `~/.config/systemd/user/t3pretty.service`. The service starts
 when the machine boots and keeps running after you log out (lingering is enabled during install).
 
-**macOS** uses a launch agent at `~/Library/LaunchAgents/com.t3tools.t3code.service.plist`. It
+**macOS** uses a launch agent at
+`~/Library/LaunchAgents/com.sergeserb.t3pretty.service.plist`. It
 starts when you log in, not when the Mac boots, and it stops when you log out; macOS has no
 equivalent of Linux lingering for user agents. For a Mac that should stay reachable unattended,
 turn on automatic login (System Settings → Users & Groups; unavailable while FileVault is on) and
@@ -70,10 +71,13 @@ A few more macOS notes:
 
 **Windows** is not supported yet.
 
-## Using It with Surge Connect
+The internal flavor keeps the legacy `t3code.service` and
+`com.t3tools.t3code.service.plist` names so both installations remain separate.
 
-Surge Connect may offer to install the service during setup so the host stays reachable in the
-background. This is only an onboarding shortcut: the service and Surge Connect are managed separately.
+## Using It with T3 Connect
 
-Signing out of Surge Connect does not remove the service. Use `t3 service uninstall` when you no
+T3 Connect may offer to install the service during setup so the host stays reachable in the
+background. This is only an onboarding shortcut: the service and T3 Connect are managed separately.
+
+Signing out of T3 Connect does not remove the service. Use `t3 service uninstall` when you no
 longer want T3 Code to start in the background.

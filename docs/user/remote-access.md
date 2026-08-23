@@ -10,7 +10,9 @@ If a server is already running on this machine, mint a fresh pairing token and Q
 t3 pair
 ```
 
-`t3 pair` finds the running server (the shared `~/.t3` install, or the current worktree's dev server when run inside one), issues a one-time pairing token, and prints the pairing URL as a QR code you can scan from your phone.
+`t3 pair` finds the running server (the public `~/.t3-pretty` install, the internal `~/.t3`
+install, or the current worktree's dev server when run inside one), issues a one-time pairing token,
+and prints the pairing URL as a QR code you can scan from your phone.
 
 If the server is only bound to loopback, the printed URL is not reachable from another device. Pair over your tailnet instead:
 
@@ -32,24 +34,27 @@ That gives you:
 - transport security at the network layer
 - less exposure than opening the server to the public internet
 
-## Surge Connect
+## T3 Connect
 
-Surge Connect provides an account-based mesh when you want to reach your environments without
+Public builds call this service **T3 Connect** and use existing T3 accounts. The compatible internal
+service appears as **Surge Connect** instead; the steps are identical.
+
+The managed connection service provides an account-based mesh when you want to reach your environments without
 manually sharing an address or pairing link with every device.
 
 On the computer that hosts an environment:
 
 1. Open **Settings** → **Connections**.
-2. Under **Surge Connect**, select **Sign in to Surge Code** and finish signing in.
-3. Under **This environment**, turn on **Surge Connect**. The environment becomes available to the
+2. Under **T3 Connect**, select **Sign in to T3** and finish signing in.
+3. Under **This environment**, turn on **T3 Connect**. The environment becomes available to the
    other devices signed in to the same account.
 
 On a new device:
 
-1. Open **Settings** → **Connections** and sign in to the same Surge Code account.
+1. Open **Settings** → **Connections** and sign in to the same T3 account.
 2. Find the host under **Remote Environments** and select **Connect**.
 
-In the desktop app, selecting **Connect** also makes the new device available through Surge
+In the desktop app, selecting **Connect** also makes the new device available through T3
 Connect. Once both desktops participate, each app automatically keeps the full account mesh in its
 connection list, including machines added later. Threads from every linked desktop are therefore
 available in either app without repeating **Connect** on both sides.
@@ -58,26 +63,26 @@ The **Remote Environments** list shows one row per machine. When several environ
 the same machine (for example an installed app and a second server on one host), only the working
 connections are shown while at least one is online, and offline duplicates collapse away instead of
 cluttering the list. Saved direct LAN or Tailscale connections are no longer offered in the app —
-connect through Surge Connect instead.
+connect through T3 Connect instead.
 
 Settle and snooze still work when a linked machine is offline. The change is saved on this device
-and applied on that machine as soon as Surge Connect can reach it again.
+and applied on that machine as soon as T3 Connect can reach it again.
 
 A headless server has no desktop connection list to synchronize, so it remains intentionally
 one-way: desktop apps can add it from the mesh, but it does not gain their threads. Browser-only
 clients also keep their explicitly saved connections.
 
-If a host says **Relay offline**, open **Connections** on that host and enable Surge Connect there.
+If a host says **Relay offline**, open **Connections** on that host and enable T3 Connect there.
 The desktop app repairs links left on an older relay or signed in to a different account before it
 synchronizes the mesh. Managed SSH backends launched by the desktop app inherit that build's public
-Surge Connect configuration instead of silently joining another relay deployment.
+T3 Connect configuration instead of silently joining another relay deployment.
 
-Use **Manage account** on the Surge Code account row to inspect or change the signed-in account.
+Use **Manage account** on the T3 account row to inspect or change the signed-in account.
 **Publish agent activity** is a separate setting for mobile notifications and Live Activities; it
-does not need the Surge Connect tunnel to be on. The iOS Live Activity lists your threads by name —
+does not need the T3 Connect tunnel to be on. The iOS Live Activity lists your threads by name —
 what each one is doing, a live elapsed timer while it works, and how long anything blocked has been
 waiting — with threads that need you first. Tap it to open the thread that needs attention, or the
-first working thread. If the account row says **Unavailable**, that build does not include Surge Connect
+first working thread. If the account row says **Unavailable**, that build does not include T3 Connect
 configuration.
 
 ## Enabling Network Access
@@ -152,11 +157,10 @@ From there, connect from another device in either of these ways:
 - in the mobile app, enter the host and token separately
 - in the hosted web app, open a hosted pairing URL when the backend is reachable over HTTPS
 
-Install the T3 Pretty CLI on the remote machine first — `npx t3` is upstream T3
-Code and will not join Surge Connect:
+Install the T3 Pretty CLI on the remote machine first — `npx t3` is upstream T3 Code:
 
 ```bash
-curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
+curl -fsSL https://github.com/SergeSerb2/t3-pretty/releases/latest/download/install.sh | sh
 ```
 
 Use `t3 serve --help` for the full flag reference. It supports the same general startup options as the normal server command, including an optional `cwd` argument.

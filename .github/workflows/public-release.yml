@@ -1,0 +1,366 @@
+name: Public release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Numeric public release version (for example 0.0.34)
+        required: true
+        type: string
+      publish_release:
+        description: Publish the GitHub Release after every build succeeds
+        required: true
+        default: false
+        type: boolean
+      deploy_pages:
+        description: Deploy the hosted web build to GitHub Pages
+        required: true
+        default: false
+        type: boolean
+      queue_mobile_builds:
+        description: Queue public iOS and Android builds on EAS
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-release
+  cancel-in-progress: false
+
+env:
+  T3CODE_BUILD_FLAVOR: public
+  T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/
+  CI: true
+
+jobs:
+  preflight:
+    name: Validate public release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Validate version and release target
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          VERSION: ${{ inputs.version }}
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
+        run: |
+          set -euo pipefail
+          [[ "$REF" == "refs/heads/main" ]] || {
+            echo "public releases must run from main" >&2
+            exit 1
+          }
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "version must be numeric semver (for example 0.0.34)" >&2
+            exit 1
+          }
+          if [[ "$PUBLISH_RELEASE" == "true" ]] &&
+             gh release view "public-v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "public-v${VERSION} already exists" >&2
+            exit 1
+          fi
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+  wsl_node_pty:
+    name: Build WSL node-pty
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=t3...
+      - name: Compile Linux node-pty for WSL
+        run: |
+          set -euo pipefail
+          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
+          pty_dir="$(dirname "$pty_pkg")"
+          (cd "$pty_dir" && npx --yes node-gyp rebuild)
+          mkdir -p wsl-prebuild
+          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
+          file wsl-prebuild/pty.node
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wsl-node-pty-x64
+          path: wsl-prebuild/pty.node
+          if-no-files-found: error
+
+  desktop:
+    name: Desktop (${{ matrix.label }})
+    needs: [preflight, wsl_node_pty]
+    if: ${{ !cancelled() && needs.preflight.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Linux x64
+            runner: ubuntu-latest
+            platform: linux
+            target: AppImage
+            arch: x64
+            rust_target: x86_64-unknown-linux-gnu
+          - label: macOS arm64
+            runner: macos-latest
+            platform: mac
+            target: dmg
+            arch: arm64
+            rust_target: aarch64-apple-darwin
+          - label: Windows x64
+            runner: windows-latest
+            platform: win
+            target: nsis
+            arch: x64
+            rust_target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/desktop...
+              - --filter=t3...
+              - --filter=@t3tools/scripts...
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+      - name: Install ImageMagick
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+      - name: Download WSL prebuild
+        if: matrix.platform == 'win'
+        uses: actions/download-artifact@v8
+        with:
+          name: wsl-node-pty-x64
+          path: wsl-prebuild
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
+      - name: Build unsigned public artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --platform "${{ matrix.platform }}"
+            --target "${{ matrix.target }}"
+            --arch "${{ matrix.arch }}"
+            --build-version "${{ needs.preflight.outputs.version }}"
+            --verbose
+          )
+          if [[ "${{ matrix.platform }}" == "win" ]]; then
+            args+=(--wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node")
+          fi
+          vp run dist:desktop:artifact "${args[@]}"
+      - name: Collect desktop files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p public-desktop
+          find release -maxdepth 1 -type f \
+            \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o \
+               -name '*.exe' -o -name '*.blockmap' -o -name '*.yml' \) \
+            -exec cp {} public-desktop/ \;
+          test -n "$(find public-desktop -type f -print -quit)"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: public-desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: public-desktop/*
+          if-no-files-found: error
+
+  cli:
+    name: Public CLI
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=t3...
+              - --filter=@t3tools/scripts...
+      - run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
+      - run: vp run --filter t3 build:bundle
+      - name: Pack public CLI and installer
+        run: |
+          set -euo pipefail
+          mkdir -p public-cli
+          node apps/server/scripts/cli.ts pack \
+            --app-version "${{ needs.preflight.outputs.version }}" \
+            --out-dir public-cli \
+            --verbose
+          cp "public-cli/t3-${{ needs.preflight.outputs.version }}.tgz" public-cli/t3.tgz
+          cp scripts/fork/install-cli.sh public-cli/install.sh
+          sed -i \
+            's|https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest|https://github.com/SergeSerb2/t3-pretty/releases/latest/download|g; s|Surge Connect|T3 Connect|g' \
+            public-cli/install.sh
+          chmod 755 public-cli/install.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: public-cli
+          path: public-cli/*
+          if-no-files-found: error
+
+  mobile:
+    name: Public mobile
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_VARIANT: production
+      T3CODE_MOBILE_APP_VERSION: ${{ needs.preflight.outputs.version }}
+      T3CODE_MOBILE_EAS_PROJECT_ID: ${{ vars.T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID }}
+      T3CODE_MOBILE_EXPO_OWNER: ${{ vars.T3CODE_PUBLIC_MOBILE_EXPO_OWNER }}
+      T3CODE_MOBILE_EXPO_SLUG: ${{ vars.T3CODE_PUBLIC_MOBILE_EXPO_SLUG }}
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+      - name: Export mobile bundles
+        working-directory: apps/mobile
+        run: vp exec expo export --platform all --output-dir dist-public
+      - name: Archive mobile export
+        run: tar -czf "public-mobile-${{ needs.preflight.outputs.version }}.tar.gz" -C apps/mobile/dist-public .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: public-mobile
+          path: public-mobile-${{ needs.preflight.outputs.version }}.tar.gz
+          if-no-files-found: error
+      - name: Queue public EAS builds
+        if: ${{ inputs.queue_mobile_builds }}
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          test -n "$EXPO_TOKEN" || { echo "EXPO_TOKEN is required" >&2; exit 1; }
+          test -n "$T3CODE_MOBILE_EAS_PROJECT_ID" || { echo "T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID is required" >&2; exit 1; }
+          test -n "$T3CODE_MOBILE_EXPO_OWNER" || { echo "T3CODE_PUBLIC_MOBILE_EXPO_OWNER is required" >&2; exit 1; }
+          test -n "$T3CODE_MOBILE_EXPO_SLUG" || { echo "T3CODE_PUBLIC_MOBILE_EXPO_SLUG is required" >&2; exit 1; }
+          npx --yes eas-cli build --platform all --profile production --non-interactive --no-wait
+
+  web:
+    name: Public hosted web
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_VERSION: ${{ needs.preflight.outputs.version }}
+      T3CODE_WEB_BASE_PATH: /t3-pretty/
+      VITE_HOSTED_APP_CHANNEL: latest
+      VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/
+      VITE_STATIC_HOSTED_APP: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/web...
+      - run: vp run --filter @t3tools/web build
+      - name: Archive hosted web build
+        run: tar -czf "public-web-${{ needs.preflight.outputs.version }}.tar.gz" -C apps/web/dist .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: public-web
+          path: public-web-${{ needs.preflight.outputs.version }}.tar.gz
+          if-no-files-found: error
+      - name: Configure GitHub Pages
+        if: ${{ inputs.deploy_pages }}
+        uses: actions/configure-pages@v5
+      - name: Upload GitHub Pages artifact
+        if: ${{ inputs.deploy_pages }}
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: apps/web/dist
+
+  deploy_pages:
+    name: Deploy public hosted web
+    needs: web
+    if: ${{ inputs.deploy_pages && needs.web.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+  release:
+    name: Publish public GitHub Release
+    needs: [preflight, desktop, cli, mobile, web]
+    if: ${{ inputs.publish_release && !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: public-*
+          path: public-release-assets
+          merge-multiple: true
+      - name: Publish immutable public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' assets < <(find public-release-assets -type f -print0)
+          ((${#assets[@]} > 0))
+          gh release create "public-v${VERSION}" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "T3 Pretty ${VERSION}" \
+            --generate-notes

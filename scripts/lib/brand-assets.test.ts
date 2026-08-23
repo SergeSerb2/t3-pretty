@@ -85,6 +85,16 @@ describe("brand-assets", () => {
     });
   });
 
+  it("maps internal builds to the cream-on-forest icon family", () => {
+    expect(resolveWebIconOverrides("internal", "apps/web/dist")).toContainEqual({
+      sourceRelativePath: BRAND_ASSET_PATHS.internalWebFaviconIco,
+      targetRelativePath: "apps/web/dist/favicon.ico",
+    });
+    expect(BRAND_ASSET_PATHS.internalMacIconPng).toBe(
+      "assets/internal/t3-pretty-internal-1024.png",
+    );
+  });
+
   it("maps hosted release channels to web asset brands", () => {
     expect(resolveWebAssetBrandForChannel("latest")).toBe("production");
     expect(resolveWebAssetBrandForChannel("nightly")).toBe("nightly");

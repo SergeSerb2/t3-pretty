@@ -13,6 +13,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as NetService from "@t3tools/shared/Net";
+import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
@@ -195,11 +196,14 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
         assert.fail(`Expected ShowHelp, got ${error._tag}`);
       }
       assert.deepEqual(error.commandPath, ["t3", "connect"]);
-      assert.include(error.errors[0]?.message ?? "", "missing T3 Connect public configuration");
+      assert.include(
+        error.errors[0]?.message ?? "",
+        `${CONNECT_BRANDING.connectName} commands are unavailable`,
+      );
 
       const output = (yield* TestConsole.errorLines).join("\n");
       assert.include(output, "ERROR");
-      assert.include(output, "missing T3 Connect public configuration");
+      assert.include(output, `${CONNECT_BRANDING.connectName} commands are unavailable`);
     }).pipe(Effect.provide(Layer.mergeAll(CliRuntimeLayer, TestConsole.layer))),
   );
 
@@ -249,10 +253,13 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
         runConnectCli(["connect", "status", "--base-dir", baseDir]),
       );
 
-      assert.include(output, "T3 Connect\n  Exposure: disabled");
+      assert.include(output, `${CONNECT_BRANDING.connectName}\n  Exposure: disabled`);
       assert.include(output, "  Authorization: missing");
       assert.include(output, "  Environment link: not provisioned");
-      assert.include(output, "Next: Run `t3 connect link` to authorize and enable T3 Connect.");
+      assert.include(
+        output,
+        `Next: Run \`t3 connect link\` to authorize and enable ${CONNECT_BRANDING.connectName}.`,
+      );
     }),
   );
 
@@ -300,7 +307,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
         runConnectCli(["connect", "unlink", "--base-dir", baseDir]),
       );
 
-      assert.equal(output, "T3 Connect is disabled locally.");
+      assert.equal(output, `${CONNECT_BRANDING.connectName} is disabled locally.`);
     }),
   );
 
@@ -320,7 +327,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
 
       assert.equal(
         output,
-        "Signed out of T3 Connect locally.\nThe background service is managed separately with `t3 service`.",
+        `Signed out of ${CONNECT_BRANDING.connectName} locally.\nThe background service is managed separately with \`t3 service\`.`,
       );
       assert.isFalse(NodeFS.existsSync(tokenPath));
     }),

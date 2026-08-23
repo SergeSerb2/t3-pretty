@@ -32,7 +32,7 @@ The available action depends on how that server was started. T3 Code does not up
 servers silently in the background.
 
 An older background-service launcher may ask you to run the exact
-`npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-<version>.tgz t3 service update`
+`npx --yes --package https://github.com/SergeSerb2/t3-pretty/releases/download/public-v<version>/t3-<version>.tgz t3 service update`
 command on the server machine. That one local update installs the
 rollback support needed for later remote updates, including versions that change the database.
 
@@ -49,7 +49,7 @@ If the server instead runs as the T3 Pretty background service, update the servi
 pin the same version:
 
 ```sh
-npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-<client-version>.tgz t3 service update
+npx --yes --package https://github.com/SergeSerb2/t3-pretty/releases/download/public-v<client-version>/t3-<client-version>.tgz t3 service update
 ```
 
 `service update` installs the version of the CLI that invoked it, so updating from `t3.tgz`

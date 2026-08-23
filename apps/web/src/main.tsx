@@ -54,7 +54,10 @@ const ElectronClerkRoot = React.lazy(async () => {
 });
 
 // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
-const history = isElectron ? createHashHistory() : createBrowserHistory();
+const history =
+  isElectron || import.meta.env.VITE_STATIC_HOSTED_APP
+    ? createHashHistory()
+    : createBrowserHistory();
 
 const router = getRouter(history);
 
@@ -64,7 +67,6 @@ if (isElectron) {
 }
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
-
 
 const app = <AppRoot router={router} />;
 

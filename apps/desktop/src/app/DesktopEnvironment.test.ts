@@ -70,8 +70,8 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
       assert.equal(environment.clientDistPath, "/repo/apps/server/dist/client");
       assert.equal(environment.backendCwd, "/repo");
-      assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev");
-      assert.equal(environment.linuxWmClass, "t3code-dev");
+      assert.equal(environment.appUserModelId, "com.sergeserb.t3pretty.dev");
+      assert.equal(environment.linuxWmClass, "t3pretty-dev");
       assert.deepEqual(
         Option.map(environment.devServerUrl, (url) => url.href),
         Option.some("http://localhost:5173/"),
@@ -131,8 +131,25 @@ describe("DesktopEnvironment", () => {
       );
       const production = yield* makeEnvironment();
 
-      assert.equal(development.stateDir, "/Users/alice/.t3/dev");
-      assert.equal(production.stateDir, "/Users/alice/.t3/userdata");
+      assert.equal(development.stateDir, "/Users/alice/.t3-pretty/dev");
+      assert.equal(production.stateDir, "/Users/alice/.t3-pretty/userdata");
+    }),
+  );
+
+  it.effect("preserves internal identity and state paths", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        { buildFlavor: "internal" },
+        { VITE_DEV_SERVER_URL: "http://localhost:5173" },
+      );
+
+      assert.equal(environment.baseDir, "/Users/alice/.t3");
+      assert.equal(environment.stateDir, "/Users/alice/.t3/dev");
+      assert.equal(environment.displayName, "T3 Pretty Internal (Dev)");
+      assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev");
+      assert.equal(environment.linuxWmClass, "t3code-dev");
+      assert.equal(environment.userDataDirName, "t3code-dev");
+      assert.include(environment.developmentDockIconPath, "t3-pretty-internal-1024.png");
     }),
   );
 

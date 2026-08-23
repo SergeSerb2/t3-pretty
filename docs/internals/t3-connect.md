@@ -2,9 +2,10 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-Surge Connect is T3 Pretty's fork-operated deployment and user-facing name for the upstream T3
-Connect protocol. Technical API routes, environment variables, types, and the `t3 connect` CLI stay
-unchanged for compatibility. Surge Connect uses one Clerk application for web, desktop, and mobile
+T3 Connect is the public build's deployment and user-facing name for the upstream protocol. Internal
+builds use the same protocol with the fork-operated Surge Connect relay and branding. Technical API
+routes, environment variables, types, and the `t3 connect` CLI stay unchanged for compatibility.
+Each flavor uses one Clerk application for web, desktop, and mobile
 authentication. The relay verifies two kinds of bearer credential: template JWTs generated from the
 `t3-relay` template with the shared `t3-code-relay` audience, and Clerk OAuth tokens issued to the
 CLI. `verifyRelayClientBearerToken` in `infra/relay/src/http/Api.ts` tries the template/session path
@@ -16,7 +17,7 @@ For the wider system diagram, see
 
 ## Application Keys
 
-This fork operates its own Surge Connect relay (`https://relay.sergeserbinenko.com`, deployed by
+The internal flavor operates its own Surge Connect relay (`https://relay.sergeserbinenko.com`, deployed by
 `deploy-relay.yml` from `infra/relay/`) with a raised managed-tunnel limit — the parent's
 production relay caps managed tunnels at 3 per user. The repository-root example file supplies the
 checked-in public defaults, so fresh source builds do not need a private environment file:
@@ -25,8 +26,9 @@ checked-in public defaults, so fresh source builds do not need a private environ
 vp run dev
 ```
 
-`.env.example` carries the fork's public identifiers (the same values baked into fork release
-builds). To target a different Clerk application or relay, override the values in a repository-root
+`.env.example` carries the public T3 Connect identifiers. `.env.internal.example` carries the
+internal Surge Connect identifiers. Select the internal flavor with `T3CODE_BUILD_FLAVOR=internal`;
+the default is `public`. To target a different Clerk application or relay, override the values in a repository-root
 `.env` or `.env.local` file:
 
 ```dotenv
@@ -50,7 +52,7 @@ Configuration precedence is:
 1. Process or CI environment variables.
 2. Repository-root `.env.local`.
 3. Repository-root `.env`.
-4. Checked-in Surge Connect public defaults from `.env.example`.
+4. Checked-in defaults from `.env.example` (public) or `.env.internal.example` (internal flavor).
 
 The Clerk publishable key, JWT template name, CLI OAuth client ID, and relay URL are public
 identifiers, not secrets.
@@ -263,8 +265,8 @@ reuse stale Shared Web Credentials metadata for the same app/version pair.
 Verify the installed bundle before testing:
 
 ```sh
-codesign --verify --deep --strict "/Applications/T3 Code (Alpha).app"
-codesign -d --entitlements :- "/Applications/T3 Code (Alpha).app"
+codesign --verify --deep --strict "/Applications/T3 Pretty.app"
+codesign -d --entitlements :- "/Applications/T3 Pretty.app"
 ```
 
 The current mobile UI uses Clerk's native authentication view. If a future mobile browser OAuth
@@ -272,12 +274,13 @@ flow uses a custom redirect URI, add that exact URI to the same allowlist.
 
 ## Sign-in Surfaces
 
-Signed-in users manage Surge Connect under **Connections**. The page begins with a persistent Surge
-Code account row: signed-out users get a **Sign in to Surge Code** action, while signed-in users
-see their account and a **Manage account** action. The settings sidebar also renders
+Signed-in users manage the selected Connect service under **Connections**. Public builds label the
+service T3 Connect and the account T3; internal builds label them Surge Connect and Surge Code. The
+page begins with a persistent account row: signed-out users get a sign-in action, while signed-in
+users see their account and a **Manage account** action. The settings sidebar also renders
 `T3ConnectSidebarSignIn` while signed out and `T3ConnectSidebarAvatar` while signed in. All account
 controls are gated on cloud public configuration; an unconfigured build keeps the Connections row
-visible and explains why Surge Connect is unavailable. Desktop renders the same web bundle, so it
+visible and explains why managed connections are unavailable. Desktop renders the same web bundle, so it
 has these controls too. The waitlist enrollment flow from the private beta was removed when Connect
 went GA; sign-up is open unless a Clerk restriction below is enabled.
 

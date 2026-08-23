@@ -22,6 +22,14 @@ const relayWorkflow = NodeFS.readFileSync(
   NodePath.resolve(here, "../../.github/workflows/deploy-relay.yml"),
   "utf8",
 );
+const publicReleaseWorkflow = NodeFS.readFileSync(
+  NodePath.resolve(here, "../../.github/workflows/public-release.yml"),
+  "utf8",
+);
+const upstreamSyncWorkflow = NodeFS.readFileSync(
+  NodePath.resolve(here, "../../.github/workflows/fork-upstream-sync.yml"),
+  "utf8",
+);
 
 function jobBlock(source, jobId) {
   const start = source.indexOf(`\n  ${jobId}:\n`);
@@ -139,7 +147,7 @@ describe("T3 Pretty release runner placement", () => {
     // agent; DMG/iOS/relay/sync must never be assigned to a Linux box.
     // upstream-sync, macos-dmg, ios-mobile, deploy-relay — reviews stay
     // queue-wide.
-    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 4);
+    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 5);
   });
 
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
@@ -328,6 +336,19 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(relayWorkflow, "relay.sergeserbinenko.com");
     assert.include(relayWorkflow, "load-buildkite-secrets.sh");
     assert.include(relayWorkflow, "Require relay deploy credentials");
+  });
+
+  it("keeps public releases manual and internal automation off the GitHub mirror", () => {
+    assert.notInclude(publicReleaseWorkflow, "\n  push:");
+    assert.notInclude(publicReleaseWorkflow, "\n  schedule:");
+    assert.include(publicReleaseWorkflow, "T3CODE_BUILD_FLAVOR: public");
+    assert.include(publicReleaseWorkflow, "T3CODE_WEB_BASE_PATH: /t3-pretty/");
+    assert.include(publicReleaseWorkflow, '[[ "$REF" == "refs/heads/main" ]]');
+    assert.include(publicReleaseWorkflow, "name: wsl-node-pty-x64");
+    assert.include(publicReleaseWorkflow, "pattern: public-*");
+    for (const workflow of [desktopWorkflow, relayWorkflow, upstreamSyncWorkflow]) {
+      assert.include(workflow, "github.repository != 'SergeSerb2/t3-pretty'");
+    }
   });
 });
 
