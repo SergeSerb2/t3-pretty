@@ -44,6 +44,7 @@ describe("T3 Pretty release runner placement", () => {
     const preflight = jobBlock(desktopWorkflow, "preflight");
     const wsl = jobBlock(desktopWorkflow, "build_wsl_node_pty");
 
+    assert.include(desktopWorkflow, "T3CODE_BUILD_FLAVOR: internal");
     assert.include(preflight, "runs-on: ubuntu-latest");
     assert.include(wsl, "runs-on: ubuntu-latest");
     assert.notInclude(desktopWorkflow, "\n  build_macos:\n");

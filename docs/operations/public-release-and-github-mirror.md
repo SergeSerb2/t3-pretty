@@ -29,6 +29,8 @@ Set `deploy_pages` to publish the hosted web build to
 of the app entry point so direct browser-history pairing and Connect callback
 routes load under the `/t3-pretty/` project path. This is the manual T3 Pretty
 public target; `https://app.t3.codes` remains the upstream T3 Code deployment.
+Web and desktop pairing links use the Pages client; CLI OAuth intentionally
+keeps the registered `https://app.t3.codes/connect/callback` URI.
 
 Set `queue_mobile_builds` to queue public iOS and Android builds on EAS. That
 option requires the repository Actions variables
