@@ -14,7 +14,10 @@ The first run preserves the old GitHub `main` tip in
 archive exists, any non-ancestor GitHub `main` tip aborts the mirror. Configure
 `GITHUB_MIRROR_SSH_KEY` as a dedicated deploy key with write access only to the
 mirror repository, and allow deploy keys to bypass the GitHub `main` pull-request
-ruleset. Do not use a personal token.
+ruleset. Do not use a personal token. Do not expand that variable in the
+Buildkite `command:` block: the agent interpolates `${}` before
+`load-buildkite-secrets.sh` runs, so a YAML `test -n "${GITHUB_MIRROR_SSH_KEY:-}"`
+becomes `test -n ""` and the step dies with the key still on disk.
 
 `.github/workflows/public-release.yml` is manual-only and sets
 `T3CODE_BUILD_FLAVOR=public`. It builds unsigned macOS DMG, Windows NSIS, and
