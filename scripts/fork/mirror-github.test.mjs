@@ -5,8 +5,10 @@ import * as NodeURL from "node:url";
 
 import { assert, it } from "@effect/vitest";
 
-const script = NodeFS.readFileSync(
-  NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "mirror-github.sh"),
+const here = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
+const script = NodeFS.readFileSync(NodePath.resolve(here, "mirror-github.sh"), "utf8");
+const pipeline = NodeFS.readFileSync(
+  NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
   "utf8",
 );
 it("uses a guarded, one-way public mirror", () => {
@@ -30,4 +32,7 @@ it("uses a guarded, one-way public mirror", () => {
   NodeAssert.doesNotMatch(script, /git fetch github main --tags/);
   NodeAssert.doesNotMatch(script, /git diff --quiet/);
   NodeAssert.doesNotMatch(script, /refs\/heads\/\*/);
+  NodeAssert.doesNotMatch(pipeline, /test -n "\$\{GITHUB_MIRROR_SSH_KEY/);
+  assert.match(pipeline, /load-buildkite-secrets\.sh GITHUB_MIRROR_SSH_KEY/);
+  assert.match(script, /GITHUB_MIRROR_SSH_KEY:\?/);
 });
