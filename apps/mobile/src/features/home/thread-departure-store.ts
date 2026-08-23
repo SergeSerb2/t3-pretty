@@ -30,7 +30,7 @@ const departingKindByKey = new Map<string, ThreadDepartureKind>();
 const arrivingKeys = new Set<string>();
 const departureExpiryTimerByKey = new Map<string, ReturnType<typeof setTimeout>>();
 const arriveExpiryTimerByKey = new Map<string, ReturnType<typeof setTimeout>>();
-const listeners = new Set<() => void>();
+const listenersByKey = new Map<string, Set<() => void>>();
 const snapshotByKey = new Map<string, ThreadDepartureSnapshot>();
 
 function emit(threadKey: string): void {
@@ -41,15 +41,23 @@ function emit(threadKey: string): void {
   } else {
     snapshotByKey.set(threadKey, { departingKind, arriving });
   }
+  const listeners = listenersByKey.get(threadKey);
+  if (listeners === undefined) return;
   for (const listener of listeners) {
     listener();
   }
 }
 
-export function subscribeThreadDeparture(listener: () => void): () => void {
+export function subscribeThreadDeparture(threadKey: string, listener: () => void): () => void {
+  let listeners = listenersByKey.get(threadKey);
+  if (listeners === undefined) {
+    listeners = new Set();
+    listenersByKey.set(threadKey, listeners);
+  }
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
+    if (listeners.size === 0) listenersByKey.delete(threadKey);
   };
 }
 

@@ -46,7 +46,7 @@ describe("thread-departure-store", () => {
 
   it("notifies subscribers on every transition", () => {
     const listener = vi.fn();
-    const unsubscribe = subscribeThreadDeparture(listener);
+    const unsubscribe = subscribeThreadDeparture(KEY, listener);
     markThreadDeparting(KEY, "settle");
     clearThreadDeparting(KEY);
     clearThreadArriving(KEY);
@@ -56,6 +56,20 @@ describe("thread-departure-store", () => {
     expect(listener).toHaveBeenCalledTimes(3);
     clearThreadDeparting(KEY);
     clearThreadArriving(KEY);
+  });
+
+  it("notifies only listeners for the changed thread", () => {
+    const otherKey = "env1:thread2";
+    const listener = vi.fn();
+    const otherListener = vi.fn();
+    const unsubscribe = subscribeThreadDeparture(KEY, listener);
+    const unsubscribeOther = subscribeThreadDeparture(otherKey, otherListener);
+    markThreadDeparting(KEY, "settle");
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(otherListener).not.toHaveBeenCalled();
+    unsubscribe();
+    unsubscribeOther();
+    clearThreadDeparting(KEY);
   });
 
   it("lands only on the shelf matching the departure kind", () => {
@@ -71,7 +85,7 @@ describe("thread-departure-store", () => {
 
   it("clearing an unmarked thread is a no-op", () => {
     const listener = vi.fn();
-    const unsubscribe = subscribeThreadDeparture(listener);
+    const unsubscribe = subscribeThreadDeparture(KEY, listener);
     clearThreadDeparting(KEY);
     clearThreadArriving(KEY);
     expect(listener).not.toHaveBeenCalled();

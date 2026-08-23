@@ -1002,6 +1002,47 @@ describe("buildThreadFeed", () => {
     expect(presented.some((entry) => entry.type === "working")).toBe(true);
   });
 
+  it("keeps the working row when streaming text sits above a later tool group", () => {
+    const startedAt = "2026-04-01T00:00:01.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "message",
+        id: "assistant-1",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        message: makeMessage({
+          id: MessageId.make("assistant-1"),
+          text: "I'll check that",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          streaming: true,
+        }),
+      },
+      {
+        type: "activity-group",
+        id: "work-group-after-text",
+        createdAt: "2026-04-01T00:00:03.000Z",
+        turnId: null,
+        activities: [
+          {
+            id: "activity-live",
+            createdAt: "2026-04-01T00:00:03.000Z",
+            turnId: null,
+            summary: "Run command",
+            detail: null,
+            canExpand: false,
+            getFullDetail: () => null,
+            getCopyText: () => "Run command",
+            icon: "command",
+            toolLike: true,
+            status: "success",
+          },
+        ],
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.map((entry) => entry.type)).toEqual(["message", "activity-group", "working"]);
+  });
+
   it("shows the working row again after a fresh user message", () => {
     const startedAt = "2026-04-01T00:00:05.000Z";
     const feed: ThreadFeedEntry[] = [

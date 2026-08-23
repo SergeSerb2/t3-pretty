@@ -350,8 +350,7 @@ describe("buildThreadListV2Items", () => {
           title: "Pinned while settled",
           pinnedAt: "2026-06-01T12:00:00.000Z",
           // Stale settled state (the decider clears it on pin): the pin wins
-          // the partition, but the settled flag stays true so a settle
-          // departure can land instead of waiting out the 4s TTL.
+          // the partition. Landing waits for settle to unpin onto the shelf.
           settledOverride: "settled",
           settledAt: "2026-06-01T12:00:00.000Z",
         }),
@@ -363,8 +362,43 @@ describe("buildThreadListV2Items", () => {
 
     expect(layout.items.map((item) => item.thread.id)).toEqual(["pinned-settled", "active"]);
     expect(layout.items.map((item) => item.pinned)).toEqual([true, false]);
-    expect(layout.items.map((item) => item.settled)).toEqual([true, false]);
+    expect(layout.items.map((item) => item.settled)).toEqual([false, false]);
     expect(layout.settledCount).toBe(0);
+  });
+
+  it("lands a pinned settle only after persist unpins onto the settled shelf", () => {
+    const pinnedTarget = makeThread({
+      id: ThreadId.make("pinned-target"),
+      title: "Pinned settle target",
+      pinnedAt: "2026-06-01T12:00:00.000Z",
+      // Production snapshot after pin: override is cleared, pin still wins.
+      settledOverride: null,
+    });
+    const before = buildThreadListV2Items({
+      threads: [pinnedTarget],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+    });
+    expect(before.items.map((item) => [item.pinned, item.settled])).toEqual([[true, false]]);
+
+    const after = buildThreadListV2Items({
+      threads: [
+        makeThread({
+          id: ThreadId.make("pinned-target"),
+          title: "Pinned settle target",
+          pinnedAt: null,
+          settledOverride: "settled",
+          settledAt: NOW,
+        }),
+      ],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+    });
+    expect(after.items.map((item) => [item.pinned, item.settled, item.variant])).toEqual([
+      [false, true, "slim"],
+    ]);
   });
 
   it("snooze hides a pinned thread and wake restores it to the pinned block", () => {

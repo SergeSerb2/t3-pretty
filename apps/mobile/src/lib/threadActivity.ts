@@ -1318,22 +1318,20 @@ export function deriveThreadFeedPresentation(
  * "Thinking" while streaming assistant text is its own activity signal.
  * Unlike web, in-progress tool activities are filtered from this feed rather
  * than shown as a live row, so the working row stays up while tools run —
- * dropping it would leave the turn with no liveness signal at all. Scans back
- * to the latest user message, which bounds the active turn the same way web's
- * activeTurnHeaderIndex does.
+ * dropping it would leave the turn with no liveness signal at all. Only the
+ * last presented row counts: earlier streaming text above a tool group is
+ * not enough liveness once work has moved on.
  */
 function feedTailSignalsActivity(entries: ReadonlyArray<ThreadFeedEntry>): boolean {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]!;
-    if (entry.type !== "message") continue;
-    if (entry.message.role === "user") return false;
-    if (
+    if (entry.type === "work-toggle" || entry.type === "turn-fold") continue;
+    return (
+      entry.type === "message" &&
       entry.message.role === "assistant" &&
       entry.message.streaming &&
       entry.message.text.trim().length > 0
-    ) {
-      return true;
-    }
+    );
   }
   return false;
 }

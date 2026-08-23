@@ -135,9 +135,12 @@ function useThreadDepartureAnimation(
   threadKey: string,
   shelf: { readonly snoozed: boolean; readonly settled: boolean },
 ) {
-  const snapshot = useSyncExternalStore(subscribeThreadDeparture, () =>
-    getThreadDepartureSnapshot(threadKey),
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => subscribeThreadDeparture(threadKey, onStoreChange),
+    [threadKey],
   );
+  const getSnapshot = useCallback(() => getThreadDepartureSnapshot(threadKey), [threadKey]);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot);
   const departing = snapshot.departingKind !== null;
   const arriving = snapshot.arriving;
   const landed = threadDepartureHasLanded(snapshot.departingKind, shelf);
@@ -455,7 +458,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly variant: "card" | "slim";
   /** Snoozed-shelf row: shows its wake time and offers Wake. */
   readonly snoozed?: boolean;
-  /** Settled-shelf row, or pinned-and-settled. Completes a pending settle departure. */
+  /** Settled-shelf row. Completes a pending settle departure. */
   readonly settled?: boolean;
   /** Pinned-block row: shows the pin glyph and offers Unpin. */
   readonly pinned?: boolean;
