@@ -298,7 +298,7 @@ export function NewTaskDraftScreen(props: {
     [flow.providerGroups, flow.selectedModel, flow.runtimeMode, newTaskOptionDescriptors],
   );
   const handleSelectModelOption = useCallback(
-    (option: ModelOption) => flow.setSelectedModelKey(option.key),
+    (option: ModelOption) => flow.setSelectedModelKey(option.key, option.selection.options),
     [flow.setSelectedModelKey],
   );
   const handleSelectPickerOption = useCallback(
