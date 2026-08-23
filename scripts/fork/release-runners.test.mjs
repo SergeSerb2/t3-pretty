@@ -151,7 +151,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(pipeline, "timeout_in_minutes: 30");
     assert.isBelow(
       mobileRelease.indexOf("checkout-origin.sh"),
-      mobileRelease.indexOf("does not change mobile-relevant paths"),
+      mobileRelease.indexOf('base="$(mobile_release_base)"'),
     );
     assert.notInclude(pipeline, "- .github/workflows/fork-mobile-release.yml");
     assert.isBelow(
