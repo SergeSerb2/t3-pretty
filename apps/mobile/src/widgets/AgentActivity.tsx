@@ -151,10 +151,17 @@ export function AgentActivity(
   const workingLabel = workingCount > 0 ? `${workingCount} working` : "";
   const failedLabel = failedCount > 0 ? `${failedCount} failed` : "";
   // One summary line, attention first: "1 approval · 2 working · 1 failed".
-  const glanceParts = allDone
-    ? [doneLabel]
-    : [attentionLabel, workingLabel, failedLabel].filter((part) => part !== "");
-  const glance = glanceParts.length > 0 ? glanceParts.join(" · ") : doneLabel;
+  // Each count keeps its own phase tint so mixed states stay scannable —
+  // working must not inherit the attention/failed color.
+  const glanceSegments = allDone
+    ? [{ key: "done", text: doneLabel, color: headerTint }]
+    : [
+        ...(attentionLabel ? [{ key: "attention", text: attentionLabel, color: headerTint }] : []),
+        ...(workingLabel
+          ? [{ key: "working", text: workingLabel, color: phaseTint("running") }]
+          : []),
+        ...(failedLabel ? [{ key: "failed", text: failedLabel, color: phaseTint("failed") }] : []),
+      ];
   const compactTrailingLabel = allDone
     ? doneLabel
     : attentionRow
@@ -334,17 +341,28 @@ export function AgentActivity(
   // A single thread gets the hero treatment: big title, status line, progress.
   const soloRow = props.activities.length === 1 && overflowCount === 0 ? heroRow : undefined;
 
-  const renderGlanceLine = (size: number) => (
-    <Text
-      modifiers={[
-        font({ design: "rounded", weight: "bold", size }),
-        foregroundStyle(headerTint),
-        lineLimit(1),
-      ]}
-    >
-      {glance}
-    </Text>
-  );
+  const renderGlanceLine = (size: number) => {
+    const items =
+      glanceSegments.length > 0
+        ? glanceSegments
+        : [{ key: "done", text: doneLabel, color: headerTint }];
+    return (
+      <HStack spacing={0} alignment="center">
+        {items.map((item, index) => (
+          <Text
+            key={item.key}
+            modifiers={[
+              font({ design: "rounded", weight: "bold", size }),
+              foregroundStyle(item.color),
+              lineLimit(1),
+            ]}
+          >
+            {index > 0 ? ` · ${item.text}` : item.text}
+          </Text>
+        ))}
+      </HStack>
+    );
+  };
 
   // The branded T3 mark. `assetName` resolves the template image set bundled in
   // the widget extension's asset catalog. Image views only honor `resizable`

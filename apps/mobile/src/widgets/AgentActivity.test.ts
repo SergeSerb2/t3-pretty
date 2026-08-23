@@ -34,6 +34,27 @@ import {
   type AgentActivityRowProps,
 } from "./AgentActivity";
 
+function textColorFor(node: unknown, includes: string): string | undefined {
+  if (node == null || typeof node !== "object") {
+    return undefined;
+  }
+  const element = node as { type?: unknown; props?: { children?: unknown; modifiers?: unknown[] } };
+  const children = element.props?.children;
+  if (element.type === "Text" && typeof children === "string" && children.includes(includes)) {
+    return element.props?.modifiers?.find(
+      (modifier): modifier is string => typeof modifier === "string",
+    );
+  }
+  const nested = Array.isArray(children) ? children : children != null ? [children] : [];
+  for (const child of nested) {
+    const color = textColorFor(child, includes);
+    if (color !== undefined) {
+      return color;
+    }
+  }
+  return undefined;
+}
+
 function makeRow(overrides: Partial<AgentActivityRowProps>): AgentActivityRowProps {
   return {
     environmentId: "env-1",
@@ -80,9 +101,8 @@ describe("AgentActivity widget layout", () => {
       },
       environment as never,
     );
-    const banner = JSON.stringify(layout.banner);
-    expect(banner).toContain("#7dd3fc"); // sky-300: running
-    expect(banner).toContain("#fcd34d"); // amber-300: waiting_for_approval
+    expect(textColorFor(layout.banner, "1 working")).toBe("#7dd3fc"); // sky-300: running
+    expect(textColorFor(layout.banner, "1 approval")).toBe("#fcd34d"); // amber-300: waiting_for_approval
   });
 
   it("lets the system paint Liquid Glass instead of an opaque Live Activity fill", () => {
@@ -148,7 +168,8 @@ describe("AgentActivity widget layout", () => {
       { ...environment, levelOfDetail: "simplified" } as never,
     );
     const banner = JSON.stringify(layout.banner);
-    expect(banner).toContain("1 approval · 1 working");
+    expect(banner).toContain("1 approval");
+    expect(banner).toContain(" · 1 working");
     expect(banner).not.toContain("Working thread");
     expect(banner).not.toContain("Blocked thread");
   });
@@ -167,9 +188,9 @@ describe("AgentActivity widget layout", () => {
       },
       lightEnvironment as never,
     );
+    expect(textColorFor(layout.banner, "1 working")).toBe("#0284c7"); // sky-600: running
+    expect(textColorFor(layout.banner, "1 approval")).toBe("#d97706"); // amber-600: waiting_for_approval
     const banner = JSON.stringify(layout.banner);
-    expect(banner).toContain("#0284c7"); // sky-600: running
-    expect(banner).toContain("#d97706"); // amber-600: waiting_for_approval
     expect(banner).not.toContain("#7dd3fc");
     expect(banner).not.toContain("#fcd34d");
   });
@@ -420,6 +441,8 @@ describe("AgentActivity widget layout", () => {
     const banner = JSON.stringify(layout.banner);
     expect(banner).toContain("2 working");
     expect(banner).toContain("1 failed");
+    expect(textColorFor(layout.banner, "2 working")).toBe("#7dd3fc");
+    expect(textColorFor(layout.banner, "1 failed")).toBe("#fca5a5");
     expect(JSON.stringify(layout.compactTrailing)).toContain("2");
   });
 

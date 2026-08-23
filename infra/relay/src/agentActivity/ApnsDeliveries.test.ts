@@ -1690,6 +1690,18 @@ describe("aggregate shape changes", () => {
     ).toBe(false);
   });
 
+  it("treats a thread title change as a shape change", () => {
+    expect(
+      ApnsDeliveries.aggregateShapeChanged(aggregate, {
+        ...aggregate,
+        activities: aggregate.activities.map((row) => ({
+          ...row,
+          threadTitle: "Renamed thread",
+        })),
+      }),
+    ).toBe(true);
+  });
+
   it("treats startedAt appearing or changing as a shape change", () => {
     const withStartedAt = {
       ...aggregate,

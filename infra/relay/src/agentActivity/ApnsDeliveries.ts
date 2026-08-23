@@ -172,10 +172,11 @@ function attentionChanged(
 
 // Whether the aggregate's shape changed since the last delivered one: a
 // different active count, a row entering/leaving the card, any row
-// changing phase, or startedAt appearing/changing. Shape changes ship at
-// APNs priority 10 so the card moves the moment work transitions;
-// content-only ticks (status text, progress) stay at the budget-friendly
-// low priority. A missing baseline counts as a shape change.
+// changing phase, startedAt appearing/changing, or a painted title
+// changing. Shape changes ship at APNs priority 10 so the card moves
+// the moment work transitions; content-only ticks (status text, progress)
+// stay at the budget-friendly low priority. A missing baseline counts
+// as a shape change.
 export function aggregateShapeChanged(
   previousAggregate: RelayAgentActivityAggregateState | null,
   nextAggregate: RelayAgentActivityAggregateState,
@@ -195,7 +196,10 @@ export function aggregateShapeChanged(
   return nextAggregate.activities.some((row) => {
     const previous = previousByKey.get(`${row.environmentId}\u0000${row.threadId}`);
     return (
-      previous === undefined || previous.phase !== row.phase || previous.startedAt !== row.startedAt
+      previous === undefined ||
+      previous.phase !== row.phase ||
+      previous.startedAt !== row.startedAt ||
+      previous.threadTitle !== row.threadTitle
     );
   });
 }
