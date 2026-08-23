@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260823.1166000754",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+      {
+        kind: "fixed",
+        title: "smooth thread loading, switching, and streaming animations",
+      },
+      {
+        kind: "new",
+        title: "rewrite the live activity line with generated headlines",
+      },
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260823.1166000749",
     date: "2026-08-23",
     items: [
