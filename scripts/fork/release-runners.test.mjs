@@ -348,6 +348,7 @@ describe("T3 Pretty release runner placement", () => {
   });
 
   it("keeps public releases manual and internal automation off the GitHub mirror", () => {
+    const publicPreflight = jobBlock(publicReleaseWorkflow, "preflight");
     const publicWeb = jobBlock(publicReleaseWorkflow, "web");
     const publicPages = jobBlock(publicReleaseWorkflow, "deploy_pages");
 
@@ -360,9 +361,18 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publicReleaseWorkflow, "pattern: public-*");
     assert.include(publicReleaseWorkflow, "cp scripts/fork/install-cli.sh public-cli/install.sh");
     assert.notInclude(publicReleaseWorkflow, "sed -i");
-    assert.include(publicWeb, "pages: read");
+    assert.include(publicPreflight, "github.repository == 'SergeSerb2/t3-pretty'");
+    assert.notInclude(publicWeb, "configure-pages");
+    assert.notInclude(publicWeb, "upload-pages-artifact");
     assert.include(publicPages, "pages: write");
     assert.include(publicPages, "id-token: write");
+    assert.include(publicPages, "actions/download-artifact@v8");
+    assert.include(publicPages, "actions/configure-pages@v5");
+    assert.include(publicPages, "actions/upload-pages-artifact@v5");
+    assert.include(
+      publicReleaseWorkflow,
+      "github.repository == 'SergeSerb2/t3-pretty' && inputs.publish_release",
+    );
     for (const workflow of [desktopWorkflow, relayWorkflow, upstreamSyncWorkflow]) {
       assert.include(workflow, "github.repository != 'SergeSerb2/t3-pretty'");
     }

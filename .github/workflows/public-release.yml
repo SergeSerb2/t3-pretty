@@ -33,12 +33,13 @@ concurrency:
 env:
   T3CODE_BUILD_FLAVOR: public
   # The mirror pushes Git tags, not GitHub Releases; this workflow alone advances GitHub latest.
-  T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/
+  T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/SergeSerb2/t3-pretty/releases/latest/download/
   CI: true
 
 jobs:
   preflight:
     name: Validate public release
+    if: github.repository == 'SergeSerb2/t3-pretty'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.value }}
@@ -284,9 +285,6 @@ jobs:
     needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    permissions:
-      contents: read
-      pages: read
     env:
       APP_VERSION: ${{ needs.preflight.outputs.version }}
       T3CODE_WEB_BASE_PATH: /t3-pretty/
@@ -315,15 +313,6 @@ jobs:
           name: public-web
           path: public-web-${{ needs.preflight.outputs.version }}.tar.gz
           if-no-files-found: error
-      - name: Configure GitHub Pages
-        if: ${{ inputs.deploy_pages }}
-        uses: actions/configure-pages@v5
-      - name: Upload GitHub Pages artifact
-        if: ${{ inputs.deploy_pages }}
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: apps/web/dist
-
   deploy_pages:
     name: Deploy public hosted web
     needs: web
@@ -336,6 +325,18 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: public-web
+          path: public-web
+      - name: Prepare GitHub Pages artifact
+        run: |
+          mkdir public-pages
+          tar -xzf public-web/public-web-*.tar.gz -C public-pages
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: public-pages
       - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
@@ -343,7 +344,7 @@ jobs:
   release:
     name: Publish public GitHub Release
     needs: [preflight, desktop, cli, mobile, web]
-    if: ${{ inputs.publish_release && !cancelled() && !failure() }}
+    if: ${{ github.repository == 'SergeSerb2/t3-pretty' && inputs.publish_release && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
