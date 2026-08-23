@@ -1376,6 +1376,7 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow() {
 
   useEffect(() => {
     if (!active || reduceMotion) {
+      cancelAnimation(highlight);
       highlight.value = 0;
       return;
     }
