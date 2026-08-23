@@ -12,6 +12,8 @@ import {
   initialProviderFilter,
   modelMatchesCatalogQuery,
   pendingModelAfterPress,
+  presentedSettingsSheetPage,
+  threadSettingsSheetPageForRoute,
   visibleSheetOptionDescriptors,
 } from "./thread-settings-sheet-state";
 
@@ -177,5 +179,45 @@ describe("provider catalog scoping", () => {
     expect(effectiveProviderFilter({ providerFilter: "cursor", searchQuery: "   " })).toBe(
       "cursor",
     );
+  });
+});
+
+describe("threadSettingsSheetPageForRoute", () => {
+  it("maps the inner picker routes and ignores choice pages", () => {
+    expect(threadSettingsSheetPageForRoute("ThreadSettingsHome")).toBe("home");
+    expect(threadSettingsSheetPageForRoute("ThreadSettingsCatalog")).toBe("catalog");
+    expect(threadSettingsSheetPageForRoute("ThreadSettingsChoice")).toBeNull();
+  });
+});
+
+describe("presentedSettingsSheetPage", () => {
+  it("keeps catalog only on a live re-present of the same owner", () => {
+    expect(
+      presentedSettingsSheetPage({
+        preservePage: true,
+        currentOwnerId: "thread-1",
+        nextOwnerId: "thread-1",
+        currentPage: "catalog",
+        requestedPage: "home",
+      }),
+    ).toBe("catalog");
+    expect(
+      presentedSettingsSheetPage({
+        preservePage: false,
+        currentOwnerId: "thread-1",
+        nextOwnerId: "thread-1",
+        currentPage: "catalog",
+        requestedPage: "home",
+      }),
+    ).toBe("home");
+    expect(
+      presentedSettingsSheetPage({
+        preservePage: true,
+        currentOwnerId: "thread-1",
+        nextOwnerId: "thread-2",
+        currentPage: "catalog",
+        requestedPage: "home",
+      }),
+    ).toBe("home");
   });
 });

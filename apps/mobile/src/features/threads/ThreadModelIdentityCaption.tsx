@@ -21,7 +21,7 @@ export function ThreadModelIdentityCaption(props: {
   readonly onSelectModel: (option: ModelOption) => void;
   readonly onSelectOption: (id: string, value: string | boolean) => void;
   readonly onSelectRuntime: (mode: RuntimeMode) => void;
-  readonly onBrowseModels: () => void;
+  readonly onOpenAdvanced: () => void;
   readonly onPressFallback: () => void;
 }) {
   const iconMuted = useThemeColor("--color-icon-muted");
@@ -57,7 +57,7 @@ export function ThreadModelIdentityCaption(props: {
       <ThreadSettingsPickerPopover
         accessibilityLabel={props.identity.accessibilityLabel}
         model={props.picker}
-        onBrowseModels={props.onBrowseModels}
+        onOpenAdvanced={props.onOpenAdvanced}
         onSelectModel={props.onSelectModel}
         onSelectOption={props.onSelectOption}
         onSelectRuntime={props.onSelectRuntime}
