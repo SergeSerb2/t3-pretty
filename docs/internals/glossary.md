@@ -50,6 +50,10 @@ How a user message sent while a turn is running reaches the agent. `thread.turn.
 
 A user-visible log item attached to a thread. In [the contracts][1], activities cover important non-message events like approvals, tool actions, and failures. They are projected into thread state in [projector.ts][4].
 
+#### Activity headline
+
+A short model-generated status line for the running turn, published as a `turn.headline` activity with the stable id `${turnId}:headline` so the projector replaces it in place. `ActivityHeadlineReactor` (in `apps/server/src/orchestration/Layers/`) watches persisted tool and error activities, coalesces per thread, and asks the text generation model (the `textGenerationModelSelection` setting, gated by `generateActivityHeadlines`) for a readable rewrite; web's live activity row prefers it over raw tool summaries. Never shown in the settled work log.
+
 #### Search index
 
 The plain-table inverted index behind `orchestration.searchThreads`: `search_index_docs` / `search_index_terms` / `search_index_postings` (migration 049), maintained by the `projection.search-index` projector in [ProjectionPipeline.ts][11] and read with BM25 ranking in `apps/server/src/search/ThreadSearch.ts`. It indexes user messages (visible text only, auto-PR instruction block stripped) and canonical assistant messages (turn-final `assistant_message_id` rows), and drops those entries when a thread is archived, deleted, or reverted, or when its project is deleted. Plain tables because the production SQLite driver (`node:sqlite`) ships without FTS5; query semantics are AND of content tokens (stopwords and truncated common terms rank without filtering) with prefix matching on the final query token.

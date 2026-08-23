@@ -183,6 +183,10 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
   });
 
+  it("defaults live activity headlines on", () => {
+    expect(DEFAULT_SERVER_SETTINGS.generateActivityHeadlines).toBe(true);
+  });
+
   it("decodes a fully empty config (legacy on-disk shape) without complaint", () => {
     const decoded = decodeServerSettings({});
     expect(decoded.providerInstances).toEqual({});

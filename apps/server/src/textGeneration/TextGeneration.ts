@@ -73,6 +73,23 @@ export interface ThreadTitleGenerationResult {
   title: string;
 }
 
+export interface ActivityHeadlineGenerationInput {
+  cwd: string;
+  /** Raw activity summary as ingested from the provider. */
+  summary: string;
+  /** Full command text when the activity is a command run. */
+  command?: string | undefined;
+  /** Tool detail/output excerpt when available. */
+  detail?: string | undefined;
+  /** What model and provider to use for generation. */
+  modelSelection: ModelSelection;
+}
+
+export interface ActivityHeadlineGenerationResult {
+  /** Empty string when the model returned nothing usable. */
+  headline: string;
+}
+
 export interface ProjectIconGenerationInput {
   cwd: string;
   projectTitle: string;
@@ -91,6 +108,9 @@ export interface TextGenerationService {
   generatePrContent(input: PrContentGenerationInput): Promise<PrContentGenerationResult>;
   generateBranchName(input: BranchNameGenerationInput): Promise<BranchNameGenerationResult>;
   generateThreadTitle(input: ThreadTitleGenerationInput): Promise<ThreadTitleGenerationResult>;
+  generateActivityHeadline(
+    input: ActivityHeadlineGenerationInput,
+  ): Promise<ActivityHeadlineGenerationResult>;
   generateProjectIcon(input: ProjectIconGenerationInput): Promise<ProjectIconGenerationResult>;
 }
 
@@ -126,6 +146,11 @@ export class TextGeneration extends Context.Service<
       input: ThreadTitleGenerationInput,
     ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
 
+    /** Generate a short live-status headline for a running turn's activity. */
+    readonly generateActivityHeadline: (
+      input: ActivityHeadlineGenerationInput,
+    ) => Effect.Effect<ActivityHeadlineGenerationResult, TextGenerationError>;
+
     /** Generate a square project icon and save it to `outputPath`. */
     readonly generateProjectIcon: (
       input: ProjectIconGenerationInput,
@@ -151,6 +176,7 @@ type TextGenerationOp =
   | "generatePrContent"
   | "generateBranchName"
   | "generateThreadTitle"
+  | "generateActivityHeadline"
   | "generateProjectIcon";
 
 const resolveInstance = (
@@ -190,6 +216,10 @@ export const makeTextGenerationFromRegistry = (
     generateThreadTitle: (input) =>
       resolveInstance(registry, "generateThreadTitle", input.modelSelection.instanceId).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generateThreadTitle(input)),
+      ),
+    generateActivityHeadline: (input) =>
+      resolveInstance(registry, "generateActivityHeadline", input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.generateActivityHeadline(input)),
       ),
     generateProjectIcon: (input) =>
       resolveInstance(registry, "generateProjectIcon", input.modelSelection.instanceId).pipe(

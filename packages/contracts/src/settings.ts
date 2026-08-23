@@ -612,6 +612,13 @@ export const ServerSettings = Schema.Struct({
    * uses the user's Grok/Codex subscription and is skipped for other providers.
    */
   autoGenerateProjectIcons: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * When on, the text generation model rewrites the live activity line of a
+   * running turn into a short human-readable headline ("Updating contract
+   * tests") instead of raw tool summaries and error text. Generation uses the
+   * user's text generation provider subscription.
+   */
+  generateActivityHeadlines: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   backgroundActivity: BackgroundActivitySettings,
   // Legacy flat fields retained for old settings files and old clients. New
   // consumers should resolve `backgroundActivity` instead.
@@ -825,6 +832,7 @@ export const ServerSettingsPatch = Schema.Struct({
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   autoGenerateProjectIcons: Schema.optionalKey(Schema.Boolean),
+  generateActivityHeadlines: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),

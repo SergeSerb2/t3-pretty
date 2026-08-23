@@ -327,6 +327,8 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
 /** Per-activity work-log derivation; null for rows the work log drops. */
 function deriveWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry | null {
   if (activity.kind === "tool.started") return null;
+  // Generated live-status headlines feed the web work-live row, never the log.
+  if (activity.kind === "turn.headline") return null;
   if (activity.kind === "task.started") return null;
   // Terminal bypassed updates pass: Codex children's only terminal signal.
   if (activity.kind === "task.updated" && !isTerminalBypassUpdate(activity)) return null;
