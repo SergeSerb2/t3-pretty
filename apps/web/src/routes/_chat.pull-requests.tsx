@@ -71,12 +71,12 @@ import {
   pullRequestListFiltersToPersist,
   readPersistedPullRequestListFilters,
   restoredListSearchToReplaceUrl,
-  searchFromPersistedFilters,
   shouldRestorePersistedListFilters,
   writePersistedPullRequestListFilters,
 } from "../components/pullRequest/pullRequestListFiltersPersistence";
 import {
   applyPullRequestsSearchPatch,
+  parsePullRequestsSearch,
   resetPullRequestsListSearch,
   type PullRequestsSearch,
   type PullRequestsSearchPatch,
@@ -168,57 +168,7 @@ const EMPTY_TERMINAL_LABELS = new Map<string, string>();
 const EMPTY_PENDING_SURFACES = new Set<string>();
 
 export const Route = createFileRoute("/_chat/pull-requests")({
-  validateSearch: (raw: Record<string, unknown>): PullRequestsSearch => {
-    // Default-named list keys are unnamed: spreading them would clobber the restore.
-    const source = shouldRestorePersistedListFilters(raw)
-      ? {
-          ...searchFromPersistedFilters(readPersistedPullRequestListFilters()),
-          ...(raw.q !== undefined ? { q: raw.q } : {}),
-        }
-      : raw;
-    return {
-      involvement:
-        source.involvement === "reviewing" || source.involvement === "authored"
-          ? source.involvement
-          : "all",
-      state:
-        source.state === "closed" || source.state === "merged" || source.state === "all"
-          ? source.state
-          : "open",
-      ...(typeof source.repository === "string" && source.repository
-        ? { repository: source.repository.slice(0, 200) }
-        : {}),
-      ...(typeof source.number === "number" && Number.isInteger(source.number) && source.number > 0
-        ? { number: source.number }
-        : {}),
-      ...(typeof source.projectId === "string" && source.projectId
-        ? { projectId: source.projectId as ProjectId }
-        : {}),
-      ...(typeof source.environmentId === "string" && source.environmentId
-        ? { environmentId: source.environmentId as EnvironmentId }
-        : {}),
-      ...(typeof source.host === "string" && source.host
-        ? { host: source.host.slice(0, 200) }
-        : {}),
-      ...(typeof source.selectedProjectId === "string" && source.selectedProjectId
-        ? { selectedProjectId: source.selectedProjectId as ProjectId }
-        : {}),
-      ...(typeof source.selectedEnvironmentId === "string" && source.selectedEnvironmentId
-        ? { selectedEnvironmentId: source.selectedEnvironmentId as EnvironmentId }
-        : {}),
-      ...(typeof source.q === "string" && source.q ? { q: source.q.slice(0, 200) } : {}),
-      ...(source.draft === "only" || source.draft === "hide" ? { draft: source.draft } : {}),
-      ...(source.review === "approved" ||
-      source.review === "changes-requested" ||
-      source.review === "review-required" ||
-      source.review === "none"
-        ? { review: source.review }
-        : {}),
-      ...(source.checks === "passing" || source.checks === "failing"
-        ? { checks: source.checks }
-        : {}),
-    };
-  },
+  validateSearch: parsePullRequestsSearch,
   component: PullRequestsRouteView,
 });
 
@@ -226,7 +176,6 @@ function PullRequestsRouteView() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const searchStr = useLocation({ select: (location) => location.searchStr });
-  const replacedRestoreUrl = useRef(false);
   const { environments } = useEnvironments();
   // Every connected environment that has said it can list pull requests. Sorted, so the query
   // keys, the scope key and the stored snapshot all read the same whichever order the
@@ -417,14 +366,18 @@ function PullRequestsRouteView() {
     [navigate],
   );
 
-  // validateSearch restores in memory; replace so the address bar matches without a persist write.
+  // Restore browser state after pure URL validation, then keep the address bar and storage aligned.
   useEffect(() => {
     const raw = Object.fromEntries(
       new URLSearchParams(searchStr.startsWith("?") ? searchStr.slice(1) : searchStr),
     );
+    const restoring = shouldRestorePersistedListFilters(raw);
+    const current = restoring
+      ? readPersistedPullRequestListFilters()
+      : persistedFiltersFromSearch(search);
     const scoped = livePullRequestListFilters(
-      persistedFiltersFromSearch(search),
-      environments.map((environment) => environment.environmentId),
+      current,
+      projectsKnown ? environments.map((environment) => environment.environmentId) : [],
       projectsKnown ? allProjects.map((project) => project.id) : undefined,
     );
     const scopePatch = {
@@ -432,23 +385,25 @@ function PullRequestsRouteView() {
       projectId: scoped.projectId,
       host: scoped.host,
     };
-    if (!replacedRestoreUrl.current) {
+    const scopeChanged =
+      scoped.environmentId !== current.environmentId ||
+      scoped.projectId !== current.projectId ||
+      scoped.host !== current.host;
+    if (restoring) {
+      if (scopeChanged) writePersistedPullRequestListFilters(scoped);
       const next = restoredListSearchToReplaceUrl(raw, scoped);
       if (next !== null) {
-        replacedRestoreUrl.current = true;
         updateSearch({ ...next, ...scopePatch });
-        return;
       }
+      return;
     }
-    const persistable = pullRequestListFiltersToPersist(raw, scoped, !replacedRestoreUrl.current);
-    replacedRestoreUrl.current = true;
+    const persistable = pullRequestListFiltersToPersist(raw, scoped, false);
     if (
       scoped.environmentId !== search.environmentId ||
       scoped.projectId !== search.projectId ||
       scoped.host !== search.host
     ) {
-      const next = persistable ?? pullRequestListFiltersToPersist(raw, scoped, false);
-      if (next !== null) writePersistedPullRequestListFilters(next);
+      if (persistable !== null) writePersistedPullRequestListFilters(persistable);
       updateSearch(scopePatch);
       return;
     }

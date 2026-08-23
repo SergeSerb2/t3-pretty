@@ -217,10 +217,7 @@ describe("persisted pull request list filters", () => {
       host: "github.com",
     });
     writePersistedPullRequestListFilters(saved);
-    expect(persistedPullRequestListSearch(["env-1" as EnvironmentId])).toEqual({
-      involvement: "authored",
-      state: "closed",
-    });
+    expect(persistedPullRequestListSearch()).toEqual(saved);
   });
 
   it("round-trips the last chosen filters and falls back to the defaults", () => {

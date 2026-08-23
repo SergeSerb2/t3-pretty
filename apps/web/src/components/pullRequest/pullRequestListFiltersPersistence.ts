@@ -214,8 +214,6 @@ export function writePersistedPullRequestListFilters(
   }
 }
 
-export function persistedPullRequestListSearch(
-  environmentIds: ReadonlyArray<EnvironmentId> = [],
-): PersistedPullRequestListFilters {
-  return livePullRequestListFilters(readPersistedPullRequestListFilters(), environmentIds);
+export function persistedPullRequestListSearch(): PersistedPullRequestListFilters {
+  return searchFromPersistedFilters(readPersistedPullRequestListFilters());
 }
