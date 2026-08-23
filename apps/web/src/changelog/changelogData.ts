@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260823.1164000722",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "rewrite the live activity line with generated headlines",
+      },
+      {
+        kind: "new",
+        title: "redesign PR page with frosted glass scenery and submenu filters",
+      },
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+      {
+        kind: "fixed",
+        title: "prevent loading fallback timer from resetting",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260823.1164000704",
     date: "2026-08-23",
     items: [
