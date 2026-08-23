@@ -1695,16 +1695,6 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const processTurnStartRequested = Effect.fn("processTurnStartRequested")(function* (
-    event: Extract<ProviderIntentEvent, { type: "thread.turn-start-requested" }>,
-  ) {
-    const key = turnStartKeyForEvent(event);
-    if (yield* hasHandledTurnStartRecently(key)) {
-      return;
-    }
-    yield* dispatchTurnStart(event);
-  });
-
   // Drain while the live session is idle. One-at-a-time: after a successful
   // dispatch, ensureSession has marked the session starting/running, so the
   // next iteration stops. Re-read live status each pass — a stale
@@ -1728,6 +1718,28 @@ const make = Effect.gen(function* () {
       // "head": if a concurrent status write re-holds this event mid-dispatch,
       // it must go back in front of its younger siblings, not behind them.
       yield* dispatchTurnStart(next, "head");
+    }
+  });
+
+  const processTurnStartRequested = Effect.fn("processTurnStartRequested")(function* (
+    event: Extract<ProviderIntentEvent, { type: "thread.turn-start-requested" }>,
+  ) {
+    const key = turnStartKeyForEvent(event);
+    if (yield* hasHandledTurnStartRecently(key)) {
+      return;
+    }
+    yield* dispatchTurnStart(event);
+    // Close the wake-up race: a session-set that committed between the hold's
+    // thread snapshot and its map insert was dropped by the stream filter
+    // (the map was still empty), so no later flush is guaranteed. If the
+    // event was held but the session has already left running/starting,
+    // flush here instead of waiting for a wake-up that never comes.
+    if (queuedTurnStarts.has(event.payload.threadId)) {
+      const current = yield* resolveThread(event.payload.threadId);
+      const status = current?.session?.status;
+      if (status !== "running" && status !== "starting") {
+        yield* flushQueuedTurnStarts(event.payload.threadId);
+      }
     }
   });
 

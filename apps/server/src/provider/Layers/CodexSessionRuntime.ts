@@ -1850,6 +1850,11 @@ export const makeCodexSessionRuntime = (
               ? sessionAtSend.activeTurnId
               : undefined;
           if (steerTurnId) {
+            // Fall back only when Codex itself answered with a JSON-RPC error
+            // (activeTurnNotSteerable, expectedTurnId mismatch) — that steer
+            // was definitively not applied. A transport or protocol failure is
+            // ambiguous: the steer may have landed, and a turn/start retry
+            // would deliver the same message twice.
             const steered = yield* client.raw
               .request("turn/steer", {
                 threadId: providerThreadId,
@@ -1858,10 +1863,12 @@ export const makeCodexSessionRuntime = (
               })
               .pipe(
                 Effect.as(true),
-                Effect.catch((cause) =>
-                  Effect.logDebug("Codex turn/steer rejected; falling back to turn/start.", {
-                    cause,
-                  }).pipe(Effect.as(false)),
+                Effect.catchIf(
+                  (cause) => cause._tag === "CodexAppServerRequestError",
+                  (cause) =>
+                    Effect.logDebug("Codex turn/steer rejected; falling back to turn/start.", {
+                      cause,
+                    }).pipe(Effect.as(false)),
                 ),
               );
             if (steered) {
