@@ -43,6 +43,14 @@ describe("Origin review comment resolution check", () => {
     const closedThread = { ...openThread, id: "cth_closed", resolved: true };
     assert.equal(unresolvedActionableFindings({ threads: [openThread] }).length, 1);
     assert.equal(unresolvedActionableFindings({ threads: [closedThread] }).length, 0);
+    assert.equal(
+      unresolvedActionableFindings({ threads: [openThread], ignoreSha: "abc" }).length,
+      0,
+    );
+    assert.equal(
+      unresolvedActionableFindings({ threads: [openThread], ignoreSha: "def" }).length,
+      1,
+    );
   });
 
   it("accepts a fixed reply for review-style findings that have no thread", () => {
@@ -95,5 +103,11 @@ describe("Origin comment-resolution job wiring", () => {
     assert.notInclude(pipeline, "build.pull_request");
     assert.include(ci, "check-origin-pr-comments.mjs");
     assert.match(ci, /if \[\[ "\$mode" != "check" \]\]; then\s+trap report_failure ERR\s+fi/u);
+    const trusted = NodeFS.readFileSync(
+      NodePath.resolve(here, "run-trusted-origin-pr-ci.sh"),
+      "utf8",
+    );
+    assert.include(trusted, 'if [[ "${1:-}" == "check" ]]; then');
+    assert.include(trusted, "Using checkout comment-resolution check");
   });
 });

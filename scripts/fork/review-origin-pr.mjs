@@ -63,6 +63,11 @@ export function reviewMarker(sha) {
   return `<!-- ${REVIEW_MARKER} sha=${sha} -->`;
 }
 
+export function reviewShaFromBody(body) {
+  const match = String(body ?? "").match(/<!-- t3-pretty-grok-review sha=([0-9a-f]+) -->/u);
+  return match?.[1] ?? "";
+}
+
 export function alreadyReviewed(reviews, sha) {
   const needle = reviewMarker(sha);
   for (const review of Array.isArray(reviews) ? reviews : []) {

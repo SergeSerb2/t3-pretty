@@ -8,6 +8,7 @@ import {
   DEFAULT_CLI_PROXY_API_URL,
   DEFAULT_MODEL,
   alreadyReviewed,
+  reviewShaFromBody,
   cliProxyApiKey,
   cliProxyApiUrl,
   formatIssueBody,
@@ -88,6 +89,8 @@ here you go
     const sha = "abc123";
     assert.equal(alreadyReviewed([{ body: `hello\n${reviewMarker(sha)}\n` }], sha), true);
     assert.equal(alreadyReviewed([{ body: "other" }], sha), false);
+    assert.equal(reviewShaFromBody(reviewMarker(sha)), sha);
+    assert.equal(reviewShaFromBody("no marker"), "");
   });
 
   it("waits for a pull request created just after its branch push", async () => {
