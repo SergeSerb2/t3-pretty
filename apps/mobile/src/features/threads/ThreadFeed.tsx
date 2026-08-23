@@ -62,6 +62,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
+import { MOTION_TIMING } from "../../lib/motion";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { useFontFamily } from "../../lib/useFontFamily";
@@ -184,10 +185,15 @@ function isFreshTimestamp(input: string): boolean {
   return Number.isFinite(timestamp) && Date.now() - timestamp < FRESH_ENTRY_WINDOW_MS;
 }
 
-// The loading/empty placeholders enter only after a beat: a cached thread
-// resolves well inside the delay, so fast switches never flash "Loading
-// messages" text at all. Slow loads get a gentle fade instead of a pop.
-const FEED_PLACEHOLDER_ENTER = FadeIn.delay(220).duration(200).reduceMotion(ReduceMotion.System);
+// The loading placeholder enters only after a beat: a cached thread resolves
+// well inside the delay, so fast switches never flash "Loading messages".
+// Empty copy has no delay so a loading→empty handoff can crossfade instead
+// of stacking another wait.
+const FEED_PLACEHOLDER_ENTER_DELAY_MS = 220;
+const FEED_PLACEHOLDER_ENTER = FadeIn.delay(FEED_PLACEHOLDER_ENTER_DELAY_MS)
+  .duration(200)
+  .reduceMotion(ReduceMotion.System);
+const FEED_PLACEHOLDER_SWAP = FadeIn.duration(200).reduceMotion(ReduceMotion.System);
 const FEED_PLACEHOLDER_EXIT = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 
 export interface ThreadFeedProps {
@@ -1996,8 +2002,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     feedLength: props.feed.length,
     listReady: listReadyForCurrentMount,
   });
-  // One host for loading and empty: they are mutually exclusive, and a
-  // second enter delay after the loading view unmounts leaves a blank gap.
   const feedPlaceholder = showLoadingOverlay
     ? {
         title: "Loading messages",
@@ -2013,15 +2017,15 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         }
       : null;
   // LegendList holds row opacity at 0 until onLoad, then reveals everything in
-  // one frame. Fading the container instead turns that reveal (and the
-  // overlay handoff) into a crossfade.
-  const feedOpacity = useSharedValue(showLoadingOverlay ? 0 : 1);
+  // one frame. Fading the container instead turns that reveal (and the overlay
+  // handoff) into a crossfade. Keep rows at full opacity until the delayed
+  // loading placeholder actually enters, so a one-frame overlay gate does not
+  // blank cached content.
+  const feedOpacity = useSharedValue(1);
   useEffect(() => {
-    feedOpacity.value = withTiming(showLoadingOverlay ? 0 : 1, {
-      duration: 200,
-      easing: Easing.out(Easing.cubic),
-      reduceMotion: ReduceMotion.System,
-    });
+    feedOpacity.value = showLoadingOverlay
+      ? withDelay(FEED_PLACEHOLDER_ENTER_DELAY_MS, withTiming(0, MOTION_TIMING))
+      : withTiming(1, MOTION_TIMING);
   }, [feedOpacity, showLoadingOverlay]);
   const feedContainerStyle = useAnimatedStyle(() => ({ opacity: feedOpacity.value }));
 
@@ -2461,7 +2465,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         </Animated.View>
         {feedPlaceholder ? (
           <Animated.View
-            entering={FEED_PLACEHOLDER_ENTER}
+            key={showLoadingOverlay ? "loading" : "empty"}
+            entering={showLoadingOverlay ? FEED_PLACEHOLDER_ENTER : FEED_PLACEHOLDER_SWAP}
             exiting={FEED_PLACEHOLDER_EXIT}
             pointerEvents="none"
             style={StyleSheet.absoluteFill}
