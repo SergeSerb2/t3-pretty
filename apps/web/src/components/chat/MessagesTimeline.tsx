@@ -179,7 +179,12 @@ interface TimelineRowActivityState {
   isRevertingCheckpoint: boolean;
   activeTurnInProgress: boolean;
   latestTurnId: TurnId | null;
-  /** Generated status headline for the running turn; overrides raw live labels. */
+  /**
+   * Generated status headline for the running turn; overrides raw live
+   * labels. Deliberately on TimelineRowActivityState, not
+   * TimelineRowSharedState: only the live rows read it, so a headline swap
+   * must not re-render every timeline row through the shared context.
+   */
   liveHeadline: string | null;
 }
 
