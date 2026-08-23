@@ -109,5 +109,10 @@ describe("Origin comment-resolution job wiring", () => {
     );
     assert.include(trusted, 'if [[ "${1:-}" == "check" ]]; then');
     assert.include(trusted, "Using checkout comment-resolution check");
+    const check = NodeFS.readFileSync(
+      NodePath.resolve(here, "check-origin-pr-comments.mjs"),
+      "utf8",
+    );
+    assert.notMatch(check, /import\s*\{[^}]*reviewShaFromBody/u);
   });
 });

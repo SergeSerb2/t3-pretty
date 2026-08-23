@@ -15,11 +15,16 @@ import {
   isActionableGrokFinding,
   resolveBranchName,
   resolveExplicitPr,
-  reviewShaFromBody,
   shouldSkipBranch,
 } from "./review-origin-pr.mjs";
 
 const FIXED_REPLY = /\b(?:fixed|addressed|resolved)\b/iu;
+
+/** Inline so overlaying this file onto origin/main's scripts still loads. */
+function reviewShaFromBody(body) {
+  const match = String(body ?? "").match(/<!-- t3-pretty-grok-review sha=([0-9a-f]+) -->/u);
+  return match?.[1] ?? "";
+}
 
 export function isFixedReply(body) {
   return typeof body === "string" && FIXED_REPLY.test(body);
