@@ -342,6 +342,22 @@ const ephemeralToolProgress = (detail: string): OrchestrationThreadStreamItem =>
   },
 });
 
+function toolProgressDetail(thread: OrchestrationThread): string | undefined {
+  const payload = thread.activities[0]?.payload;
+  return payload !== null && typeof payload === "object" && "detail" in payload
+    ? String(payload.detail)
+    : undefined;
+}
+
+function warmBlob(title: string, lastSequence: number, generation: number) {
+  return {
+    thread: { ...ACTIVE_THREAD, title },
+    page: Option.none(),
+    lastSequence,
+    generation,
+  };
+}
+
 const deleted = (): OrchestrationThreadStreamItem => ({
   kind: "event",
   event: {
@@ -477,27 +493,87 @@ describe("EnvironmentThreads", () => {
   it("keeps the newer warm snapshot when an older write arrives later", () => {
     const warmStates = makeWarmThreadStateRegistry();
     const key = "environment-1:thread-1";
-    warmStates.set(key, {
-      thread: { ...ACTIVE_THREAD, title: "Newer" },
-      page: Option.none(),
-      lastSequence: 5,
-    });
-    warmStates.set(key, {
-      thread: { ...ACTIVE_THREAD, title: "Older" },
-      page: Option.none(),
-      lastSequence: 1,
-    });
+    warmStates.set(key, warmBlob("Newer", 5, 1));
+    warmStates.set(key, warmBlob("Older", 1, 2));
 
     expect(warmStates.get(key)?.lastSequence).toBe(5);
     expect(warmStates.get(key)?.thread.title).toBe("Newer");
 
-    warmStates.set(key, {
-      thread: { ...ACTIVE_THREAD, title: "Same sequence" },
-      page: Option.none(),
-      lastSequence: 5,
-    });
-    expect(warmStates.get(key)?.thread.title).toBe("Same sequence");
+    warmStates.set(key, warmBlob("Same sequence older generation", 5, 1));
+    expect(warmStates.get(key)?.thread.title).toBe("Newer");
+
+    warmStates.set(key, warmBlob("Same sequence newer generation", 5, 2));
+    expect(warmStates.get(key)?.thread.title).toBe("Same sequence newer generation");
   });
+
+  it("does not let a tombstoned delete be re-warmed", () => {
+    const warmStates = makeWarmThreadStateRegistry();
+    const key = "environment-1:thread-1";
+    warmStates.set(key, warmBlob("Live", 5, 1));
+    warmStates.remove(key);
+    warmStates.set(key, warmBlob("Resurrected", 5, 1));
+    warmStates.set(key, warmBlob("Resurrected newer generation", 6, 2));
+
+    expect(warmStates.get(key)).toBeNull();
+  });
+
+  it.effect("keeps a successor's same-sequence updates when a predecessor finalizes later", () =>
+    Effect.gen(function* () {
+      const warmStates = makeWarmThreadStateRegistry();
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const predecessor = yield* makeHarness({ warmStates });
+          yield* Queue.offer(predecessor.inputs, snapshot(ACTIVE_THREAD));
+          yield* Queue.offer(predecessor.inputs, ephemeralToolProgress("predecessor"));
+          yield* awaitThreadState(
+            predecessor.observed,
+            (value) =>
+              Option.isSome(value.data) && toolProgressDetail(value.data.value) === "predecessor",
+          );
+
+          const successor = yield* makeHarness({ warmStates });
+          yield* Queue.offer(successor.inputs, ephemeralToolProgress("successor"));
+          yield* awaitThreadState(
+            successor.observed,
+            (value) =>
+              Option.isSome(value.data) && toolProgressDetail(value.data.value) === "successor",
+          );
+        }),
+      );
+
+      const remount = yield* makeHarness({ warmStates });
+      const state = yield* awaitThreadState(
+        remount.observed,
+        (value) => Option.isSome(value.data) && value.data.value.session?.status === "running",
+      );
+
+      expect(toolProgressDetail(Option.getOrThrow(state.data))).toBe("successor");
+      expect(yield* Ref.get(remount.lastSubscribeAfterSequence)).toBe(1);
+      expect(yield* Ref.get(remount.loaderCalls)).toBe(0);
+    }),
+  );
+
+  it.effect("does not hand a deleted thread to a successor machine", () =>
+    Effect.gen(function* () {
+      const warmStates = makeWarmThreadStateRegistry();
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const harness = yield* makeHarness({ warmStates, cached: BASE_THREAD });
+          yield* Queue.offer(harness.inputs, snapshot(BASE_THREAD));
+          yield* Queue.offer(harness.inputs, deleted());
+          yield* awaitThreadState(harness.observed, (value) => value.status === "deleted");
+        }),
+      );
+
+      const successor = yield* makeHarness({ warmStates });
+      const state = yield* awaitThreadState(
+        successor.observed,
+        (value) => value.status === "empty" || value.status === "deleted",
+      );
+
+      expect(Option.isNone(state.data)).toBe(true);
+    }),
+  );
 
   it.effect("lets overlapping machines all restore the same running-thread handoff", () =>
     Effect.gen(function* () {

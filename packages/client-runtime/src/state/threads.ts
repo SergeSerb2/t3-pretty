@@ -115,41 +115,68 @@ interface WarmThreadState {
   readonly thread: OrchestrationThread;
   readonly page: Option.Option<EnvironmentThreadPageState>;
   readonly lastSequence: number;
+  /** Minted at machine start; a late equal-sequence write cannot rewind a successor. */
+  readonly generation: number;
 }
 
 // ponytail: fixed-size LRU of full thread objects; make it byte-aware if
-// giant threads ever show up in memory profiles.
+// giant threads ever show up in memory profiles. Delete tombstones share the
+// cap — a finalizer can re-warm after 8 other keys if that ever matters.
 const WARM_THREAD_STATE_CAPACITY = 8;
+
+type WarmThreadSlot = WarmThreadState | "deleted";
 
 interface WarmThreadStateRegistry {
   /** Copy without removing so overlapping machines can all restore. */
   readonly get: (key: string) => WarmThreadState | null;
+  /**
+   * Publish a handoff blob. A lower lastSequence, an equal lastSequence with
+   * an older-or-equal generation, or a tombstoned key is ignored.
+   */
   readonly set: (key: string, entry: WarmThreadState) => void;
   readonly remove: (key: string) => void;
+  readonly nextGeneration: () => number;
 }
 
 export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
-  const entries = new Map<string, WarmThreadState>();
+  const entries = new Map<string, WarmThreadSlot>();
+  let generation = 0;
+  const put = (key: string, slot: WarmThreadSlot) => {
+    entries.delete(key);
+    entries.set(key, slot);
+    for (const oldest of entries.keys()) {
+      if (entries.size <= WARM_THREAD_STATE_CAPACITY) {
+        break;
+      }
+      entries.delete(oldest);
+    }
+  };
   return {
-    get: (key) => entries.get(key) ?? null,
+    nextGeneration: () => {
+      generation += 1;
+      return generation;
+    },
+    get: (key) => {
+      const slot = entries.get(key);
+      return slot === undefined || slot === "deleted" ? null : slot;
+    },
     set: (key, entry) => {
       const current = entries.get(key);
-      // A late predecessor (Strict Mode, environment swap) must not rewind
-      // a successor that already applied newer events.
-      if (current !== undefined && entry.lastSequence < current.lastSequence) {
+      if (current === "deleted") {
         return;
       }
-      entries.delete(key);
-      entries.set(key, entry);
-      for (const oldest of entries.keys()) {
-        if (entries.size <= WARM_THREAD_STATE_CAPACITY) {
-          break;
+      if (current !== undefined) {
+        if (entry.lastSequence < current.lastSequence) {
+          return;
         }
-        entries.delete(oldest);
+        if (entry.lastSequence === current.lastSequence && entry.generation <= current.generation) {
+          return;
+        }
       }
+      put(key, entry);
     },
     remove: (key) => {
-      entries.delete(key);
+      put(key, "deleted");
     },
   };
 }
@@ -210,6 +237,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const environmentId = supervisor.target.environmentId;
   const warmStates = yield* WarmThreadStates;
   const stateKey = threadKey({ environmentId, threadId });
+  const warmGeneration = warmStates.nextGeneration();
   // A predecessor machine's in-memory state beats the persisted cache: it is
   // newer and exists for running threads the cache deliberately skips. Peek,
   // don't take: overlapping machines (Strict Mode remount, environment swap
@@ -373,6 +401,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       thread,
       page: currentPage,
       lastSequence: snapshotSequence,
+      generation: warmGeneration,
     });
     // Active threads can update many times per second and retain large tool
     // payloads. The server remains the source of truth while a turn is active;
@@ -828,8 +857,12 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
 
   yield* Effect.addFinalizer(() =>
     Effect.all([SubscriptionRef.get(state), SubscriptionRef.get(lastSequence)]).pipe(
-      Effect.flatMap(([current, snapshotSequence]) =>
-        Option.match(current.data, {
+      Effect.flatMap(([current, snapshotSequence]) => {
+        if (current.status === "deleted") {
+          warmStates.remove(stateKey);
+          return Effect.void;
+        }
+        return Option.match(current.data, {
           onNone: () => Effect.void,
           onSome: (thread) => {
             // Hand the loaded state to the next machine for this thread even
@@ -839,6 +872,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               thread,
               page: current.page,
               lastSequence: snapshotSequence,
+              generation: warmGeneration,
             });
             return shouldPersistThread(thread)
               ? persist({
@@ -858,8 +892,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                 })
               : Effect.void;
           },
-        }),
-      ),
+        });
+      }),
     ),
   );
 
