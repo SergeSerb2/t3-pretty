@@ -176,6 +176,7 @@ function PullRequestsRouteView() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const searchStr = useLocation({ select: (location) => location.searchStr });
+  // Catalog entries can arrive late: clean the live URL without erasing the saved scope.
   const skipNextListPersist = useRef(false);
   const { environments } = useEnvironments();
   // Every connected environment that has said it can list pull requests. Sorted, so the query
