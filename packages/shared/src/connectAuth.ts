@@ -17,6 +17,16 @@ const CONNECT_CALLBACK_PATH = "/connect/callback";
  */
 export const DEFAULT_HOSTED_APP_URL = "https://app.t3.codes";
 
+/** Appends an application route without discarding a project-site base path. */
+export function hostedAppRouteUrl(hostedAppUrl: string, routePath: string): URL {
+  const url = new URL(hostedAppUrl);
+  const basePath = url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
+  url.pathname = `${basePath}${routePath.replace(/^\/+/, "")}`;
+  url.search = "";
+  url.hash = "";
+  return url;
+}
+
 /**
  * Requested at authorize time by the hosted page and honored by the CLI's
  * token exchange; keep both sides on this single definition.
@@ -52,7 +62,7 @@ export function buildConnectAuthorizeRequestUrl(input: {
   readonly challenge: string;
   readonly loopbackPort?: number;
 }): string {
-  const url = new URL(CONNECT_AUTHORIZE_PATH, input.hostedAppUrl);
+  const url = hostedAppRouteUrl(input.hostedAppUrl, CONNECT_AUTHORIZE_PATH);
   url.hash = new URLSearchParams([
     [CONNECT_AUTH_STATE_PARAM, input.state],
     [CONNECT_AUTH_CHALLENGE_PARAM, input.challenge],
@@ -101,7 +111,7 @@ export function connectLoopbackRedirectUri(port: number): string {
 }
 
 export function connectCallbackUrl(hostedAppUrl: string): string {
-  return new URL(CONNECT_CALLBACK_PATH, hostedAppUrl).toString();
+  return hostedAppRouteUrl(hostedAppUrl, CONNECT_CALLBACK_PATH).toString();
 }
 
 export function buildConnectClerkAuthorizeUrl(input: {

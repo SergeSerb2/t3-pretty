@@ -9,6 +9,7 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
 
 export PATH="${HOME}/.vite-plus/bin:${HOME}/.local/bin:${HOME}/.local/t3-pretty-node24/bin:${PATH}"
+export T3CODE_BUILD_FLAVOR=internal
 export T3CODE_DESKTOP_UPDATE_FEED_URL="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"
 export T3CODE_CLERK_PUBLISHABLE_KEY="${T3CODE_CLERK_PUBLISHABLE_KEY:-pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ}"
 export GIT_TERMINAL_PROMPT=0
@@ -103,7 +104,10 @@ node apps/server/scripts/cli.ts pack --app-version "$version" --out-dir "$tmp" -
 tarball="$tmp/t3-${version}.tgz"
 test -f "$tarball"
 cp "$tarball" "$tmp/t3.tgz"
-cp scripts/fork/install-cli.sh "$tmp/install.sh"
+# Never upload the checked-in public installer unchanged from Buildkite.
+sed \
+  's|https://github.com/SergeSerb2/t3-pretty/releases/latest/download|https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest|g; s|T3 Connect|Surge Connect|g' \
+  scripts/fork/install-cli.sh >"$tmp/install.sh"
 chmod 755 "$tmp/install.sh"
 
 if [[ "${T3_PRETTY_CLI_SKIP_UPLOAD:-}" == "1" ]]; then

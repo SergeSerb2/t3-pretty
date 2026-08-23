@@ -39,6 +39,10 @@ const configuredRelayTracingUrl = repoEnv.VITE_RELAY_OTLP_TRACES_URL?.trim() || 
 const configuredRelayTracingDataset = repoEnv.VITE_RELAY_OTLP_TRACES_DATASET?.trim() || "";
 const configuredRelayTracingToken = repoEnv.VITE_RELAY_OTLP_TRACES_TOKEN?.trim() || "";
 const configuredHostedAppChannel = process.env.VITE_HOSTED_APP_CHANNEL?.trim() || "";
+const configuredStaticHostedApp = process.env.VITE_STATIC_HOSTED_APP === "1";
+const configuredConnectCliAuthEnabled =
+  process.env.VITE_CONNECT_CLI_AUTH_ENABLED?.trim() === "0" ? "0" : "1";
+const configuredBasePath = process.env.T3CODE_WEB_BASE_PATH?.trim() || "/";
 const configuredAppVersion = process.env.APP_VERSION?.trim() || pkg.version;
 const configuredHostedAppUrl = (() => {
   const explicitHostedAppUrl = process.env.VITE_HOSTED_APP_URL?.trim();
@@ -160,6 +164,7 @@ const EAGER_ROUTE_IDS = new Set([
 
 export default defineConfig(() => {
   return {
+    base: configuredBasePath,
     assetsInclude: ["**/*.wasm"],
     plugins: [
       devCompressionPlugin(),
@@ -198,6 +203,7 @@ export default defineConfig(() => {
       ],
     },
     define: {
+      __T3CODE_BUILD_FLAVOR__: JSON.stringify(repoEnv.T3CODE_BUILD_FLAVOR ?? "public"),
       // In dev mode, tell the web app where the WebSocket server lives
       "import.meta.env.VITE_WS_URL": JSON.stringify(configuredWsUrl ?? ""),
       // Pinned explicitly rather than left to Vite's automatic VITE_ exposure:
@@ -217,6 +223,10 @@ export default defineConfig(() => {
       "import.meta.env.VITE_RELAY_OTLP_TRACES_TOKEN": JSON.stringify(configuredRelayTracingToken),
       "import.meta.env.VITE_HOSTED_APP_URL": JSON.stringify(configuredHostedAppUrl ?? ""),
       "import.meta.env.VITE_HOSTED_APP_CHANNEL": JSON.stringify(configuredHostedAppChannel),
+      "import.meta.env.VITE_STATIC_HOSTED_APP": JSON.stringify(configuredStaticHostedApp),
+      "import.meta.env.VITE_CONNECT_CLI_AUTH_ENABLED": JSON.stringify(
+        configuredConnectCliAuthEnabled,
+      ),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
     },
     resolve: {

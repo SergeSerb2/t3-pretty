@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import { forkCliCommand } from "@t3tools/shared/connectBranding";
 
 import { formatServiceStatus } from "./service.ts";
 
@@ -25,7 +26,7 @@ it("reports the installed service version and host paths", () => {
 it("gives a direct repair command for a stale service", () => {
   assert.include(
     formatServiceStatus({ ...status, current: false }, "0.0.29"),
-    "Next: Run `npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz t3 service update`.",
+    `Next: Run \`${forkCliCommand("service update")}\`.`,
   );
 });
 

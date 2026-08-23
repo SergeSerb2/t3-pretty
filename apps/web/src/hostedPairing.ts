@@ -1,4 +1,4 @@
-import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
+import { DEFAULT_HOSTED_APP_URL, hostedAppRouteUrl } from "@t3tools/shared/connectAuth";
 
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "./pairingUrl";
 
@@ -69,7 +69,7 @@ export function buildHostedPairingUrl(input: {
   readonly token: string;
   readonly label?: string | null;
 }): string {
-  const url = new URL("/pair", configuredHostedAppUrl());
+  const url = hostedAppRouteUrl(configuredHostedAppUrl(), "/pair");
   url.searchParams.set("host", input.host);
 
   const label = input.label?.trim();
@@ -83,7 +83,7 @@ export function buildHostedPairingUrl(input: {
 export function buildHostedChannelSelectionUrl(input: {
   readonly channel: HostedAppChannel;
 }): string {
-  const url = new URL("/__t3code/channel", configuredHostedAppUrl());
+  const url = hostedAppRouteUrl(configuredHostedAppUrl(), "/__t3code/channel");
   url.searchParams.set("channel", input.channel);
   return url.toString();
 }

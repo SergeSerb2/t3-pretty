@@ -2,7 +2,7 @@ import type {
   DesktopSshEnvironmentBootstrap,
   DesktopSshEnvironmentTarget,
 } from "@t3tools/contracts";
-import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
+import { forkCliTarballUrl, T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import {
   describeReadinessCause,
   waitForHttpReady as waitForHttpReadyShared,
@@ -58,6 +58,7 @@ const TUNNEL_SHUTDOWN_TIMEOUT_MS = 2_000;
 const REMOTE_READY_TIMEOUT_MS = 60_000;
 const REMOTE_LAUNCH_TIMEOUT_MS = 90_000;
 const REMOTE_REUSE_READY_TIMEOUT_MS = 2_000;
+const REMOTE_BASE_DIR_NAME = T3CODE_BUILD_FLAVOR === "internal" ? ".t3" : ".t3-pretty";
 
 export interface RemoteT3RunnerOptions {
   readonly packageSpec?: string;
@@ -509,8 +510,8 @@ exit 1
 export const REMOTE_LAUNCH_SCRIPT = `set -eu
 @@T3_NODE_ENV_SCRIPT@@
 STATE_KEY="$1"
-STATE_DIR="$HOME/.t3/ssh-launch/$STATE_KEY"
-DEFAULT_SERVER_HOME="$HOME/.t3"
+STATE_DIR="$HOME/${REMOTE_BASE_DIR_NAME}/ssh-launch/$STATE_KEY"
+DEFAULT_SERVER_HOME="$HOME/${REMOTE_BASE_DIR_NAME}"
 DEFAULT_RUNTIME_FILE="$DEFAULT_SERVER_HOME/userdata/server-runtime.json"
 PORT_FILE="$STATE_DIR/port"
 PID_FILE="$STATE_DIR/pid"
@@ -666,8 +667,8 @@ printf '{"remotePort":%s,"serverKind":"%s"}\\n' "$REMOTE_PORT" "\${REMOTE_MANAGE
 `;
 
 export const REMOTE_PAIRING_SCRIPT = `set -eu
-STATE_DIR="$HOME/.t3/ssh-launch/@@T3_STATE_KEY@@"
-DEFAULT_SERVER_HOME="$HOME/.t3"
+STATE_DIR="$HOME/${REMOTE_BASE_DIR_NAME}/ssh-launch/@@T3_STATE_KEY@@"
+DEFAULT_SERVER_HOME="$HOME/${REMOTE_BASE_DIR_NAME}"
 RUNNER_FILE="$STATE_DIR/run-t3.sh"
 mkdir -p "$STATE_DIR"
 cat >"$RUNNER_FILE" <<'SH'
@@ -679,7 +680,7 @@ PAIRING_BASE_DIR="$DEFAULT_SERVER_HOME"
 `;
 
 export const REMOTE_STOP_SCRIPT = `set -eu
-STATE_DIR="$HOME/.t3/ssh-launch/@@T3_STATE_KEY@@"
+STATE_DIR="$HOME/${REMOTE_BASE_DIR_NAME}/ssh-launch/@@T3_STATE_KEY@@"
 PID_FILE="$STATE_DIR/pid"
 PORT_FILE="$STATE_DIR/port"
 MANAGED_FILE="$STATE_DIR/managed"
@@ -698,7 +699,7 @@ printf '{"stopped":true}\\n'
 `;
 
 const REMOTE_LOG_TAIL_SCRIPT = `set -eu
-STATE_DIR="$HOME/.t3/ssh-launch/@@T3_STATE_KEY@@"
+STATE_DIR="$HOME/${REMOTE_BASE_DIR_NAME}/ssh-launch/@@T3_STATE_KEY@@"
 LOG_FILE="$STATE_DIR/server.log"
 if [ -f "$LOG_FILE" ]; then
   tail -n 80 "$LOG_FILE" 2>/dev/null || true
@@ -789,7 +790,7 @@ if (!/^[0-9a-f]{16}$/.test(stateKey)) {
   throw new Error("Invalid SSH launch state key.");
 }
 
-const defaultServerHome = path.join(os.homedir(), ".t3");
+const defaultServerHome = path.join(os.homedir(), "${REMOTE_BASE_DIR_NAME}");
 const stateDirectory = path.join(defaultServerHome, "ssh-launch", stateKey);
 const defaultRuntimeFile = path.join(defaultServerHome, "userdata", "server-runtime.json");
 const portFile = path.join(stateDirectory, "port");
@@ -1074,7 +1075,7 @@ const os = require("node:os");
 
 function main() {
   assertCompatibleNode();
-  const defaultServerHome = path.join(os.homedir(), ".t3");
+  const defaultServerHome = path.join(os.homedir(), "${REMOTE_BASE_DIR_NAME}");
   const command = resolveRemoteT3Command([
     "auth",
     "pairing",
@@ -1114,7 +1115,7 @@ const stateKey = process.argv[2] || "";
 if (!/^[0-9a-f]{16}$/.test(stateKey)) {
   throw new Error("Invalid SSH launch state key.");
 }
-const stateDirectory = path.join(os.homedir(), ".t3", "ssh-launch", stateKey);
+const stateDirectory = path.join(os.homedir(), "${REMOTE_BASE_DIR_NAME}", "ssh-launch", stateKey);
 const pidFile = path.join(stateDirectory, "pid");
 const portFile = path.join(stateDirectory, "port");
 const managedFile = path.join(stateDirectory, "managed");
@@ -1158,7 +1159,7 @@ const stateKey = process.argv[2] || "";
 if (!/^[0-9a-f]{16}$/.test(stateKey)) {
   throw new Error("Invalid SSH launch state key.");
 }
-const logFile = path.join(os.homedir(), ".t3", "ssh-launch", stateKey, "server.log");
+const logFile = path.join(os.homedir(), "${REMOTE_BASE_DIR_NAME}", "ssh-launch", stateKey, "server.log");
 try {
   const lines = fs.readFileSync(logFile, "utf8").split(/\r?\n/);
   process.stdout.write(lines.slice(-80).join("\n"));

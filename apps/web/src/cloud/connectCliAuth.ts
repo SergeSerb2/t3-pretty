@@ -27,8 +27,13 @@ export function hasConnectCliAuthConfig(): boolean {
  * deployment (the same bundle ships inside local instances) and needs the
  * Clerk CLI OAuth client configured at build time.
  */
-export function connectCliAuthRoutesEnabled(): boolean {
-  return isHostedStaticApp() && hasCloudPublicConfig() && hasConnectCliAuthConfig();
+export function connectCliAuthRoutesEnabled(url: URL = new URL(window.location.href)): boolean {
+  return (
+    import.meta.env.VITE_CONNECT_CLI_AUTH_ENABLED !== "0" &&
+    isHostedStaticApp(url) &&
+    hasCloudPublicConfig() &&
+    hasConnectCliAuthConfig()
+  );
 }
 
 /**

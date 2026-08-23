@@ -1,4 +1,5 @@
 import { isElectron } from "~/env";
+import { SURGE_CODE_ACCOUNT_NAME } from "@t3tools/shared/connectBranding";
 
 import { WORLD_SCENERY_THEME_ID } from "../../scenery/worldSceneryTheme";
 
@@ -403,7 +404,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "surge-connect-account",
-    title: "Surge Code account",
+    title: `${SURGE_CODE_ACCOUNT_NAME} account`,
     to: "/settings/connections",
   },
   {

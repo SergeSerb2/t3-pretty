@@ -35,6 +35,7 @@ env:
 jobs:
   deploy_relay:
     name: Deploy production relay
+    if: github.repository != 'SergeSerb2/t3-pretty'
     # macos-release can read the file-store fallbacks that hosted linux-small
     # cannot. Clerk / PlanetScale / Axiom tokens are not interpolatable on
     # the importer without risking a failed `secrets.*` resolve.

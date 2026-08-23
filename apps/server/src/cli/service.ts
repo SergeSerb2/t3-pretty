@@ -1,4 +1,4 @@
-import { forkCliCommand } from "@t3tools/shared/connectBranding";
+import { forkCliCommand, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
@@ -163,9 +163,9 @@ export const offerServiceDuringOnboarding = Effect.gen(function* () {
         ? "The installed T3 Code service needs an update or repair. Update it now?"
         : platform === "darwin"
           ? "Run T3 Code in the background whenever you log in to this Mac? " +
-            "It stays reachable through Surge Connect while you are logged in."
+            `It stays reachable through ${SURGE_CONNECT_NAME} while you are logged in.`
           : "Run T3 Code in the background whenever this machine boots? " +
-            "It stays reachable through Surge Connect even after you log out.",
+            `It stays reachable through ${SURGE_CONNECT_NAME} even after you log out.`,
       initial: true,
     }),
   );
