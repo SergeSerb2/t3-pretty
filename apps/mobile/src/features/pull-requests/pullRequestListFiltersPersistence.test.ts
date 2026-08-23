@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   nextPullRequestEnvironmentId,
   restorePullRequestListFilters,
+  shouldRetryPullRequestListRestore,
   type PersistedPullRequestListFilters,
 } from "./pullRequestListFiltersPersistence";
 
@@ -46,6 +47,25 @@ describe("nextPullRequestEnvironmentId", () => {
     expect(nextPullRequestEnvironmentId(null, "env-1" as EnvironmentId, [env("env-1")])).toBe(
       "env-1",
     );
+  });
+});
+
+describe("shouldRetryPullRequestListRestore", () => {
+  it("retries a named save once servers appear after an empty restore", () => {
+    expect(shouldRetryPullRequestListRestore("env-1" as EnvironmentId, [], true)).toBe(false);
+    expect(shouldRetryPullRequestListRestore("env-1" as EnvironmentId, [env("env-1")], true)).toBe(
+      true,
+    );
+    expect(shouldRetryPullRequestListRestore("env-1" as EnvironmentId, [env("env-2")], true)).toBe(
+      true,
+    );
+  });
+
+  it("does not retry after a committed restore or when nothing was saved", () => {
+    expect(shouldRetryPullRequestListRestore("env-1" as EnvironmentId, [env("env-1")], false)).toBe(
+      false,
+    );
+    expect(shouldRetryPullRequestListRestore(null, [env("env-1")], true)).toBe(false);
   });
 });
 

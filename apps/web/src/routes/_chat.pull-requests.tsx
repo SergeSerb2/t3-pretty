@@ -67,6 +67,7 @@ import {
 import {
   CLEARED_PULL_REQUEST_LIST_SEARCH,
   persistedFiltersFromSearch,
+  pullRequestListFiltersToPersist,
   readPersistedPullRequestListFilters,
   restoredListSearchToReplaceUrl,
   searchFromPersistedFilters,
@@ -466,14 +467,26 @@ function PullRequestsRouteView() {
 
   // validateSearch restores in memory; replace so the address bar matches without a persist write.
   useEffect(() => {
-    if (replacedRestoreUrl.current) return;
     const raw = Object.fromEntries(
       new URLSearchParams(searchStr.startsWith("?") ? searchStr.slice(1) : searchStr),
     );
-    const next = restoredListSearchToReplaceUrl(raw, persistedFiltersFromSearch(search));
-    if (next === null) return;
+    if (!replacedRestoreUrl.current) {
+      const next = restoredListSearchToReplaceUrl(raw, persistedFiltersFromSearch(search));
+      if (next !== null) {
+        replacedRestoreUrl.current = true;
+        updateSearch(next);
+        return;
+      }
+    }
+    const persistable = pullRequestListFiltersToPersist(
+      raw,
+      persistedFiltersFromSearch(search),
+      !replacedRestoreUrl.current,
+    );
     replacedRestoreUrl.current = true;
-    updateSearch(next);
+    if (persistable !== null) {
+      writePersistedPullRequestListFilters(persistable);
+    }
   }, [search, searchStr, updateSearch]);
 
   // Changing what the list contains must not leave a selection from the previous view open.

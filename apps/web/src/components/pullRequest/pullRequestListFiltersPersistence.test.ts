@@ -7,6 +7,7 @@ import {
   PULL_REQUEST_LIST_FILTERS_STORAGE_KEY,
   persistedFiltersFromSearch,
   persistedPullRequestListSearch,
+  pullRequestListFiltersToPersist,
   readPersistedPullRequestListFilters,
   restoredListSearchToReplaceUrl,
   shouldRestorePersistedListFilters,
@@ -70,6 +71,32 @@ describe("persisted pull request list filters", () => {
     expect(restoredListSearchToReplaceUrl({ involvement: "reviewing" }, restored)).toBe(null);
     expect(restoredListSearchToReplaceUrl({ repository: "acme/web" }, restored)).toBe(null);
     expect(restoredListSearchToReplaceUrl({}, DEFAULT_PULL_REQUEST_LIST_FILTERS)).toBe(null);
+  });
+
+  it("persists validated list search except during the in-memory restore", () => {
+    const restored = {
+      involvement: "authored" as const,
+      state: "closed" as const,
+      environmentId: "env-1" as EnvironmentId,
+    };
+    expect(pullRequestListFiltersToPersist({}, restored, true)).toBe(null);
+    expect(
+      pullRequestListFiltersToPersist({ involvement: "all", state: "open" }, restored, true),
+    ).toBe(null);
+    expect(
+      pullRequestListFiltersToPersist(
+        { involvement: "reviewing" },
+        { involvement: "reviewing", state: "open" },
+        true,
+      ),
+    ).toEqual({
+      involvement: "reviewing",
+      state: "open",
+    });
+    expect(pullRequestListFiltersToPersist({}, restored, false)).toEqual(restored);
+    expect(
+      pullRequestListFiltersToPersist({ involvement: "all", state: "open" }, restored, false),
+    ).toEqual(restored);
   });
 
   it("does not treat a default-named URL as a write of the defaults", () => {

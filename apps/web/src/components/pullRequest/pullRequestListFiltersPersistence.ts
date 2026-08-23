@@ -143,6 +143,19 @@ export function restoredListSearchToReplaceUrl(
   };
 }
 
+/**
+ * Persist the validated list, including history and deep links. Null while a bare/default URL
+ * is still the in-memory restore, so that replace is not treated as a user filter change.
+ */
+export function pullRequestListFiltersToPersist(
+  raw: Record<string, unknown>,
+  search: PersistedPullRequestListFilters,
+  restoreReplacePending: boolean,
+): PersistedPullRequestListFilters | null {
+  if (restoreReplacePending && shouldRestorePersistedListFilters(raw)) return null;
+  return persistedFiltersFromSearch(search);
+}
+
 export function readPersistedPullRequestListFilters(): PersistedPullRequestListFilters {
   try {
     const stored = getLocalStorageItem(

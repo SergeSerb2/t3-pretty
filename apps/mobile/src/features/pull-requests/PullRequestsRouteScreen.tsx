@@ -18,6 +18,7 @@ import {
   nextPullRequestEnvironmentId,
   readPersistedPullRequestListFilters,
   restorePullRequestListFilters,
+  shouldRetryPullRequestListRestore,
   writePersistedPullRequestListFilters,
 } from "./pullRequestListFiltersPersistence";
 import { usePullRequestList } from "./usePullRequestList";
@@ -79,6 +80,13 @@ export function PullRequestsRouteScreen() {
     savedFilters.environmentId ?? preferredEnvironmentId,
   );
   const [scopeRestored, setScopeRestored] = useState(false);
+  const [awaitingEmptyNamedSave, setAwaitingEmptyNamedSave] = useState(
+    savedFilters.environmentId !== null && environments.length === 0,
+  );
+  const commitScope = () => {
+    setAwaitingEmptyNamedSave(false);
+    setScopeRestored(true);
+  };
   useEffect(() => {
     if (isLoadingSavedConnection) return;
     if (!scopeRestored) {
@@ -90,7 +98,26 @@ export function PullRequestsRouteScreen() {
       setSelectedEnvironmentId(restored.environmentId);
       setSelectedProjectId(restored.projectId);
       setSelectedHost(restored.host);
+      setAwaitingEmptyNamedSave(savedFilters.environmentId !== null && environments.length === 0);
       setScopeRestored(true);
+      return;
+    }
+    if (
+      shouldRetryPullRequestListRestore(
+        savedFilters.environmentId,
+        environments,
+        awaitingEmptyNamedSave,
+      )
+    ) {
+      const restored = restorePullRequestListFilters(
+        savedFilters,
+        preferredEnvironmentId,
+        environments,
+      );
+      setAwaitingEmptyNamedSave(false);
+      setSelectedEnvironmentId(restored.environmentId);
+      setSelectedProjectId(restored.projectId);
+      setSelectedHost(restored.host);
       return;
     }
     const next = nextPullRequestEnvironmentId(
@@ -104,6 +131,7 @@ export function PullRequestsRouteScreen() {
       setSelectedHost(undefined);
     }
   }, [
+    awaitingEmptyNamedSave,
     environments,
     isLoadingSavedConnection,
     preferredEnvironmentId,
@@ -113,14 +141,27 @@ export function PullRequestsRouteScreen() {
   ]);
   useEffect(() => {
     if (!scopeRestored) return;
-    writePersistedPullRequestListFilters({
-      involvement,
-      state,
-      environmentId: selectedEnvironmentId,
-      projectId: selectedProjectId,
-      host: selectedHost,
-    });
-  }, [involvement, scopeRestored, selectedEnvironmentId, selectedHost, selectedProjectId, state]);
+    writePersistedPullRequestListFilters(
+      awaitingEmptyNamedSave
+        ? { ...savedFilters, involvement, state }
+        : {
+            involvement,
+            state,
+            environmentId: selectedEnvironmentId,
+            projectId: selectedProjectId,
+            host: selectedHost,
+          },
+    );
+  }, [
+    awaitingEmptyNamedSave,
+    involvement,
+    savedFilters,
+    scopeRestored,
+    selectedEnvironmentId,
+    selectedHost,
+    selectedProjectId,
+    state,
+  ]);
 
   const selected = environments.find(
     (environment) => environment.environmentId === selectedEnvironmentId,
@@ -178,19 +219,19 @@ export function PullRequestsRouteScreen() {
         })
       }
       onEnvironmentChange={(environmentId) => {
-        setScopeRestored(true);
+        commitScope();
         setSelectedEnvironmentId(environmentId);
         setSelectedProjectId(undefined);
         setSelectedHost(undefined);
       }}
       onHostChange={(host) => {
-        setScopeRestored(true);
+        commitScope();
         setSelectedHost(host);
       }}
       onInvolvementChange={setInvolvement}
       onLoadMore={list.loadMore}
       onProjectChange={(projectId) => {
-        setScopeRestored(true);
+        commitScope();
         setSelectedProjectId(projectId);
       }}
       onRefresh={() => void list.refreshFromHost()}
@@ -206,7 +247,7 @@ export function PullRequestsRouteScreen() {
       }}
       onStateChange={setState}
       onClearFilters={() => {
-        setScopeRestored(true);
+        commitScope();
         setInvolvement("all");
         setState("open");
         setSelectedEnvironmentId(

@@ -50,6 +50,18 @@ export function nextPullRequestEnvironmentId(
 }
 
 /**
+ * A named save on an empty list can still be a hydrate flash. Retry restore when servers
+ * appear; an empty list with no named save has nothing to wait for.
+ */
+export function shouldRetryPullRequestListRestore(
+  savedEnvironmentId: EnvironmentId | null,
+  environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
+  awaitingEmptyNamedSave: boolean,
+): boolean {
+  return awaitingEmptyNamedSave && savedEnvironmentId !== null && environments.length > 0;
+}
+
+/**
  * After saved connections have settled: keep project/host only when the saved server is still
  * present. A missing server (including an empty list) falls back to `preferred` without them.
  */
