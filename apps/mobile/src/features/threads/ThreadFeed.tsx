@@ -29,6 +29,7 @@ import {
   type PartialMarkdownTheme,
 } from "react-native-nitro-markdown";
 import {
+  ActivityIndicator,
   Image,
   Platform,
   type LayoutChangeEvent,
@@ -45,7 +46,21 @@ import {
 import { TouchableOpacity } from "react-native-gesture-handler";
 import ImageViewing from "react-native-image-viewing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeIn, FadeInUp, type SharedValue } from "react-native-reanimated";
+import Animated, {
+  cancelAnimation,
+  Easing,
+  FadeIn,
+  FadeInUp,
+  FadeOut,
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+  type SharedValue,
+} from "react-native-reanimated";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { useFontFamily } from "../../lib/useFontFamily";
@@ -167,6 +182,12 @@ function isFreshTimestamp(input: string): boolean {
   const timestamp = Date.parse(input);
   return Number.isFinite(timestamp) && Date.now() - timestamp < FRESH_ENTRY_WINDOW_MS;
 }
+
+// The loading/empty placeholders enter only after a beat: a cached thread
+// resolves well inside the delay, so fast switches never flash "Loading
+// messages" text at all. Slow loads get a gentle fade instead of a pop.
+const FEED_PLACEHOLDER_ENTER = FadeIn.delay(220).duration(200).reduceMotion(ReduceMotion.System);
+const FEED_PLACEHOLDER_EXIT = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 
 export interface ThreadFeedProps {
   readonly environmentId: EnvironmentId;
@@ -1056,14 +1077,13 @@ function renderFeedEntry(
     readonly reviewCommentBubbleWidth: number;
     readonly userBubbleMaxWidth: number;
     readonly localPreviewUrisByMessageId: Readonly<Record<string, ReadonlyArray<string>>>;
-    readonly active: boolean;
   },
 ) {
   const entry = info.item;
   const { markdownStyles, iconSubtleColor, userBubbleColor } = props;
 
   if (entry.type === "working") {
-    return <WorkingTimelineRow active={props.active} startedAt={entry.createdAt} />;
+    return <WorkingTimelineRow startedAt={entry.createdAt} />;
   }
 
   if (entry.type === "turn-fold") {
@@ -1205,25 +1225,19 @@ function renderFeedEntry(
         {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
       >
         {message.text.trim().length > 0 ? (
-          message.streaming ? (
-            <CadencedAssistantMarkdown
-              key={message.id}
-              text={message.text}
-              streaming
-              markdownStyles={styles}
-              skills={props.skills}
-              onLinkPress={props.onMarkdownLinkPress}
-              renderImage={props.renderMarkdownImage}
-            />
-          ) : (
-            <AssistantMarkdownContent
-              markdown={message.text}
-              streaming={false}
-              markdownStyles={styles}
-              skills={props.skills}
-              onLinkPress={props.onMarkdownLinkPress}
-            />
-          )
+          // One element type for streaming and settled text: swapping
+          // components at settle tears down and rebuilds every native
+          // markdown view in the message at the exact moment the user is
+          // reading it. CadencedAssistantMarkdown passes settled text
+          // through untouched.
+          <CadencedAssistantMarkdown
+            key={message.id}
+            text={message.text}
+            streaming={message.streaming === true}
+            markdownStyles={styles}
+            skills={props.skills}
+            onLinkPress={props.onMarkdownLinkPress}
+          />
         ) : null}
         {attachments.map((attachment) => {
           return (
@@ -1274,14 +1288,15 @@ function renderFeedEntry(
   );
 }
 
-const WorkingTimelineRow = memo(function WorkingTimelineRow(props: {
-  readonly active: boolean;
-  readonly startedAt: string;
-}) {
+const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly startedAt: string }) {
+  // Focus is read here rather than threaded through renderItem: a renderItem
+  // identity change re-renders every visible row, and focus flips exactly
+  // during navigation transitions — the worst moment to repaint the feed.
+  const active = useIsFocused();
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
-    if (!props.active) {
+    if (!active) {
       return;
     }
     setNowMs(Date.now());
@@ -1289,21 +1304,70 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow(props: {
       setNowMs(Date.now());
     }, 1_000);
     return () => clearInterval(intervalId);
-  }, [props.active, props.startedAt]);
+  }, [active, props.startedAt]);
 
   const durationLabel = formatElapsed(props.startedAt, new Date(nowMs).toISOString()) ?? "0s";
 
   return (
     <View className="mb-4 flex-row items-center gap-2 px-1.5 py-1">
       <View className="flex-row items-center gap-1">
-        <View className="h-1 w-1 rounded-full bg-neutral-400 dark:bg-neutral-500" />
-        <View className="h-1 w-1 rounded-full bg-neutral-400/80 dark:bg-neutral-500/80" />
-        <View className="h-1 w-1 rounded-full bg-neutral-400/60 dark:bg-neutral-500/60" />
+        <WorkingDot index={0} active={active} />
+        <WorkingDot index={1} active={active} />
+        <WorkingDot index={2} active={active} />
       </View>
       <Text className="font-t3-medium text-xs tabular-nums text-neutral-600 dark:text-neutral-400">
         Working for {durationLabel}
       </Text>
     </View>
+  );
+});
+
+// Staggered opacity pulse for the working indicator. Opacity-only on the UI
+// thread, runs solely while the row is active (agent working + screen
+// focused), and defers to the system reduce-motion setting.
+const WorkingDot = memo(function WorkingDot(props: {
+  readonly index: number;
+  readonly active: boolean;
+}) {
+  const dotOpacity = useSharedValue(0.55);
+
+  useEffect(() => {
+    if (!props.active) {
+      cancelAnimation(dotOpacity);
+      dotOpacity.value = withTiming(0.55, { duration: 180 });
+      return;
+    }
+    dotOpacity.value = withDelay(
+      props.index * 170,
+      withRepeat(
+        withSequence(
+          withTiming(1, {
+            duration: 430,
+            easing: Easing.inOut(Easing.quad),
+            reduceMotion: ReduceMotion.System,
+          }),
+          withTiming(0.3, {
+            duration: 430,
+            easing: Easing.inOut(Easing.quad),
+            reduceMotion: ReduceMotion.System,
+          }),
+        ),
+        -1,
+        false,
+      ),
+    );
+    return () => {
+      cancelAnimation(dotOpacity);
+    };
+  }, [dotOpacity, props.active, props.index]);
+
+  const dotStyle = useAnimatedStyle(() => ({ opacity: dotOpacity.value }));
+
+  return (
+    <Animated.View
+      style={dotStyle}
+      className="h-1 w-1 rounded-full bg-neutral-400 dark:bg-neutral-500"
+    />
   );
 });
 
@@ -1584,7 +1648,6 @@ function ThreadFeedPlaceholder(props: {
 export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const navigation = useNavigation();
   const openChangeRequestLink = useOpenChangeRequestLink(props.environmentId);
-  const isFocused = useIsFocused();
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const foldSettleFrameRef = useRef<number | null>(null);
   const foldSettleSecondFrameRef = useRef<number | null>(null);
@@ -1734,29 +1797,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const markdownStyles = useMarkdownStyles(onMarkdownLinkPress, renderMarkdownImage);
   const reviewCommentColors = useReviewCommentColors();
   // LegendList does not invalidate visible rows when only the renderItem closure changes.
-  // Keep row-local interaction props in extraData so disclosures and copy feedback repaint.
-  const listAppearanceData = useMemo(
-    () => ({
-      copiedRowId,
-      expandedWorkRows,
-      iconSubtleColor,
-      markdownStyles,
-      reviewCommentColors,
-      userBubbleColor,
-      viewportWidth,
-      localPreviewUrisByMessageId,
-    }),
-    [
-      copiedRowId,
-      expandedWorkRows,
-      iconSubtleColor,
-      markdownStyles,
-      reviewCommentColors,
-      userBubbleColor,
-      viewportWidth,
-      localPreviewUrisByMessageId,
-    ],
-  );
   const reportHeaderMaterialVisibility = useCallback(
     (visible: boolean) => {
       if (headerMaterialVisibleRef.current === visible) {
@@ -1941,6 +1981,18 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     feedLength: props.feed.length,
     listReady: listReadyForCurrentMount,
   });
+  // LegendList holds row opacity at 0 until onLoad, then reveals everything in
+  // one frame. Fading the container instead turns that reveal (and the
+  // overlay handoff) into a crossfade.
+  const feedOpacity = useSharedValue(showLoadingOverlay ? 0 : 1);
+  useEffect(() => {
+    feedOpacity.value = withTiming(showLoadingOverlay ? 0 : 1, {
+      duration: 200,
+      easing: Easing.out(Easing.cubic),
+      reduceMotion: ReduceMotion.System,
+    });
+  }, [feedOpacity, showLoadingOverlay]);
+  const feedContainerStyle = useAnimatedStyle(() => ({ opacity: feedOpacity.value }));
 
   const anchoredEndSpace = useMemo(
     () =>
@@ -1966,6 +2018,40 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     (props.latestTurn.completedAt === null || props.latestTurn.state === "running")
       ? props.latestTurn.turnId
       : null;
+
+  // Keep row-local interaction props in extraData so disclosures and copy
+  // feedback repaint. LegendList memoizes rows on [itemKey, itemData,
+  // extraData] only — renderItem-closure changes do not invalidate rows — so
+  // everything renderFeedEntry reads that can change without the entry object
+  // changing must ride along here. unsettledTurnId and
+  // terminalAssistantMessageIds gate showAssistantMeta: without them the
+  // timestamp/copy row would not appear when a turn settles.
+  const listAppearanceData = useMemo(
+    () => ({
+      copiedRowId,
+      expandedWorkRows,
+      iconSubtleColor,
+      markdownStyles,
+      reviewCommentColors,
+      userBubbleColor,
+      viewportWidth,
+      localPreviewUrisByMessageId,
+      terminalAssistantMessageIds,
+      unsettledTurnId,
+    }),
+    [
+      copiedRowId,
+      expandedWorkRows,
+      iconSubtleColor,
+      markdownStyles,
+      reviewCommentColors,
+      userBubbleColor,
+      viewportWidth,
+      localPreviewUrisByMessageId,
+      terminalAssistantMessageIds,
+      unsettledTurnId,
+    ],
+  );
 
   useEffect(() => {
     const previous = previousLatestTurnRef.current;
@@ -2162,7 +2248,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         userBubbleMaxWidth,
         localPreviewUrisByMessageId,
         skills: props.skills,
-        active: isFocused,
       }),
     [
       copiedRowId,
@@ -2186,7 +2271,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.skills,
       props.threadId,
       props.workspaceRoot,
-      isFocused,
       renderMarkdownImage,
     ],
   );
@@ -2206,7 +2290,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   return (
     <>
       <View className="flex-1" onLayout={handleViewportLayout}>
-        <View className="flex-1">
+        <Animated.View className="flex-1" style={feedContainerStyle}>
           <KeyboardAwareLegendList
             ref={props.listRef}
             // The empty↔filled key remounts the list when messages first
@@ -2343,9 +2427,14 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               paddingHorizontal: contentHorizontalPadding,
             }}
           />
-        </View>
+        </Animated.View>
         {showLoadingOverlay ? (
-          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <Animated.View
+            entering={FEED_PLACEHOLDER_ENTER}
+            exiting={FEED_PLACEHOLDER_EXIT}
+            pointerEvents="none"
+            style={StyleSheet.absoluteFill}
+          >
             <ThreadFeedPlaceholder
               title="Loading messages"
               detail="The conversation will appear here once it finishes loading."
@@ -2353,11 +2442,16 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               bottomInset={bottomContentInset}
               horizontalPadding={horizontalPadding}
             />
-          </View>
+          </Animated.View>
         ) : props.feed.length === 0 &&
           props.activeWorkStartedAt === null &&
           props.contentPresentation.kind === "ready" ? (
-          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <Animated.View
+            entering={FEED_PLACEHOLDER_ENTER}
+            exiting={FEED_PLACEHOLDER_EXIT}
+            pointerEvents="none"
+            style={StyleSheet.absoluteFill}
+          >
             <ThreadFeedPlaceholder
               title="No conversation yet"
               detail="Ask the agent to inspect the repo, run a command, or continue the active thread."
@@ -2365,7 +2459,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               bottomInset={bottomContentInset}
               horizontalPadding={horizontalPadding}
             />
-          </View>
+          </Animated.View>
         ) : null}
       </View>
 

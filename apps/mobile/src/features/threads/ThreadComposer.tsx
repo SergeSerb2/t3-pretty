@@ -339,7 +339,14 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
   return (
     <Animated.View
       className="absolute inset-x-0 bottom-full items-center pb-2"
-      entering={FadeInDown.duration(180)}
+      // Sync pills wait a beat before appearing: a cached thread finishes
+      // syncing inside the delay, so fast thread switches never flash a
+      // "Loading messages..." pill. Connection problems still show instantly.
+      entering={
+        props.status.kind === "syncing"
+          ? FadeInDown.delay(300).duration(180)
+          : FadeInDown.duration(180)
+      }
       exiting={FadeOutDown.duration(140)}
       pointerEvents="box-none"
     >
