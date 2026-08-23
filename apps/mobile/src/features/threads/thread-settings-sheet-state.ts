@@ -16,6 +16,20 @@ export function threadSettingsSheetPageForRoute(routeName: string): ThreadSettin
   return null;
 }
 
+/** Keep the in-sheet page only for a live re-present of the same open owner. */
+export function presentedSettingsSheetPage(input: {
+  readonly preservePage: boolean;
+  readonly currentOwnerId: string | undefined;
+  readonly nextOwnerId: string;
+  readonly currentPage: ThreadSettingsSheetPage | undefined;
+  readonly requestedPage: ThreadSettingsSheetPage | undefined;
+}): ThreadSettingsSheetPage | undefined {
+  if (input.preservePage && input.currentOwnerId === input.nextOwnerId) {
+    return input.currentPage;
+  }
+  return input.requestedPage;
+}
+
 /** Match the terms a user can actually see or recognize in the model picker. */
 export function modelMatchesCatalogQuery(input: {
   readonly model: ModelOption;

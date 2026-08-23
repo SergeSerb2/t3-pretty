@@ -68,6 +68,7 @@ import {
   initialProviderFilter,
   modelMatchesCatalogQuery,
   pendingModelAfterPress,
+  presentedSettingsSheetPage,
   providerSectionIsCollapsed,
   threadSettingsSheetPageForRoute,
   visibleSheetOptionDescriptors,
@@ -352,9 +353,16 @@ export type ExistingThreadSettingsRouteSession = ThreadSettingsSessionProps & {
   readonly ownerId: string;
 };
 
+type PresentExistingThreadSettingsOptions = {
+  readonly preservePage?: boolean;
+};
+
 type ExistingThreadSettingsRouteContextValue = {
   readonly session: ExistingThreadSettingsRouteSession | null;
-  readonly present: (session: ExistingThreadSettingsRouteSession) => void;
+  readonly present: (
+    session: ExistingThreadSettingsRouteSession,
+    options?: PresentExistingThreadSettingsOptions,
+  ) => void;
   readonly setPage: (page: ThreadSettingsSheetPage) => void;
   readonly clear: (ownerId: string) => void;
 };
@@ -365,15 +373,24 @@ const ExistingThreadSettingsRouteContext =
 /** Bridges the active thread's settings state into the root native sheet route. */
 export function ExistingThreadSettingsRouteProvider(props: { readonly children: ReactNode }) {
   const [session, setSession] = useState<ExistingThreadSettingsRouteSession | null>(null);
-  const present = useCallback((nextSession: ExistingThreadSettingsRouteSession) => {
-    setSession((current) =>
-      // Composer re-presents on model/options updates. Keep the page this
-      // owner is on so in-sheet catalog navigation isn't reset to home.
-      current?.ownerId === nextSession.ownerId
-        ? { ...nextSession, initialPage: current.initialPage }
-        : nextSession,
-    );
-  }, []);
+  const present = useCallback(
+    (
+      nextSession: ExistingThreadSettingsRouteSession,
+      options?: PresentExistingThreadSettingsOptions,
+    ) => {
+      setSession((current) => ({
+        ...nextSession,
+        initialPage: presentedSettingsSheetPage({
+          preservePage: options?.preservePage === true,
+          currentOwnerId: current?.ownerId,
+          nextOwnerId: nextSession.ownerId,
+          currentPage: current?.initialPage,
+          requestedPage: nextSession.initialPage,
+        }),
+      }));
+    },
+    [],
+  );
   const setPage = useCallback((page: ThreadSettingsSheetPage) => {
     setSession((current) =>
       current && current.initialPage !== page ? { ...current, initialPage: page } : current,

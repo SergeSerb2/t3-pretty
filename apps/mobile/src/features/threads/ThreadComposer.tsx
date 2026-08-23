@@ -1029,7 +1029,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   useEffect(() => {
     if (settingsSheetPresentation.isActive) {
-      settingsRoutePresentation.present(settingsRouteSession);
+      settingsRoutePresentation.present(settingsRouteSession, { preservePage: true });
     }
   }, [settingsRoutePresentation.present, settingsRouteSession, settingsSheetPresentation.isActive]);
 
