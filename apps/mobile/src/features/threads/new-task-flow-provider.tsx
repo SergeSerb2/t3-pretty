@@ -8,6 +8,7 @@ import type {
   ProviderOptionSelection,
   RuntimeMode,
   ServerProviderSkill,
+  SkillId,
 } from "@t3tools/contracts";
 import {
   CommandId,
@@ -97,6 +98,8 @@ type WorkspaceMode = "local" | "worktree";
 
 const BRANCH_SEARCH_DEBOUNCE_MS = 150;
 
+const EMPTY_SKILL_IDS: ReadonlyArray<SkillId> = [];
+
 function pendingTaskDraftKey(messageId: string): string {
   return `pending-task:${messageId}`;
 }
@@ -153,6 +156,7 @@ type NewTaskFlowContextValue = {
   readonly currentCheckoutBranchName: string | null;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
+  readonly selectedSkillIds: ReadonlyArray<SkillId>;
   readonly autoCreatePullRequest: boolean;
   readonly autoCreatePullRequestSettled: boolean;
   readonly canToggleAutoCreatePullRequest: boolean;
@@ -195,6 +199,7 @@ type NewTaskFlowContextValue = {
   readonly loadMoreBranches: () => void;
   readonly setRuntimeMode: (value: RuntimeMode) => void;
   readonly setInteractionMode: (value: ProviderInteractionMode) => void;
+  readonly toggleSkill: (skillId: SkillId) => void;
   readonly setSelectedModelOptions: (
     value: ReadonlyArray<ProviderOptionSelection> | undefined,
   ) => void;
@@ -454,6 +459,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const interactionMode = planModeEnabled
     ? (selectedProjectDraft.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE)
     : DEFAULT_PROVIDER_INTERACTION_MODE;
+  const selectedSkillIds = selectedProjectDraft.enabledSkillIds ?? EMPTY_SKILL_IDS;
 
   // Stored selections only count while their provider is usable on the
   // server; otherwise the server's default model wins instead of silently
@@ -856,6 +862,22 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     },
     [selectedProjectDraftKey],
   );
+  const toggleSkill = useCallback(
+    (skillId: SkillId) => {
+      if (!selectedProjectDraftKey) {
+        return;
+      }
+      const current =
+        getComposerDraftSnapshot(selectedProjectDraftKey).enabledSkillIds ?? EMPTY_SKILL_IDS;
+      const next = current.includes(skillId)
+        ? current.filter((id) => id !== skillId)
+        : [...current, skillId];
+      updateComposerDraftSettings(selectedProjectDraftKey, {
+        enabledSkillIds: next.length > 0 ? next : undefined,
+      });
+    },
+    [selectedProjectDraftKey],
+  );
 
   const beginEditingPendingTask = useCallback((messageId: string): boolean => {
     const message = findQueuedPendingTask(messageId);
@@ -975,6 +997,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
           // drain with the same origin mode the composer displayed.
           ...((workspaceSelection?.startFromOrigin ?? startFromOrigin)
             ? { startFromOrigin: true }
+            : {}),
+          // Per-thread skill picks ride the queued creation so the drain sends
+          // the same bootstrap the immediate path would have.
+          ...(draft.enabledSkillIds !== undefined && draft.enabledSkillIds.length > 0
+            ? { enabledSkillIds: draft.enabledSkillIds }
             : {}),
         },
         createdAt: metadata.createdAt,
@@ -1113,6 +1140,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       currentCheckoutBranchName,
       runtimeMode,
       interactionMode,
+      selectedSkillIds,
       autoCreatePullRequest,
       autoCreatePullRequestSettled,
       canToggleAutoCreatePullRequest: !projectConfirmedNotGitRepo && preferencesHydrated,
@@ -1149,6 +1177,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       loadMoreBranches,
       setRuntimeMode,
       setInteractionMode,
+      toggleSkill,
       setSelectedModelOptions,
       setExpandedProvider,
     }),
@@ -1173,6 +1202,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       filteredBranches,
       finishEditingPendingTask,
       interactionMode,
+      selectedSkillIds,
       planModeEnabled,
       loadBranches,
       loadMoreBranches,
@@ -1199,6 +1229,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       selectBranch,
       selectEnvironment,
       setInteractionMode,
+      toggleSkill,
       setPrompt,
       setRuntimeMode,
       setSelectedModelKey,

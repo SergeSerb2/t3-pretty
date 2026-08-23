@@ -26,6 +26,66 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260823.1164000691",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "new",
+        title: "pick and manage skills in the new-task view",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR row metadata overlapping the diff stat in narrow lists",
+      },
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+      {
+        kind: "fixed",
+        title: "prevent loading fallback timer from resetting",
+      },
+      {
+        kind: "new",
+        title: "standard queue/steer controls for messages sent while the agent is running",
+      },
+      {
+        kind: "fixed",
+        title: "removing a Surge Connect environment now deletes it for good",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1164000677",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "load pull requests whose recorded repository predates a remote change",
+      },
+      {
+        kind: "fixed",
+        title: "prevent loading fallback timer from resetting",
+      },
+      {
+        kind: "new",
+        title: "standard queue/steer controls for messages sent while the agent is running",
+      },
+      {
+        kind: "fixed",
+        title: "removing a Surge Connect environment now deletes it for good",
+      },
+      {
+        kind: "fixed",
+        title: "remove duplicate thinking indicator in the thread",
+      },
+      {
+        kind: "fixed",
+        title: "prevent markdown link parsing crash",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260823.1164000669",
     date: "2026-08-23",
     items: [
