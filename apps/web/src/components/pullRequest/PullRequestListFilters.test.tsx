@@ -5,6 +5,32 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import { PullRequestFiltersMenu, pullRequestProjectKey } from "./PullRequestListFilters";
 
+function findClear(node: ReactNode): ReactElement<{ readonly onClick: () => void }> | undefined {
+  for (const child of Children.toArray(node)) {
+    if (!isValidElement(child)) continue;
+    const props = child.props as {
+      readonly children?: ReactNode;
+      readonly onClick?: () => void;
+    };
+    if (typeof props.onClick === "function" && containsText(props.children, "Reset filters")) {
+      return child as ReactElement<{ readonly onClick: () => void }>;
+    }
+    const nested = findClear(props.children);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function containsText(node: ReactNode, text: string): boolean {
+  for (const child of Children.toArray(node)) {
+    if (child === text) return true;
+    if (!isValidElement(child)) continue;
+    const props = child.props as { readonly children?: ReactNode };
+    if (containsText(props.children, text)) return true;
+  }
+  return false;
+}
+
 function findValueChange(
   node: ReactNode,
 ):
@@ -163,6 +189,21 @@ describe("pull request filters menu", () => {
       pullRequestProjectKey({ id: projectId, environmentId: "env-2" as EnvironmentId }),
     );
     expect(onProject).toHaveBeenCalledWith(projectId, "env-2");
+  });
+
+  it("offers a reset action only when a filter is off its default", () => {
+    const onReset = vi.fn();
+    expect(findClear(menu({ onReset }))).toBeUndefined();
+
+    const item = findClear(
+      menu({
+        involvement: "authored",
+        onReset,
+      }),
+    );
+    expect(item).toBeDefined();
+    item?.props.onClick();
+    expect(onReset).toHaveBeenCalledOnce();
   });
 
   it("does not collide when environment and project ids contain spaces", () => {

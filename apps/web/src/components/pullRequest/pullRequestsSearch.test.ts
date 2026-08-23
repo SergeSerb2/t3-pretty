@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import pullRequestsRouteSource from "../../routes/_chat.pull-requests.tsx?raw";
 import {
   applyPullRequestsSearchPatch,
+  parsePullRequestsSearch,
   resetPullRequestsListSearch,
   type PullRequestsSearch,
 } from "./pullRequestsSearch";
@@ -25,6 +26,26 @@ const narrowed: PullRequestsSearch = {
 };
 
 describe("pull request list search", () => {
+  it("parses only the URL search", () => {
+    expect(
+      parsePullRequestsSearch({
+        involvement: "authored",
+        state: "closed",
+        environmentId: "env-1",
+        q: "x".repeat(201),
+      }),
+    ).toEqual({
+      involvement: "authored",
+      state: "closed",
+      environmentId: "env-1",
+      q: "x".repeat(200),
+    });
+    expect(parsePullRequestsSearch({ involvement: "invalid", state: "invalid" })).toEqual({
+      involvement: "all",
+      state: "open",
+    });
+  });
+
   it("keeps omitted keys and drops keys set to undefined", () => {
     expect(applyPullRequestsSearchPatch(narrowed, { projectId: "proj-2" as ProjectId })).toEqual({
       ...narrowed,
@@ -53,6 +74,10 @@ describe("pull request list search", () => {
       state: "open",
       q: "auth",
     });
+    expect(pullRequestsRouteSource).toContain(
+      "writePersistedPullRequestListFilters(DEFAULT_PULL_REQUEST_LIST_FILTERS)",
+    );
     expect(pullRequestsRouteSource).toContain("search: resetPullRequestsListSearch");
+    expect(pullRequestsRouteSource).toContain("livePullRequestListFilters(");
   });
 });

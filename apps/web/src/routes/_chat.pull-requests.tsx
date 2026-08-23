@@ -11,7 +11,7 @@ import type {
   PullRequestListState,
   SourceControlProviderKind,
 } from "@t3tools/contracts";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ChevronDownIcon,
   EyeIcon,
@@ -65,7 +65,18 @@ import {
   type PullRequestFilterOption,
 } from "../components/pullRequest/PullRequestListFilters";
 import {
+  DEFAULT_PULL_REQUEST_LIST_FILTERS,
+  livePullRequestListFilters,
+  persistedFiltersFromSearch,
+  pullRequestListFiltersToPersist,
+  readPersistedPullRequestListFilters,
+  restoredListSearchToReplaceUrl,
+  shouldRestorePersistedListFilters,
+  writePersistedPullRequestListFilters,
+} from "../components/pullRequest/pullRequestListFiltersPersistence";
+import {
   applyPullRequestsSearchPatch,
+  parsePullRequestsSearch,
   resetPullRequestsListSearch,
   type PullRequestsSearch,
   type PullRequestsSearchPatch,
@@ -157,46 +168,16 @@ const EMPTY_TERMINAL_LABELS = new Map<string, string>();
 const EMPTY_PENDING_SURFACES = new Set<string>();
 
 export const Route = createFileRoute("/_chat/pull-requests")({
-  validateSearch: (raw: Record<string, unknown>): PullRequestsSearch => ({
-    involvement:
-      raw.involvement === "reviewing" || raw.involvement === "authored" ? raw.involvement : "all",
-    state:
-      raw.state === "closed" || raw.state === "merged" || raw.state === "all" ? raw.state : "open",
-    ...(typeof raw.repository === "string" && raw.repository
-      ? { repository: raw.repository.slice(0, 200) }
-      : {}),
-    ...(typeof raw.number === "number" && Number.isInteger(raw.number) && raw.number > 0
-      ? { number: raw.number }
-      : {}),
-    ...(typeof raw.projectId === "string" && raw.projectId
-      ? { projectId: raw.projectId as ProjectId }
-      : {}),
-    ...(typeof raw.environmentId === "string" && raw.environmentId
-      ? { environmentId: raw.environmentId as EnvironmentId }
-      : {}),
-    ...(typeof raw.host === "string" && raw.host ? { host: raw.host.slice(0, 200) } : {}),
-    ...(typeof raw.selectedProjectId === "string" && raw.selectedProjectId
-      ? { selectedProjectId: raw.selectedProjectId as ProjectId }
-      : {}),
-    ...(typeof raw.selectedEnvironmentId === "string" && raw.selectedEnvironmentId
-      ? { selectedEnvironmentId: raw.selectedEnvironmentId as EnvironmentId }
-      : {}),
-    ...(typeof raw.q === "string" && raw.q ? { q: raw.q.slice(0, 200) } : {}),
-    ...(raw.draft === "only" || raw.draft === "hide" ? { draft: raw.draft } : {}),
-    ...(raw.review === "approved" ||
-    raw.review === "changes-requested" ||
-    raw.review === "review-required" ||
-    raw.review === "none"
-      ? { review: raw.review }
-      : {}),
-    ...(raw.checks === "passing" || raw.checks === "failing" ? { checks: raw.checks } : {}),
-  }),
+  validateSearch: parsePullRequestsSearch,
   component: PullRequestsRouteView,
 });
 
 function PullRequestsRouteView() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
+  const searchStr = useLocation({ select: (location) => location.searchStr });
+  // Catalog entries can arrive late: clean the live URL without erasing the saved scope.
+  const skipNextListPersist = useRef(false);
   const { environments } = useEnvironments();
   // Every connected environment that has said it can list pull requests. Sorted, so the query
   // keys, the scope key and the stored snapshot all read the same whichever order the
@@ -387,6 +368,56 @@ function PullRequestsRouteView() {
     [navigate],
   );
 
+  // Restore browser state after pure URL validation, then keep the address bar and storage aligned.
+  useEffect(() => {
+    const raw = Object.fromEntries(
+      new URLSearchParams(searchStr.startsWith("?") ? searchStr.slice(1) : searchStr),
+    );
+    if (skipNextListPersist.current) {
+      skipNextListPersist.current = false;
+      return;
+    }
+    const restoring = shouldRestorePersistedListFilters(raw);
+    const current = restoring
+      ? readPersistedPullRequestListFilters()
+      : persistedFiltersFromSearch(search);
+    const scoped = livePullRequestListFilters(
+      current,
+      projectsKnown ? environments.map((environment) => environment.environmentId) : undefined,
+      projectsKnown ? allProjects.map((project) => project.id) : undefined,
+    );
+    const scopePatch = {
+      environmentId: scoped.environmentId,
+      projectId: scoped.projectId,
+      host: scoped.host,
+    };
+    const scopeChanged =
+      scoped.environmentId !== current.environmentId ||
+      scoped.projectId !== current.projectId ||
+      scoped.host !== current.host;
+    if (restoring) {
+      const next = restoredListSearchToReplaceUrl(raw, scoped);
+      if (next !== null) {
+        skipNextListPersist.current = scopeChanged;
+        updateSearch({ ...next, ...scopePatch });
+      }
+      return;
+    }
+    const persistable = pullRequestListFiltersToPersist(raw, scoped, false);
+    if (
+      scoped.environmentId !== search.environmentId ||
+      scoped.projectId !== search.projectId ||
+      scoped.host !== search.host
+    ) {
+      skipNextListPersist.current = true;
+      updateSearch(scopePatch);
+      return;
+    }
+    if (persistable !== null) {
+      writePersistedPullRequestListFilters(persistable);
+    }
+  }, [allProjects, environments, projectsKnown, search, searchStr, updateSearch]);
+
   // Changing what the list contains must not leave a selection from the previous view open.
   // The project filter is untouched: it is the user's scope, not part of the selection.
   const clearedSelection = {
@@ -403,7 +434,13 @@ function PullRequestsRouteView() {
   };
   const updateListScope = (patch: PullRequestsSearchPatch) => {
     closeListSelection();
-    updateSearch({ ...patch, ...clearedSelection });
+    updateSearch({
+      ...patch,
+      ...clearedSelection,
+      ...(patch.state === undefined && search.state === "all"
+        ? { state: readPersistedPullRequestListFilters().state }
+        : {}),
+    });
   };
 
   // Searching asks the hosts, which takes a round trip, so the text is held for a moment before
@@ -1433,6 +1470,7 @@ function PullRequestsRouteView() {
       }
       onReset={() => {
         closeListSelection();
+        writePersistedPullRequestListFilters(DEFAULT_PULL_REQUEST_LIST_FILTERS);
         void navigate({
           search: resetPullRequestsListSearch,
           replace: true,
