@@ -228,6 +228,11 @@ describe("iOS publish OTA catch-up base", () => {
     try {
       assert.equal(resolveOtaBase({ work, commit: head, markContent: head }), "covered");
       assert.equal(resolveOtaBase({ work, commit: head, markContent: parent }), parent);
+      // A job on an older SHA has the older commit checked out; a newer mark
+      // must cover it so its stale bundle cannot regress the channel.
+      git(work, "-c", "advice.detachedHead=false", "checkout", "--quiet", parent);
+      assert.equal(resolveOtaBase({ work, commit: parent, markContent: head }), "covered");
+      git(work, "checkout", "--quiet", "main");
       assert.equal(resolveOtaBase({ work, commit: head }), "HEAD~1");
       assert.equal(resolveOtaBase({ work, commit: head, markContent: "1".repeat(40) }), "changed");
       assert.equal(resolveOtaBase({ work, commit: head, markContent: "bogus" }), "changed");

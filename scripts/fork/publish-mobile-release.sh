@@ -140,17 +140,24 @@ native_submit_line() {
 }
 
 # Diff base for the mobile path filter. Prints "covered" when the recorded
-# OTA already matches this commit, the recorded commit when it is an ancestor
-# of HEAD, "HEAD~1" when the runner has no record yet, and "changed" when the
-# record fell off the shallow boundary (too many pushes to prove coverage, so
-# treat the release as due).
+# OTA matches this commit or is newer (a faster job already released a later
+# SHA; this older build's bundle would regress the production channel), the
+# recorded commit when it is an ancestor of HEAD, "HEAD~1" when the runner
+# has no record yet, and "changed" when the record fell off the shallow
+# boundary (too many pushes to prove coverage, so treat the release as due).
 mobile_release_base() {
   local mark
   mark="$(native_submit_line "$LOCAL_OTA_MARK" || true)"
   if [[ "$mark" == "$commit" ]]; then
     printf 'covered\n'
-  elif [[ "$mark" =~ ^[0-9a-f]{40}$ ]] && git merge-base --is-ancestor "$mark" HEAD 2>/dev/null; then
-    printf '%s\n' "$mark"
+  elif [[ "$mark" =~ ^[0-9a-f]{40}$ ]]; then
+    if git merge-base --is-ancestor "$mark" HEAD 2>/dev/null; then
+      printf '%s\n' "$mark"
+    elif git merge-base --is-ancestor HEAD "$mark" 2>/dev/null; then
+      printf 'covered\n'
+    else
+      printf 'changed\n'
+    fi
   elif [[ -z "$mark" ]]; then
     printf 'HEAD~1\n'
   else
