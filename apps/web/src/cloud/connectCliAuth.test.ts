@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   buildConnectCliClerkAuthorizeUrl,
+  connectCliAuthRoutesEnabled,
   connectCliSignInRedirectUrl,
   hasConnectCliAuthConfig,
   readConnectCliCallbackResult,
@@ -46,6 +47,14 @@ describe("connectCliAuth", () => {
     expect(url.searchParams.get("state")).toBe("state-1");
     expect(url.searchParams.get("code_challenge")).toBe("challenge-1");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+  });
+
+  it("can disable CLI OAuth routes for a pairing-only hosted build", () => {
+    vi.stubEnv("VITE_CONNECT_CLI_AUTH_ENABLED", "0");
+
+    expect(
+      connectCliAuthRoutesEnabled(new URL("https://sergeserb2.github.io/t3-pretty/connect")),
+    ).toBe(false);
   });
 
   it("redirects straight to the CLI's loopback listener when the request carries a port", () => {

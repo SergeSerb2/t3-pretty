@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import {
   resolveServerBackedAppDisplayName,
   resolveServerBackedAppStageLabel,
 } from "./branding.logic";
 
 const originalWindow = globalThis.window;
+const expectedBaseName = T3CODE_BUILD_FLAVOR === "internal" ? "T3 Pretty Internal" : "T3 Pretty";
 
 afterEach(() => {
   vi.resetModules();
@@ -47,7 +49,7 @@ describe("branding", () => {
     expect(branding.HOSTED_APP_CHANNEL).toBe("nightly");
     expect(branding.HOSTED_APP_CHANNEL_LABEL).toBe("Nightly");
     expect(branding.APP_STAGE_LABEL).toBe("Nightly");
-    expect(branding.APP_DISPLAY_NAME).toBe("T3 Pretty (Nightly)");
+    expect(branding.APP_DISPLAY_NAME).toBe(`${expectedBaseName} (Nightly)`);
   });
 
   it("does not label the latest hosted app channel", async () => {
@@ -58,7 +60,7 @@ describe("branding", () => {
     expect(branding.HOSTED_APP_CHANNEL).toBe("latest");
     expect(branding.HOSTED_APP_CHANNEL_LABEL).toBe("Latest");
     expect(branding.APP_STAGE_LABEL).toBe("Latest");
-    expect(branding.APP_DISPLAY_NAME).toBe("T3 Pretty");
+    expect(branding.APP_DISPLAY_NAME).toBe(expectedBaseName);
   });
 
   it("ignores unknown hosted app channels", async () => {

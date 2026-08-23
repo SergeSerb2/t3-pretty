@@ -4,6 +4,7 @@ import type {
   DesktopRuntimeArch,
   DesktopRuntimeInfo,
 } from "@t3tools/contracts";
+import { T3CODE_BUILD_FLAVOR, type ConnectBuildFlavor } from "@t3tools/shared/connectBranding";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -26,6 +27,7 @@ export interface MakeDesktopEnvironmentInput {
   readonly isPackaged: boolean;
   readonly resourcesPath: string;
   readonly runningUnderArm64Translation: boolean;
+  readonly buildFlavor?: ConnectBuildFlavor;
 }
 
 export class DesktopEnvironment extends Context.Service<
@@ -90,8 +92,6 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = "T3 Pretty";
-
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
   readonly appVersion: string;
@@ -106,12 +106,14 @@ function resolveDesktopAppStageLabel(input: {
 function resolveDesktopAppBranding(input: {
   readonly isDevelopment: boolean;
   readonly appVersion: string;
+  readonly buildFlavor: ConnectBuildFlavor;
 }): DesktopAppBranding {
   const stageLabel = resolveDesktopAppStageLabel(input);
+  const baseName = input.buildFlavor === "internal" ? "T3 Pretty Internal" : "T3 Pretty";
   return {
-    baseName: APP_BASE_NAME,
+    baseName,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (${stageLabel})`,
+    displayName: `${baseName} (${stageLabel})`,
   };
 }
 
@@ -150,6 +152,8 @@ const make = Effect.fn("desktop.environment.make")(function* (
 ): Effect.fn.Return<DesktopEnvironment["Service"], Config.ConfigError, Path.Path> {
   const path = yield* Path.Path;
   const config = yield* DesktopConfig.DesktopConfig;
+  const buildFlavor = input.buildFlavor ?? T3CODE_BUILD_FLAVOR;
+  const isInternalBuild = buildFlavor === "internal";
   const homeDirectory = input.homeDirectory;
   const devServerUrl = config.devServerUrl;
   const isDevelopment = Option.isSome(devServerUrl);
@@ -165,6 +169,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     homeDirectory,
     joinPath: path.join,
     t3Home: config.t3Home,
+    defaultBaseDirName: isInternalBuild ? ".t3" : ".t3-pretty",
   });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
@@ -175,6 +180,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const branding = resolveDesktopAppBranding({
     isDevelopment,
     appVersion: input.appVersion,
+    buildFlavor,
   });
   const displayName = branding.displayName;
   const stateDir = resolveDesktopStateDir({
@@ -183,9 +189,19 @@ const make = Effect.fn("desktop.environment.make")(function* (
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  const userDataDirName = isDevelopment ? "t3code-dev" : "t3code";
+  const userDataDirName = isInternalBuild
+    ? isDevelopment
+      ? "t3code-dev"
+      : "t3code"
+    : isDevelopment
+      ? "t3pretty-dev"
+      : "t3pretty";
   // Keep the upstream names as migration inputs so the rebrand reuses existing local state.
-  const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+  const legacyUserDataDirName = isInternalBuild
+    ? isDevelopment
+      ? "T3 Code (Dev)"
+      : "T3 Code (Alpha)"
+    : userDataDirName;
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -231,10 +247,28 @@ const make = Effect.fn("desktop.environment.make")(function* (
     branding,
     displayName,
     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
+      isInternalBuild
+        ? isDevelopment
+          ? "com.t3tools.t3code.dev"
+          : "com.t3tools.t3code"
+        : isDevelopment
+          ? "com.sergeserb.t3pretty.dev"
+          : "com.sergeserb.t3pretty",
     ),
-    linuxDesktopEntryName: isDevelopment ? "t3code-dev.desktop" : "t3code.desktop",
-    linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
+    linuxDesktopEntryName: isInternalBuild
+      ? isDevelopment
+        ? "t3code-dev.desktop"
+        : "t3code.desktop"
+      : isDevelopment
+        ? "t3pretty-dev.desktop"
+        : "t3pretty.desktop",
+    linuxWmClass: isInternalBuild
+      ? isDevelopment
+        ? "t3code-dev"
+        : "t3code"
+      : isDevelopment
+        ? "t3pretty-dev"
+        : "t3pretty",
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
     userDataDirName,
@@ -276,7 +310,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
       path.join(resourcesPath, "resources", fileName),
       path.join(resourcesPath, fileName),
     ],
-    developmentDockIconPath: path.join(rootDir, "assets", "pretty", "t3-pretty-1024.png"),
+    developmentDockIconPath: isInternalBuild
+      ? path.join(rootDir, "assets", "internal", "t3-pretty-internal-1024.png")
+      : path.join(rootDir, "assets", "pretty", "t3-pretty-1024.png"),
   });
 });
 

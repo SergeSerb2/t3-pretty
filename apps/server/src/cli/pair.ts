@@ -15,6 +15,7 @@ import {
   PortSchema,
 } from "@t3tools/contracts";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
+import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import {
   buildTailscaleHttpsBaseUrl,
   DEFAULT_TAILSCALE_SERVE_PORT,
@@ -81,7 +82,7 @@ export class NoRunningServerError extends Schema.TaggedErrorClass<NoRunningServe
     return [
       "No running T3 Code server found.",
       ...this.checkedStatePaths.map((statePath) => `  checked ${statePath}`),
-      `Start one with \`${this.serveCommand}\`, or connect this machine with Surge Connect: \`${this.connectCommand}\`.`,
+      `Start one with \`${this.serveCommand}\`, or connect this machine with ${SURGE_CONNECT_NAME}: \`${this.connectCommand}\`.`,
     ].join("\n");
   }
 }

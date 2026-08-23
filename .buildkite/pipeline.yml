@@ -21,6 +21,8 @@
 # scripts/fork/load-buildkite-secrets.sh.
 
 env:
+  # loadRepoEnv selects .env.internal.example from this before compiling each surface.
+  T3CODE_BUILD_FLAVOR: internal
   T3CODE_DESKTOP_UPDATE_FEED_URL: "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/"
   T3CODE_RELEASE_S3_BUCKET: t3-pretty-releases
   T3CODE_RELEASE_S3_ENDPOINT: "https://a6f705b8c6459d937d32d31555f9fbf6.r2.cloudflarestorage.com"
@@ -38,6 +40,19 @@ env:
   APNS_TEAM_ID: "78A5P57U23"
 
 steps:
+  - label: ":github: Mirror Origin main and release tags"
+    key: github-mirror
+    # Hard-fail on purpose: silent drift violates the required Origin -> GitHub mirror.
+    # This independent step does not gate the internal packaging steps below.
+    if: 'build.branch == "main" && build.source != "schedule"'
+    agents:
+      queue: macos-release
+      os: macos
+    command: |
+      . scripts/fork/load-buildkite-secrets.sh GITHUB_MIRROR_SSH_KEY
+      test -n "${GITHUB_MIRROR_SSH_KEY:-}" || { echo "GITHUB_MIRROR_SSH_KEY secret is required for the GitHub mirror" >&2; exit 1; }
+      export GITHUB_MIRROR_REPO="${GITHUB_MIRROR_REPO:-SergeSerb2/t3-pretty}"
+      bash scripts/fork/mirror-github.sh
   - label: ":github: T3 Pretty Origin workflows"
     key: origin-workflows
     # Imported GHA jobs (desktop preflight) still die in ~2s on the importer.

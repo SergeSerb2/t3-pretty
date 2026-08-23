@@ -11,6 +11,17 @@ export const BRAND_ASSET_PATHS = {
   prettyMarkPublicPng: "apps/web/public/t3-pretty-mark.png",
   prettyMarkMobilePng: "apps/mobile/assets/t3-pretty-mark.png",
 
+  internalIosIconPng: "assets/internal/t3-pretty-internal-ios-1024.png",
+  internalMacIconPng: "assets/internal/t3-pretty-internal-1024.png",
+  internalLinuxIconPng: "assets/internal/t3-pretty-internal-1024.png",
+  internalWindowsIconIco: "assets/internal/t3-pretty-internal.ico",
+  internalWebFaviconIco: "assets/internal/t3-pretty-internal.ico",
+  internalWebFavicon16Png: "assets/internal/t3-pretty-internal-favicon-16x16.png",
+  internalWebFavicon32Png: "assets/internal/t3-pretty-internal-favicon-32x32.png",
+  internalWebAppleTouchIconPng: "assets/internal/t3-pretty-internal-apple-touch-180.png",
+  internalAndroidAdaptiveForegroundPng:
+    "apps/mobile/assets/t3-pretty-internal-android-icon-mark.png",
+
   developmentIconComposerProject: "assets/dev/app-icon.icon",
   developmentIosIconPng: "assets/dev/blueprint-ios-1024.png",
   developmentUniversalIconPng: "assets/dev/blueprint-universal-1024.png",
@@ -43,7 +54,7 @@ export const BRAND_ASSET_PATHS = {
   developmentWebAppleTouchIconPng: "assets/pretty/t3-pretty-apple-touch-180.png",
 } as const;
 
-export type WebAssetBrand = "development" | "nightly" | "production";
+export type WebAssetBrand = "development" | "internal" | "nightly" | "production";
 
 export const WEB_ASSET_CHANNELS = ["latest", "nightly"] as const;
 
@@ -76,6 +87,13 @@ const WEB_ICON_SOURCE_PATHS_BY_BRAND = {
     favicon16Png: BRAND_ASSET_PATHS.developmentWebFavicon16Png,
     favicon32Png: BRAND_ASSET_PATHS.developmentWebFavicon32Png,
     appleTouchIconPng: BRAND_ASSET_PATHS.developmentWebAppleTouchIconPng,
+    markPng: BRAND_ASSET_PATHS.prettyMarkPng,
+  },
+  internal: {
+    faviconIco: BRAND_ASSET_PATHS.internalWebFaviconIco,
+    favicon16Png: BRAND_ASSET_PATHS.internalWebFavicon16Png,
+    favicon32Png: BRAND_ASSET_PATHS.internalWebFavicon32Png,
+    appleTouchIconPng: BRAND_ASSET_PATHS.internalWebAppleTouchIconPng,
     markPng: BRAND_ASSET_PATHS.prettyMarkPng,
   },
   nightly: {

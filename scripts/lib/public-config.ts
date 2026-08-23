@@ -5,6 +5,7 @@ import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 
 export interface T3CodePublicConfig {
+  readonly buildFlavor: "public" | "internal";
   readonly clerkPublishableKey: string | undefined;
   readonly clerkJwtTemplate: string | undefined;
   readonly clerkCliOAuthClientId: string | undefined;
@@ -32,10 +33,11 @@ export function loadRepoEnv({
 } = {}): Record<string, string | undefined> {
   const rootEnv = readEnvFile(NodePath.join(repoRoot, ".env"));
   const localEnv = readEnvFile(NodePath.join(repoRoot, ".env.local"));
-  // T3 Pretty source builds use the fork-operated Surge Connect service by
-  // default. The checked-in values are public client identifiers, not secrets.
-  const forkPublicEnv = readEnvFile(NodePath.join(repoRoot, ".env.example"));
-  const config = resolvePublicConfig(baseEnv, localEnv, rootEnv, forkPublicEnv);
+  const flavor = resolveBuildFlavor(baseEnv, localEnv, rootEnv);
+  const defaults = readEnvFile(
+    NodePath.join(repoRoot, flavor === "internal" ? ".env.internal.example" : ".env.example"),
+  );
+  const config = resolvePublicConfig(baseEnv, localEnv, rootEnv, defaults);
 
   return {
     ...rootEnv,
@@ -67,6 +69,9 @@ export function loadRepoEnv({
           VITE_T3CODE_RELAY_URL: config.relayUrl,
         }
       : {}),
+    T3CODE_BUILD_FLAVOR: flavor,
+    VITE_T3CODE_BUILD_FLAVOR: flavor,
+    EXPO_PUBLIC_T3CODE_BUILD_FLAVOR: flavor,
     ...(config.mobileOtlpTracesUrl
       ? {
           T3CODE_MOBILE_OTLP_TRACES_URL: config.mobileOtlpTracesUrl,
@@ -136,6 +141,7 @@ export function readReleaseTrainVersion(repoRoot = REPO_ROOT): string | undefine
 
 export function resolvePublicConfig(...sources: readonly Environment[]): T3CodePublicConfig {
   return {
+    buildFlavor: resolveBuildFlavor(...sources),
     clerkPublishableKey: firstNonEmpty(
       sources,
       "T3CODE_CLERK_PUBLISHABLE_KEY",
@@ -185,6 +191,19 @@ export function resolvePublicConfig(...sources: readonly Environment[]): T3CodeP
       "VITE_RELAY_OTLP_TRACES_TOKEN",
     ),
   };
+}
+
+export type T3CodeBuildFlavor = "public" | "internal";
+
+export function resolveBuildFlavor(...sources: readonly Environment[]): T3CodeBuildFlavor {
+  return firstNonEmpty(
+    sources,
+    "T3CODE_BUILD_FLAVOR",
+    "VITE_T3CODE_BUILD_FLAVOR",
+    "EXPO_PUBLIC_T3CODE_BUILD_FLAVOR",
+  ) === "internal"
+    ? "internal"
+    : "public";
 }
 
 function firstNonEmpty(sources: readonly Environment[], ...names: readonly string[]) {

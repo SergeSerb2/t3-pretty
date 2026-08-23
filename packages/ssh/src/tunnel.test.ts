@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@t3tools/shared/Net";
+import { forkCliTarballUrl, T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -106,29 +107,15 @@ function commandArgs(command: ChildProcess.Command): ReadonlyArray<string> {
 describe("ssh tunnel scripts", () => {
   it("builds the remote t3 runner with npx and npm fallbacks", () => {
     const script = buildRemoteT3RunnerScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE });
+    const packageSpec = forkCliTarballUrl();
 
     assert.include(script, "T3_NODE_SCRIPT_PATH=''");
     assert.include(script, 'exec t3 "$@"');
-    assert.include(
-      script,
-      "exec npx --yes 'https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz' \"$@\"",
-    );
-    assert.include(
-      script,
-      "exec npm exec --yes 'https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz' -- \"$@\"",
-    );
-    assert.include(
-      script,
-      "could not install 'https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz'",
-    );
-    assert.include(
-      script,
-      "require_installed_t3_cli npx --yes --package 'https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz'",
-    );
-    assert.include(
-      script,
-      "require_installed_t3_cli npm exec --yes --package 'https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz'",
-    );
+    assert.include(script, `exec npx --yes '${packageSpec}' "$@"`);
+    assert.include(script, `exec npm exec --yes '${packageSpec}' -- "$@"`);
+    assert.include(script, `could not install '${packageSpec}'`);
+    assert.include(script, `require_installed_t3_cli npx --yes --package '${packageSpec}'`);
+    assert.include(script, `require_installed_t3_cli npm exec --yes --package '${packageSpec}'`);
     assert.include(script, "npm produced no t3 executable");
     assert.include(script, 'prepend_path_if_dir "$HOME/.local/bin"');
     assert.include(script, `T3_NODE_ENGINE_RANGE='${TEST_NODE_ENGINE_RANGE}'`);
@@ -169,6 +156,34 @@ describe("ssh tunnel scripts", () => {
     assert.doesNotThrow(() => new Function(launchScript));
     assert.doesNotThrow(() => new Function(pairingScript));
     assert.doesNotThrow(() => new Function(stopScript));
+  });
+
+  it("keeps remote SSH state separate for the selected build", () => {
+    const target = {
+      alias: "devbox",
+      hostname: "devbox.example.com",
+      username: "julius",
+      port: 2222,
+    } as const;
+    const baseDirName = T3CODE_BUILD_FLAVOR === "internal" ? ".t3" : ".t3-pretty";
+    const otherBaseDirName = T3CODE_BUILD_FLAVOR === "internal" ? ".t3-pretty" : ".t3";
+
+    for (const script of [
+      buildRemoteLaunchScript(),
+      buildRemotePairingScript(target),
+      buildRemoteStopScript(target),
+    ]) {
+      assert.include(script, `$HOME/${baseDirName}/ssh-launch/`);
+      assert.notInclude(script, `$HOME/${otherBaseDirName}/ssh-launch/`);
+    }
+    for (const script of [
+      buildRemoteWindowsLaunchScript(),
+      buildRemoteWindowsPairingScript(),
+      buildRemoteWindowsStopScript(),
+    ]) {
+      assert.include(script, `os.homedir(), "${baseDirName}"`);
+      assert.notInclude(script, `os.homedir(), "${otherBaseDirName}"`);
+    }
   });
 
   it("does not hard-code a remote node engine range", () => {
