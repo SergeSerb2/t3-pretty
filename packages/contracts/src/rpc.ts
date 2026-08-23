@@ -104,6 +104,11 @@ import {
   OrchestrationRpcSchemas,
   OrchestrationGetWorkflowScriptError,
 } from "./orchestration.ts";
+import {
+  ProviderUploadFeedbackError,
+  ProviderUploadFeedbackInput,
+  ProviderUploadFeedbackResult,
+} from "./provider.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
   PullRequestActionInput,
@@ -267,6 +272,9 @@ export const WS_METHODS = {
   // Filesystem methods
   filesystemBrowse: "filesystem.browse",
   assetsCreateUrl: "assets.createUrl",
+
+  // Provider methods
+  providerUploadFeedback: "provider.uploadFeedback",
 
   // VCS methods
   vcsPull: "vcs.pull",
@@ -855,6 +863,12 @@ export const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   error: Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
 });
 
+export const WsProviderUploadFeedbackRpc = Rpc.make(WS_METHODS.providerUploadFeedback, {
+  payload: ProviderUploadFeedbackInput,
+  success: ProviderUploadFeedbackResult,
+  error: Schema.Union([ProviderUploadFeedbackError, EnvironmentAuthorizationError]),
+});
+
 export const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
   payload: VcsStatusInput,
   success: VcsStatusStreamEvent,
@@ -1268,6 +1282,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,
+  WsProviderUploadFeedbackRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,
