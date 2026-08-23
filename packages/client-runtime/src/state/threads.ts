@@ -242,6 +242,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   // don't take: overlapping machines (Strict Mode remount, environment swap
   // before the old finalizer) must all see the same blob.
   const warm = warmStates.get(stateKey);
+  // One-shot: the first warm subscribe may HTTP-catch-up if afterSequence
+  // fails before any live item. Later socket errors resume from lastSequence.
+  const warmResume = { failed: false, pending: warm !== null };
   const cached =
     warm !== null
       ? Option.none<OrchestrationThreadDetailSnapshot>()
@@ -362,6 +365,17 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
           error: Option.some(formatThreadError(cause)),
         })),
+      ),
+    );
+  const setStreamError = (cause: Cause.Cause<unknown>) =>
+    publishStreamError(cause).pipe(
+      Effect.andThen(
+        Effect.sync(() => {
+          if (warmResume.pending) {
+            warmResume.failed = true;
+            warmResume.pending = false;
+          }
+        }),
       ),
     );
   const setThread = Effect.fn("EnvironmentThreadState.setThread")(function* (
@@ -765,7 +779,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           yield* SubscriptionRef.set(lastSequence, 0);
           current = yield* SubscriptionRef.get(state);
         }
-        const shouldLoadHttpSnapshot = current.status !== "deleted" && Option.isNone(current.data);
+        const shouldLoadHttpSnapshot =
+          current.status !== "deleted" && (Option.isNone(current.data) || warmResume.failed);
         if (shouldLoadHttpSnapshot) {
           const prepared = yield* SubscriptionRef.get(supervisor.prepared).pipe(
             Effect.flatMap(
@@ -786,6 +801,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             threadId,
             supportsPagination ? { turnLimit: INITIAL_THREAD_USER_TURN_LIMIT } : undefined,
           );
+          warmResume.failed = false;
+          warmResume.pending = false;
           if (Option.isSome(httpSnapshot)) {
             yield* applyChunk([{ kind: "snapshot", snapshot: httpSnapshot.value }]);
             current = yield* SubscriptionRef.get(state);
@@ -813,10 +830,17 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         };
       }),
       {
-        onExpectedFailure: publishStreamError,
+        onExpectedFailure: setStreamError,
         retryExpectedFailureAfter: "250 millis",
       },
-    ).pipe(Stream.runForEach((item) => Queue.offer(streamItems, item))),
+    ).pipe(
+      Stream.tap(() =>
+        Effect.sync(() => {
+          warmResume.pending = false;
+        }),
+      ),
+      Stream.runForEach((item) => Queue.offer(streamItems, item)),
+    ),
   );
 
   // Expose loadOlderTurns to UI actions through the request registry.

@@ -644,7 +644,7 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
-  it.effect("does not reload over HTTP when a warm subscribe errors before the first item", () =>
+  it.effect("reloads over HTTP when a warm resume cannot catch up", () =>
     Effect.gen(function* () {
       const warmStates = makeWarmThreadStateRegistry();
       yield* Effect.scoped(
@@ -658,12 +658,10 @@ describe("EnvironmentThreads", () => {
         }),
       );
 
+      const httpThread: OrchestrationThread = { ...ACTIVE_THREAD, title: "HTTP catch-up" };
       const successor = yield* makeHarness({
         warmStates,
-        httpSnapshot: Option.some({
-          snapshotSequence: 9,
-          thread: { ...ACTIVE_THREAD, title: "HTTP catch-up" },
-        }),
+        httpSnapshot: Option.some({ snapshotSequence: 9, thread: httpThread }),
       });
       yield* awaitThreadState(
         successor.observed,
@@ -671,7 +669,7 @@ describe("EnvironmentThreads", () => {
       );
       expect(yield* Ref.get(successor.loaderCalls)).toBe(0);
 
-      yield* Queue.offer(successor.inputs, new Error("socket dropped before first item"));
+      yield* Queue.offer(successor.inputs, new Error("resume gap too large"));
       yield* awaitThreadState(successor.observed, (value) => Option.isSome(value.error));
 
       yield* TestClock.adjust("250 millis");
@@ -682,8 +680,14 @@ describe("EnvironmentThreads", () => {
         yield* Effect.yieldNow;
       }
 
-      expect(yield* Ref.get(successor.loaderCalls)).toBe(0);
-      expect(yield* Ref.get(successor.lastSubscribeAfterSequence)).toBe(1);
+      const state = yield* awaitThreadState(
+        successor.observed,
+        (value) => Option.isSome(value.data) && value.data.value.title === "HTTP catch-up",
+      );
+
+      expect(yield* Ref.get(successor.loaderCalls)).toBeGreaterThanOrEqual(1);
+      expect(Option.getOrThrow(state.data).title).toBe("HTTP catch-up");
+      expect(yield* Ref.get(successor.lastSubscribeAfterSequence)).toBe(9);
     }),
   );
 
