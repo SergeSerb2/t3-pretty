@@ -2334,7 +2334,7 @@ export default function Sidebar() {
       });
       const outcome = await archiveSelectedThreadEntries({
         entries,
-        archive: (entry, onArchived) => archiveThread(entry.threadRef, { onArchived }),
+        archive: (entry) => archiveThread(entry.threadRef),
       });
       const archivedRefs = entries
         .filter((entry) => outcome.archivedThreadKeys.includes(entry.threadKey))
@@ -2348,17 +2348,6 @@ export default function Sidebar() {
               },
             }
           : undefined;
-      for (const failure of outcome.followupFailures) {
-        if (isAtomCommandInterrupted(failure)) continue;
-        const error = squashAtomCommandFailure(failure);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Thread archived, but navigation failed",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-      }
       if (outcome.mutationFailure !== null && !isAtomCommandInterrupted(outcome.mutationFailure)) {
         const error = squashAtomCommandFailure(outcome.mutationFailure);
         toastManager.add(
