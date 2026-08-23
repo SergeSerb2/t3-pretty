@@ -64,6 +64,7 @@ type ChosenLiveActivityDelivery =
       readonly token: string;
       readonly aggregate: RelayAgentActivityAggregateState;
       readonly alert: ApnsLiveActivityAlert | null;
+      readonly urgent: boolean;
     }
   | {
       readonly kind: "live_activity_end";
@@ -157,11 +158,50 @@ function attentionChanged(
     return nextAggregate.activities.some((row) => isAttentionPhase(row.phase));
   }
   const previouslyAttention = new Map(
-    previousAggregate.activities.map((row) => [row.threadId, isAttentionPhase(row.phase)]),
+    previousAggregate.activities.map((row) => [
+      `${row.environmentId}\u0000${row.threadId}`,
+      isAttentionPhase(row.phase),
+    ]),
   );
   return nextAggregate.activities.some(
-    (row) => isAttentionPhase(row.phase) !== (previouslyAttention.get(row.threadId) ?? false),
+    (row) =>
+      isAttentionPhase(row.phase) !==
+      (previouslyAttention.get(`${row.environmentId}\u0000${row.threadId}`) ?? false),
   );
+}
+
+// Whether the aggregate's shape changed since the last delivered one: a
+// different active count, a row entering/leaving the card, any row
+// changing phase, startedAt appearing/changing, or a painted title
+// changing. Shape changes ship at APNs priority 10 so the card moves
+// the moment work transitions; content-only ticks (status text, progress)
+// stay at the budget-friendly low priority. A missing baseline counts
+// as a shape change.
+export function aggregateShapeChanged(
+  previousAggregate: RelayAgentActivityAggregateState | null,
+  nextAggregate: RelayAgentActivityAggregateState,
+): boolean {
+  if (previousAggregate === null) {
+    return true;
+  }
+  if (previousAggregate.activeCount !== nextAggregate.activeCount) {
+    return true;
+  }
+  if (previousAggregate.activities.length !== nextAggregate.activities.length) {
+    return true;
+  }
+  const previousByKey = new Map(
+    previousAggregate.activities.map((row) => [`${row.environmentId}\u0000${row.threadId}`, row]),
+  );
+  return nextAggregate.activities.some((row) => {
+    const previous = previousByKey.get(`${row.environmentId}\u0000${row.threadId}`);
+    return (
+      previous === undefined ||
+      previous.phase !== row.phase ||
+      previous.startedAt !== row.startedAt ||
+      previous.threadTitle !== row.threadTitle
+    );
+  });
 }
 
 // Honors the same per-event notification switches the push channel uses; a
@@ -453,6 +493,7 @@ function chooseLiveActivityDelivery(input: {
         kind: "live_activity_update",
         token: input.target.activity_push_token,
         aggregate: nextAggregate,
+        urgent: aggregateShapeChanged(previousAggregate, nextAggregate),
         alert:
           alertForAttentionTransition({
             previousAggregate,
@@ -634,6 +675,7 @@ export type SendLiveActivityDeliveryInput =
       readonly kind: "live_activity_start" | "live_activity_update";
       readonly aggregate: RelayAgentActivityAggregateState;
       readonly alert?: ApnsLiveActivityAlert | null;
+      readonly urgent?: boolean;
     })
   | (SendLiveActivityDeliveryInputBase & {
       readonly kind: "live_activity_end";
@@ -663,6 +705,7 @@ function makeLiveActivityDeliveryRequest(
           event: deliveryEvent(input.kind),
           state: input.aggregate,
           alert: input.alert ?? null,
+          urgent: input.urgent ?? false,
         }),
       };
     case "live_activity_end":
@@ -1156,6 +1199,7 @@ export const make = Effect.gen(function* () {
             kind: payload.kind,
             aggregate: payload.aggregate,
             alert: payload.alert ?? null,
+            urgent: payload.urgent ?? false,
           });
         case "live_activity_end":
           return sendLiveActivity({
@@ -1266,6 +1310,7 @@ export const make = Effect.gen(function* () {
         apsEnvironment: input.target.aps_environment,
         aggregate: delivery.aggregate,
         alert,
+        ...(delivery.kind === "live_activity_end" ? {} : { urgent: delivery.urgent }),
       });
       if (delivery.kind === "live_activity_end" && notification && input.target.push_token) {
         yield* deliveryQueue.enqueuePushNotification({

@@ -83,6 +83,7 @@ export function liveActivityContentFingerprint(props: AgentActivityProps): strin
       row.status,
       row.threadTitle,
       row.progress ?? null,
+      row.startedAt ?? null,
     ]),
   });
 }
@@ -141,6 +142,7 @@ export function buildLocalLiveActivityProps(input: {
       updatedAt: state.updatedAt,
       deepLink: state.deepLink,
       ...(state.progress === undefined ? {} : { progress: state.progress }),
+      ...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
     });
   }
 
