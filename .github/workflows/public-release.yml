@@ -284,6 +284,9 @@ jobs:
     needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      pages: read
     env:
       APP_VERSION: ${{ needs.preflight.outputs.version }}
       T3CODE_WEB_BASE_PATH: /t3-pretty/

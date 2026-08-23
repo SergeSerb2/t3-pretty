@@ -41,3 +41,15 @@ the last one changes which app receives that scheme.
 
 The workflow does not sign installers, maintain a separate updater feed, submit
 mobile binaries to stores, or change the internal Buildkite release path.
+
+## Internal release path
+
+Buildkite continues to publish the internal CLI and desktop artifacts to the
+existing R2 feed. Install the internal CLI with:
+
+```sh
+curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
+```
+
+That build uses Surge Connect, stores state under `~/.t3`, and keeps the legacy
+`t3code.service` and `com.t3tools.t3code.service.plist` background-service names.

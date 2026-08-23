@@ -346,6 +346,9 @@ describe("T3 Pretty release runner placement", () => {
   });
 
   it("keeps public releases manual and internal automation off the GitHub mirror", () => {
+    const publicWeb = jobBlock(publicReleaseWorkflow, "web");
+    const publicPages = jobBlock(publicReleaseWorkflow, "deploy_pages");
+
     assert.notInclude(publicReleaseWorkflow, "\n  push:");
     assert.notInclude(publicReleaseWorkflow, "\n  schedule:");
     assert.include(publicReleaseWorkflow, "T3CODE_BUILD_FLAVOR: public");
@@ -354,6 +357,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publicReleaseWorkflow, "name: wsl-node-pty-x64");
     assert.include(publicReleaseWorkflow, "pattern: public-*");
     assert.notInclude(publicReleaseWorkflow, "sed -i");
+    assert.include(publicWeb, "pages: read");
+    assert.include(publicPages, "pages: write");
+    assert.include(publicPages, "id-token: write");
     for (const workflow of [desktopWorkflow, relayWorkflow, upstreamSyncWorkflow]) {
       assert.include(workflow, "github.repository != 'SergeSerb2/t3-pretty'");
     }
