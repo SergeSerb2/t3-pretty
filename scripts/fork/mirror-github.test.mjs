@@ -27,6 +27,7 @@ it("uses a guarded, one-way public mirror", () => {
   assert.match(script, /GITHUB_MIRROR_REPO.*SergeSerb2\/t3-pretty/);
   assert.match(script, /git remote set-url github/);
   assert.match(script, /git status --porcelain/);
+  NodeAssert.doesNotMatch(script, /git fetch github main --tags/);
   NodeAssert.doesNotMatch(script, /git diff --quiet/);
   NodeAssert.doesNotMatch(script, /refs\/heads\/\*/);
 });

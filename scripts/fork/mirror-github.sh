@@ -24,7 +24,7 @@ if git remote get-url github >/dev/null 2>&1; then
 else
   git remote add github "git@github.com:${GITHUB_MIRROR_REPO}.git"
 fi
-git fetch github main --tags --prune
+git fetch github main --prune
 git fetch github "refs/heads/$archive_branch:refs/remotes/github/$archive_branch" 2>/dev/null || true
 local_tip="$(git rev-parse HEAD)"
 github_tip="$(git rev-parse --verify refs/remotes/github/main 2>/dev/null || true)"

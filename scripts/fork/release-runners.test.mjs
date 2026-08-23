@@ -138,8 +138,15 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(publishCli, "git fetch --force --tags upstream");
     assert.notInclude(publishCli, "T3_FORK_BUILD_FLOOR");
     assert.notInclude(publishCli, "resolve-fork-release.mjs");
+    assert.include(publishCli, "T3CODE_BUILD_FLAVOR=internal");
     assert.include(publishCli, "latest-mac.yml");
     assert.include(publishCli, "https://vite.plus");
+    const installCli = NodeFS.readFileSync(NodePath.resolve(here, "install-cli.sh"), "utf8");
+    assert.include(installCli, "https://github.com/SergeSerb2/t3-pretty/releases/latest/download");
+    assert.include(installCli, "turn on T3 Connect");
+    assert.include(publishCli, "install.internal.sh");
+    assert.include(publishCli, "s|T3 Connect|Surge Connect|g");
+    assert.include(publishCli, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");
   });
 
   it("pins macos-release packaging steps to os=macos agents", () => {
@@ -346,6 +353,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publicReleaseWorkflow, '[[ "$REF" == "refs/heads/main" ]]');
     assert.include(publicReleaseWorkflow, "name: wsl-node-pty-x64");
     assert.include(publicReleaseWorkflow, "pattern: public-*");
+    assert.notInclude(publicReleaseWorkflow, "sed -i");
     for (const workflow of [desktopWorkflow, relayWorkflow, upstreamSyncWorkflow]) {
       assert.include(workflow, "github.repository != 'SergeSerb2/t3-pretty'");
     }

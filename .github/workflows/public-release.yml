@@ -223,9 +223,6 @@ jobs:
             --verbose
           cp "public-cli/t3-${{ needs.preflight.outputs.version }}.tgz" public-cli/t3.tgz
           cp scripts/fork/install-cli.sh public-cli/install.sh
-          sed -i \
-            's|https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest|https://github.com/SergeSerb2/t3-pretty/releases/latest/download|g; s|Surge Connect|T3 Connect|g' \
-            public-cli/install.sh
           chmod 755 public-cli/install.sh
       - uses: actions/upload-artifact@v7
         with:
