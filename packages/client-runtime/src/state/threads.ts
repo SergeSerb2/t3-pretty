@@ -10,6 +10,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -121,8 +122,8 @@ interface WarmThreadState {
 const WARM_THREAD_STATE_CAPACITY = 8;
 
 interface WarmThreadStateRegistry {
-  /** Removes and returns the entry so a live machine is its only owner. */
-  readonly take: (key: string) => WarmThreadState | null;
+  /** Copy without removing so overlapping machines can all restore. */
+  readonly get: (key: string) => WarmThreadState | null;
   readonly set: (key: string, entry: WarmThreadState) => void;
   readonly remove: (key: string) => void;
 }
@@ -130,11 +131,7 @@ interface WarmThreadStateRegistry {
 export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
   const entries = new Map<string, WarmThreadState>();
   return {
-    take: (key) => {
-      const entry = entries.get(key) ?? null;
-      entries.delete(key);
-      return entry;
-    },
+    get: (key) => entries.get(key) ?? null,
     set: (key, entry) => {
       entries.delete(key);
       entries.set(key, entry);
@@ -151,17 +148,16 @@ export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
   };
 }
 
-const defaultWarmThreadStateRegistry = makeWarmThreadStateRegistry();
-
 /**
- * Process-wide handoff between successive per-thread state machines
- * (overridable in tests). Written on scope close, consumed on the next
- * machine's startup for the same thread.
+ * In-memory handoff between successive per-thread state machines. Each
+ * runtime layer gets its own registry; tests override with
+ * `makeWarmThreadStateRegistry()`.
  */
-export class WarmThreadStates extends Context.Reference<WarmThreadStateRegistry>(
+export class WarmThreadStates extends Context.Service<WarmThreadStates, WarmThreadStateRegistry>()(
   "@t3tools/client-runtime/state/threads/WarmThreadStates",
-  { defaultValue: () => defaultWarmThreadStateRegistry },
 ) {}
+
+export const warmThreadStatesLayer = Layer.sync(WarmThreadStates, makeWarmThreadStateRegistry);
 
 /**
  * Channel from UI actions to the live per-thread state machines. The machines
@@ -209,8 +205,14 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const warmStates = yield* WarmThreadStates;
   const stateKey = threadKey({ environmentId, threadId });
   // A predecessor machine's in-memory state beats the persisted cache: it is
-  // newer and exists for running threads the cache deliberately skips.
-  const warm = warmStates.take(stateKey);
+  // newer and exists for running threads the cache deliberately skips. Peek,
+  // don't take: overlapping machines (Strict Mode remount, environment swap
+  // before the old finalizer) must all see the same blob.
+  const warm = warmStates.get(stateKey);
+  // Mutable so a failed afterSequence resume can request HTTP without extra
+  // Effect yields on the error path.
+  const warmResume = { failed: false };
+  const restoredFromWarm = warm !== null;
   const cached =
     warm !== null
       ? Option.none<OrchestrationThreadDetailSnapshot>()
@@ -322,7 +324,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       status: current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
     }));
   });
-  const setStreamError = (cause: Cause.Cause<unknown>) =>
+  const publishStreamError = (cause: Cause.Cause<unknown>) =>
     Ref.set(awaitingCompletion, false).pipe(
       Effect.andThen(
         SubscriptionRef.update(state, (current) => ({
@@ -333,6 +335,16 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         })),
       ),
     );
+  const setStreamError = restoredFromWarm
+    ? (cause: Cause.Cause<unknown>) =>
+        publishStreamError(cause).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              warmResume.failed = true;
+            }),
+          ),
+        )
+    : publishStreamError;
 
   const setThread = Effect.fn("EnvironmentThreadState.setThread")(function* (
     thread: OrchestrationThread,
@@ -347,12 +359,19 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       error: Option.none(),
       page: page === "keep" ? current.page : page,
     }));
+    const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
+    const currentPage = page === "keep" ? (yield* SubscriptionRef.get(state)).page : page;
+    // Keep a live copy so an overlapping successor can peek before this
+    // scope finalizes (React remount, Strict Mode, environment swap).
+    warmStates.set(stateKey, {
+      thread,
+      page: currentPage,
+      lastSequence: snapshotSequence,
+    });
     // Active threads can update many times per second and retain large tool
     // payloads. The server remains the source of truth while a turn is active;
     // persist once it settles so cache encoding stays off the streaming path.
     if (shouldPersistThread(thread)) {
-      const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
-      const currentPage = yield* SubscriptionRef.get(state).pipe(Effect.map((value) => value.page));
       yield* Queue.offer(persistence, {
         snapshotSequence,
         thread,
@@ -727,7 +746,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           yield* SubscriptionRef.set(lastSequence, 0);
           current = yield* SubscriptionRef.get(state);
         }
-        if (Option.isNone(current.data) && current.status !== "deleted") {
+        const shouldLoadHttpSnapshot =
+          current.status !== "deleted" && (Option.isNone(current.data) || warmResume.failed);
+        if (shouldLoadHttpSnapshot) {
           const prepared = yield* SubscriptionRef.get(supervisor.prepared).pipe(
             Effect.flatMap(
               Option.match({
@@ -747,6 +768,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             threadId,
             supportsPagination ? { turnLimit: INITIAL_THREAD_USER_TURN_LIMIT } : undefined,
           );
+          warmResume.failed = false;
           if (Option.isSome(httpSnapshot)) {
             yield* applyChunk([{ kind: "snapshot", snapshot: httpSnapshot.value }]);
             current = yield* SubscriptionRef.get(state);
@@ -847,7 +869,7 @@ export function threadStateChanges(environmentId: EnvironmentIdType, threadId: T
 
 export function createEnvironmentThreadStateAtoms<R, E>(
   runtime: Atom.AtomRuntime<
-    EnvironmentRegistry | EnvironmentCacheStore | ThreadSnapshotLoader | R,
+    EnvironmentRegistry | EnvironmentCacheStore | ThreadSnapshotLoader | WarmThreadStates | R,
     E
   >,
   options?: { readonly idleTtlMs?: number },

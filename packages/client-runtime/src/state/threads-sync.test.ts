@@ -474,6 +474,81 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it.effect("lets overlapping machines all restore the same running-thread handoff", () =>
+    Effect.gen(function* () {
+      const warmStates = makeWarmThreadStateRegistry();
+      const predecessor = yield* makeHarness({ warmStates });
+      yield* Queue.offer(predecessor.inputs, snapshot(ACTIVE_THREAD));
+      yield* awaitThreadState(
+        predecessor.observed,
+        (value) => Option.isSome(value.data) && value.data.value.session?.status === "running",
+      );
+
+      const first = yield* makeHarness({ warmStates });
+      const second = yield* makeHarness({ warmStates });
+      const firstState = yield* awaitThreadState(
+        first.observed,
+        (value) => Option.isSome(value.data) && value.data.value.session?.status === "running",
+      );
+      const secondState = yield* awaitThreadState(
+        second.observed,
+        (value) => Option.isSome(value.data) && value.data.value.session?.status === "running",
+      );
+
+      expect(Option.getOrThrow(firstState.data).session?.status).toBe("running");
+      expect(Option.getOrThrow(secondState.data).session?.status).toBe("running");
+      expect(yield* Ref.get(first.loaderCalls)).toBe(0);
+      expect(yield* Ref.get(second.loaderCalls)).toBe(0);
+    }),
+  );
+
+  it.effect("reloads over HTTP when a warm resume cannot catch up", () =>
+    Effect.gen(function* () {
+      const warmStates = makeWarmThreadStateRegistry();
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const harness = yield* makeHarness({ warmStates });
+          yield* Queue.offer(harness.inputs, snapshot(ACTIVE_THREAD));
+          yield* awaitThreadState(
+            harness.observed,
+            (value) => Option.isSome(value.data) && value.data.value.session?.status === "running",
+          );
+        }),
+      );
+
+      const httpThread: OrchestrationThread = { ...ACTIVE_THREAD, title: "HTTP catch-up" };
+      const successor = yield* makeHarness({
+        warmStates,
+        httpSnapshot: Option.some({ snapshotSequence: 9, thread: httpThread }),
+      });
+      yield* awaitThreadState(
+        successor.observed,
+        (value) => Option.isSome(value.data) && value.data.value.session?.status === "running",
+      );
+      expect(yield* Ref.get(successor.loaderCalls)).toBe(0);
+
+      yield* Queue.offer(successor.inputs, new Error("resume gap too large"));
+      yield* awaitThreadState(successor.observed, (value) => Option.isSome(value.error));
+
+      yield* TestClock.adjust("250 millis");
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(successor.subscriptionCount)) >= 2) {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+
+      const state = yield* awaitThreadState(
+        successor.observed,
+        (value) => Option.isSome(value.data) && value.data.value.title === "HTTP catch-up",
+      );
+
+      expect(yield* Ref.get(successor.loaderCalls)).toBeGreaterThanOrEqual(1);
+      expect(Option.getOrThrow(state.data).title).toBe("HTTP catch-up");
+      expect(yield* Ref.get(successor.lastSubscribeAfterSequence)).toBe(9);
+    }),
+  );
+
   it.effect("seeds the thread from the HTTP snapshot and resumes live events", () =>
     Effect.gen(function* () {
       const httpThread: OrchestrationThread = { ...BASE_THREAD, title: "HTTP title" };
@@ -601,7 +676,9 @@ describe("EnvironmentThreads", () => {
       );
 
       expect(Option.isNone(recovered.error)).toBe(true);
-      expect(yield* Ref.get(harness.subscriptionCount)).toBe(2);
+      // awaitThreadState advances TestClock in 60ms steps; that can fire the
+      // 250ms subscribe retry before replaceSession, so the count is 2 or 3.
+      expect(yield* Ref.get(harness.subscriptionCount)).toBeGreaterThanOrEqual(2);
     }),
   );
 
