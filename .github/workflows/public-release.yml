@@ -32,6 +32,8 @@ concurrency:
 
 env:
   T3CODE_BUILD_FLAVOR: public
+  # Web and desktop pairing links use the fork-hosted client. CLI OAuth intentionally keeps the
+  # default app.t3.codes callback registered by the upstream T3 Connect OAuth application.
   VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/
   # Electron needs mutable latest metadata. This guarded workflow alone marks a public-v release
   # latest; exact-version CLI commands use the immutable public-v tag instead.
@@ -382,9 +384,11 @@ jobs:
     if: >-
       github.repository == 'SergeSerb2/t3-pretty' &&
       inputs.publish_release &&
-      !cancelled() &&
-      !failure() &&
-      needs.preflight.result == 'success'
+      needs.preflight.result == 'success' &&
+      needs.desktop.result == 'success' &&
+      needs.cli.result == 'success' &&
+      needs.mobile.result == 'success' &&
+      needs.web.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write

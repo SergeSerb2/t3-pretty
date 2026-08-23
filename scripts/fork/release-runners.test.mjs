@@ -351,6 +351,7 @@ describe("T3 Pretty release runner placement", () => {
     const publicPreflight = jobBlock(publicReleaseWorkflow, "preflight");
     const publicWeb = jobBlock(publicReleaseWorkflow, "web");
     const publicPages = jobBlock(publicReleaseWorkflow, "deploy_pages");
+    const publicRelease = jobBlock(publicReleaseWorkflow, "release");
 
     assert.notInclude(publicReleaseWorkflow, "\n  push:");
     assert.notInclude(publicReleaseWorkflow, "\n  schedule:");
@@ -374,6 +375,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publicPages, "actions/configure-pages@v5");
     assert.include(publicPages, "actions/upload-pages-artifact@v5");
     assert.include(publicReleaseWorkflow, "needs.wsl_node_pty.result == 'success'");
+    for (const job of ["desktop", "cli", "mobile", "web"]) {
+      assert.include(publicRelease, `needs.${job}.result == 'success'`);
+    }
     assert.include(publicReleaseWorkflow, "--latest");
     assert.include(publicReleaseWorkflow, "latest_public_version");
     assert.include(publicReleaseWorkflow, "version $VERSION is older than latest public release");
