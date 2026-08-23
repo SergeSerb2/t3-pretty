@@ -120,11 +120,9 @@ interface WarmThreadState {
 }
 
 // ponytail: fixed-size LRU of full thread objects; make it byte-aware if
-// giant threads ever show up in memory profiles. Delete tombstones share the
-// cap — a finalizer can re-warm after 8 other keys if that ever matters.
+// giant threads ever show up in memory profiles. Delete tombstones are just
+// keys and sit outside the LRU so a late finalizer cannot resurrect them.
 const WARM_THREAD_STATE_CAPACITY = 8;
-
-type WarmThreadSlot = WarmThreadState | "deleted";
 
 interface WarmThreadStateRegistry {
   /** Copy without removing so overlapping machines can all restore. */
@@ -139,32 +137,20 @@ interface WarmThreadStateRegistry {
 }
 
 export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
-  const entries = new Map<string, WarmThreadSlot>();
+  const entries = new Map<string, WarmThreadState>();
+  const deleted = new Set<string>();
   let generation = 0;
-  const put = (key: string, slot: WarmThreadSlot) => {
-    entries.delete(key);
-    entries.set(key, slot);
-    for (const oldest of entries.keys()) {
-      if (entries.size <= WARM_THREAD_STATE_CAPACITY) {
-        break;
-      }
-      entries.delete(oldest);
-    }
-  };
   return {
     nextGeneration: () => {
       generation += 1;
       return generation;
     },
-    get: (key) => {
-      const slot = entries.get(key);
-      return slot === undefined || slot === "deleted" ? null : slot;
-    },
+    get: (key) => (deleted.has(key) ? null : (entries.get(key) ?? null)),
     set: (key, entry) => {
-      const current = entries.get(key);
-      if (current === "deleted") {
+      if (deleted.has(key)) {
         return;
       }
+      const current = entries.get(key);
       if (current !== undefined) {
         if (entry.lastSequence < current.lastSequence) {
           return;
@@ -173,10 +159,18 @@ export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
           return;
         }
       }
-      put(key, entry);
+      entries.delete(key);
+      entries.set(key, entry);
+      for (const oldest of entries.keys()) {
+        if (entries.size <= WARM_THREAD_STATE_CAPACITY) {
+          break;
+        }
+        entries.delete(oldest);
+      }
     },
     remove: (key) => {
-      put(key, "deleted");
+      entries.delete(key);
+      deleted.add(key);
     },
   };
 }
@@ -243,10 +237,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   // don't take: overlapping machines (Strict Mode remount, environment swap
   // before the old finalizer) must all see the same blob.
   const warm = warmStates.get(stateKey);
-  // Mutable so a failed afterSequence resume can request HTTP without extra
-  // Effect yields on the error path.
-  const warmResume = { failed: false };
-  const restoredFromWarm = warm !== null;
+  // pending is one-shot: the first warm subscribe may request HTTP catch-up
+  // if afterSequence fails before any live item. Later socket errors resume
+  // from lastSequence like a normal cached machine.
+  const warmResume = { failed: false, pending: warm !== null };
   const cached =
     warm !== null
       ? Option.none<OrchestrationThreadDetailSnapshot>()
@@ -369,16 +363,17 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         })),
       ),
     );
-  const setStreamError = restoredFromWarm
-    ? (cause: Cause.Cause<unknown>) =>
-        publishStreamError(cause).pipe(
-          Effect.andThen(
-            Effect.sync(() => {
-              warmResume.failed = true;
-            }),
-          ),
-        )
-    : publishStreamError;
+  const setStreamError = (cause: Cause.Cause<unknown>) =>
+    publishStreamError(cause).pipe(
+      Effect.andThen(
+        Effect.sync(() => {
+          if (warmResume.pending) {
+            warmResume.failed = true;
+            warmResume.pending = false;
+          }
+        }),
+      ),
+    );
 
   const setThread = Effect.fn("EnvironmentThreadState.setThread")(function* (
     thread: OrchestrationThread,
@@ -804,6 +799,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             supportsPagination ? { turnLimit: INITIAL_THREAD_USER_TURN_LIMIT } : undefined,
           );
           warmResume.failed = false;
+          warmResume.pending = false;
           if (Option.isSome(httpSnapshot)) {
             yield* applyChunk([{ kind: "snapshot", snapshot: httpSnapshot.value }]);
             current = yield* SubscriptionRef.get(state);
@@ -834,7 +830,14 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         onExpectedFailure: setStreamError,
         retryExpectedFailureAfter: "250 millis",
       },
-    ).pipe(Stream.runForEach((item) => Queue.offer(streamItems, item))),
+    ).pipe(
+      Stream.tap(() =>
+        Effect.sync(() => {
+          warmResume.pending = false;
+        }),
+      ),
+      Stream.runForEach((item) => Queue.offer(streamItems, item)),
+    ),
   );
 
   // Expose loadOlderTurns to UI actions through the request registry.

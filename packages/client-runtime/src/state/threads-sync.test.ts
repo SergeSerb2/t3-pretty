@@ -517,6 +517,19 @@ describe("EnvironmentThreads", () => {
     expect(warmStates.get(key)).toBeNull();
   });
 
+  it("keeps delete tombstones after other keys fill the LRU", () => {
+    const warmStates = makeWarmThreadStateRegistry();
+    const key = "environment-1:thread-1";
+    warmStates.set(key, warmBlob("Live", 5, 1));
+    warmStates.remove(key);
+    for (let index = 0; index < 16; index += 1) {
+      warmStates.set(`environment-1:thread-other-${index}`, warmBlob(`Other ${index}`, 1, 1));
+    }
+    warmStates.set(key, warmBlob("Resurrected", 99, 99));
+
+    expect(warmStates.get(key)).toBeNull();
+  });
+
   it.effect("keeps a successor's same-sequence updates when a predecessor finalizes later", () =>
     Effect.gen(function* () {
       const warmStates = makeWarmThreadStateRegistry();
@@ -647,6 +660,53 @@ describe("EnvironmentThreads", () => {
       expect(yield* Ref.get(successor.loaderCalls)).toBeGreaterThanOrEqual(1);
       expect(Option.getOrThrow(state.data).title).toBe("HTTP catch-up");
       expect(yield* Ref.get(successor.lastSubscribeAfterSequence)).toBe(9);
+    }),
+  );
+
+  it.effect("does not reload over HTTP after a warm subscribe has gone live", () =>
+    Effect.gen(function* () {
+      const warmStates = makeWarmThreadStateRegistry();
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const harness = yield* makeHarness({ warmStates });
+          yield* Queue.offer(harness.inputs, snapshot(ACTIVE_THREAD));
+          yield* awaitThreadState(
+            harness.observed,
+            (value) => Option.isSome(value.data) && value.data.value.session?.status === "running",
+          );
+        }),
+      );
+
+      const successor = yield* makeHarness({
+        warmStates,
+        httpSnapshot: Option.some({
+          snapshotSequence: 9,
+          thread: { ...ACTIVE_THREAD, title: "HTTP catch-up" },
+        }),
+      });
+      yield* Queue.offer(successor.inputs, titleUpdated("Live title", 2));
+      yield* awaitThreadState(
+        successor.observed,
+        (value) =>
+          value.status === "live" &&
+          Option.isSome(value.data) &&
+          value.data.value.title === "Live title",
+      );
+      expect(yield* Ref.get(successor.loaderCalls)).toBe(0);
+
+      yield* Queue.offer(successor.inputs, new Error("socket dropped"));
+      yield* awaitThreadState(successor.observed, (value) => Option.isSome(value.error));
+
+      yield* TestClock.adjust("250 millis");
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(successor.subscriptionCount)) >= 2) {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+
+      expect(yield* Ref.get(successor.loaderCalls)).toBe(0);
+      expect(yield* Ref.get(successor.lastSubscribeAfterSequence)).toBe(2);
     }),
   );
 
