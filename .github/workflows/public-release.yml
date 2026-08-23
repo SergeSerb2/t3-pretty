@@ -32,9 +32,6 @@ concurrency:
 
 env:
   T3CODE_BUILD_FLAVOR: public
-  # Web and desktop pairing links use the fork-hosted client. CLI OAuth intentionally keeps the
-  # default app.t3.codes callback registered by the upstream T3 Connect OAuth application.
-  VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/
   # Electron needs mutable latest metadata. This guarded workflow alone marks a public-v release
   # latest; exact-version CLI commands use the immutable public-v tag instead.
   T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/SergeSerb2/t3-pretty/releases/latest/download/
@@ -133,6 +130,8 @@ jobs:
       needs.wsl_node_pty.result == 'success'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
+    env:
+      VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/
     strategy:
       fail-fast: false
       matrix:
@@ -321,6 +320,7 @@ jobs:
     env:
       APP_VERSION: ${{ needs.preflight.outputs.version }}
       T3CODE_WEB_BASE_PATH: /t3-pretty/
+      VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/
       VITE_HOSTED_APP_CHANNEL: latest
       VITE_STATIC_HOSTED_APP: "1"
     steps:

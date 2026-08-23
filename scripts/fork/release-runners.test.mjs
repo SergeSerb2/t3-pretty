@@ -350,6 +350,8 @@ describe("T3 Pretty release runner placement", () => {
 
   it("keeps public releases manual and internal automation off the GitHub mirror", () => {
     const publicPreflight = jobBlock(publicReleaseWorkflow, "preflight");
+    const publicDesktop = jobBlock(publicReleaseWorkflow, "desktop");
+    const publicCli = jobBlock(publicReleaseWorkflow, "cli");
     const publicWeb = jobBlock(publicReleaseWorkflow, "web");
     const publicPages = jobBlock(publicReleaseWorkflow, "deploy_pages");
     const publicRelease = jobBlock(publicReleaseWorkflow, "release");
@@ -358,10 +360,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(publicReleaseWorkflow, "\n  schedule:");
     assert.include(publicReleaseWorkflow, "T3CODE_BUILD_FLAVOR: public");
     assert.include(publicReleaseWorkflow, "T3CODE_WEB_BASE_PATH: /t3-pretty/");
-    assert.include(
-      publicReleaseWorkflow,
-      "VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/",
-    );
+    assert.include(publicDesktop, "VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/");
+    assert.include(publicWeb, "VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/");
+    assert.notInclude(publicCli, "VITE_HOSTED_APP_URL");
     assert.include(publicReleaseWorkflow, '[[ "$REF" == "refs/heads/main" ]]');
     assert.include(publicReleaseWorkflow, "name: wsl-node-pty-x64");
     assert.include(publicReleaseWorkflow, "pattern: public-*");

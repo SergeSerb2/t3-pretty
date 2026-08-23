@@ -1,7 +1,7 @@
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
+import { T3CODE_BUILD_FLAVOR, type ConnectBuildFlavor } from "@t3tools/shared/connectBranding";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 
 import {
   DEFAULT_LINUX_PASSWORD_STORE,
@@ -18,6 +18,7 @@ import {
 
 interface EarlyDesktopSettingsInput {
   readonly env: NodeJS.ProcessEnv;
+  readonly buildFlavor?: ConnectBuildFlavor;
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
   readonly readFileString: (path: string) => string;
@@ -47,11 +48,11 @@ const isDevelopmentEnvironment = (env: NodeJS.ProcessEnv): boolean =>
 
 function resolveEarlyDesktopSettingsPath(input: {
   readonly env: NodeJS.ProcessEnv;
+  readonly buildFlavor?: ConnectBuildFlavor;
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
 }): string {
-  const isInternalBuild =
-    (trimNonEmpty(input.env.T3CODE_BUILD_FLAVOR) ?? T3CODE_BUILD_FLAVOR) === "internal";
+  const isInternalBuild = (input.buildFlavor ?? T3CODE_BUILD_FLAVOR) === "internal";
   const t3Home = Option.fromUndefinedOr(input.env.T3CODE_HOME);
   const baseDir = resolveDesktopBaseDir({
     homeDirectory: input.homeDirectory,
@@ -84,8 +85,7 @@ export function resolveEarlyLinuxElectronOptions(
   input: EarlyLinuxElectronOptionsInput,
 ): EarlyLinuxElectronOptions {
   const preference = resolveEarlyLinuxPasswordStorePreference(input);
-  const isInternalBuild =
-    (trimNonEmpty(input.env.T3CODE_BUILD_FLAVOR) ?? T3CODE_BUILD_FLAVOR) === "internal";
+  const isInternalBuild = (input.buildFlavor ?? T3CODE_BUILD_FLAVOR) === "internal";
   return {
     linuxWmClass: isInternalBuild
       ? isDevelopmentEnvironment(input.env)
