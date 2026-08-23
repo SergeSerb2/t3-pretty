@@ -172,13 +172,15 @@ record_local_native_submit() {
 
 record_local_ota_publish() {
   local existing next="${1:-$commit}"
-  # Both macos-release agents and the upstream-sync job share this file. A
-  # slower job on an older SHA must not regress a newer mark, or the next
-  # push would re-diff (and re-publish) content already released.
+  # Both macos-release agents and the upstream-sync job share this file.
+  # Advance only when the recorded commit is provably older: a slower job on
+  # an older SHA — or a shallow clone that cannot resolve the mark — must
+  # not regress it, or the next push would re-diff (and re-publish) content
+  # already released.
   existing="$(native_submit_line "$LOCAL_OTA_MARK" || true)"
   if [[ "$existing" =~ ^[0-9a-f]{40}$ && "$existing" != "$next" ]] \
-    && git merge-base --is-ancestor "$next" "$existing" 2>/dev/null; then
-    echo "Recorded OTA commit $existing is newer than $next; keeping it."
+    && ! git merge-base --is-ancestor "$existing" "$next" 2>/dev/null; then
+    echo "Recorded OTA commit $existing is not behind $next; keeping it."
     return 0
   fi
   mkdir -p "$(dirname "$LOCAL_OTA_MARK")"
@@ -361,6 +363,13 @@ restore_eas_json() {
 }
 
 if [[ "$MODE" == "update" || "$MODE" == "release" ]]; then
+  # The path filter ran before the publish lock; a newer job may have
+  # released while this one waited on it. Re-check coverage with the lock
+  # held so a stale bundle never lands on top of a newer one.
+  if [[ "$mobile_changed" == "true" && "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" && "$FORCE_IOS" != "true" ]] \
+    && [[ "$(mobile_release_base)" == "covered" ]]; then
+    mobile_changed=false
+  fi
   if [[ "$mobile_changed" == "true" ]]; then
     update_platform="$PLATFORM"
     if [[ "$MODE" == "release" ]]; then

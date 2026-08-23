@@ -269,6 +269,11 @@ describe("iOS publish OTA catch-up base", () => {
       assert.equal(run(head, parent), head, "older publish must not regress the mark");
       assert.equal(run(parent, head), head, "newer publish advances the mark");
       assert.equal(run("bogus", head), head, "unreadable marks are replaced");
+      assert.equal(
+        run("1".repeat(40), parent),
+        "1".repeat(40),
+        "a mark the shallow clone cannot resolve is kept, not regressed",
+      );
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
