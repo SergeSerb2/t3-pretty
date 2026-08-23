@@ -33,3 +33,14 @@ export function writePersistedPullRequestListFilters(
 ): void {
   persisted = filters;
 }
+
+/** Keep restored project/host only when the saved environment is still connected. */
+export function shouldKeepRestoredPullRequestScope(
+  restoredEnvironmentId: EnvironmentId | null,
+  environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
+): boolean {
+  return (
+    restoredEnvironmentId !== null &&
+    environments.some((environment) => environment.environmentId === restoredEnvironmentId)
+  );
+}

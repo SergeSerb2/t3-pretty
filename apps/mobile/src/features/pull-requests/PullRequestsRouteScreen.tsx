@@ -16,6 +16,7 @@ import { useHomeListOptions } from "../home/home-list-options";
 import { PullRequestsScreen, type PullRequestListEnvironment } from "./PullRequestsScreen";
 import {
   readPersistedPullRequestListFilters,
+  shouldKeepRestoredPullRequestScope,
   writePersistedPullRequestListFilters,
 } from "./pullRequestListFiltersPersistence";
 import { usePullRequestList } from "./usePullRequestList";
@@ -94,7 +95,15 @@ export function PullRequestsRouteScreen() {
     ) {
       if (!committedEnvironment.current) {
         committedEnvironment.current = true;
+        const keepScope = shouldKeepRestoredPullRequestScope(
+          previousEnvironmentId.current,
+          environments,
+        );
         previousEnvironmentId.current = selectedEnvironmentId;
+        if (!keepScope) {
+          setSelectedProjectId(undefined);
+          setSelectedHost(undefined);
+        }
         return;
       }
     }
