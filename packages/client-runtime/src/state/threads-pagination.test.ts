@@ -31,6 +31,7 @@ import {
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as Persistence from "../platform/persistence.ts";
 import * as RpcSession from "../rpc/session.ts";
+import { threadKey } from "./entities.ts";
 import type { ThreadSnapshotWindow } from "./threadSnapshotHttp.ts";
 import {
   INITIAL_THREAD_USER_TURN_LIMIT,
@@ -139,6 +140,7 @@ const makeHarness = Effect.fn("TestThreadPagination.makeHarness")(function* (opt
   readonly initialResponse?: LoaderResponse;
   /** Cached snapshot returned by the cache store (simulates a warm cache). */
   readonly cached?: OrchestrationThreadDetailSnapshot;
+  readonly warmStates?: ReturnType<typeof makeWarmThreadStateRegistry>;
 }) {
   const inputs = yield* Queue.unbounded<OrchestrationThreadStreamItem>();
   const observed = yield* Queue.unbounded<EnvironmentThreadState>();
@@ -214,7 +216,7 @@ const makeHarness = Effect.fn("TestThreadPagination.makeHarness")(function* (opt
     Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
     Effect.provideService(Persistence.EnvironmentCacheStore, cache),
     Effect.provideService(ThreadSnapshotLoader, snapshotLoader),
-    Effect.provideService(WarmThreadStates, makeWarmThreadStateRegistry()),
+    Effect.provideService(WarmThreadStates, options?.warmStates ?? makeWarmThreadStateRegistry()),
   );
   yield* SubscriptionRef.changes(threadState).pipe(
     Stream.runForEach((state) => Queue.offer(observed, state)),
@@ -546,6 +548,48 @@ describe("thread pagination state", () => {
       const subscribeInput = yield* Ref.get(harness.lastSubscribeInput);
       expect(subscribeInput?.turnLimit).toBeUndefined();
       expect(subscribeInput?.afterSequence).toBe(20);
+    }),
+  );
+
+  it.effect("does not hand a discarded windowed snapshot to a successor", () =>
+    Effect.gen(function* () {
+      const warmStates = makeWarmThreadStateRegistry();
+      const key = threadKey({ environmentId: TARGET.environmentId, threadId: THREAD_ID });
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const predecessor = yield* makeHarness({ cached: WINDOWED_SNAPSHOT, warmStates });
+          yield* predecessor.awaitState((value) => Option.isSome(value.page));
+        }),
+      );
+
+      // Forced reload against a pre-pagination server. HTTP returns nothing,
+      // so a successor must not resume the discarded window from warm state.
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const reloading = yield* makeHarness({
+            paginationCapability: false,
+            warmStates,
+          });
+          yield* reloading.awaitState(
+            (value) => Option.isNone(value.data) && Option.isNone(value.page),
+          );
+        }),
+      );
+
+      expect(warmStates.get(key)).toBeNull();
+      expect(warmStates.isDeleted(key)).toBe(false);
+
+      const fullSnapshot: OrchestrationThreadDetailSnapshot = {
+        snapshotSequence: 20,
+        thread: { ...BASE_THREAD, title: "Full reload" },
+      };
+      const successor = yield* makeHarness({
+        paginationCapability: false,
+        warmStates,
+        initialResponse: Option.some(fullSnapshot),
+      });
+      const state = yield* successor.awaitState((value) => Option.isSome(value.data));
+      expect(Option.getOrThrow(state.data).title).toBe("Full reload");
     }),
   );
 

@@ -604,6 +604,19 @@ describe("EnvironmentThreads", () => {
     expect(warmStates.get(key)?.thread.title).toBe("Same sequence newer generation");
   });
 
+  it("forgets a dropped blob without tombstoning", () => {
+    const warmStates = makeWarmThreadStateRegistry();
+    const key = "environment-1:thread-1";
+    warmStates.set(key, warmBlob("Live", 5, 1));
+    warmStates.drop(key);
+
+    expect(warmStates.get(key)).toBeNull();
+    expect(warmStates.isDeleted(key)).toBe(false);
+
+    warmStates.set(key, warmBlob("Reloaded", 1, 2));
+    expect(warmStates.get(key)?.thread.title).toBe("Reloaded");
+  });
+
   it("does not let a tombstoned delete be re-warmed", () => {
     const warmStates = makeWarmThreadStateRegistry();
     const key = "environment-1:thread-1";

@@ -169,6 +169,12 @@ interface WarmThreadStateRegistry {
    * thread.
    */
   readonly remove: (key: string) => void;
+  /**
+   * Forget the blob without tombstoning. Successors miss and fall through to
+   * cache or HTTP. The thread is still live; this snapshot is just invalid
+   * to resume from (forced full reload).
+   */
+  readonly drop: (key: string) => void;
   readonly nextGeneration: () => number;
 }
 
@@ -212,6 +218,9 @@ export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
     remove: (key) => {
       entries.delete(key);
       lruSet(deleted, key, true, WARM_THREAD_STATE_CAPACITY);
+    },
+    drop: (key) => {
+      entries.delete(key);
     },
   };
 }
@@ -347,8 +356,12 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             lastSequence: snapshot.snapshotSequence,
           }),
         });
-  const publishHandoff = (next: WarmHandoff) => {
+  const publishHandoff = (next: WarmHandoff | null) => {
     handoff = next;
+    if (next === null) {
+      warmStates.drop(stateKey);
+      return;
+    }
     if (next.kind === "deleted") {
       warmStates.remove(stateKey);
       return;
@@ -857,7 +870,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         // A windowed cache resuming against a server without pagination is a
         // trap: afterSequence resume keeps only the window, and the missing
         // older turns can never be loaded (the server has no cursor reads).
-        // Drop the window marker and treat the data as needing a full reload.
+        // Drop the window marker and the warm blob so a successor cannot
+        // restore the discarded snapshot, then take a full reload.
         if (!supportsPagination && Option.isSome(current.page)) {
           yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
           yield* SubscriptionRef.update(state, (value) => ({
@@ -867,7 +881,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             page: Option.none(),
           }));
           yield* SubscriptionRef.set(lastSequence, 0);
-          handoff = null;
+          publishHandoff(null);
           current = yield* SubscriptionRef.get(state);
         }
         const shouldLoadHttpSnapshot =
