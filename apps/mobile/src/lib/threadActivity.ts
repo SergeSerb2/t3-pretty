@@ -1307,10 +1307,35 @@ export function deriveThreadFeedPresentation(
       appendPresentedFeedEntry(result, entry, expandedWorkGroupIds);
     }
   }
-  if (activeWorkStartedAt !== null) {
+  if (activeWorkStartedAt !== null && !feedTailSignalsActivity(result)) {
     result.push(presentedWorkingEntry(activeWorkStartedAt));
   }
   return result;
+}
+
+/**
+ * Web parity for the working row (MessagesTimeline's appendWorkingRow): hide
+ * "Thinking" while streaming assistant text is its own activity signal.
+ * Unlike web, in-progress tool activities are filtered from this feed rather
+ * than shown as a live row, so the working row stays up while tools run —
+ * dropping it would leave the turn with no liveness signal at all. Scans back
+ * to the latest user message, which bounds the active turn the same way web's
+ * activeTurnHeaderIndex does.
+ */
+function feedTailSignalsActivity(entries: ReadonlyArray<ThreadFeedEntry>): boolean {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    if (entry.type !== "message") continue;
+    if (entry.message.role === "user") return false;
+    if (
+      entry.message.role === "assistant" &&
+      entry.message.streaming &&
+      entry.message.text.trim().length > 0
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Presented rows are minted per call below, but LegendList re-runs row bodies

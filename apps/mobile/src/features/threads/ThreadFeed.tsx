@@ -6,7 +6,6 @@ import type { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contra
 import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
 import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
-import { formatElapsed } from "@t3tools/shared/orchestrationTiming";
 import { SymbolView } from "../../components/AppSymbol";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
@@ -45,7 +44,19 @@ import {
 import { TouchableOpacity } from "react-native-gesture-handler";
 import ImageViewing from "react-native-image-viewing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeIn, FadeInUp, type SharedValue } from "react-native-reanimated";
+import Animated, {
+  cancelAnimation,
+  Easing,
+  FadeIn,
+  FadeInUp,
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+  type SharedValue,
+} from "react-native-reanimated";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { useFontFamily } from "../../lib/useFontFamily";
@@ -1063,7 +1074,7 @@ function renderFeedEntry(
   const { markdownStyles, iconSubtleColor, userBubbleColor } = props;
 
   if (entry.type === "working") {
-    return <WorkingTimelineRow active={props.active} startedAt={entry.createdAt} />;
+    return <WorkingTimelineRow active={props.active} />;
   }
 
   if (entry.type === "turn-fold") {
@@ -1274,35 +1285,54 @@ function renderFeedEntry(
   );
 }
 
-const WorkingTimelineRow = memo(function WorkingTimelineRow(props: {
-  readonly active: boolean;
-  readonly startedAt: string;
-}) {
-  const [nowMs, setNowMs] = useState(() => Date.now());
+// Web parity: the timeline's live indicator is the shimmering "Thinking"
+// label (elapsed time surfaces later in the turn fold's "Worked for …").
+// Without CSS gradient masks, a highlighted copy of the label breathing over
+// the muted base stands in for web's sweeping focus band — same 2.2s period,
+// opacity-only so it stays on the compositor.
+const THINKING_SHIMMER_PERIOD_MS = 2_200;
+
+const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly active: boolean }) {
+  const highlight = useSharedValue(0);
 
   useEffect(() => {
     if (!props.active) {
       return;
     }
-    setNowMs(Date.now());
-    const intervalId = setInterval(() => {
-      setNowMs(Date.now());
-    }, 1_000);
-    return () => clearInterval(intervalId);
-  }, [props.active, props.startedAt]);
+    highlight.value = withRepeat(
+      withSequence(
+        withTiming(1, {
+          duration: THINKING_SHIMMER_PERIOD_MS / 2,
+          easing: Easing.inOut(Easing.quad),
+          reduceMotion: ReduceMotion.System,
+        }),
+        withTiming(0, {
+          duration: THINKING_SHIMMER_PERIOD_MS / 2,
+          easing: Easing.inOut(Easing.quad),
+          reduceMotion: ReduceMotion.System,
+        }),
+      ),
+      -1,
+      false,
+    );
+    return () => {
+      cancelAnimation(highlight);
+      highlight.value = 0;
+    };
+  }, [highlight, props.active]);
 
-  const durationLabel = formatElapsed(props.startedAt, new Date(nowMs).toISOString()) ?? "0s";
+  const highlightStyle = useAnimatedStyle(() => ({ opacity: highlight.value }));
 
   return (
-    <View className="mb-4 flex-row items-center gap-2 px-1.5 py-1">
-      <View className="flex-row items-center gap-1">
-        <View className="h-1 w-1 rounded-full bg-neutral-400 dark:bg-neutral-500" />
-        <View className="h-1 w-1 rounded-full bg-neutral-400/80 dark:bg-neutral-500/80" />
-        <View className="h-1 w-1 rounded-full bg-neutral-400/60 dark:bg-neutral-500/60" />
-      </View>
-      <Text className="font-t3-medium text-xs tabular-nums text-neutral-600 dark:text-neutral-400">
-        Working for {durationLabel}
+    <View className="mb-4 px-1.5 py-1">
+      <Text className="font-t3-medium text-xs text-neutral-600 dark:text-neutral-400">
+        Thinking
       </Text>
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, highlightStyle]}>
+        <View className="px-1.5 py-1">
+          <Text className="font-t3-medium text-xs text-foreground">Thinking</Text>
+        </View>
+      </Animated.View>
     </View>
   );
 });

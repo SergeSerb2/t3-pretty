@@ -6,6 +6,7 @@ import { useCallback, useRef } from "react";
 import { Alert } from "react-native";
 
 import { showConfirmDialog } from "../../components/ConfirmDialogHost";
+import { clearThreadDeparting, markThreadDeparting } from "./thread-departure-store";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { refreshArchivedThreadsForEnvironment } from "../archive/useArchivedThreadSnapshots";
 import {
@@ -165,6 +166,10 @@ function useThreadActionExecutor(
             input: { threadId: thread.id, deleteHistory: true },
           });
         }
+        // Web parity: settling starts a visible departure ahead of the server
+        // round trip. Marked after the guards so a refused settle never hides
+        // the row; cleared on failure so it fades back in place.
+        if (action === "settle") markThreadDeparting(key, "settle");
         const result =
           action === "unsettle"
             ? // reason "user" pins the thread active: auto-settle stays
@@ -186,6 +191,7 @@ function useThreadActionExecutor(
                 input: { threadId: thread.id },
               });
         if (result._tag === "Failure") {
+          if (action === "settle") clearThreadDeparting(key);
           Alert.alert(actionFailureTitle(action), actionFailureMessage(action, result.cause));
           return false;
         }
@@ -311,6 +317,9 @@ export function useThreadListActions(): {
         }
 
         selectionHaptic();
+        // Web parity: the row starts its departure before the round trip;
+        // cleared on failure so it fades back in place.
+        markThreadDeparting(key, "snooze");
         const result = await snoozeMutation({
           environmentId: thread.environmentId,
           input: {
@@ -319,6 +328,7 @@ export function useThreadListActions(): {
           },
         });
         if (result._tag === "Failure") {
+          clearThreadDeparting(key);
           const error = Cause.squash(result.cause);
           Alert.alert(
             "Could not snooze thread",

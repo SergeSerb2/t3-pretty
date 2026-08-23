@@ -952,6 +952,86 @@ describe("buildThreadFeed", () => {
     expect(deriveThreadFeedPresentation(presented, null, new Set())).toEqual([]);
   });
 
+  it("suppresses the working row while assistant commentary signals activity", () => {
+    const startedAt = "2026-04-01T00:00:01.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "message",
+        id: "assistant-1",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        message: makeMessage({
+          id: MessageId.make("assistant-1"),
+          text: "Looking into it",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          streaming: true,
+        }),
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.map((entry) => entry.type)).toEqual(["message"]);
+  });
+
+  it("keeps the working row while a tool call is in progress (the live tool is hidden here)", () => {
+    const startedAt = "2026-04-01T00:00:01.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "activity-group",
+        id: "work-group-live",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        turnId: null,
+        activities: [
+          {
+            id: "activity-live",
+            createdAt: "2026-04-01T00:00:02.000Z",
+            turnId: null,
+            summary: "Run command",
+            detail: null,
+            canExpand: false,
+            getFullDetail: () => null,
+            getCopyText: () => "Run command",
+            icon: "command",
+            toolLike: true,
+            status: "neutral",
+          },
+        ],
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.some((entry) => entry.type === "working")).toBe(true);
+  });
+
+  it("shows the working row again after a fresh user message", () => {
+    const startedAt = "2026-04-01T00:00:05.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "message",
+        id: "assistant-1",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        message: makeMessage({
+          id: MessageId.make("assistant-1"),
+          text: "Done with the last request",
+          createdAt: "2026-04-01T00:00:02.000Z",
+        }),
+      },
+      {
+        type: "message",
+        id: "user-2",
+        createdAt: "2026-04-01T00:00:04.000Z",
+        message: makeMessage({
+          id: MessageId.make("user-2"),
+          role: "user",
+          text: "Next task",
+          createdAt: "2026-04-01T00:00:04.000Z",
+        }),
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.at(-1)).toMatchObject({ type: "working" });
+  });
+
   it("models work-log overflow as list rows", () => {
     const activity = (
       id: string,
