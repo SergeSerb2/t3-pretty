@@ -69,8 +69,12 @@ import {
   modelMatchesCatalogQuery,
   pendingModelAfterPress,
   providerSectionIsCollapsed,
+  threadSettingsSheetPageForRoute,
   visibleSheetOptionDescriptors,
+  type ThreadSettingsSheetPage,
 } from "./thread-settings-sheet-state";
+
+export type { ThreadSettingsSheetPage };
 
 /**
  * Keep measured row changes stable, but let catalog mutations use the list's
@@ -330,8 +334,6 @@ type ThreadSettingsSubmenuPage =
   | { readonly kind: "descriptor"; readonly id: string }
   | { readonly kind: "runtime" };
 
-export type ThreadSettingsSheetPage = "home" | "catalog";
-
 type ThreadSettingsSessionProps = {
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
   readonly selectedModel: ModelSelection | null;
@@ -353,6 +355,7 @@ export type ExistingThreadSettingsRouteSession = ThreadSettingsSessionProps & {
 type ExistingThreadSettingsRouteContextValue = {
   readonly session: ExistingThreadSettingsRouteSession | null;
   readonly present: (session: ExistingThreadSettingsRouteSession) => void;
+  readonly setPage: (page: ThreadSettingsSheetPage) => void;
   readonly clear: (ownerId: string) => void;
 };
 
@@ -365,16 +368,24 @@ export function ExistingThreadSettingsRouteProvider(props: { readonly children: 
   const present = useCallback((nextSession: ExistingThreadSettingsRouteSession) => {
     setSession((current) =>
       // Composer re-presents on model/options updates. Keep the page this
-      // owner opened with so a catalog first-page isn't reset to home.
+      // owner is on so in-sheet catalog navigation isn't reset to home.
       current?.ownerId === nextSession.ownerId
         ? { ...nextSession, initialPage: current.initialPage }
         : nextSession,
     );
   }, []);
+  const setPage = useCallback((page: ThreadSettingsSheetPage) => {
+    setSession((current) =>
+      current && current.initialPage !== page ? { ...current, initialPage: page } : current,
+    );
+  }, []);
   const clear = useCallback((ownerId: string) => {
     setSession((current) => (current?.ownerId === ownerId ? null : current));
   }, []);
-  const value = useMemo(() => ({ session, present, clear }), [clear, present, session]);
+  const value = useMemo(
+    () => ({ session, present, setPage, clear }),
+    [clear, present, session, setPage],
+  );
 
   return (
     <ExistingThreadSettingsRouteContext.Provider value={value}>
@@ -1090,6 +1101,10 @@ type ThreadSettingsPickerPresentation = {
   readonly onClose: () => void;
 };
 
+type ThreadSettingsPickerNavigatorProps = ThreadSettingsPickerPresentation & {
+  readonly onActivePageChange: (page: ThreadSettingsSheetPage) => void;
+};
+
 const ThreadSettingsPickerStack = createNativeStackNavigator<ThreadSettingsPickerStackParams>();
 const ThreadSettingsPickerPresentationContext =
   createContext<ThreadSettingsPickerPresentation | null>(null);
@@ -1132,13 +1147,16 @@ function ThreadSettingsHomeScreen() {
   const presentation = useThreadSettingsPickerPresentation();
   const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
   const commitAndClose = useCommitThreadSettings();
-  const openedCatalogRef = useRef(false);
 
   useLayoutEffect(() => {
-    if (session.initialPage !== "catalog" || openedCatalogRef.current) {
+    if (session.initialPage !== "catalog") {
       return;
     }
-    openedCatalogRef.current = true;
+    const state = navigation.getState();
+    const currentName = state.routes[state.index]?.name;
+    if (currentName === "ThreadSettingsCatalog" || currentName === "ThreadSettingsChoice") {
+      return;
+    }
     navigation.navigate("ThreadSettingsCatalog");
   }, [navigation, session.initialPage]);
 
@@ -1298,7 +1316,7 @@ function ThreadSettingsChoiceScreen() {
   );
 }
 
-function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) {
+function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerNavigatorProps) {
   const solidSheetBackground = String(useThemeColor("--color-sheet-solid"));
   const foreground = String(useThemeColor("--color-foreground"));
   const presentation = useMemo(
@@ -1307,11 +1325,36 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
     }),
     [props.onClose],
   );
+  // Nested stack hydrates at home. Skip that event so a remount cannot
+  // overwrite a persisted catalog page before Home restores it.
+  const skipHydrateRef = useRef(true);
+  const onActivePageChange = props.onActivePageChange;
 
   return (
     <ThreadSettingsPickerPresentationContext.Provider value={presentation}>
       <ThreadSettingsPickerStack.Navigator
         initialRouteName="ThreadSettingsHome"
+        screenListeners={{
+          state: (event) => {
+            const state = event.data.state;
+            const routeName = state.routes[state.index]?.name;
+            if (!routeName) {
+              return;
+            }
+            if (skipHydrateRef.current) {
+              skipHydrateRef.current = false;
+              // Hydrate always lands on home. Don't let that overwrite a
+              // persisted catalog page before Home's restore effect runs.
+              if (routeName === "ThreadSettingsHome") {
+                return;
+              }
+            }
+            const page = threadSettingsSheetPageForRoute(routeName);
+            if (page) {
+              onActivePageChange(page);
+            }
+          },
+        }}
         screenOptions={{
           animation: "slide_from_right",
           contentStyle: { backgroundColor: solidSheetBackground },
@@ -1372,7 +1415,10 @@ export function ExistingThreadSettingsRouteScreen() {
 
   return (
     <ThreadSettingsSessionProvider {...settings} initialPage={session.initialPage}>
-      <ThreadSettingsPickerNavigator onClose={() => navigation.goBack()} />
+      <ThreadSettingsPickerNavigator
+        onActivePageChange={presentation.setPage}
+        onClose={() => navigation.goBack()}
+      />
     </ThreadSettingsSessionProvider>
   );
 }
