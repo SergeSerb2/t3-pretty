@@ -56,6 +56,7 @@ import {
 } from "./features/threads/ThreadSettingsSheet";
 import { NewTaskFlowProvider } from "./features/threads/new-task-flow-provider";
 import { NewTaskRouteScreen } from "./features/threads/NewTaskRouteScreen";
+import { NewTaskSkillsPickerRouteScreen } from "./features/threads/NewTaskSkillsPickerRouteScreen";
 import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppearanceRouteScreen";
 import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsClientStorageRouteScreen";
 import { SettingsEnvironmentStorageRouteScreen } from "./features/settings/SettingsEnvironmentStorageRouteScreen";
@@ -358,6 +359,13 @@ const NewTaskSheetStack = createNativeStackNavigator({
       linking: "draft/branch",
       options: {
         title: "Branch",
+      },
+    }),
+    NewTaskSkills: createNativeStackScreen({
+      screen: NewTaskSkillsPickerRouteScreen,
+      linking: "draft/skills",
+      options: {
+        title: "Skills",
       },
     }),
     AddProject: createNativeStackScreen({

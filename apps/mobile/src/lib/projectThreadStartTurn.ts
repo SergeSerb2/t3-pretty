@@ -6,6 +6,7 @@ import {
   type ProjectId,
   type ProviderInteractionMode,
   type RuntimeMode,
+  type SkillId,
 } from "@t3tools/contracts";
 
 import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
@@ -40,6 +41,7 @@ export interface ProjectThreadStartTurnSpec {
   readonly branch: string | null;
   readonly worktreePath: string | null;
   readonly startFromOrigin: boolean;
+  readonly enabledSkillIds: ReadonlyArray<SkillId>;
   /** Generated temp branch for worktree mode; unused for local mode. */
   readonly worktreeBranchName: string;
 }
@@ -74,8 +76,7 @@ export function buildProjectThreadStartTurnInput(spec: ProjectThreadStartTurnSpe
         interactionMode: spec.interactionMode,
         branch: spec.branch,
         worktreePath: isWorktree ? null : spec.worktreePath,
-        // RPC encode requires the key; mobile has no per-thread picker yet.
-        enabledSkillIds: [],
+        enabledSkillIds: spec.enabledSkillIds,
         createdAt: spec.createdAt,
       },
       ...(isWorktree

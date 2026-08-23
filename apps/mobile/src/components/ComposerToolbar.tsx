@@ -203,6 +203,7 @@ export function ComposerToolbarButton(props: {
   readonly icon?: ComponentProps<typeof SymbolView>["name"];
   readonly iconNode?: ReactNode;
   readonly label?: string;
+  readonly accessibilityHint?: string;
   readonly accessibilityLabel?: string;
   readonly active?: boolean;
   readonly disabled?: boolean;
@@ -211,6 +212,9 @@ export function ComposerToolbarButton(props: {
   readonly maxWidth?: number;
   readonly minWidth?: number;
   readonly onPress?: () => void;
+  /** Injected by ControlPillMenu when the button hosts a long-press menu. */
+  readonly onLongPress?: () => void;
+  readonly delayLongPress?: number;
   readonly showChevron?: boolean;
   readonly textTransform?: "none" | "uppercase";
   readonly variant?: "default" | "primary" | "danger";
@@ -246,10 +250,13 @@ export function ComposerToolbarButton(props: {
 
   return (
     <Pressable
+      accessibilityHint={props.accessibilityHint}
       accessibilityLabel={props.accessibilityLabel ?? props.label}
       accessibilityRole="button"
       accessibilityState={{ disabled: props.disabled === true, busy: isLoading }}
       disabled={props.disabled || isLoading}
+      delayLongPress={props.delayLongPress}
+      onLongPress={props.onLongPress}
       onPress={props.onPress}
       className={cn(
         // Default width cap lives in the class chain (not the inline style)

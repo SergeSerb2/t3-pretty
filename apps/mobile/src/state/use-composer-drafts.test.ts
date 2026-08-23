@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, SkillId } from "@t3tools/contracts";
 import { vi } from "vite-plus/test";
 
 const composerDraftFileMocks = vi.hoisted(() => {
@@ -130,6 +130,27 @@ describe("mobile composer drafts", () => {
     });
   });
 
+  it("hydrates per-thread skill picks even when the message content is empty", () => {
+    expect(
+      decodePersistedComposerDrafts({
+        schemaVersion: 1,
+        drafts: {
+          "new-task:environment-1:project-1": {
+            text: "",
+            attachments: [],
+            enabledSkillIds: ["acme/skills:skill-a", "host:Shared:grill-me"],
+          },
+        },
+      }),
+    ).toEqual({
+      "new-task:environment-1:project-1": {
+        text: "",
+        attachments: [],
+        enabledSkillIds: ["acme/skills:skill-a", "host:Shared:grill-me"],
+      },
+    });
+  });
+
   it("keeps legacy content-only drafts and rejects invalid selector state", () => {
     expect(
       decodePersistedComposerDrafts({
@@ -178,6 +199,27 @@ describe("mobile composer drafts", () => {
       [draftKey]: {
         modelSelection: draft.modelSelection,
         workspaceSelection: draft.workspaceSelection,
+        text: "",
+        attachments: [],
+      },
+    });
+  });
+
+  it("clears per-thread skill picks with the sent content", () => {
+    const draftKey = "new-task:environment-1:project-1";
+    const draft: ComposerDraft = {
+      text: "send this",
+      attachments: [],
+      enabledSkillIds: [SkillId.make("acme/skills:skill-a")],
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5.4",
+      },
+    };
+
+    expect(clearComposerDraftContentState({ [draftKey]: draft }, draftKey)).toEqual({
+      [draftKey]: {
+        modelSelection: draft.modelSelection,
         text: "",
         attachments: [],
       },
