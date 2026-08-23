@@ -841,6 +841,8 @@ export function deriveWorkLogEntries(
   const entries: DerivedWorkLogEntry[] = [];
   for (const activity of ordered) {
     if (activity.kind === "tool.started") continue;
+    // Generated live-status headlines feed the work-live row, never the log.
+    if (activity.kind === "turn.headline") continue;
     // Agent task.started rows are CTA seeds: they carry the true spawn turn,
     // which is the batch key (completions of background subagents arrive
     // under later synthetic turns and must not start new batches). They
@@ -858,6 +860,25 @@ export function deriveWorkLogEntries(
     const { activityKind, collapseKey: _collapseKey, ...rest } = entry;
     return Object.assign(rest, { sourceActivityKind: activityKind });
   });
+}
+
+/**
+ * Latest generated status headline for the running turn, or null when none
+ * has arrived yet. The server keeps one `turn.headline` activity per turn
+ * (stable id), so the last match is the current one.
+ */
+export function deriveLiveTurnHeadline(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+  runningTurnId: TurnId | null,
+): string | null {
+  if (runningTurnId === null) return null;
+  for (let index = activities.length - 1; index >= 0; index -= 1) {
+    const activity = activities[index]!;
+    if (activity.kind === "turn.headline" && activity.turnId === runningTurnId) {
+      return activity.summary;
+    }
+  }
+  return null;
 }
 
 function isPlanBoundaryToolActivity(activity: OrchestrationThreadActivity): boolean {

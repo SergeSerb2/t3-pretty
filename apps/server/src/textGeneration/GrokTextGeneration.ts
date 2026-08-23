@@ -13,6 +13,7 @@ import { extractJsonObject } from "@t3tools/shared/schemaJson";
 import { TextGenerationError } from "@t3tools/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
+  buildActivityHeadlinePrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
@@ -20,6 +21,7 @@ import {
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
+  sanitizeActivityHeadline,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -54,6 +56,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       | "generatePrContent"
       | "generateBranchName"
       | "generateThreadTitle"
+      | "generateActivityHeadline"
       | "generateProjectIcon";
     cwd: string;
     prompt: string;
@@ -253,6 +256,27 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
+  const generateActivityHeadline: TextGeneration.TextGeneration["Service"]["generateActivityHeadline"] =
+    Effect.fn("GrokTextGeneration.generateActivityHeadline")(function* (input) {
+      const { prompt, outputSchema } = buildActivityHeadlinePrompt({
+        summary: input.summary,
+        command: input.command,
+        detail: input.detail,
+      });
+
+      const generated = yield* runGrokJson({
+        operation: "generateActivityHeadline",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return {
+        headline: sanitizeActivityHeadline(generated.headline),
+      } satisfies TextGeneration.ActivityHeadlineGenerationResult;
+    });
+
   const generateProjectIcon: TextGeneration.TextGeneration["Service"]["generateProjectIcon"] =
     Effect.fn("GrokTextGeneration.generateProjectIcon")(function* (input) {
       const { prompt, outputSchema } = buildProjectIconPrompt({
@@ -275,6 +299,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateActivityHeadline,
     generateProjectIcon,
   } satisfies TextGeneration.TextGeneration["Service"];
 });
