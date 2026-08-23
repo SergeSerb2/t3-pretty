@@ -826,11 +826,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       props.selectedThread.title,
     ],
   );
-  // Tapping send while a turn runs steers that turn; the long-press menu holds
-  // the message for the next turn instead.
+  // Delivery follows the button's promise: a "Queue" label (offline, or
+  // messages already parked in the outbox) queues, a running-turn "Send"
+  // steers, an idle "Send" leaves the server default. The long-press menu
+  // always queues.
   const handleSendPress = useCallback(() => {
-    void handleSend(showStopAction ? "steer" : undefined);
-  }, [handleSend, showStopAction]);
+    void handleSend(sendLabel === "Queue" ? "queue" : showStopAction ? "steer" : undefined);
+  }, [handleSend, sendLabel, showStopAction]);
   const handleSendMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
       if (nativeEvent.event === "queue") void handleSend("queue");
