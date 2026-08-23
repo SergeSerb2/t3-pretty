@@ -50,18 +50,7 @@ export function nextPullRequestEnvironmentId(
 }
 
 /**
- * Wait only while a named save could still arrive (empty list). A non-empty list has settled:
- * keep the saved id if it is there, otherwise commit the preferred fallback.
- */
-export function canCommitPullRequestListRestore(
-  saved: PersistedPullRequestListFilters,
-  environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
-): boolean {
-  return saved.environmentId === null || environments.length > 0;
-}
-
-/**
- * After the environment list has settled: keep project/host only when the saved server is still
+ * After saved connections have settled: keep project/host only when the saved server is still
  * present. A missing server (including an empty list) falls back to `preferred` without them.
  */
 export function restorePullRequestListFilters(

@@ -15,7 +15,6 @@ import { useWorkspaceState } from "../../state/workspace";
 import { useHomeListOptions } from "../home/home-list-options";
 import { PullRequestsScreen, type PullRequestListEnvironment } from "./PullRequestsScreen";
 import {
-  canCommitPullRequestListRestore,
   nextPullRequestEnvironmentId,
   readPersistedPullRequestListFilters,
   restorePullRequestListFilters,
@@ -83,8 +82,6 @@ export function PullRequestsRouteScreen() {
   useEffect(() => {
     if (isLoadingSavedConnection) return;
     if (!scopeRestored) {
-      // Empty can still be a hydrate flash; wait for a real list before committing.
-      if (savedFilters.environmentId !== null && environments.length === 0) return;
       const restored = restorePullRequestListFilters(
         savedFilters,
         preferredEnvironmentId,
@@ -93,9 +90,7 @@ export function PullRequestsRouteScreen() {
       setSelectedEnvironmentId(restored.environmentId);
       setSelectedProjectId(restored.projectId);
       setSelectedHost(restored.host);
-      if (canCommitPullRequestListRestore(savedFilters, environments)) {
-        setScopeRestored(true);
-      }
+      setScopeRestored(true);
       return;
     }
     const next = nextPullRequestEnvironmentId(
