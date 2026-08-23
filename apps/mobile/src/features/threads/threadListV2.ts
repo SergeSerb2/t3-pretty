@@ -353,6 +353,7 @@ export function buildThreadListV2Items(input: {
       contract as settlementEnvironmentIds. */
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly autoSettleAfterDays?: number;
+  readonly autoSettleOnMerge?: boolean;
   /** Max settled rows to render; the rest are counted, not built. */
   readonly settledLimit?: number;
   /** Injectable for tests; defaults to now. */
@@ -432,6 +433,7 @@ export function buildThreadListV2Items(input: {
       effectiveSettled(thread, {
         now,
         autoSettleAfterDays,
+        autoSettleOnMerge: input.autoSettleOnMerge,
         changeRequest,
       })
     ) {
