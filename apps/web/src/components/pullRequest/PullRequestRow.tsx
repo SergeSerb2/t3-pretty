@@ -61,7 +61,10 @@ function PullRequestRowImpl({
       />
       <span className="min-w-0">
         <span className="block truncate text-sm font-medium text-foreground">{entry.title}</span>
-        <PullRequestMetaLine className="mt-0.5 text-xs text-muted-foreground/70">
+        {/* overflow-hidden is the hard guarantee: segments below can shrink and ellipsize, but
+            in a narrow panel the fixed ones (number, verdict, checks) would otherwise overflow
+            the column and paint over the diff stat on the right. */}
+        <PullRequestMetaLine className="mt-0.5 overflow-hidden text-xs text-muted-foreground/70">
           <span className="flex shrink-0 items-center gap-1">
             {showProvider ? (
               <Tooltip>
@@ -88,10 +91,8 @@ function PullRequestRowImpl({
             </span>
           </span>
           {showProjectTitle ? <span className="truncate">{entry.repository}</span> : null}
-          {environmentLabel ? (
-            <span className="max-w-32 shrink-0 truncate">{environmentLabel}</span>
-          ) : null}
-          <PullRequestActorLabel actor={entry.author} className="max-w-40 shrink-0" />
+          {environmentLabel ? <span className="max-w-32 truncate">{environmentLabel}</span> : null}
+          <PullRequestActorLabel actor={entry.author} className="max-w-40" />
           {/* Only a verdict somebody has actually given: "review required" is the absence of
               one, and saying so on every unreviewed row would say nothing. */}
           {entry.reviewDecision === "approved" || entry.reviewDecision === "changes-requested" ? (
