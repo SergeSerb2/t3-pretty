@@ -4,8 +4,8 @@ A permission mode controls how much the agent does on its own and when it stops 
 
 The mode is set per thread, from the mode control in the message composer. Changing it in one
 thread does not change any other thread. A thread created from inside another thread keeps that
-thread's mode; otherwise new threads start in **Full access** unless you pick something else
-before sending.
+thread's mode; otherwise new threads start in **Full access** (**Yolo** on Kimi) unless you pick
+something else before sending.
 
 ## The Modes
 
@@ -22,10 +22,10 @@ permission mode, and providers without an equivalent fall back to asking, like S
 **Full access**: allow commands and edits without prompts. The default. The agent runs
 unattended until it finishes or asks a question of its own.
 
-Kimi threads use the CLI's own names for the unattended modes instead: **Auto** is full access
-that never stops to ask, and **Yolo** is the same full access but can stop to ask you questions.
-Kimi offers **Supervised**, **Auto**, and **Yolo** — the generic Auto and Auto-accept edits modes
-are not offered for Kimi.
+Kimi offers **Supervised**, **Yolo**, and **Full access** — the generic Auto and Auto-accept
+edits modes are not offered for Kimi. Both unattended modes run with full access; they differ in
+whether Kimi can stop to ask you questions: **Yolo** can (and is the default for Kimi), while
+**Full access** never does.
 
 Approvals appear inline in the conversation. Approve or reject one and the agent continues from
 there.
@@ -49,4 +49,4 @@ labels above describe what you get; the exact per-provider translation is intern
 change.
 
 Mobile offers the same modes with the same labels and descriptions: the four generic modes above,
-or **Supervised**, **Auto**, and **Yolo** for Kimi threads.
+or **Supervised**, **Yolo**, and **Full access** for Kimi threads.

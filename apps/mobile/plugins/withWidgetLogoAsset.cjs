@@ -4,7 +4,7 @@
 // makes the extension archive with the app's store versions.
 //
 // expo-widgets generates ExpoWidgetsTarget without a Resources build phase and
-// has no asset support, so this plugin (a) writes an SVG template image set into
+// has no asset support, so this plugin (a) writes a template image set into
 // the generated widget asset catalog and (b) wires that catalog into the widget
 // target with an actool build phase.
 //
@@ -38,16 +38,19 @@ const { completeWidgetInfoPlist, useSourceInfoPlistFile } = require("./lib/widge
 const TARGET_NAME = "ExpoWidgetsTarget";
 const CATALOG_NAME = "Assets.xcassets";
 const IMAGE_SET = "T3Mark.imageset";
-const SVG_NAME = "T3Mark.svg";
+// Committed next to this plugin at assets/widget/T3Mark.png — a copy of the
+// brand kit's black template glyph (assets/pretty/kit/mark-black.png, 480×351).
+// AgentActivity tints it via foregroundStyle, so the imageset must stay a
+// template — a full-color or vector-wrapped raster asset would not recolor.
+const PNG_NAME = "T3Mark.png";
 
 const CATALOG_CONTENTS = JSON.stringify({ info: { author: "expo", version: 1 } }, null, 2) + "\n";
 const IMAGE_SET_CONTENTS =
   JSON.stringify(
     {
-      images: [{ idiom: "universal", filename: SVG_NAME }],
+      images: [{ idiom: "universal", filename: PNG_NAME }],
       info: { author: "expo", version: 1 },
       properties: {
-        "preserves-vector-representation": true,
         "template-rendering-intent": "template",
       },
     },
@@ -59,13 +62,18 @@ function withAssetFiles(config) {
   return withDangerousMod(config, [
     "ios",
     (cfg) => {
-      const source = path.join(cfg.modRequest.projectRoot, "assets", "widget", SVG_NAME);
+      const source = path.join(cfg.modRequest.projectRoot, "assets", "widget", PNG_NAME);
+      if (!fs.existsSync(source)) {
+        throw new Error(
+          `withWidgetLogoAsset: ${source} is missing — copy assets/pretty/kit/mark-black.png to apps/mobile/assets/widget/${PNG_NAME} before prebuild.`,
+        );
+      }
       const catalogDir = path.join(cfg.modRequest.platformProjectRoot, TARGET_NAME, CATALOG_NAME);
       const imageSetDir = path.join(catalogDir, IMAGE_SET);
       fs.mkdirSync(imageSetDir, { recursive: true });
       fs.writeFileSync(path.join(catalogDir, "Contents.json"), CATALOG_CONTENTS);
       fs.writeFileSync(path.join(imageSetDir, "Contents.json"), IMAGE_SET_CONTENTS);
-      fs.copyFileSync(source, path.join(imageSetDir, SVG_NAME));
+      fs.copyFileSync(source, path.join(imageSetDir, PNG_NAME));
       completeWidgetInfoPlist({
         platformProjectRoot: cfg.modRequest.platformProjectRoot,
         targetName: TARGET_NAME,

@@ -44,7 +44,7 @@ function renderPendingActions(isRunning: boolean) {
   );
 }
 
-function renderStandaloneStop() {
+function renderStandaloneStop(isInterrupting = false) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
@@ -53,6 +53,7 @@ function renderStandaloneStop() {
       showPlanFollowUpPrompt: false,
       promptHasText: false,
       isSendBusy: false,
+      isInterrupting,
       sendDisabledReason: null,
       isConnecting: false,
       isEnvironmentUnavailable: false,
@@ -216,6 +217,15 @@ describe("ComposerPrimaryActions", () => {
     expect(renderPendingActions(true)).toContain("size-8 sm:size-7");
     expect(renderStandaloneStop()).toContain("size-8 sm:h-8 sm:w-8");
     expect(renderStandaloneStop()).not.toContain("sm:size-7");
+  });
+
+  it("shows a pending interrupt without taking the stop button away", () => {
+    const markup = renderStandaloneStop(true);
+
+    expect(markup).toContain('aria-busy="true"');
+    expect(markup).toContain('aria-label="Stop generation"');
+    expect(markup).not.toContain("disabled");
+    expect(markup).not.toContain("<rect");
   });
 
   it("renders stage artwork inside the send button when artwork identification is active", () => {

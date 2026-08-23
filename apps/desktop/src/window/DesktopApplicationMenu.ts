@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type { DesktopUpdateState } from "@t3tools/contracts";
 import type * as Electron from "electron";
 
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
@@ -56,6 +57,37 @@ const zoomMainWindow = Effect.fn("desktop.menu.zoomMainWindow")(function* (
   yield* desktopWindow.zoomMain(direction);
 });
 
+// The updater ignores manual checks while an update is already pending, so the menu
+// item reports where that pending update got to instead of silently doing nothing.
+const describePendingUpdate = (updateState: DesktopUpdateState) => {
+  const pendingVersion = updateState.downloadedVersion ?? updateState.availableVersion;
+  const pendingName = pendingVersion ? `T3 Pretty ${pendingVersion}` : "The update";
+  switch (updateState.status) {
+    case "checking":
+      return { title: "Checking for updates", message: "Already checking for updates." };
+    case "available":
+      return {
+        title: "Update available",
+        message: `${pendingName} is available. Use the update button in the sidebar to download it.`,
+      };
+    case "downloading":
+      return {
+        title: "Downloading update",
+        message: `${pendingName} is downloading. The update button in the sidebar shows its progress.`,
+      };
+    case "downloaded":
+      return {
+        title: "Update ready",
+        message: `${pendingName} is ready to install. Restart T3 Pretty to finish updating.`,
+      };
+    default:
+      return {
+        title: "Update check unavailable",
+        message: "Could not check for updates right now. Please try again later.",
+      };
+  }
+};
+
 const checkForUpdatesFromMenu = Effect.gen(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const electronDialog = yield* ElectronDialog.ElectronDialog;
@@ -75,6 +107,12 @@ const checkForUpdatesFromMenu = Effect.gen(function* () {
       title: "Update check failed",
       message: "Could not check for updates.",
       detail: updateState.message ?? "An unknown error occurred. Please try again later.",
+      buttons: ["OK"],
+    });
+  } else {
+    yield* electronDialog.showMessageBox({
+      type: "info",
+      ...describePendingUpdate(updateState),
       buttons: ["OK"],
     });
   }

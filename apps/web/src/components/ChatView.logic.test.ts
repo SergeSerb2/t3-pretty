@@ -27,10 +27,18 @@ import {
   isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
+  resolveBackgroundDraftWorkspaceOptions,
+  resolveDraftPromotionNavigationTarget,
   resolveThreadMetadataUpdateForNextTurn,
+  resolveCarriedRuntimeMode,
+  resolveCarriedComposerRuntimeMode,
+  resolveComposerRuntimeMode,
   resolveSendEnvMode,
+  resolveDraftHeroState,
+  storedComposerRuntimeMode,
   scheduleEnvironmentReconnectWarning,
   startNewThreadForProject,
+  shouldDockDraftHeroForSubmission,
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
@@ -39,6 +47,40 @@ const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
 const threadId = ThreadId.make("thread-1");
 const now = "2026-03-29T00:00:00.000Z";
+
+describe("draft hero submission transition", () => {
+  it("does not dock the composer before a background submission", () => {
+    expect(
+      shouldDockDraftHeroForSubmission({
+        isDraftHeroState: true,
+        activeThreadKey: "environment-local:thread-1",
+        submissionIntent: "background",
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps the composer in the hero layout until navigation after server promotion", () => {
+    expect(
+      resolveDraftHeroState({
+        isLocalDraftThread: false,
+        hasTimelineEntries: true,
+        isWorking: true,
+        draftHeroDockRequested: false,
+        backgroundSubmissionPending: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not auto-navigate a background submission after server promotion", () => {
+    expect(
+      resolveDraftPromotionNavigationTarget({
+        serverThreadRef: { environmentId, threadId },
+        serverThreadStarted: true,
+        backgroundSubmissionPending: true,
+      }),
+    ).toBeNull();
+  });
+});
 
 describe("environment reconnect warning grace", () => {
   afterEach(() => vi.useRealTimers());
@@ -432,6 +474,23 @@ describe("resolveSendEnvMode", () => {
   });
 });
 
+describe("resolveBackgroundDraftWorkspaceOptions", () => {
+  it("keeps New worktree selected without reusing the launched worktree", () => {
+    expect(
+      resolveBackgroundDraftWorkspaceOptions({
+        envMode: "worktree",
+        branch: "main",
+        startFromOrigin: true,
+      }),
+    ).toEqual({
+      envMode: "worktree",
+      branch: "main",
+      worktreePath: null,
+      startFromOrigin: true,
+    });
+  });
+});
+
 describe("branchMismatchKey", () => {
   it("builds a key from thread id and both branches", () => {
     expect(branchMismatchKey("thread-1", { threadBranch: "feat/a", currentBranch: "feat/b" })).toBe(
@@ -638,6 +697,29 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
         latestTurn: completedTurn,
         latestUserMessageId: localDispatch.latestUserMessageId,
         session: readySession,
+        hasPendingApproval: false,
+        hasPendingUserInput: false,
+        threadError: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps a follow-up active while its provider session is starting", () => {
+    const localDispatch = createLocalDispatchSnapshot(
+      makeThread({ latestTurn: completedTurn, session: readySession }),
+    );
+
+    expect(
+      hasServerAcknowledgedLocalDispatch({
+        localDispatch,
+        phase: "connecting",
+        latestTurn: completedTurn,
+        latestUserMessageId: MessageId.make("message-followup"),
+        session: {
+          ...readySession,
+          status: "starting",
+          updatedAt: "2026-03-29T00:01:00.000Z",
+        },
         hasPendingApproval: false,
         hasPendingUserInput: false,
         threadError: null,
@@ -938,5 +1020,149 @@ describe("hasOptimisticWorkingSettled", () => {
         threadError: null,
       }),
     ).toBe(true);
+  });
+});
+
+describe("composer runtime mode", () => {
+  it("remaps carried Kimi yolo off Grok on a new draft", () => {
+    expect(
+      resolveComposerRuntimeMode({
+        providerDriver: "grok",
+        composerRuntimeMode: null,
+        threadRuntimeMode: "yolo",
+        isServerThread: false,
+      }),
+    ).toBe("full-access");
+  });
+
+  it("keeps yolo on Kimi", () => {
+    expect(
+      resolveComposerRuntimeMode({
+        providerDriver: "kimi",
+        composerRuntimeMode: null,
+        threadRuntimeMode: "yolo",
+        isServerThread: false,
+      }),
+    ).toBe("yolo");
+  });
+
+  it("lets an untouched draft inherit Kimi's yolo default", () => {
+    expect(
+      resolveComposerRuntimeMode({
+        providerDriver: "kimi",
+        composerRuntimeMode: null,
+        threadRuntimeMode: "full-access",
+        isServerThread: false,
+      }),
+    ).toBe("yolo");
+  });
+
+  it("keeps an explicit Full access pick on Kimi", () => {
+    expect(
+      resolveComposerRuntimeMode({
+        providerDriver: "kimi",
+        composerRuntimeMode: "full-access",
+        threadRuntimeMode: "yolo",
+        isServerThread: false,
+      }),
+    ).toBe("full-access");
+  });
+
+  it("treats the generic default as unset on drafts only", () => {
+    expect(
+      storedComposerRuntimeMode({
+        composerRuntimeMode: null,
+        threadRuntimeMode: "full-access",
+        isServerThread: false,
+      }),
+    ).toBeNull();
+    expect(
+      storedComposerRuntimeMode({
+        composerRuntimeMode: null,
+        threadRuntimeMode: "full-access",
+        isServerThread: true,
+      }),
+    ).toBe("full-access");
+  });
+
+  it("keeps a composer-recorded full-access carry instead of inheriting Kimi yolo", () => {
+    expect(
+      storedComposerRuntimeMode({
+        composerRuntimeMode: "full-access",
+        threadRuntimeMode: "full-access",
+        isServerThread: false,
+      }),
+    ).toBe("full-access");
+    expect(
+      resolveComposerRuntimeMode({
+        providerDriver: "kimi",
+        composerRuntimeMode: "full-access",
+        threadRuntimeMode: "full-access",
+        isServerThread: false,
+      }),
+    ).toBe("full-access");
+  });
+
+  it("remaps carried yolo onto a known non-Kimi destination", () => {
+    expect(
+      resolveCarriedRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "grok",
+      }),
+    ).toBe("full-access");
+    expect(
+      resolveCarriedRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "kimi",
+      }),
+    ).toBe("yolo");
+    expect(
+      resolveCarriedRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: null,
+      }),
+    ).toBe("yolo");
+    expect(
+      resolveCarriedRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "unconfigured",
+      }),
+    ).toBe("yolo");
+    expect(
+      resolveCarriedRuntimeMode({
+        runtimeMode: null,
+        destinationProviderDriver: "grok",
+      }),
+    ).toBeNull();
+  });
+
+  it("records only real picks as the carried composer runtime mode", () => {
+    // Remapped yolo sticks as an explicit full-access pick.
+    expect(
+      resolveCarriedComposerRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "grok",
+      }),
+    ).toBe("full-access");
+    // Non-default modes carry as explicit picks.
+    expect(
+      resolveCarriedComposerRuntimeMode({
+        runtimeMode: "yolo",
+        destinationProviderDriver: "kimi",
+      }),
+    ).toBe("yolo");
+    // A plain carried full-access stays unset so Kimi inherits yolo.
+    expect(
+      resolveCarriedComposerRuntimeMode({
+        runtimeMode: "full-access",
+        destinationProviderDriver: "kimi",
+      }),
+    ).toBeNull();
+    expect(
+      resolveCarriedComposerRuntimeMode({
+        runtimeMode: null,
+        destinationProviderDriver: "grok",
+      }),
+    ).toBeNull();
   });
 });

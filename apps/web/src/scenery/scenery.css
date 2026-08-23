@@ -157,10 +157,11 @@ html[data-theme-id="world-scenery"] {
   opacity: var(--scenery-wash-light-opacity, 0);
 }
 
-/* Light↔dark ink flip: the view transition crossfades the whole snapshot,
+/* Light↔dark ink flip: the view transition crossfades the scenery snapshot,
    so the CSS photo fade and wash opacity tween would double-animate. The
    default plus-lighter blend also flashes a bright frame between a light
-   and a dark snapshot — normal blend is the dissolve we actually want. */
+   and a dark snapshot — normal blend is the dissolve we actually want.
+   Chat text is a named group that cuts instead of dissolving (below). */
 html[data-scenery-ink-transition] .scenery-layer__group,
 html[data-scenery-ink-transition] .scenery-layer__wash,
 html[data-scenery-ink-transition] .scenery-layer__edges {
@@ -190,6 +191,26 @@ html[data-scenery-ink-transition]::view-transition-new(root) {
   animation-duration: 0.3s;
   animation-timing-function: cubic-bezier(0.77, 0, 0.175, 1);
   mix-blend-mode: normal;
+}
+
+/* Thread switches capture two different transcripts in the root snapshot.
+   Isolating the list and hiding the outgoing copy stops the plus-lighter
+   overlay that reads as missing/doubled letters. The name is only on the
+   active column so cousin ChatViews (split panes) cannot share it. */
+html[data-scenery-ink-transition] [data-chat-transcript-active] {
+  view-transition-name: scenery-chat-transcript;
+}
+
+html[data-scenery-ink-transition]::view-transition-group(scenery-chat-transcript) {
+  animation: none;
+}
+
+html[data-scenery-ink-transition]::view-transition-old(scenery-chat-transcript) {
+  display: none;
+}
+
+html[data-scenery-ink-transition]::view-transition-new(scenery-chat-transcript) {
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -412,6 +433,20 @@ html:not(.dark) .scenery-attribution:hover {
   transition:
     opacity 180ms cubic-bezier(0.16, 1, 0.3, 1),
     transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  /* Continuous roll on the individual translate property: it composes with
+     the transform gather/reveal transitions instead of overriding them, so
+     the bank keeps drifting while the wallpaper decodes and the reveal
+     retargets without a snap. Compositor-only, near band rolls fastest. */
+  animation: scenery-fog-drift var(--fog-drift-ms, 12s) ease-in-out infinite alternate;
+}
+
+@keyframes scenery-fog-drift {
+  from {
+    translate: calc(var(--fog-drift-x, 0%) * -1) calc(var(--fog-drift-y, 0%) * -1);
+  }
+  to {
+    translate: var(--fog-drift-x, 0%) var(--fog-drift-y, 0%);
+  }
 }
 
 @starting-style {
@@ -433,6 +468,9 @@ html:not(.dark) .scenery-attribution:hover {
   --fog-out-x: 7%;
   --fog-out-y: -2%;
   --fog-out-scale: 1.08;
+  --fog-drift-x: 2%;
+  --fog-drift-y: 0.6%;
+  --fog-drift-ms: 17s;
   /* Masses on top of a covering plate (last stop is the bottom layer).
      Heavier top and bottom so header and composer never show a gap. */
   background:
@@ -468,6 +506,9 @@ html:not(.dark) .scenery-attribution:hover {
   --fog-out-x: 15%;
   --fog-out-y: -3%;
   --fog-out-scale: 1.14;
+  --fog-drift-x: 3.5%;
+  --fog-drift-y: 1%;
+  --fog-drift-ms: 12s;
   /* Irregular, not mirrored: a left/right pair reads as two boxes. The
      last stop is a thin even wash so holes between puffs cannot form. */
   background:
@@ -498,6 +539,9 @@ html:not(.dark) .scenery-attribution:hover {
   --fog-out-x: 26%;
   --fog-out-y: -5%;
   --fog-out-scale: 1.22;
+  --fog-drift-x: 5.5%;
+  --fog-drift-y: 1.5%;
+  --fog-drift-ms: 9s;
   background:
     radial-gradient(
       ellipse 26% 20% at 30% 76%,
@@ -527,6 +571,9 @@ html:not(.dark) .scenery-attribution:hover {
   --fog-out-x: 19%;
   --fog-out-y: -3.5%;
   --fog-out-scale: 1.17;
+  --fog-drift-x: 4.5%;
+  --fog-drift-y: 1.25%;
+  --fog-drift-ms: 10.5s;
   --fog-alpha: var(--fog-grain-alpha);
 }
 
@@ -646,9 +693,10 @@ html[data-scenery-arrival="fog"] [data-scenery-hero-chrome] {
 
 /* Chrome comes up through the thinning bank: headline first, composer a
    beat behind, so the hero reads as one gesture instead of a cut
-   (chromeInMs). */
-html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome],
-html[data-scenery-arrival="settled"] [data-scenery-hero-chrome] {
+   (chromeInMs). Settled must not keep a transform transition — it would
+   still be on the composer after arrival, and a later remount or FLIP
+   would replay as a delayed bounce. */
+html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome] {
   opacity: 1;
   transform: none;
   transition:
@@ -656,9 +704,13 @@ html[data-scenery-arrival="settled"] [data-scenery-hero-chrome] {
     transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome="composer"],
-html[data-scenery-arrival="settled"] [data-scenery-hero-chrome="composer"] {
+html[data-scenery-arrival="reveal"] [data-scenery-hero-chrome="composer"] {
   transition-delay: 70ms;
+}
+
+html[data-scenery-arrival="settled"] [data-scenery-hero-chrome] {
+  opacity: 1;
+  transform: none;
 }
 
 /* An ink flip that lands mid-arrival is crossfaded by its view transition;
@@ -976,6 +1028,18 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   background-image: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+/* Sticky PR section headings pin over their own body. The rule above clears
+   nested bg-background so plates don't double-frost; these headings still
+   have to hide the rows they cover. Opaque sidebar chrome, no extra blur —
+   the panel already frosts the photo, and a second backdrop-filter would
+   resample on every scroll. */
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  [data-right-panel]
+  [data-pull-request-summary-heading].bg-background {
+  background-color: var(--sidebar);
+  background-image: none;
 }
 
 /* User bubbles and code blocks ride translucent plates instead of opaque

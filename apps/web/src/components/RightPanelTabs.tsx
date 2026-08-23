@@ -40,6 +40,7 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
+import { TitlebarLayoutControlsDragHole } from "./chat/PanelLayoutControls";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 
 interface RightPanelTabsProps {
@@ -192,6 +193,23 @@ export function surfaceShortcutActionForKey<
   );
 }
 
+/**
+ * A focused editable is a typing context whether or not it has text yet: an
+ * empty chat composer at rest is still where the user's next keystrokes are
+ * meant to land, and claiming launcher letters from it would redirect prompts
+ * into whatever surface opens. The `:not` clause lets `closest` see past
+ * non-editable islands (`contenteditable="false"`) to an editable host around
+ * them, matching ComposerPendingUserInputPanel's typing guard.
+ */
+export function surfaceShortcutTargetsTypingContext(
+  target: { closest(selectors: string): unknown } | null,
+): boolean {
+  return (
+    target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') !=
+    null
+  );
+}
+
 function DisabledReasonTooltip(props: { reason: string; trigger: ReactElement }) {
   return (
     <Tooltip>
@@ -331,13 +349,7 @@ function RightPanelEmptyState(props: {
       if (!action) return;
       if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
       const target = event.target;
-      if (target instanceof HTMLElement) {
-        if (target.closest("input, textarea, select")) return;
-        // An empty contenteditable (the chat composer at rest) does not
-        // count as typing; letters only become text once a draft exists.
-        const editable = target.isContentEditable ? target : target.closest("[contenteditable]");
-        if (editable && (editable.textContent ?? "").trim().length > 0) return;
-      }
+      if (target instanceof Element && surfaceShortcutTargetsTypingContext(target)) return;
       event.preventDefault();
       event.stopPropagation();
       action.onClick();
@@ -439,7 +451,7 @@ function RightPanelEmptyState(props: {
                   )
                 }
                 className={cn(
-                  "relative flex w-full cursor-pointer flex-col items-start p-4 text-left transition hover:border-border hover:bg-accent/60",
+                  "relative flex w-full cursor-pointer flex-col items-start p-4 text-left transition hover:-translate-y-0.5 hover:border-border hover:bg-accent/60 active:translate-y-0",
                   cardShellClass,
                   isHighlighted(action) && highlightedCardClass,
                 )}
@@ -776,7 +788,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           // the titlebar's height: a compact row re-centers the layout
           // controls a few pixels higher and the cluster jumps on open.
           props.mode === "inline" && !props.layoutControls ? "pr-28" : "pr-3",
-          ownsDesktopTitleBar && "wco:pr-[calc(var(--workspace-native-controls-inset)+6rem)]",
+          ownsDesktopTitleBar &&
+            "relative drag-region wco:pr-[calc(var(--workspace-native-controls-inset)+6rem)]",
           props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
         data-right-panel-tabbar
@@ -785,7 +798,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           ref={tabListRef}
           hideScrollbars
           scrollFade
-          className={cn("min-w-0 flex-1 rounded-none", ownsDesktopTitleBar && "drag-region")}
+          className="min-w-0 flex-1 rounded-none"
           data-right-panel-tab-list
         >
           <div className="flex h-full w-max min-w-full items-center gap-1">
@@ -873,6 +886,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                         <button
                           type="button"
                           className="cursor-pointer flex min-w-0 items-center"
+                          aria-current={active ? "true" : undefined}
                           onClick={() => props.onActivate(surface)}
                         >
                           <span className="truncate">{title}</span>
@@ -926,6 +940,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           </div>
         </ScrollArea>
         {props.layoutControls}
+        {ownsDesktopTitleBar ? <TitlebarLayoutControlsDragHole controlCount={3} /> : null}
       </div>
       <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
         {props.activeSurfaceId === null ? (

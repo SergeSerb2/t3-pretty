@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo } from "react";
+import { Alert } from "react-native";
 
 import {
   CommandId,
@@ -8,6 +9,7 @@ import {
   type ModelSelection,
   type OrchestrationThreadActivity,
   type ProviderInteractionMode,
+  resolveRuntimeModeForProviderDriver,
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -42,10 +44,7 @@ import {
   updateComposerDraftSettings,
   useComposerDraft,
 } from "./use-composer-drafts";
-import {
-  setPendingConnectionError,
-  useRemoteEnvironmentRuntime,
-} from "../state/use-remote-environment-registry";
+import { useRemoteEnvironmentRuntime } from "../state/use-remote-environment-registry";
 import { useSelectedThreadDetail } from "../state/use-thread-detail";
 import { useThreadSelection } from "../state/use-thread-selection";
 import {
@@ -261,6 +260,11 @@ export function useThreadComposerState() {
     // the tap frame instead of after file I/O. If the write fails the message
     // is rolled out of the queue and the content is merged back into the
     // draft, preserving anything typed since.
+    const sendModelSelection = draft.modelSelection ?? thread.modelSelection;
+    const sendProviderDriver =
+      selectedEnvironmentRuntime?.serverConfig?.providers.find(
+        (provider) => provider.instanceId === sendModelSelection.instanceId,
+      )?.driver ?? null;
     const enqueuePromise = enqueueThreadOutboxMessage({
       environmentId: selectedThreadShell.environmentId,
       threadId: selectedThreadShell.id,
@@ -268,8 +272,11 @@ export function useThreadComposerState() {
       commandId: CommandId.make(metadata.commandId),
       text,
       attachments,
-      modelSelection: draft.modelSelection ?? thread.modelSelection,
-      runtimeMode: draft.runtimeMode ?? thread.runtimeMode,
+      modelSelection: sendModelSelection,
+      runtimeMode: resolveRuntimeModeForProviderDriver(
+        sendProviderDriver,
+        draft.runtimeMode ?? thread.runtimeMode,
+      ),
       interactionMode: draft.interactionMode ?? thread.interactionMode,
       createdAt: metadata.createdAt,
     });
@@ -281,12 +288,13 @@ export function useThreadComposerState() {
       // the user attached new ones while the write was in flight.
       void mergeComposerDraftContent(threadKey, { text, attachments: [] });
       appendComposerDraftAttachments(threadKey, attachments);
-      setPendingConnectionError(
+      Alert.alert(
+        "Could not queue message",
         error instanceof Error ? error.message : "Failed to save the queued message.",
       );
     });
     return messageId;
-  }, [selectedThreadDetail, selectedThreadShell]);
+  }, [selectedEnvironmentRuntime?.serverConfig, selectedThreadDetail, selectedThreadShell]);
 
   const onChangeDraftMessage = useCallback(
     (value: string) => {
@@ -318,7 +326,7 @@ export function useThreadComposerState() {
         appendComposerDraftAttachments(threadKey, result.images);
       }
       if (result.error) {
-        setPendingConnectionError(result.error);
+        Alert.alert("Could not attach image", result.error);
       }
     },
     [composerDrafts, selectedThreadShell],
@@ -340,7 +348,7 @@ export function useThreadComposerState() {
       appendComposerDraftText(threadKey, result.text);
     }
     if (result.error) {
-      setPendingConnectionError(result.error);
+      Alert.alert("Could not attach image", result.error);
     }
   }, [composerDrafts, selectedThreadShell]);
 

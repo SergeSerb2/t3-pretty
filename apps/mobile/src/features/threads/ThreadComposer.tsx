@@ -8,7 +8,7 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
-import { resolveRuntimeModeForProviderDriver } from "@t3tools/contracts";
+import { displayRuntimeModeForProviderDriver } from "@t3tools/contracts";
 import {
   detectComposerTrigger,
   replaceTextRange,
@@ -97,6 +97,7 @@ import {
 } from "../../lib/providerOptions";
 import { useComposerPathSearch } from "../../state/use-composer-path-search";
 import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerCommandPopover";
+import { matchesSlashSkillQuery } from "./composerSlashSkillSearch";
 import { buildThreadSettingsPickerModel } from "./thread-settings-picker";
 import { ThreadModelIdentityCaption } from "./ThreadModelIdentityCaption";
 import { ThreadSettingsPickerPopover } from "./ThreadSettingsPickerPopover";
@@ -342,8 +343,11 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
       exiting={FadeOutDown.duration(140)}
       pointerEvents="box-none"
     >
+      {/* Sync status is a label, not a retry affordance: retrying while
+          connected tears down the healthy socket the sync is running on. */}
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole={props.status.kind === "syncing" ? "text" : "button"}
+        disabled={props.status.kind === "syncing"}
         onPress={props.onPress}
         className="max-w-full flex-row items-center gap-2 rounded-full bg-card px-3 py-2 shadow-sm active:opacity-70"
       >
@@ -511,7 +515,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       ? "Queue"
       : "Send";
   const currentModelSelection = props.selectedThread.modelSelection;
-  const currentRuntimeMode = props.selectedThread.runtimeMode;
+  const storedRuntimeMode = props.selectedThread.runtimeMode;
   const currentInteractionMode = props.selectedThread.interactionMode ?? "default";
   const connectionStatus = composerConnectionStatus({
     connectionError: props.connectionError,
@@ -608,7 +612,17 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         });
       }
 
-      return [...builtIn, ...providerCommands];
+      const skillItems = (selectedProviderStatus?.skills ?? [])
+        .filter((skill) => matchesSlashSkillQuery(skill, q))
+        .map((skill) => ({
+          id: `skill:${skill.name}`,
+          type: "skill" as const,
+          skill,
+          label: `skill:${skill.name}`,
+          description: skill.shortDescription ?? skill.description ?? "",
+        }));
+
+      return [...builtIn, ...providerCommands, ...skillItems];
     }
 
     if (composerTrigger.kind === "skill") {
@@ -898,6 +912,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       providerOptionDescriptors,
     ],
   );
+  const currentRuntimeMode = displayRuntimeModeForProviderDriver(
+    currentModelOption?.providerDriver,
+    storedRuntimeMode,
+  );
   const settingsSummaryLabel = threadSettingsSummaryLabel({
     modelLabel,
     optionDescriptors: providerOptionDescriptors,
@@ -919,21 +937,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const onUpdateModelSelection = props.onUpdateModelSelection;
   const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
-  // Kimi's "yolo" mode has no equivalent on other providers; a model pick
-  // that crosses providers normalizes it to the generic full-access mode in
-  // the same gesture.
+  // Display remaps Kimi's "yolo" off other providers without writing back, so
+  // switching back to Kimi can still show Yolo. Send remaps at queue time.
   const handleSelectModelOption = useCallback(
     (option: ModelOption) => {
       onUpdateModelSelection(option.selection);
-      const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
-        option.providerDriver,
-        currentRuntimeMode,
-      );
-      if (nextRuntimeMode !== currentRuntimeMode) {
-        onUpdateRuntimeMode(nextRuntimeMode);
-      }
     },
-    [currentRuntimeMode, onUpdateModelSelection, onUpdateRuntimeMode],
+    [onUpdateModelSelection],
   );
   const handleSelectPickerOption = useCallback(
     (id: string, value: string | boolean) => {
@@ -959,6 +969,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       runtimeMode: currentRuntimeMode,
       onUpdateRuntimeMode,
       initialPage: settingsSheetPageRef.current,
+      checkpointsThreadRef: {
+        environmentId: props.environmentId,
+        threadId: props.selectedThread.id,
+      },
     }),
     [
       currentModelSelection,
@@ -966,6 +980,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       handleSelectModelOption,
       onUpdateModelSelection,
       onUpdateRuntimeMode,
+      props.environmentId,
+      props.selectedThread.id,
       providerOptionDescriptors,
       settingsOwnerId,
       threadProviderGroups,
@@ -1047,7 +1063,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         layout={composerLayoutTransition}
         style={{ maxWidth: props.contentMaxWidth }}
       >
-        {composerTrigger && composerMenuItems.length > 0 ? (
+        {composerTrigger &&
+        (composerMenuItems.length > 0 ||
+          (composerTrigger.kind === "path" && pathSearch.isPending)) ? (
           <View className="absolute inset-x-0 bottom-full z-10 mb-2">
             <ComposerCommandPopover
               items={composerMenuItems}
@@ -1138,9 +1156,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           {!isExpanded ? (
             <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(100)}>
               {showStopAction ? (
-                <ControlPill icon="stop.fill" variant="danger" onPress={props.onStopThread} />
+                <ControlPill
+                  accessibilityLabel="Stop"
+                  icon="stop.fill"
+                  variant="danger"
+                  onPress={props.onStopThread}
+                />
               ) : (
                 <ControlPill
+                  accessibilityLabel={isDispatching ? (dispatchStatus ?? "Sending") : sendLabel}
                   icon="arrow.up"
                   variant="primary"
                   disabled={!canSend && !isDispatching}

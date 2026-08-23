@@ -5,10 +5,9 @@
 # with the same t3code-fork / release-only labels. This script still knows how
 # to register a GitHub Actions runner for rollback only.
 #
-# This is optional. m1-dev already builds the signed macOS DMG and local iOS
-# IPAs. Adding this machine (m5-dev) with the same labels lets CI run a
-# desktop DMG and an iOS compile at the same time. Do not register a daily
-# driver until you are willing to share CPU with those jobs.
+# This is optional. m5-dev is the packaging Mac: the Buildkite agent builds
+# the signed macOS DMG and local iOS IPAs (m1-dev is now Linux). Do not
+# register a daily driver until you are willing to share CPU with those jobs.
 #
 # iOS jobs require a full Xcode.app (stable or beta). Command Line Tools
 # cannot compile a TestFlight IPA. Register this host only after Xcode is

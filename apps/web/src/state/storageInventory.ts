@@ -9,7 +9,11 @@
  * @module state/storageInventory
  */
 import { useAtomValue } from "@effect/atom-react";
-import { usageConnectionPlan } from "@t3tools/client-runtime/connection";
+import {
+  usageConnectionPlan,
+  type ConnectionTarget,
+  type EnvironmentConnectionPhase,
+} from "@t3tools/client-runtime/connection";
 import type { EnvironmentId, StorageInventory } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
@@ -22,6 +26,8 @@ import { environmentServerConfigsAtom, serverEnvironment } from "./server";
 export interface EnvironmentStorageStatus {
   readonly environmentId: EnvironmentId;
   readonly label: string;
+  readonly target: ConnectionTarget;
+  readonly connectionPhase: EnvironmentConnectionPhase;
   readonly isPending: boolean;
   readonly unsupported: boolean;
   readonly error: string | null;
@@ -42,6 +48,8 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
       statuses.push({
         environmentId,
         label: presentation.entry.target.label,
+        target: presentation.entry.target,
+        connectionPhase: presentation.connection.phase,
         isPending: true,
         unsupported: false,
         error: null,
@@ -54,6 +62,8 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
       statuses.push({
         environmentId,
         label: presentation.entry.target.label,
+        target: presentation.entry.target,
+        connectionPhase: presentation.connection.phase,
         isPending: true,
         unsupported: false,
         error: null,
@@ -65,6 +75,8 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
       statuses.push({
         environmentId,
         label: presentation.entry.target.label,
+        target: presentation.entry.target,
+        connectionPhase: presentation.connection.phase,
         isPending: false,
         unsupported: true,
         error: null,
@@ -80,6 +92,8 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
     statuses.push({
       environmentId,
       label: presentation.entry.target.label,
+      target: presentation.entry.target,
+      connectionPhase: presentation.connection.phase,
       isPending: result.waiting,
       unsupported: false,
       error: result._tag === "Failure" ? "This environment could not report storage." : null,

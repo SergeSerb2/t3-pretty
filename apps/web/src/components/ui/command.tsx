@@ -16,6 +16,7 @@ import {
   AutocompleteSeparator,
 } from "~/components/ui/autocomplete";
 import { DIALOG_BACKDROP_CLASS, DIALOG_POPUP_CLASS } from "~/components/ui/dialog-styles";
+import { Button } from "~/components/ui/button";
 
 const CommandDialog = CommandDialogPrimitive.Root;
 
@@ -177,7 +178,7 @@ function CommandItem({ className, ...props }: React.ComponentProps<typeof Autoco
   return (
     <AutocompleteItem
       className={cn(
-        "py-1.5 data-selected:bg-foreground/[0.06] data-highlighted:bg-foreground/[0.09] data-highlighted:text-foreground [&[data-highlighted][data-selected]]:bg-foreground/[0.09] [&[data-highlighted][data-selected]]:text-foreground",
+        "py-1.5 transition-colors duration-[90ms] ease-out data-selected:bg-foreground/[0.06] data-highlighted:bg-foreground/[0.09] data-highlighted:text-foreground [&[data-highlighted][data-selected]]:bg-foreground/[0.09] [&[data-highlighted][data-selected]]:text-foreground",
         className,
       )}
       data-slot="command-item"
@@ -225,6 +226,20 @@ function CommandFooter({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+function CommandFooterAction({
+  className,
+  ...props
+}: Omit<React.ComponentProps<typeof Button>, "size" | "variant">) {
+  return (
+    <Button
+      {...props}
+      variant="ghost-muted"
+      size="xs"
+      className={cn("h-auto px-2 text-xs hover:bg-transparent", className)}
+    />
+  );
+}
+
 export {
   CommandCreateHandle,
   Command,
@@ -234,6 +249,7 @@ export {
   CommandDialogTrigger,
   CommandEmpty,
   CommandFooter,
+  CommandFooterAction,
   CommandGroup,
   CommandGroupLabel,
   CommandInput,

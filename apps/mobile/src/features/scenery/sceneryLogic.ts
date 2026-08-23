@@ -10,6 +10,7 @@
  * Unsplash refresh on this surface yet. The CDN still pre-blurs the wallpaper
  * render (imgix `blur` param), so the device does no gaussian work.
  */
+import { DEFAULT_PHOTO_SET_ID, type PhotoSetId } from "./photoSets";
 import seedPoolJson from "./seedPool.json";
 
 export interface Rgb {
@@ -107,6 +108,8 @@ export interface SceneryAssignment {
   /** Curated "Location, Country" name, denormalized for display. */
   readonly name: string;
   readonly assignedAt: number;
+  /** Which catalog this bind was picked from; absent on pre-theme-set records. */
+  readonly photoSetId?: PhotoSetId;
 }
 
 /** utm_source value Unsplash attribution links must carry. */
@@ -198,11 +201,10 @@ export function layerStack(translucency: number, colorScheme: "light" | "dark"):
 
 /**
  * How many of the most recent assignments a random pick avoids repeating.
- * SurgeCode excluded photos bound to open/unsettled threads; the port
- * approximates that with a recency window, which converges to the same
- * behavior for the pool sizes involved (hundreds of photos).
+ * Capped at half the pool so extra themes (~100+ photos) still have
+ * candidates; World Scenery (~950) keeps the full 120.
  */
-const RECENT_EXCLUSION_WINDOW = 60;
+const RECENT_EXCLUSION_WINDOW = 120;
 
 /**
  * Thread routes come and go without a deletion signal reaching this store, so
@@ -211,17 +213,63 @@ const RECENT_EXCLUSION_WINDOW = 60;
  */
 const MAX_ASSIGNMENTS = 300;
 
-const SEED_POOL: ReadonlyArray<SceneryPhoto> = (
-  seedPoolJson as { photos: ReadonlyArray<SceneryPhoto> }
-).photos;
+type SeedFile = { readonly photos: ReadonlyArray<SceneryPhoto> };
+
+const EMPTY_SEED: ReadonlyArray<SceneryPhoto> = [];
+const seedCache = new Map<PhotoSetId, ReadonlyArray<SceneryPhoto>>();
+seedCache.set("world-scenery", (seedPoolJson as SeedFile).photos);
+
+const seedLoaders: Record<PhotoSetId, () => Promise<unknown>> = {
+  "world-scenery": () => Promise.resolve(seedPoolJson as SeedFile),
+  "night-cities": () => import("./seeds/night-cities.json"),
+  "deep-forest": () => import("./seeds/deep-forest.json"),
+  "night-sky": () => import("./seeds/night-sky.json"),
+  "grand-buildings": () => import("./seeds/grand-buildings.json"),
+};
+
+/** Metro/Vite JSON imports show up as `{photos}`, `{default:{photos}}`, or the array. */
+export function photosFromSeedModule(mod: unknown): ReadonlyArray<SceneryPhoto> {
+  if (Array.isArray(mod)) {
+    return mod as ReadonlyArray<SceneryPhoto>;
+  }
+  if (mod !== null && typeof mod === "object") {
+    const record = mod as { photos?: unknown; default?: unknown };
+    if (Array.isArray(record.photos)) {
+      return record.photos as ReadonlyArray<SceneryPhoto>;
+    }
+    if ("default" in record) {
+      return photosFromSeedModule(record.default);
+    }
+  }
+  return EMPTY_SEED;
+}
+
+export function peekSeedPhotos(photoSetId: PhotoSetId): ReadonlyArray<SceneryPhoto> {
+  return seedCache.get(photoSetId) ?? EMPTY_SEED;
+}
+
+export async function loadSeedPhotos(photoSetId: PhotoSetId): Promise<ReadonlyArray<SceneryPhoto>> {
+  const hit = seedCache.get(photoSetId);
+  if (hit && hit.length > 0) {
+    return hit;
+  }
+  const loaded = photosFromSeedModule(await seedLoaders[photoSetId]());
+  if (loaded.length > 0) {
+    seedCache.set(photoSetId, loaded);
+  }
+  return loaded;
+}
 
 /**
  * The photo pool: the bundled seed merged with photos fetched at runtime
  * (none on mobile yet — the parameter keeps the web shape and testability).
  */
-export function getSceneryPool(fetchedPhotos: ReadonlyArray<SceneryPhoto>): SceneryPhoto[] {
+export function getSceneryPool(
+  fetchedPhotos: ReadonlyArray<SceneryPhoto>,
+  seedPhotos: ReadonlyArray<SceneryPhoto> = peekSeedPhotos(DEFAULT_PHOTO_SET_ID),
+): SceneryPhoto[] {
   const byId = new Map<string, SceneryPhoto>();
-  for (const photo of SEED_POOL) {
+  for (const photo of seedPhotos) {
     byId.set(photo.id, photo);
   }
   for (const photo of fetchedPhotos) {
@@ -230,8 +278,12 @@ export function getSceneryPool(fetchedPhotos: ReadonlyArray<SceneryPhoto>): Scen
   return [...byId.values()];
 }
 
-/** The pool the app actually serves from on this surface. */
-export const SCENERY_POOL: ReadonlyArray<SceneryPhoto> = getSceneryPool([]);
+export function sceneryPoolForSet(photoSetId: PhotoSetId): ReadonlyArray<SceneryPhoto> {
+  return getSceneryPool([], peekSeedPhotos(photoSetId));
+}
+
+/** The World Scenery pool — the default set and the one golden tests pin. */
+export const SCENERY_POOL: ReadonlyArray<SceneryPhoto> = sceneryPoolForSet(DEFAULT_PHOTO_SET_ID);
 
 export function pickScenery(
   pool: ReadonlyArray<SceneryPhoto>,
@@ -242,7 +294,7 @@ export function pickScenery(
   }
   const recent = Object.values(assignments)
     .sort((left, right) => right.assignedAt - left.assignedAt)
-    .slice(0, RECENT_EXCLUSION_WINDOW);
+    .slice(0, Math.min(RECENT_EXCLUSION_WINDOW, Math.floor(pool.length / 2)));
   const occupied = new Set(recent.map((assignment) => assignment.photoId));
   const available = pool.filter((photo) => !occupied.has(photo.id));
   const candidates = available.length > 0 ? available : pool;

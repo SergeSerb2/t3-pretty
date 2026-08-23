@@ -421,15 +421,38 @@
         color: #f5f5f5;
       }
 
+      /* The boot shell lives outside #root so React's first commit cannot
+         delete it mid-frame; main.tsx flips data-booted after the app has
+         painted and the logo dissolves over the UI instead of hard-cutting. */
       #boot-shell {
-        position: relative;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
         overflow: hidden;
         display: flex;
-        min-height: 100%;
         align-items: center;
         justify-content: center;
         background: inherit;
         color: inherit;
+        transition:
+          opacity 260ms cubic-bezier(0.32, 0.72, 0, 1),
+          scale 260ms cubic-bezier(0.32, 0.72, 0, 1);
+      }
+
+      html[data-booted] #boot-shell {
+        opacity: 0;
+        scale: 1.03;
+        pointer-events: none;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #boot-shell {
+          transition: opacity 120ms linear;
+        }
+
+        html[data-booted] #boot-shell {
+          scale: 1;
+        }
       }
 
       html[data-theme-selected="true"] #boot-shell {
@@ -456,11 +479,10 @@
     <title>T3 Pretty (Alpha)</title>
   </head>
   <body>
-    <div id="root">
-      <div id="boot-shell">
-        <div id="boot-shell-card" aria-label="T3 Pretty splash screen">
-          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Pretty" />
-        </div>
+    <div id="root"></div>
+    <div id="boot-shell">
+      <div id="boot-shell-card" aria-label="T3 Pretty splash screen">
+        <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Pretty" />
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>

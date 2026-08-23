@@ -72,6 +72,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
       ) : null}
       <ScrollView
         className="flex-1"
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentInset={{ bottom: Math.max(insets.bottom, 18) + 18 }}
@@ -102,14 +103,18 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
             <View className="flex-row items-center gap-2">
               {!allSelected && isEditingFiles ? (
                 <Pressable
+                  accessibilityRole="button"
                   className="bg-subtle rounded-full px-3 py-2"
+                  hitSlop={{ top: 6, bottom: 6 }}
                   onPress={() => setExcludedFiles(new Set())}
                 >
                   <Text className="text-foreground text-2xs font-t3-bold uppercase">Reset</Text>
                 </Pressable>
               ) : null}
               <Pressable
+                accessibilityRole="button"
                 className="bg-subtle rounded-full px-3 py-2"
+                hitSlop={{ top: 6, bottom: 6 }}
                 onPress={() => setIsEditingFiles((current) => !current)}
               >
                 <Text className="text-foreground text-2xs font-t3-bold uppercase">

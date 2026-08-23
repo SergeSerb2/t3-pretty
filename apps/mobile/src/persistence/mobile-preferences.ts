@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import type { SidebarProjectGroupingMode } from "@t3tools/contracts";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
+import { parsePhotoSetId, type PhotoSetId } from "../features/scenery/photoSets";
 
 import * as MobileDatabase from "./mobile-database";
 import * as MobileSecureStorage from "./mobile-secure-storage";
@@ -63,6 +64,8 @@ export interface MobileSceneryAssignment {
   /** Curated "Location, Country" name, denormalized for display. */
   readonly name: string;
   readonly assignedAt: number;
+  /** Catalog this bind was picked from; absent on older records. */
+  readonly photoSetId?: PhotoSetId;
 }
 
 export interface MobileSceneryPreferences {
@@ -72,6 +75,8 @@ export interface MobileSceneryPreferences {
   readonly blur?: number;
   /** How much of the screen the app paints over the photo, 0.5–1. */
   readonly translucency?: number;
+  /** Which scenery catalog to serve; defaults to World Scenery. */
+  readonly photoSetId?: PhotoSetId;
   /** Thread key → assigned photo, LRU-capped by the scenery feature. */
   readonly assignments?: Readonly<Record<string, MobileSceneryAssignment>>;
 }
@@ -224,6 +229,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
       enabled?: boolean;
       blur?: number;
       translucency?: number;
+      photoSetId?: PhotoSetId;
       assignments?: Record<string, MobileSceneryAssignment>;
     } = {};
     if (typeof parsed.scenery.enabled === "boolean") {
@@ -234,6 +240,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     }
     if (typeof parsed.scenery.translucency === "number") {
       scenery.translucency = parsed.scenery.translucency;
+    }
+    if (typeof parsed.scenery.photoSetId === "string") {
+      scenery.photoSetId = parsePhotoSetId(parsed.scenery.photoSetId);
     }
     if (typeof parsed.scenery.assignments === "object" && parsed.scenery.assignments !== null) {
       const assignments: Record<string, MobileSceneryAssignment> = {};
@@ -249,6 +258,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
             photoId: assignment.photoId,
             name: assignment.name,
             assignedAt: assignment.assignedAt,
+            ...("photoSetId" in assignment && typeof assignment.photoSetId === "string"
+              ? { photoSetId: parsePhotoSetId(assignment.photoSetId) }
+              : {}),
           };
         }
       }

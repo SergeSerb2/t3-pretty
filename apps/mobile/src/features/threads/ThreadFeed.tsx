@@ -3,6 +3,7 @@ import { Image as ExpoImage } from "expo-image";
 import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { type LegendListRef } from "@legendapp/list/react-native";
 import type { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contracts";
+import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
 import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 import { formatElapsed } from "@t3tools/shared/orchestrationTiming";
@@ -28,7 +29,6 @@ import {
   type PartialMarkdownTheme,
 } from "react-native-nitro-markdown";
 import {
-  ActivityIndicator,
   Image,
   Platform,
   type LayoutChangeEvent,
@@ -57,6 +57,7 @@ import { hasWideMarkdownBlock } from "../../lib/wideMarkdownBlocks";
 import {
   hasNativeSelectableMarkdownText,
   SelectableMarkdownText,
+  type MarkdownImageRenderer,
   type NativeMarkdownTextStyle,
   type SelectableMarkdownSkill,
 } from "../../native/SelectableMarkdownText";
@@ -112,7 +113,7 @@ import {
   WORK_GROUP_TOGGLE_HEIGHT,
 } from "./thread-work-log";
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
-import { useAssetUrl } from "../../state/assets";
+import { useAssetUrl, useAssetUrlState } from "../../state/assets";
 import { useOutgoingMessagePreviewUris } from "../../state/outgoing-message-previews";
 import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
 import { resolveUserMessageImageSources, type UserMessageImageSource } from "./userMessageImages";
@@ -125,12 +126,27 @@ const MESSAGE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
   minute: "2-digit",
 });
+const MESSAGE_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  month: "numeric",
+  day: "numeric",
+});
+// Mirrors web's formatDayAwareTimestamp: the feed has no day dividers, so a
+// message older than today has to carry its own date.
 function formatMessageTime(input: string): string {
   const timestamp = Date.parse(input);
   if (Number.isNaN(timestamp)) {
     return "";
   }
-  return MESSAGE_TIME_FORMATTER.format(timestamp);
+  const date = new Date(timestamp);
+  const time = MESSAGE_TIME_FORMATTER.format(date);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  // Round so DST-shifted 23/25 hour days still count as whole days.
+  const dayDiff = Math.round((startOfToday - startOfDay) / 86_400_000);
+  if (dayDiff <= 0) return time;
+  if (dayDiff === 1) return `yesterday at ${time}`;
+  return `${MESSAGE_DATE_FORMATTER.format(date)} ${time}`;
 }
 
 // Pre-measurement heights for getFixedItemSize, mirroring renderFeedEntry's
@@ -164,6 +180,7 @@ export interface ThreadFeedProps {
   readonly listRef: RefObject<LegendListRef | null>;
   readonly freeze: SharedValue<boolean>;
   readonly anchorMessageId: MessageId | null;
+  readonly submittedMessageId: MessageId | null;
   readonly contentInsetEndAdjustment: SharedValue<number>;
   readonly contentTopInset?: number;
   readonly contentBottomInset?: number;
@@ -209,12 +226,11 @@ function MessageAttachmentImage(props: {
   const displayUri = props.image.localPreviewUri ?? remotePreviewUri;
   const expandedUri = remoteUri ?? props.image.localPreviewUri;
 
+  // A null URI means the signed URL is resolving, the environment is
+  // disconnected, or the request failed — indistinguishable here, so hold the
+  // caller's muted box instead of a spinner that may never finish.
   if (displayUri === null || expandedUri === null) {
-    return (
-      <View className={`${props.className} items-center justify-center`}>
-        <ActivityIndicator />
-      </View>
-    );
+    return <View className={props.className} />;
   }
 
   return (
@@ -242,6 +258,98 @@ function MessageAttachmentImage(props: {
         />
       </View>
     </TouchableOpacity>
+  );
+}
+
+/** Markdown image whose src is a workspace file — loads through a signed asset URL. */
+function ThreadMarkdownImage(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly path: string;
+  readonly alt: string | null;
+  readonly onPressImage: (uri: string) => void;
+}) {
+  const codeBackground = useThemeColor("--color-md-code-bg");
+  const [failedUri, setFailedUri] = useState<string | null>(null);
+  const assetUrl = useAssetUrlState(props.environmentId, {
+    _tag: "workspace-file",
+    threadId: props.threadId,
+    path: props.path,
+  });
+  const uri = assetUrl._tag === "Success" ? assetUrl.url : null;
+  const failed = assetUrl._tag === "Failure" || (uri !== null && failedUri === uri);
+
+  return (
+    <View style={{ gap: 6 }}>
+      {uri === null || failed ? (
+        <View
+          style={{
+            width: "100%",
+            aspectRatio: 16 / 9,
+            borderRadius: 10,
+            backgroundColor: codeBackground,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {failed ? (
+            <Text className="text-xs text-foreground-muted">Image unavailable</Text>
+          ) : (
+            <ActivityIndicator />
+          )}
+        </View>
+      ) : (
+        <TouchableOpacity
+          accessibilityRole="imagebutton"
+          accessibilityLabel={props.alt ?? "Markdown image"}
+          activeOpacity={0.7}
+          onPress={() => props.onPressImage(uri)}
+        >
+          <Image
+            source={{ uri }}
+            resizeMode="contain"
+            accessible={false}
+            onError={() => setFailedUri(uri)}
+            style={{
+              width: "100%",
+              aspectRatio: 16 / 9,
+              borderRadius: 10,
+              backgroundColor: codeBackground,
+            }}
+          />
+        </TouchableOpacity>
+      )}
+      {props.alt ? (
+        <Text selectable className="text-xs text-foreground-muted">
+          {props.alt}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function ThreadMarkdownImageUnavailable(props: { readonly alt: string | null }) {
+  const codeBackground = useThemeColor("--color-md-code-bg");
+  return (
+    <View style={{ gap: 6 }}>
+      <View
+        style={{
+          width: "100%",
+          aspectRatio: 16 / 9,
+          borderRadius: 10,
+          backgroundColor: codeBackground,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text className="text-xs text-foreground-muted">Image unavailable</Text>
+      </View>
+      {props.alt ? (
+        <Text selectable className="text-xs text-foreground-muted">
+          {props.alt}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -460,7 +568,10 @@ function useReviewCommentColors(): ReviewCommentColors {
   );
 }
 
-function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSets {
+function useMarkdownStyles(
+  onLinkPress: (href: string) => void,
+  renderImage: MarkdownImageRenderer,
+): MarkdownStyleSets {
   const { appearance, themeAppearance } = useAppearancePreferences();
   const markdownFontSizes = useMemo(
     () => resolveMarkdownFontSizes(appearance.baseFontSize),
@@ -665,6 +776,14 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
           })}
         </View>
       ),
+      image: ({ node }) =>
+        node.href
+          ? (renderImage({
+              href: node.href,
+              alt: node.alt ?? null,
+              title: node.title ?? null,
+            }) ?? undefined)
+          : undefined,
       code_inline: ({ content }) => {
         const value = content ?? "";
         return (
@@ -838,6 +957,7 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
     nativeMarkdownTypography,
     onLinkPress,
     regularFontFamily,
+    renderImage,
     themeMode,
     userBubbleForegroundMuted,
     userBubbleSkillForeground,
@@ -928,6 +1048,7 @@ function renderFeedEntry(
     readonly onToggleWorkRow: (rowId: string) => void;
     readonly onToggleTurnFold: (turnId: TurnId) => void;
     readonly onMarkdownLinkPress: (href: string) => void;
+    readonly renderMarkdownImage: MarkdownImageRenderer;
     readonly iconSubtleColor: string | import("react-native").ColorValue;
     readonly userBubbleColor: string | import("react-native").ColorValue;
     readonly markdownStyles: MarkdownStyleSets;
@@ -1036,6 +1157,7 @@ function renderFeedEntry(
                 reviewCommentColors={props.reviewCommentColors}
                 skills={props.skills}
                 onLinkPress={props.onMarkdownLinkPress}
+                renderImage={props.renderMarkdownImage}
               />
             ) : null}
             {userImages.map((image) => {
@@ -1091,6 +1213,7 @@ function renderFeedEntry(
               markdownStyles={styles}
               skills={props.skills}
               onLinkPress={props.onMarkdownLinkPress}
+              renderImage={props.renderMarkdownImage}
             />
           ) : (
             <AssistantMarkdownContent
@@ -1190,6 +1313,7 @@ const UserMessageContent = memo(function UserMessageContent(props: {
   readonly reviewCommentColors: ReviewCommentColors;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly onLinkPress: (href: string) => void;
+  readonly renderImage: MarkdownImageRenderer;
 }) {
   // Messages sent from clients with the auto-PR toggle on carry a canned
   // instruction block that those clients hide from the bubble; hide it here
@@ -1207,6 +1331,7 @@ const UserMessageContent = memo(function UserMessageContent(props: {
           textStyle={props.markdownStyles.nativeTextStyle}
           preserveSoftBreaks
           onLinkPress={props.onLinkPress}
+          renderImage={props.renderImage}
         />
       );
     }
@@ -1248,6 +1373,7 @@ const UserMessageContent = memo(function UserMessageContent(props: {
             textStyle={props.markdownStyles.nativeTextStyle}
             preserveSoftBreaks
             onLinkPress={props.onLinkPress}
+            renderImage={props.renderImage}
           />
         ) : (
           <Markdown
@@ -1584,7 +1710,28 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     },
     [openChangeRequestLink, props.environmentId, props.threadId, props.workspaceRoot, navigation],
   );
-  const markdownStyles = useMarkdownStyles(onMarkdownLinkPress);
+  const renderMarkdownImage = useCallback<MarkdownImageRenderer>(
+    (image) => {
+      const imageSource = classifyMarkdownImageSource(image.href, props.workspaceRoot ?? null);
+      if (imageSource._tag === "Direct") {
+        return null;
+      }
+      if (imageSource._tag === "Blocked") {
+        return <ThreadMarkdownImageUnavailable alt={image.alt} />;
+      }
+      return (
+        <ThreadMarkdownImage
+          environmentId={props.environmentId}
+          threadId={props.threadId}
+          path={imageSource.path}
+          alt={image.alt}
+          onPressImage={(uri) => setExpandedImage({ uri })}
+        />
+      );
+    },
+    [props.environmentId, props.threadId, props.workspaceRoot],
+  );
+  const markdownStyles = useMarkdownStyles(onMarkdownLinkPress, renderMarkdownImage);
   const reviewCommentColors = useReviewCommentColors();
   // LegendList does not invalidate visible rows when only the renderItem closure changes.
   // Keep row-local interaction props in extraData so disclosures and copy feedback repaint.
@@ -1719,12 +1866,12 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     transitionEndFollow({ type: "reset" });
   }, [clearUserScrollSettle, feedThreadKey, transitionEndFollow]);
   useEffect(() => {
-    if (props.anchorMessageId !== null) {
+    if (props.submittedMessageId !== null) {
       clearUserScrollSettle();
       userScrollSessionRef.current = false;
       transitionEndFollow({ type: "reset" });
     }
-  }, [clearUserScrollSettle, props.anchorMessageId, transitionEndFollow]);
+  }, [clearUserScrollSettle, props.submittedMessageId, transitionEndFollow]);
 
   const expandedWorkGroupIds = useMemo(() => {
     const ids = new Set<string>();
@@ -1800,7 +1947,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       resolveChatListAnchoredEndSpace(
         presentedFeed,
         props.anchorMessageId,
-        (entry) => (entry.type === "message" ? entry.id : null),
+        (entry) => (entry.type === "message" && entry.message.role === "user" ? entry.id : null),
         { anchorOffset: anchorTopInset + CHAT_LIST_ANCHOR_OFFSET },
       ),
     [presentedFeed, props.anchorMessageId, anchorTopInset],
@@ -2006,6 +2153,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         onToggleWorkRow,
         onToggleTurnFold,
         onMarkdownLinkPress,
+        renderMarkdownImage,
         iconSubtleColor,
         userBubbleColor,
         markdownStyles,
@@ -2039,6 +2187,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.threadId,
       props.workspaceRoot,
       isFocused,
+      renderMarkdownImage,
     ],
   );
 
@@ -2176,7 +2325,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
                   <Pressable
                     onPress={props.loadEarlier.onLoadEarlier}
                     disabled={props.loadEarlier.loading}
-                    className="items-center py-2"
+                    className="min-h-11 items-center justify-center py-2 active:opacity-60"
                   >
                     <Text className="text-xs text-foreground-secondary">
                       {props.loadEarlier.loading ? "Loading earlier turns…" : "Load earlier turns"}

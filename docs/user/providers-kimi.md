@@ -37,6 +37,7 @@ thread never silently resumes against another account's session store.
 - streamed assistant output and tool activity
 - image attachments
 - MCP servers forwarded over ACP
+- shell, glob, and grep through the environment's terminal
 - Kimi's Manual, Plan, Auto, and YOLO approval modes
 - session resume, cancellation, model selection, and thinking-level selection
 - Kimi-backed commit messages, branch names, thread titles, and change request text

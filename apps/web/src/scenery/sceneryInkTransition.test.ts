@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { canAnimateSceneryInkTransition, runSceneryInkTransition } from "./sceneryInkTransition";
+import {
+  canAnimateSceneryInkTransition,
+  pinActiveChatTranscript,
+  runSceneryInkTransition,
+} from "./sceneryInkTransition";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -29,12 +33,25 @@ describe("canAnimateSceneryInkTransition", () => {
   it("is true when the API exists and motion is allowed", () => {
     vi.stubGlobal("document", {
       documentElement: { dataset: {} },
+      hidden: false,
       startViewTransition: () => ({ finished: Promise.resolve() }),
     });
     vi.stubGlobal("window", {
       matchMedia: () => ({ matches: false }),
     });
     expect(canAnimateSceneryInkTransition()).toBe(true);
+  });
+
+  it("is false when the document is hidden", () => {
+    vi.stubGlobal("document", {
+      documentElement: { dataset: {} },
+      hidden: true,
+      startViewTransition: () => ({ finished: Promise.resolve() }),
+    });
+    vi.stubGlobal("window", {
+      matchMedia: () => ({ matches: false }),
+    });
+    expect(canAnimateSceneryInkTransition()).toBe(false);
   });
 });
 
@@ -109,6 +126,33 @@ describe("runSceneryInkTransition", () => {
     expect(update).toHaveBeenCalledWith(false);
   });
 
+  it("pins the first transcript before and after the view-transition update", () => {
+    const first = { setAttribute: vi.fn(), removeAttribute: vi.fn() };
+    const second = { setAttribute: vi.fn(), removeAttribute: vi.fn() };
+    const querySelectorAll = vi.fn(() => [first, second]);
+    const startViewTransition = vi.fn((update: () => void | Promise<void>) => {
+      update();
+      return { finished: Promise.resolve() };
+    });
+    vi.stubGlobal("document", {
+      documentElement: { dataset: {} },
+      hidden: false,
+      querySelectorAll,
+      startViewTransition,
+    });
+    vi.stubGlobal("window", {
+      matchMedia: () => ({ matches: false }),
+    });
+
+    runSceneryInkTransition(() => undefined);
+
+    expect(querySelectorAll).toHaveBeenCalledTimes(2);
+    expect(first.setAttribute).toHaveBeenCalledTimes(2);
+    expect(first.setAttribute).toHaveBeenCalledWith("data-chat-transcript-active", "true");
+    expect(second.removeAttribute).toHaveBeenCalledTimes(2);
+    expect(second.removeAttribute).toHaveBeenCalledWith("data-chat-transcript-active");
+  });
+
   it("falls back to a direct update when startViewTransition throws", () => {
     const dataset: Record<string, string> = {};
     vi.stubGlobal("document", {
@@ -127,5 +171,59 @@ describe("runSceneryInkTransition", () => {
     expect(update).toHaveBeenCalledOnce();
     expect(update).toHaveBeenCalledWith(false);
     expect(dataset).not.toHaveProperty("sceneryInkTransition");
+  });
+
+  it("does not let a skipped first transition commit after a second flip", async () => {
+    const dataset: Record<string, string> = {};
+    let firstUpdate: (() => void) | undefined;
+    let finishFirst: ((reason?: unknown) => void) | undefined;
+    const firstFinished = new Promise<void>((_resolve, reject) => {
+      finishFirst = reject;
+    });
+    const startViewTransition = vi.fn((update: () => void | Promise<void>) => {
+      firstUpdate = () => void update();
+      return { finished: firstFinished };
+    });
+    vi.stubGlobal("document", {
+      documentElement: { dataset },
+      hidden: false,
+      startViewTransition,
+    });
+    vi.stubGlobal("window", {
+      matchMedia: () => ({ matches: false }),
+    });
+    const first = vi.fn();
+    const second = vi.fn();
+
+    runSceneryInkTransition(first);
+    expect(dataset.sceneryInkTransition).toBe("true");
+    expect(first).not.toHaveBeenCalled();
+
+    runSceneryInkTransition(second);
+    expect(startViewTransition).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledWith(false);
+
+    firstUpdate?.();
+    expect(first).not.toHaveBeenCalled();
+
+    finishFirst?.(new Error("skipped"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(first).not.toHaveBeenCalled();
+    expect(dataset).not.toHaveProperty("sceneryInkTransition");
+  });
+});
+
+describe("pinActiveChatTranscript", () => {
+  it("keeps the name on the first transcript and clears cousins", () => {
+    const first = { setAttribute: vi.fn(), removeAttribute: vi.fn() };
+    const cousin = { setAttribute: vi.fn(), removeAttribute: vi.fn() };
+    pinActiveChatTranscript({
+      querySelectorAll: () => [first, cousin],
+    });
+    expect(first.setAttribute).toHaveBeenCalledWith("data-chat-transcript-active", "true");
+    expect(cousin.removeAttribute).toHaveBeenCalledWith("data-chat-transcript-active");
+    expect(cousin.setAttribute).not.toHaveBeenCalled();
   });
 });

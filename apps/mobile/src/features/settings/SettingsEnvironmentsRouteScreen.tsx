@@ -102,6 +102,7 @@ export function SettingsEnvironmentsRouteScreen() {
       ) : (
         <NativeHeaderToolbar placement="right">
           <NativeHeaderToolbar.Button
+            accessibilityLabel="Add environment"
             icon="plus"
             onPress={() =>
               navigation.navigate("SettingsSheet", {

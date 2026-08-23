@@ -128,6 +128,18 @@ it.layer(testLayer)("KimiTextGeneration", (it) => {
             request.params?.value === "yolo",
         ),
       ).toBe(true);
+      const initialize = NodeFS.readFileSync(requestLogPath, "utf8")
+        .trim()
+        .split("\n")
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              method?: string;
+              params?: { clientCapabilities?: { terminal?: boolean } };
+            },
+        )
+        .find((request) => request.method === "initialize");
+      expect(initialize?.params?.clientCapabilities?.terminal).toBe(true);
     }).pipe(Effect.scoped),
   );
 });

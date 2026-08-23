@@ -17,6 +17,8 @@ export type KeybindingSource = "Default" | "Custom" | "Project";
 
 export interface KeybindingRow {
   readonly id: string;
+  /** Position in the resolved config; later entries win at dispatch time. */
+  readonly order: number;
   readonly command: KeybindingCommand;
   readonly key: string;
   readonly when: string;
@@ -132,8 +134,13 @@ function keybindingRowId(command: KeybindingCommand, key: string, when: string):
   return `${command}\u0000${key}\u0000${when}`;
 }
 
-function conflictsWithWhen(leftWhen: string, rightWhen: string): boolean {
-  return leftWhen.length === 0 || rightWhen.length === 0 || leftWhen === rightWhen;
+/**
+ * True when the later-listed binding fires everywhere the earlier one does, which is the
+ * only case the user loses a shortcut. A later binding with a narrower condition is the
+ * intended scoped-override pattern (the shipped `modelPickerOpen` jump bindings), not a clash.
+ */
+function shadowsEarlierBinding(laterWhen: string, earlierWhen: string): boolean {
+  return laterWhen.length === 0 || laterWhen === earlierWhen;
 }
 
 export function keybindingConflictLabels(
@@ -141,13 +148,16 @@ export function keybindingConflictLabels(
   input: { readonly rowId: string; readonly key: string; readonly when: string },
 ): ReadonlyArray<string> {
   if (input.key.trim().length === 0) return [];
+  // An unsaved row is appended to the config, so it outranks everything already there.
+  const inputOrder = rows.find((row) => row.id === input.rowId)?.order ?? Number.MAX_SAFE_INTEGER;
   const conflicts: Array<string> = [];
   for (const candidate of rows) {
-    if (
-      candidate.id !== input.rowId &&
-      candidate.key === input.key &&
-      conflictsWithWhen(candidate.when, input.when)
-    ) {
+    if (candidate.id === input.rowId || candidate.key !== input.key) continue;
+    const shadows =
+      candidate.order > inputOrder
+        ? shadowsEarlierBinding(candidate.when, input.when)
+        : shadowsEarlierBinding(input.when, candidate.when);
+    if (shadows) {
       conflicts.push(commandLabel(candidate.command));
     }
   }
@@ -165,6 +175,7 @@ export function buildKeybindingRows(
     const when = whenAstToExpression(binding.whenAst);
     return {
       id: `${keybindingRowId(binding.command, key, when)}\u0000${index}`,
+      order: index,
       command: binding.command,
       key,
       when,
@@ -200,6 +211,7 @@ export function buildKeybindingRows(
   return rowsWithConflicts.filter((row) => {
     return (
       row.command.toLowerCase().includes(normalizedQuery) ||
+      commandLabel(row.command).toLowerCase().includes(normalizedQuery) ||
       row.key.toLowerCase().includes(normalizedQuery) ||
       row.when.toLowerCase().includes(normalizedQuery) ||
       row.source.toLowerCase().includes(normalizedQuery)

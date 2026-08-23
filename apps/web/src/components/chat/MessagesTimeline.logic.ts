@@ -243,7 +243,6 @@ export type MessagesTimelineRow =
       kind: "working";
       id: string;
       createdAt: string | null;
-      showThinking: boolean;
     };
 
 export interface StableMessagesTimelineRowsState {
@@ -767,11 +766,13 @@ export function deriveMessagesTimelineRows(input: {
         })()
       : null;
   const appendWorkingRow = () => {
+    // Only while nothing else signals activity — live tool rows and streaming
+    // content are their own indicators.
+    if (activeWorkRow !== null || activeTurnHasVisibleContent) return;
     nextRows.push({
       kind: "working",
       id: "working-indicator-row",
       createdAt: input.activeTurnStartedAt,
-      showThinking: activeWorkRow === null && !activeTurnHasVisibleContent,
     });
   };
   const appendActiveWorkRows = () => {
@@ -894,9 +895,7 @@ export function deriveMessagesTimelineRows(input: {
             onlyToolEntries: true,
             summary: summarizeToolGroup(visibleGroupedEntries),
             summaryKind,
-            hasFailure: visibleGroupedEntries.some((entry) =>
-              workEntryDisplayIndicatesToolFailure(entry),
-            ),
+            hasFailure: workEntryDisplayIndicatesToolFailure(visibleGroupedEntries.at(-1)!),
           });
           if (expanded) {
             for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
@@ -1063,9 +1062,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
   switch (a.kind) {
     case "working":
-      return (
-        a.createdAt === (b as typeof a).createdAt && a.showThinking === (b as typeof a).showThinking
-      );
+      return a.createdAt === (b as typeof a).createdAt;
 
     case "turn-fold": {
       const bf = b as typeof a;

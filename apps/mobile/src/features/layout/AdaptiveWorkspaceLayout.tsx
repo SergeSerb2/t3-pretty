@@ -463,6 +463,19 @@ function AdaptiveWorkspaceLayoutContent(
     [navigation],
   );
 
+  // Minted at the root navigator for the same reason as the other sheet
+  // navigations above: the sidebar pane renders in its own nav tree.
+  const handleRenameThread = useCallback(
+    (thread: EnvironmentThreadShell) => {
+      navigation.navigate("ThreadRename", {
+        environmentId: String(thread.environmentId),
+        threadId: String(thread.id),
+        currentTitle: thread.title,
+      });
+    },
+    [navigation],
+  );
+
   const renderedSidebarWidth = useSharedValue(
     panes.primarySidebarVisible ? (layout.listPaneWidth ?? 0) : 0,
   );
@@ -545,6 +558,7 @@ function AdaptiveWorkspaceLayoutContent(
                 onOpenEnvironmentSettings={handleOpenEnvironmentSettings}
                 onNewThreadInProject={handleNewThreadInProject}
                 onSelectThread={handleSelectThread}
+                onRenameThread={handleRenameThread}
                 onSearchQueryChange={setPrimarySidebarSearchQuery}
                 searchQuery={primarySidebarSearchQuery}
               />

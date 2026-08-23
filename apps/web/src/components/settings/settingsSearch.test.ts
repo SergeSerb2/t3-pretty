@@ -46,7 +46,7 @@ describe("searchSettings", () => {
   it("matches normalized title substrings", () => {
     expect(searchSettings("  WORD   WRAP  ", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("glass").map((item) => item.id)).toEqual(["setting-glass-opacity"]);
-    expect(searchSettings("photo blur").map((item) => item.id)).toEqual(["setting-photo-blur"]);
+    expect(searchSettings("interface font").map((item) => item.id)).toEqual(["interface-font"]);
     expect(searchSettings("xyzzy")).toEqual([]);
   });
 
@@ -66,6 +66,11 @@ describe("searchSettings", () => {
     expect(searchSettings("quit confirmation")).toEqual([]);
   });
 
+  it("hides World Scenery settings when that theme is not active", () => {
+    expect(SETTINGS_SEARCH_ITEMS.some((item) => item.id === "setting-photo-blur")).toBe(true);
+    expect(searchSettings("photo blur")).toEqual([]);
+  });
+
   it("keeps catalog result ids unique", () => {
     const ids = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -83,6 +88,14 @@ describe("searchSettings", () => {
   it("routes appearance settings to their current section", () => {
     expect(searchSettings("theme")[0]).toMatchObject({
       id: "theme",
+      to: "/settings/appearance",
+    });
+    expect(searchSettings("personalization")[0]).toMatchObject({
+      id: "personalization",
+      to: "/settings/appearance",
+    });
+    expect(searchSettings("boring")[0]).toMatchObject({
+      id: "boring-mode",
       to: "/settings/appearance",
     });
     expect(searchSettings("word wrap")[0]).toMatchObject({

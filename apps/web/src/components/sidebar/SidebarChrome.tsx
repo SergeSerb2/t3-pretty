@@ -97,7 +97,12 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       <img
         alt=""
         aria-hidden="true"
-        className="h-5 w-auto shrink-0 object-contain"
+        className={cn(
+          "h-5 w-auto shrink-0 object-contain",
+          // The sage mark carries the brand on plain chrome in both themes. Over
+          // scenery photo backdrops it washes out, so fall back to a white glyph.
+          onBackdrop && "brightness-0 invert",
+        )}
         src="/t3-pretty-mark.png"
       />
       <span

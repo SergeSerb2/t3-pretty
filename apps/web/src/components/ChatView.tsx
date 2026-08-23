@@ -17,6 +17,7 @@ import {
   type TurnId,
   type KeybindingCommand,
   OrchestrationThreadActivity,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderInteractionMode,
   ProviderDriverKind,
   resolveRuntimeModeForProviderDriver,
@@ -27,6 +28,7 @@ import {
   connectionStatusTitle,
   type EnvironmentConnectionPresentation,
 } from "@t3tools/client-runtime/connection";
+import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
 import {
   changeRequestAutoSettles,
   effectiveSettled,
@@ -84,6 +86,7 @@ import { readLocalApi } from "../localApi";
 import { useDiffPanelStore } from "../diffPanelStore";
 import {
   collapseExpandedComposerCursor,
+  type ComposerSubmissionIntent,
   parseStandaloneComposerSlashCommand,
 } from "../composer-logic";
 import {
@@ -234,10 +237,14 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
-import { buildDraftThreadRouteParams } from "../threadRoutes";
+import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRoutes";
 import {
+  beginBackgroundDraftSubmissionByRef,
+  clearBackgroundDraftSubmissionByRef,
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
+  finalizePromotedDraftThreadByRef,
+  markPromotedDraftThreadByRef,
   useComposerDraftStore,
   type DraftId,
 } from "../composerDraftStore";
@@ -289,10 +296,15 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
 import { ChatHeader } from "./chat/ChatHeader";
-import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
+import {
+  PanelLayoutControls,
+  RightPanelMaximizeControl,
+  TitlebarLayoutControlsDragHole,
+} from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
+import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import {
   resolveEffectiveEnvMode,
   resolveLocalCheckoutBranchMismatch,
@@ -316,6 +328,7 @@ import {
   threadChangeRequestSnapshotsAtom,
 } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { ComposerSpecular } from "./chat/ComposerSpecular";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -325,8 +338,14 @@ import {
   MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
   SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS,
   SCENERY_DRAFT_HERO_TRANSITION_EASING,
+  type DraftHeroHandoff,
+  draftHeroGlideHasTravel,
+  draftHeroGlideKeyframes,
+  isDraftHeroAnimationPlaying,
   recordDraftHeroHandoff,
   runMobileComposerTransition,
+  shouldGlideDraftHeroHandoff,
+  shouldPopDraftHeroGlide,
   takeDraftHeroHandoff,
 } from "./chat/draftHeroTransition";
 import { useMotionStore } from "../scenery/motionStore";
@@ -349,6 +368,7 @@ import {
   hasOptimisticWorkingSettled,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
+  shouldDockDraftHeroForSubmission,
   shouldShowBranchMismatchBanner,
   getStartedThreadModelChangeBlockReason,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
@@ -359,7 +379,10 @@ import {
   deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
+  resolveBackgroundDraftWorkspaceOptions,
+  resolveDraftHeroState,
   resolveThreadMetadataUpdateForNextTurn,
+  resolveComposerRuntimeMode,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
@@ -410,10 +433,12 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
   // undefined until the first layout pass takes (or declines) the handoff;
   // held until its glide finishes so StrictMode's second pass replays it
   // instead of finding it consumed.
-  const handoffRectRef = useRef<Pick<DOMRect, "left" | "top"> | null | undefined>(undefined);
+  const handoffRef = useRef<DraftHeroHandoff | null | undefined>(undefined);
   const animationRef = useRef<Animation | null>(null);
   const sceneryDockRef = useRef(sceneryDock);
   sceneryDockRef.current = sceneryDock;
+  const isDraftHeroStateRef = useRef(isDraftHeroState);
+  isDraftHeroStateRef.current = isDraftHeroState;
   const attachTransitionGroupRef = (element: HTMLDivElement | null) => {
     transitionGroupRef.current = element;
   };
@@ -433,6 +458,10 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
       recordDraftHeroHandoff(
         composerAnchorRef.current?.getBoundingClientRect() ?? null,
         performance.now(),
+        {
+          isDraftHero: isDraftHeroStateRef.current,
+          gliding: isDraftHeroAnimationPlaying(animationRef.current),
+        },
       );
     },
     [],
@@ -441,32 +470,42 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
   useLayoutEffect(() => {
     const transitionGroup = transitionGroupRef.current;
     const nextComposerRect = composerAnchorRef.current?.getBoundingClientRect() ?? null;
-    if (handoffRectRef.current === undefined) {
-      handoffRectRef.current = takeDraftHeroHandoff(performance.now());
+    if (handoffRef.current === undefined) {
+      handoffRef.current = takeDraftHeroHandoff(performance.now());
     }
-    const handoffRect = handoffRectRef.current;
+    const handoff = handoffRef.current ?? null;
     const stateChangedInPlace = previousStateRef.current !== isDraftHeroState;
-    const stateChanged = stateChangedInPlace || handoffRect !== null;
+    const shouldGlideHandoff = shouldGlideDraftHeroHandoff({
+      isDraftHero: isDraftHeroState,
+      handoff,
+    });
+    const stateChanged = stateChangedInPlace || shouldGlideHandoff;
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const mobileComposerTransitionActive =
       typeof document !== "undefined" &&
       document.documentElement.dataset.mobileComposerRouteTransition === "true";
+    // Fog already hides the route swap; a FLIP under it finishes during the
+    // hold and then the chrome-in 14px rise reads as a second bounce.
+    const sceneryFogCoversSwap =
+      typeof document !== "undefined" && document.documentElement.dataset.sceneryArrival === "fog";
 
     animationRef.current?.cancel();
     animationRef.current = null;
 
     // An in-place hero↔docked switch glides from the rect captured before it;
-    // a fresh mount glides from the rect the outgoing ChatView handed off.
+    // a fresh mount glides from the rect the outgoing ChatView handed off,
+    // but only when placement actually changed or a glide was still running.
     const previousComposerRect = stateChangedInPlace
       ? previousComposerRectRef.current
-      : handoffRect;
+      : (handoff?.rect ?? null);
     let handoffGlideStarted = false;
     if (
       stateChanged &&
       !prefersReducedMotion &&
       !mobileComposerTransitionActive &&
+      !sceneryFogCoversSwap &&
       transitionGroup &&
       previousComposerRect &&
       nextComposerRect &&
@@ -474,18 +513,15 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
     ) {
       const translateX = previousComposerRect.left - nextComposerRect.left;
       const translateY = previousComposerRect.top - nextComposerRect.top;
-      if (Math.abs(translateX) >= 0.5 || Math.abs(translateY) >= 0.5) {
+      if (draftHeroGlideHasTravel(translateX, translateY)) {
         const sceneryDockMotion = sceneryDockRef.current;
+        const pop = shouldPopDraftHeroGlide({
+          sceneryDock: sceneryDockMotion,
+          inPlace: stateChangedInPlace,
+          translateY,
+        });
         const animation = transitionGroup.animate(
-          sceneryDockMotion
-            ? [
-                { transform: `translate3d(${translateX}px, ${translateY}px, 0) scale(1.02)` },
-                { transform: "translate3d(0, 0, 0) scale(1)" },
-              ]
-            : [
-                { transform: `translate3d(${translateX}px, ${translateY}px, 0)` },
-                { transform: "translate3d(0, 0, 0)" },
-              ],
+          draftHeroGlideKeyframes(translateX, translateY, pop),
           {
             duration: sceneryDockMotion
               ? SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS
@@ -493,6 +529,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
             easing: sceneryDockMotion
               ? SCENERY_DRAFT_HERO_TRANSITION_EASING
               : DRAFT_HERO_TRANSITION_EASING,
+            fill: "backwards",
           },
         );
         animation.id = DRAFT_HERO_TRANSITION_ANIMATION_ID;
@@ -506,13 +543,13 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
             }
             animationRef.current = null;
             if (!stateChangedInPlace) {
-              handoffRectRef.current = null;
+              handoffRef.current = null;
             }
           });
       }
     }
     if (!stateChangedInPlace && !handoffGlideStarted) {
-      handoffRectRef.current = null;
+      handoffRef.current = null;
     }
 
     previousStateRef.current = isDraftHeroState;
@@ -687,7 +724,7 @@ function useLocalDispatchState(input: {
   );
   const activeLocalDispatch = workingSettled ? null : localDispatch;
   const beginLocalDispatch = useCallback(
-    (options?: { preparingWorktree?: boolean }) => {
+    (options?: { preparingWorktree?: boolean; submissionIntent?: ComposerSubmissionIntent }) => {
       const preparingWorktree = Boolean(options?.preparingWorktree);
       setLocalDispatch((current) => {
         const holdActive =
@@ -699,9 +736,11 @@ function useLocalDispatchState(input: {
             threadError: input.threadError,
           });
         if (holdActive) {
-          return current.preparingWorktree === preparingWorktree
+          const submissionIntent = options?.submissionIntent ?? current.submissionIntent;
+          return current.preparingWorktree === preparingWorktree &&
+            current.submissionIntent === submissionIntent
             ? current
-            : { ...current, preparingWorktree };
+            : { ...current, preparingWorktree, submissionIntent };
         }
         return createLocalDispatchSnapshot(input.activeThread, options);
       });
@@ -717,6 +756,7 @@ function useLocalDispatchState(input: {
     isPreparingWorktree: activeLocalDispatch?.preparingWorktree ?? false,
     isSendBusy: activeLocalDispatch !== null && !sendAcknowledged,
     isOptimisticWorking: activeLocalDispatch !== null,
+    backgroundSubmissionPending: localDispatch?.submissionIntent === "background",
   };
 }
 
@@ -1392,6 +1432,20 @@ function chatActionErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "An error occurred.";
 }
 
+/**
+ * Drops the send-time anchored end space. That space is what holds a sent
+ * message near the top while its turn streams, and it keeps LegendList's
+ * maintainScrollAtEnd switched off for as long as it is installed — ChatView
+ * drives the streaming scrolls itself, but only in "anchoring-new-turn" mode.
+ * So every return to the live edge has to release the anchor too, otherwise the
+ * timeline settles into "following-end" with nothing following anything.
+ */
+function releaseChatTimelineAnchor<T extends { readonly messageId: MessageId | null }>(
+  current: T,
+): T {
+  return current.messageId === null ? current : { ...current, messageId: null };
+}
+
 function ChatViewContent(props: ChatViewProps) {
   const {
     environmentId,
@@ -1753,7 +1807,6 @@ function ChatViewContent(props: ChatViewProps) {
   // session.lastError. Bump a tick so the banner hides immediately. Mirrors
   // the branch mismatch banner.
   const [, setThreadErrorBannerDismissTick] = useState(0);
-  const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   // Plan mode is legacy (Settings → Beta). With the flag off the effective
   // mode is forced to "default" — even for threads with a stored plan mode —
   // so nobody is trapped in plan mode while its toggle is hidden. The next
@@ -2438,6 +2491,20 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const selectedProvider: ProviderDriverKind =
     modelPickerLockedProvider ?? unlockedSelectedProvider;
+  // Kimi's default access mode is "yolo"; other providers default to
+  // "full-access". A composer pick always wins, and a server thread's stored
+  // mode is authoritative — even "full-access" on Kimi, which may be an
+  // explicit pick or the pre-Yolo default and must not be remapped. Only a
+  // draft whose mode still reads as the generic default (never picked, never
+  // recorded on the composer) inherits the provider's own default.
+  // Carried Kimi "yolo" is remapped off Kimi so a Grok new thread cannot
+  // show or send a mode Grok does not offer.
+  const runtimeMode: RuntimeMode = resolveComposerRuntimeMode({
+    providerDriver: selectedProvider,
+    composerRuntimeMode,
+    threadRuntimeMode: activeThread?.runtimeMode,
+    isServerThread,
+  });
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
@@ -2530,21 +2597,6 @@ function ChatViewContent(props: ChatViewProps) {
     () => deriveActivePlanState(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
   );
-  // Current step for the in-chat working row: only for the running turn's own
-  // plan (deriveActivePlanState falls back to older turns' plans, which must
-  // not label fresh work). Falls back to the first pending step so an
-  // all-pending freshly written plan labels the row, matching the chip and
-  // the server's planProgress.
-  const workingStepLabel = useMemo(() => {
-    if (!activePlan || activePlan.turnId !== (activeLatestTurn?.turnId ?? null)) {
-      return null;
-    }
-    return (
-      activePlan.steps.find((step) => step.status === "inProgress")?.step ??
-      activePlan.steps.find((step) => step.status === "pending")?.step ??
-      null
-    );
-  }, [activeLatestTurn?.turnId, activePlan]);
   const showPlanFollowUpPrompt =
     pendingUserInputs.length === 0 &&
     interactionMode === "plan" &&
@@ -2559,6 +2611,7 @@ function ChatViewContent(props: ChatViewProps) {
     isPreparingWorktree,
     isSendBusy,
     isOptimisticWorking,
+    backgroundSubmissionPending,
   } = useLocalDispatchState({
     activeThread,
     activeLatestTurn,
@@ -2833,8 +2886,13 @@ function ChatViewContent(props: ChatViewProps) {
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
-  const isDraftHeroState =
-    isLocalDraftThread && timelineEntries.length === 0 && !isWorking && !draftHeroDockRequested;
+  const isDraftHeroState = resolveDraftHeroState({
+    isLocalDraftThread,
+    hasTimelineEntries: timelineEntries.length > 0,
+    isWorking,
+    draftHeroDockRequested,
+    backgroundSubmissionPending,
+  });
   const sceneryThemeActive = useSceneryThemeActive();
   // Written during render so a sibling scenery layout effect in the same
   // commit can read hero/docked before first paint. The layout cleanup still
@@ -3532,7 +3590,11 @@ function ChatViewContent(props: ChatViewProps) {
 
   const handleRuntimeModeChange = useCallback(
     (mode: RuntimeMode) => {
-      if (mode === runtimeMode) return;
+      // Skip only when the composer already records this exact pick. Picking
+      // the value currently shown because of a default must still write, or
+      // an explicit pick of the default would be indistinguishable from
+      // "never picked" and lost on the next provider switch.
+      if (composerRuntimeMode === mode) return;
       setComposerDraftRuntimeMode(composerDraftTarget, mode);
       if (isLocalDraftThread) {
         setDraftThreadContext(composerDraftTarget, { runtimeMode: mode });
@@ -3541,7 +3603,7 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [
       isLocalDraftThread,
-      runtimeMode,
+      composerRuntimeMode,
       scheduleComposerFocus,
       composerDraftTarget,
       setComposerDraftRuntimeMode,
@@ -4098,9 +4160,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeTimelineAnchorIndexRef.current = null;
     showScrollDebouncer.current.cancel();
     setShowScrollToBottom(false);
-    setTimelineAnchor((current) =>
-      current.messageId === null ? current : { ...current, messageId: null },
-    );
+    setTimelineAnchor(releaseChatTimelineAnchor);
     requestAnimationFrame(() => {
       void legendListRef.current?.scrollToEnd?.({ animated });
     });
@@ -4275,6 +4335,11 @@ function ChatViewContent(props: ChatViewProps) {
       timelineScrollModeRef.current = "following-end";
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
       setTimelineLiveFollowEnabled(true);
+      // Reachable only once manual navigation has already broken follow, so
+      // the anchored turn framing is over: the user scrolled back to the live
+      // edge and expects the stream to stick to it again, exactly like the
+      // scroll-to-bottom pill.
+      setTimelineAnchor(releaseChatTimelineAnchor);
       showScrollDebouncer.current.cancel();
       setShowScrollToBottom(false);
     } else {
@@ -5283,6 +5348,7 @@ function ChatViewContent(props: ChatViewProps) {
 
   const onSend = async (
     e?: { preventDefault: () => void },
+    submissionIntent: ComposerSubmissionIntent = "foreground",
     directAnnotation?: {
       annotation: PreviewAnnotationPayload;
       image: ComposerImageAttachment | null;
@@ -5345,6 +5411,10 @@ function ChatViewContent(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
+    const runtimeModeForTurn = resolveRuntimeModeForProviderDriver(
+      ctxSelectedProvider,
+      runtimeMode,
+    );
     const composerImages =
       directAnnotation?.image &&
       !sendContextImages.some((image) => image.id === directAnnotation.image?.id)
@@ -5522,8 +5592,17 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
 
+    const resolvedSubmissionIntent =
+      submissionIntent === "background" && isLocalDraftThread ? "background" : "foreground";
     sendInFlightRef.current = true;
-    if (isDraftHeroState && activeThreadKey) {
+    if (
+      shouldDockDraftHeroForSubmission({
+        isDraftHeroState,
+        activeThreadKey,
+        submissionIntent: resolvedSubmissionIntent,
+      }) &&
+      activeThreadKey
+    ) {
       let resolveDockStarted: (() => void) | undefined;
       const dockStarted = new Promise<void>((resolve) => {
         resolveDockStarted = resolve;
@@ -5548,7 +5627,10 @@ function ChatViewContent(props: ChatViewProps) {
       void dockTransition.catch(() => resolveDockStarted?.());
       await dockStarted;
     }
-    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
+    beginLocalDispatch({
+      preparingWorktree: Boolean(baseBranchForWorktree),
+      submissionIntent: resolvedSubmissionIntent,
+    });
 
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
@@ -5569,21 +5651,25 @@ function ChatViewContent(props: ChatViewProps) {
       sizeBytes: image.sizeBytes,
       previewUrl: image.previewUrl,
     }));
-    // Sending always returns to the live edge. The new row becomes the
-    // anchored end-space target so it lands near the top while the response
-    // streams into the reserved space below it.
-    isAtEndRef.current = true;
-    timelineScrollModeRef.current = "anchoring-new-turn";
-    liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
-    setTimelineLiveFollowEnabled(true);
-    pendingTimelineAnchorRef.current = messageIdForSend;
-    activeTimelineAnchorIndexRef.current = null;
-    showScrollDebouncer.current.cancel();
-    setShowScrollToBottom(false);
-    setTimelineAnchor({
-      threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
-      messageId: messageIdForSend,
-    });
+    const shouldAnchorFirstMessage =
+      activeThread.latestTurn === null &&
+      !timelineMessages.some((message) => message.role === "user");
+    if (shouldAnchorFirstMessage) {
+      isAtEndRef.current = true;
+      timelineScrollModeRef.current = "anchoring-new-turn";
+      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+      setTimelineLiveFollowEnabled(true);
+      pendingTimelineAnchorRef.current = messageIdForSend;
+      activeTimelineAnchorIndexRef.current = null;
+      showScrollDebouncer.current.cancel();
+      setShowScrollToBottom(false);
+      setTimelineAnchor({
+        threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
+        messageId: messageIdForSend,
+      });
+    } else {
+      scrollToEnd();
+    }
     setOptimisticUserMessages((existing) => [
       ...existing,
       {
@@ -5666,7 +5752,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
-        runtimeMode,
+        runtimeMode: runtimeModeForTurn,
         interactionMode,
       });
       if (settingsResult._tag === "Failure") {
@@ -5690,7 +5776,7 @@ function ChatViewContent(props: ChatViewProps) {
                       projectId: activeProject.id,
                       title,
                       modelSelection: threadCreateModelSelection,
-                      runtimeMode,
+                      runtimeMode: runtimeModeForTurn,
                       interactionMode,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
@@ -5717,6 +5803,13 @@ function ChatViewContent(props: ChatViewProps) {
             }
           : undefined;
       beginLocalDispatch({ preparingWorktree: false });
+      const backgroundThreadRef =
+        resolvedSubmissionIntent === "background"
+          ? scopeThreadRef(activeThread.environmentId, threadIdForSend)
+          : null;
+      if (backgroundThreadRef) {
+        beginBackgroundDraftSubmissionByRef(backgroundThreadRef);
+      }
       const startResult = await startThreadTurn({
         environmentId,
         input: {
@@ -5729,21 +5822,93 @@ function ChatViewContent(props: ChatViewProps) {
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: title,
-          runtimeMode,
+          runtimeMode: runtimeModeForTurn,
           interactionMode,
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
         },
       });
       if (startResult._tag === "Failure") {
+        if (backgroundThreadRef) {
+          clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
+        }
         failure = startResult;
       } else {
         turnStartSucceeded = true;
         acknowledgeActiveThreadWoke();
+        // The turn went out with the remapped mode; sync a stored composer
+        // pick (carried yolo) to what was actually sent so a later provider
+        // switch cannot resurrect and re-persist the pre-send value. Skip
+        // when the send driver is unknown: remapping that case would wipe
+        // Kimi yolo after a stale provider lookup.
+        if (
+          ctxSelectedProvider !== "unconfigured" &&
+          composerRuntimeMode !== null &&
+          composerRuntimeMode !== runtimeModeForTurn
+        ) {
+          setComposerDraftRuntimeMode(composerDraftTarget, runtimeModeForTurn);
+        }
+        if (backgroundThreadRef) {
+          markPromotedDraftThreadByRef(backgroundThreadRef);
+          try {
+            const nextDraft = await handleNewThread(
+              scopeProjectRef(activeProject.environmentId, activeProject.id),
+              resolveBackgroundDraftWorkspaceOptions({
+                envMode: sendEnvMode,
+                branch: activeThreadBranch,
+                startFromOrigin,
+              }),
+            );
+            if (nextDraft) {
+              finalizePromotedDraftThreadByRef(backgroundThreadRef);
+              toastManager.add(
+                stackedThreadToast({
+                  type: "success",
+                  title: "Started in background",
+                  timeout: 5_000,
+                  actionProps: {
+                    children: "Open",
+                    onClick: () => {
+                      void navigate({
+                        to: "/$environmentId/$threadId",
+                        params: buildThreadRouteParams(backgroundThreadRef),
+                      });
+                    },
+                  },
+                }),
+              );
+            } else {
+              clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
+            }
+          } catch (error) {
+            clearBackgroundDraftSubmissionByRef(backgroundThreadRef);
+            resetLocalDispatch();
+            toastManager.add(
+              stackedThreadToast({
+                type: "warning",
+                title: "Task started in the background",
+                description:
+                  error instanceof Error
+                    ? `Could not open a fresh composer: ${error.message}`
+                    : "Could not open a fresh composer.",
+              }),
+            );
+          }
+        }
       }
     }
 
     if (failure !== null) {
+      // The bubble must go even when the composer is busy: nothing else prunes
+      // it, so leaving it would claim a message that never reached the server.
+      setOptimisticUserMessages((existing) => {
+        const removed = existing.filter((message) => message.id === messageIdForSend);
+        for (const message of removed) {
+          revokeUserMessagePreviewUrls(message);
+        }
+        const next = existing.filter((message) => message.id !== messageIdForSend);
+        return next.length === existing.length ? existing : next;
+      });
       if (
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
@@ -5757,14 +5922,6 @@ function ChatViewContent(props: ChatViewProps) {
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
           .length ?? 0) === 0
       ) {
-        setOptimisticUserMessages((existing) => {
-          const removed = existing.filter((message) => message.id === messageIdForSend);
-          for (const message of removed) {
-            revokeUserMessagePreviewUrls(message);
-          }
-          const next = existing.filter((message) => message.id !== messageIdForSend);
-          return next.length === existing.length ? existing : next;
-        });
         promptRef.current = promptForSend;
         const retryComposerImages = composerImagesSnapshot.map(cloneComposerImageForRetry);
         composerImagesRef.current = retryComposerImages;
@@ -5785,9 +5942,48 @@ function ChatViewContent(props: ChatViewProps) {
           prompt: promptForSend,
           detectTrigger: true,
         });
+      } else {
+        // The composer already holds new content, so merge the failed
+        // message's text and images back in rather than silently destroying
+        // them.
+        if (promptForSend.length > 0) {
+          const merged =
+            promptRef.current.length > 0
+              ? `${promptForSend}\n\n${promptRef.current}`
+              : promptForSend;
+          promptRef.current = merged;
+          setComposerDraftPrompt(composerDraftTarget, merged);
+          composerRef.current?.resetCursorState({
+            cursor: collapseExpandedComposerCursor(merged, merged.length),
+            prompt: merged,
+            detectTrigger: true,
+          });
+        }
+        const imageCapacity = PROVIDER_SEND_TURN_MAX_ATTACHMENTS - composerImagesRef.current.length;
+        if (composerImagesSnapshot.length > 0 && imageCapacity > 0) {
+          const retryComposerImages = composerImagesSnapshot
+            .slice(0, imageCapacity)
+            .map(cloneComposerImageForRetry);
+          composerImagesRef.current = [...composerImagesRef.current, ...retryComposerImages];
+          addComposerDraftImages(composerDraftTarget, retryComposerImages);
+        }
       }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
+        if (isLocalDraftThread && draftId && wasBootstrapThreadDeleted(error)) {
+          const failedDraftSession = getDraftSession(draftId);
+          if (failedDraftSession?.threadId === threadIdForSend) {
+            setLogicalProjectDraftThreadId(
+              failedDraftSession.logicalProjectKey,
+              scopeProjectRef(failedDraftSession.environmentId, failedDraftSession.projectId),
+              draftId,
+              {
+                threadId: newThreadId(),
+                createdAt: new Date().toISOString(),
+              },
+            );
+          }
+        }
         setThreadError(
           threadIdForSend,
           error instanceof Error ? error.message : "Failed to send message.",
@@ -5864,18 +6060,28 @@ function ChatViewContent(props: ChatViewProps) {
     threadDetailLoading,
   ]);
 
+  const [isInterrupting, setIsInterrupting] = useState(false);
+  useEffect(() => {
+    // The interrupt command resolving only means the request was accepted, so
+    // the pending state holds until the work stops; it never crosses threads.
+    setIsInterrupting(false);
+  }, [isWorking, activeThreadId]);
   const onInterrupt = async () => {
     if (!activeThread) return;
+    setIsInterrupting(true);
     const result = await interruptThreadTurn({
       environmentId,
       input: buildThreadTurnInterruptInput(activeThread),
     });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      setThreadError(
-        activeThread.id,
-        error instanceof Error ? error.message : "Failed to interrupt the current turn.",
-      );
+    if (result._tag === "Failure") {
+      setIsInterrupting(false);
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThread.id,
+          error instanceof Error ? error.message : "Failed to interrupt the current turn.",
+        );
+      }
     }
   };
 
@@ -6075,6 +6281,10 @@ function ChatViewContent(props: ChatViewProps) {
         selectedPromptEffort: ctxSelectedPromptEffort,
         selectedModelSelection: ctxSelectedModelSelection,
       } = sendCtx;
+      const runtimeModeForTurn = resolveRuntimeModeForProviderDriver(
+        ctxSelectedProvider,
+        runtimeMode,
+      );
 
       // Same path-suffix bake as the normal composer send — plan follow-up
       // used to return before takeAttachedFilesForThread ran, so refine /
@@ -6097,19 +6307,7 @@ function ChatViewContent(props: ChatViewProps) {
       beginLocalDispatch({ preparingWorktree: false });
       setThreadError(threadIdForSend, null);
 
-      // Position this sent row once LegendList has measured the anchored tail.
-      isAtEndRef.current = true;
-      timelineScrollModeRef.current = "anchoring-new-turn";
-      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
-      setTimelineLiveFollowEnabled(true);
-      pendingTimelineAnchorRef.current = messageIdForSend;
-      activeTimelineAnchorIndexRef.current = null;
-      showScrollDebouncer.current.cancel();
-      setShowScrollToBottom(false);
-      setTimelineAnchor({
-        threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
-        messageId: messageIdForSend,
-      });
+      scrollToEnd();
 
       setOptimisticUserMessages((existing) => [
         ...existing,
@@ -6131,7 +6329,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
-        runtimeMode,
+        runtimeMode: runtimeModeForTurn,
         interactionMode: nextInteractionMode,
       });
       let failure: AtomCommandResult<unknown, unknown> | null =
@@ -6144,6 +6342,19 @@ function ChatViewContent(props: ChatViewProps) {
           scopeThreadRef(activeThread.environmentId, threadIdForSend),
           nextInteractionMode,
         );
+        // Same sync as the composer send: the turn persisted the remapped
+        // mode, so a stored carried yolo must not outlive it. Unknown send
+        // driver keeps the stored pick.
+        if (
+          ctxSelectedProvider !== "unconfigured" &&
+          composerRuntimeMode !== null &&
+          composerRuntimeMode !== runtimeModeForTurn
+        ) {
+          setComposerDraftRuntimeMode(
+            scopeThreadRef(activeThread.environmentId, threadIdForSend),
+            runtimeModeForTurn,
+          );
+        }
 
         const startResult = await startThreadTurn({
           environmentId,
@@ -6157,7 +6368,7 @@ function ChatViewContent(props: ChatViewProps) {
             },
             modelSelection: ctxSelectedModelSelection,
             titleSeed: activeThread.title,
-            runtimeMode,
+            runtimeMode: runtimeModeForTurn,
             interactionMode: nextInteractionMode,
             ...(nextInteractionMode === "default" && activeProposedPlan
               ? {
@@ -6208,6 +6419,7 @@ function ChatViewContent(props: ChatViewProps) {
       persistThreadSettingsForNextTurn,
       resetLocalDispatch,
       runtimeMode,
+      scrollToEnd,
       setComposerDraftInteractionMode,
       setThreadError,
       startThreadTurn,
@@ -6241,6 +6453,10 @@ function ChatViewContent(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
+    const runtimeModeForTurn = resolveRuntimeModeForProviderDriver(
+      ctxSelectedProvider,
+      runtimeMode,
+    );
 
     const createdAt = new Date().toISOString();
     const nextThreadId = newThreadId();
@@ -6281,7 +6497,7 @@ function ChatViewContent(props: ChatViewProps) {
         projectId: activeProject.id,
         title: nextThreadTitle,
         modelSelection: nextThreadModelSelection,
-        runtimeMode,
+        runtimeMode: runtimeModeForTurn,
         interactionMode: "default",
         branch: activeThreadBranch,
         worktreePath: activeThread.worktreePath,
@@ -6306,7 +6522,7 @@ function ChatViewContent(props: ChatViewProps) {
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: nextThreadTitle,
-          runtimeMode,
+          runtimeMode: runtimeModeForTurn,
           interactionMode: "default",
           sourceProposedPlan: {
             threadId: activeThread.id,
@@ -6470,14 +6686,9 @@ function ChatViewContent(props: ChatViewProps) {
         nextModelSelection,
       );
       setStickyComposerModelSelection(nextModelSelection);
-      // Kimi's "yolo" mode has no equivalent on other providers; switching
-      // providers falls back to the generic full-access mode instead of
-      // leaking the Kimi-only literal into another provider's session config.
-      if (resolvedDriverKind !== "kimi") {
-        handleRuntimeModeChange(
-          resolveRuntimeModeForProviderDriver(resolvedDriverKind, runtimeMode),
-        );
-      }
+      // Display and send remap Kimi-only "yolo" off other providers. Do not
+      // write the remapped mode back: an unset mode keeps tracking the
+      // provider default, and a stored Yolo can still show on Kimi.
       scheduleComposerFocus();
     },
     [
@@ -6486,8 +6697,6 @@ function ChatViewContent(props: ChatViewProps) {
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
-      handleRuntimeModeChange,
-      runtimeMode,
       providerStatuses,
       settings,
       supportsProviderHandoff,
@@ -6595,19 +6804,25 @@ function ChatViewContent(props: ChatViewProps) {
         // sidebar trigger. Remounting into the shrinking chat header made the
         // cluster jump to the panel seam on close, and the rest of the top bar
         // jittered against buttons that stayed put.
-        "absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
+        // pointer-events-none on the strip, auto on the buttons: same as the
+        // left sidebar trigger. A later sibling than the chat header, so the
+        // header's frost/drag-region cannot sit on top of the cluster.
+        "pointer-events-none absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
       )}
       data-workspace-titlebar-controls
     >
-      {rightPanelOpen && !shouldUseRightPanelSheet ? (
-        <RightPanelMaximizeControl
-          maximized={rightPanelMaximized}
-          onToggle={toggleRightPanelMaximized}
-        />
-      ) : null}
-      {panelToggleControls}
+      <div className="pointer-events-auto flex h-full items-center gap-1">
+        {rightPanelOpen && !shouldUseRightPanelSheet ? (
+          <RightPanelMaximizeControl
+            maximized={rightPanelMaximized}
+            onToggle={toggleRightPanelMaximized}
+          />
+        ) : null}
+        {panelToggleControls}
+      </div>
     </div>
   );
+  const parkTitlebarLayoutControls = !(shouldUseRightPanelSheet && rightPanelOpen);
   const rightPanelContent = activeThreadRef ? (
     selectedRightPanelSurface?.kind === "preview" ? (
       <Suspense fallback={null}>
@@ -6618,7 +6833,7 @@ function ChatViewContent(props: ChatViewProps) {
           configuredUrls={configuredPreviewUrls}
           visible
           onSendAnnotation={(annotation, image) => {
-            void onSend(undefined, { annotation, image });
+            void onSend(undefined, "foreground", { annotation, image });
           }}
         />
       </Suspense>
@@ -6686,6 +6901,7 @@ function ChatViewContent(props: ChatViewProps) {
             ? "thread"
             : "page"
         }
+        chromeVariant="collapse"
         composerDraftTarget={composerDraftTarget}
         onStateChange={handlePullRequestTabStatusChange}
       />
@@ -6733,7 +6949,6 @@ function ChatViewContent(props: ChatViewProps) {
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-      {shouldUseRightPanelSheet && rightPanelOpen ? null : panelLayoutControls}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
@@ -6779,6 +6994,13 @@ function ChatViewContent(props: ChatViewProps) {
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
           />
+          {/* no-drag only punches descendants of a drag node. The parked
+              cluster sits on the workspace root; this header covers it while
+              the right panel is closed. The open inline panel's tab bar
+              mounts the matching hole. */}
+          {isElectron && parkTitlebarLayoutControls && !inlineRightPanelOwnsTitleBar ? (
+            <TitlebarLayoutControlsDragHole controlCount={2} />
+          ) : null}
         </WorkspacePageHeader>
 
         <ThreadErrorBanner
@@ -6821,15 +7043,19 @@ function ChatViewContent(props: ChatViewProps) {
                 onDismiss={() => setDismissedProviderStatusBannerKey(providerStatusBannerKey)}
               />
             </div>
-            {/* Messages Wrapper */}
-            <div className="relative flex min-h-0 flex-1 flex-col">
+            {/* Messages Wrapper. data-chat-transcript-active is the ink view-transition group. */}
+            <div
+              className="relative flex min-h-0 flex-1 flex-col"
+              data-chat-transcript="true"
+              data-chat-transcript-active="true"
+            >
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               <MessagesTimeline
                 agentPanelModel={agentPanelModel}
                 onOpenAgents={addAgentsSurface}
                 key={activeThread.id}
                 isWorking={isWorking}
-                workingStepLabel={workingStepLabel}
+                activeTurnInProgress={isWorking || !latestTurnSettled}
                 activeTurnStartedAt={activeWorkStartedAt}
                 listRef={legendListRef}
                 timelineEntries={timelineEntries}
@@ -6866,7 +7092,7 @@ function ChatViewContent(props: ChatViewProps) {
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
               {showScrollToBottom && (
                 <div
-                  className="pointer-events-none absolute left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5"
+                  className="mount-rise-in pointer-events-none absolute left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5"
                   style={{ bottom: composerOverlayHeight + 4 }}
                 >
                   <Button
@@ -6910,7 +7136,7 @@ function ChatViewContent(props: ChatViewProps) {
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
                         ref={draftHeroHeadlineRef}
-                        className="pb-8"
+                        className="mount-rise-in pb-8"
                         data-scenery-hero-chrome="headline"
                         style={
                           forceExpandedMobileComposer
@@ -6949,6 +7175,7 @@ function ChatViewContent(props: ChatViewProps) {
                         showComposerContextStrip && "chat-composer-glass-shell-with-context",
                       )}
                     >
+                      <ComposerSpecular />
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
@@ -6977,6 +7204,7 @@ function ChatViewContent(props: ChatViewProps) {
                             phase={phase}
                             isConnecting={isConnecting}
                             isSendBusy={isSendBusy}
+                            isInterrupting={isInterrupting}
                             isOptimisticWorking={isOptimisticWorking}
                             sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
                             isPreparingWorktree={isPreparingWorktree}
@@ -6995,6 +7223,7 @@ function ChatViewContent(props: ChatViewProps) {
                             activeProposedPlan={activeProposedPlan}
                             activeTasksProgress={activeComposerTasksProgress}
                             activeTaskSteps={activeComposerTaskSteps}
+                            activeLatestTurnId={activeLatestTurn?.turnId ?? null}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
                             autoCreatePullRequest={autoCreatePullRequest}
@@ -7298,6 +7527,8 @@ function ChatViewContent(props: ChatViewProps) {
           </RightPanelTabs>
         </RightPanelSheet>
       ) : null}
+
+      {parkTitlebarLayoutControls ? panelLayoutControls : null}
 
       {expandedImage && (
         <ExpandedImageDialog

@@ -296,7 +296,7 @@ export function useOpenPrLink(threadRef?: ScopedThreadRef) {
       if (!api) {
         toastManager.add({
           type: "error",
-          title: "Link opening is unavailable.",
+          title: "Link opening is unavailable",
         });
         return false;
       }

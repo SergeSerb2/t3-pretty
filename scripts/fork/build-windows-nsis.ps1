@@ -8,6 +8,31 @@ $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $root
 
+$changelogSubject = (git log -1 --format=%s | Out-String).Trim()
+$reusedVersion = $null
+$changelogPrefix = "docs(changelog): add release notes through v"
+if ($changelogSubject.StartsWith($changelogPrefix)) {
+  $reusedVersion = $changelogSubject.Substring($changelogPrefix.Length).Trim()
+  if (-not $reusedVersion) {
+    throw "Changelog commit has no reusable version"
+  }
+  Write-Host "Changelog commit; packaging already-minted $reusedVersion without reminting."
+  $feedUrl = if ($env:T3CODE_DESKTOP_UPDATE_FEED_URL) {
+    $env:T3CODE_DESKTOP_UPDATE_FEED_URL.TrimEnd("/")
+  } else {
+    "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest"
+  }
+  try {
+    $manifest = (Invoke-WebRequest -UseBasicParsing -Uri "$feedUrl/latest.yml").Content
+    if ($manifest -match ("(?m)^version: " + [regex]::Escape($reusedVersion) + "\s*$")) {
+      Write-Host "Feed already has $reusedVersion; skipping Windows packaging."
+      exit 0
+    }
+  } catch {
+    Write-Host "warning: could not read the Windows updater feed; continuing the Windows release"
+  }
+}
+
 & "$root\scripts\fork\ensure-windows-release-toolchain.ps1" -CheckOnly
 
 $gitBash = Join-Path $env:ProgramFiles "Git\bin"
@@ -29,7 +54,7 @@ if (Get-Command rustup -ErrorAction SilentlyContinue) {
   throw "rustup is required on the windows-release agent."
 }
 
-if (-not $env:GITHUB_RUN_NUMBER) {
+if (-not $reusedVersion -and -not $env:GITHUB_RUN_NUMBER) {
   if (-not $env:BUILDKITE_BUILD_NUMBER) {
     throw "BUILDKITE_BUILD_NUMBER is required to mint a fork version."
   }
@@ -43,9 +68,51 @@ if ((@(git remote) -contains "upstream")) {
 }
 git fetch --force --tags upstream
 
-$resolved = node "$root\scripts\fork\resolve-fork-release.mjs" | ConvertFrom-Json
-$version = $resolved.version
+if ($reusedVersion) {
+  $version = $reusedVersion
+} else {
+  $resolved = node "$root\scripts\fork\resolve-fork-release.mjs" | ConvertFrom-Json
+  $version = $resolved.version
+}
 Write-Host "Building Windows NSIS $version"
+
+# Mac packager persists notes to main. When main already carries this
+# version's notes commit, ship that exact file so both installers show the
+# same What's New text; otherwise generate locally so this installer still
+# ships notes if the Mac job has not pushed yet. Changelog-commit retries
+# already have those notes; do not regenerate them.
+if (-not $reusedVersion) {
+  $notesFromMain = $false
+  git fetch --quiet origin main
+  if ($LASTEXITCODE -eq 0) {
+    $mainTipSubject = (git log -1 --format=%s origin/main | Out-String).Trim()
+    if ($mainTipSubject -eq ($changelogPrefix + $version)) {
+      git checkout --quiet origin/main -- apps/web/src/changelog/changelogData.ts
+      $notesFromMain = $LASTEXITCODE -eq 0
+    }
+  }
+  if ($notesFromMain) {
+    Write-Host "Reusing the What's New notes the Mac packager pushed to main."
+  } else {
+    if (-not $env:CLI_PROXY_API_KEY) {
+      foreach ($candidate in @(
+        (Join-Path $env:USERPROFILE ".config\t3-pretty\CLI_PROXY_API_KEY"),
+        "C:\buildkite-agent\secrets\CLI_PROXY_API_KEY"
+      )) {
+        if (Test-Path $candidate) {
+          $env:CLI_PROXY_API_KEY = (Get-Content -Raw $candidate).Trim()
+          break
+        }
+      }
+    }
+    node "$root\scripts\fork\generate-changelog.mjs" --version $version --no-push
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host "warning: changelog generation failed; continuing the Windows release"
+    }
+  }
+} else {
+  Write-Host "Changelog commit already has notes; skipping changelog generation."
+}
 
 # Official Vite+ is vp.exe under VP_HOME. npm's global `vp` / `npx vp`
 # is a stub that prints install instructions and exits 0.
@@ -146,6 +213,15 @@ Get-ChildItem $publish -File | Where-Object {
 node @upload
 if ($LASTEXITCODE -ne 0) {
   throw "Windows updater upload exited $LASTEXITCODE"
+}
+
+# Publish the baked notes when the Mac job has not: main must not keep the
+# frozen 2026-08-12 file when macos-release died before its own --publish.
+# The script no-ops when the working tree has no pending notes or main
+# already carries this version's notes commit.
+node "$root\scripts\fork\generate-changelog.mjs" --publish
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "warning: release notes ship with $version but could not be pushed to main"
 }
 
 Write-Host "Windows NSIS artifacts in $publish"

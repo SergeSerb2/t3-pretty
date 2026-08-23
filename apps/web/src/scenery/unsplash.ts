@@ -40,6 +40,8 @@ export interface SceneryPhoto {
 interface UnsplashSearchResult {
   readonly id: string;
   readonly color?: string | null;
+  readonly plus?: unknown;
+  readonly premium?: boolean | null;
   readonly urls: { readonly raw: string; readonly regular: string; readonly thumb: string };
   readonly links?: { readonly download_location?: string | null } | null;
   readonly user: {
@@ -104,18 +106,20 @@ export function makeUnsplashClient(
         throw new Error(`Unsplash search failed with status ${response.status}`);
       }
       const body = (await response.json()) as { results?: ReadonlyArray<UnsplashSearchResult> };
-      return (body.results ?? []).map((photo) => ({
-        id: photo.id,
-        // Placeholder; the store pairs the curated location name at pool build.
-        name: "",
-        averageColorHex: photo.color ?? null,
-        heroURL: photo.urls.regular,
-        thumbURL: photo.urls.thumb,
-        rawURL: photo.urls.raw,
-        downloadLocationURL: photo.links?.download_location ?? null,
-        photographerName: photo.user.name,
-        photographerProfileURL: photo.user.links?.html ?? null,
-      }));
+      return (body.results ?? [])
+        .filter((photo) => !photo.plus && photo.premium !== true)
+        .map((photo) => ({
+          id: photo.id,
+          // Placeholder; the store pairs the curated location name at pool build.
+          name: "",
+          averageColorHex: photo.color ?? null,
+          heroURL: photo.urls.regular,
+          thumbURL: photo.urls.thumb,
+          rawURL: photo.urls.raw,
+          downloadLocationURL: photo.links?.download_location ?? null,
+          photographerName: photo.user.name,
+          photographerProfileURL: photo.user.links?.html ?? null,
+        }));
     },
     registerDownload: async (downloadLocationURL) => {
       try {
