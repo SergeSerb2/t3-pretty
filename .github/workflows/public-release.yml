@@ -355,6 +355,8 @@ jobs:
       inputs.deploy_pages &&
       needs.web.result == 'success'
     runs-on: ubuntu-latest
+    # Same-run artifact downloads use the Actions runtime token; keep the GITHUB_TOKEN scoped only
+    # to the Pages deployment performed below.
     permissions:
       pages: write
       id-token: write
@@ -390,6 +392,7 @@ jobs:
       needs.mobile.result == 'success' &&
       needs.web.result == 'success'
     runs-on: ubuntu-latest
+    # contents: write includes read; download-artifact uses the separate same-run runtime token.
     permissions:
       contents: write
     steps:

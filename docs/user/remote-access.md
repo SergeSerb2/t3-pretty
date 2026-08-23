@@ -114,6 +114,10 @@ If the copied link points directly at `http://192.168.x.y:3773`, open it from a 
 
 In the mobile app's **Add Environment** form, a numeric IP address without a scheme uses HTTP. Include `https://` explicitly when the backend is served over HTTPS.
 
+T3 Pretty and T3 Pretty Internal can be installed side by side, but both production mobile apps
+register `t3code://`. The app installed most recently receives pairing and deep links; open the
+other app and use **Add Environment** when you need to target it explicitly.
+
 ### Tailscale Endpoints
 
 When the desktop app can detect Tailscale, it adds Tailnet endpoints to the reachable endpoint list.

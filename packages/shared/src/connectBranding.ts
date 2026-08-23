@@ -11,6 +11,8 @@ const processBuildFlavor =
   typeof process === "undefined"
     ? undefined
     : (process.env.EXPO_PUBLIC_T3CODE_BUILD_FLAVOR ?? process.env.T3CODE_BUILD_FLAVOR);
+// This source is also the public GitHub distribution. Internal builds opt in explicitly so an
+// unqualified public clone can never inherit the private Surge service by accident.
 export const T3CODE_BUILD_FLAVOR: ConnectBuildFlavor =
   (typeof __T3CODE_BUILD_FLAVOR__ !== "undefined"
     ? __T3CODE_BUILD_FLAVOR__
