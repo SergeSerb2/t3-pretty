@@ -2248,11 +2248,15 @@ export function buildThreadFeed(
   thread: OrchestrationThread,
   options?: {
     readonly loadedMessages?: ReadonlyArray<OrchestrationThread["messages"][number]>;
+    readonly localMessages?: ReadonlyArray<OrchestrationThread["messages"][number]>;
   },
 ): ThreadFeedEntry[] {
   const loadedMessages = options?.loadedMessages ?? thread.messages;
+  const messages = options?.localMessages
+    ? [...loadedMessages, ...options.localMessages]
+    : loadedMessages;
   return assembleThreadFeed(
-    buildMessageFeedEntries(loadedMessages),
+    buildMessageFeedEntries(messages),
     buildActivityFeedEntries(thread.activities),
     options?.loadedMessages === undefined ? null : (loadedMessages[0]?.createdAt ?? null),
   );

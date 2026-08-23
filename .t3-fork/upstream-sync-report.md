@@ -385,3 +385,64 @@
 
 - `apps/web/src/index.css` — Use the generic --glass-blur value for dialog glass.. Reason: This would regress T3 Pretty's intentional overlay-specific blur hierarchy; the compatible upstream border-token change is integrated separately.
 - `apps/web/src/index.css` — Use the generic --glass-blur value for dropdown glass.. Reason: This would regress T3 Pretty's intentional raised-surface blur hierarchy; the compatible upstream border-token change is integrated separately.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.34-nightly.20260823.1167`
+- Previously integrated parent nightly: `v0.0.34-nightly.20260823.1166`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Preserved the mobile draft-image picker flow, including pending preview preparation through beginPendingPreviews and cleanup in the surrounding finally block.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Preserved the fork's dedicated send lifecycle, queue/steer delivery handling, in-flight tracking, and T3 Pretty Live Activity branding in handleSend.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Avoided accidentally sending a message when the user invokes the image picker.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Incremental mobile feed derivation continues to reuse unchanged activity groups during streaming updates.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Stable row identity coverage remains for unchanged messages and activities while replacing only the changed streaming message row.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Out-of-order replay updates retain stateless sorting semantics and unaffected row identities.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Equal-timestamp reordering retains stable-sort fallback coverage.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Loaded-message window boundary changes remain verified against stateless feed derivation.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Activity groups remain verified to split correctly when an initially empty streaming message becomes visible.
+- `apps/mobile/src/lib/threadActivity.ts` — T3 Pretty's centralized assembleThreadFeed pipeline remains authoritative instead of restoring the older duplicated sorting and work-log mapping implementation.
+- `apps/mobile/src/lib/threadActivity.ts` — T3 Pretty's buildActivityFeedEntries derivation remains in use, preserving fork activity filtering, Thinking-row behavior, generated headlines, tool handling, and other mobile work-log behavior encoded by that helper.
+- `apps/mobile/src/lib/threadActivity.ts` — The activity cutoff continues to use the oldest actually loaded message, preserving paginated-feed behavior.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Queued-message dispatch and retry state remain available for mobile send-progress and active-work calculations.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Optimistic starting-thread messages, queued messages, and server messages continue to be merged into the feed, with optimistic state cleared when the server message arrives.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Pretty's reusable thread-feed builder and feed-build performance spans remain in place for long-session mobile performance.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Messages continue to support standard queue/steer delivery through TurnDeliveryMode when sent during an active turn.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — The effective draft model selection is used for sending, and runtime mode is remapped only with the known selected provider driver, preserving stored provider-specific modes when the driver is unknown.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Composer content is cleared synchronously after enqueue and fully restored on durable-write failure without dropping attachments added while the write is pending.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Queue failures continue to use Pretty's immediate native Alert presentation rather than regressing its mobile error UX.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Active-work timing continues to account for optimistic sends, queued-head creation, queue dispatch, and the selected environment's connection state.
+- `apps/server/src/server.test.ts` — Retained ProviderSessionDirectory integration and its test-layer override, preserving T3 Pretty's session-scoped provider behavior and associated test coverage.
+- `apps/server/src/ws.ts` — Preserved `ProjectImportFaviconError`, retaining T3 Pretty's managed project-favicon import and error-handling path.
+- `apps/server/src/ws.ts` — Preserved `ProviderSessionDirectory` and its layer acquisition, retaining T3 Pretty's provider-session association used by session-pinned provider assets such as Grok-generated images.
+- `apps/web/src/components/ChatView.tsx` — T3 Pretty's painted appearance hook remains authoritative instead of reverting to the parent's generic theme hook, preserving fork-specific visual and theming behavior.
+- `apps/web/src/components/ChatView.tsx` — The composer continues receiving isInterrupting and isOptimisticWorking state, preserving T3 Pretty's running-agent queue/steer controls and optimistic working UX.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Retained the parent behavior that checks onSendMessage's returned message ID and does not arm agent-awareness Live Activity when sending returns null; this is already present in the adjacent handleSend callback.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Retained post-send agent-awareness Live Activity arming for successful sends, composed into the fork's canonical send path rather than duplicated in the image-picker path.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Added the parent regression test ensuring older local feedback command and assistant rows remain before a newer server-returned message.
+- `apps/mobile/src/lib/threadActivity.ts` — Optional localMessages are appended to loaded messages and included in message feed derivation, matching the parent mobile behavior.
+- `apps/mobile/src/lib/threadActivity.ts` — The pagination/activity cutoff remains based on loadedMessages rather than appended local messages, matching the parent implementation.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Added first-party Codex feedback command recognition and upload through threadEnvironment.uploadFeedback.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Added per-thread feedback submission tracking, including local user and assistant feed messages and suppression of interrupted submissions.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Added interrupted-command handling, Cause-based failure extraction, success/failure alerts, and haptic copying of the returned OpenAI feedback thread ID.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Integrated feedback messages into Pretty's existing optimized feed build rather than replacing its optimistic and queued-message pipeline.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Adopted the selectedEnvironmentRuntime supplied by useThreadSelection, avoiding a redundant remote-environment runtime subscription.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Applied feedback provider detection to the effective outbound model selection while retaining upstream's active-session Codex fallback.
+- `apps/server/src/server.test.ts` — Integrated the parent ProviderService import and configurable test-layer override.
+- `apps/server/src/server.test.ts` — Integrated ProviderAdapterRequestError for the parent's provider adapter error-path tests.
+- `apps/server/src/ws.ts` — Integrated `ProviderUploadFeedbackError` for the parent's provider-upload feedback RPC behavior.
+- `apps/server/src/ws.ts` — Integrated the parent's `ProviderService` import and service acquisition without displacing T3 Pretty's provider-session directory.
+- `apps/web/src/components/ChatView.tsx` — Imported the parent's shared writeTextToClipboard helper for the surrounding feedback functionality.
+- `apps/web/src/components/ChatView.tsx` — Integrated the parent's feedback-upload guard so the composer reports "Sending feedback" and prevents conflicting sends while feedback is uploading, while retaining the existing message-loading guard.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Report queued-message persistence failures through setPendingConnectionError.. Reason: That presentation conflicts with T3 Pretty's authoritative native mobile Alert behavior and would produce competing error surfaces; draft and attachment restoration is still preserved in full.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Determine the feedback provider solely from thread.modelSelection.. Reason: T3 Pretty supports draft-level model/provider selection, so using the persisted thread model can intercept a feedback-looking command for the wrong outbound provider. The resolution uses the effective send model and retains upstream's session.providerName fallback.
