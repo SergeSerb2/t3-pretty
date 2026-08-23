@@ -51,12 +51,12 @@ describe("nextPullRequestEnvironmentId", () => {
 });
 
 describe("shouldRetryPullRequestListRestore", () => {
-  it("retries a named save once servers appear after an empty restore", () => {
+  it("retries a named save only when that saved server appears", () => {
     expect(shouldRetryPullRequestListRestore("env-1" as EnvironmentId, [], true)).toBe(false);
-    expect(shouldRetryPullRequestListRestore("env-1" as EnvironmentId, [env("env-1")], true)).toBe(
-      true,
-    );
     expect(shouldRetryPullRequestListRestore("env-1" as EnvironmentId, [env("env-2")], true)).toBe(
+      false,
+    );
+    expect(shouldRetryPullRequestListRestore("env-1" as EnvironmentId, [env("env-1")], true)).toBe(
       true,
     );
   });

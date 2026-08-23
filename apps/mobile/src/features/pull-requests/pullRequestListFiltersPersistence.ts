@@ -50,15 +50,19 @@ export function nextPullRequestEnvironmentId(
 }
 
 /**
- * A named save on an empty list can still be a hydrate flash. Retry restore when servers
- * appear; an empty list with no named save has nothing to wait for.
+ * A named save on an empty list can still be a hydrate flash. Retry restore only when the
+ * saved server itself appears; a different server is not the save coming in.
  */
 export function shouldRetryPullRequestListRestore(
   savedEnvironmentId: EnvironmentId | null,
   environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
   awaitingEmptyNamedSave: boolean,
 ): boolean {
-  return awaitingEmptyNamedSave && savedEnvironmentId !== null && environments.length > 0;
+  return (
+    awaitingEmptyNamedSave &&
+    savedEnvironmentId !== null &&
+    environments.some((environment) => environment.environmentId === savedEnvironmentId)
+  );
 }
 
 /**

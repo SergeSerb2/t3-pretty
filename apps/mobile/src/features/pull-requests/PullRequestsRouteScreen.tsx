@@ -120,6 +120,7 @@ export function PullRequestsRouteScreen() {
       setSelectedHost(restored.host);
       return;
     }
+    if (awaitingEmptyNamedSave) return;
     const next = nextPullRequestEnvironmentId(
       selectedEnvironmentId,
       preferredEnvironmentId,
