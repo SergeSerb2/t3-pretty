@@ -332,16 +332,11 @@ const NewTaskSheetStack = createNativeStackNavigator({
     }),
     NewTaskDraft: createNativeStackScreen({
       screen: NewTaskDraftRouteScreen,
-      linking: "draft",
-      options: {
-        headerBackVisible: false,
-        title: "",
+      linking: {
+        path: "draft",
+        // Pre-picker sheet URL. The model panel is inline on the draft now.
+        alias: ["draft/settings"],
       },
-    }),
-    // Pre-picker sheet URL. The model panel is inline on the draft now.
-    ThreadSettings: createNativeStackScreen({
-      screen: NewTaskDraftRouteScreen,
-      linking: "draft/settings",
       options: {
         headerBackVisible: false,
         title: "",

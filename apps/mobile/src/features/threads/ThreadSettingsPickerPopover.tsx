@@ -89,14 +89,18 @@ export function ThreadSettingsPickerPopover(props: {
   const [anchor, setAnchor] = useState<AnchorSnapshot | null>(null);
   const [modelQuery, setModelQuery] = useState("");
   const anchorRef = useRef<View | null>(null);
+  const searchInputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const iconSubtle = useThemeColor("--color-icon-subtle");
   const checkmarkColor = useThemeColor("--color-icon");
   const glassTint = useThemeColor("--color-glass-surface");
+  const placeholderColor = useThemeColor("--color-placeholder");
 
   const close = useCallback(() => {
-    Keyboard.dismiss();
+    if (searchInputRef.current?.isFocused()) {
+      Keyboard.dismiss();
+    }
     setModelQuery("");
     setAnchor(null);
   }, []);
@@ -243,13 +247,14 @@ export function ThreadSettingsPickerPopover(props: {
                             type="monochrome"
                           />
                           <TextInput
+                            ref={searchInputRef}
                             accessibilityLabel="Find a model"
                             autoCapitalize="none"
                             autoCorrect={false}
                             className="min-w-0 flex-1 text-sm text-foreground"
                             onChangeText={setModelQuery}
                             placeholder="Find a model"
-                            placeholderTextColorClassName="accent-placeholder"
+                            placeholderTextColor={placeholderColor}
                             returnKeyType="search"
                             value={modelQuery}
                           />
