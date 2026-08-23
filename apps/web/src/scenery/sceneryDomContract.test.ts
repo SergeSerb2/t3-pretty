@@ -132,6 +132,25 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toContain("var(--chat-composer-glass-surface) var(--glass-opacity)");
   });
 
+  it("keeps hover chrome on an inset top drawer's joined outline", () => {
+    const joinedRim =
+      /\.chat-composer-glass-shell:has\(\.chat-composer-top-drawer\)\s+\[data-chat-composer-main-surface="true"\]::after\s*\{[^}]+\}/.exec(
+        indexCssSource,
+      )?.[0];
+    const drawerHover =
+      /\.chat-composer-glass-shell:hover \.chat-composer-top-drawer::before\s*\{[^}]+\}/.exec(
+        indexCssSource,
+      )?.[0];
+    const drawerSpecular =
+      /\.chat-composer-glass-shell:has\(\.chat-composer-top-drawer\) \.chat-composer-specular\s*\{[^}]+\}/.exec(
+        indexCssSource,
+      )?.[0];
+
+    expect(joinedRim).toContain("clip-path: polygon(");
+    expect(drawerHover).toContain("border-color:");
+    expect(drawerSpecular).toContain("display: none;");
+  });
+
   it("header controls still paint from the --toolbar-control var", () => {
     expect(indexCssSource).toContain("[data-chat-header] [data-toolbar-control]");
     expect(indexCssSource).toContain("background-color: var(--toolbar-control)");
