@@ -594,10 +594,13 @@ describe("EnvironmentThreads", () => {
     expect(warmStates.get(key)?.lastSequence).toBe(5);
     expect(warmStates.get(key)?.thread.title).toBe("Newer");
 
-    warmStates.set(key, warmBlob("Same sequence older generation", 5, 1));
-    expect(warmStates.get(key)?.thread.title).toBe("Newer");
+    warmStates.set(key, warmBlob("Same sequence same generation", 5, 1));
+    expect(warmStates.get(key)?.thread.title).toBe("Same sequence same generation");
 
     warmStates.set(key, warmBlob("Same sequence newer generation", 5, 2));
+    expect(warmStates.get(key)?.thread.title).toBe("Same sequence newer generation");
+
+    warmStates.set(key, warmBlob("Same sequence older generation", 5, 1));
     expect(warmStates.get(key)?.thread.title).toBe("Same sequence newer generation");
   });
 

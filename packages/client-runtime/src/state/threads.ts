@@ -156,8 +156,10 @@ interface WarmThreadStateRegistry {
   readonly isDeleted: (key: string) => boolean;
   /**
    * Publish a handoff blob. A lower lastSequence, an equal lastSequence with
-   * an older-or-equal generation, or a tombstoned key is ignored. Stores a
-   * cloned snapshot so later in-place updates cannot rewind a successor.
+   * an older generation, or a tombstoned key is ignored. Same-generation
+   * equal-sequence writes refresh the blob (tool progress, merged pages).
+   * Stores a cloned snapshot so later in-place updates cannot rewind a
+   * successor.
    */
   readonly set: (key: string, entry: WarmThreadState) => void;
   /**
@@ -201,7 +203,7 @@ export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
         if (entry.lastSequence < current.lastSequence) {
           return;
         }
-        if (entry.lastSequence === current.lastSequence && entry.generation <= current.generation) {
+        if (entry.lastSequence === current.lastSequence && entry.generation < current.generation) {
           return;
         }
       }
