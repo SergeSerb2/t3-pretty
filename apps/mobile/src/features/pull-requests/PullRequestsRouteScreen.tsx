@@ -14,6 +14,10 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { useWorkspaceState } from "../../state/workspace";
 import { useHomeListOptions } from "../home/home-list-options";
 import { PullRequestsScreen, type PullRequestListEnvironment } from "./PullRequestsScreen";
+import {
+  readPersistedPullRequestListFilters,
+  writePersistedPullRequestListFilters,
+} from "./pullRequestListFiltersPersistence";
 import { usePullRequestList } from "./usePullRequestList";
 
 export function PullRequestsRouteScreen() {
@@ -22,11 +26,14 @@ export function PullRequestsRouteScreen() {
   const serverConfigs = useServerConfigs();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const { environments: workspaceEnvironments } = useWorkspaceState();
+  const savedFilters = readPersistedPullRequestListFilters();
   const [searchQuery, setSearchQuery] = useState("");
-  const [involvement, setInvolvement] = useState<PullRequestInvolvement>("all");
-  const [state, setState] = useState<PullRequestListState>("open");
-  const [selectedProjectId, setSelectedProjectId] = useState<ProjectId | undefined>(undefined);
-  const [selectedHost, setSelectedHost] = useState<string | undefined>(undefined);
+  const [involvement, setInvolvement] = useState<PullRequestInvolvement>(savedFilters.involvement);
+  const [state, setState] = useState<PullRequestListState>(savedFilters.state);
+  const [selectedProjectId, setSelectedProjectId] = useState<ProjectId | undefined>(
+    savedFilters.projectId,
+  );
+  const [selectedHost, setSelectedHost] = useState<string | undefined>(savedFilters.host);
 
   const environments = useMemo<ReadonlyArray<PullRequestListEnvironment>>(
     () =>
@@ -67,9 +74,10 @@ export function PullRequestsRouteScreen() {
       ? options.selectedEnvironmentId
       : (connectedCapable[0]?.environmentId ?? capable[0]?.environmentId ?? null);
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
-    preferredEnvironmentId,
+    savedFilters.environmentId ?? preferredEnvironmentId,
   );
   useEffect(() => {
+    if (environments.length === 0) return;
     if (
       selectedEnvironmentId === null ||
       !environments.some((environment) => environment.environmentId === selectedEnvironmentId)
@@ -78,12 +86,33 @@ export function PullRequestsRouteScreen() {
     }
   }, [environments, preferredEnvironmentId, selectedEnvironmentId]);
   const previousEnvironmentId = useRef(selectedEnvironmentId);
+  const committedEnvironment = useRef(false);
   useEffect(() => {
+    if (
+      selectedEnvironmentId !== null &&
+      environments.some((environment) => environment.environmentId === selectedEnvironmentId)
+    ) {
+      if (!committedEnvironment.current) {
+        committedEnvironment.current = true;
+        previousEnvironmentId.current = selectedEnvironmentId;
+        return;
+      }
+    }
     if (previousEnvironmentId.current === selectedEnvironmentId) return;
     previousEnvironmentId.current = selectedEnvironmentId;
+    if (!committedEnvironment.current) return;
     setSelectedProjectId(undefined);
     setSelectedHost(undefined);
-  }, [selectedEnvironmentId]);
+  }, [environments, selectedEnvironmentId]);
+  useEffect(() => {
+    writePersistedPullRequestListFilters({
+      involvement,
+      state,
+      environmentId: selectedEnvironmentId,
+      projectId: selectedProjectId,
+      host: selectedHost,
+    });
+  }, [involvement, selectedEnvironmentId, selectedHost, selectedProjectId, state]);
 
   const selected = environments.find(
     (environment) => environment.environmentId === selectedEnvironmentId,
@@ -161,6 +190,12 @@ export function PullRequestsRouteScreen() {
         });
       }}
       onStateChange={setState}
+      onClearFilters={() => {
+        setInvolvement("all");
+        setState("open");
+        setSelectedProjectId(undefined);
+        setSelectedHost(undefined);
+      }}
       projects={scopedProjects}
       querySettled={list.querySettled}
       refreshing={list.refreshing}

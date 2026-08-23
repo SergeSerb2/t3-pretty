@@ -64,6 +64,14 @@ import {
   type PullRequestExpectedHost,
   type PullRequestFilterOption,
 } from "../components/pullRequest/PullRequestListFilters";
+import {
+  CLEARED_PULL_REQUEST_LIST_SEARCH,
+  persistedFiltersFromSearch,
+  readPersistedPullRequestListFilters,
+  searchFromPersistedFilters,
+  shouldRestorePersistedListFilters,
+  writePersistedPullRequestListFilters,
+} from "../components/pullRequest/pullRequestListFiltersPersistence";
 import { PullRequestListEmptyState } from "../components/pullRequest/PullRequestListEmptyState";
 import { PullRequestListGhost } from "../components/pullRequest/PullRequestGhosts";
 import { PullRequestRow } from "../components/pullRequest/PullRequestRow";
@@ -183,40 +191,53 @@ const EMPTY_TERMINAL_LABELS = new Map<string, string>();
 const EMPTY_PENDING_SURFACES = new Set<string>();
 
 export const Route = createFileRoute("/_chat/pull-requests")({
-  validateSearch: (raw: Record<string, unknown>): PullRequestsSearch => ({
-    involvement:
-      raw.involvement === "reviewing" || raw.involvement === "authored" ? raw.involvement : "all",
-    state:
-      raw.state === "closed" || raw.state === "merged" || raw.state === "all" ? raw.state : "open",
-    ...(typeof raw.repository === "string" && raw.repository
-      ? { repository: raw.repository.slice(0, 200) }
-      : {}),
-    ...(typeof raw.number === "number" && Number.isInteger(raw.number) && raw.number > 0
-      ? { number: raw.number }
-      : {}),
-    ...(typeof raw.projectId === "string" && raw.projectId
-      ? { projectId: raw.projectId as ProjectId }
-      : {}),
-    ...(typeof raw.environmentId === "string" && raw.environmentId
-      ? { environmentId: raw.environmentId as EnvironmentId }
-      : {}),
-    ...(typeof raw.host === "string" && raw.host ? { host: raw.host.slice(0, 200) } : {}),
-    ...(typeof raw.selectedProjectId === "string" && raw.selectedProjectId
-      ? { selectedProjectId: raw.selectedProjectId as ProjectId }
-      : {}),
-    ...(typeof raw.selectedEnvironmentId === "string" && raw.selectedEnvironmentId
-      ? { selectedEnvironmentId: raw.selectedEnvironmentId as EnvironmentId }
-      : {}),
-    ...(typeof raw.q === "string" && raw.q ? { q: raw.q.slice(0, 200) } : {}),
-    ...(raw.draft === "only" || raw.draft === "hide" ? { draft: raw.draft } : {}),
-    ...(raw.review === "approved" ||
-    raw.review === "changes-requested" ||
-    raw.review === "review-required" ||
-    raw.review === "none"
-      ? { review: raw.review }
-      : {}),
-    ...(raw.checks === "passing" || raw.checks === "failing" ? { checks: raw.checks } : {}),
-  }),
+  validateSearch: (raw: Record<string, unknown>): PullRequestsSearch => {
+    const source = shouldRestorePersistedListFilters(raw)
+      ? { ...searchFromPersistedFilters(readPersistedPullRequestListFilters()), ...raw }
+      : raw;
+    return {
+      involvement:
+        source.involvement === "reviewing" || source.involvement === "authored"
+          ? source.involvement
+          : "all",
+      state:
+        source.state === "closed" || source.state === "merged" || source.state === "all"
+          ? source.state
+          : "open",
+      ...(typeof source.repository === "string" && source.repository
+        ? { repository: source.repository.slice(0, 200) }
+        : {}),
+      ...(typeof source.number === "number" && Number.isInteger(source.number) && source.number > 0
+        ? { number: source.number }
+        : {}),
+      ...(typeof source.projectId === "string" && source.projectId
+        ? { projectId: source.projectId as ProjectId }
+        : {}),
+      ...(typeof source.environmentId === "string" && source.environmentId
+        ? { environmentId: source.environmentId as EnvironmentId }
+        : {}),
+      ...(typeof source.host === "string" && source.host
+        ? { host: source.host.slice(0, 200) }
+        : {}),
+      ...(typeof source.selectedProjectId === "string" && source.selectedProjectId
+        ? { selectedProjectId: source.selectedProjectId as ProjectId }
+        : {}),
+      ...(typeof source.selectedEnvironmentId === "string" && source.selectedEnvironmentId
+        ? { selectedEnvironmentId: source.selectedEnvironmentId as EnvironmentId }
+        : {}),
+      ...(typeof source.q === "string" && source.q ? { q: source.q.slice(0, 200) } : {}),
+      ...(source.draft === "only" || source.draft === "hide" ? { draft: source.draft } : {}),
+      ...(source.review === "approved" ||
+      source.review === "changes-requested" ||
+      source.review === "review-required" ||
+      source.review === "none"
+        ? { review: source.review }
+        : {}),
+      ...(source.checks === "passing" || source.checks === "failing"
+        ? { checks: source.checks }
+        : {}),
+    };
+  },
   component: PullRequestsRouteView,
 });
 
@@ -451,6 +472,7 @@ function PullRequestsRouteView() {
       // Hide the old selection while retaining peer PR tabs for parallel reviews.
       useRightPanelStore.getState().close(rightPanelRef);
     }
+    writePersistedPullRequestListFilters(persistedFiltersFromSearch({ ...search, ...patch }));
     updateSearch({ ...patch, ...clearedSelection });
   };
 
@@ -1479,6 +1501,7 @@ function PullRequestsRouteView() {
       onProject={(projectId, environmentId) =>
         updateListScope(environmentId === undefined ? { projectId } : { projectId, environmentId })
       }
+      onClear={() => updateListScope(CLEARED_PULL_REQUEST_LIST_SEARCH)}
     />
   );
   const columnProps = {

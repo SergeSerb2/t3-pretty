@@ -42,6 +42,8 @@ T3 Code works with the platforms your team already uses:
 - For open GitHub PRs, open the git menu beside the PR action to see Codex Auto Review's public
   state: running, complete, feedback, an earlier result, or no public signal
 - Open several reviews from the **Pull requests** page as tabs in the right panel
+- List filters stay where you left them when you come back. **Clear filters** in the filter
+  menu returns the list to open pull requests across every project
 - On iPhone and iPad, open **Pull Requests** from the home header or sidebar to browse, review,
   merge, comment, and resolve conflicts in the app. A thread's git controls and pull request
   links in the conversation open the same native manager instead of the host in the browser

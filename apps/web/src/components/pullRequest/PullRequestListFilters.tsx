@@ -12,6 +12,7 @@ import {
   CircleSlashIcon,
   CircleXIcon,
   EyeOffIcon,
+  FilterXIcon,
   FolderGit2Icon,
   GitPullRequestDraftIcon,
   LayersIcon,
@@ -30,6 +31,7 @@ import { Button } from "../ui/button";
 import {
   Menu,
   MenuGroupLabel,
+  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -208,6 +210,7 @@ export function PullRequestFiltersMenu({
   projectEnvironmentId,
   unavailable,
   onProject,
+  onClear,
 }: {
   state: PullRequestListState;
   stateOptions: ReadonlyArray<PullRequestFilterOption<PullRequestListState>>;
@@ -253,6 +256,7 @@ export function PullRequestFiltersMenu({
   unavailable: ReadonlyMap<string, string>;
   /** The environment comes with the project id, since picking a row picks a specific server's copy of it. */
   onProject: (projectId: ProjectId | undefined, environmentId: EnvironmentId | undefined) => void;
+  onClear: () => void;
 }) {
   const filtered =
     state !== "open" ||
@@ -292,6 +296,17 @@ export function PullRequestFiltersMenu({
         ) : null}
       </MenuTrigger>
       <MenuPopup align="end" side="bottom" className="min-w-56">
+        {filtered ? (
+          <>
+            <MenuItem onClick={onClear}>
+              <span className="flex min-w-0 items-center gap-2">
+                <FilterXIcon aria-hidden className="size-3.5" />
+                Clear filters
+              </span>
+            </MenuItem>
+            <MenuSeparator />
+          </>
+        ) : null}
         <PullRequestFilterRadioGroup
           label="State"
           value={state}

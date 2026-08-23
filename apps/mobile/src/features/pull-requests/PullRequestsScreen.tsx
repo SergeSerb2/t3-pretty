@@ -97,6 +97,7 @@ function PullRequestsHeader(props: {
   readonly onHostChange: (host: string | undefined) => void;
   readonly onInvolvementChange: (involvement: PullRequestInvolvement) => void;
   readonly onRefresh: () => void;
+  readonly onClearFilters: () => void;
 }) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -110,6 +111,15 @@ function PullRequestsHeader(props: {
   const filterMenu = {
     title: "Pull request options",
     items: [
+      ...(props.hasCustomFilter
+        ? [
+            {
+              type: "action" as const,
+              title: "Clear filters",
+              onPress: props.onClearFilters,
+            },
+          ]
+        : []),
       {
         type: "submenu" as const,
         title: "Involvement",
@@ -192,6 +202,7 @@ function PullRequestsHeader(props: {
 
   const androidFilterActions = useMemo<MenuAction[]>(
     () => [
+      ...(props.hasCustomFilter ? [{ id: "clear", title: "Clear filters" }] : []),
       {
         id: "involvement",
         title: "Involvement",
@@ -257,6 +268,7 @@ function PullRequestsHeader(props: {
     ],
     [
       props.environments,
+      props.hasCustomFilter,
       props.hosts,
       props.involvement,
       props.projects,
@@ -270,7 +282,8 @@ function PullRequestsHeader(props: {
   const handleAndroidFilterAction = useCallback(
     (event: { nativeEvent: { event: string } }) => {
       const action = event.nativeEvent.event;
-      if (action === "involvement:all") props.onInvolvementChange("all");
+      if (action === "clear") props.onClearFilters();
+      else if (action === "involvement:all") props.onInvolvementChange("all");
       else if (action === "involvement:reviewing") props.onInvolvementChange("reviewing");
       else if (action === "involvement:authored") props.onInvolvementChange("authored");
       else if (action === "project:all") props.onProjectChange(undefined);
@@ -409,6 +422,11 @@ function PullRequestsHeader(props: {
             separateBackground
             title="Pull request options"
           >
+            {props.hasCustomFilter ? (
+              <NativeHeaderToolbar.MenuAction onPress={props.onClearFilters}>
+                <NativeHeaderToolbar.Label>Clear filters</NativeHeaderToolbar.Label>
+              </NativeHeaderToolbar.MenuAction>
+            ) : null}
             <NativeHeaderToolbar.Menu title="Involvement">
               <NativeHeaderToolbar.MenuAction
                 isOn={props.involvement === "all"}
@@ -553,6 +571,7 @@ export function PullRequestsScreen(props: {
   readonly onHostChange: (host: string | undefined) => void;
   readonly onInvolvementChange: (involvement: PullRequestInvolvement) => void;
   readonly onStateChange: (state: PullRequestListState) => void;
+  readonly onClearFilters: () => void;
   readonly onRefresh: () => void;
   readonly onLoadMore: () => void;
   readonly onSelect: (entry: PullRequestListEntry) => void;
@@ -561,6 +580,7 @@ export function PullRequestsScreen(props: {
   const refreshTint = useThemeColor("--color-icon");
   const hasCustomFilter =
     props.involvement !== "all" ||
+    props.state !== "open" ||
     props.selectedProjectId !== undefined ||
     props.selectedHost !== undefined;
   const showProvider = props.hosts.length > 1;
@@ -736,6 +756,7 @@ export function PullRequestsScreen(props: {
         hasCustomFilter={hasCustomFilter}
         hosts={props.hosts}
         involvement={props.involvement}
+        onClearFilters={props.onClearFilters}
         onEnvironmentChange={props.onEnvironmentChange}
         onHostChange={props.onHostChange}
         onInvolvementChange={props.onInvolvementChange}
