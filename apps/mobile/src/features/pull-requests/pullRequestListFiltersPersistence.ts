@@ -48,3 +48,25 @@ export function nextPullRequestEnvironmentId(
   }
   return preferredEnvironmentId;
 }
+
+/**
+ * After the environment list has settled: keep project/host only when the saved server is still
+ * present. A missing server (including an empty list) falls back to `preferred` without them.
+ */
+export function restorePullRequestListFilters(
+  saved: PersistedPullRequestListFilters,
+  preferredEnvironmentId: EnvironmentId | null,
+  environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
+): Pick<PersistedPullRequestListFilters, "environmentId" | "projectId" | "host"> {
+  const environmentId = nextPullRequestEnvironmentId(
+    saved.environmentId,
+    preferredEnvironmentId,
+    environments,
+  );
+  const keepScope = saved.environmentId !== null && environmentId === saved.environmentId;
+  return {
+    environmentId,
+    projectId: keepScope ? saved.projectId : undefined,
+    host: keepScope ? saved.host : undefined,
+  };
+}

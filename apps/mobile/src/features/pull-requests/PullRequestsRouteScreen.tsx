@@ -17,6 +17,7 @@ import { PullRequestsScreen, type PullRequestListEnvironment } from "./PullReque
 import {
   nextPullRequestEnvironmentId,
   readPersistedPullRequestListFilters,
+  restorePullRequestListFilters,
   writePersistedPullRequestListFilters,
 } from "./pullRequestListFiltersPersistence";
 import { usePullRequestList } from "./usePullRequestList";
@@ -27,7 +28,7 @@ export function PullRequestsRouteScreen() {
   const serverConfigs = useServerConfigs();
   const { savedConnectionsById, isLoadingSavedConnection } = useSavedRemoteConnections();
   const { environments: workspaceEnvironments } = useWorkspaceState();
-  const savedFilters = readPersistedPullRequestListFilters();
+  const savedFilters = useRef(readPersistedPullRequestListFilters()).current;
   const [searchQuery, setSearchQuery] = useState("");
   const [involvement, setInvolvement] = useState<PullRequestInvolvement>(savedFilters.involvement);
   const [state, setState] = useState<PullRequestListState>(savedFilters.state);
@@ -77,8 +78,31 @@ export function PullRequestsRouteScreen() {
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
     savedFilters.environmentId ?? preferredEnvironmentId,
   );
+  const restoredScope = useRef(false);
   useEffect(() => {
     if (isLoadingSavedConnection) return;
+    if (!restoredScope.current) {
+      if (environments.length === 0) {
+        // Catalog is ready with no servers: drop the saved id so it cannot stick, but wait
+        // for a non-empty list before committing restore — hydrate can emit empty first.
+        if (selectedEnvironmentId !== preferredEnvironmentId) {
+          setSelectedEnvironmentId(preferredEnvironmentId);
+          setSelectedProjectId(undefined);
+          setSelectedHost(undefined);
+        }
+        return;
+      }
+      const restored = restorePullRequestListFilters(
+        savedFilters,
+        preferredEnvironmentId,
+        environments,
+      );
+      restoredScope.current = true;
+      setSelectedEnvironmentId(restored.environmentId);
+      setSelectedProjectId(restored.projectId);
+      setSelectedHost(restored.host);
+      return;
+    }
     const next = nextPullRequestEnvironmentId(
       selectedEnvironmentId,
       preferredEnvironmentId,
@@ -86,15 +110,16 @@ export function PullRequestsRouteScreen() {
     );
     if (next !== selectedEnvironmentId) {
       setSelectedEnvironmentId(next);
+      setSelectedProjectId(undefined);
+      setSelectedHost(undefined);
     }
-  }, [environments, isLoadingSavedConnection, preferredEnvironmentId, selectedEnvironmentId]);
-  const previousEnvironmentId = useRef(selectedEnvironmentId);
-  useEffect(() => {
-    if (previousEnvironmentId.current === selectedEnvironmentId) return;
-    previousEnvironmentId.current = selectedEnvironmentId;
-    setSelectedProjectId(undefined);
-    setSelectedHost(undefined);
-  }, [selectedEnvironmentId]);
+  }, [
+    environments,
+    isLoadingSavedConnection,
+    preferredEnvironmentId,
+    savedFilters,
+    selectedEnvironmentId,
+  ]);
   useEffect(() => {
     writePersistedPullRequestListFilters({
       involvement,
@@ -184,6 +209,9 @@ export function PullRequestsRouteScreen() {
       onClearFilters={() => {
         setInvolvement("all");
         setState("open");
+        setSelectedEnvironmentId(
+          nextPullRequestEnvironmentId(null, preferredEnvironmentId, environments),
+        );
         setSelectedProjectId(undefined);
         setSelectedHost(undefined);
       }}
