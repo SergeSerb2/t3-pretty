@@ -24,6 +24,7 @@ permissions:
 jobs:
   sync:
     name: Sync newest upstream nightly
+    if: github.repository != 'SergeSerb2/t3-pretty'
     # macos-release can resolve CURSOR_API_KEY and CLI_PROXY_API_KEY.
     # Hosted Linux cannot resolve CURSOR_API_KEY.
     runs-on: macos-latest

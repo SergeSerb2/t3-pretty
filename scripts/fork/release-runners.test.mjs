@@ -22,6 +22,14 @@ const relayWorkflow = NodeFS.readFileSync(
   NodePath.resolve(here, "../../.github/workflows/deploy-relay.yml"),
   "utf8",
 );
+const publicReleaseWorkflow = NodeFS.readFileSync(
+  NodePath.resolve(here, "../../.github/workflows/public-release.yml"),
+  "utf8",
+);
+const upstreamSyncWorkflow = NodeFS.readFileSync(
+  NodePath.resolve(here, "../../.github/workflows/fork-upstream-sync.yml"),
+  "utf8",
+);
 
 function jobBlock(source, jobId) {
   const start = source.indexOf(`\n  ${jobId}:\n`);
@@ -36,6 +44,7 @@ describe("T3 Pretty release runner placement", () => {
     const preflight = jobBlock(desktopWorkflow, "preflight");
     const wsl = jobBlock(desktopWorkflow, "build_wsl_node_pty");
 
+    assert.include(desktopWorkflow, "T3CODE_BUILD_FLAVOR: internal");
     assert.include(preflight, "runs-on: ubuntu-latest");
     assert.include(wsl, "runs-on: ubuntu-latest");
     assert.notInclude(desktopWorkflow, "\n  build_macos:\n");
@@ -130,8 +139,17 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(publishCli, "git fetch --force --tags upstream");
     assert.notInclude(publishCli, "T3_FORK_BUILD_FLOOR");
     assert.notInclude(publishCli, "resolve-fork-release.mjs");
+    assert.include(publishCli, "T3CODE_BUILD_FLAVOR=internal");
     assert.include(publishCli, "latest-mac.yml");
     assert.include(publishCli, "https://vite.plus");
+    const installCli = NodeFS.readFileSync(NodePath.resolve(here, "install-cli.sh"), "utf8");
+    assert.include(installCli, "https://github.com/SergeSerb2/t3-pretty/releases/latest/download");
+    assert.include(installCli, "turn on T3 Connect");
+    assert.include(installCli, "publish-cli.sh renders the internal R2/Surge copy");
+    assert.include(publishCli, 'scripts/fork/install-cli.sh >"$tmp/install.sh"');
+    assert.notInclude(publishCli, 'cp scripts/fork/install-cli.sh "$tmp/install.sh"');
+    assert.include(publishCli, "s|T3 Connect|Surge Connect|g");
+    assert.include(publishCli, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");
   });
 
   it("pins macos-release packaging steps to os=macos agents", () => {
@@ -139,7 +157,7 @@ describe("T3 Pretty release runner placement", () => {
     // agent; DMG/iOS/relay/sync must never be assigned to a Linux box.
     // upstream-sync, macos-dmg, ios-mobile, deploy-relay — reviews stay
     // queue-wide.
-    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 4);
+    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 5);
   });
 
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
@@ -328,6 +346,69 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(relayWorkflow, "relay.sergeserbinenko.com");
     assert.include(relayWorkflow, "load-buildkite-secrets.sh");
     assert.include(relayWorkflow, "Require relay deploy credentials");
+  });
+
+  it("keeps public releases manual and internal automation off the GitHub mirror", () => {
+    const publicPreflight = jobBlock(publicReleaseWorkflow, "preflight");
+    const publicDesktop = jobBlock(publicReleaseWorkflow, "desktop");
+    const publicCli = jobBlock(publicReleaseWorkflow, "cli");
+    const publicWeb = jobBlock(publicReleaseWorkflow, "web");
+    const publicPages = jobBlock(publicReleaseWorkflow, "deploy_pages");
+    const publicRelease = jobBlock(publicReleaseWorkflow, "release");
+
+    assert.notInclude(publicReleaseWorkflow, "\n  push:");
+    assert.notInclude(publicReleaseWorkflow, "\n  schedule:");
+    assert.include(publicReleaseWorkflow, "T3CODE_BUILD_FLAVOR: public");
+    assert.include(publicReleaseWorkflow, "T3CODE_WEB_BASE_PATH: /t3-pretty/");
+    assert.include(publicDesktop, "VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/");
+    assert.include(publicWeb, "VITE_HOSTED_APP_URL: https://sergeserb2.github.io/t3-pretty/");
+    assert.include(publicWeb, 'VITE_CONNECT_CLI_AUTH_ENABLED: "0"');
+    assert.notInclude(publicCli, "VITE_HOSTED_APP_URL");
+    assert.include(publicReleaseWorkflow, '[[ "$REF" == "refs/heads/main" ]]');
+    assert.include(publicReleaseWorkflow, "name: wsl-node-pty-x64");
+    assert.include(publicReleaseWorkflow, "pattern: public-*");
+    assert.include(publicReleaseWorkflow, "cp scripts/fork/install-cli.sh public-cli/install.sh");
+    assert.notInclude(publicReleaseWorkflow, "sed -i");
+    assert.include(publicPreflight, "github.repository == 'SergeSerb2/t3-pretty'");
+    assert.notInclude(publicWeb, "configure-pages");
+    assert.notInclude(publicWeb, "upload-pages-artifact");
+    assert.include(publicPages, "pages: write");
+    assert.include(publicPages, "id-token: write");
+    assert.include(publicPages, "actions/download-artifact@v8");
+    assert.include(publicPages, "actions/configure-pages@v5");
+    assert.include(publicPages, "actions/upload-pages-artifact@v5");
+    assert.include(publicReleaseWorkflow, "needs.wsl_node_pty.result == 'success'");
+    for (const job of ["desktop", "cli", "mobile", "web"]) {
+      assert.include(publicRelease, `needs.${job}.result == 'success'`);
+    }
+    assert.include(publicReleaseWorkflow, "--latest");
+    assert.include(publicReleaseWorkflow, "latest_public_version");
+    assert.include(publicReleaseWorkflow, "version $VERSION is older than latest public release");
+    assert.include(publicReleaseWorkflow, "cp apps/web/dist/index.html apps/web/dist/404.html");
+    for (const asset of [
+      "latest-mac.yml",
+      "latest-linux.yml",
+      "latest.yml",
+      "t3.tgz",
+      "install.sh",
+      "*.dmg",
+      "*.zip",
+      "*.AppImage",
+      "*.exe",
+    ]) {
+      assert.include(publicReleaseWorkflow, asset);
+    }
+    assert.equal(
+      (publicReleaseWorkflow.match(/github\.repository == 'SergeSerb2\/t3-pretty'/gu) || []).length,
+      8,
+    );
+    assert.equal(
+      (publicReleaseWorkflow.match(/needs\.preflight\.result == 'success'/gu) || []).length,
+      6,
+    );
+    for (const workflow of [desktopWorkflow, relayWorkflow, upstreamSyncWorkflow]) {
+      assert.include(workflow, "github.repository != 'SergeSerb2/t3-pretty'");
+    }
   });
 });
 

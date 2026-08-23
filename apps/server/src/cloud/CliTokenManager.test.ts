@@ -1,4 +1,5 @@
 import { readConnectAuthorizeRequest } from "@t3tools/shared/connectAuth";
+import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -97,7 +98,7 @@ it("formats loopback authorization with a headless-host fallback", () => {
   assert.equal(
     CliTokenManager.formatLoopbackAuthorizationPrompt("https://clerk.example.test/authorize"),
     [
-      "Open this URL to authorize T3 Connect:",
+      `Open this URL to authorize ${CONNECT_BRANDING.connectName}:`,
       "  https://clerk.example.test/authorize",
       "",
       "Press \u001b[1mEnter\u001b[22m to open it in your browser.",

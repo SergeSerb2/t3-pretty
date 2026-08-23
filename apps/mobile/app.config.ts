@@ -1,14 +1,21 @@
 import type { ExpoConfig } from "expo/config";
 
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
-import { loadRepoEnv, readReleaseTrainVersion } from "../../scripts/lib/public-config.ts";
+import {
+  loadRepoEnv,
+  readReleaseTrainVersion,
+  type T3CodeBuildFlavor,
+} from "../../scripts/lib/public-config.ts";
 
 type AppVariant = "development" | "preview" | "production";
 
 const repoEnv = loadRepoEnv();
+// loadRepoEnv projects the selected flavor to EXPO_PUBLIC_T3CODE_BUILD_FLAVOR,
+// which Metro inlines for shared client branding.
 Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
+const isInternalBuild = repoEnv.T3CODE_BUILD_FLAVOR === "internal";
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
@@ -65,26 +72,47 @@ const RELEASE_ASSETS = {
   androidNotificationColor: "#8FCFA8",
 } as const;
 
-// The fork's Clerk instance hosts the passkey relying party + universal links.
-// Derive it from the configured publishable key (pk_live_<base64 domain>$) so
-// swapping Clerk instances via env cannot leave stale associated domains.
-const FORK_RELYING_PARTY = "clerk.sergeserbinenko.com";
+const INTERNAL_RELEASE_ASSETS = {
+  appIcon: fromRepoRoot(BRAND_ASSET_PATHS.internalIosIconPng),
+  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.internalIosIconPng),
+  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.internalIosIconPng),
+  androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.internalAndroidAdaptiveForegroundPng),
+  androidAdaptiveBackgroundColor: "#14261B",
+  androidMonochromeIcon: "./assets/t3-pretty-internal-android-icon-mark.png",
+  // Android notifications require a neutral white alpha mask; the forest color comes from below.
+  androidNotificationIcon: "./assets/android-notification-icon.png",
+  androidNotificationColor: "#14261B",
+} as const;
 
-function resolveRelyingParty(publishableKey: string | undefined): string {
-  if (!publishableKey) return FORK_RELYING_PARTY;
+// Clerk hosts the passkey relying party + universal links. Derive it from the
+// selected publishable key so changing build flavors cannot leave stale domains.
+const RELYING_PARTY_FALLBACK = {
+  public: "clerk.t3.codes",
+  internal: "clerk.sergeserbinenko.com",
+} satisfies Record<T3CodeBuildFlavor, string>;
+
+export function resolveRelyingParty(
+  publishableKey: string | undefined,
+  buildFlavor: T3CodeBuildFlavor,
+): string {
+  const fallback = RELYING_PARTY_FALLBACK[buildFlavor];
+  if (!publishableKey) return fallback;
   const encoded = publishableKey.replace(/^pk_(?:live|test)_/, "");
   try {
     const decoded = Buffer.from(encoded, "base64").toString("utf8");
-    return decoded.endsWith("$") ? decoded.slice(0, -1) : FORK_RELYING_PARTY;
+    return decoded.endsWith("$") ? decoded.slice(0, -1) : fallback;
   } catch {
-    return FORK_RELYING_PARTY;
+    return fallback;
   }
 }
 
-const relyingParty = resolveRelyingParty(repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY);
+const relyingParty = resolveRelyingParty(
+  repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY,
+  isInternalBuild ? "internal" : "public",
+);
 
 // Schemes stay `t3code*` on purpose: pairing QR codes and hosted pair links
-// encode the upstream scheme, and Surge Connect keeps technical identifiers
+// encode the upstream scheme, and both services keep technical identifiers
 // upstream-compatible (see docs/internals/t3-connect.md).
 const VARIANT_CONFIG = {
   development: {
@@ -104,12 +132,18 @@ const VARIANT_CONFIG = {
     assets: PREVIEW_ASSETS,
   },
   production: {
-    appName: "T3 Pretty",
+    appName: isInternalBuild ? "T3 Pretty Internal" : "T3 Pretty",
+    // Both Clerk deployments allow the upstream-compatible production scheme.
+    // Distinct bundle/package IDs keep the applications installable together.
     scheme: "t3code",
-    iosBundleIdentifier: "com.sergeserbinenko.t3pretty",
-    androidPackage: "com.sergeserbinenko.t3pretty",
+    iosBundleIdentifier: isInternalBuild
+      ? "com.sergeserbinenko.t3pretty"
+      : "com.sergeserbinenko.t3pretty.public",
+    androidPackage: isInternalBuild
+      ? "com.sergeserbinenko.t3pretty"
+      : "com.sergeserbinenko.t3pretty.public",
     relyingParty,
-    assets: RELEASE_ASSETS,
+    assets: isInternalBuild ? INTERNAL_RELEASE_ASSETS : RELEASE_ASSETS,
   },
 } as const;
 
@@ -404,6 +438,7 @@ const config: ExpoConfig = {
   ],
   extra: {
     appVariant: APP_VARIANT,
+    buildFlavor: repoEnv.T3CODE_BUILD_FLAVOR,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,

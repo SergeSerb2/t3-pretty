@@ -28,6 +28,22 @@ describe("connectAuth", () => {
     });
   });
 
+  it("preserves a hosted project-site base path", () => {
+    const hostedAppUrl = "https://sergeserb2.github.io/t3-pretty/";
+    const authorizeUrl = new URL(
+      buildConnectAuthorizeRequestUrl({
+        hostedAppUrl,
+        state: "state-1",
+        challenge: "challenge-1",
+      }),
+    );
+
+    expect(authorizeUrl.pathname).toBe("/t3-pretty/connect");
+    expect(connectCallbackUrl(hostedAppUrl)).toBe(
+      "https://sergeserb2.github.io/t3-pretty/connect/callback",
+    );
+  });
+
   it("rejects authorize requests missing state or challenge", () => {
     expect(readConnectAuthorizeRequest(new URL("https://app.t3.codes/connect"))).toBeNull();
     expect(

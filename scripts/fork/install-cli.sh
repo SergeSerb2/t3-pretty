@@ -1,9 +1,10 @@
 #!/bin/sh
 # Install the T3 Pretty headless CLI (not upstream `npx t3`).
-# Usage: curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
+# This source is public; publish-cli.sh renders the internal R2/Surge copy.
+# Usage: curl -fsSL https://github.com/SergeSerb2/t3-pretty/releases/latest/download/install.sh | sh
 set -eu
 
-FEED="${T3_PRETTY_CLI_FEED:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest}"
+FEED="${T3_PRETTY_CLI_FEED:-https://github.com/SergeSerb2/t3-pretty/releases/latest/download}"
 TARBALL="${T3_PRETTY_CLI_TARBALL:-$FEED/t3.tgz}"
 
 if ! command -v node >/dev/null 2>&1; then
@@ -42,4 +43,4 @@ echo "Installed $T3_BIN ($("$T3_BIN" --version 2>/dev/null || echo ok))."
 echo "Next:"
 echo "  t3 service install"
 echo "  t3 pair"
-echo "Then in Settings → Connections, turn on Surge Connect for this environment."
+echo "Then in Settings → Connections, turn on T3 Connect for this environment."

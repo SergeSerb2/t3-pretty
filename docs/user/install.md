@@ -2,6 +2,11 @@
 
 T3 Code is a web and desktop GUI for running coding agents on your machine.
 
+This page installs the public T3 Pretty build from GitHub, with T3 Connect and
+separate `~/.t3-pretty` state. Maintainers using T3 Pretty Internal should follow
+the [internal release path](../operations/public-release-and-github-mirror.md#internal-release-path)
+for the Surge Connect build instead.
+
 ## Requirements
 
 Node.js `^22.16 || ^23.11 || >=24.10` on the machine that runs the T3 Code server.
@@ -10,13 +15,12 @@ At least one provider CLI, installed and authenticated. See [Providers](#provide
 
 ## Run Without Installing
 
-T3 Pretty's CLI is not `npx t3`. That command installs upstream T3 Code and talks
-to a different Surge Connect relay.
+T3 Pretty's CLI is not `npx t3`; that command installs upstream T3 Code.
 
 Install the T3 Pretty server (Node.js 22.16+ or 24.10+):
 
 ```bash
-curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
+curl -fsSL https://github.com/SergeSerb2/t3-pretty/releases/latest/download/install.sh | sh
 ```
 
 Then start it:
@@ -27,42 +31,12 @@ t3 serve
 
 Use `t3 --help` for the full CLI reference. On a machine that should stay
 reachable after logout, run `t3 service install` and pair from another device,
-then turn on **Surge Connect** under **Settings** → **Connections**.
+then turn on **T3 Connect** under **Settings** → **Connections**.
 
 ## Desktop App
 
-Download the latest release from
-[GitHub Releases](https://github.com/pingdotgg/t3code/releases), or install from a package
-registry.
-
-Windows:
-
-```bash
-winget install T3Tools.T3Code
-```
-
-The Windows installer does not launch T3 Code automatically after replacing an existing
-installation. Start it from the Start menu after Setup has closed.
-
-macOS:
-
-```bash
-brew install --cask t3-code
-```
-
-Arch Linux:
-
-Stable:
-
-```bash
-yay -S t3code-bin
-```
-
-Nightly:
-
-```bash
-yay -S t3code-nightly-bin
-```
+Download T3 Pretty for macOS, Windows, or Linux from
+[GitHub Releases](https://github.com/SergeSerb2/t3-pretty/releases).
 
 ## Providers
 

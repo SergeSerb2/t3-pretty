@@ -31,7 +31,7 @@ import {
   findInlinedExternalPackages,
   selectCliRuntimeExternalDependencies,
 } from "./lib/cli-external-packages.ts";
-import { loadRepoEnv } from "./lib/public-config.ts";
+import { loadRepoEnv, resolveBuildFlavor, type T3CodeBuildFlavor } from "./lib/public-config.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -51,7 +51,8 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "com.sergeserb.t3code";
+const INTERNAL_DESKTOP_APP_ID = "com.sergeserb.t3code";
+const PUBLIC_DESKTOP_APP_ID = "com.sergeserb.t3pretty";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -1041,6 +1042,7 @@ function normalizePasskeyRpDomain(value: string): string {
 
 export function resolveMacPasskeySigningConfiguration(
   env: Readonly<Record<string, string | undefined>>,
+  buildFlavor: T3CodeBuildFlavor = resolveBuildFlavor(env),
 ): MacPasskeySigningConfiguration {
   const teamId = env.T3CODE_APPLE_TEAM_ID?.trim().toUpperCase() ?? "";
   if (!APPLE_TEAM_ID_PATTERN.test(teamId)) {
@@ -1076,7 +1078,7 @@ export function resolveMacPasskeySigningConfiguration(
   }
 
   return {
-    appId: DESKTOP_APP_ID,
+    appId: buildFlavor === "internal" ? INTERNAL_DESKTOP_APP_ID : PUBLIC_DESKTOP_APP_ID,
     teamId,
     rpDomains: uniqueRpDomains,
     provisioningProfilePath,
@@ -2149,11 +2151,27 @@ export function resolveDesktopUpdateChannel(version: string): "latest" | "nightl
   return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
 }
 
-export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
-  return resolveWebAssetBrandForChannel(resolveDesktopUpdateChannel(version));
+export function resolveDesktopWebAssetBrand(
+  version: string,
+  buildFlavor: T3CodeBuildFlavor = "public",
+): WebAssetBrand {
+  return buildFlavor === "internal"
+    ? "internal"
+    : resolveWebAssetBrandForChannel(resolveDesktopUpdateChannel(version));
 }
 
-export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
+export function resolveDesktopBuildIconAssets(
+  version: string,
+  buildFlavor: T3CodeBuildFlavor = "public",
+): DesktopBuildIconAssets {
+  if (buildFlavor === "internal") {
+    return {
+      macIconPng: BRAND_ASSET_PATHS.internalMacIconPng,
+      linuxIconPng: BRAND_ASSET_PATHS.internalLinuxIconPng,
+      windowsIconIco: BRAND_ASSET_PATHS.internalWindowsIconIco,
+    };
+  }
+
   if (resolveDesktopUpdateChannel(version) === "nightly") {
     return {
       macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
@@ -2186,10 +2204,12 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
-export function resolveDesktopProductName(version: string): string {
-  return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Pretty (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Pretty");
+export function resolveDesktopProductName(
+  version: string,
+  buildFlavor: T3CodeBuildFlavor = "public",
+): string {
+  const baseName = buildFlavor === "internal" ? "T3 Pretty Internal" : "T3 Pretty";
+  return resolveDesktopUpdateChannel(version) === "nightly" ? `${baseName} (Nightly)` : baseName;
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -2205,10 +2225,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         readonly provisioningProfilePath: string;
       }
     | undefined,
+  buildFlavor: T3CodeBuildFlavor = "public",
 ) {
+  const productName = resolveDesktopProductName(version, buildFlavor);
   const buildConfig: Record<string, unknown> = {
-    appId: DESKTOP_APP_ID,
-    productName: resolveDesktopProductName(version),
+    appId: buildFlavor === "internal" ? INTERNAL_DESKTOP_APP_ID : PUBLIC_DESKTOP_APP_ID,
+    productName,
     artifactName: "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [...DESKTOP_FILE_EXCLUSIONS],
@@ -2244,7 +2266,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       protocols: [
         {
-          name: "T3 Pretty",
+          name: productName,
+          // Upstream Clerk and existing pairing links allow the t3code scheme.
+          // Bundle IDs keep the two apps installable side-by-side.
           schemes: ["t3code", "t3code-dev"],
         },
       ],
@@ -2262,7 +2286,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // Give the themed installer its own Finder volume name. Finder caches
       // DMG window backgrounds by volume name, so reusing a generic name can
       // make a newly built background look unchanged during testing.
-      title: `${resolveDesktopProductName(version)} ${version} Installer`,
+      title: `${productName} ${version} Installer`,
       background: `dmg/dmg-background-${updateChannel}.png`,
       window: {
         width: 540,
@@ -2291,7 +2315,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // t3code:// OAuth callbacks to the app.
       protocols: [
         {
-          name: "T3 Pretty",
+          name: productName,
           schemes: ["t3code", "t3code-dev"],
         },
       ],
@@ -2818,6 +2842,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const workspaceOverrides = workspaceConfig.overrides ?? {};
   const workspacePatchedDependencies = workspaceConfig.patchedDependencies ?? {};
   const workspaceAllowBuilds = workspaceConfig.allowBuilds ?? {};
+  const repoEnv = loadRepoEnv({ repoRoot });
+  const buildFlavor = resolveBuildFlavor(repoEnv);
 
   const platformConfig = PLATFORM_CONFIG[options.platform];
   if (!platformConfig) {
@@ -2868,7 +2894,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   });
 
   const appVersion = options.version ?? serverPackageJson.version;
-  const iconAssets = resolveDesktopBuildIconAssets(appVersion);
+  const iconAssets = resolveDesktopBuildIconAssets(appVersion, buildFlavor);
   const commitHash = yield* resolveGitCommitHash(repoRoot);
   const stageRoot = yield* allocateStageRoot({
     prefix: `t3code-desktop-${options.platform}-stage-`,
@@ -2986,7 +3012,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     });
   }
 
-  const webAssetBrand = resolveDesktopWebAssetBrand(appVersion);
+  const webAssetBrand = resolveDesktopWebAssetBrand(appVersion, buildFlavor);
   yield* applyWebBrandAssets(webAssetBrand, "apps/server/dist/client");
   yield* Effect.log(`[desktop-artifact] Applied ${webAssetBrand} web client branding.`);
   yield* validateBundledClientAssets(path.dirname(bundledClientEntry));
@@ -3038,12 +3064,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   // entitlement while no Developer ID provisioning profile exists for the
   // fork bundle id. Passkey login degrades; codesigning and notarization are
   // unaffected. Remove the flag once a profile secret is configured.
-  const skipMacPasskeyProfile =
-    loadRepoEnv({ repoRoot }).T3CODE_MACOS_SKIP_PASSKEY_PROFILE?.trim() === "1";
+  const skipMacPasskeyProfile = repoEnv.T3CODE_MACOS_SKIP_PASSKEY_PROFILE?.trim() === "1";
   const configuredMacPasskeySigning =
     options.platform === "mac" && options.signed && !skipMacPasskeyProfile
       ? yield* Effect.try({
-          try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
+          try: () => resolveMacPasskeySigningConfiguration(repoEnv, buildFlavor),
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
         })
       : undefined;
@@ -3121,6 +3146,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
             provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
           }
         : undefined,
+      buildFlavor,
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -3269,7 +3295,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   if (options.platform === "win") {
     yield* validateWindowsPackagedPayload({
       stageDistDir,
-      appExecutableName: `${resolveDesktopProductName(appVersion)}.exe`,
+      appExecutableName: `${resolveDesktopProductName(appVersion, buildFlavor)}.exe`,
       targetArch: options.arch,
       verbose: options.verbose,
     });

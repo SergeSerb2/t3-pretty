@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { SURGE_CODE_ACCOUNT_NAME } from "@t3tools/shared/connectBranding";
 
 import {
   searchableSetting,
@@ -109,8 +110,8 @@ describe("searchSettings", () => {
     });
   });
 
-  it("routes Surge Code account searches to Connections", () => {
-    expect(searchSettings("surge code account")[0]).toMatchObject({
+  it("routes managed account searches to Connections", () => {
+    expect(searchSettings(`${SURGE_CODE_ACCOUNT_NAME} account`)[0]).toMatchObject({
       id: "surge-connect-account",
       to: "/settings/connections",
     });

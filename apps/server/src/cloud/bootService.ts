@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 
 import * as ProcessRunner from "../processRunner.ts";
 import {
@@ -29,11 +30,14 @@ import {
   type ServiceState,
 } from "./serviceProtocol.ts";
 
-const BOOT_SERVICE_NAME = "t3code";
+const BOOT_SERVICE_NAME = T3CODE_BUILD_FLAVOR === "internal" ? "t3code" : "t3pretty";
 export const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
 // `.service` suffix keeps the label distinct from the desktop app's bundle id
 // (com.t3tools.t3code), so launchd and TCC records never collide.
-export const BOOT_SERVICE_LAUNCHD_LABEL = "com.t3tools.t3code.service";
+export const BOOT_SERVICE_LAUNCHD_LABEL =
+  T3CODE_BUILD_FLAVOR === "internal"
+    ? "com.t3tools.t3code.service"
+    : "com.sergeserb.t3pretty.service";
 export const BOOT_SERVICE_PLIST_FILE = `${BOOT_SERVICE_LAUNCHD_LABEL}.plist`;
 export const BOOT_SERVICE_UNIT_ENV = "T3_BOOT_SERVICE_UNIT";
 

@@ -34,6 +34,7 @@ except ImportError:
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRETTY = REPO_ROOT / "assets" / "pretty"
+INTERNAL = REPO_ROOT / "assets" / "internal"
 KIT = PRETTY / "kit"
 DESKTOP_RESOURCES = REPO_ROOT / "apps" / "desktop" / "resources"
 MOBILE_ASSETS = REPO_ROOT / "apps" / "mobile" / "assets"
@@ -55,6 +56,8 @@ ICNS_PNG_TYPES = (
 )
 
 FROST = (223, 239, 227, 255)  # #DFEFE3 sage-frost plate / iOS background
+FOREST = (20, 38, 27, 255)  # #14261B internal twin
+CREAM = (244, 241, 234, 255)  # #F4F1EA glyph on forest
 CANVAS = 1024
 MACOS_BODY = 824  # classic macOS safe area: opaque body inset 100px
 # Adaptive icons are 108dp; the inner 66dp is never clipped by the OEM mask.
@@ -74,6 +77,12 @@ def load_glyph() -> Image.Image:
 def scaled_glyph(glyph: Image.Image, width: int) -> Image.Image:
     height = round(glyph.height * width / glyph.width)
     return glyph.resize((width, height), Image.LANCZOS)
+
+
+def tint_glyph(glyph: Image.Image, color: tuple[int, int, int, int]) -> Image.Image:
+    tinted = Image.new("RGBA", glyph.size, color)
+    tinted.putalpha(glyph.getchannel("A"))
+    return tinted
 
 
 def paste_centered(canvas: Image.Image, overlay: Image.Image, center_y: int) -> None:
@@ -106,7 +115,7 @@ def superellipse_mask(size: int, exponent: float = 5.0) -> Image.Image:
     return mask.resize((size, size), Image.LANCZOS)
 
 
-def render_macos_master(glyph: Image.Image) -> Image.Image:
+def render_macos_master(glyph: Image.Image, plate_color=FROST) -> Image.Image:
     icon = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
     inset = (CANVAS - MACOS_BODY) // 2
     body_mask = superellipse_mask(MACOS_BODY)
@@ -121,15 +130,15 @@ def render_macos_master(glyph: Image.Image) -> Image.Image:
     icon.alpha_composite(shadow)
 
     plate = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
-    plate.paste(FROST, (inset, inset), body_mask)
+    plate.paste(plate_color, (inset, inset), body_mask)
     icon.alpha_composite(plate)
 
     paste_centered(icon, scaled_glyph(glyph, round(MACOS_BODY * GLYPH_RATIO)), CANVAS // 2)
     return icon
 
 
-def render_ios_master(glyph: Image.Image) -> Image.Image:
-    icon = Image.new("RGBA", (CANVAS, CANVAS), FROST)
+def render_ios_master(glyph: Image.Image, background=FROST) -> Image.Image:
+    icon = Image.new("RGBA", (CANVAS, CANVAS), background)
     paste_centered(icon, scaled_glyph(glyph, round(CANVAS * GLYPH_RATIO)), CANVAS // 2)
     return icon
 
@@ -254,18 +263,27 @@ def write_web_public_icons() -> None:
 
 
 def main() -> None:
+    INTERNAL.mkdir(parents=True, exist_ok=True)
     glyph = load_glyph()
     macos = render_macos_master(glyph)
     ios = render_ios_master(glyph)
+    internal_glyph = tint_glyph(glyph, CREAM)
+    internal_macos = render_macos_master(internal_glyph, FOREST)
+    internal_ios = render_ios_master(internal_glyph, FOREST)
 
     # Masters
     macos.save(PRETTY / "t3-pretty-1024.png")
     ios.save(PRETTY / "t3-pretty-ios-1024.png")
+    internal_macos.save(INTERNAL / "t3-pretty-internal-1024.png")
+    internal_ios.save(INTERNAL / "t3-pretty-internal-ios-1024.png")
 
     # Web + touch icons derive from the iOS master (opaque, full bleed).
     downscale(ios, 16).save(PRETTY / "t3-pretty-favicon-16x16.png")
     downscale(ios, 32).save(PRETTY / "t3-pretty-favicon-32x32.png")
     downscale(ios, 180).save(PRETTY / "t3-pretty-apple-touch-180.png")
+    downscale(internal_ios, 16).save(INTERNAL / "t3-pretty-internal-favicon-16x16.png")
+    downscale(internal_ios, 32).save(INTERNAL / "t3-pretty-internal-favicon-32x32.png")
+    downscale(internal_ios, 180).save(INTERNAL / "t3-pretty-internal-apple-touch-180.png")
 
     # Android adaptive foreground: 62% of the 66/108 safe-zone diameter, not
     # 62% of the full 108dp layer, or the launcher mask crops the T3.
@@ -273,11 +291,20 @@ def main() -> None:
     android_visible = round(CANVAS * ANDROID_ADAPTIVE_SAFE_ZONE)
     paste_centered(foreground, scaled_glyph(glyph, round(android_visible * GLYPH_RATIO)), CANVAS // 2)
     foreground.save(MOBILE_ASSETS / "android-icon-mark.png")
+    internal_foreground = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
+    paste_centered(
+        internal_foreground,
+        scaled_glyph(internal_glyph, round(android_visible * GLYPH_RATIO)),
+        CANVAS // 2,
+    )
+    internal_foreground.save(MOBILE_ASSETS / "t3-pretty-internal-android-icon-mark.png")
 
     # Desktop resources + packaged icns/ico.
     downscale(macos, 512).save(DESKTOP_RESOURCES / "icon.png")
     write_icns(macos, [PRETTY / "t3-pretty.icns", DESKTOP_RESOURCES / "icon.icns"])
     write_ico(ios, [PRETTY / "t3-pretty.ico", DESKTOP_RESOURCES / "icon.ico"])
+    write_icns(internal_macos, [INTERNAL / "t3-pretty-internal.icns"])
+    write_ico(internal_ios, [INTERNAL / "t3-pretty-internal.ico"])
 
     # Kit copies: the frost look is the shipping design (glass stays a variant).
     macos.save(KIT / "icon-macos-1024.png")
@@ -290,7 +317,7 @@ def main() -> None:
     write_mark_copies()
     write_web_public_icons()
 
-    print("Regenerated T3 Pretty icon family (glyph at 62% of the visible icon area).")
+    print("Regenerated public and internal T3 Pretty icon families.")
 
 
 def _selfcheck() -> None:
