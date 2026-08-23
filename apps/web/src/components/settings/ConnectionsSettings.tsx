@@ -2253,7 +2253,7 @@ export function ConnectionsSettings() {
         unlinkedFromRelay = true;
       }
       let result = await removeEnvironment(environmentId);
-      if (result._tag === "Failure" && unlinkedFromRelay) {
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result) && unlinkedFromRelay) {
         // The relay account no longer lists this environment, so mesh cannot
         // resurrect it; retry the local delete once before surfacing so the
         // row does not get stuck without an add path.
