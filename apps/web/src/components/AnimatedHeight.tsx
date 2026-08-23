@@ -26,21 +26,29 @@ export function AnimatedHeight({ children }: { readonly children: ReactNode }) {
   const [exiting, setExiting] = useState(false);
   const [prevHasContent, setPrevHasContent] = useState(hasContent);
 
-  // Start the collapse in the render phase so the outgoing content never
-  // unmounts for an intermediate commit.
+  // Locals apply on this pass: setState during render still reads the old flags.
+  let isExiting = exiting;
+  let renderedHeight = heightState.height;
+  let isClipping = heightState.isClipping;
   if (hasContent !== prevHasContent) {
     setPrevHasContent(hasContent);
     if (!hasContent && lastContentRef.current !== null && heightState.height !== null) {
+      isExiting = true;
+      renderedHeight = 0;
+      isClipping = heightState.height !== 0;
+      exitingRef.current = true;
       setExiting(true);
-      setHeightState((currentState) => ({ height: 0, isClipping: currentState.height !== 0 }));
+      setHeightState({ height: 0, isClipping });
     } else {
+      isExiting = false;
+      exitingRef.current = false;
       setExiting(false);
     }
   }
 
   useLayoutEffect(() => {
-    exitingRef.current = exiting;
-  }, [exiting]);
+    exitingRef.current = isExiting;
+  }, [isExiting]);
 
   useEffect(() => {
     if (!heightState.isClipping && !exiting) return;
@@ -119,9 +127,9 @@ export function AnimatedHeight({ children }: { readonly children: ReactNode }) {
       data-slot="animated-height"
       className="transition-[height] duration-200 ease-out motion-reduce:transition-none"
       style={
-        heightState.height === null
+        renderedHeight === null
           ? undefined
-          : { height: heightState.height, overflow: heightState.isClipping ? "hidden" : "visible" }
+          : { height: renderedHeight, overflow: isClipping ? "hidden" : "visible" }
       }
       onTransitionEnd={(event) => {
         if (event.target !== event.currentTarget || event.propertyName !== "height") return;
@@ -131,7 +139,9 @@ export function AnimatedHeight({ children }: { readonly children: ReactNode }) {
         );
       }}
     >
-      <div ref={contentRef}>{hasContent ? children : exiting ? lastContentRef.current : null}</div>
+      <div ref={contentRef}>
+        {hasContent ? children : isExiting ? lastContentRef.current : null}
+      </div>
     </div>
   );
 }
