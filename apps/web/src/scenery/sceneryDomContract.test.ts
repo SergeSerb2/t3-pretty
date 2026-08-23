@@ -95,6 +95,15 @@ describe("scenery structural contract with upstream markup", () => {
       expect(text).toContain("component: ThreadRouteView");
     }
   });
+
+  it("the shared thread view keeps ChatView mounted across the draft→server swap", () => {
+    expect(threadRouteViewSource).not.toContain("strict: false");
+    expect(threadRouteViewSource).toContain('from: "/_chat/draft/$draftId"');
+    expect(threadRouteViewSource).toContain('from: "/_chat/$environmentId/$threadId"');
+    expect(threadRouteViewSource).not.toContain(
+      'renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)',
+    );
+  });
 });
 
 describe("composer attach contract with upstream markup", () => {

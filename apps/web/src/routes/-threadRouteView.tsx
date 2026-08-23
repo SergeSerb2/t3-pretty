@@ -47,9 +47,19 @@ const SIDEBAR_INSET_CLASS =
  */
 export function ThreadRouteView() {
   const navigate = useNavigate();
-  const params = useParams({ strict: false });
-  const draftId = params.draftId ? DraftId.make(params.draftId) : null;
-  const routeThreadRef = draftId ? null : resolveThreadRouteRef(params);
+  // Per-route params, not the merged match: a wrapper per route would be a
+  // different component type and remount ChatView on promotion.
+  const draftParams = useParams({
+    from: "/_chat/draft/$draftId",
+    shouldThrow: false,
+  });
+  const routeThreadRef =
+    useParams({
+      from: "/_chat/$environmentId/$threadId",
+      shouldThrow: false,
+      select: (params) => resolveThreadRouteRef(params),
+    }) ?? null;
+  const draftId = draftParams ? DraftId.make(draftParams.draftId) : null;
 
   // Draft flavor: resolve the draft session and the server thread it minted.
   const draftSession = useComposerDraftStore((store) =>
@@ -160,37 +170,27 @@ export function ThreadRouteView() {
     finalizePromotedDraftThreadByRef(routeThreadRef);
   }, [draftThread, routeThreadRef, serverThreadStarted]);
 
-  if (draftId) {
-    if (!draftSession) {
-      return null;
-    }
-    return (
-      <SidebarInset className={SIDEBAR_INSET_CLASS}>
-        <ChatView
-          draftId={draftId}
-          environmentId={draftSession.environmentId}
-          threadId={draftSession.threadId}
-          routeKind="draft"
-          forceExpandedMobileComposer
-        />
-      </SidebarInset>
-    );
-  }
+  const chatView =
+    draftId !== null && draftSession !== null ? (
+      <ChatView
+        draftId={draftId}
+        environmentId={draftSession.environmentId}
+        threadId={draftSession.threadId}
+        routeKind="draft"
+        forceExpandedMobileComposer
+      />
+    ) : routeThreadRef !== null ? (
+      <ChatView
+        environmentId={routeThreadRef.environmentId}
+        threadId={routeThreadRef.threadId}
+        routeKind="server"
+        threadSyncPhase={threadSyncPhase}
+      />
+    ) : null;
 
-  if (!routeThreadRef) {
+  if (chatView === null) {
     return null;
   }
 
-  return (
-    <SidebarInset className={SIDEBAR_INSET_CLASS}>
-      {renderState === "ready" || (renderState === "loading" && serverThreadShell !== null) ? (
-        <ChatView
-          environmentId={routeThreadRef.environmentId}
-          threadId={routeThreadRef.threadId}
-          routeKind="server"
-          threadSyncPhase={threadSyncPhase}
-        />
-      ) : null}
-    </SidebarInset>
-  );
+  return <SidebarInset className={SIDEBAR_INSET_CLASS}>{chatView}</SidebarInset>;
 }
