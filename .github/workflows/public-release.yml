@@ -416,7 +416,7 @@ jobs:
               exit 1
             }
           done
-          for pattern in '*.dmg' '*.AppImage' '*.exe'; do
+          for pattern in '*.dmg' '*.zip' '*.AppImage' '*.exe'; do
             compgen -G "public-release-assets/${pattern}" >/dev/null || {
               echo "missing required public release asset matching ${pattern}" >&2
               exit 1

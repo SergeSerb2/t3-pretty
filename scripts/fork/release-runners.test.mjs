@@ -392,6 +392,7 @@ describe("T3 Pretty release runner placement", () => {
       "t3.tgz",
       "install.sh",
       "*.dmg",
+      "*.zip",
       "*.AppImage",
       "*.exe",
     ]) {

@@ -40,6 +40,8 @@ const configuredRelayTracingDataset = repoEnv.VITE_RELAY_OTLP_TRACES_DATASET?.tr
 const configuredRelayTracingToken = repoEnv.VITE_RELAY_OTLP_TRACES_TOKEN?.trim() || "";
 const configuredHostedAppChannel = process.env.VITE_HOSTED_APP_CHANNEL?.trim() || "";
 const configuredStaticHostedApp = process.env.VITE_STATIC_HOSTED_APP === "1";
+const configuredConnectCliAuthEnabled =
+  process.env.VITE_CONNECT_CLI_AUTH_ENABLED?.trim() === "0" ? "0" : "1";
 const configuredBasePath = process.env.T3CODE_WEB_BASE_PATH?.trim() || "/";
 const configuredAppVersion = process.env.APP_VERSION?.trim() || pkg.version;
 const configuredHostedAppUrl = (() => {
@@ -222,6 +224,9 @@ export default defineConfig(() => {
       "import.meta.env.VITE_HOSTED_APP_URL": JSON.stringify(configuredHostedAppUrl ?? ""),
       "import.meta.env.VITE_HOSTED_APP_CHANNEL": JSON.stringify(configuredHostedAppChannel),
       "import.meta.env.VITE_STATIC_HOSTED_APP": JSON.stringify(configuredStaticHostedApp),
+      "import.meta.env.VITE_CONNECT_CLI_AUTH_ENABLED": JSON.stringify(
+        configuredConnectCliAuthEnabled,
+      ),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
     },
     resolve: {
