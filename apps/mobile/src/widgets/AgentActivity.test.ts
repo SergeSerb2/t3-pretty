@@ -111,6 +111,23 @@ describe("AgentActivity widget layout", () => {
     expect(banner).toContain('"progressViewStyle":"linear"');
     expect(banner).toContain('"value":0.4');
     expect(banner).toContain("Editing AgentActivity.tsx");
+    expect(JSON.stringify(layout.expandedBottom)).toContain('"progressViewStyle":"linear"');
+  });
+
+  it("does not hang the hero plan bar under a multi-row list", () => {
+    const layout = AgentActivity(
+      {
+        ...props,
+        activeCount: 2,
+        activities: [
+          makeRow({ progress: 0.4, threadTitle: "Hero working" }),
+          makeRow({ threadId: "thread-2", threadTitle: "Other working" }),
+        ],
+      },
+      environment as never,
+    );
+    expect(JSON.stringify(layout.banner)).not.toContain('"progressViewStyle":"linear"');
+    expect(JSON.stringify(layout.expandedBottom)).not.toContain('"progressViewStyle":"linear"');
   });
 
   it("keeps the simplified glass presentation to one glance line", () => {
@@ -426,5 +443,39 @@ describe("AgentActivity widget layout", () => {
     expect(JSON.stringify(layout.expandedBottom)).toContain("Thread 1");
     expect(JSON.stringify(layout.expandedBottom)).toContain("+3 more");
     expect(JSON.stringify(layout.compactTrailing)).toContain("6");
+  });
+
+  it("does not count finished rows in the overflow", () => {
+    const layout = AgentActivity(
+      {
+        ...props,
+        activeCount: 3,
+        activities: [
+          makeRow({ threadId: "t1", threadTitle: "Working 1" }),
+          makeRow({ threadId: "t2", threadTitle: "Working 2" }),
+          makeRow({ threadId: "t3", threadTitle: "Working 3" }),
+          makeRow({
+            threadId: "t4",
+            threadTitle: "Done 1",
+            phase: "completed",
+            status: "Done",
+          }),
+          makeRow({
+            threadId: "t5",
+            threadTitle: "Done 2",
+            phase: "completed",
+            status: "Done",
+          }),
+        ],
+      },
+      environment as never,
+    );
+    const banner = JSON.stringify(layout.banner);
+    expect(banner).toContain("3 working");
+    expect(banner).toContain("Working 1");
+    expect(banner).toContain("Working 3");
+    expect(banner).not.toContain("Done 1");
+    expect(banner).not.toContain("+2 more");
+    expect(banner).not.toContain("+1 more");
   });
 });

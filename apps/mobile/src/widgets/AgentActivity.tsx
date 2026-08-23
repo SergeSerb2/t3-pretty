@@ -128,7 +128,6 @@ export function AgentActivity(
     : failedRow
       ? phaseTint(failedRow.phase)
       : tintColor;
-  const workingTint = phaseTint("running");
 
   // With nothing active the aggregate only carries recently finished work, so
   // "0 working" reads as broken. Lead with the outcome instead. The outcome
@@ -309,13 +308,16 @@ export function AgentActivity(
     </HStack>
   );
 
-  // The banner lists up to three rows; whatever the payload or the active
-  // count says exists beyond them collapses into one "+N more" line.
-  // ponytail: activeCount can exceed delivered rows (payload caps at 5), so
-  // the overflow keys off whichever is larger.
+  // The banner lists up to three rows; leftover live work collapses into
+  // one "+N more" line. Terminal rows ride along in the payload but must
+  // not inflate overflow past what the header calls working. activeCount
+  // can still exceed delivered rows (payload caps at 5).
   const MAX_BANNER_ROWS = 3;
   const shownRows = ordered.slice(0, MAX_BANNER_ROWS);
-  const overflowCount = Math.max(props.activities.length, props.activeCount) - shownRows.length;
+  const shownLive = shownRows.filter(
+    (row) => row.phase !== "completed" && row.phase !== "failed",
+  ).length;
+  const overflowCount = Math.max(0, props.activeCount - shownLive);
   const renderOverflow = () =>
     overflowCount > 0 ? (
       <Text
@@ -416,7 +418,6 @@ export function AgentActivity(
       {header}
       {shownRows.map((row) => renderActivityRow(row))}
       {renderOverflow()}
-      {heroInFlight && heroRow ? renderProgressBar(heroRow, workingTint) : null}
     </VStack>
   );
 
@@ -533,7 +534,7 @@ export function AgentActivity(
       >
         {shownRows.map((row) => renderActivityRow(row))}
         {renderOverflow()}
-        {heroInFlight && heroRow ? renderProgressBar(heroRow, workingTint) : null}
+        {soloRow ? renderProgressBar(soloRow, phaseTint(soloRow.phase)) : null}
       </VStack>
     ),
   };
