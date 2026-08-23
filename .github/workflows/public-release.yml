@@ -32,6 +32,7 @@ concurrency:
 
 env:
   T3CODE_BUILD_FLAVOR: public
+  # The mirror pushes Git tags, not GitHub Releases; this workflow alone advances GitHub latest.
   T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/
   CI: true
 
@@ -102,6 +103,7 @@ jobs:
 
   desktop:
     name: Desktop (${{ matrix.label }})
+    # Keep the release atomic: Windows requires this prebuild, so no partial desktop set ships.
     needs: [preflight, wsl_node_pty]
     if: ${{ !cancelled() && needs.preflight.result == 'success' }}
     runs-on: ${{ matrix.runner }}

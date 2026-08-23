@@ -6,6 +6,8 @@ import { loadRepoEnv, readReleaseTrainVersion } from "../../scripts/lib/public-c
 type AppVariant = "development" | "preview" | "production";
 
 const repoEnv = loadRepoEnv();
+// loadRepoEnv projects the selected flavor to EXPO_PUBLIC_T3CODE_BUILD_FLAVOR,
+// which Metro inlines for shared client branding.
 Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);

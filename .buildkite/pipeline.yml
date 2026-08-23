@@ -21,6 +21,7 @@
 # scripts/fork/load-buildkite-secrets.sh.
 
 env:
+  # loadRepoEnv selects .env.internal.example from this before compiling each surface.
   T3CODE_BUILD_FLAVOR: internal
   T3CODE_DESKTOP_UPDATE_FEED_URL: "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/"
   T3CODE_RELEASE_S3_BUCKET: t3-pretty-releases
