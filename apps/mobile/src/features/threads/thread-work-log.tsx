@@ -457,15 +457,18 @@ export function ThreadWorkGroupToggle(props: {
             type="monochrome"
           />
         </View>
-        <Animated.View
-          key={props.expanded ? "expanded" : "collapsed"}
-          entering={FadeIn.duration(140)}
-          exiting={FadeOut.duration(140)}
-        >
-          <Text className="font-t3-medium text-xs text-foreground opacity-80">
-            {props.expanded ? expandedLabel : `+${props.hiddenCount} previous ${noun}`}
-          </Text>
-        </Animated.View>
+        <View className="h-[18px] flex-1 justify-center">
+          <Animated.View
+            key={props.expanded ? "expanded" : "collapsed"}
+            entering={FadeIn.duration(140)}
+            exiting={FadeOut.duration(140)}
+            className="absolute inset-y-0 left-0 justify-center"
+          >
+            <Text className="font-t3-medium text-xs text-foreground opacity-80">
+              {props.expanded ? expandedLabel : `+${props.hiddenCount} previous ${noun}`}
+            </Text>
+          </Animated.View>
+        </View>
       </Pressable>
     </View>
   );
