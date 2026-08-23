@@ -1466,20 +1466,29 @@ it.effect("flags a review request for the viewer but not on their own change req
   }),
 );
 
-it.effect("refuses a repository that does not belong to the requested project", () =>
+it.effect("resolves a stale repository spelling against the project's current identity", () =>
   Effect.gen(function* () {
+    let seenRepository: string | null = null;
     const service = yield* makeService({
       projects: [
         project({ id: "p1", title: "t3code", workspaceRoot: "/a", repository: "pingdotgg/t3code" }),
       ],
-      providers: [fakeProvider("github")],
+      providers: [
+        fakeProvider("github", {
+          getDiff: (input) =>
+            Effect.sync(() => {
+              seenRepository = input.repository;
+              return { patch: "", truncated: false, nextCursor: null };
+            }),
+        }),
+      ],
     });
 
-    const error = yield* service
-      .diff({ projectId: "p1" as ProjectId, repository: "attacker/repo", number: 1 })
-      .pipe(Effect.flip);
+    // A surface persisted before the project's remote changed still carries the old spelling;
+    // the read is scoped by the project's own current identity, never by the client's copy.
+    yield* service.diff({ projectId: "p1" as ProjectId, repository: "stale/spelling", number: 1 });
 
-    assert.strictEqual(error._tag, "PullRequestOperationError");
+    assert.strictEqual(seenRepository, "pingdotgg/t3code");
   }),
 );
 
