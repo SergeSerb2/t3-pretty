@@ -3,6 +3,10 @@
 On Linux and macOS, T3 Code can run as a background service for your user, so it is ready without
 keeping a terminal open.
 
+The commands below use the public GitHub build. T3 Pretty Internal operators should
+install from the [internal release path](../operations/public-release-and-github-mirror.md#internal-release-path)
+before running the same `t3 service` commands.
+
 ## Manage the Service
 
 Install the T3 Pretty CLI first (not `npx t3`, which is upstream T3 Code):

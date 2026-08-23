@@ -2,6 +2,11 @@
 
 T3 Code is a web and desktop GUI for running coding agents on your machine.
 
+This page installs the public T3 Pretty build from GitHub, with T3 Connect and
+separate `~/.t3-pretty` state. Maintainers using T3 Pretty Internal should follow
+the [internal release path](../operations/public-release-and-github-mirror.md#internal-release-path)
+for the Surge Connect build instead.
+
 ## Requirements
 
 Node.js `^22.16 || ^23.11 || >=24.10` on the machine that runs the T3 Code server.

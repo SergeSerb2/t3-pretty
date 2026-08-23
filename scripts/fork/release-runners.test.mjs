@@ -369,9 +369,13 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publicPages, "actions/download-artifact@v8");
     assert.include(publicPages, "actions/configure-pages@v5");
     assert.include(publicPages, "actions/upload-pages-artifact@v5");
-    assert.include(
-      publicReleaseWorkflow,
-      "github.repository == 'SergeSerb2/t3-pretty' && inputs.publish_release",
+    assert.equal(
+      (publicReleaseWorkflow.match(/github\.repository == 'SergeSerb2\/t3-pretty'/gu) || []).length,
+      8,
+    );
+    assert.equal(
+      (publicReleaseWorkflow.match(/needs\.preflight\.result == 'success'/gu) || []).length,
+      6,
     );
     for (const workflow of [desktopWorkflow, relayWorkflow, upstreamSyncWorkflow]) {
       assert.include(workflow, "github.repository != 'SergeSerb2/t3-pretty'");

@@ -3,6 +3,10 @@
 The T3 Code web or desktop app and the server it connects to work best when they use the same
 version. If they do not match, T3 Code shows a warning with the right update option for that server.
 
+The explicit URLs below are for the public GitHub build. T3 Pretty Internal uses
+the [internal R2 release path](../operations/public-release-and-github-mirror.md#internal-release-path),
+and its in-app update action selects that feed automatically.
+
 ## Where to Find the Update
 
 You may see the warning in either of these places:

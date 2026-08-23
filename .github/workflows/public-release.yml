@@ -71,6 +71,9 @@ jobs:
   wsl_node_pty:
     name: Build WSL node-pty
     needs: preflight
+    if: >-
+      github.repository == 'SergeSerb2/t3-pretty' &&
+      needs.preflight.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -106,7 +109,10 @@ jobs:
     name: Desktop (${{ matrix.label }})
     # Keep the release atomic: Windows requires this prebuild, so no partial desktop set ships.
     needs: [preflight, wsl_node_pty]
-    if: ${{ !cancelled() && needs.preflight.result == 'success' }}
+    if: >-
+      github.repository == 'SergeSerb2/t3-pretty' &&
+      !cancelled() &&
+      needs.preflight.result == 'success'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
@@ -197,6 +203,9 @@ jobs:
   cli:
     name: Public CLI
     needs: preflight
+    if: >-
+      github.repository == 'SergeSerb2/t3-pretty' &&
+      needs.preflight.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -236,6 +245,9 @@ jobs:
   mobile:
     name: Public mobile
     needs: preflight
+    if: >-
+      github.repository == 'SergeSerb2/t3-pretty' &&
+      needs.preflight.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -283,6 +295,9 @@ jobs:
   web:
     name: Public hosted web
     needs: preflight
+    if: >-
+      github.repository == 'SergeSerb2/t3-pretty' &&
+      needs.preflight.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -316,7 +331,10 @@ jobs:
   deploy_pages:
     name: Deploy public hosted web
     needs: web
-    if: ${{ inputs.deploy_pages && needs.web.result == 'success' }}
+    if: >-
+      github.repository == 'SergeSerb2/t3-pretty' &&
+      inputs.deploy_pages &&
+      needs.web.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -344,7 +362,12 @@ jobs:
   release:
     name: Publish public GitHub Release
     needs: [preflight, desktop, cli, mobile, web]
-    if: ${{ github.repository == 'SergeSerb2/t3-pretty' && inputs.publish_release && !cancelled() && !failure() }}
+    if: >-
+      github.repository == 'SergeSerb2/t3-pretty' &&
+      inputs.publish_release &&
+      !cancelled() &&
+      !failure() &&
+      needs.preflight.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
