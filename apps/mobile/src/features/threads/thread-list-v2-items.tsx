@@ -169,6 +169,11 @@ function useThreadDepartureAnimation(
         translateY.value = 12;
         scale.value = 0.98;
       } else {
+        // LegendList recycleItems can bind a new threadKey to this instance
+        // with the same departing/arriving flags, inheriting mid-flight values.
+        opacity.value = 1;
+        translateY.value = 0;
+        scale.value = 1;
         const config = {
           duration: DEPART_DURATION_MS,
           easing: Easing.bezier(0.3, 0, 0.8, 0.15),
@@ -200,7 +205,7 @@ function useThreadDepartureAnimation(
       cancelAnimation(translateY);
       cancelAnimation(scale);
     };
-  }, [arriving, departing, landed, opacity, scale, translateY]);
+  }, [arriving, departing, landed, opacity, scale, threadKey, translateY]);
 
   const style = useAnimatedStyle(() => ({
     opacity: opacity.value,

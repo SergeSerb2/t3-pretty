@@ -1002,6 +1002,88 @@ describe("buildThreadFeed", () => {
     expect(presented.some((entry) => entry.type === "working")).toBe(true);
   });
 
+  it("keeps the working row when streaming text is followed by a filtered live tool", () => {
+    const startedAt = "2026-04-01T00:00:01.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "message",
+        id: "assistant-1",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        message: makeMessage({
+          id: MessageId.make("assistant-1"),
+          text: "I'll check that",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          streaming: true,
+        }),
+      },
+      {
+        type: "activity-group",
+        id: "work-group-live",
+        createdAt: "2026-04-01T00:00:03.000Z",
+        turnId: null,
+        activities: [
+          {
+            id: "activity-live",
+            createdAt: "2026-04-01T00:00:03.000Z",
+            turnId: null,
+            summary: "Run command",
+            detail: null,
+            canExpand: false,
+            getFullDetail: () => null,
+            getCopyText: () => "Run command",
+            icon: "command",
+            toolLike: true,
+            status: "neutral",
+          },
+        ],
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.map((entry) => entry.type)).toEqual(["message", "working"]);
+  });
+
+  it("keeps the working row when a filtered live tool sits above later streaming text", () => {
+    const startedAt = "2026-04-01T00:00:01.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "activity-group",
+        id: "work-group-live",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        turnId: null,
+        activities: [
+          {
+            id: "activity-live",
+            createdAt: "2026-04-01T00:00:02.000Z",
+            turnId: null,
+            summary: "Run command",
+            detail: null,
+            canExpand: false,
+            getFullDetail: () => null,
+            getCopyText: () => "Run command",
+            icon: "command",
+            toolLike: true,
+            status: "neutral",
+          },
+        ],
+      },
+      {
+        type: "message",
+        id: "assistant-1",
+        createdAt: "2026-04-01T00:00:03.000Z",
+        message: makeMessage({
+          id: MessageId.make("assistant-1"),
+          text: "Still working",
+          createdAt: "2026-04-01T00:00:03.000Z",
+          streaming: true,
+        }),
+      },
+    ];
+
+    const presented = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), startedAt);
+    expect(presented.map((entry) => entry.type)).toEqual(["message", "working"]);
+  });
+
   it("keeps the working row when streaming text sits above a later tool group", () => {
     const startedAt = "2026-04-01T00:00:01.000Z";
     const feed: ThreadFeedEntry[] = [

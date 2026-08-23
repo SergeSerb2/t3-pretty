@@ -1307,7 +1307,10 @@ export function deriveThreadFeedPresentation(
       appendPresentedFeedEntry(result, entry, expandedWorkGroupIds);
     }
   }
-  if (activeWorkStartedAt !== null && !feedTailSignalsActivity(result)) {
+  if (
+    activeWorkStartedAt !== null &&
+    (!feedTailSignalsActivity(result) || feedHasFilteredLiveTools(sourceFeed, collapsedEntryIds))
+  ) {
     result.push(presentedWorkingEntry(activeWorkStartedAt));
   }
   return result;
@@ -1320,7 +1323,8 @@ export function deriveThreadFeedPresentation(
  * than shown as a live row, so the working row stays up while tools run —
  * dropping it would leave the turn with no liveness signal at all. Only the
  * last presented row counts: earlier streaming text above a tool group is
- * not enough liveness once work has moved on.
+ * not enough liveness once work has moved on. A filtered live tool still
+ * counts as activity even when the presented tail is that streaming text.
  */
 function feedTailSignalsActivity(entries: ReadonlyArray<ThreadFeedEntry>): boolean {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -1332,6 +1336,22 @@ function feedTailSignalsActivity(entries: ReadonlyArray<ThreadFeedEntry>): boole
       entry.message.streaming &&
       entry.message.text.trim().length > 0
     );
+  }
+  return false;
+}
+
+function feedHasFilteredLiveTools(
+  entries: ReadonlyArray<ThreadFeedEntry>,
+  collapsedEntryIds: ReadonlySet<string>,
+): boolean {
+  for (const entry of entries) {
+    if (collapsedEntryIds.has(entry.id) || entry.type !== "activity-group") continue;
+    if (
+      entry.activities.length > 0 &&
+      entry.activities.every((activity) => activity.toolLike && activity.status === "neutral")
+    ) {
+      return true;
+    }
   }
   return false;
 }

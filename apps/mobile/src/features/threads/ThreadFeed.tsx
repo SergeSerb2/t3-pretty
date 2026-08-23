@@ -49,8 +49,8 @@ import Animated, {
   Easing,
   FadeIn,
   FadeInUp,
-  ReduceMotion,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withRepeat,
   withSequence,
@@ -1294,9 +1294,11 @@ const THINKING_SHIMMER_PERIOD_MS = 2_200;
 
 const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly active: boolean }) {
   const highlight = useSharedValue(0);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
-    if (!props.active) {
+    if (!props.active || reduceMotion) {
+      highlight.value = 0;
       return;
     }
     highlight.value = withRepeat(
@@ -1304,12 +1306,10 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly ac
         withTiming(1, {
           duration: THINKING_SHIMMER_PERIOD_MS / 2,
           easing: Easing.inOut(Easing.quad),
-          reduceMotion: ReduceMotion.System,
         }),
         withTiming(0, {
           duration: THINKING_SHIMMER_PERIOD_MS / 2,
           easing: Easing.inOut(Easing.quad),
-          reduceMotion: ReduceMotion.System,
         }),
       ),
       -1,
@@ -1319,7 +1319,7 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow(props: { readonly ac
       cancelAnimation(highlight);
       highlight.value = 0;
     };
-  }, [highlight, props.active]);
+  }, [highlight, props.active, reduceMotion]);
 
   const highlightStyle = useAnimatedStyle(() => ({ opacity: highlight.value }));
 
