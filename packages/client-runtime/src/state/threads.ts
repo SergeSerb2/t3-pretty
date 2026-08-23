@@ -136,14 +136,34 @@ function lruSet<V>(map: Map<string, V>, key: string, value: V, capacity: number)
   }
 }
 
+function copyWarmState(entry: WarmThreadState): WarmThreadState {
+  return {
+    thread: { ...entry.thread },
+    page: Option.map(entry.page, (page) => ({ ...page })),
+    lastSequence: entry.lastSequence,
+    generation: entry.generation,
+  };
+}
+
 interface WarmThreadStateRegistry {
-  /** Copy without removing so overlapping machines can all restore. */
+  /**
+   * Peek without removing so overlapping machines can all restore. Marks the
+   * key recently used and returns a shallow copy so callers cannot mutate
+   * the stored blob.
+   */
   readonly get: (key: string) => WarmThreadState | null;
   /**
    * Publish a handoff blob. A lower lastSequence, an equal lastSequence with
-   * an older-or-equal generation, or a tombstoned key is ignored.
+   * an older-or-equal generation, or a tombstoned key is ignored. Stores a
+   * shallow copy so later in-place updates cannot rewind a successor.
    */
   readonly set: (key: string, entry: WarmThreadState) => void;
+  /**
+   * Drop the blob and remember the delete. Thread ids are not reused, so a
+   * later set for the same key is ignored until this tombstone ages out of
+   * the LRU. That blocks a predecessor finalizer from resurrecting a deleted
+   * thread.
+   */
   readonly remove: (key: string) => void;
   readonly nextGeneration: () => number;
 }
@@ -157,7 +177,18 @@ export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
       generation += 1;
       return generation;
     },
-    get: (key) => (deleted.has(key) ? null : (entries.get(key) ?? null)),
+    get: (key) => {
+      if (deleted.has(key)) {
+        return null;
+      }
+      const entry = entries.get(key);
+      if (entry === undefined) {
+        return null;
+      }
+      entries.delete(key);
+      entries.set(key, entry);
+      return copyWarmState(entry);
+    },
     set: (key, entry) => {
       if (deleted.has(key)) {
         return;
@@ -171,7 +202,7 @@ export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
           return;
         }
       }
-      lruSet(entries, key, entry, WARM_THREAD_STATE_CAPACITY);
+      lruSet(entries, key, copyWarmState(entry), WARM_THREAD_STATE_CAPACITY);
     },
     remove: (key) => {
       entries.delete(key);

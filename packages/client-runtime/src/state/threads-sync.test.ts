@@ -501,6 +501,38 @@ describe("EnvironmentThreads", () => {
     expect(warmStates.get("environment-1:thread-8")?.thread.title).toBe("Thread 8");
   });
 
+  it("treats a restore as recent so a later write cannot evict it", () => {
+    const warmStates = makeWarmThreadStateRegistry();
+    for (let index = 0; index < WARM_THREAD_STATE_CAPACITY; index += 1) {
+      warmStates.set(`environment-1:thread-${index}`, warmBlob(`Thread ${index}`, 1, 1));
+    }
+
+    expect(warmStates.get("environment-1:thread-0")?.thread.title).toBe("Thread 0");
+    warmStates.set("environment-1:thread-new", warmBlob("New", 1, 1));
+
+    expect(warmStates.get("environment-1:thread-0")?.thread.title).toBe("Thread 0");
+    expect(warmStates.get("environment-1:thread-1")).toBeNull();
+    expect(warmStates.get("environment-1:thread-new")?.thread.title).toBe("New");
+  });
+
+  it("does not let callers mutate the stored warm blob", () => {
+    const warmStates = makeWarmThreadStateRegistry();
+    const key = "environment-1:thread-1";
+    const page = { beforeCursor: "c", hasMore: true, loadingOlder: false };
+    const blob = { ...warmBlob("Live", 5, 1), page: Option.some(page) };
+    warmStates.set(key, blob);
+    blob.thread.title = "Mutated input";
+    page.loadingOlder = true;
+
+    const restored = warmStates.get(key)!;
+    expect(restored.thread.title).toBe("Live");
+    expect(Option.getOrThrow(restored.page).loadingOlder).toBe(false);
+    restored.thread.title = "Mutated restore";
+    Option.getOrThrow(restored.page).loadingOlder = true;
+    expect(warmStates.get(key)?.thread.title).toBe("Live");
+    expect(Option.getOrThrow(warmStates.get(key)!.page).loadingOlder).toBe(false);
+  });
+
   it("keeps the newer warm snapshot when an older write arrives later", () => {
     const warmStates = makeWarmThreadStateRegistry();
     const key = "environment-1:thread-1";
