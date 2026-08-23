@@ -164,8 +164,18 @@ record_local_native_submit() {
 }
 
 record_local_ota_publish() {
+  local existing next="${1:-$commit}"
+  # Both macos-release agents and the upstream-sync job share this file. A
+  # slower job on an older SHA must not regress a newer mark, or the next
+  # push would re-diff (and re-publish) content already released.
+  existing="$(native_submit_line "$LOCAL_OTA_MARK" || true)"
+  if [[ "$existing" =~ ^[0-9a-f]{40}$ && "$existing" != "$next" ]] \
+    && git merge-base --is-ancestor "$next" "$existing" 2>/dev/null; then
+    echo "Recorded OTA commit $existing is newer than $next; keeping it."
+    return 0
+  fi
   mkdir -p "$(dirname "$LOCAL_OTA_MARK")"
-  printf '%s\n' "${1:-$commit}" > "$LOCAL_OTA_MARK"
+  printf '%s\n' "$next" > "$LOCAL_OTA_MARK"
 }
 
 # One successful macos-release TestFlight submit is enough. The git marker

@@ -235,6 +235,37 @@ describe("iOS publish OTA catch-up base", () => {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("keeps a newer OTA mark when an older job finishes late", () => {
+    const { root, work, parent, head } = makeOtaBaseRepo();
+    try {
+      const record = mobileRelease.match(/record_local_ota_publish\(\) \{\n[\s\S]*?\n\}/);
+      const line = mobileRelease.match(/native_submit_line\(\) \{\n[\s\S]*?\n\}/);
+      assert.ok(record, "record_local_ota_publish missing");
+      assert.ok(line, "native_submit_line missing");
+      const run = (markContent, sha) => {
+        const mark = NodePath.join(work, "ota-mark");
+        NodeFS.writeFileSync(mark, `${markContent}\n`);
+        NodeChildProcess.execFileSync(
+          "bash",
+          [
+            "-c",
+            `${line[0]}\n${record[0]}\nLOCAL_OTA_MARK="$1"\ncommit="$2"\nrecord_local_ota_publish`,
+            "ota-record",
+            mark,
+            sha,
+          ],
+          { cwd: work, encoding: "utf8" },
+        );
+        return NodeFS.readFileSync(mark, "utf8").trim();
+      };
+      assert.equal(run(head, parent), head, "older publish must not regress the mark");
+      assert.equal(run(parent, head), head, "newer publish advances the mark");
+      assert.equal(run("bogus", head), head, "unreadable marks are replaced");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("iOS publish Xcode selection", () => {
