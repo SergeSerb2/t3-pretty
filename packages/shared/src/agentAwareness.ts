@@ -26,6 +26,7 @@ export interface AgentAwarenessState {
   readonly updatedAt: string;
   readonly deepLink: string;
   readonly progress?: number;
+  readonly startedAt?: string;
 }
 
 export interface ProjectThreadAwarenessInput {
@@ -64,6 +65,7 @@ export function projectThreadAwareness(
 
   const detail = detailForPhase(phase, thread);
   const progress = progressForPhase(phase, thread);
+  const startedAt = startedAtForPhase(phase, thread);
   return {
     environmentId,
     threadId: thread.id,
@@ -73,6 +75,7 @@ export function projectThreadAwareness(
     headline: headlineForPhase(phase),
     ...(detail === undefined ? {} : { detail }),
     ...(progress === undefined ? {} : { progress }),
+    ...(startedAt === undefined ? {} : { startedAt }),
     modelTitle: thread.modelSelection.model,
     updatedAt: thread.updatedAt,
     deepLink: buildAgentAwarenessDeepLink({ environmentId, threadId: thread.id }),
@@ -155,6 +158,24 @@ function progressForPhase(
     return undefined;
   }
   return Math.max(0, Math.min(1, plan.completedSteps / plan.totalSteps));
+}
+
+// When the in-flight turn began, feeding the Live Activity's ticking elapsed
+// timer. Only the materialized running turn carries a trustworthy start;
+// sessions running without one (background fleets, pre-checkpoint turns)
+// would pin the timer to a stale prior turn, so they get no startedAt.
+function startedAtForPhase(
+  phase: AgentAwarenessPhase,
+  thread: ProjectThreadAwarenessInput["thread"],
+): string | undefined {
+  if (phase !== "running" && phase !== "starting") {
+    return undefined;
+  }
+  const turn = thread.latestTurn;
+  if (!turn || turn.state !== "running") {
+    return undefined;
+  }
+  return turn.startedAt ?? turn.requestedAt;
 }
 
 function detailForPhase(

@@ -1660,6 +1660,37 @@ describe("ApnsDeliveries", () => {
   });
 });
 
+describe("aggregate shape changes", () => {
+  it("marks a missing baseline, count changes, and phase changes urgent", () => {
+    expect(ApnsDeliveries.aggregateShapeChanged(null, aggregate)).toBe(true);
+    expect(ApnsDeliveries.aggregateShapeChanged(aggregate, { ...aggregate, activeCount: 2 })).toBe(
+      true,
+    );
+    expect(
+      ApnsDeliveries.aggregateShapeChanged(aggregate, {
+        ...aggregate,
+        activities: aggregate.activities.map((row) => ({
+          ...row,
+          phase: "waiting_for_approval" as const,
+        })),
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps content-only ticks non-urgent", () => {
+    expect(
+      ApnsDeliveries.aggregateShapeChanged(aggregate, {
+        ...aggregate,
+        activities: aggregate.activities.map((row) => ({
+          ...row,
+          status: "Editing ApnsDeliveries.ts",
+          progress: 0.5,
+        })),
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("live activity alert decisions", () => {
   const preferences = {
     liveActivitiesEnabled: true,

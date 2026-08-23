@@ -99,6 +99,22 @@ describe("ApnsClient", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.effect("builds a high-priority update payload when the update is urgent", () =>
+    Effect.gen(function* () {
+      const apns = yield* ApnsClient.ApnsClient;
+      const request = apns.makeLiveActivityRequest({
+        event: "update",
+        token: "token",
+        state,
+        urgent: true,
+        nowEpochSeconds: Math.floor(now.epochMilliseconds / 1_000),
+        nowIso: DateTime.formatIso(now),
+      });
+
+      expect(request.priority).toBe("10");
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("builds a high-priority alerting update payload when an alert is attached", () =>
     Effect.gen(function* () {
       const apns = yield* ApnsClient.ApnsClient;

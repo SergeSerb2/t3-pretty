@@ -131,8 +131,7 @@ describe("AgentActivity widget layout", () => {
       { ...environment, levelOfDetail: "simplified" } as never,
     );
     const banner = JSON.stringify(layout.banner);
-    expect(banner).toContain("1 approval");
-    expect(banner).not.toContain("1 working");
+    expect(banner).toContain("1 approval · 1 working");
     expect(banner).not.toContain("Working thread");
     expect(banner).not.toContain("Blocked thread");
   });
@@ -158,7 +157,7 @@ describe("AgentActivity widget layout", () => {
     expect(banner).not.toContain("#fcd34d");
   });
 
-  it("leads the banner with attention, then working, and never lists thread titles", () => {
+  it("leads the header with attention, then working, and lists the thread rows", () => {
     const layout = AgentActivity(
       {
         ...props,
@@ -183,10 +182,38 @@ describe("AgentActivity widget layout", () => {
     expect(banner).toContain("1 approval");
     expect(banner).toContain("2 working");
     expect(banner.indexOf("1 approval")).toBeLessThan(banner.indexOf("2 working"));
-    expect(banner).not.toContain("Working thread");
-    expect(banner).not.toContain("Blocked thread");
-    expect(banner).not.toContain("Another working thread");
-    expect(banner).not.toContain("Project");
+    // The rows themselves, attention first.
+    expect(banner).toContain("Blocked thread");
+    expect(banner).toContain("Working thread");
+    expect(banner).toContain("Another working thread");
+    expect(banner.indexOf("Blocked thread")).toBeLessThan(banner.indexOf("Working thread"));
+  });
+
+  it("ticks a live elapsed timer for in-flight rows that carry a turn start", () => {
+    const layout = AgentActivity(
+      {
+        ...props,
+        activeCount: 2,
+        activities: [
+          makeRow({ startedAt: "2026-05-25T13:01:30.000Z" }),
+          makeRow({ threadId: "thread-2" }),
+        ],
+      },
+      environment as never,
+    );
+    const banner = JSON.stringify(layout.banner);
+    expect(banner).toContain('"dateStyle":"timer"');
+    expect(banner).toContain("2026-05-25T13:01:30.000Z");
+  });
+
+  it("shows the solo running thread's elapsed timer in the compact island", () => {
+    const layout = AgentActivity(
+      { ...props, activities: [makeRow({ startedAt: "2026-05-25T13:01:30.000Z" })] },
+      environment as never,
+    );
+    const trailing = JSON.stringify(layout.compactTrailing);
+    expect(trailing).toContain('"dateStyle":"timer"');
+    expect(trailing).toContain("2026-05-25T13:01:30.000Z");
   });
 
   it("names mixed attention as need you", () => {
@@ -326,7 +353,9 @@ describe("AgentActivity widget layout", () => {
     );
     const banner = JSON.stringify(layout.banner);
     expect(banner).toContain("Failed");
-    expect(banner).not.toContain("Done");
+    // The header outcome reads Failed; the completed row may still list its
+    // own Done status below, but never ahead of the failure.
+    expect(banner.indexOf("Failed")).toBeLessThan(banner.indexOf("Done"));
     expect(banner).not.toContain("Agent work completed");
     expect(banner).toContain("#fca5a5"); // red-300 header tint
     expect(JSON.stringify(layout.compactTrailing)).toContain("Failed");
@@ -350,11 +379,10 @@ describe("AgentActivity widget layout", () => {
     const banner = JSON.stringify(layout.banner);
     expect(banner).toContain("2 working");
     expect(banner).toContain("1 failed");
-    expect(banner).not.toContain("Failed");
     expect(JSON.stringify(layout.compactTrailing)).toContain("2");
   });
 
-  it("summarizes many working threads as a count instead of listing titles", () => {
+  it("lists the first rows and collapses the rest into an overflow count", () => {
     const layout = AgentActivity(
       {
         ...props,
@@ -367,11 +395,12 @@ describe("AgentActivity widget layout", () => {
     );
     const banner = JSON.stringify(layout.banner);
     expect(banner).toContain("6 working");
-    for (const n of [1, 2, 3, 4, 5, 6]) {
-      expect(banner).not.toContain(`Thread ${n}`);
-    }
-    expect(JSON.stringify(layout.expandedBottom)).toContain("6 working");
-    expect(JSON.stringify(layout.expandedBottom)).not.toContain("Thread 1");
+    expect(banner).toContain("Thread 1");
+    expect(banner).toContain("Thread 3");
+    expect(banner).not.toContain("Thread 4");
+    expect(banner).toContain("+3 more");
+    expect(JSON.stringify(layout.expandedBottom)).toContain("Thread 1");
+    expect(JSON.stringify(layout.expandedBottom)).toContain("+3 more");
     expect(JSON.stringify(layout.compactTrailing)).toContain("6");
   });
 });
