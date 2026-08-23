@@ -24,6 +24,7 @@ import {
   resolveThreadRowClassName,
   resolveSidebarThreadStatus,
   isSettledThreadPastArchiveAge,
+  reserveSettledArchiveAttempts,
   retainSettledAutoArchiveAttempts,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
@@ -1198,6 +1199,17 @@ describe("retainSettledAutoArchiveAttempts", () => {
         new Set(["lagging", "other"]),
       ),
     ).toEqual(new Set(["lagging"]));
+  });
+});
+
+describe("reserveSettledArchiveAttempts", () => {
+  it("skips keys already reserved and claims the rest", () => {
+    const attempted = new Set(["busy"]);
+    expect(reserveSettledArchiveAttempts(attempted, ["busy", "free", "also-free"])).toEqual([
+      "free",
+      "also-free",
+    ]);
+    expect(attempted).toEqual(new Set(["busy", "free", "also-free"]));
   });
 });
 

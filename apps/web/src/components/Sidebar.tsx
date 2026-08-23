@@ -139,6 +139,7 @@ import {
   planPinnedReorder,
   resolveAdjacentThreadId,
   isSettledThreadPastArchiveAge,
+  reserveSettledArchiveAttempts,
   retainSettledAutoArchiveAttempts,
   resolveSettledTimestamp,
   resolveSidebarThreadStatus,
@@ -2320,7 +2321,8 @@ export default function Sidebar() {
   // Bulk/auto archive must not navigate away if the user opened a candidate
   // after the batch was planned. Row archive still passes the default.
   const archiveSettledQuietly = useCallback(
-    (threadRef: ScopedThreadRef) => archiveThread(threadRef, { navigateIfCurrent: false }),
+    (threadRef: ScopedThreadRef, onArchived?: () => void) =>
+      archiveThread(threadRef, { navigateIfCurrent: false, onArchived }),
     [archiveThread],
   );
   // Attempted keys are remembered so a successful archive isn't retried
@@ -2342,16 +2344,32 @@ export default function Sidebar() {
     if (confirmed._tag === "Failure" || !confirmed.value) return;
     setClearingSettled(true);
     try {
-      const entries = clearableSettledThreads.map((thread) => {
+      // Skip keys auto-archive already claimed, then mark the rest before the
+      // first await so a minute sweep cannot archive the same rows mid-Clear.
+      const candidates = clearableSettledThreads.map((thread) => {
         const threadRef = scopeThreadRef(thread.environmentId, thread.id);
         return { threadKey: scopedThreadKey(threadRef), threadRef };
       });
+      const reservedKeys = new Set(
+        reserveSettledArchiveAttempts(
+          autoArchiveAttemptedRef.current,
+          candidates.map((entry) => entry.threadKey),
+        ),
+      );
+      const entries = candidates.filter((entry) => reservedKeys.has(entry.threadKey));
+      if (entries.length === 0) return;
       const outcome = await archiveSelectedThreadEntries({
         entries,
-        archive: (entry) => archiveSettledQuietly(entry.threadRef),
+        archive: (entry, onArchived) => archiveSettledQuietly(entry.threadRef, onArchived),
       });
+      const archivedKeySet = new Set(outcome.archivedThreadKeys);
+      for (const entry of entries) {
+        if (!archivedKeySet.has(entry.threadKey)) {
+          autoArchiveAttemptedRef.current.delete(entry.threadKey);
+        }
+      }
       const archivedRefs = entries
-        .filter((entry) => outcome.archivedThreadKeys.includes(entry.threadKey))
+        .filter((entry) => archivedKeySet.has(entry.threadKey))
         .map((entry) => entry.threadRef);
       const undoAction =
         archivedRefs.length > 0
@@ -2394,8 +2412,13 @@ export default function Sidebar() {
               },
             }
           : undefined;
-      if (outcome.mutationFailure !== null && !isAtomCommandInterrupted(outcome.mutationFailure)) {
-        const error = squashAtomCommandFailure(outcome.mutationFailure);
+      const reportedFailure =
+        outcome.mutationFailure !== null && !isAtomCommandInterrupted(outcome.mutationFailure)
+          ? outcome.mutationFailure
+          : (outcome.followupFailures.find((failure) => !isAtomCommandInterrupted(failure)) ??
+            null);
+      if (reportedFailure !== null) {
+        const error = squashAtomCommandFailure(reportedFailure);
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -2429,6 +2452,8 @@ export default function Sidebar() {
   // One archive at a time so a long tail cannot open a mutation per row.
   useEffect(() => {
     if (autoArchiveSettledAfterDays === null) return;
+    // Clear already reserved its rows; a concurrent sweep would double-archive.
+    if (clearingSettled) return;
     const nowMs = Date.parse(`${nowMinute}:00.000Z`);
     if (Number.isNaN(nowMs)) return;
     const settledKeys = new Set(
@@ -2440,7 +2465,7 @@ export default function Sidebar() {
       autoArchiveAttemptedRef.current,
       settledKeys,
     );
-    const entries = settledThreads.flatMap((thread) => {
+    const candidates = settledThreads.flatMap((thread) => {
       if (!isSettledThreadPastArchiveAge(thread, { nowMs, afterDays: autoArchiveSettledAfterDays }))
         return [];
       const threadRef = scopeThreadRef(thread.environmentId, thread.id);
@@ -2448,13 +2473,16 @@ export default function Sidebar() {
       // Never yank the open thread out from under the user; it archives
       // after they navigate away.
       if (threadKey === routeThreadKey) return [];
-      if (autoArchiveAttemptedRef.current.has(threadKey)) return [];
       return [{ threadKey, threadRef }];
     });
+    const reservedKeys = new Set(
+      reserveSettledArchiveAttempts(
+        autoArchiveAttemptedRef.current,
+        candidates.map((entry) => entry.threadKey),
+      ),
+    );
+    const entries = candidates.filter((entry) => reservedKeys.has(entry.threadKey));
     if (entries.length === 0) return;
-    // Mark the whole batch before the first await so a re-run cannot start
-    // a second sweep of the same rows while this one is in flight.
-    for (const entry of entries) autoArchiveAttemptedRef.current.add(entry.threadKey);
     void (async () => {
       for (const entry of entries) {
         // Re-check after each prior await: a thread opened mid-sweep stays.
@@ -2471,6 +2499,7 @@ export default function Sidebar() {
   }, [
     archiveSettledQuietly,
     autoArchiveSettledAfterDays,
+    clearingSettled,
     nowMinute,
     routeThreadKey,
     settledThreads,
