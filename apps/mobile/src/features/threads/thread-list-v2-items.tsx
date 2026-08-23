@@ -13,6 +13,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   useSyncExternalStore,
@@ -149,25 +150,35 @@ function useThreadDepartureAnimation(
     if (departing && landed) clearThreadDeparting(threadKey);
   }, [departing, landed, threadKey]);
 
-  const opacity = useSharedValue(1);
-  const translateY = useSharedValue(0);
-  const scale = useSharedValue(1);
+  // FlatList may remount the same key on the destination shelf. Shared values
+  // reset to their initials, so departing+landed (and arriving) must start
+  // hidden — the landing effect only clears after paint.
+  const startHidden = (departing && landed) || arriving;
+  const opacity = useSharedValue(startHidden ? 0 : 1);
+  const translateY = useSharedValue(departing && landed ? 12 : arriving ? 6 : 0);
+  const scale = useSharedValue(departing && landed ? 0.98 : 1);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     cancelAnimation(opacity);
     cancelAnimation(translateY);
     cancelAnimation(scale);
 
-    if (departing && !landed) {
-      const config = {
-        duration: DEPART_DURATION_MS,
-        easing: Easing.bezier(0.3, 0, 0.8, 0.15),
-        reduceMotion: ReduceMotion.System,
-      };
-      opacity.value = withTiming(0, config);
-      translateY.value = withTiming(12, config);
-      scale.value = withTiming(0.98, config);
-    } else if (!departing && arriving) {
+    if (departing) {
+      if (landed) {
+        opacity.value = 0;
+        translateY.value = 12;
+        scale.value = 0.98;
+      } else {
+        const config = {
+          duration: DEPART_DURATION_MS,
+          easing: Easing.bezier(0.3, 0, 0.8, 0.15),
+          reduceMotion: ReduceMotion.System,
+        };
+        opacity.value = withTiming(0, config);
+        translateY.value = withTiming(12, config);
+        scale.value = withTiming(0.98, config);
+      }
+    } else if (arriving) {
       opacity.value = 0;
       translateY.value = 6;
       scale.value = 1;
@@ -178,7 +189,7 @@ function useThreadDepartureAnimation(
       };
       opacity.value = withTiming(1, config);
       translateY.value = withTiming(0, config);
-    } else if (!departing) {
+    } else {
       opacity.value = 1;
       translateY.value = 0;
       scale.value = 1;
