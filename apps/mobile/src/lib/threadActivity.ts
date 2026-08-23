@@ -1357,7 +1357,10 @@ function feedHasFilteredLiveTools(
   entries: ReadonlyArray<ThreadFeedEntry>,
   collapsedEntryIds: ReadonlySet<string>,
 ): boolean {
-  for (const entry of entries) {
+  // Stop at the latest user message so leftover earlier-turn live tools don't count.
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    if (entry.type === "message" && entry.message.role === "user") return false;
     if (collapsedEntryIds.has(entry.id) || entry.type !== "activity-group") continue;
     if (
       entry.activities.length > 0 &&
