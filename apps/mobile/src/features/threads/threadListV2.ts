@@ -203,7 +203,8 @@ export interface ThreadListV2Item {
   readonly variant: "card" | "slim";
   /** Snoozed-shelf row: shows the wake countdown and offers Wake. */
   readonly snoozed: boolean;
-  /** Settled-shelf row. With `snoozed`, tells a departing row it landed. */
+  /** Settled-shelf row, or pinned-and-settled. With `snoozed`, tells a
+      departing row it landed. Pin still wins the partition. */
   readonly settled: boolean;
   /** Pinned-block row: renders the pin glyph and offers Unpin. */
   readonly pinned: boolean;
@@ -476,7 +477,7 @@ export function buildThreadListV2Items(input: {
       thread,
       variant: "card",
       snoozed: false,
-      settled: false,
+      settled: thread.settledOverride === "settled",
       pinned: true,
       isLast: false,
     });

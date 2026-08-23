@@ -349,7 +349,9 @@ describe("buildThreadListV2Items", () => {
           id: ThreadId.make("pinned-settled"),
           title: "Pinned while settled",
           pinnedAt: "2026-06-01T12:00:00.000Z",
-          // Stale settled state (the decider clears it on pin): the pin wins.
+          // Stale settled state (the decider clears it on pin): the pin wins
+          // the partition, but the settled flag stays true so a settle
+          // departure can land instead of waiting out the 4s TTL.
           settledOverride: "settled",
           settledAt: "2026-06-01T12:00:00.000Z",
         }),
@@ -361,7 +363,7 @@ describe("buildThreadListV2Items", () => {
 
     expect(layout.items.map((item) => item.thread.id)).toEqual(["pinned-settled", "active"]);
     expect(layout.items.map((item) => item.pinned)).toEqual([true, false]);
-    expect(layout.items.map((item) => item.settled)).toEqual([false, false]);
+    expect(layout.items.map((item) => item.settled)).toEqual([true, false]);
     expect(layout.settledCount).toBe(0);
   });
 
