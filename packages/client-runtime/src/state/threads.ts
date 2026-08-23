@@ -133,6 +133,12 @@ export function makeWarmThreadStateRegistry(): WarmThreadStateRegistry {
   return {
     get: (key) => entries.get(key) ?? null,
     set: (key, entry) => {
+      const current = entries.get(key);
+      // A late predecessor (Strict Mode, environment swap) must not rewind
+      // a successor that already applied newer events.
+      if (current !== undefined && entry.lastSequence < current.lastSequence) {
+        return;
+      }
       entries.delete(key);
       entries.set(key, entry);
       for (const oldest of entries.keys()) {

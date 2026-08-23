@@ -474,6 +474,31 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it("keeps the newer warm snapshot when an older write arrives later", () => {
+    const warmStates = makeWarmThreadStateRegistry();
+    const key = "environment-1:thread-1";
+    warmStates.set(key, {
+      thread: { ...ACTIVE_THREAD, title: "Newer" },
+      page: Option.none(),
+      lastSequence: 5,
+    });
+    warmStates.set(key, {
+      thread: { ...ACTIVE_THREAD, title: "Older" },
+      page: Option.none(),
+      lastSequence: 1,
+    });
+
+    expect(warmStates.get(key)?.lastSequence).toBe(5);
+    expect(warmStates.get(key)?.thread.title).toBe("Newer");
+
+    warmStates.set(key, {
+      thread: { ...ACTIVE_THREAD, title: "Same sequence" },
+      page: Option.none(),
+      lastSequence: 5,
+    });
+    expect(warmStates.get(key)?.thread.title).toBe("Same sequence");
+  });
+
   it.effect("lets overlapping machines all restore the same running-thread handoff", () =>
     Effect.gen(function* () {
       const warmStates = makeWarmThreadStateRegistry();
