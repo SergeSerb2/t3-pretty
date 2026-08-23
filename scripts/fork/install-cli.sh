@@ -1,5 +1,6 @@
 #!/bin/sh
 # Install the T3 Pretty headless CLI (not upstream `npx t3`).
+# This source is public; publish-cli.sh renders the internal R2/Surge copy.
 # Usage: curl -fsSL https://github.com/SergeSerb2/t3-pretty/releases/latest/download/install.sh | sh
 set -eu
 

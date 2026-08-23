@@ -104,11 +104,10 @@ node apps/server/scripts/cli.ts pack --app-version "$version" --out-dir "$tmp" -
 tarball="$tmp/t3-${version}.tgz"
 test -f "$tarball"
 cp "$tarball" "$tmp/t3.tgz"
-cp scripts/fork/install-cli.sh "$tmp/install.sh"
+# Never upload the checked-in public installer unchanged from Buildkite.
 sed \
   's|https://github.com/SergeSerb2/t3-pretty/releases/latest/download|https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest|g; s|T3 Connect|Surge Connect|g' \
-  "$tmp/install.sh" >"$tmp/install.internal.sh"
-mv "$tmp/install.internal.sh" "$tmp/install.sh"
+  scripts/fork/install-cli.sh >"$tmp/install.sh"
 chmod 755 "$tmp/install.sh"
 
 if [[ "${T3_PRETTY_CLI_SKIP_UPLOAD:-}" == "1" ]]; then

@@ -144,7 +144,9 @@ describe("T3 Pretty release runner placement", () => {
     const installCli = NodeFS.readFileSync(NodePath.resolve(here, "install-cli.sh"), "utf8");
     assert.include(installCli, "https://github.com/SergeSerb2/t3-pretty/releases/latest/download");
     assert.include(installCli, "turn on T3 Connect");
-    assert.include(publishCli, "install.internal.sh");
+    assert.include(installCli, "publish-cli.sh renders the internal R2/Surge copy");
+    assert.include(publishCli, 'scripts/fork/install-cli.sh >"$tmp/install.sh"');
+    assert.notInclude(publishCli, 'cp scripts/fork/install-cli.sh "$tmp/install.sh"');
     assert.include(publishCli, "s|T3 Connect|Surge Connect|g");
     assert.include(publishCli, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");
   });
@@ -356,6 +358,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publicReleaseWorkflow, '[[ "$REF" == "refs/heads/main" ]]');
     assert.include(publicReleaseWorkflow, "name: wsl-node-pty-x64");
     assert.include(publicReleaseWorkflow, "pattern: public-*");
+    assert.include(publicReleaseWorkflow, "cp scripts/fork/install-cli.sh public-cli/install.sh");
     assert.notInclude(publicReleaseWorkflow, "sed -i");
     assert.include(publicWeb, "pages: read");
     assert.include(publicPages, "pages: write");

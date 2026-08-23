@@ -17,6 +17,7 @@ const defaultInput = {
   isPackaged: false,
   resourcesPath: "/Applications/T3 Pretty.app/Contents/Resources",
   runningUnderArm64Translation: false,
+  buildFlavor: "public",
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
 const makeEnvironmentLayer = (
