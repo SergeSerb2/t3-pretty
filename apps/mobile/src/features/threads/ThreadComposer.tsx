@@ -512,10 +512,20 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.selectedThread.session?.status === "running" ||
     props.selectedThread.session?.status === "starting";
 
-  // Sending during a running turn steers it, so only the genuinely-queued
-  // states (offline, or messages already parked in the outbox) say "Queue".
-  const sendLabel =
-    props.connectionState !== "connected" || props.queueCount > 0 ? "Queue" : "Send";
+  // What a tap delivers, and therefore what the button says — one source of
+  // truth so the label cannot promise one behavior and send another. Offline
+  // parks the message for the next turn boundary; a connected running turn
+  // steers on tap (long-press queues); a still-draining outbox queues behind
+  // its siblings; an idle connected send leaves the server default (steer).
+  const sendDelivery: TurnDeliveryMode | undefined =
+    props.connectionState !== "connected"
+      ? "queue"
+      : showStopAction
+        ? "steer"
+        : props.queueCount > 0
+          ? "queue"
+          : undefined;
+  const sendLabel = sendDelivery === "queue" ? "Queue" : "Send";
   const currentModelSelection = props.selectedThread.modelSelection;
   const storedRuntimeMode = props.selectedThread.runtimeMode;
   const currentInteractionMode = props.selectedThread.interactionMode ?? "default";
@@ -826,13 +836,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       props.selectedThread.title,
     ],
   );
-  // Delivery follows the button's promise: a "Queue" label (offline, or
-  // messages already parked in the outbox) queues, a running-turn "Send"
-  // steers, an idle "Send" leaves the server default. The long-press menu
-  // always queues.
   const handleSendPress = useCallback(() => {
-    void handleSend(sendLabel === "Queue" ? "queue" : showStopAction ? "steer" : undefined);
-  }, [handleSend, sendLabel, showStopAction]);
+    void handleSend(sendDelivery);
+  }, [handleSend, sendDelivery]);
   const handleSendMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
       if (nativeEvent.event === "queue") void handleSend("queue");
