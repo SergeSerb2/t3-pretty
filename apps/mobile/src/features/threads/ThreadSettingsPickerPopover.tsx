@@ -155,9 +155,10 @@ export function ThreadSettingsPickerPopover(props: {
     void Haptics.selectionAsync();
     props.onSelectModel(option);
   };
+  // Listed catalogs stay open so effort/access remain one extra tap, same as chips.
   const pickListedModel = (option: ModelOption) => {
+    Keyboard.dismiss();
     pickModel(option);
-    close();
   };
   const openAdvanced = () => {
     close();
