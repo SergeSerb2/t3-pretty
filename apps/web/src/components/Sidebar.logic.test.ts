@@ -3,6 +3,7 @@ import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit
 import {
   animatePinnedLayoutChanges,
   archiveSelectedThreadEntries,
+  unarchiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
   buildMultiSelectThreadContextMenuItems,
   countThreadsAwaitingUser,
@@ -197,6 +198,34 @@ describe("archiveSelectedThreadEntries", () => {
       archivedThreadKeys: ["one", "two", "three"],
       mutationFailure: null,
       followupFailures: [failure],
+    });
+  });
+});
+
+describe("unarchiveSelectedThreadEntries", () => {
+  const entries = [{ threadKey: "one" }, { threadKey: "two" }, { threadKey: "three" }] as const;
+  const success = { _tag: "Success" } as const;
+  const failure = { _tag: "Failure" } as const;
+
+  it("restores every entry after full success", async () => {
+    const outcome = await unarchiveSelectedThreadEntries({
+      entries,
+      unarchive: async () => success,
+    });
+
+    expect(outcome).toEqual({ restored: [...entries], failures: [] });
+  });
+
+  it("continues after a failure and reports it", async () => {
+    const unarchive = vi.fn(async (entry: (typeof entries)[number]) =>
+      entry.threadKey === "two" ? failure : success,
+    );
+    const outcome = await unarchiveSelectedThreadEntries({ entries, unarchive });
+
+    expect(unarchive).toHaveBeenCalledTimes(3);
+    expect(outcome).toEqual({
+      restored: [entries[0], entries[2]],
+      failures: [failure],
     });
   });
 });

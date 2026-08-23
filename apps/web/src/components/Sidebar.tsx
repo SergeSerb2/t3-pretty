@@ -127,6 +127,7 @@ import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   animatePinnedLayoutChanges,
   archiveSelectedThreadEntries,
+  unarchiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
   countThreadsAwaitingUser,
   formatWorkingDurationLabel,
@@ -2316,6 +2317,19 @@ export default function Sidebar() {
     );
   }, [routeThreadKey, settledThreads]);
   const [clearingSettled, setClearingSettled] = useState(false);
+  // Bulk/auto archive must not navigate away if the user opened a candidate
+  // after the batch was planned. Row archive still passes the default.
+  const archiveSettledQuietly = useCallback(
+    (threadRef: ScopedThreadRef) => archiveThread(threadRef, { navigateIfCurrent: false }),
+    [archiveThread],
+  );
+  // Attempted keys are remembered so a successful archive isn't retried
+  // every minute while the projection still lists the thread. Keys that
+  // leave the tail are dropped so an unarchive can be attempted again.
+  // Failures are dropped so a transient error can retry on the next tick.
+  // Clear undo re-adds restored keys so auto-archive cannot immediately
+  // re-grab what the user just put back.
+  const autoArchiveAttemptedRef = useRef(new Set<string>());
   const clearSettledThreads = useCallback(async () => {
     const api = readLocalApi();
     if (!api || clearableSettledThreads.length === 0 || clearingSettled) return;
@@ -2334,7 +2348,7 @@ export default function Sidebar() {
       });
       const outcome = await archiveSelectedThreadEntries({
         entries,
-        archive: (entry) => archiveThread(entry.threadRef),
+        archive: (entry) => archiveSettledQuietly(entry.threadRef),
       });
       const archivedRefs = entries
         .filter((entry) => outcome.archivedThreadKeys.includes(entry.threadKey))
@@ -2344,7 +2358,39 @@ export default function Sidebar() {
           ? {
               children: "Undo",
               onClick: () => {
-                for (const threadRef of archivedRefs) void unarchiveThread(threadRef);
+                void (async () => {
+                  for (const threadRef of archivedRefs) {
+                    autoArchiveAttemptedRef.current.add(scopedThreadKey(threadRef));
+                  }
+                  const restored = await unarchiveSelectedThreadEntries({
+                    entries: archivedRefs,
+                    unarchive: unarchiveThread,
+                  });
+                  const restoredKeys = new Set(
+                    restored.restored.map((threadRef) => scopedThreadKey(threadRef)),
+                  );
+                  for (const threadRef of archivedRefs) {
+                    const threadKey = scopedThreadKey(threadRef);
+                    if (!restoredKeys.has(threadKey)) {
+                      autoArchiveAttemptedRef.current.delete(threadKey);
+                    }
+                  }
+                  const failures = restored.failures.filter(
+                    (failure) => !isAtomCommandInterrupted(failure),
+                  );
+                  if (failures.length === 0) return;
+                  const error = squashAtomCommandFailure(failures[0]!);
+                  toastManager.add(
+                    stackedThreadToast({
+                      type: "error",
+                      title:
+                        restored.restored.length > 0
+                          ? `Restored ${restored.restored.length} of ${archivedRefs.length} settled threads`
+                          : "Failed to restore settled threads",
+                      description: error instanceof Error ? error.message : "An error occurred.",
+                    }),
+                  );
+                })();
               },
             }
           : undefined;
@@ -2375,17 +2421,12 @@ export default function Sidebar() {
     } finally {
       setClearingSettled(false);
     }
-  }, [archiveThread, clearableSettledThreads, clearingSettled, unarchiveThread]);
+  }, [archiveSettledQuietly, clearableSettledThreads, clearingSettled, unarchiveThread]);
 
   // Auto-archive: settled threads past the configured age leave the sidebar
   // on their own. Candidates come from the scoped partition on the minute
   // clock; a scoped-out project's tail sweeps next time it is in view.
-  // Attempted keys are remembered so a successful archive isn't retried
-  // every minute while the projection still lists the thread. Keys that
-  // leave the tail are dropped so an unarchive can be attempted again.
-  // Failures are dropped so a transient error can retry on the next tick.
   // One archive at a time so a long tail cannot open a mutation per row.
-  const autoArchiveAttemptedRef = useRef(new Set<string>());
   useEffect(() => {
     if (autoArchiveSettledAfterDays === null) return;
     const nowMs = Date.parse(`${nowMinute}:00.000Z`);
@@ -2416,13 +2457,24 @@ export default function Sidebar() {
     for (const entry of entries) autoArchiveAttemptedRef.current.add(entry.threadKey);
     void (async () => {
       for (const entry of entries) {
-        const result = await archiveThread(entry.threadRef);
+        // Re-check after each prior await: a thread opened mid-sweep stays.
+        if (routeThreadKeyRef.current === entry.threadKey) {
+          autoArchiveAttemptedRef.current.delete(entry.threadKey);
+          continue;
+        }
+        const result = await archiveSettledQuietly(entry.threadRef);
         if (result._tag === "Failure") {
           autoArchiveAttemptedRef.current.delete(entry.threadKey);
         }
       }
     })();
-  }, [archiveThread, autoArchiveSettledAfterDays, nowMinute, routeThreadKey, settledThreads]);
+  }, [
+    archiveSettledQuietly,
+    autoArchiveSettledAfterDays,
+    nowMinute,
+    routeThreadKey,
+    settledThreads,
+  ]);
 
   // The snoozed shelf is collapsed by default: out of the way, never gone.
   // Collapsed threads don't render (and so don't participate in jump

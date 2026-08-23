@@ -92,6 +92,31 @@ export async function archiveSelectedThreadEntries<
   return { archivedThreadKeys, mutationFailure: null, followupFailures };
 }
 
+export async function unarchiveSelectedThreadEntries<
+  TEntry,
+  TResult extends { readonly _tag: "Success" | "Failure" },
+>(input: {
+  entries: readonly TEntry[];
+  unarchive: (entry: TEntry) => Promise<TResult>;
+}): Promise<{
+  restored: readonly TEntry[];
+  failures: readonly Extract<TResult, { readonly _tag: "Failure" }>[];
+}> {
+  const restored: TEntry[] = [];
+  const failures: Extract<TResult, { readonly _tag: "Failure" }>[] = [];
+
+  for (const entry of input.entries) {
+    const result = await input.unarchive(entry);
+    if (result._tag === "Success") {
+      restored.push(entry);
+      continue;
+    }
+    failures.push(result as Extract<TResult, { readonly _tag: "Failure" }>);
+  }
+
+  return { restored, failures };
+}
+
 export function buildMultiSelectThreadContextMenuItems(input: {
   count: number;
   hasRunningThread: boolean;

@@ -208,7 +208,10 @@ export function useThreadActions() {
   }, [router]);
 
   const archiveThread = useCallback(
-    async (target: ScopedThreadRef, opts: { onArchived?: () => void } = {}) => {
+    async (
+      target: ScopedThreadRef,
+      opts: { onArchived?: () => void; navigateIfCurrent?: boolean } = {},
+    ) => {
       const resolved = resolveThreadTarget(target);
       if (!resolved) return AsyncResult.success(undefined);
       const { thread, threadRef } = resolved;
@@ -225,6 +228,7 @@ export function useThreadActions() {
 
       const currentRouteThreadRef = getCurrentRouteThreadRef();
       const shouldNavigateToDraft =
+        opts.navigateIfCurrent !== false &&
         currentRouteThreadRef?.threadId === threadRef.threadId &&
         currentRouteThreadRef.environmentId === threadRef.environmentId;
       const archiveResult = await archiveThreadMutation({
