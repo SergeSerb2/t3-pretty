@@ -16,6 +16,7 @@ import previewPanelShellSource from "../components/preview/PreviewPanelShell.tsx
 import pullRequestSummaryTabSource from "../components/pullRequest/PullRequestSummaryTab.tsx?raw";
 import threadTerminalDrawerSource from "../components/ThreadTerminalDrawer.tsx?raw";
 import sidebarSource from "../components/ui/sidebar.tsx?raw";
+import workspacePageHeaderSource from "../components/WorkspacePageHeader.tsx?raw";
 import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
 import rightPanelLayoutSource from "../rightPanelLayout.ts?raw";
@@ -167,6 +168,10 @@ describe("glass contract with upstream chrome", () => {
     expect(sceneryCssSource).toContain("[data-pull-requests-column]");
     expect(sceneryCssSource).toContain("[data-pull-requests-panel]");
     expect(sceneryCssSource).toContain("[data-pull-requests-header]");
+    // The header hook reaches the DOM only because WorkspacePageHeader spreads
+    // unknown props onto the <header> it renders; if that forwarding goes, the
+    // frosted band silently detaches while this test's source greps stay green.
+    expect(workspacePageHeaderSource).toContain("{...props}");
   });
 
   it("the bottom terminal drawer wears the same chrome glass plate as the sidebars", () => {
