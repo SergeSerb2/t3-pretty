@@ -19,6 +19,7 @@ import {
   readPersistedPullRequestListFilters,
   restorePullRequestListFilters,
   shouldAbandonNamedSaveWait,
+  shouldDeferNamedSaveRestore,
   shouldRetryPullRequestListRestore,
   writePersistedPullRequestListFilters,
 } from "./pullRequestListFiltersPersistence";
@@ -82,7 +83,7 @@ export function PullRequestsRouteScreen() {
   );
   const [scopeRestored, setScopeRestored] = useState(false);
   const [awaitingEmptyNamedSave, setAwaitingEmptyNamedSave] = useState(
-    savedFilters.environmentId !== null && environments.length === 0,
+    shouldDeferNamedSaveRestore(savedFilters.environmentId, environments),
   );
   const commitScope = () => {
     setAwaitingEmptyNamedSave(false);
@@ -91,6 +92,12 @@ export function PullRequestsRouteScreen() {
   useEffect(() => {
     if (isLoadingSavedConnection) return;
     if (!scopeRestored) {
+      const waiting = shouldDeferNamedSaveRestore(savedFilters.environmentId, environments);
+      setAwaitingEmptyNamedSave(waiting);
+      if (waiting) {
+        setScopeRestored(true);
+        return;
+      }
       const restored = restorePullRequestListFilters(
         savedFilters,
         preferredEnvironmentId,
@@ -99,7 +106,6 @@ export function PullRequestsRouteScreen() {
       setSelectedEnvironmentId(restored.environmentId);
       setSelectedProjectId(restored.projectId);
       setSelectedHost(restored.host);
-      setAwaitingEmptyNamedSave(savedFilters.environmentId !== null && environments.length === 0);
       setScopeRestored(true);
       return;
     }

@@ -50,6 +50,17 @@ export function nextPullRequestEnvironmentId(
 }
 
 /**
+ * A named save on an empty list can still be a hydrate flash. Do not fall back yet — keep
+ * the saved server until it appears or a different one hydrates.
+ */
+export function shouldDeferNamedSaveRestore(
+  savedEnvironmentId: EnvironmentId | null,
+  environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
+): boolean {
+  return savedEnvironmentId !== null && environments.length === 0;
+}
+
+/**
  * A named save on an empty list can still be a hydrate flash. Retry restore only when the
  * saved server itself appears; a different server is not the save coming in.
  */
