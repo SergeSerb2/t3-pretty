@@ -1,7 +1,15 @@
 import type { RuntimeMode } from "@t3tools/contracts";
 import * as Haptics from "expo-haptics";
-import { useCallback, useState, type ReactNode } from "react";
-import { Pressable, ScrollView, useWindowDimensions, View, type ViewStyle } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Keyboard,
+  Pressable,
+  ScrollView,
+  TextInput,
+  useWindowDimensions,
+  View,
+  type ViewStyle,
+} from "react-native";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -14,11 +22,11 @@ import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import { useThemeColor } from "../../lib/useThemeColor";
 import type { ModelOption } from "../../lib/modelOptions";
-import type { ThreadSettingsPickerModel } from "./thread-settings-picker";
+import { filterPickerModelList, type ThreadSettingsPickerModel } from "./thread-settings-picker";
 
 /**
- * Everyday composer picker: current model plus one-tap effort/tier/runtime.
- * Long catalogs (Cursor) leave the list in the searchable sheet.
+ * Everyday composer picker: searchable model list plus one-tap
+ * effort/tier/runtime, all applied instantly. Small catalogs stay as chips.
  */
 const POPOVER_MAX_WIDTH = 360;
 const SCREEN_MARGIN = 12;
@@ -73,18 +81,51 @@ export function ThreadSettingsPickerPopover(props: {
   readonly children: ReactNode;
   readonly disabled?: boolean;
   readonly model: ThreadSettingsPickerModel;
-  readonly onBrowseModels: () => void;
+  readonly onOpenAdvanced?: () => void;
   readonly onSelectModel: (option: ModelOption) => void;
   readonly onSelectOption: (id: string, value: string | boolean) => void;
   readonly onSelectRuntime: (mode: RuntimeMode) => void;
 }) {
   const [anchor, setAnchor] = useState<AnchorSnapshot | null>(null);
+  const [modelQuery, setModelQuery] = useState("");
+  const anchorRef = useRef<View | null>(null);
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const iconSubtle = useThemeColor("--color-icon-subtle");
+  const checkmarkColor = useThemeColor("--color-icon");
   const glassTint = useThemeColor("--color-glass-surface");
 
-  const close = useCallback(() => setAnchor(null), []);
+  const close = useCallback(() => {
+    Keyboard.dismiss();
+    setModelQuery("");
+    setAnchor(null);
+  }, []);
+
+  const remeasureAnchor = useCallback(() => {
+    anchorRef.current?.measureInWindow((x, y, width, height) => {
+      setAnchor({ x, y, width, height });
+    });
+  }, []);
+
+  // Model search opens the keyboard, which lifts the composer; keep the panel
+  // glued to wherever the anchor moved.
+  const isOpen = anchor !== null;
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    const show = Keyboard.addListener("keyboardDidShow", remeasureAnchor);
+    const hide = Keyboard.addListener("keyboardDidHide", remeasureAnchor);
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [isOpen, remeasureAnchor]);
+
+  const modelListEntries = useMemo(
+    () => (props.model.modelList ? filterPickerModelList(props.model.modelList, modelQuery) : null),
+    [props.model.modelList, modelQuery],
+  );
 
   if (props.disabled) {
     return props.children;
@@ -114,9 +155,13 @@ export function ThreadSettingsPickerPopover(props: {
     void Haptics.selectionAsync();
     props.onSelectModel(option);
   };
-  const browseModels = () => {
+  const pickListedModel = (option: ModelOption) => {
+    pickModel(option);
     close();
-    props.onBrowseModels();
+  };
+  const openAdvanced = () => {
+    close();
+    props.onOpenAdvanced?.();
   };
 
   const frameStyle: ViewStyle = {
@@ -133,6 +178,7 @@ export function ThreadSettingsPickerPopover(props: {
   return (
     <>
       <Pressable
+        ref={anchorRef}
         accessibilityLabel={props.accessibilityLabel}
         accessibilityRole="button"
         collapsable={false}
@@ -169,6 +215,7 @@ export function ThreadSettingsPickerPopover(props: {
               >
                 <ScrollView
                   bounces={false}
+                  keyboardDismissMode="on-drag"
                   keyboardShouldPersistTaps="always"
                   showsVerticalScrollIndicator={false}
                 >
@@ -184,32 +231,69 @@ export function ThreadSettingsPickerPopover(props: {
                       ))}
                     </ChoiceChipRow>
                   ) : (
-                    <Pressable
-                      accessibilityHint="Opens the model catalog"
-                      accessibilityLabel={`Change model, ${props.model.modelLabel}`}
-                      accessibilityRole="button"
-                      className="min-h-12 flex-row items-center gap-2.5 px-3.5 py-2.5 active:opacity-70"
-                      onPress={browseModels}
-                    >
-                      <ProviderIcon provider={props.model.providerDriver} size={16} />
-                      <View className="min-w-0 flex-1">
-                        <Text className="text-sm font-t3-medium text-foreground" numberOfLines={1}>
-                          {props.model.modelLabel}
-                        </Text>
-                        {props.model.providerLabel ? (
-                          <Text className="text-xs text-foreground-muted" numberOfLines={1}>
-                            {props.model.providerLabel}
-                          </Text>
-                        ) : null}
+                    <>
+                      <View className="gap-2 px-3.5 pb-1 pt-2.5">
+                        <Text className="text-xs font-t3-medium text-foreground-muted">Model</Text>
+                        <View className="h-9 flex-row items-center gap-2 rounded-full bg-subtle px-3">
+                          <SymbolView
+                            name="magnifyingglass"
+                            size={13}
+                            tintColor={iconSubtle}
+                            type="monochrome"
+                          />
+                          <TextInput
+                            accessibilityLabel="Find a model"
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            className="min-w-0 flex-1 text-sm text-foreground"
+                            onChangeText={setModelQuery}
+                            placeholder="Find a model"
+                            placeholderTextColorClassName="accent-placeholder"
+                            returnKeyType="search"
+                            value={modelQuery}
+                          />
+                        </View>
                       </View>
-                      <Text className="text-xs font-t3-medium text-foreground-muted">Change</Text>
-                      <SymbolView
-                        name="chevron.right"
-                        size={12}
-                        tintColor={iconSubtle}
-                        type="monochrome"
-                      />
-                    </Pressable>
+                      {modelListEntries?.length === 0 ? (
+                        <Text className="px-3.5 pb-2.5 pt-1 text-sm text-foreground-muted">
+                          No models match.
+                        </Text>
+                      ) : (
+                        modelListEntries?.map((entry) => (
+                          <View key={entry.option.key}>
+                            {entry.showProviderHeader ? (
+                              <Text className="px-3.5 pb-1 pt-1.5 text-xs font-t3-medium text-foreground-muted">
+                                {entry.providerLabel}
+                              </Text>
+                            ) : null}
+                            <Pressable
+                              accessibilityLabel={entry.option.label}
+                              accessibilityRole="radio"
+                              accessibilityState={{ selected: entry.selected }}
+                              className="min-h-10 flex-row items-center gap-2.5 px-3.5 py-2 active:opacity-70"
+                              onPress={() => pickListedModel(entry.option)}
+                            >
+                              <ProviderIcon provider={entry.option.providerDriver} size={16} />
+                              <Text
+                                className="min-w-0 flex-1 text-sm font-t3-medium text-foreground"
+                                numberOfLines={1}
+                              >
+                                {entry.option.label}
+                              </Text>
+                              {entry.selected ? (
+                                <SymbolView
+                                  name="checkmark"
+                                  size={13}
+                                  tintColor={checkmarkColor}
+                                  type="monochrome"
+                                  weight="semibold"
+                                />
+                              ) : null}
+                            </Pressable>
+                          </View>
+                        ))
+                      )}
+                    </>
                   )}
 
                   <View className="mx-3.5 h-px bg-border-subtle" />
@@ -253,6 +337,27 @@ export function ThreadSettingsPickerPopover(props: {
                       />
                     ))}
                   </ChoiceChipRow>
+
+                  {props.onOpenAdvanced ? (
+                    <>
+                      <View className="mx-3.5 h-px bg-border-subtle" />
+                      <Pressable
+                        accessibilityHint="Opens checkpoints and advanced thread settings"
+                        accessibilityLabel="Checkpoints"
+                        accessibilityRole="button"
+                        className="min-h-11 flex-row items-center justify-between px-3.5 py-2.5 active:opacity-70"
+                        onPress={openAdvanced}
+                      >
+                        <Text className="text-sm font-t3-medium text-foreground">Checkpoints</Text>
+                        <SymbolView
+                          name="chevron.right"
+                          size={12}
+                          tintColor={iconSubtle}
+                          type="monochrome"
+                        />
+                      </Pressable>
+                    </>
+                  ) : null}
                 </ScrollView>
               </GlassSurface>
             </Animated.View>

@@ -10,6 +10,7 @@ import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import {
   INLINE_MODEL_LIMIT,
   buildThreadSettingsPickerModel,
+  filterPickerModelList,
   shouldInlinePickerModels,
   visiblePickerModels,
 } from "./thread-settings-picker";
@@ -260,5 +261,94 @@ describe("buildThreadSettingsPickerModel", () => {
     });
 
     expect(picker.runtimeChoices.find((choice) => choice.selected)).toBeUndefined();
+  });
+});
+
+describe("buildThreadSettingsPickerModel modelList", () => {
+  it("is null when the catalog renders as chips", () => {
+    expect(buildThreadSettingsPickerModel(baseInput()).modelList).toBeNull();
+  });
+
+  it("lists a Cursor-sized catalog flat, without provider headers", () => {
+    const models = Array.from({ length: 20 }, (_, index) =>
+      modelOption(`cursor-${index}`, {
+        providerKey: "cursor",
+        providerLabel: "Cursor",
+        providerDriver: "cursor",
+      }),
+    );
+    const picker = buildThreadSettingsPickerModel({
+      providerGroups: [group(models)],
+      selectedModel: models[1]?.selection ?? null,
+      optionDescriptors: [],
+      runtimeMode: "auto",
+    });
+
+    expect(picker.modelList?.length).toBe(20);
+    expect(picker.modelList?.every((entry) => !entry.showProviderHeader)).toBe(true);
+    expect(picker.modelList?.find((entry) => entry.selected)?.option.label).toBe("cursor-1");
+  });
+
+  it("marks group headers and hides unselected legacy models across providers", () => {
+    const codex = [modelOption("gpt-a"), modelOption("gpt-b", { isLegacy: true })];
+    const claude = [modelOption("claude-a", { providerKey: "claude" })];
+    const picker = buildThreadSettingsPickerModel({
+      providerGroups: [group(codex), group(claude)],
+      selectedModel: null,
+      optionDescriptors: [],
+      runtimeMode: "auto",
+    });
+
+    expect(picker.modelList?.map((entry) => entry.option.label)).toEqual(["gpt-a", "claude-a"]);
+    expect(picker.modelList?.map((entry) => entry.showProviderHeader)).toEqual([true, true]);
+    expect(picker.modelList?.map((entry) => entry.providerLabel)).toEqual(["Codex", "Claude"]);
+  });
+});
+
+describe("filterPickerModelList", () => {
+  function twoProviderList() {
+    const codex = [modelOption("gpt-a"), modelOption("gpt-b")];
+    const claude = [modelOption("claude-a", { providerKey: "claude" })];
+    const picker = buildThreadSettingsPickerModel({
+      providerGroups: [group(codex), group(claude)],
+      selectedModel: null,
+      optionDescriptors: [],
+      runtimeMode: "auto",
+    });
+    const list = picker.modelList;
+    if (!list) {
+      throw new Error("expected a model list for a multi-provider catalog");
+    }
+    return list;
+  }
+
+  it("returns the list untouched for a blank query", () => {
+    const list = twoProviderList();
+    expect(filterPickerModelList(list, "")).toBe(list);
+    expect(filterPickerModelList(list, "   ")).toBe(list);
+  });
+
+  it("matches model labels case-insensitively", () => {
+    const filtered = filterPickerModelList(twoProviderList(), "GPT");
+    expect(filtered.map((entry) => entry.option.label)).toEqual(["gpt-a", "gpt-b"]);
+  });
+
+  it("matches provider labels", () => {
+    const filtered = filterPickerModelList(twoProviderList(), "claude");
+    expect(filtered.map((entry) => entry.option.label)).toEqual(["claude-a"]);
+  });
+
+  it("drops headers once one provider remains", () => {
+    const filtered = filterPickerModelList(twoProviderList(), "gpt");
+    expect(filtered.every((entry) => !entry.showProviderHeader)).toBe(true);
+  });
+
+  it("keeps headers on the first row of each remaining provider", () => {
+    const filtered = filterPickerModelList(twoProviderList(), "-a");
+    expect(filtered.map((entry) => entry.showProviderHeader)).toEqual([true, true]);
+  });
+
+  it("returns an empty list when nothing matches", () => {
+    expect(filterPickerModelList(twoProviderList(), "grok")).toEqual([]);
   });
 });

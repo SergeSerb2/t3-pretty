@@ -43,10 +43,7 @@ import { ProviderIcon } from "../../components/ProviderIcon";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
-import {
-  applyProviderOptionSelection,
-  resolveProviderOptionDescriptors,
-} from "../../lib/providerOptions";
+import { applyProviderOptionSelection } from "../../lib/providerOptions";
 import { useThemeColor } from "../../lib/useThemeColor";
 import {
   NativeHeaderToolbar,
@@ -54,7 +51,6 @@ import {
   nativeHeaderScrollEdgeEffects,
 } from "../../native/StackHeader";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
-import { useNewTaskFlow } from "./new-task-flow-provider";
 import {
   createNativeMailSearchToolbarItem,
   NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET,
@@ -1370,38 +1366,6 @@ export function ExistingThreadSettingsRouteScreen() {
 
   return (
     <ThreadSettingsSessionProvider {...settings} initialPage={session.initialPage}>
-      <ThreadSettingsPickerNavigator onClose={() => navigation.goBack()} />
-    </ThreadSettingsSessionProvider>
-  );
-}
-
-/**
- * Native stack hosted by the New Task navigator's form-sheet route. Keeping
- * the sheet presentation in RNS gives UIKit ownership of nested dismissal,
- * while Reasoning and Runtime remain regular pushes inside this navigator.
- */
-export function NewTaskThreadSettingsRouteScreen() {
-  const flow = useNewTaskFlow();
-  const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
-  const optionDescriptors = useMemo(
-    () =>
-      resolveProviderOptionDescriptors({
-        capabilities: flow.selectedModelOption?.capabilities,
-        selections: flow.selectedModel?.options,
-      }),
-    [flow.selectedModel?.options, flow.selectedModelOption?.capabilities],
-  );
-
-  return (
-    <ThreadSettingsSessionProvider
-      providerGroups={flow.providerGroups}
-      selectedModel={flow.selectedModel}
-      onSelectModel={(option) => flow.setSelectedModelKey(option.key, option.selection.options)}
-      optionDescriptors={optionDescriptors}
-      onUpdateOptionSelections={flow.setSelectedModelOptions}
-      runtimeMode={flow.runtimeMode}
-      onUpdateRuntimeMode={flow.setRuntimeMode}
-    >
       <ThreadSettingsPickerNavigator onClose={() => navigation.goBack()} />
     </ThreadSettingsSessionProvider>
   );

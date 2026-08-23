@@ -1,12 +1,7 @@
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
-import {
-  StackActions,
-  useFocusEffect,
-  useNavigation,
-  usePreventRemove,
-} from "@react-navigation/native";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { StackActions, useNavigation, usePreventRemove } from "@react-navigation/native";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -61,9 +56,11 @@ import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
 import { useDailySceneryPhoto, useSceneryChromeActive } from "../scenery/SceneryProvider";
 import { UNSPLASH_UTM, type SceneryPhoto } from "../scenery/sceneryLogic";
 import {
-  useThreadSettingsSheetPresentation,
-  type NavigationWithFinishTransitioning,
-} from "./use-thread-settings-sheet-presentation";
+  applyProviderOptionSelection,
+  resolveProviderOptionDescriptors,
+} from "../../lib/providerOptions";
+import { buildThreadSettingsPickerModel } from "./thread-settings-picker";
+import { ThreadSettingsPickerPopover } from "./ThreadSettingsPickerPopover";
 
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { convertPastedImagesToAttachments, pickComposerImages } from "../../lib/composerImages";
@@ -79,7 +76,7 @@ import {
 import { useEnvironmentServerConfig, useProjects } from "../../state/entities";
 import { gitEnvironment } from "../../state/git";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { resolveSelectableModelSelection } from "../../lib/modelOptions";
+import { resolveSelectableModelSelection, type ModelOption } from "../../lib/modelOptions";
 import { deriveThreadTitleFromPrompt } from "../../lib/projectThreadStartTurn";
 import { markThreadOpenStarted } from "../observability/threadPerformance";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
@@ -265,14 +262,9 @@ export function NewTaskDraftScreen(props: {
     )?.connectionState === "connected";
   const promptInputRef = useRef<ComposerEditorHandle>(null);
   const loadedBranchesProjectKeyRef = useRef<string | null>(null);
-  const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [pendingPreviews, setPendingPreviews] = useState<ReadonlyArray<ComposerAttachmentPreview>>(
     [],
   );
-  const settingsSheetPresentation = useThreadSettingsSheetPresentation({
-    editorRef: promptInputRef,
-    isEditorFocused: isComposerFocused,
-  });
   useEffect(() => {
     if (Platform.OS !== "ios") {
       return;
@@ -287,34 +279,36 @@ export function NewTaskDraftScreen(props: {
       }
     };
   }, [navigation]);
-  const settingsRoutePresentedRef = useRef(false);
-  useEffect(() => {
-    if (!settingsSheetPresentation.isVisible || settingsRoutePresentedRef.current) {
-      return;
-    }
-
-    settingsRoutePresentedRef.current = true;
-    navigation.dispatch(StackActions.push("ThreadSettings"));
-  }, [navigation, settingsSheetPresentation.isVisible]);
-  useFocusEffect(
-    useCallback(() => {
-      if (!settingsRoutePresentedRef.current) {
-        return;
-      }
-
-      settingsRoutePresentedRef.current = false;
-      settingsSheetPresentation.onDismissed();
-    }, [settingsSheetPresentation.onDismissed]),
-  );
-  useEffect(
+  const newTaskOptionDescriptors = useMemo(
     () =>
-      // UIKit's completion callback for the sheet dismissal, surfaced by the
-      // native-stack patch. This is when the queued keyboard restore runs.
-      (navigation as unknown as NavigationWithFinishTransitioning).addListener(
-        "finishTransitioning",
-        settingsSheetPresentation.onStackTransitionsFinished,
-      ),
-    [navigation, settingsSheetPresentation.onStackTransitionsFinished],
+      resolveProviderOptionDescriptors({
+        capabilities: flow.selectedModelOption?.capabilities,
+        selections: flow.selectedModel?.options,
+      }),
+    [flow.selectedModelOption?.capabilities, flow.selectedModel?.options],
+  );
+  const settingsPicker = useMemo(
+    () =>
+      buildThreadSettingsPickerModel({
+        providerGroups: flow.providerGroups,
+        selectedModel: flow.selectedModel,
+        optionDescriptors: newTaskOptionDescriptors,
+        runtimeMode: flow.runtimeMode,
+      }),
+    [flow.providerGroups, flow.selectedModel, flow.runtimeMode, newTaskOptionDescriptors],
+  );
+  const handleSelectModelOption = useCallback(
+    (option: ModelOption) => flow.setSelectedModelKey(option.key),
+    [flow.setSelectedModelKey],
+  );
+  const handleSelectPickerOption = useCallback(
+    (id: string, value: string | boolean) => {
+      const options = applyProviderOptionSelection(newTaskOptionDescriptors, { id, value });
+      if (options) {
+        flow.setSelectedModelOptions(options);
+      }
+    },
+    [flow.setSelectedModelOptions, newTaskOptionDescriptors],
   );
   const [importingShareKey, setImportingShareKey] = useState<string | null>(null);
   const [isCancellingShareImport, setIsCancellingShareImport] = useState(false);
@@ -1149,7 +1143,6 @@ export function NewTaskDraftScreen(props: {
     <ComposerEditor
       ref={promptInputRef}
       // The context-first screen intentionally opens with the keyboard closed.
-      // Focusing is a user action, so presenting the form sheet has one motion.
       autoFocus={false}
       editable={!isIncomingShareTransferPending && !isDispatching}
       multiline
@@ -1157,8 +1150,6 @@ export function NewTaskDraftScreen(props: {
       value={flow.prompt}
       skills={flow.selectedProviderSkills}
       onChangeText={flow.setPrompt}
-      onFocus={() => setIsComposerFocused(true)}
-      onBlur={() => setIsComposerFocused(false)}
       onPasteImages={(uris) => void handleNativePasteImages(uris)}
       placeholder="Ask anything…"
       singleLineCentered={false}
@@ -1349,17 +1340,25 @@ export function NewTaskDraftScreen(props: {
               onPress={() => void handlePickImages()}
               showChevron={false}
             />
-            <ComposerInlineControl
+            <ThreadSettingsPickerPopover
               accessibilityLabel="Model and reasoning settings"
               disabled={isIncomingShareTransferPending}
-              emphasized
-              iconNode={
-                <ProviderIcon provider={flow.selectedModelOption?.providerDriver} size={16} />
-              }
-              label={flow.selectedModelOption?.label ?? "Choose model"}
-              maxWidth={152}
-              onPress={settingsSheetPresentation.open}
-            />
+              model={settingsPicker}
+              onSelectModel={handleSelectModelOption}
+              onSelectOption={handleSelectPickerOption}
+              onSelectRuntime={flow.setRuntimeMode}
+            >
+              <ComposerInlineControl
+                accessibilityLabel="Model and reasoning settings"
+                disabled={isIncomingShareTransferPending}
+                emphasized
+                iconNode={
+                  <ProviderIcon provider={flow.selectedModelOption?.providerDriver} size={16} />
+                }
+                label={flow.selectedModelOption?.label ?? "Choose model"}
+                maxWidth={152}
+              />
+            </ThreadSettingsPickerPopover>
             {flow.planModeEnabled ? (
               <ComposerInlineControl
                 accessibilityHint={`Switches to ${flow.interactionMode === "plan" ? "Build" : "Plan"} mode`}

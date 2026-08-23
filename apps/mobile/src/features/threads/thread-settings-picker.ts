@@ -46,11 +46,20 @@ export type ThreadSettingsPickerInlineModel = {
   readonly selected: boolean;
 };
 
+/** One row in the panel's searchable list for catalogs too big to inline. */
+export type ThreadSettingsPickerModelListEntry = {
+  readonly option: ModelOption;
+  readonly selected: boolean;
+  readonly providerLabel: string | null;
+  readonly showProviderHeader: boolean;
+};
+
 export type ThreadSettingsPickerModel = {
   readonly modelLabel: string;
   readonly providerLabel: string | null;
   readonly providerDriver: string | null;
   readonly inlineModels: ReadonlyArray<ThreadSettingsPickerInlineModel> | null;
+  readonly modelList: ReadonlyArray<ThreadSettingsPickerModelListEntry> | null;
   readonly selectSections: ReadonlyArray<ThreadSettingsPickerSelectSection>;
   readonly booleanSections: ReadonlyArray<ThreadSettingsPickerBooleanSection>;
   readonly runtimeChoices: ReadonlyArray<ThreadSettingsPickerRuntimeChoice>;
@@ -102,6 +111,52 @@ export function selectedPickerModel(input: {
   return null;
 }
 
+/**
+ * Searchable list rows in provider-group order. Headers only make sense when
+ * more than one provider contributed rows, so single-provider lists stay flat.
+ */
+function buildModelListEntries(input: {
+  readonly providerGroups: ReadonlyArray<ProviderGroup>;
+  readonly selectedModel: ModelSelection | null;
+}): ThreadSettingsPickerModelListEntry[] {
+  const multiProvider = input.providerGroups.length > 1;
+  return input.providerGroups.flatMap((group) => {
+    const visible = group.models.filter(
+      (option) => !option.isLegacy || isSelectedModel(option, input.selectedModel),
+    );
+    return visible.map((option, index) => ({
+      option,
+      selected: isSelectedModel(option, input.selectedModel),
+      providerLabel: group.providerLabel,
+      showProviderHeader: multiProvider && index === 0,
+    }));
+  });
+}
+
+/** Panel search: match model or provider name, then re-derive the headers. */
+export function filterPickerModelList(
+  list: ReadonlyArray<ThreadSettingsPickerModelListEntry>,
+  query: string,
+): ReadonlyArray<ThreadSettingsPickerModelListEntry> {
+  const normalized = query.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return list;
+  }
+  const matched = list.filter(
+    (entry) =>
+      entry.option.label.toLowerCase().includes(normalized) ||
+      (entry.providerLabel?.toLowerCase().includes(normalized) ?? false),
+  );
+  const providerKeys = new Set(matched.map((entry) => entry.option.providerKey));
+  const seen = new Set<string>();
+  return matched.map((entry) => {
+    const key = entry.option.providerKey;
+    const first = !seen.has(key);
+    seen.add(key);
+    return { ...entry, showProviderHeader: providerKeys.size > 1 && first };
+  });
+}
+
 /** Everyday composer panel: current model, then effort/tier/runtime — never the full catalog. */
 export function buildThreadSettingsPickerModel(input: {
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
@@ -120,6 +175,7 @@ export function buildThreadSettingsPickerModel(input: {
         selected: isSelectedModel(option, input.selectedModel),
       }))
     : null;
+  const modelList = inline === null ? buildModelListEntries(input) : null;
 
   const selectSections: ThreadSettingsPickerSelectSection[] = [];
   const booleanSections: ThreadSettingsPickerBooleanSection[] = [];
@@ -167,6 +223,7 @@ export function buildThreadSettingsPickerModel(input: {
     providerLabel: selected?.providerLabel ?? null,
     providerDriver: selected?.providerDriver ?? null,
     inlineModels: inline,
+    modelList,
     selectSections,
     booleanSections,
     runtimeChoices,

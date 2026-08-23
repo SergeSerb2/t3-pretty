@@ -53,7 +53,6 @@ import {
 import {
   ExistingThreadSettingsRouteProvider,
   ExistingThreadSettingsRouteScreen,
-  NewTaskThreadSettingsRouteScreen,
 } from "./features/threads/ThreadSettingsSheet";
 import { NewTaskFlowProvider } from "./features/threads/new-task-flow-provider";
 import { NewTaskRouteScreen } from "./features/threads/NewTaskRouteScreen";
@@ -350,21 +349,6 @@ const NewTaskSheetStack = createNativeStackNavigator({
       linking: "draft/branch",
       options: {
         title: "Branch",
-      },
-    }),
-    ThreadSettings: createNativeStackScreen({
-      screen: NewTaskThreadSettingsRouteScreen,
-      linking: "draft/settings",
-      options: {
-        gestureEnabled: true,
-        headerShown: false,
-        ...(Platform.OS === "android"
-          ? { presentation: "card" as const }
-          : {
-              ...FORM_SHEET_PRESENTATION_OPTIONS,
-              sheetAllowedDetents: [1],
-              sheetGrabberVisible: true,
-            }),
       },
     }),
     AddProject: createNativeStackScreen({

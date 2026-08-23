@@ -956,7 +956,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   );
 
   const settingsOwnerId = scopedThreadKey(props.environmentId, props.selectedThread.id);
-  const settingsSheetPageRef = useRef<"home" | "catalog">("home");
   const settingsRouteSession = useMemo<ExistingThreadSettingsRouteSession>(
     () => ({
       ownerId: settingsOwnerId,
@@ -968,7 +967,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         onUpdateModelSelection({ ...currentModelSelection, options }),
       runtimeMode: currentRuntimeMode,
       onUpdateRuntimeMode,
-      initialPage: settingsSheetPageRef.current,
+      initialPage: "home" as const,
       checkpointsThreadRef: {
         environmentId: props.environmentId,
         threadId: props.selectedThread.id,
@@ -987,21 +986,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       threadProviderGroups,
     ],
   );
-  const openSettings = useCallback(
-    (page: "home" | "catalog" = "home") => {
-      settingsSheetPageRef.current = page;
-      settingsRoutePresentation.present({ ...settingsRouteSession, initialPage: page });
-      settingsSheetPresentation.open();
-    },
-    [settingsRoutePresentation.present, settingsRouteSession, settingsSheetPresentation.open],
-  );
+  const openSettings = useCallback(() => {
+    settingsRoutePresentation.present(settingsRouteSession);
+    settingsSheetPresentation.open();
+  }, [settingsRoutePresentation.present, settingsRouteSession, settingsSheetPresentation.open]);
 
   useEffect(() => {
     if (settingsSheetPresentation.isActive) {
-      settingsRoutePresentation.present({
-        ...settingsRouteSession,
-        initialPage: settingsSheetPageRef.current,
-      });
+      settingsRoutePresentation.present(settingsRouteSession);
     }
   }, [settingsRoutePresentation.present, settingsRouteSession, settingsSheetPresentation.isActive]);
 
@@ -1180,8 +1172,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           <ThreadModelIdentityCaption
             identity={modelIdentity}
             picker={settingsPicker}
-            onBrowseModels={() => openSettings("catalog")}
-            onPressFallback={() => openSettings("home")}
+            onOpenAdvanced={openSettings}
+            onPressFallback={openSettings}
             onSelectModel={handleSelectModelOption}
             onSelectOption={handleSelectPickerOption}
             onSelectRuntime={onUpdateRuntimeMode}
@@ -1207,7 +1199,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 <ThreadSettingsPickerPopover
                   accessibilityLabel="Model and reasoning settings"
                   model={settingsPicker}
-                  onBrowseModels={() => openSettings("catalog")}
+                  onOpenAdvanced={openSettings}
                   onSelectModel={handleSelectModelOption}
                   onSelectOption={handleSelectPickerOption}
                   onSelectRuntime={onUpdateRuntimeMode}
