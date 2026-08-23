@@ -551,6 +551,7 @@ export function PullRequestsScreen(props: {
   }>;
   readonly searchQuery: string;
   readonly selectedEnvironmentId: EnvironmentId | null;
+  readonly preferredEnvironmentId: EnvironmentId | null;
   readonly selectedProjectId: ProjectId | undefined;
   readonly selectedHost: string | undefined;
   readonly involvement: PullRequestInvolvement;
@@ -582,7 +583,8 @@ export function PullRequestsScreen(props: {
     props.involvement !== "all" ||
     props.state !== "open" ||
     props.selectedProjectId !== undefined ||
-    props.selectedHost !== undefined;
+    props.selectedHost !== undefined ||
+    props.selectedEnvironmentId !== props.preferredEnvironmentId;
   const showProvider = props.hosts.length > 1;
   const typedQuery = props.searchQuery.trim();
   const listItems = useMemo<ReadonlyArray<ListItem>>(() => {

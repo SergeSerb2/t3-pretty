@@ -97,13 +97,17 @@ export function searchFromPersistedFilters(
   return persistedFiltersFromSearch(filters);
 }
 
-export function shouldRestorePersistedListFilters(raw: Record<string, unknown>): boolean {
-  return [...LIST_FILTER_KEYS, ...SELECTION_KEYS].every((key) => raw[key] === undefined);
+function stripDefaultListFilterParams(raw: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...raw };
+  if (next.involvement === "all") delete next.involvement;
+  if (next.state === "open") delete next.state;
+  return next;
 }
 
-/** Persist when the URL named a list filter, not a selection-only or empty link. */
-export function shouldPersistPullRequestListFiltersFromUrl(raw: Record<string, unknown>): boolean {
-  return LIST_FILTER_KEYS.some((key) => raw[key] !== undefined);
+/** Restore unless a list key is present and off-default, or a selection key is present. */
+export function shouldRestorePersistedListFilters(raw: Record<string, unknown>): boolean {
+  const named = stripDefaultListFilterParams(raw);
+  return [...LIST_FILTER_KEYS, ...SELECTION_KEYS].every((key) => named[key] === undefined);
 }
 
 export function readPersistedPullRequestListFilters(): PersistedPullRequestListFilters {

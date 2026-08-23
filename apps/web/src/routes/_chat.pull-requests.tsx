@@ -69,7 +69,6 @@ import {
   persistedFiltersFromSearch,
   readPersistedPullRequestListFilters,
   searchFromPersistedFilters,
-  shouldPersistPullRequestListFiltersFromUrl,
   shouldRestorePersistedListFilters,
   writePersistedPullRequestListFilters,
 } from "../components/pullRequest/pullRequestListFiltersPersistence";
@@ -193,10 +192,14 @@ const EMPTY_PENDING_SURFACES = new Set<string>();
 
 export const Route = createFileRoute("/_chat/pull-requests")({
   validateSearch: (raw: Record<string, unknown>): PullRequestsSearch => {
+    // Default-named list keys are unnamed: spreading them would clobber the restore.
     const source = shouldRestorePersistedListFilters(raw)
-      ? { ...searchFromPersistedFilters(readPersistedPullRequestListFilters()), ...raw }
+      ? {
+          ...searchFromPersistedFilters(readPersistedPullRequestListFilters()),
+          ...(raw.q !== undefined ? { q: raw.q } : {}),
+        }
       : raw;
-    const search: PullRequestsSearch = {
+    return {
       involvement:
         source.involvement === "reviewing" || source.involvement === "authored"
           ? source.involvement
@@ -238,10 +241,6 @@ export const Route = createFileRoute("/_chat/pull-requests")({
         ? { checks: source.checks }
         : {}),
     };
-    if (shouldPersistPullRequestListFiltersFromUrl(raw)) {
-      writePersistedPullRequestListFilters(persistedFiltersFromSearch(search));
-    }
-    return search;
   },
   component: PullRequestsRouteView,
 });
@@ -477,6 +476,7 @@ function PullRequestsRouteView() {
       // Hide the old selection while retaining peer PR tabs for parallel reviews.
       useRightPanelStore.getState().close(rightPanelRef);
     }
+    writePersistedPullRequestListFilters(persistedFiltersFromSearch({ ...search, ...patch }));
     updateSearch({ ...patch, ...clearedSelection });
   };
 

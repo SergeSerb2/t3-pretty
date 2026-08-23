@@ -78,26 +78,18 @@ export function PullRequestsRouteScreen() {
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
     savedFilters.environmentId ?? preferredEnvironmentId,
   );
-  const restoredScope = useRef(false);
+  const [scopeRestored, setScopeRestored] = useState(false);
   useEffect(() => {
     if (isLoadingSavedConnection) return;
-    if (!restoredScope.current) {
-      if (environments.length === 0) {
-        // Catalog is ready with no servers: drop the saved id so it cannot stick, but wait
-        // for a non-empty list before committing restore — hydrate can emit empty first.
-        if (selectedEnvironmentId !== preferredEnvironmentId) {
-          setSelectedEnvironmentId(preferredEnvironmentId);
-          setSelectedProjectId(undefined);
-          setSelectedHost(undefined);
-        }
-        return;
-      }
+    if (!scopeRestored) {
+      // Empty can still be a hydrate flash; wait for a real list before committing.
+      if (environments.length === 0) return;
       const restored = restorePullRequestListFilters(
         savedFilters,
         preferredEnvironmentId,
         environments,
       );
-      restoredScope.current = true;
+      setScopeRestored(true);
       setSelectedEnvironmentId(restored.environmentId);
       setSelectedProjectId(restored.projectId);
       setSelectedHost(restored.host);
@@ -118,9 +110,11 @@ export function PullRequestsRouteScreen() {
     isLoadingSavedConnection,
     preferredEnvironmentId,
     savedFilters,
+    scopeRestored,
     selectedEnvironmentId,
   ]);
   useEffect(() => {
+    if (!scopeRestored) return;
     writePersistedPullRequestListFilters({
       involvement,
       state,
@@ -128,7 +122,7 @@ export function PullRequestsRouteScreen() {
       projectId: selectedProjectId,
       host: selectedHost,
     });
-  }, [involvement, selectedEnvironmentId, selectedHost, selectedProjectId, state]);
+  }, [involvement, scopeRestored, selectedEnvironmentId, selectedHost, selectedProjectId, state]);
 
   const selected = environments.find(
     (environment) => environment.environmentId === selectedEnvironmentId,
@@ -219,6 +213,7 @@ export function PullRequestsRouteScreen() {
       querySettled={list.querySettled}
       refreshing={list.refreshing}
       searchQuery={searchQuery}
+      preferredEnvironmentId={preferredEnvironmentId}
       selectedEnvironmentId={selectedEnvironmentId}
       selectedHost={selectedHost}
       selectedProjectId={selectedProjectId}
