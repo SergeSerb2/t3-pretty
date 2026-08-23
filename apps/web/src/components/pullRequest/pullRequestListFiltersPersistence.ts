@@ -86,16 +86,13 @@ export function searchFromPersistedFilters(
   return persistedFiltersFromSearch(filters);
 }
 
-/**
- * Keep environment/project/host only while those ids still exist. An empty environment list is
- * "not loaded yet", not "every server is gone" — do not wipe a named save during hydrate.
- */
+/** Keep environment/project/host only after the live catalogs are known. */
 export function livePullRequestListFilters(
   filters: PersistedPullRequestListFilters,
-  environmentIds: ReadonlyArray<EnvironmentId>,
+  environmentIds?: ReadonlyArray<EnvironmentId>,
   projectIds?: ReadonlyArray<ProjectId>,
 ): PersistedPullRequestListFilters {
-  if (environmentIds.length === 0) return persistedFiltersFromSearch(filters);
+  if (environmentIds === undefined) return persistedFiltersFromSearch(filters);
   const keepEnvironment =
     filters.environmentId === undefined || environmentIds.includes(filters.environmentId);
   const next = keepEnvironment

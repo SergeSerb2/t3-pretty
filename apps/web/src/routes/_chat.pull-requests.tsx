@@ -377,7 +377,7 @@ function PullRequestsRouteView() {
       : persistedFiltersFromSearch(search);
     const scoped = livePullRequestListFilters(
       current,
-      projectsKnown ? environments.map((environment) => environment.environmentId) : [],
+      projectsKnown ? environments.map((environment) => environment.environmentId) : undefined,
       projectsKnown ? allProjects.map((project) => project.id) : undefined,
     );
     const scopePatch = {

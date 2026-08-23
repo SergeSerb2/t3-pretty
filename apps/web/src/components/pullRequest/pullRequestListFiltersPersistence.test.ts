@@ -192,7 +192,11 @@ describe("persisted pull request list filters", () => {
       projectId: "project-1" as ProjectId,
       host: "github.com",
     };
-    expect(livePullRequestListFilters(saved, [])).toEqual(saved);
+    expect(livePullRequestListFilters(saved)).toEqual(saved);
+    expect(livePullRequestListFilters(saved, [])).toEqual({
+      involvement: "authored",
+      state: "closed",
+    });
     expect(livePullRequestListFilters(saved, ["env-1" as EnvironmentId])).toEqual({
       involvement: "authored",
       state: "closed",
