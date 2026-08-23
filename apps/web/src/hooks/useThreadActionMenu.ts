@@ -31,6 +31,7 @@ import {
 } from "../state/entities";
 import { readLocalApi } from "../localApi";
 import { useUiStateStore } from "../uiStateStore";
+import { useCopyThreadConversation } from "./useCopyThreadConversation";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
@@ -103,6 +104,7 @@ export function useThreadActionMenu(input: {
     },
     onError: (error) => failureToast("Failed to copy thread ID", error),
   });
+  const copyThreadConversation = useCopyThreadConversation();
 
   const openMenu = useCallback(
     (position: { x: number; y: number; motion?: "instant" | "dropdown" }) => {
@@ -233,6 +235,10 @@ export function useThreadActionMenu(input: {
           case "mark-unread":
             markThreadUnread(scopedThreadKey(threadRef), thread.latestTurn?.completedAt);
             return;
+          case "copy":
+          case "copy-conversation":
+            copyThreadConversation(threadRef, thread.title);
+            return;
           case "copy-path": {
             const workspacePath = thread.worktreePath ?? projectCwd;
             if (!workspacePath) {
@@ -316,6 +322,7 @@ export function useThreadActionMenu(input: {
       confirmThreadDelete,
       copyBranchToClipboard,
       copyPathToClipboard,
+      copyThreadConversation,
       copyThreadIdToClipboard,
       deleteThread,
       handleNewThread,
@@ -334,5 +341,9 @@ export function useThreadActionMenu(input: {
     ],
   );
 
-  return { openMenu };
+  const closeMenu = useCallback(() => {
+    void readLocalApi()?.contextMenu.close();
+  }, []);
+
+  return { openMenu, closeMenu };
 }

@@ -41,6 +41,8 @@ export interface AgentActivityRowProps {
   readonly updatedAt: string;
   readonly deepLink: string;
   readonly progress?: number;
+  // When the in-flight turn started; drives the ticking elapsed timer.
+  readonly startedAt?: string;
 }
 
 export interface AgentActivityProps {
@@ -97,7 +99,7 @@ export function AgentActivity(
     }
   };
 
-  // Order attention-first so the hero row (deep link, island glyph, clock)
+  // Order attention-first so the hero row (deep link, island glyph, timer)
   // is whatever the user should open, then failures, then in-flight work.
   const phasePriority = (phase: AgentActivityPhase): number => {
     if (phase === "waiting_for_approval" || phase === "waiting_for_input") return 0;
@@ -126,14 +128,13 @@ export function AgentActivity(
     : failedRow
       ? phaseTint(failedRow.phase)
       : tintColor;
-  const workingTint = phaseTint("running");
 
   // With nothing active the aggregate only carries recently finished work, so
-  // "0 working" (and a lone "0" in the expanded island) read as broken.
-  // Lead with the outcome instead. The outcome is derived here from the rows
-  // rather than taken from the server subtitle (which keys off the newest
-  // terminal row): every presentation — headline, tint, count slots, minimal
-  // glyph — must agree, and a failure anywhere should dominate a newer success.
+  // "0 working" reads as broken. Lead with the outcome instead. The outcome
+  // is derived here from the rows rather than taken from the server subtitle
+  // (which keys off the newest terminal row): every presentation — header,
+  // tint, count slots, minimal glyph — must agree, and a failure anywhere
+  // should dominate a newer success.
   const allDone = props.activeCount === 0;
   const doneLabel = failedRow ? "Failed" : "Done";
   const workingCount = allDone ? 0 : Math.max(0, props.activeCount - attentionRows.length);
@@ -149,7 +150,18 @@ export function AgentActivity(
           : `${attentionRows.length} need you`;
   const workingLabel = workingCount > 0 ? `${workingCount} working` : "";
   const failedLabel = failedCount > 0 ? `${failedCount} failed` : "";
-  const glance = allDone ? doneLabel : attentionLabel || workingLabel || doneLabel;
+  // One summary line, attention first: "1 approval · 2 working · 1 failed".
+  // Each count keeps its own phase tint so mixed states stay scannable —
+  // working must not inherit the attention/failed color.
+  const glanceSegments = allDone
+    ? [{ key: "done", text: doneLabel, color: headerTint }]
+    : [
+        ...(attentionLabel ? [{ key: "attention", text: attentionLabel, color: headerTint }] : []),
+        ...(workingLabel
+          ? [{ key: "working", text: workingLabel, color: phaseTint("running") }]
+          : []),
+        ...(failedLabel ? [{ key: "failed", text: failedLabel, color: phaseTint("failed") }] : []),
+      ];
   const compactTrailingLabel = allDone
     ? doneLabel
     : attentionRow
@@ -159,12 +171,6 @@ export function AgentActivity(
           ? "Approval"
           : "Input"
       : `${workingCount}`;
-
-  // A single in-flight thread can spare one secondary line for what it is
-  // doing. Titles, projects, and stacked rows do not fit this card.
-  const soloWorking = !allDone && attentionRows.length === 0 && workingCount === 1;
-  const soloStatus =
-    soloWorking && heroRow && heroRow.status && heroRow.status !== "Working" ? heroRow.status : "";
 
   // Any registered scheme variant routes back to this app; taps are delivered
   // to the widget's containing app, so the prod scheme is safe for all builds.
@@ -249,6 +255,26 @@ export function AgentActivity(
       />
     ) : null;
 
+  // Per-row live time: an elapsed timer for in-flight work (ticks every
+  // second without a push — the card never looks frozen), a relative age for
+  // everything else (how long an approval sat, how long ago work finished).
+  const renderRowTime = (row: AgentActivityRowProps, size: number, color: string) => {
+    const timerDate = inFlightPhase(row.phase) ? parseDate(row.startedAt) : null;
+    const relativeDate = timerDate ?? parseDate(row.updatedAt);
+    return relativeDate ? (
+      <Text
+        date={relativeDate}
+        dateStyle={timerDate ? "timer" : "relative"}
+        modifiers={[
+          font({ design: "rounded", weight: "semibold", size }),
+          foregroundStyle(color),
+          layoutPriority(1),
+          lineLimit(1),
+        ]}
+      />
+    ) : null;
+  };
+
   const renderProgressBar = (row: AgentActivityRowProps | undefined, color: string) =>
     typeof row?.progress === "number" ? (
       <ProgressView
@@ -257,29 +283,142 @@ export function AgentActivity(
       />
     ) : null;
 
-  const renderHeadline = (text: string, color: string, size: number) => (
-    <Text
-      modifiers={[
-        font({ design: "rounded", weight: "bold", size }),
-        foregroundStyle(color),
-        lineLimit(1),
-      ]}
-    >
-      {text}
-    </Text>
+  // One thread, one line: phase mark, title, status (plan step for running
+  // work), and the live time on the right. The title wins the space fight;
+  // the status truncates first.
+  const renderActivityRow = (row: AgentActivityRowProps) => (
+    <HStack key={`${row.environmentId}:${row.threadId}`} spacing={6} alignment="center">
+      {renderPhaseMark(row.phase, 12, phaseTint(row.phase))}
+      <Text
+        modifiers={[
+          font({ design: "rounded", weight: "semibold", size: 14 }),
+          foregroundStyle(primaryForeground),
+          lineLimit(1),
+          layoutPriority(1),
+        ]}
+      >
+        {row.threadTitle}
+      </Text>
+      {row.status ? (
+        <Text
+          modifiers={[
+            font({ design: "rounded", weight: "regular", size: 12 }),
+            foregroundStyle(secondaryForeground),
+            lineLimit(1),
+          ]}
+        >
+          {row.status}
+        </Text>
+      ) : null}
+      <Spacer minLength={6} />
+      {renderRowTime(row, 11, secondaryForeground)}
+    </HStack>
   );
 
-  const glanceLineCount =
-    (allDone ? 1 : 0) + (attentionLabel ? 1 : 0) + (workingLabel ? 1 : 0) + (failedLabel ? 1 : 0);
-  const headlineSize = glanceLineCount > 1 ? 22 : 28;
+  // The banner lists up to three rows; leftover live work collapses into
+  // one "+N more" line. Terminal rows ride along in the payload but must
+  // not inflate overflow past what the header calls working. activeCount
+  // can still exceed delivered rows (payload caps at 5).
+  const MAX_BANNER_ROWS = 3;
+  const shownRows = ordered.slice(0, MAX_BANNER_ROWS);
+  const shownLive = shownRows.filter(
+    (row) => row.phase !== "completed" && row.phase !== "failed",
+  ).length;
+  const overflowCount = Math.max(0, props.activeCount - shownLive);
+  const renderOverflow = () =>
+    overflowCount > 0 ? (
+      <Text
+        modifiers={[
+          font({ design: "rounded", weight: "semibold", size: 12 }),
+          foregroundStyle(secondaryForeground),
+          lineLimit(1),
+        ]}
+      >
+        {`+${overflowCount} more`}
+      </Text>
+    ) : null;
 
-  const renderGlance = (size: number) => (
-    <VStack alignment="leading" spacing={2}>
-      {allDone ? renderHeadline(doneLabel, headerTint, size) : null}
-      {attentionLabel ? renderHeadline(attentionLabel, headerTint, size) : null}
-      {workingLabel ? renderHeadline(workingLabel, workingTint, size) : null}
-      {failedLabel ? renderHeadline(failedLabel, phaseTint("failed"), size) : null}
-      {soloStatus ? (
+  // A single thread gets the hero treatment: big title, status line, progress.
+  const soloRow = props.activities.length === 1 && overflowCount === 0 ? heroRow : undefined;
+
+  const renderGlanceLine = (size: number) => {
+    const items =
+      glanceSegments.length > 0
+        ? glanceSegments
+        : [{ key: "done", text: doneLabel, color: headerTint }];
+    return (
+      <HStack spacing={0} alignment="center">
+        {items.map((item, index) => (
+          <Text
+            key={item.key}
+            modifiers={[
+              font({ design: "rounded", weight: "bold", size }),
+              foregroundStyle(item.color),
+              lineLimit(1),
+            ]}
+          >
+            {index > 0 ? ` · ${item.text}` : item.text}
+          </Text>
+        ))}
+      </HStack>
+    );
+  };
+
+  // The branded T3 mark. `assetName` resolves the template image set bundled in
+  // the widget extension's asset catalog. Image views only honor `resizable`
+  // directly (frame/foregroundStyle are dropped), so we size it via a container
+  // frame the resizable image fills and tint it through the container's
+  // foreground style, which the template image inherits. The frame matches
+  // the cut-out T3's aspect ratio so it never distorts.
+  const renderLogo = (height: number, color: string) => (
+    <HStack modifiers={[frame({ width: height * (480 / 351), height }), foregroundStyle(color)]}>
+      <Image assetName="T3Mark" modifiers={[resizable()]} />
+    </HStack>
+  );
+
+  const bannerModifiers = [
+    padding({ all: 14 }),
+    // nil tint lets iOS 26 apply Liquid Glass instead of the old opaque
+    // Live Activity material. Pre-glass iOS keeps the system default.
+    activityBackgroundTint(null),
+    ...(deepLink ? [widgetURL(deepLink)] : []),
+  ];
+
+  const header = (
+    <HStack spacing={8} alignment="center">
+      {renderLogo(13, primaryForeground)}
+      {renderGlanceLine(13)}
+      <Spacer minLength={8} />
+      {renderClock(11, secondaryForeground)}
+    </HStack>
+  );
+
+  const bannerBody = simplified ? (
+    <HStack spacing={8} alignment="center">
+      {renderLogo(14, primaryForeground)}
+      {renderGlanceLine(17)}
+      <Spacer minLength={8} />
+      {renderClock(12, secondaryForeground)}
+    </HStack>
+  ) : soloRow ? (
+    <VStack alignment="leading" spacing={6}>
+      {header}
+      <HStack spacing={7} alignment="center">
+        {renderPhaseMark(soloRow.phase, 16, phaseTint(soloRow.phase))}
+        <Text
+          modifiers={[
+            font({ design: "rounded", weight: "bold", size: 17 }),
+            foregroundStyle(primaryForeground),
+            lineLimit(2),
+            layoutPriority(1),
+          ]}
+        >
+          {soloRow.threadTitle}
+        </Text>
+        <Spacer minLength={6} />
+        {renderRowTime(soloRow, 13, phaseTint(soloRow.phase))}
+      </HStack>
+      {soloRow.status ? (
         <Text
           modifiers={[
             font({ design: "rounded", weight: "semibold", size: 13 }),
@@ -287,52 +426,16 @@ export function AgentActivity(
             lineLimit(1),
           ]}
         >
-          {soloStatus}
+          {soloRow.status}
         </Text>
       ) : null}
+      {renderProgressBar(soloRow, phaseTint(soloRow.phase))}
     </VStack>
-  );
-
-  // The branded T3 mark. `assetName` resolves the template image set bundled in
-  // the widget extension's asset catalog. Image views only honor `resizable`
-  // directly (frame/foregroundStyle are dropped), so we size it via a container
-  // frame the resizable image fills and tint it through the container's
-  // foreground style, which the template image inherits. The 3:2 frame matches
-  // the glyph's aspect ratio so it never distorts.
-  const renderLogo = (height: number, color: string) => (
-    <HStack modifiers={[frame({ width: height * 1.5, height }), foregroundStyle(color)]}>
-      <Image assetName="T3Mark" modifiers={[resizable()]} />
-    </HStack>
-  );
-
-  const bannerModifiers = [
-    padding({ all: 16 }),
-    // nil tint lets iOS 26 apply Liquid Glass instead of the old opaque
-    // Live Activity material. Pre-glass iOS keeps the system default.
-    activityBackgroundTint(null),
-    ...(deepLink ? [widgetURL(deepLink)] : []),
-  ];
-
-  const chrome = (
-    <HStack spacing={8} alignment="center">
-      {renderLogo(14, primaryForeground)}
-      <Spacer minLength={8} />
-      {renderClock(12, secondaryForeground)}
-    </HStack>
-  );
-
-  const bannerBody = simplified ? (
-    <HStack spacing={8} alignment="center">
-      {renderLogo(14, primaryForeground)}
-      {renderHeadline(glance, headerTint, 17)}
-      <Spacer minLength={8} />
-      {renderClock(12, secondaryForeground)}
-    </HStack>
   ) : (
-    <VStack alignment="leading" spacing={10}>
-      {chrome}
-      {renderGlance(headlineSize)}
-      {renderProgressBar(soloWorking ? heroRow : undefined, tintColor)}
+    <VStack alignment="leading" spacing={7}>
+      {header}
+      {shownRows.map((row) => renderActivityRow(row))}
+      {renderOverflow()}
     </VStack>
   );
 
@@ -343,27 +446,53 @@ export function AgentActivity(
       </VStack>
     ),
     // Compact card for the watchOS Smart Stack + CarPlay (the `.small` family):
-    // brand + the one number that matters.
+    // brand + the one number that matters, plus the hero title when there is
+    // exactly one thread to talk about.
     bannerSmall: (
-      <VStack alignment="leading" spacing={8} modifiers={[padding({ all: 10 })]}>
+      <VStack alignment="leading" spacing={6} modifiers={[padding({ all: 10 })]}>
         {renderLogo(14, primaryForeground)}
-        {renderHeadline(glance, headerTint, 20)}
+        {renderGlanceLine(20)}
+        {soloRow ? (
+          <Text
+            modifiers={[
+              font({ design: "rounded", weight: "semibold", size: 13 }),
+              foregroundStyle(secondaryForeground),
+              lineLimit(1),
+            ]}
+          >
+            {soloRow.threadTitle}
+          </Text>
+        ) : null}
       </VStack>
     ),
     compactLeading:
       heroRow && (heroInFlight || attentionRow || failedRow || allDone)
         ? renderPhaseMark(heroRow.phase, 20, tintColor)
         : renderLogo(14, tintColor),
-    compactTrailing: (
-      <Text
-        modifiers={[
-          font({ design: "rounded", weight: "semibold", size: 12 }),
-          foregroundStyle(tintColor),
-        ]}
-      >
-        {compactTrailingLabel}
-      </Text>
-    ),
+    // A lone in-flight thread shows its live elapsed timer in the island —
+    // the strongest "still alive" signal a glance can carry. Everything else
+    // shows the count/blocking label.
+    compactTrailing:
+      soloRow && inFlightPhase(soloRow.phase) && parseDate(soloRow.startedAt) ? (
+        <Text
+          date={parseDate(soloRow.startedAt) as Date}
+          dateStyle="timer"
+          modifiers={[
+            font({ design: "rounded", weight: "semibold", size: 12 }),
+            foregroundStyle(tintColor),
+            lineLimit(1),
+          ]}
+        />
+      ) : (
+        <Text
+          modifiers={[
+            font({ design: "rounded", weight: "semibold", size: 12 }),
+            foregroundStyle(tintColor),
+          ]}
+        >
+          {compactTrailingLabel}
+        </Text>
+      ),
     // The shared/minimal form is a ~22pt circle — a single signal reads there,
     // the wordmark does not. Show the blocking/outcome phase mark, else the
     // in-flight mark (all-done shows the hero row's checkmark/cross).
@@ -393,7 +522,20 @@ export function AgentActivity(
       </HStack>
     ),
     expandedCenter: null,
-    expandedTrailing: renderClock(11, tintColor),
+    expandedTrailing:
+      heroRow && inFlightPhase(heroRow.phase) && parseDate(heroRow.startedAt) ? (
+        <Text
+          date={parseDate(heroRow.startedAt) as Date}
+          dateStyle="timer"
+          modifiers={[
+            font({ design: "rounded", weight: "semibold", size: 11 }),
+            foregroundStyle(tintColor),
+            lineLimit(1),
+          ]}
+        />
+      ) : (
+        renderClock(11, tintColor)
+      ),
     expandedBottom: (
       // Vertical padding only: the expanded region provides its own horizontal
       // content margins, so `all` padding double-indented the content.
@@ -408,8 +550,9 @@ export function AgentActivity(
             : [padding({ vertical: 4, horizontal: 8 })]
         }
       >
-        {renderGlance(20)}
-        {renderProgressBar(soloWorking ? heroRow : undefined, tintColor)}
+        {shownRows.map((row) => renderActivityRow(row))}
+        {renderOverflow()}
+        {soloRow ? renderProgressBar(soloRow, phaseTint(soloRow.phase)) : null}
       </VStack>
     ),
   };

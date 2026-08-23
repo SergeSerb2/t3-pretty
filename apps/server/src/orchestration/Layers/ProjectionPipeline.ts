@@ -55,6 +55,7 @@ import {
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
 import { attachmentFeedPreviewPath } from "../../assets/attachmentFeedPreviewPath.ts";
+import { SearchIndex, SearchIndexLive } from "../../search/SearchIndex.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -66,6 +67,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   threadTurns: "projection.thread-turns",
   checkpoints: "projection.checkpoints",
   pendingApprovals: "projection.pending-approvals",
+  searchIndex: "projection.search-index",
 } as const;
 
 type ProjectorName =
@@ -515,6 +517,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionThreadSessionRepository = yield* ProjectionThreadSessionRepository;
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
+    const searchIndex = yield* SearchIndex;
 
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -1624,6 +1627,53 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyCheckpointsProjection: ProjectorDefinition["apply"] = () => Effect.void;
 
+    const applySearchIndexProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applySearchIndexProjection",
+    )(function* (event, _attachmentSideEffects) {
+      switch (event.type) {
+        case "thread.message-sent": {
+          // reindexRow drops streaming rows and indexes finished ones.
+          yield* searchIndex.reindexMessage({ messageId: event.payload.messageId });
+          return;
+        }
+
+        case "thread.turn-diff-completed": {
+          // Turn completion can make an assistant message canonical (its turn
+          // row gains assistant_message_id). Re-index the new id and any
+          // previously indexed assistants for this thread so a superseded
+          // canonical message is dropped, not left searchable.
+          yield* searchIndex.reindexCanonicalAssistants({
+            threadId: event.payload.threadId,
+            assistantMessageId: event.payload.assistantMessageId,
+          });
+          return;
+        }
+
+        case "thread.archived":
+        case "thread.unarchived":
+        case "thread.deleted":
+        case "thread.reverted": {
+          yield* searchIndex.reindexThread({ threadId: event.payload.threadId });
+          return;
+        }
+
+        case "project.deleted": {
+          const threads = yield* projectionThreadRepository.listByProjectId({
+            projectId: event.payload.projectId,
+          });
+          yield* Effect.forEach(
+            threads,
+            (thread) => searchIndex.reindexThread({ threadId: thread.threadId }),
+            { concurrency: 1, discard: true },
+          );
+          return;
+        }
+
+        default:
+          return;
+      }
+    });
+
     const applyPendingApprovalsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyPendingApprovalsProjection",
     )(function* (event, _attachmentSideEffects) {
@@ -1785,6 +1835,12 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         name: ORCHESTRATION_PROJECTOR_NAMES.threads,
         apply: applyThreadsProjection,
       },
+      // Last on purpose: reads projection_thread_messages / projection_turns
+      // written by the projectors above within the same transaction.
+      {
+        name: ORCHESTRATION_PROJECTOR_NAMES.searchIndex,
+        apply: applySearchIndexProjection,
+      },
     ];
 
     // Attachment cleanup only happens for a handful of event types; skip the
@@ -1878,6 +1934,45 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           ),
         );
 
+    // First boot (no cursor) or empty index with existing messages: index
+    // from current projection tables, then adopt the other projectors' head.
+    // Event-log replay is capped at 1000 events; a later live event then
+    // advances every projector cursor and would skip the rest of history.
+    const bootstrapSearchIndexProjector = (projector: ProjectorDefinition) =>
+      Effect.gen(function* () {
+        const stateRow = yield* projectionStateRepository.getByProjector({
+          projector: projector.name,
+        });
+        const docRows = yield* sql<{ readonly docCount: number }>`
+          SELECT COUNT(*) AS "docCount" FROM search_index_docs
+        `;
+        const messageRows = yield* sql<{ readonly messageCount: number }>`
+          SELECT COUNT(*) AS "messageCount" FROM projection_thread_messages
+        `;
+        const missingCursor = Option.isNone(stateRow);
+        const indexEmpty = (docRows[0]?.docCount ?? 0) === 0;
+        const hasMessages = (messageRows[0]?.messageCount ?? 0) > 0;
+        if ((missingCursor || indexEmpty) && hasMessages) {
+          yield* searchIndex.backfillFromProjection();
+          const states = yield* projectionStateRepository.listAll();
+          const others = states.filter(
+            (row) => row.projector !== ORCHESTRATION_PROJECTOR_NAMES.searchIndex,
+          );
+          if (others.length > 0) {
+            const head = others.reduce(
+              (max, row) => (row.lastAppliedSequence > max.lastAppliedSequence ? row : max),
+              others[0]!,
+            );
+            yield* projectionStateRepository.upsert({
+              projector: ORCHESTRATION_PROJECTOR_NAMES.searchIndex,
+              lastAppliedSequence: head.lastAppliedSequence,
+              updatedAt: head.updatedAt,
+            });
+          }
+        }
+        yield* bootstrapProjector(projector);
+      });
+
     const projectEvent: OrchestrationProjectionPipelineShape["projectEvent"] = (event) =>
       runProjectorsForEvent(event).pipe(
         Effect.provideService(FileSystem.FileSystem, fileSystem),
@@ -1891,7 +1986,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const bootstrap: OrchestrationProjectionPipelineShape["bootstrap"] = Effect.forEach(
       projectors,
-      bootstrapProjector,
+      (projector) =>
+        projector.name === ORCHESTRATION_PROJECTOR_NAMES.searchIndex
+          ? bootstrapSearchIndexProjector(projector)
+          : bootstrapProjector(projector),
       { concurrency: 1 },
     ).pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
@@ -1928,4 +2026,5 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
+  Layer.provideMerge(SearchIndexLive),
 );

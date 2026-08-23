@@ -1,3 +1,4 @@
+import type { MenuAction } from "@react-native-menu/menu";
 import { skillMentionToken } from "@t3tools/shared/skillTool";
 import type {
   EnvironmentId,
@@ -7,8 +8,9 @@ import type {
   ProviderInteractionMode,
   RuntimeMode,
   ServerConfig as T3ServerConfig,
+  TurnDeliveryMode,
 } from "@t3tools/contracts";
-import { resolveRuntimeModeForProviderDriver } from "@t3tools/contracts";
+import { displayRuntimeModeForProviderDriver } from "@t3tools/contracts";
 import {
   detectComposerTrigger,
   replaceTextRange,
@@ -72,7 +74,7 @@ import {
   ComposerToolbarRow,
   ComposerToolbarScroller,
 } from "../../components/ComposerToolbar";
-import { ControlPill } from "../../components/ControlPill";
+import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import {
@@ -97,6 +99,7 @@ import {
 } from "../../lib/providerOptions";
 import { useComposerPathSearch } from "../../state/use-composer-path-search";
 import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerCommandPopover";
+import { matchesSlashSkillQuery } from "./composerSlashSkillSearch";
 import { buildThreadSettingsPickerModel } from "./thread-settings-picker";
 import { ThreadModelIdentityCaption } from "./ThreadModelIdentityCaption";
 import { ThreadSettingsPickerPopover } from "./ThreadSettingsPickerPopover";
@@ -158,7 +161,7 @@ export interface ThreadComposerProps {
   readonly onNativePasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
-  readonly onSendMessage: () => Promise<MessageId | null>;
+  readonly onSendMessage: (delivery?: TurnDeliveryMode) => Promise<MessageId | null>;
   readonly onUpdateModelSelection: (modelSelection: ModelSelection) => void;
   readonly onUpdateRuntimeMode: (runtimeMode: RuntimeMode) => void;
   readonly onUpdateInteractionMode: (interactionMode: ProviderInteractionMode) => void;
@@ -337,13 +340,25 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
 
   return (
     <Animated.View
+      key={props.status.kind}
       className="absolute inset-x-0 bottom-full items-center pb-2"
-      entering={FadeInDown.duration(180)}
+      // Sync pills wait a beat before appearing: a cached thread finishes
+      // syncing inside the delay, so fast thread switches never flash a
+      // "Loading messages..." pill. Connection problems still show instantly.
+      // Keyed on kind so a syncing → error swap remounts without the delay.
+      entering={
+        props.status.kind === "syncing"
+          ? FadeInDown.delay(300).duration(180)
+          : FadeInDown.duration(180)
+      }
       exiting={FadeOutDown.duration(140)}
       pointerEvents="box-none"
     >
+      {/* Sync status is a label, not a retry affordance: retrying while
+          connected tears down the healthy socket the sync is running on. */}
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole={props.status.kind === "syncing" ? "text" : "button"}
+        disabled={props.status.kind === "syncing"}
         onPress={props.onPress}
         className="max-w-full flex-row items-center gap-2 rounded-full bg-card px-3 py-2 shadow-sm active:opacity-70"
       >
@@ -506,12 +521,22 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.selectedThread.session?.status === "running" ||
     props.selectedThread.session?.status === "starting";
 
-  const sendLabel =
-    props.connectionState !== "connected" || props.activeThreadBusy || props.queueCount > 0
-      ? "Queue"
-      : "Send";
+  // What a tap delivers, and therefore what the button says — one source of
+  // truth so the label cannot promise one behavior and send another. Offline
+  // parks the message for the next turn boundary; a connected running turn
+  // steers on tap (long-press queues); a still-draining outbox queues behind
+  // its siblings; an idle connected send leaves the server default (steer).
+  const sendDelivery: TurnDeliveryMode | undefined =
+    props.connectionState !== "connected"
+      ? "queue"
+      : showStopAction
+        ? "steer"
+        : props.queueCount > 0
+          ? "queue"
+          : undefined;
+  const sendLabel = sendDelivery === "queue" ? "Queue" : "Send";
   const currentModelSelection = props.selectedThread.modelSelection;
-  const currentRuntimeMode = props.selectedThread.runtimeMode;
+  const storedRuntimeMode = props.selectedThread.runtimeMode;
   const currentInteractionMode = props.selectedThread.interactionMode ?? "default";
   const connectionStatus = composerConnectionStatus({
     connectionError: props.connectionError,
@@ -608,7 +633,17 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         });
       }
 
-      return [...builtIn, ...providerCommands];
+      const skillItems = (selectedProviderStatus?.skills ?? [])
+        .filter((skill) => matchesSlashSkillQuery(skill, q))
+        .map((skill) => ({
+          id: `skill:${skill.name}`,
+          type: "skill" as const,
+          skill,
+          label: `skill:${skill.name}`,
+          description: skill.shortDescription ?? skill.description ?? "",
+        }));
+
+      return [...builtIn, ...providerCommands, ...skillItems];
     }
 
     if (composerTrigger.kind === "skill") {
@@ -773,40 +808,64 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     [handleNativePasteImages],
   );
 
-  const handleSend = useCallback(async () => {
-    const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
-    if (inFlightThreadIdsRef.current.has(threadKey) || isDispatching) return;
-    inFlightThreadIdsRef.current.add(threadKey);
-    sendStartedAtRef.current = Date.now();
-    setIsSending(true);
-    try {
-      const messageId = await onSendMessage();
-      if (messageId === null) {
-        setIsSending(false);
-        setInFlightMessageId(null);
-        return;
+  const handleSend = useCallback(
+    async (delivery?: TurnDeliveryMode) => {
+      const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
+      if (inFlightThreadIdsRef.current.has(threadKey) || isDispatching) return;
+      inFlightThreadIdsRef.current.add(threadKey);
+      sendStartedAtRef.current = Date.now();
+      setIsSending(true);
+      try {
+        const messageId = await onSendMessage(delivery);
+        if (messageId === null) {
+          setIsSending(false);
+          setInFlightMessageId(null);
+          return;
+        }
+        setInFlightMessageId(messageId);
+        // Sending a prompt starts agent work: arm the lock-screen card while the
+        // app is foregrounded and the activity token can be registered. Armed
+        // after the send so its preference read and native Activity start don't
+        // contend with the queued-message feedback on the tap frame.
+        armAgentAwarenessLiveActivityForLocalWork({
+          environmentId: props.environmentId,
+          threadTitle: props.selectedThread.title,
+          projectTitle: props.environmentLabel ?? "T3 Pretty",
+        });
+      } finally {
+        inFlightThreadIdsRef.current.delete(threadKey);
       }
-      setInFlightMessageId(messageId);
-      // Sending a prompt starts agent work: arm the lock-screen card while the
-      // app is foregrounded and the activity token can be registered. Armed
-      // after the send so its preference read and native Activity start don't
-      // contend with the queued-message feedback on the tap frame.
-      armAgentAwarenessLiveActivityForLocalWork({
-        environmentId: props.environmentId,
-        threadTitle: props.selectedThread.title,
-        projectTitle: props.environmentLabel ?? "T3 Pretty",
-      });
-    } finally {
-      inFlightThreadIdsRef.current.delete(threadKey);
-    }
-  }, [
-    isDispatching,
-    onSendMessage,
-    props.environmentId,
-    props.environmentLabel,
-    props.selectedThread.id,
-    props.selectedThread.title,
-  ]);
+    },
+    [
+      isDispatching,
+      onSendMessage,
+      props.environmentId,
+      props.environmentLabel,
+      props.selectedThread.id,
+      props.selectedThread.title,
+    ],
+  );
+  const handleSendPress = useCallback(() => {
+    void handleSend(sendDelivery);
+  }, [handleSend, sendDelivery]);
+  const handleSendMenuAction = useCallback(
+    ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
+      if (nativeEvent.event === "queue") void handleSend("queue");
+    },
+    [handleSend],
+  );
+  // Kept mounted for the whole running turn (its host is a native menu view,
+  // so remounting it on every keystroke would flicker the send button).
+  const sendMenuActions = useMemo<MenuAction[]>(
+    () => [
+      {
+        id: "queue",
+        title: "Queue for next turn",
+        attributes: { disabled: !canSend || isDispatching },
+      },
+    ],
+    [canSend, isDispatching],
+  );
   const handleCommandSelect = useCallback(
     (item: ComposerCommandItem) => {
       if (!composerTrigger) return;
@@ -898,6 +957,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       providerOptionDescriptors,
     ],
   );
+  const currentRuntimeMode = displayRuntimeModeForProviderDriver(
+    currentModelOption?.providerDriver,
+    storedRuntimeMode,
+  );
   const settingsSummaryLabel = threadSettingsSummaryLabel({
     modelLabel,
     optionDescriptors: providerOptionDescriptors,
@@ -919,21 +982,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const onUpdateModelSelection = props.onUpdateModelSelection;
   const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
-  // Kimi's "yolo" mode has no equivalent on other providers; a model pick
-  // that crosses providers normalizes it to the generic full-access mode in
-  // the same gesture.
+  // Display remaps Kimi's "yolo" off other providers without writing back, so
+  // switching back to Kimi can still show Yolo. Send remaps at queue time.
   const handleSelectModelOption = useCallback(
     (option: ModelOption) => {
       onUpdateModelSelection(option.selection);
-      const nextRuntimeMode = resolveRuntimeModeForProviderDriver(
-        option.providerDriver,
-        currentRuntimeMode,
-      );
-      if (nextRuntimeMode !== currentRuntimeMode) {
-        onUpdateRuntimeMode(nextRuntimeMode);
-      }
     },
-    [currentRuntimeMode, onUpdateModelSelection, onUpdateRuntimeMode],
+    [onUpdateModelSelection],
   );
   const handleSelectPickerOption = useCallback(
     (id: string, value: string | boolean) => {
@@ -959,6 +1014,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       runtimeMode: currentRuntimeMode,
       onUpdateRuntimeMode,
       initialPage: settingsSheetPageRef.current,
+      checkpointsThreadRef: {
+        environmentId: props.environmentId,
+        threadId: props.selectedThread.id,
+      },
     }),
     [
       currentModelSelection,
@@ -966,6 +1025,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       handleSelectModelOption,
       onUpdateModelSelection,
       onUpdateRuntimeMode,
+      props.environmentId,
+      props.selectedThread.id,
       providerOptionDescriptors,
       settingsOwnerId,
       threadProviderGroups,
@@ -1047,7 +1108,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         layout={composerLayoutTransition}
         style={{ maxWidth: props.contentMaxWidth }}
       >
-        {composerTrigger && composerMenuItems.length > 0 ? (
+        {composerTrigger &&
+        (composerMenuItems.length > 0 ||
+          (composerTrigger.kind === "path" && pathSearch.isPending)) ? (
           <View className="absolute inset-x-0 bottom-full z-10 mb-2">
             <ComposerCommandPopover
               items={composerMenuItems}
@@ -1099,7 +1162,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               placeholder={props.placeholder}
               onFocus={handleFocus}
               onBlur={handleBlur}
-              onSubmit={handleSend}
+              onSubmit={handleSendPress}
               scrollEnabled={isExpanded}
               // Android: collapsed single line centers natively (gravity) in
               // a pill-height box matching the send button; iOS keeps insets.
@@ -1138,14 +1201,20 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           {!isExpanded ? (
             <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(100)}>
               {showStopAction ? (
-                <ControlPill icon="stop.fill" variant="danger" onPress={props.onStopThread} />
+                <ControlPill
+                  accessibilityLabel="Stop"
+                  icon="stop.fill"
+                  variant="danger"
+                  onPress={props.onStopThread}
+                />
               ) : (
                 <ControlPill
+                  accessibilityLabel={isDispatching ? (dispatchStatus ?? "Sending") : sendLabel}
                   icon="arrow.up"
                   variant="primary"
                   disabled={!canSend && !isDispatching}
                   loading={isDispatching}
-                  onPress={handleSend}
+                  onPress={handleSendPress}
                 />
               )}
             </Animated.View>
@@ -1208,15 +1277,27 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   />
                 ) : null}
               </ComposerToolbarScroller>
-              <ComposerToolbarButton
-                accessibilityLabel={isDispatching ? (dispatchStatus ?? "Sending") : sendLabel}
-                icon="arrow.up"
-                variant="primary"
-                disabled={!canSend && !isDispatching}
-                loading={isDispatching}
-                onPress={handleSend}
-                showChevron={false}
-              />
+              {/* Long-press queues for the next turn while a turn runs; the
+                  menu host is skipped otherwise so send keeps a plain press. */}
+              <ControlPillMenu
+                actions={sendMenuActions}
+                disabled={!showStopAction}
+                onPressAction={handleSendMenuAction}
+                shouldOpenOnLongPress
+              >
+                <ComposerToolbarButton
+                  accessibilityHint={
+                    showStopAction ? "Long press to queue for the next turn" : undefined
+                  }
+                  accessibilityLabel={isDispatching ? (dispatchStatus ?? "Sending") : sendLabel}
+                  icon="arrow.up"
+                  variant="primary"
+                  disabled={!canSend && !isDispatching}
+                  loading={isDispatching}
+                  onPress={handleSendPress}
+                  showChevron={false}
+                />
+              </ControlPillMenu>
             </ComposerToolbarRow>
           </Animated.View>
         ) : null}

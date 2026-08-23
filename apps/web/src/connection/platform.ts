@@ -30,6 +30,7 @@ import {
   type DesktopBridge,
   type DesktopEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
+  EnvironmentId,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -43,6 +44,7 @@ import * as Stream from "effect/Stream";
 import { FetchHttpClient } from "effect/unstable/http";
 import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 
+import { APP_VERSION } from "../branding";
 import { readDesktopPrimaryBearerToken } from "../environments/primary/desktopAuth";
 import { primaryEnvironmentHttpLayer } from "../environments/primary/httpLayer";
 import {
@@ -121,6 +123,8 @@ function clientMetadata() {
     label: desktop ? "T3 Pretty Desktop" : "T3 Pretty Web",
     deviceType: "desktop" as const,
     ...(platform === "" ? {} : { os: platform }),
+    surface: desktop ? ("desktop" as const) : ("web" as const),
+    ...(APP_VERSION === "0.0.0" ? {} : { appVersion: APP_VERSION }),
   };
 }
 
@@ -610,7 +614,7 @@ const rpcRequestObserverLayer = Layer.succeed(
       Effect.sync(() => {
         nextObservedRpcRequestId += 1;
         const requestId = `${environmentId}:${nextObservedRpcRequestId}`;
-        trackRpcRequestSent(requestId, method, `${method} · ${environmentId}`);
+        trackRpcRequestSent(requestId, method, method, EnvironmentId.make(environmentId));
         return Effect.sync(() => {
           acknowledgeRpcRequest(requestId);
         });

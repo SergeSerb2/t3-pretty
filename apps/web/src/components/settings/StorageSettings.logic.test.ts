@@ -1,4 +1,5 @@
 import {
+  EnvironmentId,
   ProjectId,
   ThreadId,
   type StorageInventory,
@@ -15,8 +16,11 @@ import {
   isStorageScanInProgress,
   pendingActionCopy,
   pluralCount,
+  resolveSelectedStorageEnvironmentId,
   scanProgressCaption,
   settledWorktrees,
+  sortStorageEnvironments,
+  storageDeviceStatusText,
   summaryCaption,
   uniqueWorktreeBytes,
   worktreeRowDescription,
@@ -171,5 +175,55 @@ describe("storage settings helpers", () => {
     expect(worktreeRowDescription(inventory.activeWorktrees[1]!)).toContain("uncommitted changes");
     expect(pendingActionCopy({ kind: "remove-orphans" }).confirmLabel).toBe("Remove");
     expect(pendingActionCopy({ kind: "delete-archived" }).confirmLabel).toBe("Delete");
+  });
+
+  it("lists this device first, then remaining devices alphabetically", () => {
+    const primary = { environmentId: EnvironmentId.make("env-1"), label: "Serge's Mac" };
+    const remoteB = { environmentId: EnvironmentId.make("env-2"), label: "Box B" };
+    const remoteA = { environmentId: EnvironmentId.make("env-3"), label: "Box A" };
+    expect(sortStorageEnvironments([remoteB, remoteA], EnvironmentId.make("env-1"))).toEqual([
+      remoteA,
+      remoteB,
+    ]);
+    expect(sortStorageEnvironments([remoteB, primary, remoteA], primary.environmentId)).toEqual([
+      primary,
+      remoteA,
+      remoteB,
+    ]);
+  });
+
+  it("keeps a live pick, falls back to this device, then the first listed device", () => {
+    const primary = { environmentId: EnvironmentId.make("env-1"), label: "Serge's Mac" };
+    const remote = { environmentId: EnvironmentId.make("env-2"), label: "Box" };
+    const listed = [primary, remote];
+    expect(
+      resolveSelectedStorageEnvironmentId(listed, remote.environmentId, primary.environmentId),
+    ).toBe(remote.environmentId);
+    expect(
+      resolveSelectedStorageEnvironmentId(
+        listed,
+        EnvironmentId.make("env-gone"),
+        primary.environmentId,
+      ),
+    ).toBe(primary.environmentId);
+    expect(
+      resolveSelectedStorageEnvironmentId([remote], EnvironmentId.make("env-gone"), null),
+    ).toBe(remote.environmentId);
+    expect(resolveSelectedStorageEnvironmentId([], null, null)).toBe(null);
+  });
+
+  it("summarizes a device as bytes once measured, otherwise its state", () => {
+    expect(storageDeviceStatusText({ unsupported: false, error: null, inventory })).toBe(
+      formatStorageBytes(inventory.totalBytes),
+    );
+    expect(storageDeviceStatusText({ unsupported: true, error: null, inventory: null })).toBe(
+      "Server update needed",
+    );
+    expect(storageDeviceStatusText({ unsupported: false, error: "boom", inventory: null })).toBe(
+      "Unavailable",
+    );
+    expect(storageDeviceStatusText({ unsupported: false, error: null, inventory: null })).toBe(
+      "Measuring…",
+    );
   });
 });

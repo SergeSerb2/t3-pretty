@@ -1,4 +1,5 @@
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
@@ -11,10 +12,16 @@ import {
   UPSTREAM_GIT_URL,
   blockedSyncBranch,
   defaultUpdateFeedUrl,
+  describeMergeConflicts,
+  hasMergeConflicts,
   isGitHubFeedUrl,
   isMergeableState,
+  isPullRequestMerged,
   originChildEnv,
+  originUnknownOption,
+  usableGitCredentialStore,
   redactCommandArgs,
+  pullRequestHeadName,
   pullRequestItems,
   pullRequestNumber,
   pullRequestUrl,
@@ -27,6 +34,25 @@ const here = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 function workflow(name) {
   return NodeFS.readFileSync(NodePath.resolve(here, `../../.github/workflows/${name}`), "utf8");
 }
+
+describe("usableGitCredentialStore", () => {
+  it("rejects missing and empty stores that make git fetch exit 128", () => {
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-git-store-"));
+    try {
+      const missing = NodePath.join(dir, "missing");
+      const empty = NodePath.join(dir, "empty");
+      const filled = NodePath.join(dir, "filled");
+      NodeFS.writeFileSync(empty, "");
+      NodeFS.writeFileSync(filled, "https://x-access-token:token@origin.cursor.com\n");
+      assert.equal(usableGitCredentialStore(""), false);
+      assert.equal(usableGitCredentialStore(missing), false);
+      assert.equal(usableGitCredentialStore(empty), false);
+      assert.equal(usableGitCredentialStore(filled), true);
+    } finally {
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("Origin CLI child environment", () => {
   it("drops NO_COLOR and turns off FORCE_COLOR so bun Origin does not 255", () => {
@@ -60,13 +86,89 @@ describe("Origin pull request parsing", () => {
     assert.equal(pullRequestUrl("13"), "https://cursor.com/codebase/serbinenko/t3-pretty/pull/13");
   });
 
+  it("does not pass --sha to origin pr merge", () => {
+    const forge = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
+    assert.notInclude(forge, 'args.push("--sha", sha)');
+    assert.include(forge, "Origin CLI has no --sha on `pr merge`");
+    assert.include(forge, '["--merge"]');
+    assert.include(forge, "did not merge");
+    assert.include(forge, "has merge conflicts");
+    assert.isTrue(originUnknownOption("Unknown argument: sha", "sha"));
+    assert.isTrue(originUnknownOption("unknown flag: auto", "auto"));
+    assert.isFalse(originUnknownOption("merge failed", "sha"));
+  });
+
+  it("matches Origin list payloads by headRef", () => {
+    assert.equal(
+      pullRequestHeadName({ headRef: "automation/upstream-v1" }),
+      "automation/upstream-v1",
+    );
+    assert.equal(pullRequestHeadName({ headRefName: "legacy" }), "legacy");
+    const forge = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
+    const listFn = forge.slice(
+      forge.indexOf("export function listPullRequests"),
+      forge.indexOf("export function findPullRequest"),
+    );
+    assert.include(listFn, "number,title,status,headRef,headSha");
+    assert.include(listFn, '"number,title,status"');
+    assert.include(listFn, "fields.at(-1)");
+  });
+
   it("treats Origin mergeability variants as mergeable", () => {
     assert.isTrue(isMergeableState("clean"));
     assert.isTrue(isMergeableState("unstable"));
     assert.isTrue(isMergeableState("MERGEABLE"));
+    assert.isTrue(isMergeableState("mergeable"));
     assert.isTrue(isMergeableState({ state: "ready" }));
+    assert.isTrue(isMergeableState({ verdict: "mergeable" }));
+    assert.isTrue(isMergeableState({ mergeable: true, hasMergeConflicts: false }));
     assert.isFalse(isMergeableState("blocked"));
     assert.isFalse(isMergeableState("dirty"));
+    assert.isFalse(isMergeableState({ mergeable: false }));
+    assert.isFalse(isMergeableState({ hasMergeConflicts: true, mergeable: true }));
+    assert.isFalse(
+      isMergeableState({
+        mergeability: { verdict: "blocked" },
+      }),
+    );
+  });
+
+  it("reads Origin nested mergeability for conflicts and merged status", () => {
+    const conflicted = {
+      status: "open",
+      mergeability: {
+        mergeable: false,
+        hasMergeConflicts: true,
+        conflictedPaths: ["apps/web/src/index.css"],
+        mergeability: {
+          verdict: "blocked",
+          blockers: [{ kind: "stack-conflicts-with-root-base" }],
+        },
+      },
+    };
+    assert.isTrue(hasMergeConflicts(conflicted));
+    assert.isFalse(isPullRequestMerged(conflicted));
+    assert.include(describeMergeConflicts("104", conflicted), "apps/web/src/index.css");
+
+    assert.isTrue(
+      isPullRequestMerged({
+        status: "merged",
+        mergedAt: "2026-08-21T16:00:00Z",
+        mergeCommitSha: "abc",
+      }),
+    );
+    assert.isFalse(hasMergeConflicts({ status: "open", mergeability: { mergeable: true } }));
+  });
+
+  it("keeps polling while Origin computes mergeability", () => {
+    const forge = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
+    const waitFn = forge.slice(
+      forge.indexOf("export function waitForMergeable"),
+      forge.indexOf("export function originUnknownOption"),
+    );
+    assert.notInclude(waitFn, "if (state == null) return viewed;");
+    assert.include(waitFn, "while it computes");
+    assert.include(waitFn, "if (!last) return lastViewed;");
   });
 });
 
@@ -123,6 +225,10 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(syncScript, '>> "$GITHUB_OUTPUT"');
     assert.include(syncScript, "Do not write GITHUB_OUTPUT");
     assert.include(syncScript, "GIT_TERMINAL_PROMPT");
+    assert.include(syncScript, "unset NO_COLOR");
+    assert.include(syncScript, "git merge --abort");
+    assert.include(syncScript, "refs/heads/automation/upstream-*");
+    assert.include(syncScript, "same_first_parent_line");
     assert.include(sync, 'GIT_TERMINAL_PROMPT: "0"');
     const preparePath = sync.slice(
       sync.indexOf("Prepare macOS runner PATH"),
@@ -162,7 +268,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(sync, "mapfile ");
     assert.include(sync, "Prepare macOS runner PATH");
     assert.include(sync, "checkout-origin.sh");
-    assert.include(mobile, "macos-release (m1-dev)");
+    assert.include(mobile, "macos-release (m5-dev)");
     assert.notInclude(mobile, "keeping importer tree");
     assert.notInclude(mobile, "t3_require_ota");
     assert.include(desktop, "ensure-linux-node.sh");
@@ -265,13 +371,21 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "deploy-relay-ci.sh");
     assert.notInclude(pipeline, "deploy-relay.yml");
     assert.include(pipeline, "queue: macos-release");
+    assert.notInclude(pipeline, "queue: macos-package");
     assert.include(pipeline, "queue: windows-release");
     assert.include(pipeline, "queue: linux-small");
+    const dmgStep = pipeline.slice(pipeline.indexOf(":mac: macOS arm64 DMG"));
+    assert.include(dmgStep.slice(0, 900), "queue: macos-release");
+    const linuxStep = pipeline.slice(pipeline.indexOf(":linux: Linux x64 AppImage"));
+    assert.include(linuxStep.slice(0, 900), "queue: linux-small");
+    const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
+    assert.include(reviewStep.slice(0, 900), "queue: macos-release");
     assert.include(pipeline, "github-actions#v0.13.0");
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");
     assert.include(pipeline, "build-macos-dmg.sh");
+    assert.include(pipeline, "build-linux-appimage.sh");
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, 'build.source != "schedule"');
     assert.notInclude(pipeline, "depends_on: origin-workflows");
@@ -295,6 +409,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(source, 'case "upload-assets"');
     assert.include(source, "originGitConfigArgs");
     assert.include(source, "credential.https://origin.cursor.com.helper");
+    assert.include(source, "maxBuffer");
   });
 
   it("reads the baked updater feed from T3CODE_DESKTOP_UPDATE_FEED_URL", () => {

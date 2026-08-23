@@ -13,18 +13,21 @@ import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
 import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import previewPanelShellSource from "../components/preview/PreviewPanelShell.tsx?raw";
+import pullRequestSummaryTabSource from "../components/pullRequest/PullRequestSummaryTab.tsx?raw";
 import threadTerminalDrawerSource from "../components/ThreadTerminalDrawer.tsx?raw";
 import sidebarSource from "../components/ui/sidebar.tsx?raw";
 import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
 import rightPanelLayoutSource from "../rightPanelLayout.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
+import pullRequestsRouteSource from "../routes/_chat.pull-requests.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
 import sceneryLayerSource from "./SceneryLayer.tsx?raw";
 import sceneryPlaceCreditSource from "./SceneryPlaceCredit.tsx?raw";
 import sceneryArrivalSource from "./SceneryArrival.tsx?raw";
 import sceneryAppearanceSettingsSource from "./SceneryAppearanceSettings.tsx?raw";
+import sceneryHostSource from "./SceneryHost.tsx?raw";
 import activeScenerySource from "./ActiveScenery.tsx?raw";
 import primeWorldScenerySource from "./primeWorldScenery.ts?raw";
 import useInkOverrideSource from "./useInkOverride.ts?raw";
@@ -70,6 +73,12 @@ describe("scenery structural contract with upstream markup", () => {
 
   it("SceneryHost is still mounted at the root route", () => {
     expect(rootRouteSource).toContain("<SceneryHost />");
+  });
+
+  it("SceneryHost still installs World Scenery without pinning it as the only palette", () => {
+    expect(sceneryHostSource).toContain("ensureWorldSceneryThemeInstalled");
+    expect(sceneryHostSource).toContain("shouldForceWorldSceneryTheme");
+    expect(sceneryHostSource).not.toContain("if (theme !== WORLD_SCENERY_THEME_ID)");
   });
 
   it("the thread routes still render ChatView inside SidebarInset", () => {
@@ -141,6 +150,23 @@ describe("glass contract with upstream chrome", () => {
     expect(sceneryCssSource).toMatch(
       /\[data-right-panel=""\]\s+\.bg-background\s*\{[^}]*background-color: transparent;/s,
     );
+  });
+
+  it("sticky PR section headings keep a covering fill after nested bg-background is cleared", () => {
+    expect(pullRequestSummaryTabSource).toContain('data-pull-request-summary-heading=""');
+    expect(pullRequestSummaryTabSource).toContain("bg-background");
+    expect(sceneryCssSource).toMatch(
+      /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*background-color: var\(--sidebar\);/s,
+    );
+  });
+
+  it("the pull requests page still exposes the hooks its scenery glass targets", () => {
+    expect(pullRequestsRouteSource).toContain("data-pull-requests-column");
+    expect(pullRequestsRouteSource).toContain("data-pull-requests-panel");
+    expect(pullRequestsRouteSource).toContain("data-pull-requests-header");
+    expect(sceneryCssSource).toContain("[data-pull-requests-column]");
+    expect(sceneryCssSource).toContain("[data-pull-requests-panel]");
+    expect(sceneryCssSource).toContain("[data-pull-requests-header]");
   });
 
   it("the bottom terminal drawer wears the same chrome glass plate as the sidebars", () => {
@@ -249,6 +275,20 @@ describe("scenery new-thread arrival contract", () => {
   it("docks the World Scenery composer with the longer scenery curve", () => {
     expect(chatViewSource).toContain("SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS");
     expect(chatViewSource).toContain("scenery-hero-headline-ghost");
+    expect(chatViewSource).toContain("shouldGlideDraftHeroHandoff");
+    expect(chatViewSource).toContain("shouldPopDraftHeroGlide");
+  });
+
+  it("does not keep a transform transition on settled hero chrome", () => {
+    const settledChrome =
+      /html\[data-scenery-arrival="settled"\] \[data-scenery-hero-chrome\]\s*\{[^}]+\}/.exec(
+        sceneryCssSource,
+      )?.[0];
+    expect(settledChrome, "missing settled chrome rule").toBeTruthy();
+    expect(settledChrome).not.toContain("transition");
+    expect(sceneryCssSource).not.toContain(
+      'html[data-scenery-arrival="settled"] [data-scenery-hero-chrome="composer"]',
+    );
   });
 
   it("holds fog until the wallpaper is decoded and primes it before navigation", () => {
@@ -300,6 +340,11 @@ describe("ink override contract with upstream appearance handling", () => {
     expect(useThemeSource).toContain('classList.toggle("dark", isDark)');
   });
 
+  it("theme swap view transitions run only when transitions are not suppressed", () => {
+    expect(useThemeSource).toContain("if (suppressTransitions)");
+    expect(useThemeSource).not.toContain("if (!suppressTransitions)");
+  });
+
   it("applies ink in layout so a photo view transition captures the new palette", () => {
     expect(useInkOverrideSource).toContain("useLayoutEffect");
   });
@@ -326,6 +371,7 @@ describe("scenery light/dark appearance crossfade", () => {
     expect(sceneryLayerSource).toContain("runSceneryInkTransition");
     expect(sceneryLayerSource).toContain("flushSync(commit)");
     expect(sceneryLayerSource).toContain("appearanceCrossfadeRef.current");
+    expect(sceneryLayerSource).toContain("if (cancelled)");
   });
 
   it("crossfades wash by opacity instead of snapping rgb() channels", () => {
@@ -343,6 +389,25 @@ describe("scenery light/dark appearance crossfade", () => {
     expect(sceneryCssSource).toContain("html[data-scenery-ink-transition]");
     expect(sceneryCssSource).toContain("mix-blend-mode: normal");
     expect(sceneryInkTransitionSource).toContain("sceneryInkTransition");
+  });
+
+  it("keeps the chat transcript out of the ink view-transition overlay", () => {
+    expect(sceneryCssSource).toContain("view-transition-name: scenery-chat-transcript");
+    expect(sceneryCssSource).toContain(
+      "html[data-scenery-ink-transition]::view-transition-old(scenery-chat-transcript)",
+    );
+    expect(sceneryCssSource).toContain("display: none");
+    expect(sceneryCssSource).toContain(
+      "html[data-scenery-ink-transition] [data-chat-transcript-active]",
+    );
+    expect(sceneryCssSource).not.toContain(
+      "html[data-scenery-ink-transition] [data-chat-transcript] {",
+    );
+    expect(chatViewSource).toContain('data-chat-transcript="true"');
+    expect(chatViewSource).toContain('data-chat-transcript-active="true"');
+    expect(sceneryInkTransitionSource).toContain("document.hidden");
+    expect(sceneryInkTransitionSource).toContain("pinActiveChatTranscript");
+    expect(sceneryInkTransitionSource).toContain("generation !== inkTransitionGeneration");
   });
 
   it("parks the CSS layers only when the view transition really animates", () => {

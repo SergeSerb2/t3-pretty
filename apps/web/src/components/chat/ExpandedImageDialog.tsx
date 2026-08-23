@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
@@ -13,6 +13,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   onClose,
 }: ExpandedImageDialogProps) {
   const [imageOffset, setImageOffset] = useState(0);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const index = (preview.index + imageOffset + preview.images.length) % preview.images.length;
 
   const navigateImage = useCallback((direction: -1 | 1) => {
@@ -43,15 +44,27 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [navigateImage, onClose, preview.images.length]);
 
+  useEffect(() => {
+    const restoreTo = document.activeElement;
+    overlayRef.current?.focus();
+    return () => {
+      if (restoreTo instanceof HTMLElement) restoreTo.focus();
+    };
+  }, []);
+
   const item = preview.images[index];
   if (!item) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6 [-webkit-app-region:no-drag]"
+      ref={overlayRef}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6 outline-none [-webkit-app-region:no-drag]"
       role="dialog"
       aria-modal="true"
       aria-label="Expanded image preview"
+      tabIndex={-1}
+      // Chat's type-to-focus guard bails on floating layers by this slot.
+      data-slot="dialog"
     >
       <button
         type="button"

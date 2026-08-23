@@ -48,6 +48,7 @@ export function ConnectionsRouteScreen() {
       ) : (
         <NativeHeaderToolbar placement="right">
           <NativeHeaderToolbar.Button
+            accessibilityLabel="Add environment"
             icon="plus"
             onPress={() => navigation.navigate("ConnectionsNew")}
             separateBackground

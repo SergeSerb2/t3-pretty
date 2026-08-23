@@ -1,8 +1,8 @@
 <svg width="1080" height="760" viewBox="0 0 540 380" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="latest-surface" x1="0" y1="0" x2="540" y2="380" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FAFAF9"/>
-      <stop offset="1" stop-color="#F5F5F4"/>
+      <stop stop-color="#F4F1EA"/>
+      <stop offset="1" stop-color="#F4F1EA"/>
     </linearGradient>
     <radialGradient id="latest-light" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(430 0) rotate(152) scale(320 150)">
       <stop stop-color="#FFFFFF"/>
@@ -11,7 +11,7 @@
   </defs>
 
   <rect width="540" height="380" fill="url(#latest-surface)"/>
-  <rect width="540" height="112" fill="#EFEFED"/>
+  <rect width="540" height="112" fill="#DFEFE3"/>
   <rect width="540" height="112" fill="url(#latest-light)"/>
   <path d="M0 111.5H540" stroke="#18181B" stroke-opacity="0.08"/>
   <path d="M32 28H64" stroke="#18181B" stroke-width="2"/>

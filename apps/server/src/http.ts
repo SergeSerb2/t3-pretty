@@ -57,6 +57,7 @@ export function assetResponseHeaders(
   filePath: string,
   source?: ResolvedAssetSource,
 ): Record<string, string> {
+  const lowerPath = filePath.toLowerCase();
   return {
     // Attachment bytes never change for a given attachment id, so they can be
     // cached hard; workspace files and favicons can be edited in place.
@@ -69,7 +70,10 @@ export function assetResponseHeaders(
     ...(source === "attachment" || source === "workspace-file" || source === "generated-image"
       ? { "Access-Control-Allow-Origin": "*" }
       : {}),
-    ...(filePath.toLowerCase().endsWith(".svg")
+    ...(lowerPath.endsWith(".html") || lowerPath.endsWith(".htm")
+      ? { "Content-Type": "text/html; charset=utf-8" }
+      : {}),
+    ...(lowerPath.endsWith(".svg")
       ? { "Content-Security-Policy": SVG_CONTENT_SECURITY_POLICY }
       : {}),
   };
@@ -84,9 +88,7 @@ export const browserApiCorsLayer = Layer.unwrap(
     const config = yield* ServerConfig.ServerConfig;
     const devOrigin = config.devUrl?.origin;
     // Dev uses credentialed requests from Vite or the Electron custom origin, so both must be
-    // explicit. Packaged servers echo the request Origin instead of `*`: Windows Chromium
-    // treats `t3code://app` as a non-wildcard origin and drops cross-origin Surge Connect
-    // responses that only advertise `*`.
+    // explicit. Packaged desktop omits credentials and uses Effect's default wildcard origin.
     //
     // T3CODE_DEV_ALLOWED_ORIGINS covers dev servers reached from a second
     // origin — a tailnet name, a LAN IP, a phone. Browser dev normally proxies
@@ -98,9 +100,7 @@ export const browserApiCorsLayer = Layer.unwrap(
             allowedOrigins: [devOrigin, ...DESKTOP_RENDERER_ORIGINS, ...config.devAllowedOrigins],
             credentials: true,
           }
-        : {
-            allowedOrigins: (origin) => typeof origin === "string" && origin.length > 0,
-          }),
+        : {}),
       allowedMethods: browserApiCorsAllowedMethods,
       allowedHeaders: browserApiCorsAllowedHeaders,
       maxAge: 600,

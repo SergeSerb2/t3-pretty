@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  buildActivityHeadlinePrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildProjectIconPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
-import { normalizeCliError, sanitizeThreadTitle } from "./TextGenerationUtils.ts";
+import {
+  normalizeCliError,
+  sanitizeActivityHeadline,
+  sanitizeThreadTitle,
+} from "./TextGenerationUtils.ts";
 import { TextGenerationError } from "@t3tools/contracts";
 
 describe("buildCommitMessagePrompt", () => {
@@ -247,6 +252,44 @@ describe("buildProjectIconPrompt", () => {
     expect(result.prompt).toContain("/tmp/icon.png");
     expect(result.prompt).toContain("image generation");
     expect(result.prompt).toContain("do not write any other files");
+  });
+});
+
+describe("buildActivityHeadlinePrompt", () => {
+  it("includes the activity summary and optional command and detail", () => {
+    const result = buildActivityHeadlinePrompt({
+      summary: "Shell",
+      command: "rg -n deriveWorkLogEntries src",
+      detail: "3 matches",
+    });
+
+    expect(result.prompt).toContain("Current activity:");
+    expect(result.prompt).toContain("Shell");
+    expect(result.prompt).toContain("Command:");
+    expect(result.prompt).toContain("rg -n deriveWorkLogEntries src");
+    expect(result.prompt).toContain("Detail:");
+    expect(result.prompt).toContain("3 matches");
+    expect(result.prompt).toContain("Return JSON with exactly one key: headline.");
+  });
+
+  it("omits empty sections", () => {
+    const result = buildActivityHeadlinePrompt({ summary: "Reading files" });
+
+    expect(result.prompt).not.toContain("Command:");
+    expect(result.prompt).not.toContain("Detail:");
+  });
+});
+
+describe("sanitizeActivityHeadline", () => {
+  it("keeps one compact unquoted line without trailing punctuation", () => {
+    expect(sanitizeActivityHeadline('  "Updating contract tests."\nsecond line ')).toBe(
+      "Updating contract tests",
+    );
+  });
+
+  it("returns empty for unusable output and truncates long lines", () => {
+    expect(sanitizeActivityHeadline("   \n\n")).toBe("");
+    expect(sanitizeActivityHeadline("x".repeat(80))).toHaveLength(60);
   });
 });
 

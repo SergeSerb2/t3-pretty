@@ -7,7 +7,7 @@ Use this when you want to connect to a T3 Code server from another device such a
 If a server is already running on this machine, mint a fresh pairing token and QR code without restarting anything:
 
 ```bash
-npx t3 pair
+t3 pair
 ```
 
 `t3 pair` finds the running server (the shared `~/.t3` install, or the current worktree's dev server when run inside one), issues a one-time pairing token, and prints the pairing URL as a QR code you can scan from your phone.
@@ -15,12 +15,12 @@ npx t3 pair
 If the server is only bound to loopback, the printed URL is not reachable from another device. Pair over your tailnet instead:
 
 ```bash
-npx t3 pair --tailscale
+t3 pair --tailscale
 ```
 
 This publishes the server over Tailscale Serve HTTPS (configuring the mapping if needed — it persists until you run `tailscale serve --https=443 off`) and pairs through the `https://machine.tailnet.ts.net/` URL. Use `--tailscale-serve-port` for a different HTTPS port, `--ttl` to change the token lifetime, and `--base-dir` to target a specific data directory.
 
-If no server is running, `t3 pair` says so and points you at `npx t3 serve` or `npx t3 connect`.
+If no server is running, `t3 pair` says so and points you at `t3 serve` or `t3 connect`.
 
 ## Recommended Setup
 
@@ -54,6 +54,12 @@ Connect. Once both desktops participate, each app automatically keeps the full a
 connection list, including machines added later. Threads from every linked desktop are therefore
 available in either app without repeating **Connect** on both sides.
 
+The **Remote Environments** list shows one row per machine. When several environments publish from
+the same machine (for example an installed app and a second server on one host), only the working
+connections are shown while at least one is online, and offline duplicates collapse away instead of
+cluttering the list. Saved direct LAN or Tailscale connections are no longer offered in the app —
+connect through Surge Connect instead.
+
 Settle and snooze still work when a linked machine is offline. The change is saved on this device
 and applied on that machine as soon as Surge Connect can reach it again.
 
@@ -68,9 +74,10 @@ Surge Connect configuration instead of silently joining another relay deployment
 
 Use **Manage account** on the Surge Code account row to inspect or change the signed-in account.
 **Publish agent activity** is a separate setting for mobile notifications and Live Activities; it
-does not need the Surge Connect tunnel to be on. The iOS Live Activity shows how many threads are
-working and whether any need you. Tap it to open the thread that needs attention, or the first
-working thread. If the account row says **Unavailable**, that build does not include Surge Connect
+does not need the Surge Connect tunnel to be on. The iOS Live Activity lists your threads by name —
+what each one is doing, a live elapsed timer while it works, and how long anything blocked has been
+waiting — with threads that need you first. Tap it to open the thread that needs attention, or the
+first working thread. If the account row says **Unavailable**, that build does not include Surge Connect
 configuration.
 
 ## Enabling Network Access
@@ -128,7 +135,7 @@ Use this when you want to run the server without a GUI, for example on a remote 
 Run the server with `t3 serve`.
 
 ```bash
-npx t3 serve --host "$(tailscale ip -4)"
+t3 serve --host "$(tailscale ip -4)"
 ```
 
 `t3 serve` starts the server without opening a browser and prints:
@@ -141,23 +148,30 @@ npx t3 serve --host "$(tailscale ip -4)"
 From there, connect from another device in either of these ways:
 
 - scan the QR code on your phone
-- in the desktop app, enter the full pairing URL
-- in the desktop app, enter the host and token separately
+- in the mobile app, enter the full pairing URL
+- in the mobile app, enter the host and token separately
 - in the hosted web app, open a hosted pairing URL when the backend is reachable over HTTPS
+
+Install the T3 Pretty CLI on the remote machine first — `npx t3` is upstream T3
+Code and will not join Surge Connect:
+
+```bash
+curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
+```
 
 Use `t3 serve --help` for the full flag reference. It supports the same general startup options as the normal server command, including an optional `cwd` argument.
 
 For hosted web pairing over Tailscale HTTPS, opt in to Tailscale Serve:
 
 ```bash
-npx t3 serve --tailscale-serve
+t3 serve --tailscale-serve
 ```
 
 By default this configures Tailscale Serve on HTTPS port 443 and advertises
 `https://machine.tailnet.ts.net/`. Advanced users can choose a different HTTPS port:
 
 ```bash
-npx t3 serve --tailscale-serve --tailscale-serve-port 8443
+t3 serve --tailscale-serve --tailscale-serve-port 8443
 ```
 
 Once paired, add projects normally: open the Command Palette and choose **Add Project**, then pick
@@ -169,10 +183,9 @@ Use this when you want the desktop app to start or reuse T3 Code on another mach
 
 1. Open **Settings** → **Connections**.
 2. Under **Remote Environments**, choose **Add environment**.
-3. Select the SSH launch flow.
-4. Enter the SSH target, such as `user@example.com`. When you use an SSH config alias, leave the
+3. Enter the SSH target, such as `user@example.com`. When you use an SSH config alias, leave the
    username blank to use the alias's configured `User` value.
-5. Confirm the launch. The desktop app probes the host, starts or reuses a remote T3 server, opens a local port forward, and saves the environment.
+4. Confirm the launch. The desktop app probes the host, starts or reuses a remote T3 server, opens a local port forward, and saves the environment.
 
 After setup, the renderer connects to a local forwarded HTTP/WebSocket endpoint. The remote host still owns the actual T3 server, projects, files, git state, terminals, and provider sessions.
 

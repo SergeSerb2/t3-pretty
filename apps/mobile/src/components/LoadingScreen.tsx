@@ -1,10 +1,12 @@
 import { ActivityIndicator, StatusBar, View } from "react-native";
+import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeColor } from "../lib/useThemeColor";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 
 import { AppText as Text } from "./AppText";
 import { BrandMark } from "./BrandMark";
+import { enterFade, exitFade } from "../lib/motion";
 
 export function LoadingScreen(props: {
   readonly message: string;
@@ -16,7 +18,12 @@ export function LoadingScreen(props: {
   const messagePlacement = props.messagePlacement ?? "below-spinner";
 
   return (
-    <View className="flex-1 bg-screen" style={{ paddingTop: insets.top }}>
+    <Animated.View
+      entering={enterFade}
+      exiting={exitFade}
+      className="flex-1 bg-screen"
+      style={{ paddingTop: insets.top }}
+    >
       <StatusBar
         barStyle={colorScheme === "dark" ? "light-content" : "dark-content"}
         backgroundColor={screenBg as string}
@@ -32,6 +39,6 @@ export function LoadingScreen(props: {
           <Text className="font-t3-bold text-lg text-foreground">{props.message}</Text>
         ) : null}
       </View>
-    </View>
+    </Animated.View>
   );
 }

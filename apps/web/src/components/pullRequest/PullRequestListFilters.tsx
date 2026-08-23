@@ -17,9 +17,10 @@ import {
   LayersIcon,
   ListFilterIcon,
   LoaderIcon,
+  RotateCcwIcon,
   SearchIcon,
 } from "lucide-react";
-import type { ElementType } from "react";
+import type { ElementType, ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
@@ -30,10 +31,14 @@ import { Button } from "../ui/button";
 import {
   Menu,
   MenuGroupLabel,
+  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
   MenuSeparator,
+  MenuSub,
+  MenuSubPopup,
+  MenuSubTrigger,
   MenuTrigger,
 } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -100,8 +105,10 @@ export function PullRequestSearchInput({
 /**
  * Every list filter lives behind the one filter icon so the control row stays two controls
  * wide: the search and this. The trigger carries a dot whenever any filter is off its
- * default, so a narrowed list is never a mystery. Same menu chrome as the detail panel's
- * actions, which also owns its own spacing.
+ * default, so a narrowed list is never a mystery. Inside, each category is one row that
+ * names its current choice and opens its options as a submenu, so the reader scans eight
+ * rows instead of a scrolling list of every option at once. Same menu chrome as the detail
+ * panel's actions, which also owns its own spacing.
  */
 const ALL_PROJECTS_VALUE = "all";
 /** MenuRadioGroup wants a string, so "every host" wears the one value no host can be. */
@@ -188,6 +195,39 @@ function PullRequestFilterRadioGroup<Value extends string>({
   );
 }
 
+/**
+ * One filter category as a submenu row: the trigger names the category and the option in
+ * effect, so the closed menu already reads as the list's scope, and the radio group itself
+ * moves into the submenu — the top level stays one row per category instead of every option
+ * of every category stacked behind one button.
+ */
+function PullRequestFilterSubmenu<Value extends string>({
+  title,
+  value,
+  options,
+  children,
+}: {
+  title: string;
+  value: Value;
+  options: ReadonlyArray<PullRequestFilterOption<Value>>;
+  /** The category's radio group, kept as a child so the group owns its own change wiring. */
+  children: ReactNode;
+}) {
+  const current = options.find((option) => option.value === value) ?? options[0];
+  return (
+    <MenuSub>
+      <MenuSubTrigger>
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          {current ? <current.Icon aria-hidden /> : null}
+          {title}
+        </span>
+        <span className="max-w-28 truncate text-xs text-muted-foreground">{current?.label}</span>
+      </MenuSubTrigger>
+      <MenuSubPopup className="min-w-48">{children}</MenuSubPopup>
+    </MenuSub>
+  );
+}
+
 export function PullRequestFiltersMenu({
   state,
   stateOptions,
@@ -208,6 +248,7 @@ export function PullRequestFiltersMenu({
   projectEnvironmentId,
   unavailable,
   onProject,
+  onReset,
 }: {
   state: PullRequestListState;
   stateOptions: ReadonlyArray<PullRequestFilterOption<PullRequestListState>>;
@@ -253,6 +294,11 @@ export function PullRequestFiltersMenu({
   unavailable: ReadonlyMap<string, string>;
   /** The environment comes with the project id, since picking a row picks a specific server's copy of it. */
   onProject: (projectId: ProjectId | undefined, environmentId: EnvironmentId | undefined) => void;
+  /**
+   * Returns every filter to its default in one shot. Rendered only while something is
+   * filtered — with nothing to reset the row would just be noise.
+   */
+  onReset?: (() => void) | undefined;
 }) {
   const filtered =
     state !== "open" ||
@@ -271,6 +317,10 @@ export function PullRequestFiltersMenu({
         ([, held]) => held !== undefined,
       ),
     ) as PullRequestListFilters;
+  /** The selected project row, so the submenu trigger can wear its favicon and title. */
+  const selectedProject = projects.find(
+    (project) => project.id === projectId && project.environmentId === projectEnvironmentId,
+  );
   return (
     <Menu>
       <MenuTrigger
@@ -291,55 +341,85 @@ export function PullRequestFiltersMenu({
           />
         ) : null}
       </MenuTrigger>
-      <MenuPopup align="end" side="bottom" className="min-w-56">
-        <PullRequestFilterRadioGroup
-          label="State"
-          value={state}
-          options={stateOptions}
-          onChange={onState}
-        />
-        <MenuSeparator />
-        <PullRequestFilterRadioGroup
-          label="Involvement"
+      <MenuPopup align="end" side="bottom" className="min-w-60">
+        <PullRequestFilterSubmenu title="State" value={state} options={stateOptions}>
+          <PullRequestFilterRadioGroup
+            label="State"
+            value={state}
+            options={stateOptions}
+            onChange={onState}
+          />
+        </PullRequestFilterSubmenu>
+        <PullRequestFilterSubmenu
+          title="Involvement"
           value={involvement}
           options={involvementOptions}
-          onChange={onInvolvement}
-        />
+        >
+          <PullRequestFilterRadioGroup
+            label="Involvement"
+            value={involvement}
+            options={involvementOptions}
+            onChange={onInvolvement}
+          />
+        </PullRequestFilterSubmenu>
         <MenuSeparator />
-        <PullRequestFilterRadioGroup
-          label="Draft"
+        <PullRequestFilterSubmenu
+          title="Draft"
           value={filters.draft ?? UNFILTERED_VALUE}
           options={DRAFT_OPTIONS}
-          onChange={(next) => onFilters(withFilter("draft", next))}
-        />
-        <MenuSeparator />
-        <PullRequestFilterRadioGroup
-          label="Review"
+        >
+          <PullRequestFilterRadioGroup
+            label="Draft"
+            value={filters.draft ?? UNFILTERED_VALUE}
+            options={DRAFT_OPTIONS}
+            onChange={(next) => onFilters(withFilter("draft", next))}
+          />
+        </PullRequestFilterSubmenu>
+        <PullRequestFilterSubmenu
+          title="Review"
           value={filters.review ?? UNFILTERED_VALUE}
           options={REVIEW_OPTIONS}
-          onChange={(next) => onFilters(withFilter("review", next))}
-        />
-        <MenuSeparator />
-        <PullRequestFilterRadioGroup
-          label="Checks"
+        >
+          <PullRequestFilterRadioGroup
+            label="Review"
+            value={filters.review ?? UNFILTERED_VALUE}
+            options={REVIEW_OPTIONS}
+            onChange={(next) => onFilters(withFilter("review", next))}
+          />
+        </PullRequestFilterSubmenu>
+        <PullRequestFilterSubmenu
+          title="Checks"
           value={filters.checks ?? UNFILTERED_VALUE}
           options={CHECKS_OPTIONS}
-          onChange={(next) => onFilters(withFilter("checks", next))}
-        />
+        >
+          <PullRequestFilterRadioGroup
+            label="Checks"
+            value={filters.checks ?? UNFILTERED_VALUE}
+            options={CHECKS_OPTIONS}
+            onChange={(next) => onFilters(withFilter("checks", next))}
+          />
+        </PullRequestFilterSubmenu>
+        <MenuSeparator />
         {hostOptions.length > 2 ? (
-          <>
-            <MenuSeparator />
+          <PullRequestFilterSubmenu
+            title="Host"
+            value={host ?? ALL_HOSTS_VALUE}
+            options={hostOptions}
+          >
             <PullRequestFilterRadioGroup
               label="Host"
               value={host ?? ALL_HOSTS_VALUE}
               options={hostOptions}
               onChange={(next) => onHost(next === ALL_HOSTS_VALUE ? undefined : next)}
             />
-          </>
+          </PullRequestFilterSubmenu>
         ) : null}
         {serverOptions.length > 2 ? (
-          <>
-            <MenuSeparator />
+          <PullRequestFilterSubmenu
+            title="Server"
+            value={server ?? ALL_SERVERS_VALUE}
+            options={serverOptions}
+          >
             <PullRequestFilterRadioGroup
               label="Server"
               value={server ?? ALL_SERVERS_VALUE}
@@ -348,82 +428,116 @@ export function PullRequestFiltersMenu({
                 onServer(next === ALL_SERVERS_VALUE ? undefined : (next as EnvironmentId))
               }
             />
+          </PullRequestFilterSubmenu>
+        ) : null}
+        <MenuSub>
+          <MenuSubTrigger>
+            <span className="flex min-w-0 flex-1 items-center gap-2">
+              {selectedProject ? (
+                <ProjectFavicon
+                  environmentId={selectedProject.environmentId}
+                  cwd={selectedProject.workspaceRoot}
+                  fallbackIcon={FolderGit2Icon}
+                  className="size-3.5 shrink-0"
+                />
+              ) : (
+                <LayersIcon aria-hidden />
+              )}
+              Project
+            </span>
+            <span className="max-w-28 truncate text-xs text-muted-foreground">
+              {selectedProject?.title ?? "All projects"}
+            </span>
+          </MenuSubTrigger>
+          <MenuSubPopup className="min-w-56">
+            <MenuRadioGroup
+              value={
+                projectId === undefined || projectEnvironmentId === undefined
+                  ? ALL_PROJECTS_VALUE
+                  : pullRequestProjectKey({ id: projectId, environmentId: projectEnvironmentId })
+              }
+              onValueChange={(next) => {
+                if (next === ALL_PROJECTS_VALUE) {
+                  if (projectId !== undefined) onProject(undefined, undefined);
+                  return;
+                }
+                // The value carries both halves, since the id alone cannot tell two servers' rows
+                // apart once they share one.
+                const project = projects.find(
+                  (candidate) => pullRequestProjectKey(candidate) === next,
+                );
+                if (
+                  project !== undefined &&
+                  (project.id !== projectId || project.environmentId !== projectEnvironmentId)
+                ) {
+                  onProject(project.id, project.environmentId);
+                }
+              }}
+            >
+              <MenuGroupLabel>Project</MenuGroupLabel>
+              <MenuRadioItem value={ALL_PROJECTS_VALUE}>
+                <span className="flex min-w-0 items-center gap-2">
+                  <LayersIcon aria-hidden className="size-3.5" />
+                  All projects
+                </span>
+              </MenuRadioItem>
+              {/* The ones that can be chosen first: a list that opens with three disabled rows reads
+              as a broken menu rather than as a workspace with three unreadable repositories. */}
+              {projects
+                .toSorted(
+                  (left, right) =>
+                    Number(unavailable.has(pullRequestProjectKey(left))) -
+                    Number(unavailable.has(pullRequestProjectKey(right))),
+                )
+                .map((project) => {
+                  const reason = unavailable.get(pullRequestProjectKey(project));
+                  const item = (
+                    <MenuRadioItem
+                      key={pullRequestProjectKey(project)}
+                      value={pullRequestProjectKey(project)}
+                      className={
+                        reason !== undefined ? "data-disabled:pointer-events-auto" : undefined
+                      }
+                      disabled={reason !== undefined}
+                    >
+                      <span className="flex min-w-0 flex-1 items-center gap-2">
+                        <ProjectFavicon
+                          environmentId={project.environmentId}
+                          cwd={project.workspaceRoot}
+                          fallbackIcon={FolderGit2Icon}
+                          className="size-3.5 shrink-0"
+                        />
+                        <span className="min-w-0 flex-1 truncate">{project.title}</span>
+                        {reason === undefined ? null : (
+                          <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-px text-[10px] font-medium text-amber-600 dark:text-amber-400/90">
+                            Unavailable
+                          </span>
+                        )}
+                      </span>
+                    </MenuRadioItem>
+                  );
+                  if (reason === undefined) return item;
+                  return (
+                    <Tooltip key={pullRequestProjectKey(project)}>
+                      <TooltipTrigger render={item} />
+                      <TooltipPopup side="top" className="max-w-80">
+                        {reason}
+                      </TooltipPopup>
+                    </Tooltip>
+                  );
+                })}
+            </MenuRadioGroup>
+          </MenuSubPopup>
+        </MenuSub>
+        {filtered && onReset ? (
+          <>
+            <MenuSeparator />
+            <MenuItem onClick={onReset}>
+              <RotateCcwIcon aria-hidden />
+              Reset filters
+            </MenuItem>
           </>
         ) : null}
-        <MenuSeparator />
-        <MenuRadioGroup
-          value={
-            projectId === undefined || projectEnvironmentId === undefined
-              ? ALL_PROJECTS_VALUE
-              : pullRequestProjectKey({ id: projectId, environmentId: projectEnvironmentId })
-          }
-          onValueChange={(next) => {
-            if (next === ALL_PROJECTS_VALUE) {
-              if (projectId !== undefined) onProject(undefined, undefined);
-              return;
-            }
-            // The value carries both halves, since the id alone cannot tell two servers' rows
-            // apart once they share one.
-            const project = projects.find((candidate) => pullRequestProjectKey(candidate) === next);
-            if (
-              project !== undefined &&
-              (project.id !== projectId || project.environmentId !== projectEnvironmentId)
-            ) {
-              onProject(project.id, project.environmentId);
-            }
-          }}
-        >
-          <MenuGroupLabel>Project</MenuGroupLabel>
-          <MenuRadioItem value={ALL_PROJECTS_VALUE}>
-            <span className="flex min-w-0 items-center gap-2">
-              <LayersIcon aria-hidden className="size-3.5" />
-              All projects
-            </span>
-          </MenuRadioItem>
-          {/* The ones that can be chosen first: a list that opens with three disabled rows reads
-              as a broken menu rather than as a workspace with three unreadable repositories. */}
-          {projects
-            .toSorted(
-              (left, right) =>
-                Number(unavailable.has(pullRequestProjectKey(left))) -
-                Number(unavailable.has(pullRequestProjectKey(right))),
-            )
-            .map((project) => {
-              const reason = unavailable.get(pullRequestProjectKey(project));
-              const item = (
-                <MenuRadioItem
-                  key={pullRequestProjectKey(project)}
-                  value={pullRequestProjectKey(project)}
-                  className={reason !== undefined ? "data-disabled:pointer-events-auto" : undefined}
-                  disabled={reason !== undefined}
-                >
-                  <span className="flex min-w-0 flex-1 items-center gap-2">
-                    <ProjectFavicon
-                      environmentId={project.environmentId}
-                      cwd={project.workspaceRoot}
-                      fallbackIcon={FolderGit2Icon}
-                      className="size-3.5 shrink-0"
-                    />
-                    <span className="min-w-0 flex-1 truncate">{project.title}</span>
-                    {reason === undefined ? null : (
-                      <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-px text-[10px] font-medium text-amber-600 dark:text-amber-400/90">
-                        Unavailable
-                      </span>
-                    )}
-                  </span>
-                </MenuRadioItem>
-              );
-              if (reason === undefined) return item;
-              return (
-                <Tooltip key={pullRequestProjectKey(project)}>
-                  <TooltipTrigger render={item} />
-                  <TooltipPopup side="top" className="max-w-80">
-                    {reason}
-                  </TooltipPopup>
-                </Tooltip>
-              );
-            })}
-        </MenuRadioGroup>
       </MenuPopup>
     </Menu>
   );

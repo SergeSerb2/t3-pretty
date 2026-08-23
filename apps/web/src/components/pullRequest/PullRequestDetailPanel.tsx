@@ -389,6 +389,7 @@ export function PullRequestDetailPanel({
   onClose,
   onStateChange,
   context = "page",
+  chromeVariant = "full",
   composerDraftTarget,
 }: {
   environmentId: EnvironmentId;
@@ -420,6 +421,12 @@ export function PullRequestDetailPanel({
    * again is at best a no-op and at worst git refusing a branch two checkouts.
    */
   context?: "page" | "thread";
+  /**
+   * How the metadata above the content behaves: `full` keeps every row pinned; `collapse`
+   * folds the whole of it into the top row once the active tab scrolls, and unfolds at the
+   * top — the chrome spends its height on what is being read.
+   */
+  chromeVariant?: "full" | "collapse";
   /**
    * The open thread's composer. Beside the thread whose own pull request this is, hand-offs
    * land here instead of opening a new thread — the branch is already under the reader's feet.
@@ -1513,7 +1520,9 @@ export function PullRequestDetailPanel({
                   <MenuItem disabled={handoff !== null} onClick={explainPullRequest}>
                     <BookOpenIcon className="mt-0.5 size-3.5 shrink-0 self-start" />
                     <span className="flex min-w-0 flex-col">
-                      <span>{handoff === "explain" ? "Opening..." : "Explain this PR"}</span>
+                      <span>
+                        {handoff === "explain" ? "Opening..." : "Explain this pull request"}
+                      </span>
                       <span className="text-xs text-muted-foreground">
                         A walk through the diff and what to read closely.
                       </span>
@@ -2047,9 +2056,7 @@ export function PullRequestDetailPanel({
                       ? "Show oldest activity first"
                       : "Show newest activity first"
                   }
-                  onClick={() =>
-                    setTimelineOrder(timelineOrder === "newest" ? "oldest" : "newest")
-                  }
+                  onClick={() => setTimelineOrder(timelineOrder === "newest" ? "oldest" : "newest")}
                 >
                   <ArrowDownUpIcon aria-hidden className="size-3" />
                   {timelineOrder === "newest" ? "Newest first" : "Oldest first"}

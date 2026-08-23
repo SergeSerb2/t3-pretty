@@ -254,6 +254,7 @@ export function useThreadOutboxDrain(): void {
           runtimeMode: settings.runtimeMode,
           interactionMode: settings.interactionMode,
           createdAt: queuedMessage.createdAt,
+          ...(queuedMessage.delivery ? { delivery: queuedMessage.delivery } : {}),
         },
       });
       return completeDelivery(deliveryResult);
@@ -296,6 +297,7 @@ export function useThreadOutboxDrain(): void {
           branch: creation.branch,
           worktreePath: creation.worktreePath,
           startFromOrigin: creation.startFromOrigin ?? false,
+          enabledSkillIds: creation.enabledSkillIds ?? [],
           worktreeBranchName: buildTemporaryWorktreeBranchName(randomHex),
         }),
       });

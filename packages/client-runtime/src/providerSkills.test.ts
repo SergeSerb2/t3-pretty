@@ -4,10 +4,6 @@ import {
   formatProviderSkillDisplayName,
   resolveProviderSkillSourceKind,
 } from "./providerSkills.ts";
-import {
-  formatProviderSkillInstallSource,
-  normalizeProviderSkillPath,
-} from "./providerSkillPresentation";
 
 describe("formatProviderSkillDisplayName", () => {
   it("prefers the provider display name", () => {
@@ -77,13 +73,5 @@ describe("resolveProviderSkillSourceKind", () => {
         path: "/opt/skills/team-review/SKILL.md",
       }),
     ).toBe("other");
-  });
-});
-
-describe("normalizeProviderSkillPath", () => {
-  it("normalizes Windows separators so host and snapshot paths can be compared", () => {
-    expect(
-      normalizeProviderSkillPath("C:\\Users\\julius\\.claude\\skills\\grill-me\\SKILL.md"),
-    ).toBe("C:/Users/julius/.claude/skills/grill-me/SKILL.md");
   });
 });

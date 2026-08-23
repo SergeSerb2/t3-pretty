@@ -2,9 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   DRAFT_HERO_HANDOFF_MAX_AGE_MS,
+  DRAFT_HERO_POP_MIN_TRAVEL_PX,
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
+  draftHeroGlideHasTravel,
+  draftHeroGlideKeyframes,
+  isDraftHeroAnimationPlaying,
   recordDraftHeroHandoff,
   runMobileComposerTransition,
+  shouldGlideDraftHeroHandoff,
+  shouldPopDraftHeroGlide,
   takeDraftHeroHandoff,
   waitForDraftHeroTransition,
 } from "./draftHeroTransition";
@@ -16,8 +22,12 @@ afterEach(() => {
 
 describe("draft hero handoff across a ChatView remount", () => {
   it("hands the outgoing composer rect to the next mount exactly once", () => {
-    recordDraftHeroHandoff({ left: 12, top: 640 }, 1000);
-    expect(takeDraftHeroHandoff(1100)).toEqual({ left: 12, top: 640 });
+    recordDraftHeroHandoff({ left: 12, top: 640 }, 1000, { isDraftHero: true, gliding: false });
+    expect(takeDraftHeroHandoff(1100)).toEqual({
+      rect: { left: 12, top: 640 },
+      isDraftHero: true,
+      gliding: false,
+    });
     expect(takeDraftHeroHandoff(1101)).toBeNull();
   });
 
@@ -30,6 +40,89 @@ describe("draft hero handoff across a ChatView remount", () => {
     recordDraftHeroHandoff({ left: 12, top: 640 }, 1000);
     recordDraftHeroHandoff(null, 1050);
     expect(takeDraftHeroHandoff(1060)).toBeNull();
+  });
+});
+
+describe("shouldGlideDraftHeroHandoff", () => {
+  const dockedHandoff = {
+    rect: { left: 12, top: 640 },
+    isDraftHero: false,
+    gliding: false,
+  };
+
+  it("glides a remount that crosses hero↔docked", () => {
+    expect(
+      shouldGlideDraftHeroHandoff({
+        isDraftHero: true,
+        handoff: dockedHandoff,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not glide a settled docked→docked remount after the in-place dock", () => {
+    expect(
+      shouldGlideDraftHeroHandoff({
+        isDraftHero: false,
+        handoff: dockedHandoff,
+      }),
+    ).toBe(false);
+  });
+
+  it("continues a remount when the outgoing view was still gliding", () => {
+    expect(
+      shouldGlideDraftHeroHandoff({
+        isDraftHero: false,
+        handoff: { ...dockedHandoff, gliding: true },
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("shouldPopDraftHeroGlide", () => {
+  it("pops only an in-place scenery dock with real vertical travel", () => {
+    expect(
+      shouldPopDraftHeroGlide({
+        sceneryDock: true,
+        inPlace: true,
+        translateY: DRAFT_HERO_POP_MIN_TRAVEL_PX,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not pop a promotion remount or a short correction", () => {
+    expect(
+      shouldPopDraftHeroGlide({
+        sceneryDock: true,
+        inPlace: false,
+        translateY: DRAFT_HERO_POP_MIN_TRAVEL_PX,
+      }),
+    ).toBe(false);
+    expect(
+      shouldPopDraftHeroGlide({
+        sceneryDock: true,
+        inPlace: true,
+        translateY: DRAFT_HERO_POP_MIN_TRAVEL_PX - 1,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("draftHeroGlideKeyframes", () => {
+  it("omits the scale pop unless the dock asked for it", () => {
+    expect(draftHeroGlideHasTravel(0, 2)).toBe(true);
+    expect(draftHeroGlideHasTravel(0, 0.4)).toBe(false);
+    expect(draftHeroGlideKeyframes(0, 240, true)[0]?.transform).toContain("scale(1.02)");
+    expect(draftHeroGlideKeyframes(0, 8, false)[0]?.transform).not.toContain("scale");
+  });
+});
+
+describe("isDraftHeroAnimationPlaying", () => {
+  it("treats running and paused as in-flight, finished as settled", () => {
+    expect(isDraftHeroAnimationPlaying(null)).toBe(false);
+    expect(isDraftHeroAnimationPlaying({ playState: "running" } as Animation)).toBe(true);
+    expect(isDraftHeroAnimationPlaying({ playState: "paused" } as Animation)).toBe(true);
+    expect(isDraftHeroAnimationPlaying({ playState: "finished" } as Animation)).toBe(false);
+    expect(isDraftHeroAnimationPlaying({ playState: "idle" } as Animation)).toBe(false);
   });
 });
 

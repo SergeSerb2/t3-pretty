@@ -7,7 +7,15 @@ import {
   usePreventRemove,
 } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import * as Linking from "expo-linking";
 import {
   KeyboardController,
@@ -21,7 +29,7 @@ import { useThemeColor } from "../../lib/useThemeColor";
 import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { useFontFamily } from "../../lib/useFontFamily";
 
-import { MessageId, ThreadId } from "@t3tools/contracts";
+import { MessageId, resolveRuntimeModeForProviderDriver, ThreadId } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -46,6 +54,7 @@ import { composerDispatchStatusLabel } from "../../lib/composerDispatchStatus";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
+import { EmptyState } from "../../components/EmptyState";
 import { GlassSurface } from "../../components/GlassSurface";
 import { ComposerSurface } from "./ThreadComposer";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
@@ -82,6 +91,8 @@ import { rememberOutgoingMessageDraftAttachments } from "../../state/outgoing-me
 import { enqueueThreadOutboxMessage, removeThreadOutboxMessage } from "../../state/thread-outbox";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { useNewTaskFlow } from "./new-task-flow-provider";
+import { deriveProjectEmptyState } from "./NewTaskRouteScreen";
+import { useWorkspaceState } from "../../state/workspace";
 import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
 import { useCreateProjectThread } from "./use-project-actions";
 import { resolveDraftProjectSelection } from "./new-task-project-selection";
@@ -214,6 +225,7 @@ export function NewTaskDraftScreen(props: {
     reportFailure: false,
   });
   const flow = useNewTaskFlow();
+  const { state: catalogState } = useWorkspaceState();
   const navigation = useNavigation();
   const {
     consumeShare,
@@ -820,7 +832,12 @@ export function NewTaskDraftScreen(props: {
     let selectedBranchName = draft.workspaceSelection?.branch ?? flow.selectedBranchName;
     let selectedWorktreePath = draft.workspaceSelection?.worktreePath ?? flow.selectedWorktreePath;
     let startFromOrigin = draft.workspaceSelection?.startFromOrigin ?? flow.startFromOrigin;
-    const runtimeMode = draft.runtimeMode ?? flow.runtimeMode;
+    const runtimeMode = resolveRuntimeModeForProviderDriver(
+      selectedEnvironmentServerConfig?.providers.find(
+        (provider) => provider.instanceId === modelSelection?.instanceId,
+      )?.driver,
+      draft.runtimeMode ?? flow.runtimeMode,
+    );
     const interactionMode = flow.planModeEnabled
       ? (draft.interactionMode ?? flow.interactionMode)
       : "default";
@@ -983,6 +1000,7 @@ export function NewTaskDraftScreen(props: {
       interactionMode,
       branch: creationBranch,
       worktreePath: workspaceMode === "worktree" ? null : selectedWorktreePath,
+      enabledSkillIds: draft.enabledSkillIds,
       createdAt: turnMetadata.createdAt,
       sendStartedAt: new Date().toISOString(),
       message: {
@@ -1021,6 +1039,7 @@ export function NewTaskDraftScreen(props: {
       startFromOrigin,
       runtimeMode,
       interactionMode,
+      enabledSkillIds: draft.enabledSkillIds ?? [],
       initialMessageText: initialMessageTextForSend,
       initialAttachments: draft.attachments,
       turnMetadata,
@@ -1060,6 +1079,9 @@ export function NewTaskDraftScreen(props: {
   }
 
   if (!selectedProject) {
+    // No project can mean "still loading" or a real dead end (no environments,
+    // environment offline, no projects) — a bare spinner would lie forever.
+    const projectEmptyState = deriveProjectEmptyState(catalogState);
     return (
       <NewTaskDraftFrame sceneryChrome={sceneryChrome}>
         {Platform.OS === "android" ? (
@@ -1068,8 +1090,27 @@ export function NewTaskDraftScreen(props: {
             <AndroidScreenHeader title="New Thread" onBack={() => navigation.goBack()} />
           </>
         ) : (
-          <NativeStackScreenOptions options={{ title: "Loading task" }} />
+          <NativeStackScreenOptions
+            options={{ title: projectEmptyState.loading ? "Loading task" : "New task" }}
+          />
         )}
+        <View className="flex-1 items-center justify-center">
+          {projectEmptyState.loading ? (
+            <ActivityIndicator />
+          ) : (
+            <EmptyState
+              title={projectEmptyState.title}
+              detail={projectEmptyState.detail}
+              actionLabel={catalogState.hasReadyEnvironment ? "Add new project" : "Add environment"}
+              onAction={() =>
+                catalogState.hasReadyEnvironment
+                  ? navigation.dispatch(StackActions.push("AddProject"))
+                  : navigation.navigate("ConnectionsNew")
+              }
+              variant="plain"
+            />
+          )}
+        </View>
       </NewTaskDraftFrame>
     );
   }
@@ -1151,7 +1192,9 @@ export function NewTaskDraftScreen(props: {
     void KeyboardController.dismiss({ animated: true });
     navigation.dispatch(StackActions.push("NewTask", { incomingShareId: props.incomingShareId }));
   };
-  const openContextPicker = (routeName: "NewTaskBranch" | "NewTaskEnvironment") => {
+  const openContextPicker = (
+    routeName: "NewTaskBranch" | "NewTaskEnvironment" | "NewTaskSkills",
+  ) => {
     if (composerSelectorsLocked) {
       return;
     }
@@ -1255,6 +1298,22 @@ export function NewTaskDraftScreen(props: {
         label={showBranchLoading ? "Loading branches…" : selectedBranchLabel}
         maxWidth={190}
         onPress={() => openContextPicker("NewTaskBranch")}
+      />
+
+      <ComposerInlineControl
+        accessibilityLabel={
+          flow.selectedSkillIds.length > 0
+            ? `Skills: ${flow.selectedSkillIds.length} selected`
+            : "Skills"
+        }
+        chevronDirection="right"
+        disabled={composerSelectorsLocked}
+        icon={{ ios: "sparkles", android: "auto_awesome" }}
+        label={
+          flow.selectedSkillIds.length > 0 ? `Skills · ${flow.selectedSkillIds.length}` : "Skills"
+        }
+        maxWidth={120}
+        onPress={() => openContextPicker("NewTaskSkills")}
       />
     </View>
   );

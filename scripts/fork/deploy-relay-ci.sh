@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Production relay deploy on macos-release. Imported GHA macos-latest jobs
 # can land on hosted Macs that do not have the Origin git store or the
-# m1-dev file-store secrets.
+# packaging Mac file-store secrets.
 set -euo pipefail
 
 export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
@@ -16,7 +16,6 @@ load_secret() {
   if [[ -z "$value" ]]; then
     for candidate in \
       "${HOME}/.config/t3-pretty/${name}" \
-      "/Users/m1-dev/.config/t3-pretty/${name}" \
       "/opt/homebrew/var/buildkite-agent/secrets/${name}"; do
       if [[ -f "$candidate" ]]; then
         value="$(tr -d '\r' < "$candidate")"
@@ -27,6 +26,7 @@ load_secret() {
   fi
   if [[ -z "$value" ]]; then
     echo "Missing relay secret: $name" >&2
+    echo "Create the Buildkite cluster secret '$name' or write the value to ~/.config/t3-pretty/$name on every macos-release agent." >&2
     return 1
   fi
   printf -v "$name" '%s' "$value"

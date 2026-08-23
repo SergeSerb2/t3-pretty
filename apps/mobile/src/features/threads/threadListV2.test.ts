@@ -151,6 +151,38 @@ describe("resolveThreadListV2Status", () => {
       "ready",
     );
   });
+
+  it("surfaces background liveness after the turn settles", () => {
+    expect(
+      resolveThreadListV2Status(
+        makeThread({ id: ThreadId.make("t"), title: "t", backgroundLiveness: "working" }),
+      ),
+    ).toBe("working");
+    expect(
+      resolveThreadListV2Status(
+        makeThread({ id: ThreadId.make("t"), title: "t", backgroundLiveness: "monitoring" }),
+      ),
+    ).toBe("monitoring");
+  });
+
+  it("keeps a failed session ahead of lingering background liveness", () => {
+    const thread = makeThread({
+      id: ThreadId.make("t"),
+      title: "t",
+      backgroundLiveness: "working",
+      session: {
+        threadId: ThreadId.make("t"),
+        status: "error",
+        providerName: "Codex",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        runtimeMode: "full-access",
+        activeTurnId: null,
+        lastError: null,
+        updatedAt: NOW,
+      },
+    });
+    expect(resolveThreadListV2Status(thread)).toBe("failed");
+  });
 });
 
 describe("resolveThreadListV2SwipeActions", () => {

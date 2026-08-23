@@ -4,10 +4,12 @@ import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderInteractionMode as ProviderInteractionModeSchema,
   RuntimeMode as RuntimeModeSchema,
+  SkillId as SkillIdSchema,
   type EnvironmentId,
   type ModelSelection,
   type ProviderInteractionMode,
   type RuntimeMode,
+  type SkillId,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { useEffect } from "react";
@@ -46,6 +48,8 @@ export interface ComposerDraft {
   readonly runtimeMode?: RuntimeMode;
   readonly interactionMode?: ProviderInteractionMode;
   readonly workspaceSelection?: ComposerDraftWorkspaceSelection;
+  /** Per-thread skill picks for the next Start; absent means none picked. */
+  readonly enabledSkillIds?: ReadonlyArray<SkillId>;
   /**
    * Draft-scoped auto-PR override. Absent means "follow the per-mode
    * preference"; set when a queued task is hydrated for editing so its
@@ -83,6 +87,7 @@ export type ComposerDraftSettingsUpdate = Pick<
   | "runtimeMode"
   | "interactionMode"
   | "workspaceSelection"
+  | "enabledSkillIds"
   | "autoCreatePullRequest"
 >;
 
@@ -101,6 +106,7 @@ const ComposerDraftSchema = Schema.Struct({
   runtimeMode: Schema.optional(RuntimeModeSchema),
   interactionMode: Schema.optional(ProviderInteractionModeSchema),
   workspaceSelection: Schema.optional(ComposerDraftWorkspaceSelectionSchema),
+  enabledSkillIds: Schema.optional(Schema.Array(SkillIdSchema)),
   autoCreatePullRequest: Schema.optional(Schema.Boolean),
   lastHandoffPrompt: Schema.optional(Schema.String),
   pullRequestReference: Schema.optional(Schema.String),
@@ -156,6 +162,7 @@ function isEmptyDraft(draft: ComposerDraft): boolean {
     draft.runtimeMode === undefined &&
     draft.interactionMode === undefined &&
     draft.workspaceSelection === undefined &&
+    draft.enabledSkillIds === undefined &&
     draft.autoCreatePullRequest === undefined &&
     draft.lastHandoffPrompt === undefined &&
     draft.pullRequestReference === undefined
@@ -553,6 +560,7 @@ export function clearComposerDraftContentState(
     autoCreatePullRequest,
     lastHandoffPrompt: _lastHandoffPrompt,
     pullRequestReference: _pullRequestReference,
+    enabledSkillIds: _enabledSkillIds,
     ...retained
   } = existing;
   // The auto-PR override travels with the workspace selection: both describe

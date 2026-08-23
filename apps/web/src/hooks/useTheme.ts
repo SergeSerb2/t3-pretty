@@ -2,6 +2,16 @@ import type { DesktopBridge } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { canAnimateSceneryInkTransition } from "../scenery/sceneryInkTransition";
+import {
+  canSweepTerminatorFront,
+  cutActiveThemeSwap,
+  mountSweepVeil,
+  retainActiveThemeSwap,
+  shouldMashCut,
+  sweepDirection,
+  type ThemeSwapSource,
+} from "./themeSweep";
 import {
   applyThemePalette,
   CUSTOM_THEMES_STORAGE_KEY,
@@ -282,7 +292,7 @@ export function syncBrowserChromeTheme() {
   }
 }
 
-function applyTheme(theme: Theme, suppressTransitions = false) {
+function applyTheme(theme: Theme, suppressTransitions = false, source: ThemeSwapSource = "user") {
   if (typeof document === "undefined" || typeof window === "undefined") return;
   const appearanceMode = readAppearanceModePreference(theme);
   const followSystem = appearanceMode === "system";
@@ -299,9 +309,7 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
     return;
   }
 
-  if (suppressTransitions) {
-    document.documentElement.classList.add("no-transitions");
-  }
+  const isFirstApply = lastAppliedTheme === null;
   const resolvedAppearance = resolveThemeAppearance(
     theme,
     systemDark,
@@ -309,20 +317,111 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
     appearanceMode,
     themeHalves,
   );
-  applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
-  const isDark = resolvedAppearance === "dark";
-  document.documentElement.classList.toggle("dark", isDark);
-  lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
-  syncBrowserChromeTheme();
-  syncDesktopTheme(theme, followSystem, appearanceMode);
-  if (suppressTransitions) {
+  const commitTheme = () => {
+    applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
+    const isDark = resolvedAppearance === "dark";
+    document.documentElement.classList.toggle("dark", isDark);
+    lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
+    syncBrowserChromeTheme();
+    syncDesktopTheme(theme, followSystem, appearanceMode);
+  };
+
+  const root = document.documentElement;
+  const releaseTransitions = () => {
     // Force a reflow so the no-transitions class takes effect before removal
     // oxlint-disable-next-line no-unused-expressions
-    document.documentElement.offsetHeight;
+    root.offsetHeight;
     requestAnimationFrame(() => {
-      document.documentElement.classList.remove("no-transitions");
+      root.classList.remove("no-transitions");
     });
+  };
+  const commitWithoutElementTweens = () => {
+    root.classList.add("no-transitions");
+    commitTheme();
+    releaseTransitions();
+  };
+
+  // Forced applies (cross-tab storage, refresh) hard-cut under no-transitions
+  // and never start a view transition.
+  if (suppressTransitions) {
+    cutActiveThemeSwap();
+    commitWithoutElementTweens();
+    return;
   }
+
+  // Boot has nothing to dissolve from. Hidden documents and motion-gated
+  // sessions still suppress per-element color tweens so the palette does not
+  // tween field-by-field when the snapshot path is unavailable.
+  if (isFirstApply) {
+    commitTheme();
+    return;
+  }
+  if (document.hidden || !canAnimateThemeSwapTransition()) {
+    cutActiveThemeSwap();
+    commitWithoutElementTweens();
+    return;
+  }
+
+  // A second toggle mid-sweep or a rapid A/B burst wants the comparison, not
+  // the choreography: skip the in-flight view transition and commit instantly.
+  if (root.dataset.themeSwap !== undefined || shouldMashCut(Date.now())) {
+    cutActiveThemeSwap();
+    commitWithoutElementTweens();
+    return;
+  }
+
+  // The new palette sweeps across the held old snapshot as a terminator
+  // front — dusk settles downward, dawn rises — with a feather veil riding
+  // the edge (see html[data-theme-sweep] in index.css). WebKit stays on the
+  // dissolve (250ms user, 1200ms system). no-transitions still suppresses
+  // per-element color tweens underneath.
+  root.classList.add("no-transitions");
+  root.dataset.themeSwap = source;
+  const sweeping = canSweepTerminatorFront();
+  if (sweeping) {
+    root.dataset.themeSweep = sweepDirection(resolvedAppearance === "dark");
+  }
+  const removeVeil = sweeping ? mountSweepVeil() : () => {};
+  let finishedSwap = false;
+  let releaseSwap = () => {};
+  const finishSwap = () => {
+    if (finishedSwap) return;
+    finishedSwap = true;
+    releaseSwap();
+    removeVeil();
+    delete root.dataset.themeSwap;
+    delete root.dataset.themeSweep;
+    releaseTransitions();
+  };
+  try {
+    const transition = (
+      document as Document & {
+        startViewTransition: (update: () => void) => {
+          finished: Promise<void>;
+          skipTransition: () => void;
+        };
+      }
+    ).startViewTransition(commitTheme);
+    releaseSwap = retainActiveThemeSwap({
+      skipTransition: () => {
+        transition.skipTransition();
+      },
+      finish: finishSwap,
+    });
+    void transition.finished.then(finishSwap, finishSwap);
+  } catch {
+    commitTheme();
+    finishSwap();
+  }
+}
+
+// A theme swap sweep is worth a view transition only when the scenery ink
+// transition is not already coordinating this flip (it runs its own), View
+// Transitions exist, the Motion toggle is on, and the OS allows motion — the
+// last three via the scenery helper's own gate.
+function canAnimateThemeSwapTransition(): boolean {
+  if (document.documentElement.dataset.sceneryInkTransition !== undefined) return false;
+  return canAnimateSceneryInkTransition();
 }
 
 export async function syncDesktopThemePreference(
@@ -407,7 +506,9 @@ function getServerSnapshot() {
 
 function handleSystemAppearanceChange() {
   const storedTheme = getStored();
-  if (readAppearanceModePreference(storedTheme) === "system") applyTheme(storedTheme, true);
+  if (readAppearanceModePreference(storedTheme) === "system") {
+    applyTheme(storedTheme, false, "system");
+  }
   emitChange();
 }
 
@@ -511,7 +612,7 @@ export function useTheme() {
       });
       return false;
     }
-    applyTheme(next, true);
+    applyTheme(next);
     emitChange();
     return true;
   }, []);
@@ -536,7 +637,7 @@ export function useTheme() {
       return false;
     }
     themeStorageReadFailure = null;
-    applyTheme(getStored(), true);
+    applyTheme(getStored());
     emitChange();
     return true;
   }, []);
@@ -580,7 +681,7 @@ export function useTheme() {
         });
         return false;
       }
-      applyTheme(getStored(), true);
+      applyTheme(getStored());
       emitChange();
       return true;
     },
@@ -604,7 +705,7 @@ export function useTheme() {
       });
       return false;
     }
-    applyTheme(getStored(), true);
+    applyTheme(getStored());
     emitChange();
     return true;
   }, []);

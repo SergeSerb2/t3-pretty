@@ -76,6 +76,7 @@ describe("buildThreadActionMenuItems", () => {
       (item) => item.id === "copy",
     );
     expect(copy?.children?.map((child) => child.id)).toEqual([
+      "copy-conversation",
       "copy-path",
       "copy-branch",
       "copy-thread-id",
@@ -84,7 +85,7 @@ describe("buildThreadActionMenuItems", () => {
       buildThreadActionMenuItems(baseState)
         .find((item) => item.id === "copy")
         ?.children?.map((child) => child.id),
-    ).toEqual(["copy-path", "copy-thread-id"]);
+    ).toEqual(["copy-conversation", "copy-path", "copy-thread-id"]);
   });
 
   it("shortens the new-thread label so the branch name does not stretch the menu", () => {
@@ -127,12 +128,18 @@ describe("buildThreadActionMenuItems", () => {
     expect(item).toMatchObject({ label: "Regenerating…", disabled: true });
   });
 
-  it("nests copy children without icons", () => {
+  it("copies conversation on the Copy row, with other targets in the flyout", () => {
     const copy = buildThreadActionMenuItems({ ...baseState, branch: "main" }).find(
       (item) => item.id === "copy",
     );
-    expect(copy?.icon).toBe("copy");
-    expect(copy?.children?.every((child) => child.icon === undefined)).toBe(true);
+    expect(copy).toMatchObject({ icon: "copy", activateOnClick: true });
+    expect(copy?.children?.map((child) => child.id)).toEqual([
+      "copy-conversation",
+      "copy-path",
+      "copy-branch",
+      "copy-thread-id",
+    ]);
+    expect(copy?.children?.[0]).toMatchObject({ id: "copy-conversation", icon: "copy" });
   });
 
   it("puts an icon on every top-level action", () => {

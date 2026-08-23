@@ -12,6 +12,7 @@ import type {
   SkillId,
   ThreadId,
   ThreadSubagentPolicy,
+  TurnDeliveryMode,
   TurnId,
 } from "@t3tools/contracts";
 import {
@@ -20,6 +21,7 @@ import {
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  displayRuntimeModeForProviderDriver,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -40,12 +42,13 @@ import { createPortal } from "react-dom";
 import { useRouter } from "@tanstack/react-router";
 import {
   clampCollapsedComposerCursor,
+  type ComposerSubmissionIntent,
   type ComposerTrigger,
   collapseExpandedComposerCursor,
+  composerSubmissionIntentForEnter,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   replaceTextRange,
-  shouldSubmitComposerOnEnter,
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
@@ -234,6 +237,7 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
 }
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
+import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { BotIcon, CircleAlertIcon, PencilRulerIcon, XIcon } from "lucide-react";
@@ -412,12 +416,13 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   showPlanFollowUpPrompt: boolean;
   promptHasText: boolean;
   isSendBusy: boolean;
+  isInterrupting: boolean;
   sendDisabledReason: string | null;
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
-  showSendWhileRunning?: boolean;
+  onQueueSend?: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -440,13 +445,14 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         showPlanFollowUpPrompt={props.showPlanFollowUpPrompt}
         promptHasText={props.promptHasText}
         isSendBusy={props.isSendBusy}
+        isInterrupting={props.isInterrupting}
         sendDisabledReason={props.sendDisabledReason}
         isConnecting={props.isConnecting}
         isEnvironmentUnavailable={props.isEnvironmentUnavailable}
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
-        showSendWhileRunning={props.showSendWhileRunning ?? false}
+        {...(props.onQueueSend ? { onQueueSend: props.onQueueSend } : {})}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
@@ -528,6 +534,8 @@ export interface ChatComposerProps {
   phase: SessionPhase;
   isConnecting: boolean;
   isSendBusy: boolean;
+  /** An interrupt is in flight; the Stop button shows it until the work stops. */
+  isInterrupting?: boolean;
   /** Local send is in flight; keep Stop/thinking even if session status flickers. */
   isOptimisticWorking?: boolean;
   sendDisabledReason: string | null;
@@ -560,6 +568,7 @@ export interface ChatComposerProps {
   activeProposedPlan: Thread["proposedPlans"][number] | null;
   activeTasksProgress: ComposerTasksProgress | null;
   activeTaskSteps: readonly ComposerTaskStep[] | null;
+  activeLatestTurnId: TurnId | null;
 
   // Mode
   runtimeMode: RuntimeMode;
@@ -594,7 +603,11 @@ export interface ChatComposerProps {
   composerRef: React.RefObject<ChatComposerHandle | null>;
 
   // Callbacks
-  onSend: (e?: { preventDefault: () => void }) => void;
+  onSend: (
+    e?: { preventDefault: () => void },
+    intent?: ComposerSubmissionIntent,
+    options?: { delivery?: TurnDeliveryMode },
+  ) => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
@@ -647,6 +660,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     phase,
     isConnecting,
     isSendBusy,
+    isInterrupting = false,
     isOptimisticWorking = false,
     sendDisabledReason,
     isPreparingWorktree,
@@ -664,6 +678,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProposedPlan,
     activeTasksProgress,
     activeTaskSteps,
+    activeLatestTurnId,
     runtimeMode,
     interactionMode,
     autoCreatePullRequest,
@@ -876,6 +891,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // disabled.
   const selectedProvider: ProviderDriverKind =
     selectedProviderEntry?.driverKind ?? requestedDriverKind;
+  // The picker only offers Kimi's "yolo" on Kimi. A carried Kimi pick must
+  // not keep showing "Yolo" after the user switches this draft to Grok.
+  const resolvedRuntimeMode = displayRuntimeModeForProviderDriver(selectedProvider, runtimeMode);
 
   const { modelOptions: composerModelOptions, selectedModel } = useEffectiveComposerModelState({
     threadRef: composerDraftTarget,
@@ -1037,6 +1055,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * next draft.
    */
   const pendingImageCompressionsRef = useRef<Map<ThreadId, number>>(new Map());
+  /** Render mirror of the ref above; the ref stays the synchronous source of truth. */
+  const [pendingImageCompressions, setPendingImageCompressions] = useState<
+    ReadonlyMap<ThreadId, number>
+  >(() => new Map());
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -1137,7 +1159,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             icon: option.icon,
             label: `/${option.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
             description:
-              mode === runtimeMode ? `${option.description} (current)` : option.description,
+              mode === resolvedRuntimeMode ? `${option.description} (current)` : option.description,
           };
         },
       );
@@ -1223,10 +1245,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }),
       );
       const query = composerTrigger.query.trim().toLowerCase();
-      const slashCommandItems = [...builtInSlashCommandItems, ...providerSlashCommandItems];
-      if (!query) {
-        return slashCommandItems;
-      }
+      const skillItems = (selectedProviderStatus?.skills ?? [])
+        .filter((skill) => skill.enabled)
+        .map((skill) => ({
+          id: `skill:${selectedProvider}:${skill.name}`,
+          type: "skill" as const,
+          provider: selectedProvider,
+          skill,
+          label: `skill:${skill.name}`,
+          description:
+            skill.shortDescription ??
+            skill.description ??
+            (skill.scope ? `${skill.scope} skill` : ""),
+        }));
+      const slashCommandItems = [
+        ...builtInSlashCommandItems,
+        ...providerSlashCommandItems,
+        ...skillItems,
+      ];
       return searchSlashCommandItems(slashCommandItems, query);
     }
     if (composerTrigger.kind === "skill") {
@@ -1238,7 +1274,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     autoCreatePullRequest,
     composerTrigger,
     planModeUiEnabled,
-    runtimeMode,
+    resolvedRuntimeMode,
     selectedProvider,
     selectedProviderStatus,
     showAutoCreatePullRequestToggle,
@@ -1272,6 +1308,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => new Set(nonPersistedComposerImageIds),
     [nonPersistedComposerImageIds],
   );
+
+  const compressingImageCount = activeThreadId
+    ? (pendingImageCompressions.get(activeThreadId) ?? 0)
+    : 0;
 
   const isComposerApprovalState = activePendingApproval !== null;
   const activePendingUserInput = pendingUserInputs[0] ?? null;
@@ -2049,7 +2089,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
 
   const submitComposer = useCallback(
-    (event?: { preventDefault: () => void }) => {
+    (
+      event?: { preventDefault: () => void },
+      intent: ComposerSubmissionIntent = "foreground",
+      delivery?: TurnDeliveryMode,
+    ) => {
       if (noProviderAvailable || isSendDisabled) {
         event?.preventDefault();
         return;
@@ -2075,12 +2119,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           // ChatView reports its final composed-input preflight through the
           // composer handle before its first asynchronous send step.
           providerInputRejectedRef.current = false;
-          onSend(sendEvent);
+          onSend(sendEvent, intent, delivery ? { delivery } : undefined);
           return !providerInputRejectedRef.current;
         },
       });
       setComposerSubmissionError(submission.validationMessage);
-      if (!submission.didDispatch) return;
+      if (!submission.didDispatch) {
+        // Put the failure where the click was: one imperative 300ms shake on
+        // the form, removed on animationend so nothing is left at rest.
+        const form = composerFormRef.current;
+        if (form) {
+          form.removeAttribute("data-reject-shake");
+          // Force a reflow so re-setting the attribute restarts the one-shot.
+          void form.offsetWidth;
+          form.setAttribute("data-reject-shake", "true");
+          form.addEventListener("animationend", () => form.removeAttribute("data-reject-shake"), {
+            once: true,
+          });
+        }
+        return;
+      }
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
       }
@@ -2149,11 +2207,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return true;
       }
     }
-    if (
-      key === "Enter" &&
-      shouldSubmitComposerOnEnter({ isMobileViewport, shiftKey: event.shiftKey })
-    ) {
-      submitComposer();
+    const submissionIntent =
+      key === "Enter"
+        ? composerSubmissionIntentForEnter({
+            isMobileViewport,
+            shiftKey: event.shiftKey,
+            modifierKey: event.metaKey || event.ctrlKey,
+            isDraftThread: routeKind === "draft",
+          })
+        : null;
+    if (submissionIntent) {
+      // Alt+Enter queues the message for the next turn instead of steering
+      // the one that is running; outside a running turn it sends normally.
+      submitComposer(
+        undefined,
+        submissionIntent,
+        event.altKey && turnInProgress ? "queue" : undefined,
+      );
       return true;
     }
     return false;
@@ -2493,7 +2563,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const toggleTasksDrawer = useCallback(() => {
     setIsTasksDrawerOpen((open) => !open);
   }, []);
-  const activeTasksTurnId = activeThread?.latestTurn?.turnId ?? null;
+  const activeTasksTurnId = activeLatestTurnId;
   const tasksDismissedForActiveTurn =
     activeTasksTurnId !== null && dismissedTasksTurnId === activeTasksTurnId;
   const visibleTasksProgress = tasksDismissedForActiveTurn ? null : activeTasksProgress;
@@ -2539,6 +2609,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       steps={visibleTaskSteps}
     />
   ) : null;
+  const showShoulderTabs =
+    !props.externalDrawerAttached &&
+    !showComposerTopDrawer &&
+    !isTasksDrawerOpen &&
+    !isComposerCollapsedMobile;
+  const hasShoulderTab =
+    showShoulderTabs &&
+    (stashQueue.length > 0 ||
+      (visibleTasksProgress !== null &&
+        visibleTaskSteps !== null &&
+        visibleTasksProgress.totalSteps > 0));
   useEffect(() => {
     if (visibleTasksProgress === null || visibleTaskSteps === null) {
       setIsTasksDrawerOpen(false);
@@ -2646,10 +2727,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       acceptedFiles.push(file);
       reservedCount += 1;
     }
-    setThreadError(threadId, error);
+    // Same rule as the compression failure below: only report failures, never
+    // clear on success, or an unread error from other work is swallowed.
+    if (error !== null) {
+      setThreadError(threadId, error);
+    }
     if (acceptedFiles.length === 0) return;
 
     pendingImageCompressionsRef.current.set(threadId, pendingCount + acceptedFiles.length);
+    setPendingImageCompressions(new Map(pendingImageCompressionsRef.current));
     try {
       const nextImages: ComposerImageAttachment[] = [];
       let compressionError: string | null = null;
@@ -2696,6 +2782,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       } else {
         pendingImageCompressionsRef.current.delete(threadId);
       }
+      setPendingImageCompressions(new Map(pendingImageCompressionsRef.current));
     }
   };
 
@@ -2779,6 +2866,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const handleImplementPlanInNewThreadPrimaryAction = useCallback(() => {
     void onImplementPlanInNewThread();
   }, [onImplementPlanInNewThread]);
+  const handleQueueSendPrimaryAction = useCallback(() => {
+    submitComposer(undefined, "foreground", "queue");
+  }, [submitComposer]);
   const scheduleComposerCollapseCheck = useCallback(() => {
     if (!isMobileViewport) {
       return;
@@ -2992,7 +3082,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onDragOverCapture={composerMentionDragHandlers.onDragOver}
       onDragLeaveCapture={onComposerMentionDragLeaveCapture}
       onDropCapture={composerMentionDragHandlers.onDrop}
-      className="mx-auto w-full min-w-0 max-w-3xl"
+      className={cn("mx-auto w-full min-w-0 max-w-3xl", hasShoulderTab && "pt-7")}
       data-chat-composer-form="true"
     >
       {showComposerTopDrawer && (!isTasksDrawerOpen || hasBlockingComposerTopDrawer) ? (
@@ -3118,12 +3208,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         />
       ) : null}
       <div className="relative">
-        {visibleTasksProgress &&
-        visibleTaskSteps &&
-        !isTasksDrawerOpen &&
-        !props.externalDrawerAttached &&
-        !showComposerTopDrawer &&
-        !isComposerCollapsedMobile ? (
+        {showShoulderTabs && visibleTasksProgress && visibleTaskSteps ? (
           <ComposerTasksBadge
             expanded={false}
             hasTrailingShoulder={stashQueue.length > 0}
@@ -3133,10 +3218,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             steps={visibleTaskSteps}
           />
         ) : null}
-        {!props.externalDrawerAttached &&
-        !showComposerTopDrawer &&
-        !isTasksDrawerOpen &&
-        !isComposerCollapsedMobile ? (
+        {showShoulderTabs ? (
           <ComposerStashBadge
             count={stashQueue.length}
             menuOpen={isStashMenuOpen}
@@ -3152,6 +3234,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             composerProviderState.composerFrameClassName,
           )}
         >
+          {composerProviderState.composerFrameClassName === "ultrathink-frame" ? (
+            // The rainbow ring: mask + conic gradient rasterize once, the inner
+            // layer rotates on the compositor (see .ultrathink-ring in index.css).
+            <span aria-hidden className="ultrathink-ring">
+              <span className="ultrathink-ring-spin" />
+            </span>
+          ) : null}
           <div
             ref={composerSurfaceRef}
             data-chat-composer-editor-chrome="true"
@@ -3310,21 +3399,32 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               {!isComposerCollapsedMobile &&
                 !isComposerApprovalState &&
                 pendingUserInputs.length === 0 &&
-                composerImages.some(
-                  (image) =>
-                    !composerPreviewAnnotations.some((annotation) => annotation.id === image.id) &&
-                    !composerCanvasSelections.some((selection) => selection.id === image.id),
-                ) && (
+                (compressingImageCount > 0 ||
+                  composerImages.some(
+                    (image) =>
+                      !composerPreviewAnnotations.some(
+                        (annotation) => annotation.id === image.id,
+                      ) && !composerCanvasSelections.some((selection) => selection.id === image.id),
+                  )) && (
                   <div className="mb-3 flex flex-wrap gap-2">
+                    {Array.from({ length: compressingImageCount }, (_, index) => (
+                      <div
+                        key={`compressing-${index}`}
+                        className="flex h-16 w-16 items-center justify-center rounded-lg border border-border/80 bg-background"
+                      >
+                        <Spinner
+                          className="size-3.5 text-secondary-label"
+                          aria-label="Compressing image"
+                        />
+                      </div>
+                    ))}
                     {composerImages
                       .filter(
                         (image) =>
                           !composerPreviewAnnotations.some(
                             (annotation) => annotation.id === image.id,
                           ) &&
-                          !composerCanvasSelections.some(
-                            (selection) => selection.id === image.id,
-                          ),
+                          !composerCanvasSelections.some((selection) => selection.id === image.id),
                       )
                       .map((image) => (
                         <div
@@ -3522,11 +3622,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     <ComposerOverflowMenu
                       provider={selectedProvider}
                       interactionMode={interactionMode}
-                      showInteractionModeToggle={
-                        composerProviderControls.showInteractionModeToggle
-                      }
+                      showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                       onToggleInteractionMode={toggleInteractionMode}
-                      runtimeMode={runtimeMode}
+                      runtimeMode={resolvedRuntimeMode}
                       showRuntimeModeSelect
                       onRuntimeModeChange={handleRuntimeModeChange}
                       autoCreatePullRequest={autoCreatePullRequest}
@@ -3565,20 +3663,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           composerProviderControls.showInteractionModeToggle
                         }
                         interactionMode={interactionMode}
-                        runtimeMode={runtimeMode}
+                        runtimeMode={resolvedRuntimeMode}
                         onToggleInteractionMode={toggleInteractionMode}
                         onRuntimeModeChange={handleRuntimeModeChange}
                       />
-                      <Separator
-                        orientation="vertical"
-                        className="mx-0.5 hidden h-4 sm:block"
-                      />
+                      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
                       <ComposerOverflowMenu
                         provider={selectedProvider}
                         interactionMode={interactionMode}
                         showInteractionModeToggle={false}
                         onToggleInteractionMode={toggleInteractionMode}
-                        runtimeMode={runtimeMode}
+                        runtimeMode={resolvedRuntimeMode}
                         showRuntimeModeSelect={false}
                         onRuntimeModeChange={handleRuntimeModeChange}
                         autoCreatePullRequest={autoCreatePullRequest}
@@ -3619,6 +3714,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     promptHasText={prompt.trim().length > 0}
                     isSendBusy={isSendBusy}
+                    isInterrupting={isInterrupting}
                     sendDisabledReason={sendDisabledReason}
                     isConnecting={isConnecting}
                     isEnvironmentUnavailable={
@@ -3629,7 +3725,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isPreparingWorktree={isPreparingWorktree}
                     hasSendableContent={composerSendState.hasSendableContent}
                     preserveComposerFocusOnPointerDown={isMobileViewport}
-                    showSendWhileRunning={isMobileViewport}
+                    onQueueSend={handleQueueSendPrimaryAction}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}

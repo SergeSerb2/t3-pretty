@@ -67,6 +67,7 @@ import {
 import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDeletionReactor.ts";
 import { ThreadMergedPullRequestReactor } from "../src/orchestration/ThreadMergedPullRequestReactor.ts";
 import { ProjectIconReactor } from "../src/project/ProjectIconReactor.ts";
+import { ActivityHeadlineReactor } from "../src/orchestration/Layers/ActivityHeadlineReactor.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
@@ -402,6 +403,11 @@ export const makeOrchestrationIntegrationHarness = (
       ),
       Layer.provideMerge(
         Layer.succeed(ProjectIconReactor, {
+          start: () => Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(ActivityHeadlineReactor, {
           start: () => Effect.void,
         }),
       ),

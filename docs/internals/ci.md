@@ -2,10 +2,10 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) defines four jobs. T3 Pretty does not
-run them automatically: fork-only types fail Check, and the jobs do not gate releases. Dispatch
-the workflow manually if a one-off run is needed. On the parent repo the same jobs run on
-pushes to `main`:
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) defines these quality gates. T3 Pretty
+does not run them automatically: fork-only types fail Check, and the jobs do not gate releases.
+Dispatch the workflow manually if a one-off run is needed. In the parent repository, the quality
+gates run on pull requests and pushes to `main`:
 
 - **Check**: `vp check` (format and lint; this repo sets `typeCheck: false` in its lint options),
   then `vpr typecheck` for the workspace type check. The same job
@@ -13,7 +13,13 @@ pushes to `main`:
   still exports its expected symbols.
 - **Test**: `vp run test` across the workspace.
 - **Mobile Native Static Analysis**: `vp run lint:mobile` on macOS, wrapping
-  `scripts/mobile-native-static-check.ts`.
+  `scripts/mobile-native-static-check.ts`. A cheap Linux **Mobile Native Changes** job gates it:
+  the macOS runner only boots when the diff touches `apps/mobile` Swift/Kotlin sources, the
+  SwiftLint/detekt/ktlint configuration, the `Brewfile`, the check script, the root `package.json`
+  that defines `lint:mobile`, or `ci.yml`. Otherwise the job is skipped, which GitHub reports as
+  success for the required check. Renames are matched on both their old and new path. The gate fails
+  open in every other case: if the changed-file list cannot be resolved, GitHub truncates it, or the
+  gate job itself fails, the lint runs.
 - **Release Smoke**: exercises release-only workflow steps through `scripts/release-smoke.ts`, so
   release breakage surfaces on PRs rather than at tag time.
 
@@ -26,8 +32,14 @@ Without the core signing credentials, it still releases unsigned artifacts.
 T3 Pretty desktop and mobile releases are documented in
 [fork-release.md](../operations/fork-release.md) and
 [fork-mobile-release.md](../operations/fork-mobile-release.md). Imported
-preflight and WSL `node-pty` run on hosted Linux. Native `macos-release`
-(m1-dev) signs the DMG, publishes iOS OTA, submits TestFlight IPAs, and
-deploys the relay. Windows NSIS is native `windows-release`.
+preflight and WSL `node-pty` run on hosted Linux. Native `linux-small`
+builds the x64 AppImage onto the same updater feed. On the shared
+`macos-release` queue, packaging steps select `os: macos` so they only run
+on m5-dev (`REVIEW_ONLY=0`, two workers): signing the DMG, publishing iOS
+OTA, submitting TestFlight IPAs, deploying the relay, and upstream sync.
+Origin PR Review stays queue-wide (one reviewer per PR branch via a
+Buildkite concurrency group) so the review-only Linux agent
+`m1-linux-t3code-fork` — the previous packaging Mac, now a Linux server —
+can take it. Windows NSIS is native `windows-release`.
 
 See [Release Checklist](../operations/release.md) for the full release/signing setup checklist.

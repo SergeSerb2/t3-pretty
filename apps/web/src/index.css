@@ -78,6 +78,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 :root {
   --app-scrollbar-width: 6px;
+  --appearance-contrast-base: 100%;
+  --appearance-contrast-boost: 0%;
+  --appearance-contrast-border-boost: 0%;
+  --appearance-contrast-target: black;
   --app-scrollbar-thumb: rgb(217 217 217);
   --app-scrollbar-thumb-hover: rgb(191 191 191);
   /*
@@ -87,12 +91,21 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --control-radius: 0.5rem;
   --sidebar-content-inset: 0.5rem;
   --sidebar-control-gap: 0.5rem;
-  --sidebar-icon-color: color-mix(in srgb, var(--sidebar-muted-foreground) 60%, var(--sidebar));
+  --sidebar-icon-color: color-mix(
+    in srgb,
+    var(--contrast-sidebar-muted-foreground) 60%,
+    var(--sidebar)
+  );
   --sidebar-row-content-inset: 0.625rem;
   --command-shell-inset: 0.5rem;
   --command-content-inset: 1rem;
   --floating-content-inset: 0.75rem;
+  /* Elevation-tiered glass: raised chrome (menus, popovers, toasts) blurs the
+     least, floating surfaces keep the mid tier, and overlays (dialogs, the
+     command palette) blur the most so depth reads through the material. */
+  --glass-blur-raised: 10px;
   --glass-blur: 12px;
+  --glass-blur-overlay: 20px;
   --glass-opacity: 80%;
   --glass-saturation: 1.14;
   --desktop-window-right-resize-inset: 0px;
@@ -103,11 +116,21 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --workspace-native-controls-inset: 0px;
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: 0.75rem;
+  /* Parked titlebar cluster: sm toggles with gap-1. Count is 2, or 3 with
+     maximize. The Electron no-drag hole overrides count on itself. */
+  --workspace-titlebar-layout-control-count: 2;
+  --workspace-titlebar-layout-cluster-width: calc(
+    var(--workspace-titlebar-layout-control-count) * var(--workspace-titlebar-control-size) +
+      (var(--workspace-titlebar-layout-control-count) - 1) * 0.25rem
+  );
 
   @variant dark {
+    --appearance-contrast-target: white;
     --app-scrollbar-thumb: rgb(255 255 255 / 8%);
     --app-scrollbar-thumb-hover: rgb(255 255 255 / 12%);
+    --glass-blur-raised: 12px;
     --glass-blur: 16px;
+    --glass-blur-overlay: 26px;
     --glass-saturation: 1.08;
   }
 }
@@ -156,40 +179,40 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-info: var(--info);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
+  --color-input: var(--contrast-input);
+  --color-border: var(--contrast-border);
   --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-foreground: var(--contrast-accent-foreground);
   --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
+  --color-muted-foreground: var(--contrast-muted-foreground);
   --color-muted: var(--muted);
-  --color-placeholder: var(--placeholder);
-  --color-secondary-label: var(--secondary-label);
-  --color-icon-muted: var(--icon-muted);
-  --color-secondary-foreground: var(--secondary-foreground);
+  --color-placeholder: var(--contrast-placeholder);
+  --color-secondary-label: var(--contrast-secondary-label);
+  --color-icon-muted: var(--contrast-icon-muted);
+  --color-secondary-foreground: var(--contrast-secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
+  --color-popover-foreground: var(--contrast-popover-foreground);
   --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
+  --color-card-foreground: var(--contrast-card-foreground);
   --color-card: var(--card);
-  --color-foreground: var(--foreground);
+  --color-foreground: var(--contrast-foreground);
   --color-background: var(--background);
   --color-surface-raised: var(--surface-raised);
   --color-message: var(--message-surface);
-  --color-message-foreground: var(--message-foreground);
+  --color-message-foreground: var(--contrast-message-foreground);
   --color-message-action: var(--message-action);
   --color-message-action-foreground: var(--message-action-foreground);
   --color-message-action-hover: var(--message-action-hover);
   --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-muted-foreground: var(--sidebar-muted-foreground);
+  --color-sidebar-foreground: var(--contrast-sidebar-foreground);
+  --color-sidebar-muted-foreground: var(--contrast-sidebar-muted-foreground);
   --color-sidebar-control-surface: var(--sidebar-control-surface);
   --color-sidebar-row-hover: var(--sidebar-row-hover);
   --color-sidebar-row-active: var(--sidebar-row-active);
   --color-sidebar-row-selected: var(--sidebar-row-selected);
-  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-border: var(--contrast-sidebar-border);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -320,15 +343,18 @@ html[data-status-pulse="1"] .status-ping {
 
 @utility dialog-glass {
   background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  border-color: color-mix(in srgb, var(--foreground) 10%, transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur-overlay)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur-overlay)) saturate(var(--glass-saturation));
+  border-color: color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
   box-shadow: 0 24px 64px -24px rgb(0 0 0 / 65%);
 
   @variant dark {
     border-color: color-mix(in srgb, var(--color-white) 8%, transparent);
+    /* Top-lit inner glow: the -40px spread keeps it a dome at the top edge
+       instead of a ring, so dark dialogs read as lit glass, not outlined. */
     box-shadow:
-      inset 0 1px rgb(255 255 255 / 4%),
+      inset 0 1px rgb(255 255 255 / 9%),
+      inset 0 28px 56px -40px color-mix(in srgb, var(--color-white) 14%, transparent),
       0 24px 72px -20px rgb(0 0 0 / 90%);
   }
 
@@ -356,12 +382,121 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
     var(--popover) 18%,
     color-mix(in srgb, var(--popover) var(--glass-opacity), transparent)
   );
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur-raised)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur-raised)) saturate(var(--glass-saturation));
+  border: 1px solid color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
+  /* Rim light: a specular top edge and a faintly shaded bottom edge, so the
+     glass reads as refracting light instead of a flat translucent card.
+     Routed through the Tailwind shadow composition vars so consumers that
+     stack their own shadow-* drop shadows keep them either way the two
+     box-shadow declarations cascade. */
+  --tw-inset-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--color-white) 45%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--foreground) 5%, transparent);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow, 0 0 #0000),
+    var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000),
+    var(--tw-shadow, 0 0 #0000);
+
+  @variant dark {
+    border-color: color-mix(in srgb, var(--color-white) 9%, transparent);
+    --tw-inset-shadow:
+      inset 0 1px 0 color-mix(in srgb, var(--color-white) 8%, transparent),
+      inset 0 18px 36px -30px color-mix(in srgb, var(--color-white) 10%, transparent),
+      inset 0 -1px 0 rgb(0 0 0 / 22%);
+  }
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background: var(--popover) !important;
+  }
+}
+
+/* prefers-reduced-transparency: every glass surface goes opaque and skips the
+   blur pass entirely. The backgrounds are forced per utility (mirroring the
+   @supports fallbacks) because the glass-opacity setting writes an inline
+   --glass-opacity on <html> that a stylesheet override cannot beat. */
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  html[data-theme-id] {
+    --glass-saturation: 1;
+  }
+
+  .surface-glass,
+  .alert-glass {
+    background: var(--background) !important;
+  }
+
+  .dialog-glass,
+  .dropdown-glass {
+    background: var(--popover) !important;
+  }
+
+  .chat-composer-glass-shell::before,
+  .chat-composer-context-strip::before {
+    background: var(--chat-composer-glass-surface) !important;
+  }
+
+  .surface-glass,
+  .dialog-glass,
+  .dropdown-glass,
+  .alert-glass,
+  .chat-composer-glass-shell::before,
+  .chat-composer-context-strip::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* While the user drags or resizes the desktop window (html attribute pushed
+   from the Electron main process), glass freezes to flat surfaces so the
+   compositor is not re-sampling backdrop blur on every frame of the gesture.
+   Deliberately no transition either way: an instant swap beats a fading blur
+   mid-drag. Opaque backgrounds, not just blur-off — translucency without its
+   blur reads as a glitch. */
+html[data-window-interacting] :is(.surface-glass, .alert-glass) {
+  background: var(--background) !important;
+}
+
+html[data-window-interacting] :is(.dialog-glass, .dropdown-glass) {
+  background: var(--popover) !important;
+}
+
+html[data-window-interacting] .chat-composer-glass-shell::before,
+html[data-window-interacting] .chat-composer-context-strip::before {
+  background: var(--chat-composer-glass-surface) !important;
+}
+
+html[data-window-interacting] :is(.surface-glass, .dialog-glass, .dropdown-glass, .alert-glass),
+html[data-window-interacting] .chat-composer-glass-shell::before,
+html[data-window-interacting] .chat-composer-context-strip::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* AppKit inactive-window convention: when the desktop window is not key, the
+   window chrome recedes so a background T3 window stops competing with the
+   one the user is in. Whole chrome containers (not individual buttons, whose
+   transition lists this must not clobber), opacity-only, 140ms each way. */
+[data-chat-header],
+[data-workspace-titlebar-controls],
+[data-app-sidebar] [data-slot="sidebar-header"] {
+  transition: opacity 140ms ease-out;
+}
+
+html[data-window-inactive]
+  :is(
+    [data-chat-header],
+    [data-workspace-titlebar-controls],
+    [data-app-sidebar] [data-slot="sidebar-header"]
+  ) {
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-chat-header],
+  [data-workspace-titlebar-controls],
+  [data-app-sidebar] [data-slot="sidebar-header"] {
+    transition: none;
   }
 }
 
@@ -579,6 +714,21 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
   }
   body {
     @apply text-foreground relative;
+  }
+  /* Theme-aware text selection instead of the browser's stock blue. Code
+     surfaces pick a neutral tint so syntax colors survive the highlight; the
+     terminal canvas owns --terminal-selection-background and is untouched. */
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 24%, transparent);
+    color: inherit;
+  }
+  .dark ::selection {
+    background: color-mix(in srgb, var(--primary) 34%, transparent);
+  }
+  pre ::selection,
+  code ::selection,
+  .chat-markdown-codeblock ::selection {
+    background: color-mix(in srgb, var(--foreground) 16%, transparent);
   }
 }
 
@@ -861,7 +1011,7 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
   .chat-composer-shoulder-tab {
     border-color: var(
       --chat-composer-outline,
-      color-mix(in srgb, var(--foreground) 8%, transparent)
+      color-mix(in srgb, var(--contrast-foreground) 8%, transparent)
     );
     background: color-mix(
       in srgb,
@@ -885,7 +1035,7 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
     --chat-composer-attached-surface: var(--chat-composer-glass-surface, var(--card));
     --chat-composer-attached-outline: var(
       --chat-composer-outline,
-      color-mix(in srgb, var(--foreground) 8%, transparent)
+      color-mix(in srgb, var(--contrast-foreground) 8%, transparent)
     );
     background: color-mix(
       in srgb,
@@ -921,7 +1071,7 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
     --chat-composer-attached-surface: var(--chat-composer-glass-surface, var(--card));
     --chat-composer-attached-outline: var(
       --chat-composer-outline,
-      color-mix(in srgb, var(--foreground) 8%, transparent)
+      color-mix(in srgb, var(--contrast-foreground) 8%, transparent)
     );
     --chat-composer-attached-tint: transparent;
     position: relative;
@@ -1045,6 +1195,8 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
     --chat-composer-attachment-overlap: calc(1rem + 1px);
     --chat-composer-glass-surface: var(--card);
     --chat-composer-outline: rgb(0 0 0 / 8%);
+    /* Light mode gets its own specular top edge; dark overrides below. */
+    --chat-composer-highlight: rgb(255 255 255 / 60%);
 
     isolation: isolate;
 
@@ -1117,13 +1269,22 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
 
   .chat-composer-glass-host {
     box-shadow: 0 12px 28px -18px rgb(0 0 0 / 40%);
+    transition: box-shadow 260ms cubic-bezier(0.32, 0.72, 0, 1);
 
     @variant dark {
       box-shadow: none;
+    }
+  }
 
-      &::after {
-        box-shadow: inset 0 1px var(--chat-composer-highlight);
-      }
+  /* The resting drop shadow deepens and stretches on hover so the composer
+     lifts toward the pointer. Dark mode stays flat: there the rim and the
+     specular carry the hover state. One 260ms shadow transition per hover
+     change on a single small element — not a per-frame repaint. */
+  .chat-composer-glass-shell:hover .chat-composer-glass-host {
+    box-shadow: 0 18px 40px -18px rgb(0 0 0 / 46%);
+
+    @variant dark {
+      box-shadow: none;
     }
   }
 
@@ -1134,6 +1295,8 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
     inset: 0;
     border: 1px solid var(--chat-composer-outline);
     border-radius: inherit;
+    box-shadow: inset 0 1px var(--chat-composer-highlight);
+    transition: border-color 160ms cubic-bezier(0.32, 0.72, 0, 1);
     content: "";
   }
 
@@ -1183,15 +1346,13 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
       inset: 0;
       border: 1px solid var(--chat-composer-outline);
       border-radius: inherit;
+      box-shadow: inset 0 1px var(--chat-composer-highlight);
+      transition: border-color 160ms cubic-bezier(0.32, 0.72, 0, 1);
       content: "";
     }
 
     @variant dark {
       box-shadow: none;
-
-      &::after {
-        box-shadow: inset 0 1px var(--chat-composer-highlight);
-      }
     }
 
     @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
@@ -1206,6 +1367,157 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
     .chat-composer-glass-host
     [data-chat-composer-mobile-collapsed="true"] {
     min-height: var(--chat-composer-attachment-overlap);
+  }
+
+  /* The composer wakes when engaged: the rim picks up the focus ring color.
+     One border-color transition per focus change on a 1px pseudo-element.
+     Hover gets a quieter half-step of the same brightening — declared first
+     so focus-within wins the tie when both apply. */
+  .chat-composer-glass-shell:hover .chat-composer-glass-host::after,
+  .chat-composer-glass-shell:is(
+      .chat-composer-glass-shell-attached,
+      :has(:is(.chat-composer-top-drawer, .chat-composer-shoulder-tab))
+    ):hover
+    .chat-composer-glass-host
+    [data-chat-composer-main-surface="true"]::after {
+    border-color: color-mix(in srgb, var(--ring) 16%, var(--chat-composer-outline));
+  }
+
+  .chat-composer-glass-shell:focus-within .chat-composer-glass-host::after,
+  .chat-composer-glass-shell:is(
+      .chat-composer-glass-shell-attached,
+      :has(:is(.chat-composer-top-drawer, .chat-composer-shoulder-tab))
+    ):focus-within
+    .chat-composer-glass-host
+    [data-chat-composer-main-surface="true"]::after {
+    border-color: color-mix(in srgb, var(--ring) 38%, var(--chat-composer-outline));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chat-composer-glass-host,
+    .chat-composer-glass-host::after,
+    .chat-composer-glass-shell:is(
+        .chat-composer-glass-shell-attached,
+        :has(:is(.chat-composer-top-drawer, .chat-composer-shoulder-tab))
+      )
+      .chat-composer-glass-host
+      [data-chat-composer-main-surface="true"]::after {
+      transition: none;
+    }
+  }
+
+  /* Pointer-reactive specular: a fixed-size radial highlight rasterized once
+     and moved with `translate` only, so every pointer update is a compositor
+     transform on an existing layer. The listener (ComposerSpecular) only runs
+     while the pointer moves inside the composer; a still pointer is zero work.
+     The layer spans the whole glass shell — context strip included — clipped
+     to the same joined silhouette as the shell's glass, so the glow follows
+     the pointer down into the strip instead of cutting off at the composer
+     lip. A wider halo (::after) sits under the core and blooms from 72% to
+     full size on hover; `scale` transitions independently of the per-frame
+     `translate` updates, so tracking stays instant while the bloom settles. */
+  @media (hover: hover) and (pointer: fine) {
+    .chat-composer-specular {
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      overflow: hidden;
+      border-radius: 22px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 220ms cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    .chat-composer-glass-shell-with-context .chat-composer-specular {
+      border-radius: 0;
+      /* Same joined silhouette as .chat-composer-glass-shell-with-context::before. */
+      clip-path: shape(
+        from 0 22px,
+        curve to 22px 0 with 0 9.85px / 9.85px 0,
+        line to calc(100% - 22px) 0,
+        curve to 100% 22px with calc(100% - 9.85px) 0 / 100% 9.85px,
+        line to 100% calc(100% - var(--chat-composer-context-extension) - 1.375rem),
+        curve to calc(100% - 1.375rem) calc(100% - var(--chat-composer-context-extension)) with 100%
+          calc(100% - var(--chat-composer-context-extension) - 0.6156rem) / calc(100% - 0.6156rem)
+          calc(100% - var(--chat-composer-context-extension)),
+        line to calc(100% - 1.375rem) calc(100% - 16px),
+        curve to calc(100% - 1.375rem - 16px) 100% with calc(100% - 1.375rem) calc(100% - 7.16px) /
+          calc(100% - 1.375rem - 7.16px) 100%,
+        line to calc(1.375rem + 16px) 100%,
+        curve to 1.375rem calc(100% - 16px) with calc(1.375rem + 7.16px) 100% / 1.375rem
+          calc(100% - 7.16px),
+        line to 1.375rem calc(100% - var(--chat-composer-context-extension)),
+        curve to 0 calc(100% - var(--chat-composer-context-extension) - 1.375rem) with 0.6156rem
+          calc(100% - var(--chat-composer-context-extension)) / 0
+          calc(100% - var(--chat-composer-context-extension) - 0.6156rem),
+        line to 0 22px,
+        close
+      );
+    }
+
+    .chat-composer-glass-shell:hover .chat-composer-specular {
+      opacity: 1;
+    }
+
+    .chat-composer-specular::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 320px;
+      height: 320px;
+      margin: -160px 0 0 -160px;
+      background: radial-gradient(
+        circle closest-side,
+        color-mix(in srgb, var(--foreground) 6%, transparent),
+        transparent
+      );
+      translate: var(--spec-x, -160px) var(--spec-y, -160px);
+      will-change: translate;
+
+      @variant dark {
+        background: radial-gradient(circle closest-side, rgb(255 255 255 / 5%), transparent);
+      }
+    }
+
+    .chat-composer-specular::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 560px;
+      height: 560px;
+      margin: -280px 0 0 -280px;
+      background: radial-gradient(
+        circle closest-side,
+        color-mix(in srgb, var(--foreground) 3.5%, transparent),
+        transparent
+      );
+      translate: var(--spec-x, -560px) var(--spec-y, -560px);
+      scale: 0.72;
+      will-change: translate;
+      transition: scale 420ms cubic-bezier(0.22, 1, 0.36, 1);
+
+      @variant dark {
+        background: radial-gradient(circle closest-side, rgb(255 255 255 / 2.5%), transparent);
+      }
+    }
+
+    .chat-composer-glass-shell:hover .chat-composer-specular::after {
+      scale: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chat-composer-specular {
+      display: none;
+    }
+  }
+
+  /* The Motion toggle parks the highlight too; ComposerSpecular also skips
+     its pointer work while the attribute is absent. */
+  html:not([data-scenery-motion]) .chat-composer-specular {
+    display: none;
   }
 
   .chat-composer-glass-shell-with-context .chat-composer-glass-host::after,
@@ -1297,6 +1609,14 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
       clip-path: none;
     }
 
+    /* Without the joined silhouette the glow cannot follow into the strip;
+       keep it clipped to the composer body as before. */
+    .chat-composer-glass-shell-with-context .chat-composer-specular {
+      inset-block-end: var(--chat-composer-context-extension);
+      border-radius: 22px;
+      clip-path: none;
+    }
+
     .chat-composer-context-strip::before {
       background: color-mix(
         in srgb,
@@ -1324,6 +1644,48 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
     }
   }
 
+  /* The context strip tucks out from under the composer when it first
+     appears. One-shot on mount, transform+opacity only; then it stays put. */
+  .chat-composer-context-strip {
+    animation: composer-strip-enter 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @keyframes composer-strip-enter {
+    from {
+      opacity: 0;
+      translate: 0 -6px;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+
+  /* Surfaces that mount conditionally over the chat view (scroll-to-end and
+     sync-status pills, the draft hero headline) rise and fade in once on
+     mount; unmount stays instant. */
+  .mount-rise-in {
+    animation: mount-rise-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @keyframes mount-rise-in {
+    from {
+      opacity: 0;
+      translate: 0 6px;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chat-composer-context-strip,
+    .mount-rise-in {
+      animation: none;
+    }
+  }
+
   .settings-slider {
     --settings-slider-progress: 0%;
     --settings-slider-fill-offset: 0.5rem;
@@ -1342,17 +1704,17 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
     background: linear-gradient(
       to right,
       var(--primary) 0 var(--settings-slider-fill-position),
-      color-mix(in srgb, var(--muted-foreground) 22%, transparent)
+      color-mix(in srgb, var(--contrast-muted-foreground) 22%, transparent)
         var(--settings-slider-fill-position) 100%
     );
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 55%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--contrast-border) 55%, transparent);
   }
 
   .settings-slider::-moz-range-track {
     height: 0.375rem;
     border-radius: 9999px;
-    background: color-mix(in srgb, var(--muted-foreground) 22%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 55%, transparent);
+    background: color-mix(in srgb, var(--contrast-muted-foreground) 22%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--contrast-border) 55%, transparent);
   }
 
   .settings-slider::-moz-range-progress {
@@ -1369,7 +1731,7 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
     border: 2px solid var(--primary);
     border-radius: 9999px;
     background: var(--background);
-    box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 12%, transparent);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--contrast-foreground) 12%, transparent);
     transition:
       transform 120ms ease,
       box-shadow 120ms ease;
@@ -1381,7 +1743,7 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
     border: 2px solid var(--primary);
     border-radius: 9999px;
     background: var(--background);
-    box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 12%, transparent);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--contrast-foreground) 12%, transparent);
     transition:
       transform 120ms ease,
       box-shadow 120ms ease;
@@ -1389,12 +1751,12 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
 
   .settings-slider:hover::-webkit-slider-thumb {
     transform: scale(1.08);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--foreground) 20%, transparent);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--contrast-foreground) 20%, transparent);
   }
 
   .settings-slider:hover::-moz-range-thumb {
     transform: scale(1.08);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--foreground) 20%, transparent);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--contrast-foreground) 20%, transparent);
   }
 
   .settings-slider:active::-webkit-slider-thumb {
@@ -1478,6 +1840,247 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
 .no-transitions *::after {
   transition-duration: 0s !important;
   animation-duration: 0s !important;
+}
+
+/* Theme swap: default is the 250ms snapshot dissolve (compositor-cheap on
+   every engine). When useTheme sets data-theme-sweep, the new snapshot clips
+   in as a terminator front — dusk settles downward, dawn rises — with a
+   feather veil riding the edge (.theme-sweep-veil below). WebKit stays on
+   the dissolve: full-viewport clip-path can re-raster every frame there.
+   no-transitions stays applied underneath so no element runs its own color
+   tween during the swap. */
+html[data-theme-swap] {
+  --theme-sweep-ms: 600ms;
+  --theme-sweep-ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* A system flip is weather, not a switch: let it cross the window slowly
+   on the sweep and the dissolve fallback (WebKit never sets data-theme-sweep). */
+html[data-theme-swap="system"] {
+  --theme-sweep-ms: 1200ms;
+}
+
+html[data-theme-swap]::view-transition-group(root) {
+  animation-duration: 250ms;
+}
+
+html[data-theme-swap]::view-transition-old(root),
+html[data-theme-swap]::view-transition-new(root) {
+  animation-duration: 250ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  /* plus-lighter flashes a bright frame between a light and dark snapshot. */
+  mix-blend-mode: normal;
+}
+
+html[data-theme-swap="system"]::view-transition-group(root),
+html[data-theme-swap="system"]::view-transition-old(root),
+html[data-theme-swap="system"]::view-transition-new(root) {
+  animation-duration: var(--theme-sweep-ms);
+}
+
+html[data-theme-sweep]::view-transition-group(root) {
+  animation: none;
+}
+
+html[data-theme-sweep]::view-transition-old(root) {
+  animation: none;
+  /* Held at full opacity under the advancing front. */
+  opacity: 1;
+}
+
+html[data-theme-sweep]::view-transition-new(root) {
+  animation: var(--theme-sweep-ms) var(--theme-sweep-ease) both theme-sweep-dusk;
+}
+
+html[data-theme-sweep="dawn"]::view-transition-new(root) {
+  animation-name: theme-sweep-dawn;
+}
+
+@keyframes theme-sweep-dusk {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes theme-sweep-dawn {
+  from {
+    clip-path: inset(100% 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* Feather band riding the terminator front: a faint smear of the incoming
+   chrome tone plus grain, so the clip edge reads as thin atmosphere instead
+   of a hard wipe. The live node is only a named box (opacity 0): VT capture
+   bakes opacity into the snapshot, so the gradient/grain paint on
+   ::view-transition-new instead — that also means a skipped VT cannot flash
+   a 56vh chrome band. */
+.theme-sweep-veil {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 56vh;
+  pointer-events: none;
+  view-transition-name: theme-sweep-veil;
+  opacity: 0;
+}
+
+html[data-theme-sweep]::view-transition-old(theme-sweep-veil) {
+  display: none;
+}
+
+html[data-theme-sweep]::view-transition-group(theme-sweep-veil) {
+  animation: var(--theme-sweep-ms) var(--theme-sweep-ease) both theme-sweep-veil-dusk;
+}
+
+html[data-theme-sweep="dawn"]::view-transition-group(theme-sweep-veil) {
+  animation-name: theme-sweep-veil-dawn;
+}
+
+html[data-theme-sweep]::view-transition-new(theme-sweep-veil) {
+  animation: var(--theme-sweep-ms) linear both theme-sweep-veil-fade;
+  background:
+    var(--surface-grain) repeat,
+    linear-gradient(
+      to bottom,
+      transparent,
+      color-mix(in oklab, var(--app-chrome-background) 30%, transparent),
+      transparent
+    );
+  background-size: var(--surface-grain-size), auto;
+  mask-image: linear-gradient(to bottom, transparent, black, transparent);
+}
+
+/* The veil tracks the clip front with its band centered on the edge; the
+   fade at the extremes hides it entering and leaving the window. */
+@keyframes theme-sweep-veil-dusk {
+  from {
+    transform: translateY(-28vh);
+  }
+  to {
+    transform: translateY(72vh);
+  }
+}
+
+@keyframes theme-sweep-veil-dawn {
+  from {
+    transform: translateY(72vh);
+  }
+  to {
+    transform: translateY(-28vh);
+  }
+}
+
+@keyframes theme-sweep-veil-fade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  18%,
+  82% {
+    opacity: 1;
+  }
+}
+
+/* One-shot rejection shake: set imperatively when a send fails preflight and
+   removed on animationend, so the attribute is never present at rest. The
+   shake rides the form inside the glass shell — the backdrop-filter layer is
+   a sibling and does not re-sample. */
+@keyframes composer-reject-shake {
+  0%,
+  100% {
+    translate: 0;
+  }
+  18% {
+    translate: -4px;
+  }
+  42% {
+    translate: 4px;
+  }
+  68% {
+    translate: -2px;
+  }
+  86% {
+    translate: 1px;
+  }
+}
+
+/* Gated on the Motion toggle like the rest of the animation vocabulary. */
+html[data-scenery-motion] [data-chat-composer-form="true"][data-reject-shake="true"] {
+  animation: composer-reject-shake 300ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* Copy confirmation flash: the whole code block glows once so the copy reads
+   at block scale, not just the 12px icon swap. The pseudo-element only exists
+   while data-copied is true; `both` parks it at opacity 0 either way. */
+html[data-scenery-motion] .chat-markdown-codeblock[data-copied="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--primary) 13%, transparent);
+  animation: codeblock-copy-flash 520ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes codeblock-copy-flash {
+  0% {
+    opacity: 0;
+  }
+  14% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Hold-to-quit progress: the fill tracks the desktop hold duration —
+   QuitHoldOverlay sets --quit-hold-ms from its constant, which mirrors
+   QUIT_HOLD_DURATION_MS in apps/desktop/src/window/QuitHold.ts — and drains
+   back the moment the shortcut is released. scale/opacity only. */
+.quit-hold-fill {
+  transform-origin: left center;
+  scale: 0 1;
+}
+
+[data-quit-phase="holding"] .quit-hold-fill {
+  scale: 1 1;
+  transition: scale var(--quit-hold-ms, 1200ms) linear;
+}
+
+[data-quit-phase="released"] .quit-hold-fill {
+  scale: 0 1;
+  transition: scale 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.quit-hold-scrim {
+  background: rgb(0 0 0 / 22%);
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+[data-quit-phase="holding"] .quit-hold-scrim {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-scenery-motion] [data-chat-composer-form="true"][data-reject-shake="true"] {
+    animation: none;
+  }
+
+  html[data-scenery-motion] .chat-markdown-codeblock[data-copied="true"]::after {
+    animation: none;
+  }
+
+  .quit-hold-fill,
+  .quit-hold-scrim {
+    transition: none;
+  }
 }
 
 :root {
@@ -1628,9 +2231,9 @@ html[data-theme-id="world-scenery"][data-scenery-on] .topbar-scroll-fade {
     --sidebar-foreground: var(--foreground);
     --sidebar-muted-foreground: var(--muted-foreground);
     --sidebar-control-surface: var(--muted);
-    --sidebar-row-hover: color-mix(in srgb, var(--foreground) 8%, transparent);
-    --sidebar-row-active: color-mix(in srgb, var(--foreground) 11%, transparent);
-    --sidebar-row-selected: color-mix(in srgb, var(--foreground) 7%, transparent);
+    --sidebar-row-hover: color-mix(in srgb, var(--contrast-foreground) 8%, transparent);
+    --sidebar-row-active: color-mix(in srgb, var(--contrast-foreground) 11%, transparent);
+    --sidebar-row-selected: color-mix(in srgb, var(--contrast-foreground) 7%, transparent);
     --sidebar-border: var(--border);
     --sidebar-stage-fade: var(--card);
   }
@@ -1815,11 +2418,11 @@ html[data-theme-token-probe] *::after {
   max-width: 12rem;
   overflow: hidden;
   padding: 0.2rem 0.45rem;
-  border: 1px solid color-mix(in oklab, var(--ring) 48%, var(--border));
+  border: 1px solid color-mix(in oklab, var(--ring) 48%, var(--contrast-border));
   border-radius: 0.4rem;
   background: var(--popover);
   box-shadow: 0 4px 16px rgb(0 0 0 / 24%);
-  color: var(--popover-foreground);
+  color: var(--contrast-popover-foreground);
   font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1rem;
@@ -1840,16 +2443,16 @@ html[data-theme-token-probe] *::after {
    dark-mode whites while preserving the same theme file across clients. */
 html[data-theme-id] [data-chat-header] {
   background-color: var(--toolbar-background);
-  color: var(--toolbar-foreground);
+  color: var(--contrast-toolbar-foreground);
 }
 
 html[data-theme-id] [data-chat-header] [data-slot="button"],
 html[data-theme-id] [data-chat-header] [data-slot="menu-trigger"],
 html[data-theme-id] [data-chat-header] [data-toolbar-control] {
-  --control-icon-color: var(--toolbar-control-foreground);
+  --control-icon-color: var(--contrast-toolbar-control-foreground);
   background-color: var(--toolbar-control);
-  border-color: var(--toolbar-border);
-  color: var(--toolbar-control-foreground);
+  border-color: var(--contrast-toolbar-border);
+  color: var(--contrast-toolbar-control-foreground);
 }
 
 /* The panel layout toggles stay ghost: they render both inside the header and
@@ -1861,8 +2464,8 @@ html[data-theme-id] [data-panel-layout-controls] [data-slot="toggle"],
 html[data-theme-id] [data-panel-layout-controls] [data-slot="tooltip-trigger"],
 html[data-theme-id] [data-workspace-titlebar-controls] [data-slot="toggle"],
 html[data-theme-id] [data-workspace-titlebar-controls] [data-slot="tooltip-trigger"] {
-  --control-icon-color: var(--toolbar-foreground);
-  color: var(--toolbar-foreground);
+  --control-icon-color: var(--contrast-toolbar-foreground);
+  color: var(--contrast-toolbar-foreground);
 }
 
 html[data-theme-id] [data-chat-header] [data-slot="button"]:hover,
@@ -1875,7 +2478,7 @@ html[data-theme-id] [data-chat-header] [data-toolbar-control][data-pressed] {
 }
 
 html[data-theme-id] [data-chat-header] [data-slot="separator"] {
-  background-color: var(--toolbar-border);
+  background-color: var(--contrast-toolbar-border);
 }
 
 /* Chat code blocks join the other code surfaces on the code tokens. The
@@ -1883,7 +2486,7 @@ html[data-theme-id] [data-chat-header] [data-slot="separator"] {
    surfaces with the accent, which fights syntax highlighting. */
 html[data-theme-id] .chat-markdown .chat-markdown-codeblock {
   background-color: var(--code-background);
-  border-color: var(--border);
+  border-color: var(--contrast-border);
   color: var(--code-foreground);
 }
 
@@ -1918,7 +2521,7 @@ html[data-theme-id="t3-chat"] {
     }
 
     & .chat-markdown :not(pre) > code {
-      color: var(--message-foreground);
+      color: var(--contrast-message-foreground);
     }
   }
 }
@@ -1948,10 +2551,10 @@ html[data-theme-id] [data-app-sidebar] {
   --sidebar-row-selected: var(--app-theme-sidebar-row-selected);
   --sidebar-border: var(--app-theme-sidebar-border);
   --sidebar-stage-fade: var(--app-theme-sidebar);
-  border-color: color-mix(in srgb, var(--sidebar-foreground) 10%, transparent);
+  border-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 10%, transparent);
 
   @variant dark {
-    border-color: color-mix(in srgb, var(--sidebar-foreground) 8%, transparent);
+    border-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 8%, transparent);
   }
 }
 
@@ -1959,8 +2562,125 @@ html[data-theme-id] [data-app-sidebar] {
    keeps that color while hovered. Do not neutralize this branded edge. */
 html[data-theme-id="t3-chat"] [data-app-sidebar] {
   @variant dark {
-    border-color: var(--sidebar-border);
+    border-color: var(--contrast-sidebar-border);
   }
+}
+
+/* Contrast stays in ordinary custom properties so both Tailwind utilities and
+   global/imperative chrome styles resolve the same adjusted role. Redeclare on
+   the sidebar because it owns a local semantic palette. */
+:root,
+[data-app-sidebar] {
+  --contrast-toolbar-foreground: color-mix(
+    in oklab,
+    color-mix(
+      in oklab,
+      var(--toolbar-foreground) var(--appearance-contrast-base),
+      var(--toolbar-background)
+    ),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-toolbar-border: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--toolbar-border) var(--appearance-contrast-base), transparent),
+    var(--toolbar-foreground) var(--appearance-contrast-border-boost)
+  );
+  --contrast-toolbar-control-foreground: color-mix(
+    in oklab,
+    color-mix(
+      in oklab,
+      var(--toolbar-control-foreground) var(--appearance-contrast-base),
+      var(--toolbar-control)
+    ),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-input: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--input) var(--appearance-contrast-base), transparent),
+    var(--foreground) var(--appearance-contrast-border-boost)
+  );
+  --contrast-border: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--border) var(--appearance-contrast-base), transparent),
+    var(--foreground) var(--appearance-contrast-border-boost)
+  );
+  --contrast-foreground: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--foreground) var(--appearance-contrast-base), var(--background)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-muted-foreground: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--muted-foreground) var(--appearance-contrast-base), var(--background)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-placeholder: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--placeholder) var(--appearance-contrast-base), var(--background)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-secondary-label: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--secondary-label) var(--appearance-contrast-base), var(--background)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-icon-muted: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--icon-muted) var(--appearance-contrast-base), var(--background)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-card-foreground: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--card-foreground) var(--appearance-contrast-base), var(--card)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-popover-foreground: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--popover-foreground) var(--appearance-contrast-base), var(--popover)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-accent-foreground: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--accent-foreground) var(--appearance-contrast-base), var(--accent)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-secondary-foreground: color-mix(
+    in oklab,
+    color-mix(
+      in oklab,
+      var(--secondary-foreground) var(--appearance-contrast-base),
+      var(--secondary)
+    ),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-message-foreground: color-mix(
+    in oklab,
+    color-mix(
+      in oklab,
+      var(--message-foreground) var(--appearance-contrast-base),
+      var(--message-surface)
+    ),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-sidebar-foreground: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--sidebar-foreground) var(--appearance-contrast-base), var(--sidebar)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-sidebar-muted-foreground: color-mix(
+    in oklab,
+    color-mix(
+      in oklab,
+      var(--sidebar-muted-foreground) var(--appearance-contrast-base),
+      var(--sidebar)
+    ),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-sidebar-border: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--sidebar-border) var(--appearance-contrast-base), transparent),
+    var(--sidebar-foreground) var(--appearance-contrast-border-boost)
+  );
 }
 
 body {
@@ -2054,6 +2774,19 @@ code {
   -webkit-app-region: drag;
 }
 
+[data-titlebar-controls-drag-hole] {
+  --workspace-titlebar-layout-control-count: 2;
+  --workspace-titlebar-layout-cluster-width: calc(
+    var(--workspace-titlebar-layout-control-count) * var(--workspace-titlebar-control-size) +
+      (var(--workspace-titlebar-layout-control-count) - 1) * 0.25rem
+  );
+  width: calc(var(--workspace-titlebar-layout-cluster-width) + var(--workspace-controls-right));
+}
+
+[data-titlebar-controls-drag-hole][data-titlebar-layout-control-count="3"] {
+  --workspace-titlebar-layout-control-count: 3;
+}
+
 .drag-region button,
 .drag-region input,
 .drag-region textarea,
@@ -2108,7 +2841,7 @@ code {
   margin: 1.25rem 0 0.5rem;
   font-weight: 600;
   line-height: 1.3;
-  color: var(--foreground);
+  color: var(--contrast-foreground);
 }
 
 .chat-markdown h1 {
@@ -2130,7 +2863,7 @@ code {
 }
 
 .chat-markdown h6 {
-  color: var(--muted-foreground);
+  color: var(--contrast-muted-foreground);
 }
 
 .chat-markdown ul {
@@ -2144,13 +2877,17 @@ code {
 
 /* --list-gutter defaults to the same 1.25rem as .chat-markdown ul, but
    ChatMarkdown's `ol` renderer widens it (via inline style) for lists whose
-   last marker is 3+ digits, so item 100+ isn't clipped by list-style-position:
+   widest marker is 3+ characters, so item 100+ isn't clipped by list-style-position:
    outside painting the marker past the padding box. Reset it here too so a
    nested ol without its own widened marker doesn't inherit the outer one. */
 .chat-markdown ol {
   --list-gutter: 1.25rem;
   padding-left: var(--list-gutter, 1.25rem);
   list-style-type: decimal;
+}
+
+.chat-markdown ol > li::marker {
+  font-variant-numeric: tabular-nums;
 }
 
 .chat-markdown ul ul {
@@ -2203,22 +2940,21 @@ code {
 }
 
 .chat-markdown blockquote {
-  border-left: 2px solid var(--border);
+  border-left: 2px solid var(--contrast-border);
   padding-left: 0.8rem;
-  color: var(--muted-foreground);
+  color: var(--contrast-muted-foreground);
 }
 
 .chat-markdown section[data-footnotes] {
   margin-top: 1.25rem;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--contrast-border);
   padding-top: 0.75rem;
-  color: var(--muted-foreground);
+  color: var(--contrast-muted-foreground);
   font-size: 0.75rem;
 }
 
 .chat-markdown section[data-footnotes] ol {
   margin: 0;
-  padding-left: 1.25rem;
 }
 
 .chat-markdown section[data-footnotes] li + li {
@@ -2238,17 +2974,17 @@ code {
 }
 
 .chat-markdown :not(pre) > code {
-  border: 1px solid var(--border);
+  border: 1px solid var(--contrast-border);
   border-radius: 0.375rem;
   background: var(--muted);
   padding: 0.1rem 0.35rem;
-  color: var(--foreground);
+  color: var(--contrast-foreground);
   font-size: 0.75rem;
 }
 
 .chat-markdown a.chat-markdown-file-link,
 .chat-markdown a.chat-markdown-file-link:hover {
-  color: var(--foreground);
+  color: var(--contrast-foreground);
   text-decoration: none;
 }
 
@@ -2260,12 +2996,12 @@ code {
 .chat-markdown pre {
   max-width: 100%;
   overflow-x: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--contrast-border);
   border-radius: 0.75rem;
   background: var(--muted);
   padding: 0.8rem 0.9rem;
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--border) 78%, transparent) transparent;
+  scrollbar-color: color-mix(in srgb, var(--contrast-border) 78%, transparent) transparent;
 }
 
 .chat-markdown pre code {
@@ -2280,21 +3016,21 @@ code {
 
 .chat-markdown pre::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--contrast-border) 78%, transparent);
 }
 
 .chat-markdown .chat-markdown-codeblock-header,
 .chat-markdown .chat-markdown-chrome-action {
-  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  color: color-mix(in srgb, var(--contrast-foreground) 72%, transparent);
 }
 
 .chat-markdown .chat-markdown-chrome-action:hover {
-  color: var(--foreground);
+  color: var(--contrast-foreground);
 }
 
 .chat-markdown .chat-markdown-chrome-action[aria-pressed="true"] {
-  color: var(--foreground);
-  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--contrast-foreground);
+  background: color-mix(in srgb, var(--contrast-foreground) 8%, transparent);
 }
 
 .chat-markdown .chat-markdown-codeblock pre {
@@ -2353,14 +3089,14 @@ code {
 }
 
 .chat-markdown thead th {
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--contrast-border) 60%, transparent);
   padding-block: 0.55rem;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .chat-markdown tbody td {
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--contrast-border) 60%, transparent);
 }
 
 /* Collapsed (default): single-line cells truncate so arbitrary chat content
@@ -2389,6 +3125,66 @@ code {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Settle/snooze row departure: the row starts sliding down and fading the
+   moment the action fires (optimistically, ahead of the server round trip),
+   so the lifecycle change reads as a motion instead of a snap. The trip to
+   the destination shelf and the sibling reflow stay on the list's
+   auto-animate; when the classification lands, the same surface replays the
+   arrive half at its new spot (or in place, when the command failed).
+   One-shot, transform+opacity only. */
+@keyframes sidebar-row-depart {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+@keyframes sidebar-row-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sidebar-row-departing {
+  pointer-events: none;
+  animation: sidebar-row-depart 240ms cubic-bezier(0.3, 0, 0.8, 0.15) forwards;
+}
+
+/* ARRIVE_MARKER_TTL_MS in threadDepartureStore.ts is this duration plus a
+   buffer, not a copy of it: the class must outlive the animation so it never
+   disappears mid-animation. */
+.sidebar-row-arriving {
+  animation: sidebar-row-arrive 200ms cubic-bezier(0.05, 0.7, 0.1, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes sidebar-row-depart {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes sidebar-row-arrive {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 }
 
@@ -2454,12 +3250,9 @@ code {
   color: var(--code-foreground) !important;
 }
 
-@keyframes ultrathink-rainbow {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 200% 50%;
+@keyframes ultrathink-spin {
+  to {
+    rotate: 360deg;
   }
 }
 
@@ -2473,27 +3266,23 @@ code {
 }
 
 .ultrathink-frame {
-  --ultrathink-spectrum: linear-gradient(
-    120deg,
-    #ff6b6b 0%,
-    #f59e0b 18%,
-    #22c55e 36%,
-    #14b8a6 54%,
-    #3b82f6 72%,
-    #ec4899 90%,
-    #ff6b6b 100%
-  );
   position: relative;
 }
 
-.ultrathink-frame::before {
-  content: "";
+.ultrathink-frame > * {
+  position: relative;
+}
+
+/* The rainbow ring is a rotating conic layer inside a masked host: mask and
+   gradient rasterize once, then the loop is a pure `rotate` the compositor
+   replays from an existing texture — versus the old background-position
+   animation that repainted the masked, filtered ring every frame. */
+.ultrathink-ring {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   padding: 2px;
-  background-image: var(--ultrathink-spectrum);
-  background-size: 220% 220%;
+  overflow: hidden;
   pointer-events: none;
   filter: saturate(0.82) brightness(0.92);
   -webkit-mask:
@@ -2504,26 +3293,76 @@ code {
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
   mask-composite: exclude;
-  animation: ultrathink-rainbow 10s linear infinite;
 }
 
-.ultrathink-frame > * {
-  position: relative;
+.ultrathink-ring-spin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 200%;
+  aspect-ratio: 1;
+  margin: -100% 0 0 -100%;
+  background: conic-gradient(
+    from 0deg,
+    #ff6b6b,
+    #f59e0b,
+    #22c55e,
+    #14b8a6,
+    #3b82f6,
+    #ec4899,
+    #ff6b6b
+  );
+  animation: ultrathink-spin 10s linear infinite;
+  will-change: rotate;
 }
 
 .ultrathink-chroma {
   animation: ultrathink-chroma-shift 10s linear infinite;
 }
 
-/* Both ultrathink animations repaint every frame while the composer is in
-   that mode; hold the static spectrum when motion is off (app toggle or OS). */
-html:not([data-scenery-motion]) .ultrathink-frame::before,
+/* Hold the static spectrum when motion is off (app toggle or OS). */
+html:not([data-scenery-motion]) .ultrathink-ring-spin,
 html:not([data-scenery-motion]) .ultrathink-chroma {
   animation: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .ultrathink-frame::before,
+  .ultrathink-ring-spin,
   .ultrathink-chroma {
     animation: none;
+  }
+}
+
+@keyframes preview-loading-progress {
+  from {
+    transform: scaleX(0.04);
+  }
+
+  to {
+    transform: scaleX(0.9);
+  }
+}
+
+.preview-loading-progress {
+  opacity: 0;
+  transform: scaleX(1);
+  transition:
+    transform 150ms ease-out,
+    opacity 150ms ease-out 220ms;
+}
+
+.preview-loading-progress[data-loading="true"] {
+  opacity: 1;
+  animation: preview-loading-progress 5.3s cubic-bezier(0.1, 0.5, 0.2, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-loading-progress,
+  .preview-loading-progress[data-loading="true"] {
+    transition: none;
+    animation: none;
+  }
+
+  .preview-loading-progress[data-loading="true"] {
+    transform: scaleX(0.9);
   }
 }

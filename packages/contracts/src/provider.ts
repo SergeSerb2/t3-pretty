@@ -20,6 +20,7 @@ import {
   ProviderSandboxMode,
   ProviderUserInputAnswers,
   RuntimeMode,
+  TurnDeliveryMode,
 } from "./orchestration.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
 import { ResolvedSubagentPolicy } from "./subagentPolicy.ts";
@@ -79,6 +80,9 @@ export const ProviderSendTurnInput = Schema.Struct({
   ),
   modelSelection: Schema.optional(ModelSelection),
   interactionMode: Schema.optional(ProviderInteractionMode),
+  // The user's delivery intent. Adapters whose provider session may lag the
+  // orchestration view (Codex) must not steer a message sent with "queue".
+  delivery: Schema.optional(TurnDeliveryMode),
 });
 export type ProviderSendTurnInput = typeof ProviderSendTurnInput.Type;
 

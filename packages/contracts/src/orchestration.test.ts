@@ -7,6 +7,7 @@ import {
   DEFAULT_RUNTIME_MODE,
   ModelSelection,
   OrchestrationCommand,
+  OrchestrationDispatchCommandError,
   OrchestrationEvent,
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetTurnDiffInput,
@@ -18,6 +19,9 @@ import {
   OrchestrationThread,
   OrchestrationThreadShell,
   ProjectCreateCommand,
+  defaultRuntimeModeForProviderDriver,
+  displayRuntimeModeForProviderDriver,
+  effectiveRuntimeModeForProviderDriver,
   resolveRuntimeModeForProviderDriver,
   ThreadMetaUpdatedPayload,
   ThreadTurnStartCommand,
@@ -25,6 +29,7 @@ import {
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
   ClientOrchestrationCommand,
+  OrchestrationThreadSearchMatch,
   isProviderSendTurnSupportedImageMimeType,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
@@ -56,6 +61,19 @@ const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPaylo
 const decodeOrchestrationCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const decodeThreadMetaUpdatedPayload = Schema.decodeUnknownEffect(ThreadMetaUpdatedPayload);
+const decodeDispatchCommandError = Schema.decodeUnknownEffect(OrchestrationDispatchCommandError);
+
+it.effect("decodes a dispatch error after its bootstrap thread was deleted", () =>
+  Effect.gen(function* () {
+    const error = yield* decodeDispatchCommandError({
+      _tag: "OrchestrationDispatchCommandError",
+      message: "Failed to create worktree.",
+      bootstrapThreadDisposition: "deleted",
+    });
+
+    assert.strictEqual(error.bootstrapThreadDisposition, "deleted");
+  }),
+);
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -996,10 +1014,13 @@ it.effect("project favicon overrides accept only supported image files", () =>
   }),
 );
 
-it("resolveRuntimeModeForProviderDriver maps yolo to full-access off Kimi", () => {
+it("resolveRuntimeModeForProviderDriver maps yolo to full-access unless the driver is kimi or unknown", () => {
   assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "yolo"), "full-access");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("claudeAgent", "yolo"), "full-access");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver(null, "yolo"), "full-access");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver(null, "yolo"), "yolo");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver(undefined, "yolo"), "yolo");
+  assert.strictEqual(resolveRuntimeModeForProviderDriver("unconfigured", "yolo"), "yolo");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "full-access"), "full-access");
   assert.strictEqual(
@@ -1008,8 +1029,50 @@ it("resolveRuntimeModeForProviderDriver maps yolo to full-access off Kimi", () =
   );
 });
 
+it("displayRuntimeModeForProviderDriver keeps yolo when the driver is unknown", () => {
+  assert.strictEqual(displayRuntimeModeForProviderDriver(null, "yolo"), "yolo");
+  assert.strictEqual(displayRuntimeModeForProviderDriver(undefined, "yolo"), "yolo");
+  assert.strictEqual(displayRuntimeModeForProviderDriver("unconfigured", "yolo"), "yolo");
+  assert.strictEqual(displayRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
+  assert.strictEqual(displayRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
+});
+
+it("defaultRuntimeModeForProviderDriver defaults Kimi to yolo", () => {
+  assert.strictEqual(defaultRuntimeModeForProviderDriver("kimi"), "yolo");
+  assert.strictEqual(defaultRuntimeModeForProviderDriver("codex"), "full-access");
+  assert.strictEqual(defaultRuntimeModeForProviderDriver("grok"), "full-access");
+  assert.strictEqual(defaultRuntimeModeForProviderDriver(null), "full-access");
+  assert.strictEqual(defaultRuntimeModeForProviderDriver(undefined), "full-access");
+});
+
+it("effectiveRuntimeModeForProviderDriver remaps carried yolo off Kimi", () => {
+  assert.strictEqual(effectiveRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
+  assert.strictEqual(effectiveRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
+  assert.strictEqual(effectiveRuntimeModeForProviderDriver(null, "yolo"), "yolo");
+  assert.strictEqual(effectiveRuntimeModeForProviderDriver("kimi", null), "yolo");
+  assert.strictEqual(effectiveRuntimeModeForProviderDriver("grok", null), "full-access");
+  assert.strictEqual(effectiveRuntimeModeForProviderDriver("kimi", "full-access"), "full-access");
+});
+
 it("isProviderSendTurnSupportedImageMimeType accepts raster formats and rejects svg", () => {
   assert.strictEqual(isProviderSendTurnSupportedImageMimeType("image/png"), true);
   assert.strictEqual(isProviderSendTurnSupportedImageMimeType("IMAGE/JPEG"), true);
   assert.strictEqual(isProviderSendTurnSupportedImageMimeType("image/svg+xml"), false);
 });
+
+it.effect("decodes a thread search match with and without a score", () =>
+  Effect.gen(function* () {
+    const decodeSearchMatch = Schema.decodeUnknownEffect(OrchestrationThreadSearchMatch);
+    const base = {
+      threadId: "thread-1",
+      projectId: "project-1",
+      source: "user",
+      snippet: "hello",
+      messageCreatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const withoutScore = yield* decodeSearchMatch(base);
+    assert.strictEqual(withoutScore.score, undefined);
+    const withScore = yield* decodeSearchMatch({ ...base, score: 1.25 });
+    assert.strictEqual(withScore.score, 1.25);
+  }),
+);

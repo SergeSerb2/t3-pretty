@@ -85,9 +85,7 @@ export async function walkDirectoryOnDiskBytes(
       const sizes = await Promise.all(
         chunk.map(async (file) => {
           try {
-            return onDiskBytes(
-              await NodeFSP.stat(file, signal === undefined ? undefined : { signal }),
-            );
+            return onDiskBytes(await NodeFSP.stat(file));
           } catch (error) {
             if (isAbortError(error)) throw error;
             return 0;

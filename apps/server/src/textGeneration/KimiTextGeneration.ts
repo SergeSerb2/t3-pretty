@@ -12,12 +12,14 @@ import { extractJsonObject } from "@t3tools/shared/schemaJson";
 import { TextGenerationError } from "@t3tools/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
+  buildActivityHeadlinePrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
+  sanitizeActivityHeadline,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -51,7 +53,8 @@ export const makeKimiTextGeneration = Effect.fn("makeKimiTextGeneration")(functi
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateActivityHeadline";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -256,11 +259,33 @@ export const makeKimiTextGeneration = Effect.fn("makeKimiTextGeneration")(functi
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
+  const generateActivityHeadline: TextGeneration.TextGeneration["Service"]["generateActivityHeadline"] =
+    Effect.fn("KimiTextGeneration.generateActivityHeadline")(function* (input) {
+      const { prompt, outputSchema } = buildActivityHeadlinePrompt({
+        summary: input.summary,
+        command: input.command,
+        detail: input.detail,
+      });
+
+      const generated = yield* runKimiJson({
+        operation: "generateActivityHeadline",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return {
+        headline: sanitizeActivityHeadline(generated.headline),
+      } satisfies TextGeneration.ActivityHeadlineGenerationResult;
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateActivityHeadline,
     generateProjectIcon: TextGeneration.unsupportedProjectIconGeneration("Kimi"),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

@@ -14,6 +14,7 @@ import {
   deriveTurnPlans,
   derivePendingApprovals,
   derivePendingUserInputs,
+  deriveLiveTurnHeadline,
   deriveTimelineEntries,
   deriveWorkLogEntries,
   findLatestProposedPlan,
@@ -895,6 +896,28 @@ describe("deriveWorkLogEntries", () => {
         createdAt: "2026-02-23T00:00:02.000Z",
         summary: "Tool call",
         kind: "tool.started",
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities);
+    expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
+  });
+
+  it("omits generated turn headlines from the log", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "turn-1:headline",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        summary: "Updating contract tests",
+        kind: "turn.headline",
+        tone: "info",
+        turnId: "turn-1",
+      }),
+      makeActivity({
+        id: "tool-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        summary: "Tool call complete",
+        kind: "tool.completed",
       }),
     ];
 
@@ -1858,6 +1881,33 @@ describe("deriveTimelineEntries", () => {
         implementationThreadId: null,
       },
     });
+  });
+});
+
+describe("deriveLiveTurnHeadline", () => {
+  it("returns the running turn's headline and ignores other turns", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "turn-1:headline",
+        kind: "turn.headline",
+        tone: "info",
+        summary: "Old turn status",
+        turnId: "turn-1",
+      }),
+      makeActivity({
+        id: "turn-2:headline",
+        kind: "turn.headline",
+        tone: "info",
+        summary: "Updating contract tests",
+        turnId: "turn-2",
+      }),
+    ];
+
+    expect(deriveLiveTurnHeadline(activities, TurnId.make("turn-2"))).toBe(
+      "Updating contract tests",
+    );
+    expect(deriveLiveTurnHeadline(activities, TurnId.make("turn-3"))).toBeNull();
+    expect(deriveLiveTurnHeadline(activities, null)).toBeNull();
   });
 });
 

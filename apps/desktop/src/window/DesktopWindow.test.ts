@@ -43,7 +43,12 @@ import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { MENU_ACTION_CHANNEL, WINDOW_FULLSCREEN_STATE_CHANNEL } from "../ipc/channels.ts";
+import {
+  MENU_ACTION_CHANNEL,
+  WINDOW_ACTIVE_STATE_CHANNEL,
+  WINDOW_FULLSCREEN_STATE_CHANNEL,
+  WINDOW_INTERACTING_CHANNEL,
+} from "../ipc/channels.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 import * as PreviewManager from "../preview/Manager.ts";
@@ -60,7 +65,7 @@ const environmentInput = {
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
-function makeFakeBrowserWindow() {
+function makeFakeBrowserWindow(options?: { readonly focused?: boolean }) {
   const windowListeners = new Map<string, (...args: readonly unknown[]) => void>();
   const webContentsListeners = new Map<string, (...args: readonly unknown[]) => void>();
   let zoomLevel = 0;
@@ -90,6 +95,7 @@ function makeFakeBrowserWindow() {
     getBounds: vi.fn(() => ({ x: 0, y: 0, width: 1100, height: 780 })),
     getNormalBounds: vi.fn(() => ({ x: 0, y: 0, width: 1100, height: 780 })),
     isDestroyed: vi.fn(() => false),
+    isFocused: vi.fn(() => options?.focused ?? false),
     isFullScreen: vi.fn(() => false),
     isMaximized: vi.fn(() => false),
     isMinimized: vi.fn(() => false),
@@ -136,9 +142,30 @@ const desktopClientSettingsLayer = Layer.mock(DesktopClientSettings.DesktopClien
   get: Effect.succeed(Option.none()),
 });
 
-const electronAppLayer = Layer.mock(ElectronApp.ElectronApp)({
-  quit: Effect.void,
-});
+const makeElectronAppLayer = (recorders: {
+  readonly dockBadges?: string[];
+  readonly dockBounces?: number[];
+  readonly dockBounceCancels?: number[];
+  readonly nextDockBounceId?: number;
+}) =>
+  Layer.mock(ElectronApp.ElectronApp)({
+    quit: Effect.void,
+    setDockBadge: (label) =>
+      Effect.sync(() => {
+        recorders.dockBadges?.push(label);
+      }),
+    bounceDock: Effect.sync(() => {
+      const id = recorders.nextDockBounceId ?? 7;
+      recorders.dockBounces?.push(id);
+      return id;
+    }),
+    cancelDockBounce: (id) =>
+      Effect.sync(() => {
+        recorders.dockBounceCancels?.push(id);
+      }),
+  });
+
+const electronAppLayer = makeElectronAppLayer({});
 
 const desktopAssetsLayer = Layer.succeed(DesktopAssets.DesktopAssets, {
   iconPaths: Effect.succeed({
@@ -206,6 +233,9 @@ function makeTestLayer(input: {
   readonly openedExternalUrls?: unknown[];
   readonly previewZoomReapplies?: number[];
   readonly broadcastChannels?: string[];
+  readonly dockBadges?: string[];
+  readonly dockBounces?: number[];
+  readonly dockBounceCancels?: number[];
 }) {
   let desktopSettings = input.desktopSettings ?? DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS;
   const desktopAppSettingsLayer = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
@@ -272,7 +302,13 @@ function makeTestLayer(input: {
         desktopClientSettingsLayer,
         desktopServerExposureLayer,
         DesktopState.layer,
-        electronAppLayer,
+        makeElectronAppLayer({
+          ...(input.dockBadges === undefined ? {} : { dockBadges: input.dockBadges }),
+          ...(input.dockBounces === undefined ? {} : { dockBounces: input.dockBounces }),
+          ...(input.dockBounceCancels === undefined
+            ? {}
+            : { dockBounceCancels: input.dockBounceCancels }),
+        }),
         electronMenuLayer,
         Layer.succeed(ElectronShell.ElectronShell, {
           openExternal: (url) =>
@@ -1024,12 +1060,205 @@ describe("DesktopWindow", () => {
           return yield* Effect.die("fullscreen listeners were not registered");
         }
 
+        fakeWindow.send.mockClear();
         enterFullscreen();
         leaveFullscreen();
         assert.deepEqual(fakeWindow.send.mock.calls, [
           [WINDOW_FULLSCREEN_STATE_CHANNEL, true],
           [WINDOW_FULLSCREEN_STATE_CHANNEL, false],
         ]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("publishes window key state and drag/resize gestures to the renderer", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const listeners = ["focus", "blur", "will-resize", "resized", "will-move", "moved"].map(
+          (eventName) => fakeWindow.windowListeners.get(eventName),
+        );
+        if (listeners.some((listener) => listener === undefined)) {
+          return yield* Effect.die("window state listeners were not registered");
+        }
+        for (const listener of listeners) {
+          listener?.();
+        }
+
+        assert.deepEqual(fakeWindow.send.mock.calls, [
+          [WINDOW_ACTIVE_STATE_CHANNEL, false],
+          [WINDOW_ACTIVE_STATE_CHANNEL, true],
+          [WINDOW_ACTIVE_STATE_CHANNEL, false],
+          [WINDOW_INTERACTING_CHANNEL, true],
+          [WINDOW_INTERACTING_CHANNEL, false],
+          [WINDOW_INTERACTING_CHANNEL, true],
+          [WINDOW_INTERACTING_CHANNEL, false],
+        ]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("pushes a focused seed so the renderer does not start inactive", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow({ focused: true });
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        assert.deepEqual(fakeWindow.send.mock.calls, [[WINDOW_ACTIVE_STATE_CHANNEL, true]]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("re-pushes window key state after the renderer finishes loading", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const didFinishLoad = fakeWindow.webContentsListeners.get("did-finish-load");
+        const focus = fakeWindow.windowListeners.get("focus");
+        if (!didFinishLoad || !focus) {
+          return yield* Effect.die("window key-state listeners were not registered");
+        }
+
+        fakeWindow.send.mockClear();
+        didFinishLoad();
+        assert.deepEqual(fakeWindow.send.mock.calls, [[WINDOW_ACTIVE_STATE_CHANNEL, false]]);
+
+        focus();
+        fakeWindow.send.mockClear();
+        didFinishLoad();
+        assert.deepEqual(fakeWindow.send.mock.calls, [[WINDOW_ACTIVE_STATE_CHANNEL, true]]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("badges the dock and bounces once while the window is in the background", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const dockBadges: string[] = [];
+      const dockBounces: number[] = [];
+      const dockBounceCancels: number[] = [];
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        dockBadges,
+        dockBounces,
+        dockBounceCancels,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const focus = fakeWindow.windowListeners.get("focus");
+        const blur = fakeWindow.windowListeners.get("blur");
+        if (!focus || !blur) {
+          return yield* Effect.die("focus listeners were not registered");
+        }
+
+        // The user has to have seen the window before growth is news. Splash
+        // hydration — including 0 before threads load, then a non-zero jump,
+        // then further growth — only badges.
+        blur();
+        yield* desktopWindow.setDockAttention(0);
+        yield* desktopWindow.setDockAttention(3);
+        yield* desktopWindow.setDockAttention(5);
+        assert.deepEqual(dockBadges, ["", "3", "5"]);
+        assert.deepEqual(dockBounces, []);
+
+        // After a focus, the current count is the seen baseline. Backgrounded
+        // growth badges plus one bounce. A second growth cancels the in-flight
+        // bounce before starting the next, and focus cancels the one still
+        // standing.
+        focus();
+        blur();
+        yield* desktopWindow.setDockAttention(6);
+        yield* desktopWindow.setDockAttention(8);
+        focus();
+        yield* Effect.yieldNow;
+        assert.deepEqual(dockBounces, [7, 7]);
+        // The seeding focus cancels a never-started bounce (-1); the next
+        // growth cancels the in-flight one; the return focus cancels the rest.
+        assert.deepEqual(dockBounceCancels, [-1, 7, 7]);
+
+        // Focused, or shrinking, never bounces — and zero clears the badge.
+        yield* desktopWindow.setDockAttention(9);
+        yield* desktopWindow.setDockAttention(0);
+        blur();
+        yield* desktopWindow.setDockAttention(0);
+        focus();
+        yield* Effect.yieldNow;
+
+        assert.deepEqual(dockBadges, ["", "3", "5", "6", "8", "9", "", ""]);
+        assert.deepEqual(dockBounces, [7, 7]);
+        assert.deepEqual(dockBounceCancels, [-1, 7, 7, -1]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("treats an already-key window as a dock-attention baseline", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow({ focused: true });
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const dockBadges: string[] = [];
+      const dockBounces: number[] = [];
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        dockBadges,
+        dockBounces,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const blur = fakeWindow.windowListeners.get("blur");
+        if (!blur) {
+          return yield* Effect.die("blur listener was not registered");
+        }
+
+        yield* desktopWindow.setDockAttention(0);
+        blur();
+        yield* desktopWindow.setDockAttention(2);
+
+        assert.deepEqual(dockBadges, ["", "2"]);
+        assert.deepEqual(dockBounces, [7]);
       }).pipe(Effect.provide(layer));
     }),
   );
@@ -1247,7 +1476,10 @@ describe("DesktopWindow", () => {
         yield* desktopWindow.dispatchMenuAction("open-settings");
 
         assert.equal(yield* Ref.get(scenario.createCalls), 3);
-        assert.deepEqual(main.send.mock.calls, [[MENU_ACTION_CHANNEL, "open-settings"]]);
+        assert.deepEqual(main.send.mock.calls, [
+          [WINDOW_ACTIVE_STATE_CHANNEL, false],
+          [MENU_ACTION_CHANNEL, "open-settings"],
+        ]);
       }).pipe(Effect.provide(scenario.layer));
     }),
   );

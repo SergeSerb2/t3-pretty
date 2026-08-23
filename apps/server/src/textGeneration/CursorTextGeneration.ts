@@ -12,12 +12,14 @@ import { extractJsonObject } from "@t3tools/shared/schemaJson";
 import { TextGenerationError } from "@t3tools/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
+  buildActivityHeadlinePrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
+  sanitizeActivityHeadline,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -54,7 +56,8 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateActivityHeadline";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -259,11 +262,33 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
+  const generateActivityHeadline: TextGeneration.TextGeneration["Service"]["generateActivityHeadline"] =
+    Effect.fn("CursorTextGeneration.generateActivityHeadline")(function* (input) {
+      const { prompt, outputSchema } = buildActivityHeadlinePrompt({
+        summary: input.summary,
+        command: input.command,
+        detail: input.detail,
+      });
+
+      const generated = yield* runCursorJson({
+        operation: "generateActivityHeadline",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return {
+        headline: sanitizeActivityHeadline(generated.headline),
+      } satisfies TextGeneration.ActivityHeadlineGenerationResult;
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateActivityHeadline,
     generateProjectIcon: TextGeneration.unsupportedProjectIconGeneration("Cursor"),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

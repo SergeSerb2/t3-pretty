@@ -19,7 +19,7 @@ import { MOBILE_TYPOGRAPHY } from "../../lib/typography";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { useAssetUrl } from "../../state/assets";
 import { resolveWorkspaceFilePath } from "../files/filePath";
-import Animated, { FadeIn } from "react-native-reanimated";
+import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 
 const WORK_LOG_LAYOUT_ANIMATION = {
   duration: 180,
@@ -320,11 +320,19 @@ export const ThreadWorkLog = memo(function ThreadWorkLog(props: {
 
                   <View className="shrink-0 flex-row items-center gap-px">
                     {props.copiedRowId === row.id ? (
-                      <Text className="pr-1 font-t3-medium text-3xs text-emerald-600 dark:text-emerald-400">
-                        Copied
-                      </Text>
+                      <Animated.View
+                        entering={FadeIn.duration(140)}
+                        exiting={FadeOut.duration(140)}
+                      >
+                        <Text className="pr-1 font-t3-medium text-3xs text-emerald-600 dark:text-emerald-400">
+                          Copied
+                        </Text>
+                      </Animated.View>
                     ) : null}
-                    <View className="h-4 w-4 items-center justify-center">
+                    <Animated.View
+                      layout={LinearTransition.duration(180)}
+                      className="h-4 w-4 items-center justify-center"
+                    >
                       {canExpand ? (
                         <SymbolView
                           name={
@@ -337,8 +345,11 @@ export const ThreadWorkLog = memo(function ThreadWorkLog(props: {
                           type="monochrome"
                         />
                       ) : null}
-                    </View>
-                    <View className="h-4 w-4 items-center justify-center">
+                    </Animated.View>
+                    <Animated.View
+                      layout={LinearTransition.duration(180)}
+                      className="h-4 w-4 items-center justify-center"
+                    >
                       {row.status ? (
                         <SymbolView
                           name={
@@ -353,7 +364,7 @@ export const ThreadWorkLog = memo(function ThreadWorkLog(props: {
                           type="monochrome"
                         />
                       ) : null}
-                    </View>
+                    </Animated.View>
                   </View>
                 </View>
               </Pressable>
@@ -417,6 +428,7 @@ export function ThreadWorkGroupToggle(props: {
   const expandedLabel = props.onlyToolActivities
     ? "Show fewer tool calls"
     : "Show fewer log entries";
+  const visibleLabel = props.expanded ? expandedLabel : `+${props.hiddenCount} previous ${noun}`;
 
   return (
     <View className="-mx-1 mb-1 px-1 py-0">
@@ -446,9 +458,18 @@ export function ThreadWorkGroupToggle(props: {
             type="monochrome"
           />
         </View>
-        <Text className="font-t3-medium text-xs text-foreground opacity-80">
-          {props.expanded ? expandedLabel : `+${props.hiddenCount} previous ${noun}`}
-        </Text>
+        <View className="h-[18px] min-w-0 flex-1 justify-center overflow-hidden">
+          <Animated.View
+            key={props.expanded ? "expanded" : "collapsed"}
+            entering={FadeIn.duration(140)}
+            exiting={FadeOut.duration(140)}
+            className="absolute inset-0 justify-center"
+          >
+            <Text className="font-t3-medium text-xs text-foreground opacity-80" numberOfLines={1}>
+              {visibleLabel}
+            </Text>
+          </Animated.View>
+        </View>
       </Pressable>
     </View>
   );

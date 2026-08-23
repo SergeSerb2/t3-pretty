@@ -11,23 +11,29 @@ describe("runtimeModeOptionsForProvider", () => {
       "auto",
       "full-access",
     ]);
+    expect(runtimeModeOptionsForProvider(ProviderDriverKind.make("grok"))).toEqual([
+      "approval-required",
+      "auto-accept-edits",
+      "auto",
+      "full-access",
+    ]);
   });
 
-  it("replaces full access with Auto and Yolo for Kimi", () => {
+  it("offers Yolo and Full access for Kimi in ascending order of access", () => {
     expect(runtimeModeOptionsForProvider(ProviderDriverKind.make("kimi"))).toEqual([
       "approval-required",
-      "full-access",
       "yolo",
+      "full-access",
     ]);
   });
 });
 
 describe("resolveRuntimeModeOption", () => {
-  it("labels Kimi full access as Auto and yolo as Yolo", () => {
-    expect(resolveRuntimeModeOption(ProviderDriverKind.make("kimi"), "full-access").label).toBe(
-      "Auto",
-    );
+  it("labels Kimi yolo as Yolo and full access as Full access", () => {
     expect(resolveRuntimeModeOption(ProviderDriverKind.make("kimi"), "yolo").label).toBe("Yolo");
+    expect(resolveRuntimeModeOption(ProviderDriverKind.make("kimi"), "full-access").label).toBe(
+      "Full access",
+    );
   });
 
   it("keeps generic labels for other providers", () => {

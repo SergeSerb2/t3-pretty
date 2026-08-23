@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import webSeedPoolJson from "../../../../web/src/scenery/seedPool.json";
+import webDeepForestJson from "../../../../web/src/scenery/seeds/deep-forest.json";
+import webGrandBuildingsJson from "../../../../web/src/scenery/seeds/grand-buildings.json";
+import webNightCitiesJson from "../../../../web/src/scenery/seeds/night-cities.json";
+import webNightSkyJson from "../../../../web/src/scenery/seeds/night-sky.json";
+import { PHOTO_SET_IDS as WEB_PHOTO_SET_IDS } from "../../../../web/src/scenery/photoSets";
+import { PHOTO_SET_IDS, PHOTO_SETS } from "./photoSets";
 import mobileSeedPoolJson from "./seedPool.json";
+import mobileDeepForestJson from "./seeds/deep-forest.json";
+import mobileGrandBuildingsJson from "./seeds/grand-buildings.json";
+import mobileNightCitiesJson from "./seeds/night-cities.json";
+import mobileNightSkyJson from "./seeds/night-sky.json";
 import {
   capAssignments,
   chatWashBase,
@@ -17,8 +27,12 @@ import {
   getSceneryPool,
   gradientPair,
   layerStack,
+  loadSeedPhotos,
+  peekSeedPhotos,
   photoOpacity,
+  photosFromSeedModule,
   pickScenery,
+  sceneryPoolForSet,
   SCENERY_POOL,
   sizedImageURL,
   stableIndex,
@@ -117,9 +131,10 @@ describe("pickScenery", () => {
   });
 
   it("avoids photos assigned within the recent window", () => {
+    // Window is min(120, floor(80/2)) = 40.
     const assignments = Object.fromEntries(
       pool
-        .slice(0, 60)
+        .slice(0, 40)
         .map((photo, index) => [
           `thread-${index}`,
           { photoId: photo.id, name: photo.name, assignedAt: index + 1 },
@@ -128,7 +143,23 @@ describe("pickScenery", () => {
     for (let attempt = 0; attempt < 25; attempt += 1) {
       const pick = pickScenery(pool, assignments);
       expect(pick).not.toBeNull();
-      expect(Number(pick!.id.replace("photo-", ""))).toBeGreaterThanOrEqual(60);
+      expect(Number(pick!.id.replace("photo-", ""))).toBeGreaterThanOrEqual(40);
+    }
+  });
+
+  it("keeps candidates in extra-sized pools instead of excluding the whole set", () => {
+    const extraPool = Array.from({ length: 110 }, (_, index) => makePhoto(`extra-${index}`));
+    const assignments = Object.fromEntries(
+      extraPool.map((photo, index) => [
+        `thread-${index}`,
+        { photoId: photo.id, name: photo.name, assignedAt: index + 1 },
+      ]),
+    );
+    // Window is min(120, floor(110/2)) = 55, so the oldest 55 stay available.
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const pick = pickScenery(extraPool, assignments);
+      expect(pick).not.toBeNull();
+      expect(Number(pick!.id.replace("extra-", ""))).toBeLessThan(55);
     }
   });
 
@@ -262,5 +293,36 @@ describe("seed pool", () => {
     const pool = getSceneryPool([extra]);
     expect(pool).toContainEqual(extra);
     expect(pool.length).toBe(SCENERY_POOL.length + 1);
+  });
+
+  it("ships the same extra photo sets as desktop", async () => {
+    expect(PHOTO_SET_IDS).toEqual(WEB_PHOTO_SET_IDS);
+    expect(PHOTO_SETS.map((set) => set.id)).toEqual(PHOTO_SET_IDS);
+    expect(mobileNightCitiesJson).toEqual(webNightCitiesJson);
+    expect(mobileDeepForestJson).toEqual(webDeepForestJson);
+    expect(mobileNightSkyJson).toEqual(webNightSkyJson);
+    expect(mobileGrandBuildingsJson).toEqual(webGrandBuildingsJson);
+    expect(peekSeedPhotos("world-scenery").length).toBeGreaterThan(800);
+    expect(peekSeedPhotos("night-cities").length).toBe(0);
+    expect(peekSeedPhotos("deep-forest").length).toBe(0);
+    expect(peekSeedPhotos("night-sky").length).toBe(0);
+    expect(peekSeedPhotos("grand-buildings").length).toBe(0);
+    for (const id of ["night-cities", "deep-forest", "night-sky", "grand-buildings"] as const) {
+      const loaded = await loadSeedPhotos(id);
+      expect(loaded.length, id).toBeGreaterThan(100);
+      expect(peekSeedPhotos(id).length).toBe(loaded.length);
+      expect(sceneryPoolForSet(id).length).toBe(loaded.length);
+    }
+    expect(sceneryPoolForSet("world-scenery").length).toBeGreaterThan(800);
+  });
+
+  it("reads JSON seed modules in Metro, Vite, and array shapes", () => {
+    const photos = [makePhoto("a")];
+    expect(photosFromSeedModule({ photos })).toEqual(photos);
+    expect(photosFromSeedModule({ default: { photos } })).toEqual(photos);
+    expect(photosFromSeedModule(photos)).toEqual(photos);
+    expect(photosFromSeedModule({ default: photos })).toEqual(photos);
+    expect(photosFromSeedModule({})).toEqual([]);
+    expect(photosFromSeedModule(null)).toEqual([]);
   });
 });

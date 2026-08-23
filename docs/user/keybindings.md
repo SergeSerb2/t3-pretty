@@ -54,8 +54,9 @@ so add one in **Settings** → **Keybindings** if you want to use it.
 
 The command palette searches active thread titles, projects, branches, user messages, and final
 agent responses across connected environments. Message matches show one labeled excerpt while
-keeping the thread's project, branch, and machine context visible. Message search begins after two
-characters and uses SQLite's ASCII case-insensitive matching.
+keeping the thread's project, branch, and machine context visible. Message search begins after
+two characters. It matches on whole words and ranks threads by relevance; the last word of a
+query also matches the start of words, so results refine as you type.
 
 The full command list and the current defaults are shown in **Settings** → **Keybindings**, which
 always matches the build you are running. Use that rather than a copied list.
@@ -66,6 +67,10 @@ environment mode always come from your configured defaults, not from the thread 
 at. To keep a worktree, use the explicit "new thread in this worktree" action in the branch
 toolbar. The only difference between the two commands: with the current sidebar and more than one
 project, `chat.new` opens a project chooser first.
+
+Background submission from a new thread is the exception. `mod+enter` starts that thread and opens
+another new thread with the same workspace mode and base branch. **New worktree** remains selected,
+but the new thread does not reuse the worktree created for the thread that just started.
 
 ## `when` Conditions
 

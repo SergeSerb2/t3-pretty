@@ -36,6 +36,7 @@ import { PullRequestDetailScreen } from "./features/pull-requests/PullRequestDet
 import { PullRequestDiffScreen } from "./features/pull-requests/PullRequestDiffScreen";
 import { PullRequestReviewersSheet } from "./features/pull-requests/PullRequestReviewersSheet";
 import { PullRequestsRouteScreen } from "./features/pull-requests/PullRequestsRouteScreen";
+import { ThreadRenameSheet } from "./features/threads/ThreadRenameSheet";
 import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";
 import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteScreen";
 import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewRouteScreen";
@@ -56,6 +57,7 @@ import {
 } from "./features/threads/ThreadSettingsSheet";
 import { NewTaskFlowProvider } from "./features/threads/new-task-flow-provider";
 import { NewTaskRouteScreen } from "./features/threads/NewTaskRouteScreen";
+import { NewTaskSkillsPickerRouteScreen } from "./features/threads/NewTaskSkillsPickerRouteScreen";
 import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppearanceRouteScreen";
 import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsClientStorageRouteScreen";
 import { SettingsEnvironmentStorageRouteScreen } from "./features/settings/SettingsEnvironmentStorageRouteScreen";
@@ -351,6 +353,13 @@ const NewTaskSheetStack = createNativeStackNavigator({
         title: "Branch",
       },
     }),
+    NewTaskSkills: createNativeStackScreen({
+      screen: NewTaskSkillsPickerRouteScreen,
+      linking: "draft/skills",
+      options: {
+        title: "Skills",
+      },
+    }),
     ThreadSettings: createNativeStackScreen({
       screen: NewTaskThreadSettingsRouteScreen,
       linking: "draft/settings",
@@ -404,6 +413,7 @@ const WORKSPACE_OVERLAY_ROUTES = new Set([
   "PullRequestReviewers",
   "SettingsLegal",
   "SettingsSheet",
+  "ThreadRename",
   "ThreadReviewComment",
   "ThreadSettingsSheet",
 ]);
@@ -670,6 +680,14 @@ export const RootStack = createNativeStackNavigator({
       options: {
         ...FORM_SHEET_PRESENTATION_OPTIONS,
         sheetAllowedDetents: [0.55, 0.92],
+        sheetGrabberVisible: true,
+      },
+    }),
+    ThreadRename: createNativeStackScreen({
+      screen: ThreadRenameSheet,
+      options: {
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
+        sheetAllowedDetents: [0.45, 0.7],
         sheetGrabberVisible: true,
       },
     }),
