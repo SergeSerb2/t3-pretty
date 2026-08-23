@@ -209,8 +209,7 @@ describe("projectThreadAwareness", () => {
     expect(state?.startedAt).toBe(promptAt);
   });
 
-  it("falls back to the session stamp when starting has no newer prompt", () => {
-    const sessionStartedAt = "2026-05-22T11:50:00.000Z";
+  it("omits startedAt when starting has no newer prompt than the prior turn", () => {
     const state = projectThreadAwareness({
       environmentId: "env-1" as EnvironmentId,
       project,
@@ -232,13 +231,13 @@ describe("projectThreadAwareness", () => {
           runtimeMode: "full-access",
           activeTurnId: null,
           lastError: null,
-          updatedAt: sessionStartedAt,
+          updatedAt: NOW,
         },
       }),
     });
 
     expect(state?.phase).toBe("starting");
-    expect(state?.startedAt).toBe(sessionStartedAt);
+    expect(state?.startedAt).toBeUndefined();
   });
 
   it("surfaces the current plan step as the running detail", () => {

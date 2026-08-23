@@ -167,8 +167,9 @@ function progressForPhase(
 // would pin the timer to a stale prior turn, so they get no startedAt.
 // Starting shells have no running turn yet. Pin to the prompt that opened
 // this connecting window so later session.updatedAt writes (lifecycle
-// heartbeats) do not reset the on-screen elapsed timer. Fall back to the
-// session stamp when there is no newer prompt.
+// heartbeats) do not reset the on-screen elapsed timer. Do not fall back to
+// the session stamp: it is rewritten by those heartbeats, which both rewinds
+// the timer and marks every tick as an urgent APNs shape change.
 function startedAtForPhase(
   phase: AgentAwarenessPhase,
   thread: ProjectThreadAwarenessInput["thread"],
@@ -186,7 +187,6 @@ function startedAtForPhase(
     if (messageAt && (priorDone == null || messageAt >= priorDone)) {
       return messageAt;
     }
-    return thread.session?.updatedAt;
   }
   return undefined;
 }

@@ -454,7 +454,7 @@ export function AgentActivity(
     // the strongest "still alive" signal a glance can carry. Everything else
     // shows the count/blocking label.
     compactTrailing:
-      soloRow && heroInFlight && parseDate(soloRow.startedAt) ? (
+      soloRow && inFlightPhase(soloRow.phase) && parseDate(soloRow.startedAt) ? (
         <Text
           date={parseDate(soloRow.startedAt) as Date}
           dateStyle="timer"
@@ -504,7 +504,7 @@ export function AgentActivity(
     ),
     expandedCenter: null,
     expandedTrailing:
-      heroRow && heroInFlight && parseDate(heroRow.startedAt) ? (
+      heroRow && inFlightPhase(heroRow.phase) && parseDate(heroRow.startedAt) ? (
         <Text
           date={parseDate(heroRow.startedAt) as Date}
           dateStyle="timer"

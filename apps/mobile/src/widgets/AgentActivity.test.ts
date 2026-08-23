@@ -216,6 +216,30 @@ describe("AgentActivity widget layout", () => {
     expect(trailing).toContain("2026-05-25T13:01:30.000Z");
   });
 
+  it("ticks the island timer for a solo starting thread the same way as banner rows", () => {
+    const layout = AgentActivity(
+      {
+        ...props,
+        activities: [
+          makeRow({
+            phase: "starting",
+            status: "Connecting",
+            startedAt: "2026-05-25T13:01:30.000Z",
+          }),
+        ],
+      },
+      environment as never,
+    );
+    const compact = JSON.stringify(layout.compactTrailing);
+    const expanded = JSON.stringify(layout.expandedTrailing);
+    const banner = JSON.stringify(layout.banner);
+    expect(compact).toContain('"dateStyle":"timer"');
+    expect(compact).toContain("2026-05-25T13:01:30.000Z");
+    expect(expanded).toContain('"dateStyle":"timer"');
+    expect(expanded).toContain("2026-05-25T13:01:30.000Z");
+    expect(banner).toContain('"dateStyle":"timer"');
+  });
+
   it("names mixed attention as need you", () => {
     const layout = AgentActivity(
       {
