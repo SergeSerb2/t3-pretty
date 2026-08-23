@@ -20,6 +20,7 @@ import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
 import rightPanelLayoutSource from "../rightPanelLayout.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
+import pullRequestsRouteSource from "../routes/_chat.pull-requests.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
 import sceneryLayerSource from "./SceneryLayer.tsx?raw";
@@ -157,6 +158,15 @@ describe("glass contract with upstream chrome", () => {
     expect(sceneryCssSource).toMatch(
       /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*background-color: var\(--sidebar\);/s,
     );
+  });
+
+  it("the pull requests page still exposes the hooks its scenery glass targets", () => {
+    expect(pullRequestsRouteSource).toContain("data-pull-requests-column");
+    expect(pullRequestsRouteSource).toContain("data-pull-requests-panel");
+    expect(pullRequestsRouteSource).toContain("data-pull-requests-header");
+    expect(sceneryCssSource).toContain("[data-pull-requests-column]");
+    expect(sceneryCssSource).toContain("[data-pull-requests-panel]");
+    expect(sceneryCssSource).toContain("[data-pull-requests-header]");
   });
 
   it("the bottom terminal drawer wears the same chrome glass plate as the sidebars", () => {

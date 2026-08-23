@@ -1479,6 +1479,18 @@ function PullRequestsRouteView() {
       onProject={(projectId, environmentId) =>
         updateListScope(environmentId === undefined ? { projectId } : { projectId, environmentId })
       }
+      onReset={() =>
+        updateListScope({
+          state: "open",
+          involvement: "all",
+          host: undefined,
+          environmentId: undefined,
+          projectId: undefined,
+          draft: undefined,
+          review: undefined,
+          checks: undefined,
+        })
+      }
     />
   );
   const columnProps = {
@@ -1835,13 +1847,18 @@ function PullRequestsColumn({
   }, [condensed]);
 
   return (
-    // Painted flat like the chat column: the inset underneath carries the chrome grain, and a
-    // content surface that lets it show reads as a different background than every thread.
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+    // Painted flat like the chat column outside scenery: the inset underneath carries the
+    // chrome grain. In world-scenery the attribute hook lets the photo carry through instead
+    // (scenery.css), and the content panel below frosts its own plate for readability.
+    <div data-pull-requests-column className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
       {/* A closed right panel leaves this column full-width, so the shared header
           reserves native window controls. While the panel is open, the column ends
           at the panel and the absolute controls strip owns the top-right corner. */}
-      <WorkspacePageHeader electron={isElectron} reserveNativeControls={!rightPanelOpen}>
+      <WorkspacePageHeader
+        data-pull-requests-header
+        electron={isElectron}
+        reserveNativeControls={!rightPanelOpen}
+      >
         {condensed ? (
           <WorkspaceBreadcrumb ariaLabel="Pull request scope">
             {/* The page name remains the foreground anchor in both states; the live filters are
@@ -1908,19 +1925,23 @@ function PullRequestsColumn({
             settings page makes: at rest the controls sit fully below the mask, and only
             content actually passing under the chrome fades. */}
         <WorkspacePageContainer className="gap-4">
-          <div className="flex flex-col gap-3">
-            <div ref={inFlowSearchRef} className="flex items-center gap-2">
-              {searchInput}
-              {filtersMenu}
-              {!condensed ? (
-                <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-              ) : null}
+          {/* Controls and list ride as one surface; in world-scenery this becomes the
+              page's frosted plate (scenery.css), outside it stays unstyled flow. */}
+          <div data-pull-requests-panel className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
+              <div ref={inFlowSearchRef} className="flex items-center gap-2">
+                {searchInput}
+                {filtersMenu}
+                {!condensed ? (
+                  <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                ) : null}
+              </div>
+              {/* Scrolled past this marker, the controls are gone and the title takes over. */}
+              <div ref={markerRef} aria-hidden className="-mt-3 h-px w-full" />
             </div>
-            {/* Scrolled past this marker, the controls are gone and the title takes over. */}
-            <div ref={markerRef} aria-hidden className="-mt-3 h-px w-full" />
-          </div>
 
-          {listBody}
+            {listBody}
+          </div>
         </WorkspacePageContainer>
       </div>
     </div>
