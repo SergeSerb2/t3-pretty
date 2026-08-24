@@ -6,7 +6,7 @@ shared runtime code. It separates changes that were safe to make without a
 product decision from findings that need an explicit tradeoff.
 
 During wrap-up on 2026-08-24, the fork's main branch had been force-rewritten.
-The draft PR was therefore integrated conservatively onto that refreshed main:
+The PR was therefore integrated conservatively onto that refreshed main:
 current-main behavior wins at overlapping or structurally ambiguous changes,
 and retired OpenCode, canvas, and desktop-capture paths remain retired. The
 final PR diff is the source of truth for which compatible audit fixes survived
