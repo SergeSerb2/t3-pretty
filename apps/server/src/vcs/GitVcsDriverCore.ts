@@ -2600,6 +2600,20 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       { concurrency: 16 },
     );
     const worktreeMap = new Map(existingWorktreeEntries);
+    // Git keeps counting a branch as checked out in a worktree whose directory is gone, and
+    // refuses to move, fetch into, or re-add that branch until the entry is pruned. Prune where
+    // the stale entry is noticed, so every later write sees what this snapshot reports.
+    const hasPrunableWorktree = worktreeListResult.stdout
+      .split("\0")
+      .some((field) => field === "prunable" || field.startsWith("prunable "));
+    if (hasPrunableWorktree) {
+      yield* executeGit(
+        "GitVcsDriver.listRefs.pruneWorktrees",
+        fetchCwd,
+        [...gitDirArgs, "worktree", "prune"],
+        { timeoutMs: 30_000, allowNonZeroExit: true },
+      );
+    }
     const localBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];
     const remoteBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];
 

@@ -527,6 +527,25 @@ it.effect("ignores worktree metadata for directories that no longer exist", () =
   ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
+it.effect("prunes a worktree entry whose directory is gone so git releases its branch", () =>
+  Effect.gen(function* () {
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const pathService = yield* Path.Path;
+    const cwd = yield* makeTmpDir();
+    const worktreePath = pathService.join(yield* makeTmpDir("git-vcs-driver-worktree-"), "gone");
+    yield* initRepoWithCommit(cwd);
+    yield* git(cwd, ["worktree", "add", "-b", "feature/gone", worktreePath]);
+    yield* fileSystem.remove(worktreePath, { recursive: true });
+
+    const refs = yield* driver.listRefs({ cwd, refresh: true });
+
+    assert.equal(refs.refs.find((ref) => ref.name === "feature/gone")?.worktreePath, null);
+    // Unpruned, git answers "cannot force update the branch ... used by worktree".
+    yield* git(cwd, ["branch", "--force", "feature/gone", "HEAD"]);
+  }).pipe(Effect.provide(TestLayer)),
+);
+
 it.effect("refreshes the current branch after an external checkout", () =>
   Effect.scoped(
     Effect.gen(function* () {
