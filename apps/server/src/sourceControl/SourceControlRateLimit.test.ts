@@ -120,3 +120,30 @@ it.effect("keeps a fresh provider reset from an older request", () =>
     assert.equal((yield* Effect.flip(limits.check(github))).retryAt, 61_000);
   }).pipe(Effect.provide(SourceControlRateLimit.layer)),
 );
+
+it.effect("bounds retained cooldown and generation entries across one-off hosts", () =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(0);
+    const limits = yield* SourceControlRateLimit.SourceControlRateLimit;
+    for (
+      let index = 0;
+      index <= SourceControlRateLimit.SOURCE_CONTROL_RATE_LIMIT_CAPACITY;
+      index += 1
+    ) {
+      const host = `github-${index}.example.com`;
+      const lease = yield* limits.check({ provider: "github", host });
+      yield* limits.recordRateLimit({ provider: "github", host, lease });
+    }
+
+    assert.equal(yield* limits.check({ provider: "github", host: "github-0.example.com" }), 0);
+    assert.equal(
+      (yield* Effect.flip(
+        limits.check({
+          provider: "github",
+          host: `github-${SourceControlRateLimit.SOURCE_CONTROL_RATE_LIMIT_CAPACITY}.example.com`,
+        }),
+      ))._tag,
+      "SourceControlRateLimitPausedError",
+    );
+  }).pipe(Effect.provide(SourceControlRateLimit.layer)),
+);

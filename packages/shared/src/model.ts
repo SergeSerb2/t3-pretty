@@ -423,7 +423,7 @@ export function applyClaudePromptEffortPrefix(
   if (effort !== "ultrathink") {
     return trimmed;
   }
-  if (trimmed.startsWith("Ultrathink:")) {
+  if (/^ultrathink:/iu.test(trimmed)) {
     return trimmed;
   }
   return `Ultrathink:\n${trimmed}`;

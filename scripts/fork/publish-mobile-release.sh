@@ -595,6 +595,9 @@ else
 
   mkdir -p "$HOME/.cache/t3-pretty-release/cocoapods"
   export CP_HOME_DIR="$HOME/.cache/t3-pretty-release/cocoapods"
+  # Homebrew 5 prompts on a TTY before installing deps; the LaunchAgent has one.
+  export HOMEBREW_NO_ASK=1
+  export HOMEBREW_NO_AUTO_UPDATE=1
   if ! command -v pod >/dev/null; then
     brew install cocoapods
   fi

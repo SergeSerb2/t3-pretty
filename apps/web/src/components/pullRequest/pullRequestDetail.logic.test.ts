@@ -599,6 +599,31 @@ describe("pull request timeline", () => {
     ]);
   });
 
+  it("orders mixed-precision instants chronologically", () => {
+    const source = {
+      ...TIMELINE_SOURCE,
+      createdAt: "2026-07-01T00:00:00Z",
+      commits: [
+        {
+          ...TIMELINE_SOURCE.commits[0]!,
+          committedDate: "2026-07-01T00:00:00.8Z",
+        },
+      ],
+      comments: [
+        {
+          ...TIMELINE_SOURCE.comments[0]!,
+          createdAt: "2026-07-01T00:00:00.9Z",
+        },
+      ],
+    };
+
+    expect(buildPullRequestTimeline(source).map((event) => event.id)).toEqual([
+      "c1",
+      "1baf7bdcafe",
+      "created",
+    ]);
+  });
+
   it("carries the comment url, and leaves the events the host cannot address without one", () => {
     const events = buildPullRequestTimeline({
       ...TIMELINE_SOURCE,

@@ -16,7 +16,12 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { GitCommandError, type ReviewDiffFileContentsInput } from "@t3tools/contracts";
 import { ServerConfig } from "../config.ts";
-import { makeGitVcsDriverCore, splitNullSeparatedGitStdoutPaths } from "./GitVcsDriverCore.ts";
+import {
+  collectBoundedReviewDiffs,
+  makeGitVcsDriverCore,
+  REVIEW_UNTRACKED_AGGREGATE_MAX_CHARS,
+  splitNullSeparatedGitStdoutPaths,
+} from "./GitVcsDriverCore.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 
 const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
@@ -780,6 +785,21 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         });
 
         assert.deepStrictEqual(paths, ["complete.txt", "final.txt"]);
+      }),
+    );
+
+    it.effect("bounds the aggregate retained untracked-file patch", () =>
+      Effect.sync(() => {
+        const result = collectBoundedReviewDiffs([
+          {
+            stdout: "a".repeat(REVIEW_UNTRACKED_AGGREGATE_MAX_CHARS - 1),
+            stdoutTruncated: false,
+          },
+          { stdout: "second patch", stdoutTruncated: false },
+        ]);
+
+        assert.strictEqual(result.diff.length, REVIEW_UNTRACKED_AGGREGATE_MAX_CHARS);
+        assert.strictEqual(result.truncated, true);
       }),
     );
 

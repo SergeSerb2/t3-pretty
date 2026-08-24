@@ -2,9 +2,10 @@ import { EnvironmentHttpApi } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
-import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http";
+import { FetchHttpClient, HttpRouter, HttpServer, HttpServerRequest } from "effect/unstable/http";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
@@ -142,6 +143,15 @@ import { forkParked, ServerActivation } from "./serverActivation.ts";
 // already closes the websocket gracefully. Do not add an artificial drain before
 // those finalizers get a chance to run.
 const HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS = 0;
+// One turn may carry eight compact 14M-character image data URLs plus a
+// 120k-character prompt. Keep a finite transport bound, but leave enough room
+// for the RPC envelope and JSON escaping around that contract-valid payload.
+export const WEBSOCKET_MAX_MESSAGE_BYTES = 128 * 1024 * 1024;
+// HTTP orchestration dispatch accepts the same command envelope as WebSocket.
+// Apply the ceiling while Effect is collecting the body, before HttpApi schema
+// decoding; this also bounds chunked requests without a Content-Length header.
+export const HTTP_MAX_REQUEST_BODY_BYTES = WEBSOCKET_MAX_MESSAGE_BYTES;
+const HTTP_MAX_REQUEST_BODY_SIZE = FileSystem.Size(HTTP_MAX_REQUEST_BODY_BYTES);
 const ResourceAttributionLayerLive = ResourceAttribution.layer;
 const ApplicationObservabilityLive = ObservabilityLive.pipe(
   Layer.provideMerge(ResourceAttributionLayerLive),
@@ -224,8 +234,12 @@ const HttpServerLive = Layer.unwrap(
       return BunHttpServer.layer({
         port: config.port,
         hostname: config.host ?? "127.0.0.1",
+        maxRequestBodySize: HTTP_MAX_REQUEST_BODY_BYTES,
         gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
         websocket: {
+          maxPayloadLength: WEBSOCKET_MAX_MESSAGE_BYTES,
+          backpressureLimit: WEBSOCKET_MAX_MESSAGE_BYTES,
+          closeOnBackpressureLimit: true,
           // Negotiate permessage-deflate with clients that offer it; clients
           // that don't still get uncompressed frames on their connection. A
           // dedicated compressor keeps a per-connection sliding window
@@ -284,7 +298,10 @@ const HttpServerLive = Layer.unwrap(
           // window is shared across frames — that also makes small frames cheap
           // to compress, so no size threshold is set (ws only honors
           // `threshold` when context takeover is disabled).
-          websocket: { perMessageDeflate: true },
+          websocket: {
+            maxPayload: WEBSOCKET_MAX_MESSAGE_BYTES,
+            perMessageDeflate: true,
+          },
         },
       );
     }
@@ -523,6 +540,14 @@ const commandReadinessLayer = HttpRouter.middleware(
   { global: true },
 );
 
+const requestBodyLimitLayer = HttpRouter.middleware(
+  (httpEffect) =>
+    httpEffect.pipe(
+      Effect.provideService(HttpServerRequest.MaxBodySize, HTTP_MAX_REQUEST_BODY_SIZE),
+    ),
+  { global: true },
+);
+
 const PullRequestServiceLive = PullRequestService.layer.pipe(
   // One registry entry per supported host; the service only knows the registry.
   Layer.provide(PullRequestProviderRegistry.layer),
@@ -561,6 +586,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer),
   Layer.provide(commandReadinessLayer),
+  Layer.provide(requestBodyLimitLayer),
   Layer.provide(browserApiCorsLayer),
   Layer.provide(httpCompressionLayer),
 );

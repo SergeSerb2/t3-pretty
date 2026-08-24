@@ -7,7 +7,18 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 import { classifyImageToolItemType } from "@t3tools/shared/imageTool";
 import { deriveToolActivityPresentation } from "@t3tools/shared/toolActivity";
 import { classifySkillLoadItemType } from "@t3tools/shared/skillTool";
-import type { RuntimeContentStreamKind, ToolLifecycleItemType } from "@t3tools/contracts";
+import {
+  PROVIDER_OPTION_AGGREGATE_MAX_CHOICES,
+  PROVIDER_OPTION_AGGREGATE_MAX_TEXT_CHARS,
+  PROVIDER_OPTION_DESCRIPTION_MAX_LENGTH,
+  PROVIDER_OPTION_ID_MAX_LENGTH,
+  PROVIDER_OPTION_LABEL_MAX_LENGTH,
+  PROVIDER_OPTION_MAX_COUNT,
+  PROVIDER_OPTION_VALUE_MAX_LENGTH,
+  PROVIDER_RUNTIME_MAX_PLAN_STEPS,
+  type RuntimeContentStreamKind,
+  type ToolLifecycleItemType,
+} from "@t3tools/contracts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -74,6 +85,43 @@ export interface AcpPlanUpdate {
     readonly step: string;
     readonly status: "pending" | "inProgress" | "completed";
   }>;
+}
+
+/**
+ * Stable, allocation-bounded fingerprint for repeated cumulative ACP plan
+ * notifications. Serializing the full provider payload solely for deduplication
+ * can briefly duplicate a very large plan and retain that copy for the session.
+ */
+export function fingerprintAcpPlanUpdate(payload: AcpPlanUpdate): string {
+  let left = 0x811c9dc5;
+  let right = 0x9e3779b9;
+  let characterCount = 0;
+
+  const mixNumber = (value: number) => {
+    left = Math.imul(left ^ (value & 0xffff), 0x01000193);
+    left = Math.imul(left ^ ((value >>> 16) & 0xffff), 0x01000193);
+    right = Math.imul(right ^ (value & 0xffff), 0x85ebca6b);
+    right = Math.imul(right ^ ((value >>> 16) & 0xffff), 0x85ebca6b);
+  };
+  const mixText = (value: string) => {
+    mixNumber(value.length);
+    characterCount += value.length;
+    for (let index = 0; index < value.length; index += 1) {
+      const code = value.charCodeAt(index);
+      left = Math.imul(left ^ code, 0x01000193);
+      right = Math.imul(right ^ code, 0x85ebca6b);
+    }
+  };
+
+  mixText(payload.explanation ?? "");
+  mixNumber(payload.plan.length);
+  for (const entry of payload.plan) {
+    mixText(entry.step);
+    mixText(entry.status);
+  }
+  return `${payload.plan.length}:${characterCount}:${(left >>> 0).toString(16)}:${(
+    right >>> 0
+  ).toString(16)}`;
 }
 
 export interface AcpPermissionRequest {
@@ -148,15 +196,271 @@ export function findSessionConfigOption(
   return configOptions.find((option) => option.id.trim() === normalizedConfigId);
 }
 
+interface AcpConfigBudget {
+  choices: number;
+  textChars: number;
+}
+
+function boundedAcpConfigIdentity(value: string, maximumChars: number): string | undefined {
+  if (value.length > maximumChars) return undefined;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function boundedAcpConfigPresentation(value: string, maximumChars: number): string | undefined {
+  const normalized = value.slice(0, maximumChars).trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function consumeAcpConfigText(budget: AcpConfigBudget, values: ReadonlyArray<string>): boolean {
+  let addedChars = 0;
+  for (const value of values) addedChars += value.length;
+  if (budget.textChars + addedChars > PROVIDER_OPTION_AGGREGATE_MAX_TEXT_CHARS) return false;
+  budget.textChars += addedChars;
+  return true;
+}
+
+function boundAcpConfigSelectOption(
+  option: EffectAcpSchema.SessionConfigSelectOption,
+): EffectAcpSchema.SessionConfigSelectOption | undefined {
+  const value = boundedAcpConfigIdentity(option.value, PROVIDER_OPTION_VALUE_MAX_LENGTH);
+  if (!value) return undefined;
+  const name = boundedAcpConfigPresentation(option.name, PROVIDER_OPTION_LABEL_MAX_LENGTH) ?? value;
+  const description = option.description
+    ? boundedAcpConfigPresentation(option.description, PROVIDER_OPTION_DESCRIPTION_MAX_LENGTH)
+    : undefined;
+  return {
+    value,
+    name,
+    ...(description ? { description } : {}),
+  };
+}
+
+function acpConfigSelectOptionText(
+  option: EffectAcpSchema.SessionConfigSelectOption,
+): ReadonlyArray<string> {
+  return [option.value, option.name, ...(option.description ? [option.description] : [])];
+}
+
+/**
+ * Keeps the first representable ACP session options within the same budgets as
+ * ModelCapabilities. Provider metadata is intentionally dropped: consumers of
+ * this state use only canonical ids, labels, categories, and choices.
+ */
+export function boundAcpSessionConfigOptions(
+  configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption> | null | undefined,
+): ReadonlyArray<EffectAcpSchema.SessionConfigOption> {
+  if (!configOptions) return [];
+
+  const bounded: Array<EffectAcpSchema.SessionConfigOption> = [];
+  const budget: AcpConfigBudget = { choices: 0, textChars: 0 };
+  let textBudgetExhausted = false;
+
+  for (const option of configOptions) {
+    if (bounded.length >= PROVIDER_OPTION_MAX_COUNT || textBudgetExhausted) break;
+
+    const id = boundedAcpConfigIdentity(option.id, PROVIDER_OPTION_ID_MAX_LENGTH);
+    if (!id) continue;
+    const name = boundedAcpConfigPresentation(option.name, PROVIDER_OPTION_LABEL_MAX_LENGTH) ?? id;
+    const description = option.description
+      ? boundedAcpConfigPresentation(option.description, PROVIDER_OPTION_DESCRIPTION_MAX_LENGTH)
+      : undefined;
+    const category = option.category
+      ? boundedAcpConfigIdentity(option.category, PROVIDER_OPTION_ID_MAX_LENGTH)
+      : undefined;
+
+    if (option.type === "boolean") {
+      if (
+        !consumeAcpConfigText(budget, [
+          id,
+          name,
+          ...(description ? [description] : []),
+          ...(category ? [category] : []),
+        ])
+      ) {
+        break;
+      }
+      bounded.push({
+        type: "boolean",
+        id,
+        name,
+        currentValue: option.currentValue,
+        ...(description ? { description } : {}),
+        ...(category ? { category } : {}),
+      });
+      continue;
+    }
+
+    const currentValue = boundedAcpConfigIdentity(
+      option.currentValue,
+      PROVIDER_OPTION_VALUE_MAX_LENGTH,
+    );
+    if (!currentValue) continue;
+    const descriptorText = [
+      id,
+      name,
+      currentValue,
+      ...(description ? [description] : []),
+      ...(category ? [category] : []),
+    ];
+    const descriptorTextStart = budget.textChars;
+    if (!consumeAcpConfigText(budget, descriptorText)) break;
+
+    const firstEntry = option.options[0];
+    const grouped = firstEntry !== undefined && !("value" in firstEntry);
+    let descriptorChoices = 0;
+
+    if (grouped) {
+      const groups: Array<EffectAcpSchema.SessionConfigSelectGroup> = [];
+      for (const entry of option.options) {
+        if ("value" in entry || descriptorChoices >= PROVIDER_OPTION_MAX_COUNT) break;
+        if (budget.choices >= PROVIDER_OPTION_AGGREGATE_MAX_CHOICES) break;
+
+        const group = boundedAcpConfigIdentity(entry.group, PROVIDER_OPTION_ID_MAX_LENGTH);
+        if (!group) continue;
+        const groupName =
+          boundedAcpConfigPresentation(entry.name, PROVIDER_OPTION_LABEL_MAX_LENGTH) ?? group;
+        const groupTextStart = budget.textChars;
+        if (!consumeAcpConfigText(budget, [group, groupName])) {
+          textBudgetExhausted = true;
+          break;
+        }
+
+        const groupOptions: Array<EffectAcpSchema.SessionConfigSelectOption> = [];
+        for (const nested of entry.options) {
+          if (
+            descriptorChoices >= PROVIDER_OPTION_MAX_COUNT ||
+            budget.choices >= PROVIDER_OPTION_AGGREGATE_MAX_CHOICES
+          ) {
+            break;
+          }
+          const choice = boundAcpConfigSelectOption(nested);
+          if (!choice) continue;
+          if (!consumeAcpConfigText(budget, acpConfigSelectOptionText(choice))) {
+            textBudgetExhausted = true;
+            break;
+          }
+          groupOptions.push(choice);
+          descriptorChoices += 1;
+          budget.choices += 1;
+        }
+
+        if (groupOptions.length > 0) {
+          groups.push({ group, name: groupName, options: groupOptions });
+        } else {
+          budget.textChars = groupTextStart;
+        }
+        if (textBudgetExhausted) break;
+      }
+
+      if (option.options.length > 0 && descriptorChoices === 0) {
+        budget.textChars = descriptorTextStart;
+        if (textBudgetExhausted) break;
+        continue;
+      }
+      bounded.push({
+        type: "select",
+        id,
+        name,
+        currentValue,
+        options: groups,
+        ...(description ? { description } : {}),
+        ...(category ? { category } : {}),
+      });
+    } else {
+      const choices: Array<EffectAcpSchema.SessionConfigSelectOption> = [];
+      for (const entry of option.options) {
+        if (!("value" in entry)) break;
+        if (
+          descriptorChoices >= PROVIDER_OPTION_MAX_COUNT ||
+          budget.choices >= PROVIDER_OPTION_AGGREGATE_MAX_CHOICES
+        ) {
+          break;
+        }
+        const choice = boundAcpConfigSelectOption(entry);
+        if (!choice) continue;
+        if (!consumeAcpConfigText(budget, acpConfigSelectOptionText(choice))) {
+          textBudgetExhausted = true;
+          break;
+        }
+        choices.push(choice);
+        descriptorChoices += 1;
+        budget.choices += 1;
+      }
+
+      if (option.options.length > 0 && descriptorChoices === 0) {
+        budget.textChars = descriptorTextStart;
+        if (textBudgetExhausted) break;
+        continue;
+      }
+      bounded.push({
+        type: "select",
+        id,
+        name,
+        currentValue,
+        options: choices,
+        ...(description ? { description } : {}),
+        ...(category ? { category } : {}),
+      });
+    }
+  }
+
+  return bounded;
+}
+
+function visitSessionConfigOptionValues(
+  configOption: EffectAcpSchema.SessionConfigOption,
+  visit: (value: string) => boolean,
+): void {
+  if (configOption.type !== "select") return;
+  for (const entry of configOption.options) {
+    if ("value" in entry) {
+      if (!visit(entry.value)) return;
+      continue;
+    }
+    for (const option of entry.options) {
+      if (!visit(option.value)) return;
+    }
+  }
+}
+
 export function collectSessionConfigOptionValues(
   configOption: EffectAcpSchema.SessionConfigOption,
 ): ReadonlyArray<string> {
-  if (configOption.type !== "select") {
-    return [];
-  }
-  return configOption.options.flatMap((entry) =>
-    "value" in entry ? [entry.value] : entry.options.map((option) => option.value),
-  );
+  const values: Array<string> = [];
+  visitSessionConfigOptionValues(configOption, (value) => {
+    if (values.length >= PROVIDER_OPTION_MAX_COUNT) return false;
+    values.push(value);
+    return true;
+  });
+  return values;
+}
+
+export function sessionConfigOptionIncludesValue(
+  configOption: EffectAcpSchema.SessionConfigOption,
+  expected: string,
+): boolean {
+  let found = false;
+  visitSessionConfigOptionValues(configOption, (value) => {
+    found = value === expected;
+    return !found;
+  });
+  return found;
+}
+
+export function summarizeSessionConfigOptionValuesForError(
+  configOption: EffectAcpSchema.SessionConfigOption,
+): { readonly values: ReadonlyArray<string>; readonly count: number } {
+  const values: Array<string> = [];
+  let count = 0;
+  visitSessionConfigOptionValues(configOption, (value) => {
+    count += 1;
+    if (values.length < 16) {
+      values.push(boundedAcpConfigPresentation(value, 256) ?? "[empty]");
+    }
+    return true;
+  });
+  return { values, count };
 }
 
 export function parseSessionModeState(
@@ -535,10 +839,13 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       break;
     }
     case "plan": {
-      const plan = upd.entries.map((entry, index) => ({
-        step: entry.content.trim().length > 0 ? entry.content.trim() : `Step ${index + 1}`,
-        status: normalizePlanStepStatus(entry.status),
-      }));
+      const plan = upd.entries.slice(0, PROVIDER_RUNTIME_MAX_PLAN_STEPS).map((entry, index) => {
+        const step = entry.content.trim();
+        return {
+          step: step.length > 0 ? step : `Step ${index + 1}`,
+          status: normalizePlanStepStatus(entry.status),
+        };
+      });
       if (plan.length > 0) {
         events.push({
           _tag: "PlanUpdated",

@@ -1,5 +1,8 @@
-import { CommandId, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { CommandId, EnvironmentId, IsoDateTime, ThreadId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+
+export const THREAD_LIFECYCLE_OUTBOX_MAX_ENTRIES = 65_536;
+export const THREAD_LIFECYCLE_OUTBOX_MAX_JSON_LENGTH = 16 * 1024 * 1024;
 
 export const QueuedThreadLifecycleCommand = Schema.Union([
   Schema.Struct({
@@ -17,7 +20,7 @@ export const QueuedThreadLifecycleCommand = Schema.Union([
     type: Schema.Literal("thread.snooze"),
     commandId: CommandId,
     threadId: ThreadId,
-    snoozedUntil: Schema.String,
+    snoozedUntil: IsoDateTime,
   }),
   Schema.Struct({
     type: Schema.Literal("thread.unsnooze"),
@@ -30,12 +33,14 @@ export type QueuedThreadLifecycleCommand = typeof QueuedThreadLifecycleCommand.T
 
 export const PendingThreadLifecycleEntry = Schema.Struct({
   environmentId: EnvironmentId,
-  queuedAt: Schema.String,
+  queuedAt: IsoDateTime,
   command: QueuedThreadLifecycleCommand,
 });
 export type PendingThreadLifecycleEntry = typeof PendingThreadLifecycleEntry.Type;
 
-export const PendingThreadLifecycleEntries = Schema.Array(PendingThreadLifecycleEntry);
+export const PendingThreadLifecycleEntries = Schema.Array(PendingThreadLifecycleEntry).check(
+  Schema.isMaxLength(THREAD_LIFECYCLE_OUTBOX_MAX_ENTRIES),
+);
 export type PendingThreadLifecycleEntries = typeof PendingThreadLifecycleEntries.Type;
 
 export type ThreadLifecyclePendingByEnvironment = ReadonlyMap<

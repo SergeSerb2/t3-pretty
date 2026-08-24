@@ -4,6 +4,8 @@ import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   FILL_PREVIEW_VIEWPORT,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type PreviewAnnotationPayload,
   type PreviewViewportSetting,
   type ScopedThreadRef,
@@ -20,6 +22,8 @@ import {
 } from "~/browserHistoryStore";
 import { type ComposerImageAttachment, useComposerDraftStore } from "~/composerDraftStore";
 import { previewAnnotationScreenshotFile } from "~/lib/previewAnnotation";
+import { compressImageToByteLimit } from "~/lib/imageCompression";
+import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { ensureLocalApi } from "~/localApi";
 import {
   rememberPreviewUrl,
@@ -73,6 +77,18 @@ interface Props {
 }
 
 const localApi = typeof window === "undefined" ? null : ensureLocalApi();
+
+function runPreviewControl(operation: () => Promise<unknown>): void {
+  void Promise.resolve()
+    .then(operation)
+    .catch((error) => {
+      toastManager.add({
+        type: "error",
+        title: "Preview action failed",
+        description: error instanceof Error ? error.message : "An error occurred.",
+      });
+    });
+}
 
 /**
  * Single-tab preview surface: chrome row on top, one webview below, empty
@@ -201,19 +217,31 @@ export function PreviewView({
   );
 
   const handleRefresh = useCallback(() => {
-    if (previewBridge && runtimeTabId) void previewBridge.refresh(runtimeTabId);
+    const bridge = previewBridge;
+    if (bridge && runtimeTabId) {
+      runPreviewControl(() => bridge.refresh(runtimeTabId));
+    }
   }, [runtimeTabId]);
 
   const handleZoomIn = useCallback(() => {
-    if (previewBridge && runtimeTabId) void previewBridge.zoomIn(runtimeTabId);
+    const bridge = previewBridge;
+    if (bridge && runtimeTabId) {
+      runPreviewControl(() => bridge.zoomIn(runtimeTabId));
+    }
   }, [runtimeTabId]);
 
   const handleZoomOut = useCallback(() => {
-    if (previewBridge && runtimeTabId) void previewBridge.zoomOut(runtimeTabId);
+    const bridge = previewBridge;
+    if (bridge && runtimeTabId) {
+      runPreviewControl(() => bridge.zoomOut(runtimeTabId));
+    }
   }, [runtimeTabId]);
 
   const handleResetZoom = useCallback(() => {
-    if (previewBridge && runtimeTabId) void previewBridge.resetZoom(runtimeTabId);
+    const bridge = previewBridge;
+    if (bridge && runtimeTabId) {
+      runPreviewControl(() => bridge.resetZoom(runtimeTabId));
+    }
   }, [runtimeTabId]);
 
   const handleViewportChange = useCallback(
@@ -264,11 +292,17 @@ export function PreviewView({
   }, [handleViewportChange, runtimeTabId]);
 
   const handleBack = useCallback(() => {
-    if (previewBridge && runtimeTabId) void previewBridge.goBack(runtimeTabId);
+    const bridge = previewBridge;
+    if (bridge && runtimeTabId) {
+      runPreviewControl(() => bridge.goBack(runtimeTabId));
+    }
   }, [runtimeTabId]);
 
   const handleForward = useCallback(() => {
-    if (previewBridge && runtimeTabId) void previewBridge.goForward(runtimeTabId);
+    const bridge = previewBridge;
+    if (bridge && runtimeTabId) {
+      runPreviewControl(() => bridge.goForward(runtimeTabId));
+    }
   }, [runtimeTabId]);
 
   const handleOpenInBrowser = useCallback(() => {
@@ -314,20 +348,7 @@ export function PreviewView({
             let toastId: ReturnType<typeof toastManager.add>;
 
             const copyPath = () => {
-              if (!navigator.clipboard?.writeText) {
-                toastManager.update(
-                  toastId,
-                  stackedThreadToast({
-                    type: "error",
-                    title: "Unable to copy recording path",
-                    description: "Clipboard API unavailable.",
-                    actionProps: revealAction,
-                  }),
-                );
-                return;
-              }
-
-              void navigator.clipboard.writeText(artifact.path).then(
+              void writeTextToClipboard(artifact.path, "recording path").then(
                 () => {
                   pathCopied = true;
                   updateRecordingToast();
@@ -455,16 +476,7 @@ export function PreviewView({
           };
 
           const copyPath = () => {
-            if (!navigator.clipboard?.writeText) {
-              updateScreenshotToast(
-                "error",
-                "Unable to copy screenshot path",
-                "Clipboard API unavailable.",
-              );
-              return;
-            }
-
-            void navigator.clipboard.writeText(artifact.path).then(
+            void writeTextToClipboard(artifact.path, "screenshot path").then(
               () => {
                 pathCopied = true;
                 updateScreenshotToast();
@@ -564,12 +576,27 @@ export function PreviewView({
         addPreviewAnnotation(threadRef, annotation);
         let screenshotFile: File | null = null;
         try {
-          screenshotFile = await previewAnnotationScreenshotFile(annotation);
+          const capturedFile = await previewAnnotationScreenshotFile(annotation);
+          if (capturedFile) {
+            const compressed = await compressImageToByteLimit(
+              capturedFile,
+              PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+            );
+            if (compressed.ok) {
+              screenshotFile = compressed.file;
+            } else {
+              toastManager.add({
+                type: "warning",
+                title: "Annotation attached without screenshot",
+                description: "The screenshot is too large to attach safely.",
+              });
+            }
+          }
         } catch {
           // The structured annotation is still sendable when converting its
           // optional screenshot into a composer attachment fails.
         }
-        const image =
+        let image =
           screenshotFile && annotation.screenshot
             ? ({
                 type: "image",
@@ -577,12 +604,19 @@ export function PreviewView({
                 name: screenshotFile.name,
                 mimeType: screenshotFile.type,
                 sizeBytes: screenshotFile.size,
-                previewUrl: annotation.screenshot.dataUrl,
+                previewUrl: URL.createObjectURL(screenshotFile),
                 file: screenshotFile,
               } satisfies ComposerImageAttachment)
             : null;
         if (image) {
-          addImage(threadRef, image);
+          if (!addImage(threadRef, image)) {
+            image = null;
+            toastManager.add({
+              type: "warning",
+              title: "Annotation attached without screenshot",
+              description: `A message can carry ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images. Remove one to attach this screenshot.`,
+            });
+          }
         }
         if (submission === "send") {
           onSendAnnotation?.(annotation, image);

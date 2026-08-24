@@ -98,7 +98,11 @@ import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavai
 import { DiffPanelLoadingState } from "../DiffPanelShell";
 import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
 import type { PullRequestAgentSelectionInput } from "./PullRequestCodeTab";
-import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
+import {
+  openOnHostLabel,
+  openPullRequestLinkOnHost,
+  showPullRequestLinkContextMenu,
+} from "./pullRequestLinkContextMenu";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 import { PullRequestTimelineTab } from "./PullRequestTimelineTab";
 import {
@@ -239,6 +243,26 @@ const PullRequestCodeTab = lazy(loadCodeTab);
  * apart from the one they were handed: only the sentence still exactly as written may be replaced.
  */
 const lastHandoffPromptByDraft = new Map<string, string>();
+const MAX_LAST_HANDOFF_PROMPTS = 128;
+
+function readLastHandoffPrompt(key: string): string | undefined {
+  const prompt = lastHandoffPromptByDraft.get(key);
+  if (prompt !== undefined) {
+    lastHandoffPromptByDraft.delete(key);
+    lastHandoffPromptByDraft.set(key, prompt);
+  }
+  return prompt;
+}
+
+function rememberLastHandoffPrompt(key: string, prompt: string): void {
+  lastHandoffPromptByDraft.delete(key);
+  lastHandoffPromptByDraft.set(key, prompt);
+  while (lastHandoffPromptByDraft.size > MAX_LAST_HANDOFF_PROMPTS) {
+    const oldestKey = lastHandoffPromptByDraft.keys().next().value;
+    if (oldestKey === undefined) break;
+    lastHandoffPromptByDraft.delete(oldestKey);
+  }
+}
 
 const composerTargetKey = (target: ScopedThreadRef | DraftId): string =>
   typeof target === "string" ? target : scopedThreadKey(target);
@@ -433,7 +457,21 @@ export function PullRequestDetailPanel({
    */
   composerDraftTarget?: ScopedThreadRef | DraftId;
 }) {
-  const pullRequestKey = `${reference.projectId}:${reference.repository}#${reference.number}`;
+  const pullRequestKey = JSON.stringify([
+    environmentId,
+    reference.projectId,
+    reference.repository,
+    reference.number,
+  ]);
+  const activePullRequestKeyRef = useRef(pullRequestKey);
+  const mountedRef = useRef(false);
+  activePullRequestKeyRef.current = pullRequestKey;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const viewKey = pullRequestPanelViewKey(
     pullRequestPanelSessionKey(composerDraftTarget, environmentId),
     reference,
@@ -527,6 +565,7 @@ export function PullRequestDetailPanel({
   // alone. One at a time whatever the key: they all check the same pull request out.
   const [handoff, setHandoff] = useState<string | null>(null);
   const [fixAllOpen, setFixAllOpen] = useState(false);
+  const handoffInFlightRef = useRef(false);
   const { copyToClipboard: copyBranchToClipboard, isCopied: isBranchCopied } = useCopyToClipboard({
     target: "branch name",
     timeout: 1600,
@@ -632,6 +671,27 @@ export function PullRequestDetailPanel({
   const [refreshToken, setRefreshToken] = useState(0);
   const wantDiffReset = useRef(false);
   const hostRefreshInFlight = useRef(false);
+  const hostRefreshScopeRef = useRef<string | null>(null);
+  const hostRefreshReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    hostRefreshScopeRef.current = pullRequestKey;
+    hostRefreshInFlight.current = false;
+    wantDiffReset.current = false;
+    if (hostRefreshReleaseTimerRef.current !== null) {
+      clearTimeout(hostRefreshReleaseTimerRef.current);
+      hostRefreshReleaseTimerRef.current = null;
+    }
+    return () => {
+      if (hostRefreshScopeRef.current === pullRequestKey) {
+        hostRefreshScopeRef.current = null;
+      }
+      hostRefreshInFlight.current = false;
+      if (hostRefreshReleaseTimerRef.current !== null) {
+        clearTimeout(hostRefreshReleaseTimerRef.current);
+        hostRefreshReleaseTimerRef.current = null;
+      }
+    };
+  }, [pullRequestKey]);
   const refreshFromHost = useCallback(
     async (resetDiff = true) => {
       if (resetDiff) wantDiffReset.current = true;
@@ -639,8 +699,11 @@ export function PullRequestDetailPanel({
       // strands that request on an old epoch and pays for the same answer twice.
       if (hostRefreshInFlight.current || detailQuery.isPending || activityQuery.isPending) return;
       hostRefreshInFlight.current = true;
+      const refreshScope = pullRequestKey;
+      const isCurrentRefresh = () => hostRefreshScopeRef.current === refreshScope;
       try {
         await invalidate({ environmentId, input: { reference } });
+        if (!isCurrentRefresh()) return;
         refreshDetail();
         diffWarmUpQuery.refresh();
         if (wantDiffReset.current) {
@@ -648,9 +711,17 @@ export function PullRequestDetailPanel({
           setRefreshToken((token) => token + 1);
         }
       } finally {
-        setTimeout(() => {
-          hostRefreshInFlight.current = false;
-        }, PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS);
+        if (isCurrentRefresh()) {
+          const releaseTimer = setTimeout(() => {
+            if (hostRefreshScopeRef.current === refreshScope) {
+              hostRefreshInFlight.current = false;
+            }
+            if (hostRefreshReleaseTimerRef.current === releaseTimer) {
+              hostRefreshReleaseTimerRef.current = null;
+            }
+          }, PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS);
+          hostRefreshReleaseTimerRef.current = releaseTimer;
+        }
       }
     },
     [
@@ -659,6 +730,7 @@ export function PullRequestDetailPanel({
       diffWarmUpQuery.refresh,
       environmentId,
       invalidate,
+      pullRequestKey,
       reference,
       refreshDetail,
     ],
@@ -669,7 +741,7 @@ export function PullRequestDetailPanel({
   // request every time it is opened. These reads go through the server's cache: only the refresh
   // button punches through it.
   useLiveRefresh(detailQuery.refresh, {
-    key: `pull-request:${reference.projectId}:${reference.repository}#${reference.number}`,
+    key: `pull-request:${pullRequestKey}`,
     intervalMs: PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS,
     minIntervalMs: PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS,
   });
@@ -696,7 +768,11 @@ export function PullRequestDetailPanel({
   const runAction = useAtomCommand(pullRequestEnvironment.runAction, { reportFailure: false });
   // Which action is in flight, not merely that one is: every control here is disabled while any
   // of them runs, but only the button that was pressed may say what it is doing.
-  const [pendingAction, setPendingAction] = useState<PullRequestAction | null>(null);
+  const [pendingActions, setPendingActions] = useState<ReadonlyMap<string, PullRequestAction>>(
+    () => new Map(),
+  );
+  const pendingActionsRef = useRef(new Map<string, PullRequestAction>());
+  const pendingAction = pendingActions.get(pullRequestKey) ?? null;
   const actionPending = pendingAction !== null;
   const update = useAtomCommand(pullRequestEnvironment.update, { reportFailure: false });
   // Scoped to the pull request it was typed against, since this one panel shows a different one
@@ -706,7 +782,11 @@ export function PullRequestDetailPanel({
     readonly text: string;
   } | null>(null);
   const titleDraft = titleScope?.pullRequestKey === pullRequestKey ? titleScope.text : null;
-  const [titleSaving, setTitleSaving] = useState(false);
+  const [titleSavingTargets, setTitleSavingTargets] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const titleSavingTargetsRef = useRef(new Set<string>());
+  const titleSaving = titleSavingTargets.has(pullRequestKey);
   const newThread = useNewThreadHandler();
   const { environments } = useEnvironments();
   const projects = useProjects();
@@ -746,76 +826,120 @@ export function PullRequestDetailPanel({
     method?: PullRequestMergeMethod,
     updateMethod?: PullRequestUpdateMethod,
   ) => {
-    if (pendingAction !== null) return;
-    setPendingAction(action);
-    const result = await runAction({
-      environmentId,
-      input: {
-        ...reference,
-        action,
-        ...(method ? { mergeMethod: method } : {}),
-        ...(updateMethod ? { updateMethod } : {}),
-      },
-    });
-    setPendingAction(null);
-    if (result._tag === "Failure") {
-      // The host's own sentence, because it is the only thing that says why. A merge strategy a
-      // branch policy forbids is refused at completion and nowhere earlier — Azure DevOps
-      // publishes no per-strategy availability to hide the control with — so "action failed"
-      // would leave the reader pressing the same button again.
-      const failure = squashAtomCommandFailure(result);
-      // The hint stands for what was actually asked for: a reader who pressed Update branch is
-      // told to check their access, not offered the merge commit they already chose.
-      const hint =
-        updateMethod === "rebase"
-          ? UPDATE_BRANCH_REBASE_FAILURE_HINT
-          : ACTION_FAILURE_HINTS[action];
-      toastManager.add({
-        type: "error",
-        title: ACTION_FAILURE_LABELS[action],
-        description: readableFailure(failure, hint),
+    if (pendingActionsRef.current.has(pullRequestKey)) return;
+    pendingActionsRef.current.set(pullRequestKey, action);
+    setPendingActions((current) => new Map(current).set(pullRequestKey, action));
+    try {
+      const result = await runAction({
+        environmentId,
+        input: {
+          ...reference,
+          action,
+          ...(method ? { mergeMethod: method } : {}),
+          ...(updateMethod ? { updateMethod } : {}),
+        },
       });
-      return;
+      if (!mountedRef.current || activePullRequestKeyRef.current !== pullRequestKey) return;
+      if (result._tag === "Failure") {
+        // The host's own sentence, because it is the only thing that says why. A merge strategy a
+        // branch policy forbids is refused at completion and nowhere earlier — Azure DevOps
+        // publishes no per-strategy availability to hide the control with — so "action failed"
+        // would leave the reader pressing the same button again.
+        const failure = squashAtomCommandFailure(result);
+        // The hint stands for what was actually asked for: a reader who pressed Update branch is
+        // told to check their access, not offered the merge commit they already chose.
+        const hint =
+          updateMethod === "rebase"
+            ? UPDATE_BRANCH_REBASE_FAILURE_HINT
+            : ACTION_FAILURE_HINTS[action];
+        toastManager.add({
+          type: "error",
+          title: ACTION_FAILURE_LABELS[action],
+          description: readableFailure(failure, hint),
+        });
+        return;
+      }
+      toastManager.add({ type: "success", title: ACTION_SUCCESS_LABELS[action] });
+      // A branch update moves the head commit, which leaves the diff atom pointed at a comparison
+      // that no longer exists — the same staleness the manual refresh button fixes, so it goes
+      // through that path rather than a second one. Every other action here only changes metadata;
+      // a merge does move the branch too, but it also closes the pull request, where the diff is
+      // no longer what anyone is looking at.
+      if (pullRequestActionNeedsHostRefresh(action)) {
+        void refreshFromHost();
+      } else {
+        refreshDetail();
+      }
+      onActed?.();
+    } catch (error) {
+      if (mountedRef.current && activePullRequestKeyRef.current === pullRequestKey) {
+        toastManager.add({
+          type: "error",
+          title: ACTION_FAILURE_LABELS[action],
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        });
+      }
+    } finally {
+      pendingActionsRef.current.delete(pullRequestKey);
+      if (mountedRef.current) {
+        setPendingActions((current) => {
+          if (!current.has(pullRequestKey)) return current;
+          const next = new Map(current);
+          next.delete(pullRequestKey);
+          return next;
+        });
+      }
     }
-    toastManager.add({ type: "success", title: ACTION_SUCCESS_LABELS[action] });
-    // A branch update moves the head commit, which leaves the diff atom pointed at a comparison
-    // that no longer exists — the same staleness the manual refresh button fixes, so it goes
-    // through that path rather than a second one. Every other action here only changes metadata;
-    // a merge does move the branch too, but it also closes the pull request, where the diff is
-    // no longer what anyone is looking at.
-    if (pullRequestActionNeedsHostRefresh(action)) {
-      void refreshFromHost();
-    } else {
-      refreshDetail();
-    }
-    onActed?.();
   };
 
   const saveTitle = async (next: string) => {
     const title = next.trim();
-    if (detail === null || titleSaving) return;
+    if (detail === null || titleSavingTargetsRef.current.has(pullRequestKey)) return;
     if (title.length === 0 || title === detail.title) {
       setTitleScope(null);
       return;
     }
-    setTitleSaving(true);
-    const result = await update({ environmentId, input: { ...reference, title } });
-    setTitleSaving(false);
-    if (result._tag === "Failure") {
-      // The draft stays open with the words still in it: retyping a title somebody has just
-      // rewritten is the one thing a failed save must not cost them.
-      toastManager.add({
-        type: "error",
-        title: "The title could not be saved",
-        description: readableFailure(
-          squashAtomCommandFailure(result),
-          "The host refused the new title.",
-        ),
-      });
-      return;
+    titleSavingTargetsRef.current.add(pullRequestKey);
+    setTitleSavingTargets((current) => new Set(current).add(pullRequestKey));
+    try {
+      const result = await update({ environmentId, input: { ...reference, title } });
+      if (!mountedRef.current) return;
+      if (result._tag === "Failure") {
+        // The draft stays open with the words still in it: retyping a title somebody has just
+        // rewritten is the one thing a failed save must not cost them.
+        if (activePullRequestKeyRef.current === pullRequestKey) {
+          toastManager.add({
+            type: "error",
+            title: "The title could not be saved",
+            description: readableFailure(
+              squashAtomCommandFailure(result),
+              "The host refused the new title.",
+            ),
+          });
+        }
+        return;
+      }
+      setTitleScope((current) => (current?.pullRequestKey === pullRequestKey ? null : current));
+      if (activePullRequestKeyRef.current === pullRequestKey) refreshDetail();
+    } catch (error) {
+      if (mountedRef.current && activePullRequestKeyRef.current === pullRequestKey) {
+        toastManager.add({
+          type: "error",
+          title: "The title could not be saved",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        });
+      }
+    } finally {
+      titleSavingTargetsRef.current.delete(pullRequestKey);
+      if (mountedRef.current) {
+        setTitleSavingTargets((current) => {
+          if (!current.has(pullRequestKey)) return current;
+          const nextSet = new Set(current);
+          nextSet.delete(pullRequestKey);
+          return nextSet;
+        });
+      }
     }
-    setTitleScope(null);
-    refreshDetail();
   };
 
   type ThreadTask = {
@@ -842,10 +966,10 @@ export function PullRequestDetailPanel({
     const draft = store.getComposerDraft(target);
     const key = composerTargetKey(target);
     const prompt = handoffPrompt(
-      { prompt: draft?.prompt ?? "", lastHandoffPrompt: lastHandoffPromptByDraft.get(key) },
+      { prompt: draft?.prompt ?? "", lastHandoffPrompt: readLastHandoffPrompt(key) },
       task.prompt,
     );
-    lastHandoffPromptByDraft.set(key, task.prompt);
+    rememberLastHandoffPrompt(key, task.prompt);
     store.setPrompt(target, prompt);
     store.setReviewComments(
       target,
@@ -883,7 +1007,7 @@ export function PullRequestDetailPanel({
 
   /** A question about the change, which needs a thread and nothing else. */
   const startAsk = async (kind: string, task: ThreadTask) => {
-    if (!detail || handoff !== null) return;
+    if (!detail || handoffInFlightRef.current) return;
     if (attachTarget !== null) {
       writeTaskToComposer(attachTarget, task);
       toastManager.add({
@@ -896,16 +1020,31 @@ export function PullRequestDetailPanel({
       });
       return;
     }
+    handoffInFlightRef.current = true;
     setHandoff(kind);
     const projectRef = scopeProjectRef(actingEnvironmentId, acting?.projectId ?? detail.projectId);
-    const opened = await openThreadWithTask(projectRef, task);
-    setHandoff(null);
+    let opened: { draftId: DraftId } | null = null;
+    let openError: unknown = null;
+    try {
+      opened = await openThreadWithTask(projectRef, task);
+    } catch (error) {
+      openError = error;
+    } finally {
+      handoffInFlightRef.current = false;
+      if (mountedRef.current && activePullRequestKeyRef.current === pullRequestKey)
+        setHandoff(null);
+    }
     if (opened === null) {
-      toastManager.add({
-        type: "error",
-        title: "Could not open a thread",
-        description: "Try again from the project, or open a thread first.",
-      });
+      if (mountedRef.current && activePullRequestKeyRef.current === pullRequestKey) {
+        toastManager.add({
+          type: "error",
+          title: "Could not open a thread",
+          description:
+            openError instanceof Error
+              ? openError.message
+              : "Try again from the project, or open a thread first.",
+        });
+      }
       return;
     }
     toastManager.add({
@@ -933,7 +1072,7 @@ export function PullRequestDetailPanel({
     destination: "this-thread" | "new-thread" = "this-thread",
     run?: { readonly modelSelection: ModelSelection },
   ) => {
-    if (!detail || handoff !== null) return;
+    if (!detail || handoffInFlightRef.current) return;
     const sendAfterWrite = (target: ScopedThreadRef | DraftId, threadId?: ThreadId) => {
       if (!run || task === null) return;
       const store = useComposerDraftStore.getState();
@@ -958,6 +1097,7 @@ export function PullRequestDetailPanel({
       });
       return;
     }
+    handoffInFlightRef.current = true;
     setHandoff(kind);
     // The menu closes on the press and takes its "Preparing..." label with it, so this is the
     // only thing answering for the checkout. It carries no timeout of its own: a loading toast
@@ -977,7 +1117,9 @@ export function PullRequestDetailPanel({
       () => null,
     );
     if (opened === null) {
-      setHandoff(null);
+      handoffInFlightRef.current = false;
+      if (mountedRef.current && activePullRequestKeyRef.current === pullRequestKey)
+        setHandoff(null);
       // Without a thread there is nowhere for the checkout to belong: its setup script would not
       // run and its task would have no composer to land in. Better to stop before touching the
       // working tree than to prepare a worktree nobody asked for.
@@ -988,13 +1130,31 @@ export function PullRequestDetailPanel({
       });
       return;
     }
-    const prepared = await prepareThread.run({
-      reference: detail.url,
-      mode,
-      threadId: opened.threadId,
-    });
+    const prepared = await prepareThread
+      .run({
+        reference: detail.url,
+        mode,
+        threadId: opened.threadId,
+      })
+      .catch((error: unknown) => {
+        handoffInFlightRef.current = false;
+        if (mountedRef.current && activePullRequestKeyRef.current === pullRequestKey) {
+          setHandoff(null);
+        }
+        toastManager.update(toastId, {
+          type: "error",
+          title: "Could not prepare the pull request checkout",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        });
+        return null;
+      });
+    if (prepared === null) {
+      return;
+    }
     if (prepared._tag === "Failure") {
-      setHandoff(null);
+      handoffInFlightRef.current = false;
+      if (mountedRef.current && activePullRequestKeyRef.current === pullRequestKey)
+        setHandoff(null);
       // The server says what to do about it — that the branch is already checked out in the main
       // repository, say — and that sentence is the only way out of the failure.
       const detailMessage =
@@ -1017,7 +1177,9 @@ export function PullRequestDetailPanel({
       () => false,
     );
     if (!pointed) {
-      setHandoff(null);
+      handoffInFlightRef.current = false;
+      if (mountedRef.current && activePullRequestKeyRef.current === pullRequestKey)
+        setHandoff(null);
       // The checkout is on disk; only the thread failed to move onto it. Writing the task now
       // would send the agent at whatever the thread was already open on — which is the one
       // outcome worth stopping for, since it reads as success and is not.
@@ -1030,7 +1192,8 @@ export function PullRequestDetailPanel({
     }
     // Released here whatever happened next: a loading toast never expires on its own, so leaving
     // this set would spin forever and lock every handoff behind it until a reload.
-    setHandoff(null);
+    handoffInFlightRef.current = false;
+    if (mountedRef.current && activePullRequestKeyRef.current === pullRequestKey) setHandoff(null);
     // A worktree that was already there and had been worked in keeps whatever it holds, so the
     // thread opens on older code than the pull request carries. Said once, in place of the
     // success, because everything else about the handoff did happen.
@@ -1321,7 +1484,7 @@ export function PullRequestDetailPanel({
                     render={
                       <button
                         type="button"
-                        onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
+                        onClick={() => void openPullRequestLinkOnHost(detail.url)}
                         onContextMenu={(event) => openNumberContextMenu(event, detail)}
                         className={cn(
                           "shrink-0 font-medium underline-offset-2 hover:underline",
@@ -1356,7 +1519,7 @@ export function PullRequestDetailPanel({
                       <button
                         type="button"
                         tabIndex={condensed ? 0 : -1}
-                        onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
+                        onClick={() => void openPullRequestLinkOnHost(detail.url)}
                         onContextMenu={(event) => openNumberContextMenu(event, detail)}
                         className={cn(
                           "shrink-0 font-medium underline-offset-2 hover:underline",

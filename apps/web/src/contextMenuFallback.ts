@@ -210,8 +210,17 @@ export function showContextMenuFallback<T extends string>(
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const menuStack: HTMLDivElement[] = [];
     const submenuTriggerStack: Array<HTMLButtonElement | undefined> = [];
+    const pendingFrames = new Set<number>();
     let isDisposed = false;
     let canDismissFromPointer = false;
+
+    const scheduleFrame = (callback: () => void) => {
+      const frameId = requestAnimationFrame(() => {
+        pendingFrames.delete(frameId);
+        if (!isDisposed) callback();
+      });
+      pendingFrames.add(frameId);
+    };
 
     const dismiss = () => cleanup(null);
 
@@ -226,6 +235,10 @@ export function showContextMenuFallback<T extends string>(
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("contextmenu", onContextMenu, true);
+      for (const frameId of pendingFrames) {
+        cancelAnimationFrame(frameId);
+      }
+      pendingFrames.clear();
       const shouldRestoreFocus = isNodeWithinMenuStack(document.activeElement, menuStack);
       for (const menu of menuStack) {
         menu.remove();
@@ -469,8 +482,10 @@ export function showContextMenuFallback<T extends string>(
       menuStack[level] = menu;
       submenuTriggerStack[level] = parentTrigger;
 
-      requestAnimationFrame(() => {
-        clampMenuPosition(menu, preferredLeft, preferredTop);
+      scheduleFrame(() => {
+        if (menu.isConnected) {
+          clampMenuPosition(menu, preferredLeft, preferredTop);
+        }
       });
     };
 
@@ -486,7 +501,7 @@ export function showContextMenuFallback<T extends string>(
     }
     activeContextMenuDismiss = dismiss;
 
-    requestAnimationFrame(() => {
+    scheduleFrame(() => {
       canDismissFromPointer = true;
     });
   });

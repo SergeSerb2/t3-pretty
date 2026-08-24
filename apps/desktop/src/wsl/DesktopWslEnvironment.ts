@@ -25,6 +25,9 @@ const BUILD_TIMEOUT = Duration.minutes(5);
 const USER_HOME_TIMEOUT = Duration.seconds(5);
 const TOOLCHAIN_TRANSPORT_RETRY_LIMIT = 12;
 const BUILD_TRANSPORT_RETRY_LIMIT = 2;
+const WSL_SHELL_OUTPUT_MAX_BYTES = 1024 * 1024;
+const WSL_COMMAND_OUTPUT_MAX_BYTES = 64 * 1024;
+const WSL_USER_HOME_CACHE_MAX_ENTRIES = 32;
 
 export interface EnsureWslNodePtyOptions {
   readonly allowBuild?: boolean;
@@ -103,6 +106,28 @@ const concatChunks = (arrays: ReadonlyArray<Uint8Array>): Uint8Array => {
 };
 
 const decodeUtf8 = (bytes: Uint8Array): string => new TextDecoder("utf-8").decode(bytes);
+
+const collectBoundedBytes = <E>(
+  stream: Stream.Stream<Uint8Array, E>,
+  maxBytes: number,
+): Effect.Effect<Uint8Array, E> =>
+  stream.pipe(
+    Stream.runFold(
+      () => ({ chunks: [] as Uint8Array[], byteLength: 0 }),
+      (state, chunk) => {
+        const remainingBytes = maxBytes - state.byteLength;
+        if (remainingBytes <= 0) return state;
+
+        const retained = chunk.byteLength > remainingBytes ? chunk.slice(0, remainingBytes) : chunk;
+        state.chunks.push(retained);
+        return {
+          chunks: state.chunks,
+          byteLength: state.byteLength + retained.byteLength,
+        };
+      },
+    ),
+    Effect.map((state) => concatChunks(state.chunks)),
+  );
 
 interface ShellResult {
   readonly exitCode: number;
@@ -190,13 +215,17 @@ const runWslShell = (
       // Drain stdout and stderr concurrently so neither pipe buffer can fill
       // and stall the child (node-gyp rebuild emits large output on both).
       const [stdoutBytes, stderrBytes, exitCode] = yield* Effect.all(
-        [Stream.runCollect(handle.stdout), Stream.runCollect(handle.stderr), handle.exitCode],
+        [
+          collectBoundedBytes(handle.stdout, WSL_SHELL_OUTPUT_MAX_BYTES),
+          collectBoundedBytes(handle.stderr, WSL_SHELL_OUTPUT_MAX_BYTES),
+          handle.exitCode,
+        ],
         { concurrency: "unbounded" },
       );
       return {
         exitCode: exitCode as unknown as number,
-        stdout: decodeUtf8(concatChunks(stdoutBytes)),
-        stderr: decodeUtf8(concatChunks(stderrBytes)),
+        stdout: decodeUtf8(stdoutBytes),
+        stderr: decodeUtf8(stderrBytes),
         transportFailure: null,
       } satisfies ShellResult;
     }),
@@ -259,7 +288,28 @@ const marker = path.join(prebuildDir, "t3code-wsl-node-pty.json");
 const binary = path.join(prebuildDir, "pty.node");
 if (!fs.existsSync(marker) || !fs.existsSync(binary)) process.exit(${NODE_PTY_PREBUILD_MISSING_EXIT_CODE});
 require("node-pty");
-const actual = JSON.parse(fs.readFileSync(marker, "utf8"));
+const markerHandle = fs.openSync(marker, "r");
+let markerBytes;
+try {
+  markerBytes = Buffer.allocUnsafe(4097);
+  let markerOffset = 0;
+  while (markerOffset < markerBytes.length) {
+    const bytesRead = fs.readSync(
+      markerHandle,
+      markerBytes,
+      markerOffset,
+      markerBytes.length - markerOffset,
+      markerOffset,
+    );
+    if (bytesRead === 0) break;
+    markerOffset += bytesRead;
+  }
+  if (markerOffset > 4096) process.exit(${NODE_PTY_PREBUILD_MISSING_EXIT_CODE});
+  markerBytes = markerBytes.subarray(0, markerOffset);
+} finally {
+  fs.closeSync(markerHandle);
+}
+const actual = JSON.parse(markerBytes.toString("utf8"));
 for (const key of Object.keys(expected)) {
   if (actual[key] !== expected[key]) process.exit(2);
 }
@@ -599,14 +649,14 @@ export const probeWslDistros: Effect.Effect<
       forceKillAfter: PROCESS_TERMINATE_GRACE,
     });
     const handle = yield* spawner.spawn(command);
-    const stdoutBytes = yield* Stream.runCollect(handle.stdout);
+    const stdoutBytes = yield* collectBoundedBytes(handle.stdout, WSL_COMMAND_OUTPUT_MAX_BYTES);
     const exitCode = yield* handle.exitCode;
     if ((exitCode as unknown as number) !== 0) {
       return yield* new DesktopWslDistroListError({
         reason: `wsl.exe --list --verbose exited with code ${String(exitCode)}`,
       });
     }
-    return parseWslDistroList(Buffer.from(concatChunks(stdoutBytes)));
+    return parseWslDistroList(Buffer.from(stdoutBytes));
   }),
 ).pipe(
   Effect.mapError((error) =>
@@ -671,10 +721,10 @@ const windowsToWslPathImpl = (
         },
       );
       const handle = yield* spawner.spawn(command);
-      const stdoutBytes = yield* Stream.runCollect(handle.stdout);
+      const stdoutBytes = yield* collectBoundedBytes(handle.stdout, WSL_COMMAND_OUTPUT_MAX_BYTES);
       const exitCode = yield* handle.exitCode;
       if ((exitCode as unknown as number) !== 0) return Option.none<string>();
-      const converted = decodeUtf8(concatChunks(stdoutBytes)).trim();
+      const converted = decodeUtf8(stdoutBytes).trim();
       return converted.length > 0 ? Option.some(converted) : Option.none<string>();
     }),
   ).pipe(
@@ -708,10 +758,10 @@ const getDistroIpImpl = (
         },
       );
       const handle = yield* spawner.spawn(command);
-      const stdoutBytes = yield* Stream.runCollect(handle.stdout);
+      const stdoutBytes = yield* collectBoundedBytes(handle.stdout, WSL_COMMAND_OUTPUT_MAX_BYTES);
       const exitCode = yield* handle.exitCode;
       if ((exitCode as unknown as number) !== 0) return Option.none<string>();
-      const raw = decodeUtf8(concatChunks(stdoutBytes)).trim();
+      const raw = decodeUtf8(stdoutBytes).trim();
       const candidate = raw.split(/\s+/).find((part) => IPV4_PATTERN.test(part));
       return candidate ? Option.some(candidate) : Option.none<string>();
     }),
@@ -747,10 +797,10 @@ const getUserHomeImpl = (
         },
       );
       const handle = yield* spawner.spawn(command);
-      const stdoutBytes = yield* Stream.runCollect(handle.stdout);
+      const stdoutBytes = yield* collectBoundedBytes(handle.stdout, WSL_COMMAND_OUTPUT_MAX_BYTES);
       const exitCode = yield* handle.exitCode;
       if ((exitCode as unknown as number) !== 0) return Option.none<string>();
-      const home = decodeUtf8(concatChunks(stdoutBytes)).trim();
+      const home = decodeUtf8(stdoutBytes).trim();
       return home.startsWith("/") ? Option.some(home) : Option.none<string>();
     }),
   ).pipe(
@@ -857,9 +907,19 @@ export const layer = Layer.effect(
       Effect.gen(function* () {
         const key = distro ?? "__default__";
         const cached = userHomeCache.get(key);
-        if (cached !== undefined) return Option.some(cached);
+        if (cached !== undefined) {
+          userHomeCache.delete(key);
+          userHomeCache.set(key, cached);
+          return Option.some(cached);
+        }
         const resolved = yield* provideSpawner(getUserHomeImpl(distro));
-        if (Option.isSome(resolved)) userHomeCache.set(key, resolved.value);
+        if (Option.isSome(resolved)) {
+          userHomeCache.set(key, resolved.value);
+          if (userHomeCache.size > WSL_USER_HOME_CACHE_MAX_ENTRIES) {
+            const oldestKey = userHomeCache.keys().next().value;
+            if (oldestKey !== undefined) userHomeCache.delete(oldestKey);
+          }
+        }
         return resolved;
       }).pipe(Effect.withSpan("desktop.wsl.getUserHome"));
 

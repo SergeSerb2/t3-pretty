@@ -151,4 +151,25 @@ describe("desktopTabLifetime", () => {
     await reacquired.ready;
     expect(createTab).toHaveBeenCalledTimes(2);
   });
+
+  it("evicts failed creation without letting its stale release close the retry", async () => {
+    vi.useFakeTimers();
+    createTab.mockRejectedValueOnce(new Error("guest creation failed")).mockResolvedValueOnce();
+
+    const failed = acquireDesktopTab("tab_create_retry");
+    await expect(failed.ready).rejects.toThrow("guest creation failed");
+
+    const retried = acquireDesktopTab("tab_create_retry");
+    await retried.ready;
+    expect(createTab).toHaveBeenCalledTimes(2);
+
+    failed.release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(closeTab).not.toHaveBeenCalled();
+
+    retried.release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stopBrowserRecording).toHaveBeenCalledOnce();
+    expect(closeTab).toHaveBeenCalledOnce();
+  });
 });

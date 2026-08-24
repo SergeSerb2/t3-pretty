@@ -1696,7 +1696,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         }
 
         await actionHandlers.get(clicked)?.();
-      })();
+      })().catch(() => {
+        // A menu that could not be shown has already consumed the right-click.
+      });
     },
     [
       copyPathToClipboard,

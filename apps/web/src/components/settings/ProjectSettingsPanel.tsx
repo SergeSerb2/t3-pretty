@@ -114,6 +114,7 @@ import {
   canPickExternalProjectFavicon,
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
+import { settingsEscapeAction } from "./settingsEscape";
 
 export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
   repository: "Group by repository",
@@ -189,10 +190,14 @@ export function ProjectSettingsPage({ projectKey }: { projectKey: string }) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (event.key !== "Escape") return;
-      event.preventDefault();
       const activeElement = document.activeElement;
-      if (activeElement instanceof HTMLElement) {
+      const action = settingsEscapeAction(activeElement);
+      if (action === "ignore") return;
+
+      event.preventDefault();
+      if (action === "blur" && activeElement instanceof HTMLElement) {
         activeElement.blur();
+        return;
       }
       navigateBackWithinApp();
     };

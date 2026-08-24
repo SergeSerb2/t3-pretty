@@ -72,17 +72,22 @@ it.effect("runs Kimi sessions through ACP with models, thinking, modes, and stre
       Effect.forkChild,
     );
 
-    const session = yield* adapter.startSession({
-      threadId,
-      provider: ProviderDriverKind.make("kimi"),
-      cwd: process.cwd(),
-      runtimeMode: "full-access",
-      modelSelection: {
-        instanceId: ProviderInstanceId.make("kimi"),
-        model: "kimi-code/k3-256k",
-        options: [{ id: "thinking", value: "max" }],
-      },
-    });
+    // Production starts a session from a request fiber that completes before
+    // the first turn. Joining this fiber reproduces that lifecycle boundary.
+    const startSessionFiber = yield* adapter
+      .startSession({
+        threadId,
+        provider: ProviderDriverKind.make("kimi"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("kimi"),
+          model: "kimi-code/k3-256k",
+          options: [{ id: "thinking", value: "max" }],
+        },
+      })
+      .pipe(Effect.forkChild);
+    const session = yield* Fiber.join(startSessionFiber);
     assert.equal(session.provider, "kimi");
     assert.deepEqual(session.resumeCursor, {
       schemaVersion: 1,

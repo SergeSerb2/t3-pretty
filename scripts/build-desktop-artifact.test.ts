@@ -40,6 +40,7 @@ import {
   resolveDesktopUpdateChannel,
   resolveDesktopWebAssetBrand,
   resolveCargoTargetDir,
+  resolveAzureTrustedSigningOptions,
   resolveResourceMonitorRustTargets,
   resolveWindowsServerAsarIgnoreGlobs,
   resourceMonitorExecutableName,
@@ -207,7 +208,21 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       ),
       "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
     );
+    assert.equal(resolveGenericUpdateFeedUrl("http://example.test/updates"), undefined);
     assert.equal(resolveGenericUpdateFeedUrl("ftp://example.test/updates"), undefined);
+    assert.equal(
+      resolveGenericUpdateFeedUrl("https://user:secret@example.test/updates"),
+      undefined,
+    );
+    assert.equal(
+      resolveGenericUpdateFeedUrl("https://example.test/updates?token=secret"),
+      undefined,
+    );
+    assert.equal(resolveGenericUpdateFeedUrl("https://example.test/updates#latest"), undefined);
+    assert.equal(
+      resolveGenericUpdateFeedUrl(`https://example.test/${"a".repeat(4096)}`),
+      undefined,
+    );
     assert.equal(resolveGenericUpdateFeedUrl("not a url"), undefined);
   });
 
@@ -1344,6 +1359,45 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.notProperty(win, "azureSignOptions");
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
+
+  it("canonicalizes bounded credential-free Azure Trusted Signing URLs", () => {
+    assert.deepStrictEqual(
+      resolveAzureTrustedSigningOptions({
+        publisherName: "T3 Tools",
+        endpoint: "https://eus.codesigning.azure.net",
+        certificateProfileName: "production",
+        codeSigningAccountName: "t3code",
+        fileDigest: "sha256",
+        timestampDigest: "SHA384",
+        timestampRfc3161: "http://timestamp.acs.microsoft.com",
+      }),
+      {
+        publisherName: "T3 Tools",
+        endpoint: "https://eus.codesigning.azure.net/",
+        certificateProfileName: "production",
+        codeSigningAccountName: "t3code",
+        fileDigest: "SHA256",
+        timestampDigest: "SHA384",
+        timestampRfc3161: "http://timestamp.acs.microsoft.com/",
+      },
+    );
+  });
+
+  it("rejects credential-bearing Azure Trusted Signing URLs", () => {
+    assert.throws(
+      () =>
+        resolveAzureTrustedSigningOptions({
+          publisherName: "T3 Tools",
+          endpoint: "https://token@eus.codesigning.azure.net",
+          certificateProfileName: "production",
+          codeSigningAccountName: "t3code",
+          fileDigest: "SHA256",
+          timestampDigest: "SHA256",
+          timestampRfc3161: "http://timestamp.acs.microsoft.com?secret=value",
+        }),
+      /credential-free URL/u,
+    );
+  });
 
   it("stages the resource monitor as an external executable resource", () => {
     assert.deepStrictEqual(DESKTOP_EXTRA_RESOURCES, [

@@ -1,18 +1,160 @@
 import { describe, expect, it } from "vite-plus/test";
+import {
+  PROVIDER_OPTION_AGGREGATE_MAX_CHOICES,
+  PROVIDER_OPTION_AGGREGATE_MAX_TEXT_CHARS,
+  PROVIDER_OPTION_DESCRIPTION_MAX_LENGTH,
+  PROVIDER_OPTION_LABEL_MAX_LENGTH,
+  PROVIDER_OPTION_MAX_COUNT,
+  PROVIDER_OPTION_VALUE_MAX_LENGTH,
+} from "@t3tools/contracts";
 
 import type * as EffectAcpSchema from "effect-acp/schema";
 
 import {
+  boundAcpSessionConfigOptions,
   extractModelConfigId,
+  fingerprintAcpPlanUpdate,
   mergeToolCallState,
   parsePermissionRequest,
   parseSessionModeState,
   parseSessionUpdateEvent,
   sessionUpdateIsReplay,
   syntheticLoadSessionResponseFromInitialize,
+  summarizeSessionConfigOptionValuesForError,
 } from "./AcpRuntimeModel.ts";
 
+function flattenConfigValues(
+  configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
+): ReadonlyArray<string> {
+  return configOptions.flatMap((option) => {
+    if (option.type !== "select") return [];
+    return option.options.flatMap((entry) =>
+      "value" in entry ? [entry.value] : entry.options.map((nested) => nested.value),
+    );
+  });
+}
+
+function configTextCharacters(
+  configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
+): number {
+  let characters = 0;
+  for (const option of configOptions) {
+    characters +=
+      option.id.length +
+      option.name.length +
+      (option.description?.length ?? 0) +
+      (option.category?.length ?? 0);
+    if (option.type !== "select") continue;
+    characters += option.currentValue.length;
+    for (const entry of option.options) {
+      if ("value" in entry) {
+        characters += entry.value.length + entry.name.length + (entry.description?.length ?? 0);
+        continue;
+      }
+      characters += entry.group.length + entry.name.length;
+      for (const nested of entry.options) {
+        characters += nested.value.length + nested.name.length + (nested.description?.length ?? 0);
+      }
+    }
+  }
+  return characters;
+}
+
 describe("AcpRuntimeModel", () => {
+  it("bounds ACP session configuration collections in provider order", () => {
+    const booleans = Array.from({ length: PROVIDER_OPTION_MAX_COUNT + 1 }, (_, index) => ({
+      type: "boolean" as const,
+      id: `boolean-${index}`,
+      name: `Boolean ${index}`,
+      currentValue: false,
+    }));
+    expect(boundAcpSessionConfigOptions(booleans)).toHaveLength(PROVIDER_OPTION_MAX_COUNT);
+
+    const selects = Array.from(
+      { length: Math.ceil(PROVIDER_OPTION_AGGREGATE_MAX_CHOICES / PROVIDER_OPTION_MAX_COUNT) + 1 },
+      (_, descriptorIndex) => ({
+        type: "select" as const,
+        id: `select-${descriptorIndex}`,
+        name: `Select ${descriptorIndex}`,
+        currentValue: `${descriptorIndex}-0`,
+        options: Array.from({ length: PROVIDER_OPTION_MAX_COUNT + 1 }, (_, optionIndex) => ({
+          value: `${descriptorIndex}-${optionIndex}`,
+          name: `Choice ${descriptorIndex}-${optionIndex}`,
+        })),
+      }),
+    );
+    const bounded = boundAcpSessionConfigOptions(selects);
+    const values = flattenConfigValues(bounded);
+    expect(values).toHaveLength(PROVIDER_OPTION_AGGREGATE_MAX_CHOICES);
+    expect(values.slice(0, 3)).toEqual(["0-0", "0-1", "0-2"]);
+    expect(values).not.toContain(`0-${PROVIDER_OPTION_MAX_COUNT}`);
+  });
+
+  it("stops ACP configuration text at the shared aggregate budget", () => {
+    const heavySelects = Array.from({ length: 2 }, (_, descriptorIndex) => ({
+      type: "select" as const,
+      id: `heavy-${descriptorIndex}`,
+      name: `Heavy ${descriptorIndex}`,
+      currentValue: `${descriptorIndex}-0`,
+      options: Array.from({ length: PROVIDER_OPTION_MAX_COUNT }, (_, optionIndex) => ({
+        value: `${descriptorIndex}-${optionIndex}`.padEnd(PROVIDER_OPTION_VALUE_MAX_LENGTH, "v"),
+        name: `Choice ${descriptorIndex}-${optionIndex}`.padEnd(
+          PROVIDER_OPTION_LABEL_MAX_LENGTH,
+          "n",
+        ),
+        description: "d".repeat(PROVIDER_OPTION_DESCRIPTION_MAX_LENGTH),
+      })),
+    }));
+    const bounded = boundAcpSessionConfigOptions(heavySelects);
+
+    expect(configTextCharacters(bounded)).toBeLessThanOrEqual(
+      PROVIDER_OPTION_AGGREGATE_MAX_TEXT_CHARS,
+    );
+    expect(flattenConfigValues(bounded)[0]?.startsWith("0-0")).toBe(true);
+  });
+
+  it("summarizes invalid ACP option values without retaining the full menu", () => {
+    const configOption = {
+      type: "select" as const,
+      id: "mode",
+      name: "Mode",
+      currentValue: "value-0",
+      options: Array.from({ length: 20 }, (_, index) => ({
+        value: `value-${index}-${"x".repeat(512)}`,
+        name: `Value ${index}`,
+      })),
+    };
+
+    const summary = summarizeSessionConfigOptionValuesForError(configOption);
+    expect(summary.count).toBe(20);
+    expect(summary.values).toHaveLength(16);
+    expect(Math.max(...summary.values.map((value) => value.length))).toBeLessThanOrEqual(256);
+  });
+
+  it("fingerprints cumulative plans without serializing a retained payload copy", () => {
+    const plan = {
+      explanation: "Ship safely",
+      plan: [
+        { step: "Inspect", status: "completed" as const },
+        { step: "Patch", status: "inProgress" as const },
+      ],
+    };
+
+    expect(fingerprintAcpPlanUpdate(plan)).toBe(fingerprintAcpPlanUpdate({ ...plan }));
+    expect(
+      fingerprintAcpPlanUpdate({
+        ...plan,
+        plan: [...plan.plan, { step: "Verify", status: "pending" }],
+      }),
+    ).not.toBe(fingerprintAcpPlanUpdate(plan));
+    expect(
+      fingerprintAcpPlanUpdate({
+        ...plan,
+        plan: plan.plan.toReversed(),
+      }),
+    ).not.toBe(fingerprintAcpPlanUpdate(plan));
+  });
+
   it("parses session mode state from typed ACP session setup responses", () => {
     const modeState = parseSessionModeState({
       sessionId: "session-1",

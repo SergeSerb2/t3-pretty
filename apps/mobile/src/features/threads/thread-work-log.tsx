@@ -36,7 +36,7 @@ const WORK_LOG_LAYOUT_ANIMATION = {
 
 function triggerDisclosureFeedback() {
   LayoutAnimation.configureNext(WORK_LOG_LAYOUT_ANIMATION);
-  void Haptics.selectionAsync();
+  void Haptics.selectionAsync().catch(() => undefined);
 }
 
 function stripShellWrapper(value: string): string {
@@ -440,7 +440,7 @@ export function ThreadWorkGroupToggle(props: {
         accessibilityLabel={props.expanded ? expandedLabel : collapsedLabel}
         hitSlop={4}
         onPress={() => {
-          void Haptics.selectionAsync();
+          void Haptics.selectionAsync().catch(() => undefined);
           props.onToggle();
         }}
         style={({ pressed }) => ({

@@ -1,4 +1,14 @@
-import type { ProviderUserInputAnswers, UserInputQuestion } from "@t3tools/contracts";
+import {
+  ENTITY_ID_MAX_LENGTH,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS,
+  PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH,
+  PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH,
+  PROVIDER_RUNTIME_USER_INPUT_OPTION_LABEL_MAX_LENGTH,
+  PROVIDER_RUNTIME_USER_INPUT_QUESTION_MAX_LENGTH,
+  type ProviderUserInputAnswers,
+  type UserInputQuestion,
+} from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
@@ -7,10 +17,15 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 
 import type * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 
+const XAiEntityId = Schema.String.check(Schema.isMaxLength(ENTITY_ID_MAX_LENGTH));
+const XAiUserInputId = Schema.String.check(
+  Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH),
+);
+
 const XAiPromptCompleteNotification = Schema.Struct({
-  sessionId: Schema.String,
-  promptId: Schema.optional(Schema.String),
-  stopReason: Schema.optional(Schema.String),
+  sessionId: XAiEntityId,
+  promptId: Schema.optional(XAiEntityId),
+  stopReason: Schema.optional(XAiEntityId),
   agentResult: Schema.optional(Schema.NullOr(Schema.Unknown)),
 });
 
@@ -26,23 +41,39 @@ const completedXAiPromptIdLimit = 128;
 const xAiStopReasonMissingMetaKey = "xAiStopReasonMissing";
 
 const XAiAskUserQuestionOption = Schema.Struct({
-  label: Schema.String,
-  description: Schema.optional(Schema.String),
-  preview: Schema.optional(Schema.String),
-  id: Schema.optional(Schema.String),
+  label: Schema.String.check(
+    Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_OPTION_LABEL_MAX_LENGTH),
+  ),
+  description: Schema.optional(
+    Schema.String.check(
+      Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH),
+    ),
+  ),
+  preview: Schema.optional(
+    Schema.String.check(
+      Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH),
+    ),
+  ),
+  id: Schema.optional(XAiUserInputId),
 });
 
 const XAiAskUserQuestion = Schema.Struct({
-  id: Schema.optional(Schema.String),
-  question: Schema.String,
-  options: Schema.Array(XAiAskUserQuestionOption),
+  id: Schema.optional(XAiUserInputId),
+  question: Schema.String.check(
+    Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_QUESTION_MAX_LENGTH),
+  ),
+  options: Schema.Array(XAiAskUserQuestionOption).check(
+    Schema.isMaxLength(PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS),
+  ),
   multiSelect: Schema.optional(Schema.NullOr(Schema.Boolean)),
 });
 
 const XAiAskUserQuestionParams = Schema.Struct({
-  sessionId: Schema.String,
-  toolCallId: Schema.String,
-  questions: Schema.Array(XAiAskUserQuestion),
+  sessionId: XAiEntityId,
+  toolCallId: XAiEntityId,
+  questions: Schema.Array(XAiAskUserQuestion).check(
+    Schema.isMaxLength(PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS),
+  ),
   mode: Schema.Literals(["default", "plan"]),
 });
 
@@ -295,13 +326,11 @@ const abortPendingPromptCompletions = (
   sessionId: string,
 ) =>
   Ref.modify(pendingRef, (pending) => {
-    const [toAbort, remaining] = pending.reduce<
-      [ReadonlyArray<PendingXAiPromptCompletion>, ReadonlyArray<PendingXAiPromptCompletion>]
-    >(
-      ([aborting, kept], entry) =>
-        entry.sessionId === sessionId ? [[...aborting, entry], kept] : [aborting, [...kept, entry]],
-      [[], []],
-    );
+    const toAbort: Array<PendingXAiPromptCompletion> = [];
+    const remaining: Array<PendingXAiPromptCompletion> = [];
+    for (const entry of pending) {
+      (entry.sessionId === sessionId ? toAbort : remaining).push(entry);
+    }
     if (toAbort.length === 0) {
       return [Effect.void, pending] as const;
     }

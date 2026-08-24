@@ -1,6 +1,9 @@
 import {
   type GrokSettings,
   type ModelCapabilities,
+  PROVIDER_MODEL_ID_MAX_LENGTH,
+  SERVER_PROVIDER_LABEL_MAX_LENGTH,
+  SERVER_PROVIDER_MODELS_MAX_ITEMS,
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
@@ -115,26 +118,26 @@ function buildGrokDiscoveredModelsFromSessionModelState(
     return [];
   }
   const seen = new Set<string>();
-  return modelState.availableModels
-    .map((model): ServerProviderModel | undefined => {
-      const slug = resolveGrokAcpBaseModelId(model.modelId);
-      if (!slug || seen.has(slug)) {
-        return undefined;
-      }
-      seen.add(slug);
-      const name = model.name.trim() || slug;
-      return {
+  const models: Array<ServerProviderModel> = [];
+  for (const model of modelState.availableModels) {
+    if (models.length >= SERVER_PROVIDER_MODELS_MAX_ITEMS) break;
+    if (model.modelId.length > PROVIDER_MODEL_ID_MAX_LENGTH) continue;
+    const slug = resolveGrokAcpBaseModelId(model.modelId);
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+    const name = model.name.slice(0, SERVER_PROVIDER_LABEL_MAX_LENGTH).trim() || slug;
+    models.push({
+      slug,
+      name,
+      isCustom: false,
+      capabilities: grokModelCapabilities({
         slug,
         name,
-        isCustom: false,
-        capabilities: grokModelCapabilities({
-          slug,
-          name,
-          meta: model._meta,
-        }),
-      };
-    })
-    .filter((model): model is ServerProviderModel => model !== undefined);
+        meta: model._meta,
+      }),
+    });
+  }
+  return models;
 }
 
 const discoverGrokModelsViaAcp = (

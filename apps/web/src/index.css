@@ -720,6 +720,18 @@ html[data-window-inactive]
   ):focus-visible {
     @apply outline-none ring-0;
   }
+  /* While a submenu flyout is open, Base UI's hover traversal writes inline
+     pointer-events: none on the parent menu popup and only restores it when
+     the flyout closes cleanly. Our standalone menu roots miss the floating
+     tree wiring that keeps that restore reliable, so the parent menu goes
+     dead: rows stop highlighting, and clicks inside the menu can neither
+     select nor dismiss — the "stuck open menu". Forcing open popups
+     interactive keeps every row and the dismiss paths alive; closing popups
+     drop [data-open], so exit transitions stay untouched. */
+  [data-slot="menu-popup"][data-open],
+  [data-slot="menu-sub-content"][data-open] {
+    pointer-events: auto !important;
+  }
   html,
   body {
     background-color: var(--app-chrome-background);
@@ -3365,7 +3377,7 @@ code {
 }
 
 .ultrathink-chroma {
-  animation: ultrathink-chroma-shift 10s linear infinite;
+  animation: ultrathink-chroma-shift 800ms ease-out both;
 }
 
 /* Hold the static spectrum when motion is off (app toggle or OS). */
@@ -3401,6 +3413,16 @@ html:not([data-scenery-motion]) .ultrathink-chroma {
 .preview-loading-progress[data-loading="true"] {
   opacity: 1;
   animation: preview-loading-progress 5.3s cubic-bezier(0.1, 0.5, 0.2, 1) forwards;
+}
+
+html:not([data-scenery-motion]) .preview-loading-progress,
+html:not([data-scenery-motion]) .preview-loading-progress[data-loading="true"] {
+  transition: none;
+  animation: none;
+}
+
+html:not([data-scenery-motion]) .preview-loading-progress[data-loading="true"] {
+  transform: scaleX(0.9);
 }
 
 @media (prefers-reduced-motion: reduce) {

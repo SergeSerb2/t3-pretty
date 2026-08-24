@@ -718,7 +718,7 @@ export function HomeScreen(props: HomeScreenProps) {
   // signed-32-bit setTimeout range; far-future wakes re-arm at the clamp).
   const nextSnoozeWakeAt = threadListV2Layout.nextSnoozeWakeAt;
   useEffect(() => {
-    if (nextSnoozeWakeAt === null) return;
+    if (!isFocused || nextSnoozeWakeAt === null) return;
     const wakeAtMs = Date.parse(nextSnoozeWakeAt);
     if (Number.isNaN(wakeAtMs)) return;
     const delayMs = Math.min(Math.max(0, wakeAtMs - Date.now()) + 50, 2_147_483_647);
@@ -727,7 +727,7 @@ export function HomeScreen(props: HomeScreenProps) {
     // snoozeWakeTick must re-arm the timer even when nextSnoozeWakeAt is
     // unchanged: after a clamped fire (wake beyond the 32-bit setTimeout
     // range) the boundary string is identical and the chain would die.
-  }, [nextSnoozeWakeAt, snoozeWakeTick]);
+  }, [isFocused, nextSnoozeWakeAt, snoozeWakeTick]);
   // Queued tasks are not thread shells, so the v2 partition never sees them;
   // they are spliced in below the active block and stay visible and deletable
   // while their environment is offline. Same environment scope and search

@@ -68,6 +68,7 @@ import {
   type ReactNode,
 } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
+import { useShallow } from "zustand/react/shallow";
 
 import {
   isAtomCommandInterrupted,
@@ -89,6 +90,8 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { isMacPlatform } from "~/lib/utils";
+import { subscribeSecondTick } from "~/lib/secondTicker";
+import { compareIsoDateTimes } from "~/lib/threadSort";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { readLocalApi } from "../localApi";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
@@ -243,18 +246,21 @@ function JumpHintBadge(props: { label: string }) {
   );
 }
 
-// Self-ticking so only this span re-renders each second, not the whole row.
+// Direct text updates keep the one-second label out of React's render path.
 function WorkingDuration(props: { startedAt: string | null }) {
   const startedMs = props.startedAt !== null ? Date.parse(props.startedAt) : Number.NaN;
-  const [, setTick] = useState(0);
+  const textRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     if (Number.isNaN(startedMs)) return;
-    const id = window.setInterval(() => setTick((tick) => tick + 1), 1_000);
-    return () => window.clearInterval(id);
+    return subscribeSecondTick(() => {
+      if (textRef.current) {
+        textRef.current.textContent = formatWorkingDurationLabel(Date.now() - startedMs);
+      }
+    });
   }, [startedMs]);
   if (Number.isNaN(startedMs)) return null;
   return (
-    <span className="font-mono tabular-nums">
+    <span ref={textRef} className="font-mono tabular-nums">
       {formatWorkingDurationLabel(Date.now() - startedMs)}
     </span>
   );
@@ -617,7 +623,6 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   onNavigateToDraft: (draftId: DraftId) => void;
 }) {
   const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
-  const draftsByThreadKey = useComposerDraftStore((store) => store.draftsByThreadKey);
   const clearDraftThread = useComposerDraftStore((store) => store.clearDraftThread);
   // The open draft's row is FROZEN at the moment the draft became the route:
   // it stays visible (like a thread row) but never repaints while the user
@@ -643,21 +648,36 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
     }
     setFrozenActive({ routeDraftId: props.routeDraftId, row });
   }
-  const drafts = useMemo(() => {
-    const rows: SidebarDraftRowData[] = [];
-    // Every non-promoted session with content gets a row, mapped or not:
-    // new-thread surfaces mint fresh drafts and leave invested ones behind
-    // unmapped, so the mapping only knows about the latest per project.
+  const draftCandidates = useMemo(() => {
+    const candidates: Array<{ draftKey: string; session: DraftSessionState }> = [];
     for (const [draftKey, session] of Object.entries(draftThreadsByThreadKey)) {
-      if (session.promotedTo != null) {
-        continue;
-      }
+      if (session.promotedTo != null) continue;
       if (
         props.scopedProjectKeys !== null &&
         !props.scopedProjectKeys.has(`${session.environmentId}:${session.projectId}`)
       ) {
         continue;
       }
+      candidates.push({ draftKey, session });
+    }
+    candidates.sort((left, right) =>
+      compareIsoDateTimes(right.session.createdAt, left.session.createdAt),
+    );
+    return candidates;
+  }, [draftThreadsByThreadKey, props.scopedProjectKeys]);
+  const inactiveDraftCandidates = useMemo(
+    () => draftCandidates.filter(({ draftKey }) => draftKey !== props.routeDraftId),
+    [draftCandidates, props.routeDraftId],
+  );
+  const inactiveDraftComposers = useComposerDraftStore(
+    useShallow((store) =>
+      inactiveDraftCandidates.map(({ draftKey }) => store.draftsByThreadKey[draftKey]),
+    ),
+  );
+  const drafts = useMemo(() => {
+    const rows: SidebarDraftRowData[] = [];
+    let inactiveIndex = 0;
+    for (const { draftKey, session } of draftCandidates) {
       if (draftKey === props.routeDraftId) {
         // Open draft: render the frozen entry snapshot, or nothing for a
         // draft that has never been left. Gated on the LIVE session above so
@@ -667,7 +687,8 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
         }
         continue;
       }
-      const composer = draftsByThreadKey[draftKey];
+      const composer = inactiveDraftComposers[inactiveIndex];
+      inactiveIndex += 1;
       if (!draftHasInvestedContent(composer, session)) {
         continue;
       }
@@ -677,15 +698,8 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
         composer: composer ?? EMPTY_SIDEBAR_DRAFT_COMPOSER,
       });
     }
-    rows.sort((left, right) => right.session.createdAt.localeCompare(left.session.createdAt));
     return rows;
-  }, [
-    draftThreadsByThreadKey,
-    draftsByThreadKey,
-    frozenActive,
-    props.routeDraftId,
-    props.scopedProjectKeys,
-  ]);
+  }, [draftCandidates, frozenActive, inactiveDraftComposers, props.routeDraftId]);
   const handleDiscard = useCallback(
     (draftId: DraftId) => {
       // The /draft/$draftId route redirects home on its own when the draft
@@ -2323,7 +2337,10 @@ export default function Sidebar() {
   // after the batch was planned. Row archive still passes the default.
   const archiveSettledQuietly = useCallback(
     (threadRef: ScopedThreadRef, onArchived?: () => void) =>
-      archiveThread(threadRef, { navigateIfCurrent: false, onArchived }),
+      archiveThread(threadRef, {
+        navigateIfCurrent: false,
+        ...(onArchived === undefined ? {} : { onArchived }),
+      }),
     [archiveThread],
   );
   // Attempted keys are remembered so a successful archive isn't retried

@@ -30,6 +30,7 @@ import {
   RelayAgentActivityPublishProofInvalidError,
   RelayClientAuth,
   RelayClientPrincipal,
+  RelayCloudUserId,
   RelayAccessTokenType,
   RelayDpopClientAuth,
   RelayEnvironmentConnectScope,
@@ -71,6 +72,8 @@ import * as EnvironmentPublishSignatures from "../environments/EnvironmentPublis
 import * as MobileRegistrations from "../agentActivity/MobileRegistrations.ts";
 import { withSpanAttributes } from "../observability.ts";
 import * as RelayDb from "../db.ts";
+
+const isRelayCloudUserId = Schema.is(RelayCloudUserId);
 
 const relayCorsAllowedMethods = ["GET", "POST", "DELETE", "OPTIONS"] as const;
 const relayCorsAllowedHeaders = [
@@ -290,9 +293,9 @@ export const relayClientAuthLayer = Layer.effect(
           ),
           Effect.catch(() => relayAuthInvalidError("invalid_bearer")),
         );
-        if (!verified.sub) {
+        if (!isRelayCloudUserId(verified.sub)) {
           yield* Effect.annotateCurrentSpan({
-            "relay.auth.clerk_verification_failure": "missing_subject",
+            "relay.auth.clerk_verification_failure": "invalid_subject",
           });
           return yield* relayAuthInvalidError("invalid_bearer");
         }
@@ -363,7 +366,7 @@ export const relayDpopClientAuthLayer = Layer.effect(
           token,
           nowEpochSeconds: Math.floor(now.epochMilliseconds / 1_000),
         });
-        if (!verified) {
+        if (!verified || !isRelayCloudUserId(verified.sub)) {
           return yield* relayAuthInvalidError("invalid_bearer");
         }
         yield* Effect.annotateCurrentSpan({
@@ -748,7 +751,10 @@ export const tokenApi = HttpApiBuilder.group(
         const verified = yield* verifyClerkBearerToken(config, args.payload.subject_token).pipe(
           Effect.catch(() => relayAuthInvalidError("invalid_bearer")),
         );
-        if (!verified.sub || !hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience)) {
+        if (
+          !isRelayCloudUserId(verified.sub) ||
+          !hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience)
+        ) {
           return yield* relayAuthInvalidError("invalid_bearer");
         }
         const proofKeyThumbprint = yield* requireDpopProof().pipe(
@@ -1072,7 +1078,6 @@ const RelayCommonPersistenceError = Schema.Union([
   Devices.DeviceListPersistenceError,
   LiveActivities.LiveActivityRegistrationPersistenceError,
   EnvironmentLinks.EnvironmentLinkUserListPersistenceError,
-  EnvironmentLinks.EnvironmentPublicKeyListPersistenceError,
   EnvironmentLinks.EnvironmentLinkListPersistenceError,
   EnvironmentLinks.EnvironmentLinkLookupPersistenceError,
   EnvironmentLinks.EnvironmentLinkRevokePersistenceError,

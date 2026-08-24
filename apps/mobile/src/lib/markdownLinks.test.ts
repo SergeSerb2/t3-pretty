@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveMarkdownLinkPresentation } from "@t3tools/mobile-markdown-text/links";
+import {
+  MARKDOWN_LINK_HREF_MAX_LENGTH,
+  resolveMarkdownLinkPresentation,
+} from "@t3tools/mobile-markdown-text/links";
 
 describe("resolveMarkdownLinkPresentation", () => {
   it("extracts external link hosts", () => {
@@ -84,5 +87,13 @@ describe("resolveMarkdownLinkPresentation", () => {
       kind: "link",
       href: null,
     });
+  });
+
+  it("rejects oversized destinations before URL parsing or percent decoding", () => {
+    expect(
+      resolveMarkdownLinkPresentation(
+        `https://example.com/${"a".repeat(MARKDOWN_LINK_HREF_MAX_LENGTH)}`,
+      ),
+    ).toEqual({ kind: "link", href: null });
   });
 });

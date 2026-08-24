@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as EffectAcpErrors from "effect-acp/errors";
 
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { PROVIDER_OPTION_MAX_COUNT, ProviderInstanceId } from "@t3tools/contracts";
 
 import {
   applyGrokAcpModelSelection,
@@ -80,6 +80,19 @@ describe("parseGrokAcpModelMeta", () => {
     expect(grokReasoningEffortCapabilities(meta.reasoningEfforts).optionDescriptors?.[0]?.id).toBe(
       GROK_REASONING_EFFORT_OPTION_ID,
     );
+  });
+
+  it("keeps only the first contract-sized live effort menu", () => {
+    const meta = parseGrokAcpModelMeta({
+      reasoningEfforts: Array.from({ length: PROVIDER_OPTION_MAX_COUNT + 1 }, (_, index) => ({
+        id: `effort-${index}`,
+        label: `Effort ${index}`,
+      })),
+    });
+
+    expect(meta.reasoningEfforts).toHaveLength(PROVIDER_OPTION_MAX_COUNT);
+    expect(meta.reasoningEfforts[0]?.id).toBe("effort-0");
+    expect(meta.reasoningEfforts.at(-1)?.id).toBe(`effort-${PROVIDER_OPTION_MAX_COUNT - 1}`);
   });
 });
 

@@ -9,6 +9,9 @@ export interface ComposerTrigger {
 }
 
 const SIMPLE_MENTION_PATH_REGEX = /^[^\s@"\\]+$/;
+const COMPOSER_TRIGGER_QUERY_MAX_LENGTH = 256;
+const COMPOSER_TRIGGER_TOKEN_MAX_LENGTH = COMPOSER_TRIGGER_QUERY_MAX_LENGTH + 1;
+const COMPOSER_SLASH_LINE_MAX_LENGTH = COMPOSER_TRIGGER_QUERY_MAX_LENGTH + "/model ".length;
 
 export function serializeComposerMentionPath(path: string): string {
   if (SIMPLE_MENTION_PATH_REGEX.test(path)) {
@@ -26,6 +29,29 @@ function escapeMarkdownLinkLabel(label: string): string {
   return label.replaceAll("\\", "\\\\").replaceAll("[", "\\[").replaceAll("]", "\\]");
 }
 
+function replaceUnpairedSurrogates(value: string): string {
+  let result: string | undefined;
+  let segmentStart = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        index += 1;
+        continue;
+      }
+    } else if (code < 0xdc00 || code > 0xdfff) {
+      continue;
+    }
+
+    result = `${result ?? ""}${value.slice(segmentStart, index)}\uFFFD`;
+    segmentStart = index + 1;
+  }
+
+  return result === undefined ? value : `${result}${value.slice(segmentStart)}`;
+}
+
 function encodeMarkdownLinkDestination(path: string): string {
   return encodeURI(path)
     .replaceAll("(", "%28")
@@ -36,8 +62,9 @@ function encodeMarkdownLinkDestination(path: string): string {
 }
 
 export function serializeComposerFileLink(path: string): string {
-  const label = escapeMarkdownLinkLabel(composerFileLinkBasename(path));
-  return `[${label}](${encodeMarkdownLinkDestination(path)})`;
+  const safePath = replaceUnpairedSurrogates(path);
+  const label = escapeMarkdownLinkLabel(composerFileLinkBasename(safePath));
+  return `[${label}](${encodeMarkdownLinkDestination(safePath)})`;
 }
 
 function clampCursor(text: string, cursor: number): number {
@@ -62,44 +89,60 @@ export function detectComposerTrigger(
   isWhitespaceChar?: (char: string) => boolean,
 ): ComposerTrigger | null {
   const cursor = clampCursor(text, cursorInput);
-  const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
-  const linePrefix = text.slice(lineStart, cursor);
-
-  if (linePrefix.startsWith("/")) {
-    const commandMatch = /^\/(\S*)$/.exec(linePrefix);
-    if (commandMatch) {
-      const commandQuery = commandMatch[1] ?? "";
-      if (commandQuery.toLowerCase() === "model") {
+  const lineWindowStart = Math.max(0, cursor - COMPOSER_SLASH_LINE_MAX_LENGTH);
+  const lineWindow = text.slice(lineWindowStart, cursor);
+  const newlineOffset = lineWindow.lastIndexOf("\n");
+  const lineStart =
+    newlineOffset >= 0 ? lineWindowStart + newlineOffset + 1 : lineWindowStart === 0 ? 0 : null;
+  if (lineStart !== null) {
+    const linePrefix = text.slice(lineStart, cursor);
+    if (linePrefix.startsWith("/")) {
+      const commandMatch = /^\/(\S*)$/.exec(linePrefix);
+      if (commandMatch) {
+        const commandQuery = commandMatch[1] ?? "";
+        if (commandQuery.length > COMPOSER_TRIGGER_QUERY_MAX_LENGTH) {
+          return null;
+        }
+        if (commandQuery.toLowerCase() === "model") {
+          return {
+            kind: "slash-model",
+            query: "",
+            rangeStart: lineStart,
+            rangeEnd: cursor,
+          };
+        }
         return {
-          kind: "slash-model",
-          query: "",
+          kind: "slash-command",
+          query: commandQuery,
           rangeStart: lineStart,
           rangeEnd: cursor,
         };
       }
-      return {
-        kind: "slash-command",
-        query: commandQuery,
-        rangeStart: lineStart,
-        rangeEnd: cursor,
-      };
-    }
 
-    const modelMatch = /^\/model(?:\s+(.*))?$/.exec(linePrefix);
-    if (modelMatch) {
-      return {
-        kind: "slash-model",
-        query: (modelMatch[1] ?? "").trim(),
-        rangeStart: lineStart,
-        rangeEnd: cursor,
-      };
+      const modelMatch = /^\/model(?:\s+(.*))?$/.exec(linePrefix);
+      if (modelMatch) {
+        const modelQuery = (modelMatch[1] ?? "").trim();
+        if (modelQuery.length > COMPOSER_TRIGGER_QUERY_MAX_LENGTH) {
+          return null;
+        }
+        return {
+          kind: "slash-model",
+          query: modelQuery,
+          rangeStart: lineStart,
+          rangeEnd: cursor,
+        };
+      }
     }
   }
 
   const wsCheck = isWhitespaceChar ?? isWhitespace;
   let tokenIdx = cursor - 1;
-  while (tokenIdx >= 0 && !wsCheck(text[tokenIdx] ?? "")) {
+  const tokenWindowStart = Math.max(0, cursor - COMPOSER_TRIGGER_TOKEN_MAX_LENGTH);
+  while (tokenIdx >= tokenWindowStart && !wsCheck(text[tokenIdx] ?? "")) {
     tokenIdx -= 1;
+  }
+  if (tokenIdx >= 0 && !wsCheck(text[tokenIdx] ?? "")) {
+    return null;
   }
   const tokenStart = tokenIdx + 1;
 

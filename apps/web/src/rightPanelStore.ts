@@ -12,8 +12,9 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { resolveStorage } from "./lib/storage";
+import { resolveLocalStorage } from "./lib/storage";
 import { usePreviewMiniPlayerStore } from "./previewMiniPlayerStore";
+import { MAX_TERMINALS_PER_GROUP } from "./types";
 
 export const RIGHT_PANEL_KINDS = [
   "diff",
@@ -248,6 +249,108 @@ function normalizeRevealLine(line: number | undefined): number | null {
   return Math.max(1, Math.trunc(line));
 }
 
+function migratePersistedRightPanelSurface(value: unknown): RightPanelSurface | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const surface = value as Record<string, unknown>;
+  switch (surface.kind) {
+    case "diff":
+    case "files":
+    case "agents":
+      return singletonSurface(surface.kind);
+    case "preview": {
+      if (surface.id === "browser:new" && surface.resourceId === null) return browserSurface(null);
+      if (
+        typeof surface.resourceId !== "string" ||
+        surface.resourceId.length === 0 ||
+        surface.id !== `browser:${surface.resourceId}`
+      ) {
+        return null;
+      }
+      return browserSurface(surface.resourceId);
+    }
+    case "file": {
+      if (
+        typeof surface.relativePath !== "string" ||
+        surface.relativePath.length === 0 ||
+        surface.id !== `file:${surface.relativePath}`
+      ) {
+        return null;
+      }
+      const revealLine =
+        typeof surface.revealLine === "number" && Number.isFinite(surface.revealLine)
+          ? Math.max(1, Math.trunc(surface.revealLine))
+          : null;
+      const revealRequestId =
+        typeof surface.revealRequestId === "number" &&
+        Number.isSafeInteger(surface.revealRequestId) &&
+        surface.revealRequestId >= 0
+          ? surface.revealRequestId
+          : 0;
+      return fileSurface(surface.relativePath, revealLine, revealRequestId);
+    }
+    case "pull-request": {
+      if (
+        typeof surface.projectId !== "string" ||
+        typeof surface.repository !== "string" ||
+        typeof surface.number !== "number" ||
+        !Number.isSafeInteger(surface.number) ||
+        surface.number < 1
+      ) {
+        return null;
+      }
+      return pullRequestSurface({
+        projectId: surface.projectId,
+        repository: surface.repository,
+        number: surface.number,
+        ...(typeof surface.environmentId === "string"
+          ? { environmentId: surface.environmentId }
+          : {}),
+      });
+    }
+    case "terminal": {
+      if (
+        typeof surface.resourceId !== "string" ||
+        surface.resourceId.length === 0 ||
+        surface.id !== `terminal:${surface.resourceId}`
+      ) {
+        return null;
+      }
+      const terminalIds: string[] = [];
+      if (Array.isArray(surface.terminalIds)) {
+        for (const terminalId of surface.terminalIds) {
+          if (
+            typeof terminalId !== "string" ||
+            terminalId.length === 0 ||
+            terminalIds.includes(terminalId)
+          ) {
+            continue;
+          }
+          terminalIds.push(terminalId);
+          if (terminalIds.length === MAX_TERMINALS_PER_GROUP) break;
+        }
+      } else {
+        terminalIds.push(surface.resourceId);
+      }
+      const boundedTerminalIds = terminalIds.length > 0 ? terminalIds : [surface.resourceId];
+      const activeTerminalId =
+        typeof surface.activeTerminalId === "string" &&
+        boundedTerminalIds.includes(surface.activeTerminalId)
+          ? surface.activeTerminalId
+          : boundedTerminalIds[0]!;
+      return {
+        id: `terminal:${surface.resourceId}`,
+        kind: "terminal",
+        resourceId: surface.resourceId,
+        terminalIds: boundedTerminalIds,
+        activeTerminalId,
+        ...(surface.splitDirection === "vertical" ? { splitDirection: "vertical" as const } : {}),
+      };
+    }
+    default:
+      return null;
+  }
+}
+
 export function migratePersistedRightPanelState(persistedState: unknown): {
   byThreadKey: Record<string, ThreadRightPanelState>;
 } {
@@ -263,86 +366,19 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
             .filter(([threadKey]) => !isPullRequestsPanelKey(threadKey))
             .map(([threadKey, threadState]) => {
               const validThreadState =
-                threadState && typeof threadState === "object" ? threadState : null;
-              const surfaces = Array.isArray(validThreadState?.surfaces)
-                ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
-                    // Drop surfaces whose kind no longer exists (e.g. "plan",
-                    // removed in v9 when plans moved inline into the
-                    // transcript).
-                    if (
-                      !(RIGHT_PANEL_KINDS as readonly string[]).includes(
-                        (surface as { kind?: string }).kind ?? "",
-                      )
-                    ) {
-                      return [];
-                    }
-                    if (surface.kind === "file") {
-                      const revealLine =
-                        typeof surface.revealLine === "number" &&
-                        Number.isFinite(surface.revealLine)
-                          ? Math.max(1, Math.trunc(surface.revealLine))
-                          : null;
-                      const revealRequestId =
-                        typeof surface.revealRequestId === "number" &&
-                        Number.isSafeInteger(surface.revealRequestId) &&
-                        surface.revealRequestId >= 0
-                          ? surface.revealRequestId
-                          : 0;
-                      return [{ ...surface, revealLine, revealRequestId }];
-                    }
-                    if (surface.kind === "pull-request") {
-                      if (
-                        typeof surface.projectId !== "string" ||
-                        typeof surface.repository !== "string" ||
-                        typeof surface.number !== "number" ||
-                        !Number.isSafeInteger(surface.number) ||
-                        surface.number < 1
-                      ) {
-                        return [];
-                      }
-                      const { environmentId, ...rest } = surface;
-                      // Anything else stored under that name is not an environment.
-                      return [
-                        pullRequestSurface({
-                          ...rest,
-                          ...(typeof environmentId === "string" ? { environmentId } : {}),
-                        }),
-                      ];
-                    }
-                    if (surface.kind !== "terminal") return [surface];
-                    if (
-                      !("resourceId" in surface) ||
-                      typeof surface.resourceId !== "string" ||
-                      surface.id !== `terminal:${surface.resourceId}`
-                    ) {
-                      return [];
-                    }
-                    const terminalIds =
-                      "terminalIds" in surface && Array.isArray(surface.terminalIds)
-                        ? [
-                            ...new Set(
-                              surface.terminalIds.filter(
-                                (terminalId): terminalId is string =>
-                                  typeof terminalId === "string",
-                              ),
-                            ),
-                          ]
-                        : [surface.resourceId];
-                    const activeTerminalId =
-                      "activeTerminalId" in surface &&
-                      typeof surface.activeTerminalId === "string" &&
-                      terminalIds.includes(surface.activeTerminalId)
-                        ? surface.activeTerminalId
-                        : (terminalIds[0] ?? surface.resourceId);
-                    return [
-                      {
-                        ...surface,
-                        terminalIds: terminalIds.length > 0 ? terminalIds : [surface.resourceId],
-                        activeTerminalId,
-                      },
-                    ];
-                  })
-                : [];
+                threadState && typeof threadState === "object" && !Array.isArray(threadState)
+                  ? threadState
+                  : null;
+              const surfaces: RightPanelSurface[] = [];
+              const seenSurfaceIds = new Set<string>();
+              if (Array.isArray(validThreadState?.surfaces)) {
+                for (const rawSurface of validThreadState.surfaces) {
+                  const surface = migratePersistedRightPanelSurface(rawSurface);
+                  if (!surface || seenSurfaceIds.has(surface.id)) continue;
+                  seenSurfaceIds.add(surface.id);
+                  surfaces.push(surface);
+                }
+              }
               const rawActiveSurfaceId = validThreadState?.activeSurfaceId;
               const persistedActiveSurfaceId = surfaces.some(
                 (surface) => surface.id === rawActiveSurfaceId,
@@ -443,6 +479,12 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             activeSurfaceId: surfaceId,
             surfaces: current.surfaces.map((surface) => {
               if (surface.id !== surfaceId || surface.kind !== "terminal") return surface;
+              if (
+                !surface.terminalIds.includes(terminalId) &&
+                surface.terminalIds.length >= MAX_TERMINALS_PER_GROUP
+              ) {
+                return surface;
+              }
               const { splitDirection: _splitDirection, ...baseSurface } = surface;
               return {
                 ...baseSurface,
@@ -667,9 +709,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
     {
       name: RIGHT_PANEL_STORAGE_KEY,
       version: RIGHT_PANEL_STORAGE_VERSION,
-      storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
-      ),
+      storage: createJSONStorage(resolveLocalStorage),
       partialize: (state) => ({
         byThreadKey: Object.fromEntries(
           Object.entries(state.byThreadKey).filter(

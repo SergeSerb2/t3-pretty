@@ -1,6 +1,14 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import {
+  ENTITY_ID_MAX_LENGTH,
+  EnvironmentId,
+  ThreadId,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import type { DraftId } from "./composerDraftStore";
+
+/** Legacy draft ids may be the concatenated `<environmentId>:<threadId>` key. */
+export const DRAFT_ROUTE_ID_MAX_LENGTH = ENTITY_ID_MAX_LENGTH * 2 + 1;
 
 export type ThreadRouteTarget =
   | {
@@ -55,27 +63,43 @@ export function buildDraftThreadRouteParams(draftId: DraftId): {
   return { draftId };
 }
 
+function isCanonicalRouteId(value: string | undefined, maximumLength: number): value is string {
+  return (
+    value !== undefined &&
+    value.length > 0 &&
+    value.length <= maximumLength &&
+    value.trim() === value
+  );
+}
+
 export function resolveThreadRouteRef(
   params: Partial<Record<"environmentId" | "threadId", string | undefined>>,
 ): ScopedThreadRef | null {
-  if (!params.environmentId || !params.threadId) {
+  if (
+    !isCanonicalRouteId(params.environmentId, ENTITY_ID_MAX_LENGTH) ||
+    !isCanonicalRouteId(params.threadId, ENTITY_ID_MAX_LENGTH)
+  ) {
     return null;
   }
 
-  return scopeThreadRef(params.environmentId as EnvironmentId, params.threadId as ThreadId);
+  return scopeThreadRef(EnvironmentId.make(params.environmentId), ThreadId.make(params.threadId));
 }
 
 export function resolveThreadRouteTarget(
   params: Partial<Record<"environmentId" | "threadId" | "draftId", string | undefined>>,
 ): ThreadRouteTarget | null {
   if (params.environmentId && params.threadId) {
+    const threadRef = resolveThreadRouteRef(params);
+    if (!threadRef) {
+      return null;
+    }
     return {
       kind: "server",
-      threadRef: scopeThreadRef(params.environmentId as EnvironmentId, params.threadId as ThreadId),
+      threadRef,
     };
   }
 
-  if (!params.draftId) {
+  if (!isCanonicalRouteId(params.draftId, DRAFT_ROUTE_ID_MAX_LENGTH)) {
     return null;
   }
 

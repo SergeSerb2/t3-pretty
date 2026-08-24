@@ -9,7 +9,11 @@
  *
  * @module usagePricing
  */
-import type { UsageCostSource, UsageTokenTotals } from "@t3tools/contracts";
+import {
+  USAGE_MODEL_MAX_LENGTH,
+  type UsageCostSource,
+  type UsageTokenTotals,
+} from "@t3tools/contracts";
 
 /**
  * The subset of a LiteLLM entry we price against. All values are USD per token.
@@ -36,8 +40,18 @@ interface LiteLlmEntry {
   readonly cache_creation_input_token_cost?: unknown;
 }
 
-function finiteNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+const RATE_TABLE_MAX_MODELS = 50_000;
+// One USD per token is orders of magnitude above real model pricing while
+// keeping a hostile rate document from overflowing aggregate arithmetic.
+const RATE_USD_PER_TOKEN_MAX = 1;
+
+function boundedRate(value: unknown): number | null {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= RATE_USD_PER_TOKEN_MAX
+    ? value
+    : null;
 }
 
 /**
@@ -52,20 +66,23 @@ export function parseRateTable(document: unknown): RateTable {
   if (typeof document !== "object" || document === null) return table;
 
   for (const [name, raw] of Object.entries(document as Record<string, unknown>)) {
+    if (table.size >= RATE_TABLE_MAX_MODELS) break;
     if (typeof raw !== "object" || raw === null) continue;
+    const normalizedName = normalizeModelName(name);
+    if (normalizedName.length === 0 || normalizedName.length > USAGE_MODEL_MAX_LENGTH) continue;
     const entry = raw as LiteLlmEntry;
-    const input = finiteNumber(entry.input_cost_per_token);
-    const output = finiteNumber(entry.output_cost_per_token);
+    const input = boundedRate(entry.input_cost_per_token);
+    const output = boundedRate(entry.output_cost_per_token);
     if (input === null || output === null) continue;
 
-    table.set(normalizeModelName(name), {
+    table.set(normalizedName, {
       inputCostPerToken: input,
       outputCostPerToken: output,
       // Anthropic bills cache reads at a discount and cache writes at a
       // premium. When a model omits them, cached input is priced as plain
       // input rather than as free.
-      cacheReadCostPerToken: finiteNumber(entry.cache_read_input_token_cost) ?? input,
-      cacheCreationCostPerToken: finiteNumber(entry.cache_creation_input_token_cost) ?? input,
+      cacheReadCostPerToken: boundedRate(entry.cache_read_input_token_cost) ?? input,
+      cacheCreationCostPerToken: boundedRate(entry.cache_creation_input_token_cost) ?? input,
     });
   }
   return table;
@@ -179,7 +196,7 @@ export function priceUsage(
   totals: UsageTokenTotals,
   reportedCostUsd: number | null,
 ): PricedUsage {
-  if (reportedCostUsd !== null && Number.isFinite(reportedCostUsd)) {
+  if (reportedCostUsd !== null && Number.isFinite(reportedCostUsd) && reportedCostUsd >= 0) {
     return { costUsd: reportedCostUsd, costSource: "providerReported" };
   }
 
@@ -192,7 +209,9 @@ export function priceUsage(
     totals.cacheCreationTokens * rate.cacheCreationCostPerToken +
     totals.outputTokens * rate.outputCostPerToken;
 
-  return { costUsd, costSource: "modelPriced" };
+  return Number.isFinite(costUsd)
+    ? { costUsd, costSource: "modelPriced" }
+    : { costUsd: 0, costSource: "unpriced" };
 }
 
 /**
@@ -202,5 +221,6 @@ export function priceUsage(
 export function cacheSavingsUsd(table: RateTable, model: string, totals: UsageTokenTotals): number {
   const rate = lookupRate(table, model);
   if (rate === null) return 0;
-  return totals.cachedInputTokens * (rate.inputCostPerToken - rate.cacheReadCostPerToken);
+  const savings = totals.cachedInputTokens * (rate.inputCostPerToken - rate.cacheReadCostPerToken);
+  return Number.isFinite(savings) && savings > 0 ? savings : 0;
 }

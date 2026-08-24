@@ -18,7 +18,10 @@ export const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 export const PositiveInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 export const PortSchema = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }));
 
-export const IsoDateTime = Schema.String;
+export const ISO_DATE_TIME_MAX_LENGTH = 128;
+export const ENTITY_ID_MAX_LENGTH = 4_096;
+
+export const IsoDateTime = Schema.String.check(Schema.isMaxLength(ISO_DATE_TIME_MAX_LENGTH));
 export type IsoDateTime = typeof IsoDateTime.Type;
 
 /**
@@ -46,10 +49,12 @@ export const ForwardCompatibleArray = <Element extends Schema.Top>(element: Elem
 };
 
 /**
- * Construct a branded identifier. Enforces non-empty trimmed strings
+ * Construct a branded identifier. Enforces bounded, non-empty trimmed strings.
  */
 const makeEntityId = <Brand extends string>(brand: Brand) => {
-  return TrimmedNonEmptyString.pipe(Schema.brand(brand));
+  return TrimmedNonEmptyString.check(Schema.isMaxLength(ENTITY_ID_MAX_LENGTH)).pipe(
+    Schema.brand(brand),
+  );
 };
 
 export const ThreadId = makeEntityId("ThreadId");

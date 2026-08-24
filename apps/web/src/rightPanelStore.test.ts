@@ -77,6 +77,43 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("bounds persisted and runtime terminal groups to the supported pane limit", () => {
+    const persisted = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "terminal:term-1",
+          surfaces: [
+            {
+              id: "terminal:term-1",
+              kind: "terminal",
+              resourceId: "term-1",
+              terminalIds: ["term-1", "term-2", "term-3", "term-4", "term-5"],
+              activeTerminalId: "term-5",
+            },
+          ],
+        },
+      },
+    });
+    expect(
+      persisted.byThreadKey["env-1:thread-A"]?.surfaces[0]?.kind === "terminal"
+        ? persisted.byThreadKey["env-1:thread-A"].surfaces[0].terminalIds
+        : [],
+    ).toEqual(["term-1", "term-2", "term-3", "term-4"]);
+
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    for (const terminalId of ["term-2", "term-3", "term-4", "term-5"]) {
+      useRightPanelStore.getState().splitTerminal(refA, "terminal:term-1", terminalId);
+    }
+    const surface = selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA);
+    expect(surface?.kind === "terminal" ? surface.terminalIds : []).toEqual([
+      "term-1",
+      "term-2",
+      "term-3",
+      "term-4",
+    ]);
+  });
+
   it("upgrades saved file surfaces with neutral reveal state", () => {
     expect(
       migratePersistedRightPanelState({
@@ -206,6 +243,35 @@ describe("rightPanelStore", () => {
           surfaces: [],
         },
         "env-1:thread-B": {
+          isOpen: true,
+          activeSurfaceId: "diff",
+          surfaces: [{ id: "diff", kind: "diff" }],
+        },
+      },
+    });
+  });
+
+  it("drops malformed surfaces and canonicalizes duplicate persisted tabs", () => {
+    expect(
+      migratePersistedRightPanelState({
+        byThreadKey: {
+          "env-1:thread-A": {
+            isOpen: true,
+            activeSurfaceId: "diff",
+            surfaces: [
+              null,
+              "diff",
+              { id: "not-diff", kind: "diff", retainedGarbage: "ignored" },
+              { id: "diff", kind: "diff" },
+              { id: "browser:tab-a", kind: "preview", resourceId: 42 },
+              { id: "file:README.md", kind: "file", relativePath: null },
+            ],
+          },
+        },
+      }),
+    ).toEqual({
+      byThreadKey: {
+        "env-1:thread-A": {
           isOpen: true,
           activeSurfaceId: "diff",
           surfaces: [{ id: "diff", kind: "diff" }],

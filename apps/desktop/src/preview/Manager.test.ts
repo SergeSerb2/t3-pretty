@@ -1,4 +1,5 @@
 import { it as effectIt } from "@effect/vitest";
+import { PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES } from "@t3tools/contracts";
 import type { DesktopPreviewRecordingFrame } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
@@ -70,6 +71,39 @@ describe("isPreviewRefreshShortcut", () => {
     );
     expect(PreviewManager.isPreviewRefreshShortcut(input({ shift: true }))).toBe(false);
     expect(PreviewManager.isPreviewRefreshShortcut(input({ type: "keyUp" }))).toBe(false);
+  });
+});
+
+describe("boundAccessibilityTree", () => {
+  it("retains a bounded node prefix and reports omitted nodes", () => {
+    const nodes = Array.from(
+      { length: PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES + 2 },
+      (_, index) => ({ nodeId: index }),
+    );
+
+    const normalized = PreviewManager.boundAccessibilityTree({ nodes });
+
+    expect(normalized.nodes).toEqual(
+      nodes.slice(0, PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES),
+    );
+    expect(normalized.t3TruncatedNodeCount).toBe(2);
+  });
+
+  it("skips oversized nodes and stops at the aggregate byte budget", () => {
+    const oversized = { nodeId: "oversized", name: "x".repeat(64_001) };
+    const bounded = Array.from({ length: 20 }, (_, index) => ({
+      nodeId: index,
+      name: "x".repeat(60_000),
+    }));
+
+    const normalized = PreviewManager.boundAccessibilityTree({ nodes: [oversized, ...bounded] });
+
+    expect(normalized.nodes).toEqual(bounded.slice(0, 16));
+    expect(normalized.t3TruncatedNodeCount).toBe(5);
+  });
+
+  it("fails soft for malformed protocol responses", () => {
+    expect(PreviewManager.boundAccessibilityTree({})).toEqual({ nodes: [] });
   });
 });
 
@@ -2500,7 +2534,7 @@ describe("PreviewManager", () => {
                 },
               }
             : method === "Accessibility.getFullAXTree"
-              ? { nodes: [] }
+              ? { nodes: Array.from({ length: 2_100 }, (_, index) => ({ nodeId: index })) }
               : undefined,
         );
         fromId.mockReturnValue(
@@ -2559,6 +2593,9 @@ describe("PreviewManager", () => {
           "Accessibility.getFullAXTree",
           "Accessibility.disable",
         ]);
+        expect(sendCommand).toHaveBeenCalledWith("Accessibility.getFullAXTree", { depth: 12 });
+        expect(snapshot.accessibilityTree.nodes).toHaveLength(2_048);
+        expect(snapshot.accessibilityTree.t3TruncatedNodeCount).toBe(52);
       }),
     ),
   );

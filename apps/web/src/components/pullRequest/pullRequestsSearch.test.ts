@@ -80,4 +80,9 @@ describe("pull request list search", () => {
     expect(pullRequestsRouteSource).toContain("search: resetPullRequestsListSearch");
     expect(pullRequestsRouteSource).toContain("livePullRequestListFilters(");
   });
+
+  it("does not inert the page while the header filter menus are open", () => {
+    expect(pullRequestsRouteSource).toContain("function CompactFilterMenu");
+    expect(pullRequestsRouteSource).toContain("modal={false}");
+  });
 });

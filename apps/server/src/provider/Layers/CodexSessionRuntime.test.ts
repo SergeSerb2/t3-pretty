@@ -11,7 +11,13 @@ import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { describe } from "vite-plus/test";
-import { DEFAULT_MODEL, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_MODEL,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS,
+  PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
@@ -24,11 +30,15 @@ import {
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import {
   buildTurnStartParams,
+  CODEX_STDERR_FRAGMENT_MAX_CHARS,
   hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
   makeCodexSessionRuntime,
+  isTerminalCodexChildNotification,
   makeMemoryConsolidationNotificationFilter,
+  normalizeCodexUserInputQuestions,
   openCodexThread,
+  splitCodexStderrChunk,
 } from "./CodexSessionRuntime.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
 
@@ -45,6 +55,93 @@ describe("CodexSessionRuntimeIdentifierGenerationError", () => {
     NodeAssert.equal(
       error.message,
       "Failed to generate Codex App Server identifier for provider-event.",
+    );
+  });
+});
+
+describe("splitCodexStderrChunk", () => {
+  it("bounds incomplete and completed stderr fragments", () => {
+    const oversized = "x".repeat(CODEX_STDERR_FRAGMENT_MAX_CHARS + 1_000);
+
+    const [noLines, remainder] = splitCodexStderrChunk("", oversized);
+    NodeAssert.deepEqual(noLines, []);
+    NodeAssert.equal(remainder.length, CODEX_STDERR_FRAGMENT_MAX_CHARS);
+
+    const [lines, nextRemainder] = splitCodexStderrChunk(remainder, "tail\r\nnext");
+    NodeAssert.equal(lines.length, 1);
+    NodeAssert.equal(lines[0]?.length, CODEX_STDERR_FRAGMENT_MAX_CHARS);
+    NodeAssert.equal(nextRemainder, "next");
+  });
+});
+
+describe("normalizeCodexUserInputQuestions", () => {
+  const freeformQuestion = {
+    id: "answer",
+    header: "Answer",
+    question: "What should Codex do next?",
+    options: null,
+  } as const;
+
+  it("keeps valid free-form questions without inventing options", () => {
+    NodeAssert.deepEqual(normalizeCodexUserInputQuestions([freeformQuestion]), [
+      {
+        id: "answer",
+        header: "Answer",
+        question: "What should Codex do next?",
+        options: [],
+        multiSelect: false,
+      },
+    ]);
+  });
+
+  it("rejects question sets that cannot cross the canonical contract", () => {
+    NodeAssert.equal(
+      normalizeCodexUserInputQuestions(
+        Array.from(
+          { length: PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS + 1 },
+          () => freeformQuestion,
+        ),
+      ),
+      undefined,
+    );
+    NodeAssert.equal(
+      normalizeCodexUserInputQuestions([
+        { ...freeformQuestion, id: "x".repeat(PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH + 1) },
+      ]),
+      undefined,
+    );
+    NodeAssert.equal(
+      normalizeCodexUserInputQuestions([
+        {
+          ...freeformQuestion,
+          options: Array.from(
+            { length: PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS + 1 },
+            (_, index) => ({ label: `option-${index}`, description: "description" }),
+          ),
+        },
+      ]),
+      undefined,
+    );
+  });
+});
+
+describe("isTerminalCodexChildNotification", () => {
+  it("settles closed and non-retrying children only", () => {
+    NodeAssert.equal(
+      isTerminalCodexChildNotification({ method: "thread/closed", params: {} }),
+      true,
+    );
+    NodeAssert.equal(
+      isTerminalCodexChildNotification({ method: "error", params: { willRetry: false } }),
+      true,
+    );
+    NodeAssert.equal(
+      isTerminalCodexChildNotification({ method: "error", params: { willRetry: true } }),
+      false,
+    );
+    NodeAssert.equal(
+      isTerminalCodexChildNotification({ method: "turn/completed", params: {} }),
+      false,
     );
   });
 });

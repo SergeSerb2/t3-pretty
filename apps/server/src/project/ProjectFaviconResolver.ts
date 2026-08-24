@@ -15,6 +15,7 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
+import { readTextPrefix } from "../boundedFileRead.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
 
@@ -62,6 +63,7 @@ const LINK_ICON_HTML_RE =
   /<link\b(?=[^>]*\brel=["'](?:icon|shortcut icon)["'])(?=[^>]*\bhref=["']([^"'?]+))[^>]*>/i;
 const ICON_REL_RE = /\brel\s*:\s*["'](?:icon|shortcut icon)["']/i;
 const ICON_HREF_RE = /\bhref\s*:\s*["']([^"'?]+)/i;
+const ICON_SOURCE_MAX_BYTES = 1024 * 1024;
 
 export class ProjectFaviconResolutionError extends Schema.TaggedErrorClass<ProjectFaviconResolutionError>()(
   "ProjectFaviconResolutionError",
@@ -238,7 +240,7 @@ export const make = Effect.gen(function* () {
           ),
         );
       const source = yield* optionOnNotFound(
-        fileSystem.readFileString(sourcePath.absolutePath),
+        readTextPrefix(fileSystem, sourcePath.absolutePath, ICON_SOURCE_MAX_BYTES),
       ).pipe(
         Effect.mapError(
           (cause) =>

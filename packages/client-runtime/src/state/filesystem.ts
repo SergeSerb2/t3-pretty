@@ -13,6 +13,8 @@ import {
 } from "./projects.ts";
 import { createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
 
+export const FILESYSTEM_BROWSE_IDLE_TTL_MS = 30_000;
+
 export function getFilesystemBrowsePath(query: string, platform = "", enabled = true) {
   const isBrowsing = enabled && isFilesystemBrowseQuery(query, platform);
   const directoryPath = isBrowsing ? getBrowseDirectoryPath(query) : "";
@@ -78,6 +80,7 @@ export function createFilesystemEnvironmentAtoms<R, E>(
     browse: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:filesystem:browse",
       tag: WS_METHODS.filesystemBrowse,
+      idleTtlMs: FILESYSTEM_BROWSE_IDLE_TTL_MS,
     }),
   };
 }

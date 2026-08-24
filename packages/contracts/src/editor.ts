@@ -69,8 +69,11 @@ export const EDITORS = [
 export const EditorId = Schema.Literals(EDITORS.map((e) => e.id));
 export type EditorId = typeof EditorId.Type;
 
+export const EDITOR_LAUNCH_PATH_MAX_LENGTH = 32 * 1024;
+export const REMOTE_OPEN_TARGET_HOST_MAX_LENGTH = 253;
+export const REMOTE_OPEN_TARGET_MAX_COUNT = 2;
 export const LaunchEditorInput = Schema.Struct({
-  cwd: TrimmedNonEmptyString,
+  cwd: TrimmedNonEmptyString.check(Schema.isMaxLength(EDITOR_LAUNCH_PATH_MAX_LENGTH)),
   editor: EditorId,
 });
 export type LaunchEditorInput = typeof LaunchEditorInput.Type;
@@ -119,7 +122,7 @@ export type RemoteOpenTargetKind = typeof RemoteOpenTargetKind.Type;
 
 export const RemoteOpenTarget = Schema.Struct({
   kind: RemoteOpenTargetKind,
-  host: TrimmedNonEmptyString,
+  host: TrimmedNonEmptyString.check(Schema.isMaxLength(REMOTE_OPEN_TARGET_HOST_MAX_LENGTH)),
 });
 export type RemoteOpenTarget = typeof RemoteOpenTarget.Type;
 

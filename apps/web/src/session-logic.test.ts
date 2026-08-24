@@ -1960,6 +1960,28 @@ describe("deriveTimelineEntries", () => {
       },
     });
   });
+
+  it("orders mixed-precision timestamps by instant rather than raw string", () => {
+    const makeMessage = (id: string, createdAt: string) => ({
+      id: MessageId.make(id),
+      role: "assistant" as const,
+      text: id,
+      createdAt,
+      turnId: null,
+      updatedAt: createdAt,
+      streaming: false,
+    });
+    const entries = deriveTimelineEntries(
+      [
+        makeMessage("media-micro", "2026-07-28T17:55:08.546238Z"),
+        makeMessage("text-milli", "2026-07-28T17:55:08.546Z"),
+      ],
+      [],
+      [],
+    );
+
+    expect(entries.map((entry) => entry.id)).toEqual(["text-milli", "media-micro"]);
+  });
 });
 
 describe("deriveLiveTurnHeadline", () => {
@@ -2392,5 +2414,66 @@ describe("rerun workflows", () => {
     const spawnRows = entries.filter((entry) => entry.agentSpawn !== undefined);
     expect(spawnRows.map((row) => row.agentSpawn!.workflowId)).toEqual(["wf-run1", "wf-run2"]);
     expect(spawnRows.map((row) => row.turnId)).toEqual(["turn-1", "turn-2"]);
+  });
+});
+
+describe("session activity performance", () => {
+  it("reuses entries for unchanged activities", () => {
+    const activities = ["status", "diff", "log"].map((command, index) =>
+      makeActivity({
+        id: `stable-tool-${index}`,
+        kind: "tool.completed",
+        sequence: index,
+        payload: {
+          itemType: "command_execution",
+          data: { toolCallId: `stable-tool-${index}`, item: { command: ["git", command] } },
+        },
+      }),
+    );
+
+    const initialEntries = deriveWorkLogEntries(activities.slice(0, 2));
+    const appendedEntries = deriveWorkLogEntries(activities);
+    expect(appendedEntries[0]).toBe(initialEntries[0]);
+    expect(appendedEntries[1]).toBe(initialEntries[1]);
+  });
+
+  it("updates 20,000 ordered tool activities within 100 ms", () => {
+    const activities = Array.from({ length: 20_000 }, (_, index) =>
+      makeActivity({
+        id: `benchmark-tool-${index}`,
+        createdAt: new Date(1_700_000_000_000 + index).toISOString(),
+        kind: "tool.completed",
+        summary: "Ran command",
+        sequence: index,
+        payload: {
+          itemType: "command_execution",
+          title: "Ran command",
+          data: {
+            toolCallId: `benchmark-tool-${index}`,
+            item: { command: ["git", "status"] },
+          },
+        },
+      }),
+    );
+    deriveWorkLogEntries(activities);
+    const updatedActivities = [
+      ...activities,
+      makeActivity({
+        id: "benchmark-tool-appended",
+        createdAt: new Date(1_700_000_000_000 + activities.length).toISOString(),
+        kind: "tool.completed",
+        summary: "Ran command",
+        sequence: activities.length,
+        payload: {
+          itemType: "command_execution",
+          title: "Ran command",
+          data: { toolCallId: "benchmark-tool-appended", item: { command: ["git", "diff"] } },
+        },
+      }),
+    ];
+
+    const startedAt = performance.now();
+    expect(deriveWorkLogEntries(updatedActivities)).toHaveLength(20_001);
+    expect(performance.now() - startedAt).toBeLessThan(100);
   });
 });

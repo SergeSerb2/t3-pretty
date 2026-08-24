@@ -17,19 +17,61 @@ import {
   KeybindingWhen,
   ResolvedKeybindingsConfig,
 } from "./keybindings.ts";
-import { EditorId, RemoteOpenTarget } from "./editor.ts";
-import { ModelCapabilities } from "./model.ts";
+import { EDITORS, EditorId, REMOTE_OPEN_TARGET_MAX_COUNT, RemoteOpenTarget } from "./editor.ts";
+import { ModelCapabilities, PROVIDER_MODEL_ID_MAX_LENGTH } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import {
+  RESOURCE_MONITOR_PROCESS_COMMAND_MAX_LENGTH,
+  RESOURCE_MONITOR_PROCESS_STATUS_MAX_LENGTH,
+  RESOURCE_TELEMETRY_HEALTH_ERROR_MAX_LENGTH,
+  RESOURCE_TELEMETRY_HISTORY_BUCKET_MAX_COUNT,
+  RESOURCE_TELEMETRY_HISTORY_TOP_PROCESS_MAX_COUNT,
+  RESOURCE_TELEMETRY_SNAPSHOT_PROCESS_MAX_COUNT,
+} from "./resourceTelemetry.ts";
 import { ServerSettings } from "./settings.ts";
+import {
+  SKILL_DESCRIPTION_MAX_LENGTH,
+  SKILL_NAME_MAX_LENGTH,
+  SKILL_STATE_MAX_ITEMS,
+} from "./skills.ts";
+
+export const SERVER_PROVIDER_LABEL_MAX_LENGTH = 4_096;
+export const SERVER_PROVIDER_TEXT_MAX_LENGTH = 64 * 1024;
+export const SERVER_PROVIDER_PATH_MAX_LENGTH = 32 * 1024;
+export const SERVER_PROVIDER_MODELS_MAX_ITEMS = 1_024;
+export const SERVER_PROVIDER_SLASH_COMMANDS_MAX_ITEMS = 2_048;
+export const SERVER_PROVIDERS_MAX_ITEMS = 256;
+export const SERVER_TRACE_DIAGNOSTIC_TEXT_MAX_LENGTH = 4_096;
+export const SERVER_TRACE_DIAGNOSTIC_PATH_MAX_LENGTH = 32 * 1_024;
+export const SERVER_TRACE_DIAGNOSTIC_SCANNED_FILE_MAX_COUNT = 101;
+export const SERVER_TRACE_DIAGNOSTIC_TOP_MAX_COUNT = 10;
+export const SERVER_TRACE_DIAGNOSTIC_RECENT_MAX_COUNT = 20;
+export const SERVER_TRACE_DIAGNOSTIC_LOG_LEVEL_MAX_COUNT = 64;
+export const SERVER_PROCESS_DIAGNOSTIC_ELAPSED_MAX_LENGTH = 128;
+export const SERVER_PROCESS_DIAGNOSTIC_MAX_COUNT = RESOURCE_TELEMETRY_SNAPSHOT_PROCESS_MAX_COUNT;
+
+const ServerProviderLabel = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(SERVER_PROVIDER_LABEL_MAX_LENGTH),
+);
+const ServerProviderText = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(SERVER_PROVIDER_TEXT_MAX_LENGTH),
+);
+const ServerProviderTimestamp = IsoDateTime.check(Schema.isMaxLength(128));
+const ServerTraceDiagnosticText = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(SERVER_TRACE_DIAGNOSTIC_TEXT_MAX_LENGTH),
+);
+const ServerTraceDiagnosticPath = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(SERVER_TRACE_DIAGNOSTIC_PATH_MAX_LENGTH),
+);
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
   kind: Schema.Literal("keybindings.malformed-config"),
-  message: TrimmedNonEmptyString,
+  message: ServerProviderText,
 });
 
 const KeybindingsInvalidEntryIssue = Schema.Struct({
   kind: Schema.Literal("keybindings.invalid-entry"),
-  message: TrimmedNonEmptyString,
+  message: ServerProviderText,
   index: Schema.Number,
 });
 
@@ -41,7 +83,7 @@ export type ServerConfigIssue = typeof ServerConfigIssue.Type;
 
 // Issue kinds grow over time; older clients must not fail the whole config
 // decode over a kind they cannot render.
-const ServerConfigIssues = ForwardCompatibleArray(ServerConfigIssue);
+const ServerConfigIssues = ForwardCompatibleArray(ServerConfigIssue).check(Schema.isMaxLength(256));
 
 export const ServerProviderState = Schema.Literals(["ready", "warning", "error", "disabled"]);
 export type ServerProviderState = typeof ServerProviderState.Type;
@@ -55,17 +97,17 @@ export type ServerProviderAuthStatus = typeof ServerProviderAuthStatus.Type;
 
 export const ServerProviderAuth = Schema.Struct({
   status: ServerProviderAuthStatus,
-  type: Schema.optional(TrimmedNonEmptyString),
-  label: Schema.optional(TrimmedNonEmptyString),
-  email: Schema.optional(TrimmedNonEmptyString),
+  type: Schema.optional(ServerProviderLabel),
+  label: Schema.optional(ServerProviderLabel),
+  email: Schema.optional(ServerProviderLabel),
 });
 export type ServerProviderAuth = typeof ServerProviderAuth.Type;
 
 export const ServerProviderModel = Schema.Struct({
-  slug: TrimmedNonEmptyString,
-  name: TrimmedNonEmptyString,
-  shortName: Schema.optional(TrimmedNonEmptyString),
-  subProvider: Schema.optional(TrimmedNonEmptyString),
+  slug: TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_MODEL_ID_MAX_LENGTH)),
+  name: ServerProviderLabel,
+  shortName: Schema.optional(ServerProviderLabel),
+  subProvider: Schema.optional(ServerProviderLabel),
   isCustom: Schema.Boolean,
   isDefault: Schema.optional(Schema.Boolean),
   isLegacy: Schema.optional(Schema.Boolean),
@@ -74,25 +116,27 @@ export const ServerProviderModel = Schema.Struct({
 export type ServerProviderModel = typeof ServerProviderModel.Type;
 
 export const ServerProviderSlashCommandInput = Schema.Struct({
-  hint: TrimmedNonEmptyString,
+  hint: ServerProviderText,
 });
 export type ServerProviderSlashCommandInput = typeof ServerProviderSlashCommandInput.Type;
 
 export const ServerProviderSlashCommand = Schema.Struct({
-  name: TrimmedNonEmptyString,
-  description: Schema.optional(TrimmedNonEmptyString),
+  name: ServerProviderLabel,
+  description: Schema.optional(ServerProviderText),
   input: Schema.optional(ServerProviderSlashCommandInput),
 });
 export type ServerProviderSlashCommand = typeof ServerProviderSlashCommand.Type;
 
 export const ServerProviderSkill = Schema.Struct({
-  name: TrimmedNonEmptyString,
-  description: Schema.optional(TrimmedNonEmptyString),
-  path: TrimmedNonEmptyString,
-  scope: Schema.optional(TrimmedNonEmptyString),
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(SKILL_NAME_MAX_LENGTH)),
+  description: Schema.optional(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(SKILL_DESCRIPTION_MAX_LENGTH)),
+  ),
+  path: TrimmedNonEmptyString.check(Schema.isMaxLength(SERVER_PROVIDER_PATH_MAX_LENGTH)),
+  scope: Schema.optional(ServerProviderLabel),
   enabled: Schema.Boolean,
-  displayName: Schema.optional(TrimmedNonEmptyString),
-  shortDescription: Schema.optional(TrimmedNonEmptyString),
+  displayName: Schema.optional(ServerProviderLabel),
+  shortDescription: Schema.optional(ServerProviderText),
 });
 export type ServerProviderSkill = typeof ServerProviderSkill.Type;
 
@@ -117,7 +161,7 @@ export const ServerProviderAvailability = Schema.Literals(["available", "unavail
 export type ServerProviderAvailability = typeof ServerProviderAvailability.Type;
 
 export const ServerProviderContinuation = Schema.Struct({
-  groupKey: TrimmedNonEmptyString,
+  groupKey: ServerProviderLabel,
 });
 export type ServerProviderContinuation = typeof ServerProviderContinuation.Type;
 
@@ -130,12 +174,12 @@ export type ServerProviderVersionAdvisoryStatus = typeof ServerProviderVersionAd
 
 export const ServerProviderVersionAdvisory = Schema.Struct({
   status: ServerProviderVersionAdvisoryStatus,
-  currentVersion: Schema.NullOr(TrimmedNonEmptyString),
-  latestVersion: Schema.NullOr(TrimmedNonEmptyString),
-  updateCommand: Schema.NullOr(TrimmedNonEmptyString),
+  currentVersion: Schema.NullOr(ServerProviderLabel),
+  latestVersion: Schema.NullOr(ServerProviderLabel),
+  updateCommand: Schema.NullOr(ServerProviderText),
   canUpdate: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  checkedAt: Schema.NullOr(IsoDateTime),
-  message: Schema.NullOr(TrimmedNonEmptyString),
+  checkedAt: Schema.NullOr(ServerProviderTimestamp),
+  message: Schema.NullOr(ServerProviderText),
 });
 export type ServerProviderVersionAdvisory = typeof ServerProviderVersionAdvisory.Type;
 
@@ -151,9 +195,9 @@ export type ServerProviderUpdateStatus = typeof ServerProviderUpdateStatus.Type;
 
 export const ServerProviderUpdateState = Schema.Struct({
   status: ServerProviderUpdateStatus,
-  startedAt: Schema.NullOr(IsoDateTime),
-  finishedAt: Schema.NullOr(IsoDateTime),
-  message: Schema.NullOr(TrimmedNonEmptyString),
+  startedAt: Schema.NullOr(ServerProviderTimestamp),
+  finishedAt: Schema.NullOr(ServerProviderTimestamp),
+  message: Schema.NullOr(ServerProviderText),
   output: Schema.NullOr(Schema.String.check(Schema.isMaxLength(10_000))),
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
@@ -165,19 +209,19 @@ export const ServerProvider = Schema.Struct({
   // Open driver kind slug that selects the implementation handling this
   // instance. It is metadata/capability context, not a routing key.
   driver: ProviderDriverKind,
-  displayName: Schema.optional(TrimmedNonEmptyString),
-  accentColor: Schema.optional(TrimmedNonEmptyString),
-  badgeLabel: Schema.optional(TrimmedNonEmptyString),
+  displayName: Schema.optional(ServerProviderLabel),
+  accentColor: Schema.optional(ServerProviderLabel),
+  badgeLabel: Schema.optional(ServerProviderLabel),
   continuation: Schema.optional(ServerProviderContinuation),
   showInteractionModeToggle: Schema.optional(Schema.Boolean),
   requiresNewThreadForModelChange: Schema.optional(Schema.Boolean),
   enabled: Schema.Boolean,
   installed: Schema.Boolean,
-  version: Schema.NullOr(TrimmedNonEmptyString),
+  version: Schema.NullOr(ServerProviderLabel),
   status: ServerProviderState,
   auth: ServerProviderAuth,
-  checkedAt: IsoDateTime,
-  message: Schema.optional(TrimmedNonEmptyString),
+  checkedAt: ServerProviderTimestamp,
+  message: Schema.optional(ServerProviderText),
   // Optional for back-compat: every legacy producer omits this field and
   // an absent value is interpreted as `"available"` by consumers (see
   // `isProviderAvailable`). New `ProviderInstanceRegistry` outputs set it
@@ -186,12 +230,16 @@ export const ServerProvider = Schema.Struct({
   availability: Schema.optional(ServerProviderAvailability),
   // Human-readable reason populated when `availability === "unavailable"`.
   // Surfaces in the UI alongside the missing-driver affordance.
-  unavailableReason: Schema.optional(TrimmedNonEmptyString),
-  models: Schema.Array(ServerProviderModel),
-  slashCommands: Schema.Array(ServerProviderSlashCommand).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
+  unavailableReason: Schema.optional(ServerProviderText),
+  models: Schema.Array(ServerProviderModel).check(
+    Schema.isMaxLength(SERVER_PROVIDER_MODELS_MAX_ITEMS),
   ),
-  skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  slashCommands: Schema.Array(ServerProviderSlashCommand)
+    .check(Schema.isMaxLength(SERVER_PROVIDER_SLASH_COMMANDS_MAX_ITEMS))
+    .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  skills: Schema.Array(ServerProviderSkill)
+    .check(Schema.isMaxLength(SKILL_STATE_MAX_ITEMS))
+    .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
 });
@@ -201,7 +249,9 @@ export type ServerProvider = typeof ServerProvider.Type;
 // ServerProviderAuthStatus, ServerProviderVersionAdvisoryStatus,
 // ServerProviderUpdateStatus); an older client must not fail the whole config
 // decode over one provider it cannot render.
-export const ServerProviders = ForwardCompatibleArray(ServerProvider);
+export const ServerProviders = ForwardCompatibleArray(ServerProvider).check(
+  Schema.isMaxLength(SERVER_PROVIDERS_MAX_ITEMS),
+);
 export type ServerProviders = typeof ServerProviders.Type;
 
 /**
@@ -214,11 +264,11 @@ export const isProviderAvailable = (snapshot: ServerProvider): boolean =>
   snapshot.availability !== "unavailable";
 
 export const ServerObservability = Schema.Struct({
-  logsDirectoryPath: TrimmedNonEmptyString,
+  logsDirectoryPath: ServerTraceDiagnosticPath,
   localTracingEnabled: Schema.Boolean,
-  otlpTracesUrl: Schema.optional(TrimmedNonEmptyString),
+  otlpTracesUrl: Schema.optional(ServerProviderText),
   otlpTracesEnabled: Schema.Boolean,
-  otlpMetricsUrl: Schema.optional(TrimmedNonEmptyString),
+  otlpMetricsUrl: Schema.optional(ServerProviderText),
   otlpMetricsEnabled: Schema.Boolean,
 });
 export type ServerObservability = typeof ServerObservability.Type;
@@ -230,7 +280,7 @@ export const ServerTraceDiagnosticsErrorKind = Schema.Literals([
 export type ServerTraceDiagnosticsErrorKind = typeof ServerTraceDiagnosticsErrorKind.Type;
 
 export const ServerTraceDiagnosticsSpanSummary = Schema.Struct({
-  name: TrimmedNonEmptyString,
+  name: ServerTraceDiagnosticText,
   count: NonNegativeInt,
   failureCount: NonNegativeInt,
   totalDurationMs: Schema.Number,
@@ -240,47 +290,49 @@ export const ServerTraceDiagnosticsSpanSummary = Schema.Struct({
 export type ServerTraceDiagnosticsSpanSummary = typeof ServerTraceDiagnosticsSpanSummary.Type;
 
 export const ServerTraceDiagnosticsFailureSummary = Schema.Struct({
-  name: TrimmedNonEmptyString,
-  cause: TrimmedNonEmptyString,
+  name: ServerTraceDiagnosticText,
+  cause: ServerTraceDiagnosticText,
   count: NonNegativeInt,
   lastSeenAt: Schema.DateTimeUtc,
-  traceId: TrimmedNonEmptyString,
-  spanId: TrimmedNonEmptyString,
+  traceId: ServerTraceDiagnosticText,
+  spanId: ServerTraceDiagnosticText,
 });
 export type ServerTraceDiagnosticsFailureSummary = typeof ServerTraceDiagnosticsFailureSummary.Type;
 
 export const ServerTraceDiagnosticsRecentFailure = Schema.Struct({
-  name: TrimmedNonEmptyString,
-  cause: TrimmedNonEmptyString,
+  name: ServerTraceDiagnosticText,
+  cause: ServerTraceDiagnosticText,
   durationMs: Schema.Number,
   endedAt: Schema.DateTimeUtc,
-  traceId: TrimmedNonEmptyString,
-  spanId: TrimmedNonEmptyString,
+  traceId: ServerTraceDiagnosticText,
+  spanId: ServerTraceDiagnosticText,
 });
 export type ServerTraceDiagnosticsRecentFailure = typeof ServerTraceDiagnosticsRecentFailure.Type;
 
 export const ServerTraceDiagnosticsSpanOccurrence = Schema.Struct({
-  name: TrimmedNonEmptyString,
+  name: ServerTraceDiagnosticText,
   durationMs: Schema.Number,
   endedAt: Schema.DateTimeUtc,
-  traceId: TrimmedNonEmptyString,
-  spanId: TrimmedNonEmptyString,
+  traceId: ServerTraceDiagnosticText,
+  spanId: ServerTraceDiagnosticText,
 });
 export type ServerTraceDiagnosticsSpanOccurrence = typeof ServerTraceDiagnosticsSpanOccurrence.Type;
 
 export const ServerTraceDiagnosticsLogEvent = Schema.Struct({
-  spanName: TrimmedNonEmptyString,
-  level: TrimmedNonEmptyString,
-  message: TrimmedNonEmptyString,
+  spanName: ServerTraceDiagnosticText,
+  level: ServerTraceDiagnosticText,
+  message: ServerTraceDiagnosticText,
   seenAt: Schema.DateTimeUtc,
-  traceId: TrimmedNonEmptyString,
-  spanId: TrimmedNonEmptyString,
+  traceId: ServerTraceDiagnosticText,
+  spanId: ServerTraceDiagnosticText,
 });
 export type ServerTraceDiagnosticsLogEvent = typeof ServerTraceDiagnosticsLogEvent.Type;
 
 export const ServerTraceDiagnosticsResult = Schema.Struct({
-  traceFilePath: TrimmedNonEmptyString,
-  scannedFilePaths: Schema.Array(TrimmedNonEmptyString),
+  traceFilePath: ServerTraceDiagnosticPath,
+  scannedFilePaths: Schema.Array(ServerTraceDiagnosticPath).check(
+    Schema.isMaxLength(SERVER_TRACE_DIAGNOSTIC_SCANNED_FILE_MAX_COUNT),
+  ),
   readAt: Schema.DateTimeUtc,
   recordCount: NonNegativeInt,
   parseErrorCount: NonNegativeInt,
@@ -290,17 +342,29 @@ export const ServerTraceDiagnosticsResult = Schema.Struct({
   interruptionCount: NonNegativeInt,
   slowSpanThresholdMs: NonNegativeInt,
   slowSpanCount: NonNegativeInt,
-  logLevelCounts: Schema.Record(TrimmedNonEmptyString, NonNegativeInt),
-  topSpansByCount: Schema.Array(ServerTraceDiagnosticsSpanSummary),
-  slowestSpans: Schema.Array(ServerTraceDiagnosticsSpanOccurrence),
-  commonFailures: Schema.Array(ServerTraceDiagnosticsFailureSummary),
-  latestFailures: Schema.Array(ServerTraceDiagnosticsRecentFailure),
-  latestWarningAndErrorLogs: Schema.Array(ServerTraceDiagnosticsLogEvent),
+  logLevelCounts: Schema.Record(ServerTraceDiagnosticText, NonNegativeInt).check(
+    Schema.isMaxProperties(SERVER_TRACE_DIAGNOSTIC_LOG_LEVEL_MAX_COUNT),
+  ),
+  topSpansByCount: Schema.Array(ServerTraceDiagnosticsSpanSummary).check(
+    Schema.isMaxLength(SERVER_TRACE_DIAGNOSTIC_TOP_MAX_COUNT),
+  ),
+  slowestSpans: Schema.Array(ServerTraceDiagnosticsSpanOccurrence).check(
+    Schema.isMaxLength(SERVER_TRACE_DIAGNOSTIC_TOP_MAX_COUNT),
+  ),
+  commonFailures: Schema.Array(ServerTraceDiagnosticsFailureSummary).check(
+    Schema.isMaxLength(SERVER_TRACE_DIAGNOSTIC_TOP_MAX_COUNT),
+  ),
+  latestFailures: Schema.Array(ServerTraceDiagnosticsRecentFailure).check(
+    Schema.isMaxLength(SERVER_TRACE_DIAGNOSTIC_RECENT_MAX_COUNT),
+  ),
+  latestWarningAndErrorLogs: Schema.Array(ServerTraceDiagnosticsLogEvent).check(
+    Schema.isMaxLength(SERVER_TRACE_DIAGNOSTIC_RECENT_MAX_COUNT),
+  ),
   partialFailure: Schema.Option(Schema.Boolean),
   error: Schema.Option(
     Schema.Struct({
       kind: ServerTraceDiagnosticsErrorKind,
-      message: TrimmedNonEmptyString,
+      message: ServerTraceDiagnosticText,
     }),
   ),
 });
@@ -314,13 +378,21 @@ export const ServerProcessDiagnosticsEntry = Schema.Struct({
   startTimeMs: NonNegativeInt,
   ppid: NonNegativeInt,
   pgid: Schema.Option(Schema.Int),
-  status: TrimmedNonEmptyString,
+  status: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(RESOURCE_MONITOR_PROCESS_STATUS_MAX_LENGTH),
+  ),
   cpuPercent: Schema.Number,
   rssBytes: NonNegativeInt,
-  elapsed: TrimmedNonEmptyString,
-  command: TrimmedNonEmptyString,
+  elapsed: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(SERVER_PROCESS_DIAGNOSTIC_ELAPSED_MAX_LENGTH),
+  ),
+  command: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(RESOURCE_MONITOR_PROCESS_COMMAND_MAX_LENGTH),
+  ),
   depth: NonNegativeInt,
-  childPids: Schema.Array(PositiveInt),
+  childPids: Schema.Array(PositiveInt).check(
+    Schema.isMaxLength(SERVER_PROCESS_DIAGNOSTIC_MAX_COUNT),
+  ),
 });
 export type ServerProcessDiagnosticsEntry = typeof ServerProcessDiagnosticsEntry.Type;
 
@@ -330,10 +402,14 @@ export const ServerProcessDiagnosticsResult = Schema.Struct({
   processCount: NonNegativeInt,
   totalRssBytes: NonNegativeInt,
   totalCpuPercent: Schema.Number,
-  processes: Schema.Array(ServerProcessDiagnosticsEntry),
+  processes: Schema.Array(ServerProcessDiagnosticsEntry).check(
+    Schema.isMaxLength(SERVER_PROCESS_DIAGNOSTIC_MAX_COUNT),
+  ),
   error: Schema.Option(
     Schema.Struct({
-      message: TrimmedNonEmptyString,
+      message: TrimmedNonEmptyString.check(
+        Schema.isMaxLength(RESOURCE_TELEMETRY_HEALTH_ERROR_MAX_LENGTH),
+      ),
     }),
   ),
 });
@@ -359,7 +435,9 @@ export const ServerProcessResourceHistorySummary = Schema.Struct({
   processKey: TrimmedNonEmptyString,
   pid: PositiveInt,
   ppid: NonNegativeInt,
-  command: TrimmedNonEmptyString,
+  command: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(RESOURCE_MONITOR_PROCESS_COMMAND_MAX_LENGTH),
+  ),
   depth: NonNegativeInt,
   isServerRoot: Schema.Boolean,
   firstSeenAt: Schema.DateTimeUtc,
@@ -391,12 +469,19 @@ export const ServerProcessResourceHistoryResult = Schema.Struct({
   sampleIntervalMs: NonNegativeInt,
   retainedSampleCount: NonNegativeInt,
   totalCpuSecondsApprox: Schema.Number,
-  buckets: Schema.Array(ServerProcessResourceHistoryBucket),
-  topProcesses: Schema.Array(ServerProcessResourceHistorySummary),
+  buckets: Schema.Array(ServerProcessResourceHistoryBucket).check(
+    Schema.isMaxLength(RESOURCE_TELEMETRY_HISTORY_BUCKET_MAX_COUNT),
+  ),
+  topProcesses: Schema.Array(ServerProcessResourceHistorySummary).check(
+    Schema.isMaxLength(RESOURCE_TELEMETRY_HISTORY_TOP_PROCESS_MAX_COUNT),
+  ),
+  topProcessesTruncated: Schema.optionalKey(Schema.Boolean),
   error: Schema.Option(
     Schema.Struct({
       failureTag: ServerProcessResourceHistoryFailureTag,
-      message: TrimmedNonEmptyString,
+      message: TrimmedNonEmptyString.check(
+        Schema.isMaxLength(RESOURCE_TELEMETRY_HEALTH_ERROR_MAX_LENGTH),
+      ),
     }),
   ),
 });
@@ -413,7 +498,9 @@ export const ServerSignalProcessResult = Schema.Struct({
   pid: PositiveInt,
   signal: ServerProcessSignal,
   signaled: Schema.Boolean,
-  message: Schema.Option(TrimmedNonEmptyString),
+  message: Schema.Option(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(RESOURCE_TELEMETRY_HEALTH_ERROR_MAX_LENGTH)),
+  ),
 });
 export type ServerSignalProcessResult = typeof ServerSignalProcessResult.Type;
 
@@ -427,13 +514,17 @@ export const ServerConfig = Schema.Struct({
   providers: ServerProviders,
   // Editor ids grow over time; drop ones this build does not know rather than
   // failing the whole config decode.
-  availableEditors: ForwardCompatibleArray(EditorId),
+  availableEditors: ForwardCompatibleArray(EditorId).check(Schema.isMaxLength(EDITORS.length)),
   /**
    * SSH hosts this environment advertises for remote open-in-editor links.
    * Absent on servers that predate the feature; empty when the machine has no
    * sshd or no advertisable name.
    */
-  remoteOpenTargets: Schema.optionalKey(ForwardCompatibleArray(RemoteOpenTarget)),
+  remoteOpenTargets: Schema.optionalKey(
+    ForwardCompatibleArray(RemoteOpenTarget).check(
+      Schema.isMaxLength(REMOTE_OPEN_TARGET_MAX_COUNT),
+    ),
+  ),
   observability: ServerObservability,
   settings: ServerSettings,
   /** Whether shell subscriptions can emit an opt-in catch-up completion marker. */

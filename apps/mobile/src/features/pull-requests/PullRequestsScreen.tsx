@@ -778,6 +778,7 @@ export function PullRequestsScreen(props: {
         contentInsetAdjustmentBehavior="automatic"
         data={listItems}
         estimatedItemSize={96}
+        extraData={`${typedQuery}\u0000${showProvider ? "show-provider" : "hide-provider"}`}
         getItemType={(item) => item.kind}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"

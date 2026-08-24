@@ -251,6 +251,50 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
       `,
   });
 
+  const listAllProjectionThreadRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionThreadDbRow,
+    execute: () =>
+      sql`
+        SELECT
+          thread_id AS "threadId",
+          project_id AS "projectId",
+          title,
+          model_selection_json AS "modelSelection",
+          runtime_mode AS "runtimeMode",
+          interaction_mode AS "interactionMode",
+          branch,
+          branch_event_id AS "branchEventId",
+          branch_head_ref AS "branchHeadRef",
+          branch_head_repository AS "branchHeadRepository",
+          branch_head_owner AS "branchHeadOwner",
+          branch_head_is_cross_repository AS "branchHeadIsCrossRepository",
+          worktree_path AS "worktreePath",
+          latest_turn_id AS "latestTurnId",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt",
+          settled_override AS "settledOverride",
+          settled_at AS "settledAt",
+          snoozed_until AS "snoozedUntil",
+          snoozed_at AS "snoozedAt",
+          pinned_at AS "pinnedAt",
+          pin_order_key AS "pinOrderKey",
+          scenery_json AS "scenery",
+          enabled_skill_ids AS "enabledSkillIds",
+          subagent_policy_json AS "subagentPolicy",
+          title_regeneration_request_id AS "titleRegenerationRequestId",
+          title_regeneration_started_at AS "titleRegenerationStartedAt",
+          latest_user_message_at AS "latestUserMessageAt",
+          pending_approval_count AS "pendingApprovalCount",
+          pending_user_input_count AS "pendingUserInputCount",
+          has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          deleted_at AS "deletedAt"
+        FROM projection_threads
+        ORDER BY created_at ASC, thread_id ASC
+      `,
+  });
+
   const deleteProjectionThreadRow = SqlSchema.void({
     Request: DeleteProjectionThreadInput,
     execute: ({ threadId }) =>
@@ -285,6 +329,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.getById:query")),
     );
 
+  const listAll: ProjectionThreadRepositoryShape["listAll"] = () =>
+    listAllProjectionThreadRows().pipe(
+      Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.listAll:query")),
+    );
+
   const listByProjectId: ProjectionThreadRepositoryShape["listByProjectId"] = (input) =>
     listProjectionThreadRows(input).pipe(
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.listByProjectId:query")),
@@ -303,6 +352,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
   return {
     upsert,
     getById,
+    listAll,
     listByProjectId,
     recordBranchHead,
     deleteById,
