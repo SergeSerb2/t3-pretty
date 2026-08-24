@@ -6,7 +6,15 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
-import { AuthEnvironmentScopes } from "@t3tools/contracts";
+import {
+  AUTH_ACCESS_PAIRING_LINK_MAX_COUNT,
+  AuthClientLabel,
+  AuthCredential,
+  AuthEnvironmentScopes,
+  AuthIdentifier,
+  AuthProofKeyThumbprint,
+  AuthSubject,
+} from "@t3tools/contracts";
 
 import {
   type AuthPairingLinkRepositoryError,
@@ -16,13 +24,13 @@ import {
 } from "./Errors.ts";
 
 export const AuthPairingLinkRecord = Schema.Struct({
-  id: Schema.String,
-  credential: Schema.String,
+  id: AuthIdentifier,
+  credential: AuthCredential,
   method: Schema.Literals(["desktop-bootstrap", "one-time-token"]),
   scopes: Schema.fromJsonString(AuthEnvironmentScopes),
-  subject: Schema.String,
-  label: Schema.NullOr(Schema.String),
-  proofKeyThumbprint: Schema.NullOr(Schema.String),
+  subject: AuthSubject,
+  label: Schema.NullOr(AuthClientLabel),
+  proofKeyThumbprint: Schema.NullOr(AuthProofKeyThumbprint),
   createdAt: Schema.DateTimeUtcFromString,
   expiresAt: Schema.DateTimeUtcFromString,
   consumedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
@@ -31,21 +39,22 @@ export const AuthPairingLinkRecord = Schema.Struct({
 export type AuthPairingLinkRecord = typeof AuthPairingLinkRecord.Type;
 
 export const CreateAuthPairingLinkInput = Schema.Struct({
-  id: Schema.String,
-  credential: Schema.String,
+  id: AuthIdentifier,
+  credential: AuthCredential,
   method: Schema.Literals(["desktop-bootstrap", "one-time-token"]),
   scopes: AuthEnvironmentScopes,
-  subject: Schema.String,
-  label: Schema.NullOr(Schema.String),
-  proofKeyThumbprint: Schema.NullOr(Schema.String),
+  subject: AuthSubject,
+  label: Schema.NullOr(AuthClientLabel),
+  proofKeyThumbprint: Schema.NullOr(AuthProofKeyThumbprint),
   createdAt: Schema.DateTimeUtcFromString,
   expiresAt: Schema.DateTimeUtcFromString,
 });
 export type CreateAuthPairingLinkInput = typeof CreateAuthPairingLinkInput.Type;
 
 export const ConsumeAuthPairingLinkInput = Schema.Struct({
-  credential: Schema.String,
-  proofKeyThumbprint: Schema.NullOr(Schema.String),
+  credential: AuthCredential,
+  proofKeyThumbprint: Schema.NullOr(AuthProofKeyThumbprint),
+  requestedScopes: AuthEnvironmentScopes,
   consumedAt: Schema.DateTimeUtcFromString,
   now: Schema.DateTimeUtcFromString,
 });
@@ -57,13 +66,13 @@ export const ListActiveAuthPairingLinksInput = Schema.Struct({
 export type ListActiveAuthPairingLinksInput = typeof ListActiveAuthPairingLinksInput.Type;
 
 export const RevokeAuthPairingLinkInput = Schema.Struct({
-  id: Schema.String,
+  id: AuthIdentifier,
   revokedAt: Schema.DateTimeUtcFromString,
 });
 export type RevokeAuthPairingLinkInput = typeof RevokeAuthPairingLinkInput.Type;
 
 export const GetAuthPairingLinkByCredentialInput = Schema.Struct({
-  credential: Schema.String,
+  credential: AuthCredential,
 });
 export type GetAuthPairingLinkByCredentialInput = typeof GetAuthPairingLinkByCredentialInput.Type;
 
@@ -158,8 +167,9 @@ export const make = Effect.gen(function* () {
   const consumeAvailablePairingLinkRow = SqlSchema.findOneOption({
     Request: ConsumeAuthPairingLinkInput,
     Result: AuthPairingLinkRawDbRow,
-    execute: ({ credential, proofKeyThumbprint, consumedAt, now }) =>
-      sql`
+    execute: ({ credential, proofKeyThumbprint, requestedScopes, consumedAt, now }) => {
+      const requestedScopesJson = JSON.stringify(requestedScopes);
+      return sql`
         UPDATE auth_pairing_links
         SET consumed_at = ${consumedAt}
         WHERE credential = ${credential}
@@ -169,6 +179,15 @@ export const make = Effect.gen(function* () {
           AND (
             proof_key_thumbprint IS NULL
             OR proof_key_thumbprint = ${proofKeyThumbprint}
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM json_each(${requestedScopesJson}) AS requested_scope
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM json_each(auth_pairing_links.scopes) AS granted_scope
+              WHERE granted_scope.value = requested_scope.value
+            )
           )
         RETURNING
           id AS "id",
@@ -182,7 +201,8 @@ export const make = Effect.gen(function* () {
           expires_at AS "expiresAt",
           consumed_at AS "consumedAt",
           revoked_at AS "revokedAt"
-      `,
+      `;
+    },
   });
 
   const listActivePairingLinkRows = SqlSchema.findAll({
@@ -207,12 +227,13 @@ export const make = Effect.gen(function* () {
           AND consumed_at IS NULL
           AND expires_at > ${now}
         ORDER BY created_at DESC, id DESC
+        LIMIT ${AUTH_ACCESS_PAIRING_LINK_MAX_COUNT + 1}
       `,
   });
 
   const revokePairingLinkRow = SqlSchema.findAll({
     Request: RevokeAuthPairingLinkInput,
-    Result: Schema.Struct({ id: Schema.String }),
+    Result: Schema.Struct({ id: AuthIdentifier }),
     execute: ({ id, revokedAt }) =>
       sql`
         UPDATE auth_pairing_links

@@ -111,11 +111,59 @@ export function useRemoteOpenState(environmentId: EnvironmentId | null): RemoteO
  * renderer runs on; a browser cannot, so it offers VS Code only.
  */
 const REMOTE_FALLBACK_EDITORS: ReadonlyArray<EditorId> = ["vscode"];
+const REMOTE_EDITOR_PROBE_TIMEOUT_MS = 5_000;
 
 let cachedProbedEditors: ReadonlyArray<EditorId> | null = null;
+let remoteEditorProbeInFlight: Promise<ReadonlyArray<EditorId>> | null = null;
+let remoteEditorProbeGeneration = 0;
 
 export function __resetRemoteEditorProbeForTests(): void {
+  remoteEditorProbeGeneration += 1;
   cachedProbedEditors = null;
+  remoteEditorProbeInFlight = null;
+}
+
+function loadRemoteCapableEditors(): Promise<ReadonlyArray<EditorId>> {
+  if (cachedProbedEditors !== null) {
+    return Promise.resolve(cachedProbedEditors);
+  }
+  if (remoteEditorProbeInFlight !== null) {
+    return remoteEditorProbeInFlight;
+  }
+  const probe = window.desktopBridge?.probeRemoteEditors;
+  if (probe === undefined) {
+    cachedProbedEditors = REMOTE_FALLBACK_EDITORS;
+    return Promise.resolve(cachedProbedEditors);
+  }
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error("Editor probe timed out")),
+      REMOTE_EDITOR_PROBE_TIMEOUT_MS,
+    );
+  });
+  const generation = remoteEditorProbeGeneration;
+  const probePromise = Promise.resolve()
+    .then(() => probe())
+    .then((ids) => {
+      const remoteCapable = ids.filter((id) => REMOTE_CAPABLE_EDITOR_IDS.includes(id));
+      return remoteCapable.length > 0 ? remoteCapable : REMOTE_FALLBACK_EDITORS;
+    });
+  const load = Promise.race([probePromise, timeout])
+    .catch(() => REMOTE_FALLBACK_EDITORS)
+    .then((editors) => {
+      if (remoteEditorProbeGeneration === generation) {
+        cachedProbedEditors = editors;
+      }
+      return editors;
+    })
+    .finally(() => {
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      if (remoteEditorProbeInFlight === load) remoteEditorProbeInFlight = null;
+    });
+  remoteEditorProbeInFlight = load;
+  return load;
 }
 
 export function useRemoteCapableEditors(): ReadonlyArray<EditorId> {
@@ -127,23 +175,14 @@ export function useRemoteCapableEditors(): ReadonlyArray<EditorId> {
     if (cachedProbedEditors !== null) {
       return;
     }
-    const probe = window.desktopBridge?.probeRemoteEditors;
-    if (probe === undefined) {
-      cachedProbedEditors = REMOTE_FALLBACK_EDITORS;
-      return;
-    }
     let cancelled = false;
-    probe().then(
+    void loadRemoteCapableEditors().then(
       (ids) => {
-        const remoteCapable = ids.filter((id) => REMOTE_CAPABLE_EDITOR_IDS.includes(id));
-        cachedProbedEditors = remoteCapable.length > 0 ? remoteCapable : REMOTE_FALLBACK_EDITORS;
         if (!cancelled) {
-          setEditors(cachedProbedEditors);
+          setEditors(ids);
         }
       },
-      () => {
-        cachedProbedEditors = REMOTE_FALLBACK_EDITORS;
-      },
+      () => undefined,
     );
     return () => {
       cancelled = true;
@@ -164,16 +203,16 @@ export function useRemoteCapableEditors(): ReadonlyArray<EditorId> {
  * record a successful open that never happened.
  */
 export async function openRemoteEditorUrl(url: string): Promise<boolean> {
-  const bridge = window.desktopBridge;
-  if (bridge !== undefined) {
-    try {
+  try {
+    const bridge = window.desktopBridge;
+    if (bridge !== undefined) {
       return await bridge.openExternal(url);
-    } catch {
-      return false;
     }
+    window.location.assign(url);
+    return true;
+  } catch {
+    return false;
   }
-  window.location.assign(url);
-  return true;
 }
 
 /**

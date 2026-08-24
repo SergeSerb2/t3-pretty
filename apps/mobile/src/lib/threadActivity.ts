@@ -17,6 +17,8 @@ import {
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 
+import { compareTimestamps } from "./time";
+
 export interface PendingApproval {
   readonly requestId: ApprovalRequestId;
   readonly requestKind: "command" | "file-read" | "file-change";
@@ -1088,7 +1090,7 @@ function compareActivityLifecycleRank(kind: string): number {
 
 const activityOrder = Order.combineAll<OrchestrationThreadActivity>([
   Order.mapInput(Order.Number, (activity) => activity.sequence ?? Number.MAX_SAFE_INTEGER),
-  Order.mapInput(Order.String, (activity) => activity.createdAt),
+  Order.make((left, right) => compareTimestamps(left.createdAt, right.createdAt)),
   Order.mapInput(Order.Number, (activity) => compareActivityLifecycleRank(activity.kind)),
   Order.mapInput(Order.String, (activity) => activity.id),
 ]);
@@ -2112,7 +2114,9 @@ function assembleThreadFeed(
   const visibleActivities =
     oldestLoadedMessageCreatedAt === null
       ? activities
-      : activities.filter((entry) => entry.createdAt >= oldestLoadedMessageCreatedAt);
+      : activities.filter(
+          (entry) => compareTimestamps(entry.createdAt, oldestLoadedMessageCreatedAt) >= 0,
+        );
   return groupAdjacentActivities(mergeThreadFeedEntries(messages, visibleActivities));
 }
 

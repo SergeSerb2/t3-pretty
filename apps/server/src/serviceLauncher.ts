@@ -24,7 +24,9 @@ import {
   parseServiceState,
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_LAUNCHER_PROTOCOL,
+  SERVICE_RUNTIME_SENTINEL_MAX_BYTES,
   SERVICE_STATE_FILE,
+  SERVICE_STATE_MAX_BYTES,
   SERVICE_STOP_MARKER_FILE,
 } from "./cloud/serviceProtocol.ts";
 
@@ -165,9 +167,27 @@ async function discardDatabaseBackup(baseDir: string, updateId: string): Promise
   await syncDirectory(NodePath.dirname(backupDir));
 }
 
+async function readUtf8WithinLimit(filePath: string, maximumBytes: number): Promise<string> {
+  const handle = await NodeFSP.open(filePath, "r");
+  try {
+    const bytes = Buffer.allocUnsafe(maximumBytes + 1);
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      const { bytesRead } = await handle.read(bytes, offset, bytes.byteLength - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset > maximumBytes) {
+      throw new Error("Launcher-owned file exceeds the supported size.");
+    }
+    return bytes.subarray(0, offset).toString("utf8");
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function readServiceState(filePath: string): Promise<ServiceState> {
-  const contents = await NodeFSP.readFile(filePath, "utf8");
-  const state = parseServiceState(contents);
+  const state = parseServiceState(await readUtf8WithinLimit(filePath, SERVICE_STATE_MAX_BYTES));
   if (state === undefined) throw new Error("Service state is invalid or unsupported.");
   return state;
 }
@@ -205,7 +225,7 @@ async function runtimeExists(baseDir: string, version: string): Promise<boolean>
   try {
     const [entry, sentinel] = await Promise.all([
       NodeFSP.stat(paths.entryPath),
-      NodeFSP.readFile(paths.sentinelPath, "utf8"),
+      readUtf8WithinLimit(paths.sentinelPath, SERVICE_RUNTIME_SENTINEL_MAX_BYTES),
     ]);
     return entry.isFile() && sentinel.trim() === version;
   } catch {

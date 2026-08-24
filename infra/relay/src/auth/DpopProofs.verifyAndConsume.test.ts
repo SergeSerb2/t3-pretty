@@ -181,6 +181,42 @@ describe("DpopProofReplay.verifyAndConsume", () => {
     }).pipe(Effect.provide(layer(() => Effect.die("unexpected DPoP replay persistence"))));
   });
 
+  it.effect("hashes long proof ids before replay persistence", () => {
+    const now = DateTime.makeUnsafe("2026-05-25T12:00:00.000Z");
+    const proof = makeDpopProof({
+      method: "POST",
+      url: "https://relay.example.com/v1/environments/env/connect",
+      iat: Math.floor(now.epochMilliseconds / 1_000),
+      jti: "j".repeat(256),
+    });
+    let insertedJti: string | undefined;
+
+    return Effect.gen(function* () {
+      const replay = yield* DpopProofs.DpopProofReplay;
+      const result = yield* replay.verifyAndConsume({
+        proof: proof.proof,
+        method: "POST",
+        url: "https://relay.example.com/v1/environments/env/connect",
+        expectedThumbprint: proof.thumbprint,
+        now,
+      });
+
+      expect(result).toBe(proof.thumbprint);
+      expect(insertedJti).toMatch(/^sha256:/);
+      expect(insertedJti).not.toBe("j".repeat(256));
+      expect(insertedJti?.length).toBeLessThanOrEqual(255);
+    }).pipe(
+      Effect.provide(
+        layer((values) =>
+          Effect.sync(() => {
+            insertedJti = values.jti;
+            return [{ jti: values.jti }];
+          }),
+        ),
+      ),
+    );
+  });
+
   it.effect("preserves replay persistence failures", () => {
     const now = DateTime.makeUnsafe("2026-05-25T12:00:00.000Z");
     const proof = makeDpopProof({

@@ -11,12 +11,14 @@ import {
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import { it as effectIt } from "@effect/vitest";
 import { describe, expect, it } from "vite-plus/test";
 
 import { PersistenceSqlError } from "../../persistence/Errors.ts";
@@ -28,7 +30,11 @@ import {
   type OrchestrationEventStoreShape,
 } from "../../persistence/Services/OrchestrationEventStore.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
-import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
+import {
+  makeOrchestrationCommandQueue,
+  ORCHESTRATION_COMMAND_QUEUE_CAPACITY,
+  OrchestrationEngineLive,
+} from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
@@ -94,6 +100,27 @@ const hasMetricSnapshot = (
       snapshot.id === id &&
       Object.entries(attributes).every(([key, value]) => snapshot.attributes?.[key] === value),
   );
+
+effectIt.effect("backpressures orchestration commands at the queue ceiling", () =>
+  Effect.gen(function* () {
+    const queue = yield* makeOrchestrationCommandQueue<number>();
+    yield* Effect.forEach(
+      Array.from({ length: ORCHESTRATION_COMMAND_QUEUE_CAPACITY }, (_, index) => index),
+      (index) => Queue.offer(queue, index),
+      { discard: true },
+    );
+
+    const blockedOffer = yield* Queue.offer(queue, ORCHESTRATION_COMMAND_QUEUE_CAPACITY).pipe(
+      Effect.forkChild,
+    );
+    yield* Effect.yieldNow;
+    expect(yield* Queue.size(queue)).toBe(ORCHESTRATION_COMMAND_QUEUE_CAPACITY);
+
+    expect(yield* Queue.take(queue)).toBe(0);
+    expect(yield* Fiber.join(blockedOffer)).toBe(true);
+    expect(yield* Queue.size(queue)).toBe(ORCHESTRATION_COMMAND_QUEUE_CAPACITY);
+  }),
+);
 
 describe("OrchestrationEngine", () => {
   it("bootstraps command handling from persisted projections without reading the full snapshot", async () => {

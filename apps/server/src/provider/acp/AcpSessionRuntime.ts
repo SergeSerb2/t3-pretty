@@ -23,13 +23,15 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { makeAcpTerminalHost } from "./AcpTerminalHost.ts";
 
 import {
-  collectSessionConfigOptionValues,
+  boundAcpSessionConfigOptions,
   extractModelConfigId,
   findSessionConfigOption,
   mergeToolCallState,
   parseSessionModeState,
   parseSessionUpdateEvent,
+  sessionConfigOptionIncludesValue,
   sessionUpdateIsReplay,
+  summarizeSessionConfigOptionValuesForError,
   waitForSessionLoadReplayIdle,
   type SessionLoadGate,
   type AcpParsedSessionEvent,
@@ -50,6 +52,7 @@ export type AcpSessionRuntimeEvent = AcpParsedSessionEvent | AcpSessionEventStre
 
 const defaultSessionLoadTimeout = Duration.seconds(90);
 const defaultSessionLoadReplayIdleGap = Duration.seconds(2);
+const ACP_SESSION_EVENT_QUEUE_CAPACITY = 512;
 
 export interface AcpSpawnInput {
   readonly command: string;
@@ -279,7 +282,11 @@ export const make = (
     const crypto = yield* Crypto.Crypto;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const runtimeScope = yield* Scope.Scope;
-    const eventQueue = yield* Queue.unbounded<AcpSessionRuntimeEvent>();
+    // Session updates are lossless, but they must backpressure a provider
+    // that outpaces projection instead of retaining an unbounded history.
+    const eventQueue = yield* Queue.bounded<AcpSessionRuntimeEvent>(
+      ACP_SESSION_EVENT_QUEUE_CAPACITY,
+    );
     const modeStateRef = yield* Ref.make<AcpSessionModeState | undefined>(undefined);
     const toolCallsRef = yield* Ref.make(new Map<string, AcpToolCallState>());
     const assistantItemRuntimeId = yield* crypto.randomUUIDv4.pipe(
@@ -477,28 +484,23 @@ export const make = (
             },
           });
         }
-        const allowedValues = collectSessionConfigOptionValues(configOption);
-        if (allowedValues.includes(value)) {
+        if (sessionConfigOptionIncludesValue(configOption, value)) {
           return;
         }
+        const allowed = summarizeSessionConfigOptionValuesForError(configOption);
+        const expected = allowed.values.map(formatConfigOptionValue).join(", ");
+        const omitted = allowed.count - allowed.values.length;
         return yield* new EffectAcpErrors.AcpRequestError({
           code: -32602,
-          errorMessage: `Invalid value ${formatConfigOptionValue(value)} for session config option "${configOption.id}": expected one of ${allowedValues.join(", ")}`,
+          errorMessage: `Invalid value ${formatConfigOptionValue(value)} for session config option "${configOption.id}": expected one of ${expected}${omitted > 0 ? ` (${omitted} more omitted)` : ""}`,
           data: {
             configId: configOption.id,
-            allowedValues,
+            allowedValues: allowed.values,
+            allowedValueCount: allowed.count,
             receivedValue: value,
           },
         });
       });
-
-    const updateConfigOptions = (
-      response:
-        | EffectAcpSchema.SetSessionConfigOptionResponse
-        | EffectAcpSchema.LoadSessionResponse
-        | EffectAcpSchema.NewSessionResponse
-        | EffectAcpSchema.ResumeSessionResponse,
-    ): Effect.Effect<void> => Ref.set(configOptionsRef, sessionConfigOptionsFromSetup(response));
 
     const updateCurrentModeId = (modeId: string): Effect.Effect<void> =>
       Ref.update(modeStateRef, (current) =>
@@ -537,7 +539,17 @@ export const make = (
                 "session/set_config_option",
                 requestPayload,
                 acp.agent.setSessionConfigOption(requestPayload),
-              ).pipe(Effect.tap((response) => updateConfigOptions(response)));
+              ).pipe(
+                Effect.flatMap((response) => {
+                  const configOptions = sessionConfigOptionsFromSetup(response);
+                  return Ref.set(configOptionsRef, configOptions).pipe(
+                    Effect.as({
+                      ...response,
+                      configOptions,
+                    } satisfies EffectAcpSchema.SetSessionConfigOptionResponse),
+                  );
+                }),
+              );
             }),
           ),
         ),
@@ -659,8 +671,13 @@ export const make = (
         sessionSetupResult = created;
       }
 
+      const configOptions = sessionConfigOptionsFromSetup(sessionSetupResult);
+      sessionSetupResult = {
+        ...sessionSetupResult,
+        configOptions,
+      };
       yield* Ref.set(modeStateRef, parseSessionModeState(sessionSetupResult));
-      yield* Ref.set(configOptionsRef, sessionConfigOptionsFromSetup(sessionSetupResult));
+      yield* Ref.set(configOptionsRef, configOptions);
 
       const nextState = {
         sessionId,
@@ -840,7 +857,7 @@ function sessionConfigOptionsFromSetup(
       }
     | undefined,
 ): ReadonlyArray<EffectAcpSchema.SessionConfigOption> {
-  return response?.configOptions ?? [];
+  return boundAcpSessionConfigOptions(response?.configOptions);
 }
 
 function configOptionCurrentValueMatches(

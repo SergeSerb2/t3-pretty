@@ -1,13 +1,14 @@
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   ApprovalRequestId,
   EventId,
   IsoDateTime,
   ProviderItemId,
   ThreadId,
+  TrimmedNonEmptyString,
   TurnId,
 } from "./baseSchemas.ts";
+import { ProviderModelId } from "./model.ts";
 import {
   ChatAttachment,
   ModelSelection,
@@ -21,6 +22,8 @@ import {
   ProviderUserInputAnswers,
   RuntimeMode,
   TurnDeliveryMode,
+  THREAD_TURN_START_PATH_MAX_LENGTH,
+  THREAD_TURN_START_TITLE_MAX_LENGTH,
 } from "./orchestration.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
 import { ResolvedSubagentPolicy } from "./subagentPolicy.ts";
@@ -33,6 +36,21 @@ const ProviderSessionStatus = Schema.Literals([
   "closed",
 ]);
 
+export const PROVIDER_SESSION_ERROR_MAX_LENGTH = 64 * 1024;
+const ProviderSessionPath = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(THREAD_TURN_START_PATH_MAX_LENGTH),
+);
+const ProviderSessionTitle = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(THREAD_TURN_START_TITLE_MAX_LENGTH),
+);
+const ProviderSessionError = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROVIDER_SESSION_ERROR_MAX_LENGTH),
+);
+
+export function normalizeProviderSessionError(value: string): string {
+  return value.trim().slice(0, PROVIDER_SESSION_ERROR_MAX_LENGTH) || "Provider session failed.";
+}
+
 export const ProviderSession = Schema.Struct({
   provider: ProviderDriverKind,
   // Optional during the driver/instance migration. Once every producer
@@ -41,14 +59,14 @@ export const ProviderSession = Schema.Struct({
   providerInstanceId: Schema.optional(ProviderInstanceId),
   status: ProviderSessionStatus,
   runtimeMode: RuntimeMode,
-  cwd: Schema.optional(TrimmedNonEmptyString),
-  model: Schema.optional(TrimmedNonEmptyString),
+  cwd: Schema.optional(ProviderSessionPath),
+  model: Schema.optional(ProviderModelId),
   threadId: ThreadId,
   resumeCursor: Schema.optional(Schema.Unknown),
   activeTurnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
-  lastError: Schema.optional(TrimmedNonEmptyString),
+  lastError: Schema.optional(ProviderSessionError),
 });
 export type ProviderSession = typeof ProviderSession.Type;
 
@@ -57,8 +75,8 @@ export const ProviderSessionStartInput = Schema.Struct({
   provider: Schema.optional(ProviderDriverKind),
   // See ProviderSession for the migration story.
   providerInstanceId: Schema.optional(ProviderInstanceId),
-  cwd: Schema.optional(TrimmedNonEmptyString),
-  title: Schema.optional(TrimmedNonEmptyString),
+  cwd: Schema.optional(ProviderSessionPath),
+  title: Schema.optional(ProviderSessionTitle),
   modelSelection: Schema.optional(ModelSelection),
   resumeCursor: Schema.optional(Schema.Unknown),
   approvalPolicy: Schema.optional(ProviderApprovalPolicy),

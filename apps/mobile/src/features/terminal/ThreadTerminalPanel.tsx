@@ -233,6 +233,8 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
             </Text>
           ) : null}
           <Pressable
+            accessibilityLabel="Close terminal"
+            accessibilityRole="button"
             className="h-8 w-8 items-center justify-center rounded-[8px] bg-subtle"
             onPress={props.onClose}
           >

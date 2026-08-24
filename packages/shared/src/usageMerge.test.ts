@@ -8,7 +8,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { mergeUsage, type EnvironmentUsage } from "./usageMerge.ts";
+import { mergeUsage, type EnvironmentUsage, USAGE_MERGE_MAX_ENVIRONMENTS } from "./usageMerge.ts";
 
 function bucket(overrides: Partial<UsageBucket> = {}): UsageBucket {
   return {
@@ -40,6 +40,8 @@ function summary(
     homePath: string;
     volumeId?: string;
     distinctSessions?: number;
+    status?: "ok" | "missing" | "partial" | "failed";
+    message?: string | null;
   }[],
   contractVersion: number = USAGE_CONTRACT_VERSION,
 ): UsageSummary {
@@ -57,12 +59,12 @@ function summary(
         resolvedHomePath: source.homePath,
         volumeId: source.volumeId ?? `vol-${source.hostId}`,
       },
-      status: "ok" as const,
+      status: source.status ?? ("ok" as const),
       scannedFiles: 1,
       skippedFiles: 0,
       malformedRecords: 0,
       distinctSessions: source.distinctSessions ?? 1,
-      message: null,
+      message: source.message ?? null,
     })),
     pricing: { status: "fresh", source: "litellm", fetchedAt: null, knownModels: 10 },
     scanDurationMs: 1,
@@ -228,6 +230,119 @@ describe("mergeUsage", () => {
 
     expect(merged.costUsd).toBe(10);
     expect(merged.duplicateSources).toHaveLength(1);
+  });
+
+  it("does not collide fingerprints whose fields contain the old delimiter", () => {
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [bucket()],
+            [
+              {
+                provider: "claude",
+                hostId: "mac claude",
+                homePath: "/sessions",
+                volumeId: "volume",
+              },
+            ],
+          ),
+        ),
+        environment(
+          "env-b",
+          summary(
+            [bucket()],
+            [
+              {
+                provider: "claude",
+                hostId: "mac",
+                homePath: "claude /sessions",
+                volumeId: "volume",
+              },
+            ],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.costUsd).toBe(20);
+    expect(merged.duplicateSources).toHaveLength(0);
+  });
+
+  it("does not guess that sources with unknown filesystem identity are duplicates", () => {
+    const shape = {
+      provider: "claude" as const,
+      hostId: "mac",
+      homePath: "/Users/theo/.claude",
+      volumeId: "",
+    };
+    const merged = mergeUsage(
+      [
+        environment("env-a", summary([bucket()], [shape])),
+        environment("env-b", summary([bucket()], [shape])),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.costUsd).toBe(20);
+    expect(merged.duplicateSources).toHaveLength(0);
+  });
+
+  it("prefers a complete duplicate source over a lower-id partial scan", () => {
+    const shared = {
+      provider: "claude" as const,
+      hostId: "mac",
+      homePath: "/Users/theo/.claude",
+      volumeId: "volume",
+    };
+    const merged = mergeUsage(
+      [
+        environment("env-a", summary([bucket({ costUsd: 3 })], [{ ...shared, status: "partial" }])),
+        environment("env-b", summary([bucket({ costUsd: 10 })], [shared])),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.costUsd).toBe(10);
+    expect(merged.contributingEnvironments).toEqual(["env-b"]);
+    expect(merged.sourceWarnings).toHaveLength(0);
+  });
+
+  it("surfaces a selected partial source and ignores a failed duplicate owner", () => {
+    const shared = {
+      provider: "claude" as const,
+      hostId: "mac",
+      homePath: "/Users/theo/.claude",
+      volumeId: "volume",
+    };
+    const partial = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [bucket()],
+            [{ ...shared, status: "partial", message: "Transcript scan hit its file limit." }],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+    const recovered = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary([], [{ ...shared, status: "failed", message: "Scan failed." }]),
+        ),
+        environment("env-b", summary([bucket()], [shared])),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(partial.sourceWarnings).toEqual(["env-a: Transcript scan hit its file limit."]);
+    expect(recovered.costUsd).toBe(10);
+    expect(recovered.sourceWarnings).toHaveLength(0);
   });
 
   it("totals sessions from per-directory distinct counts, not per-bucket sums", () => {

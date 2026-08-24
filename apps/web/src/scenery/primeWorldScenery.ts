@@ -14,7 +14,12 @@ export function primeWorldSceneryForNewThread(threadKey: string): void {
     return;
   }
   requestSceneryArrival(threadKey);
-  void import("./primeScenery").then((mod) => {
-    mod.primeSceneryForThread(threadKey);
-  });
+  // Priming is best-effort. A transient lazy-chunk failure must not surface as
+  // an unhandled rejection from the synchronous new-thread action.
+  void import("./primeScenery").then(
+    (mod) => {
+      mod.primeSceneryForThread(threadKey);
+    },
+    () => undefined,
+  );
 }

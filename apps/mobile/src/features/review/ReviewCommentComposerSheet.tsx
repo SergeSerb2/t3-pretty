@@ -107,12 +107,15 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
         })),
       );
       try {
-        const images = await convertPastedImagesToAttachments({
+        const result = await convertPastedImagesToAttachments({
           uris,
           existingCount: attachments.length,
         });
-        if (images.length > 0) {
-          setAttachments((current) => [...current, ...images]);
+        if (result.images.length > 0) {
+          setAttachments((current) => [...current, ...result.images]);
+        }
+        if (result.error) {
+          Alert.alert("Could not attach image", result.error);
         }
       } catch (error) {
         console.error("[review comment] error converting pasted images", error);

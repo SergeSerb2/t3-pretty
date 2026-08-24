@@ -3,6 +3,31 @@ import * as Schema from "effect/Schema";
 
 import { EnvironmentId, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
+export const ENVIRONMENT_LABEL_MAX_LENGTH = 512;
+export const ENVIRONMENT_SERVER_VERSION_MAX_LENGTH = 256;
+export const REPOSITORY_IDENTITY_REMOTE_MAX_COUNT = 256;
+export const REPOSITORY_IDENTITY_REMOTE_NAME_MAX_LENGTH = 1_024;
+export const REPOSITORY_IDENTITY_REMOTE_URL_MAX_LENGTH = 16 * 1_024;
+export const REPOSITORY_IDENTITY_CANONICAL_KEY_MAX_LENGTH = 16 * 1_024;
+export const REPOSITORY_IDENTITY_PATH_MAX_LENGTH = 32 * 1_024;
+export const REPOSITORY_IDENTITY_DISPLAY_NAME_MAX_LENGTH = 16 * 1_024;
+export const REPOSITORY_IDENTITY_PROVIDER_MAX_LENGTH = 128;
+export const REPOSITORY_IDENTITY_OWNER_MAX_LENGTH = 4_096;
+export const REPOSITORY_IDENTITY_NAME_MAX_LENGTH = 4_096;
+
+const EnvironmentLabel = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ENVIRONMENT_LABEL_MAX_LENGTH),
+);
+const EnvironmentServerVersion = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ENVIRONMENT_SERVER_VERSION_MAX_LENGTH),
+);
+const RepositoryIdentityRemoteName = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(REPOSITORY_IDENTITY_REMOTE_NAME_MAX_LENGTH),
+);
+const RepositoryIdentityRemoteUrl = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(REPOSITORY_IDENTITY_REMOTE_URL_MAX_LENGTH),
+);
+
 export const ExecutionEnvironmentPlatformOs = Schema.Literals([
   "darwin",
   "linux",
@@ -101,9 +126,9 @@ export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabi
 
 export const ExecutionEnvironmentDescriptor = Schema.Struct({
   environmentId: EnvironmentId,
-  label: TrimmedNonEmptyString,
+  label: EnvironmentLabel,
   platform: ExecutionEnvironmentPlatform,
-  serverVersion: TrimmedNonEmptyString,
+  serverVersion: EnvironmentServerVersion,
   capabilities: ExecutionEnvironmentCapabilities,
 });
 export type ExecutionEnvironmentDescriptor = typeof ExecutionEnvironmentDescriptor.Type;
@@ -118,19 +143,31 @@ export type EnvironmentConnectionState = typeof EnvironmentConnectionState.Type;
 
 export const RepositoryIdentityLocator = Schema.Struct({
   source: Schema.Literal("git-remote"),
-  remoteName: TrimmedNonEmptyString,
-  remoteUrl: TrimmedNonEmptyString,
+  remoteName: RepositoryIdentityRemoteName,
+  remoteUrl: RepositoryIdentityRemoteUrl,
 });
 export type RepositoryIdentityLocator = typeof RepositoryIdentityLocator.Type;
 
 export const RepositoryIdentity = Schema.Struct({
-  canonicalKey: TrimmedNonEmptyString,
+  canonicalKey: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(REPOSITORY_IDENTITY_CANONICAL_KEY_MAX_LENGTH),
+  ),
   locator: RepositoryIdentityLocator,
-  rootPath: Schema.optionalKey(TrimmedNonEmptyString),
-  displayName: Schema.optionalKey(TrimmedNonEmptyString),
-  provider: Schema.optionalKey(TrimmedNonEmptyString),
-  owner: Schema.optionalKey(TrimmedNonEmptyString),
-  name: Schema.optionalKey(TrimmedNonEmptyString),
+  rootPath: Schema.optionalKey(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(REPOSITORY_IDENTITY_PATH_MAX_LENGTH)),
+  ),
+  displayName: Schema.optionalKey(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(REPOSITORY_IDENTITY_DISPLAY_NAME_MAX_LENGTH)),
+  ),
+  provider: Schema.optionalKey(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(REPOSITORY_IDENTITY_PROVIDER_MAX_LENGTH)),
+  ),
+  owner: Schema.optionalKey(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(REPOSITORY_IDENTITY_OWNER_MAX_LENGTH)),
+  ),
+  name: Schema.optionalKey(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(REPOSITORY_IDENTITY_NAME_MAX_LENGTH)),
+  ),
 });
 export type RepositoryIdentity = typeof RepositoryIdentity.Type;
 

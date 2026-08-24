@@ -186,4 +186,26 @@ describe("GitHub GraphQL budget", () => {
       expect(yield* budget.query("github.com", mutation)).toBe(mutation);
     }).pipe(Effect.provide(GitHubGraphQlBudget.layer)),
   );
+
+  it.effect("bounds retained snapshots from one-off Enterprise hosts", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(BEFORE_RESET);
+      const budget = yield* GitHubGraphQlBudget.GitHubGraphQlBudget;
+      for (let index = 0; index <= GitHubGraphQlBudget.GRAPHQL_BUDGET_HOST_CAPACITY; index += 1) {
+        yield* budget.observe(`github-${index}.example.com`, rateLimit(0));
+      }
+
+      expect(yield* budget.query("github-0.example.com", "query { viewer { login } }")).toContain(
+        "rateLimit",
+      );
+      expect(
+        (yield* Effect.flip(
+          budget.query(
+            `github-${GitHubGraphQlBudget.GRAPHQL_BUDGET_HOST_CAPACITY}.example.com`,
+            "query { viewer { login } }",
+          ),
+        ))._tag,
+      ).toBe("SourceControlRateLimitPausedError");
+    }).pipe(Effect.provide(GitHubGraphQlBudget.layer)),
+  );
 });

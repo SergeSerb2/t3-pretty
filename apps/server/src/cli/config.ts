@@ -14,6 +14,7 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 import { Argument, Flag } from "effect/unstable/cli";
 
 import { readBootstrapEnvelope } from "../bootstrap.ts";
+import { readTextWithinLimit } from "../boundedFileRead.ts";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
 
@@ -75,6 +76,11 @@ export const tailscaleServePortFlag = Flag.integer("tailscale-serve-port").pipe(
   Flag.optional,
 );
 
+const PositiveConfigInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
+const TraceMaxFilesConfigInt = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: ServerConfig.TRACE_MAX_FILES_LIMIT }),
+);
+
 const EnvServerConfig = Config.all({
   logLevel: Config.logLevel("T3CODE_LOG_LEVEL").pipe(Config.withDefault("Info")),
   traceMinLevel: Config.logLevel("T3CODE_TRACE_MIN_LEVEL").pipe(Config.withDefault("Info")),
@@ -83,9 +89,15 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
-  traceMaxBytes: Config.int("T3CODE_TRACE_MAX_BYTES").pipe(Config.withDefault(10 * 1024 * 1024)),
-  traceMaxFiles: Config.int("T3CODE_TRACE_MAX_FILES").pipe(Config.withDefault(10)),
-  traceBatchWindowMs: Config.int("T3CODE_TRACE_BATCH_WINDOW_MS").pipe(Config.withDefault(1_000)),
+  traceMaxBytes: Config.schema(PositiveConfigInt, "T3CODE_TRACE_MAX_BYTES").pipe(
+    Config.withDefault(10 * 1024 * 1024),
+  ),
+  traceMaxFiles: Config.schema(TraceMaxFilesConfigInt, "T3CODE_TRACE_MAX_FILES").pipe(
+    Config.withDefault(10),
+  ),
+  traceBatchWindowMs: Config.schema(PositiveConfigInt, "T3CODE_TRACE_BATCH_WINDOW_MS").pipe(
+    Config.withDefault(1_000),
+  ),
   otlpTracesUrl: Config.string("T3CODE_OTLP_TRACES_URL").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -94,7 +106,7 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
-  otlpExportIntervalMs: Config.int("T3CODE_OTLP_EXPORT_INTERVAL_MS").pipe(
+  otlpExportIntervalMs: Config.schema(PositiveConfigInt, "T3CODE_OTLP_EXPORT_INTERVAL_MS").pipe(
     Config.withDefault(10_000),
   ),
   otlpServiceName: Config.string("T3CODE_OTLP_SERVICE_NAME").pipe(Config.withDefault("t3-server")),
@@ -196,6 +208,8 @@ const resolveOptionPrecedence = <Value>(
   ...values: ReadonlyArray<Option.Option<Value>>
 ): Option.Option<Value> => Option.firstSomeOf(values);
 
+const PERSISTED_OBSERVABILITY_SETTINGS_MAX_BYTES = 1024 * 1024;
+
 const loadPersistedObservabilitySettings = Effect.fn(function* (settingsPath: string) {
   const fs = yield* FileSystem.FileSystem;
   const exists = yield* fs.exists(settingsPath).pipe(Effect.orElseSucceed(() => false));
@@ -203,7 +217,11 @@ const loadPersistedObservabilitySettings = Effect.fn(function* (settingsPath: st
     return { otlpTracesUrl: undefined, otlpMetricsUrl: undefined };
   }
 
-  const raw = yield* fs.readFileString(settingsPath).pipe(Effect.orElseSucceed(() => ""));
+  const raw = yield* readTextWithinLimit(
+    fs,
+    settingsPath,
+    PERSISTED_OBSERVABILITY_SETTINGS_MAX_BYTES,
+  ).pipe(Effect.orElseSucceed(() => ""));
   return parsePersistedServerObservabilitySettings(raw);
 });
 

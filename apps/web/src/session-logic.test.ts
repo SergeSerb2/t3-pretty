@@ -1882,6 +1882,28 @@ describe("deriveTimelineEntries", () => {
       },
     });
   });
+
+  it("orders mixed-precision timestamps by instant rather than raw string", () => {
+    const makeMessage = (id: string, createdAt: string) => ({
+      id: MessageId.make(id),
+      role: "assistant" as const,
+      text: id,
+      createdAt,
+      turnId: null,
+      updatedAt: createdAt,
+      streaming: false,
+    });
+    const entries = deriveTimelineEntries(
+      [
+        makeMessage("media-micro", "2026-07-28T17:55:08.546238Z"),
+        makeMessage("text-milli", "2026-07-28T17:55:08.546Z"),
+      ],
+      [],
+      [],
+    );
+
+    expect(entries.map((entry) => entry.id)).toEqual(["text-milli", "media-micro"]);
+  });
 });
 
 describe("deriveLiveTurnHeadline", () => {

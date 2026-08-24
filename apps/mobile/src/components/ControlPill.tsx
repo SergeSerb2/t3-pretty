@@ -6,6 +6,7 @@ import {
   type ComponentProps,
   type ReactElement,
   type ReactNode,
+  useEffect,
   useRef,
 } from "react";
 import { Platform, Pressable } from "react-native";
@@ -35,16 +36,31 @@ export function ControlPill(props: {
   const isLoading = props.loading === true;
   const showDisabledChrome = props.disabled === true && !isLoading;
   const activatedOnPressInRef = useRef(false);
+  const pressResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (pressResetTimerRef.current) {
+        clearTimeout(pressResetTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const handlePressIn = () => {
+    if (pressResetTimerRef.current) {
+      clearTimeout(pressResetTimerRef.current);
+      pressResetTimerRef.current = null;
+    }
     activatedOnPressInRef.current = true;
     props.onPress?.();
   };
   const handlePressOut = () => {
     // Pressability invokes onPressOut immediately before onPress on release.
     // Defer the reset so onPress can identify the same physical gesture.
-    setTimeout(() => {
+    pressResetTimerRef.current = setTimeout(() => {
       activatedOnPressInRef.current = false;
+      pressResetTimerRef.current = null;
     }, 0);
   };
   const handlePress = () => {

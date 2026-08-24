@@ -33,6 +33,7 @@ export function initialConfigOption<E>(
 // Bounded like the snapshot fetches: a wedged environment must not pin the
 // permissions check (and with it the settings UI) in a loading state for long.
 const DEFAULT_SESSION_STATE_TIMEOUT_MS = 6_000;
+export const SESSION_STATE_IDLE_TTL_MS = 5 * 60_000;
 
 /**
  * Read the granted scopes of this client's session on one environment via its
@@ -65,26 +66,28 @@ export function createEnvironmentSessionAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | HttpClient.HttpClient | R, E>,
 ) {
   const initialConfigAtom = Atom.family((environmentId: EnvironmentId) =>
-    runtime.atom(
-      followStreamInEnvironment(
-        environmentId,
-        Stream.unwrap(
-          EnvironmentSupervisor.pipe(
-            Effect.map((supervisor) =>
-              SubscriptionRef.changes(supervisor.session).pipe(
-                Stream.mapEffect(
-                  Option.match({
-                    onNone: () => Effect.succeed(Option.none<ServerConfig>()),
-                    onSome: (session) => initialConfigOption(session.initialConfig),
-                  }),
+    runtime
+      .atom(
+        followStreamInEnvironment(
+          environmentId,
+          Stream.unwrap(
+            EnvironmentSupervisor.pipe(
+              Effect.map((supervisor) =>
+                SubscriptionRef.changes(supervisor.session).pipe(
+                  Stream.mapEffect(
+                    Option.match({
+                      onNone: () => Effect.succeed(Option.none<ServerConfig>()),
+                      onSome: (session) => initialConfigOption(session.initialConfig),
+                    }),
+                  ),
                 ),
               ),
             ),
           ),
         ),
-      ),
-      { initialValue: Option.none() },
-    ),
+        { initialValue: Option.none() },
+      )
+      .pipe(Atom.setIdleTTL(SESSION_STATE_IDLE_TTL_MS)),
   );
 
   // This is only the bootstrap config captured when a transport session is
@@ -101,17 +104,19 @@ export function createEnvironmentSessionAtoms<R, E>(
   );
 
   const preparedConnectionAtom = Atom.family((environmentId: EnvironmentId) =>
-    runtime.atom(
-      followStreamInEnvironment(
-        environmentId,
-        Stream.unwrap(
-          EnvironmentSupervisor.pipe(
-            Effect.map((supervisor) => SubscriptionRef.changes(supervisor.prepared)),
+    runtime
+      .atom(
+        followStreamInEnvironment(
+          environmentId,
+          Stream.unwrap(
+            EnvironmentSupervisor.pipe(
+              Effect.map((supervisor) => SubscriptionRef.changes(supervisor.prepared)),
+            ),
           ),
         ),
-      ),
-      { initialValue: Option.none<PreparedConnection>() },
-    ),
+        { initialValue: Option.none<PreparedConnection>() },
+      )
+      .pipe(Atom.setIdleTTL(SESSION_STATE_IDLE_TTL_MS)),
   );
 
   const preparedConnectionValueAtom = Atom.family((environmentId: EnvironmentId) =>
@@ -139,7 +144,7 @@ export function createEnvironmentSessionAtoms<R, E>(
       })
       .pipe(
         Atom.swr({ staleTime: 30_000, revalidateOnMount: true }),
-        Atom.setIdleTTL(5 * 60_000),
+        Atom.setIdleTTL(SESSION_STATE_IDLE_TTL_MS),
         Atom.withLabel(`environment-session-state:${environmentId}`),
       ),
   );

@@ -112,7 +112,8 @@ interface AtomCommandSchedulerState {
 
 interface AtomCommandLatestBatch {
   execute: () => Promise<AtomCommandResult<unknown, unknown>>;
-  readonly resolve: Array<(result: AtomCommandResult<unknown, unknown>) => void>;
+  readonly promise: Promise<AtomCommandResult<unknown, unknown>>;
+  readonly resolve: (result: AtomCommandResult<unknown, unknown>) => void;
 }
 
 interface AtomCommandLatestLane {
@@ -219,19 +220,23 @@ export function createAtomCommandScheduler(): AtomCommandScheduler {
       }
       const activeLane = lane;
 
-      const result = new Promise<AtomCommandResult<A, E>>((resolve) => {
-        if (activeLane.pending === undefined) {
-          activeLane.pending = {
-            execute: execute as () => Promise<AtomCommandResult<unknown, unknown>>,
-            resolve: [resolve as (result: AtomCommandResult<unknown, unknown>) => void],
-          };
-          return;
-        }
+      if (activeLane.pending === undefined) {
+        let resolveBatch!: (result: AtomCommandResult<unknown, unknown>) => void;
+        const promise = new Promise<AtomCommandResult<unknown, unknown>>((resolve) => {
+          resolveBatch = resolve;
+        });
+        activeLane.pending = {
+          execute: execute as () => Promise<AtomCommandResult<unknown, unknown>>,
+          promise,
+          resolve: resolveBatch,
+        };
+      } else {
+        // Every call coalesced into this batch observes the same latest result,
+        // so share one promise instead of retaining one resolver per caller
+        // while a slow command is in flight.
         activeLane.pending.execute = execute as () => Promise<AtomCommandResult<unknown, unknown>>;
-        activeLane.pending.resolve.push(
-          resolve as (result: AtomCommandResult<unknown, unknown>) => void,
-        );
-      });
+      }
+      const result = activeLane.pending.promise as Promise<AtomCommandResult<A, E>>;
 
       if (!activeLane.running) {
         activeLane.running = true;
@@ -245,9 +250,7 @@ export function createAtomCommandScheduler(): AtomCommandScheduler {
             } catch (defect) {
               batchResult = AsyncResult.failure(Cause.die(defect));
             }
-            for (const resolve of batch.resolve) {
-              resolve(batchResult);
-            }
+            batch.resolve(batchResult);
           }
           activeLane.running = false;
           if (state.latest.get(key) === activeLane) {

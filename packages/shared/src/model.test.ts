@@ -3,6 +3,7 @@ import { ProviderDriverKind, ProviderInstanceId, type ModelCapabilities } from "
 
 import {
   buildProviderOptionSelectionsFromDescriptors,
+  applyClaudePromptEffortPrefix,
   createModelCapabilities,
   createModelSelection,
   getModelSelectionBooleanOptionValue,
@@ -223,5 +224,16 @@ describe("model slug normalization", () => {
 
     expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5");
     expect(normalizeCustomModelSlug(" opus ")).toBe("opus");
+  });
+});
+
+describe("Claude prompt effort", () => {
+  it("does not duplicate an existing case-insensitive ultrathink prefix", () => {
+    expect(applyClaudePromptEffortPrefix("ultrathink: investigate", "ultrathink")).toBe(
+      "ultrathink: investigate",
+    );
+    expect(applyClaudePromptEffortPrefix("ULTRATHINK:\ninvestigate", "ultrathink")).toBe(
+      "ULTRATHINK:\ninvestigate",
+    );
   });
 });

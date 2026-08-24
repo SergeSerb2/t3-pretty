@@ -2,91 +2,95 @@
 import * as NodeFS from "node:fs";
 import * as NodeProcess from "node:process";
 
+const MAX_FINGERPRINT_INPUT_BYTES = 64 * 1024;
+const MAX_FINGERPRINT_BYTES = 512;
+
 function readJson(value, label) {
   if (!value || !value.trim()) return null;
+  if (Buffer.byteLength(value, "utf8") > MAX_FINGERPRINT_INPUT_BYTES) {
+    throw new Error(`${label} exceeded the ${MAX_FINGERPRINT_INPUT_BYTES}-byte safety limit.`);
+  }
   try {
     return JSON.parse(value);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to parse ${label}: ${detail}`);
+    throw new Error(`Failed to parse ${label}: ${detail}`, { cause: error });
   }
 }
 
+function normalizeFingerprint(value, label, allowEmpty = false) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!normalized && allowEmpty) return "";
+  if (
+    !normalized ||
+    Buffer.byteLength(normalized, "utf8") > MAX_FINGERPRINT_BYTES ||
+    [...normalized].some((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f);
+    })
+  ) {
+    throw new Error(`${label} was empty, oversized, or contained a control character.`);
+  }
+  return normalized;
+}
+
 function fingerprintHash(value) {
-  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "string") return normalizeFingerprint(value, "Fingerprint hash");
   if (value && typeof value === "object" && typeof value.hash === "string") {
-    return value.hash.trim();
+    return normalizeFingerprint(value.hash, "Fingerprint hash");
   }
   throw new Error("Fingerprint JSON did not contain a hash.");
+}
+
+function readBoundedFile(path, label) {
+  const file = NodeFS.openSync(path, "r");
+  try {
+    if (NodeFS.fstatSync(file).size > MAX_FINGERPRINT_INPUT_BYTES) {
+      throw new Error(`${label} exceeded the ${MAX_FINGERPRINT_INPUT_BYTES}-byte safety limit.`);
+    }
+    const bytes = Buffer.alloc(MAX_FINGERPRINT_INPUT_BYTES + 1);
+    let length = 0;
+    while (length < bytes.byteLength) {
+      const read = NodeFS.readSync(file, bytes, length, bytes.byteLength - length, null);
+      if (read === 0) break;
+      length += read;
+    }
+    if (length > MAX_FINGERPRINT_INPUT_BYTES) {
+      throw new Error(`${label} exceeded the ${MAX_FINGERPRINT_INPUT_BYTES}-byte safety limit.`);
+    }
+    return bytes.subarray(0, length).toString("utf8");
+  } finally {
+    NodeFS.closeSync(file);
+  }
 }
 
 function readFingerprintInput(args) {
   if (args.has("fingerprint-file")) {
     const path = args.get("fingerprint-file");
-    const source = NodeFS.readFileSync(path, "utf8").trim();
+    const source = readBoundedFile(path, "Fingerprint file").trim();
     if (source.startsWith("{") || source.startsWith("[")) {
       return fingerprintHash(readJson(source, "fingerprint file"));
     }
-    const lastToken = source.split(/\s+/u).filter(Boolean).at(-1);
-    if (lastToken) return lastToken;
+    const lastToken = source.split(/\s+/u).findLast(Boolean);
+    if (lastToken) return normalizeFingerprint(lastToken, "Fingerprint hash");
     throw new Error(`Fingerprint file '${path}' was empty.`);
   }
   return fingerprintHash(readJson(args.get("fingerprint-json") ?? "", "fingerprint JSON"));
 }
 
-function asBuildList(value) {
-  if (value == null) return [];
-  if (Array.isArray(value)) return value;
-  if (Array.isArray(value.builds)) return value.builds;
-  if (Array.isArray(value.data)) return value.data;
-  return [];
-}
-
-function readBuildList(args) {
-  try {
-    if (args.has("builds-file")) {
-      const path = args.get("builds-file");
-      return asBuildList(readJson(NodeFS.readFileSync(path, "utf8"), "EAS build list file") ?? []);
-    }
-    return asBuildList(readJson(args.get("builds-json") ?? "[]", "EAS build list JSON") ?? []);
-  } catch {
-    return [];
+function readSubmittedFingerprint(args) {
+  if (args.has("submitted-fingerprint-file")) {
+    return normalizeFingerprint(
+      readBoundedFile(args.get("submitted-fingerprint-file"), "Submitted fingerprint file"),
+      "Submitted fingerprint",
+      true,
+    );
   }
-}
-
-function runtimeVersionOf(build) {
-  if (!build || typeof build !== "object") return "";
-  for (const key of ["runtimeVersion", "runtime_version", "fingerprintHash", "fingerprint_hash"]) {
-    const value = build[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  const fingerprint = build.fingerprint;
-  if (fingerprint && typeof fingerprint === "object" && typeof fingerprint.hash === "string") {
-    return fingerprint.hash.trim();
-  }
-  return "";
-}
-
-function isIosProductionBuild(build) {
-  if (!build || typeof build !== "object") return false;
-  const platform = String(build.platform ?? build.appPlatform ?? "").toUpperCase();
-  if (platform && platform !== "IOS") return false;
-  const profile = String(build.buildProfile ?? build.profile ?? "").toLowerCase();
-  return !profile || profile === "production";
-}
-
-// Finished binaries and still-running production compiles both count. A gate
-// that only sees `finished` will queue a duplicate paid build while the first
-// one is new / in-queue / in-progress. Errored and canceled builds do not.
-const ACTIVE_BUILD_STATUSES = new Set(["", "new", "in-queue", "in-progress", "finished"]);
-
-function isActiveProductionBuild(build) {
-  if (!isIosProductionBuild(build)) return false;
-  const status = String(build.status ?? build.buildStatus ?? "")
-    .trim()
-    .toLowerCase()
-    .replaceAll("_", "-");
-  return ACTIVE_BUILD_STATUSES.has(status);
+  return normalizeFingerprint(
+    args.get("submitted-fingerprint") ?? "",
+    "Submitted fingerprint",
+    true,
+  );
 }
 
 const args = new Map();
@@ -107,36 +111,22 @@ for (let index = 2; index < NodeProcess.argv.length; index += 1) {
 
 const fingerprint = readFingerprintInput(args);
 const forceBuild = args.get("force") === "true" || args.get("force") === "1";
-const builds = readBuildList(args);
 // Local `eas build --local` binaries never appear in `eas build:list`. The
-// workflow therefore also persists the last successfully submitted fingerprint
+// workflow therefore persists the last successfully submitted fingerprint
 // (`.t3-fork/ios-production-fingerprint`). Automatic `release` skips Xcode
 // when that hash still matches (OTA already shipped the JS). `--force` is
 // reserved for explicit `build` / force_ios dispatches.
-const submittedFingerprint = (args.get("submitted-fingerprint") ?? "").trim();
-const activeBuilds = builds.filter(isActiveProductionBuild);
-const easRuntimeVersions = activeBuilds
-  .map((build) => runtimeVersionOf(build))
-  .filter((value) => Boolean(value));
-const easRuntimeVersion = easRuntimeVersions[0] ?? "";
-const knownFingerprints = new Set(
-  [...easRuntimeVersions, submittedFingerprint].filter((value) => Boolean(value)),
-);
-const lastRuntimeVersion = submittedFingerprint || easRuntimeVersion;
-const shouldBuild = forceBuild || !knownFingerprints.has(fingerprint);
-const matchingActiveBuild = activeBuilds.find((build) => runtimeVersionOf(build) === fingerprint);
-const matchingBuildStatus = String(
-  matchingActiveBuild?.status ?? matchingActiveBuild?.buildStatus ?? "",
-)
-  .trim()
-  .toLowerCase()
-  .replaceAll("_", "-");
+const submittedFingerprint = readSubmittedFingerprint(args);
+// A hosted EAS build record proves only that an IPA was compiled. This fork has
+// no hosted auto-submit path, so neither an in-flight nor a finished build can
+// prove TestFlight delivery. Only the marker written after `eas submit`
+// succeeds is allowed to suppress a local release build.
+const shouldBuild = forceBuild || submittedFingerprint !== fingerprint;
 
 const outputPath = args.get("github-output") || NodeProcess.env.GITHUB_OUTPUT;
 const lines = [
   `fingerprint=${fingerprint}`,
-  `last_runtime_version=${lastRuntimeVersion}`,
-  `eas_runtime_version=${easRuntimeVersion}`,
+  `last_runtime_version=${submittedFingerprint}`,
   `submitted_fingerprint=${submittedFingerprint}`,
   `should_build=${shouldBuild ? "true" : "false"}`,
 ];
@@ -153,11 +143,7 @@ if (forceBuild) {
   NodeProcess.stdout.write("Forcing a native iOS build (mode=build).\n");
 } else if (shouldBuild) {
   NodeProcess.stdout.write(
-    `iOS runtime fingerprint changed (${lastRuntimeVersion || "none"} -> ${fingerprint}).\n`,
-  );
-} else if (matchingBuildStatus && matchingBuildStatus !== "finished") {
-  NodeProcess.stdout.write(
-    `iOS runtime fingerprint ${fingerprint} already has an ${matchingBuildStatus} production build; skipping Xcode.\n`,
+    `iOS runtime fingerprint changed (${submittedFingerprint || "none"} -> ${fingerprint}).\n`,
   );
 } else {
   NodeProcess.stdout.write(

@@ -1,4 +1,6 @@
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
@@ -8,8 +10,78 @@ import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
 import * as HttpApiSecurity from "effect/unstable/httpapi/HttpApiSecurity";
 import * as OpenApi from "effect/unstable/httpapi/OpenApi";
 
-import { EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  AUTH_ACCESS_TOKEN_MAX_EXPIRES_IN_SECONDS,
+  AUTH_CLIENT_LABEL_MAX_LENGTH,
+  AUTH_CREDENTIAL_MAX_LENGTH,
+  AuthClientLabel,
+  AuthCredential,
+  AuthIdentifier,
+  AuthOAuthScope,
+  AuthProofKeyThumbprint,
+  AuthSubject,
+} from "./auth.ts";
+import { EnvironmentId, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+
+export const SECURE_RELAY_URL_MAX_LENGTH = 8_192;
+export const RELAY_PUBLIC_KEY_MAX_LENGTH = AUTH_CREDENTIAL_MAX_LENGTH;
+export const RELAY_AUTHORIZATION_HEADER_MAX_LENGTH = AUTH_CREDENTIAL_MAX_LENGTH + 128;
+export const RELAY_DPOP_PROOF_MAX_LENGTH = 64 * 1024;
+export const RELAY_DEVICE_MAX_COUNT = 128;
+export const RELAY_ENVIRONMENT_MAX_COUNT = 1_024;
+export const RELAY_ACTIVITY_MAX_COUNT = 128;
+// Project and thread activity titles originate in orchestration snapshots.
+export const RELAY_TITLE_MAX_LENGTH = 8_192;
+export const RELAY_DETAIL_MAX_LENGTH = 4_096;
+export const RELAY_DEEP_LINK_MAX_LENGTH = 8_192;
+export const RELAY_TRACE_ID_MAX_LENGTH = 256;
+export const RELAY_PERSISTED_USER_ID_MAX_LENGTH = 191;
+export const RELAY_ENVIRONMENT_ID_MAX_LENGTH = 191;
+export const RELAY_THREAD_ID_MAX_LENGTH = 191;
+export const RELAY_DEVICE_ID_MAX_LENGTH = 191;
+export const RELAY_ENVIRONMENT_LABEL_MAX_LENGTH = AUTH_CLIENT_LABEL_MAX_LENGTH;
+export const RELAY_APP_VERSION_MAX_LENGTH = 64;
+export const RELAY_BUNDLE_ID_MAX_LENGTH = 255;
+export const RELAY_MANAGED_RESOURCE_ID_MAX_LENGTH = 191;
+export const RELAY_TIMESTAMP_MAX_LENGTH = 64;
+export const RELAY_IOS_MAJOR_VERSION_MAX = 999;
+export const RELAY_JWT_CLAIM_MAX_LENGTH = 8_192;
+export const RELAY_JWT_ID_MAX_LENGTH = 4_096;
+
+const RelayUrl = TrimmedNonEmptyString.check(Schema.isMaxLength(SECURE_RELAY_URL_MAX_LENGTH));
+const RelayPublicKey = TrimmedNonEmptyString.check(Schema.isMaxLength(RELAY_PUBLIC_KEY_MAX_LENGTH));
+const RelayJwt = TrimmedNonEmptyString.check(Schema.isMaxLength(RELAY_DPOP_PROOF_MAX_LENGTH));
+const RelayTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(RELAY_TITLE_MAX_LENGTH));
+const RelayDetail = TrimmedNonEmptyString.check(Schema.isMaxLength(RELAY_DETAIL_MAX_LENGTH));
+const RelayDeepLink = TrimmedNonEmptyString.check(Schema.isMaxLength(RELAY_DEEP_LINK_MAX_LENGTH));
+const RelayTraceId = TrimmedNonEmptyString.check(Schema.isMaxLength(RELAY_TRACE_ID_MAX_LENGTH));
+const canonicalRelayTimestamp = Schema.makeFilter((value: string) => {
+  const parsed = DateTime.make(value);
+  return (
+    (Option.isSome(parsed) && DateTime.formatIso(parsed.value) === value) ||
+    "Relay timestamps must use canonical UTC ISO-8601 format."
+  );
+});
+const RelayTimestamp = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(RELAY_TIMESTAMP_MAX_LENGTH),
+  canonicalRelayTimestamp,
+);
+const RelayJwtClaim = TrimmedNonEmptyString.check(Schema.isMaxLength(RELAY_JWT_CLAIM_MAX_LENGTH));
+const RelayJwtId = TrimmedNonEmptyString.check(Schema.isMaxLength(RELAY_JWT_ID_MAX_LENGTH));
+export const RelayCloudUserId = AuthSubject.check(
+  Schema.isMaxLength(RELAY_PERSISTED_USER_ID_MAX_LENGTH),
+);
+export const RelayEnvironmentId = EnvironmentId.check(
+  Schema.isMaxLength(RELAY_ENVIRONMENT_ID_MAX_LENGTH),
+);
+export const RelayThreadId = ThreadId.check(Schema.isMaxLength(RELAY_THREAD_ID_MAX_LENGTH));
+export const RelayDeviceId = AuthIdentifier.check(Schema.isMaxLength(RELAY_DEVICE_ID_MAX_LENGTH));
+const RelayAppVersion = AuthIdentifier.check(Schema.isMaxLength(RELAY_APP_VERSION_MAX_LENGTH));
+const RelayBundleId = AuthIdentifier.check(Schema.isMaxLength(RELAY_BUNDLE_ID_MAX_LENGTH));
+const RelayManagedResourceId = AuthIdentifier.check(
+  Schema.isMaxLength(RELAY_MANAGED_RESOURCE_ID_MAX_LENGTH),
+);
 
 export const RelayAgentAwarenessPlatform = Schema.Literal("ios");
 export type RelayAgentAwarenessPlatform = typeof RelayAgentAwarenessPlatform.Type;
@@ -39,29 +111,33 @@ export const RelayApnsEnvironment = Schema.Literals(["sandbox", "production"]);
 export type RelayApnsEnvironment = typeof RelayApnsEnvironment.Type;
 
 export const RelayDeviceRegistrationRequest = Schema.Struct({
-  deviceId: TrimmedNonEmptyString,
-  label: TrimmedNonEmptyString,
+  deviceId: RelayDeviceId,
+  label: AuthClientLabel,
   platform: RelayAgentAwarenessPlatform,
-  iosMajorVersion: Schema.Int.check(Schema.isGreaterThanOrEqualTo(18)),
-  appVersion: Schema.optional(TrimmedNonEmptyString),
+  iosMajorVersion: Schema.Int.check(
+    Schema.isBetween({ minimum: 18, maximum: RELAY_IOS_MAJOR_VERSION_MAX }),
+  ),
+  appVersion: Schema.optional(RelayAppVersion),
   // APNs routing for this install: the topic must match the app's bundle id
   // (dev/preview/prod variants differ) and development-signed builds receive
   // sandbox tokens. Optional so older app builds keep registering; the relay
   // falls back to its configured defaults.
-  bundleId: Schema.optional(TrimmedNonEmptyString),
+  bundleId: Schema.optional(RelayBundleId),
   apsEnvironment: Schema.optional(RelayApnsEnvironment),
-  pushToken: Schema.optional(TrimmedNonEmptyString),
-  pushToStartToken: Schema.optional(TrimmedNonEmptyString),
+  pushToken: Schema.optional(AuthCredential),
+  pushToStartToken: Schema.optional(AuthCredential),
   preferences: RelayAgentAwarenessPreferences,
 });
 export type RelayDeviceRegistrationRequest = typeof RelayDeviceRegistrationRequest.Type;
 
 export const RelayClientDeviceRecord = Schema.Struct({
-  deviceId: TrimmedNonEmptyString,
-  label: TrimmedNonEmptyString,
+  deviceId: RelayDeviceId,
+  label: AuthClientLabel,
   platform: RelayAgentAwarenessPlatform,
-  iosMajorVersion: Schema.Int.check(Schema.isGreaterThanOrEqualTo(18)),
-  appVersion: Schema.NullOr(TrimmedNonEmptyString),
+  iosMajorVersion: Schema.Int.check(
+    Schema.isBetween({ minimum: 18, maximum: RELAY_IOS_MAJOR_VERSION_MAX }),
+  ),
+  appVersion: Schema.NullOr(RelayAppVersion),
   notifications: Schema.Struct({
     enabled: Schema.Boolean,
     notifyOnApproval: Schema.Boolean,
@@ -72,23 +148,23 @@ export const RelayClientDeviceRecord = Schema.Struct({
   liveActivities: Schema.Struct({
     enabled: Schema.Boolean,
   }),
-  updatedAt: TrimmedNonEmptyString,
+  updatedAt: RelayTimestamp,
 });
 export type RelayClientDeviceRecord = typeof RelayClientDeviceRecord.Type;
 
 export const RelayListDevicesResponse = Schema.Struct({
-  devices: Schema.Array(RelayClientDeviceRecord),
+  devices: Schema.Array(RelayClientDeviceRecord).check(Schema.isMaxLength(RELAY_DEVICE_MAX_COUNT)),
 });
 export type RelayListDevicesResponse = typeof RelayListDevicesResponse.Type;
 
 export const RelayLiveActivityRegistrationRequest = Schema.Struct({
-  deviceId: TrimmedNonEmptyString,
-  activityPushToken: TrimmedNonEmptyString,
+  deviceId: RelayDeviceId,
+  activityPushToken: AuthCredential,
 });
 export type RelayLiveActivityRegistrationRequest = typeof RelayLiveActivityRegistrationRequest.Type;
 
 export const RelayDeviceUnregistrationParams = Schema.Struct({
-  deviceId: TrimmedNonEmptyString,
+  deviceId: RelayDeviceId,
 });
 export type RelayDeviceUnregistrationParams = typeof RelayDeviceUnregistrationParams.Type;
 
@@ -97,47 +173,49 @@ export const RelayAgentActivityProgress = Schema.Number.check(
 );
 
 export const RelayAgentActivityState = Schema.Struct({
-  environmentId: EnvironmentId,
-  threadId: ThreadId,
-  projectTitle: TrimmedNonEmptyString,
-  threadTitle: TrimmedNonEmptyString,
+  environmentId: RelayEnvironmentId,
+  threadId: RelayThreadId,
+  projectTitle: RelayTitle,
+  threadTitle: RelayTitle,
   phase: RelayAgentAwarenessPhase,
-  headline: TrimmedNonEmptyString,
-  detail: Schema.optional(TrimmedNonEmptyString),
-  modelTitle: TrimmedNonEmptyString,
-  updatedAt: TrimmedNonEmptyString,
-  deepLink: TrimmedNonEmptyString,
+  headline: RelayTitle,
+  detail: Schema.optional(RelayDetail),
+  modelTitle: RelayTitle,
+  updatedAt: RelayTimestamp,
+  deepLink: RelayDeepLink,
   // Plan completion ratio for running work, so remote card updates carry the
   // same progress bar the phone paints from its own thread shells.
   progress: Schema.optional(RelayAgentActivityProgress),
   // When the in-flight turn started, so the Live Activity can render a
   // ticking elapsed timer that stays live between pushes. Absent for
   // waiting/terminal rows and for payloads from older servers.
-  startedAt: Schema.optional(TrimmedNonEmptyString),
+  startedAt: Schema.optional(RelayTimestamp),
 });
 export type RelayAgentActivityState = typeof RelayAgentActivityState.Type;
 
 export const RelayAgentActivityAggregateRow = Schema.Struct({
-  environmentId: EnvironmentId,
-  threadId: ThreadId,
-  projectTitle: TrimmedNonEmptyString,
-  threadTitle: TrimmedNonEmptyString,
-  modelTitle: TrimmedNonEmptyString,
+  environmentId: RelayEnvironmentId,
+  threadId: RelayThreadId,
+  projectTitle: RelayTitle,
+  threadTitle: RelayTitle,
+  modelTitle: RelayTitle,
   phase: RelayAgentAwarenessPhase,
-  status: TrimmedNonEmptyString,
-  updatedAt: TrimmedNonEmptyString,
-  deepLink: TrimmedNonEmptyString,
+  status: RelayTitle,
+  updatedAt: RelayTimestamp,
+  deepLink: RelayDeepLink,
   progress: Schema.optional(RelayAgentActivityProgress),
-  startedAt: Schema.optional(TrimmedNonEmptyString),
+  startedAt: Schema.optional(RelayTimestamp),
 });
 export type RelayAgentActivityAggregateRow = typeof RelayAgentActivityAggregateRow.Type;
 
 export const RelayAgentActivityAggregateState = Schema.Struct({
-  title: TrimmedNonEmptyString,
-  subtitle: TrimmedNonEmptyString,
+  title: RelayTitle,
+  subtitle: RelayTitle,
   activeCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  updatedAt: TrimmedNonEmptyString,
-  activities: Schema.Array(RelayAgentActivityAggregateRow),
+  updatedAt: RelayTimestamp,
+  activities: Schema.Array(RelayAgentActivityAggregateRow).check(
+    Schema.isMaxLength(RELAY_ACTIVITY_MAX_COUNT),
+  ),
 });
 export type RelayAgentActivityAggregateState = typeof RelayAgentActivityAggregateState.Type;
 
@@ -149,14 +227,14 @@ export const RelayManagedEndpointProviderKind = Schema.Literals([
 export type RelayManagedEndpointProviderKind = typeof RelayManagedEndpointProviderKind.Type;
 
 export const RelayManagedEndpoint = Schema.Struct({
-  httpBaseUrl: TrimmedNonEmptyString,
-  wsBaseUrl: TrimmedNonEmptyString,
+  httpBaseUrl: RelayUrl,
+  wsBaseUrl: RelayUrl,
   providerKind: RelayManagedEndpointProviderKind,
 });
 export type RelayManagedEndpoint = typeof RelayManagedEndpoint.Type;
 
 export const RelayManagedEndpointOrigin = Schema.Struct({
-  localHttpHost: TrimmedNonEmptyString,
+  localHttpHost: TrimmedNonEmptyString.check(Schema.isMaxLength(1_024)),
   localHttpPort: Schema.Int.check(
     Schema.isGreaterThanOrEqualTo(1),
     Schema.isLessThanOrEqualTo(65_535),
@@ -166,43 +244,66 @@ export type RelayManagedEndpointOrigin = typeof RelayManagedEndpointOrigin.Type;
 
 export const RelayManagedEndpointRuntimeConfig = Schema.Struct({
   providerKind: RelayManagedEndpointProviderKind,
-  connectorToken: TrimmedNonEmptyString,
-  tunnelId: Schema.optional(TrimmedNonEmptyString),
-  tunnelName: Schema.optional(TrimmedNonEmptyString),
+  connectorToken: AuthCredential,
+  tunnelId: Schema.optional(RelayManagedResourceId),
+  tunnelName: Schema.optional(AuthClientLabel),
 });
 export type RelayManagedEndpointRuntimeConfig = typeof RelayManagedEndpointRuntimeConfig.Type;
 
+export const RelayManagedEndpointRuntimeStatus = Schema.Union([
+  Schema.Struct({ status: Schema.Literal("disabled") }),
+  Schema.Struct({
+    status: Schema.Literal("failed"),
+    providerKind: RelayManagedEndpointProviderKind,
+    reason: RelayDetail,
+    tunnelId: Schema.optional(RelayManagedResourceId),
+    tunnelName: Schema.optional(AuthClientLabel),
+  }),
+  Schema.Struct({
+    status: Schema.Literal("running"),
+    providerKind: Schema.Literal("cloudflare_tunnel"),
+    pid: NonNegativeInt,
+    tunnelId: Schema.optional(RelayManagedResourceId),
+    tunnelName: Schema.optional(AuthClientLabel),
+  }),
+  Schema.Struct({
+    status: Schema.Literal("unsupported"),
+    providerKind: RelayManagedEndpointProviderKind,
+  }),
+]);
+export type RelayManagedEndpointRuntimeStatus = typeof RelayManagedEndpointRuntimeStatus.Type;
+
 export const RelayLinkProofRequest = Schema.Struct({
-  challenge: Schema.String,
-  relayIssuer: Schema.String,
+  challenge: Schema.String.check(Schema.isMaxLength(AUTH_CREDENTIAL_MAX_LENGTH)),
+  relayIssuer: RelayUrl,
   endpoint: RelayManagedEndpoint,
   origin: RelayManagedEndpointOrigin,
 });
 export type RelayLinkProofRequest = typeof RelayLinkProofRequest.Type;
 
 export const RelayEnvironmentConfigRequest = Schema.Struct({
-  relayUrl: Schema.String,
-  relayIssuer: Schema.optional(Schema.String),
-  cloudUserId: Schema.String,
-  environmentCredential: Schema.String,
-  cloudMintPublicKey: Schema.String,
+  relayUrl: RelayUrl,
+  relayIssuer: Schema.optional(RelayUrl),
+  cloudUserId: RelayCloudUserId,
+  environmentCredential: AuthCredential,
+  cloudMintPublicKey: RelayPublicKey,
   endpointRuntime: Schema.NullOr(RelayManagedEndpointRuntimeConfig),
 });
 export type RelayEnvironmentConfigRequest = typeof RelayEnvironmentConfigRequest.Type;
 
 const RelaySignedJwtRegisteredClaims = {
-  iss: TrimmedNonEmptyString,
-  aud: TrimmedNonEmptyString,
-  sub: TrimmedNonEmptyString,
-  jti: TrimmedNonEmptyString,
-  iat: Schema.Int,
-  exp: Schema.Int,
+  iss: RelayJwtClaim,
+  aud: RelayJwtClaim,
+  sub: RelayJwtClaim,
+  jti: RelayJwtId,
+  iat: NonNegativeInt,
+  exp: NonNegativeInt,
 } as const;
 
 export const RelayAgentActivityPublishProofPayload = Schema.Struct({
   ...RelaySignedJwtRegisteredClaims,
-  environmentId: EnvironmentId,
-  threadId: ThreadId,
+  environmentId: RelayEnvironmentId,
+  threadId: RelayThreadId,
   state: Schema.NullOr(RelayAgentActivityState),
 });
 export type RelayAgentActivityPublishProofPayload =
@@ -213,7 +314,7 @@ export const RelayAgentActivityPublishRequest = Schema.Struct({
   state: Schema.NullOr(RelayAgentActivityState).annotate({
     description: "Current agent-awareness state, or null to remove the published state.",
   }),
-  proof: TrimmedNonEmptyString.annotate({
+  proof: RelayJwt.annotate({
     description: "Environment-signed JWT covering this published activity state.",
   }),
 }).annotate({ description: "Publishes a signed agent-awareness update from an environment." });
@@ -227,17 +328,17 @@ export type RelayEnvironmentLinkScope = typeof RelayEnvironmentLinkScope.Type;
 
 export const RelayEnvironmentLinkProofPayload = Schema.Struct({
   ...RelaySignedJwtRegisteredClaims,
-  challenge: TrimmedNonEmptyString,
+  challenge: AuthCredential,
   descriptor: ExecutionEnvironmentDescriptor,
-  environmentId: EnvironmentId,
-  environmentPublicKey: TrimmedNonEmptyString,
+  environmentId: RelayEnvironmentId,
+  environmentPublicKey: RelayPublicKey,
   endpoint: RelayManagedEndpoint,
   origin: RelayManagedEndpointOrigin,
-  scopes: Schema.Array(RelayEnvironmentLinkScope),
+  scopes: Schema.Array(RelayEnvironmentLinkScope).check(Schema.isMaxLength(2)),
 });
 export type RelayEnvironmentLinkProofPayload = typeof RelayEnvironmentLinkProofPayload.Type;
 
-export const RelayEnvironmentLinkProof = TrimmedNonEmptyString;
+export const RelayEnvironmentLinkProof = RelayJwt;
 export type RelayEnvironmentLinkProof = typeof RelayEnvironmentLinkProof.Type;
 
 export const RelayEnvironmentLinkChallengeRequest = Schema.Struct({
@@ -254,15 +355,15 @@ export const RelayEnvironmentLinkChallengeRequest = Schema.Struct({
 export type RelayEnvironmentLinkChallengeRequest = typeof RelayEnvironmentLinkChallengeRequest.Type;
 
 export const RelayEnvironmentLinkChallengeResponse = Schema.Struct({
-  challenge: TrimmedNonEmptyString,
-  expiresAt: TrimmedNonEmptyString,
+  challenge: AuthCredential,
+  expiresAt: RelayTimestamp,
 });
 export type RelayEnvironmentLinkChallengeResponse =
   typeof RelayEnvironmentLinkChallengeResponse.Type;
 
 export const RelayEnvironmentLinkRequest = Schema.Struct({
   deviceId: Schema.optional(
-    TrimmedNonEmptyString.annotate({
+    RelayDeviceId.annotate({
       description: "Optional client device identifier associated with this link.",
     }),
   ),
@@ -277,13 +378,13 @@ export type RelayEnvironmentLinkRequest = typeof RelayEnvironmentLinkRequest.Typ
 
 export const RelayEnvironmentLinkResponse = Schema.Struct({
   ok: Schema.Boolean,
-  cloudUserId: TrimmedNonEmptyString,
-  environmentId: EnvironmentId,
+  cloudUserId: RelayCloudUserId,
+  environmentId: RelayEnvironmentId,
   endpoint: RelayManagedEndpoint,
   endpointRuntime: Schema.NullOr(RelayManagedEndpointRuntimeConfig),
-  relayIssuer: TrimmedNonEmptyString,
-  environmentCredential: TrimmedNonEmptyString,
-  cloudMintPublicKey: TrimmedNonEmptyString,
+  relayIssuer: RelayUrl,
+  environmentCredential: AuthCredential,
+  cloudMintPublicKey: RelayPublicKey,
 });
 export type RelayEnvironmentLinkResponse = typeof RelayEnvironmentLinkResponse.Type;
 
@@ -348,7 +449,7 @@ export class RelayAuthInvalidError extends Schema.TaggedErrorClass<RelayAuthInva
   {
     code: Schema.Literal("auth_invalid"),
     reason: RelayAuthInvalidReason,
-    traceId: TrimmedNonEmptyString,
+    traceId: RelayTraceId,
   },
   { httpApiStatus: 401 },
 ) {
@@ -361,7 +462,7 @@ export class RelayEnvironmentLinkProofExpiredError extends Schema.TaggedErrorCla
   "RelayEnvironmentLinkProofExpiredError",
   {
     code: Schema.Literal("environment_link_proof_expired"),
-    traceId: TrimmedNonEmptyString,
+    traceId: RelayTraceId,
   },
   { httpApiStatus: 401 },
 ) {
@@ -375,7 +476,7 @@ export class RelayEnvironmentLinkProofInvalidError extends Schema.TaggedErrorCla
   {
     code: Schema.Literal("environment_link_proof_invalid"),
     reason: RelayEnvironmentLinkProofInvalidReason,
-    traceId: TrimmedNonEmptyString,
+    traceId: RelayTraceId,
   },
   { httpApiStatus: 400 },
 ) {
@@ -404,7 +505,7 @@ export class RelayEnvironmentConnectNotAuthorizedError extends Schema.TaggedErro
     // Optional so responses from relays deployed before the reason was
     // threaded through still decode.
     reason: Schema.optional(RelayEnvironmentConnectNotAuthorizedReason),
-    traceId: TrimmedNonEmptyString,
+    traceId: RelayTraceId,
   },
   { httpApiStatus: 403 },
 ) {
@@ -420,7 +521,7 @@ export class RelayEnvironmentEndpointUnavailableError extends Schema.TaggedError
   {
     code: Schema.Literal("environment_endpoint_unavailable"),
     reason: RelayEnvironmentEndpointUnavailableReason,
-    traceId: TrimmedNonEmptyString,
+    traceId: RelayTraceId,
   },
   { httpApiStatus: 502 },
 ) {
@@ -433,7 +534,7 @@ export class RelayEnvironmentEndpointTimedOutError extends Schema.TaggedErrorCla
   "RelayEnvironmentEndpointTimedOutError",
   {
     code: Schema.Literal("environment_endpoint_timed_out"),
-    traceId: TrimmedNonEmptyString,
+    traceId: RelayTraceId,
   },
   { httpApiStatus: 504 },
 ) {
@@ -447,7 +548,7 @@ export class RelayEnvironmentLinkFailedError extends Schema.TaggedErrorClass<Rel
   {
     code: Schema.Literal("environment_link_failed"),
     reason: RelayEnvironmentLinkFailedReason,
-    traceId: TrimmedNonEmptyString,
+    traceId: RelayTraceId,
   },
   { httpApiStatus: 500 },
 ) {
@@ -461,7 +562,7 @@ export class RelayEnvironmentLinkUnavailableError extends Schema.TaggedErrorClas
   {
     code: Schema.Literal("environment_link_unavailable"),
     reason: RelayEnvironmentLinkUnavailableReason,
-    traceId: TrimmedNonEmptyString,
+    traceId: RelayTraceId,
   },
   { httpApiStatus: 503 },
 ) {
@@ -474,8 +575,8 @@ export class RelayEnvironmentLinkLimitExceededError extends Schema.TaggedErrorCl
   "RelayEnvironmentLinkLimitExceededError",
   {
     code: Schema.Literal("environment_link_limit_exceeded"),
-    maxTunnels: Schema.Number,
-    traceId: TrimmedNonEmptyString,
+    maxTunnels: NonNegativeInt,
+    traceId: RelayTraceId,
   },
   { httpApiStatus: 403 },
 ) {
@@ -488,7 +589,7 @@ export class RelayAgentActivityPublishProofExpiredError extends Schema.TaggedErr
   "RelayAgentActivityPublishProofExpiredError",
   {
     code: Schema.Literal("agent_activity_publish_proof_expired"),
-    traceId: TrimmedNonEmptyString,
+    traceId: RelayTraceId,
   },
   { httpApiStatus: 401 },
 ) {
@@ -502,7 +603,7 @@ export class RelayAgentActivityPublishProofInvalidError extends Schema.TaggedErr
   {
     code: Schema.Literal("agent_activity_publish_proof_invalid"),
     reason: RelayAgentActivityPublishProofInvalidReason,
-    traceId: TrimmedNonEmptyString,
+    traceId: RelayTraceId,
   },
   { httpApiStatus: 401 },
 ) {
@@ -516,7 +617,7 @@ export class RelayInternalError extends Schema.TaggedErrorClass<RelayInternalErr
   {
     code: Schema.Literal("internal_error"),
     reason: RelayInternalErrorReason,
-    traceId: TrimmedNonEmptyString,
+    traceId: RelayTraceId,
   },
   { httpApiStatus: 500 },
 ) {
@@ -632,31 +733,33 @@ export class RelayDpopClientAuth extends HttpApiMiddleware.Service<
 }) {}
 
 export const RelayClientEnvironmentRecord = Schema.Struct({
-  environmentId: EnvironmentId,
-  label: TrimmedNonEmptyString,
+  environmentId: RelayEnvironmentId,
+  label: AuthClientLabel,
   endpoint: RelayManagedEndpoint,
-  linkedAt: TrimmedNonEmptyString,
+  linkedAt: RelayTimestamp,
 });
 export type RelayClientEnvironmentRecord = typeof RelayClientEnvironmentRecord.Type;
 
 export const RelayListEnvironmentsResponse = Schema.Struct({
-  environments: Schema.Array(RelayClientEnvironmentRecord),
+  environments: Schema.Array(RelayClientEnvironmentRecord).check(
+    Schema.isMaxLength(RELAY_ENVIRONMENT_MAX_COUNT),
+  ),
 });
 export type RelayListEnvironmentsResponse = typeof RelayListEnvironmentsResponse.Type;
 
 export const RelayEnvironmentConnectRequest = Schema.Struct({
   deviceId: Schema.optional(
-    TrimmedNonEmptyString.annotate({
+    RelayDeviceId.annotate({
       description: "Optional client device identifier requesting the connection.",
     }),
   ),
   clientKeyThumbprint: Schema.optional(
-    TrimmedNonEmptyString.annotate({
+    AuthProofKeyThumbprint.annotate({
       description: "Deprecated alias for clientProofKeyThumbprint.",
     }),
   ),
   clientProofKeyThumbprint: Schema.optional(
-    TrimmedNonEmptyString.annotate({
+    AuthProofKeyThumbprint.annotate({
       description: "JWK thumbprint that the minted environment credential must be bound to.",
     }),
   ),
@@ -684,15 +787,15 @@ export const RelayWebClientId = "t3-web" as const;
 
 export const RelayDpopAccessTokenRequest = Schema.Struct({
   grant_type: Schema.Literal(RelayDpopTokenExchangeGrantType),
-  subject_token: TrimmedNonEmptyString.annotate({
+  subject_token: AuthCredential.annotate({
     description: "Clerk bearer token for the signed-in cloud user.",
   }),
   subject_token_type: Schema.Literal(RelayJwtSubjectTokenType),
   requested_token_type: Schema.Literal(RelayAccessTokenType),
-  resource: TrimmedNonEmptyString.annotate({
+  resource: RelayUrl.annotate({
     description: "Relay issuer URL that will receive the DPoP-bound access token.",
   }),
-  scope: TrimmedNonEmptyString.annotate({
+  scope: AuthOAuthScope.annotate({
     description: "Space-separated relay scopes requested by the client.",
   }),
   client_id: RelayPublicClientId,
@@ -702,54 +805,72 @@ export const RelayDpopAccessTokenRequest = Schema.Struct({
 export type RelayDpopAccessTokenRequest = typeof RelayDpopAccessTokenRequest.Type;
 
 export const RelayDpopAccessTokenResponse = Schema.Struct({
-  access_token: TrimmedNonEmptyString,
+  access_token: AuthCredential,
   issued_token_type: Schema.Literal(RelayAccessTokenType),
   token_type: Schema.Literal("DPoP"),
-  expires_in: Schema.Int.check(Schema.isGreaterThan(0)),
-  scope: TrimmedNonEmptyString,
+  expires_in: NonNegativeInt.check(
+    Schema.isGreaterThan(0),
+    Schema.isLessThanOrEqualTo(AUTH_ACCESS_TOKEN_MAX_EXPIRES_IN_SECONDS),
+  ),
+  scope: AuthOAuthScope,
 });
 export type RelayDpopAccessTokenResponse = typeof RelayDpopAccessTokenResponse.Type;
 
+const RelayAuthorizationHeader = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(RELAY_AUTHORIZATION_HEADER_MAX_LENGTH),
+);
+const RelayDpopProofHeader = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(RELAY_DPOP_PROOF_MAX_LENGTH),
+);
+
 export const RelayBearerRequestHeaders = Schema.Struct({
-  authorization: TrimmedNonEmptyString,
+  authorization: RelayAuthorizationHeader,
 });
 
 export const RelayDpopProofRequestHeaders = Schema.Struct({
-  dpop: TrimmedNonEmptyString,
+  dpop: RelayDpopProofHeader,
 });
 
 export const RelayDpopRequestHeaders = Schema.Struct({
-  authorization: TrimmedNonEmptyString,
-  dpop: TrimmedNonEmptyString,
+  authorization: RelayAuthorizationHeader,
+  dpop: RelayDpopProofHeader,
 });
 
 export const RelayAuthorizationServerMetadata = Schema.Struct({
-  issuer: TrimmedNonEmptyString,
-  token_endpoint: TrimmedNonEmptyString,
-  grant_types_supported: Schema.Array(Schema.Literal(RelayDpopTokenExchangeGrantType)),
-  token_endpoint_auth_methods_supported: Schema.Array(Schema.Literal("none")),
-  dpop_signing_alg_values_supported: Schema.Array(Schema.Literal("ES256")),
-  scopes_supported: Schema.Array(RelayDpopAccessTokenScope),
+  issuer: RelayUrl,
+  token_endpoint: RelayUrl,
+  grant_types_supported: Schema.Array(Schema.Literal(RelayDpopTokenExchangeGrantType)).check(
+    Schema.isMaxLength(8),
+  ),
+  token_endpoint_auth_methods_supported: Schema.Array(Schema.Literal("none")).check(
+    Schema.isMaxLength(8),
+  ),
+  dpop_signing_alg_values_supported: Schema.Array(Schema.Literal("ES256")).check(
+    Schema.isMaxLength(8),
+  ),
+  scopes_supported: Schema.Array(RelayDpopAccessTokenScope).check(Schema.isMaxLength(8)),
 });
 
 export const RelayProtectedResourceMetadata = Schema.Struct({
-  resource: TrimmedNonEmptyString,
-  authorization_servers: Schema.Array(TrimmedNonEmptyString),
-  scopes_supported: Schema.Array(RelayDpopAccessTokenScope),
+  resource: RelayUrl,
+  authorization_servers: Schema.Array(RelayUrl).check(Schema.isMaxLength(8)),
+  scopes_supported: Schema.Array(RelayDpopAccessTokenScope).check(Schema.isMaxLength(8)),
   dpop_bound_access_tokens_required: Schema.Boolean,
-  dpop_signing_alg_values_supported: Schema.Array(Schema.Literal("ES256")),
+  dpop_signing_alg_values_supported: Schema.Array(Schema.Literal("ES256")).check(
+    Schema.isMaxLength(8),
+  ),
 });
 
 export const RelayEnvironmentUnlinkParams = Schema.Struct({
-  environmentId: EnvironmentId,
+  environmentId: RelayEnvironmentId,
 });
 export type RelayEnvironmentUnlinkParams = typeof RelayEnvironmentUnlinkParams.Type;
 
 export const RelayEnvironmentConnectResponse = Schema.Struct({
-  environmentId: EnvironmentId,
+  environmentId: RelayEnvironmentId,
   endpoint: RelayManagedEndpoint,
-  credential: TrimmedNonEmptyString,
-  expiresAt: TrimmedNonEmptyString,
+  credential: AuthCredential,
+  expiresAt: RelayTimestamp,
 });
 export type RelayEnvironmentConnectResponse = typeof RelayEnvironmentConnectResponse.Type;
 
@@ -757,30 +878,30 @@ export const RelayEnvironmentStatusValue = Schema.Literals(["online", "offline"]
 export type RelayEnvironmentStatusValue = typeof RelayEnvironmentStatusValue.Type;
 
 export const RelayEnvironmentStatusResponse = Schema.Struct({
-  environmentId: EnvironmentId,
+  environmentId: RelayEnvironmentId,
   endpoint: RelayManagedEndpoint,
   status: RelayEnvironmentStatusValue,
-  checkedAt: TrimmedNonEmptyString,
+  checkedAt: RelayTimestamp,
   descriptor: Schema.optional(ExecutionEnvironmentDescriptor),
-  error: Schema.optional(TrimmedNonEmptyString),
-  traceId: Schema.optional(TrimmedNonEmptyString),
+  error: Schema.optional(RelayDetail),
+  traceId: Schema.optional(RelayTraceId),
 });
 export type RelayEnvironmentStatusResponse = typeof RelayEnvironmentStatusResponse.Type;
 
 export const RelayCloudMintCredentialProofPayload = Schema.Struct({
   ...RelaySignedJwtRegisteredClaims,
-  environmentId: EnvironmentId,
-  clientProofKeyThumbprint: TrimmedNonEmptyString,
+  environmentId: RelayEnvironmentId,
+  clientProofKeyThumbprint: AuthProofKeyThumbprint,
   cnf: Schema.Struct({
-    jkt: TrimmedNonEmptyString,
+    jkt: AuthProofKeyThumbprint,
   }),
-  deviceId: Schema.optional(TrimmedNonEmptyString),
-  nonce: TrimmedNonEmptyString,
-  scope: Schema.Array(Schema.Literal("environment:connect")),
+  deviceId: Schema.optional(RelayDeviceId),
+  nonce: AuthCredential,
+  scope: Schema.Array(Schema.Literal("environment:connect")).check(Schema.isMaxLength(1)),
 });
 export type RelayCloudMintCredentialProofPayload = typeof RelayCloudMintCredentialProofPayload.Type;
 
-export const RelayCloudMintCredentialProof = TrimmedNonEmptyString;
+export const RelayCloudMintCredentialProof = RelayJwt;
 export type RelayCloudMintCredentialProof = typeof RelayCloudMintCredentialProof.Type;
 
 export const RelayCloudMintCredentialRequest = Schema.Struct({
@@ -790,14 +911,14 @@ export type RelayCloudMintCredentialRequest = typeof RelayCloudMintCredentialReq
 
 export const RelayCloudEnvironmentHealthProofPayload = Schema.Struct({
   ...RelaySignedJwtRegisteredClaims,
-  environmentId: EnvironmentId,
-  nonce: TrimmedNonEmptyString,
-  scope: Schema.Array(Schema.Literal("environment:status")),
+  environmentId: RelayEnvironmentId,
+  nonce: AuthCredential,
+  scope: Schema.Array(Schema.Literal("environment:status")).check(Schema.isMaxLength(1)),
 });
 export type RelayCloudEnvironmentHealthProofPayload =
   typeof RelayCloudEnvironmentHealthProofPayload.Type;
 
-export const RelayCloudEnvironmentHealthProof = TrimmedNonEmptyString;
+export const RelayCloudEnvironmentHealthProof = RelayJwt;
 export type RelayCloudEnvironmentHealthProof = typeof RelayCloudEnvironmentHealthProof.Type;
 
 export const RelayCloudEnvironmentHealthRequest = Schema.Struct({
@@ -807,38 +928,38 @@ export type RelayCloudEnvironmentHealthRequest = typeof RelayCloudEnvironmentHea
 
 export const RelayEnvironmentHealthResponseProofPayload = Schema.Struct({
   ...RelaySignedJwtRegisteredClaims,
-  environmentId: EnvironmentId,
-  requestNonce: TrimmedNonEmptyString,
+  environmentId: RelayEnvironmentId,
+  requestNonce: AuthCredential,
   status: Schema.Literal("online"),
   descriptor: ExecutionEnvironmentDescriptor,
-  checkedAt: TrimmedNonEmptyString,
+  checkedAt: RelayTimestamp,
 });
 export type RelayEnvironmentHealthResponseProofPayload =
   typeof RelayEnvironmentHealthResponseProofPayload.Type;
 
 export const RelayEnvironmentHealthResponse = Schema.Struct({
-  environmentId: EnvironmentId,
+  environmentId: RelayEnvironmentId,
   status: Schema.Literal("online"),
   descriptor: ExecutionEnvironmentDescriptor,
-  checkedAt: TrimmedNonEmptyString,
-  proof: TrimmedNonEmptyString,
+  checkedAt: RelayTimestamp,
+  proof: RelayJwt,
 });
 export type RelayEnvironmentHealthResponse = typeof RelayEnvironmentHealthResponse.Type;
 
 export const RelayEnvironmentMintResponseProofPayload = Schema.Struct({
   ...RelaySignedJwtRegisteredClaims,
-  environmentId: EnvironmentId,
-  clientProofKeyThumbprint: TrimmedNonEmptyString,
-  requestNonce: TrimmedNonEmptyString,
-  credential: TrimmedNonEmptyString,
+  environmentId: RelayEnvironmentId,
+  clientProofKeyThumbprint: AuthProofKeyThumbprint,
+  requestNonce: AuthCredential,
+  credential: AuthCredential,
 });
 export type RelayEnvironmentMintResponseProofPayload =
   typeof RelayEnvironmentMintResponseProofPayload.Type;
 
 export const RelayEnvironmentMintResponse = Schema.Struct({
-  credential: TrimmedNonEmptyString,
-  expiresAt: TrimmedNonEmptyString,
-  proof: TrimmedNonEmptyString,
+  credential: AuthCredential,
+  expiresAt: RelayTimestamp,
+  proof: RelayJwt,
 });
 export type RelayEnvironmentMintResponse = typeof RelayEnvironmentMintResponse.Type;
 
@@ -851,13 +972,13 @@ export const RelayDeliveryKind = Schema.Literals([
 export type RelayDeliveryKind = typeof RelayDeliveryKind.Type;
 
 export const RelayDeliveryResult = Schema.Struct({
-  deviceId: TrimmedNonEmptyString,
+  deviceId: RelayDeviceId,
   kind: RelayDeliveryKind,
   ok: Schema.Boolean,
   queued: Schema.optional(Schema.Boolean),
-  apnsStatus: Schema.NullOr(Schema.Number),
-  apnsReason: Schema.NullOr(Schema.String),
-  apnsId: Schema.NullOr(Schema.String),
+  apnsStatus: Schema.NullOr(NonNegativeInt),
+  apnsReason: Schema.NullOr(Schema.String.check(Schema.isMaxLength(RELAY_DETAIL_MAX_LENGTH))),
+  apnsId: Schema.NullOr(Schema.String.check(Schema.isMaxLength(RELAY_TRACE_ID_MAX_LENGTH))),
 });
 export type RelayDeliveryResult = typeof RelayDeliveryResult.Type;
 
@@ -868,7 +989,7 @@ export type RelayOkResponse = typeof RelayOkResponse.Type;
 
 export const RelayPublishResponse = Schema.Struct({
   ok: Schema.Boolean,
-  deliveries: Schema.Array(RelayDeliveryResult),
+  deliveries: Schema.Array(RelayDeliveryResult).check(Schema.isMaxLength(RELAY_DEVICE_MAX_COUNT)),
 });
 export type RelayPublishResponse = typeof RelayPublishResponse.Type;
 
@@ -1038,7 +1159,7 @@ export const RelayConnectEnvironmentEndpoint = HttpApiEndpoint.post(
   {
     headers: RelayDpopRequestHeaders,
     params: Schema.Struct({
-      environmentId: EnvironmentId,
+      environmentId: RelayEnvironmentId,
     }),
     payload: RelayEnvironmentConnectRequest,
     success: RelayEnvironmentConnectResponse,
@@ -1052,7 +1173,7 @@ export const RelayGetEnvironmentStatusEndpoint = HttpApiEndpoint.post(
   {
     headers: RelayDpopRequestHeaders,
     params: Schema.Struct({
-      environmentId: EnvironmentId,
+      environmentId: RelayEnvironmentId,
     }),
     success: RelayEnvironmentStatusResponse,
     error: RelayEnvironmentConnectErrors,
@@ -1071,8 +1192,8 @@ export const RelayServerGroup = HttpApiGroup.make("server")
       "/v1/environments/:environmentId/threads/:threadId/agent-activity",
       {
         params: Schema.Struct({
-          environmentId: EnvironmentId,
-          threadId: ThreadId,
+          environmentId: RelayEnvironmentId,
+          threadId: RelayThreadId,
         }),
         payload: RelayAgentActivityPublishRequest,
         success: RelayPublishResponse,

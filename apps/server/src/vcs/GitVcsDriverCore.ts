@@ -1,4 +1,3 @@
-import * as Arr from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Data from "effect/Data";
 import * as Crypto from "effect/Crypto";
@@ -20,6 +19,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
+  GIT_LIST_BRANCHES_MAX_LIMIT,
   GitCommandError,
   type ReviewDiffFileContentsInput,
   type ReviewDiffPreviewInput,
@@ -37,6 +37,7 @@ import {
   parseRemoteRefWithRemoteNames,
 } from "../git/remoteRefs.ts";
 import { ServerConfig } from "../config.ts";
+import { readFilePrefix } from "../boundedFileRead.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 // `git worktree add` checks out the full tree, so on large repositories it can
@@ -51,6 +52,8 @@ const RANGE_DIFF_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
 const RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES = 59_000;
 const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES = 80_000;
+export const REVIEW_UNTRACKED_MAX_FILES = 32;
+export const REVIEW_UNTRACKED_AGGREGATE_MAX_CHARS = 120_000;
 const REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES = 1024 * 1024;
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 120_000;
 const STATUS_UPSTREAM_REFRESH_INTERVAL = Duration.seconds(15);
@@ -69,6 +72,8 @@ const LIST_REFS_REFRESH_COALESCE_TTL = Duration.seconds(5);
 const LIST_REFS_REFRESH_FAILURE_COOLDOWN = Duration.seconds(30);
 const STATUS_DEFAULT_BRANCH_CACHE_TTL = Duration.minutes(5);
 const STATUS_ORIGIN_EXISTS_CACHE_TTL = Duration.minutes(5);
+const TRACE2_READ_CHUNK_BYTES = 64 * 1024;
+const TRACE2_LINE_MAX_CHARS = 1024 * 1024;
 const STATUS_UPSTREAM_REFRESH_ENV = Object.freeze({
   GCM_INTERACTIVE: "never",
   GIT_ASKPASS: "",
@@ -104,8 +109,8 @@ const NON_REPOSITORY_REMOTE_STATUS_DETAILS = Object.freeze<GitVcsDriver.GitRemot
 });
 
 type TraceTailState = {
-  processedChars: number;
   remainder: string;
+  droppingOversizedLine: boolean;
 };
 
 class StatusRemoteRefreshCacheKey extends Data.Class<{
@@ -230,7 +235,10 @@ function paginateBranches(input: {
   totalCount: number;
 } {
   const cursor = input.cursor ?? 0;
-  const limit = input.limit ?? GIT_LIST_BRANCHES_DEFAULT_LIMIT;
+  const limit = Math.min(
+    input.limit ?? GIT_LIST_BRANCHES_DEFAULT_LIMIT,
+    GIT_LIST_BRANCHES_MAX_LIMIT,
+  );
   const totalCount = input.refs.length;
   const refs = input.refs.slice(cursor, cursor + limit);
   const nextCursor = cursor + refs.length < totalCount ? cursor + refs.length : null;
@@ -288,6 +296,34 @@ export function splitNullSeparatedGitStdoutPaths(
   result: Pick<GitVcsDriver.ExecuteGitResult, "stdout" | "stdoutTruncated">,
 ): string[] {
   return splitNullSeparatedPaths(result.stdout, result.stdoutTruncated);
+}
+
+export function collectBoundedReviewDiffs(
+  results: ReadonlyArray<Pick<GitVcsDriver.ExecuteGitResult, "stdout" | "stdoutTruncated">>,
+): { readonly diff: string; readonly truncated: boolean } {
+  let diff = "";
+  let truncated = false;
+
+  for (const result of results) {
+    const fragment = result.stdout.trim();
+    truncated ||= result.stdoutTruncated;
+    if (fragment.length === 0) continue;
+
+    const separator = diff.length === 0 ? "" : "\n";
+    const remaining = REVIEW_UNTRACKED_AGGREGATE_MAX_CHARS - diff.length - separator.length;
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
+    if (fragment.length > remaining) {
+      diff += `${separator}${fragment.slice(0, remaining)}`;
+      truncated = true;
+      break;
+    }
+    diff += `${separator}${fragment}`;
+  }
+
+  return { diff, truncated };
 }
 
 function sanitizeRemoteName(value: string): string {
@@ -486,10 +522,12 @@ const createTrace2Monitor = Effect.fn("createTrace2Monitor")(function* (
     prefix: `t3code-git-trace2-${process.pid}-`,
     suffix: ".json",
   });
+  const traceFile = yield* fs.open(traceFilePath, { flag: "r" });
+  const traceDecoder = new TextDecoder();
   const hookStartByChildKey = new Map<string, { hookName: string; startedAtMs: number }>();
   const traceTailState = yield* Ref.make<TraceTailState>({
-    processedChars: 0,
     remainder: "",
+    droppingOversizedLine: false,
   });
 
   const handleTraceLine = Effect.fn("handleTraceLine")(function* (line: string) {
@@ -559,35 +597,45 @@ const createTrace2Monitor = Effect.fn("createTrace2Monitor")(function* (
     }
   });
 
+  const handleTraceChunk = Effect.fn("handleTraceChunk")(function* (decoded: string) {
+    const lines = yield* Ref.modify(
+      traceTailState,
+      ({ remainder, droppingOversizedLine }): [ReadonlyArray<string>, TraceTailState] => {
+        let chunk = decoded;
+        if (droppingOversizedLine) {
+          const newline = chunk.indexOf("\n");
+          if (newline === -1) {
+            return [[], { remainder: "", droppingOversizedLine: true }];
+          }
+          chunk = chunk.slice(newline + 1);
+          droppingOversizedLine = false;
+        }
+
+        const segments = `${remainder}${chunk}`.split("\n");
+        const nextRemainder = segments.pop() ?? "";
+        const completeLines = segments
+          .map((line) => line.replace(/\r$/, ""))
+          .filter((line) => line.length <= TRACE2_LINE_MAX_CHARS);
+
+        if (nextRemainder.length > TRACE2_LINE_MAX_CHARS) {
+          return [completeLines, { remainder: "", droppingOversizedLine: true }];
+        }
+        return [completeLines, { remainder: nextRemainder, droppingOversizedLine: false }];
+      },
+    );
+    yield* Effect.forEach(lines, handleTraceLine, { discard: true });
+  });
+
+  const readAvailableTraceChunks = Effect.gen(function* () {
+    while (true) {
+      const chunk = yield* traceFile.readAlloc(TRACE2_READ_CHUNK_BYTES);
+      if (Option.isNone(chunk)) return;
+      yield* handleTraceChunk(traceDecoder.decode(chunk.value, { stream: true }));
+    }
+  });
   const deltaMutex = yield* Semaphore.make(1);
   const readTraceDelta = deltaMutex.withPermit(
-    fs.readFileString(traceFilePath).pipe(
-      Effect.flatMap((contents) =>
-        Effect.uninterruptible(
-          Ref.modify(traceTailState, ({ processedChars, remainder }) => {
-            if (contents.length <= processedChars) {
-              return [[], { processedChars, remainder }];
-            }
-
-            const appended = contents.slice(processedChars);
-            const combined = remainder + appended;
-            const lines = combined.split("\n");
-            const nextRemainder = lines.pop() ?? "";
-
-            return [
-              lines.map((line) => line.replace(/\r$/, "")),
-              {
-                processedChars: contents.length,
-                remainder: nextRemainder,
-              },
-            ];
-          }).pipe(
-            Effect.flatMap((lines) => Effect.forEach(lines, handleTraceLine, { discard: true })),
-          ),
-        ),
-      ),
-      Effect.ignore({ log: true }),
-    ),
+    readAvailableTraceChunks.pipe(Effect.ignore({ log: true })),
   );
   const traceFileName = path.basename(traceFilePath);
   yield* Stream.runForEach(fs.watch(traceFilePath), (event) => {
@@ -600,19 +648,24 @@ const createTrace2Monitor = Effect.fn("createTrace2Monitor")(function* (
     return readTraceDelta;
   }).pipe(Effect.ignoreCause({ log: true }), Effect.forkScoped);
 
-  const finalizeTrace2Monitor = Effect.fn("finalizeTrace2Monitor")(function* () {
-    yield* readTraceDelta;
-    const finalLine = yield* Ref.modify(traceTailState, ({ processedChars, remainder }) => [
-      remainder.trim(),
-      {
-        processedChars,
-        remainder: "",
-      },
-    ]);
-    if (finalLine.length > 0) {
-      yield* handleTraceLine(finalLine);
-    }
-  });
+  const finalizeTrace2Monitor = Effect.fn("finalizeTrace2Monitor")(() =>
+    deltaMutex.withPermit(
+      Effect.gen(function* () {
+        yield* readAvailableTraceChunks;
+        yield* handleTraceChunk(traceDecoder.decode());
+        const finalLine = yield* Ref.modify(
+          traceTailState,
+          ({ remainder, droppingOversizedLine }): [string, TraceTailState] => [
+            droppingOversizedLine ? "" : remainder.trim(),
+            { remainder: "", droppingOversizedLine: false },
+          ],
+        );
+        if (finalLine.length > 0 && finalLine.length <= TRACE2_LINE_MAX_CHARS) {
+          yield* handleTraceLine(finalLine);
+        }
+      }).pipe(Effect.ignore({ log: true })),
+    ),
+  );
 
   yield* Effect.addFinalizer(finalizeTrace2Monitor);
 
@@ -2128,8 +2181,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return { diff: "", truncated: untrackedResult.stdoutTruncated };
     }
 
+    const selectedPaths = untrackedPaths.slice(0, REVIEW_UNTRACKED_MAX_FILES);
+    const pathsTruncated = selectedPaths.length < untrackedPaths.length;
+
     const diffs = yield* Effect.forEach(
-      untrackedPaths,
+      selectedPaths,
       (relativePath) =>
         executeGit(
           "GitVcsDriver.readUntrackedReviewDiffs.diff",
@@ -2155,11 +2211,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       { concurrency: 4 },
     );
 
+    const aggregate = collectBoundedReviewDiffs(diffs);
     return {
-      diff: Arr.filterMap(diffs, (result) =>
-        result.stdout.trim().length > 0 ? Result.succeed(result.stdout) : Result.failVoid,
-      ).join("\n"),
-      truncated: untrackedResult.stdoutTruncated || diffs.some((result) => result.stdoutTruncated),
+      diff: aggregate.diff,
+      truncated: untrackedResult.stdoutTruncated || pathsTruncated || aggregate.truncated,
     };
   });
 
@@ -2387,13 +2442,21 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       );
     }
 
-    const bytes = yield* fileSystem
-      .readFile(realTarget)
-      .pipe(
-        Effect.mapError((cause) =>
-          fileError("fs.readFile", `Could not read diff file '${input.newPath}'.`, cause),
-        ),
+    const bytes = yield* readFilePrefix(
+      fileSystem,
+      realTarget,
+      REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES + 1,
+    ).pipe(
+      Effect.mapError((cause) =>
+        fileError("fs.readFile", `Could not read diff file '${input.newPath}'.`, cause),
+      ),
+    );
+    if (bytes.byteLength > REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES) {
+      return yield* fileError(
+        "fs.readFile",
+        `Diff file '${input.newPath}' exceeds the 1 MB expansion limit.`,
       );
+    }
     if (bytes.includes(0)) {
       return yield* fileError("fs.readFile", `Cannot expand binary file '${input.newPath}'.`);
     }

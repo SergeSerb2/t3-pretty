@@ -7,6 +7,22 @@ export interface ParseCliArgsOptions {
   readonly booleanFlags?: readonly string[];
 }
 
+function setParsedFlag(
+  flags: Record<string, string | null>,
+  name: string,
+  value: string | null,
+): void {
+  // Assignment to `__proto__` invokes Object.prototype's legacy setter and
+  // silently loses the flag. Define an own data property so every CLI flag
+  // name has the same behavior without changing the returned object's shape.
+  Object.defineProperty(flags, name, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
+
 export function tokenizeCliArgs(args?: string): ReadonlyArray<string> {
   const input = args?.trim();
   if (!input) return [];
@@ -105,23 +121,23 @@ export function parseCliArgs(
       // Handle --key=value syntax
       const eqIndex = rest.indexOf("=");
       if (eqIndex !== -1) {
-        flags[rest.slice(0, eqIndex)] = rest.slice(eqIndex + 1);
+        setParsedFlag(flags, rest.slice(0, eqIndex), rest.slice(eqIndex + 1));
         continue;
       }
 
       // Known boolean flag — never consumes next token
       if (booleanSet?.has(rest)) {
-        flags[rest] = null;
+        setParsedFlag(flags, rest, null);
         continue;
       }
 
       // Handle --key value or --flag (boolean)
       const next = tokens[i + 1];
       if (next !== undefined && !next.startsWith("--")) {
-        flags[rest] = next;
+        setParsedFlag(flags, rest, next);
         i++;
       } else {
-        flags[rest] = null;
+        setParsedFlag(flags, rest, null);
       }
     } else {
       positionals.push(token);

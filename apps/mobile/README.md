@@ -1,7 +1,8 @@
 # T3 Pretty Mobile
 
-> [!WARNING]
-> T3 Pretty Mobile is currently in development and is not distributed yet. If you want to try it out, you can build it from source.
+T3 Pretty Mobile supports iOS and Android. This fork's automated production
+binary pipeline currently builds and submits iOS releases; Android store
+binaries are not wired into that workflow yet.
 
 ## Quickstart
 
@@ -38,8 +39,9 @@ vp run ios:dev
 ```
 
 If your Xcode account only has a Personal Team, use a bundle identifier you control and opt into the
-reduced-capability local build. Personal Team builds omit the widget and share extensions, push
-entitlement, and native Sign in with Apple entitlement; builds without this opt-in are unchanged.
+reduced-capability local build. Personal Team builds omit the widget and share extensions, push,
+Associated Domains, and native Sign in with Apple entitlements; builds without this opt-in are
+unchanged.
 
 ```bash
 T3CODE_IOS_PERSONAL_TEAM=1 \

@@ -1,14 +1,24 @@
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as HttpApiError from "effect/unstable/httpapi/HttpApiError";
+import { sha256 } from "@noble/hashes/sha2";
 import { lt } from "drizzle-orm";
 
 import { verifyDpopProof } from "@t3tools/shared/dpop";
 import * as RelayDb from "../db.ts";
 import { relayDpopProofs } from "../persistence/schema.ts";
+
+const RELAY_DPOP_THUMBPRINT_MAX_LENGTH = 128;
+const RELAY_DPOP_JTI_MAX_LENGTH = 255;
+
+function persistedReplayKey(value: string, maxLength: number) {
+  if (value.length <= maxLength) return value;
+  return `sha256:${Encoding.encodeBase64Url(sha256(new TextEncoder().encode(value)))}`;
+}
 
 export class DpopProofReplayPersistenceError extends Schema.TaggedErrorClass<DpopProofReplayPersistenceError>()(
   "DpopProofReplayPersistenceError",
@@ -62,11 +72,13 @@ const make = Effect.gen(function* () {
   const consume: DpopProofReplay["Service"]["consume"] = Effect.fn("relay.dpop_proofs.consume")(
     function* (input) {
       const createdAt = DateTime.formatIso(yield* DateTime.now);
+      const thumbprint = persistedReplayKey(input.thumbprint, RELAY_DPOP_THUMBPRINT_MAX_LENGTH);
+      const jti = persistedReplayKey(input.jti, RELAY_DPOP_JTI_MAX_LENGTH);
       const inserted = yield* db
         .insert(relayDpopProofs)
         .values({
-          thumbprint: input.thumbprint,
-          jti: input.jti,
+          thumbprint,
+          jti,
           iat: input.iat,
           expiresAt: DateTime.formatIso(input.expiresAt),
           createdAt,
@@ -78,8 +90,8 @@ const make = Effect.gen(function* () {
             (cause) =>
               new DpopProofReplayPersistenceError({
                 operation: "consume",
-                thumbprint: input.thumbprint,
-                jti: input.jti,
+                thumbprint,
+                jti,
                 iat: input.iat,
                 cause,
               }),

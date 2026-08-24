@@ -2,7 +2,11 @@ import type { UsageProviderKind } from "@t3tools/contracts";
 import { CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
+import {
+  type DailyTotals,
+  type HourlyTotals,
+  USAGE_MERGE_MAX_ENVIRONMENTS,
+} from "@t3tools/shared/usageMerge";
 
 import { isElectron } from "../../env";
 import { useStatusPulse } from "../../hooks/useStatusPulse";
@@ -51,7 +55,8 @@ export function UsagePage() {
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
-  const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const { merged, environments, isPending, isPartial, omittedEnvironmentCount, refresh } =
+    useUsage(window);
 
   // Hold the content until every connected environment is terminal. Rendering
   // merged totals while devices are still answering makes every number on the
@@ -212,6 +217,9 @@ export function UsagePage() {
                   environments={environments}
                   duplicateSources={merged.duplicateSources}
                   staleEnvironments={merged.staleEnvironments}
+                  sourceWarnings={merged.sourceWarnings}
+                  omittedEnvironmentCount={omittedEnvironmentCount}
+                  coverageWarningsOmitted={merged.coverageWarningsOmitted}
                 />
 
                 <section className="grid gap-6 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
@@ -488,16 +496,29 @@ function UsageCoverageNotice({
   environments,
   duplicateSources,
   staleEnvironments,
+  sourceWarnings,
+  omittedEnvironmentCount,
+  coverageWarningsOmitted,
 }: {
   readonly environments: readonly EnvironmentUsageStatus[];
   readonly duplicateSources: readonly string[];
   readonly staleEnvironments: readonly string[];
+  readonly sourceWarnings: readonly string[];
+  readonly omittedEnvironmentCount: number;
+  readonly coverageWarningsOmitted: number;
 }) {
   const failed = environments.filter((environment) => environment.error !== null);
   const stale = environments.filter((environment) =>
     staleEnvironments.includes(environment.environmentId),
   );
-  if (failed.length === 0 && stale.length === 0 && duplicateSources.length === 0) {
+  if (
+    failed.length === 0 &&
+    stale.length === 0 &&
+    duplicateSources.length === 0 &&
+    sourceWarnings.length === 0 &&
+    omittedEnvironmentCount === 0 &&
+    coverageWarningsOmitted === 0
+  ) {
     return null;
   }
 
@@ -511,10 +532,26 @@ function UsageCoverageNotice({
           {environment.label} runs an older server version and is excluded from totals.
         </span>
       ))}
+      {omittedEnvironmentCount > 0 ? (
+        <span>
+          {omittedEnvironmentCount} additional environment
+          {omittedEnvironmentCount === 1 ? " was" : "s were"} not queried because usage is limited
+          to {USAGE_MERGE_MAX_ENVIRONMENTS} environments at once.
+        </span>
+      ) : null}
+      {sourceWarnings.map((warning) => (
+        <span key={warning}>{warning}</span>
+      ))}
       {duplicateSources.length > 0 ? (
         <span>
           Counted once across environments sharing a transcript directory:{" "}
           {duplicateSources.join(", ")}
+        </span>
+      ) : null}
+      {coverageWarningsOmitted > 0 ? (
+        <span>
+          {coverageWarningsOmitted} additional coverage notice
+          {coverageWarningsOmitted === 1 ? " was" : "s were"} omitted.
         </span>
       ) : null}
     </div>

@@ -145,6 +145,7 @@ describe("composer attach contract with upstream markup", () => {
     );
     expect(followUpSlice).toContain("takeAttachedFilesForThread(activeThreadKey)");
     expect(followUpSlice).toContain("applyAttachedFilePathsSuffix");
+    expect(followUpSlice).toContain("validateProviderInput(outgoingMessageText)");
     expect(followUpSlice).toContain("restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot)");
   });
 });

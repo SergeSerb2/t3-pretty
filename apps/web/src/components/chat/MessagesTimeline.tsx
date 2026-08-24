@@ -80,6 +80,7 @@ import { keepTimelineEndVisibleAfterOverlayGrowth } from "./timelineScrollAnchor
 import { MessageCopyButton } from "./MessageCopyButton";
 import {
   computeStableMessagesTimelineRows,
+  deriveTimelineMinimapTurns,
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
@@ -711,45 +712,16 @@ interface TimelinePositionState {
 function deriveTimelineMinimapItems(
   rows: ReadonlyArray<MessagesTimelineRow>,
 ): TimelineMinimapItem[] {
-  const items: TimelineMinimapItem[] = [];
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index];
-    if (row?.kind !== "message" || row.message.role !== "user") {
-      continue;
-    }
-
-    items.push({
-      id: row.id,
-      rowIndex: index,
-      // Match the bubble: agent-facing auto-PR and attached-filepath blocks
-      // stay out of the minimap preview and its accessible label.
-      userText: compactMinimapPreview(
-        stripAttachedFilePathsSuffix(stripCreatePullRequestSuffix(row.message.text)),
-      ),
-      assistantText: compactMinimapPreview(resolveFinalAssistantTextForTurn(rows, index)),
-    });
-  }
-  return items;
-}
-
-function resolveFinalAssistantTextForTurn(
-  rows: ReadonlyArray<MessagesTimelineRow>,
-  userRowIndex: number,
-) {
-  let finalAssistantText: string | null = null;
-  for (let index = userRowIndex + 1; index < rows.length; index += 1) {
-    const row = rows[index];
-    if (row?.kind !== "message") {
-      continue;
-    }
-    if (row.message.role === "user") {
-      break;
-    }
-    if (row.message.role === "assistant") {
-      finalAssistantText = row.message.text ?? null;
-    }
-  }
-  return finalAssistantText;
+  return deriveTimelineMinimapTurns(rows).map((turn) => ({
+    id: turn.id,
+    rowIndex: turn.rowIndex,
+    // Match the bubble: agent-facing auto-PR and attached-filepath blocks
+    // stay out of the minimap preview and its accessible label.
+    userText: compactMinimapPreview(
+      stripAttachedFilePathsSuffix(stripCreatePullRequestSuffix(turn.userText ?? "")),
+    ),
+    assistantText: compactMinimapPreview(turn.assistantText),
+  }));
 }
 
 /**

@@ -431,6 +431,7 @@ import { useAssetUrls } from "../assets/assetUrls";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
+const ATTACHMENT_PREVIEW_LOAD_TIMEOUT_MS = 15_000;
 const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
@@ -531,7 +532,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
           translateY,
         });
         const animation = transitionGroup.animate(
-          draftHeroGlideKeyframes(translateX, translateY, pop),
+          [...draftHeroGlideKeyframes(translateX, translateY, pop)],
           {
             duration: sceneryDockMotion
               ? SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS
@@ -1728,13 +1729,12 @@ function ChatViewContent(props: ChatViewProps) {
   const storeCloseTerminal = useTerminalUiStateStore((s) => s.closeTerminal);
   const serverThreadRefs = useThreadRefs();
   const serverThreadKeys = useMemo(() => serverThreadRefs.map(scopedThreadKey), [serverThreadRefs]);
-  const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
-  const draftThreadKeys = useMemo(
-    () =>
-      Object.values(draftThreadsByThreadKey).map((draftThread) =>
+  const draftThreadKeys = useComposerDraftStore(
+    useShallow((store) =>
+      Object.values(store.draftThreadsByThreadKey).map((draftThread) =>
         scopedThreadKey(scopeThreadRef(draftThread.environmentId, draftThread.threadId)),
       ),
-    [draftThreadsByThreadKey],
+    ),
   );
   const [mountedTerminalThreadKeys, setMountedTerminalThreadKeys] = useState<string[]>([]);
   const mountedTerminalThreadRefs = useMemo(
@@ -2808,17 +2808,44 @@ function ChatViewContent(props: ChatViewProps) {
       attachmentPreviewPromotionInFlightByMessageIdRef.current[messageId] = true;
 
       let cancelled = false;
-      const imageInstances: HTMLImageElement[] = [];
+      const cancelImagePreloads = new Set<() => void>();
+      const cancelPendingImagePreloads = () => {
+        for (const cancelImagePreload of cancelImagePreloads) {
+          cancelImagePreload();
+        }
+        cancelImagePreloads.clear();
+      };
 
       const preloadServerPreviews = Promise.all(
         serverPreviewUrls.map(
           (previewUrl) =>
             new Promise<void>((resolve, reject) => {
               const image = new Image();
-              imageInstances.push(image);
-              const handleLoad = () => resolve();
+              let settled = false;
+              const finish = (error?: Error) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeoutId);
+                image.removeEventListener("load", handleLoad);
+                image.removeEventListener("error", handleError);
+                cancelImagePreloads.delete(cancel);
+                if (error) reject(error);
+                else resolve();
+              };
+              const handleLoad = () => finish();
               const handleError = () =>
-                reject(new Error(`Failed to load server preview for ${messageId}.`));
+                finish(new Error(`Failed to load server preview for ${messageId}.`));
+              const cancel = (
+                error = new Error(`Cancelled server preview preload for ${messageId}.`),
+              ) => {
+                finish(error);
+                image.src = "";
+              };
+              const timeoutId = window.setTimeout(
+                () => cancel(new Error(`Timed out loading server preview for ${messageId}.`)),
+                ATTACHMENT_PREVIEW_LOAD_TIMEOUT_MS,
+              );
+              cancelImagePreloads.add(cancel);
               image.addEventListener("load", handleLoad, { once: true });
               image.addEventListener("error", handleError, { once: true });
               image.src = previewUrl;
@@ -2834,6 +2861,7 @@ function ChatViewContent(props: ChatViewProps) {
           clearAttachmentPreviewHandoff(messageId as MessageId, handoffPreviewUrls);
         })
         .catch(() => {
+          cancelPendingImagePreloads();
           if (!cancelled) {
             delete attachmentPreviewPromotionInFlightByMessageIdRef.current[messageId];
           }
@@ -2842,9 +2870,7 @@ function ChatViewContent(props: ChatViewProps) {
       cleanups.push(() => {
         cancelled = true;
         delete attachmentPreviewPromotionInFlightByMessageIdRef.current[messageId];
-        for (const image of imageInstances) {
-          image.src = "";
-        }
+        cancelPendingImagePreloads();
       });
     }
 
@@ -3998,18 +4024,7 @@ function ChatViewContent(props: ChatViewProps) {
     useRightPanelStore.getState().closeAllSurfaces(activeThreadRef);
   }, [activeThreadRef, cleanupRightPanelSurfaces, rightPanelState.surfaces]);
   const copyRightPanelFilePath = useCallback((relativePath: string) => {
-    if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to copy path",
-          description: "Clipboard API unavailable.",
-        }),
-      );
-      return;
-    }
-
-    void navigator.clipboard.writeText(relativePath).then(
+    void writeTextToClipboard(relativePath, "path").then(
       () => {
         toastManager.add({
           type: "success",
@@ -5759,6 +5774,19 @@ function ChatViewContent(props: ChatViewProps) {
       text: messageTextForSend,
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
+      // Path attachments are removed from the external store before we build
+      // the provider prompt. A local validation failure never enters the
+      // dispatch/retry path below, so put them back instead of silently
+      // dropping their chips when the composed prompt is too long.
+      if (activeThreadKey && attachedFilesSnapshot.length > 0) {
+        const restore = restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+        if (restore.droppedCount > 0) {
+          toastManager.add({
+            type: "warning",
+            title: "Some files could not be restored because the attachment limit was reached.",
+          });
+        }
+      }
       return;
     }
 
@@ -6106,7 +6134,13 @@ function ChatViewContent(props: ChatViewProps) {
         setComposerDraftCanvasSelections(composerDraftTarget, composerCanvasSelectionsSnapshot);
         setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
         if (activeThreadKey && attachedFilesSnapshot.length > 0) {
-          restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+          const restore = restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+          if (restore.droppedCount > 0) {
+            toastManager.add({
+              type: "warning",
+              title: "Some files could not be restored because the attachment limit was reached.",
+            });
+          }
         }
         composerRef.current?.resetCursorState({
           cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
@@ -6473,6 +6507,18 @@ function ChatViewContent(props: ChatViewProps) {
         effort: ctxSelectedPromptEffort,
         text: textWithAttachedFiles,
       });
+      if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
+        if (activeThreadKey && attachedFilesSnapshot.length > 0) {
+          const restore = restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+          if (restore.droppedCount > 0) {
+            toastManager.add({
+              type: "warning",
+              title: "Some files could not be restored because the attachment limit was reached.",
+            });
+          }
+        }
+        return;
+      }
 
       sendInFlightRef.current = true;
       beginLocalDispatch({ preparingWorktree: false });
@@ -6565,7 +6611,13 @@ function ChatViewContent(props: ChatViewProps) {
         existing.filter((message) => message.id !== messageIdForSend),
       );
       if (activeThreadKey && attachedFilesSnapshot.length > 0) {
-        restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+        const restore = restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+        if (restore.droppedCount > 0) {
+          toastManager.add({
+            type: "warning",
+            title: "Some files could not be restored because the attachment limit was reached.",
+          });
+        }
       }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);

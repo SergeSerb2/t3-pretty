@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   ModelSelection as ModelSelectionSchema,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderInteractionMode as ProviderInteractionModeSchema,
   RuntimeMode as RuntimeModeSchema,
   SkillId as SkillIdSchema,
@@ -15,9 +16,13 @@ import * as Schema from "effect/Schema";
 import { useEffect } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
-import { writeFileAtomically } from "../lib/atomic-file";
+import { removeStaleAtomicWriteTempFiles, writeFileAtomically } from "../lib/atomic-file";
 import { PersistedComposerImageAttachmentSchema } from "../lib/composer-image-schema";
-import type { DraftComposerImageAttachment } from "../lib/composerImages";
+import {
+  appendComposerImagesWithinLimit,
+  deleteComposerPreviewFiles,
+  type DraftComposerImageAttachment,
+} from "../lib/composerImages";
 import { SerializedAsyncQueue } from "../lib/serialized-async-queue";
 import { appAtomRegistry } from "./atom-registry";
 
@@ -132,6 +137,8 @@ export const composerDraftsAtom = Atom.make<Record<string, ComposerDraft>>({}).p
 );
 
 let loadPromise: Promise<void> | null = null;
+let draftsLoaded = false;
+let lastLoadError: ComposerDraftPersistenceError | null = null;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 const persistenceQueue = new SerializedAsyncQueue();
 
@@ -141,9 +148,22 @@ function normalizeDraft(draft: ComposerDraft | undefined): ComposerDraft {
   }
   return {
     ...draft,
-    text: draft.text,
+    text: limitComposerDraftText(draft.text),
     attachments: draft.attachments,
+    ...(draft.lastHandoffPrompt === undefined
+      ? {}
+      : { lastHandoffPrompt: limitComposerDraftText(draft.lastHandoffPrompt) }),
   };
+}
+
+export function limitComposerDraftText(value: string): string {
+  return value.length <= PROVIDER_SEND_TURN_MAX_INPUT_CHARS
+    ? value
+    : value.slice(0, PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
+}
+
+export function composerDraftTextLimitMessage(): string {
+  return `Messages can contain up to ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS.toLocaleString("en-US")} characters.`;
 }
 
 export function getComposerDraftSnapshot(draftKey: string): ComposerDraft {
@@ -177,6 +197,10 @@ export function decodePersistedComposerDrafts(value: unknown): Record<string, Co
         draftKey,
         {
           ...draft,
+          text: limitComposerDraftText(draft.text),
+          ...(draft.lastHandoffPrompt === undefined
+            ? {}
+            : { lastHandoffPrompt: limitComposerDraftText(draft.lastHandoffPrompt) }),
           // Persisted drafts omit the payload; an empty dataUrl marks the
           // attachment for rehydration from its preview file on load.
           attachments: draft.attachments.map((attachment) => ({
@@ -209,7 +233,7 @@ export function encodePersistedComposerDrafts(
       .map(([draftKey, draft]): [string, PersistedComposerDraft] => [
         draftKey,
         {
-          ...draft,
+          ...normalizeDraft(draft),
           attachments: draft.attachments.map(({ dataUrl: _dataUrl, ...attachment }) => attachment),
         },
       ]),
@@ -227,6 +251,7 @@ async function loadPersistedComposerDrafts(): Promise<Record<string, ComposerDra
   let operation: ComposerDraftPersistenceError["operation"] = "open";
   try {
     const file = await getComposerDraftsFile();
+    await removeStaleAtomicWriteTempFiles(file.parentDirectory, file.name);
     if (!file.exists) {
       return {};
     }
@@ -237,16 +262,12 @@ async function loadPersistedComposerDrafts(): Promise<Record<string, ComposerDra
     operation = "hydrate";
     return await rehydrateDraftAttachments(decoded);
   } catch (cause) {
-    console.warn(
-      "[composer-drafts] ignored persisted draft failure",
-      new ComposerDraftPersistenceError({
-        operation,
-        directory: COMPOSER_DRAFTS_DIRECTORY,
-        fileName: COMPOSER_DRAFTS_FILE,
-        cause,
-      }),
-    );
-    return {};
+    throw new ComposerDraftPersistenceError({
+      operation,
+      directory: COMPOSER_DRAFTS_DIRECTORY,
+      fileName: COMPOSER_DRAFTS_FILE,
+      cause,
+    });
   }
 }
 
@@ -274,7 +295,9 @@ async function rehydrateDraftAttachments(
           if (attachment.dataUrl.length > 0) {
             return attachment;
           }
-          const dataUrl = await resolveComposerAttachmentDataUrl(attachment);
+          const dataUrl = await resolveComposerAttachmentDataUrl(attachment, {
+            throwOnReadError: true,
+          });
           return dataUrl === null ? null : { ...attachment, dataUrl };
         }),
       )
@@ -328,58 +351,91 @@ async function savePersistedComposerDrafts(drafts: Record<string, ComposerDraft>
  * failure propagates so the caller can decide whether the restart may proceed.
  */
 export async function flushComposerDrafts(): Promise<void> {
+  await requireComposerDraftsLoaded();
   // An edit during an awaited write schedules another debounced write, so
   // keep landing snapshots until no debounce is pending after a queue drain.
   do {
-    while (persistTimer !== null) {
+    if (persistTimer !== null) {
       clearTimeout(persistTimer);
       persistTimer = null;
-      await persistenceQueue.run(() =>
-        writePersistedComposerDrafts(appAtomRegistry.get(composerDraftsAtom)),
-      );
     }
+    // Always land one current snapshot. A failed best-effort debounce clears
+    // its timer, so timer presence alone cannot prove the in-memory draft is
+    // already durable.
+    await persistenceQueue.run(() =>
+      writePersistedComposerDrafts(appAtomRegistry.get(composerDraftsAtom)),
+    );
     await persistenceQueue.run(() => Promise.resolve());
   } while (persistTimer !== null);
 }
 
-function schedulePersistComposerDrafts(drafts: Record<string, ComposerDraft>): void {
+function schedulePersistComposerDrafts(): void {
   if (persistTimer !== null) {
     clearTimeout(persistTimer);
   }
   persistTimer = setTimeout(() => {
     persistTimer = null;
-    void savePersistedComposerDrafts(drafts);
+    void ensureComposerDraftsLoaded().then(() => {
+      if (!draftsLoaded) return;
+      return savePersistedComposerDrafts(appAtomRegistry.get(composerDraftsAtom));
+    });
   }, PERSIST_DEBOUNCE_MS);
 }
 
 export function ensureComposerDraftsLoaded(): Promise<void> {
+  if (draftsLoaded) {
+    return Promise.resolve();
+  }
   if (loadPromise !== null) {
     return loadPromise;
   }
-  loadPromise = loadPersistedComposerDrafts()
+  const pending = loadPersistedComposerDrafts()
     .then((persistedDrafts) => {
-      if (Object.keys(persistedDrafts).length === 0) {
-        return;
+      if (Object.keys(persistedDrafts).length > 0) {
+        const current = appAtomRegistry.get(composerDraftsAtom);
+        appAtomRegistry.set(composerDraftsAtom, {
+          ...persistedDrafts,
+          ...current,
+        });
       }
-      const current = appAtomRegistry.get(composerDraftsAtom);
-      appAtomRegistry.set(composerDraftsAtom, {
-        ...persistedDrafts,
-        ...current,
-      });
+      draftsLoaded = true;
+      lastLoadError = null;
     })
     .catch((cause) => {
-      console.warn(
-        "[composer-drafts] failed to hydrate drafts",
-        new ComposerDraftPersistenceError({
-          operation: "hydrate",
-          directory: COMPOSER_DRAFTS_DIRECTORY,
-          fileName: COMPOSER_DRAFTS_FILE,
-          cause,
-        }),
-      );
-      // Draft loading is best-effort; in-memory drafts still keep working.
+      const error =
+        cause instanceof ComposerDraftPersistenceError
+          ? cause
+          : new ComposerDraftPersistenceError({
+              operation: "hydrate",
+              directory: COMPOSER_DRAFTS_DIRECTORY,
+              fileName: COMPOSER_DRAFTS_FILE,
+              cause,
+            });
+      lastLoadError = error;
+      console.warn("[composer-drafts] failed to hydrate drafts", error);
+    })
+    .finally(() => {
+      if (!draftsLoaded && loadPromise === pending) {
+        loadPromise = null;
+      }
     });
-  return loadPromise;
+  loadPromise = pending;
+  return pending;
+}
+
+export async function requireComposerDraftsLoaded(): Promise<void> {
+  await ensureComposerDraftsLoaded();
+  if (!draftsLoaded) {
+    throw (
+      lastLoadError ??
+      new ComposerDraftPersistenceError({
+        operation: "hydrate",
+        directory: COMPOSER_DRAFTS_DIRECTORY,
+        fileName: COMPOSER_DRAFTS_FILE,
+        cause: new Error("Composer drafts did not finish loading."),
+      })
+    );
+  }
 }
 
 function updateComposerDrafts(
@@ -391,23 +447,27 @@ function updateComposerDrafts(
     return;
   }
   appAtomRegistry.set(composerDraftsAtom, next);
-  schedulePersistComposerDrafts(next);
+  schedulePersistComposerDrafts();
 }
 
 export function setComposerDraftText(draftKey: string, value: string): void {
   updateComposerDrafts((current) => {
     const existing = normalizeDraft(current[draftKey]);
+    const text = limitComposerDraftText(value);
     // Clearing the composer also drops hand-off ownership — there is nothing left to replace.
     let draft: ComposerDraft;
-    if (value.length === 0) {
+    if (text.length === 0) {
       const {
         lastHandoffPrompt: _lastHandoffPrompt,
         pullRequestReference: _pullRequestReference,
         ...rest
       } = existing;
-      draft = { ...rest, text: value };
+      draft = { ...rest, text };
     } else {
-      draft = { ...existing, text: value };
+      if (current[draftKey]?.text === text) {
+        return current;
+      }
+      draft = { ...existing, text };
     }
     if (isEmptyDraft(draft)) {
       const next = { ...current };
@@ -434,8 +494,8 @@ export function setComposerDraftHandoffText(
   updateComposerDrafts((current) => {
     const draft = {
       ...normalizeDraft(current[draftKey]),
-      text,
-      lastHandoffPrompt,
+      text: limitComposerDraftText(text),
+      lastHandoffPrompt: limitComposerDraftText(lastHandoffPrompt),
       ...(options?.pullRequestReference !== undefined
         ? { pullRequestReference: options.pullRequestReference }
         : {}),
@@ -455,11 +515,15 @@ export function setComposerDraftHandoffText(
 export function appendComposerDraftText(draftKey: string, value: string): void {
   updateComposerDrafts((current) => {
     const existing = normalizeDraft(current[draftKey]);
+    const remaining = PROVIDER_SEND_TURN_MAX_INPUT_CHARS - existing.text.length;
+    if (remaining <= 0 || value.length === 0) {
+      return current;
+    }
     return {
       ...current,
       [draftKey]: {
         ...existing,
-        text: `${existing.text}${value}`,
+        text: `${existing.text}${value.slice(0, remaining)}`,
       },
     };
   });
@@ -468,10 +532,41 @@ export function appendComposerDraftText(draftKey: string, value: string): void {
 export function appendComposerDraftAttachments(
   draftKey: string,
   attachments: ReadonlyArray<DraftComposerImageAttachment>,
-): void {
+): number {
   if (attachments.length === 0) {
-    return;
+    return 0;
   }
+  let rejected: ReadonlyArray<DraftComposerImageAttachment> = [];
+  updateComposerDrafts((current) => {
+    const existing = normalizeDraft(current[draftKey]);
+    const limited = appendComposerImagesWithinLimit(existing.attachments, attachments);
+    rejected = limited.rejected;
+    if (limited.attachments.length === existing.attachments.length) {
+      return current;
+    }
+    return {
+      ...current,
+      [draftKey]: {
+        ...existing,
+        attachments: limited.attachments,
+      },
+    };
+  });
+  if (rejected.length > 0) {
+    void deleteComposerPreviewFiles(rejected.map((attachment) => attachment.previewUri));
+  }
+  return rejected.length;
+}
+
+/**
+ * Restores a failed send without discarding either the failed message's images
+ * or newer images the user attached while its durable outbox write was in flight.
+ */
+export function restoreComposerDraftAttachmentsAfterEnqueueFailure(
+  draftKey: string,
+  attachments: ReadonlyArray<DraftComposerImageAttachment>,
+): void {
+  if (attachments.length === 0) return;
   updateComposerDrafts((current) => {
     const existing = normalizeDraft(current[draftKey]);
     return {
@@ -597,7 +692,7 @@ export function restoreComposerDraftSnapshotState(
   if (isEmptyDraft(snapshot)) {
     delete next[draftKey];
   } else {
-    next[draftKey] = snapshot;
+    next[draftKey] = normalizeDraft(snapshot);
   }
   return next;
 }
@@ -638,28 +733,32 @@ export async function copyComposerDraftContentIfEmpty(
   sourceDraftKey: string,
   targetDraftKey: string,
 ): Promise<void> {
-  ensureComposerDraftsLoaded();
-  if (loadPromise !== null) {
-    await loadPromise;
-  }
+  await requireComposerDraftsLoaded();
   updateComposerDrafts((current) =>
     copyComposerDraftContentState(current, sourceDraftKey, targetDraftKey),
   );
 }
 
 function mergeComposerDraftText(existing: string, incoming: string): string {
-  if (incoming.length === 0) {
-    return existing;
+  const boundedExisting = limitComposerDraftText(existing);
+  const boundedIncoming = limitComposerDraftText(incoming);
+  if (boundedIncoming.length === 0) {
+    return boundedExisting;
   }
-  if (existing.length === 0) {
-    return incoming;
+  if (boundedExisting.length === 0) {
+    return boundedIncoming;
   }
   // Import retries are possible after an interrupted native handoff. Keep the
   // operation idempotent when the same shared text is already present.
-  if (existing === incoming || existing.endsWith(`\n\n${incoming}`)) {
-    return existing;
+  if (boundedExisting === boundedIncoming || boundedExisting.endsWith(`\n\n${boundedIncoming}`)) {
+    return boundedExisting;
   }
-  return `${existing}\n\n${incoming}`;
+  const separator = "\n\n";
+  const remaining = PROVIDER_SEND_TURN_MAX_INPUT_CHARS - boundedExisting.length - separator.length;
+  if (remaining <= 0) {
+    return boundedExisting;
+  }
+  return `${boundedExisting}${separator}${boundedIncoming.slice(0, remaining)}`;
 }
 
 export function mergeComposerDraftContentState(
@@ -712,8 +811,11 @@ export function mergeComposerDraftContentState(
 export async function mergeComposerDraftContent(
   draftKey: string,
   content: ComposerDraftContent,
-): Promise<{ readonly skippedAttachmentCount: number }> {
-  await ensureComposerDraftsLoaded();
+): Promise<{
+  readonly skippedAttachmentCount: number;
+  readonly skippedAttachments: ReadonlyArray<DraftComposerImageAttachment>;
+}> {
+  await requireComposerDraftsLoaded();
   if (persistTimer !== null) {
     clearTimeout(persistTimer);
     persistTimer = null;
@@ -726,10 +828,10 @@ export async function mergeComposerDraftContent(
   const nextAttachmentIds = new Set(
     normalizeDraft(next[draftKey]).attachments.map((attachment) => attachment.id),
   );
-  const skippedAttachmentCount = content.attachments.filter(
+  const skippedAttachments = content.attachments.filter(
     (attachment) =>
       !currentAttachmentIds.has(attachment.id) && !nextAttachmentIds.has(attachment.id),
-  ).length;
+  );
   // Publish the content and its import receipt together before the filesystem
   // await. Typing during persistence then builds on the receipt-bearing state,
   // and its debounced write is serialized after this transaction.
@@ -737,7 +839,7 @@ export async function mergeComposerDraftContent(
     appAtomRegistry.set(composerDraftsAtom, next);
   }
   await persistenceQueue.run(() => writePersistedComposerDrafts(next));
-  return { skippedAttachmentCount };
+  return { skippedAttachmentCount: skippedAttachments.length, skippedAttachments };
 }
 
 /** Restores the exact content/settings captured before an interrupted import. */
@@ -745,7 +847,7 @@ export async function restoreComposerDraftSnapshot(
   draftKey: string,
   snapshot: ComposerDraft,
 ): Promise<void> {
-  await ensureComposerDraftsLoaded();
+  await requireComposerDraftsLoaded();
   if (persistTimer !== null) {
     clearTimeout(persistTimer);
     persistTimer = null;
@@ -792,7 +894,7 @@ export function removeComposerDraftsForEnvironment(
 }
 
 export async function clearComposerDraftsEnvironment(environmentId: EnvironmentId): Promise<void> {
-  await ensureComposerDraftsLoaded();
+  await requireComposerDraftsLoaded();
 
   const next = removeComposerDraftsForEnvironment(
     appAtomRegistry.get(composerDraftsAtom),
@@ -810,7 +912,7 @@ export async function clearComposerDraftsEnvironment(environmentId: EnvironmentI
 export function useComposerDraft(draftKey: string | null): ComposerDraft {
   const drafts = useAtomValue(composerDraftsAtom);
   useEffect(() => {
-    ensureComposerDraftsLoaded();
+    void ensureComposerDraftsLoaded();
   }, []);
   return draftKey ? normalizeDraft(drafts[draftKey]) : EMPTY_DRAFT;
 }

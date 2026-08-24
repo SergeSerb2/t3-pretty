@@ -45,12 +45,18 @@ function makeHandle(exitCode = 0) {
   });
 }
 
-const makeHttpClientLayer = (bytes: Uint8Array) =>
+const makeHttpClientLayer = (bytes: Uint8Array, headers?: HeadersInit) =>
   Layer.succeed(
     HttpClient.HttpClient,
     HttpClient.make((request) =>
       Effect.succeed(
-        HttpClientResponse.fromWeb(request, new Response(bytes.buffer as ArrayBuffer)),
+        HttpClientResponse.fromWeb(
+          request,
+          new Response(
+            bytes.buffer as ArrayBuffer,
+            headers === undefined ? undefined : { headers },
+          ),
+        ),
       ),
     ),
   );
@@ -195,6 +201,65 @@ describe("RelayClient", () => {
       ),
     ),
   );
+
+  it.effect("rejects an oversized managed download before reading it into memory", () => {
+    const cancellation = { observed: false };
+    return Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-cloudflared-test-",
+      });
+      const manager = yield* makeCloudflaredRelayClient({
+        baseDir,
+        releaseAsset: {
+          url: "https://example.test/cloudflared",
+          sha256: "unused-after-size-check",
+          archive: "binary",
+        },
+      });
+
+      const error = yield* manager.install.pipe(Effect.flip);
+      expect(error).toBeInstanceOf(RelayClientInstallError);
+      expect(error.reason).toBe("download_failed");
+      expect(error.message).toContain("larger than expected");
+      expect(cancellation.observed).toBe(true);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          Layer.succeed(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  request,
+                  new Response(
+                    new ReadableStream<Uint8Array>({
+                      start(controller) {
+                        controller.enqueue(new Uint8Array([1]));
+                      },
+                      cancel() {
+                        cancellation.observed = true;
+                      },
+                    }),
+                    {
+                      headers: {
+                        // One byte above the production ceiling, without allocating it.
+                        "content-length": String(128 * 1024 * 1024 + 1),
+                      },
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+          makeSpawnerLayer([]),
+          hostRuntimeLayer(),
+        ),
+      ),
+    );
+  });
 
   it.effect("serializes concurrent installs within one runtime", () => {
     const commands: Array<string> = [];

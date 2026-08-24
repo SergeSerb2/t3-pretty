@@ -1,4 +1,6 @@
 import { expect, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import { describe } from "vite-plus/test";
 
 import {
@@ -6,11 +8,50 @@ import {
   assetResponseHeaders,
   isHashedClientAssetPath,
   isLoopbackHostname,
+  readJsonBodyWithinByteLimit,
   resolveDevRedirectUrl,
   shouldEnablePermessageDeflate,
   staticClientAssetCacheControl,
   stripPermessageDeflateExtensionOffer,
 } from "./http.ts";
+
+const encodeUtf8 = (value: string) => new TextEncoder().encode(value);
+
+describe("bounded JSON request bodies", () => {
+  it.effect("accepts a JSON body exactly at the byte limit", () =>
+    Effect.gen(function* () {
+      const body = '{"resourceSpans":[]}';
+      const bytes = encodeUtf8(body);
+
+      const decoded = yield* readJsonBodyWithinByteLimit(Stream.make(bytes), bytes.byteLength);
+
+      expect(decoded).toEqual({ resourceSpans: [] });
+    }),
+  );
+
+  it.effect("rejects a split body as soon as it crosses the byte limit", () =>
+    Effect.gen(function* () {
+      const result = yield* readJsonBodyWithinByteLimit(
+        Stream.make(encodeUtf8('{"a"'), encodeUtf8(":1}")),
+        5,
+      ).pipe(
+        Effect.match({
+          onFailure: (error) => ({ _tag: "Failure" as const, error }),
+          onSuccess: (value) => ({ _tag: "Success" as const, value }),
+        }),
+      );
+
+      expect(result).toMatchObject({
+        _tag: "Failure",
+        error: {
+          _tag: "RequestBodySizeLimitExceededError",
+          maxBytes: 5,
+          observedBytes: 7,
+        },
+      });
+    }),
+  );
+});
 
 describe("http dev routing", () => {
   it("treats localhost and loopback addresses as local", () => {

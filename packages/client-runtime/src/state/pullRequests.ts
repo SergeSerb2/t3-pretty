@@ -25,6 +25,7 @@ export { PullRequestDiffLoader, pullRequestDiffLoaderLayer } from "./pullRequest
  * GitHub in the app down with it.
  */
 export const PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS = 30_000;
+export const PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS = 60_000;
 
 export class EnvironmentHttpConnectionNotReadyError extends Data.TaggedError(
   "EnvironmentHttpConnectionNotReadyError",
@@ -69,6 +70,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       label: "environment-data:pull-requests:activity",
       tag: WS_METHODS.pullRequestsActivity,
       staleTimeMs: 20_000,
+      idleTtlMs: PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
     }),
     threadComments: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:thread-comments",
@@ -83,6 +85,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     diff: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:diff",
       staleTimeMs: 60_000,
+      idleTtlMs: PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
       execute: (input: PullRequestDiffInput) =>
         Effect.gen(function* () {
           const supervisor = yield* EnvironmentSupervisor;

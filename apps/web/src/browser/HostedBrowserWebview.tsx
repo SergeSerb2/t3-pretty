@@ -101,24 +101,39 @@ export function HostedBrowserWebview(props: {
     if (!webview || !config || !bridge) return;
     let disposed = false;
     let recoveryTimeout: ReturnType<typeof setTimeout> | null = null;
+    let registrationInFlight = false;
+    let registrationRequested = false;
     const register = () => {
-      const lease = tabLeaseRef.current;
-      if (!lease) return;
+      registrationRequested = true;
+      if (registrationInFlight) return;
+      registrationInFlight = true;
       void (async () => {
-        try {
-          // The main-process tab and the DOM webview are created by separate
-          // effects. Wait for the former so registration cannot race and fail
-          // with PreviewTabNotFoundError on a fast about:blank attachment.
-          await lease.ready;
-          if (disposed || webviewRef.current !== webview) return;
-          const webContentsId = webview.getWebContentsId();
-          if (Number.isInteger(webContentsId) && webContentsId > 0) {
-            await bridge.registerWebview(runtimeTabId, webContentsId);
+        while (registrationRequested) {
+          if (disposed) break;
+          registrationRequested = false;
+          const lease = tabLeaseRef.current;
+          if (!lease) continue;
+          try {
+            // The main-process tab and the DOM webview are created by separate
+            // effects. Wait for the former so registration cannot race and fail
+            // with PreviewTabNotFoundError on a fast about:blank attachment.
+            await lease.ready;
+            if (disposed || webviewRef.current !== webview) return;
+            const webContentsId = webview.getWebContentsId();
+            if (Number.isInteger(webContentsId) && webContentsId > 0) {
+              await bridge.registerWebview(runtimeTabId, webContentsId);
+              // did-attach/dom-ready may both have fired while this attempt
+              // waited for the tab. A successful registration satisfies them.
+              registrationRequested = false;
+            }
+          } catch {
+            // A later did-attach/dom-ready event can request another attempt.
           }
-        } catch {
-          // did-attach/dom-ready will retry if the guest was not ready yet.
         }
-      })();
+      })().finally(() => {
+        registrationInFlight = false;
+        if (registrationRequested && !disposed) register();
+      });
     };
     const recoverGuest = () => {
       if (disposed || recoveryTimeout !== null) return;

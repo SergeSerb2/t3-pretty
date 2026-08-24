@@ -21,7 +21,7 @@ import {
   SHOWCASE_CONNECTED_CLOUD_ENVIRONMENTS,
 } from "../showcase/showcaseEnvironmentRows";
 
-const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
+import { SHOWCASE_ENABLED } from "../showcase/showcaseEnabled";
 
 export function SettingsEnvironmentsRouteScreen() {
   const {

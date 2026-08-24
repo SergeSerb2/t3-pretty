@@ -2,6 +2,8 @@ import { it } from "@effect/vitest";
 import { describe, expect } from "vite-plus/test";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Scope from "effect/Scope";
 
 import { makeDrainableWorker } from "./DrainableWorker.ts";
 
@@ -53,5 +55,18 @@ describe("makeDrainableWorker", () => {
         expect(processed).toEqual(["first", "second"]);
       }),
     ),
+  );
+
+  it.live("does not retain rejected work after the owner scope closes", () =>
+    Effect.gen(function* () {
+      const workerScope = yield* Scope.make();
+      const worker = yield* makeDrainableWorker((_item: string) => Effect.void).pipe(
+        Scope.provide(workerScope),
+      );
+
+      yield* Scope.close(workerScope, Exit.void);
+      yield* worker.enqueue("late");
+      yield* worker.drain;
+    }),
   );
 });

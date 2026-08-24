@@ -132,6 +132,121 @@ function ArchivedThreadsHeader(props: {
     },
     [props.onEnvironmentChange, props.onSortOrderChange],
   );
+  const archiveFilterMenu = useMemo(
+    () => ({
+      title: "Archived thread options",
+      items:
+        Platform.OS === "android"
+          ? []
+          : [
+              {
+                type: "submenu" as const,
+                title: "Environment",
+                items: [
+                  {
+                    type: "action" as const,
+                    title: "All environments",
+                    state:
+                      props.selectedEnvironmentId === null ? ("on" as const) : ("off" as const),
+                    onPress: () => props.onEnvironmentChange(null),
+                  },
+                  ...props.environments.map((environment) => ({
+                    type: "action" as const,
+                    title: environment.label,
+                    state:
+                      props.selectedEnvironmentId === environment.environmentId
+                        ? ("on" as const)
+                        : ("off" as const),
+                    onPress: () => props.onEnvironmentChange(environment.environmentId),
+                  })),
+                ],
+              },
+              {
+                type: "submenu" as const,
+                title: "Sort by archived date",
+                items: [
+                  {
+                    type: "action" as const,
+                    title: "Newest first",
+                    state: props.sortOrder === "newest" ? ("on" as const) : ("off" as const),
+                    onPress: () => props.onSortOrderChange("newest"),
+                  },
+                  {
+                    type: "action" as const,
+                    title: "Oldest first",
+                    state: props.sortOrder === "oldest" ? ("on" as const) : ("off" as const),
+                    onPress: () => props.onSortOrderChange("oldest"),
+                  },
+                ],
+              },
+            ],
+    }),
+    [
+      props.environments,
+      props.onEnvironmentChange,
+      props.onSortOrderChange,
+      props.selectedEnvironmentId,
+      props.sortOrder,
+    ],
+  );
+  const nativeArchiveFilterMenu = useMemo(
+    () =>
+      Platform.OS === "android" ? null : (
+        <NativeHeaderToolbar.Menu
+          accessibilityLabel="Filter and sort archived threads"
+          icon={
+            hasCustomFilter
+              ? "line.3.horizontal.decrease.circle.fill"
+              : "line.3.horizontal.decrease.circle"
+          }
+          separateBackground
+          title="Archived thread options"
+        >
+          <NativeHeaderToolbar.Menu title="Environment">
+            <NativeHeaderToolbar.Label>Environment</NativeHeaderToolbar.Label>
+            <NativeHeaderToolbar.MenuAction
+              isOn={props.selectedEnvironmentId === null}
+              onPress={() => props.onEnvironmentChange(null)}
+            >
+              <NativeHeaderToolbar.Label>All environments</NativeHeaderToolbar.Label>
+            </NativeHeaderToolbar.MenuAction>
+            {props.environments.map((environment) => (
+              <NativeHeaderToolbar.MenuAction
+                key={environment.environmentId}
+                isOn={props.selectedEnvironmentId === environment.environmentId}
+                onPress={() => props.onEnvironmentChange(environment.environmentId)}
+              >
+                <NativeHeaderToolbar.Label>{environment.label}</NativeHeaderToolbar.Label>
+              </NativeHeaderToolbar.MenuAction>
+            ))}
+          </NativeHeaderToolbar.Menu>
+
+          <NativeHeaderToolbar.Menu title="Sort by archived date">
+            <NativeHeaderToolbar.Label>Sort by archived date</NativeHeaderToolbar.Label>
+            <NativeHeaderToolbar.MenuAction
+              isOn={props.sortOrder === "newest"}
+              onPress={() => props.onSortOrderChange("newest")}
+            >
+              <NativeHeaderToolbar.Label>Newest first</NativeHeaderToolbar.Label>
+            </NativeHeaderToolbar.MenuAction>
+            <NativeHeaderToolbar.MenuAction
+              isOn={props.sortOrder === "oldest"}
+              onPress={() => props.onSortOrderChange("oldest")}
+            >
+              <NativeHeaderToolbar.Label>Oldest first</NativeHeaderToolbar.Label>
+            </NativeHeaderToolbar.MenuAction>
+          </NativeHeaderToolbar.Menu>
+        </NativeHeaderToolbar.Menu>
+      ),
+    [
+      hasCustomFilter,
+      props.environments,
+      props.onEnvironmentChange,
+      props.onSortOrderChange,
+      props.selectedEnvironmentId,
+      props.sortOrder,
+    ],
+  );
 
   if (Platform.OS === "android") {
     // Single header row matching the app's Android chrome (AndroidScreenHeader
@@ -204,51 +319,6 @@ function ArchivedThreadsHeader(props: {
       </>
     );
   }
-  const archiveFilterMenu = {
-    title: "Archived thread options",
-    items: [
-      {
-        type: "submenu" as const,
-        title: "Environment",
-        items: [
-          {
-            type: "action" as const,
-            title: "All environments",
-            state: props.selectedEnvironmentId === null ? ("on" as const) : ("off" as const),
-            onPress: () => props.onEnvironmentChange(null),
-          },
-          ...props.environments.map((environment) => ({
-            type: "action" as const,
-            title: environment.label,
-            state:
-              props.selectedEnvironmentId === environment.environmentId
-                ? ("on" as const)
-                : ("off" as const),
-            onPress: () => props.onEnvironmentChange(environment.environmentId),
-          })),
-        ],
-      },
-      {
-        type: "submenu" as const,
-        title: "Sort by archived date",
-        items: [
-          {
-            type: "action" as const,
-            title: "Newest first",
-            state: props.sortOrder === "newest" ? ("on" as const) : ("off" as const),
-            onPress: () => props.onSortOrderChange("newest"),
-          },
-          {
-            type: "action" as const,
-            title: "Oldest first",
-            state: props.sortOrder === "oldest" ? ("on" as const) : ("off" as const),
-            onPress: () => props.onSortOrderChange("oldest"),
-          },
-        ],
-      },
-    ],
-  };
-
   return (
     <>
       {/* Static header config (glass preset + title) lives in Stack.tsx; only
@@ -323,51 +393,7 @@ function ArchivedThreadsHeader(props: {
               separateBackground
             />
           ) : null}
-          <NativeHeaderToolbar.Menu
-            accessibilityLabel="Filter and sort archived threads"
-            icon={
-              hasCustomFilter
-                ? "line.3.horizontal.decrease.circle.fill"
-                : "line.3.horizontal.decrease.circle"
-            }
-            separateBackground
-            title="Archived thread options"
-          >
-            <NativeHeaderToolbar.Menu title="Environment">
-              <NativeHeaderToolbar.Label>Environment</NativeHeaderToolbar.Label>
-              <NativeHeaderToolbar.MenuAction
-                isOn={props.selectedEnvironmentId === null}
-                onPress={() => props.onEnvironmentChange(null)}
-              >
-                <NativeHeaderToolbar.Label>All environments</NativeHeaderToolbar.Label>
-              </NativeHeaderToolbar.MenuAction>
-              {props.environments.map((environment) => (
-                <NativeHeaderToolbar.MenuAction
-                  key={environment.environmentId}
-                  isOn={props.selectedEnvironmentId === environment.environmentId}
-                  onPress={() => props.onEnvironmentChange(environment.environmentId)}
-                >
-                  <NativeHeaderToolbar.Label>{environment.label}</NativeHeaderToolbar.Label>
-                </NativeHeaderToolbar.MenuAction>
-              ))}
-            </NativeHeaderToolbar.Menu>
-
-            <NativeHeaderToolbar.Menu title="Sort by archived date">
-              <NativeHeaderToolbar.Label>Sort by archived date</NativeHeaderToolbar.Label>
-              <NativeHeaderToolbar.MenuAction
-                isOn={props.sortOrder === "newest"}
-                onPress={() => props.onSortOrderChange("newest")}
-              >
-                <NativeHeaderToolbar.Label>Newest first</NativeHeaderToolbar.Label>
-              </NativeHeaderToolbar.MenuAction>
-              <NativeHeaderToolbar.MenuAction
-                isOn={props.sortOrder === "oldest"}
-                onPress={() => props.onSortOrderChange("oldest")}
-              >
-                <NativeHeaderToolbar.Label>Oldest first</NativeHeaderToolbar.Label>
-              </NativeHeaderToolbar.MenuAction>
-            </NativeHeaderToolbar.Menu>
-          </NativeHeaderToolbar.Menu>
+          {nativeArchiveFilterMenu}
         </NativeHeaderToolbar>
       )}
     </>

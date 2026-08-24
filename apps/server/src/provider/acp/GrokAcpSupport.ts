@@ -2,7 +2,14 @@ import {
   type GrokSettings,
   type ModelCapabilities,
   type ModelSelection,
+  PROVIDER_MODEL_ID_MAX_LENGTH,
+  PROVIDER_OPTION_DESCRIPTION_MAX_LENGTH,
+  PROVIDER_OPTION_LABEL_MAX_LENGTH,
+  PROVIDER_OPTION_MAX_COUNT,
+  PROVIDER_OPTION_VALUE_MAX_LENGTH,
   ProviderDriverKind,
+  SERVER_PROVIDER_LABEL_MAX_LENGTH,
+  SERVER_PROVIDER_MODELS_MAX_ITEMS,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -163,7 +170,10 @@ export function currentGrokModelIdFromSessionSetup(
     | EffectAcpSchema.NewSessionResponse
     | EffectAcpSchema.ResumeSessionResponse,
 ): string | undefined {
-  return sessionSetupResult.models?.currentModelId?.trim() || undefined;
+  return boundedGrokIdentity(
+    sessionSetupResult.models?.currentModelId,
+    PROVIDER_MODEL_ID_MAX_LENGTH,
+  );
 }
 
 export function spawnableGrokReasoningEffort(value: string | undefined): string | undefined {
@@ -178,11 +188,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function trimmedString(value: unknown): string | undefined {
+function boundedGrokIdentity(value: unknown, maximumChars: number): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
+  if (value.length > maximumChars) return undefined;
   const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function boundedGrokPresentation(value: unknown, maximumChars: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.slice(0, maximumChars).trim();
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
@@ -203,18 +220,26 @@ function looksLikeGrok45(value: string | null | undefined): boolean {
 
 function parseGrokReasoningEffortChoice(value: unknown): GrokReasoningEffortChoice | undefined {
   if (typeof value === "string") {
-    const id = value.trim();
-    return id.length > 0 ? { id, label: id } : undefined;
+    const id = boundedGrokIdentity(value, PROVIDER_OPTION_VALUE_MAX_LENGTH);
+    return id ? { id, label: id } : undefined;
   }
   if (!isRecord(value)) {
     return undefined;
   }
-  const id = trimmedString(value.value) ?? trimmedString(value.id);
+  const id =
+    boundedGrokIdentity(value.value, PROVIDER_OPTION_VALUE_MAX_LENGTH) ??
+    boundedGrokIdentity(value.id, PROVIDER_OPTION_VALUE_MAX_LENGTH);
   if (!id) {
     return undefined;
   }
-  const label = trimmedString(value.label) ?? trimmedString(value.name) ?? id;
-  const description = trimmedString(value.description);
+  const label =
+    boundedGrokPresentation(value.label, PROVIDER_OPTION_LABEL_MAX_LENGTH) ??
+    boundedGrokPresentation(value.name, PROVIDER_OPTION_LABEL_MAX_LENGTH) ??
+    id;
+  const description = boundedGrokPresentation(
+    value.description,
+    PROVIDER_OPTION_DESCRIPTION_MAX_LENGTH,
+  );
   return {
     id,
     label,
@@ -229,20 +254,18 @@ export function parseGrokAcpModelMeta(meta: unknown): GrokAcpModelMeta {
     return { supportsReasoningEffort: false, reasoningEfforts: [] };
   }
 
-  const reasoningEfforts = Array.isArray(meta.reasoningEfforts)
-    ? meta.reasoningEfforts.flatMap((entry) => {
-        const choice = parseGrokReasoningEffortChoice(entry);
-        return choice ? [choice] : [];
-      })
-    : [];
   const unique = new Map<string, GrokReasoningEffortChoice>();
-  for (const choice of reasoningEfforts) {
-    if (!unique.has(choice.id)) {
-      unique.set(choice.id, choice);
+  if (Array.isArray(meta.reasoningEfforts)) {
+    for (const entry of meta.reasoningEfforts) {
+      if (unique.size >= PROVIDER_OPTION_MAX_COUNT) break;
+      const choice = parseGrokReasoningEffortChoice(entry);
+      if (choice && !unique.has(choice.id)) {
+        unique.set(choice.id, choice);
+      }
     }
   }
   const choices = [...unique.values()];
-  const current = trimmedString(meta.reasoningEffort);
+  const current = boundedGrokIdentity(meta.reasoningEffort, PROVIDER_OPTION_VALUE_MAX_LENGTH);
   const supportsReasoningEffort = meta.supportsReasoningEffort === true || choices.length > 0;
 
   return {
@@ -329,7 +352,11 @@ export function grokReasoningEffortMenusFromSessionSetup(
     | EffectAcpSchema.ResumeSessionResponse,
 ): Map<string, ReadonlyArray<string>> {
   const menus = new Map<string, ReadonlyArray<string>>();
+  let inspectedModels = 0;
   for (const model of sessionSetupResult.models?.availableModels ?? []) {
+    if (inspectedModels >= SERVER_PROVIDER_MODELS_MAX_ITEMS) break;
+    inspectedModels += 1;
+    if (model.modelId.length > PROVIDER_MODEL_ID_MAX_LENGTH) continue;
     const slug = resolveGrokAcpBaseModelId(model.modelId);
     const advertised = parseGrokAcpModelMeta(model._meta).reasoningEfforts.map(
       (choice) => choice.id,
@@ -337,7 +364,10 @@ export function grokReasoningEffortMenusFromSessionSetup(
     const efforts =
       advertised.length > 0
         ? advertised
-        : fallbackGrokReasoningEffortsForModel(slug, model.name).map((choice) => choice.id);
+        : fallbackGrokReasoningEffortsForModel(
+            slug,
+            model.name.slice(0, SERVER_PROVIDER_LABEL_MAX_LENGTH),
+          ).map((choice) => choice.id);
     if (efforts.length > 0) {
       menus.set(slug, efforts);
       menus.set(model.modelId, efforts);

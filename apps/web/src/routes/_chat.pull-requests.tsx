@@ -38,6 +38,7 @@ import {
   narrowPullRequestsToFilters,
   mergePullRequestDiffStats,
   partitionPullRequestsWithPriority,
+  pullRequestDiffStatKey,
   pullRequestEntryKey,
   pullRequestEntryViewer,
   rankPullRequestMatches,
@@ -97,6 +98,8 @@ import { isElectron } from "../env";
 import { PanelLayoutControls } from "../components/chat/PanelLayoutControls";
 import { Button } from "../components/ui/button";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../components/ui/menu";
+import { resolveLocalStorage } from "../lib/storage";
+import { compareIsoDateTimes } from "../lib/threadSort";
 import { SidebarInset } from "../components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
@@ -748,10 +751,7 @@ function PullRequestsRouteView() {
       // Rows read from a different set of environments cannot even be narrowed — one of them may
       // no longer be connected at all — so that set's own snapshot beats holding them.
       if (current !== null && current.environmentKey === environmentKey) return current;
-      const snapshot = readPullRequestListSnapshot(
-        typeof window === "undefined" ? undefined : window.localStorage,
-        environmentKey,
-      );
+      const snapshot = readPullRequestListSnapshot(resolveLocalStorage(), environmentKey);
       if (snapshot === null) return null;
       return {
         environmentKey,
@@ -793,20 +793,16 @@ function PullRequestsRouteView() {
       // read — which never drops an environment for lack of a cursor — carries the full hosts.
       if (environmentKey.length > 0 && sentQuery.length === 0) {
         const accumulatedEntries = ordered?.key === filterKey ? ordered.entries : data.entries;
-        writePullRequestListSnapshot(
-          typeof window === "undefined" ? undefined : window.localStorage,
-          environmentKey,
-          {
-            scope: scopeKey,
-            data: {
-              ...data,
-              entries: accumulatedEntries,
-              viewers: baselineQuery.data?.viewers ?? data.viewers,
-              providers: baselineQuery.data?.providers ?? data.providers,
-            },
-            ...(partitions === undefined ? {} : { partitions }),
+        writePullRequestListSnapshot(resolveLocalStorage(), environmentKey, {
+          scope: scopeKey,
+          data: {
+            ...data,
+            entries: accumulatedEntries,
+            viewers: baselineQuery.data?.viewers ?? data.viewers,
+            providers: baselineQuery.data?.providers ?? data.providers,
           },
-        );
+          ...(partitions === undefined ? {} : { partitions }),
+        });
       }
       return {
         environmentKey,
@@ -890,7 +886,7 @@ function PullRequestsRouteView() {
         const held = new Set(previous.entries.map(pullRequestEntryKey));
         const arrived = answered.entries.filter((entry) => !held.has(pullRequestEntryKey(entry)));
         const appended = rankPullRequestMatches(
-          arrived.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+          arrived.toSorted((left, right) => compareIsoDateTimes(right.updatedAt, left.updatedAt)),
           sentParsed.text,
         );
         return { key: filterKey, entries: [...previous.entries, ...appended] };
@@ -1004,7 +1000,7 @@ function PullRequestsRouteView() {
     // the order, and re-sorting by date here would undo it.
     if (typedParsed.text.length === 0) {
       return narrowedEntries.toSorted((left, right) =>
-        right.updatedAt.localeCompare(left.updatedAt),
+        compareIsoDateTimes(right.updatedAt, left.updatedAt),
       );
     }
     const answeredLocally = querySettled && !showingCarried;
@@ -1128,13 +1124,15 @@ function PullRequestsRouteView() {
   // Keyed by every row being shown — the partitions can hold rows the feed has not paged to —
   // so scrolling further asks only about what is new. One read per environment, each asking only
   // about its own rows: a reference names a project, and a project belongs to one machine.
-  const statsTargets = useMemo(() => {
+  const { statsTargets, statsTargetKeys } = useMemo(() => {
     const refsByEnvironment = new Map<
       EnvironmentId,
       Array<{ projectId: ProjectId; repository: string; number: number }>
     >();
+    const currentKeys = new Set<string>();
     for (const group of groups) {
       for (const entry of group.entries) {
+        currentKeys.add(pullRequestDiffStatKey(entry));
         const refs = refsByEnvironment.get(entry.environmentId) ?? [];
         refs.push({
           projectId: entry.projectId,
@@ -1144,10 +1142,13 @@ function PullRequestsRouteView() {
         refsByEnvironment.set(entry.environmentId, refs);
       }
     }
-    return [...refsByEnvironment].map(([environmentId, refs]) => ({
-      environmentId,
-      input: { refs },
-    }));
+    return {
+      statsTargets: [...refsByEnvironment].map(([environmentId, refs]) => ({
+        environmentId,
+        input: { refs },
+      })),
+      statsTargetKeys: currentKeys,
+    };
   }, [groups]);
   const statsQuery = usePullRequestListStats(statsTargets);
   // Adding or removing one row keys a fresh stats query with nothing in it yet, so the counts
@@ -1155,10 +1156,10 @@ function PullRequestsRouteView() {
   // its replacement arrives.
   const [statsByRow, setStatsByRow] = useState<PullRequestDiffStats>(() => new Map());
   useEffect(() => {
-    const stats = statsQuery.stats;
-    if (stats === null) return;
-    setStatsByRow((previous) => mergePullRequestDiffStats(previous, stats));
-  }, [statsQuery.stats]);
+    setStatsByRow((previous) =>
+      mergePullRequestDiffStats(previous, statsQuery.stats ?? [], statsTargetKeys),
+    );
+  }, [statsQuery.stats, statsTargetKeys]);
 
   const linkedSelection = useMemo(
     () =>

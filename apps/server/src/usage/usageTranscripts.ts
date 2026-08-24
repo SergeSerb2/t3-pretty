@@ -6,7 +6,11 @@
  *
  * @module usageTranscripts
  */
-import type { UsageProviderKind, UsageTokenTotals } from "@t3tools/contracts";
+import {
+  USAGE_MODEL_MAX_LENGTH,
+  type UsageProviderKind,
+  type UsageTokenTotals,
+} from "@t3tools/contracts";
 
 export interface UsageRecord {
   readonly provider: UsageProviderKind;
@@ -30,8 +34,28 @@ const EMPTY_TOTALS: UsageTokenTotals = {
   reasoningTokens: 0,
 };
 
+const USAGE_SESSION_ID_MAX_LENGTH = 1_024;
+const USAGE_DEDUPE_PART_MAX_LENGTH = 1_024;
+const USAGE_TOKEN_FIELD_MAX = 10_000_000_000;
+const REPORTED_COST_USD_MAX = 1_000_000;
+
 function int(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.min(Math.trunc(value), USAGE_TOKEN_FIELD_MAX)
+    : 0;
+}
+
+function boundedString(value: unknown, maxLength: number): string | null {
+  return typeof value === "string" && value.length <= maxLength ? value : null;
+}
+
+function reportedCost(value: unknown): number | null {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= REPORTED_COST_USD_MAX
+    ? value
+    : null;
 }
 
 function parseTimestampMs(value: unknown): number | null {
@@ -118,23 +142,33 @@ export function parseClaudeLine(line: string): UsageRecord | null {
   const timestampMs = parseTimestampMs(record["timestamp"]);
   if (timestampMs === null) return null;
 
-  const model = typeof messageRecord["model"] === "string" ? messageRecord["model"] : "";
-  if (model.length === 0) return null;
+  const model = boundedString(messageRecord["model"], USAGE_MODEL_MAX_LENGTH);
+  if (model === null || model.length === 0) return null;
 
   const messageId = typeof messageRecord["id"] === "string" ? messageRecord["id"] : null;
   const requestId = typeof record["requestId"] === "string" ? record["requestId"] : null;
+  if (
+    (messageId !== null && messageId.length > USAGE_DEDUPE_PART_MAX_LENGTH) ||
+    (requestId !== null && requestId.length > USAGE_DEDUPE_PART_MAX_LENGTH)
+  ) {
+    return null;
+  }
   // Matches ccusage: prefer the message/request pair, fall back to whichever
   // half exists. Records with neither cannot be de-duplicated.
   const dedupeKey =
     messageId === null && requestId === null ? null : `${messageId ?? ""}:${requestId ?? ""}`;
 
-  const cost = record["costUSD"];
+  const sessionId =
+    record["sessionId"] === undefined
+      ? ""
+      : boundedString(record["sessionId"], USAGE_SESSION_ID_MAX_LENGTH);
+  if (sessionId === null) return null;
 
   return {
     provider: "claude",
     timestampMs,
     model,
-    sessionId: typeof record["sessionId"] === "string" ? record["sessionId"] : "",
+    sessionId,
     totals: {
       uncachedInputTokens: int(usageRecord["input_tokens"]),
       cachedInputTokens: int(usageRecord["cache_read_input_tokens"]),
@@ -143,7 +177,7 @@ export function parseClaudeLine(line: string): UsageRecord | null {
       // Anthropic folds thinking tokens into output and does not break them out.
       reasoningTokens: 0,
     },
-    reportedCostUsd: typeof cost === "number" && Number.isFinite(cost) ? cost : null,
+    reportedCostUsd: reportedCost(record["costUSD"]),
     dedupeKey,
   };
 }
@@ -231,7 +265,9 @@ export function parseCodexLine(line: string, state: CodexScanState): UsageRecord
     if (state.sawSessionMeta) return null;
     state.sawSessionMeta = true;
     const id = payloadRecord["id"] ?? payloadRecord["session_id"];
-    if (typeof id === "string") state.sessionId = id;
+    if (typeof id === "string") {
+      state.sessionId = id.length <= USAGE_SESSION_ID_MAX_LENGTH ? id : "";
+    }
     const metaTimestampMs = parseTimestampMs(record["timestamp"]);
     if (metaTimestampMs !== null && isForkedSessionMeta(payloadRecord)) {
       state.suppressingForkCopies = true;
@@ -241,7 +277,10 @@ export function parseCodexLine(line: string, state: CodexScanState): UsageRecord
   }
 
   if (record["type"] === "turn_context") {
-    if (typeof payloadRecord["model"] === "string") state.model = payloadRecord["model"];
+    if (typeof payloadRecord["model"] === "string") {
+      state.model =
+        payloadRecord["model"].length <= USAGE_MODEL_MAX_LENGTH ? payloadRecord["model"] : "";
+    }
     return null;
   }
 
@@ -349,7 +388,7 @@ function grokModelFromUsage(usage: Record<string, unknown>): string {
   let best = "";
   let bestTokens = -1;
   for (const [name, raw] of Object.entries(modelUsage)) {
-    if (name.length === 0) continue;
+    if (name.length === 0 || name.length > USAGE_MODEL_MAX_LENGTH) continue;
     const entry = asRecord(raw);
     const tokens = entry === null ? 0 : int(entry["totalTokens"]);
     if (tokens > bestTokens) {
@@ -408,10 +447,17 @@ export function parseGrokLine(line: string): UsageRecord | null {
   const totals = grokTotals(usage);
   if (totalTokens(totals) === 0) return null;
 
-  const sessionId = typeof params["sessionId"] === "string" ? params["sessionId"] : "";
-  const promptId = typeof update["prompt_id"] === "string" ? update["prompt_id"] : "";
+  const sessionId =
+    params["sessionId"] === undefined
+      ? ""
+      : boundedString(params["sessionId"], USAGE_SESSION_ID_MAX_LENGTH);
+  const promptId =
+    update["prompt_id"] === undefined
+      ? ""
+      : boundedString(update["prompt_id"], USAGE_DEDUPE_PART_MAX_LENGTH);
+  if (sessionId === null || promptId === null) return null;
   const ticks = usage["costUsdTicks"];
-  const reportedCostUsd =
+  const costFromTicks =
     typeof ticks === "number" && Number.isFinite(ticks) && ticks > 0
       ? ticks / GROK_COST_TICKS_PER_USD
       : null;
@@ -422,7 +468,7 @@ export function parseGrokLine(line: string): UsageRecord | null {
     model,
     sessionId,
     totals,
-    reportedCostUsd,
+    reportedCostUsd: reportedCost(costFromTicks),
     // prompt_id repeats across turns in a session; pair it with the instant.
     dedupeKey: `${sessionId}:${promptId}:${timestampMs}`,
   };
@@ -446,8 +492,9 @@ export function parseKimiLine(line: string, sessionId: string): UsageRecord | nu
   const record = asRecord(parsed);
   if (record === null || record["type"] !== "usage.record") return null;
 
-  const model = typeof record["model"] === "string" ? record["model"] : "";
-  if (model.length === 0) return null;
+  const model = boundedString(record["model"], USAGE_MODEL_MAX_LENGTH);
+  if (model === null || model.length === 0) return null;
+  if (sessionId.length > USAGE_SESSION_ID_MAX_LENGTH) return null;
 
   const usage = asRecord(record["usage"]);
   if (usage === null) return null;

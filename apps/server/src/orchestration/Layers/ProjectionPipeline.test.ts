@@ -16,6 +16,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as Stream from "effect/Stream";
 
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
@@ -24,9 +25,11 @@ import {
   SqlitePersistenceMemory,
 } from "../../persistence/Layers/Sqlite.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
+import type { OrchestrationEventStoreShape } from "../../persistence/Services/OrchestrationEventStore.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import {
+  indexAttachmentRootEntriesByThread,
   ORCHESTRATION_PROJECTOR_NAMES,
   OrchestrationProjectionPipelineLive,
 } from "./ProjectionPipeline.ts";
@@ -54,6 +57,65 @@ const exists = (filePath: string) =>
   });
 
 const BaseTestLayer = makeProjectionPipelinePrefixedTestLayer("t3-projection-pipeline-test-");
+
+it("indexes attachment-root entries once by their owning thread", () => {
+  const first = "thread-a-00000000-0000-4000-8000-000000000001.png";
+  const second = "thread-a-00000000-0000-4000-8000-000000000002.webp";
+  const third = "thread-b-00000000-0000-4000-8000-000000000003.jpg";
+
+  assert.deepEqual(
+    [
+      ...indexAttachmentRootEntriesByThread([
+        first,
+        `/${second}`,
+        third,
+        `${first}.feed.webp`,
+        `nested/${third}`,
+        "sentinel.txt",
+      ]),
+    ],
+    [
+      ["thread-a", [first, second]],
+      ["thread-b", [third]],
+    ],
+  );
+});
+
+it.effect("requests the complete event tail when bootstrapping every projector", () => {
+  const replayRequests: Array<{ readonly sequenceExclusive: number; readonly limit?: number }> = [];
+  const eventStore: OrchestrationEventStoreShape = {
+    append: () => Effect.die("append should not be called"),
+    readFromSequence: (sequenceExclusive, limit) => {
+      replayRequests.push({
+        sequenceExclusive,
+        ...(limit === undefined ? {} : { limit }),
+      });
+      return Stream.empty;
+    },
+    readAll: () => Stream.empty,
+  };
+  const layer = OrchestrationProjectionPipelineLive.pipe(
+    Layer.provideMerge(Layer.succeed(OrchestrationEventStore, eventStore)),
+    Layer.provideMerge(
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-projection-replay-limit-test-" }),
+    ),
+    Layer.provideMerge(SqlitePersistenceMemory),
+    Layer.provideMerge(NodeServices.layer),
+  );
+
+  return Effect.gen(function* () {
+    const projectionPipeline = yield* OrchestrationProjectionPipeline;
+    yield* projectionPipeline.bootstrap;
+
+    assert.deepEqual(
+      replayRequests,
+      Object.keys(ORCHESTRATION_PROJECTOR_NAMES).map(() => ({
+        sequenceExclusive: 0,
+        limit: Number.MAX_SAFE_INTEGER,
+      })),
+    );
+  }).pipe(Effect.provide(layer));
+});
 
 it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
   it.effect("bootstraps all projection states and writes projection rows", () =>

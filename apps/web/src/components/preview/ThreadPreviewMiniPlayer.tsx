@@ -27,6 +27,10 @@ interface DragState {
   readonly pointerY: number;
   readonly playerX: number;
   readonly playerY: number;
+  readonly playerWidth: number;
+  readonly playerHeight: number;
+  readonly parentWidth: number;
+  readonly parentHeight: number;
 }
 
 interface ResizeState {
@@ -37,6 +41,8 @@ interface ResizeState {
   readonly playerY: number;
   readonly width: number;
   readonly height: number;
+  readonly parentWidth: number;
+  readonly parentHeight: number;
 }
 
 interface Props {
@@ -58,6 +64,8 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
   const runtimeTabId = previewRuntimeTabId(threadRef, previewState.serverEpoch, tabId);
   const desktopOverlay = previewState.desktopByTabId[tabId] ?? null;
   const position = miniPlayer?.tabId === tabId ? miniPlayer.position : null;
+  const positionRef = useRef(position);
+  positionRef.current = position;
   const size =
     miniPlayer?.tabId === tabId && miniPlayer.size
       ? miniPlayer.size
@@ -96,12 +104,13 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
         bottomInset,
       );
       usePreviewMiniPlayerStore.getState().resize(threadRef, tabId, nextSize);
-      if (!position) {
+      const currentPosition = positionRef.current;
+      if (!currentPosition) {
         setDefaultLayoutVersion(`${parent.clientWidth}:${parent.clientHeight}`);
         return;
       }
       const next = clampPreviewMiniPlayerPosition(
-        position,
+        currentPosition,
         { width: parent.clientWidth, height: parent.clientHeight },
         nextSize,
         bottomInset,
@@ -118,7 +127,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
     observer.observe(root);
     observer.observe(parent);
     return () => observer.disconnect();
-  }, [bottomInset, position, tabId, threadRef]);
+  }, [bottomInset, tabId, threadRef]);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -133,6 +142,10 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
       pointerY: event.clientY,
       playerX: rootRect.left - parentRect.left,
       playerY: rootRect.top - parentRect.top,
+      playerWidth: root.offsetWidth,
+      playerHeight: root.offsetHeight,
+      parentWidth: parent.clientWidth,
+      parentHeight: parent.clientHeight,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
@@ -140,9 +153,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
-    const root = rootRef.current;
-    const parent = root?.offsetParent;
-    if (!drag || drag.pointerId !== event.pointerId || !root || !(parent instanceof HTMLElement)) {
+    if (!drag || drag.pointerId !== event.pointerId || !rootRef.current?.isConnected) {
       return;
     }
     const next = clampPreviewMiniPlayerPosition(
@@ -150,8 +161,8 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
         x: drag.playerX + event.clientX - drag.pointerX,
         y: drag.playerY + event.clientY - drag.pointerY,
       },
-      { width: parent.clientWidth, height: parent.clientHeight },
-      { width: root.offsetWidth, height: root.offsetHeight },
+      { width: drag.parentWidth, height: drag.parentHeight },
+      { width: drag.playerWidth, height: drag.playerHeight },
       bottomInset,
     );
     usePreviewMiniPlayerStore.getState().move(threadRef, tabId, next);
@@ -180,6 +191,8 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
       playerY: rootRect.top - parentRect.top,
       width: root.offsetWidth,
       height: root.offsetHeight,
+      parentWidth: parent.clientWidth,
+      parentHeight: parent.clientHeight,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
@@ -188,14 +201,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
 
   const handleResizePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const resize = resizeRef.current;
-    const root = rootRef.current;
-    const parent = root?.offsetParent;
-    if (
-      !resize ||
-      resize.pointerId !== event.pointerId ||
-      !root ||
-      !(parent instanceof HTMLElement)
-    ) {
+    if (!resize || resize.pointerId !== event.pointerId || !rootRef.current?.isConnected) {
       return;
     }
     const nextSize = clampPreviewMiniPlayerSize(
@@ -203,13 +209,13 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
         width: resize.width + event.clientX - resize.pointerX,
         height: resize.height + event.clientY - resize.pointerY,
       },
-      { width: parent.clientWidth, height: parent.clientHeight },
+      { width: resize.parentWidth, height: resize.parentHeight },
       bottomInset,
     );
     usePreviewMiniPlayerStore.getState().resize(threadRef, tabId, nextSize);
     const nextPosition = clampPreviewMiniPlayerPosition(
       { x: resize.playerX, y: resize.playerY },
-      { width: parent.clientWidth, height: parent.clientHeight },
+      { width: resize.parentWidth, height: resize.parentHeight },
       nextSize,
       bottomInset,
     );

@@ -4,16 +4,16 @@
  *
  * Isolated here so the rest of the usage code stays on Effect's `FileSystem`.
  * The direct `node:fs` streaming is deliberate: a cold 30-day window is ~1.4 GB
- * across ~1,500 files, and `readline` over a read stream is roughly an order of
- * magnitude cheaper than materialising each file. The equivalent Effect stream
- * pipeline is idiomatic but not fast enough to sit behind a page load.
+ * across ~1,500 files, and direct bounded framing over a read stream is roughly
+ * an order of magnitude cheaper than materialising each file. The equivalent
+ * Effect stream pipeline is idiomatic but not fast enough to sit behind a page
+ * load.
  *
  * @module usageTranscriptReader
  */
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import * as NodeReadline from "node:readline";
 
 import type { UsageProviderKind } from "@t3tools/contracts";
 
@@ -34,6 +34,95 @@ export interface TranscriptFile {
   readonly mtimeMs: number;
 }
 
+export const TRANSCRIPT_FILE_MAX = 50_000;
+export const TRANSCRIPT_DIRECTORY_MAX = 20_000;
+export const TRANSCRIPT_ENTRY_MAX = 500_000;
+
+export interface TranscriptListing {
+  readonly files: readonly TranscriptFile[];
+  readonly truncated: boolean;
+  readonly unreadableDirectories: number;
+}
+
+export interface TranscriptListingLimits {
+  readonly maxFiles?: number;
+  readonly maxDirectories?: number;
+  readonly maxEntries?: number;
+}
+
+/**
+ * Provider transcripts can contain large tool payloads, but a single malformed
+ * JSONL record must not be able to grow the server heap without bound while the
+ * Usage page scans it. Oversized records are skipped and scanning resumes at
+ * the next newline so one bad record does not hide the rest of the file.
+ */
+export const TRANSCRIPT_LINE_MAX_BYTES = 16 * 1024 * 1024;
+export const TRANSCRIPT_FILE_RECORD_MAX = 200_000;
+
+/**
+ * Frames UTF-8 JSONL without retaining more than `maxLineBytes` for one line.
+ * Newlines are safe to find byte-wise because `0x0a` cannot occur inside a
+ * multi-byte UTF-8 sequence.
+ */
+export async function* readUtf8LinesWithinLimit(
+  input: AsyncIterable<Uint8Array>,
+  maxLineBytes = TRANSCRIPT_LINE_MAX_BYTES,
+  onOversizedLine: () => void = () => {},
+): AsyncGenerator<string> {
+  const boundedMax = Number.isFinite(maxLineBytes) ? Math.max(0, Math.trunc(maxLineBytes)) : 0;
+  let chunks: Buffer[] = [];
+  let retainedBytes = 0;
+  let discarding = false;
+
+  const reset = () => {
+    chunks = [];
+    retainedBytes = 0;
+    discarding = false;
+  };
+
+  const decodeRetainedLine = () => {
+    const line = Buffer.concat(chunks, retainedBytes);
+    const content = line.at(-1) === 0x0d ? line.subarray(0, -1) : line;
+    return content.toString("utf8");
+  };
+
+  for await (const rawChunk of input) {
+    const chunk = Buffer.from(rawChunk.buffer, rawChunk.byteOffset, rawChunk.byteLength);
+    let offset = 0;
+
+    while (offset < chunk.byteLength) {
+      const newline = chunk.indexOf(0x0a, offset);
+      const end = newline === -1 ? chunk.byteLength : newline;
+      const segment = chunk.subarray(offset, end);
+
+      if (!discarding) {
+        if (retainedBytes + segment.byteLength > boundedMax) {
+          chunks = [];
+          retainedBytes = 0;
+          discarding = true;
+          onOversizedLine();
+        } else if (segment.byteLength > 0) {
+          chunks.push(segment);
+          retainedBytes += segment.byteLength;
+        }
+      }
+
+      if (newline === -1) break;
+      if (!discarding) yield decodeRetainedLine();
+      reset();
+      offset = newline + 1;
+    }
+  }
+
+  if (!discarding && retainedBytes > 0) yield decodeRetainedLine();
+}
+
+export interface TranscriptReadResult {
+  readonly records: readonly UsageRecord[];
+  readonly oversizedRecords: number;
+  readonly recordLimitReached: boolean;
+}
+
 /**
  * Lists `.jsonl` transcripts under `root` last modified at or after `sinceMs`.
  *
@@ -45,20 +134,47 @@ export async function listTranscriptFiles(
   root: string,
   sinceMs: number,
   fileName?: string,
-): Promise<readonly TranscriptFile[]> {
+  limits: TranscriptListingLimits = {},
+): Promise<TranscriptListing> {
   const found: TranscriptFile[] = [];
+  const boundedLimit = (value: number | undefined, fallback: number) =>
+    value === undefined || !Number.isFinite(value) ? fallback : Math.max(0, Math.trunc(value));
+  const maxFiles = boundedLimit(limits.maxFiles, TRANSCRIPT_FILE_MAX);
+  const maxDirectories = boundedLimit(limits.maxDirectories, TRANSCRIPT_DIRECTORY_MAX);
+  const maxEntries = boundedLimit(limits.maxEntries, TRANSCRIPT_ENTRY_MAX);
+  const pendingDirectories = maxDirectories > 0 ? [root] : [];
+  let openedDirectories = 0;
+  let visitedEntries = 0;
+  let unreadableDirectories = 0;
+  let truncated = maxDirectories === 0 || maxFiles === 0 || maxEntries === 0;
 
-  const walk = async (dir: string): Promise<void> => {
+  while (pendingDirectories.length > 0 && !truncated) {
+    const dir = pendingDirectories.pop();
+    if (dir === undefined) break;
+    openedDirectories += 1;
+
     let entries;
     try {
-      entries = await NodeFSP.readdir(dir, { withFileTypes: true });
+      entries = await NodeFSP.opendir(dir);
     } catch {
-      return;
+      unreadableDirectories += 1;
+      continue;
     }
-    for (const entry of entries) {
+
+    for await (const entry of entries) {
+      visitedEntries += 1;
+      if (visitedEntries > maxEntries) {
+        truncated = true;
+        break;
+      }
+
       const child = NodePath.join(dir, entry.name);
       if (entry.isDirectory()) {
-        await walk(child);
+        if (openedDirectories + pendingDirectories.length >= maxDirectories) {
+          truncated = true;
+          break;
+        }
+        pendingDirectories.push(child);
         continue;
       }
       if (fileName !== undefined ? entry.name !== fileName : !entry.name.endsWith(".jsonl")) {
@@ -68,15 +184,18 @@ export async function listTranscriptFiles(
         const stats = await NodeFSP.stat(child);
         if (stats.mtimeMs >= sinceMs) {
           found.push({ path: child, size: stats.size, mtimeMs: stats.mtimeMs });
+          if (found.length >= maxFiles) {
+            truncated = true;
+            break;
+          }
         }
       } catch {
-        // Vanished between readdir and stat.
+        // Vanished between directory iteration and stat.
       }
     }
-  };
+  }
 
-  await walk(root);
-  return found;
+  return { files: found, truncated, unreadableDirectories };
 }
 
 /**
@@ -111,15 +230,32 @@ export async function readDirectoryVolumeId(path: string): Promise<string> {
 export async function readTranscriptRecords(
   filePath: string,
   provider: UsageProviderKind,
-): Promise<readonly UsageRecord[] | null> {
+  maxRecords = TRANSCRIPT_FILE_RECORD_MAX,
+): Promise<TranscriptReadResult | null> {
   const records: UsageRecord[] = [];
   const codexState = initialCodexScanState();
+  const boundedMaxRecords = Number.isFinite(maxRecords) ? Math.max(0, Math.trunc(maxRecords)) : 0;
+  let oversizedRecords = 0;
+  let recordLimitReached = boundedMaxRecords === 0;
+
+  if (recordLimitReached) return { records, oversizedRecords, recordLimitReached };
+
+  const appendRecord = (record: UsageRecord | null): boolean => {
+    if (record === null) return false;
+    records.push(record);
+    if (records.length < boundedMaxRecords) return false;
+    recordLimitReached = true;
+    return true;
+  };
 
   try {
-    const lines = NodeReadline.createInterface({
-      input: NodeFS.createReadStream(filePath, { encoding: "utf8" }),
-      crlfDelay: Infinity,
-    });
+    const lines = readUtf8LinesWithinLimit(
+      NodeFS.createReadStream(filePath),
+      TRANSCRIPT_LINE_MAX_BYTES,
+      () => {
+        oversizedRecords += 1;
+      },
+    );
 
     const kimiSessionId = provider === "kimi" ? kimiSessionIdFromPath(filePath) : "";
 
@@ -133,7 +269,7 @@ export async function readTranscriptRecords(
           continue;
         }
         const record = parseCodexLine(line, codexState);
-        if (record !== null) records.push(record);
+        if (appendRecord(record)) break;
         continue;
       }
 
@@ -145,11 +281,11 @@ export async function readTranscriptRecords(
           : provider === "kimi"
             ? parseKimiLine(line, kimiSessionId)
             : parseClaudeLine(line);
-      if (record !== null) records.push(record);
+      if (appendRecord(record)) break;
     }
   } catch {
     return null;
   }
 
-  return records;
+  return { records, oversizedRecords, recordLimitReached };
 }
