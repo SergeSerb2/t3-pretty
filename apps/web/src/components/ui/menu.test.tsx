@@ -23,10 +23,8 @@ describe("menu flyout pointer events", () => {
   // dead and reads as stuck. The rule must stay scoped to [data-open] so
   // closing popups keep their exit transition inert.
   it("keeps the parent menu interactive while a flyout is open", () => {
-    expect(indexCss).toContain('[data-slot="menu-popup"][data-open]');
-    expect(indexCss).toContain('[data-slot="menu-sub-content"][data-open]');
     expect(indexCss).toMatch(
-      /\[data-slot="menu-sub-content"\]\[data-open\]\s*\{\s*pointer-events:\s*auto\s*!important/,
+      /\[data-slot="menu-popup"\]\[data-open\]\s*,\s*\[data-slot="menu-sub-content"\]\[data-open\]\s*\{\s*pointer-events:\s*auto\s*!important/,
     );
   });
 });
