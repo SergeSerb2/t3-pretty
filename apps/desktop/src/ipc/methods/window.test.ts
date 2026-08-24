@@ -138,7 +138,7 @@ describe("getLocalEnvironmentBootstraps", () => {
 });
 
 describe("getWindowFullscreenState", () => {
-  it.effect("reads the main native window state", () => {
+  it.effect("reads the current native window state", () => {
     const window = { isFullScreen: () => true } as Electron.BrowserWindow;
 
     return Effect.gen(function* () {
@@ -146,7 +146,7 @@ describe("getWindowFullscreenState", () => {
     }).pipe(
       Effect.provide(
         Layer.mock(ElectronWindow.ElectronWindow)({
-          main: Effect.succeed(Option.some(window)),
+          currentMainOrFirst: Effect.succeed(Option.some(window)),
         }),
       ),
     );

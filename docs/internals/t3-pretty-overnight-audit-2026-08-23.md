@@ -2162,15 +2162,13 @@ audit snapshot rather than claiming that every item remains in the PR.
 - Correct the mobile README: JS-only releases publish OTA without needlessly
   occupying the Mac runner; native iOS fingerprint changes trigger TestFlight,
   while Android store binaries are not yet wired into this fork workflow.
-- Restore the upstream release workflow's documented three-hour schedule. Its
-  schedule-only change detector was otherwise unreachable; the detector now
-  asks Git for one sorted ref directly instead of risking `pipefail` through a
-  short-reading `head` process.
-- Serialize upstream stable/nightly publication through one non-cancelling
-  release queue, and opt every fork release/sync queue into GitHub's 100-run
-  pending maximum. Later cron or push events no longer silently replace a
-  stable, manual, or already-pending release; operations docs record the queue
-  ceiling and waiting-time ordering semantics.
+- Leave the upstream release workflow unscheduled in this fork. Its
+  schedule-only detector belongs to `pingdotgg/t3code`; T3 Pretty scheduling
+  remains in the fork-owned release and upstream-sync paths.
+- Preserve the existing non-cancelling workflow concurrency groups without
+  `queue: max`. That key is not supported by the pinned Buildkite GitHub
+  Actions importer, whose queue already retains waiting entries; native sync
+  also has an explicit Buildkite concurrency group.
 - Require complete Apple signing, notarization, team, and provisioning-profile
   prerequisites before the official workflow builds either macOS updater.
   Missing prerequisites now stop publication instead of silently changing the
@@ -2962,10 +2960,11 @@ install` plus whichever `node-gyp` `npx` resolves, so transitive build inputs
   mutate Origin `main` from distinct concurrency groups. Serializing all three
   entire workflows would waste independent Linux/Mac work; their final main
   mutations need a narrower retry or compare-and-swap contract.
-- Each GitHub Actions queue retains at most 100 pending runs. A repository
-  blocked long enough to fill that queue cancels additional arriving runs, so
-  operations must repair from source state rather than assume every dispatch
-  survived.
+- Each native GitHub Actions queue retains at most 100 pending runs. A
+  repository blocked long enough to fill that queue cancels additional
+  arriving runs, so operations must repair from source state rather than
+  assume every dispatch survived. This limit does not describe the pinned
+  Buildkite importer used for Origin workflows.
 
 ## Simplicity audit (ponytail)
 

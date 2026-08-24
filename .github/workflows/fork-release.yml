@@ -45,7 +45,6 @@ env:
 concurrency:
   group: fork-release
   cancel-in-progress: false
-  queue: max
 
 jobs:
   preflight:

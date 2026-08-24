@@ -108,7 +108,7 @@ export const getWindowFullscreenState = DesktopIpc.makeSyncIpcMethod({
   result: Schema.Boolean,
   handler: Effect.fn("desktop.ipc.window.getWindowFullscreenState")(function* () {
     const electronWindow = yield* ElectronWindow.ElectronWindow;
-    const window = yield* electronWindow.main;
+    const window = yield* electronWindow.currentMainOrFirst;
     return Option.isSome(window) && window.value.isFullScreen();
   }),
 });

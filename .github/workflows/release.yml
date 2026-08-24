@@ -5,8 +5,6 @@ on:
     tags:
       - "v*.*.*"
       - "!v*-nightly.*"
-  schedule:
-    - cron: "0 */3 * * *"
   workflow_dispatch:
     inputs:
       channel:
@@ -29,12 +27,10 @@ permissions:
 # Every release updates shared publication targets: npm dist-tags, channel
 # aliases, GitHub release assets, and (for stable releases) main. Keep those
 # mutations ordered so a nightly and stable run cannot publish over each other.
-# Retain GitHub's maximum 100 pending runs so a later cron run cannot replace a
-# stable or manually dispatched release that is already waiting for the lock.
+# Let the active release finish before a pending tag or manual release starts.
 concurrency:
   group: release
   cancel-in-progress: false
-  queue: max
 
 jobs:
   check_changes:

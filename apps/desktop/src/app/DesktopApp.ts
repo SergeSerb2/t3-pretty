@@ -82,11 +82,9 @@ export function formatFatalStartupError(error: unknown): {
   let detail = "";
   if (error instanceof Error) {
     try {
-      if (typeof error.stack === "string" && error.stack.length > 0) {
-        detail = `\n${truncateStartupDiagnostic(
-          error.stack,
-          DESKTOP_FATAL_STARTUP_DETAIL_MAX_LENGTH - 1,
-        )}`;
+      const stack = error.stack;
+      if (typeof stack === "string" && stack.length > 0) {
+        detail = truncateStartupDiagnostic(`\n${stack}`, DESKTOP_FATAL_STARTUP_DETAIL_MAX_LENGTH);
       }
     } catch {
       // The native error box still gets the bounded primary message.
