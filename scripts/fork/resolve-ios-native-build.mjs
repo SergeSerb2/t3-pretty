@@ -2,7 +2,12 @@
 import * as NodeFS from "node:fs";
 import * as NodeProcess from "node:process";
 
-const MAX_FINGERPRINT_INPUT_BYTES = 64 * 1024;
+// `eas fingerprint:generate --json` lists every native source it hashed; on
+// this app that runs well past 64 KiB, and a 64 KiB cap failed every
+// TestFlight job. The dump gets a bound a fingerprint cannot reach; the
+// submitted-fingerprint marker holds one hash and keeps the tight one.
+const MAX_FINGERPRINT_INPUT_BYTES = 16 * 1024 * 1024;
+const MAX_MARKER_INPUT_BYTES = 64 * 1024;
 const MAX_FINGERPRINT_BYTES = 512;
 
 function readJson(value, label) {
@@ -42,21 +47,21 @@ function fingerprintHash(value) {
   throw new Error("Fingerprint JSON did not contain a hash.");
 }
 
-function readBoundedFile(path, label) {
+function readBoundedFile(path, label, limit = MAX_FINGERPRINT_INPUT_BYTES) {
   const file = NodeFS.openSync(path, "r");
   try {
-    if (NodeFS.fstatSync(file).size > MAX_FINGERPRINT_INPUT_BYTES) {
-      throw new Error(`${label} exceeded the ${MAX_FINGERPRINT_INPUT_BYTES}-byte safety limit.`);
+    if (NodeFS.fstatSync(file).size > limit) {
+      throw new Error(`${label} exceeded the ${limit}-byte safety limit.`);
     }
-    const bytes = Buffer.alloc(MAX_FINGERPRINT_INPUT_BYTES + 1);
+    const bytes = Buffer.alloc(limit + 1);
     let length = 0;
     while (length < bytes.byteLength) {
       const read = NodeFS.readSync(file, bytes, length, bytes.byteLength - length, null);
       if (read === 0) break;
       length += read;
     }
-    if (length > MAX_FINGERPRINT_INPUT_BYTES) {
-      throw new Error(`${label} exceeded the ${MAX_FINGERPRINT_INPUT_BYTES}-byte safety limit.`);
+    if (length > limit) {
+      throw new Error(`${label} exceeded the ${limit}-byte safety limit.`);
     }
     return bytes.subarray(0, length).toString("utf8");
   } finally {
@@ -81,7 +86,11 @@ function readFingerprintInput(args) {
 function readSubmittedFingerprint(args) {
   if (args.has("submitted-fingerprint-file")) {
     return normalizeFingerprint(
-      readBoundedFile(args.get("submitted-fingerprint-file"), "Submitted fingerprint file"),
+      readBoundedFile(
+        args.get("submitted-fingerprint-file"),
+        "Submitted fingerprint file",
+        MAX_MARKER_INPUT_BYTES,
+      ),
       "Submitted fingerprint",
       true,
     );

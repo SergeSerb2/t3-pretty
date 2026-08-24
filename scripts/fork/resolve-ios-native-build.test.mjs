@@ -125,6 +125,24 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "none -> abc123");
   });
 
+  it("reads a full eas fingerprint:generate --json dump larger than 64 KiB", () => {
+    // The real dump lists every hashed native source and runs past 64 KiB;
+    // a 64 KiB cap failed every TestFlight job with "exceeded the safety limit".
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fingerprint-"));
+    const file = NodePath.join(dir, "ios-fingerprint.json");
+    const sources = Array.from({ length: 2000 }, (_, index) => ({
+      type: "file",
+      filePath: `ios/Sources/Generated/File${index}.swift`,
+      hash: "0123456789abcdef0123456789abcdef01234567",
+      reasons: ["expoAutolinkingIos"],
+    }));
+    NodeFS.writeFileSync(file, JSON.stringify({ hash: "big-dump-hash", sources }));
+    assert.isAbove(NodeFS.statSync(file).size, 64 * 1024);
+    const output = run(["--fingerprint-file", file, "--submitted-fingerprint", "big-dump-hash"]);
+    assert.include(output, "fingerprint=big-dump-hash");
+    assert.include(output, "should_build=false");
+  });
+
   it("rebuilds when the native fingerprint changed", () => {
     const output = run([
       "--fingerprint-json",
@@ -266,7 +284,7 @@ describe("T3 Pretty iOS native-build gate", () => {
 
     const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-fingerprint-"));
     const fingerprintFile = NodePath.join(directory, "fingerprint.json");
-    NodeFS.writeFileSync(fingerprintFile, "x".repeat(64 * 1024 + 1));
+    NodeFS.writeFileSync(fingerprintFile, "x".repeat(16 * 1024 * 1024 + 1));
     assert.throws(
       () => run(["--fingerprint-file", fingerprintFile, "--builds-json", "[]"]),
       /safety limit/u,
