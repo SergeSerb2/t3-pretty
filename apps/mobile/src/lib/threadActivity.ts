@@ -1,3 +1,7 @@
+import {
+  summarizePreviewAutomationCall,
+  type PreviewAutomationCallSummary,
+} from "@t3tools/client-runtime/preview-automation-calls";
 import { ApprovalRequestId, isToolLifecycleItemType } from "@t3tools/contracts";
 import { extractGeneratedImagePath } from "@t3tools/shared/imageTool";
 import type {
@@ -56,6 +60,7 @@ export interface ThreadFeedActivity {
     | "image"
     | "message"
     | "package"
+    | "pointer"
     | "warning"
     | "wrench"
     | "zap";
@@ -85,6 +90,8 @@ interface WorkLogEntry {
   requestKind?: PendingApproval["requestKind"];
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
   toolData?: unknown;
+  /** Present when this row is a browser-automation (preview_*) tool call. */
+  previewAutomation?: PreviewAutomationCallSummary;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -442,6 +449,15 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       entry.toolData = data.item;
     }
   }
+  if (itemType === "mcp_tool_call" || itemType === "dynamic_tool_call") {
+    const previewAutomation = summarizePreviewAutomationCall({
+      data: payload?.data,
+      title: title ?? activity.summary,
+    });
+    if (previewAutomation) {
+      entry.previewAutomation = previewAutomation;
+    }
+  }
   if (itemType === "image_generation") {
     const data = asRecord(payload?.data);
     if (data !== undefined) {
@@ -540,6 +556,7 @@ function mergeDerivedWorkLogEntries(
   const collapseKey = next.collapseKey ?? previous.collapseKey;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
+  const previewAutomation = next.previewAutomation ?? previous.previewAutomation;
   return {
     ...previous,
     ...next,
@@ -553,6 +570,7 @@ function mergeDerivedWorkLogEntries(
     ...(collapseKey ? { collapseKey } : {}),
     ...(toolLifecycleStatus ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
+    ...(previewAutomation ? { previewAutomation } : {}),
   };
 }
 
@@ -669,6 +687,7 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";
   if (entry.requestKind === "file-change") return "edit";
+  if (entry.previewAutomation) return "pointer";
   if (entry.itemType === "command_execution" || entry.command) return "command";
   if (entry.itemType === "file_change" || (entry.changedFiles?.length ?? 0) > 0) return "edit";
   if (entry.itemType === "web_search") return "globe";
@@ -743,6 +762,7 @@ function capitalizePhrase(value: string): string {
 }
 
 function workEntryHeading(workEntry: WorkLogEntry): string {
+  if (workEntry.previewAutomation) return workEntry.previewAutomation.label;
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
@@ -1831,7 +1851,9 @@ function updateMessageFeedEntryCache(
 
 function toActivityFeedEntry(entry: DerivedWorkLogEntry): RawThreadFeedEntry {
   const summary = workEntryHeading(entry);
-  const detail = workEntryPreview(entry);
+  // Browser-automation rows label themselves; raw provider JSON stays behind
+  // the disclosure instead of trailing the heading.
+  const detail = entry.previewAutomation ? null : workEntryPreview(entry);
   const generatedImagePath =
     entry.itemType === "image_generation"
       ? extractGeneratedImagePath({

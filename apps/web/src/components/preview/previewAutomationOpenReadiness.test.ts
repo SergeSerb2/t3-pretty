@@ -7,7 +7,49 @@ import {
   previewAutomationDefaultViewport,
   previewAutomationOpenNeedsOverlay,
   shouldOpenPreviewMiniPlayer,
+  shouldPresentAutomationActivity,
 } from "./previewAutomationOpenReadiness";
+
+describe("shouldPresentAutomationActivity", () => {
+  const base = {
+    operation: "click",
+    autoShowFloatingPreview: true,
+    tabId: "tab-1",
+    dismissedTabId: null,
+    miniPlayerTabId: null,
+    panelPreviewTabId: null,
+  } as const;
+
+  it("presents input actions on a hidden tab", () => {
+    for (const operation of ["click", "type", "press", "scroll"]) {
+      expect(shouldPresentAutomationActivity({ ...base, operation })).toBe(true);
+    }
+  });
+
+  it("ignores passive operations", () => {
+    for (const operation of ["status", "snapshot", "navigate", "open", "evaluate", "waitFor"]) {
+      expect(shouldPresentAutomationActivity({ ...base, operation })).toBe(false);
+    }
+  });
+
+  it("respects the auto-show preference, dismissal, and visible surfaces", () => {
+    expect(shouldPresentAutomationActivity({ ...base, autoShowFloatingPreview: false })).toBe(
+      false,
+    );
+    expect(shouldPresentAutomationActivity({ ...base, dismissedTabId: "tab-1" })).toBe(false);
+    expect(shouldPresentAutomationActivity({ ...base, miniPlayerTabId: "tab-1" })).toBe(false);
+    expect(shouldPresentAutomationActivity({ ...base, panelPreviewTabId: "tab-1" })).toBe(false);
+    // Another tab's dismissal or surface never blocks this tab.
+    expect(
+      shouldPresentAutomationActivity({
+        ...base,
+        dismissedTabId: "tab-2",
+        miniPlayerTabId: "tab-2",
+        panelPreviewTabId: "tab-2",
+      }),
+    ).toBe(true);
+  });
+});
 
 const snapshot = (navStatus: PreviewSessionSnapshot["navStatus"]): PreviewSessionSnapshot => ({
   threadId: "thread-1",

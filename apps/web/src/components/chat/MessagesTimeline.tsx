@@ -1579,6 +1579,8 @@ function toolGroupSummaryIconName(
       return "globe";
     case "code-search":
       return "search";
+    case "browser":
+      return "mouse-pointer";
     case "other":
       return "wrench";
     case "dynamic-tool":
@@ -2230,6 +2232,7 @@ type WorkEntryIconName =
   | "hammer"
   | "image"
   | "message-circle"
+  | "mouse-pointer"
   | "package"
   | "search"
   | "square-pen"
@@ -2256,6 +2259,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <ImageIcon className={className} aria-hidden />;
     case "message-circle":
       return <MessageCircleIcon className={className} aria-hidden />;
+    case "mouse-pointer":
+      return <MousePointerClickIcon className={className} aria-hidden />;
     case "package":
       return <PackageIcon className={className} aria-hidden />;
     case "search":
@@ -2490,6 +2495,7 @@ function liveWorkEntryLabel(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
 ): string {
+  if (workEntry.previewAutomation) return workEntry.previewAutomation.label;
   const command = workEntry.command?.trim();
   if (command) {
     // This row describes the active parent turn, not the command lifecycle.
@@ -2571,6 +2577,7 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  if (workEntry.previewAutomation) return workEntry.previewAutomation.label;
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
@@ -2708,7 +2715,11 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const entryIconName = showWarningIndicator ? "x" : workEntryIconName(workEntry);
   const heading = toolWorkEntryHeading(workEntry);
-  const rawPreview = workEntryPreview(workEntry, workspaceRoot);
+  // Browser-automation rows label themselves; the raw detail (provider JSON)
+  // stays available behind the disclosure instead of trailing the heading.
+  const rawPreview = workEntry.previewAutomation
+    ? null
+    : workEntryPreview(workEntry, workspaceRoot);
   const preview =
     rawPreview &&
     normalizeCompactToolLabel(rawPreview).toLowerCase() ===

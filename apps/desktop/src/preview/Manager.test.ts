@@ -3205,7 +3205,7 @@ describe("PreviewManager", () => {
         const click = yield* manager
           .automationClick("tab_1", { x: 120, y: 80 })
           .pipe(Effect.forkChild({ startImmediately: true }));
-        yield* TestClock.adjust(200);
+        yield* TestClock.adjust(400);
         yield* Fiber.join(click);
 
         expect(activity).toEqual(["move", "click", "mousePressed"]);
@@ -3458,7 +3458,7 @@ describe("PreviewManager", () => {
         const click = yield* manager
           .automationClick("tab_1", { x: 120, y: 80 })
           .pipe(Effect.forkChild({ startImmediately: true }));
-        yield* TestClock.adjust(200);
+        yield* TestClock.adjust(400);
         const exit = yield* Fiber.await(click);
         expect(Exit.isFailure(exit)).toBe(true);
         if (Exit.isSuccess(exit)) return;

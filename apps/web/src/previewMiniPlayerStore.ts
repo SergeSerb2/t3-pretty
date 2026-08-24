@@ -20,8 +20,11 @@ export interface PreviewMiniPlayerState {
 
 interface PreviewMiniPlayerStoreState {
   readonly byThreadKey: Record<string, PreviewMiniPlayerState>;
+  /** Tabs whose floating player the user explicitly closed; automation must not reopen them. */
+  readonly dismissedTabIdByThreadKey: Record<string, string>;
   readonly open: (ref: ScopedThreadRef, tabId: string) => void;
   readonly close: (ref: ScopedThreadRef) => void;
+  readonly dismiss: (ref: ScopedThreadRef, tabId: string) => void;
   readonly move: (ref: ScopedThreadRef, tabId: string, position: PreviewMiniPlayerPosition) => void;
   readonly resize: (ref: ScopedThreadRef, tabId: string, size: PreviewMiniPlayerSize) => void;
   readonly removeThread: (ref: ScopedThreadRef) => void;
@@ -29,12 +32,18 @@ interface PreviewMiniPlayerStoreState {
 
 export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((set) => ({
   byThreadKey: {},
+  dismissedTabIdByThreadKey: {},
   open: (ref, tabId) =>
     set((state) => {
       const threadKey = scopedThreadKey(ref);
+      const { [threadKey]: _cleared, ...dismissedTabIdByThreadKey } =
+        state.dismissedTabIdByThreadKey;
       const current = state.byThreadKey[threadKey];
-      if (current?.tabId === tabId) return state;
+      if (current?.tabId === tabId && !(threadKey in state.dismissedTabIdByThreadKey)) {
+        return state;
+      }
       return {
+        dismissedTabIdByThreadKey,
         byThreadKey: {
           ...state.byThreadKey,
           [threadKey]: {
@@ -43,6 +52,15 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((
             size: current?.size ?? null,
           },
         },
+      };
+    }),
+  dismiss: (ref, tabId) =>
+    set((state) => {
+      const threadKey = scopedThreadKey(ref);
+      const { [threadKey]: _closed, ...byThreadKey } = state.byThreadKey;
+      return {
+        byThreadKey,
+        dismissedTabIdByThreadKey: { ...state.dismissedTabIdByThreadKey, [threadKey]: tabId },
       };
     }),
   close: (ref) =>
@@ -81,9 +99,13 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((
   removeThread: (ref) =>
     set((state) => {
       const threadKey = scopedThreadKey(ref);
-      if (!(threadKey in state.byThreadKey)) return state;
+      if (!(threadKey in state.byThreadKey) && !(threadKey in state.dismissedTabIdByThreadKey)) {
+        return state;
+      }
       const { [threadKey]: _removed, ...byThreadKey } = state.byThreadKey;
-      return { byThreadKey };
+      const { [threadKey]: _dismissed, ...dismissedTabIdByThreadKey } =
+        state.dismissedTabIdByThreadKey;
+      return { byThreadKey, dismissedTabIdByThreadKey };
     }),
 }));
 

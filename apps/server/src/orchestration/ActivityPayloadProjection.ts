@@ -278,6 +278,26 @@ function summarizeMcpResult(result: unknown): Record<string, unknown> | undefine
 }
 
 /**
+ * MCP tool arguments stay renderable (browser-automation rows label
+ * themselves from them) but oversized payloads — e.g. preview_evaluate
+ * expressions — are dropped rather than shipped to every client.
+ */
+const MCP_ARGUMENTS_MAX_CHARS = 4_000;
+
+function boundedMcpArguments(value: unknown): unknown {
+  if (value === undefined || value === null) return undefined;
+  try {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined || encoded.length > MCP_ARGUMENTS_MAX_CHARS) {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return value;
+}
+
+/**
  * MCP tool calls carry full tool results (`data.item.result` on Codex,
  * `data.result` on Claude) that used to bypass slimming entirely to
  * keep the expanded-row UI working. Keep the fields the UI actually renders
@@ -291,7 +311,7 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
     const projectedItem: Record<string, unknown> = {};
     for (const key of MCP_ITEM_KEPT_FIELDS) {
       if (key in item) {
-        projectedItem[key] = item[key];
+        projectedItem[key] = key === "arguments" ? boundedMcpArguments(item[key]) : item[key];
       }
     }
     const result = summarizeMcpResult(item.result);
@@ -303,6 +323,14 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
 
   if ("toolName" in data) {
     projectedData.toolName = data.toolName;
+  }
+  // Claude reports MCP arguments as `input` where Codex nests them in
+  // `item.arguments`. Normalize to `arguments` so clients read one field.
+  if (!item && "input" in data) {
+    const argumentsValue = boundedMcpArguments(data.input);
+    if (argumentsValue !== undefined) {
+      projectedData.arguments = argumentsValue;
+    }
   }
   if (!item) {
     const result = summarizeMcpResult(data.result);

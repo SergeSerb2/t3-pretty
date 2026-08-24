@@ -78,6 +78,8 @@ function workRowSymbolName(icon: ThreadFeedActivity["icon"]): AppSymbolName {
       return { ios: "bubble.left", android: "chat_bubble" };
     case "package":
       return { ios: "shippingbox", android: "inventory_2" };
+    case "pointer":
+      return { ios: "cursorarrow.click", android: "touch_app" };
     case "warning":
       return { ios: "xmark", android: "close" };
     case "wrench":
