@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260823.1170000859",
+    date: "2026-08-24",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop open PR menus from trapping navigation",
+      },
+      {
+        kind: "new",
+        title: "clear settled button and auto-archive of settled threads",
+      },
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260823.1170000853",
     date: "2026-08-24",
     items: [
