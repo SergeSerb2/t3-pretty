@@ -3316,13 +3316,14 @@ describe("PreviewManager", () => {
         yield* manager.registerWebview("tab_input", 42);
         yield* manager.automationType("tab_input", { text: "hello", clear: true });
         yield* manager.automationType("tab_input", { text: "", clear: true });
-        expect(pointerPhases).toEqual(["type", "type"]);
+        yield* manager.automationType("tab_input", { text: "world" });
+        expect(pointerPhases).toEqual(["type", "type", "type"]);
         expect(focus).not.toHaveBeenCalled();
         expect(sendCommand.mock.calls.map(([method]) => method)).not.toContain("Page.bringToFront");
 
         const commandCountBeforePress = sendCommand.mock.calls.length;
         yield* manager.automationPress("tab_input", { key: "x" });
-        expect(pointerPhases).toEqual(["type", "type", "press"]);
+        expect(pointerPhases).toEqual(["type", "type", "type", "press"]);
 
         const calls = sendCommand.mock.calls;
         const methods = calls.map(([method]) => method);

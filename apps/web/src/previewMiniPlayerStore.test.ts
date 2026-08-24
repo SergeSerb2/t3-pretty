@@ -62,7 +62,7 @@ describe("previewMiniPlayerStore", () => {
     ).toMatchObject({ tabId: "tab-b", size: { width: 480, height: 320 } });
   });
 
-  it("keeps dismissed tabs independently and only undismisses the tab being opened", () => {
+  it("keeps dismissed tabs independently and does not undismiss on open", () => {
     const store = usePreviewMiniPlayerStore.getState();
     store.open(refA, "tab-a");
     store.dismiss(refA, "tab-a");
@@ -84,11 +84,17 @@ describe("previewMiniPlayerStore", () => {
     usePreviewMiniPlayerStore.getState().open(refA, "tab-b");
 
     expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
-      [scopedThreadKey(refA)]: ["tab-a"],
+      [scopedThreadKey(refA)]: ["tab-a", "tab-b"],
     });
     expect(
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
     ).toMatchObject({ tabId: "tab-b" });
+
+    usePreviewMiniPlayerStore.getState().undismiss(refA, "tab-b");
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
+      [scopedThreadKey(refA)]: ["tab-a"],
+    });
   });
 
   it("undismisses a tab without opening its floating player", () => {

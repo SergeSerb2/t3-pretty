@@ -282,7 +282,9 @@ export function PreviewView({
       usePreviewMiniPlayerStore.getState().close(threadRef);
       return;
     }
-    usePreviewMiniPlayerStore.getState().open(threadRef, tabId);
+    const miniPlayers = usePreviewMiniPlayerStore.getState();
+    miniPlayers.undismiss(threadRef, tabId);
+    miniPlayers.open(threadRef, tabId);
     useRightPanelStore.getState().close(threadRef);
   }, [miniPlayer?.tabId, tabId, threadRef]);
 

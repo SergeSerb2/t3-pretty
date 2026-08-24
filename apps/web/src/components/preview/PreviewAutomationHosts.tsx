@@ -482,7 +482,9 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
               (await resolveBrowserDefaults()).autoShowFloatingPreview,
             );
             if (shouldPresentPreview) {
-              usePreviewMiniPlayerStore.getState().open(threadRef, activeTabId);
+              const miniPlayers = usePreviewMiniPlayerStore.getState();
+              miniPlayers.undismiss(threadRef, activeTabId);
+              miniPlayers.open(threadRef, activeTabId);
             }
             if (activeSnapshot && previewAutomationOpenNeedsOverlay(input, activeSnapshot)) {
               await waitForDesktopOverlay(

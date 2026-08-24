@@ -22,6 +22,7 @@ interface PreviewMiniPlayerStoreState {
   readonly byThreadKey: Record<string, PreviewMiniPlayerState>;
   /** Tabs whose floating player the user explicitly closed; automation must not reopen them. */
   readonly dismissedTabIdsByThreadKey: Record<string, readonly string[]>;
+  /** Show the player. Does not clear dismissal; explicit reopen paths call undismiss first. */
   readonly open: (ref: ScopedThreadRef, tabId: string) => void;
   readonly close: (ref: ScopedThreadRef) => void;
   readonly dismiss: (ref: ScopedThreadRef, tabId: string) => void;
@@ -52,20 +53,9 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((
   open: (ref, tabId) =>
     set((state) => {
       const threadKey = scopedThreadKey(ref);
-      const dismissedTabIdsByThreadKey = withoutDismissedTab(
-        state.dismissedTabIdsByThreadKey,
-        threadKey,
-        tabId,
-      );
       const current = state.byThreadKey[threadKey];
-      if (
-        current?.tabId === tabId &&
-        dismissedTabIdsByThreadKey === state.dismissedTabIdsByThreadKey
-      ) {
-        return state;
-      }
+      if (current?.tabId === tabId) return state;
       return {
-        dismissedTabIdsByThreadKey,
         byThreadKey: {
           ...state.byThreadKey,
           [threadKey]: {
