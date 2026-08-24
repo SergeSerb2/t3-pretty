@@ -1,13 +1,33 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
+import * as NodeFS from "node:fs";
+
 import { Menu, MenuCheckboxItem, MenuRadioGroup, MenuRadioItem } from "./menu";
 import menuSource from "./menu.tsx?raw";
+
+// ?raw on a .css module yields "" under the test pipeline (the CSS transform
+// wins), so the stylesheet is read straight from disk.
+const indexCss = NodeFS.readFileSync(new URL("../../index.css", import.meta.url), "utf8");
 
 describe("menu modal default", () => {
   it("does not inert the page while a dropdown is open", () => {
     expect(menuSource).toContain("modal = false");
     expect(menuSource).toContain("modal={modal}");
+  });
+});
+
+describe("menu flyout pointer events", () => {
+  // Base UI's hover traversal writes inline pointer-events: none on the parent
+  // popup while a flyout is open; without this override the whole menu goes
+  // dead and reads as stuck. The rule must stay scoped to [data-open] so
+  // closing popups keep their exit transition inert.
+  it("keeps the parent menu interactive while a flyout is open", () => {
+    expect(indexCss).toContain('[data-slot="menu-popup"][data-open]');
+    expect(indexCss).toContain('[data-slot="menu-sub-content"][data-open]');
+    expect(indexCss).toMatch(
+      /\[data-slot="menu-sub-content"\]\[data-open\]\s*\{\s*pointer-events:\s*auto\s*!important/,
+    );
   });
 });
 
