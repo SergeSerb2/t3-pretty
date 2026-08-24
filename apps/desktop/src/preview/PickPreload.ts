@@ -73,8 +73,8 @@ let idSequence = 0;
 let annotationTheme: DesktopPreviewAnnotationTheme | null = null;
 
 const truncate = (value: string, maxLength: number): string => value.slice(0, maxLength);
-const truncateNullable = (value: string | null, maxLength: number): string | null =>
-  value === null ? null : truncate(value, maxLength);
+const truncateNullable = (value: string | null | undefined, maxLength: number): string | null =>
+  value === null || value === undefined ? null : truncate(value, maxLength);
 
 const applyAnnotationTheme = (
   host: HTMLElement,
