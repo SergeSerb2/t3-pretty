@@ -1499,6 +1499,13 @@ function PullRequestsRouteView() {
       !pullRequestsSupported || rightPanelState.isOpen ? null : (
         <span aria-hidden className="w-7 shrink-0 sm:w-5" />
       ),
+    titlebarControls:
+      // While the panel is closed the strip lives inside the header: a no-drag
+      // descendant beats the header's desktop drag-region, where a floating
+      // sibling loses (app-region hit-testing ignores z-index). Open, it moves
+      // back out to the route container, which spans the panel too, so the
+      // toggle keeps one fixed top-right anchor and never jumps sideways.
+      pullRequestsSupported && !rightPanelState.isOpen ? openPanelControls : null,
     rightPanelOpen: rightPanelState.isOpen,
     listBody,
   };
@@ -1540,7 +1547,7 @@ function PullRequestsRouteView() {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="relative flex min-h-0 flex-1">
-        {pullRequestsSupported ? openPanelControls : null}
+        {pullRequestsSupported && rightPanelState.isOpen ? openPanelControls : null}
         <PullRequestsColumn {...columnProps} />
 
         {rightPanelState.isOpen && activePullRequestSurface && panelEnvironmentId !== null ? (
@@ -1761,6 +1768,7 @@ function PullRequestsColumn({
   searchInput,
   filtersMenu,
   rightPanelControl,
+  titlebarControls,
   rightPanelOpen,
   listBody,
 }: {
@@ -1777,6 +1785,7 @@ function PullRequestsColumn({
   searchInput: ReactNode;
   filtersMenu: ReactNode;
   rightPanelControl: ReactNode;
+  titlebarControls: ReactNode;
   rightPanelOpen: boolean;
   listBody: ReactNode;
 }) {
@@ -1841,13 +1850,19 @@ function PullRequestsColumn({
     // (scenery.css), and the content panel below frosts its own plate for readability.
     <div data-pull-requests-column className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
       {/* A closed right panel leaves this column full-width, so the shared header
-          reserves native window controls. While the panel is open, the column ends
-          at the panel and the absolute controls strip owns the top-right corner. */}
+          reserves native window controls and hosts the controls strip itself: on
+          desktop the header is a drag-region, and only a no-drag descendant wins
+          clicks from it - a floating sibling loses to app-region hit-testing no
+          matter its z-index. While the panel is open, the strip mounts back at
+          the route level, whose box spans the panel too, so the toggle keeps one
+          fixed top-right anchor. */}
       <WorkspacePageHeader
         data-pull-requests-header
         electron={isElectron}
         reserveNativeControls={!rightPanelOpen}
+        className="relative bg-background"
       >
+        {titlebarControls}
         {condensed ? (
           <WorkspaceBreadcrumb ariaLabel="Pull request scope">
             {/* The page name remains the foreground anchor in both states; the live filters are
