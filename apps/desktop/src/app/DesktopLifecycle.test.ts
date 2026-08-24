@@ -313,14 +313,26 @@ describe("DesktopLifecycle", () => {
           const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
           yield* lifecycle.register;
 
-          const event = { preventDefault: () => undefined } as Electron.Event;
-          appListeners.get("before-quit")?.(event);
+          let firstPrevented = false;
+          appListeners.get("before-quit")?.({
+            preventDefault: () => {
+              firstPrevented = true;
+            },
+          } as Electron.Event);
 
           yield* Deferred.await(shutdownRequested);
+          let secondPrevented = false;
+          appListeners.get("before-quit")?.({
+            preventDefault: () => {
+              secondPrevented = true;
+            },
+          } as Electron.Event);
           const eventsBeforeCleanup = [...events];
           yield* Deferred.succeed(allowShutdown, undefined);
           yield* Deferred.await(quitRequested);
 
+          assert.isTrue(firstPrevented);
+          assert.isFalse(secondPrevented);
           assert.deepEqual(eventsBeforeCleanup, ["flush", "destroy", "request"]);
           assert.deepEqual(events, ["flush", "destroy", "request", "quit"]);
         }),

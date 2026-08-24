@@ -29,6 +29,7 @@ import type {
   PreviewAutomationTypeInput,
   PreviewAutomationWaitForInput,
 } from "@t3tools/contracts";
+import { PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import { BrowserWindow, type Session, clipboard, nativeImage, shell, webContents } from "electron";
@@ -108,6 +109,10 @@ const MAX_EVALUATION_BYTES = 64_000;
 const MAX_VISIBLE_TEXT_LENGTH = 20_000;
 const MAX_INTERACTIVE_ELEMENTS = 200;
 const MAX_SCREENSHOT_WIDTH = 1280;
+const MAX_ACCESSIBILITY_TREE_DEPTH = 12;
+const MAX_ACCESSIBILITY_TREE_NODES = PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES;
+const MAX_ACCESSIBILITY_TREE_BYTES = 1_000_000;
+const MAX_ACCESSIBILITY_NODE_BYTES = 64_000;
 const RECORDING_FRAME_INTERVAL_MS = Math.ceil(1_000 / 12);
 const RECORDING_JPEG_QUALITY = 80;
 // Longest edge of a recording/PiP frame; bounds both screencast and fallback encodes.
@@ -157,6 +162,46 @@ const DEFAULT_ANNOTATION_THEME: DesktopPreviewAnnotationTheme = {
   fontSans: "system-ui, sans-serif",
   fontMono: "ui-monospace, monospace",
 };
+
+export function boundAccessibilityTree(
+  value: unknown,
+): PreviewAutomationSnapshot["accessibilityTree"] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return { nodes: [] };
+  const tree = value as Record<string, unknown>;
+  const nodes = tree["nodes"];
+  if (!Array.isArray(nodes)) return { nodes: [] };
+  const retainedNodes: Array<unknown> = [];
+  const candidateCount = Math.min(nodes.length, MAX_ACCESSIBILITY_TREE_NODES);
+  let retainedBytes = 0;
+  let truncatedNodeCount = nodes.length - candidateCount;
+  for (let index = 0; index < candidateCount; index += 1) {
+    let serialized: string | undefined;
+    try {
+      serialized = JSON.stringify(nodes[index]);
+    } catch {
+      truncatedNodeCount += 1;
+      continue;
+    }
+    if (serialized === undefined) {
+      truncatedNodeCount += 1;
+      continue;
+    }
+    const nodeBytes = Buffer.byteLength(serialized, "utf8");
+    if (nodeBytes > MAX_ACCESSIBILITY_NODE_BYTES) {
+      truncatedNodeCount += 1;
+      continue;
+    }
+    if (retainedBytes + nodeBytes > MAX_ACCESSIBILITY_TREE_BYTES) {
+      truncatedNodeCount += candidateCount - index;
+      break;
+    }
+    retainedBytes += nodeBytes;
+    retainedNodes.push(nodes[index]);
+  }
+  return truncatedNodeCount === 0
+    ? { nodes: retainedNodes }
+    : { nodes: retainedNodes, t3TruncatedNodeCount: truncatedNodeCount };
+}
 
 export const buildPreviewPictureInPictureDataUrl = (): string => {
   const html = `<!doctype html>
@@ -3343,7 +3388,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         // The disable must run even after human input bumps the control
         // epoch mid-snapshot, or the AX tree stays enabled for the session.
         send("Accessibility.enable").pipe(
-          Effect.andThen(send("Accessibility.getFullAXTree")),
+          Effect.andThen(
+            send("Accessibility.getFullAXTree", { depth: MAX_ACCESSIBILITY_TREE_DEPTH }),
+          ),
           Effect.ensuring(sendCleanup("Accessibility.disable").pipe(Effect.ignore)),
         ),
         attemptPromise(
@@ -3365,7 +3412,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       const browserDiagnostics = diagnostics.get(wc.id);
       return {
         ...page,
-        accessibilityTree: accessibility as PreviewAutomationSnapshot["accessibilityTree"],
+        accessibilityTree: boundAccessibilityTree(accessibility),
         consoleEntries: [...(browserDiagnostics?.consoleEntries ?? [])],
         networkEntries: [...(browserDiagnostics?.networkEntries ?? [])],
         actionTimeline: [...(timelines.get(tabId) ?? [])],

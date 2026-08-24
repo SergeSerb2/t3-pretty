@@ -1732,10 +1732,11 @@ audit snapshot rather than claiming that every item remains in the PR.
   per click.
 - Latch the first normal quit synchronously so repeated `before-quit` events do
   not start duplicate shutdown waiters, consume a failed shutdown promise while
-  still allowing Electron's fail-open quit, and skip dock activation after
-  shutdown has begun. Concurrent relaunch requests now atomically claim that
-  same quitting state inside their detached sequence, preventing duplicate
-  shutdown, relaunch, and exit calls.
+  still allowing Electron's fail-open quit, and let a repeated native quit act
+  as the force path if graceful cleanup never settles. Dock activation is
+  skipped after shutdown has begun. Concurrent relaunch requests now atomically
+  claim that same quitting state inside their detached sequence, preventing
+  duplicate shutdown, relaunch, and exit calls.
 - Retry backend child-log initialization after a transient filesystem failure
   by caching only successful writers; failed calls remain no-op for that call
   without disabling logging for the rest of the app session.

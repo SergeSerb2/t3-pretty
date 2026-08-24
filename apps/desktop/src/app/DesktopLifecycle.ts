@@ -129,8 +129,8 @@ function handleBeforeQuit(
     return;
   }
 
-  event.preventDefault();
   if (!beginNormalQuit()) return;
+  event.preventDefault();
   const finishNormalQuit = () => {
     markQuitAllowed();
     void runEffect(
