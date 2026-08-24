@@ -46,7 +46,7 @@ function withoutDismissedTab(
   return { ...dismissedTabIdsByThreadKey, [threadKey]: remaining };
 }
 
-export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((set) => ({
+export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((set, get) => ({
   byThreadKey: {},
   dismissedTabIdsByThreadKey: {},
   open: (ref, tabId) =>
@@ -102,13 +102,10 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((
       if (dismissedTabIdsByThreadKey === state.dismissedTabIdsByThreadKey) return state;
       return { dismissedTabIdsByThreadKey };
     }),
-  close: (ref) =>
-    set((state) => {
-      const threadKey = scopedThreadKey(ref);
-      if (!(threadKey in state.byThreadKey)) return state;
-      const { [threadKey]: _closed, ...byThreadKey } = state.byThreadKey;
-      return { byThreadKey };
-    }),
+  close: (ref) => {
+    const current = get().byThreadKey[scopedThreadKey(ref)];
+    if (current) get().dismiss(ref, current.tabId);
+  },
   move: (ref, tabId, position) =>
     set((state) => {
       const threadKey = scopedThreadKey(ref);

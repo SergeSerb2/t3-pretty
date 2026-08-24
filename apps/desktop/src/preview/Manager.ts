@@ -3660,7 +3660,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     send: SendCommand,
     sendCleanup: SendCommand,
   ) {
-    yield* prepareAutomationInput(send, true);
+    yield* prepareAutomationInput(send, false);
     const focusedPoint = yield* evaluateWithDebugger<{
       readonly x?: number;
       readonly y?: number;

@@ -3320,11 +3320,13 @@ describe("PreviewManager", () => {
         expect(focus).not.toHaveBeenCalled();
         expect(sendCommand.mock.calls.map(([method]) => method)).not.toContain("Page.bringToFront");
 
+        const commandCountBeforePress = sendCommand.mock.calls.length;
         yield* manager.automationPress("tab_input", { key: "x" });
         expect(pointerPhases).toEqual(["type", "type", "press"]);
 
         const calls = sendCommand.mock.calls;
         const methods = calls.map(([method]) => method);
+        const pressMethods = methods.slice(commandCountBeforePress);
         const enableIndex = methods.indexOf("Input.setIgnoreInputEvents");
         const focusOnIndex = calls.findIndex(
           ([method, params]) =>
@@ -3363,6 +3365,7 @@ describe("PreviewManager", () => {
         );
         expect(clearOnlyEvaluation).toBeDefined();
         expect(methods).not.toContain("Input.insertText");
+        expect(pressMethods).not.toContain("Runtime.enable");
         expect(enableIndex).toBeGreaterThanOrEqual(0);
         expect(focus).toHaveBeenCalledOnce();
         expect(restoreFocus).toHaveBeenCalledOnce();
