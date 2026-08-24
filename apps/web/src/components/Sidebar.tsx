@@ -140,6 +140,7 @@ import {
   resolveAdjacentThreadId,
   isSettledThreadPastArchiveAge,
   reserveSettledArchiveAttempts,
+  reserveUndonePastArchiveAgeAttempts,
   retainSettledAutoArchiveAttempts,
   resolveSettledTimestamp,
   resolveSidebarThreadStatus,
@@ -2329,8 +2330,9 @@ export default function Sidebar() {
   // every minute while the projection still lists the thread. Keys that
   // leave the tail are dropped so an unarchive can be attempted again.
   // Failures are dropped so a transient error can retry on the next tick.
-  // Clear undo re-adds restored keys so auto-archive cannot immediately
-  // re-grab what the user just put back.
+  // Clear undo re-adds restored keys already past archive age so
+  // auto-archive cannot immediately re-grab them. Younger restored keys
+  // stay unreserved so they can still auto-archive once they age out.
   const autoArchiveAttemptedRef = useRef(new Set<string>());
   const clearSettledThreads = useCallback(async () => {
     const api = readLocalApi();
@@ -2348,7 +2350,7 @@ export default function Sidebar() {
       // first await so a minute sweep cannot archive the same rows mid-Clear.
       const candidates = clearableSettledThreads.map((thread) => {
         const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-        return { threadKey: scopedThreadKey(threadRef), threadRef };
+        return { threadKey: scopedThreadKey(threadRef), threadRef, thread };
       });
       const reservedKeys = new Set(
         reserveSettledArchiveAttempts(
@@ -2368,18 +2370,19 @@ export default function Sidebar() {
           autoArchiveAttemptedRef.current.delete(entry.threadKey);
         }
       }
-      const archivedRefs = entries
-        .filter((entry) => archivedKeySet.has(entry.threadKey))
-        .map((entry) => entry.threadRef);
+      const archivedEntries = entries.filter((entry) => archivedKeySet.has(entry.threadKey));
+      const archivedRefs = archivedEntries.map((entry) => entry.threadRef);
       const undoAction =
         archivedRefs.length > 0
           ? {
               children: "Undo",
               onClick: () => {
                 void (async () => {
-                  for (const threadRef of archivedRefs) {
-                    autoArchiveAttemptedRef.current.add(scopedThreadKey(threadRef));
-                  }
+                  reserveUndonePastArchiveAgeAttempts(
+                    autoArchiveAttemptedRef.current,
+                    archivedEntries,
+                    { nowMs: Date.now(), afterDays: autoArchiveSettledAfterDays },
+                  );
                   const restored = await unarchiveSelectedThreadEntries({
                     entries: archivedRefs,
                     unarchive: unarchiveThread,
@@ -2444,7 +2447,13 @@ export default function Sidebar() {
     } finally {
       setClearingSettled(false);
     }
-  }, [archiveSettledQuietly, clearableSettledThreads, clearingSettled, unarchiveThread]);
+  }, [
+    archiveSettledQuietly,
+    autoArchiveSettledAfterDays,
+    clearableSettledThreads,
+    clearingSettled,
+    unarchiveThread,
+  ]);
 
   // Auto-archive: settled threads past the configured age leave the sidebar
   // on their own. Candidates come from the scoped partition on the minute

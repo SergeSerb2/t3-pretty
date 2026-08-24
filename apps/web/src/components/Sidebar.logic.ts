@@ -711,6 +711,23 @@ export function reserveSettledArchiveAttempts(
   return reserved;
 }
 
+/** After Clear undo, re-reserve only restored keys already past archive
+    age so a minute sweep cannot immediately reverse the undo. Younger
+    restored keys stay unreserved so they can still auto-archive later. */
+export function reserveUndonePastArchiveAgeAttempts(
+  attemptedKeys: Set<string>,
+  restored: readonly { threadKey: string; thread: SettledTimestampInput }[],
+  input: { nowMs: number; afterDays: number | null },
+): void {
+  if (input.afterDays === null) return;
+  const afterDays = input.afterDays;
+  for (const entry of restored) {
+    if (isSettledThreadPastArchiveAge(entry.thread, { nowMs: input.nowMs, afterDays })) {
+      attemptedKeys.add(entry.threadKey);
+    }
+  }
+}
+
 // Settled rows are history, so they order by when the work ENDED, not when
 // the thread was created or last touched.
 export function sortSettledThreadsForSidebar<

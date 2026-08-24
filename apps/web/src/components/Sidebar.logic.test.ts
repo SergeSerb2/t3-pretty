@@ -25,6 +25,7 @@ import {
   resolveSidebarThreadStatus,
   isSettledThreadPastArchiveAge,
   reserveSettledArchiveAttempts,
+  reserveUndonePastArchiveAgeAttempts,
   retainSettledAutoArchiveAttempts,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
@@ -1210,6 +1211,39 @@ describe("reserveSettledArchiveAttempts", () => {
       "also-free",
     ]);
     expect(attempted).toEqual(new Set(["busy", "free", "also-free"]));
+  });
+});
+
+describe("reserveUndonePastArchiveAgeAttempts", () => {
+  const nowMs = Date.parse("2026-03-30T12:00:00.000Z");
+  const thread = (settledAt: string) => ({
+    settledAt,
+    latestUserMessageAt: null,
+    latestTurn: null,
+    updatedAt: "",
+  });
+
+  it("reserves only restored keys already past archive age", () => {
+    const attempted = new Set<string>();
+    reserveUndonePastArchiveAgeAttempts(
+      attempted,
+      [
+        { threadKey: "old", thread: thread("2026-02-01T00:00:00.000Z") },
+        { threadKey: "young", thread: thread("2026-03-15T00:00:00.000Z") },
+      ],
+      { nowMs, afterDays: 30 },
+    );
+    expect(attempted).toEqual(new Set(["old"]));
+  });
+
+  it("reserves nothing when auto-archive is off", () => {
+    const attempted = new Set<string>();
+    reserveUndonePastArchiveAgeAttempts(
+      attempted,
+      [{ threadKey: "old", thread: thread("2026-02-01T00:00:00.000Z") }],
+      { nowMs, afterDays: null },
+    );
+    expect(attempted).toEqual(new Set());
   });
 });
 
