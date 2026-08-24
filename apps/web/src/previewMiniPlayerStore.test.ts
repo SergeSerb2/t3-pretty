@@ -90,4 +90,16 @@ describe("previewMiniPlayerStore", () => {
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
     ).toMatchObject({ tabId: "tab-b" });
   });
+
+  it("undismisses a tab without opening its floating player", () => {
+    const store = usePreviewMiniPlayerStore.getState();
+    store.open(refA, "tab-a");
+    store.dismiss(refA, "tab-a");
+    store.undismiss(refA, "tab-a");
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({});
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toBeNull();
+  });
 });

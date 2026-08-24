@@ -25,6 +25,7 @@ interface PreviewMiniPlayerStoreState {
   readonly open: (ref: ScopedThreadRef, tabId: string) => void;
   readonly close: (ref: ScopedThreadRef) => void;
   readonly dismiss: (ref: ScopedThreadRef, tabId: string) => void;
+  readonly undismiss: (ref: ScopedThreadRef, tabId: string) => void;
   readonly move: (ref: ScopedThreadRef, tabId: string, position: PreviewMiniPlayerPosition) => void;
   readonly resize: (ref: ScopedThreadRef, tabId: string, size: PreviewMiniPlayerSize) => void;
   readonly removeThread: (ref: ScopedThreadRef) => void;
@@ -89,6 +90,17 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((
           ? state.dismissedTabIdsByThreadKey
           : { ...state.dismissedTabIdsByThreadKey, [threadKey]: [...dismissed, tabId] },
       };
+    }),
+  undismiss: (ref, tabId) =>
+    set((state) => {
+      const threadKey = scopedThreadKey(ref);
+      const dismissedTabIdsByThreadKey = withoutDismissedTab(
+        state.dismissedTabIdsByThreadKey,
+        threadKey,
+        tabId,
+      );
+      if (dismissedTabIdsByThreadKey === state.dismissedTabIdsByThreadKey) return state;
+      return { dismissedTabIdsByThreadKey };
     }),
   close: (ref) =>
     set((state) => {

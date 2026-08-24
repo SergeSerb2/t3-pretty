@@ -19,7 +19,7 @@ and resizable, and while the agent is in control it shows a blue glow ring.
 ## The agent cursor
 
 A blue cursor shows where the agent is working. It glides to each target,
-ripples on clicks, and labels what it's doing (Click, Type, Scroll). When
+ripples on clicks, and labels what it's doing (Click, Type, Press, Scroll). When
 you take over the tab yourself, the cursor fades until the agent acts again.
 
 ## Browser actions in chat

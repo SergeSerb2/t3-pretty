@@ -3256,8 +3256,11 @@ describe("PreviewManager", () => {
           }
           if (method === "Runtime.evaluate") {
             const expression = typeof params?.expression === "string" ? params.expression : "";
-            if (expression.includes("document.documentElement")) {
-              return { result: { value: { x: 40, y: 60 } } };
+            if (
+              expression.includes("document.documentElement") ||
+              expression.includes("getBoundingClientRect")
+            ) {
+              return { result: { value: { ok: true, x: 40, y: 60 } } };
             }
             return { result: { value: { ok: true } } };
           }
@@ -3313,8 +3316,12 @@ describe("PreviewManager", () => {
         yield* manager.registerWebview("tab_input", 42);
         yield* manager.automationType("tab_input", { text: "hello", clear: true });
         yield* manager.automationType("tab_input", { text: "", clear: true });
+        expect(pointerPhases).toEqual(["type", "type"]);
+        expect(focus).not.toHaveBeenCalled();
+        expect(sendCommand.mock.calls.map(([method]) => method)).not.toContain("Page.bringToFront");
+
         yield* manager.automationPress("tab_input", { key: "x" });
-        expect(pointerPhases).toContain("press");
+        expect(pointerPhases).toEqual(["type", "type", "press"]);
 
         const calls = sendCommand.mock.calls;
         const methods = calls.map(([method]) => method);
