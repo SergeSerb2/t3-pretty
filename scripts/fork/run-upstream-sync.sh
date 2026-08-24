@@ -262,8 +262,19 @@ resolve_current_merge() {
   # manifests so the committed lockfile actually installs (the runner
   # sets CI=true, which would force a frozen lockfile, so opt out).
   if [[ "$lockfile_conflicted" == "true" ]]; then
-    corepack enable
-    corepack pnpm install --lockfile-only --no-frozen-lockfile
+    # Homebrew's node no longer ships corepack, and a bare `corepack enable`
+    # exited 127 on every scheduled sync. Prefer the pinned pnpm that vite-plus
+    # already manages on macos-release, then corepack, then a one-off pnpm.
+    pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+    managed_pnpm="${HOME}/.vite-plus/package_manager/pnpm/${pnpm_version}/pnpm/bin"
+    if [[ -x "${managed_pnpm}/pnpm" ]]; then
+      PATH="${managed_pnpm}:${PATH}" pnpm install --lockfile-only --no-frozen-lockfile
+    elif command -v corepack >/dev/null; then
+      corepack enable
+      corepack pnpm install --lockfile-only --no-frozen-lockfile
+    else
+      npx --yes "pnpm@${pnpm_version}" install --lockfile-only --no-frozen-lockfile
+    fi
     git add pnpm-lock.yaml
   fi
 
