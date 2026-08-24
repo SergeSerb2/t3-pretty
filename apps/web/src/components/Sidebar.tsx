@@ -2334,10 +2334,26 @@ export default function Sidebar() {
   // auto-archive cannot immediately re-grab them. Younger restored keys
   // stay unreserved so they can still auto-archive once they age out.
   const autoArchiveAttemptedRef = useRef(new Set<string>());
+  const autoArchiveWindowRef = useRef(autoArchiveSettledAfterDays);
   const clearSettledThreads = useCallback(async () => {
     const api = readLocalApi();
     if (!api || clearableSettledThreads.length === 0 || clearingSettled) return;
-    const count = clearableSettledThreads.length;
+    const alreadyArchivingSettledToast = stackedThreadToast({
+      type: "error",
+      title: "Those settled threads are already being archived",
+    });
+    const candidates = clearableSettledThreads.map((thread) => {
+      const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+      return { threadKey: scopedThreadKey(threadRef), threadRef, thread };
+    });
+    const available = candidates.filter(
+      (entry) => !autoArchiveAttemptedRef.current.has(entry.threadKey),
+    );
+    if (available.length === 0) {
+      toastManager.add(alreadyArchivingSettledToast);
+      return;
+    }
+    const count = available.length;
     const confirmed = await settlePromise(() =>
       api.dialogs.confirm(
         `Archive ${count === 1 ? "1 settled thread" : `all ${count} settled threads`}?`,
@@ -2348,18 +2364,17 @@ export default function Sidebar() {
     try {
       // Skip keys auto-archive already claimed, then mark the rest before the
       // first await so a minute sweep cannot archive the same rows mid-Clear.
-      const candidates = clearableSettledThreads.map((thread) => {
-        const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-        return { threadKey: scopedThreadKey(threadRef), threadRef, thread };
-      });
       const reservedKeys = new Set(
         reserveSettledArchiveAttempts(
           autoArchiveAttemptedRef.current,
-          candidates.map((entry) => entry.threadKey),
+          available.map((entry) => entry.threadKey),
         ),
       );
-      const entries = candidates.filter((entry) => reservedKeys.has(entry.threadKey));
-      if (entries.length === 0) return;
+      const entries = available.filter((entry) => reservedKeys.has(entry.threadKey));
+      if (entries.length === 0) {
+        toastManager.add(alreadyArchivingSettledToast);
+        return;
+      }
       const outcome = await archiveSelectedThreadEntries({
         entries,
         archive: (entry, onArchived) => archiveSettledQuietly(entry.threadRef, onArchived),
@@ -2460,6 +2475,10 @@ export default function Sidebar() {
   // clock; a scoped-out project's tail sweeps next time it is in view.
   // One archive at a time so a long tail cannot open a mutation per row.
   useEffect(() => {
+    if (autoArchiveWindowRef.current !== autoArchiveSettledAfterDays) {
+      autoArchiveAttemptedRef.current = new Set();
+      autoArchiveWindowRef.current = autoArchiveSettledAfterDays;
+    }
     if (autoArchiveSettledAfterDays === null) return;
     // Clear already reserved its rows; a concurrent sweep would double-archive.
     if (clearingSettled) return;
