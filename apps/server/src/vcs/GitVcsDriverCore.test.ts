@@ -546,6 +546,31 @@ it.effect("prunes a worktree entry whose directory is gone so git releases its b
   }).pipe(Effect.provide(TestLayer)),
 );
 
+it.effect("prunes a gone worktree before adding another checkout of the same branch", () =>
+  Effect.gen(function* () {
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const pathService = yield* Path.Path;
+    const cwd = yield* makeTmpDir();
+    const gonePath = pathService.join(yield* makeTmpDir("git-vcs-driver-worktree-"), "gone");
+    const nextPath = pathService.join(yield* makeTmpDir("git-vcs-driver-worktree-"), "next");
+    yield* initRepoWithCommit(cwd);
+    yield* git(cwd, ["worktree", "add", "-b", "feature/gone", gonePath]);
+    yield* fileSystem.remove(gonePath, { recursive: true });
+
+    // No listRefs first: new-thread / Fix in another thread can hit this write cold.
+    const created = yield* driver.createWorktree({
+      cwd,
+      path: nextPath,
+      refName: "feature/gone",
+    });
+
+    assert.equal(created.worktree.path, nextPath);
+    assert.equal(created.worktree.refName, "feature/gone");
+    assert.equal(yield* git(nextPath, ["branch", "--show-current"]), "feature/gone");
+  }).pipe(Effect.provide(TestLayer)),
+);
+
 it.effect("refreshes the current branch after an external checkout", () =>
   Effect.scoped(
     Effect.gen(function* () {
