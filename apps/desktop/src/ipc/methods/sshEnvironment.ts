@@ -26,6 +26,7 @@ import {
   AuthSessionState,
   AuthWebSocketTicketResult,
 } from "@t3tools/contracts";
+import { SSH_DISCOVERED_HOST_MAX_COUNT } from "@t3tools/ssh/config";
 import { SshHttpBridgeError } from "@t3tools/ssh/errors";
 import { resolveLoopbackSshHttpBaseUrl } from "@t3tools/ssh/tunnel";
 import * as Data from "effect/Data";
@@ -110,10 +111,13 @@ const withLoopbackSshApi =
 export const discoverSshHosts = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.DISCOVER_SSH_HOSTS_CHANNEL,
   payload: Schema.Void,
-  result: Schema.Array(DesktopDiscoveredSshHostSchema).check(Schema.isMaxLength(4_096)),
+  result: Schema.Array(DesktopDiscoveredSshHostSchema).check(
+    Schema.isMaxLength(SSH_DISCOVERED_HOST_MAX_COUNT),
+  ),
   handler: Effect.fn("desktop.ipc.sshEnvironment.discoverHosts")(function* () {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
-    return yield* sshEnvironment.discoverHosts();
+    const hosts = yield* sshEnvironment.discoverHosts();
+    return hosts.slice(0, SSH_DISCOVERED_HOST_MAX_COUNT);
   }),
 });
 

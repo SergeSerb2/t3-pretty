@@ -8,6 +8,7 @@ import {
   discoverSshHosts,
   parseKnownHostsHostnames,
   resolveSshConfigIncludePattern,
+  SSH_DISCOVERED_HOST_MAX_COUNT,
 } from "./config.ts";
 
 function makeTempHomeDir() {
@@ -133,7 +134,7 @@ describe("ssh config", () => {
     entries.unshift(`${"a".repeat(1_025)} ssh-ed25519 AAAA`);
 
     const hosts = parseKnownHostsHostnames(entries.join("\n"));
-    assert.equal(hosts.length, 4_096);
+    assert.equal(hosts.length, SSH_DISCOVERED_HOST_MAX_COUNT);
     assert.notInclude(hosts, "a".repeat(1_025));
   });
 
