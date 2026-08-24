@@ -1249,6 +1249,45 @@ describe("deriveWorkLogEntries", () => {
     });
   });
 
+  it("upgrades a title-only browser label when arguments arrive later", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "click-title",
+        kind: "tool.updated",
+        summary: "preview_click",
+        payload: {
+          itemType: "dynamic_tool_call",
+          toolCallId: "call-click",
+          title: "preview_click",
+        },
+      }),
+      makeActivity({
+        id: "click-args",
+        kind: "tool.updated",
+        summary: "t3-code · preview_click",
+        payload: {
+          itemType: "mcp_tool_call",
+          toolCallId: "call-click",
+          title: "t3-code · preview_click",
+          data: {
+            item: {
+              type: "mcpToolCall",
+              server: "t3-code",
+              tool: "preview_click",
+              arguments: { locator: "role=button[name='Send']" },
+            },
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry?.previewAutomation).toEqual({
+      operation: "click",
+      label: "Clicked “Send”",
+    });
+  });
+
   it("collapses interleaved lifecycle updates by tool call id", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

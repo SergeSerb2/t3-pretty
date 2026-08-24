@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { humanizePreviewTarget, summarizePreviewAutomationCall } from "./previewAutomationCalls.ts";
+import {
+  humanizePreviewTarget,
+  mergePreviewAutomationCallSummaries,
+  summarizePreviewAutomationCall,
+} from "./previewAutomationCalls.ts";
 
 describe("summarizePreviewAutomationCall", () => {
   it("labels Codex-shaped item calls", () => {
@@ -66,6 +70,21 @@ describe("summarizePreviewAutomationCall", () => {
     expect(call("preview_set_appearance", { colorScheme: "dark" })).toBe(
       "Switched the page to dark mode",
     );
+  });
+});
+
+describe("mergePreviewAutomationCallSummaries", () => {
+  const generic = { operation: "click" as const, label: "Clicked in the browser" };
+  const specific = { operation: "click" as const, label: "Clicked “Send”" };
+
+  it("keeps a specific summary across either update order", () => {
+    expect(mergePreviewAutomationCallSummaries(generic, specific)).toEqual(specific);
+    expect(mergePreviewAutomationCallSummaries(specific, generic)).toEqual(specific);
+  });
+
+  it("takes the only present summary", () => {
+    expect(mergePreviewAutomationCallSummaries(undefined, specific)).toEqual(specific);
+    expect(mergePreviewAutomationCallSummaries(specific, undefined)).toEqual(specific);
   });
 });
 

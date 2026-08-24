@@ -1,6 +1,7 @@
 import * as Option from "effect/Option";
 import * as Arr from "effect/Array";
 import {
+  mergePreviewAutomationCallSummaries,
   summarizePreviewAutomationCall,
   type PreviewAutomationCallSummary,
 } from "@t3tools/client-runtime/preview-automation-calls";
@@ -1231,7 +1232,10 @@ function mergeDerivedWorkLogEntries(
   const toolCallId = next.toolCallId ?? previous.toolCallId;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
-  const previewAutomation = previous.previewAutomation ?? next.previewAutomation;
+  const previewAutomation = mergePreviewAutomationCallSummaries(
+    previous.previewAutomation,
+    next.previewAutomation,
+  );
   return {
     ...previous,
     ...next,

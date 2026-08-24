@@ -191,3 +191,25 @@ export function summarizePreviewAutomationCall(input: {
   const args = asRecord(item?.arguments) ?? asRecord(data?.arguments) ?? {};
   return { operation, label: labelForCall(operation, args) };
 }
+
+function isGenericPreviewAutomationLabel(summary: PreviewAutomationCallSummary): boolean {
+  return summary.label === labelForCall(summary.operation, {});
+}
+
+/**
+ * Lifecycle rows for one tool call may be title-only first (ACP) then
+ * argument-bearing, or arguments first then a completion that omits them.
+ * Keep the more specific human label across either order.
+ */
+export function mergePreviewAutomationCallSummaries(
+  previous: PreviewAutomationCallSummary | undefined,
+  next: PreviewAutomationCallSummary | undefined,
+): PreviewAutomationCallSummary | undefined {
+  if (!next) return previous;
+  if (!previous) return next;
+  if (previous.operation !== next.operation) return next;
+  if (isGenericPreviewAutomationLabel(next) && !isGenericPreviewAutomationLabel(previous)) {
+    return previous;
+  }
+  return next;
+}
