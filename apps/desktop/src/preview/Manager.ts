@@ -3660,7 +3660,31 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     send: SendCommand,
     sendCleanup: SendCommand,
   ) {
-    yield* prepareAutomationInput(send, false);
+    yield* prepareAutomationInput(send, true);
+    const focusedPoint = yield* evaluateWithDebugger<{
+      readonly x?: number;
+      readonly y?: number;
+    }>(
+      tabId,
+      send,
+      `(() => {
+        const element = document.activeElement;
+        const rect =
+          element && element !== document.body && element !== document.documentElement
+            ? element.getBoundingClientRect()
+            : null;
+        return {
+          x: rect
+            ? Math.min(Math.max(rect.left + rect.width / 2, 0), window.innerWidth)
+            : window.innerWidth / 2,
+          y: rect
+            ? Math.min(Math.max(rect.top + rect.height / 2, 0), window.innerHeight)
+            : window.innerHeight / 2,
+        };
+      })()`,
+      true,
+    ).pipe(Effect.orElseSucceed(() => ({})));
+    yield* emitAutomationPointer(tabId, "press", focusedPoint ?? {});
     const keySequence = makePreviewAutomationKeySequence(input, {
       isMac: hostPlatform === "darwin",
     });

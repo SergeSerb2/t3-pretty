@@ -3232,6 +3232,7 @@ describe("PreviewManager", () => {
       Effect.gen(function* () {
         let failKeyDown = false;
         let humanInput: ((_event: unknown, signal: unknown) => void) | undefined;
+        const pointerPhases: string[] = [];
         const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
           if (
             failKeyDown &&
@@ -3253,7 +3254,14 @@ describe("PreviewManager", () => {
               },
             );
           }
-          return method === "Runtime.evaluate" ? { result: { value: { ok: true } } } : undefined;
+          if (method === "Runtime.evaluate") {
+            const expression = typeof params?.expression === "string" ? params.expression : "";
+            if (expression.includes("document.documentElement")) {
+              return { result: { value: { x: 40, y: 60 } } };
+            }
+            return { result: { value: { ok: true } } };
+          }
+          return undefined;
         });
         const restoreFocus = vi.fn();
         const focus = vi.fn();
@@ -3296,11 +3304,17 @@ describe("PreviewManager", () => {
           },
         } as never);
 
+        yield* manager.subscribePointerEvents((event) =>
+          Effect.sync(() => {
+            pointerPhases.push(event.phase);
+          }),
+        );
         yield* manager.createTab("tab_input");
         yield* manager.registerWebview("tab_input", 42);
         yield* manager.automationType("tab_input", { text: "hello", clear: true });
         yield* manager.automationType("tab_input", { text: "", clear: true });
         yield* manager.automationPress("tab_input", { key: "x" });
+        expect(pointerPhases).toContain("press");
 
         const calls = sendCommand.mock.calls;
         const methods = calls.map(([method]) => method);

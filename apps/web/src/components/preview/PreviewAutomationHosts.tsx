@@ -103,7 +103,7 @@ async function maybePresentAutomationActivity(
     operation,
     autoShowFloatingPreview: (await resolveBrowserDefaults()).autoShowFloatingPreview,
     tabId,
-    dismissedTabId: miniPlayers.dismissedTabIdByThreadKey[threadKey] ?? null,
+    dismissedTabIds: miniPlayers.dismissedTabIdsByThreadKey[threadKey] ?? [],
     miniPlayerTabId: miniPlayers.byThreadKey[threadKey]?.tabId ?? null,
     panelPreviewTabId: panelSurface?.kind === "preview" ? (panelSurface.resourceId ?? null) : null,
   });

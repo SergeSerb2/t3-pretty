@@ -15,7 +15,7 @@ describe("shouldPresentAutomationActivity", () => {
     operation: "click",
     autoShowFloatingPreview: true,
     tabId: "tab-1",
-    dismissedTabId: null,
+    dismissedTabIds: [],
     miniPlayerTabId: null,
     panelPreviewTabId: null,
   } as const;
@@ -36,14 +36,14 @@ describe("shouldPresentAutomationActivity", () => {
     expect(shouldPresentAutomationActivity({ ...base, autoShowFloatingPreview: false })).toBe(
       false,
     );
-    expect(shouldPresentAutomationActivity({ ...base, dismissedTabId: "tab-1" })).toBe(false);
+    expect(shouldPresentAutomationActivity({ ...base, dismissedTabIds: ["tab-1"] })).toBe(false);
     expect(shouldPresentAutomationActivity({ ...base, miniPlayerTabId: "tab-1" })).toBe(false);
     expect(shouldPresentAutomationActivity({ ...base, panelPreviewTabId: "tab-1" })).toBe(false);
     // Another tab's dismissal or surface never blocks this tab.
     expect(
       shouldPresentAutomationActivity({
         ...base,
-        dismissedTabId: "tab-2",
+        dismissedTabIds: ["tab-2"],
         miniPlayerTabId: "tab-2",
         panelPreviewTabId: "tab-2",
       }),

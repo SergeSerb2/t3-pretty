@@ -23,6 +23,8 @@ export function agentCursorActionLabel(phase: DesktopPreviewPointerEvent["phase"
       return "Click";
     case "type":
       return "Type";
+    case "press":
+      return "Press";
     case "scroll":
       return "Scroll";
     case "move":

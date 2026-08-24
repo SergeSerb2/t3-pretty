@@ -1,4 +1,4 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { type EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
@@ -8,7 +8,7 @@ const refA = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-A"))
 const refB = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-B"));
 
 beforeEach(() => {
-  usePreviewMiniPlayerStore.setState({ byThreadKey: {} });
+  usePreviewMiniPlayerStore.setState({ byThreadKey: {}, dismissedTabIdsByThreadKey: {} });
 });
 
 describe("previewMiniPlayerStore", () => {
@@ -60,5 +60,34 @@ describe("previewMiniPlayerStore", () => {
     expect(
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
     ).toMatchObject({ tabId: "tab-b", size: { width: 480, height: 320 } });
+  });
+
+  it("keeps dismissed tabs independently and only undismisses the tab being opened", () => {
+    const store = usePreviewMiniPlayerStore.getState();
+    store.open(refA, "tab-a");
+    store.dismiss(refA, "tab-a");
+    store.open(refA, "tab-b");
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
+      [scopedThreadKey(refA)]: ["tab-a"],
+    });
+
+    usePreviewMiniPlayerStore.getState().dismiss(refA, "tab-b");
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
+      [scopedThreadKey(refA)]: ["tab-a", "tab-b"],
+    });
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toBeNull();
+
+    usePreviewMiniPlayerStore.getState().open(refA, "tab-b");
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
+      [scopedThreadKey(refA)]: ["tab-a"],
+    });
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toMatchObject({ tabId: "tab-b" });
   });
 });

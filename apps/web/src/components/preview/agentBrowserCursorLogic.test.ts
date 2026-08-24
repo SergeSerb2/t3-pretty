@@ -28,6 +28,7 @@ describe("agentCursorActionLabel", () => {
   it("labels action phases and stays silent on moves", () => {
     expect(agentCursorActionLabel("click")).toBe("Click");
     expect(agentCursorActionLabel("type")).toBe("Type");
+    expect(agentCursorActionLabel("press")).toBe("Press");
     expect(agentCursorActionLabel("scroll")).toBe("Scroll");
     expect(agentCursorActionLabel("move")).toBeNull();
   });

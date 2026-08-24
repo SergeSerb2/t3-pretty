@@ -21,7 +21,7 @@ export interface PreviewMiniPlayerState {
 interface PreviewMiniPlayerStoreState {
   readonly byThreadKey: Record<string, PreviewMiniPlayerState>;
   /** Tabs whose floating player the user explicitly closed; automation must not reopen them. */
-  readonly dismissedTabIdByThreadKey: Record<string, string>;
+  readonly dismissedTabIdsByThreadKey: Record<string, readonly string[]>;
   readonly open: (ref: ScopedThreadRef, tabId: string) => void;
   readonly close: (ref: ScopedThreadRef) => void;
   readonly dismiss: (ref: ScopedThreadRef, tabId: string) => void;
@@ -30,20 +30,41 @@ interface PreviewMiniPlayerStoreState {
   readonly removeThread: (ref: ScopedThreadRef) => void;
 }
 
+function withoutDismissedTab(
+  dismissedTabIdsByThreadKey: Record<string, readonly string[]>,
+  threadKey: string,
+  tabId: string,
+): Record<string, readonly string[]> {
+  const dismissed = dismissedTabIdsByThreadKey[threadKey];
+  if (!dismissed?.includes(tabId)) return dismissedTabIdsByThreadKey;
+  const remaining = dismissed.filter((id) => id !== tabId);
+  if (remaining.length === 0) {
+    const { [threadKey]: _cleared, ...rest } = dismissedTabIdsByThreadKey;
+    return rest;
+  }
+  return { ...dismissedTabIdsByThreadKey, [threadKey]: remaining };
+}
+
 export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((set) => ({
   byThreadKey: {},
-  dismissedTabIdByThreadKey: {},
+  dismissedTabIdsByThreadKey: {},
   open: (ref, tabId) =>
     set((state) => {
       const threadKey = scopedThreadKey(ref);
-      const { [threadKey]: _cleared, ...dismissedTabIdByThreadKey } =
-        state.dismissedTabIdByThreadKey;
+      const dismissedTabIdsByThreadKey = withoutDismissedTab(
+        state.dismissedTabIdsByThreadKey,
+        threadKey,
+        tabId,
+      );
       const current = state.byThreadKey[threadKey];
-      if (current?.tabId === tabId && !(threadKey in state.dismissedTabIdByThreadKey)) {
+      if (
+        current?.tabId === tabId &&
+        dismissedTabIdsByThreadKey === state.dismissedTabIdsByThreadKey
+      ) {
         return state;
       }
       return {
-        dismissedTabIdByThreadKey,
+        dismissedTabIdsByThreadKey,
         byThreadKey: {
           ...state.byThreadKey,
           [threadKey]: {
@@ -57,10 +78,16 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((
   dismiss: (ref, tabId) =>
     set((state) => {
       const threadKey = scopedThreadKey(ref);
-      const { [threadKey]: _closed, ...byThreadKey } = state.byThreadKey;
+      const current = state.byThreadKey[threadKey];
+      const dismissed = state.dismissedTabIdsByThreadKey[threadKey] ?? [];
+      const alreadyDismissed = dismissed.includes(tabId);
+      if (alreadyDismissed && current?.tabId !== tabId) return state;
+      const { [threadKey]: _closed, ...restByThreadKey } = state.byThreadKey;
       return {
-        byThreadKey,
-        dismissedTabIdByThreadKey: { ...state.dismissedTabIdByThreadKey, [threadKey]: tabId },
+        byThreadKey: current?.tabId === tabId ? restByThreadKey : state.byThreadKey,
+        dismissedTabIdsByThreadKey: alreadyDismissed
+          ? state.dismissedTabIdsByThreadKey
+          : { ...state.dismissedTabIdsByThreadKey, [threadKey]: [...dismissed, tabId] },
       };
     }),
   close: (ref) =>
@@ -99,13 +126,13 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((
   removeThread: (ref) =>
     set((state) => {
       const threadKey = scopedThreadKey(ref);
-      if (!(threadKey in state.byThreadKey) && !(threadKey in state.dismissedTabIdByThreadKey)) {
+      if (!(threadKey in state.byThreadKey) && !(threadKey in state.dismissedTabIdsByThreadKey)) {
         return state;
       }
       const { [threadKey]: _removed, ...byThreadKey } = state.byThreadKey;
-      const { [threadKey]: _dismissed, ...dismissedTabIdByThreadKey } =
-        state.dismissedTabIdByThreadKey;
-      return { byThreadKey, dismissedTabIdByThreadKey };
+      const { [threadKey]: _dismissed, ...dismissedTabIdsByThreadKey } =
+        state.dismissedTabIdsByThreadKey;
+      return { byThreadKey, dismissedTabIdsByThreadKey };
     }),
 }));
 

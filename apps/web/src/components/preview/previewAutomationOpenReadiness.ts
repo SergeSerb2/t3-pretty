@@ -46,13 +46,13 @@ export function shouldPresentAutomationActivity(input: {
   readonly operation: string;
   readonly autoShowFloatingPreview: boolean;
   readonly tabId: string;
-  readonly dismissedTabId: string | null;
+  readonly dismissedTabIds: readonly string[];
   readonly miniPlayerTabId: string | null;
   readonly panelPreviewTabId: string | null;
 }): boolean {
   if (!AUTO_PRESENT_AUTOMATION_OPERATIONS.has(input.operation)) return false;
   if (!input.autoShowFloatingPreview) return false;
-  if (input.dismissedTabId === input.tabId) return false;
+  if (input.dismissedTabIds.includes(input.tabId)) return false;
   if (input.miniPlayerTabId === input.tabId) return false;
   if (input.panelPreviewTabId === input.tabId) return false;
   return true;
