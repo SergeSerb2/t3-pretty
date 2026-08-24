@@ -314,6 +314,7 @@ export const DESKTOP_IPC_CREDENTIAL_MAX_LENGTH = 64 * 1024;
 export const DESKTOP_CONNECTION_CATALOG_MAX_LENGTH = 4 * 1024 * 1024;
 export const DESKTOP_IPC_PATH_MAX_LENGTH = 32 * 1024;
 export const DESKTOP_SSH_ALIAS_MAX_LENGTH = 512;
+export const DESKTOP_WSL_DISTRO_NAME_MAX_LENGTH = 512;
 export const DESKTOP_SSH_DESTINATION_MAX_LENGTH = 1_024;
 export const DESKTOP_SSH_USERNAME_MAX_LENGTH = 512;
 export const DESKTOP_SSH_PROMPT_REQUEST_ID_MAX_LENGTH = 128;
@@ -332,6 +333,9 @@ export const DesktopConnectionCatalogSchema = Schema.String.check(
 );
 export const DesktopSshAliasSchema = Schema.String.check(
   Schema.isMaxLength(DESKTOP_SSH_ALIAS_MAX_LENGTH),
+);
+export const DesktopWslDistroNameSchema = Schema.String.check(
+  Schema.isMaxLength(DESKTOP_WSL_DISTRO_NAME_MAX_LENGTH),
 );
 const DesktopSshHostnameSchema = Schema.String.check(
   Schema.isMaxLength(DESKTOP_SSH_DESTINATION_MAX_LENGTH),
@@ -365,7 +369,7 @@ export interface DesktopEnvironmentBootstrap {
 export const DesktopEnvironmentBootstrapSchema = Schema.Struct({
   id: DesktopEnvironmentIdSchema,
   label: DesktopEnvironmentLabelSchema,
-  runningDistro: Schema.optionalKey(Schema.NullOr(DesktopSshAliasSchema)),
+  runningDistro: Schema.optionalKey(Schema.NullOr(DesktopWslDistroNameSchema)),
   httpBaseUrl: Schema.NullOr(DesktopUrlSchema),
   wsBaseUrl: Schema.NullOr(DesktopUrlSchema),
   bootstrapToken: Schema.optionalKey(DesktopCredentialSchema),
@@ -546,7 +550,7 @@ export interface DesktopWslDistro {
 }
 
 export const DesktopWslDistroSchema = Schema.Struct({
-  name: DesktopSshAliasSchema,
+  name: DesktopWslDistroNameSchema,
   isDefault: Schema.Boolean,
   version: Schema.Literals([1, 2]),
 });
@@ -574,7 +578,7 @@ export interface DesktopWslState {
 
 export const DesktopWslStateSchema = Schema.Struct({
   enabled: Schema.Boolean,
-  distro: Schema.NullOr(DesktopSshAliasSchema),
+  distro: Schema.NullOr(DesktopWslDistroNameSchema),
   available: Schema.Boolean,
   wslOnly: Schema.Boolean,
   distros: Schema.Array(DesktopWslDistroSchema).check(Schema.isMaxLength(64)),

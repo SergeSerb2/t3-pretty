@@ -45,4 +45,32 @@ describe("DesktopConfig", () => {
       assert.deepEqual(config.desktopHttpsEndpointUrls, ["https://kept.example.test"]);
     }),
   );
+
+  it.effect("does not spend endpoint capacity on discarded segments", () =>
+    Effect.gen(function* () {
+      const configured = Array.from(
+        { length: DesktopConfig.DESKTOP_HTTPS_ENDPOINTS_MAX_ITEMS },
+        (_, index) => `https://endpoint-${index}.example.test`,
+      );
+      const config = yield* readConfig({
+        T3CODE_DESKTOP_HTTPS_ENDPOINTS: `${",".repeat(
+          DesktopConfig.DESKTOP_HTTPS_ENDPOINTS_MAX_ITEMS,
+        )}${configured.join(",")}`,
+      });
+
+      assert.deepEqual(config.desktopHttpsEndpointUrls, configured);
+    }),
+  );
+
+  it.effect("bounds discarded endpoint segment scanning", () =>
+    Effect.gen(function* () {
+      const config = yield* readConfig({
+        T3CODE_DESKTOP_HTTPS_ENDPOINTS: `${",".repeat(
+          DesktopConfig.DESKTOP_HTTPS_ENDPOINTS_MAX_SEGMENTS,
+        )}https://not-scanned.example.test`,
+      });
+
+      assert.deepEqual(config.desktopHttpsEndpointUrls, []);
+    }),
+  );
 });

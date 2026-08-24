@@ -1,5 +1,5 @@
 import {
-  DesktopSshAliasSchema,
+  DesktopWslDistroNameSchema,
   DesktopWslStateSchema,
   type DesktopWslState,
 } from "@t3tools/contracts";
@@ -84,7 +84,7 @@ export const setWslBackendEnabled = makeIpcMethod({
 
 export const setWslDistro = makeIpcMethod({
   channel: IpcChannels.SET_WSL_DISTRO_CHANNEL,
-  payload: Schema.NullOr(DesktopSshAliasSchema),
+  payload: Schema.NullOr(DesktopWslDistroNameSchema),
   result: DesktopWslStateSchema,
   handler: Effect.fn("desktop.ipc.wsl.setDistro")(function* (distro) {
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;

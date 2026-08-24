@@ -2,9 +2,11 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  DESKTOP_WSL_DISTRO_NAME_MAX_LENGTH,
   DesktopEnvironmentBootstrapSchema,
   DesktopSshEnvironmentTargetSchema,
   DesktopSshPasswordPromptResolutionInputSchema,
+  DesktopWslDistroNameSchema,
 } from "./ipc.ts";
 
 describe("DesktopEnvironmentBootstrapSchema", () => {
@@ -38,6 +40,15 @@ describe("DesktopEnvironmentBootstrapSchema", () => {
         wsBaseUrl: null,
       }).runningDistro,
     ).toBeNull();
+  });
+});
+
+describe("DesktopWslDistroNameSchema", () => {
+  const decode = Schema.decodeUnknownSync(DesktopWslDistroNameSchema);
+
+  it("preserves distro names independently of SSH alias semantics", () => {
+    expect(decode("Ubuntu 22.04 (LTS)")).toBe("Ubuntu 22.04 (LTS)");
+    expect(() => decode("x".repeat(DESKTOP_WSL_DISTRO_NAME_MAX_LENGTH + 1))).toThrow();
   });
 });
 

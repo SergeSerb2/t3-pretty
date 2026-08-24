@@ -15,17 +15,26 @@ const optionalBoolean = (name: string) =>
   Config.boolean(name).pipe(Config.option, Config.map(Option.getOrElse(() => false)));
 
 export const DESKTOP_HTTPS_ENDPOINTS_MAX_ITEMS = 32;
+export const DESKTOP_HTTPS_ENDPOINTS_MAX_SEGMENTS = DESKTOP_HTTPS_ENDPOINTS_MAX_ITEMS * 2;
 
 const splitBoundedCommaSeparatedStrings = (
   value: string,
-  options: { readonly maxItems: number; readonly maxItemLength: number },
+  options: {
+    readonly maxItems: number;
+    readonly maxItemLength: number;
+    readonly maxSegments: number;
+  },
 ): readonly string[] => {
   const entries: string[] = [];
   let offset = 0;
 
-  // Count every segment, including empty or oversized ones, so an input made
-  // only of delimiters cannot bypass the work budget.
-  for (let index = 0; index < options.maxItems && offset <= value.length; index += 1) {
+  // Retained entries and examined segments have separate limits so discarded
+  // values do not spend endpoint capacity while delimiter work stays bounded.
+  for (
+    let scanned = 0;
+    scanned < options.maxSegments && entries.length < options.maxItems && offset <= value.length;
+    scanned += 1
+  ) {
     const separator = value.indexOf(",", offset);
     const end = separator === -1 ? value.length : separator;
     if (end - offset <= options.maxItemLength) {
@@ -44,7 +53,11 @@ const splitBoundedCommaSeparatedStrings = (
 
 const commaSeparatedStrings = (
   name: string,
-  options: { readonly maxItems: number; readonly maxItemLength: number },
+  options: {
+    readonly maxItems: number;
+    readonly maxItemLength: number;
+    readonly maxSegments: number;
+  },
 ) =>
   trimmedString(name).pipe(
     Config.map(
@@ -74,6 +87,7 @@ export const DesktopConfig = Config.all({
   desktopHttpsEndpointUrls: commaSeparatedStrings("T3CODE_DESKTOP_HTTPS_ENDPOINTS", {
     maxItems: DESKTOP_HTTPS_ENDPOINTS_MAX_ITEMS,
     maxItemLength: ADVERTISED_ENDPOINT_URL_MAX_LENGTH,
+    maxSegments: DESKTOP_HTTPS_ENDPOINTS_MAX_SEGMENTS,
   }),
   otlpTracesUrl: trimmedString("T3CODE_OTLP_TRACES_URL"),
   otlpExportIntervalMs: Config.int("T3CODE_OTLP_EXPORT_INTERVAL_MS").pipe(
