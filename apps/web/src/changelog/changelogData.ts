@@ -26,6 +26,126 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260823.1170000839",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000834",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000830",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000821",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260823.1170000817",
     date: "2026-08-23",
     items: [

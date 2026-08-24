@@ -23,6 +23,7 @@ import rootRouteSource from "../routes/__root.tsx?raw";
 import pullRequestsRouteSource from "../routes/_chat.pull-requests.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
+import threadRouteViewSource from "../routes/-threadRouteView.tsx?raw";
 import sceneryLayerSource from "./SceneryLayer.tsx?raw";
 import sceneryPlaceCreditSource from "./SceneryPlaceCredit.tsx?raw";
 import sceneryArrivalSource from "./SceneryArrival.tsx?raw";
@@ -82,10 +83,32 @@ describe("scenery structural contract with upstream markup", () => {
   });
 
   it("the thread routes still render ChatView inside SidebarInset", () => {
+    expect(threadRouteViewSource).toContain("<SidebarInset");
+    expect(threadRouteViewSource).toContain("<ChatView");
+  });
+
+  it("both thread routes share one component so promotion cannot remount ChatView", () => {
+    // The draft→server navigation lands seconds after the first send; two
+    // different route components would remount ChatView there, flashing every
+    // glass surface right as the generated title arrives.
     for (const text of [serverThreadRouteSource, draftThreadRouteSource]) {
-      expect(text).toContain("<SidebarInset");
-      expect(text).toContain("<ChatView");
+      expect(text).toContain("component: ThreadRouteView");
     }
+  });
+
+  it("the shared thread view keeps ChatView mounted across the draft→server swap", () => {
+    expect(threadRouteViewSource).not.toContain("strict: false");
+    expect(threadRouteViewSource).toContain('from: "/_chat/draft/$draftId"');
+    expect(threadRouteViewSource).toContain('from: "/_chat/$environmentId/$threadId"');
+  });
+
+  it("the server branch still gates ChatView on renderState", () => {
+    // Direct visits to missing/not-ready threads must not mount ChatView.
+    // Promotion still renders: the draft route already has ChatView, and the
+    // replace lands with a shell so this gate stays true.
+    expect(threadRouteViewSource).toContain(
+      'renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)',
+    );
   });
 });
 
