@@ -184,6 +184,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "--local");
     assert.include(mobileRelease, "eas submit");
     assert.include(mobileRelease, "Xcode-beta.app");
+    assert.include(mobileRelease, "HOMEBREW_NO_ASK=1");
+    assert.include(mobileRelease, "brew install cocoapods");
+    assert.include(mobileRelease, "brew install fastlane");
     assert.include(mobileRelease, "security-eas-local-keychain");
     assert.include(mobileRelease, "origin-forge.mjs merge-pr");
     assert.include(mobileRelease, "did not write should_build");
@@ -252,6 +255,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(macosAgent, "macos-review-only-hook.sh");
     assert.include(macosAgent, "T3_PRETTY_REVIEW_ONLY");
     assert.include(macosAgent, "GIT_CONFIG_GLOBAL");
+    assert.include(macosAgent, "HOMEBREW_NO_ASK");
+    assert.include(macosAgent, "HOMEBREW_NO_AUTO_UPDATE");
     assert.include(macosAgent, "persist-ios-native-submit-hook.sh");
     assert.include(macosAgent, "refresh-origin-git-credentials.sh");
     const persistHook = NodeFS.readFileSync(
