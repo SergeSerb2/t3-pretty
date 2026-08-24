@@ -22,6 +22,7 @@ import {
 import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
+import { useNavigate } from "@tanstack/react-router";
 import React, {
   Children,
   Suspense,
@@ -65,6 +66,7 @@ import { recordVisitForThread } from "../browserHistoryStore";
 import { useOpenInPreferredEditor } from "../editorPreferences";
 import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import { fnv1a32 } from "../lib/diffRendering";
+import { faviconUrlForOrigin } from "../lib/favicon";
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
@@ -471,15 +473,12 @@ function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
 
   const handleCopy = useCallback((format: "markdown" | "csv") => {
     const table = containerRef.current?.querySelector("table");
-    if (!table || typeof navigator === "undefined" || navigator.clipboard == null) {
-      return;
-    }
+    if (!table) return;
     const text =
       format === "markdown"
         ? serializeTableElementToMarkdown(table)
         : serializeTableElementToCsv(table);
-    void navigator.clipboard
-      .writeText(text)
+    void writeTextToClipboard(text, `${format} table`)
       .then(() => {
         if (copiedTimerRef.current != null) {
           clearTimeout(copiedTimerRef.current);
@@ -492,6 +491,13 @@ function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
       })
       .catch((cause) => {
         reportMarkdownActionFailure({ operation: "copy-table", format }, cause);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to copy table",
+            description: cause instanceof Error ? cause.message : "An error occurred.",
+          }),
+        );
       });
   }, []);
 
@@ -675,11 +681,7 @@ function MarkdownCodeBlock({
   const copyLabel = copied ? "Copied" : "Copy code";
 
   const handleCopy = useCallback(() => {
-    if (typeof navigator === "undefined" || navigator.clipboard == null) {
-      return;
-    }
-    void navigator.clipboard
-      .writeText(code)
+    void writeTextToClipboard(code, "code block")
       .then(() => {
         if (copiedTimerRef.current != null) {
           clearTimeout(copiedTimerRef.current);
@@ -698,6 +700,13 @@ function MarkdownCodeBlock({
             ...(fenceTitle ? { fenceTitle } : {}),
           },
           cause,
+        );
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to copy code",
+            description: cause instanceof Error ? cause.message : "An error occurred.",
+          }),
         );
       });
   }, [code, fenceTitle, language]);
@@ -889,31 +898,32 @@ function buildFileLinkParentSuffixByPath(filePaths: ReadonlyArray<string>): Map<
     const parentSegmentsByPath = new Map(
       uniquePaths.map((filePath) => [filePath, pathParentSegments(filePath)]),
     );
-    const minUniqueDepthByPath = new Map<string, number>();
+    let maxDepth = 0;
+    for (const segments of parentSegmentsByPath.values()) {
+      maxDepth = Math.max(maxDepth, segments.length);
+    }
+    const suffixCountsByDepth = Array.from({ length: maxDepth }, (_, index) => {
+      const depth = index + 1;
+      const counts = new Map<string, number>();
+      for (const segments of parentSegmentsByPath.values()) {
+        const suffix = segments.slice(-depth).join("/");
+        counts.set(suffix, (counts.get(suffix) ?? 0) + 1);
+      }
+      return counts;
+    });
 
     for (const filePath of uniquePaths) {
       const segments = parentSegmentsByPath.get(filePath) ?? [];
       let resolvedDepth = segments.length;
       for (let depth = 1; depth <= segments.length; depth += 1) {
         const candidate = segments.slice(-depth).join("/");
-        const collision = uniquePaths.some((otherPath) => {
-          if (otherPath === filePath) return false;
-          const otherSegments = parentSegmentsByPath.get(otherPath) ?? [];
-          return otherSegments.slice(-depth).join("/") === candidate;
-        });
-        if (!collision) {
+        if (suffixCountsByDepth[depth - 1]?.get(candidate) === 1) {
           resolvedDepth = depth;
           break;
         }
       }
-      minUniqueDepthByPath.set(filePath, resolvedDepth);
-    }
-
-    for (const filePath of uniquePaths) {
-      const segments = parentSegmentsByPath.get(filePath) ?? [];
       if (segments.length === 0) continue;
-      const minUniqueDepth = minUniqueDepthByPath.get(filePath) ?? 1;
-      const suffixDepth = Math.min(segments.length, Math.max(minUniqueDepth, 2));
+      const suffixDepth = Math.min(segments.length, Math.max(resolvedDepth, 2));
       suffixByPath.set(filePath, segments.slice(-suffixDepth).join("/"));
     }
   }
@@ -968,27 +978,28 @@ function normalizeMarkdownLinkHrefKey(href: string): string {
 
 const MARKDOWN_LINK_FAVICON_CLASS_NAME = "block size-full shrink-0 select-none";
 
-/** Hosts whose favicon request already failed this session — skip straight to the globe. */
-const failedFaviconHosts = new Set<string>();
+/** Bound failed providers for the renderer lifetime; agent-authored hosts are untrusted input. */
+const failedFaviconHosts = new LRUCache<boolean>(128, 128);
 
 const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: string }) {
   const [failedHost, setFailedHost] = useState<string | null>(null);
+  const faviconUrl = faviconUrlForOrigin(`https://${host}`, 32);
   return (
     <span
       className="ms-[0.25em] me-[0.2em] inline-flex size-[14px] [vertical-align:-0.125em]"
       aria-hidden
     >
-      {failedHost === host || failedFaviconHosts.has(host) ? (
+      {faviconUrl === null || failedHost === host || failedFaviconHosts.get(host) === true ? (
         <GlobeIcon className={MARKDOWN_LINK_FAVICON_CLASS_NAME} />
       ) : (
         <img
-          src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`}
+          src={faviconUrl}
           alt=""
           loading="lazy"
           draggable={false}
           className={cn(MARKDOWN_LINK_FAVICON_CLASS_NAME, "rounded-sm")}
           onError={() => {
-            failedFaviconHosts.add(host);
+            failedFaviconHosts.set(host, true, 1);
             setFailedHost(host);
           }}
         />
@@ -1145,7 +1156,11 @@ function findMarkdownFragmentTarget(anchor: HTMLAnchorElement, href: string): HT
   );
 }
 
-function handleMarkdownFragmentClick(event: ReactMouseEvent<HTMLAnchorElement>, href: string) {
+function handleMarkdownFragmentClick(
+  event: ReactMouseEvent<HTMLAnchorElement>,
+  href: string,
+  navigateToFragment: (fragment: string) => void,
+) {
   if (
     event.defaultPrevented ||
     event.button !== 0 ||
@@ -1161,9 +1176,7 @@ function handleMarkdownFragmentClick(event: ReactMouseEvent<HTMLAnchorElement>, 
   if (!target) return;
 
   event.preventDefault();
-  const nextUrl = new URL(window.location.href);
-  nextUrl.hash = href.slice(1);
-  window.history.pushState(window.history.state, "", nextUrl);
+  navigateToFragment(href.slice(1));
   target.scrollIntoView({ block: "nearest" });
 }
 
@@ -1316,18 +1329,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
 
   const handleCopy = useCallback(
     (value: string, title: string) => {
-      if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: `Failed to copy ${title.toLowerCase()}`,
-            description: "Clipboard API unavailable.",
-          }),
-        );
-        return;
-      }
-
-      void navigator.clipboard.writeText(value).then(
+      void writeTextToClipboard(value, title.toLowerCase()).then(
         () => {
           toastManager.add({
             type: "success",
@@ -1475,6 +1477,7 @@ function ChatMarkdown({
   lineBreaks = false,
   parseRawHtml = true,
 }: ChatMarkdownProps) {
+  const navigate = useNavigate();
   // Streaming providers can deliver many deltas in a single frame. Keep the
   // latest text in React immediately, but let the expensive markdown parse and
   // syntax tree render trail urgent chat/composer interactions. The settled
@@ -1542,6 +1545,17 @@ function ChatMarkdown({
   const markdownUrlTransform = useCallback((href: string) => {
     return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
   }, []);
+  const navigateToMarkdownFragment = useCallback(
+    (fragment: string) => {
+      void navigate({
+        hash: fragment,
+        replace: false,
+        resetScroll: false,
+        hashScrollIntoView: false,
+      });
+    },
+    [navigate],
+  );
   // Re-emit highlighted content as markdown so copying out of the rendered
   // view keeps links, emphasis, lists, and code fences intact.
   const handleCopy = useCallback((event: ReactClipboardEvent<HTMLDivElement>) => {
@@ -1771,7 +1785,7 @@ function ChatMarkdown({
               onClick={(event) => {
                 onClick?.(event);
                 if (isSameDocumentLink && href) {
-                  handleMarkdownFragmentClick(event, href);
+                  handleMarkdownFragmentClick(event, href, navigateToMarkdownFragment);
                   return;
                 }
                 // A link to a change request in a workspace project opens beside the
@@ -1839,7 +1853,6 @@ function ChatMarkdown({
           props.className,
         );
       },
-
       code({ node, children, className, ...props }) {
         if (node?.properties?.dataInlineCode != null) {
           const codeText = nodeToPlainText(children);
@@ -1910,7 +1923,10 @@ function ChatMarkdown({
                 <code className={codeBlock.className}>{codeBlock.code}</code>
               </pre>
             ) : (
-              <RenderErrorBoundary fallback={<pre {...props}>{children}</pre>}>
+              <RenderErrorBoundary
+                fallback={<pre {...props}>{children}</pre>}
+                resetKeys={[codeBlock.code, codeBlock.className, diffThemeName]}
+              >
                 <Suspense fallback={<pre {...props}>{children}</pre>}>
                   <SuspenseShikiCodeBlock
                     className={codeBlock.className}
@@ -1930,6 +1946,7 @@ function ChatMarkdown({
     generatedImagePaths,
     isStreaming,
     onImageExpand,
+    navigateToMarkdownFragment,
     onTaskListChange,
     openFileInPanel,
     openInPreferredEditor,

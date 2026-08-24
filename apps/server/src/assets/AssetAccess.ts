@@ -12,6 +12,7 @@ import {
   AssetWorkspacePathValidationError,
   AssetWorkspaceResolutionError,
   AssetWorkspaceRootNormalizationError,
+  PROJECT_IMPORT_FAVICON_MAX_BYTES,
 } from "@t3tools/contracts";
 import {
   isWorkspaceImagePreviewPath,
@@ -544,7 +545,13 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
             };
       if (sourceFaviconPath && canonicalFaviconPath) {
         const crypto = yield* Crypto.Crypto;
-        const faviconBytes = yield* fileSystem.readFile(canonicalFaviconPath).pipe(
+        const faviconBytes = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const handle = yield* fileSystem.open(canonicalFaviconPath, { flag: "r" });
+            return yield* handle.readAlloc(PROJECT_IMPORT_FAVICON_MAX_BYTES + 1);
+          }),
+        ).pipe(
+          Effect.map(Option.getOrElse(() => new Uint8Array())),
           Effect.mapError(
             (cause) =>
               new AssetProjectFaviconInspectionError({
@@ -553,6 +560,12 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
               }),
           ),
         );
+        if (faviconBytes.byteLength > PROJECT_IMPORT_FAVICON_MAX_BYTES) {
+          return yield* new AssetProjectFaviconInspectionError({
+            resource: input.resource,
+            cause: new Error("Project favicon exceeds the 2 MiB inspection limit."),
+          });
+        }
         const revision = yield* crypto.digest("SHA-256", faviconBytes).pipe(
           Effect.map(Encoding.encodeHex),
           Effect.mapError(

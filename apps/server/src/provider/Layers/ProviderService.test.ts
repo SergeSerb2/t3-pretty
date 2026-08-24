@@ -14,7 +14,6 @@ import type {
 } from "@t3tools/contracts";
 import {
   ApprovalRequestId,
-  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -26,6 +25,7 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { it, assert, describe, vi } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -2202,6 +2202,86 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith(true, threadId);
 
       assert.deepEqual(issued, [threadId]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("serializes same-thread starts across credential issuance and adapter startup", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-browser-concurrent-start");
+      const firstAdapterStartEntered = yield* Deferred.make<void>();
+      const releaseFirstAdapterStart = yield* Deferred.make<void>();
+      const secondCallStarted = yield* Deferred.make<void>();
+      const issued: Array<ThreadId> = [];
+      const codex = makeFakeCodexAdapter();
+      let adapterStartCount = 0;
+      const serializedAdapter: ProviderAdapterShape<ProviderAdapterError> = {
+        ...codex.adapter,
+        startSession: (input) =>
+          Effect.gen(function* () {
+            adapterStartCount += 1;
+            if (adapterStartCount === 1) {
+              yield* Deferred.succeed(firstAdapterStartEntered, undefined);
+              yield* Deferred.await(releaseFirstAdapterStart);
+            }
+            return yield* codex.adapter.startSession(input);
+          }),
+      };
+      const providerAdapterLayer = Layer.succeed(
+        ProviderAdapterRegistry.ProviderAdapterRegistry,
+        makeAdapterRegistryMock({ [CODEX_DRIVER]: serializedAdapter }),
+      );
+      const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+        Layer.provide(SqlitePersistenceMemory),
+      );
+      const directoryLayer = ProviderSessionDirectoryLive.pipe(
+        Layer.provide(runtimeRepositoryLayer),
+      );
+      const providerLayer = makeProviderServiceLive({
+        issueMcpCredential: (request) =>
+          Effect.sync(() => {
+            issued.push(request.threadId);
+            return undefined;
+          }),
+      }).pipe(
+        Layer.provide(providerAdapterLayer),
+        Layer.provide(directoryLayer),
+        Layer.provide(
+          ServerSettings.ServerSettingsService.layerTest({ enableAgentBrowserAccess: true }),
+        ),
+        Layer.provide(serverConfigTestLayer),
+        Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      );
+
+      yield* Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const startInput = {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "full-access" as const,
+        };
+        const first = yield* provider.startSession(threadId, startInput).pipe(Effect.forkChild);
+        yield* Deferred.await(firstAdapterStartEntered);
+        const second = yield* Effect.gen(function* () {
+          yield* Deferred.succeed(secondCallStarted, undefined);
+          return yield* provider.startSession(threadId, startInput);
+        }).pipe(Effect.forkChild);
+        yield* Deferred.await(secondCallStarted);
+        yield* Effect.yieldNow;
+
+        assert.deepEqual(issued, [threadId]);
+
+        yield* Deferred.succeed(releaseFirstAdapterStart, undefined);
+        yield* Fiber.join(first);
+        yield* Fiber.join(second);
+        assert.deepEqual(issued, [threadId, threadId]);
+      }).pipe(Effect.provide(providerLayer));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

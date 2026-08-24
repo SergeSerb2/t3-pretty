@@ -103,3 +103,17 @@ describe("streaming markdown stability", () => {
     expect(chatMarkdownSource).toContain("resolveDiffThemeName(resolvedTheme)");
   });
 });
+
+describe("markdown link favicons", () => {
+  it("routes favicon requests through the public-host privacy guard", () => {
+    expect(chatMarkdownSource).toContain("faviconUrlForOrigin");
+    expect(chatMarkdownSource).not.toContain("https://www.google.com/s2/favicons");
+  });
+});
+
+describe("markdown fragment navigation", () => {
+  it("updates the router history instead of bypassing it with the browser API", () => {
+    expect(chatMarkdownSource).toContain("navigateToMarkdownFragment");
+    expect(chatMarkdownSource).not.toContain("window.history.pushState");
+  });
+});

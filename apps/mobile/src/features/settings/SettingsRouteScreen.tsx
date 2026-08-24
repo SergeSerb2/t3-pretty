@@ -30,6 +30,7 @@ import {
   subscribeAgentAwarenessRegistrationStatus,
 } from "../agent-awareness/remoteRegistration";
 import { refreshManagedRelayEnvironments } from "../cloud/managedRelayState";
+import { readClerkTokenWithDeadline } from "../cloud/clerkToken";
 import { hasCloudPublicConfig, resolveRelayClerkTokenOptions } from "../cloud/publicConfig";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { WorkspaceSidebarToolbar } from "../layout/workspace-sidebar-toolbar";
@@ -159,6 +160,8 @@ function ConfiguredSettingsRouteScreen() {
   const { savedConnectionsById } = useSavedRemoteConnections();
   const [notificationStatus, setNotificationStatus] = useState<NotificationStatus>("checking");
   const [liveActivityStatus, setLiveActivityStatus] = useState<LiveActivityStatus>("checking");
+  const [liveActivityMutationPending, setLiveActivityMutationPending] = useState(false);
+  const liveActivityMutationPendingRef = useRef(false);
   const deviceRegistered = useDeviceRegistered();
   const liveActivitiesPreferenceEnabled = AsyncResult.isSuccess(preferencesResult)
     ? preferencesResult.value.liveActivitiesEnabled !== false
@@ -287,73 +290,93 @@ function ConfiguredSettingsRouteScreen() {
     );
   }, [navigation]);
 
+  const beginLiveActivityMutation = useCallback(() => {
+    if (liveActivityMutationPendingRef.current) return false;
+    liveActivityMutationPendingRef.current = true;
+    setLiveActivityMutationPending(true);
+    return true;
+  }, []);
+  const finishLiveActivityMutation = useCallback(() => {
+    liveActivityMutationPendingRef.current = false;
+    setLiveActivityMutationPending(false);
+  }, []);
+
   const linkEnvironments = useCallback(async () => {
     if (!isSignedIn) {
       promptSignIn();
       return;
     }
+    if (!beginLiveActivityMutation()) return;
 
-    setLiveActivityStatus("linking");
-    const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
-    if (tokenResult._tag === "Failure") {
-      setLiveActivityStatus("disabled");
-      const error = squashAtomCommandFailure(tokenResult);
-      Alert.alert(
-        "Live Activities unavailable",
-        error instanceof Error ? error.message : "Could not enable Live Activity updates.",
+    try {
+      setLiveActivityStatus("linking");
+      const tokenResult = await settlePromise(() =>
+        readClerkTokenWithDeadline(() => getToken(resolveRelayClerkTokenOptions())),
       );
-      return;
-    }
-    if (!tokenResult.value) {
-      promptSignIn();
-      setLiveActivityStatus("signed-out");
-      return;
-    }
-
-    const updateResult = await settleAsyncResult(() =>
-      runtime.runPromiseExit(
-        setLiveActivityUpdatesEnabled({
-          enabled: true,
-          previousEnabled: liveActivitiesPreferenceEnabled,
-          clerkToken: tokenResult.value,
-          connections,
-        }),
-      ),
-    );
-    if (updateResult._tag === "Failure") {
-      setLiveActivityStatus("disabled");
-      if (!isAtomCommandInterrupted(updateResult)) {
-        const error = squashAtomCommandFailure(updateResult);
+      if (tokenResult._tag === "Failure") {
+        setLiveActivityStatus(liveActivitiesPreferenceEnabled ? "enabled" : "disabled");
+        const error = squashAtomCommandFailure(tokenResult);
         Alert.alert(
           "Live Activities unavailable",
           error instanceof Error ? error.message : "Could not enable Live Activity updates.",
         );
+        return;
       }
-      return;
-    }
+      if (!tokenResult.value) {
+        promptSignIn();
+        setLiveActivityStatus("signed-out");
+        return;
+      }
 
-    savePreferences({ liveActivitiesEnabled: true });
-    refreshManagedRelayEnvironments();
-    setLiveActivityStatus("enabled");
-    // The environment link can succeed while this device's own registration
-    // (the push-to-start token the relay needs) has not — don't claim Live
-    // Activities are live until the device is actually registered.
-    if (getAgentAwarenessRegistrationStatus() === "registered") {
-      Alert.alert(
-        "Live Activities enabled",
-        environmentCount > 0
-          ? `${environmentCount} environment${environmentCount === 1 ? "" : "s"} linked for Live Activity updates.`
-          : "Live Activity updates are enabled. Add an environment to start receiving updates.",
+      const updateResult = await settleAsyncResult(() =>
+        runtime.runPromiseExit(
+          setLiveActivityUpdatesEnabled({
+            enabled: true,
+            previousEnabled: liveActivitiesPreferenceEnabled,
+            clerkToken: tokenResult.value,
+            connections,
+          }),
+        ),
       );
-    } else {
-      Alert.alert(
-        "Couldn't finish enabling Live Activities",
-        `This device could not be registered with ${SURGE_CONNECT_NAME}, so Live Activities won't appear yet. They'll start once registration succeeds.`,
-      );
+      if (updateResult._tag === "Failure") {
+        setLiveActivityStatus(liveActivitiesPreferenceEnabled ? "enabled" : "disabled");
+        if (!isAtomCommandInterrupted(updateResult)) {
+          const error = squashAtomCommandFailure(updateResult);
+          Alert.alert(
+            "Live Activities unavailable",
+            error instanceof Error ? error.message : "Could not enable Live Activity updates.",
+          );
+        }
+        return;
+      }
+
+      savePreferences({ liveActivitiesEnabled: true });
+      refreshManagedRelayEnvironments();
+      setLiveActivityStatus("enabled");
+      // The environment link can succeed while this device's own registration
+      // (the push-to-start token the relay needs) has not — don't claim Live
+      // Activities are live until the device is actually registered.
+      if (getAgentAwarenessRegistrationStatus() === "registered") {
+        Alert.alert(
+          "Live Activities enabled",
+          environmentCount > 0
+            ? `${environmentCount} environment${environmentCount === 1 ? "" : "s"} linked for Live Activity updates.`
+            : "Live Activity updates are enabled. Add an environment to start receiving updates.",
+        );
+      } else {
+        Alert.alert(
+          "Couldn't finish enabling Live Activities",
+          `This device could not be registered with ${SURGE_CONNECT_NAME}, so Live Activities won't appear yet. They'll start once registration succeeds.`,
+        );
+      }
+    } finally {
+      finishLiveActivityMutation();
     }
   }, [
+    beginLiveActivityMutation,
     connections,
     environmentCount,
+    finishLiveActivityMutation,
     getToken,
     isSignedIn,
     liveActivitiesPreferenceEnabled,
@@ -383,41 +406,47 @@ function ConfiguredSettingsRouteScreen() {
   const handleLiveActivitiesChange = useCallback(
     (enabled: boolean) => {
       if (!enabled) {
+        if (!beginLiveActivityMutation()) return;
         setLiveActivityStatus("disabled");
         void (async () => {
-          let token: string | null = null;
-          if (isSignedIn) {
-            const tokenResult = await settlePromise(() =>
-              getToken(resolveRelayClerkTokenOptions()),
+          try {
+            let token: string | null = null;
+            if (isSignedIn) {
+              const tokenResult = await settlePromise(() =>
+                readClerkTokenWithDeadline(() => getToken(resolveRelayClerkTokenOptions())),
+              );
+              if (tokenResult._tag === "Failure") {
+                setLiveActivityStatus(liveActivitiesPreferenceEnabled ? "enabled" : "disabled");
+                reportAtomCommandResult(tokenResult, {
+                  label: "live activity disable token lookup",
+                });
+                return;
+              }
+              token = tokenResult.value;
+            }
+
+            const updateResult = await settleAsyncResult(() =>
+              runtime.runPromiseExit(
+                setLiveActivityUpdatesEnabled({
+                  enabled: false,
+                  previousEnabled: liveActivitiesPreferenceEnabled,
+                  clerkToken: token,
+                  connections,
+                }),
+              ),
             );
-            if (tokenResult._tag === "Failure") {
-              reportAtomCommandResult(tokenResult, {
-                label: "live activity disable token lookup",
+            if (updateResult._tag === "Failure") {
+              setLiveActivityStatus(liveActivitiesPreferenceEnabled ? "enabled" : "disabled");
+              reportAtomCommandResult(updateResult, {
+                label: "live activity disable",
               });
               return;
             }
-            token = tokenResult.value;
+            savePreferences({ liveActivitiesEnabled: false });
+            refreshManagedRelayEnvironments();
+          } finally {
+            finishLiveActivityMutation();
           }
-
-          const updateResult = await settleAsyncResult(() =>
-            runtime.runPromiseExit(
-              setLiveActivityUpdatesEnabled({
-                enabled: false,
-                previousEnabled: liveActivitiesPreferenceEnabled,
-                clerkToken: token,
-                connections,
-              }),
-            ),
-          );
-          if (updateResult._tag === "Failure") {
-            setLiveActivityStatus("enabled");
-            reportAtomCommandResult(updateResult, {
-              label: "live activity disable",
-            });
-            return;
-          }
-          savePreferences({ liveActivitiesEnabled: false });
-          refreshManagedRelayEnvironments();
         })();
         return;
       }
@@ -430,7 +459,9 @@ function ConfiguredSettingsRouteScreen() {
       void linkEnvironments();
     },
     [
+      beginLiveActivityMutation,
       connections,
+      finishLiveActivityMutation,
       getToken,
       isSignedIn,
       linkEnvironments,
@@ -500,6 +531,7 @@ function ConfiguredSettingsRouteScreen() {
               !agentAwarenessPlatform.supported ||
               !agentAwarenessPushAvailable ||
               !isLoaded ||
+              liveActivityMutationPending ||
               liveActivityStatus === "checking" ||
               liveActivityStatus === "linking"
             }

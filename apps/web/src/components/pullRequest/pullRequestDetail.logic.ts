@@ -18,6 +18,7 @@ import type {
 import { firstGrokReviewFinding, parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
+import { compareIsoDateTimes } from "../../lib/threadSort";
 
 /** Activity changes only when the same host resource reports a newer revision. */
 export function shouldRefreshPullRequestActivity(
@@ -194,7 +195,7 @@ export function groupPullRequestConversation(
     ...items,
     ...unseenThreads.map((thread) => ({ kind: "thread" as const, thread })),
   ].toSorted((left, right) => {
-    const cmp = activityAt(left).localeCompare(activityAt(right));
+    const cmp = compareIsoDateTimes(activityAt(left), activityAt(right));
     return order === "newest" ? -cmp : cmp;
   });
 }
@@ -204,8 +205,8 @@ function threadActivityAt(thread: PullRequestReviewThread, order: "newest" | "ol
   const times = thread.comments.map((comment) => comment.createdAt);
   if (times.length === 0) return "";
   return order === "newest"
-    ? times.reduce((latest, at) => (at > latest ? at : latest))
-    : times.reduce((earliest, at) => (at < earliest ? at : earliest));
+    ? times.reduce((latest, at) => (compareIsoDateTimes(at, latest) > 0 ? at : latest))
+    : times.reduce((earliest, at) => (compareIsoDateTimes(at, earliest) < 0 ? at : earliest));
 }
 
 export function countUnresolvedReviewThreads(
@@ -396,18 +397,20 @@ export function groupPullRequestTimelineConversations(
   events: ReadonlyArray<PullRequestTimelineEvent>,
 ): ReadonlyArray<PullRequestTimelineRow> {
   const rows: PullRequestTimelineRow[] = [];
+  let commentBatch: PullRequestTimelineEvent[] | null = null;
   for (const event of events) {
     if (
       (event.kind === "comment" || event.kind === "review") &&
       pullRequestReviewOutcome(event.reviewState) === null
     ) {
-      const last = rows.at(-1);
-      if (last?.kind === "comments") {
-        rows[rows.length - 1] = { kind: "comments", events: [...last.events, event] };
-      } else {
-        rows.push({ kind: "comments", events: [event] });
+      if (commentBatch !== null) {
+        commentBatch.push(event);
+        continue;
       }
+      commentBatch = [event];
+      rows.push({ kind: "comments", events: commentBatch });
     } else {
+      commentBatch = null;
       rows.push({ kind: "event", event });
     }
   }
@@ -536,7 +539,7 @@ export function buildPullRequestTimeline(
           },
         ]
       : []),
-  ].toSorted((left, right) => right.at.localeCompare(left.at));
+  ].toSorted((left, right) => compareIsoDateTimes(right.at, left.at));
 }
 
 const FINDING_LIMIT = 20;

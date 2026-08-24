@@ -57,6 +57,9 @@ const FileTreeRow = memo(function FileTreeRow(props: {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={node.path}
+      accessibilityState={
+        node.kind === "directory" ? { expanded: props.expanded } : { selected: props.selected }
+      }
       onPressIn={() => {
         if (node.kind === "file") {
           props.onPreviewFile?.(node.path);
@@ -224,6 +227,10 @@ export function FileTreeBrowser(props: {
     ),
     [expandedPaths, handleSelectFile, iconColor, onPreviewFile, selectedPath, toggleDirectory],
   );
+  const rowState = useMemo(
+    () => ({ expandedPaths, iconColor, selectedPath }),
+    [expandedPaths, iconColor, selectedPath],
+  );
 
   if (props.error && props.entries.length === 0) {
     return (
@@ -243,6 +250,7 @@ export function FileTreeBrowser(props: {
     <FlatList
       className="flex-1"
       data={visibleNodes}
+      extraData={rowState}
       keyExtractor={(item) => item.node.path}
       contentInsetAdjustmentBehavior={NATIVE_LIQUID_GLASS_SUPPORTED ? "automatic" : "never"}
       scrollIndicatorInsets={

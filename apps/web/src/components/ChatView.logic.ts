@@ -524,9 +524,15 @@ export function shouldShowBranchMismatchBanner(input: {
 // Session-scoped (module-level so it survives ChatView remounts, e.g. route
 // changes). Durable cross-device dismissal is planned as a server-side ack.
 const sessionDismissedBranchMismatchKeys = new Set<string>();
+const MAX_SESSION_DISMISSED_BRANCH_MISMATCHES = 256;
 
 export function dismissBranchMismatchForSession(key: string): void {
+  sessionDismissedBranchMismatchKeys.delete(key);
   sessionDismissedBranchMismatchKeys.add(key);
+  if (sessionDismissedBranchMismatchKeys.size > MAX_SESSION_DISMISSED_BRANCH_MISMATCHES) {
+    const oldest = sessionDismissedBranchMismatchKeys.values().next().value;
+    if (oldest !== undefined) sessionDismissedBranchMismatchKeys.delete(oldest);
+  }
 }
 
 export function isBranchMismatchDismissedForSession(key: string | null): boolean {

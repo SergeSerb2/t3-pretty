@@ -76,7 +76,7 @@ type ProjectorName =
 /**
  * Activity kinds that can move a shell's pending approval / user-input
  * counts — the same kinds the pending-approvals projector and
- * derivePendingUserInputCountFromActivities react to. Any other activity
+ * pending user-input aggregate query reacts to. Any other activity
  * kind (tool calls, progress, …) leaves those counts untouched, so
  * refreshing the shell summary for it only re-reads rows that cannot have
  * changed. Tool activities stream in constantly during a turn, which makes
@@ -151,79 +151,6 @@ function isStalePendingApprovalFailureDetail(detail: string | null): boolean {
     detail.includes("unknown pending approval request") ||
     detail.includes("unknown pending permission request")
   );
-}
-
-function derivePendingUserInputCountFromActivities(
-  activities: ReadonlyArray<ProjectionThreadActivity>,
-): number {
-  const openRequestIds = new Set<string>();
-  const ordered = [...activities].toSorted(
-    (left, right) =>
-      left.createdAt.localeCompare(right.createdAt) ||
-      left.activityId.localeCompare(right.activityId),
-  );
-
-  for (const activity of ordered) {
-    const requestId = extractActivityRequestId(activity.payload);
-    if (requestId === null) {
-      continue;
-    }
-    const payload =
-      typeof activity.payload === "object" && activity.payload !== null
-        ? (activity.payload as Record<string, unknown>)
-        : null;
-    const detail = typeof payload?.detail === "string" ? payload.detail.toLowerCase() : null;
-
-    if (activity.kind === "user-input.requested") {
-      openRequestIds.add(requestId);
-      continue;
-    }
-
-    if (activity.kind === "user-input.resolved") {
-      openRequestIds.delete(requestId);
-      continue;
-    }
-
-    if (
-      activity.kind === "provider.user-input.respond.failed" &&
-      detail !== null &&
-      (detail.includes("stale pending user-input request") ||
-        detail.includes("unknown pending user-input request") ||
-        detail.includes("unknown pending user input request") ||
-        detail.includes("unknown pending codex user input request"))
-    ) {
-      openRequestIds.delete(requestId);
-    }
-  }
-
-  return openRequestIds.size;
-}
-
-function deriveHasActionableProposedPlan(input: {
-  readonly latestTurnId: string | null;
-  readonly proposedPlans: ReadonlyArray<ProjectionThreadProposedPlan>;
-}): boolean {
-  const sorted = [...input.proposedPlans].toSorted(
-    (left, right) =>
-      left.updatedAt.localeCompare(right.updatedAt) || left.planId.localeCompare(right.planId),
-  );
-
-  let latestForTurn: ProjectionThreadProposedPlan | null = null;
-  if (input.latestTurnId !== null) {
-    for (let index = sorted.length - 1; index >= 0; index -= 1) {
-      const plan = sorted[index];
-      if (plan?.turnId === input.latestTurnId) {
-        latestForTurn = plan;
-        break;
-      }
-    }
-  }
-  if (latestForTurn !== null) {
-    return latestForTurn.implementedAt === null;
-  }
-
-  const latestPlan = sorted.at(-1) ?? null;
-  return latestPlan !== null && latestPlan.implementedAt === null;
 }
 
 function retainProjectionMessagesAfterRevert(
@@ -374,17 +301,49 @@ function collectThreadAttachmentRelativePaths(
   return relativePaths;
 }
 
+export function indexAttachmentRootEntriesByThread(
+  entries: ReadonlyArray<string>,
+): ReadonlyMap<string, ReadonlyArray<string>> {
+  const entriesByThread = new Map<string, Array<string>>();
+  for (const entry of entries) {
+    const relativePath = entry.replace(/^[/\\]+/, "").replace(/\\/g, "/");
+    if (relativePath.length === 0 || relativePath.includes("/")) {
+      continue;
+    }
+    const attachmentId = parseAttachmentIdFromRelativePath(relativePath);
+    if (!attachmentId) {
+      continue;
+    }
+    const threadSegment = parseThreadSegmentFromAttachmentId(attachmentId);
+    if (!threadSegment) {
+      continue;
+    }
+    const threadEntries = entriesByThread.get(threadSegment);
+    if (threadEntries) {
+      threadEntries.push(relativePath);
+    } else {
+      entriesByThread.set(threadSegment, [relativePath]);
+    }
+  }
+  return entriesByThread;
+}
+
 const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function* (
   sideEffects: AttachmentSideEffects,
 ) {
+  if (sideEffects.deletedThreadIds.size === 0 && sideEffects.prunedThreadRelativePaths.size === 0) {
+    return;
+  }
+
   const serverConfig = yield* Effect.service(ServerConfig);
   const fileSystem = yield* Effect.service(FileSystem.FileSystem);
   const path = yield* Effect.service(Path.Path);
 
   const attachmentsRootDir = serverConfig.attachmentsDir;
-  const readAttachmentRootEntries = fileSystem
+  const attachmentRootEntries = yield* fileSystem
     .readDirectory(attachmentsRootDir, { recursive: false })
     .pipe(Effect.orElseSucceed(() => [] as Array<string>));
+  const attachmentEntriesByThread = indexAttachmentRootEntriesByThread(attachmentRootEntries);
 
   const removeDeletedThreadAttachmentEntry = Effect.fn("removeDeletedThreadAttachmentEntry")(
     function* (threadSegment: string, entry: string) {
@@ -424,7 +383,7 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
       return;
     }
 
-    const entries = yield* readAttachmentRootEntries;
+    const entries = attachmentEntriesByThread.get(threadSegment) ?? [];
     yield* Effect.forEach(
       entries,
       (entry) => removeDeletedThreadAttachmentEntry(threadSegment, entry),
@@ -484,7 +443,7 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
       return;
     }
 
-    const entries = yield* readAttachmentRootEntries;
+    const entries = attachmentEntriesByThread.get(threadSegment) ?? [];
     yield* Effect.forEach(
       entries,
       (entry) => pruneThreadAttachmentEntry(threadSegment, keptThreadRelativePaths, entry),
@@ -603,21 +562,20 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       // latestUserMessageAt comes from a MAX() aggregate — listing the full
       // text of every message in the thread just to find its newest user
       // message was the most expensive part of this refresh.
-      const [latestUserMessageAt, proposedPlans, activities, pendingApprovals] = yield* Effect.all([
+      const [
+        latestUserMessageAt,
+        hasActionableProposedPlan,
+        pendingUserInputCount,
+        pendingApprovalCount,
+      ] = yield* Effect.all([
         projectionThreadMessageRepository.getLatestUserMessageAt({ threadId }),
-        projectionThreadProposedPlanRepository.listByThreadId({ threadId }),
-        projectionThreadActivityRepository.listByThreadId({ threadId }),
-        projectionPendingApprovalRepository.listByThreadId({ threadId }),
+        projectionThreadProposedPlanRepository.hasActionableByThreadId({
+          threadId,
+          latestTurnId: existingRow.value.latestTurnId,
+        }),
+        projectionThreadActivityRepository.countPendingUserInputByThreadId({ threadId }),
+        projectionPendingApprovalRepository.countPendingByThreadId({ threadId }),
       ]);
-
-      const pendingApprovalCount = pendingApprovals.filter(
-        (approval) => approval.status === "pending",
-      ).length;
-      const pendingUserInputCount = derivePendingUserInputCountFromActivities(activities);
-      const hasActionableProposedPlan = deriveHasActionableProposedPlan({
-        latestTurnId: existingRow.value.latestTurnId,
-        proposedPlans,
-      });
 
       yield* projectionThreadRepository.upsert({
         ...existingRow.value,
@@ -1085,21 +1043,35 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     )(function* (event, attachmentSideEffects) {
       switch (event.type) {
         case "thread.message-sent": {
+          if (event.payload.streaming) {
+            const nextAttachments =
+              event.payload.attachments !== undefined
+                ? yield* materializeAttachmentsForProjection({
+                    attachments: event.payload.attachments,
+                  })
+                : undefined;
+            yield* projectionThreadMessageRepository.appendStreamingDelta({
+              messageId: event.payload.messageId,
+              threadId: event.payload.threadId,
+              turnId: event.payload.turnId,
+              role: event.payload.role,
+              text: event.payload.text,
+              ...(nextAttachments !== undefined ? { attachments: [...nextAttachments] } : {}),
+              isStreaming: true,
+              createdAt: event.payload.createdAt,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
           const existingMessage = yield* projectionThreadMessageRepository.getByMessageId({
             messageId: event.payload.messageId,
           });
           const previousMessage = Option.getOrUndefined(existingMessage);
           const nextText = Option.match(existingMessage, {
             onNone: () => event.payload.text,
-            onSome: (message) => {
-              if (event.payload.streaming) {
-                return `${message.text}${event.payload.text}`;
-              }
-              if (event.payload.text.length === 0) {
-                return message.text;
-              }
-              return event.payload.text;
-            },
+            onSome: (message) =>
+              event.payload.text.length === 0 ? message.text : event.payload.text,
           });
           const nextAttachments =
             event.payload.attachments !== undefined
@@ -1314,49 +1286,24 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             if (settledTurnState === null) {
               return;
             }
-            const existingTurns = yield* projectionTurnRepository.listByThreadId({
+            yield* projectionTurnRepository.settleRunningByThreadId({
               threadId: event.payload.threadId,
+              state: settledTurnState,
+              completedAt: event.payload.session.updatedAt,
+              excludedTurnId: null,
             });
-            yield* Effect.forEach(
-              existingTurns.filter((turn) => turn.turnId !== null && turn.state === "running"),
-              (turn) =>
-                turn.turnId === null
-                  ? Effect.void
-                  : projectionTurnRepository.upsertByTurnId({
-                      ...turn,
-                      turnId: turn.turnId,
-                      state: settledTurnState,
-                      // A running turn's completedAt can only hold a mid-turn
-                      // placeholder checkpoint timestamp — the session leaving
-                      // "running" is the authoritative turn end.
-                      completedAt: event.payload.session.updatedAt,
-                    }),
-              { concurrency: 1 },
-            );
             return;
           }
 
           // A new active turn supersedes any still-running turn on the same
           // thread — steering can open a new turn without the provider ever
           // completing the previous one.
-          const otherRunningTurns = yield* projectionTurnRepository.listByThreadId({
+          yield* projectionTurnRepository.settleRunningByThreadId({
             threadId: event.payload.threadId,
+            state: "completed",
+            completedAt: event.payload.session.updatedAt,
+            excludedTurnId: turnId,
           });
-          yield* Effect.forEach(
-            otherRunningTurns.filter(
-              (turn) => turn.turnId !== null && turn.turnId !== turnId && turn.state === "running",
-            ),
-            (turn) =>
-              turn.turnId === null
-                ? Effect.void
-                : projectionTurnRepository.upsertByTurnId({
-                    ...turn,
-                    turnId: turn.turnId,
-                    state: "completed",
-                    completedAt: event.payload.session.updatedAt,
-                  }),
-            { concurrency: 1 },
-          );
 
           const existingTurn = yield* projectionTurnRepository.getByTurnId({
             threadId: event.payload.threadId,
@@ -1752,7 +1699,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           // rows.  Other activity kinds that happen to carry a requestId
           // (e.g. user-input.requested / user-input.resolved) must not
           // pollute this projection — they have their own accounting via
-          // derivePendingUserInputCountFromActivities.
+          // the pending user-input aggregate query.
           if (event.payload.activity.kind !== "approval.requested") {
             return;
           }
@@ -1928,6 +1875,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             Stream.runForEach(
               eventStore.readFromSequence(
                 Option.isSome(stateRow) ? stateRow.value.lastAppliedSequence : 0,
+                Number.MAX_SAFE_INTEGER,
               ),
               (event) => runProjectorForEvent(projector, event),
             ),

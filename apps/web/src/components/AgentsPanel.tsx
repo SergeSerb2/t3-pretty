@@ -46,6 +46,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
+import { subscribeSecondTick } from "~/lib/secondTicker";
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Button } from "~/components/ui/button";
@@ -102,7 +103,8 @@ function elapsedBetween(startedAt: string, endIso: string | null): string {
 
 /**
  * Elapsed time for the current activation. Live agents self-tick via DOM
- * writes (zero React commits per tick); settled agents freeze at completedAt.
+ * writes from one shared timer (zero React commits per tick); settled agents
+ * freeze at completedAt.
  */
 function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
   const textRef = useRef<HTMLSpanElement>(null);
@@ -118,9 +120,7 @@ function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
         textRef.current.textContent = elapsedBetween(startedAt, null);
       }
     };
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
+    return subscribeSecondTick(update);
   }, [live, startedAt]);
 
   if (!startedAt) {

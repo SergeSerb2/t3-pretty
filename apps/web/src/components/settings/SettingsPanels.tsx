@@ -61,6 +61,7 @@ import {
 } from "../SidebarStageBackdrop";
 import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
+import { compareIsoDateTimes } from "../../lib/threadSort";
 import {
   readAppearanceModePreference,
   readThemeHalves,
@@ -2683,7 +2684,7 @@ export function ArchivedThreadsPanel() {
           threads: projectThreads.toSorted((left, right) => {
             const leftKey = left.archivedAt ?? left.createdAt;
             const rightKey = right.archivedAt ?? right.createdAt;
-            return rightKey.localeCompare(leftKey) || right.id.localeCompare(left.id);
+            return compareIsoDateTimes(rightKey, leftKey) || right.id.localeCompare(left.id);
           }),
         });
       }

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -13,6 +14,8 @@ export const ORIGIN_GIT_URL = `https://origin.cursor.com/${ORIGIN_FULL_NAME}.git
 export const ORIGIN_WEB_URL = `https://cursor.com/codebase/${ORIGIN_FULL_NAME}`;
 export const UPSTREAM_GIT_URL = "https://github.com/pingdotgg/t3code.git";
 export const ORIGIN_CLI_INSTALL_URL = "https://downloads.cursor.com/origin/install.sh";
+const RELEASE_NOTES_MAX_BYTES = 1024 * 1024;
+const ORIGIN_BODY_MAX_BYTES = 8 * 1024 * 1024;
 
 const MERGEABLE_STATES = new Set([
   "clean",
@@ -37,6 +40,7 @@ export function originBin() {
 export function withLocalBinPath(env = process.env) {
   const localBin = NodePath.join(NodeOS.homedir(), ".local", "bin");
   const current = env.PATH ?? "";
+  if (!current) return localBin;
   if (current.split(NodePath.delimiter).includes(localBin)) return current;
   return `${localBin}${NodePath.delimiter}${current}`;
 }
@@ -56,7 +60,7 @@ export function redactCommandArgs(args) {
   const redacted = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    redacted.push(arg);
+    redacted.push(redactSensitiveValues(arg, sensitiveValues));
     if (arg === "--api-key" || arg === "--token") {
       redacted.push("***");
       index += 1;
@@ -93,6 +97,8 @@ export function originGitConfigArgs() {
 }
 
 export function runCommand(command, args, options = {}) {
+  const inheritedEnv = options.inheritEnv === false ? {} : process.env;
+  const commandEnv = { ...inheritedEnv, ...options.env };
   const result = NodeChildProcess.spawnSync(command, args, {
     encoding: "utf8",
     // origin pr diff of seed JSON exceeds Node's 1 MiB default and returns status null.
@@ -102,16 +108,36 @@ export function runCommand(command, args, options = {}) {
     cwd: options.cwd,
   });
   if (result.status !== 0) {
-    const detail = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
+    const detail = safeCommandDiagnostic(
+      redactCommandOutput(
+        [result.stderr, result.stdout].filter(Boolean).join("\n").trim(),
+        commandEnv,
+        args,
+        options.redactValues,
+      ),
+    );
+    const fallback = safeCommandDiagnostic(
+      redactCommandOutput(
+        result.error?.message || "no output",
+        commandEnv,
+        args,
+        options.redactValues,
+      ),
+    );
+    const safeArgs = safeCommandDiagnostic(redactCommandArgs(args, options.redactValues).join(" "));
     throw new Error(
-      `${command} ${redactCommandArgs(args).join(" ")} failed (${result.status ?? "spawn"}): ${detail || result.error?.message || "no output"}`,
+      `${command} ${safeArgs} failed (${result.status ?? "spawn"}): ${detail || fallback}`,
     );
   }
   return (result.stdout ?? "").trim();
 }
 
 export function runOrigin(args, options = {}) {
-  return runCommand(originBin(), args, options);
+  return runCommand(originBin(), args, {
+    ...options,
+    env: { ...originInstallerEnvironment(), ...options.env },
+    inheritEnv: false,
+  });
 }
 
 export function parseJson(text, fallback) {
@@ -133,7 +159,8 @@ export function pullRequestItems(payload) {
 export function pullRequestNumber(payload) {
   const value = payload?.number ?? payload?.id ?? payload?.pullRequest?.number;
   if (value === undefined || value === null || value === "") return undefined;
-  return String(value);
+  const number = String(value);
+  return /^\d+$/u.test(number) ? number : undefined;
 }
 
 export function pullRequestHeadName(item) {
@@ -204,16 +231,38 @@ export function isGitHubFeedUrl(raw) {
   }
 }
 
+function containsControlCharacter(value) {
+  return [...value].some((character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f);
+  });
+}
+
 export function resolveUpdateFeedUrl(raw) {
-  const trimmed = raw?.trim() ?? "";
-  if (!trimmed) return undefined;
+  const source = raw ?? "";
+  if (Buffer.byteLength(source, "utf8") > 4096) return undefined;
+  const trimmed = source.trim();
+  if (!trimmed || containsControlCharacter(trimmed)) {
+    return undefined;
+  }
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined;
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      return undefined;
+    }
+    // Updater channel files resolve relative to this public directory. Do not
+    // embed credentials or token-like query state in release metadata.
+    if (!parsed.pathname.endsWith("/")) parsed.pathname = `${parsed.pathname}/`;
+    return parsed.toString();
   } catch {
     return undefined;
   }
-  return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
 }
 
 export function defaultUpdateFeedUrl() {
@@ -242,12 +291,18 @@ export function resolveReleaseObjectKey(fileName) {
 export function writeGitHubOutput(values) {
   const outputPath = process.env.GITHUB_OUTPUT;
   if (!outputPath) return;
-  NodeFS.appendFileSync(
-    outputPath,
-    Object.entries(values)
-      .map(([key, value]) => `${key}=${value}`)
-      .join("\n") + "\n",
-  );
+  const entries = Object.entries(values).map(([key, rawValue]) => {
+    const value = String(rawValue);
+    if (
+      !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/u.test(key) ||
+      Buffer.byteLength(value, "utf8") > 8192 ||
+      containsControlCharacter(value)
+    ) {
+      throw new Error("GitHub output key or value is outside its safety boundary.");
+    }
+    return `${key}=${value}`;
+  });
+  NodeFS.appendFileSync(outputPath, entries.join("\n") + "\n");
 }
 
 function sleep(ms) {
@@ -257,16 +312,51 @@ function sleep(ms) {
 export function installOriginCli() {
   if (commandExists(originBin()) && originBin() !== "origin") return originBin();
   if (commandExists("origin")) return "origin";
-  runCommand("sh", ["-c", `curl -fsSL ${ORIGIN_CLI_INSTALL_URL} | sh`]);
+  runCommand("sh", ["-c", `curl -fsSL ${ORIGIN_CLI_INSTALL_URL} | sh`], {
+    inheritEnv: false,
+    env: originInstallerEnvironment(),
+  });
   return originBin();
+}
+
+export function originInstallerEnvironment(env = process.env) {
+  const safe = {};
+  for (const key of [
+    "CI",
+    "GITHUB_ACTIONS",
+    "HOME",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "LANG",
+    "LC_ALL",
+    "LOGNAME",
+    "NO_PROXY",
+    "PATH",
+    "SHELL",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "USER",
+    "XDG_BIN_HOME",
+    "XDG_DATA_HOME",
+    "https_proxy",
+    "http_proxy",
+    "no_proxy",
+  ]) {
+    if (env[key] !== undefined) safe[key] = env[key];
+  }
+  return safe;
 }
 
 function commandExists(command) {
   if (command.includes(NodePath.sep)) return NodeFS.existsSync(command);
+  const env = originInstallerEnvironment();
   const result = NodeChildProcess.spawnSync("sh", ["-c", `command -v ${JSON.stringify(command)}`], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
-    env: { ...process.env, PATH: withLocalBinPath() },
+    env: { ...env, PATH: withLocalBinPath(env) },
   });
   return result.status === 0;
 }
@@ -322,45 +412,54 @@ export function findPullRequest({ repo, base, head, state = "open" } = {}) {
 export function ensurePullRequest({ repo, base = "main", head, title, body, bodyFile } = {}) {
   if (!head) throw new Error("ensure-pr requires --head");
   if (!title) throw new Error("ensure-pr requires --title");
-  const resolvedBodyFile = bodyFile || writeTempBody(body ?? "");
-  const existing = findPullRequest({ repo, base, head, state: "open" });
-  if (existing) {
+  const resolvedBodyFile = writeTempBody(bodyFile ? readOriginBodyFile(bodyFile) : (body ?? ""));
+  try {
+    const existing = findPullRequest({ repo, base, head, state: "open" });
+    if (existing) {
+      const number = pullRequestNumber(existing);
+      if (!number) {
+        throw new Error(`Origin returned an invalid pull request number for ${head}.`);
+      }
+      runOrigin([
+        "pr",
+        "edit",
+        number,
+        ...originRepoFlag(repo),
+        "-t",
+        title,
+        "-F",
+        resolvedBodyFile,
+      ]);
+      writeGitHubOutput({ number, url: pullRequestUrl(number) });
+      return number;
+    }
+
     runOrigin([
       "pr",
-      "edit",
-      pullRequestNumber(existing),
+      "create",
       ...originRepoFlag(repo),
       "-t",
       title,
       "-F",
       resolvedBodyFile,
+      "-H",
+      head,
+      "-B",
+      base,
+      "--status",
+      "open",
     ]);
-    const number = pullRequestNumber(existing);
+    // A reused branch name can have older closed pull requests. After creating
+    // an explicitly open PR, only an exact open-head match can identify it.
+    const created = findPullRequest({ repo, base, head, state: "open" });
+    const number = pullRequestNumber(created);
+    if (!number)
+      throw new Error(`Created an Origin pull request for ${head} but could not read its number.`);
     writeGitHubOutput({ number, url: pullRequestUrl(number) });
     return number;
+  } finally {
+    NodeFS.rmSync(resolvedBodyFile, { force: true });
   }
-
-  runOrigin([
-    "pr",
-    "create",
-    ...originRepoFlag(repo),
-    "-t",
-    title,
-    "-F",
-    resolvedBodyFile,
-    "-H",
-    head,
-    "-B",
-    base,
-    "--status",
-    "open",
-  ]);
-  const created = findPullRequest({ repo, base, head, state: "all" });
-  const number = pullRequestNumber(created);
-  if (!number)
-    throw new Error(`Created an Origin pull request for ${head} but could not read its number.`);
-  writeGitHubOutput({ number, url: pullRequestUrl(number) });
-  return number;
 }
 
 export function pullRequestUrl(number, repo = ORIGIN_FULL_NAME) {
@@ -513,10 +612,9 @@ export function reportBlockedSync({
   const head = blockedSyncBranch(upstreamTag);
   const report = `${body?.trim() || title}\n`;
   const reportFile = writeTempBody(report);
-  const blob = runCommand("git", ["hash-object", "-w", reportFile]);
   const indexFile = NodePath.join(NodeOS.tmpdir(), `t3-pretty-sync-blocked-${process.pid}`);
   NodeFS.rmSync(indexFile, { force: true });
-  const env = { ...process.env, GIT_INDEX_FILE: indexFile };
+  const env = { GIT_INDEX_FILE: indexFile };
   try {
     runCommand("git", [...originGitConfigArgs(), "fetch", "origin", "main"], { env });
   } catch {
@@ -572,7 +670,11 @@ export function dispatchWorkflow(workflow, { ref = "main", inputs = {} } = {}) {
     for (const [key, value] of Object.entries(inputs)) {
       args.push("--input", `${key}=${value}`);
     }
-    return runCommand("depot", args);
+    const env = originInstallerEnvironment();
+    for (const key of ["DEPOT_API_TOKEN", "DEPOT_TOKEN"]) {
+      if (process.env[key] !== undefined) env[key] = process.env[key];
+    }
+    return runCommand("depot", args, { env, inheritEnv: false });
   }
   process.stdout.write(
     `No Depot dispatch token; Origin-connected CI should start ${workflowPath} from the ${ref} push or pull request merge.\n`,
@@ -580,12 +682,186 @@ export function dispatchWorkflow(workflow, { ref = "main", inputs = {} } = {}) {
   return "";
 }
 
+export function resolveReleaseAssetObjectKey(raw) {
+  if (
+    typeof raw !== "string" ||
+    !raw ||
+    raw === "." ||
+    raw === ".." ||
+    raw !== NodePath.basename(raw) ||
+    Buffer.byteLength(raw, "utf8") > 255 ||
+    raw.includes("\\") ||
+    containsControlCharacter(raw)
+  ) {
+    return undefined;
+  }
+  return raw;
+}
+
+export function releaseAssetObjectKeys(assets) {
+  if (assets.length === 0) {
+    throw new Error("publish-release requires at least one updater asset");
+  }
+  const objectKeys = [];
+  const seen = new Set();
+  for (const asset of assets) {
+    const objectKey =
+      typeof asset === "string"
+        ? resolveReleaseAssetObjectKey(NodePath.basename(asset))
+        : undefined;
+    if (!objectKey) {
+      throw new Error("Release asset has an invalid object name.");
+    }
+    if (seen.has(objectKey)) {
+      throw new Error(`Release assets contain the duplicate object name '${objectKey}'.`);
+    }
+    seen.add(objectKey);
+    objectKeys.push(objectKey);
+  }
+  return objectKeys;
+}
+
+export function releaseAssetUploadPlan(assets) {
+  const objectKeys = releaseAssetObjectKeys(assets);
+  return assets
+    .map((asset, index) => ({ asset, objectKey: objectKeys[index] }))
+    .sort(
+      (left, right) =>
+        Number(left.objectKey.endsWith(".yml")) - Number(right.objectKey.endsWith(".yml")),
+    );
+}
+
+export function readReleaseNotesFile(filePath, maxBytes = RELEASE_NOTES_MAX_BYTES) {
+  if (!filePath) return "";
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes > RELEASE_NOTES_MAX_BYTES) {
+    throw new Error(`Invalid release notes safety limit: ${maxBytes}`);
+  }
+  const noFollow = NodeFS.constants.O_NOFOLLOW ?? 0;
+  let file;
+  try {
+    file = NodeFS.openSync(filePath, NodeFS.constants.O_RDONLY | noFollow);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      throw new Error(`Release notes file does not exist: ${filePath}`, { cause: error });
+    }
+    throw error;
+  }
+  try {
+    const metadata = NodeFS.fstatSync(file);
+    if (!metadata.isFile()) {
+      throw new Error(`Release notes path is not a regular file: ${filePath}`);
+    }
+    const size = metadata.size;
+    if (size > maxBytes) {
+      throw new Error(`Release notes exceed the ${maxBytes}-byte safety limit: ${filePath}`);
+    }
+    const bytes = Buffer.alloc(maxBytes + 1);
+    let length = 0;
+    while (length < bytes.byteLength) {
+      const read = NodeFS.readSync(file, bytes, length, bytes.byteLength - length, null);
+      if (read === 0) break;
+      length += read;
+    }
+    if (length > maxBytes) {
+      throw new Error(`Release notes exceed the ${maxBytes}-byte safety limit: ${filePath}`);
+    }
+    return bytes.subarray(0, length).toString("utf8");
+  } finally {
+    NodeFS.closeSync(file);
+  }
+}
+
+function readUtf8Prefix(filePath, maxBytes) {
+  const noFollow = NodeFS.constants.O_NOFOLLOW ?? 0;
+  let file;
+  try {
+    file = NodeFS.openSync(filePath, NodeFS.constants.O_RDONLY | noFollow);
+  } catch (error) {
+    if (error?.code === "ENOENT") return undefined;
+    throw error;
+  }
+
+  try {
+    const metadata = NodeFS.fstatSync(file);
+    if (!metadata.isFile()) {
+      throw new Error(`Release report is not a regular file: ${filePath}`);
+    }
+    const bytes = Buffer.alloc(maxBytes + 1);
+    let length = 0;
+    while (length < bytes.byteLength) {
+      const read = NodeFS.readSync(file, bytes, length, bytes.byteLength - length, null);
+      if (read === 0) break;
+      length += read;
+    }
+
+    const truncated = metadata.size > maxBytes || length > maxBytes;
+    let end = Math.min(length, maxBytes);
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        return {
+          text: new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, end)),
+          truncated,
+        };
+      } catch {
+        end -= 1;
+      }
+    }
+    throw new Error(`Release report is not valid UTF-8: ${filePath}`);
+  } finally {
+    NodeFS.closeSync(file);
+  }
+}
+
+export function prepareReleaseNotesFile({ outputPath, target, upstreamTag, reportPath } = {}) {
+  if (!outputPath) throw new Error("prepare-release-notes requires --output-file");
+  if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/iu.test(target ?? "")) {
+    throw new Error("prepare-release-notes --target must be a full commit object ID");
+  }
+  if (
+    !upstreamTag ||
+    Buffer.byteLength(upstreamTag, "utf8") > 512 ||
+    containsControlCharacter(upstreamTag)
+  ) {
+    throw new Error("prepare-release-notes requires a bounded upstream tag");
+  }
+
+  const header = `T3 Pretty build from \`${target}\`.\nIncludes parent T3 Code through \`${upstreamTag}\` plus all changes merged to T3 Pretty \`main\`.\n`;
+  const missingReport = "\nNo parent integration report is present for this revision.\n";
+  const truncationMarker =
+    "\n\n_The integration report was truncated here to fit the release-note limit; the complete report remains in the repository._\n";
+  const separator = "\n";
+  const reportBudget =
+    RELEASE_NOTES_MAX_BYTES -
+    Buffer.byteLength(header, "utf8") -
+    Buffer.byteLength(separator, "utf8") -
+    Buffer.byteLength(truncationMarker, "utf8");
+  if (reportBudget <= 0) {
+    throw new Error("Release note header exceeds the release-note safety limit");
+  }
+
+  const report = reportPath ? readUtf8Prefix(reportPath, reportBudget) : undefined;
+  const notes = report
+    ? `${header}${separator}${report.text}${report.truncated ? truncationMarker : ""}`
+    : `${header}${missingReport}`;
+  if (Buffer.byteLength(notes, "utf8") > RELEASE_NOTES_MAX_BYTES) {
+    throw new Error("Prepared release notes exceeded the release-note safety limit");
+  }
+  NodeFS.writeFileSync(outputPath, notes, { flag: "wx", mode: 0o600 });
+  return notes;
+}
+
 export function publishOriginRelease({ tag, target, title, notesFile, assets = [] } = {}) {
   if (!tag) throw new Error("publish-release requires --tag");
+  if (tag.startsWith("-") || containsControlCharacter(tag)) {
+    throw new Error("publish-release --tag must be a valid Git tag name");
+  }
   if (!target) throw new Error("publish-release requires --target");
+  if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/iu.test(target)) {
+    throw new Error("publish-release --target must be a full commit object ID");
+  }
   const feedUrl = defaultUpdateFeedUrl();
   if (!feedUrl) {
-    throw new Error("T3CODE_DESKTOP_UPDATE_FEED_URL must be an http(s) generic updater feed.");
+    throw new Error("T3CODE_DESKTOP_UPDATE_FEED_URL must be an HTTPS generic updater feed.");
   }
   if (isGitHubFeedUrl(feedUrl)) {
     throw new Error(
@@ -593,10 +869,29 @@ export function publishOriginRelease({ tag, target, title, notesFile, assets = [
     );
   }
 
-  const notes =
-    notesFile && NodeFS.existsSync(notesFile) ? NodeFS.readFileSync(notesFile, "utf8") : "";
-  const existing = runCommand("git", ["tag", "--list", tag]);
-  if (!existing) {
+  const uploadPlan = releaseAssetUploadPlan(assets);
+  for (const { asset } of uploadPlan) {
+    if (!NodeFS.existsSync(asset) || !NodeFS.lstatSync(asset).isFile()) {
+      throw new Error(`Release asset is not a file: ${asset}`);
+    }
+  }
+  const normalizedTarget = target.toLowerCase();
+  runReleaseGit(["check-ref-format", `refs/tags/${tag}`]);
+  const targetCommit = runReleaseGit(["rev-parse", "--verify", `${target}^{commit}`]);
+  if (targetCommit.toLowerCase() !== normalizedTarget) {
+    throw new Error(`Release target ${target} did not resolve to that exact commit object ID.`);
+  }
+
+  const notes = readReleaseNotesFile(notesFile);
+  const existing = runReleaseGit(["tag", "--list", "--", tag]);
+  if (existing) {
+    const existingCommit = runReleaseGit(["rev-parse", "--verify", `refs/tags/${tag}^{commit}`]);
+    if (existingCommit.toLowerCase() !== normalizedTarget) {
+      throw new Error(
+        `Local release tag ${tag} points to ${existingCommit}, not requested target ${targetCommit}.`,
+      );
+    }
+  } else {
     const notePath = writeTempBody(notes || title || tag);
     // Annotated tags need a committer; CI checkouts have no user.name/email.
     runCommand("git", [
@@ -635,13 +930,66 @@ export function uploadReleaseAssets(assets = []) {
 }
 
 export function uploadReleaseAsset(filePath, objectKey) {
-  if (!NodeFS.existsSync(filePath)) {
-    throw new Error(`Release asset does not exist: ${filePath}`);
+  if (!NodeFS.existsSync(filePath) || !NodeFS.lstatSync(filePath).isFile()) {
+    throw new Error(`Release asset is not a regular file: ${filePath}`);
   }
-  const bucket = process.env.T3CODE_RELEASE_S3_BUCKET;
+  const resolvedObjectKey = resolveReleaseAssetObjectKey(objectKey);
+  if (!resolvedObjectKey) {
+    throw new Error("Release asset has an invalid object name.");
+  }
+  const rawBucket = process.env.T3CODE_RELEASE_S3_BUCKET;
+  const bucket = resolveReleaseBucket(rawBucket);
   if (!bucket) {
     throw new Error(
-      "T3CODE_RELEASE_S3_BUCKET is required to upload Origin desktop updater assets.",
+      "T3CODE_RELEASE_S3_BUCKET must be a bounded bucket name without URI separators.",
+    );
+  }
+  const destination = `s3://${bucket}/${resolvedObjectKey}`;
+  // Channel manifests are uploaded after their referenced binaries, and AWS
+  // progress output is suppressed so large installers cannot exhaust the
+  // synchronous command runner's output buffer.
+  const args = ["s3", "cp", NodePath.resolve(filePath), destination, "--only-show-errors"];
+  const rawEndpoint = process.env.T3CODE_RELEASE_S3_ENDPOINT;
+  const endpoint = rawEndpoint ? resolveReleaseEndpointUrl(rawEndpoint) : undefined;
+  if (rawEndpoint && !endpoint) {
+    throw new Error(
+      "T3CODE_RELEASE_S3_ENDPOINT must be a bounded HTTPS URL without credentials, query, or fragment.",
+    );
+  }
+  if (endpoint) {
+    args.push("--endpoint-url", endpoint);
+  }
+  const env = originInstallerEnvironment();
+  for (const key of [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_CA_BUNDLE",
+    "AWS_CONFIG_FILE",
+    "AWS_DEFAULT_PROFILE",
+    "AWS_DEFAULT_REGION",
+    "AWS_EC2_METADATA_DISABLED",
+    "AWS_PROFILE",
+    "AWS_REGION",
+    "AWS_ROLE_ARN",
+    "AWS_ROLE_SESSION_NAME",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_SHARED_CREDENTIALS_FILE",
+    "AWS_WEB_IDENTITY_TOKEN_FILE",
+  ]) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  const rawAccessKeyId = process.env.T3CODE_RELEASE_S3_ACCESS_KEY_ID;
+  const accessKeyId = rawAccessKeyId ? resolveReleaseCredential(rawAccessKeyId, 4096) : undefined;
+  if (rawAccessKeyId && !accessKeyId) {
+    throw new Error("T3CODE_RELEASE_S3_ACCESS_KEY_ID exceeds its safety limit or has controls.");
+  }
+  const rawSecretAccessKey = process.env.T3CODE_RELEASE_S3_SECRET_ACCESS_KEY;
+  const secretAccessKey = rawSecretAccessKey
+    ? resolveReleaseCredential(rawSecretAccessKey, 8192)
+    : undefined;
+  if (rawSecretAccessKey && !secretAccessKey) {
+    throw new Error(
+      "T3CODE_RELEASE_S3_SECRET_ACCESS_KEY exceeds its safety limit or has controls.",
     );
   }
   const destination = `s3://${bucket}/${objectKey}`;
@@ -686,8 +1034,29 @@ export function uploadReleaseAsset(filePath, objectKey) {
 }
 
 function writeTempBody(body) {
-  const path = NodePath.join(NodeOS.tmpdir(), `t3-pretty-origin-${process.pid}-${Date.now()}.md`);
-  NodeFS.writeFileSync(path, body.endsWith("\n") ? body : `${body}\n`);
+  const normalizedBody = String(body);
+  const serializedBody = normalizedBody.endsWith("\n") ? normalizedBody : `${normalizedBody}\n`;
+  if (Buffer.byteLength(serializedBody, "utf8") > ORIGIN_BODY_MAX_BYTES) {
+    throw new Error("Origin body exceeds its safety limit.");
+  }
+  for (const character of normalizedBody) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      ((codePoint <= 0x1f && character !== "\n" && character !== "\r" && character !== "\t") ||
+        codePoint === 0x7f)
+    ) {
+      throw new Error("Origin body contains an unsupported control character.");
+    }
+  }
+  const path = NodePath.join(
+    NodeOS.tmpdir(),
+    `t3-pretty-origin-${process.pid}-${NodeCrypto.randomUUID()}.md`,
+  );
+  NodeFS.writeFileSync(path, serializedBody, {
+    flag: "wx",
+    mode: 0o600,
+  });
   return path;
 }
 
@@ -703,6 +1072,19 @@ function readRepeated(args, name) {
     if (args[index] === name && args[index + 1]) values.push(args[index + 1]);
   }
   return values;
+}
+
+export function readPositional(args, valueFlags = []) {
+  const flags = new Set(valueFlags);
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+    if (flags.has(value)) {
+      index += 1;
+      continue;
+    }
+    if (!value.startsWith("--")) return value;
+  }
+  return undefined;
 }
 
 function parseInputs(rawInputs) {
@@ -734,7 +1116,7 @@ export function main(argv = process.argv.slice(2)) {
     case "merge-pr":
       mergePullRequest({
         repo: readFlag(rest, "--repo"),
-        target: rest.find((value) => !value.startsWith("--")) ?? readFlag(rest, "--head"),
+        target: readFlag(rest, "--head") ?? readPositional(rest, ["--repo", "--head", "--sha"]),
         sha: readFlag(rest, "--sha"),
       });
       return;

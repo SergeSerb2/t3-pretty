@@ -5,6 +5,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Scope from "effect/Scope";
 import {
   PullRequestOperationError,
   PullRequestUnavailableError,
@@ -115,6 +116,7 @@ const DETAIL_STALE_WINDOW = Duration.seconds(60);
 const DIFF_STALE_WINDOW = Duration.seconds(20);
 /** How long one host's signed-in login is believed without asking its CLI again. */
 const VIEWER_CACHE_TTL = Duration.minutes(10);
+const VIEWER_CACHE_CAPACITY = 256;
 const LIST_CACHE_CAPACITY = 64;
 const LIST_STATS_CACHE_CAPACITY = 32;
 const DETAIL_CACHE_CAPACITY = 128;
@@ -498,6 +500,9 @@ export const make = Effect.gen(function* () {
   const projections = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const rateLimits = yield* SourceControlRateLimit.SourceControlRateLimit;
+  const backgroundRefreshScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+    Scope.close(scope, Exit.void),
+  );
 
   const refineUnknownProjectKinds = (
     projects: ReadonlyArray<OrchestrationProjectShell>,
@@ -706,6 +711,14 @@ export const make = Effect.gen(function* () {
   // "is this host set up" answer the provider switcher shows, and holding it would keep saying
   // signed-out after the reader has signed in.
   const viewersByHost = new Map<string, { readonly at: number; readonly result: ResolvedViewer }>();
+  const recordViewer = (host: string, at: number, result: ResolvedViewer) => {
+    viewersByHost.delete(host);
+    if (viewersByHost.size >= VIEWER_CACHE_CAPACITY) {
+      const oldest = viewersByHost.keys().next().value;
+      if (oldest !== undefined) viewersByHost.delete(oldest);
+    }
+    viewersByHost.set(host, { at, result });
+  };
 
   const resolveViewers = (
     projects: ReadonlyArray<SupportedProject>,
@@ -717,8 +730,11 @@ export const make = Effect.gen(function* () {
         Effect.flatMap(Clock.currentTimeMillis, (now): Effect.Effect<ResolvedViewer> => {
           const held = viewersByHost.get(host);
           if (held !== undefined && now - held.at <= Duration.toMillis(VIEWER_CACHE_TTL)) {
+            viewersByHost.delete(host);
+            viewersByHost.set(host, held);
             return Effect.succeed(held.result);
           }
+          viewersByHost.delete(host);
           const forHost = projects.filter((project) => project.host === host);
           const api = forHost[0]!.api;
           // Every checkout on the host, not just the ones that survived de-duplication: one
@@ -733,7 +749,7 @@ export const make = Effect.gen(function* () {
               error: null as PullRequestProviderError | null,
             })),
             Effect.tap((result) =>
-              Effect.map(Clock.currentTimeMillis, (at) => viewersByHost.set(host, { at, result })),
+              Effect.map(Clock.currentTimeMillis, (at) => recordViewer(host, at, result)),
             ),
             Effect.catch((error) => Effect.succeed({ host, kind: api.kind, viewer: null, error })),
           );
@@ -756,8 +772,8 @@ export const make = Effect.gen(function* () {
     viewer: string,
   ): boolean => {
     if (filters === undefined) return true;
-    const labels = item.labels.map((label) => label.name.trim().toLowerCase());
-    const holds = (label: string) => labels.includes(label.trim().toLowerCase());
+    const labels = new Set(item.labels.map((label) => label.name.trim().toLowerCase()));
+    const holds = (label: string) => labels.has(label.trim().toLowerCase());
     return (
       (filters.draft === undefined || item.isDraft === (filters.draft === "only")) &&
       // Judged on the provider row rather than the entry, because the two absences mean
@@ -1839,9 +1855,6 @@ export const make = Effect.gen(function* () {
       return { stats: stats.flat() };
     });
 
-  const context = yield* Effect.context<never>();
-  const runFork = Effect.runForkWith(context);
-
   /**
    * Stale answers served while a fresh one is fetched behind them. Every read here leaves the
    * process for a CLI whose wall clock is the host's — seconds on a good day, tens of them on a
@@ -1871,10 +1884,14 @@ export const make = Effect.gen(function* () {
       return Effect.flatMap(Clock.currentTimeMillis, (now) => {
         const snapshot = held.get(key);
         if (snapshot === undefined || now - snapshot.at > staleMs) return recorded;
-        // Run as its own fiber rather than a child: the caller is answered and gone before the
-        // refresh lands. The read still coalesces on the cache key, so ten stale reads in one
-        // window cost one host request — and a failed refresh costs nothing but the retry.
-        return Effect.sync(() => runFork(Effect.ignore(recorded))).pipe(Effect.as(snapshot.value));
+        // Run in the service-owned scope rather than the caller scope: the caller is answered and
+        // gone before the refresh lands, while service teardown can still interrupt and await it.
+        // The read coalesces on the cache key, so ten stale reads cost one host request.
+        return recorded.pipe(
+          Effect.ignore,
+          Effect.forkIn(backgroundRefreshScope),
+          Effect.as(snapshot.value),
+        );
       });
     };
   };

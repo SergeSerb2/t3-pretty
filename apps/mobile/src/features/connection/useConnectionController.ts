@@ -14,6 +14,7 @@ import { useCallback, useMemo } from "react";
 import { environmentCatalog } from "../../connection/catalog";
 import {
   connectPairingUrl as connectPairingUrlAtom,
+  invalidatePairingConnectionAttempt,
   updateBearerConnection,
 } from "../../connection/onboarding";
 import { useEnvironments } from "../../state/environments";
@@ -73,6 +74,9 @@ export function useConnectionController() {
     (pairingUrl: string) => connectPairingUrlMutation(pairingUrl),
     [connectPairingUrlMutation],
   );
+  const cancelPairingConnection = useCallback(() => {
+    invalidatePairingConnectionAttempt();
+  }, []);
   const connectRelayEnvironment = useCallback(
     (environment: RelayClientEnvironmentRecord) =>
       registerEnvironment(
@@ -117,6 +121,7 @@ export function useConnectionController() {
       errorTraceId: Option.getOrNull(discovery.error)?.traceId ?? null,
     },
     connectPairingUrl,
+    cancelPairingConnection,
     connectRelayEnvironment,
     removeEnvironment,
     retryEnvironment,

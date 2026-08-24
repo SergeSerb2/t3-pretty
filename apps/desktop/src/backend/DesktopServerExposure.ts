@@ -3,6 +3,7 @@ import {
   type CreateAdvertisedEndpointInput,
 } from "@t3tools/shared/advertisedEndpoint";
 import {
+  ADVERTISED_ENDPOINTS_MAX_ITEMS,
   DesktopServerExposureModeSchema,
   type AdvertisedEndpoint,
   type AdvertisedEndpointProvider,
@@ -29,6 +30,7 @@ const TAILSCALE_STATUS_CACHE_TTL = Duration.seconds(60);
 
 export const DESKTOP_LOOPBACK_HOST = "127.0.0.1";
 const DESKTOP_LAN_BIND_HOST = "0.0.0.0";
+const DESKTOP_LAN_HOST_MAX_LENGTH = 1_024;
 
 interface ResolvedDesktopServerExposure {
   readonly mode: DesktopServerExposureMode;
@@ -61,15 +63,33 @@ const DESKTOP_MANUAL_ENDPOINT_PROVIDER: AdvertisedEndpointProvider = {
 
 const normalizeOptionalHost = (value: string | undefined): string | undefined => {
   const normalized = value?.trim();
-  return normalized && normalized.length > 0 ? normalized : undefined;
+  if (!normalized || normalized.length > DESKTOP_LAN_HOST_MAX_LENGTH) return undefined;
+
+  try {
+    const parsed = new URL(`http://${normalized}`);
+    if (
+      parsed.username.length > 0 ||
+      parsed.password.length > 0 ||
+      parsed.port.length > 0 ||
+      parsed.pathname !== "/" ||
+      parsed.search.length > 0 ||
+      parsed.hash.length > 0
+    ) {
+      return undefined;
+    }
+    return parsed.host;
+  } catch {
+    return undefined;
+  }
 };
 
 const isUsableLanIpv4Address = (address: string): boolean =>
   !address.startsWith("127.") && !address.startsWith("169.254.");
 
-const isHttpsEndpointUrl = (value: string): boolean => {
+const isSecureEndpointUrl = (value: string): boolean => {
   try {
-    return new URL(value).protocol === "https:";
+    const protocol = new URL(value).protocol;
+    return protocol === "https:" || protocol === "wss:";
   } catch {
     return false;
   }
@@ -179,22 +199,24 @@ const resolveDesktopCoreAdvertisedEndpoints = (
     );
   }
 
+  const seenManualHttpBaseUrls = new Set<string>();
   for (const customEndpointUrl of input.customHttpsEndpointUrls ?? []) {
     try {
-      const isHttpsEndpoint = isHttpsEndpointUrl(customEndpointUrl);
-      endpoints.push(
-        createManualEndpoint({
-          id: `manual:${customEndpointUrl}`,
-          label: isHttpsEndpoint ? "Custom HTTPS" : "Custom endpoint",
-          httpBaseUrl: customEndpointUrl,
-          reachability: "public",
-          ...(isHttpsEndpoint ? ({ hostedHttpsCompatibility: "compatible" } as const) : {}),
-          status: "unknown",
-          description: isHttpsEndpoint
-            ? "User-configured HTTPS endpoint for this desktop backend."
-            : "User-configured endpoint for this desktop backend.",
-        }),
-      );
+      const isSecureEndpoint = isSecureEndpointUrl(customEndpointUrl);
+      const endpoint = createManualEndpoint({
+        id: `manual:${customEndpointUrl}`,
+        label: isSecureEndpoint ? "Custom HTTPS" : "Custom endpoint",
+        httpBaseUrl: customEndpointUrl,
+        reachability: "public",
+        ...(isSecureEndpoint ? ({ hostedHttpsCompatibility: "compatible" } as const) : {}),
+        status: "unknown",
+        description: isSecureEndpoint
+          ? "User-configured HTTPS endpoint for this desktop backend."
+          : "User-configured endpoint for this desktop backend.",
+      });
+      if (seenManualHttpBaseUrls.has(endpoint.httpBaseUrl)) continue;
+      seenManualHttpBaseUrls.add(endpoint.httpBaseUrl);
+      endpoints.push(endpoint);
     } catch {
       // Ignore malformed user-configured endpoints without dropping valid endpoints.
     }
@@ -547,7 +569,7 @@ export const make = Effect.gen(function* () {
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
-    return [...coreEndpoints, ...tailscaleEndpoints];
+    return [...coreEndpoints, ...tailscaleEndpoints].slice(0, ADVERTISED_ENDPOINTS_MAX_ITEMS);
   }).pipe(Effect.withSpan("desktop.serverExposure.getAdvertisedEndpoints"));
 
   return DesktopServerExposure.of({

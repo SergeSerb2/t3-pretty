@@ -2,6 +2,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import { ADVERTISED_ENDPOINTS_MAX_ITEMS } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -366,6 +367,110 @@ describe("DesktopServerExposure", () => {
         T3CODE_DESKTOP_LAN_HOST: "10.0.0.7",
         T3CODE_DESKTOP_HTTPS_ENDPOINTS: "https://public.example.test",
       },
+    ),
+  );
+
+  it.effect("ignores malformed LAN host overrides and falls back to a usable interface", () =>
+    withHarness(
+      lanNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+        const change = yield* serverExposure.setMode("network-accessible");
+
+        assert.equal(change.state.advertisedHost, "192.168.1.20");
+        assert.equal(change.state.endpointUrl, "http://192.168.1.20:4173");
+      }),
+      {
+        T3CODE_DESKTOP_LAN_HOST: "alice:secret@10.0.0.7",
+      },
+    ),
+  );
+
+  it.effect("drops configured endpoints containing credentials", () =>
+    withHarness(
+      emptyNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        assert.deepEqual(
+          endpoints.map((endpoint) => endpoint.httpBaseUrl),
+          ["http://127.0.0.1:4173/", "https://public.example.test/"],
+        );
+        assert.isFalse(
+          endpoints.some(
+            (endpoint) =>
+              endpoint.id.includes("secret") ||
+              endpoint.httpBaseUrl.includes("secret") ||
+              endpoint.wsBaseUrl.includes("secret"),
+          ),
+        );
+      }),
+      {
+        T3CODE_DESKTOP_HTTPS_ENDPOINTS:
+          "https://alice:secret@private.example.test,https://public.example.test",
+      },
+    ),
+  );
+
+  it.effect("deduplicates normalized manual endpoints and recognizes secure WebSocket URLs", () =>
+    withHarness(
+      emptyNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        const manualEndpoints = endpoints.filter((endpoint) => endpoint.source === "user");
+        assert.deepEqual(manualEndpoints, [
+          {
+            id: "manual:https://duplicate.example.test",
+            label: "Custom HTTPS",
+            provider: {
+              id: "manual",
+              label: "Manual",
+              kind: "manual",
+              isAddon: false,
+            },
+            httpBaseUrl: "https://duplicate.example.test/",
+            wsBaseUrl: "wss://duplicate.example.test/",
+            reachability: "public",
+            compatibility: {
+              hostedHttpsApp: "compatible",
+              desktopApp: "compatible",
+            },
+            source: "user",
+            status: "unknown",
+            description: "User-configured HTTPS endpoint for this desktop backend.",
+          },
+        ]);
+      }),
+      {
+        T3CODE_DESKTOP_HTTPS_ENDPOINTS:
+          "https://duplicate.example.test,https://duplicate.example.test/path,wss://duplicate.example.test/socket",
+      },
+    ),
+  );
+
+  it.effect("caps the advertised endpoint result before desktop IPC encoding", () =>
+    withHarness(
+      {
+        tailscale0: Array.from({ length: ADVERTISED_ENDPOINTS_MAX_ITEMS + 8 }, (_, index) => ({
+          address: `100.64.0.${index + 1}`,
+          family: "IPv4" as const,
+          internal: false,
+        })),
+      },
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+        yield* serverExposure.setMode("network-accessible");
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        assert.equal(endpoints.length, ADVERTISED_ENDPOINTS_MAX_ITEMS);
+      }),
     ),
   );
 

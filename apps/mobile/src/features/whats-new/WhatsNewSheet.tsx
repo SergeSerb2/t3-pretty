@@ -41,6 +41,7 @@ export function WhatsNewSheet(props: {
     >
       <View className="flex-1 justify-end bg-backdrop">
         <View
+          accessibilityViewIsModal
           className="max-h-[82%] rounded-t-[28px] bg-sheet px-6 pt-6"
           style={{ paddingBottom: Math.max(insets.bottom, 16) }}
         >

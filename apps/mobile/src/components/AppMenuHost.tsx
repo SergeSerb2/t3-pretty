@@ -20,7 +20,7 @@ let presentRequest: ((request: AppMenuRequest) => void) | null = null;
  * view. Requires AppMenuHost at the app root.
  */
 export function presentAppMenu(request: AppMenuRequest): void {
-  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
   presentRequest?.(request);
 }
 
@@ -64,9 +64,12 @@ export function AppMenuHost() {
   const [request, setRequest] = useState<AppMenuRequest | null>(null);
 
   useEffect(() => {
-    presentRequest = setRequest;
+    const present = setRequest;
+    presentRequest = present;
     return () => {
-      presentRequest = null;
+      if (presentRequest === present) {
+        presentRequest = null;
+      }
     };
   }, []);
 

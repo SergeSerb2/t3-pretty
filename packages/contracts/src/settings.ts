@@ -7,6 +7,8 @@ import { ThreadEnvMode } from "./environment.ts";
 import {
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
+  PROVIDER_MODEL_ID_MAX_LENGTH,
+  ProviderModelId,
   ProviderOptionSelections,
 } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
@@ -21,11 +23,14 @@ import {
 import { AppsSettings } from "./apps.ts";
 import {
   ProviderInstanceConfig,
+  ProviderInstanceConfigMap,
+  ProviderInstanceEnvironmentVariableName,
   ProviderInstanceId,
+  ProviderInstanceSlug,
   type ProviderDriverKind,
 } from "./providerInstance.ts";
-import { SkillId, SkillMarketplaceSource, SkillsSettings } from "./skills.ts";
-import { SubagentChildSelection, SubagentPolicySettings } from "./subagentPolicy.ts";
+import { EnabledSkillIds, SkillId, SkillMarketplaceSources, SkillsSettings } from "./skills.ts";
+import { SubagentPolicyChildren, SubagentPolicySettings } from "./subagentPolicy.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -60,7 +65,7 @@ export type SidebarThreadPreviewCount = typeof SidebarThreadPreviewCount.Type;
 export const DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT: SidebarThreadPreviewCount = 6;
 export const MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS = 1;
 export const MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS = 90;
-export const SidebarAutoSettleAfterDays = Schema.Number.check(
+export const SidebarAutoSettleAfterDays = Schema.Int.check(
   Schema.isBetween({
     minimum: MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
     maximum: MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
@@ -146,6 +151,43 @@ export type FontFamilyPreference = typeof FontFamilyPreference.Type;
 export const DEFAULT_BROWSER_VIEWPORT: PreviewViewportSetting = FILL_PREVIEW_VIEWPORT;
 export const DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW = true;
 
+export const CLIENT_SETTINGS_LIST_MAX_LENGTH = 512;
+export const CLIENT_SETTINGS_RECORD_MAX_PROPERTIES = 2_048;
+export const CLIENT_SETTINGS_VALUE_MAX_LENGTH = 2_048;
+
+const ClientSettingsValue = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(CLIENT_SETTINGS_VALUE_MAX_LENGTH),
+);
+const DismissedProviderUpdateNotificationKeys = Schema.Array(ClientSettingsValue).check(
+  Schema.isMaxLength(CLIENT_SETTINGS_LIST_MAX_LENGTH),
+);
+const ClientSettingsFavorite = Schema.Struct({
+  provider: ProviderInstanceId,
+  model: ClientSettingsValue,
+});
+const ClientSettingsFavorites = Schema.Array(ClientSettingsFavorite).check(
+  Schema.isMaxLength(CLIENT_SETTINGS_LIST_MAX_LENGTH),
+);
+const ClientSettingsFavoriteSkillIds = Schema.Array(
+  SkillId.check(Schema.isMaxLength(CLIENT_SETTINGS_VALUE_MAX_LENGTH)),
+).check(Schema.isMaxLength(CLIENT_SETTINGS_LIST_MAX_LENGTH));
+const ClientSettingsModelNames = Schema.Array(
+  Schema.String.check(Schema.isMaxLength(CLIENT_SETTINGS_VALUE_MAX_LENGTH)),
+)
+  .check(Schema.isMaxLength(CLIENT_SETTINGS_LIST_MAX_LENGTH))
+  .pipe(Schema.withDecodingDefault(Effect.succeed([])));
+const ClientSettingsProviderModelPreferences = Schema.Record(
+  ProviderInstanceId,
+  Schema.Struct({
+    hiddenModels: ClientSettingsModelNames,
+    modelOrder: ClientSettingsModelNames,
+  }),
+).check(Schema.isMaxProperties(CLIENT_SETTINGS_LIST_MAX_LENGTH));
+const ClientSettingsProjectGroupingOverrides = Schema.Record(
+  ClientSettingsValue,
+  SidebarProjectGroupingMode,
+).check(Schema.isMaxProperties(CLIENT_SETTINGS_RECORD_MAX_PROPERTIES));
+
 export const ClientSettingsSchema = Schema.Struct({
   appearanceContrast: AppearanceContrast.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_APPEARANCE_CONTRAST)),
@@ -173,7 +215,7 @@ export const ClientSettingsSchema = Schema.Struct({
   confirmQuit: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
+  dismissedProviderUpdateNotificationKeys: DismissedProviderUpdateNotificationKeys.pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   diffIgnoreWhitespace: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -212,25 +254,16 @@ export const ClientSettingsSchema = Schema.Struct({
   // default instance for their kind (because `defaultInstanceIdForDriver(kind)`
   // uses the same slug). The field name is kept as `provider` for storage
   // stability; new call sites should treat the value as an instance id.
-  favorites: Schema.Array(
-    Schema.Struct({
-      provider: ProviderInstanceId,
-      model: TrimmedNonEmptyString,
-    }),
-  ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  favorites: ClientSettingsFavorites.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   // Composer Skills picker pins. Client-only, like model favorites: the
   // starred ids float to the top of the ⋯ → Skills submenu and do not
   // change which skills a thread actually loads.
-  favoriteSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  providerModelPreferences: Schema.Record(
-    ProviderInstanceId,
-    Schema.Struct({
-      hiddenModels: Schema.Array(Schema.String).pipe(
-        Schema.withDecodingDefault(Effect.succeed([])),
-      ),
-      modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-    }),
-  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  favoriteSkillIds: ClientSettingsFavoriteSkillIds.pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  providerModelPreferences: ClientSettingsProviderModelPreferences.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   // Legacy plan mode. The composer's Build/Plan toggle was removed from the
   // default UI; this beta flag restores it (plus the /plan and /default slash
   // commands) for users who still rely on the old workflow.
@@ -253,10 +286,9 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
-  sidebarProjectGroupingOverrides: Schema.Record(
-    TrimmedNonEmptyString,
-    SidebarProjectGroupingMode,
-  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  sidebarProjectGroupingOverrides: ClientSettingsProjectGroupingOverrides.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
   ),
@@ -281,8 +313,24 @@ export const DEFAULT_CLIENT_SETTINGS: ClientSettings = Schema.decodeSync(ClientS
 // import cycle; re-exported here for compatibility with deep imports.
 export { ThreadEnvMode } from "./environment.ts";
 
+export const SERVER_SETTINGS_PATH_MAX_LENGTH = 32 * 1024;
+export const SERVER_SETTINGS_URL_MAX_LENGTH = 8_192;
+export const SERVER_SETTINGS_TEXT_MAX_LENGTH = 64 * 1024;
+export const SERVER_SETTINGS_SECRET_MAX_LENGTH = 64 * 1024;
+export const SERVER_SETTINGS_CUSTOM_MODELS_MAX_LENGTH = 512;
+
+const ServerSettingsPath = TrimmedString.check(Schema.isMaxLength(SERVER_SETTINGS_PATH_MAX_LENGTH));
+const ServerSettingsUrl = TrimmedString.check(Schema.isMaxLength(SERVER_SETTINGS_URL_MAX_LENGTH));
+const ServerSettingsText = TrimmedString.check(Schema.isMaxLength(SERVER_SETTINGS_TEXT_MAX_LENGTH));
+const ServerSettingsSecret = TrimmedString.check(
+  Schema.isMaxLength(SERVER_SETTINGS_SECRET_MAX_LENGTH),
+);
+const ServerSettingsCustomModels = Schema.Array(
+  Schema.String.check(Schema.isMaxLength(PROVIDER_MODEL_ID_MAX_LENGTH)),
+).check(Schema.isMaxLength(SERVER_SETTINGS_CUSTOM_MODELS_MAX_LENGTH));
+
 const makeBinaryPathSetting = (fallback: string) =>
-  TrimmedString.pipe(
+  ServerSettingsPath.pipe(
     Schema.decodeTo(
       Schema.String,
       SchemaTransformation.transformOrFail({
@@ -347,7 +395,7 @@ export const CodexSettings = makeProviderSettingsSchema(
         providerSettingsForm: { placeholder: "codex", clearWhenEmpty: "omit" },
       }),
     ),
-    homePath: TrimmedString.pipe(
+    homePath: ServerSettingsPath.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "CODEX_HOME path",
@@ -358,7 +406,7 @@ export const CodexSettings = makeProviderSettingsSchema(
         },
       }),
     ),
-    shadowHomePath: TrimmedString.pipe(
+    shadowHomePath: ServerSettingsPath.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "Shadow home path",
@@ -370,14 +418,14 @@ export const CodexSettings = makeProviderSettingsSchema(
         },
       }),
     ),
-    launchArgs: TrimmedString.pipe(
+    launchArgs: ServerSettingsText.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "Launch arguments",
         description: "Additional CLI arguments passed to codex app-server on session start.",
       }),
     ),
-    customModels: Schema.Array(Schema.String).pipe(
+    customModels: ServerSettingsCustomModels.pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
@@ -401,7 +449,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         providerSettingsForm: { placeholder: "claude", clearWhenEmpty: "omit" },
       }),
     ),
-    homePath: TrimmedString.pipe(
+    homePath: ServerSettingsPath.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "CLAUDE_CONFIG_DIR path",
@@ -410,11 +458,11 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         providerSettingsForm: { placeholder: "~/.claude", clearWhenEmpty: "omit" },
       }),
     ),
-    customModels: Schema.Array(Schema.String).pipe(
+    customModels: ServerSettingsCustomModels.pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
-    launchArgs: Schema.String.pipe(
+    launchArgs: ServerSettingsText.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "Launch arguments",
@@ -446,7 +494,7 @@ export const CursorSettings = makeProviderSettingsSchema(
         providerSettingsForm: { placeholder: "cursor-agent", clearWhenEmpty: "omit" },
       }),
     ),
-    apiEndpoint: TrimmedString.pipe(
+    apiEndpoint: ServerSettingsUrl.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "API endpoint",
@@ -457,7 +505,7 @@ export const CursorSettings = makeProviderSettingsSchema(
         },
       }),
     ),
-    customModels: Schema.Array(Schema.String).pipe(
+    customModels: ServerSettingsCustomModels.pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
@@ -483,7 +531,7 @@ export const GrokSettings = makeProviderSettingsSchema(
         providerSettingsForm: { placeholder: "grok", clearWhenEmpty: "omit" },
       }),
     ),
-    customModels: Schema.Array(Schema.String).pipe(
+    customModels: ServerSettingsCustomModels.pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
@@ -507,7 +555,7 @@ export const KimiSettings = makeProviderSettingsSchema(
         providerSettingsForm: { placeholder: "kimi", clearWhenEmpty: "omit" },
       }),
     ),
-    homePath: TrimmedString.pipe(
+    homePath: ServerSettingsPath.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "KIMI_CODE_HOME path",
@@ -519,7 +567,7 @@ export const KimiSettings = makeProviderSettingsSchema(
         },
       }),
     ),
-    customModels: Schema.Array(Schema.String).pipe(
+    customModels: ServerSettingsCustomModels.pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
@@ -531,8 +579,8 @@ export const KimiSettings = makeProviderSettingsSchema(
 export type KimiSettings = typeof KimiSettings.Type;
 
 export const ObservabilitySettings = Schema.Struct({
-  otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  otlpTracesUrl: ServerSettingsUrl.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  otlpMetricsUrl: ServerSettingsUrl.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 });
 export type ObservabilitySettings = typeof ObservabilitySettings.Type;
 
@@ -547,7 +595,7 @@ export const SourceControlWritingStyleSettings = Schema.Struct({
   mode: SourceControlWritingStyleMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("repo_conventions" as const)),
   ),
-  customInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  customInstructions: ServerSettingsText.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   followChangeRequestTemplates: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
@@ -556,6 +604,23 @@ export type SourceControlWritingStyleSettings = typeof SourceControlWritingStyle
 
 export const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.seconds(30);
 export const DEFAULT_PROVIDER_HEALTH_REFRESH_INTERVAL = Duration.minutes(5);
+export const BACKGROUND_ACTIVITY_MAX_INTERVAL_MILLIS = Number.MAX_SAFE_INTEGER;
+export const BACKGROUND_ACTIVITY_MIN_HOST_POWER_INTERVAL_MILLIS = 5_000;
+export const BACKGROUND_ACTIVITY_MIN_IDLE_CLIENT_TTL_MILLIS = 1_000;
+
+const backgroundActivityDurationFromMillis = (minimum: number) =>
+  Schema.Number.check(
+    Schema.isFinite(),
+    Schema.isBetween({ minimum, maximum: BACKGROUND_ACTIVITY_MAX_INTERVAL_MILLIS }),
+  ).pipe(Schema.decodeTo(Schema.Duration, SchemaTransformation.durationFromMillis));
+
+const BackgroundActivityNonNegativeDuration = backgroundActivityDurationFromMillis(0);
+const BackgroundActivityHostPowerDuration = backgroundActivityDurationFromMillis(
+  BACKGROUND_ACTIVITY_MIN_HOST_POWER_INTERVAL_MILLIS,
+);
+const BackgroundActivityIdleClientTtl = backgroundActivityDurationFromMillis(
+  BACKGROUND_ACTIVITY_MIN_IDLE_CLIENT_TTL_MILLIS,
+);
 
 export const BackgroundActivityProfile = Schema.Literals([
   "balanced",
@@ -574,11 +639,11 @@ export const BackgroundActivityProfileSelection = Schema.Literals([
 export type BackgroundActivityProfileSelection = typeof BackgroundActivityProfileSelection.Type;
 
 export const BackgroundActivityOverrides = Schema.Struct({
-  automaticGitFetchInterval: Schema.optionalKey(Schema.DurationFromMillis),
-  providerHealthRefreshInterval: Schema.optionalKey(Schema.DurationFromMillis),
-  hostPowerMonitorActiveInterval: Schema.optionalKey(Schema.DurationFromMillis),
-  hostPowerMonitorIdleInterval: Schema.optionalKey(Schema.DurationFromMillis),
-  idleClientTtl: Schema.optionalKey(Schema.DurationFromMillis),
+  automaticGitFetchInterval: Schema.optionalKey(BackgroundActivityNonNegativeDuration),
+  providerHealthRefreshInterval: Schema.optionalKey(BackgroundActivityNonNegativeDuration),
+  hostPowerMonitorActiveInterval: Schema.optionalKey(BackgroundActivityHostPowerDuration),
+  hostPowerMonitorIdleInterval: Schema.optionalKey(BackgroundActivityHostPowerDuration),
+  idleClientTtl: Schema.optionalKey(BackgroundActivityIdleClientTtl),
   pauseWhenHostLocked: Schema.optionalKey(Schema.Boolean),
   pauseWhenHostLowPower: Schema.optionalKey(Schema.Boolean),
   pauseWhenClientLowPower: Schema.optionalKey(Schema.Boolean),
@@ -632,12 +697,12 @@ export const ServerSettings = Schema.Struct({
   backgroundActivity: BackgroundActivitySettings,
   // Legacy flat fields retained for old settings files and old clients. New
   // consumers should resolve `backgroundActivity` instead.
-  automaticGitFetchInterval: Schema.DurationFromMillis.pipe(
+  automaticGitFetchInterval: BackgroundActivityNonNegativeDuration.pipe(
     Schema.withDecodingDefault(
       Effect.succeed(Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL)),
     ),
   ),
-  providerHealthRefreshInterval: Schema.DurationFromMillis.pipe(
+  providerHealthRefreshInterval: BackgroundActivityNonNegativeDuration.pipe(
     Schema.withDecodingDefault(
       Effect.succeed(Duration.toMillis(DEFAULT_PROVIDER_HEALTH_REFRESH_INTERVAL)),
     ),
@@ -651,7 +716,7 @@ export const ServerSettings = Schema.Struct({
   newWorktreesStartFromOrigin: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
-  addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  addProjectBaseDirectory: ServerSettingsPath.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
@@ -691,9 +756,7 @@ export const ServerSettings = Schema.Struct({
   // is `Schema.Unknown` at this layer so envelopes with unknown drivers
   // (forks, downgrades, in-flight PR branches) round-trip without loss.
   // See providerInstance.ts for the forward/backward compatibility invariant.
-  providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
-  ),
+  providerInstances: ProviderInstanceConfigMap.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   skills: SkillsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   subagentPolicy: SubagentPolicySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -765,10 +828,10 @@ export type ServerSettingsOperation = typeof ServerSettingsOperation.Type;
 export class ServerSettingsError extends Schema.TaggedErrorClass<ServerSettingsError>()(
   "ServerSettingsError",
   {
-    settingsPath: Schema.String,
+    settingsPath: ServerSettingsPath,
     operation: ServerSettingsOperation,
-    providerInstanceId: Schema.optional(Schema.String),
-    environmentVariable: Schema.optional(Schema.String),
+    providerInstanceId: Schema.optional(ProviderInstanceSlug),
+    environmentVariable: Schema.optional(ProviderInstanceEnvironmentVariableName),
     cause: Schema.Defect(),
   },
 ) {
@@ -795,45 +858,45 @@ export const DEFAULT_UNIFIED_SETTINGS: UnifiedSettings = {
 
 const ModelSelectionPatch = Schema.Struct({
   instanceId: Schema.optionalKey(ProviderInstanceId),
-  model: Schema.optionalKey(TrimmedNonEmptyString),
+  model: Schema.optionalKey(ProviderModelId),
   options: Schema.optionalKey(ProviderOptionSelections),
 });
 
 const CodexSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  homePath: Schema.optionalKey(TrimmedString),
-  shadowHomePath: Schema.optionalKey(TrimmedString),
-  launchArgs: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+  binaryPath: Schema.optionalKey(ServerSettingsPath),
+  homePath: Schema.optionalKey(ServerSettingsPath),
+  shadowHomePath: Schema.optionalKey(ServerSettingsPath),
+  launchArgs: Schema.optionalKey(ServerSettingsText),
+  customModels: Schema.optionalKey(ServerSettingsCustomModels),
 });
 
 const ClaudeSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  homePath: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
-  launchArgs: Schema.optionalKey(TrimmedString),
+  binaryPath: Schema.optionalKey(ServerSettingsPath),
+  homePath: Schema.optionalKey(ServerSettingsPath),
+  customModels: Schema.optionalKey(ServerSettingsCustomModels),
+  launchArgs: Schema.optionalKey(ServerSettingsText),
 });
 
 const CursorSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  apiEndpoint: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+  binaryPath: Schema.optionalKey(ServerSettingsPath),
+  apiEndpoint: Schema.optionalKey(ServerSettingsUrl),
+  customModels: Schema.optionalKey(ServerSettingsCustomModels),
 });
 
 const GrokSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+  binaryPath: Schema.optionalKey(ServerSettingsPath),
+  customModels: Schema.optionalKey(ServerSettingsCustomModels),
 });
 
 const KimiSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
-  binaryPath: Schema.optionalKey(TrimmedString),
-  homePath: Schema.optionalKey(TrimmedString),
-  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+  binaryPath: Schema.optionalKey(ServerSettingsPath),
+  homePath: Schema.optionalKey(ServerSettingsPath),
+  customModels: Schema.optionalKey(ServerSettingsCustomModels),
 });
 
 export const ServerSettingsPatch = Schema.Struct({
@@ -851,17 +914,17 @@ export const ServerSettingsPatch = Schema.Struct({
       overrides: Schema.optionalKey(BackgroundActivityOverrides),
     }),
   ),
-  automaticGitFetchInterval: Schema.optionalKey(Schema.DurationFromMillis),
-  providerHealthRefreshInterval: Schema.optionalKey(Schema.DurationFromMillis),
+  automaticGitFetchInterval: Schema.optionalKey(BackgroundActivityNonNegativeDuration),
+  providerHealthRefreshInterval: Schema.optionalKey(BackgroundActivityNonNegativeDuration),
   backgroundActivityProfile: Schema.optionalKey(BackgroundActivityProfile),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
-  addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
+  addProjectBaseDirectory: Schema.optionalKey(ServerSettingsPath),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   sourceControlWritingStyle: Schema.optionalKey(
     Schema.Struct({
       mode: Schema.optionalKey(SourceControlWritingStyleMode),
-      customInstructions: Schema.optionalKey(TrimmedString),
+      customInstructions: Schema.optionalKey(ServerSettingsText),
       followChangeRequestTemplates: Schema.optionalKey(Schema.Boolean),
     }),
   ),
@@ -870,8 +933,8 @@ export const ServerSettingsPatch = Schema.Struct({
   // when present (the client always sends the full list it wants).
   skills: Schema.optionalKey(
     Schema.Struct({
-      enabledSkillIds: Schema.optionalKey(Schema.Array(SkillId)),
-      marketplaceSources: Schema.optionalKey(Schema.Array(SkillMarketplaceSource)),
+      enabledSkillIds: Schema.optionalKey(EnabledSkillIds),
+      marketplaceSources: Schema.optionalKey(SkillMarketplaceSources),
     }),
   ),
   // Deep-merged into ServerSettings.subagentPolicy. `children` is a wholesale
@@ -879,13 +942,13 @@ export const ServerSettingsPatch = Schema.Struct({
   subagentPolicy: Schema.optionalKey(
     Schema.Struct({
       enabled: Schema.optionalKey(Schema.Boolean),
-      children: Schema.optionalKey(Schema.Record(ProviderInstanceId, SubagentChildSelection)),
+      children: Schema.optionalKey(SubagentPolicyChildren),
     }),
   ),
   observability: Schema.optionalKey(
     Schema.Struct({
-      otlpTracesUrl: Schema.optionalKey(TrimmedString),
-      otlpMetricsUrl: Schema.optionalKey(TrimmedString),
+      otlpTracesUrl: Schema.optionalKey(ServerSettingsUrl),
+      otlpMetricsUrl: Schema.optionalKey(ServerSettingsUrl),
     }),
   ),
   providers: Schema.optionalKey(
@@ -901,7 +964,7 @@ export const ServerSettingsPatch = Schema.Struct({
   // entries is intentionally out of scope: the map is small, and partial
   // patches risk leaving driver-specific config in a half-merged state.
   // The web UI sends a fully-formed map every time it edits this field.
-  providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
+  providerInstances: Schema.optionalKey(ProviderInstanceConfigMap),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
@@ -926,37 +989,16 @@ export const ClientSettingsPatch = Schema.Struct({
   fontFamilySans: Schema.optionalKey(FontFamilyPreference),
   fontFamilyTerminal: Schema.optionalKey(FontFamilyPreference),
   fontSmoothing: Schema.optionalKey(Schema.Boolean),
-  favorites: Schema.optionalKey(
-    Schema.Array(
-      Schema.Struct({
-        provider: ProviderInstanceId,
-        model: TrimmedNonEmptyString,
-      }),
-    ),
-  ),
-  favoriteSkillIds: Schema.optionalKey(Schema.Array(SkillId)),
-  providerModelPreferences: Schema.optionalKey(
-    Schema.Record(
-      ProviderInstanceId,
-      Schema.Struct({
-        hiddenModels: Schema.Array(Schema.String).pipe(
-          Schema.withDecodingDefault(Effect.succeed([])),
-        ),
-        modelOrder: Schema.Array(Schema.String).pipe(
-          Schema.withDecodingDefault(Effect.succeed([])),
-        ),
-      }),
-    ),
-  ),
+  favorites: Schema.optionalKey(ClientSettingsFavorites),
+  favoriteSkillIds: Schema.optionalKey(ClientSettingsFavoriteSkillIds),
+  providerModelPreferences: Schema.optionalKey(ClientSettingsProviderModelPreferences),
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
   showSkillsInSlashMenu: Schema.optionalKey(Schema.Boolean),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   sidebarAutoArchiveSettledAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
-  sidebarProjectGroupingOverrides: Schema.optionalKey(
-    Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),
-  ),
+  sidebarProjectGroupingOverrides: Schema.optionalKey(ClientSettingsProjectGroupingOverrides),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),

@@ -13,8 +13,10 @@ import {
   resolveDisplayedThreadPrProvider,
   resolveThreadPr,
   settledPrHoverColorClass,
+  THREAD_CHANGE_REQUEST_SNAPSHOT_LIMIT,
   threadChangeRequestSnapshotsAtom,
   type ThreadChangeRequestSnapshot,
+  updateThreadChangeRequestSnapshots,
 } from "./ThreadStatusIndicators";
 
 function status(overrides: Partial<VcsStatusResult> = {}): VcsStatusResult {
@@ -453,6 +455,19 @@ describe("threadChangeRequestSnapshotsAtom", () => {
       registry.dispose();
     }),
   );
+
+  it("bounds snapshots retained across visited threads", () => {
+    const snapshot = snapshotFor("feature/current", mergedFeaturePr());
+    let snapshots: ReadonlyMap<string, ThreadChangeRequestSnapshot> = new Map();
+
+    for (let index = 0; index <= THREAD_CHANGE_REQUEST_SNAPSHOT_LIMIT; index += 1) {
+      snapshots = updateThreadChangeRequestSnapshots(snapshots, `thread-${index}`, snapshot);
+    }
+
+    expect(snapshots.size).toBe(THREAD_CHANGE_REQUEST_SNAPSHOT_LIMIT);
+    expect(snapshots.has("thread-0")).toBe(false);
+    expect(snapshots.has(`thread-${THREAD_CHANGE_REQUEST_SNAPSHOT_LIMIT}`)).toBe(true);
+  });
 });
 
 describe("prStatusIndicator", () => {

@@ -217,6 +217,7 @@ export interface ThreadChangeRequestSnapshot {
 export const threadChangeRequestSnapshotsAtom = Atom.make<
   ReadonlyMap<string, ThreadChangeRequestSnapshot>
 >(new Map()).pipe(Atom.keepAlive, Atom.withLabel("sidebar:thread-change-request-snapshots"));
+export const THREAD_CHANGE_REQUEST_SNAPSHOT_LIMIT = 512;
 
 function isTerminalChangeRequestState(
   state: NonNullable<ThreadPr>["state"],
@@ -250,24 +251,39 @@ export function threadChangeRequestSnapshotsEqual(
   );
 }
 
+export function updateThreadChangeRequestSnapshots(
+  current: ReadonlyMap<string, ThreadChangeRequestSnapshot>,
+  threadKey: string,
+  snapshot: ThreadChangeRequestSnapshot | null,
+): ReadonlyMap<string, ThreadChangeRequestSnapshot> {
+  const existing = current.get(threadKey);
+  if (snapshot === null) {
+    if (existing === undefined) return current;
+    const next = new Map(current);
+    next.delete(threadKey);
+    return next;
+  }
+  if (existing !== undefined && threadChangeRequestSnapshotsEqual(existing, snapshot)) {
+    return current;
+  }
+  const next = new Map(current);
+  next.delete(threadKey);
+  next.set(threadKey, snapshot);
+  while (next.size > THREAD_CHANGE_REQUEST_SNAPSHOT_LIMIT) {
+    const oldestThreadKey = next.keys().next().value;
+    if (oldestThreadKey === undefined) break;
+    next.delete(oldestThreadKey);
+  }
+  return next;
+}
+
 export function setThreadChangeRequestSnapshot(
   threadKey: string,
   snapshot: ThreadChangeRequestSnapshot | null,
 ): void {
   appAtomRegistry.modify(threadChangeRequestSnapshotsAtom, (current) => {
-    const existing = current.get(threadKey);
-    if (snapshot === null) {
-      if (existing === undefined) return [false, current];
-      const next = new Map(current);
-      next.delete(threadKey);
-      return [true, next];
-    }
-    if (existing !== undefined && threadChangeRequestSnapshotsEqual(existing, snapshot)) {
-      return [false, current];
-    }
-    const next = new Map(current);
-    next.set(threadKey, snapshot);
-    return [true, next];
+    const next = updateThreadChangeRequestSnapshots(current, threadKey, snapshot);
+    return [next !== current, next];
   });
 }
 

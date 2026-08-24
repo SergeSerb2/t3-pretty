@@ -15,6 +15,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 
+import { readTextWithinLimit } from "../boundedFileRead.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import {
   ensurePinnedRuntimeInstalled,
@@ -24,13 +25,17 @@ import {
 import {
   SERVICE_LAUNCHER_FILE,
   SERVICE_LAUNCHER_PROTOCOL,
+  SERVICE_RUNTIME_SENTINEL_MAX_BYTES,
   SERVICE_STATE_FILE,
+  SERVICE_STATE_MAX_BYTES,
   parseServiceState,
   serviceStateHasPendingUpdate,
   type ServiceState,
 } from "./serviceProtocol.ts";
 
 const BOOT_SERVICE_NAME = T3CODE_BUILD_FLAVOR === "internal" ? "t3code" : "t3pretty";
+const BOOT_SERVICE_LAUNCHER_MAX_BYTES = 4 * 1024 * 1024;
+const BOOT_SERVICE_UNIT_MAX_BYTES = 256 * 1024;
 export const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
 // `.service` suffix keeps the label distinct from the desktop app's bundle id
 // (com.t3tools.t3code), so launchd and TCC records never collide.
@@ -588,9 +593,11 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
           : new BootServiceInstallError({ cause: error }),
       ),
     );
-    const launcherSource = yield* fs
-      .readFileString(launcherSourcePath)
-      .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
+    const launcherSource = yield* readTextWithinLimit(
+      fs,
+      launcherSourcePath,
+      BOOT_SERVICE_LAUNCHER_MAX_BYTES,
+    ).pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
 
     const installed = yield* fs
       .exists(unitPath)
@@ -601,7 +608,11 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
 
     yield* Effect.gen(function* () {
       if (installed) {
-        const previousStateText = yield* fs.readFileString(statePath).pipe(Effect.option);
+        const previousStateText = yield* readTextWithinLimit(
+          fs,
+          statePath,
+          SERVICE_STATE_MAX_BYTES,
+        ).pipe(Effect.option);
         if (
           Option.isSome(previousStateText) &&
           serviceStateHasPendingUpdate(previousStateText.value)
@@ -661,11 +672,13 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     }
     const [unit, launcherExists, runtimeEntryExists, runtimeSentinel, stateText] =
       yield* Effect.all([
-        fs.readFileString(unitPath),
+        readTextWithinLimit(fs, unitPath, BOOT_SERVICE_UNIT_MAX_BYTES),
         fs.exists(launcherPath),
         fs.exists(runtimePaths.entryPath),
-        fs.readFileString(runtimePaths.sentinelPath).pipe(Effect.option),
-        fs.readFileString(statePath).pipe(Effect.option),
+        readTextWithinLimit(fs, runtimePaths.sentinelPath, SERVICE_RUNTIME_SENTINEL_MAX_BYTES).pipe(
+          Effect.option,
+        ),
+        readTextWithinLimit(fs, statePath, SERVICE_STATE_MAX_BYTES).pipe(Effect.option),
       ]);
     const state = Option.isSome(stateText) ? parseServiceState(stateText.value) : undefined;
     return {

@@ -27,6 +27,9 @@ import {
   pullRequestUrl,
   resolveReleaseObjectKey,
   resolveUpdateFeedUrl,
+  safeCommandDiagnostic,
+  selectPullRequest,
+  writeGitHubOutput,
 } from "./origin-forge.mjs";
 
 const here = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
@@ -83,6 +86,7 @@ describe("Origin pull request parsing", () => {
     assert.deepEqual(pullRequestItems({ pullRequests: [{ number: 4 }] }), [{ number: 4 }]);
     assert.equal(pullRequestNumber({ number: "13" }), "13");
     assert.equal(pullRequestNumber({ pullRequest: { number: 7 } }), "7");
+    assert.isUndefined(pullRequestNumber({ number: "7\nfeed=attacker" }));
     assert.equal(pullRequestUrl("13"), "https://cursor.com/codebase/serbinenko/t3-pretty/pull/13");
   });
 
@@ -191,6 +195,15 @@ describe("Origin release and blocked-sync helpers", () => {
       "https://updates.example.test/t3-pretty/latest/",
     );
     assert.equal(resolveUpdateFeedUrl("not a url"), undefined);
+    assert.equal(resolveUpdateFeedUrl("http://updates.example.test/feed"), undefined);
+    assert.equal(resolveUpdateFeedUrl("https://updates.example.test/feed\nPATH=/tmp"), undefined);
+    assert.equal(resolveUpdateFeedUrl("https://user:secret@updates.example.test/feed"), undefined);
+    assert.equal(resolveUpdateFeedUrl("https://updates.example.test/feed?token=secret"), undefined);
+    assert.equal(resolveUpdateFeedUrl("https://updates.example.test/feed#latest"), undefined);
+    assert.equal(
+      resolveUpdateFeedUrl(`https://updates.example.test/${"a".repeat(4096)}`),
+      undefined,
+    );
     assert.isTrue(
       isGitHubFeedUrl("https://github.com/SergeSerb2/t3-pretty/releases/latest/download/"),
     );
@@ -202,6 +215,173 @@ describe("Origin release and blocked-sync helpers", () => {
       "***",
       "--local",
     ]);
+    assert.deepEqual(redactCommandArgs(["s3://private-bucket/T3.dmg"], ["private-bucket"]), [
+      "s3://***/T3.dmg",
+    ]);
+    assert.equal(
+      redactCommandOutput("request failed for cursor-secret", {
+        CURSOR_API_KEY: "cursor-secret",
+        PATH: "/usr/bin",
+      }),
+      "request failed for ***",
+    );
+    assert.equal(
+      redactCommandOutput("request failed for argument-secret", { PATH: "/usr/bin" }, [
+        "auth",
+        "login",
+        "--api-key",
+        "argument-secret",
+      ]),
+      "request failed for ***",
+    );
+  });
+
+  it("collapses control-bearing command diagnostics under a fixed ceiling", () => {
+    assert.equal(
+      safeCommandDiagnostic("first\n::error::forged\u001b[31m", 24),
+      "first ::error::forged [3",
+    );
+    assert.throws(() => safeCommandDiagnostic("text", 20_001), /safety limit/u);
+  });
+
+  it("does not expose release credentials to the remote CLI installer", () => {
+    assert.deepEqual(
+      originInstallerEnvironment({
+        CURSOR_API_KEY: "cursor-secret",
+        HOME: "/home/runner",
+        PATH: "/usr/bin",
+        T3CODE_RELEASE_S3_SECRET_ACCESS_KEY: "s3-secret",
+      }),
+      { HOME: "/home/runner", PATH: "/usr/bin" },
+    );
+  });
+
+  it("publishes the remote release tag only after every updater asset", () => {
+    const source = NodeFS.readFileSync(NodePath.resolve(here, "origin-forge.mjs"), "utf8");
+    const publishStart = source.indexOf("export function publishOriginRelease");
+    const publishEnd = source.indexOf("export function uploadReleaseAsset", publishStart);
+    const publish = source.slice(publishStart, publishEnd);
+
+    assert.isBelow(
+      publish.indexOf("uploadReleaseAsset(asset, objectKey)"),
+      publish.indexOf("refs/tags/${tag}"),
+    );
+    assert.isBelow(publish.indexOf("`${target}^{commit}`"), publish.indexOf("uploadReleaseAsset"));
+    assert.include(publish, "user.name=t3-pretty-release[bot]");
+  });
+
+  it("rejects ambiguous updater asset object names before publication", () => {
+    assert.deepEqual(releaseAssetObjectKeys(["release/T3.dmg", "release/latest-mac.yml"]), [
+      "T3.dmg",
+      "latest-mac.yml",
+    ]);
+    assert.throws(
+      () => releaseAssetObjectKeys(["mac/T3.zip", "windows/T3.zip"]),
+      /duplicate object name/u,
+    );
+    assert.throws(() => releaseAssetObjectKeys(["release/bad\nname.yml"]), /invalid object name/u);
+    assert.throws(() => releaseAssetObjectKeys(["release/bad\\name.yml"]), /invalid object name/u);
+    assert.throws(() => releaseAssetObjectKeys([]), /at least one updater asset/u);
+    assert.equal(resolveReleaseAssetObjectKey("latest-mac.yml"), "latest-mac.yml");
+    assert.isUndefined(resolveReleaseAssetObjectKey("nested/latest-mac.yml"));
+    assert.isUndefined(resolveReleaseAssetObjectKey("bad\nname.yml"));
+  });
+
+  it("rejects control-bearing or oversized GitHub output values", () => {
+    const previousOutput = process.env.GITHUB_OUTPUT;
+    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "origin-output-"));
+    try {
+      process.env.GITHUB_OUTPUT = NodePath.join(tempDir, "output");
+      assert.throws(() => writeGitHubOutput({ release: "ok\nforged=true" }), /safety boundary/u);
+      assert.throws(() => writeGitHubOutput({ release: "x".repeat(8193) }), /safety boundary/u);
+    } finally {
+      if (previousOutput === undefined) delete process.env.GITHUB_OUTPUT;
+      else process.env.GITHUB_OUTPUT = previousOutput;
+      NodeFS.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads Origin request bodies through a bounded UTF-8 handle", () => {
+    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "origin-body-"));
+    try {
+      const bodyPath = NodePath.join(tempDir, "body.md");
+      NodeFS.writeFileSync(bodyPath, "hello");
+      assert.equal(readOriginBodyFile(bodyPath, 5), "hello");
+      NodeFS.writeFileSync(bodyPath, "123456");
+      assert.throws(() => readOriginBodyFile(bodyPath, 5), /bounded regular file/u);
+    } finally {
+      NodeFS.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uploads updater manifests only after their referenced payloads", () => {
+    assert.deepEqual(
+      releaseAssetUploadPlan([
+        "release/nightly.yml",
+        "release/T3.exe",
+        "release/T3.exe.blockmap",
+        "release/nightly-mac.yml",
+        "release/T3.zip",
+      ]),
+      [
+        { asset: "release/T3.exe", objectKey: "T3.exe" },
+        { asset: "release/T3.exe.blockmap", objectKey: "T3.exe.blockmap" },
+        { asset: "release/T3.zip", objectKey: "T3.zip" },
+        { asset: "release/nightly.yml", objectKey: "nightly.yml" },
+        { asset: "release/nightly-mac.yml", objectKey: "nightly-mac.yml" },
+      ],
+    );
+  });
+
+  it("bounds object-store addressing without accepting credential-bearing URLs", () => {
+    assert.equal(resolveReleaseBucket("t3-pretty-releases"), "t3-pretty-releases");
+    assert.isUndefined(resolveReleaseBucket("t3-pretty/releases"));
+    assert.isUndefined(resolveReleaseBucket(`bucket-${"a".repeat(256)}`));
+
+    assert.equal(resolveReleaseRegion("auto"), "auto");
+    assert.equal(resolveReleaseRegion("us-east-1"), "us-east-1");
+    assert.isUndefined(resolveReleaseRegion("us-east-1\nAWS_PROFILE=attacker"));
+
+    assert.equal(
+      resolveReleaseEndpointUrl("https://account.r2.cloudflarestorage.com"),
+      "https://account.r2.cloudflarestorage.com/",
+    );
+    assert.isUndefined(resolveReleaseEndpointUrl("https://user:secret@example.test"));
+    assert.isUndefined(resolveReleaseEndpointUrl("https://example.test?token=secret"));
+    assert.isUndefined(resolveReleaseEndpointUrl("https://example.test/#fragment"));
+    assert.isUndefined(resolveReleaseEndpointUrl(`https://example.test/${"a".repeat(4096)}`));
+
+    assert.equal(resolveReleaseCredential("secret+/=", 32), "secret+/=");
+    assert.isUndefined(resolveReleaseCredential("secret\nvalue", 32));
+    assert.isUndefined(resolveReleaseCredential("a".repeat(33), 32));
+  });
+
+  it("bounds release notes reads and fails when an explicit file is missing", () => {
+    const notesPath = NodePath.resolve(here, "origin-forge.test.mjs");
+    assert.include(readReleaseNotesFile(notesPath), "Origin forge constants");
+    assert.throws(() => readReleaseNotesFile(notesPath, 8), /safety limit/u);
+    assert.throws(() => readReleaseNotesFile(`${notesPath}.missing`), /does not exist/u);
+  });
+
+  it("clips a large integration report to the publisher's release-note limit", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "origin-notes-"));
+    try {
+      const reportPath = NodePath.join(directory, "report.md");
+      const outputPath = NodePath.join(directory, "notes.md");
+      NodeFS.writeFileSync(reportPath, `# Integration\n${"é".repeat(1024 * 1024)}`);
+      const notes = prepareReleaseNotesFile({
+        outputPath,
+        target: "a".repeat(40),
+        upstreamTag: "v0.0.34-nightly.20260823.1",
+        reportPath,
+      });
+
+      assert.isAtMost(Buffer.byteLength(notes, "utf8"), 1024 * 1024);
+      assert.include(notes, "complete report remains in the repository");
+      assert.equal(readReleaseNotesFile(outputPath), notes);
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("keeps the fork release and sync workflows off the GitHub CLI", () => {

@@ -18,6 +18,7 @@ import {
 import { Atom } from "effect/unstable/reactivity";
 
 import { PREVIEW_RECENT_URL_LIMIT } from "./components/preview/previewConstants";
+import { compareIsoDateTimes } from "./lib/threadSort";
 import { appAtomRegistry } from "./rpc/atomRegistry";
 
 export interface DesktopPreviewOverlay {
@@ -139,7 +140,7 @@ const latestSnapshot = (
   sessions: Record<string, PreviewSessionSnapshot>,
 ): PreviewSessionSnapshot | null =>
   Object.values(sessions)
-    .toSorted((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+    .toSorted((a, b) => compareIsoDateTimes(a.updatedAt, b.updatedAt))
     .at(-1) ?? null;
 
 const removeSession = (current: ThreadPreviewState, tabId: string): ThreadPreviewState => {
@@ -271,7 +272,7 @@ export function applyPreviewServerSnapshot(
     }
     if (current.suppressedTabIds.has(snapshot.tabId)) return current;
     const existing = current.sessions[snapshot.tabId];
-    if (existing && existing.updatedAt > snapshot.updatedAt) return current;
+    if (existing && compareIsoDateTimes(existing.updatedAt, snapshot.updatedAt) > 0) return current;
     const recentlySeenUrls = rememberSnapshotUrl(current.recentlySeenUrls, snapshot);
     return {
       ...current,
@@ -297,7 +298,7 @@ export function updatePreviewServerSnapshot(
   updateThreadPreviewState(ref, (current) => {
     if (current.suppressedTabIds.has(snapshot.tabId)) return current;
     const existing = current.sessions[snapshot.tabId];
-    if (existing && existing.updatedAt > snapshot.updatedAt) return current;
+    if (existing && compareIsoDateTimes(existing.updatedAt, snapshot.updatedAt) > 0) return current;
     const sessions = { ...current.sessions, [snapshot.tabId]: snapshot };
     const activeTabId =
       current.activeTabId && sessions[current.activeTabId] ? current.activeTabId : snapshot.tabId;
@@ -332,7 +333,10 @@ export function reconcilePreviewServerSessions(
     for (const snapshot of snapshots) {
       if (currentSuppressedTabIds.has(snapshot.tabId)) continue;
       const existing = sameServer ? current.sessions[snapshot.tabId] : undefined;
-      const next = existing && existing.updatedAt > snapshot.updatedAt ? existing : snapshot;
+      const next =
+        existing && compareIsoDateTimes(existing.updatedAt, snapshot.updatedAt) > 0
+          ? existing
+          : snapshot;
       sessions[next.tabId] = next;
       recentlySeenUrls = rememberSnapshotUrl(recentlySeenUrls, next);
     }

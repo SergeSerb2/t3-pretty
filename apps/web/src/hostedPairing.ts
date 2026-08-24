@@ -1,12 +1,12 @@
 import { DEFAULT_HOSTED_APP_URL, hostedAppRouteUrl } from "@t3tools/shared/connectAuth";
+import {
+  readHostedPairingRequest as readSharedHostedPairingRequest,
+  type HostedPairingRequest as SharedHostedPairingRequest,
+} from "@t3tools/shared/remote";
 
-import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "./pairingUrl";
+import { setPairingTokenOnUrl } from "./pairingUrl";
 
-export interface HostedPairingRequest {
-  readonly host: string;
-  readonly token: string;
-  readonly label: string;
-}
+export type HostedPairingRequest = SharedHostedPairingRequest;
 
 export type HostedAppChannel = "latest" | "nightly";
 
@@ -44,20 +44,10 @@ export function isHostedStaticApp(url: URL = new URL(window.location.href)): boo
   return hostedOrigin !== null && url.origin === hostedOrigin;
 }
 
-export function readHostedPairingRequest(url: URL = new URL(window.location.href)) {
-  const host = url.searchParams.get("host")?.trim() ?? "";
-  const token = getPairingTokenFromUrl(url)?.trim() ?? "";
-  const label = url.searchParams.get("label")?.trim() ?? "";
-
-  if (!host || !token) {
-    return null;
-  }
-
-  return {
-    host,
-    token,
-    label,
-  } satisfies HostedPairingRequest;
+export function readHostedPairingRequest(
+  url: URL = new URL(window.location.href),
+): HostedPairingRequest | null {
+  return readSharedHostedPairingRequest(url);
 }
 
 export function hasHostedPairingRequest(url: URL = new URL(window.location.href)): boolean {

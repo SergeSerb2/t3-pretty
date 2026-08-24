@@ -19,6 +19,7 @@ import {
   unregisterAgentAwarenessDeviceForCurrentUser,
 } from "../agent-awareness/remoteRegistration";
 import { clearConnectOnboardingRequest, requestConnectOnboarding } from "./connectOnboarding";
+import { readClerkTokenWithDeadline } from "./clerkToken";
 import { resolveCloudPublicConfig, resolveRelayClerkTokenOptions } from "./publicConfig";
 
 function resetManagedRelayTokenCache() {
@@ -121,7 +122,8 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
     }
 
     const previous = previousTokenProviderRef.current;
-    const tokenProvider = () => getToken(resolveRelayClerkTokenOptions());
+    const tokenProvider = () =>
+      readClerkTokenWithDeadline(() => getToken(resolveRelayClerkTokenOptions()));
     const activateSession = () => {
       if (cancelled) {
         return;

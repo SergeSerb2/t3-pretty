@@ -14,6 +14,7 @@ import {
   mergePullRequestDiffStats,
   narrowPullRequestsToFilters,
   partitionPullRequestsWithPriority,
+  PULL_REQUEST_LIST_SNAPSHOT_MAX_CHARS,
   readPullRequestListSnapshot,
   writePullRequestListSnapshot,
   rankPullRequestMatches,
@@ -481,34 +482,73 @@ describe("line counts that arrive after the rows", () => {
 
 describe("merging line counts across keyed stats queries", () => {
   it("keeps counts already held while a fresh batch says nothing about them", () => {
-    const held = mergePullRequestDiffStats(new Map(), [
-      { environmentId: "env-1", projectId: "project-1", number: 1, additions: 10, deletions: 2 },
-      { environmentId: "env-1", projectId: "project-1", number: 2, additions: 5, deletions: 1 },
-    ]);
+    const held = mergePullRequestDiffStats(
+      new Map(),
+      [
+        { environmentId: "env-1", projectId: "project-1", number: 1, additions: 10, deletions: 2 },
+        { environmentId: "env-1", projectId: "project-1", number: 2, additions: 5, deletions: 1 },
+      ],
+      new Set(["env-1 project-1 1", "env-1 project-1 2"]),
+    );
     // A third row appeared; its batch is still pending and contributes nothing yet.
-    const merged = mergePullRequestDiffStats(held, []);
+    const merged = mergePullRequestDiffStats(
+      held,
+      [],
+      new Set(["env-1 project-1 1", "env-1 project-1 2", "env-1 project-1 3"]),
+    );
     expect(merged.get("env-1 project-1 1")).toEqual({ additions: 10, deletions: 2 });
     expect(merged.get("env-1 project-1 2")).toEqual({ additions: 5, deletions: 1 });
   });
 
   it("replaces a count once its replacement arrives, keeping its neighbours", () => {
-    const held = mergePullRequestDiffStats(new Map(), [
-      { environmentId: "env-1", projectId: "project-1", number: 1, additions: 10, deletions: 2 },
-    ]);
-    const merged = mergePullRequestDiffStats(held, [
-      { environmentId: "env-1", projectId: "project-1", number: 1, additions: 11, deletions: 2 },
-      { environmentId: "env-1", projectId: "project-1", number: 3, additions: 7, deletions: 0 },
-    ]);
+    const held = mergePullRequestDiffStats(
+      new Map(),
+      [{ environmentId: "env-1", projectId: "project-1", number: 1, additions: 10, deletions: 2 }],
+      new Set(["env-1 project-1 1"]),
+    );
+    const merged = mergePullRequestDiffStats(
+      held,
+      [
+        { environmentId: "env-1", projectId: "project-1", number: 1, additions: 11, deletions: 2 },
+        { environmentId: "env-1", projectId: "project-1", number: 3, additions: 7, deletions: 0 },
+      ],
+      new Set(["env-1 project-1 1", "env-1 project-1 3"]),
+    );
     expect(merged.get("env-1 project-1 1")).toEqual({ additions: 11, deletions: 2 });
     expect(merged.get("env-1 project-1 3")).toEqual({ additions: 7, deletions: 0 });
   });
 
   it("does not mutate the map it was handed", () => {
     const held = new Map([["env-1 project-1 1", { additions: 1, deletions: 1 }]]);
-    mergePullRequestDiffStats(held, [
-      { environmentId: "env-1", projectId: "project-1", number: 1, additions: 2, deletions: 2 },
-    ]);
+    mergePullRequestDiffStats(
+      held,
+      [{ environmentId: "env-1", projectId: "project-1", number: 1, additions: 2, deletions: 2 }],
+      new Set(["env-1 project-1 1"]),
+    );
     expect(held.get("env-1 project-1 1")).toEqual({ additions: 1, deletions: 1 });
+  });
+
+  it("prunes hidden rows while a replacement query is still pending", () => {
+    const held = new Map([
+      ["env-1 project-1 1", { additions: 10, deletions: 2 }],
+      ["env-1 project-1 2", { additions: 5, deletions: 1 }],
+    ]);
+    const merged = mergePullRequestDiffStats(held, [], new Set(["env-1 project-1 2"]));
+
+    expect(merged).toEqual(new Map([["env-1 project-1 2", { additions: 5, deletions: 1 }]]));
+  });
+
+  it("does not reintroduce a removed row from a late stats result", () => {
+    const merged = mergePullRequestDiffStats(
+      new Map([["env-1 project-1 1", { additions: 10, deletions: 2 }]]),
+      [
+        { environmentId: "env-1", projectId: "project-1", number: 1, additions: 11, deletions: 2 },
+        { environmentId: "env-1", projectId: "project-1", number: 2, additions: 5, deletions: 1 },
+      ],
+      new Set(["env-1 project-1 1"]),
+    );
+
+    expect(merged).toEqual(new Map([["env-1 project-1 1", { additions: 11, deletions: 2 }]]));
   });
 });
 
@@ -566,6 +606,7 @@ describe("the list snapshot across a reload", () => {
     const held = new Map<string, string>();
     return {
       getItem: (key: string) => held.get(key) ?? null,
+      removeItem: (key: string) => void held.delete(key),
       setItem: (key: string, value: string) => void held.set(key, value),
     };
   };
@@ -618,7 +659,23 @@ describe("the list snapshot across a reload", () => {
     const storage = makeStorage();
     storage.setItem("t3.pullRequests.list:env-1", "{not json");
     expect(readPullRequestListSnapshot(storage, "env-1")).toBeNull();
+    expect(storage.getItem("t3.pullRequests.list:env-1")).toBeNull();
     expect(readPullRequestListSnapshot(undefined, "env-1")).toBeNull();
+  });
+
+  it("removes oversized snapshots before parsing or persistence", () => {
+    const storage = makeStorage();
+    const key = "t3.pullRequests.list:env-1";
+    storage.setItem(key, " ".repeat(PULL_REQUEST_LIST_SNAPSHOT_MAX_CHARS + 1));
+
+    expect(readPullRequestListSnapshot(storage, "env-1")).toBeNull();
+    expect(storage.getItem(key)).toBeNull();
+
+    writePullRequestListSnapshot(storage, "env-1", {
+      scope: "x".repeat(PULL_REQUEST_LIST_SNAPSHOT_MAX_CHARS + 1),
+      data,
+    });
+    expect(storage.getItem(key)).toBeNull();
   });
 
   it("caps the accumulated rows but keeps the whole host set", () => {

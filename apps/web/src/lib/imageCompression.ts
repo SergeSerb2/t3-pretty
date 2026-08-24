@@ -76,6 +76,12 @@ async function blobToDataUrl(blob: File | Blob, mimeTypeOverride?: string): Prom
   return `data:${mimeType};base64,${bytesToBase64(new Uint8Array(buffer))}`;
 }
 
+/** Exact string length of this blob's base64 data URL without reading it. */
+function blobDataUrlLength(blob: File | Blob, mimeTypeOverride?: string): number {
+  const mimeType = mimeTypeOverride || blob.type || "application/octet-stream";
+  return `data:${mimeType};base64,`.length + 4 * Math.ceil(blob.size / 3);
+}
+
 /** Approximate decoded byte count for a base64 data URL. */
 function dataUrlByteLength(dataUrl: string): number {
   const commaIndex = dataUrl.indexOf(",");
@@ -154,7 +160,7 @@ async function encodeCanvas(
   }
   const blob = await (canvas as OffscreenCanvas).convertToBlob({ type: mimeType, quality });
   if (blob.type && blob.type !== mimeType) return null;
-  const dataUrlLength = `data:${mimeType};base64,`.length + 4 * Math.ceil(blob.size / 3);
+  const dataUrlLength = blobDataUrlLength(blob, mimeType);
   if (dataUrlLength > budgetChars) return { dataUrl: null, mimeType };
   return { dataUrl: await blobToDataUrl(blob, mimeType), mimeType };
 }
@@ -263,13 +269,16 @@ export async function compressImageForStash(
   file: File,
   budgetChars: number = MAX_STASH_IMAGE_DATA_URL_CHARS,
 ): Promise<CompressStashImageResult> {
-  let originalDataUrl: string;
-  try {
-    originalDataUrl = await blobToDataUrl(file);
-  } catch {
-    return { ok: false, reason: "unreadable" };
-  }
-  if (originalDataUrl.length <= budgetChars) {
+  // Base64 length is determined entirely by the byte count. Check that first
+  // so an oversized source goes straight to bounded re-encoding instead of
+  // briefly allocating both its ArrayBuffer and a much larger base64 string.
+  if (blobDataUrlLength(file) <= budgetChars) {
+    let originalDataUrl: string;
+    try {
+      originalDataUrl = await blobToDataUrl(file);
+    } catch {
+      return { ok: false, reason: "unreadable" };
+    }
     return {
       ok: true,
       image: {
@@ -279,6 +288,9 @@ export async function compressImageForStash(
         recompressed: false,
       },
     };
+  }
+  if (file.size > MAX_COMPRESSIBLE_SOURCE_BYTES) {
+    return { ok: false, reason: "too-large" };
   }
   const reencoded = await reencodeWithinBudget(file, budgetChars);
   if (!reencoded.ok) {

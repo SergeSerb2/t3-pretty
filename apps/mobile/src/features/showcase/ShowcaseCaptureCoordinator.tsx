@@ -36,8 +36,8 @@ import {
   isShowcaseNativeContentReady,
   subscribeToShowcaseRenderSignal,
 } from "./showcaseRenderSignal";
+import { SHOWCASE_ENABLED } from "./showcaseEnabled";
 
-const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
 const SHOWCASE_THREAD_ID = "remote-command-center";
 
 type ShowcaseResetRoute = PartialState<NavigationState>["routes"][number];

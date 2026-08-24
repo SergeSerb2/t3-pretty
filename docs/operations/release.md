@@ -30,7 +30,9 @@ This document covers the unified release workflow for stable and nightly desktop
 - Deploys the hosted web app to Vercel only after a release is published:
   - stable releases are aliased to the `latest` hosted app channel
   - nightly releases are aliased to the `nightly` hosted app channel
-- Signing is optional and auto-detected per platform from secrets.
+- macOS signing and notarization credentials are required; the official release
+  stops rather than publishing an unsigned macOS updater. Windows signing is
+  auto-detected and remains optional; Linux artifacts are not signed.
 
 ## Required release credentials
 
@@ -99,6 +101,11 @@ database. Local personal stages provision isolated branches from it and are neve
 Production adopts the configured relay API and tunnel DNS zones as retained Cloudflare resources.
 Personal stages reference the production-owned zones.
 
+Relay deployment state is accepted only when its relay/tracing endpoints are bounded,
+credential-free HTTPS URLs and its datasets/tokens are bounded and control-free. The release workflow
+creates the token-bearing handoff file exclusively at mode `0600`, retains its artifact for one day,
+and has each consumer revalidate the file and mask the token before exporting it.
+
 Developers deploy personal stages locally rather than through pull-request automation:
 
 ```sh
@@ -121,9 +128,9 @@ Required GitHub Actions secrets:
 Optional GitHub Actions variables:
 
 - `VERCEL_TEAM_SLUG`: overrides the Vercel CLI scope when the team slug is preferred over the `VERCEL_ORG_ID` secret.
-- `T3CODE_WEB_ROUTER_URL`: defaults to `https://app.t3.codes`.
-- `T3CODE_WEB_LATEST_DOMAIN`: defaults to `latest.app.t3.codes`.
-- `T3CODE_WEB_NIGHTLY_DOMAIN`: defaults to `nightly.app.t3.codes`.
+- `T3CODE_WEB_ROUTER_URL`: defaults to `https://app.t3.codes`; it must be an HTTPS origin without credentials, a path, query, fragment, or custom port.
+- `T3CODE_WEB_LATEST_DOMAIN`: defaults to `latest.app.t3.codes`; it must be a public DNS name.
+- `T3CODE_WEB_NIGHTLY_DOMAIN`: defaults to `nightly.app.t3.codes`; it must be a public DNS name.
 
 Required Vercel domains:
 
@@ -216,6 +223,7 @@ desktop-managed guidance when those environments are available.
 - macOS metadata note:
   - `electron-updater` reads `latest-mac.yml` on stable and `nightly-mac.yml` on nightly, for both Intel and Apple Silicon.
   - The workflow merges the per-arch mac manifests into one channel-specific mac manifest before publishing the GitHub Release.
+  - Publication requires the exact macOS, Windows, and Linux channel-manifest set. Every referenced payload must be a regular local file whose byte size and SHA-512 match the manifest; both macOS architectures must be present.
 
 ### Windows payload topology and update validation
 
@@ -273,7 +281,7 @@ Checklist:
    - invoke the CLI publish script with npm dist-tag `latest`
 5. Nightly runs invoke the same publish script with npm dist-tag `nightly`.
 
-## 1) Release validation and unsigned builds
+## 1) Release validation and signing
 
 There is no dry-run tag path. Pushing any accepted non-nightly tag, including
 `v0.0.0-test.1`, classifies the run as the stable channel. It publishes `t3` with npm dist-tag
@@ -287,8 +295,9 @@ risk, manually dispatch `channel=nightly`; this still publishes a real nightly n
 prerelease, desktop updater release, and hosted nightly alias, but it does not update stable aliases or
 commit a version bump to `main`. Only run it when a real nightly release is acceptable.
 
-Manual `channel=stable` with a version input is also a real stable-channel release. Omitting signing
-secrets only makes platform artifacts unsigned; it does not prevent publication.
+Manual `channel=stable` with a version input is also a real stable-channel release. Missing Apple
+signing or notarization credentials stops the official release before publication. Missing Windows
+signing credentials still produces an unsigned Windows artifact.
 
 ## 2) Apple signing + notarization setup (macOS)
 
@@ -380,12 +389,11 @@ Checklist:
 
 ## 5) Troubleshooting
 
-- macOS build unsigned when expected signed:
+- macOS build stops because signing/notarization prerequisites are missing:
   - Check all Apple secrets plus `APPLE_TEAM_ID` are populated and non-empty.
   - Confirm the provisioning profile belongs to `APPLE_TEAM_ID.com.t3tools.t3code` and includes
     Associated Domains.
 - Windows build unsigned when expected signed:
   - Check all Azure ATS and auth secrets are populated and non-empty.
 - Build fails with signing error:
-  - Retry with secrets removed to confirm unsigned path still works.
   - Re-check certificate/profile names and tenant/client credentials.

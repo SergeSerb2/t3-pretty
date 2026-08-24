@@ -52,6 +52,7 @@ import {
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
+import { serializeComposerImageAttachments } from "./composerImagePersistence";
 import {
   dataTransferHasComposerMention,
   makeComposerMentionDragHandlers,
@@ -165,7 +166,7 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
       return;
     }
 
-    const updatePosition = () => {
+    const measurePosition = () => {
       const form = anchor.closest<HTMLElement>('[data-chat-composer-form="true"]');
       const mainSurface = form?.querySelector<HTMLElement>(
         '[data-chat-composer-main-surface="true"]',
@@ -193,7 +194,19 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
       );
     };
 
-    updatePosition();
+    let positionFrame = 0;
+    const updatePosition = () => {
+      if (positionFrame !== 0) return;
+      positionFrame = window.requestAnimationFrame(() => {
+        positionFrame = 0;
+        measurePosition();
+      });
+    };
+
+    // Measure synchronously for the first paint, then collapse resize,
+    // capture-phase scroll, and ResizeObserver bursts into one layout read per
+    // frame while a panel animation moves the composer.
+    measurePosition();
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
 
@@ -214,6 +227,9 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
       observer?.disconnect();
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
+      if (positionFrame !== 0) {
+        window.cancelAnimationFrame(positionFrame);
+      }
     };
   }, [props.anchor]);
 
@@ -1703,31 +1719,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         getComposerDraft(composerDraftTarget)?.persistedAttachments ?? [];
       try {
         const currentPersistedAttachments = getPersistedAttachmentsForThread();
-        const existingPersistedById = new Map(
-          currentPersistedAttachments.map((attachment) => [attachment.id, attachment]),
-        );
-        const stagedAttachmentById = new Map<string, PersistedComposerImageAttachment>();
-        await Promise.all(
-          composerImages.map(async (image) => {
-            try {
-              const dataUrl = await readFileAsDataUrl(image.file);
-              stagedAttachmentById.set(image.id, {
-                id: image.id,
-                name: image.name,
-                mimeType: image.mimeType,
-                sizeBytes: image.sizeBytes,
-                dataUrl,
-              });
-            } catch {
-              const existingPersisted = existingPersistedById.get(image.id);
-              if (existingPersisted) {
-                stagedAttachmentById.set(image.id, existingPersisted);
-              }
-            }
-          }),
-        );
-        const serialized = Array.from(stagedAttachmentById.values());
-        if (cancelled) return;
+        const serialized = await serializeComposerImageAttachments({
+          images: composerImages,
+          existingAttachments: currentPersistedAttachments,
+          readDataUrl: readFileAsDataUrl,
+          isCancelled: () => cancelled,
+        });
+        if (serialized === null || cancelled) return;
         syncComposerDraftPersistedAttachments(composerDraftTarget, serialized);
       } catch {
         const currentImageIds = new Set(composerImages.map((image) => image.id));
@@ -2311,7 +2309,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         // unique image into the overflow list for nothing.
         const existingDedupKeys = new Set(
           composerImagesRef.current.map(
-            (image) => `${image.mimeType} ${image.sizeBytes} ${image.name}`,
+            (image) => `${image.mimeType}\0${image.sizeBytes}\0${image.name}`,
           ),
         );
         const capacity = Math.max(
@@ -2322,7 +2320,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           (attachment) =>
             !existingIds.has(attachment.id) &&
             !existingDedupKeys.has(
-              `${attachment.mimeType} ${attachment.sizeBytes} ${attachment.name}`,
+              `${attachment.mimeType}\0${attachment.sizeBytes}\0${attachment.name}`,
             ),
         );
         // Anything past the attachment limit cannot be restored. The entry is
@@ -2414,7 +2412,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // the composer has been cleared the user can type something genuinely
     // new (or switch threads) while encoding continues, and that deserves its
     // own entry.
-    const snapshotKey = `${String(composerDraftTarget)} ${prompt} ${images
+    const snapshotKey = `${String(composerDraftTarget)}\0${prompt}\0${images
       .map((image) => image.id)
       .join(",")}`;
     if (stashInFlightRef.current.has(snapshotKey)) return;

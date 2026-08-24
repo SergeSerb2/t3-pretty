@@ -39,6 +39,7 @@ import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { isElectron } from "../../env";
 import { usePrimarySessionState } from "../../environments/primary";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
+import { compareIsoDateTimes } from "../../lib/threadSort";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
 import {
@@ -417,7 +418,8 @@ export function EnvironmentProviderSettings({
   const lastCheckedAt =
     serverProviders.length > 0
       ? serverProviders.reduce(
-          (latest, provider) => (provider.checkedAt > latest ? provider.checkedAt : latest),
+          (latest, provider) =>
+            compareIsoDateTimes(provider.checkedAt, latest) > 0 ? provider.checkedAt : latest,
           serverProviders[0]!.checkedAt,
         )
       : null;

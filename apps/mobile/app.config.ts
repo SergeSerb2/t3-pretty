@@ -277,15 +277,14 @@ const config: ExpoConfig = {
     // showcase capture build requires full screen (see infoPlist below).
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
-    // Pin code signing via T3CODE_IOS_APPLE_TEAM_ID so non-interactive
+    // Pin code signing via T3CODE_APPLE_TEAM_ID so non-interactive
     // `expo run:ios` does not fall back to a personal team (which cannot sign
-    // app groups, Sign in with Apple, or push notification entitlements).
+    // app groups, Associated Domains, Sign in with Apple, or push entitlements).
     // Unset, Xcode selects whichever team the local account provides.
     ...(appleTeamId ? { appleTeamId } : {}),
-    associatedDomains: [
-      `applinks:${variant.relyingParty}`,
-      `webcredentials:${variant.relyingParty}`,
-    ],
+    associatedDomains: isIosPersonalTeamBuild
+      ? []
+      : [`applinks:${variant.relyingParty}`, `webcredentials:${variant.relyingParty}`],
     infoPlist: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,

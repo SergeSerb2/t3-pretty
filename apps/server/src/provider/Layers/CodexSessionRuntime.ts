@@ -2,6 +2,7 @@ import {
   ApprovalRequestId,
   DEFAULT_MODEL,
   EventId,
+  normalizeProviderSessionError,
   ProviderDriverKind,
   ProviderItemId,
   type ProviderInstanceId,
@@ -12,9 +13,18 @@ import {
   type ProviderSession,
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS,
+  PROVIDER_RUNTIME_USER_INPUT_HEADER_MAX_LENGTH,
+  PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH,
+  PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS,
+  PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH,
+  PROVIDER_RUNTIME_USER_INPUT_OPTION_LABEL_MAX_LENGTH,
+  PROVIDER_RUNTIME_USER_INPUT_QUESTION_MAX_LENGTH,
   RuntimeMode,
   ThreadId,
   TurnId,
+  type UserInputQuestion,
 } from "@t3tools/contracts";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { normalizeModelSlug } from "@t3tools/shared/model";
@@ -52,6 +62,8 @@ const BENIGN_ERROR_LOG_SNIPPETS = [
   "state db record_discrepancy: find_thread_path_by_id_str_in_subdir, falling_back",
 ];
 const CODEX_APP_SERVER_FORCE_KILL_AFTER = "2 seconds" as const;
+export const CODEX_STDERR_FRAGMENT_MAX_CHARS = 64 * 1024;
+const CODEX_SESSION_EVENT_QUEUE_CAPACITY = 512;
 const RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS = [
   "not found",
   "missing thread",
@@ -77,6 +89,18 @@ const CodexUserInputAnswerObject = Schema.Struct({
 });
 const isCodexResumeCursorSchema = Schema.is(CodexResumeCursorSchema);
 const isCodexUserInputAnswerObject = Schema.is(CodexUserInputAnswerObject);
+
+export function splitCodexStderrChunk(
+  current: string,
+  chunk: string,
+): readonly [ReadonlyArray<string>, string] {
+  const lines = `${current}${chunk}`.split("\n");
+  const remainder = (lines.pop() ?? "").slice(0, CODEX_STDERR_FRAGMENT_MAX_CHARS);
+  return [
+    lines.map((line) => line.replace(/\r$/, "").slice(0, CODEX_STDERR_FRAGMENT_MAX_CHARS)),
+    remainder,
+  ];
+}
 
 // TODO: Verify `packages/effect-codex-app-server/scripts/generate.ts` so the generated
 // `V2TurnStartParams` schema includes `collaborationMode` directly.
@@ -745,6 +769,24 @@ function rememberCollabReceiverTurns(
   }
 }
 
+export function isTerminalCodexChildNotification(notification: {
+  readonly method: string;
+  readonly params?: unknown;
+}): boolean {
+  if (notification.method === "thread/closed") {
+    return true;
+  }
+  if (notification.method !== "error") {
+    return false;
+  }
+  const params = notification.params;
+  return (
+    typeof params !== "object" ||
+    params === null ||
+    (params as { readonly willRetry?: unknown }).willRetry !== true
+  );
+}
+
 function shouldSuppressChildConversationNotification(
   method: CodexRpc.ServerNotificationMethod,
 ): boolean {
@@ -850,6 +892,84 @@ function toCodexUserInputAnswer(
   return Effect.fail(new CodexSessionRuntimeInvalidUserInputAnswersError({ questionId }));
 }
 
+type CodexRuntimeUserInputQuestion =
+  | EffectCodexSchema.ServerRequest__ToolRequestUserInputQuestion
+  | EffectCodexSchema.ToolRequestUserInputParams__ToolRequestUserInputQuestion;
+
+function boundedCodexUserInputText(value: string, maximumLength: number): string | undefined {
+  if (value.length > maximumLength) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * Validates provider questions before the request enters the pending map. The
+ * canonical ids stay byte-for-byte compatible with Codex's answer keys; a
+ * request that cannot cross the client contract is rejected instead of being
+ * truncated into an answer the provider cannot correlate.
+ */
+export function normalizeCodexUserInputQuestions(
+  questions: ReadonlyArray<CodexRuntimeUserInputQuestion>,
+): ReadonlyArray<UserInputQuestion> | undefined {
+  if (questions.length === 0 || questions.length > PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS) {
+    return undefined;
+  }
+
+  const normalized: Array<UserInputQuestion> = [];
+  const ids = new Set<string>();
+  let totalChars = 0;
+
+  for (const question of questions) {
+    const id = boundedCodexUserInputText(question.id, PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH);
+    const header = boundedCodexUserInputText(
+      question.header,
+      PROVIDER_RUNTIME_USER_INPUT_HEADER_MAX_LENGTH,
+    );
+    const prompt = boundedCodexUserInputText(
+      question.question,
+      PROVIDER_RUNTIME_USER_INPUT_QUESTION_MAX_LENGTH,
+    );
+    if (!id || id !== question.id || !header || !prompt || ids.has(id)) {
+      return undefined;
+    }
+
+    const providerOptions = question.options ?? [];
+    if (providerOptions.length > PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS) {
+      return undefined;
+    }
+    const options: Array<UserInputQuestion["options"][number]> = [];
+    for (const option of providerOptions) {
+      const label = boundedCodexUserInputText(
+        option.label,
+        PROVIDER_RUNTIME_USER_INPUT_OPTION_LABEL_MAX_LENGTH,
+      );
+      const description = boundedCodexUserInputText(
+        option.description,
+        PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH,
+      );
+      if (!label || !description) {
+        return undefined;
+      }
+      totalChars += label.length + description.length;
+      if (totalChars > PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS) {
+        return undefined;
+      }
+      options.push({ label, description });
+    }
+
+    totalChars += id.length + header.length + prompt.length;
+    if (totalChars > PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS) {
+      return undefined;
+    }
+    ids.add(id);
+    normalized.push({ id, header, question: prompt, options, multiSelect: false });
+  }
+
+  return normalized;
+}
+
 function toCodexUserInputAnswers(
   answers: ProviderUserInputAnswers,
 ): Effect.Effect<
@@ -907,7 +1027,7 @@ export const makeCodexSessionRuntime = (
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const runtimeScope = yield* Scope.Scope;
     const crypto = yield* Crypto.Crypto;
-    const events = yield* Queue.unbounded<ProviderEvent>();
+    const events = yield* Queue.bounded<ProviderEvent>(CODEX_SESSION_EVENT_QUEUE_CAPACITY);
     const pendingApprovalsRef = yield* Ref.make(new Map<ApprovalRequestId, PendingApproval>());
     const approvalCorrelationsRef = yield* Ref.make(new Map<string, ApprovalCorrelation>());
     const pendingUserInputsRef = yield* Ref.make(new Map<ApprovalRequestId, PendingUserInput>());
@@ -960,7 +1080,9 @@ export const makeCodexSessionRuntime = (
     const client = yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
       Effect.provide(clientContext),
     );
-    const serverNotifications = yield* Queue.unbounded<CodexServerNotification>();
+    const serverNotifications = yield* Queue.bounded<CodexServerNotification>(
+      CODEX_SESSION_EVENT_QUEUE_CAPACITY,
+    );
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
     const randomUUIDv4 = (purpose: CodexErrors.CodexAppServerIdentifierPurpose) =>
       crypto.randomUUIDv4.pipe(
@@ -1031,6 +1153,13 @@ export const makeCodexSessionRuntime = (
           ),
         ),
       );
+
+    const forgetCollabChildAgent = (agentThreadId: string) =>
+      Ref.update(collabChildAgentsRef, (current) => {
+        const next = new Map(current);
+        next.delete(agentThreadId);
+        return next;
+      });
 
     /**
      * Registers v2 collab children and re-emits their notifications as
@@ -1266,6 +1395,7 @@ export const makeCodexSessionRuntime = (
               method: "collabAgent/closed",
               payload: childIdentity,
             });
+            yield* forgetCollabChildAgent(child.agentThreadId);
             return true;
           case "error": {
             // A child error must surface as a failed agent, not vanish into
@@ -1295,6 +1425,7 @@ export const makeCodexSessionRuntime = (
                 status: { type: "systemError" },
               },
             });
+            yield* forgetCollabChildAgent(child.agentThreadId);
             return true;
           }
           default:
@@ -1328,6 +1459,13 @@ export const makeCodexSessionRuntime = (
         // become synthetic collabAgent events (review finding). The
         // suppressor still covers UNREGISTERED children.
         if (yield* interceptCollabChildNotification(notification)) {
+          const providerConversationId = readNotificationThreadId(notification);
+          if (
+            providerConversationId !== undefined &&
+            isTerminalCodexChildNotification(notification)
+          ) {
+            collabReceiverTurns.delete(providerConversationId);
+          }
           yield* Ref.set(collabReceiverTurnsRef, collabReceiverTurns);
           return;
         }
@@ -1382,6 +1520,9 @@ export const makeCodexSessionRuntime = (
                 next.delete(foreignThreadId);
                 return next;
               });
+              if (notification.method === "thread/closed") {
+                collabReceiverTurns.delete(foreignThreadId);
+              }
             }
           }
           yield* Ref.set(collabReceiverTurnsRef, collabReceiverTurns);
@@ -1493,7 +1634,7 @@ export const makeCodexSessionRuntime = (
           const willRetry = payload.willRetry;
           return updateSession(sessionRef, {
             status: willRetry ? "running" : "error",
-            ...(errorMessage ? { lastError: errorMessage } : {}),
+            ...(errorMessage ? { lastError: normalizeProviderSessionError(errorMessage) } : {}),
           });
         }),
       ),
@@ -1615,6 +1756,11 @@ export const makeCodexSessionRuntime = (
 
     yield* client.handleServerRequest("item/tool/requestUserInput", (payload) =>
       Effect.gen(function* () {
+        if (!normalizeCodexUserInputQuestions(payload.questions)) {
+          return yield* CodexErrors.CodexAppServerRequestError.invalidParams(
+            "Codex user-input request exceeds the canonical client limits.",
+          );
+        }
         const requestId = ApprovalRequestId.make(yield* randomUUIDv4("user-input-request"));
         const turnId = TurnId.make(payload.turnId);
         const itemId = ProviderItemId.make(payload.itemId);
@@ -1692,10 +1838,8 @@ export const makeCodexSessionRuntime = (
       Stream.decodeText(),
       Stream.runForEach((chunk) =>
         Ref.modify(stderrRemainderRef, (current) => {
-          const combined = current + chunk;
-          const lines = combined.split("\n");
-          const remainder = lines.pop() ?? "";
-          return [lines.map((line) => line.replace(/\r$/, "")), remainder] as const;
+          const [lines, remainder] = splitCodexStderrChunk(current, chunk);
+          return [lines, remainder] as const;
         }).pipe(
           Effect.flatMap((lines) =>
             Effect.forEach(

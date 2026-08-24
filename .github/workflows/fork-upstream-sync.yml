@@ -14,6 +14,7 @@ on:
 concurrency:
   group: fork-upstream-sync
   cancel-in-progress: false
+  queue: max
 
 permissions:
   actions: write

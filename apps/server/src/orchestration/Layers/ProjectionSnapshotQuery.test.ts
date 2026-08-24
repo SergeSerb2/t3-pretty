@@ -640,17 +640,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           branchHeadIsCrossRepository: null,
         },
         {
-          threadId: ThreadId.make("eligible-worktree"),
-          branch: "feature/worktree",
-          cwd: "/tmp/project-worktree",
-          branchObservedAt: "2026-08-10T00:00:03.800Z",
-          branchEventId: EventId.make("event-eligible-worktree-branch"),
-          branchHeadRef: null,
-          branchHeadRepository: null,
-          branchHeadOwner: null,
-          branchHeadIsCrossRepository: null,
-        },
-        {
           threadId: ThreadId.make("eligible-stopped"),
           branch: "feature/stopped",
           cwd: "/tmp/project-active",
@@ -661,7 +650,28 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           branchHeadOwner: null,
           branchHeadIsCrossRepository: null,
         },
+        {
+          threadId: ThreadId.make("eligible-worktree"),
+          branch: "feature/worktree",
+          cwd: "/tmp/project-worktree",
+          branchObservedAt: "2026-08-10T00:00:03.800Z",
+          branchEventId: EventId.make("event-eligible-worktree-branch"),
+          branchHeadRef: null,
+          branchHeadRepository: null,
+          branchHeadOwner: null,
+          branchHeadIsCrossRepository: null,
+        },
       ]);
+
+      const firstPage = yield* snapshotQuery.listMergedPullRequestCandidates({ limit: 2 });
+      assert.deepEqual(firstPage, candidates.slice(0, 2));
+      const lastFirstPageCandidate = firstPage.at(-1);
+      assert.ok(lastFirstPageCandidate);
+      const secondPage = yield* snapshotQuery.listMergedPullRequestCandidates({
+        afterThreadId: lastFirstPageCandidate.threadId,
+        limit: 2,
+      });
+      assert.deepEqual(secondPage, candidates.slice(2));
     }),
   );
 

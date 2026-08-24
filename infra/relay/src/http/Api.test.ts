@@ -33,6 +33,7 @@ import {
 } from "./Api.ts";
 import * as RelayConfiguration from "../Config.ts";
 import * as RelayDb from "../db.ts";
+import { ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS } from "../environments/EnvironmentConnector.ts";
 import * as EnvironmentCredentials from "../environments/EnvironmentCredentials.ts";
 import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
 import * as ManagedEndpointProvider from "../environments/ManagedEndpointProvider.ts";
@@ -182,9 +183,7 @@ function relayUnlinkTestLayer(input?: {
       EnvironmentLinks.EnvironmentLinks,
       EnvironmentLinks.EnvironmentLinks.of({
         upsert: () => Effect.die("unused upsert"),
-        listUsersForEnvironment: () => Effect.die("unused listUsersForEnvironment"),
         listDeliveryUsersForEnvironment: () => Effect.die("unused listDeliveryUsersForEnvironment"),
-        listPublicKeysForEnvironment: () => Effect.die("unused listPublicKeysForEnvironment"),
         listForUser: () => Effect.die("unused listForUser"),
         getForUser: input?.getForUser ?? (() => Effect.succeed(null)),
         revokeForUser: input?.revokeForUser ?? (() => Effect.succeed(false)),
@@ -476,6 +475,10 @@ describe("relay request tracing", () => {
       expect(spans[0]?.attributes.get("http.response.status_code")).toBe(504);
     }),
   );
+
+  it("keeps managed-environment deadlines inside the relay request envelope", () => {
+    expect(ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS).toBeLessThan(RELAY_REQUEST_DEADLINE_MS);
+  });
 
   it.effect("keeps health probes off the request-scoped trace exporter", () =>
     Effect.gen(function* () {

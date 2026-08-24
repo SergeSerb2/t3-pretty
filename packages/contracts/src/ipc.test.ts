@@ -1,7 +1,11 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { DesktopEnvironmentBootstrapSchema } from "./ipc.ts";
+import {
+  DesktopEnvironmentBootstrapSchema,
+  DesktopSshEnvironmentTargetSchema,
+  DesktopSshPasswordPromptResolutionInputSchema,
+} from "./ipc.ts";
 
 describe("DesktopEnvironmentBootstrapSchema", () => {
   const decode = Schema.decodeUnknownSync(DesktopEnvironmentBootstrapSchema);
@@ -34,5 +38,28 @@ describe("DesktopEnvironmentBootstrapSchema", () => {
         wsBaseUrl: null,
       }).runningDistro,
     ).toBeNull();
+  });
+});
+
+describe("desktop SSH IPC schemas", () => {
+  const decodeTarget = Schema.decodeUnknownSync(DesktopSshEnvironmentTargetSchema);
+  const decodePromptResolution = Schema.decodeUnknownSync(
+    DesktopSshPasswordPromptResolutionInputSchema,
+  );
+
+  it("accepts a normal SSH target and rejects invalid ports", () => {
+    expect(
+      decodeTarget({ alias: "devbox", hostname: "devbox.local", username: "serge", port: 22 }),
+    ).toEqual({ alias: "devbox", hostname: "devbox.local", username: "serge", port: 22 });
+    expect(() =>
+      decodeTarget({ alias: "devbox", hostname: "devbox.local", username: null, port: 0 }),
+    ).toThrow();
+  });
+
+  it("rejects oversized renderer-provided prompt credentials", () => {
+    expect(() =>
+      decodePromptResolution({ requestId: "request", password: "x".repeat(64 * 1024 + 1) }),
+    ).toThrow();
+    expect(() => decodePromptResolution({ requestId: "x".repeat(129), password: null })).toThrow();
   });
 });

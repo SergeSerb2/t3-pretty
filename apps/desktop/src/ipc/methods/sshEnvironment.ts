@@ -110,7 +110,7 @@ const withLoopbackSshApi =
 export const discoverSshHosts = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.DISCOVER_SSH_HOSTS_CHANNEL,
   payload: Schema.Void,
-  result: Schema.Array(DesktopDiscoveredSshHostSchema),
+  result: Schema.Array(DesktopDiscoveredSshHostSchema).check(Schema.isMaxLength(4_096)),
   handler: Effect.fn("desktop.ipc.sshEnvironment.discoverHosts")(function* () {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
     return yield* sshEnvironment.discoverHosts();

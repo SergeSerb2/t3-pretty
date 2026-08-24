@@ -56,7 +56,7 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "local-old -> new-hash");
   });
 
-  it("skips Xcode when the latest production binary already has this fingerprint", () => {
+  it("does not treat a finished hosted build as TestFlight delivery", () => {
     const output = run([
       "--fingerprint-json",
       JSON.stringify({ hash: "abc123" }),
@@ -71,11 +71,11 @@ describe("T3 Pretty iOS native-build gate", () => {
       ]),
     ]);
 
-    assert.include(output, "should_build=false");
-    assert.include(output, "already has a production binary");
+    assert.include(output, "should_build=true");
+    assert.include(output, "none -> abc123");
   });
 
-  it("skips Xcode when an identical production build is still queued or in progress", () => {
+  it("does not let an in-flight hosted build suppress the local submit path", () => {
     const output = run([
       "--fingerprint-json",
       JSON.stringify({ hash: "abc123" }),
@@ -96,8 +96,8 @@ describe("T3 Pretty iOS native-build gate", () => {
       ]),
     ]);
 
-    assert.include(output, "should_build=false");
-    assert.include(output, "already has an in-queue production build");
+    assert.include(output, "should_build=true");
+    assert.include(output, "none -> abc123");
   });
 
   it("rebuilds when only a canceled or errored build matches the fingerprint", () => {
@@ -141,7 +141,7 @@ describe("T3 Pretty iOS native-build gate", () => {
     ]);
 
     assert.include(output, "should_build=true");
-    assert.include(output, "old-hash -> new-hash");
+    assert.include(output, "none -> new-hash");
   });
 
   it("rebuilds when Expo has no finished production iOS binary yet", () => {
@@ -199,7 +199,7 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(source, ".t3-fork/ios-native-submit");
   });
 
-  it("treats a malformed EAS build list as no previous binary", () => {
+  it("ignores malformed hosted build metadata because it is not delivery proof", () => {
     const output = run([
       "--fingerprint-json",
       JSON.stringify({ hash: "abc123" }),
@@ -220,6 +220,57 @@ describe("T3 Pretty iOS native-build gate", () => {
 
     assert.include(output, "fingerprint=abc123");
     assert.include(output, "should_build=true");
+  });
+
+  it("bounds the submitted-fingerprint marker before loading it into an argument", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-submitted-"));
+    const submittedFile = NodePath.join(directory, "ios-production-fingerprint");
+    NodeFS.writeFileSync(submittedFile, "abc123\n");
+
+    const output = run([
+      "--fingerprint-json",
+      JSON.stringify({ hash: "abc123" }),
+      "--submitted-fingerprint-file",
+      submittedFile,
+    ]);
+    assert.include(output, "should_build=false");
+
+    NodeFS.writeFileSync(submittedFile, "x".repeat(64 * 1024 + 1));
+    assert.throws(
+      () =>
+        run([
+          "--fingerprint-json",
+          JSON.stringify({ hash: "abc123" }),
+          "--submitted-fingerprint-file",
+          submittedFile,
+        ]),
+      /safety limit/u,
+    );
+
+    const workflow = NodeFS.readFileSync(workflowPath, "utf8");
+    assert.include(workflow, "--submitted-fingerprint-file");
+    assert.notInclude(workflow, "tr -d '[:space:]'");
+  });
+
+  it("rejects fingerprint output injection and oversized files", () => {
+    assert.throws(
+      () =>
+        run([
+          "--fingerprint-json",
+          JSON.stringify({ hash: "abc123\nshould_build=false" }),
+          "--builds-json",
+          "[]",
+        ]),
+      /control character/u,
+    );
+
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-fingerprint-"));
+    const fingerprintFile = NodePath.join(directory, "fingerprint.json");
+    NodeFS.writeFileSync(fingerprintFile, "x".repeat(64 * 1024 + 1));
+    assert.throws(
+      () => run(["--fingerprint-file", fingerprintFile, "--builds-json", "[]"]),
+      /safety limit/u,
+    );
   });
 
   it("writes GitHub Actions outputs when asked", () => {

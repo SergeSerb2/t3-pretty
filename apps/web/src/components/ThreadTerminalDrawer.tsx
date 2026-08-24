@@ -3,7 +3,10 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { type TerminalSessionState } from "@t3tools/client-runtime/state/terminal";
+import {
+  terminalBufferAppendSince,
+  type TerminalSessionState,
+} from "@t3tools/client-runtime/state/terminal";
 import {
   Plus,
   SquareSplitHorizontal,
@@ -426,6 +429,9 @@ export function TerminalViewport({
     }),
   );
   const terminalBuffer = terminalSession.buffer;
+  const terminalBufferStartOffset = terminalSession.bufferStartOffset;
+  const terminalBufferEndOffset = terminalSession.bufferEndOffset;
+  const terminalBufferGeneration = terminalSession.bufferGeneration;
   const terminalError = terminalSession.error;
   const terminalStatus = terminalSession.status;
   const synchronizedStatusRef = useRef<TerminalSessionState["status"]>("closed");
@@ -449,6 +455,9 @@ export function TerminalViewport({
   const terminalVersion = terminalSession.version;
   const previousSessionRef = useRef({
     buffer: terminalBuffer,
+    bufferStartOffset: terminalBufferStartOffset,
+    bufferEndOffset: terminalBufferEndOffset,
+    bufferGeneration: terminalBufferGeneration,
     error: terminalError,
     status: terminalStatus,
     version: terminalVersion,
@@ -456,6 +465,9 @@ export function TerminalViewport({
   const latestSessionRef = useRef(previousSessionRef.current);
   latestSessionRef.current = {
     buffer: terminalBuffer,
+    bufferStartOffset: terminalBufferStartOffset,
+    bufferEndOffset: terminalBufferEndOffset,
+    bufferGeneration: terminalBufferGeneration,
     error: terminalError,
     status: terminalStatus,
     version: terminalVersion,
@@ -674,13 +686,21 @@ export function TerminalViewport({
         }
         const requestId = ++selectionActionRequestIdRef.current;
         openSelectionMenuRequestIdRef.current = requestId;
-        const clicked = await localApi.contextMenu
-          .show(terminalSelectionMenuItems(), nextAction.position)
-          .finally(() => {
-            if (openSelectionMenuRequestIdRef.current === requestId) {
-              openSelectionMenuRequestIdRef.current = null;
-            }
-          });
+        let clicked: "add-to-chat" | "copy" | null;
+        try {
+          clicked = await localApi.contextMenu.show(
+            terminalSelectionMenuItems(),
+            nextAction.position,
+          );
+        } catch (error) {
+          reportIfCurrent(requestId, error, "Unable to open the terminal selection menu");
+          focusIfCurrent(requestId);
+          return;
+        } finally {
+          if (openSelectionMenuRequestIdRef.current === requestId) {
+            openSelectionMenuRequestIdRef.current = null;
+          }
+        }
         if (requestId !== selectionActionRequestIdRef.current || clicked === null) {
           return;
         }
@@ -814,7 +834,10 @@ export function TerminalViewport({
         // the context menu that appears with the selection, but a clear that
         // never opened a menu must not dismiss an unrelated one.
         if (openSelectionMenuRequestIdRef.current !== null) {
-          void localApi?.contextMenu.close();
+          void localApi?.contextMenu.close().catch(() => {
+            // The selection was already cleared; a closing window may reject
+            // this best-effort request after there is no state left to recover.
+          });
         }
       }
 
@@ -911,6 +934,9 @@ export function TerminalViewport({
     const terminal = terminalRef.current;
     const current = {
       buffer: terminalBuffer,
+      bufferStartOffset: terminalBufferStartOffset,
+      bufferEndOffset: terminalBufferEndOffset,
+      bufferGeneration: terminalBufferGeneration,
       error: terminalError,
       status: terminalStatus,
       version: terminalVersion,
@@ -926,15 +952,14 @@ export function TerminalViewport({
       return;
     }
 
-    if (
-      current.buffer.length >= previous.buffer.length &&
-      current.buffer.startsWith(previous.buffer)
-    ) {
-      terminal.write(current.buffer.slice(previous.buffer.length));
-    } else {
+    const appended = terminalBufferAppendSince(previous, current);
+    if (appended === null) {
       writeTerminalBuffer(terminal, current.buffer);
+      terminal.clearSelection();
+    } else if (appended.length > 0) {
+      terminal.write(appended);
+      terminal.clearSelection();
     }
-    terminal.clearSelection();
 
     if (current.error !== null && current.error !== previous.error) {
       writeSystemMessage(terminal, current.error);
@@ -946,7 +971,16 @@ export function TerminalViewport({
       });
     }
     previousSessionRef.current = current;
-  }, [autoFocus, terminalBuffer, terminalError, terminalStatus, terminalVersion]);
+  }, [
+    autoFocus,
+    terminalBuffer,
+    terminalBufferEndOffset,
+    terminalBufferGeneration,
+    terminalBufferStartOffset,
+    terminalError,
+    terminalStatus,
+    terminalVersion,
+  ]);
 
   useEffect(() => {
     if (!autoFocus) return;

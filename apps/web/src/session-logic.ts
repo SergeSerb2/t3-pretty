@@ -22,6 +22,7 @@ import type {
   ThreadSession,
   TurnDiffSummary,
 } from "./types";
+import { compareIsoDateTimes } from "./lib/threadSort";
 
 export type ProviderPickerKind = ProviderDriverKind;
 
@@ -458,7 +459,7 @@ export function derivePendingApprovals(
   }
 
   return [...openByRequestId.values()].toSorted((left, right) =>
-    left.createdAt.localeCompare(right.createdAt),
+    compareIsoDateTimes(left.createdAt, right.createdAt),
   );
 }
 
@@ -557,7 +558,7 @@ export function derivePendingUserInputs(
   }
 
   return [...openByRequestId.values()].toSorted((left, right) =>
-    left.createdAt.localeCompare(right.createdAt),
+    compareIsoDateTimes(left.createdAt, right.createdAt),
   );
 }
 
@@ -753,7 +754,7 @@ export function findLatestProposedPlan(
       .filter((proposedPlan) => proposedPlan.turnId === latestTurnId)
       .toSorted(
         (left, right) =>
-          left.updatedAt.localeCompare(right.updatedAt) || left.id.localeCompare(right.id),
+          compareIsoDateTimes(left.updatedAt, right.updatedAt) || left.id.localeCompare(right.id),
       )
       .at(-1);
     if (matchingTurnPlan) {
@@ -764,7 +765,7 @@ export function findLatestProposedPlan(
   const latestPlan = [...proposedPlans]
     .toSorted(
       (left, right) =>
-        left.updatedAt.localeCompare(right.updatedAt) || left.id.localeCompare(right.id),
+        compareIsoDateTimes(left.updatedAt, right.updatedAt) || left.id.localeCompare(right.id),
     )
     .at(-1);
   if (!latestPlan) {
@@ -1269,7 +1270,7 @@ function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | un
     entry.taskId &&
     (entry.sourceActivityKind === "task.progress" || entry.sourceActivityKind === "task.completed")
   ) {
-    return `task${entry.taskId}`;
+    return `task\x1f${entry.taskId}`;
   }
   if (
     entry.sourceActivityKind !== "tool.updated" &&
@@ -1828,7 +1829,7 @@ function compareActivitiesByOrder(
     return -1;
   }
 
-  const createdAtComparison = left.createdAt.localeCompare(right.createdAt);
+  const createdAtComparison = compareIsoDateTimes(left.createdAt, right.createdAt);
   if (createdAtComparison !== 0) {
     return createdAtComparison;
   }
@@ -1886,14 +1887,21 @@ export function deriveTimelineEntries(
     entry,
   }));
   return [...messageRows, ...proposedPlanRows, ...turnPlanRows, ...workRows].toSorted((a, b) =>
-    a.createdAt.localeCompare(b.createdAt),
+    compareIsoTimestamps(a.createdAt, b.createdAt),
   );
+}
+
+/** Backward-compatible export for timeline callers and focused tests. */
+export function compareIsoTimestamps(a: string, b: string): number {
+  return compareIsoDateTimes(a, b);
 }
 
 export function inferCheckpointTurnCountByTurnId(
   summaries: ReadonlyArray<TurnDiffSummary>,
 ): Record<TurnId, number> {
-  const sorted = [...summaries].toSorted((a, b) => a.completedAt.localeCompare(b.completedAt));
+  const sorted = [...summaries].toSorted((a, b) =>
+    compareIsoDateTimes(a.completedAt, b.completedAt),
+  );
   const result: Record<TurnId, number> = {};
   for (let index = 0; index < sorted.length; index += 1) {
     const summary = sorted[index];

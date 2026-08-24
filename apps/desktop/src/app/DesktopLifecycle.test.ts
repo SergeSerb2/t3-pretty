@@ -123,6 +123,101 @@ describe("DesktopLifecycle", () => {
     );
   });
 
+  it.effect("runs only one shutdown sequence for concurrent relaunch requests", () =>
+    Effect.gen(function* () {
+      const backendReady = yield* Ref.make(false);
+      const quitting = yield* Ref.make(false);
+      const shutdownRequests = yield* Ref.make(0);
+      const boundsFlushes = yield* Ref.make(0);
+      const exits = yield* Ref.make(0);
+      const exitCalled = yield* Deferred.make<void>();
+
+      const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
+        metadata: Effect.die("unexpected metadata read"),
+        name: Effect.succeed("T3 Pretty"),
+        systemLocale: Effect.succeed("en-US"),
+        whenReady: Effect.void,
+        quit: Effect.void,
+        exit: () =>
+          Ref.update(exits, (count) => count + 1).pipe(
+            Effect.andThen(Deferred.succeed(exitCalled, undefined)),
+            Effect.asVoid,
+          ),
+        relaunch: () => Effect.die("development relaunch must exit directly"),
+        setPath: () => Effect.void,
+        setName: () => Effect.void,
+        setAboutPanelOptions: () => Effect.void,
+        setAppUserModelId: () => Effect.void,
+        getAppMetrics: Effect.succeed([]),
+        isDefaultProtocolClient: () => Effect.succeed(false),
+        setAsDefaultProtocolClient: () => Effect.succeed(true),
+        setDesktopName: () => Effect.void,
+        setDockIcon: () => Effect.void,
+        setDockBadge: () => Effect.void,
+        bounceDock: Effect.succeed(-1),
+        cancelDockBounce: () => Effect.void,
+        startLocalCrashReporter: () => Effect.void,
+        appendCommandLineSwitch: () => Effect.void,
+        removeCommandLineSwitch: () => Effect.void,
+        onBeforeQuitForUpdate: () => Effect.void,
+        on: () => Effect.void,
+      } satisfies ElectronApp.ElectronApp["Service"]);
+      const desktopWindowLayer = Layer.succeed(DesktopWindow.DesktopWindow, {
+        createMain: Effect.die("unexpected window creation"),
+        ensureMain: Effect.die("unexpected window creation"),
+        revealOrCreateMain: Effect.die("unexpected window creation"),
+        activate: Effect.void,
+        createMainIfBackendReady: Effect.void,
+        showConnectingSplash: Effect.void,
+        handleBackendReady: () => Effect.void,
+        handleBackendNotReady: Effect.void,
+        flushMainWindowBounds: Ref.update(boundsFlushes, (count) => count + 1),
+        dispatchMenuAction: () => Effect.void,
+        zoomMain: () => Effect.void,
+        setDockAttention: () => Effect.void,
+        syncAppearance: Effect.void,
+      } satisfies DesktopWindow.DesktopWindow["Service"]);
+      const shutdownLayer = Layer.succeed(DesktopShutdown.DesktopShutdown, {
+        request: Ref.update(shutdownRequests, (count) => count + 1),
+        awaitRequest: Effect.never,
+        markComplete: Effect.void,
+        awaitComplete: Effect.void,
+        isComplete: Effect.succeed(true),
+      });
+      const stateLayer = Layer.succeed(DesktopState.DesktopState, { backendReady, quitting });
+      const themeLayer = Layer.succeed(ElectronTheme.ElectronTheme, {
+        shouldUseDarkColors: Effect.succeed(false),
+        setSource: () => Effect.void,
+        onUpdated: () => Effect.void,
+      });
+      const environmentLayer = Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
+        isDevelopment: true,
+      } as DesktopEnvironment.DesktopEnvironment["Service"]);
+      const layer = Layer.mergeAll(
+        electronAppLayer,
+        desktopWindowLayer,
+        shutdownLayer,
+        stateLayer,
+        themeLayer,
+        environmentLayer,
+      );
+
+      yield* Effect.all(
+        [
+          DesktopLifecycle.make.relaunch("first request"),
+          DesktopLifecycle.make.relaunch("second request"),
+        ],
+        { concurrency: "unbounded" },
+      ).pipe(Effect.provide(layer));
+      yield* Deferred.await(exitCalled);
+      yield* Effect.yieldNow;
+
+      assert.equal(yield* Ref.get(shutdownRequests), 1);
+      assert.equal(yield* Ref.get(boundsFlushes), 1);
+      assert.equal(yield* Ref.get(exits), 1);
+    }),
+  );
+
   for (const platform of ["darwin", "win32", "linux"] satisfies ReadonlyArray<NodeJS.Platform>) {
     it.effect(`lets the updater's quit event proceed on ${platform}`, () => {
       const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
