@@ -68,6 +68,9 @@ export const SidebarAutoSettleAfterDays = Schema.Number.check(
 );
 export type SidebarAutoSettleAfterDays = typeof SidebarAutoSettleAfterDays.Type;
 export const DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS: SidebarAutoSettleAfterDays = 3;
+// Toggle-on value when auto-archive is enabled. Decoded settings stay null
+// (off) until the user turns the switch on.
+export const DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS: SidebarAutoSettleAfterDays = 30;
 export const MIN_GLASS_OPACITY = 40;
 export const MAX_GLASS_OPACITY = 100;
 export const GlassOpacity = Schema.Int.check(
@@ -239,6 +242,12 @@ export const ClientSettingsSchema = Schema.Struct({
   legacySidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
+  ),
+  // Settled threads older than this many days archive automatically, keeping
+  // the settled tail from growing without bound. Null (the default) leaves
+  // history alone. Shares the auto-settle day bounds.
+  sidebarAutoArchiveSettledAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
@@ -941,6 +950,7 @@ export const ClientSettingsPatch = Schema.Struct({
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
+  sidebarAutoArchiveSettledAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),

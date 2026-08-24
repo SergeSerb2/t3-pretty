@@ -2,6 +2,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import { Menu, MenuCheckboxItem, MenuRadioGroup, MenuRadioItem } from "./menu";
+import menuSource from "./menu.tsx?raw";
+
+describe("menu modal default", () => {
+  it("does not inert the page while a dropdown is open", () => {
+    expect(menuSource).toContain("modal = false");
+    expect(menuSource).toContain("modal={modal}");
+  });
+});
 
 describe("menu radio item geometry", () => {
   it("keeps radio-item icons on the same text grid as menu items", () => {

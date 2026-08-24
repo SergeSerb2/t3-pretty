@@ -92,6 +92,31 @@ export async function archiveSelectedThreadEntries<
   return { archivedThreadKeys, mutationFailure: null, followupFailures };
 }
 
+export async function unarchiveSelectedThreadEntries<
+  TEntry,
+  TResult extends { readonly _tag: "Success" | "Failure" },
+>(input: {
+  entries: readonly TEntry[];
+  unarchive: (entry: TEntry) => Promise<TResult>;
+}): Promise<{
+  restored: readonly TEntry[];
+  failures: readonly Extract<TResult, { readonly _tag: "Failure" }>[];
+}> {
+  const restored: TEntry[] = [];
+  const failures: Extract<TResult, { readonly _tag: "Failure" }>[] = [];
+
+  for (const entry of input.entries) {
+    const result = await input.unarchive(entry);
+    if (result._tag === "Success") {
+      restored.push(entry);
+      continue;
+    }
+    failures.push(result as Extract<TResult, { readonly _tag: "Failure" }>);
+  }
+
+  return { restored, failures };
+}
+
 export function buildMultiSelectThreadContextMenuItems(input: {
   count: number;
   hasRunningThread: boolean;
@@ -640,6 +665,67 @@ export function resolveSettledTimestamp(thread: SettledTimestampInput): string |
     }
   }
   return latest ?? firstValidTimestamp(thread.updatedAt);
+}
+
+/** Whether a settled thread has been settled (or quiet, for auto-settled
+    threads with no settledAt stamp) long enough to auto-archive. Uses the
+    same timestamp the settled tail sorts and labels by, so a row never
+    archives before the age its label shows. A thread with no resolvable
+    timestamp never auto-archives. */
+export function isSettledThreadPastArchiveAge(
+  thread: SettledTimestampInput,
+  input: { nowMs: number; afterDays: number },
+): boolean {
+  const timestamp = resolveSettledTimestamp(thread);
+  if (timestamp === null) return false;
+  const parsed = Date.parse(timestamp);
+  return !Number.isNaN(parsed) && parsed <= input.nowMs - input.afterDays * 24 * 60 * 60 * 1000;
+}
+
+/** Drop auto-archive attempts that have left the settled tail so a later
+    unarchive (Clear undo, archived list) can be attempted again. Keys still
+    in the tail stay, covering projection lag after a successful archive. */
+export function retainSettledAutoArchiveAttempts(
+  attemptedKeys: ReadonlySet<string>,
+  settledThreadKeys: ReadonlySet<string>,
+): Set<string> {
+  const retained = new Set<string>();
+  for (const key of attemptedKeys) {
+    if (settledThreadKeys.has(key)) retained.add(key);
+  }
+  return retained;
+}
+
+/** Claim keys that are not already reserved so Clear and auto-archive cannot
+    mutate the same thread concurrently. Returns the newly reserved keys. */
+export function reserveSettledArchiveAttempts(
+  attemptedKeys: Set<string>,
+  threadKeys: readonly string[],
+): string[] {
+  const reserved: string[] = [];
+  for (const key of threadKeys) {
+    if (attemptedKeys.has(key)) continue;
+    attemptedKeys.add(key);
+    reserved.push(key);
+  }
+  return reserved;
+}
+
+/** After Clear undo, re-reserve only restored keys already past archive
+    age so a minute sweep cannot immediately reverse the undo. Younger
+    restored keys stay unreserved so they can still auto-archive later. */
+export function reserveUndonePastArchiveAgeAttempts(
+  attemptedKeys: Set<string>,
+  restored: readonly { threadKey: string; thread: SettledTimestampInput }[],
+  input: { nowMs: number; afterDays: number | null },
+): void {
+  if (input.afterDays === null) return;
+  const afterDays = input.afterDays;
+  for (const entry of restored) {
+    if (isSettledThreadPastArchiveAge(entry.thread, { nowMs: input.nowMs, afterDays })) {
+      attemptedKeys.add(entry.threadKey);
+    }
+  }
 }
 
 // Settled rows are history, so they order by when the work ENDED, not when

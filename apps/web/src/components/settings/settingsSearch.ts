@@ -201,6 +201,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "auto-archive-settled-threads",
+    title: "Auto-archive settled threads",
+    to: "/settings/general",
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",

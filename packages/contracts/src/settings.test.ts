@@ -6,6 +6,9 @@ import {
   ClientSettingsSchema,
   ClientSettingsPatch,
   DEFAULT_SERVER_SETTINGS,
+  DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS,
+  MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   defaultEnabledForDriver,
   resolveProviderInstanceEnabled,
   ServerSettings,
@@ -167,6 +170,21 @@ describe("ClientSettings sidebar", () => {
   it.each([-1, 0, 91])("rejects an auto-settle threshold outside 1..90: %s", (value) => {
     expect(() => decodeClientSettings({ sidebarAutoSettleAfterDays: value })).toThrow();
     expect(() => decodeClientSettingsPatch({ sidebarAutoSettleAfterDays: value })).toThrow();
+  });
+
+  it("keeps auto-archive off until enabled at a value inside the shared day bounds", () => {
+    expect(decodeClientSettings({}).sidebarAutoArchiveSettledAfterDays).toBeNull();
+    expect(DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS).toBeGreaterThanOrEqual(
+      MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+    );
+    expect(DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS).toBeLessThanOrEqual(
+      MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+    );
+    expect(
+      decodeClientSettings({
+        sidebarAutoArchiveSettledAfterDays: DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS,
+      }).sidebarAutoArchiveSettledAfterDays,
+    ).toBe(DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS);
   });
 });
 
