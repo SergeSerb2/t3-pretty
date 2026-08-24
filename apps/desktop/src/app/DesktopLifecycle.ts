@@ -131,6 +131,15 @@ function handleBeforeQuit(
 
   event.preventDefault();
   if (!beginNormalQuit()) return;
+  const finishNormalQuit = () => {
+    markQuitAllowed();
+    void runEffect(
+      Effect.gen(function* () {
+        const electronApp = yield* ElectronApp.ElectronApp;
+        yield* electronApp.quit;
+      }).pipe(Effect.withSpan("desktop.lifecycle.quitAfterShutdown")),
+    );
+  };
   void runEffect(
     Effect.gen(function* () {
       const state = yield* DesktopState.DesktopState;
@@ -145,15 +154,7 @@ function handleBeforeQuit(
         ),
       );
     }).pipe(Effect.withSpan("desktop.lifecycle.beforeQuit")),
-  ).finally(() => {
-    markQuitAllowed();
-    void runEffect(
-      Effect.gen(function* () {
-        const electronApp = yield* ElectronApp.ElectronApp;
-        yield* electronApp.quit;
-      }).pipe(Effect.withSpan("desktop.lifecycle.quitAfterShutdown")),
-    );
-  });
+  ).then(finishNormalQuit, finishNormalQuit);
 }
 
 function quitFromSignal(

@@ -328,6 +328,56 @@ describe("DesktopLifecycle", () => {
     }),
   );
 
+  it.effect("continues quitting when normal shutdown fails", () =>
+    Effect.gen(function* () {
+      const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
+      const quitRequested = yield* Deferred.make<void>();
+      const quit = Deferred.succeed(quitRequested, undefined).pipe(Effect.asVoid);
+      const environmentLayer = Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
+        platform: "darwin",
+        isDevelopment: false,
+      } as DesktopEnvironment.DesktopEnvironment["Service"]);
+      const layer = DesktopLifecycle.layer.pipe(
+        Layer.provideMerge(makeElectronAppLayer(appListeners, quit)),
+        Layer.provideMerge(electronThemeLayer),
+        Layer.provideMerge(makeElectronWindowLayer()),
+        Layer.provideMerge(
+          makeDesktopWindowLayer({
+            flushMainWindowBounds: Effect.die("simulated bounds flush failure"),
+          }),
+        ),
+        Layer.provideMerge(environmentLayer),
+        Layer.provideMerge(DesktopShutdown.layer),
+        Layer.provideMerge(DesktopState.layer),
+      );
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+          yield* lifecycle.register;
+
+          let firstPrevented = false;
+          appListeners.get("before-quit")?.({
+            preventDefault: () => {
+              firstPrevented = true;
+            },
+          } as Electron.Event);
+          yield* Deferred.await(quitRequested);
+
+          let secondPrevented = false;
+          appListeners.get("before-quit")?.({
+            preventDefault: () => {
+              secondPrevented = true;
+            },
+          } as Electron.Event);
+
+          assert.isTrue(firstPrevented);
+          assert.isFalse(secondPrevented);
+        }),
+      ).pipe(Effect.provide(layer));
+    }),
+  );
+
   it.effect("ignores app activation while quitting", () =>
     Effect.gen(function* () {
       const appListeners = new Map<string, (...args: readonly unknown[]) => void>();

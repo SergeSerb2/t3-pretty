@@ -370,6 +370,29 @@ describe("DesktopServerExposure", () => {
     ),
   );
 
+  it.effect("normalizes IPv6 LAN host overrides for advertised URLs", () =>
+    withHarness(
+      emptyNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+        const change = yield* serverExposure.setMode("network-accessible");
+
+        assert.equal(change.state.advertisedHost, "[2001:db8::7]");
+        assert.equal(change.state.endpointUrl, "http://[2001:db8::7]:4173");
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        assert.deepEqual(
+          endpoints.map((endpoint) => endpoint.httpBaseUrl),
+          ["http://127.0.0.1:4173/", "http://[2001:db8::7]:4173/"],
+        );
+      }),
+      {
+        T3CODE_DESKTOP_LAN_HOST: "2001:db8::7",
+      },
+    ),
+  );
+
   it.effect("ignores malformed LAN host overrides and falls back to a usable interface", () =>
     withHarness(
       lanNetworkInterfaces,

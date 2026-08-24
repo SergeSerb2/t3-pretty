@@ -1,3 +1,5 @@
+import * as NodeNet from "node:net";
+
 import {
   createAdvertisedEndpoint,
   type CreateAdvertisedEndpointInput,
@@ -66,7 +68,8 @@ const normalizeOptionalHost = (value: string | undefined): string | undefined =>
   if (!normalized || normalized.length > DESKTOP_LAN_HOST_MAX_LENGTH) return undefined;
 
   try {
-    const parsed = new URL(`http://${normalized}`);
+    const urlHost = NodeNet.isIPv6(normalized) ? `[${normalized}]` : normalized;
+    const parsed = new URL(`http://${urlHost}`);
     if (
       parsed.username.length > 0 ||
       parsed.password.length > 0 ||

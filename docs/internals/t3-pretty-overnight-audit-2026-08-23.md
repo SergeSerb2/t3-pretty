@@ -1731,10 +1731,11 @@ audit snapshot rather than claiming that every item remains in the PR.
   failure, destruction, or window close instead of accumulating one listener
   per click.
 - Latch the first normal quit synchronously so repeated `before-quit` events do
-  not start duplicate shutdown waiters, and skip dock activation after shutdown
-  has begun. Concurrent relaunch requests now atomically claim that same
-  quitting state inside their detached sequence, preventing duplicate shutdown,
-  relaunch, and exit calls.
+  not start duplicate shutdown waiters, consume a failed shutdown promise while
+  still allowing Electron's fail-open quit, and skip dock activation after
+  shutdown has begun. Concurrent relaunch requests now atomically claim that
+  same quitting state inside their detached sequence, preventing duplicate
+  shutdown, relaunch, and exit calls.
 - Retry backend child-log initialization after a transient filesystem failure
   by caching only successful writers; failed calls remain no-op for that call
   without disabling logging for the rest of the app session.
@@ -1833,7 +1834,8 @@ audit snapshot rather than claiming that every item remains in the PR.
   the aggregate desktop IPC result while preserving existing endpoint IDs and
   ordinary HTTP, HTTPS, WS, and WSS values. Credential-bearing endpoint URLs
   are rejected before renderer exposure, malformed LAN-host overrides fall
-  back to a usable interface, and oversized comma-list segments are skipped
+  back to a usable interface, raw or bracketed IPv6 overrides are canonicalized
+  to URL-safe bracketed hosts, and oversized comma-list segments are skipped
   without truncating them into different URLs. Equivalent manual URLs are
   deduplicated after normalization to prevent repeated rows and React key
   collisions, and secure WebSocket inputs inherit HTTPS compatibility.
