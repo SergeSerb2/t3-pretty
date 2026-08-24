@@ -49,6 +49,8 @@ import {
   wslUncPathToLinuxPath,
 } from "../../wsl/wslPathParsing.ts";
 
+const LOCAL_ENVIRONMENT_BOOTSTRAPS_MAX_ITEMS = 64;
+
 const ContextMenuPosition = Schema.Struct({
   x: Schema.Finite,
   y: Schema.Finite,
@@ -126,12 +128,15 @@ export const setDockAttention = DesktopIpc.makeIpcMethod({
 export const getLocalEnvironmentBootstraps = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL,
   payload: Schema.Void,
-  result: Schema.Array(DesktopEnvironmentBootstrapSchema).check(Schema.isMaxLength(64)),
+  result: Schema.Array(DesktopEnvironmentBootstrapSchema).check(
+    Schema.isMaxLength(LOCAL_ENVIRONMENT_BOOTSTRAPS_MAX_ITEMS),
+  ),
   handler: Effect.fn("desktop.ipc.window.getLocalEnvironmentBootstraps")(function* () {
     const pool = yield* DesktopBackendPool.DesktopBackendPool;
     const instances = yield* pool.list;
     const bootstraps: DesktopEnvironmentBootstrap[] = [];
     for (const instance of instances) {
+      if (bootstraps.length >= LOCAL_ENVIRONMENT_BOOTSTRAPS_MAX_ITEMS) break;
       const isPrimary = instance.id === PRIMARY_LOCAL_ENVIRONMENT_ID;
       const config = yield* instance.currentConfig;
       const snapshot = yield* instance.snapshot;
