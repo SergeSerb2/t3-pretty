@@ -1628,7 +1628,11 @@ function CompactFilterMenu<Value extends string>({
   const current = options.find((option) => option.value === value) ?? options[0];
   if (!current) return null;
   return (
-    <Menu>
+    <Menu
+      // Same trap as the overflow filter menu: modal mode inerts Back, the
+      // sidebar, and every other control that would leave this page.
+      modal={false}
+    >
       <MenuTrigger
         aria-label={label}
         className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
