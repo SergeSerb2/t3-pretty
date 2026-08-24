@@ -641,6 +641,12 @@ function publishNotes({ baseSha, newest, entries }) {
     "commit",
     "-m",
     `docs(changelog): add release notes through v${newest}`,
+    // The packaging step pushes this while the rest of its own build (iOS,
+    // Linux, relay, CLI) is still running. Buildkite cancels intermediate
+    // main builds, so a build for this commit would only re-read the feed,
+    // skip packaging, and kill the release in flight. Skip it outright.
+    "-m",
+    "Pushed by the packaging step of the build that shipped this version. [skip ci]",
   ]);
 
   try {
