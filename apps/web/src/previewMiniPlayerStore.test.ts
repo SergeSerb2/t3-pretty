@@ -103,23 +103,23 @@ describe("previewMiniPlayerStore", () => {
     ).toBeNull();
   });
 
-  it("records the current tab as dismissed when close() hides the player", () => {
+  it("hides the player from close() without recording a dismissal", () => {
     const store = usePreviewMiniPlayerStore.getState();
     store.open(refA, "tab-a");
     store.close(refA);
 
-    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
-      [scopedThreadKey(refA)]: ["tab-a"],
-    });
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({});
     expect(
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
     ).toBeNull();
 
+    store.open(refA, "tab-a");
+    store.dismiss(refA, "tab-a");
     store.open(refA, "tab-b");
     store.close(refA);
 
     expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
-      [scopedThreadKey(refA)]: ["tab-a", "tab-b"],
+      [scopedThreadKey(refA)]: ["tab-a"],
     });
   });
 });

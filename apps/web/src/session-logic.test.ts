@@ -1210,6 +1210,45 @@ describe("deriveWorkLogEntries", () => {
     expect(entry?.toolCallId).toBe("call-1");
   });
 
+  it("keeps the labeled browser action when a later lifecycle row omits arguments", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "click-progress",
+        kind: "tool.updated",
+        summary: "t3-code · preview_click",
+        payload: {
+          itemType: "mcp_tool_call",
+          toolCallId: "call-click",
+          title: "t3-code · preview_click",
+          data: {
+            item: {
+              type: "mcpToolCall",
+              server: "t3-code",
+              tool: "preview_click",
+              arguments: { locator: "role=button[name='Send']" },
+            },
+          },
+        },
+      }),
+      makeActivity({
+        id: "click-complete",
+        kind: "tool.completed",
+        summary: "t3-code · preview_click",
+        payload: {
+          itemType: "mcp_tool_call",
+          toolCallId: "call-click",
+          title: "t3-code · preview_click",
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry?.previewAutomation).toEqual({
+      operation: "click",
+      label: "Clicked “Send”",
+    });
+  });
+
   it("collapses interleaved lifecycle updates by tool call id", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

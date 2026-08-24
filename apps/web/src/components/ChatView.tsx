@@ -1973,11 +1973,7 @@ function ChatViewContent(props: ChatViewProps) {
       activeRightPanelSurface?.kind === "preview" &&
       activeRightPanelSurface.resourceId === activePreviewMiniPlayer.tabId;
     if (!miniTabStillExists || sameTabOpenInPanel) {
-      const tabId = activePreviewMiniPlayer.tabId;
       usePreviewMiniPlayerStore.getState().close(activeThreadRef);
-      if (sameTabOpenInPanel) {
-        usePreviewMiniPlayerStore.getState().undismiss(activeThreadRef, tabId);
-      }
     }
   }, [
     activePreviewMiniPlayer,
