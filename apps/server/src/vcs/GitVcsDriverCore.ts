@@ -252,17 +252,17 @@ function paginateBranches(input: {
 
 function parseWorktreeBranchPaths(stdout: string): {
   readonly branchPaths: ReadonlyMap<string, string>;
-  readonly hasPrunable: boolean;
+  readonly prunablePaths: ReadonlyMap<string, string>;
 } {
   const worktreePaths = new Map<string, string>();
+  const prunablePaths = new Map<string, string>();
   let currentPath: string | null = null;
   let currentBranch: string | null = null;
   let currentPrunable = false;
-  let hasPrunable = false;
 
   const flush = () => {
-    if (currentPath !== null && currentBranch !== null && !currentPrunable) {
-      worktreePaths.set(currentBranch, currentPath);
+    if (currentPath !== null && currentBranch !== null) {
+      (currentPrunable ? prunablePaths : worktreePaths).set(currentBranch, currentPath);
     }
     currentPath = null;
     currentBranch = null;
@@ -278,12 +278,11 @@ function parseWorktreeBranchPaths(stdout: string): {
       currentBranch = field.slice("branch refs/heads/".length);
     } else if (field === "prunable" || field.startsWith("prunable ")) {
       currentPrunable = true;
-      hasPrunable = true;
     }
   }
   flush();
 
-  return { branchPaths: worktreePaths, hasPrunable };
+  return { branchPaths: worktreePaths, prunablePaths };
 }
 
 function splitNullSeparatedPaths(input: string, truncated: boolean): string[] {
@@ -972,11 +971,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     operation: string,
     cwd: string,
     gitDirArgs: readonly string[] = [],
-  ): Effect.Effect<void, GitCommandError> =>
+  ): Effect.Effect<GitVcsDriver.ExecuteGitResult, GitCommandError> =>
     executeGit(operation, cwd, [...gitDirArgs, "worktree", "prune"], {
       timeoutMs: 30_000,
       allowNonZeroExit: true,
-    }).pipe(Effect.asVoid);
+    });
 
   const runGit = (
     operation: string,
@@ -2601,7 +2600,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const parsedWorktreeList =
       worktreeListResult.exitCode === 0
         ? parseWorktreeBranchPaths(worktreeListResult.stdout)
-        : { branchPaths: new Map<string, string>(), hasPrunable: false };
+        : { branchPaths: new Map<string, string>(), prunablePaths: new Map<string, string>() };
     const parsedWorktreeEntries = [...parsedWorktreeList.branchPaths].map(
       ([branchName, worktreePath]) =>
         [branchName, path.normalize(path.resolve(worktreePath))] as const,
@@ -2619,8 +2618,19 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     // Git keeps counting a branch as checked out in a worktree whose directory is gone, and
     // refuses to move, fetch into, or re-add that branch until the entry is pruned. Prune where
     // the stale entry is noticed, so every later write sees what this snapshot reports.
-    if (parsedWorktreeList.hasPrunable) {
-      yield* pruneStaleWorktrees("GitVcsDriver.listRefs.pruneWorktrees", fetchCwd, gitDirArgs);
+    // If prune does not actually drop the entry, keep it visible so listRefs does not claim
+    // the branch is free while git still refuses to move it.
+    if (parsedWorktreeList.prunablePaths.size > 0) {
+      const pruneResult = yield* pruneStaleWorktrees(
+        "GitVcsDriver.listRefs.pruneWorktrees",
+        fetchCwd,
+        gitDirArgs,
+      );
+      if (pruneResult.exitCode !== 0) {
+        for (const [branchName, worktreePath] of parsedWorktreeList.prunablePaths) {
+          worktreeMap.set(branchName, path.normalize(path.resolve(worktreePath)));
+        }
+      }
     }
     const localBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];
     const remoteBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];

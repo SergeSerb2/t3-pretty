@@ -527,6 +527,51 @@ it.effect("ignores worktree metadata for directories that no longer exist", () =
   ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
+it.effect("keeps a prunable worktree visible when prune does not succeed", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const pathService = yield* Path.Path;
+      const missingWorktreePath = "/missing/deleted-worktree";
+      const staleWorktreeSpawner = ChildProcessSpawner.make((command) =>
+        Effect.gen(function* () {
+          if (!ChildProcess.isStandardCommand(command)) {
+            return yield* Effect.die("expected a standard Git command");
+          }
+          const isWorktreeList =
+            command.args.includes("worktree") && command.args.includes("--porcelain");
+          const isWorktreePrune =
+            command.args.includes("worktree") && command.args.includes("prune");
+          if (isWorktreeList) {
+            return makeSuccessfulHandle(
+              `worktree ${missingWorktreePath}\0HEAD deadbeef\0branch refs/heads/stale-worktree\0prunable\0\0`,
+            );
+          }
+          if (isWorktreePrune) {
+            return makeNonRepositoryHandle();
+          }
+          return yield* delegate.spawn(command);
+        }),
+      );
+      const driver = yield* makeGitVcsDriverCore().pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, staleWorktreeSpawner),
+      );
+      const cwd = yield* makeTmpDir();
+      yield* initRepoWithCommit(cwd).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, driver));
+      yield* git(cwd, ["branch", "stale-worktree"]).pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
+      );
+
+      const refs = yield* driver.listRefs({ cwd, refresh: true });
+
+      assert.equal(
+        refs.refs.find((ref) => ref.name === "stale-worktree")?.worktreePath,
+        pathService.normalize(pathService.resolve(missingWorktreePath)),
+      );
+    }),
+  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
 it.effect("prunes a worktree entry whose directory is gone so git releases its branch", () =>
   Effect.gen(function* () {
     const driver = yield* GitVcsDriver.GitVcsDriver;
