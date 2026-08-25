@@ -359,3 +359,13 @@ describe("iOS publish Xcode selection", () => {
     }
   });
 });
+
+describe("iOS fingerprint recording", () => {
+  it("retries the bookkeeping branch push once", () => {
+    assert.include(mobileRelease, "Fingerprint branch push failed; retrying once.");
+    assert.equal(
+      mobileRelease.match(/git push --force origin "HEAD:refs\/heads\/\$branch"/g)?.length,
+      2,
+    );
+  });
+});

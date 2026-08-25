@@ -700,7 +700,11 @@ git config user.email "t3-pretty-bot@users.noreply.cursor.com"
 git commit --no-verify -m "chore(mobile): record iOS production fingerprint"
 
 branch="automation/ios-fingerprint-${fingerprint:0:12}"
-git push --force origin "HEAD:refs/heads/$branch"
+git push --force origin "HEAD:refs/heads/$branch" || {
+  echo "Fingerprint branch push failed; retrying once."
+  sleep 5
+  git push --force origin "HEAD:refs/heads/$branch"
+}
 node scripts/fork/origin-forge.mjs setup-ci
 body_path="$tmp/t3-pretty-ios-fingerprint.md"
 printf '%s\n' \
