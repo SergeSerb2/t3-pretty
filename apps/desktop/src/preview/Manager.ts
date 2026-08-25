@@ -3676,13 +3676,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         ...automationSelectorDiagnostics(input),
       });
     }
+    yield* emitAutomationPointer(tabId, "type", result);
   });
 
   const emitFocusedElementPointer = Effect.fn("PreviewManager.emitFocusedElementPointer")(
     function* (
       tabId: string,
       send: SendCommand,
-      phase: Extract<DesktopPreviewPointerEvent["phase"], "type" | "press">,
+      phase: Extract<DesktopPreviewPointerEvent["phase"], "press">,
     ) {
       const focusedPoint = yield* evaluateWithDebugger<{
         readonly x?: number;
@@ -3720,7 +3721,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     // guest WebContents with a pointer event. Editing in the page runtime keeps
     // background automation deterministic without stealing foreground app focus.
     yield* typeIntoAutomationTarget(tabId, send, input);
-    yield* emitFocusedElementPointer(tabId, send, "type");
   });
 
   const automationType = Effect.fn("PreviewManager.automationType")(function* (

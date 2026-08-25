@@ -95,6 +95,7 @@ async function maybePresentAutomationActivity(
   operation: PreviewAutomationRequest["operation"],
 ): Promise<void> {
   if (!AUTO_PRESENT_AUTOMATION_OPERATIONS.has(operation)) return;
+  const autoShowFloatingPreview = (await resolveBrowserDefaults()).autoShowFloatingPreview;
   const threadKey = scopedThreadKey(threadRef);
   const miniPlayers = usePreviewMiniPlayerStore.getState();
   const panelState = useRightPanelStore.getState().byThreadKey[threadKey];
@@ -103,7 +104,7 @@ async function maybePresentAutomationActivity(
     : undefined;
   const shouldPresent = shouldPresentAutomationActivity({
     operation,
-    autoShowFloatingPreview: (await resolveBrowserDefaults()).autoShowFloatingPreview,
+    autoShowFloatingPreview,
     tabId,
     dismissedTabIds: miniPlayers.dismissedTabIdsByThreadKey[threadKey] ?? [],
     miniPlayerTabId: miniPlayers.byThreadKey[threadKey]?.tabId ?? null,

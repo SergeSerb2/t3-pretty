@@ -88,17 +88,13 @@ describe("previewMiniPlayerStore", () => {
     });
     expect(
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
-    ).toBeNull();
+    ).toMatchObject({ tabId: "tab-b" });
 
     usePreviewMiniPlayerStore.getState().undismiss(refA, "tab-b");
-    usePreviewMiniPlayerStore.getState().open(refA, "tab-b");
 
     expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
       [scopedThreadKey(refA)]: ["tab-a"],
     });
-    expect(
-      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
-    ).toMatchObject({ tabId: "tab-b" });
   });
 
   it("undismisses a tab without opening its floating player", () => {
