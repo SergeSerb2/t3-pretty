@@ -2503,6 +2503,7 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
+  if (workEntry.previewAutomation) return "mouse-pointer";
   if (workEntry.itemType === "image_generation") return "image";
 
   const action = toolGroupAction(workEntry);

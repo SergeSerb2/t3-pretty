@@ -3676,28 +3676,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         ...automationSelectorDiagnostics(input),
       });
     }
-    yield* emitAutomationPointer(tabId, "type", result);
-  });
-
-  const performAutomationType = Effect.fn("PreviewManager.performAutomationType")(function* (
-    tabId: string,
-    input: PreviewAutomationTypeInput,
-    send: SendCommand,
-  ) {
-    // CDP Input.insertText silently drops text until Electron has activated a hidden
-    // guest WebContents with a pointer event. Editing in the page runtime keeps
-    // background automation deterministic without stealing foreground app focus.
-    yield* typeIntoAutomationTarget(tabId, send, input);
-  });
-
-  const automationType = Effect.fn("PreviewManager.automationType")(function* (
-    tabId: string,
-    input: PreviewAutomationTypeInput,
-  ) {
-    const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "type", (send) =>
-      performAutomationType(tabId, input, send),
-    );
   });
 
   const emitFocusedElementPointer = Effect.fn("PreviewManager.emitFocusedElementPointer")(
@@ -3732,6 +3710,28 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       yield* emitAutomationPointer(tabId, phase, focusedPoint ?? {});
     },
   );
+
+  const performAutomationType = Effect.fn("PreviewManager.performAutomationType")(function* (
+    tabId: string,
+    input: PreviewAutomationTypeInput,
+    send: SendCommand,
+  ) {
+    // CDP Input.insertText silently drops text until Electron has activated a hidden
+    // guest WebContents with a pointer event. Editing in the page runtime keeps
+    // background automation deterministic without stealing foreground app focus.
+    yield* typeIntoAutomationTarget(tabId, send, input);
+    yield* emitFocusedElementPointer(tabId, send, "type");
+  });
+
+  const automationType = Effect.fn("PreviewManager.automationType")(function* (
+    tabId: string,
+    input: PreviewAutomationTypeInput,
+  ) {
+    const wc = yield* requireWebContents(tabId);
+    yield* withControlSession(tabId, wc, "type", (send) =>
+      performAutomationType(tabId, input, send),
+    );
+  });
 
   const performAutomationPress = Effect.fn("PreviewManager.performAutomationPress")(function* (
     tabId: string,
