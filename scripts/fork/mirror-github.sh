@@ -33,7 +33,7 @@ archive_tip="$(git rev-parse --verify "refs/remotes/github/$archive_branch" 2>/d
 if [[ -n "$github_tip" ]]; then
   if [[ -n "$archive_tip" ]]; then
     if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then
-      git fetch --unshallow origin main
+      git fetch --unshallow origin
     fi
     git merge-base --is-ancestor "$github_tip" "$local_tip" || {
       echo "GitHub main diverged from Origin; refusing mirror" >&2; exit 1;
