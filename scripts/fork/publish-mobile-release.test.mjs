@@ -359,3 +359,44 @@ describe("iOS publish Xcode selection", () => {
     }
   });
 });
+
+describe("iOS fingerprint recording", () => {
+  it("retries the bookkeeping branch push once", () => {
+    const snippet = mobileRelease.match(
+      /branch="automation\/ios-fingerprint-[^\n]+\n[\s\S]*?origin-forge\.mjs setup-ci/,
+    )?.[0];
+    assert.ok(snippet, "fingerprint branch push missing");
+
+    const run = (failures) => {
+      const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-push-"));
+      const log = NodePath.join(directory, "calls.log");
+      try {
+        const script = [
+          "set -e",
+          "git_attempts=0",
+          `git() { git_attempts=$((git_attempts + 1)); printf 'push\\n' >> "$TEST_LOG"; (( git_attempts > FAILURES )); }`,
+          "sleep() { :; }",
+          `node() { printf 'setup-ci\\n' >> "$TEST_LOG"; }`,
+          "fingerprint=fe8118329f9969e50fad032c7ea3c536e6ea6967",
+          snippet,
+        ].join("\n");
+        const result = NodeChildProcess.spawnSync("bash", ["-c", script], {
+          encoding: "utf8",
+          env: { ...process.env, FAILURES: String(failures), TEST_LOG: log },
+        });
+        return { result, calls: NodeFS.readFileSync(log, "utf8").trim().split("\n") };
+      } finally {
+        NodeFS.rmSync(directory, { recursive: true, force: true });
+      }
+    };
+
+    const recovered = run(1);
+    assert.equal(recovered.result.status, 0);
+    assert.deepEqual(recovered.calls, ["push", "push", "setup-ci"]);
+    assert.include(recovered.result.stdout, "Fingerprint branch push failed; retrying once.");
+
+    const failed = run(2);
+    assert.notEqual(failed.result.status, 0);
+    assert.deepEqual(failed.calls, ["push", "push"]);
+  });
+});
