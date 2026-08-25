@@ -1,7 +1,8 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { type EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
+import { usePreviewMiniPlayerStore } from "./previewMiniPlayerStore";
 import {
   migratePersistedRightPanelState,
   pullRequestSurfaceId,
@@ -18,6 +19,7 @@ const refB = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-B"))
 
 beforeEach(() => {
   useRightPanelStore.setState({ byThreadKey: {} });
+  usePreviewMiniPlayerStore.setState({ byThreadKey: {}, dismissedTabIdsByThreadKey: {} });
 });
 
 describe("rightPanelStore", () => {
@@ -456,6 +458,20 @@ describe("rightPanelStore", () => {
   it("close on never-opened thread is a no-op", () => {
     useRightPanelStore.getState().close(refA);
     expect(useRightPanelStore.getState().byThreadKey).toEqual({});
+  });
+
+  it("undismisses that tab's floating preview when opening the browser panel", () => {
+    usePreviewMiniPlayerStore.getState().open(refA, "tab-a");
+    usePreviewMiniPlayerStore.getState().dismiss(refA, "tab-a");
+    usePreviewMiniPlayerStore.getState().open(refA, "tab-b");
+    usePreviewMiniPlayerStore.getState().dismiss(refA, "tab-b");
+
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
+      [scopedThreadKey(refA)]: ["tab-b"],
+    });
+    expect(usePreviewMiniPlayerStore.getState().byThreadKey[scopedThreadKey(refA)]).toBeUndefined();
   });
 
   it("tracks one surface per browser session", () => {

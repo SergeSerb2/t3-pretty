@@ -1,5 +1,10 @@
 import * as Option from "effect/Option";
 import * as Arr from "effect/Array";
+import {
+  mergePreviewAutomationCallSummaries,
+  summarizePreviewAutomationCall,
+  type PreviewAutomationCallSummary,
+} from "@t3tools/client-runtime/preview-automation-calls";
 import { isBackgroundTaskActivity } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
   ApprovalRequestId,
@@ -76,6 +81,8 @@ export interface WorkLogEntry {
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   toolData?: unknown;
+  /** Present when this row is a browser-automation (preview_*) tool call. */
+  previewAutomation?: PreviewAutomationCallSummary;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   /** From runtime item / task payload `status` when present (e.g. tool.updated). */
@@ -1009,6 +1016,15 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       entry.toolData = data.item;
     }
   }
+  if (itemType === "mcp_tool_call" || itemType === "dynamic_tool_call") {
+    const previewAutomation = summarizePreviewAutomationCall({
+      data: payload?.data,
+      title: title ?? activity.summary,
+    });
+    if (previewAutomation) {
+      entry.previewAutomation = previewAutomation;
+    }
+  }
   if (itemType === "image_generation") {
     const data = asRecord(payload?.data);
     if (data !== undefined) {
@@ -1235,6 +1251,10 @@ function mergeDerivedWorkLogEntries(
   const toolCallId = next.toolCallId ?? previous.toolCallId;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
+  const previewAutomation = mergePreviewAutomationCallSummaries(
+    previous.previewAutomation,
+    next.previewAutomation,
+  );
   return {
     ...previous,
     ...next,
@@ -1249,6 +1269,7 @@ function mergeDerivedWorkLogEntries(
     ...(toolCallId ? { toolCallId } : {}),
     ...(toolLifecycleStatus !== undefined ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
+    ...(previewAutomation ? { previewAutomation } : {}),
   };
 }
 

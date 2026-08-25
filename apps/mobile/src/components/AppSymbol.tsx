@@ -18,6 +18,7 @@ import {
   IconChartBar,
   IconCheck,
   IconChevronDown,
+  IconClick,
   IconCode,
   IconChevronLeft,
   IconChevronRight,
@@ -192,6 +193,7 @@ const ANDROID_ICON_BY_MATERIAL_NAME: Record<string, Icon> = {
   public: IconWorld,
   remove: IconMinus,
   terminal: IconTerminal2,
+  touch_app: IconClick,
   visibility: IconEye,
 };
 

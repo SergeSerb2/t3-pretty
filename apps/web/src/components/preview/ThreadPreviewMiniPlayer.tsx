@@ -2,9 +2,16 @@
 
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { PanelRightIcon, PictureInPicture2, XIcon } from "lucide-react";
-import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef, useState } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { BrowserSurfaceSlot } from "~/browser/BrowserSurfaceSlot";
+import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import { Button } from "~/components/ui/button";
 import { toastManager } from "~/components/ui/toast";
@@ -13,10 +20,12 @@ import { useThreadPreviewState } from "~/previewStateStore";
 import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 
+import { AgentBrowserCursor } from "./AgentBrowserCursor";
 import { previewBridge } from "./previewBridge";
 import {
   clampPreviewMiniPlayerPosition,
   clampPreviewMiniPlayerSize,
+  miniPlayerCursorContent,
   PREVIEW_MINI_PLAYER_DEFAULT_SIZE,
   PREVIEW_MINI_PLAYER_EDGE_GAP,
 } from "./previewMiniPlayerLayout";
@@ -63,6 +72,13 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
   const snapshot = previewState.sessions[tabId] ?? null;
   const runtimeTabId = previewRuntimeTabId(threadRef, previewState.serverEpoch, tabId);
   const desktopOverlay = previewState.desktopByTabId[tabId] ?? null;
+  const contentScale = useBrowserSurfaceStore(
+    (state) => state.byTabId[runtimeTabId]?.content?.scale ?? 0,
+  );
+  const cursorContent = useMemo(
+    () => miniPlayerCursorContent(contentScale > 0 ? { scale: contentScale } : null),
+    [contentScale],
+  );
   const position = miniPlayer?.tabId === tabId ? miniPlayer.position : null;
   const positionRef = useRef(position);
   positionRef.current = position;
@@ -71,7 +87,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
       ? miniPlayer.size
       : PREVIEW_MINI_PLAYER_DEFAULT_SIZE;
   const close = () => {
-    usePreviewMiniPlayerStore.getState().close(threadRef);
+    usePreviewMiniPlayerStore.getState().dismiss(threadRef, tabId);
   };
 
   const openInPanel = () => {
@@ -335,7 +351,28 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
           }
           className="absolute inset-0"
         />
-        <div className="pointer-events-none absolute inset-0 z-[31] rounded-xl ring-1 ring-inset ring-border/80" />
+        <div
+          className={
+            desktopOverlay?.controller === "agent"
+              ? "pointer-events-none absolute inset-0 z-[31] rounded-xl ring-2 ring-inset ring-primary/70"
+              : "pointer-events-none absolute inset-0 z-[31] rounded-xl ring-1 ring-inset ring-border/80"
+          }
+          style={
+            desktopOverlay?.controller === "agent"
+              ? { boxShadow: "0 0 14px 2px var(--color-ring)" }
+              : undefined
+          }
+        />
+        {desktopOverlay ? (
+          <div className="pointer-events-none absolute inset-0 z-[32] overflow-hidden rounded-xl">
+            <AgentBrowserCursor
+              tabId={runtimeTabId}
+              zoomFactor={desktopOverlay.zoomFactor}
+              controller={desktopOverlay.controller}
+              content={cursorContent}
+            />
+          </div>
+        ) : null}
         {!desktopOverlay?.hasWebContents ? (
           <div className="pointer-events-none absolute inset-0 z-[32] flex items-center justify-center rounded-xl bg-muted text-xs text-muted-foreground">
             Reconnecting preview…

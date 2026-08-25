@@ -709,7 +709,7 @@ export const DesktopPreviewTabStateSchema: Schema.Codec<DesktopPreviewTabState> 
 
 export interface DesktopPreviewPointerEvent {
   tabId: string;
-  phase: "move" | "click";
+  phase: "move" | "click" | "type" | "press" | "scroll";
   x: number;
   y: number;
   sequence: number;
@@ -719,7 +719,7 @@ export interface DesktopPreviewPointerEvent {
 export const DesktopPreviewPointerEventSchema: Schema.Codec<DesktopPreviewPointerEvent> =
   Schema.Struct({
     tabId: DesktopPreviewTabIdSchema,
-    phase: Schema.Literals(["move", "click"]),
+    phase: Schema.Literals(["move", "click", "type", "press", "scroll"]),
     x: Schema.Number,
     y: Schema.Number,
     sequence: Schema.Int,

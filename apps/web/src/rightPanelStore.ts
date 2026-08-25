@@ -13,6 +13,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { resolveLocalStorage } from "./lib/storage";
+import { usePreviewMiniPlayerStore } from "./previewMiniPlayerStore";
 import { MAX_TERMINALS_PER_GROUP } from "./types";
 
 export const RIGHT_PANEL_KINDS = [
@@ -419,7 +420,8 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             return upsertSurface(current, singletonSurface(kind));
           }),
         })),
-      openBrowser: (ref, tabId) =>
+      openBrowser: (ref, tabId) => {
+        if (tabId) usePreviewMiniPlayerStore.getState().undismiss(ref, tabId);
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
             const surface = browserSurface(tabId);
@@ -428,7 +430,8 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               : current.surfaces;
             return upsertSurface({ ...current, surfaces: withoutPlaceholder }, surface);
           }),
-        })),
+        }));
+      },
       openPullRequest: (ref, target) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
