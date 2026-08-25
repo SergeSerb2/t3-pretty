@@ -96,9 +96,10 @@ The native lint task runs SwiftLint for Swift plus ktlint and detekt for Kotlin.
 
 CI publishes production OTA through the fork-owned EAS project. Installed
 TestFlight binaries pick that up. When the native fingerprint changes, a new
-IPA is compiled locally with stable `Xcode.app`, or on EAS cloud when the
-release Mac only has beta Xcode, then uploaded as a TestFlight build. Neither
-path submits the app for App Store review.
+IPA is compiled locally with stable `Xcode.app` or the Apple-listed beta build
+configured by `T3CODE_ACCEPTED_XCODE_BETA_BUILD`. Older beta builds fall back
+to EAS cloud. The resulting IPA is uploaded as a TestFlight build; neither path
+submits the app for App Store review.
 
 Use `vp run ios:release` only when you want a self-contained local Release
 app that does not need Metro.
