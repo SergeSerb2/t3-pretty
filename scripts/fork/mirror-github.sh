@@ -42,9 +42,9 @@ if [[ -n "$github_tip" ]]; then
 fi
 
 if [[ -n "$github_tip" ]]; then
-  git push --force-with-lease="refs/heads/main:$github_tip" github "$local_tip:refs/heads/main"
+  git push --no-thin --force-with-lease="refs/heads/main:$github_tip" github "$local_tip:refs/heads/main"
 else
-  git push github "$local_tip:refs/heads/main"
+  git push --no-thin github "$local_tip:refs/heads/main"
 fi
 while IFS= read -r tag; do
   [[ "$tag" =~ $release_tag_pattern ]] && git push github "refs/tags/$tag:refs/tags/$tag"

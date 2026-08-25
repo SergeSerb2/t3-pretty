@@ -129,6 +129,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(pipeline, "key: publish-cli");
     assert.include(pipeline, "CLI tarball");
     assert.include(pipeline, "depends_on: macos-dmg");
+    assert.match(pipeline, /key: publish-cli[\s\S]*?build\.source != "schedule"/u);
     const publishCli = NodeFS.readFileSync(NodePath.resolve(here, "publish-cli.sh"), "utf8");
     assert.include(publishCli, "cli.ts pack");
     assert.include(publishCli, "bash scripts/fork/ensure-linux-node.sh");
@@ -142,6 +143,11 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publishCli, "T3CODE_BUILD_FLAVOR=internal");
     assert.include(publishCli, "latest-mac.yml");
     assert.include(publishCli, "https://vite.plus");
+    const secretsHelper = NodeFS.readFileSync(
+      NodePath.resolve(here, "load-buildkite-secrets.sh"),
+      "utf8",
+    );
+    assert.include(secretsHelper, ".local/share/vite-plus/bin");
     const installCli = NodeFS.readFileSync(NodePath.resolve(here, "install-cli.sh"), "utf8");
     assert.include(installCli, "https://github.com/SergeSerb2/t3-pretty/releases/latest/download");
     assert.include(installCli, "turn on T3 Connect");
