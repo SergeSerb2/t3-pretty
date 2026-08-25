@@ -120,13 +120,13 @@ function extractXcodeSearch() {
   return match[0].replaceAll("/Applications", '"$apps"');
 }
 
-function installFakeXcode(applicationsDir, appName, runnable) {
+function installFakeXcode(applicationsDir, appName, runnable, build = "27A5300") {
   const developerDir = NodePath.join(applicationsDir, appName, "Contents", "Developer");
   NodeFS.mkdirSync(NodePath.join(developerDir, "usr", "bin"), { recursive: true });
   NodeFS.writeFileSync(
     NodePath.join(developerDir, "usr", "bin", "xcodebuild"),
     runnable
-      ? "#!/bin/bash\necho 'Xcode 27.0'\nexit 0\n"
+      ? `#!/bin/bash\necho 'Xcode 27.0'\necho 'Build version ${build}'\nexit 0\n`
       : "#!/bin/bash\necho 'this Xcode is not compatible with this macOS' >&2\nexit 1\n",
     { mode: 0o755 },
   );
@@ -298,11 +298,15 @@ describe("iOS publish Xcode selection", () => {
       const fn = extractIsFullXcode();
       const broken = installFakeXcode(root, "Xcode.app", false);
       const working = installFakeXcode(root, "Xcode-stable.app", true);
+      const beta = installFakeXcode(root, "Xcode-beta.app", true);
+      const renamedBeta = installFakeXcode(root, "Renamed.app", true, "27A5252f");
       const clt = installFakeXcode(root, "CommandLineTools", true);
 
       assert.isFalse(runIsFullXcode(fn, ""));
       assert.isFalse(runIsFullXcode(fn, broken));
       assert.isFalse(runIsFullXcode(fn, clt));
+      assert.isFalse(runIsFullXcode(fn, beta));
+      assert.isFalse(runIsFullXcode(fn, renamedBeta));
       assert.isTrue(runIsFullXcode(fn, working));
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });

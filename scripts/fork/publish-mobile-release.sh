@@ -473,11 +473,17 @@ is_full_xcode() {
     return 1
   fi
   # leftover Xcode.app on macOS 27 can exist without being runnable.
-  if DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version >/dev/null 2>&1; then
-    return 0
+  local version build
+  if ! version="$(DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version 2>/dev/null)"; then
+    echo "Skipping $1: xcodebuild -version failed." >&2
+    return 1
   fi
-  echo "Skipping $1: xcodebuild -version failed." >&2
-  return 1
+  build="$(awk '/^Build version / { print $3 }' <<<"$version")"
+  if [[ "$build" =~ [a-z]$ ]]; then
+    echo "Skipping $1: prerelease Xcode build $build is not reliable for App Store Connect submissions." >&2
+    return 1
+  fi
+  return 0
 }
 
 # Prefer a stable full Xcode.app if xcodebuild actually runs. Command Line
