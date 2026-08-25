@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260824.1173000942",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+      {
+        kind: "fixed",
+        title: "commit the migration for the delivery and credential indexes",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260824.1173000937",
     date: "2026-08-25",
     items: [
