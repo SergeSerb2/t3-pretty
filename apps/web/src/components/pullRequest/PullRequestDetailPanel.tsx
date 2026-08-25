@@ -1319,12 +1319,10 @@ export function PullRequestDetailPanel({
     );
   };
 
-  const startFixFindings = (modelSelection: ModelSelection) => {
+  const startFixFindings = (modelSelection: ModelSelection, continuous: boolean) => {
     if (!detail) return;
-    const continuous = fixAllMode === "continuous";
     const canResolve = detail.capabilities.review.resolve && detail.viewerPermissions.resolve;
     const host = pullRequestUrlHost(detail.url) ?? detail.provider;
-    setFixAllMode(null);
     void startHandoff(
       continuous ? "continuous-findings" : "findings",
       buildFixFindingsHandoff({

@@ -2,7 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import type { ModelSelection, ScopedThreadRef } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { HammerIcon, Repeat2Icon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getComposerProviderState } from "~/components/chat/composerProviderState";
 import { ProviderModelPicker } from "~/components/chat/ProviderModelPicker";
@@ -59,9 +59,13 @@ export function FixAllFindingsDialog({
   composerTarget: ScopedThreadRef | DraftId | null;
   pending: boolean;
   continuous: boolean;
-  onConfirm: (selection: ModelSelection) => void;
+  onConfirm: (selection: ModelSelection, continuous: boolean) => void;
 }) {
   const settings = usePrimarySettings();
+  // Close clears the parent's mode; keep the last open value for copy and confirm.
+  const continuousRef = useRef(continuous);
+  if (open) continuousRef.current = continuous;
+  const activeContinuous = continuousRef.current;
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const fallbackSelection = useMemo(
     () => resolveAppModelSelectionState(settings, serverProviders),
@@ -103,11 +107,15 @@ export function FixAllFindingsDialog({
       <DialogPopup className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {continuous ? <Repeat2Icon className="size-4" /> : <HammerIcon className="size-4" />}
-            {continuous ? "Fix continuously" : "Fix all findings"}
+            {activeContinuous ? (
+              <Repeat2Icon className="size-4" />
+            ) : (
+              <HammerIcon className="size-4" />
+            )}
+            {activeContinuous ? "Fix continuously" : "Fix all findings"}
           </DialogTitle>
           <DialogDescription>
-            {continuous
+            {activeContinuous
               ? findingCount > 0
                 ? `Pick the agent to fix ${findingLabel}, then monitor this pull request and keep fixing new review comments and failures until it is green.`
                 : "Pick the agent to wait on latest-commit reviews and required checks, then keep fixing until the pull request is green."
@@ -178,9 +186,12 @@ export function FixAllFindingsDialog({
             type="button"
             size="sm"
             disabled={pending || activeEntry === null || selection.model.length === 0}
-            onClick={() => onConfirm(selection)}
+            onClick={() => {
+              onConfirm(selection, activeContinuous);
+              onOpenChange(false);
+            }}
           >
-            {pending ? "Starting..." : continuous ? "Fix continuously" : "Fix all"}
+            {pending ? "Starting..." : activeContinuous ? "Fix continuously" : "Fix all"}
           </Button>
         </DialogFooter>
       </DialogPopup>
