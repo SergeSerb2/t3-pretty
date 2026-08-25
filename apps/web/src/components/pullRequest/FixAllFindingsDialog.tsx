@@ -108,7 +108,9 @@ export function FixAllFindingsDialog({
           </DialogTitle>
           <DialogDescription>
             {continuous
-              ? `Pick the agent to fix ${findingLabel}, then monitor this pull request and keep fixing new review comments and failures until it is green.`
+              ? findingCount > 0
+                ? `Pick the agent to fix ${findingLabel}, then monitor this pull request and keep fixing new review comments and failures until it is green.`
+                : "Pick the agent to wait on latest-commit reviews and required checks, then keep fixing until the pull request is green."
               : `Pick the agent for this sweep of ${findingLabel}. It will fix the unresolved review comments and resolve the ones it addresses.`}
           </DialogDescription>
         </DialogHeader>

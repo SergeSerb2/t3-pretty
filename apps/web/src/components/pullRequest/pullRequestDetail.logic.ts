@@ -789,6 +789,17 @@ export function countFixableFindings(input: {
   return collected.threads.length + collected.remarks.length + collected.failingChecks.length;
 }
 
+/** Fix all needs a current finding; continuous can start on pending CI with none. */
+export function canStartContinuousFix(input: {
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+  readonly checks: ReadonlyArray<PullRequestCheck>;
+}): boolean {
+  return (
+    countFixableFindings(input) > 0 || input.checks.some((check) => check.status === "pending")
+  );
+}
+
 /**
  * The task for handing a pull request's review findings to a fresh thread. Everything derived
  * from the pull request is explicitly marked untrusted: review bodies and check output are

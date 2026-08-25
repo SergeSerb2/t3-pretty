@@ -113,6 +113,7 @@ import {
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
   buildResolveConflictsPrompt,
+  canStartContinuousFix,
   countFixableFindings,
   handoffPrompt,
   handoffReviewComments,
@@ -961,6 +962,13 @@ export function PullRequestDetailPanel({
           comments: detail.comments,
           checks: detail.checks,
         });
+  const canFixContinuously =
+    detail !== null &&
+    canStartContinuousFix({
+      reviewThreads: detail.reviewThreads,
+      comments: detail.comments,
+      checks: detail.checks,
+    });
 
   const writeTaskToComposer = (target: ScopedThreadRef | DraftId, task: ThreadTask) => {
     const store = useComposerDraftStore.getState();
@@ -1554,26 +1562,26 @@ export function PullRequestDetailPanel({
           {detail ? (
             <>
               {findingCount > 0 ? (
-                <>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    disabled={handoff !== null}
-                    onClick={() => setFixAllMode("once")}
-                  >
-                    <HammerIcon className="size-3.5" />
-                    {handoff === "findings" ? "Starting..." : "Fix all"}
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    disabled={handoff !== null}
-                    onClick={() => setFixAllMode("continuous")}
-                  >
-                    <Repeat2Icon className="size-3.5" />
-                    {handoff === "continuous-findings" ? "Starting..." : "Fix continuously"}
-                  </Button>
-                </>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={handoff !== null}
+                  onClick={() => setFixAllMode("once")}
+                >
+                  <HammerIcon className="size-3.5" />
+                  {handoff === "findings" ? "Starting..." : "Fix all"}
+                </Button>
+              ) : null}
+              {canFixContinuously ? (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={handoff !== null}
+                  onClick={() => setFixAllMode("continuous")}
+                >
+                  <Repeat2Icon className="size-3.5" />
+                  {handoff === "continuous-findings" ? "Starting..." : "Fix continuously"}
+                </Button>
               ) : null}
               {/* Checking a pull request out is the reason to open one here at all, so it is a
                   button of its own rather than a side effect of asking an agent for something.
@@ -1706,33 +1714,33 @@ export function PullRequestDetailPanel({
                     </span>
                   </MenuItem>
                   {findingCount > 0 ? (
-                    <>
-                      <MenuItem disabled={handoff !== null} onClick={() => setFixAllMode("once")}>
-                        <HammerIcon className="mt-0.5 size-3.5 shrink-0 self-start" />
-                        <span className="flex min-w-0 flex-col">
-                          <span>
-                            {handoff === "findings" ? "Starting..." : handoffLabels.fixFindings}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            Runs every unresolved review finding in a new thread.
-                          </span>
+                    <MenuItem disabled={handoff !== null} onClick={() => setFixAllMode("once")}>
+                      <HammerIcon className="mt-0.5 size-3.5 shrink-0 self-start" />
+                      <span className="flex min-w-0 flex-col">
+                        <span>
+                          {handoff === "findings" ? "Starting..." : handoffLabels.fixFindings}
                         </span>
-                      </MenuItem>
-                      <MenuItem
-                        disabled={handoff !== null}
-                        onClick={() => setFixAllMode("continuous")}
-                      >
-                        <Repeat2Icon className="mt-0.5 size-3.5 shrink-0 self-start" />
-                        <span className="flex min-w-0 flex-col">
-                          <span>
-                            {handoff === "continuous-findings" ? "Starting..." : "Fix continuously"}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            Keeps fixing new reviews and failures until the pull request is green.
-                          </span>
+                        <span className="text-xs text-muted-foreground">
+                          Runs every unresolved review finding in a new thread.
                         </span>
-                      </MenuItem>
-                    </>
+                      </span>
+                    </MenuItem>
+                  ) : null}
+                  {canFixContinuously ? (
+                    <MenuItem
+                      disabled={handoff !== null}
+                      onClick={() => setFixAllMode("continuous")}
+                    >
+                      <Repeat2Icon className="mt-0.5 size-3.5 shrink-0 self-start" />
+                      <span className="flex min-w-0 flex-col">
+                        <span>
+                          {handoff === "continuous-findings" ? "Starting..." : "Fix continuously"}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Keeps fixing new reviews and failures until the pull request is green.
+                        </span>
+                      </span>
+                    </MenuItem>
                   ) : null}
                   {pickableEnvironments.length > 0 ? (
                     <ActOnEnvironmentPicker

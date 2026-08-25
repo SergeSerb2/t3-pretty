@@ -13,6 +13,7 @@ import {
   buildExplainPullRequestHandoff,
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
+  canStartContinuousFix,
   countFixableFindings,
   countResolvedReviewThreads,
   countUnresolvedReviewThreads,
@@ -1059,6 +1060,30 @@ describe("fix findings handoff", () => {
         checks: [failingCheck, { name: "build", status: "success", description: null, url: null }],
       }),
     ).toBe(4);
+  });
+
+  it("lets a continuous fix start on pending checks with no current findings", () => {
+    const pendingOnly = {
+      reviewThreads: [] as PullRequestReviewThread[],
+      comments: [] as PullRequestComment[],
+      checks: [{ name: "build", status: "pending" as const, description: null, url: null }],
+    };
+    expect(countFixableFindings(pendingOnly)).toBe(0);
+    expect(canStartContinuousFix(pendingOnly)).toBe(true);
+    expect(canStartContinuousFix({ ...pendingOnly, checks: [] })).toBe(false);
+    expect(
+      canStartContinuousFix({
+        ...pendingOnly,
+        checks: [{ name: "build", status: "success", description: null, url: null }],
+      }),
+    ).toBe(false);
+    expect(
+      canStartContinuousFix({
+        reviewThreads: [],
+        comments: [],
+        checks: [failingCheck],
+      }),
+    ).toBe(true);
   });
 
   it("still hands a Grok finding whose file was parsed from the body", () => {
