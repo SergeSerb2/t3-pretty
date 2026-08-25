@@ -3700,21 +3700,19 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
-  const performAutomationPress = Effect.fn("PreviewManager.performAutomationPress")(function* (
-    tabId: string,
-    wc: Electron.WebContents,
-    input: PreviewAutomationPressInput,
-    send: SendCommand,
-    sendCleanup: SendCommand,
-  ) {
-    yield* prepareAutomationInput(send, false);
-    const focusedPoint = yield* evaluateWithDebugger<{
-      readonly x?: number;
-      readonly y?: number;
-    }>(
-      tabId,
-      send,
-      `(() => {
+  const emitFocusedElementPointer = Effect.fn("PreviewManager.emitFocusedElementPointer")(
+    function* (
+      tabId: string,
+      send: SendCommand,
+      phase: Extract<DesktopPreviewPointerEvent["phase"], "type" | "press">,
+    ) {
+      const focusedPoint = yield* evaluateWithDebugger<{
+        readonly x?: number;
+        readonly y?: number;
+      }>(
+        tabId,
+        send,
+        `(() => {
         const element = document.activeElement;
         const rect =
           element && element !== document.body && element !== document.documentElement
@@ -3729,9 +3727,21 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             : window.innerHeight / 2,
         };
       })()`,
-      true,
-    ).pipe(Effect.orElseSucceed(() => ({})));
-    yield* emitAutomationPointer(tabId, "press", focusedPoint ?? {});
+        true,
+      ).pipe(Effect.orElseSucceed(() => ({})));
+      yield* emitAutomationPointer(tabId, phase, focusedPoint ?? {});
+    },
+  );
+
+  const performAutomationPress = Effect.fn("PreviewManager.performAutomationPress")(function* (
+    tabId: string,
+    wc: Electron.WebContents,
+    input: PreviewAutomationPressInput,
+    send: SendCommand,
+    sendCleanup: SendCommand,
+  ) {
+    yield* prepareAutomationInput(send, false);
+    yield* emitFocusedElementPointer(tabId, send, "press");
     const keySequence = makePreviewAutomationKeySequence(input, {
       isMac: hostPlatform === "darwin",
     });

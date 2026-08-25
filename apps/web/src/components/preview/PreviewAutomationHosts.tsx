@@ -390,9 +390,6 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
             tabId,
             bridgeAvailable: Boolean(previewBridge),
           };
-          if (tabId) {
-            void maybePresentAutomationActivity(threadRef, tabId, request.operation).catch(() => {});
-          }
           const requireReadyTab = async () => {
             const bridge = previewBridge;
             const readyTabId = tabId;
@@ -408,6 +405,9 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
               runtimeTabId,
               request.operation,
               request.timeoutMs,
+            );
+            void maybePresentAutomationActivity(threadRef, readyTabId, request.operation).catch(
+              () => {},
             );
             return {
               bridge,

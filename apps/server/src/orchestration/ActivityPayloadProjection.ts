@@ -279,22 +279,35 @@ function summarizeMcpResult(result: unknown): Record<string, unknown> | undefine
 
 /**
  * MCP tool arguments stay renderable (browser-automation rows label
- * themselves from them) but oversized payloads — e.g. preview_evaluate
- * expressions — are dropped rather than shipped to every client.
+ * themselves from them) but oversized fields — e.g. preview_evaluate
+ * expressions — are dropped rather than shipping the whole object.
  */
 const MCP_ARGUMENTS_MAX_CHARS = 4_000;
 
-function boundedMcpArguments(value: unknown): unknown {
-  if (value === undefined || value === null) return undefined;
+function jsonEncodedLength(value: unknown): number | undefined {
   try {
     const encoded = JSON.stringify(value);
-    if (encoded === undefined || encoded.length > MCP_ARGUMENTS_MAX_CHARS) {
-      return undefined;
-    }
+    return encoded === undefined ? undefined : encoded.length;
   } catch {
     return undefined;
   }
-  return value;
+}
+
+function boundedMcpArguments(value: unknown): unknown {
+  if (value === undefined || value === null) return undefined;
+  const total = jsonEncodedLength(value);
+  if (total === undefined) return undefined;
+  if (total <= MCP_ARGUMENTS_MAX_CHARS) return value;
+  const record = asRecord(value);
+  if (!record) return undefined;
+  const kept: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(record)) {
+    const length = jsonEncodedLength(field);
+    if (length !== undefined && length <= MCP_ARGUMENTS_MAX_CHARS) {
+      kept[key] = field;
+    }
+  }
+  return Object.keys(kept).length > 0 ? kept : undefined;
 }
 
 /**

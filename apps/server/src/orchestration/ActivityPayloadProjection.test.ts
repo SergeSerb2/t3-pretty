@@ -248,6 +248,34 @@ describe("projectActivityPayload", () => {
     expect(item.arguments).toBeUndefined();
   });
 
+  it("keeps locator and text when only an MCP argument field is oversized", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            type: "mcpToolCall",
+            id: "item-1",
+            tool: "preview_type",
+            server: "t3-code",
+            status: "completed",
+            arguments: {
+              locator: "role=textbox[name='Prompt']",
+              text: "hello",
+              expression: "e".repeat(50_000),
+            },
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    const item = data.item as Record<string, unknown>;
+    expect(item.arguments).toEqual({
+      locator: "role=textbox[name='Prompt']",
+      text: "hello",
+    });
+  });
+
   it("keeps first-line summary semantics across MCP text blocks", () => {
     const projected = projectActivityPayload(
       activity({
