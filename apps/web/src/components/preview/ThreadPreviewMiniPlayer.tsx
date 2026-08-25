@@ -2,7 +2,13 @@
 
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { PanelRightIcon, PictureInPicture2, XIcon } from "lucide-react";
-import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef, useState } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { BrowserSurfaceSlot } from "~/browser/BrowserSurfaceSlot";
 import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
@@ -66,10 +72,13 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
   const snapshot = previewState.sessions[tabId] ?? null;
   const runtimeTabId = previewRuntimeTabId(threadRef, previewState.serverEpoch, tabId);
   const desktopOverlay = previewState.desktopByTabId[tabId] ?? null;
-  const cursorContent = useBrowserSurfaceStore((state) => {
-    const surface = state.byTabId[runtimeTabId];
-    return miniPlayerCursorContent(surface?.fitSourceContent ? (surface.content ?? null) : null);
-  });
+  const contentScale = useBrowserSurfaceStore(
+    (state) => state.byTabId[runtimeTabId]?.content?.scale ?? 0,
+  );
+  const cursorContent = useMemo(
+    () => miniPlayerCursorContent(contentScale > 0 ? { scale: contentScale } : null),
+    [contentScale],
+  );
   const position = miniPlayer?.tabId === tabId ? miniPlayer.position : null;
   const positionRef = useRef(position);
   positionRef.current = position;

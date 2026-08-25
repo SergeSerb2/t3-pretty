@@ -313,7 +313,7 @@ export function PreviewView({
   const handlePictureInPicture = useCallback(() => {
     if (!tabId) return;
     if (miniPlayer?.tabId === tabId) {
-      usePreviewMiniPlayerStore.getState().close(threadRef);
+      usePreviewMiniPlayerStore.getState().dismiss(threadRef, tabId);
       return;
     }
     const miniPlayers = usePreviewMiniPlayerStore.getState();
