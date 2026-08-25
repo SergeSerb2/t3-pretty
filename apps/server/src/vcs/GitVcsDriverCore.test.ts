@@ -572,6 +572,46 @@ it.effect("keeps a prunable worktree visible when prune does not succeed", () =>
   ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
+it.effect("keeps a locked missing worktree visible so the branch is not treated as free", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const pathService = yield* Path.Path;
+      const missingWorktreePath = "/missing/locked-worktree";
+      const lockedWorktreeSpawner = ChildProcessSpawner.make((command) =>
+        Effect.gen(function* () {
+          if (!ChildProcess.isStandardCommand(command)) {
+            return yield* Effect.die("expected a standard Git command");
+          }
+          const isWorktreeList =
+            command.args.includes("worktree") && command.args.includes("--porcelain");
+          if (isWorktreeList) {
+            return makeSuccessfulHandle(
+              `worktree ${missingWorktreePath}\0HEAD deadbeef\0branch refs/heads/locked-worktree\0locked\0\0`,
+            );
+          }
+          return yield* delegate.spawn(command);
+        }),
+      );
+      const driver = yield* makeGitVcsDriverCore().pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, lockedWorktreeSpawner),
+      );
+      const cwd = yield* makeTmpDir();
+      yield* initRepoWithCommit(cwd).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, driver));
+      yield* git(cwd, ["branch", "locked-worktree"]).pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
+      );
+
+      const refs = yield* driver.listRefs({ cwd, refresh: true });
+
+      assert.equal(
+        refs.refs.find((ref) => ref.name === "locked-worktree")?.worktreePath,
+        pathService.normalize(pathService.resolve(missingWorktreePath)),
+      );
+    }),
+  ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
 it.effect("prunes a worktree entry whose directory is gone so git releases its branch", () =>
   Effect.gen(function* () {
     const driver = yield* GitVcsDriver.GitVcsDriver;
@@ -606,6 +646,32 @@ it.effect("prunes a gone worktree before adding another checkout of the same bra
     // No listRefs first: new-thread / Fix in another thread can hit this write cold.
     const created = yield* driver.createWorktree({
       cwd,
+      path: nextPath,
+      refName: "feature/gone",
+    });
+
+    assert.equal(created.worktree.path, nextPath);
+    assert.equal(created.worktree.refName, "feature/gone");
+    assert.equal(yield* git(nextPath, ["branch", "--show-current"]), "feature/gone");
+  }).pipe(Effect.provide(TestLayer)),
+);
+
+it.effect("prunes a gone worktree when createWorktree runs from a linked worktree", () =>
+  Effect.gen(function* () {
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const pathService = yield* Path.Path;
+    const cwd = yield* makeTmpDir();
+    const linkedPath = pathService.join(yield* makeTmpDir("git-vcs-driver-worktree-"), "linked");
+    const gonePath = pathService.join(yield* makeTmpDir("git-vcs-driver-worktree-"), "gone");
+    const nextPath = pathService.join(yield* makeTmpDir("git-vcs-driver-worktree-"), "next");
+    yield* initRepoWithCommit(cwd);
+    yield* git(cwd, ["worktree", "add", "-b", "feature/linked", linkedPath]);
+    yield* git(cwd, ["worktree", "add", "-b", "feature/gone", gonePath]);
+    yield* fileSystem.remove(gonePath, { recursive: true });
+
+    const created = yield* driver.createWorktree({
+      cwd: linkedPath,
       path: nextPath,
       refName: "feature/gone",
     });

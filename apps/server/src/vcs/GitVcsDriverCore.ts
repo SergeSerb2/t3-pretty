@@ -253,20 +253,27 @@ function paginateBranches(input: {
 function parseWorktreeBranchPaths(stdout: string): {
   readonly branchPaths: ReadonlyMap<string, string>;
   readonly prunablePaths: ReadonlyMap<string, string>;
+  readonly lockedPaths: ReadonlyMap<string, string>;
 } {
   const worktreePaths = new Map<string, string>();
   const prunablePaths = new Map<string, string>();
+  const lockedPaths = new Map<string, string>();
   let currentPath: string | null = null;
   let currentBranch: string | null = null;
   let currentPrunable = false;
+  let currentLocked = false;
 
   const flush = () => {
     if (currentPath !== null && currentBranch !== null) {
       (currentPrunable ? prunablePaths : worktreePaths).set(currentBranch, currentPath);
+      if (currentLocked) {
+        lockedPaths.set(currentBranch, currentPath);
+      }
     }
     currentPath = null;
     currentBranch = null;
     currentPrunable = false;
+    currentLocked = false;
   };
 
   for (const field of stdout.split("\0")) {
@@ -278,11 +285,13 @@ function parseWorktreeBranchPaths(stdout: string): {
       currentBranch = field.slice("branch refs/heads/".length);
     } else if (field === "prunable" || field.startsWith("prunable ")) {
       currentPrunable = true;
+    } else if (field === "locked" || field.startsWith("locked ")) {
+      currentLocked = true;
     }
   }
   flush();
 
-  return { branchPaths: worktreePaths, prunablePaths };
+  return { branchPaths: worktreePaths, prunablePaths, lockedPaths };
 }
 
 function splitNullSeparatedPaths(input: string, truncated: boolean): string[] {
@@ -967,16 +976,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       },
     });
 
-  const pruneStaleWorktrees = (
-    operation: string,
-    cwd: string,
-    gitDirArgs: readonly string[] = [],
-  ): Effect.Effect<GitVcsDriver.ExecuteGitResult, GitCommandError> =>
-    executeGit(operation, cwd, [...gitDirArgs, "worktree", "prune"], {
-      timeoutMs: 30_000,
-      allowNonZeroExit: true,
-    });
-
   const runGit = (
     operation: string,
     cwd: string,
@@ -1271,6 +1270,24 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       detail: "Cannot resolve a Git common directory outside a repository.",
     });
   });
+
+  const pruneStaleWorktrees = (
+    operation: string,
+    cwd: string,
+  ): Effect.Effect<GitVcsDriver.ExecuteGitResult, GitCommandError> =>
+    resolveGitCommonDir(cwd).pipe(
+      Effect.flatMap((gitCommonDir) =>
+        executeGit(
+          operation,
+          path.basename(gitCommonDir) === ".git" ? path.dirname(gitCommonDir) : gitCommonDir,
+          ["--git-dir", gitCommonDir, "worktree", "prune"],
+          {
+            timeoutMs: 30_000,
+            allowNonZeroExit: true,
+          },
+        ),
+      ),
+    );
 
   const statusRemoteRefreshFailureCounts = new Map<string, number>();
   const statusRemoteRefreshFailureKey = (cacheKey: StatusRemoteRefreshCacheKey) =>
@@ -2600,7 +2617,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const parsedWorktreeList =
       worktreeListResult.exitCode === 0
         ? parseWorktreeBranchPaths(worktreeListResult.stdout)
-        : { branchPaths: new Map<string, string>(), prunablePaths: new Map<string, string>() };
+        : {
+            branchPaths: new Map<string, string>(),
+            prunablePaths: new Map<string, string>(),
+            lockedPaths: new Map<string, string>(),
+          };
     const parsedWorktreeEntries = [...parsedWorktreeList.branchPaths].map(
       ([branchName, worktreePath]) =>
         [branchName, path.normalize(path.resolve(worktreePath))] as const,
@@ -2619,12 +2640,15 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     // refuses to move, fetch into, or re-add that branch until the entry is pruned. Prune where
     // the stale entry is noticed, so every later write sees what this snapshot reports.
     // If prune does not actually drop the entry, keep it visible so listRefs does not claim
-    // the branch is free while git still refuses to move it.
+    // the branch is free while git still refuses to move it. Locked worktrees are never
+    // prunable — even with a missing directory — so they stay in the snapshot too.
+    for (const [branchName, worktreePath] of parsedWorktreeList.lockedPaths) {
+      worktreeMap.set(branchName, path.normalize(path.resolve(worktreePath)));
+    }
     if (parsedWorktreeList.prunablePaths.size > 0) {
       const pruneResult = yield* pruneStaleWorktrees(
         "GitVcsDriver.listRefs.pruneWorktrees",
         fetchCwd,
-        gitDirArgs,
       );
       if (pruneResult.exitCode !== 0) {
         for (const [branchName, worktreePath] of parsedWorktreeList.prunablePaths) {
