@@ -37,6 +37,7 @@ export function AgentBrowserCursor(props: {
 
   return (
     <AgentBrowserCursorGlide
+      key={tabId}
       event={event}
       content={content}
       zoomFactor={zoomFactor}
