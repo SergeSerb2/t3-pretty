@@ -179,7 +179,7 @@ export function pruneResolutionCache({
     right.modified - left.modified || left.name.localeCompare(right.name);
   const entries = [];
   let removed = 0;
-  for (const directoryEntry of NodeFS.opendirSync(resolvedCacheDir)) {
+  for (const directoryEntry of NodeFS.readdirSync(resolvedCacheDir, { withFileTypes: true })) {
     const name = directoryEntry.name;
     const path = NodePath.join(resolvedCacheDir, name);
     const metadata = NodeFS.lstatSync(path);

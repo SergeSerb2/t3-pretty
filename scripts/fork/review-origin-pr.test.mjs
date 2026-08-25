@@ -196,7 +196,7 @@ describe("Origin Grok review workflow wiring", () => {
     );
     assert.notInclude(trusted, "refs/remotes/origin/main");
     assert.notInclude(trusted, "fetch --deepen=");
-    assert.include(trusted, "refs/t3-pretty/origin-main");
+    assert.include(trusted, '"+refs/heads/main:${main_ref}"');
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
     assert.include(reviewStep.slice(0, 1200), "queue: macos-release");
     assert.include(reviewStep, "automation");

@@ -146,7 +146,7 @@ steps:
     # stamped — remotes fetch t3-<appVersion>.tgz, so reminting 404s.
     # Skipped when DMG skips (PRs, scheduled sync). Do not promote t3.tgz
     # from a failed or non-desktop revision.
-    if: build.branch == "main"
+    if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 40
     agents:
       queue: linux-small
