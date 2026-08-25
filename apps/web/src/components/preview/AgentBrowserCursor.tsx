@@ -10,7 +10,7 @@ import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
 import {
   agentBrowserCursorOpacity,
   agentCursorActionLabel,
-  agentCursorGlideMs,
+  agentCursorTransitionMs,
   type BrowserController,
 } from "./agentBrowserCursorLogic";
 
@@ -62,19 +62,22 @@ function AgentBrowserCursorGlide(props: {
   const x = event.x * zoomFactor * scale + (content?.x ?? 0) - (content?.scrollLeft ?? 0);
   const y = event.y * zoomFactor * scale + (content?.y ?? 0) - (content?.scrollTop ?? 0);
 
-  // Glide only when a new pointer event arrives; surface scroll/zoom between
-  // events snaps instantly so the cursor stays glued to the page underneath.
-  // The ref updates post-commit so re-renders (and StrictMode's double
-  // render) of the same event keep the glide duration they started with.
-  const glideRef = useRef<{ sequence: number; x: number; y: number } | null>(null);
-  const last = glideRef.current;
-  const durationMs =
-    last !== null && last.sequence !== event.sequence
-      ? agentCursorGlideMs(Math.hypot(x - last.x, y - last.y))
-      : 0;
-  useEffect(() => {
-    glideRef.current = { sequence: event.sequence, x, y };
-  }, [event.sequence, x, y]);
+  // Persist duration on the sequence that started the glide so later paints
+  // of the same event (store, overlay, zoom, StrictMode) do not drop to 0ms
+  // and cancel the compositor transition.
+  const glideRef = useRef<{
+    sequence: number;
+    x: number;
+    y: number;
+    durationMs: number;
+  } | null>(null);
+  const durationMs = agentCursorTransitionMs({
+    last: glideRef.current,
+    sequence: event.sequence,
+    x,
+    y,
+  });
+  glideRef.current = { sequence: event.sequence, x, y, durationMs };
 
   const label = active ? agentCursorActionLabel(event.phase) : null;
 

@@ -4,6 +4,7 @@ import {
   agentBrowserCursorOpacity,
   agentCursorActionLabel,
   agentCursorGlideMs,
+  agentCursorTransitionMs,
 } from "./agentBrowserCursorLogic";
 
 describe("agentCursorGlideMs", () => {
@@ -21,6 +22,28 @@ describe("agentCursorGlideMs", () => {
     // click events; the glide must finish first so the ripple lands on a
     // settled cursor.
     expect(agentCursorGlideMs(Number.MAX_SAFE_INTEGER)).toBeLessThan(300);
+  });
+});
+
+describe("agentCursorTransitionMs", () => {
+  it("keeps the in-flight duration across same-sequence re-renders", () => {
+    expect(agentCursorTransitionMs({ last: null, sequence: 1, x: 10, y: 10 })).toBe(0);
+    expect(
+      agentCursorTransitionMs({
+        last: { sequence: 1, x: 0, y: 0, durationMs: 0 },
+        sequence: 2,
+        x: 100,
+        y: 0,
+      }),
+    ).toBe(agentCursorGlideMs(100));
+    expect(
+      agentCursorTransitionMs({
+        last: { sequence: 2, x: 100, y: 0, durationMs: 120 },
+        sequence: 2,
+        x: 100,
+        y: 0,
+      }),
+    ).toBe(120);
   });
 });
 

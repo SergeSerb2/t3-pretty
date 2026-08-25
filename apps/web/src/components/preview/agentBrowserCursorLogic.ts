@@ -17,6 +17,22 @@ export function agentCursorGlideMs(distancePx: number): number {
   return Math.round(Math.min(280, Math.max(120, distancePx * 0.4)));
 }
 
+export function agentCursorTransitionMs(input: {
+  readonly last: {
+    readonly sequence: number;
+    readonly x: number;
+    readonly y: number;
+    readonly durationMs: number;
+  } | null;
+  readonly sequence: number;
+  readonly x: number;
+  readonly y: number;
+}): number {
+  if (input.last === null) return 0;
+  if (input.last.sequence === input.sequence) return input.last.durationMs;
+  return agentCursorGlideMs(Math.hypot(input.x - input.last.x, input.y - input.last.y));
+}
+
 export function agentCursorActionLabel(phase: DesktopPreviewPointerEvent["phase"]): string | null {
   switch (phase) {
     case "click":
