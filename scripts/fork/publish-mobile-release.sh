@@ -468,22 +468,28 @@ fi
 
 is_full_xcode() {
   [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]] || return 1
-  if [[ "$1" == *Xcode-beta.app* || -f "$1/../Resources/BetaVersion.plist" ]]; then
-    echo "Skipping $1: beta Xcode is not reliable for App Store Connect submissions." >&2
+  # leftover Xcode.app on macOS 27 can exist without being runnable.
+  local version_output
+  if ! version_output="$(DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version 2>/dev/null)"; then
+    echo "Skipping $1: xcodebuild -version failed." >&2
     return 1
   fi
-  # leftover Xcode.app on macOS 27 can exist without being runnable.
-  if DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version >/dev/null 2>&1; then
-    return 0
+  if [[ "$1" == *Xcode-beta.app* || -f "$1/../Resources/BetaVersion.plist" ]]; then
+    local accepted_beta_build="${T3CODE_ACCEPTED_XCODE_BETA_BUILD:-27A5252f}"
+    local beta_build
+    beta_build="$(sed -n 's/^Build version //p' <<< "$version_output" | head -n 1)"
+    if [[ "$beta_build" != "$accepted_beta_build" ]]; then
+      echo "Skipping $1: beta build ${beta_build:-unknown}; accepted beta is $accepted_beta_build." >&2
+      return 1
+    fi
   fi
-  echo "Skipping $1: xcodebuild -version failed." >&2
-  return 1
+  return 0
 }
 
 # Prefer a stable full Xcode.app if xcodebuild actually runs. Command Line
-# Tools cannot compile an IPA, and beta Xcode uploads can be rejected as soon
-# as Apple advances the supported beta. EAS cloud supplies a stable SDK when
-# this Mac only has Xcode-beta.app.
+# Tools cannot compile an IPA. The current Apple-listed beta is accepted for
+# macOS developer builds; stale betas fall back to EAS cloud.
+# Override T3CODE_ACCEPTED_XCODE_BETA_BUILD when Apple advances the listed beta.
 # Origin's pipeline upload rejects `interruptible`, so a later main push
 # can still cancel this job. Do not merge unrelated main PRs during an IPA.
 developer_dir=""
