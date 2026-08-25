@@ -19,7 +19,10 @@ it("uses a guarded, one-way public mirror", () => {
   assert.match(script, /SergeSerb2\/t3-pretty/);
   assert.match(script, /force-with-lease/);
   assert.match(script, /push --no-thin/);
-  assert.match(script, /fetch --unshallow origin main/);
+  assert.match(
+    script,
+    /if \[\[ "\$\(git rev-parse --is-shallow-repository\)" == true \]\]; then\s+git fetch --unshallow origin main\s+fi\s+git merge-base --is-ancestor/,
+  );
   assert.match(script, /--force-with-lease="refs\/heads\/\$archive_branch:"/);
   NodeAssert.doesNotMatch(
     script,
