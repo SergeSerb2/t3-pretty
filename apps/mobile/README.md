@@ -95,11 +95,9 @@ The native lint task runs SwiftLint for Swift plus ktlint and detekt for Kotlin.
 ## Production builds
 
 CI publishes production OTA through the fork-owned EAS project. Installed
-TestFlight binaries pick that up. A new IPA is compiled with
-`eas build --local` from `Xcode.app` or `Xcode-beta.app` and uploaded as a
-TestFlight build when the native fingerprint changed. macos-release is on
-the macOS developer beta, so `Xcode-beta.app` is the expected compiler.
-EAS cloud is only the fallback when that Mac has no full Xcode. Neither
+TestFlight binaries pick that up. When the native fingerprint changes, a new
+IPA is compiled locally with stable `Xcode.app`, or on EAS cloud when the
+release Mac only has beta Xcode, then uploaded as a TestFlight build. Neither
 path submits the app for App Store review.
 
 Use `vp run ios:release` only when you want a self-contained local Release
