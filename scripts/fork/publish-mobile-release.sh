@@ -489,7 +489,7 @@ is_full_xcode() {
 # Prefer a stable full Xcode.app if xcodebuild actually runs. Command Line
 # Tools cannot compile an IPA. The current Apple-listed beta is accepted for
 # macOS developer builds; stale betas fall back to EAS cloud.
-# ponytail: override the accepted build when Apple advances the supported beta.
+# Override T3CODE_ACCEPTED_XCODE_BETA_BUILD when Apple advances the listed beta.
 # Origin's pipeline upload rejects `interruptible`, so a later main push
 # can still cancel this job. Do not merge unrelated main PRs during an IPA.
 developer_dir=""
