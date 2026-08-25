@@ -277,25 +277,29 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     [detail, environmentId, startHandoff],
   );
 
-  const startFixFindings = useCallback(() => {
-    if (detail === null) return;
-    handoff(
-      buildFixFindingsPrompt({
-        provider: detail.provider,
-        host: pullRequestUrlHost(detail.url) ?? detail.repository,
-        number: detail.number,
-        title: detail.title,
-        url: detail.url,
-        headBranch: detail.headBranch,
-        baseBranch: detail.baseBranch,
-        reviewThreads: detail.reviewThreads,
-        comments: detail.comments,
-        checks: detail.checks,
-        commentsTruncated: detail.commentsTruncated,
-        canResolve: detail.viewerPermissions.resolve && detail.capabilities.review.resolve,
-      }),
-    );
-  }, [detail, handoff]);
+  const startFixFindings = useCallback(
+    (continuous: boolean) => {
+      if (detail === null) return;
+      handoff(
+        buildFixFindingsPrompt({
+          provider: detail.provider,
+          host: pullRequestUrlHost(detail.url) ?? detail.repository,
+          number: detail.number,
+          title: detail.title,
+          url: detail.url,
+          headBranch: detail.headBranch,
+          baseBranch: detail.baseBranch,
+          reviewThreads: detail.reviewThreads,
+          comments: detail.comments,
+          checks: detail.checks,
+          commentsTruncated: detail.commentsTruncated,
+          canResolve: detail.viewerPermissions.resolve && detail.capabilities.review.resolve,
+          continuous,
+        }),
+      );
+    },
+    [detail, handoff],
+  );
 
   const findingCount =
     detail === null
@@ -356,7 +360,12 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
         items.push({
           type: "action",
           title: "Fix all findings",
-          onPress: startFixFindings,
+          onPress: () => startFixFindings(false),
+        });
+        items.push({
+          type: "action",
+          title: "Fix continuously",
+          onPress: () => startFixFindings(true),
         });
       }
     } else if (activityQuery.error !== null) {
@@ -703,7 +712,8 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                         mode: "comment",
                       })
                     }
-                    onFixAll={findingCount > 0 ? startFixFindings : undefined}
+                    onFixAll={findingCount > 0 ? () => startFixFindings(false) : undefined}
+                    onFixContinuously={findingCount > 0 ? () => startFixFindings(true) : undefined}
                     onFixThread={(thread) =>
                       handoff(
                         buildFixFindingPrompt({

@@ -808,6 +808,7 @@ export function buildFixFindingsHandoff(input: {
   readonly comments: ReadonlyArray<PullRequestComment>;
   readonly checks: ReadonlyArray<PullRequestCheck>;
   readonly commentsTruncated: boolean;
+  readonly continuous?: boolean;
   /**
    * Whether this viewer may resolve review threads on the host — host capability and
    * `viewerPermissions.resolve` together, matching the Resolve control.
@@ -874,6 +875,11 @@ export function buildFixFindingsHandoff(input: {
       includedRemarks.length === 0
         ? [
             "No unresolved review findings were returned; inspect the pull request and its failing checks before changing code.",
+          ]
+        : []),
+      ...(input.continuous
+        ? [
+            "Keep working until the pull request is green on its latest commit. After every push, wait for the next automated review cycle when configured and all required checks for that exact head to finish, then refresh the host's review and check state. Fix each new valid actionable finding or code-caused failure, resolve the conversations you address when permitted, push, and repeat. Do not stop while an expected latest-head review or required check is pending or failing, or while actionable feedback remains unresolved. If an external failure or missing permission blocks progress, report the evidence instead of changing unrelated code.",
           ]
         : []),
       // Checks and top-level review remarks are not resolvable threads — only threaded findings are.

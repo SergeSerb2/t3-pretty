@@ -294,6 +294,17 @@ describe("handoffs and failures", () => {
     canResolve: true,
   };
 
+  it("keeps a continuous sweep on the latest head until reviews and checks are green", () => {
+    const continuous = buildFixFindingsPrompt({ ...findingsBase, continuous: true });
+    const once = buildFixFindingsPrompt(findingsBase);
+
+    expect(continuous).toContain("green on its latest commit");
+    expect(continuous).toContain("wait for the next automated review cycle");
+    expect(continuous).toContain("required checks for that exact head");
+    expect(continuous).toContain("while actionable feedback remains unresolved");
+    expect(once).not.toContain("green on its latest commit");
+  });
+
   it("omits a thread whose comments are only HTML markers", () => {
     const prompt = buildFixFindingsPrompt({
       ...findingsBase,

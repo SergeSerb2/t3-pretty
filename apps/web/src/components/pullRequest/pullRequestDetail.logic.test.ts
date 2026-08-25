@@ -1095,6 +1095,26 @@ describe("fix findings handoff", () => {
     expect(handoff.prompt).not.toContain("resolveReviewThread");
   });
 
+  it("keeps a continuous sweep on the latest head until reviews and checks are green", () => {
+    const continuous = buildFixFindingsHandoff({
+      ...base,
+      reviewThreads: [],
+      checks: [failingCheck],
+      continuous: true,
+    });
+    const once = buildFixFindingsHandoff({
+      ...base,
+      reviewThreads: [],
+      checks: [failingCheck],
+    });
+
+    expect(continuous.prompt).toContain("green on its latest commit");
+    expect(continuous.prompt).toContain("wait for the next automated review cycle");
+    expect(continuous.prompt).toContain("required checks for that exact head");
+    expect(continuous.prompt).toContain("while actionable feedback remains unresolved");
+    expect(once.prompt).not.toContain("green on its latest commit");
+  });
+
   it("leaves out a resolved conversation, and one nobody wrote in", () => {
     const handoff = buildFixFindingsHandoff({
       ...base,

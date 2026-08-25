@@ -36,6 +36,7 @@ import {
   PanelRightIcon,
   PencilIcon,
   RefreshCwIcon,
+  Repeat2Icon,
   ServerIcon,
   TriangleAlertIcon,
 } from "lucide-react";
@@ -564,7 +565,7 @@ export function PullRequestDetailPanel({
   // Which handoff is preparing, keyed so a per-finding button can say "Preparing..." on itself
   // alone. One at a time whatever the key: they all check the same pull request out.
   const [handoff, setHandoff] = useState<string | null>(null);
-  const [fixAllOpen, setFixAllOpen] = useState(false);
+  const [fixAllMode, setFixAllMode] = useState<"once" | "continuous" | null>(null);
   const handoffInFlightRef = useRef(false);
   const { copyToClipboard: copyBranchToClipboard, isCopied: isBranchCopied } = useCopyToClipboard({
     target: "branch name",
@@ -1312,11 +1313,12 @@ export function PullRequestDetailPanel({
 
   const startFixFindings = (modelSelection: ModelSelection) => {
     if (!detail) return;
+    const continuous = fixAllMode === "continuous";
     const canResolve = detail.capabilities.review.resolve && detail.viewerPermissions.resolve;
     const host = pullRequestUrlHost(detail.url) ?? detail.provider;
-    setFixAllOpen(false);
+    setFixAllMode(null);
     void startHandoff(
-      "findings",
+      continuous ? "continuous-findings" : "findings",
       buildFixFindingsHandoff({
         provider: detail.provider,
         host,
@@ -1330,6 +1332,7 @@ export function PullRequestDetailPanel({
         checks: detail.checks,
         commentsTruncated: detail.commentsTruncated,
         canResolve,
+        continuous,
       }),
       "worktree",
       "new-thread",
@@ -1551,15 +1554,26 @@ export function PullRequestDetailPanel({
           {detail ? (
             <>
               {findingCount > 0 ? (
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  disabled={handoff !== null}
-                  onClick={() => setFixAllOpen(true)}
-                >
-                  <HammerIcon className="size-3.5" />
-                  {handoff === "findings" ? "Starting..." : "Fix all"}
-                </Button>
+                <>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    disabled={handoff !== null}
+                    onClick={() => setFixAllMode("once")}
+                  >
+                    <HammerIcon className="size-3.5" />
+                    {handoff === "findings" ? "Starting..." : "Fix all"}
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    disabled={handoff !== null}
+                    onClick={() => setFixAllMode("continuous")}
+                  >
+                    <Repeat2Icon className="size-3.5" />
+                    {handoff === "continuous-findings" ? "Starting..." : "Fix continuously"}
+                  </Button>
+                </>
               ) : null}
               {/* Checking a pull request out is the reason to open one here at all, so it is a
                   button of its own rather than a side effect of asking an agent for something.
@@ -1692,17 +1706,33 @@ export function PullRequestDetailPanel({
                     </span>
                   </MenuItem>
                   {findingCount > 0 ? (
-                    <MenuItem disabled={handoff !== null} onClick={() => setFixAllOpen(true)}>
-                      <HammerIcon className="mt-0.5 size-3.5 shrink-0 self-start" />
-                      <span className="flex min-w-0 flex-col">
-                        <span>
-                          {handoff === "findings" ? "Starting..." : handoffLabels.fixFindings}
+                    <>
+                      <MenuItem disabled={handoff !== null} onClick={() => setFixAllMode("once")}>
+                        <HammerIcon className="mt-0.5 size-3.5 shrink-0 self-start" />
+                        <span className="flex min-w-0 flex-col">
+                          <span>
+                            {handoff === "findings" ? "Starting..." : handoffLabels.fixFindings}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            Runs every unresolved review finding in a new thread.
+                          </span>
                         </span>
-                        <span className="text-xs text-muted-foreground">
-                          Runs every unresolved review finding in a new thread.
+                      </MenuItem>
+                      <MenuItem
+                        disabled={handoff !== null}
+                        onClick={() => setFixAllMode("continuous")}
+                      >
+                        <Repeat2Icon className="mt-0.5 size-3.5 shrink-0 self-start" />
+                        <span className="flex min-w-0 flex-col">
+                          <span>
+                            {handoff === "continuous-findings" ? "Starting..." : "Fix continuously"}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            Keeps fixing new reviews and failures until the pull request is green.
+                          </span>
                         </span>
-                      </span>
-                    </MenuItem>
+                      </MenuItem>
+                    </>
                   ) : null}
                   {pickableEnvironments.length > 0 ? (
                     <ActOnEnvironmentPicker
@@ -2345,11 +2375,14 @@ export function PullRequestDetailPanel({
       </div>
 
       <FixAllFindingsDialog
-        open={fixAllOpen}
-        onOpenChange={setFixAllOpen}
+        open={fixAllMode !== null}
+        onOpenChange={(open) => {
+          if (!open) setFixAllMode(null);
+        }}
         findingCount={findingCount}
         composerTarget={attachTarget}
-        pending={handoff === "findings"}
+        pending={handoff === "findings" || handoff === "continuous-findings"}
+        continuous={fixAllMode === "continuous"}
         onConfirm={startFixFindings}
       />
 

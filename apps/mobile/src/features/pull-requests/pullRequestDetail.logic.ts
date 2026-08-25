@@ -520,6 +520,7 @@ export function buildFixFindingsPrompt(input: {
   readonly checks: ReadonlyArray<PullRequestCheck>;
   readonly commentsTruncated: boolean;
   readonly canResolve: boolean;
+  readonly continuous?: boolean;
 }): string {
   const collected = collectFixableFindings(input);
   const threads = collected.threads;
@@ -583,6 +584,11 @@ export function buildFixFindingsPrompt(input: {
     ...(includedThreads.length === 0 && includedChecks.length === 0 && includedRemarks.length === 0
       ? [
           "No unresolved review findings were returned; inspect the pull request and its failing checks before changing code.",
+        ]
+      : []),
+    ...(input.continuous
+      ? [
+          "Keep working until the pull request is green on its latest commit. After every push, wait for the next automated review cycle when configured and all required checks for that exact head to finish, then refresh the host's review and check state. Fix each new valid actionable finding or code-caused failure, resolve the conversations you address when permitted, push, and repeat. Do not stop while an expected latest-head review or required check is pending or failing, or while actionable feedback remains unresolved. If an external failure or missing permission blocks progress, report the evidence instead of changing unrelated code.",
         ]
       : []),
     ...(includedThreads.length > 0

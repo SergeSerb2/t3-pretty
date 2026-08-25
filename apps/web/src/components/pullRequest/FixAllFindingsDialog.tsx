@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { ModelSelection, ScopedThreadRef } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import { HammerIcon } from "lucide-react";
+import { HammerIcon, Repeat2Icon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { getComposerProviderState } from "~/components/chat/composerProviderState";
@@ -50,6 +50,7 @@ export function FixAllFindingsDialog({
   findingCount,
   composerTarget,
   pending,
+  continuous,
   onConfirm,
 }: {
   open: boolean;
@@ -57,6 +58,7 @@ export function FixAllFindingsDialog({
   findingCount: number;
   composerTarget: ScopedThreadRef | DraftId | null;
   pending: boolean;
+  continuous: boolean;
   onConfirm: (selection: ModelSelection) => void;
 }) {
   const settings = usePrimarySettings();
@@ -101,12 +103,13 @@ export function FixAllFindingsDialog({
       <DialogPopup className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <HammerIcon className="size-4" />
-            Fix all findings
+            {continuous ? <Repeat2Icon className="size-4" /> : <HammerIcon className="size-4" />}
+            {continuous ? "Fix continuously" : "Fix all findings"}
           </DialogTitle>
           <DialogDescription>
-            Pick the agent for this sweep of {findingLabel}. It will fix the unresolved review
-            comments and resolve the ones it addresses.
+            {continuous
+              ? `Pick the agent to fix ${findingLabel}, then monitor this pull request and keep fixing new review comments and failures until it is green.`
+              : `Pick the agent for this sweep of ${findingLabel}. It will fix the unresolved review comments and resolve the ones it addresses.`}
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-3">
@@ -175,7 +178,7 @@ export function FixAllFindingsDialog({
             disabled={pending || activeEntry === null || selection.model.length === 0}
             onClick={() => onConfirm(selection)}
           >
-            {pending ? "Starting..." : "Fix all"}
+            {pending ? "Starting..." : continuous ? "Fix continuously" : "Fix all"}
           </Button>
         </DialogFooter>
       </DialogPopup>
