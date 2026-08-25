@@ -57,6 +57,8 @@ T3 Code works with the platforms your team already uses:
   finding — GitHub, GitLab, Bitbucket, Azure DevOps, Origin, and Grok Origin comments — then
   resolves the conversations it fixed. You pick the agent and reasoning effort first. Per-comment
   **Fix in a thread** buttons still handle one finding at a time
+- **Fix continuously** starts the same focused sweep, then keeps the agent watching latest-commit
+  reviews and checks, fixing new actionable feedback until the pull request is green
 - On GitHub pull requests, see emoji reactions on the description and comments — including Codex's
   eyes while it reviews and thumbs-up when it finishes without comments
 - Resolved review conversations collapse in the pull request conversation and on the diff, so you
