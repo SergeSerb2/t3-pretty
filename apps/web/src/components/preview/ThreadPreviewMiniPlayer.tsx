@@ -5,6 +5,7 @@ import { PanelRightIcon, PictureInPicture2, XIcon } from "lucide-react";
 import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef, useState } from "react";
 
 import { BrowserSurfaceSlot } from "~/browser/BrowserSurfaceSlot";
+import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import { Button } from "~/components/ui/button";
 import { toastManager } from "~/components/ui/toast";
@@ -18,6 +19,7 @@ import { previewBridge } from "./previewBridge";
 import {
   clampPreviewMiniPlayerPosition,
   clampPreviewMiniPlayerSize,
+  miniPlayerCursorContent,
   PREVIEW_MINI_PLAYER_DEFAULT_SIZE,
   PREVIEW_MINI_PLAYER_EDGE_GAP,
 } from "./previewMiniPlayerLayout";
@@ -64,6 +66,13 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
   const snapshot = previewState.sessions[tabId] ?? null;
   const runtimeTabId = previewRuntimeTabId(threadRef, previewState.serverEpoch, tabId);
   const desktopOverlay = previewState.desktopByTabId[tabId] ?? null;
+  const cursorContent = useBrowserSurfaceStore((state) => {
+    const surface = state.byTabId[runtimeTabId];
+    return miniPlayerCursorContent(
+      surface?.rect ?? null,
+      surface?.fittedSourceContent ?? surface?.content ?? null,
+    );
+  });
   const position = miniPlayer?.tabId === tabId ? miniPlayer.position : null;
   const positionRef = useRef(position);
   positionRef.current = position;
@@ -354,6 +363,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
               tabId={runtimeTabId}
               zoomFactor={desktopOverlay.zoomFactor}
               controller={desktopOverlay.controller}
+              content={cursorContent}
             />
           </div>
         ) : null}

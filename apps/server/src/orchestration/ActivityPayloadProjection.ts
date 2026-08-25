@@ -293,6 +293,26 @@ function jsonEncodedLength(value: unknown): number | undefined {
   }
 }
 
+const MCP_ARGUMENT_LABEL_KEYS = [
+  "locator",
+  "selector",
+  "text",
+  "url",
+  "key",
+  "clear",
+  "x",
+  "y",
+  "target",
+  "deltaX",
+  "deltaY",
+  "modifiers",
+  "preset",
+  "width",
+  "height",
+  "colorScheme",
+  "urlIncludes",
+] as const;
+
 function boundedMcpArguments(value: unknown): unknown {
   if (value === undefined || value === null) return undefined;
   const total = jsonEncodedLength(value);
@@ -300,12 +320,20 @@ function boundedMcpArguments(value: unknown): unknown {
   if (total <= MCP_ARGUMENTS_MAX_CHARS) return value;
   const record = asRecord(value);
   if (!record) return undefined;
+  const preferred = new Set<string>(MCP_ARGUMENT_LABEL_KEYS);
+  const keys = [
+    ...MCP_ARGUMENT_LABEL_KEYS.filter((key) => key in record),
+    ...Object.keys(record).filter((key) => !preferred.has(key)),
+  ];
   const kept: Record<string, unknown> = {};
-  for (const [key, field] of Object.entries(record)) {
-    const length = jsonEncodedLength(field);
-    if (length !== undefined && length <= MCP_ARGUMENTS_MAX_CHARS) {
-      kept[key] = field;
-    }
+  for (const key of keys) {
+    const field = record[key];
+    const fieldLength = jsonEncodedLength(field);
+    if (fieldLength === undefined || fieldLength > MCP_ARGUMENTS_MAX_CHARS) continue;
+    const next = { ...kept, [key]: field };
+    const nextLength = jsonEncodedLength(next);
+    if (nextLength === undefined || nextLength > MCP_ARGUMENTS_MAX_CHARS) continue;
+    kept[key] = field;
   }
   return Object.keys(kept).length > 0 ? kept : undefined;
 }

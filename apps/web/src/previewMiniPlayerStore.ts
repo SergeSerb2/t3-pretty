@@ -53,6 +53,7 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((
   open: (ref, tabId) =>
     set((state) => {
       const threadKey = scopedThreadKey(ref);
+      if (state.dismissedTabIdsByThreadKey[threadKey]?.includes(tabId)) return state;
       const current = state.byThreadKey[threadKey];
       if (current?.tabId === tabId) return state;
       return {

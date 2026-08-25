@@ -248,6 +248,36 @@ describe("projectActivityPayload", () => {
     expect(item.arguments).toBeUndefined();
   });
 
+  it("caps reconstructed MCP arguments at the wire budget", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            type: "mcpToolCall",
+            id: "item-1",
+            tool: "preview_type",
+            server: "t3-code",
+            status: "completed",
+            arguments: {
+              locator: "role=textbox[name='Prompt']",
+              text: "hello",
+              extra: "x".repeat(3_900),
+              more: "y".repeat(3_900),
+            },
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    const item = data.item as Record<string, unknown>;
+    const argumentsValue = item.arguments as Record<string, unknown>;
+    expect(argumentsValue.locator).toBe("role=textbox[name='Prompt']");
+    expect(argumentsValue.text).toBe("hello");
+    expect(argumentsValue.more).toBeUndefined();
+    expect(JSON.stringify(argumentsValue).length).toBeLessThanOrEqual(4_000);
+  });
+
   it("keeps locator and text when only an MCP argument field is oversized", () => {
     const projected = projectActivityPayload(
       activity({

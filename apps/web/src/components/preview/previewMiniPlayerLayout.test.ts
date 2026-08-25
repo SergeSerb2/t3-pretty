@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   clampPreviewMiniPlayerPosition,
   clampPreviewMiniPlayerSize,
+  miniPlayerCursorContent,
   PREVIEW_MINI_PLAYER_EDGE_GAP,
 } from "./previewMiniPlayerLayout";
 
@@ -69,5 +70,19 @@ describe("clampPreviewMiniPlayerSize", () => {
     expect(
       clampPreviewMiniPlayerSize({ width: 360, height: 239 }, { width: 250, height: 180 }, 20),
     ).toEqual({ width: 226, height: 136 });
+  });
+});
+
+describe("miniPlayerCursorContent", () => {
+  it("maps page pixels into the mini overlay without panel offsets", () => {
+    expect(
+      miniPlayerCursorContent({ width: 320, height: 200 }, { width: 1280, height: 800, scale: 1 }),
+    ).toEqual({
+      x: 0,
+      y: 0,
+      scale: 0.25,
+      scrollLeft: 0,
+      scrollTop: 0,
+    });
   });
 });

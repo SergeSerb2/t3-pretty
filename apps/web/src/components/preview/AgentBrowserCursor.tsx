@@ -20,10 +20,18 @@ export function AgentBrowserCursor(props: {
   readonly tabId: string;
   readonly zoomFactor: number;
   readonly controller: BrowserController;
+  readonly content?: {
+    readonly x: number;
+    readonly y: number;
+    readonly scale: number;
+    readonly scrollLeft: number;
+    readonly scrollTop: number;
+  } | null;
 }) {
   const { tabId, zoomFactor, controller } = props;
   const event = useBrowserPointerStore((state) => state.byTabId[tabId] ?? null);
-  const content = useBrowserSurfaceStore((state) => state.byTabId[tabId]?.content ?? null);
+  const storeContent = useBrowserSurfaceStore((state) => state.byTabId[tabId]?.content ?? null);
+  const content = props.content ?? storeContent;
 
   if (!event) return null;
 
