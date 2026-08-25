@@ -74,10 +74,8 @@ describe("clampPreviewMiniPlayerSize", () => {
 });
 
 describe("miniPlayerCursorContent", () => {
-  it("maps page pixels into the mini overlay without panel offsets", () => {
-    expect(
-      miniPlayerCursorContent({ width: 320, height: 200 }, { width: 1280, height: 800, scale: 1 }),
-    ).toEqual({
+  it("keeps the laid-out scale and drops panel offsets", () => {
+    expect(miniPlayerCursorContent({ scale: 0.25 })).toEqual({
       x: 0,
       y: 0,
       scale: 0.25,

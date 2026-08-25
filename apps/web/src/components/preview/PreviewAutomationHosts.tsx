@@ -111,7 +111,7 @@ async function maybePresentAutomationActivity(
     panelPreviewTabId: panelSurface?.kind === "preview" ? (panelSurface.resourceId ?? null) : null,
   });
   if (shouldPresent) {
-    usePreviewMiniPlayerStore.getState().open(threadRef, tabId);
+    usePreviewMiniPlayerStore.getState().openIfNotDismissed(threadRef, tabId);
   }
 }
 

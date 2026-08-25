@@ -68,10 +68,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
   const desktopOverlay = previewState.desktopByTabId[tabId] ?? null;
   const cursorContent = useBrowserSurfaceStore((state) => {
     const surface = state.byTabId[runtimeTabId];
-    return miniPlayerCursorContent(
-      surface?.rect ?? null,
-      surface?.fittedSourceContent ?? surface?.content ?? null,
-    );
+    return miniPlayerCursorContent(surface?.fitSourceContent ? (surface.content ?? null) : null);
   });
   const position = miniPlayer?.tabId === tabId ? miniPlayer.position : null;
   const positionRef = useRef(position);

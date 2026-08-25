@@ -2,7 +2,11 @@ import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environ
 import { type EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "./previewMiniPlayerStore";
+import {
+  normalizePersistedMiniPlayerState,
+  selectThreadPreviewMiniPlayer,
+  usePreviewMiniPlayerStore,
+} from "./previewMiniPlayerStore";
 
 const refA = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-A"));
 const refB = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-B"));
@@ -94,6 +98,32 @@ describe("previewMiniPlayerStore", () => {
 
     expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
       [scopedThreadKey(refA)]: ["tab-a"],
+    });
+  });
+
+  it("does not auto-present a dismissed tab", () => {
+    const store = usePreviewMiniPlayerStore.getState();
+    store.open(refA, "tab-a");
+    store.dismiss(refA, "tab-a");
+    store.openIfNotDismissed(refA, "tab-a");
+
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toBeNull();
+
+    usePreviewMiniPlayerStore.getState().open(refA, "tab-a");
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toMatchObject({ tabId: "tab-a" });
+  });
+
+  it("keeps only string tab ids from persisted dismissal state", () => {
+    expect(
+      normalizePersistedMiniPlayerState({
+        dismissedTabIdsByThreadKey: { "env-1:thread-A": ["tab-a", 1, null] },
+      }),
+    ).toEqual({
+      dismissedTabIdsByThreadKey: { "env-1:thread-A": ["tab-a"] },
     });
   });
 

@@ -24,27 +24,18 @@ export function clampPreviewMiniPlayerSize(
   };
 }
 
-/** Cursor overlay is inset:0 on the mini webview; ignore panel offsets. */
-export function miniPlayerCursorContent(
-  overlay: { readonly width: number; readonly height: number } | null,
-  source: { readonly width: number; readonly height: number; readonly scale: number } | null,
-): {
+/** Overlay is inset:0 on the mini webview. Use the laid-out scale; skip panel offsets. */
+export function miniPlayerCursorContent(content: { readonly scale: number } | null): {
   readonly x: number;
   readonly y: number;
   readonly scale: number;
   readonly scrollLeft: number;
   readonly scrollTop: number;
 } {
-  if (!overlay || !source || source.scale <= 0 || source.width <= 0 || source.height <= 0) {
-    return { x: 0, y: 0, scale: 1, scrollLeft: 0, scrollTop: 0 };
-  }
-  const renderedWidth = source.width / source.scale;
-  const renderedHeight = source.height / source.scale;
-  const scale = Math.min(1, overlay.width / renderedWidth, overlay.height / renderedHeight);
   return {
-    x: Math.max(0, (overlay.width - renderedWidth * scale) / 2),
-    y: Math.max(0, (overlay.height - renderedHeight * scale) / 2),
-    scale,
+    x: 0,
+    y: 0,
+    scale: content && content.scale > 0 ? content.scale : 1,
     scrollLeft: 0,
     scrollTop: 0,
   };
