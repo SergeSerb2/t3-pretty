@@ -111,8 +111,12 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    macos-release generates with `--no-push` (baking the notes into the DMG)
    and runs `--publish` only after the artifacts and update feed are live,
    committing and pushing `changelogData.ts` when HEAD is still the `main`
-   tip; the build that push triggers sees the version in the feed and skips
-   packaging instead of publishing it twice. windows-release first reuses the
+   tip. That commit carries `[skip ci]` in its body: Buildkite cancels
+   intermediate `main` builds, so a build for the notes push would only
+   re-read the feed, skip packaging, and cancel the iOS, Linux, relay, and
+   CLI jobs of the release still running on the triggering commit. Packagers
+   that do meet a notes commit at HEAD (a manual retry) still read the feed
+   and skip a version it already lists. windows-release first reuses the
    notes commit from `origin/main` when it covers the same version, so both
    installers ship the same What's New text, and generates locally only as a
    fallback. Both packagers run `--publish` after their uploads, so main

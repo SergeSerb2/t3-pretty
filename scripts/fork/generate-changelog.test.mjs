@@ -463,6 +463,9 @@ describe("publishPendingNotes", () => {
           git(originPath, "log", "-1", "--format=%s", "main"),
           "docs(changelog): add release notes through v0.0.35-nightly.2",
         );
+        // The notes push must not start a Buildkite build: that build would
+        // cancel the release still packaging on the triggering commit.
+        assert.include(git(originPath, "log", "-1", "--format=%b", "main"), "[skip ci]");
         assert.equal(
           git(originPath, "show", "main:apps/web/src/changelog/changelogData.ts"),
           next.trim(),

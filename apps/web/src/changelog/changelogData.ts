@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260824.1173000891",
+    date: "2026-08-24",
+    items: [
+      {
+        kind: "fixed",
+        title: "harden cross-surface reliability",
+      },
+      {
+        kind: "fixed",
+        title: "keep menus alive while a submenu flyout is open",
+      },
+      {
+        kind: "fixed",
+        title: "stop open PR menus from trapping navigation",
+      },
+      {
+        kind: "new",
+        title: "clear settled button and auto-archive of settled threads",
+      },
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260824.1173000888",
     date: "2026-08-24",
     items: [
