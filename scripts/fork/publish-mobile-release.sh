@@ -10,10 +10,9 @@
 # is only compiled when the native fingerprint changed, or a maintainer set
 # T3CODE_FORCE_IOS / T3CODE_MOBILE_MODE=build. eas submit / Fastlane pilot
 # uploads that IPA as a TestFlight build through App Store Connect; it does
-# not submit the app for App Store review. macos-release runs macOS 27
-# developer beta, so the compiler is Xcode-beta.app. TestFlight accepts the
-# current Xcode 27 beta (not every older beta). EAS cloud is only the
-# fallback when this Mac has no full Xcode at all.
+# not submit the app for App Store review. Local builds use stable Xcode;
+# beta toolchains can fall out of App Store Connect support without warning,
+# so the existing EAS cloud path handles IPA builds while this Mac is on beta.
 #
 # Buildkite cancels intermediate main builds when pushes land in quick
 # succession, so a release can die mid-flight and a later push would skip on
@@ -469,6 +468,10 @@ fi
 
 is_full_xcode() {
   [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]] || return 1
+  if [[ "$1" == *Xcode-beta.app* || -f "$1/../Resources/BetaVersion.plist" ]]; then
+    echo "Skipping $1: beta Xcode is not reliable for App Store Connect submissions." >&2
+    return 1
+  fi
   # leftover Xcode.app on macOS 27 can exist without being runnable.
   if DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version >/dev/null 2>&1; then
     return 0
@@ -477,10 +480,10 @@ is_full_xcode() {
   return 1
 }
 
-# Prefer a full Xcode.app, then Xcode-beta.app, if xcodebuild actually runs.
-# Command Line Tools cannot compile an IPA. TestFlight currently accepts
-# Xcode 27 beta 5 (27A5237l). This Mac is on macOS 27 developer beta so a
-# leftover Xcode.app often cannot run and Xcode-beta.app is the toolchain.
+# Prefer a stable full Xcode.app if xcodebuild actually runs. Command Line
+# Tools cannot compile an IPA, and beta Xcode uploads can be rejected as soon
+# as Apple advances the supported beta. EAS cloud supplies a stable SDK when
+# this Mac only has Xcode-beta.app.
 # Origin's pipeline upload rejects `interruptible`, so a later main push
 # can still cancel this job. Do not merge unrelated main PRs during an IPA.
 developer_dir=""
@@ -500,7 +503,7 @@ if ! is_full_xcode "$developer_dir"; then
   ipa_via_cloud=true
   ls -ld /Applications/Xcode*.app 2>/dev/null || echo "No Xcode*.app under /Applications."
   xcode-select -p 2>/dev/null || true
-  annotate info "No full Xcode on this Mac (need Xcode.app or Xcode-beta.app, not Command Line Tools). Compiling the TestFlight IPA on EAS cloud."
+  annotate info "No full Xcode on this Mac that is safe for App Store Connect. Compiling the TestFlight IPA on EAS cloud."
 fi
 
 load_secret APPLE_API_KEY
